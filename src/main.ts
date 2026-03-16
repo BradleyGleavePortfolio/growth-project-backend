@@ -25,8 +25,9 @@ async function bootstrap() {
   // API prefix
   app.setGlobalPrefix('api');
 
-  const port = process.env.PORT || 3000;
-  await app.listen(port);
+  const port = parseInt(process.env.PORT || '3000', 10);
+  // Must bind to 0.0.0.0 for Fly.io — binding to localhost won't be reachable
+  await app.listen(port, '0.0.0.0');
   console.log(`The Growth Project API running on port ${port}`);
 }
 
