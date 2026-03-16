@@ -1,6 +1,5 @@
 import { Injectable, UnauthorizedException, BadRequestException, ConflictException } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
-import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma.service';
 
 const COACH_BACKDOOR_CODE = '6678345';
@@ -9,11 +8,7 @@ const COACH_BACKDOOR_CODE = '6678345';
 export class AuthService {
   private supabaseAdmin;
 
-  constructor(
-    private prisma: PrismaService,
-    private jwtService: JwtService,
-  ) {
-    // Supabase Admin SDK for user management (service role key)
+  constructor(private prisma: PrismaService) {
     this.supabaseAdmin = createClient(
       process.env.SUPABASE_URL || '',
       process.env.SUPABASE_SERVICE_ROLE_KEY || '',
@@ -21,166 +16,43 @@ export class AuthService {
   }
 
   async register(data: { email: string; password: string; name: string; phone?: string }) {
-    // Check if user already exists
     const existing = await this.prisma.user.findUnique({ where: { email: data.email } });
     if (existing) throw new ConflictException('Email already registered');
-
-    // Create user in Supabase Auth
-    const { data: supaUser, error } = await this.supabaseAdmin.auth.admin.createUser({
+    const supaClient = createClient(process.env.SUPABASE_URL || '', process.env.SUPABASE_ANON_KEY || '');
+    const { data: signupData, error } = await supaClient.auth.signUp({
       email: data.email,
       password: data.password,
-      email_confirm: true, // auto-confirm — no email verification required
+      options: { emailRedirectTo: 'tgp://verified', data: { full_name: data.name } },
     });
-
     if (error) throw new BadRequestException(error.message);
-
-    // Create user record in our DB
+    if (!signupData.user) throw new BadRequestException('Signup failed');
     const user = await this.prisma.user.create({
-      data: {
-        supabase_id: supaUser.user.id,
-        email: data.email,
-        name: data.name,
-        phone: data.phone || null,
-        role: 'student',
-      },
+      data: { supabase_id: signupData.user.id, email: data.email, name: data.name, phone: data.phone || null, role: 'student' },
     });
-
-    // Auto-confirm is on — sign the user in immediately so the app gets a token
-    const supaClient = createClient(
-      process.env.SUPABASE_URL || '',
-      process.env.SUPABASE_ANON_KEY || '',
-    );
-    const { data: session, error: signInError } = await supaClient.auth.signInWithPassword({
-      email: data.email,
-      password: data.password,
-    });
-
-    if (signInError || !session.session) {
-      // Registration succeeded but couldn't auto-login — still return success
-      return { message: 'Account created! Please log in.', user_id: user.id };
-    }
-
-    return {
-      message: 'Account created!',
-      access_token: session.session.access_token,
-      is_new_user: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        coach_id: user.coach_id,
-      },
-    };
+    return { message: 'Verification email sent! Please check your inbox.', requires_verification: true, user_id: user.id, email: data.email };
   }
 
   async login(email: string, password: string) {
-    // Authenticate via Supabase
-    const supaClient = createClient(
-      process.env.SUPABASE_URL || '',
-      process.env.SUPABASE_ANON_KEY || '',
-    );
-
+    const supaClient = createClient(process.env.SUPABASE_URL || '', process.env.SUPABASE_ANON_KEY || '');
     const { data, error } = await supaClient.auth.signInWithPassword({ email, password });
-
     if (error) throw new UnauthorizedException('Invalid email or password');
-
-    // Find user in our DB
-    const user = await this.prisma.user.findUnique({
-      where: { email },
-      include: { profile: true },
-    });
-
+    const user = await this.prisma.user.findUnique({ where: { email }, include: { profile: true } });
     if (!user) throw new UnauthorizedException('User not found');
-
-    // Return Supabase access token + our user record
-    return {
-      access_token: data.session.access_token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        coach_id: user.coach_id,
-        profile: user.profile,
-      },
-    };
-  }
-
-  async googleAuth(googleToken: string) {
-    // Exchange Google ID token with Supabase
-    const supaClient = createClient(
-      process.env.SUPABASE_URL || '',
-      process.env.SUPABASE_ANON_KEY || '',
-    );
-
-    const { data, error } = await supaClient.auth.signInWithIdToken({
-      provider: 'google',
-      token: googleToken,
-    });
-
-    if (error) throw new UnauthorizedException('Google auth failed');
-
-    const supaUser = data.user;
-
-    // Upsert user in our DB (Google users are pre-verified)
-    let user = await this.prisma.user.findUnique({ where: { supabase_id: supaUser.id } });
-
-    if (!user) {
-      user = await this.prisma.user.create({
-        data: {
-          supabase_id: supaUser.id,
-          email: supaUser.email,
-          name: supaUser.user_metadata?.full_name || supaUser.email,
-          role: 'student',
-        },
-      });
-    }
-
-    return {
-      access_token: data.session.access_token,
-      is_new_user: false,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        coach_id: user.coach_id,
-      },
-    };
+    return { access_token: data.session.access_token, user: { id: user.id, email: user.email, name: user.name, role: user.role, coach_id: user.coach_id, profile: user.profile } };
   }
 
   async selectRole(userId: string, role: 'coach' | 'student', coachCode?: string) {
-    if (role === 'coach') {
-      if (coachCode !== COACH_BACKDOOR_CODE) {
-        throw new UnauthorizedException('Incorrect code. Contact support.');
-      }
+    if (role === 'coach' && coachCode !== COACH_BACKDOOR_CODE) {
+      throw new UnauthorizedException('Incorrect code. Contact support.');
     }
-
-    const user = await this.prisma.user.update({
-      where: { id: userId },
-      data: { role },
-    });
-
+    const user = await this.prisma.user.update({ where: { id: userId }, data: { role } });
     return { role: user.role };
   }
 
   async getMe(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { profile: true },
-    });
-
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
     if (!user) throw new UnauthorizedException('User not found');
-
-    return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      coach_id: user.coach_id,
-      profile: user.profile,
-    };
+    return { id: user.id, email: user.email, name: user.name, role: user.role, coach_id: user.coach_id, profile: user.profile };
   }
 
   async validateSupabaseToken(supabaseId: string) {
