@@ -89,14 +89,14 @@ enum CheckInType {
 // ============================================================
 
 model User {
-  id          String   @id @default(uuid())
-  supabase_id String   @unique
-  email       String   @unique
-  name        String
-  phone       String?
-  role        Role     @default(student)
-  coach_id    String? // null for coaches; set for students to their coach's User.id
-  created_at  DateTime @default(now())
+  id                 String   @id @default(uuid())
+  supabase_id        String   @unique
+  email              String   @unique
+  name               String
+  phone              String?
+  role               Role     @default(student)
+  coach_id           String?  // null for coaches; set for students to their coach's User.id
+  created_at         DateTime @default(now())
 
   profile            UserProfile?
   logged_entries     LoggedFoodEntry[]
@@ -132,10 +132,10 @@ model UserProfile {
 }
 
 model FoodItem {
-  id                  String            @id @default(uuid())
+  id                  String       @id @default(uuid())
   name                String
   brand_or_restaurant String?
-  category            FoodCategory      @default(generic)
+  category            FoodCategory @default(generic)
   serving_description String
   serving_size_grams  Float
   calories            Float
@@ -151,36 +151,36 @@ model FoodItem {
   tags                String[]
   search_aliases      String[]
   image_url           String?
-  barcode             String?           @unique
-  created_at          DateTime          @default(now())
+  barcode             String?      @unique
+  created_at          DateTime     @default(now())
   log_entries         LoggedFoodEntry[]
 }
 
 model LoggedFoodEntry {
-  id                  String   @id @default(uuid())
+  id                  String    @id @default(uuid())
   user_id             String
-  user                User     @relation(fields: [user_id], references: [id])
-  date                DateTime @db.Date
+  user                User      @relation(fields: [user_id], references: [id])
+  date                DateTime  @db.Date
   meal_type           MealType
   food_item_id        String
-  food_item           FoodItem @relation(fields: [food_item_id], references: [id])
-  quantity_multiplier Float    @default(1.0)
+  food_item           FoodItem  @relation(fields: [food_item_id], references: [id])
+  quantity_multiplier Float     @default(1.0)
   notes               String?
-  logged_at           DateTime @default(now())
+  logged_at           DateTime  @default(now())
 }
 
 model WorkoutSession {
-  id               String        @id @default(uuid())
+  id               String       @id @default(uuid())
   user_id          String
-  user             User          @relation(fields: [user_id], references: [id])
-  date             DateTime      @db.Date
+  user             User         @relation(fields: [user_id], references: [id])
+  date             DateTime     @db.Date
   workout_name     String
   workout_type     String
   duration_minutes Int?
-  intensity        Intensity     @default(moderate)
+  intensity        Intensity    @default(moderate)
   notes            String?
   exercises        ExerciseSet[]
-  created_at       DateTime      @default(now())
+  created_at       DateTime     @default(now())
 }
 
 model ExerciseSet {
@@ -233,26 +233,25 @@ model FastingWindow {
 model WeightLog {
   id         String   @id @default(uuid())
   user_id    String
+  user       User     @relation(fields: [user_id], references: [id])
   date       DateTime @db.Date
   weight_lbs Float
   notes      String?
   logged_at  DateTime @default(now())
-  User       User?    @relation(fields: [userId], references: [id])
-  userId     String?
 }
 
 model NotificationPreferences {
-  id                String  @id @default(uuid())
-  user_id           String  @unique
-  user              User    @relation(fields: [user_id], references: [id])
-  water_enabled     Boolean @default(true)
-  workout_enabled   Boolean @default(true)
-  eat_enabled       Boolean @default(true)
-  mindset_enabled   Boolean @default(true)
-  fasting_enabled   Boolean @default(true)
-  quiet_hours_start String  @default("22:00")
-  quiet_hours_end   String  @default("06:00")
-  timezone          String  @default("America/Los_Angeles")
+  id                  String  @id @default(uuid())
+  user_id             String  @unique
+  user                User    @relation(fields: [user_id], references: [id])
+  water_enabled       Boolean @default(true)
+  workout_enabled     Boolean @default(true)
+  eat_enabled         Boolean @default(true)
+  mindset_enabled     Boolean @default(true)
+  fasting_enabled     Boolean @default(true)
+  quiet_hours_start   String  @default("22:00")
+  quiet_hours_end     String  @default("06:00")
+  timezone            String  @default("America/Los_Angeles")
 }
 
 model Habit {
@@ -277,7 +276,7 @@ model HabitLog {
 }
 
 model Lesson {
-  id          String             @id @default(uuid())
+  id          String            @id @default(uuid())
   coach_id    String
   title       String
   description String?
@@ -285,9 +284,9 @@ model Lesson {
   article_url String?
   tags        String[]
   goal_tags   GoalType[]
-  order_index Int                @default(0)
+  order_index Int               @default(0)
   completions LessonCompletion[]
-  created_at  DateTime           @default(now())
+  created_at  DateTime          @default(now())
 }
 
 model LessonCompletion {
@@ -304,9 +303,9 @@ model CheckIn {
   user_id   String
   user      User        @relation(fields: [user_id], references: [id])
   date      DateTime    @db.Date
-  mood      Int // 1-5
-  energy    Int // 1-5
-  soreness  Int // 1-5
+  mood      Int         // 1-5
+  energy    Int         // 1-5
+  soreness  Int         // 1-5
   notes     String?
   type      CheckInType @default(morning)
   logged_at DateTime    @default(now())
