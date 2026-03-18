@@ -4,24 +4,20 @@ RUN apt-get update -qq && apt-get install -y openssl && rm -rf /var/lib/apt/list
 
 WORKDIR /app
 
-# Copy package files and prisma schema
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install all dependencies
 RUN npm ci
 
-# Copy source BEFORE generating prisma (so generate uses final node_modules path)
 COPY . .
 
-# Generate Prisma client AFTER all files are in place
 RUN npx prisma generate
 
-# Build NestJS
 RUN npm run build
 
-# Expose port
+COPY start.sh ./
+RUN chmod +x start.sh
+
 EXPOSE 3000
 
-# Start production server
-CMD ["node", "dist/main"]
+CMD ["sh", "start.sh"]
