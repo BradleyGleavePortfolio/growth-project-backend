@@ -33,10 +33,9 @@ export class FoodService {
 
   constructor(private prisma: PrismaService) {}
 
-  async search(query: string, limit: number = 20): Promise<FoodSearchResponse> {
+  async search(query: string, limit: number = 50): Promise<FoodSearchResponse> {
     const q = (query || '').trim();
 
-    // Empty query — return default top foods from local DB or external
     if (!q || q.length < 2) {
       const defaults = await this.prisma.foodItem.findMany({
         take: limit,
@@ -50,34 +49,55 @@ export class FoodService {
       };
     }
 
-    // -------------------------------------------------------
-    // 1. Try local DB search first (pg_trgm similarity)
-    // -------------------------------------------------------
-    let localResults: FoodResult[] = [];
+    // Run all 3 sources in parallel
+    const [usdaResults, offResults, localResults] = await Promise.allSettled([
+      this.searchUSDA(q, 20),
+      this.searchOpenFoodFacts(q, 20),
+      this.searchLocalDB(q, 10),
+    ]);
+
+    const usda = usdaResults.status === 'fulfilled' ? usdaResults.value : [];
+    const off = offResults.status === 'fulfilled' ? offResults.value : [];
+    const local = localResults.status === 'fulfilled' ? localResults.value : [];
+
+    // Merge: local first (user's own foods), then USDA (reliable nutrition), then OFF (images)
+    const merged: FoodResult[] = [];
+    const seen = new Set<string>();
+
+    const addUnique = (items: FoodResult[]) => {
+      for (const item of items) {
+        const key = item.name.toLowerCase().replace(/\s+/g, ' ').trim();
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(item);
+        }
+      }
+    };
+
+    addUnique(local);
+    addUnique(usda);
+    addUnique(off);
+
+    return {
+      results: merged.slice(0, limit),
+      suggestions: [],
+      did_you_mean: false,
+      query: q,
+    };
+  }
+
+  private async searchLocalDB(query: string, limit: number): Promise<FoodResult[]> {
     try {
       const trgmResults = await this.prisma.$queryRaw<any[]>`
         SELECT
-          id,
-          name,
-          brand_or_restaurant,
-          category,
-          serving_description,
-          serving_size_grams,
-          calories,
-          protein_g,
-          carbs_g,
-          fat_g,
-          fiber_g,
-          sugar_g,
-          sodium_mg,
-          tags,
-          search_aliases,
-          image_url,
+          id, name, brand_or_restaurant, category, serving_description,
+          serving_size_grams, calories, protein_g, carbs_g, fat_g,
+          fiber_g, sugar_g, sodium_mg, tags, search_aliases, image_url,
           similarity(
             lower(name) || ' ' ||
             lower(coalesce(brand_or_restaurant, '')) || ' ' ||
             lower(array_to_string(search_aliases, ' ')),
-            lower(${q})
+            lower(${query})
           ) AS score
         FROM "FoodItem"
         WHERE
@@ -85,16 +105,16 @@ export class FoodService {
             lower(name) || ' ' ||
             lower(coalesce(brand_or_restaurant, '')) || ' ' ||
             lower(array_to_string(search_aliases, ' ')),
-            lower(${q})
+            lower(${query})
           ) > 0.08
         ORDER BY score DESC
         LIMIT ${limit}
       `;
-      localResults = trgmResults.map(this.toResult);
-    } catch (_pgError) {
+      return trgmResults.map(this.toResult);
+    } catch {
       // pg_trgm not installed — try ILIKE fallback
       try {
-        const likeQ = `%${q}%`;
+        const likeQ = `%${query}%`;
         const ilikeResults = await this.prisma.$queryRaw<any[]>`
           SELECT DISTINCT
             id, name, brand_or_restaurant, category, serving_description,
@@ -113,43 +133,79 @@ export class FoodService {
             name
           LIMIT ${limit}
         `;
-        localResults = ilikeResults.map(this.toResult);
+        return ilikeResults.map(this.toResult);
       } catch {
-        // DB search failed entirely
+        return [];
       }
     }
+  }
 
-    // -------------------------------------------------------
-    // 2. If local DB has < 3 results, supplement with OpenFoodFacts
-    // -------------------------------------------------------
-    if (localResults.length < 3) {
-      try {
-        const externalResults = await this.searchOpenFoodFacts(q, limit - localResults.length);
-        // Deduplicate by name (case-insensitive)
-        const localNames = new Set(localResults.map((r) => r.name.toLowerCase()));
-        const unique = externalResults.filter(
-          (r) => !localNames.has(r.name.toLowerCase()),
-        );
-        localResults = [...localResults, ...unique].slice(0, limit);
-      } catch (err) {
-        this.logger.warn('OpenFoodFacts search failed', err);
-      }
-    }
+  private async searchUSDA(query: string, limit: number = 20): Promise<FoodResult[]> {
+    const url = `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=${Math.min(limit, 25)}&api_key=DEMO_KEY`;
 
-    if (localResults.length > 0) {
-      return {
-        results: localResults,
-        suggestions: [],
-        did_you_mean: false,
-        query: q,
-      };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'TheGrowthProject/1.0' },
+      });
+      clearTimeout(timeout);
+
+      if (!response.ok) return [];
+
+      const data = await response.json();
+      const foods: any[] = data?.foods || [];
+
+      return foods
+        .filter(f => f.description && f.description.trim())
+        .slice(0, limit)
+        .map(f => this.mapUSDAFood(f));
+    } catch {
+      clearTimeout(timeout);
+      return [];
     }
+  }
+
+  private mapUSDAFood(food: any): FoodResult {
+    const nutrients = food.foodNutrients || [];
+
+    const getNutrient = (name: string, unit?: string): number => {
+      const match = nutrients.find((n: any) =>
+        n.nutrientName === name && (!unit || n.unitName === unit)
+      );
+      return match ? Math.round((match.value || 0) * 10) / 10 : 0;
+    };
+
+    const calories = getNutrient('Energy', 'KCAL') || Math.round(getNutrient('Energy', 'kJ') / 4.184);
+    const protein = getNutrient('Protein');
+    const carbs = getNutrient('Carbohydrates, by difference');
+    const fat = getNutrient('Total lipid (fat)');
+    const fiber = getNutrient('Fiber, total dietary');
+    const sugar = getNutrient('Sugars, total including NLEA') || getNutrient('Sugars, total');
+    const sodium = getNutrient('Sodium, Na');
+
+    const servingDesc = food.householdServingFullText ||
+      (food.servingSize ? `${food.servingSize}${food.servingSizeUnit || 'g'}` : '1 serving');
 
     return {
-      results: [],
-      suggestions: [],
-      did_you_mean: false,
-      query: q,
+      id: `usda_${food.fdcId}`,
+      name: food.description.trim(),
+      brand_or_restaurant: food.brandOwner?.trim() || null,
+      category: food.foodCategory || 'generic',
+      serving_description: servingDesc,
+      serving_size_grams: food.servingSize || 100,
+      calories: Math.round(calories),
+      protein_g: protein,
+      carbs_g: carbs,
+      fat_g: fat,
+      fiber_g: fiber || null,
+      sugar_g: sugar || null,
+      sodium_mg: sodium ? Math.round(sodium) : null,
+      tags: [],
+      search_aliases: [],
+      image_url: null,
     };
   }
 
@@ -160,7 +216,7 @@ export class FoodService {
     const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=${Math.min(limit, 40)}`;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    const timeout = setTimeout(() => controller.abort(), 4000);
 
     try {
       const response = await fetch(url, {
