@@ -4,8 +4,8 @@ import {
   ExecutionContext,
   UnauthorizedException,
 } from '@nestjs/common';
-import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma.service';
+import { SupabaseService } from '../supabase/supabase.service';
 
 /**
  * JwtAuthGuard — Supabase ES256 Token Validation
@@ -21,7 +21,10 @@ import { PrismaService } from '../prisma.service';
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private supabaseService: SupabaseService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
@@ -37,11 +40,8 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('No authentication token provided');
     }
 
-    // Validate token via Supabase (handles ES256 verification internally)
-    const supabase = createClient(
-      process.env.SUPABASE_URL || '',
-      process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-    );
+    // Validate token via Supabase singleton (handles ES256 verification internally)
+    const supabase = this.supabaseService.getClient();
 
     const { data, error } = await supabase.auth.getUser(token);
 

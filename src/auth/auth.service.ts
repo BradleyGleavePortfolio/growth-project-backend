@@ -19,6 +19,19 @@ export class AuthService {
   }
 
   async register(data: { email: string; password: string; name: string; phone?: string }) {
+    // Validate password strength before sending to Supabase
+    const { password } = data;
+    if (
+      password.length < 8 ||
+      !/[A-Z]/.test(password) ||
+      !/[0-9]/.test(password) ||
+      !/[^A-Za-z0-9]/.test(password)
+    ) {
+      throw new BadRequestException(
+        'Password must be at least 8 characters with one uppercase letter, one number, and one special character.',
+      );
+    }
+
     // Check if user already exists in our DB
     const existing = await this.prisma.user.findUnique({ where: { email: data.email } });
     if (existing) throw new ConflictException('Email already registered');
@@ -71,7 +84,14 @@ export class AuthService {
 
     const { data, error } = await supaClient.auth.signInWithPassword({ email, password });
 
-    if (error) throw new UnauthorizedException('Invalid email or password');
+    if (error) {
+      // Surface specific errors so the mobile client can handle them
+      const msg = error.message || '';
+      if (msg.toLowerCase().includes('email') && msg.toLowerCase().includes('confirm')) {
+        throw new UnauthorizedException('Email not confirmed. Please check your inbox and verify your email first.');
+      }
+      throw new UnauthorizedException('Invalid email or password');
+    }
 
     // Find user in our DB
     const user = await this.prisma.user.findUnique({

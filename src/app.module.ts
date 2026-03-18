@@ -14,6 +14,7 @@ import { CoachModule } from './coach/coach.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { CommunityModule } from './community/community.module';
 import { LessonsModule } from './lessons/lessons.module';
+import { SupabaseModule } from './supabase/supabase.module';
 import { PrismaService } from './prisma.service';
 
 @Module({
@@ -23,6 +24,9 @@ import { PrismaService } from './prisma.service';
 
     // Rate limiting: 100 requests per minute globally (AI endpoint has own tighter limit)
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
+
+    // Supabase singleton client (global — available to all modules)
+    SupabaseModule,
 
     AuthModule,
     ProfileModule,
