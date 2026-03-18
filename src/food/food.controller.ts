@@ -9,7 +9,7 @@ export class FoodController {
 
   @Get('search')
   async search(@Query('q') q: string, @Query('limit') limit?: string) {
-    return this.foodService.search(q, limit ? parseInt(limit, 10) : 20);
+    return this.foodService.search(q, limit ? parseInt(limit, 10) : 50);
   }
 
   @Get(':id')
