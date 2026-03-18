@@ -1,4 +1,4 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import OpenAI from 'openai';
 import { PrismaService } from '../prisma.service';
 
@@ -305,7 +305,8 @@ The 15 examples above are PATTERNS, not a complete list. Handle ANY question wit
       return response.choices[0]?.message?.content || 'GP is taking a break. Try again in a moment.';
     } catch (error) {
       console.error('Perplexity API error:', error);
-      throw new ServiceUnavailableException('GP is taking a break. Try again in a moment.');
+      // Fall back to rule-based response on any API error
+      return this.generateFallbackResponse(userMessage, userContext);
     }
   }
 }
