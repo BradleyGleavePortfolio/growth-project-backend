@@ -203,7 +203,7 @@ export class AuthService {
 
     if (error) {
       // Don't reveal whether the email exists — always return success
-      console.warn('Password reset error:', error.message);
+      // Silently swallow — don't reveal if email exists or not
     }
 
     return { message: 'If an account exists with that email, a reset link has been sent.' };

@@ -304,7 +304,7 @@ The 15 examples above are PATTERNS, not a complete list. Handle ANY question wit
 
       return response.choices[0]?.message?.content || 'GP is taking a break. Try again in a moment.';
     } catch (error) {
-      console.error('Perplexity API error:', error);
+      // Perplexity API error — falling back to rule-based response
       // Fall back to rule-based response on any API error
       return this.generateFallbackResponse(userMessage, userContext);
     }
