@@ -19,6 +19,21 @@ export class CoachController {
     return this.coachService.getClientTimeline(req.user.id, id, daysNum);
   }
 
+  @Get('clients/:id/summary')
+  async getClientSummary(@Request() req, @Param('id') clientId: string, @Query('date') date?: string) {
+    return this.coachService.getClientSummary(req.user.id, clientId, date);
+  }
+
+  @Get('my-guidelines')
+  async getMyGuidelines(@Request() req) {
+    return this.coachService.getGuidelines(req.user.id);
+  }
+
+  @Get('guidelines/:client_id')
+  async getGuidelines(@Request() req, @Param('client_id') clientId: string) {
+    return this.coachService.getGuidelines(req.user.id, clientId);
+  }
+
   @Post('guidelines/:client_id')
   async postGuidelines(@Request() req, @Param('client_id') clientId: string, @Body() body: { guidelines: string }) {
     return this.coachService.postGuidelines(req.user.id, clientId, body.guidelines);
