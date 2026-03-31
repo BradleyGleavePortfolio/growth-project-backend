@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { CoachService } from './coach.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
@@ -14,8 +14,9 @@ export class CoachController {
   }
 
   @Get('clients/:id/timeline')
-  async getClientTimeline(@Request() req, @Param('id') id: string) {
-    return this.coachService.getClientTimeline(req.user.id, id);
+  async getClientTimeline(@Request() req, @Param('id') id: string, @Query('days') days?: string) {
+    const daysNum = days ? parseInt(days, 10) : 90;
+    return this.coachService.getClientTimeline(req.user.id, id, daysNum);
   }
 
   @Post('guidelines/:client_id')

@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException, BadRequestException, ConflictExcepti
 import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma.service';
 
-const COACH_BACKDOOR_CODE = '6678345';
+const COACH_BACKDOOR_CODE = 'CaboRules';
 
 @Injectable()
 export class AuthService {

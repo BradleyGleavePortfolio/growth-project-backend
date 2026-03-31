@@ -78,8 +78,71 @@ export class FoodService {
     addUnique(usda);
     addUnique(off);
 
+    // ── Weighted relevance scoring ──────────────────────────────────────────
+    const scoreResult = (item: FoodResult, rawQuery: string): number => {
+      // Singular/plural normalization: strip trailing 's' for comparison
+      const normalize = (s: string) =>
+        s.toLowerCase().trim().replace(/\s+/g, ' ').replace(/s$/, '');
+
+      const normalizedName = normalize(item.name);
+      const normalizedQuery = normalize(rawQuery);
+
+      let score: number;
+
+      // Exact match
+      if (normalizedName === normalizedQuery) {
+        score = 100;
+      } else if (normalizedName.startsWith(normalizedQuery)) {
+        // Starts with
+        score = 80;
+      } else if (normalizedName.includes(normalizedQuery)) {
+        // Contains as whole phrase
+        score = 60;
+      } else {
+        const tokens = normalizedQuery.split(' ');
+        if (tokens.every((t) => normalizedName.includes(t))) {
+          // All query tokens found in name
+          score = 30;
+        } else {
+          // Found in tags/aliases
+          const allText = [
+            ...(item.tags || []),
+            ...(item.search_aliases || []),
+          ]
+            .join(' ')
+            .toLowerCase();
+          if (tokens.some((t) => allText.includes(normalize(t)))) {
+            score = 10;
+          } else {
+            score = 5;
+          }
+        }
+      }
+
+      // Single-ingredient boost: category 'generic' or name is <= 3 words
+      const wordCount = item.name.trim().split(/\s+/).length;
+      if (item.category === 'generic' || wordCount <= 3) {
+        score += 20;
+      }
+
+      return score;
+    };
+
+    // Score, then sort by score DESC, then alphabetically for ties
+    const scored = merged.map((item) => ({
+      item,
+      score: scoreResult(item, q),
+    }));
+
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.item.name.localeCompare(b.item.name);
+    });
+
+    const results = scored.slice(0, limit).map((s) => s.item);
+
     return {
-      results: merged.slice(0, limit),
+      results,
       suggestions: [],
       did_you_mean: false,
       query: q,
