@@ -13,33 +13,33 @@ export class CoachService {
     });
   }
 
-  async getClientTimeline(coachId: string, clientId: string) {
+  async getClientTimeline(coachId: string, clientId: string, days: number = 90) {
     // Verify this client belongs to this coach
     const client = await this.prisma.user.findFirst({
       where: { id: clientId, coach_id: coachId },
     });
     if (!client) return { error: 'Client not found' };
 
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - days);
 
     const [meals, workouts, weights, checkIns] = await Promise.all([
       this.prisma.loggedFoodEntry.findMany({
-        where: { user_id: clientId, logged_at: { gte: sevenDaysAgo } },
+        where: { user_id: clientId, logged_at: { gte: ninetyDaysAgo } },
         include: { food_item: true },
         orderBy: { logged_at: 'desc' },
       }),
       this.prisma.workoutSession.findMany({
-        where: { user_id: clientId, created_at: { gte: sevenDaysAgo } },
+        where: { user_id: clientId, created_at: { gte: ninetyDaysAgo } },
         include: { exercises: true },
         orderBy: { created_at: 'desc' },
       }),
       this.prisma.weightLog.findMany({
-        where: { user_id: clientId, date: { gte: sevenDaysAgo } },
+        where: { user_id: clientId, date: { gte: ninetyDaysAgo } },
         orderBy: { date: 'desc' },
       }),
       this.prisma.checkIn.findMany({
-        where: { user_id: clientId, date: { gte: sevenDaysAgo } },
+        where: { user_id: clientId, date: { gte: ninetyDaysAgo } },
         orderBy: { date: 'desc' },
       }),
     ]);
