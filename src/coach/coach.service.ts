@@ -60,6 +60,76 @@ export class CoachService {
     });
   }
 
+  async getGuidelines(coachOrClientId: string, clientId?: string) {
+    const targetId = clientId || coachOrClientId;
+    const lessons = await this.prisma.lesson.findMany({
+      where: { tags: { has: `client:${targetId}` } },
+      orderBy: { created_at: 'desc' },
+      take: 1,
+    });
+    return lessons[0] || null;
+  }
+
+  async getClientSummary(coachId: string, clientId: string, date?: string) {
+    // Verify this client belongs to this coach
+    const client = await this.prisma.user.findFirst({
+      where: { id: clientId, coach_id: coachId },
+      include: { profile: true },
+    });
+    if (!client) return { error: 'Client not found' };
+
+    const today = date || new Date().toISOString().split('T')[0];
+    const startOfDay = new Date(today + 'T00:00:00.000Z');
+    const endOfDay = new Date(today + 'T23:59:59.999Z');
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const [todayEntries, weightLogs, recentWorkouts] = await Promise.all([
+      this.prisma.loggedFoodEntry.findMany({
+        where: { user_id: clientId, logged_at: { gte: startOfDay, lte: endOfDay } },
+        include: { food_item: true },
+        orderBy: { logged_at: 'asc' },
+      }),
+      this.prisma.weightLog.findMany({
+        where: { user_id: clientId, date: { gte: thirtyDaysAgo } },
+        orderBy: { date: 'desc' },
+      }),
+      this.prisma.workoutSession.findMany({
+        where: { user_id: clientId },
+        include: { exercises: true },
+        orderBy: { created_at: 'desc' },
+        take: 10,
+      }),
+    ]);
+
+    // Calculate daily totals
+    let total_calories = 0, total_protein_g = 0, total_carbs_g = 0, total_fat_g = 0;
+    for (const entry of todayEntries) {
+      const qty = entry.quantity_multiplier || 1;
+      const fi = entry.food_item;
+      if (fi) {
+        total_calories += (fi.calories || 0) * qty;
+        total_protein_g += (fi.protein_g || 0) * qty;
+        total_carbs_g += (fi.carbs_g || 0) * qty;
+        total_fat_g += (fi.fat_g || 0) * qty;
+      }
+    }
+
+    return {
+      profile: client.profile,
+      client_name: client.name,
+      today: {
+        entries: todayEntries,
+        total_calories: Math.round(total_calories),
+        total_protein_g: Math.round(total_protein_g),
+        total_carbs_g: Math.round(total_carbs_g),
+        total_fat_g: Math.round(total_fat_g),
+      },
+      weight_logs: weightLogs,
+      recent_workouts: recentWorkouts,
+    };
+  }
+
   async getAlerts(coachId: string) {
     const clients = await this.prisma.user.findMany({
       where: { coach_id: coachId, role: 'student' },
