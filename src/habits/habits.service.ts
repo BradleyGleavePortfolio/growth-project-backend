@@ -33,6 +33,24 @@ export class HabitsService {
     });
   }
 
+  async getLogs(userId: string, date: string) {
+    const targetDate = new Date(date);
+    targetDate.setHours(0, 0, 0, 0);
+
+    const habits = await this.prisma.habit.findMany({
+      where: { user_id: userId },
+      select: { id: true },
+    });
+    const habitIds = habits.map(h => h.id);
+
+    return this.prisma.habitLog.findMany({
+      where: {
+        habit_id: { in: habitIds },
+        date: targetDate,
+      },
+    });
+  }
+
   async getStreaks(userId: string) {
     const habits = await this.prisma.habit.findMany({
       where: { user_id: userId },

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { HabitsService } from './habits.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 
@@ -20,6 +20,12 @@ export class HabitsController {
   @Post(':id/log')
   async logHabit(@Request() req, @Param('id') id: string, @Body() body: any) {
     return this.habitsService.logHabit(req.user.id, id, body);
+  }
+
+  @Get('logs')
+  async getLogs(@Request() req, @Query('date') date: string) {
+    const d = date || new Date().toISOString().split('T')[0];
+    return this.habitsService.getLogs(req.user.id, d);
   }
 
   @Get('streaks')
