@@ -13,7 +13,18 @@ export class HabitsService {
   }
 
   async createHabit(userId: string, data: any) {
-    return this.prisma.habit.create({ data: { ...data, user_id: userId } });
+    return this.prisma.habit.create({
+      data: {
+        user_id: userId,
+        name: data.name,
+        category: data.category || 'custom',
+        icon: data.icon || 'checkmark-circle',
+        color: data.color || '#2D6A4F',
+        frequency: data.frequency || 'daily',
+        target_value: data.target_count ? parseFloat(data.target_count) : data.target_value || null,
+        unit: data.unit || null,
+      },
+    });
   }
 
   async logHabit(userId: string, habitId: string, data: any) {
