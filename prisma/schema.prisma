@@ -260,9 +260,6 @@ model Habit {
   user         User       @relation(fields: [user_id], references: [id])
   name         String
   category     String     @default("custom")
-  icon         String     @default("checkmark-circle")
-  color        String     @default("#2D6A4F")
-  frequency    String     @default("daily")
   target_value Float?
   unit         String?
   logs         HabitLog[]

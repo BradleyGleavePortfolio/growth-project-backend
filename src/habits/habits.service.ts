@@ -13,14 +13,13 @@ export class HabitsService {
   }
 
   async createHabit(userId: string, data: any) {
+    // Only write columns that exist in the database schema.
+    // Display fields (icon, color, frequency) are handled client-side with defaults.
     return this.prisma.habit.create({
       data: {
         user_id: userId,
         name: data.name,
         category: data.category || 'custom',
-        icon: data.icon || 'checkmark-circle',
-        color: data.color || '#2D6A4F',
-        frequency: data.frequency || 'daily',
         target_value: data.target_count ? parseFloat(data.target_count) : data.target_value || null,
         unit: data.unit || null,
       },
