@@ -319,4 +319,6 @@ model WaterLog {
   amount_ml  Int
   logged_at  DateTime @default(now()) @db.Timestamptz
   created_at DateTime @default(now()) @db.Timestamptz
+
+  @@map("water_logs")
 }
