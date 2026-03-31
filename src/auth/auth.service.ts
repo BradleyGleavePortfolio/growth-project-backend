@@ -191,6 +191,24 @@ export class AuthService {
     };
   }
 
+  async forgotPassword(email: string) {
+    const supaClient = createClient(
+      process.env.SUPABASE_URL || '',
+      process.env.SUPABASE_ANON_KEY || '',
+    );
+
+    const { error } = await supaClient.auth.resetPasswordForEmail(email, {
+      redirectTo: 'tgp://reset-password',
+    });
+
+    if (error) {
+      // Don't reveal whether the email exists — always return success
+      console.warn('Password reset error:', error.message);
+    }
+
+    return { message: 'If an account exists with that email, a reset link has been sent.' };
+  }
+
   async validateSupabaseToken(supabaseId: string) {
     return this.prisma.user.findUnique({ where: { supabase_id: supabaseId } });
   }
