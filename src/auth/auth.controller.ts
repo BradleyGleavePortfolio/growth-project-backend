@@ -40,6 +40,12 @@ export class AuthController {
     return this.authService.selectRole(req.user.id, body.role, body.coach_code);
   }
 
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body() body: { email: string }) {
+    return this.authService.forgotPassword(body.email);
+  }
+
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async getMe(@Request() req) {
