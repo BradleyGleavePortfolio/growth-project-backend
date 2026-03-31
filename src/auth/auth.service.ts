@@ -115,39 +115,49 @@ export class AuthService {
     };
   }
 
-  async googleAuth(googleToken: string) {
-    // Exchange Google ID token with Supabase
-    const supaClient = createClient(
-      process.env.SUPABASE_URL || '',
-      process.env.SUPABASE_ANON_KEY || '',
-    );
+  async googleAuth(token: string) {
+    // The mobile app uses Supabase OAuth flow (expo-auth-session).
+    // The token here is a Supabase access_token from the OAuth redirect.
+    // We use the admin SDK to look up the user by their access token.
 
-    const { data, error } = await supaClient.auth.signInWithIdToken({
-      provider: 'google',
-      token: googleToken,
-    });
+    const { data: userData, error: userError } = await this.supabaseAdmin.auth.getUser(token);
 
-    if (error) throw new UnauthorizedException('Google auth failed');
+    if (userError || !userData.user) {
+      throw new UnauthorizedException('Google auth failed — invalid token');
+    }
 
-    const supaUser = data.user;
+    const supaUser = userData.user;
 
     // Upsert user in our DB (Google users are pre-verified)
     let user = await this.prisma.user.findUnique({ where: { supabase_id: supaUser.id } });
+    let isNewUser = false;
 
     if (!user) {
-      user = await this.prisma.user.create({
-        data: {
-          supabase_id: supaUser.id,
-          email: supaUser.email,
-          name: supaUser.user_metadata?.full_name || supaUser.email,
-          role: 'student',
-        },
-      });
+      // Also check by email in case user registered with email first
+      user = await this.prisma.user.findUnique({ where: { email: supaUser.email } });
+      
+      if (user) {
+        // Link the Supabase ID to the existing email-based account
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: { supabase_id: supaUser.id },
+        });
+      } else {
+        user = await this.prisma.user.create({
+          data: {
+            supabase_id: supaUser.id,
+            email: supaUser.email,
+            name: supaUser.user_metadata?.full_name || supaUser.email,
+            role: 'student',
+          },
+        });
+        isNewUser = true;
+      }
     }
 
     return {
-      access_token: data.session.access_token,
-      is_new_user: false,
+      access_token: token,
+      is_new_user: isNewUser,
       user: {
         id: user.id,
         email: user.email,
