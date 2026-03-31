@@ -28,19 +28,29 @@ export class HabitsService {
   }
 
   async logHabit(userId: string, habitId: string, data: any) {
-    // Upsert habit log for today
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const targetDate = data.date ? new Date(data.date) : new Date();
+    targetDate.setHours(0, 0, 0, 0);
 
     const existing = await this.prisma.habitLog.findFirst({
-      where: { habit_id: habitId, date: today },
+      where: { habit_id: habitId, date: targetDate },
     });
 
     if (existing) {
-      return this.prisma.habitLog.update({ where: { id: existing.id }, data });
+      return this.prisma.habitLog.update({
+        where: { id: existing.id },
+        data: {
+          completed: data.completed ?? !existing.completed,
+          value: data.value ?? existing.value,
+        },
+      });
     }
     return this.prisma.habitLog.create({
-      data: { habit_id: habitId, date: today, ...data },
+      data: {
+        habit_id: habitId,
+        date: targetDate,
+        completed: data.completed ?? true,
+        value: data.value ?? null,
+      },
     });
   }
 
