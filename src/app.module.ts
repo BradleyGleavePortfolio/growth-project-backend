@@ -14,6 +14,7 @@ import { CoachModule } from './coach/coach.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { CommunityModule } from './community/community.module';
 import { LessonsModule } from './lessons/lessons.module';
+import { WaterModule } from './water/water.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { PrismaService } from './prisma.service';
 
@@ -41,6 +42,7 @@ import { PrismaService } from './prisma.service';
     NotificationsModule,
     CommunityModule,
     LessonsModule,
+    WaterModule,
   ],
   providers: [PrismaService],
 })
