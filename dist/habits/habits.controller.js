@@ -29,6 +29,10 @@ let HabitsController = class HabitsController {
     async logHabit(req, id, body) {
         return this.habitsService.logHabit(req.user.id, id, body);
     }
+    async getLogs(req, date) {
+        const d = date || new Date().toISOString().split('T')[0];
+        return this.habitsService.getLogs(req.user.id, d);
+    }
     async getStreaks(req) {
         return this.habitsService.getStreaks(req.user.id);
     }
@@ -58,6 +62,14 @@ __decorate([
     __metadata("design:paramtypes", [Object, String, Object]),
     __metadata("design:returntype", Promise)
 ], HabitsController.prototype, "logHabit", null);
+__decorate([
+    (0, common_1.Get)('logs'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Query)('date')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], HabitsController.prototype, "getLogs", null);
 __decorate([
     (0, common_1.Get)('streaks'),
     __param(0, (0, common_1.Request)()),

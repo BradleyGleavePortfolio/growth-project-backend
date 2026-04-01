@@ -13,7 +13,6 @@ export declare class WeightService {
         notes: string | null;
         logged_at: Date;
         weight_lbs: number;
-        userId: string | null;
     }>;
     getHistory(userId: string, days?: number): Promise<{
         logs: {
@@ -23,7 +22,6 @@ export declare class WeightService {
             notes: string | null;
             logged_at: Date;
             weight_lbs: number;
-            userId: string | null;
         }[];
         height_cm: number;
     }>;

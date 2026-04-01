@@ -35,6 +35,14 @@ export declare class HabitsService {
         value: number | null;
         completed: boolean;
     }>;
+    getLogs(userId: string, date: string): Promise<{
+        id: string;
+        date: Date;
+        logged_at: Date;
+        habit_id: string;
+        value: number | null;
+        completed: boolean;
+    }[]>;
     getStreaks(userId: string): Promise<{
         habit_id: string;
         habit_name: string;

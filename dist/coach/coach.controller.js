@@ -24,8 +24,18 @@ let CoachController = class CoachController {
     async getClients(req) {
         return this.coachService.getClients(req.user.id);
     }
-    async getClientTimeline(req, id) {
-        return this.coachService.getClientTimeline(req.user.id, id);
+    async getClientTimeline(req, id, days) {
+        const daysNum = days ? parseInt(days, 10) : 90;
+        return this.coachService.getClientTimeline(req.user.id, id, daysNum);
+    }
+    async getClientSummary(req, clientId, date) {
+        return this.coachService.getClientSummary(req.user.id, clientId, date);
+    }
+    async getMyGuidelines(req) {
+        return this.coachService.getGuidelines(req.user.id);
+    }
+    async getGuidelines(req, clientId) {
+        return this.coachService.getGuidelines(req.user.id, clientId);
     }
     async postGuidelines(req, clientId, body) {
         return this.coachService.postGuidelines(req.user.id, clientId, body.guidelines);
@@ -46,10 +56,35 @@ __decorate([
     (0, common_1.Get)('clients/:id/timeline'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Query)('days')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:returntype", Promise)
+], CoachController.prototype, "getClientTimeline", null);
+__decorate([
+    (0, common_1.Get)('clients/:id/summary'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Query)('date')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:returntype", Promise)
+], CoachController.prototype, "getClientSummary", null);
+__decorate([
+    (0, common_1.Get)('my-guidelines'),
+    __param(0, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], CoachController.prototype, "getMyGuidelines", null);
+__decorate([
+    (0, common_1.Get)('guidelines/:client_id'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Param)('client_id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
-], CoachController.prototype, "getClientTimeline", null);
+], CoachController.prototype, "getGuidelines", null);
 __decorate([
     (0, common_1.Post)('guidelines/:client_id'),
     __param(0, (0, common_1.Request)()),

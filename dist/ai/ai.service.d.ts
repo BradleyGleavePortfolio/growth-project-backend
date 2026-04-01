@@ -34,6 +34,7 @@ export declare class AiService {
     constructor(prisma: PrismaService);
     buildDietitianSystemPrompt(userContext: UserContextPayload): string;
     getUserContext(userId: string): Promise<UserContextPayload>;
+    private generateFallbackResponse;
     chat(userId: string, userMessage: string, conversationHistory: Array<{
         role: string;
         content: string;

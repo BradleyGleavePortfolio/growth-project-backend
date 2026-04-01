@@ -21,7 +21,7 @@ let FoodController = class FoodController {
         this.foodService = foodService;
     }
     async search(q, limit) {
-        return this.foodService.search(q, limit ? parseInt(limit, 10) : 20);
+        return this.foodService.search(q, limit ? parseInt(limit, 10) : 50);
     }
     async getById(id) {
         return this.foodService.getById(id);

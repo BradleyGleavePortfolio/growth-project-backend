@@ -1,10 +1,8 @@
-import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma.service';
 export declare class AuthService {
     private prisma;
-    private jwtService;
     private supabaseAdmin;
-    constructor(prisma: PrismaService, jwtService: JwtService);
+    constructor(prisma: PrismaService);
     register(data: {
         email: string;
         password: string;
@@ -12,22 +10,9 @@ export declare class AuthService {
         phone?: string;
     }): Promise<{
         message: string;
+        requires_verification: boolean;
         user_id: string;
-        access_token?: undefined;
-        is_new_user?: undefined;
-        user?: undefined;
-    } | {
-        message: string;
-        access_token: string;
-        is_new_user: boolean;
-        user: {
-            id: string;
-            email: string;
-            name: string;
-            role: import(".prisma/client").$Enums.Role;
-            coach_id: string;
-        };
-        user_id?: undefined;
+        email: string;
     }>;
     login(email: string, password: string): Promise<{
         access_token: string;
@@ -59,7 +44,7 @@ export declare class AuthService {
             };
         };
     }>;
-    googleAuth(googleToken: string): Promise<{
+    googleAuth(token: string): Promise<{
         access_token: string;
         is_new_user: boolean;
         user: {
@@ -99,6 +84,9 @@ export declare class AuthService {
             avatar_url: string | null;
             updated_at: Date;
         };
+    }>;
+    forgotPassword(email: string): Promise<{
+        message: string;
     }>;
     validateSupabaseToken(supabaseId: string): Promise<{
         id: string;

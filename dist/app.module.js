@@ -23,6 +23,8 @@ const coach_module_1 = require("./coach/coach.module");
 const notifications_module_1 = require("./notifications/notifications.module");
 const community_module_1 = require("./community/community.module");
 const lessons_module_1 = require("./lessons/lessons.module");
+const water_module_1 = require("./water/water.module");
+const supabase_module_1 = require("./supabase/supabase.module");
 const prisma_service_1 = require("./prisma.service");
 let AppModule = class AppModule {
 };
@@ -32,6 +34,7 @@ exports.AppModule = AppModule = __decorate([
         imports: [
             config_1.ConfigModule.forRoot({ isGlobal: true }),
             throttler_1.ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
+            supabase_module_1.SupabaseModule,
             auth_module_1.AuthModule,
             profile_module_1.ProfileModule,
             food_module_1.FoodModule,
@@ -45,6 +48,7 @@ exports.AppModule = AppModule = __decorate([
             notifications_module_1.NotificationsModule,
             community_module_1.CommunityModule,
             lessons_module_1.LessonsModule,
+            water_module_1.WaterModule,
         ],
         providers: [prisma_service_1.PrismaService],
     })
