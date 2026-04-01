@@ -35,6 +35,14 @@ export declare class HabitsController {
         value: number | null;
         completed: boolean;
     }>;
+    getLogs(req: any, date: string): Promise<{
+        id: string;
+        date: Date;
+        logged_at: Date;
+        habit_id: string;
+        value: number | null;
+        completed: boolean;
+    }[]>;
     getStreaks(req: any): Promise<{
         habit_id: string;
         habit_name: string;

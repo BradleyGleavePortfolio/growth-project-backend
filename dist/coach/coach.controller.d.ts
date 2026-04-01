@@ -33,7 +33,7 @@ export declare class CoachController {
         coach_id: string | null;
         created_at: Date;
     })[]>;
-    getClientTimeline(req: any, id: string): Promise<{
+    getClientTimeline(req: any, id: string, days?: string): Promise<{
         error: string;
         client?: undefined;
         meals?: undefined;
@@ -116,7 +116,6 @@ export declare class CoachController {
             notes: string | null;
             logged_at: Date;
             weight_lbs: number;
-            userId: string | null;
         }[];
         checkIns: {
             id: string;
@@ -130,6 +129,133 @@ export declare class CoachController {
             type: import(".prisma/client").$Enums.CheckInType;
         }[];
         error?: undefined;
+    }>;
+    getClientSummary(req: any, clientId: string, date?: string): Promise<{
+        error: string;
+        profile?: undefined;
+        client_name?: undefined;
+        today?: undefined;
+        weight_logs?: undefined;
+        recent_workouts?: undefined;
+    } | {
+        profile: {
+            id: string;
+            user_id: string;
+            height_cm: number | null;
+            current_weight_lbs: number | null;
+            target_weight_lbs: number | null;
+            date_of_birth: Date | null;
+            sex: import(".prisma/client").$Enums.Sex;
+            activity_level: import(".prisma/client").$Enums.ActivityLevel;
+            goal_type: import(".prisma/client").$Enums.GoalType;
+            workout_experience: import(".prisma/client").$Enums.WorkoutExperience;
+            has_gym_membership: boolean;
+            preferred_snacks: string[];
+            macro_target_calories: number | null;
+            macro_target_protein_g: number | null;
+            macro_target_carbs_g: number | null;
+            macro_target_fat_g: number | null;
+            avatar_url: string | null;
+            updated_at: Date;
+        };
+        client_name: string;
+        today: {
+            entries: ({
+                food_item: {
+                    id: string;
+                    name: string;
+                    created_at: Date;
+                    brand_or_restaurant: string | null;
+                    category: import(".prisma/client").$Enums.FoodCategory;
+                    serving_description: string;
+                    serving_size_grams: number;
+                    calories: number;
+                    protein_g: number;
+                    carbs_g: number;
+                    fat_g: number;
+                    saturated_fat_g: number | null;
+                    mono_fat_g: number | null;
+                    poly_fat_g: number | null;
+                    fiber_g: number | null;
+                    sugar_g: number | null;
+                    sodium_mg: number | null;
+                    tags: string[];
+                    search_aliases: string[];
+                    image_url: string | null;
+                    barcode: string | null;
+                };
+            } & {
+                id: string;
+                user_id: string;
+                date: Date;
+                meal_type: import(".prisma/client").$Enums.MealType;
+                quantity_multiplier: number;
+                notes: string | null;
+                logged_at: Date;
+                food_item_id: string;
+            })[];
+            total_calories: number;
+            total_protein_g: number;
+            total_carbs_g: number;
+            total_fat_g: number;
+        };
+        weight_logs: {
+            id: string;
+            user_id: string;
+            date: Date;
+            notes: string | null;
+            logged_at: Date;
+            weight_lbs: number;
+        }[];
+        recent_workouts: ({
+            exercises: {
+                id: string;
+                notes: string | null;
+                exercise_name: string;
+                muscle_group: import(".prisma/client").$Enums.MuscleGroup;
+                sets_completed: number;
+                reps_per_set: number[];
+                weight_per_set: number[];
+                rpe: number | null;
+                video_url: string | null;
+                workout_id: string;
+            }[];
+        } & {
+            id: string;
+            created_at: Date;
+            user_id: string;
+            date: Date;
+            notes: string | null;
+            workout_name: string;
+            workout_type: string;
+            duration_minutes: number | null;
+            intensity: import(".prisma/client").$Enums.Intensity;
+        })[];
+        error?: undefined;
+    }>;
+    getMyGuidelines(req: any): Promise<{
+        id: string;
+        coach_id: string;
+        created_at: Date;
+        tags: string[];
+        video_url: string | null;
+        description: string | null;
+        order_index: number;
+        title: string;
+        article_url: string | null;
+        goal_tags: import(".prisma/client").$Enums.GoalType[];
+    }>;
+    getGuidelines(req: any, clientId: string): Promise<{
+        id: string;
+        coach_id: string;
+        created_at: Date;
+        tags: string[];
+        video_url: string | null;
+        description: string | null;
+        order_index: number;
+        title: string;
+        article_url: string | null;
+        goal_tags: import(".prisma/client").$Enums.GoalType[];
     }>;
     postGuidelines(req: any, clientId: string, body: {
         guidelines: string;

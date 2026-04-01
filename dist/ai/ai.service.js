@@ -180,8 +180,53 @@ The 15 examples above are PATTERNS, not a complete list. Handle ANY question wit
             todays_logs: entries,
         };
     }
+    generateFallbackResponse(userMessage, ctx) {
+        const msg = userMessage.toLowerCase().trim();
+        const p = ctx.profile;
+        const m = ctx.macro_targets;
+        const t = ctx.today_summary;
+        const remaining = t.remaining_calories;
+        const pct = m.calories > 0 ? Math.round((t.total_calories / m.calories) * 100) : 0;
+        if (/(on track|how am i|my progress|doing (well|good|okay)|calorie|macros today)/.test(msg)) {
+            const statusMsg = pct < 40
+                ? `You have ${remaining} kcal remaining. Front-load your day — eat your biggest meal before 2pm.`
+                : pct > 95
+                    ? `You're close to your limit. Keep dinner lean — grilled protein and vegetables only.`
+                    : `You're on pace. Keep going. Hit your protein goal before worrying about anything else.`;
+            return `Today: ${t.total_calories}/${m.calories} kcal (${pct}%), ${t.total_protein_g}/${m.protein_g}g protein. ${statusMsg}`;
+        }
+        if (/(meal plan|what should i eat|what to eat|plan (my|for) day|food today)/.test(msg)) {
+            const cal = m.calories;
+            const pro = m.protein_g;
+            return `Your ${cal} kcal / ${pro}g protein plan for today:\n\nBreakfast (~${Math.round(cal * 0.25)} kcal): 4-5 eggs scrambled + oatmeal + black coffee. ~${Math.round(pro * 0.22)}g protein.\n\nLunch (~${Math.round(cal * 0.35)} kcal): ${Math.round(pro * 0.35)}g chicken breast or 2 cans tuna + white rice + any vegetables. Best post-workout meal.\n\nDinner (~${Math.round(cal * 0.30)} kcal): Salmon fillet OR 90% lean beef + sweet potato or rice. ~${Math.round(pro * 0.30)}g protein.\n\nSnack (~${Math.round(cal * 0.10)} kcal): Greek yogurt (plain, full fat) + handful almonds. ~${Math.round(pro * 0.13)}g protein.\n\nTotal hits your targets. Track each meal and adjust portions.`;
+        }
+        if (/(i (had|ate|just ate|consumed)|log (my|a|this)|add (a|this|my)|lunch was|dinner was|breakfast was|for (lunch|dinner|breakfast))/.test(msg)) {
+            return `To log that food precisely, tap the + button on the Log tab. Search for the exact item — our database pulls from OpenFoodFacts for accurate macros. Once logged, it counts toward your ${m.calories} kcal target. Want me to tell you how that food fits into today's remaining ${remaining} kcal?`;
+        }
+        if (/(fast|fasting|16:8|intermittent|eating window|break (the |my )?fast)/.test(msg)) {
+            return `Intermittent fasting works by extending the overnight fast. Most effective protocol for body composition: 16:8 (16 hours fasted, 8 hour eating window). Benefits: improved insulin sensitivity, increased growth hormone, reduced overall calorie intake without conscious restriction. For your ${p.goal_type === 'fat_loss' ? 'fat loss' : 'muscle gain'} goal, combine 16:8 with hitting your ${m.protein_g}g protein target within the eating window. Break the fast with protein first — blunt hunger and trigger muscle protein synthesis immediately.`;
+        }
+        if (/(workout|training|exercise|lift|gym|muscle|gains|strength|program|progressive overload|sets|reps)/.test(msg)) {
+            return `For ${p.goal_type === 'fat_loss' ? 'fat loss while preserving muscle' : 'muscle gain'}: train 4x per week minimum. Prioritize compound lifts (squat, deadlift, bench, row, overhead press) — they hit the most muscle per unit of time. Progressive overload is non-negotiable: add weight OR reps every single session. Track your lifts in the Workout tab so you have data to beat next time. ${p.goal_type === 'fat_loss' ? '20-30 min cardio on rest days accelerates fat loss without killing recovery.' : 'Rest 48-72 hours between training the same muscle group.'}`;
+        }
+        if (/(protein|how much protein|protein target|hit (my |my daily )?protein)/.test(msg)) {
+            return `Your target is ${m.protein_g}g protein daily. You've hit ${t.total_protein_g}g so far — ${m.protein_g - t.total_protein_g}g remaining. Best sources per gram of protein: chicken breast (most efficient), 90% lean ground beef, eggs, Greek yogurt, canned tuna. Aim for 35-50g per meal across 3-4 meals. Protein is your #1 priority every day — if you only track one macro, track protein.`;
+        }
+        if (/(supplement|creatine|pre.workout|protein powder|whey|vitamin|bcaa)/.test(msg)) {
+            return `The supplements with real evidence:\n\n1. Creatine monohydrate — 5g/day, no loading needed. Increases strength output 5-15%. Safest supplement with 500+ studies. Take it.\n2. Protein powder — only needed if you can't hit ${m.protein_g}g from food. Whey concentrate is cost-effective.\n3. Caffeine — 200-400mg pre-workout improves performance. Black coffee works fine.\n4. Vitamin D3 — 2000-4000 IU/day if you're not outdoors daily.\n\nSkip: BCAAs (redundant if hitting protein), most pre-workouts (overpriced caffeine + placebo), fat burners (ineffective).`;
+        }
+        const goalMsg = p.goal_type === 'fat_loss'
+            ? `You're in a fat loss phase (${m.calories} kcal target, ~500 kcal deficit). Protect muscle by hitting ${m.protein_g}g protein and training hard.`
+            : p.goal_type === 'muscle_gain'
+                ? `You're in a muscle gain phase (${m.calories} kcal target, ~300 kcal surplus). Hit your protein, train progressively, sleep 7-9 hours.`
+                : `You're maintaining (${m.calories} kcal target). Focus on body recomposition — lose fat, gain muscle simultaneously.`;
+        return `${goalMsg}\n\nToday you've logged ${t.total_calories} kcal and ${t.total_protein_g}g protein. Ask me anything specific about nutrition, training, fasting, or mindset and I'll give you a direct answer.`;
+    }
     async chat(userId, userMessage, conversationHistory) {
         const userContext = await this.getUserContext(userId);
+        if (!process.env.PERPLEXITY_API_KEY || process.env.PERPLEXITY_API_KEY.trim() === '') {
+            return this.generateFallbackResponse(userMessage, userContext);
+        }
         const systemPrompt = this.buildDietitianSystemPrompt(userContext);
         const messages = [
             { role: 'system', content: systemPrompt },
@@ -198,8 +243,7 @@ The 15 examples above are PATTERNS, not a complete list. Handle ANY question wit
             return response.choices[0]?.message?.content || 'GP is taking a break. Try again in a moment.';
         }
         catch (error) {
-            console.error('Perplexity API error:', error);
-            throw new common_1.ServiceUnavailableException('GP is taking a break. Try again in a moment.');
+            return this.generateFallbackResponse(userMessage, userContext);
         }
     }
 };

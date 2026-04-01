@@ -23,19 +23,53 @@ let HabitsService = class HabitsService {
         });
     }
     async createHabit(userId, data) {
-        return this.prisma.habit.create({ data: { ...data, user_id: userId } });
+        return this.prisma.habit.create({
+            data: {
+                user_id: userId,
+                name: data.name,
+                category: data.category || 'custom',
+                target_value: data.target_count ? parseFloat(data.target_count) : data.target_value || null,
+                unit: data.unit || null,
+            },
+        });
     }
     async logHabit(userId, habitId, data) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const targetDate = data.date ? new Date(data.date) : new Date();
+        targetDate.setHours(0, 0, 0, 0);
         const existing = await this.prisma.habitLog.findFirst({
-            where: { habit_id: habitId, date: today },
+            where: { habit_id: habitId, date: targetDate },
         });
         if (existing) {
-            return this.prisma.habitLog.update({ where: { id: existing.id }, data });
+            return this.prisma.habitLog.update({
+                where: { id: existing.id },
+                data: {
+                    completed: data.completed ?? !existing.completed,
+                    value: data.value ?? existing.value,
+                },
+            });
         }
         return this.prisma.habitLog.create({
-            data: { habit_id: habitId, date: today, ...data },
+            data: {
+                habit_id: habitId,
+                date: targetDate,
+                completed: data.completed ?? true,
+                value: data.value ?? null,
+            },
+        });
+    }
+    async getLogs(userId, date) {
+        const targetDate = new Date(date);
+        targetDate.setHours(0, 0, 0, 0);
+        const habits = await this.prisma.habit.findMany({
+            where: { user_id: userId },
+            select: { id: true },
+        });
+        const habitIds = habits.map(h => h.id);
+        return this.prisma.habitLog.findMany({
+            where: {
+                habit_id: { in: habitIds },
+                date: targetDate,
+            },
         });
     }
     async getStreaks(userId) {

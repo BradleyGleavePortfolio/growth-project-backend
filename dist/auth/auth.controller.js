@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthController = void 0;
 const common_1 = require("@nestjs/common");
+const throttler_1 = require("@nestjs/throttler");
 const auth_service_1 = require("./auth.service");
 const auth_guard_1 = require("./auth.guard");
 let AuthController = class AuthController {
@@ -32,6 +33,9 @@ let AuthController = class AuthController {
     async selectRole(req, body) {
         return this.authService.selectRole(req.user.id, body.role, body.coach_code);
     }
+    async forgotPassword(body) {
+        return this.authService.forgotPassword(body.email);
+    }
     async getMe(req) {
         return this.authService.getMe(req.user.id);
     }
@@ -39,6 +43,7 @@ let AuthController = class AuthController {
 exports.AuthController = AuthController;
 __decorate([
     (0, common_1.Post)('register'),
+    (0, throttler_1.Throttle)({ default: { ttl: 3600000, limit: 3 } }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -46,6 +51,7 @@ __decorate([
 ], AuthController.prototype, "register", null);
 __decorate([
     (0, common_1.Post)('login'),
+    (0, throttler_1.Throttle)({ default: { ttl: 60000, limit: 5 } }),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -70,6 +76,14 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "selectRole", null);
+__decorate([
+    (0, common_1.Post)('forgot-password'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "forgotPassword", null);
 __decorate([
     (0, common_1.Get)('me'),
     (0, common_1.UseGuards)(auth_guard_1.JwtAuthGuard),

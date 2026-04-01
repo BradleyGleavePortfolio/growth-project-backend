@@ -9,22 +9,9 @@ export declare class AuthController {
         phone?: string;
     }): Promise<{
         message: string;
+        requires_verification: boolean;
         user_id: string;
-        access_token?: undefined;
-        is_new_user?: undefined;
-        user?: undefined;
-    } | {
-        message: string;
-        access_token: string;
-        is_new_user: boolean;
-        user: {
-            id: string;
-            email: string;
-            name: string;
-            role: import(".prisma/client").$Enums.Role;
-            coach_id: string;
-        };
-        user_id?: undefined;
+        email: string;
     }>;
     login(body: {
         email: string;
@@ -77,6 +64,11 @@ export declare class AuthController {
         coach_code?: string;
     }): Promise<{
         role: import(".prisma/client").$Enums.Role;
+    }>;
+    forgotPassword(body: {
+        email: string;
+    }): Promise<{
+        message: string;
     }>;
     getMe(req: any): Promise<{
         id: string;

@@ -25,8 +25,14 @@ export interface FoodResult {
 }
 export declare class FoodService {
     private prisma;
+    private readonly logger;
     constructor(prisma: PrismaService);
     search(query: string, limit?: number): Promise<FoodSearchResponse>;
+    private searchLocalDB;
+    private searchUSDA;
+    private mapUSDAFood;
+    private searchOpenFoodFacts;
+    private mapOpenFoodFactsProduct;
     getById(id: string): Promise<FoodResult>;
     create(data: any): Promise<{
         id: string;
