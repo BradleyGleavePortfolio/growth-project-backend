@@ -101,9 +101,10 @@ export class AuthService {
 
     if (!user) throw new UnauthorizedException('User not found');
 
-    // Return Supabase access token + our user record
+    // Return Supabase tokens + our user record
     return {
       access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
       user: {
         id: user.id,
         email: user.email,
