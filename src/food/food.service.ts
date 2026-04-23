@@ -204,7 +204,11 @@ export class FoodService {
   }
 
   private async searchUSDA(query: string, limit: number = 20): Promise<FoodResult[]> {
-    const url = `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=${Math.min(limit, 25)}&api_key=DEMO_KEY`;
+    // USDA_API_KEY is required — validated at boot in main.ts. DEMO_KEY was a shared
+    // 30-req/hr-per-IP bucket that silently returned [] under any real user volume.
+    const apiKey = process.env.USDA_API_KEY;
+    if (!apiKey) return [];
+    const url = `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=${Math.min(limit, 25)}&api_key=${apiKey}`;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
@@ -340,6 +344,130 @@ export class FoodService {
 
   async create(data: any) {
     return this.prisma.foodItem.create({ data });
+  }
+
+  /**
+   * Resolve a (possibly synthetic) food id to a real FoodItem.id.
+   *
+   * The mobile client can hand us:
+   *  - a real uuid from our FoodItem table (pass-through after existence check)
+   *  - "usda_<fdcId>"  — USDA FDC external id (fetched + upserted)
+   *  - "off_<code>"    — OpenFoodFacts barcode (fetched + upserted)
+   *
+   * Synthetic ids broke LoggedFoodEntry.food_item_id's FK to FoodItem. Upserting
+   * into FoodItem first (keyed by barcode for OFF, by a "usda_*" alias for USDA)
+   * gives us a real primary key we can reference without schema changes.
+   */
+  async resolveOrImportId(id: string): Promise<string> {
+    if (!id) throw new Error('food_item_id is required');
+
+    if (id.startsWith('usda_')) {
+      const fdcId = id.slice(5);
+      return this.upsertFromUSDA(fdcId);
+    }
+
+    if (id.startsWith('off_')) {
+      const code = id.slice(4);
+      return this.upsertFromOpenFoodFacts(code);
+    }
+
+    // Assume real uuid — verify it exists to surface a clean 404 before the FK explodes.
+    const existing = await this.prisma.foodItem.findUnique({ where: { id } });
+    if (!existing) throw new Error(`FoodItem ${id} not found`);
+    return existing.id;
+  }
+
+  private async upsertFromUSDA(fdcId: string): Promise<string> {
+    // Use tags array with "usda:<fdcId>" as the idempotency key — no schema change needed.
+    const tag = `usda:${fdcId}`;
+    const existing = await this.prisma.foodItem.findFirst({ where: { tags: { has: tag } } });
+    if (existing) return existing.id;
+
+    const apiKey = process.env.USDA_API_KEY;
+    if (!apiKey) throw new Error('USDA_API_KEY is not configured');
+
+    const url = `https://api.nal.usda.gov/fdc/v1/food/${encodeURIComponent(fdcId)}?api_key=${apiKey}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    let food: any;
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'TheGrowthProject/1.0' },
+      });
+      if (!response.ok) throw new Error(`USDA fetch failed: ${response.status}`);
+      food = await response.json();
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const mapped = this.mapUSDAFood(food);
+    const created = await this.prisma.foodItem.create({
+      data: {
+        name: mapped.name,
+        brand_or_restaurant: mapped.brand_or_restaurant,
+        category: 'generic',
+        serving_description: mapped.serving_description,
+        serving_size_grams: mapped.serving_size_grams,
+        calories: mapped.calories,
+        protein_g: mapped.protein_g,
+        carbs_g: mapped.carbs_g,
+        fat_g: mapped.fat_g,
+        fiber_g: mapped.fiber_g,
+        sugar_g: mapped.sugar_g,
+        sodium_mg: mapped.sodium_mg,
+        tags: [tag],
+        search_aliases: [],
+        image_url: mapped.image_url,
+      },
+    });
+    return created.id;
+  }
+
+  private async upsertFromOpenFoodFacts(code: string): Promise<string> {
+    // Barcode is unique in FoodItem — use upsert by barcode for idempotency.
+    const existing = await this.prisma.foodItem.findUnique({ where: { barcode: code } });
+    if (existing) return existing.id;
+
+    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    let payload: any;
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'TheGrowthProject/1.0' },
+      });
+      if (!response.ok) throw new Error(`OpenFoodFacts fetch failed: ${response.status}`);
+      payload = await response.json();
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (!payload?.product) throw new Error(`OpenFoodFacts product ${code} not found`);
+    const mapped = this.mapOpenFoodFactsProduct(payload.product);
+
+    const created = await this.prisma.foodItem.create({
+      data: {
+        name: mapped.name,
+        brand_or_restaurant: mapped.brand_or_restaurant,
+        category: 'generic',
+        serving_description: mapped.serving_description,
+        serving_size_grams: mapped.serving_size_grams,
+        calories: mapped.calories,
+        protein_g: mapped.protein_g,
+        carbs_g: mapped.carbs_g,
+        fat_g: mapped.fat_g,
+        fiber_g: mapped.fiber_g,
+        sugar_g: mapped.sugar_g,
+        sodium_mg: mapped.sodium_mg,
+        tags: [`off:${code}`],
+        search_aliases: [],
+        image_url: mapped.image_url,
+        barcode: code,
+      },
+    });
+    return created.id;
   }
 
   /** Normalize a raw DB row or Prisma object to FoodResult shape */

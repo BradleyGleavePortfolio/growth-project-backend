@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import type { AuthedRequest } from '../auth/auth-request';
 import { HabitsService } from './habits.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 
@@ -8,28 +9,28 @@ export class HabitsController {
   constructor(private habitsService: HabitsService) {}
 
   @Get()
-  async getHabits(@Request() req) {
+  async getHabits(@Request() req: AuthedRequest) {
     return this.habitsService.getHabits(req.user.id);
   }
 
   @Post()
-  async createHabit(@Request() req, @Body() body: any) {
+  async createHabit(@Request() req: AuthedRequest, @Body() body: any) {
     return this.habitsService.createHabit(req.user.id, body);
   }
 
   @Post(':id/log')
-  async logHabit(@Request() req, @Param('id') id: string, @Body() body: any) {
+  async logHabit(@Request() req: AuthedRequest, @Param('id') id: string, @Body() body: any) {
     return this.habitsService.logHabit(req.user.id, id, body);
   }
 
   @Get('logs')
-  async getLogs(@Request() req, @Query('date') date: string) {
+  async getLogs(@Request() req: AuthedRequest, @Query('date') date: string) {
     const d = date || new Date().toISOString().split('T')[0];
     return this.habitsService.getLogs(req.user.id, d);
   }
 
   @Get('streaks')
-  async getStreaks(@Request() req) {
+  async getStreaks(@Request() req: AuthedRequest) {
     return this.habitsService.getStreaks(req.user.id);
   }
 }

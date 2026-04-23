@@ -1,4 +1,5 @@
 import { Controller, Get, Put, Body, UseGuards, Request } from '@nestjs/common';
+import type { AuthedRequest } from '../auth/auth-request';
 import { ProfileService } from './profile.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { UpdateProfileDto } from './profile.dto';
@@ -9,12 +10,12 @@ export class ProfileController {
   constructor(private profileService: ProfileService) {}
 
   @Get()
-  async getProfile(@Request() req) {
+  async getProfile(@Request() req: AuthedRequest) {
     return this.profileService.getProfile(req.user.id);
   }
 
   @Put()
-  async updateProfile(@Request() req, @Body() body: UpdateProfileDto) {
+  async updateProfile(@Request() req: AuthedRequest, @Body() body: UpdateProfileDto) {
     const profile = await this.profileService.updateProfile(req.user.id, body);
     // Recompute macros whenever profile is updated
     await this.profileService.computeAndSaveMacros(req.user.id);

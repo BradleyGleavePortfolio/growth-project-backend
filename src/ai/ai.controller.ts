@@ -1,4 +1,5 @@
 import { Controller, Post, Get, Body, UseGuards, Request } from '@nestjs/common';
+import type { AuthedRequest } from '../auth/auth-request';
 import { Throttle } from '@nestjs/throttler';
 import { AiService } from './ai.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -12,7 +13,7 @@ export class AiController {
   @Post('chat')
   @Throttle({ default: { ttl: 3600000, limit: 20 } })
   async chat(
-    @Request() req,
+    @Request() req: AuthedRequest,
     @Body() body: { message: string; conversation_history?: Array<{ role: string; content: string }> },
   ) {
     const reply = await this.aiService.chat(
@@ -24,7 +25,7 @@ export class AiController {
   }
 
   @Get('context')
-  async getContext(@Request() req) {
+  async getContext(@Request() req: AuthedRequest) {
     return this.aiService.getUserContext(req.user.id);
   }
 }

@@ -131,20 +131,52 @@ export class CoachService {
   }
 
   async getAlerts(coachId: string) {
+    // Before: 1 + 2N queries (findMany clients, then per client: weightLog.findMany +
+    //   workoutSession.findFirst). With 50 clients that's 101 sequential round-trips.
+    // After: 3 queries total — one client list, one batched weight-log fetch (walked in
+    //   memory), and one groupBy of recent workouts. Response shape unchanged.
     const clients = await this.prisma.user.findMany({
       where: { coach_id: coachId, role: 'student' },
     });
 
-    const alerts = [];
+    if (clients.length === 0) return [];
+
+    const clientIds = clients.map((c) => c.id);
+    const fiveDaysAgo = new Date();
+    fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+
+    const [allRecentWeightLogs, workoutGroups] = await Promise.all([
+      // Pull the most recent weight logs per client in a single query. We over-fetch
+      // up to 4 per client by ordering and then slicing in memory — we can't LIMIT
+      // per group in Prisma, but 4*N rows is still far smaller than N round-trips.
+      this.prisma.weightLog.findMany({
+        where: { user_id: { in: clientIds } },
+        orderBy: [{ user_id: 'asc' }, { date: 'desc' }],
+        select: { user_id: true, date: true, weight_lbs: true },
+      }),
+      this.prisma.workoutSession.groupBy({
+        by: ['user_id'],
+        where: { user_id: { in: clientIds }, date: { gte: fiveDaysAgo } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const workedOutRecently = new Set(
+      workoutGroups.filter((g) => g._count._all > 0).map((g) => g.user_id),
+    );
+
+    // Group weight logs per-user and keep the 4 most recent for the streak check.
+    const weightLogsByUser = new Map<string, { date: Date; weight_lbs: number }[]>();
+    for (const wl of allRecentWeightLogs) {
+      const arr = weightLogsByUser.get(wl.user_id) ?? [];
+      if (arr.length < 4) arr.push({ date: wl.date, weight_lbs: wl.weight_lbs });
+      weightLogsByUser.set(wl.user_id, arr);
+    }
+
+    const alerts: Array<{ type: string; client_id: string; client_name: string; message: string }> = [];
 
     for (const client of clients) {
-      // Red flag 1: weight up 3+ consecutive days
-      const weightLogs = await this.prisma.weightLog.findMany({
-        where: { user_id: client.id },
-        orderBy: { date: 'desc' },
-        take: 4,
-      });
-
+      const weightLogs = weightLogsByUser.get(client.id) ?? [];
       if (weightLogs.length >= 3) {
         let weightUp = true;
         for (let i = 0; i < weightLogs.length - 1; i++) {
@@ -163,14 +195,7 @@ export class CoachService {
         }
       }
 
-      // Red flag 2: missed workouts 5+ days
-      const fiveDaysAgo = new Date();
-      fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
-      const recentWorkout = await this.prisma.workoutSession.findFirst({
-        where: { user_id: client.id, date: { gte: fiveDaysAgo } },
-      });
-
-      if (!recentWorkout) {
+      if (!workedOutRecently.has(client.id)) {
         alerts.push({
           type: 'missed_workouts',
           client_id: client.id,

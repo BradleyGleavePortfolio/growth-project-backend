@@ -1,17 +1,21 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { FoodService } from '../food/food.service';
 
 @Injectable()
 export class LogService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private foodService: FoodService) {}
 
   async logFood(userId: string, data: { date: string; meal_type: string; food_item_id: string; quantity_multiplier?: number; notes?: string }) {
+    // Mobile client may send synthetic ids ("usda_123", "off_456") returned by food search.
+    // Resolve them to real FoodItem.id via upsert-on-log so the FK below can't blow up.
+    const resolvedFoodItemId = await this.foodService.resolveOrImportId(data.food_item_id);
     return this.prisma.loggedFoodEntry.create({
       data: {
         user_id: userId,
         date: new Date(data.date),
         meal_type: data.meal_type as any,
-        food_item_id: data.food_item_id,
+        food_item_id: resolvedFoodItemId,
         quantity_multiplier: data.quantity_multiplier || 1.0,
         notes: data.notes,
       },

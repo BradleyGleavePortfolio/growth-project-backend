@@ -1,10 +1,11 @@
-import { Injectable, UnauthorizedException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma.service';
 
 @Injectable()
 export class AuthService {
   private supabaseAdmin;
+  private readonly logger = new Logger(AuthService.name);
 
   constructor(
     private prisma: PrismaService,
@@ -145,14 +146,21 @@ export class AuthService {
       throw new UnauthorizedException('Google auth failed — token is not from Google');
     }
 
+    // Supabase types email as optional — Google provider always returns one, but TS
+    // doesn't know that. Bail out early under strict mode rather than trust the `!`.
+    const supaEmail = supaUser.email;
+    if (!supaEmail) {
+      throw new UnauthorizedException('Google account has no email');
+    }
+
     // Upsert user in our DB (Google users are pre-verified)
     let user = await this.prisma.user.findUnique({ where: { supabase_id: supaUser.id } });
     let isNewUser = false;
 
     if (!user) {
       // Also check by email in case user registered with email first
-      user = await this.prisma.user.findUnique({ where: { email: supaUser.email } });
-      
+      user = await this.prisma.user.findUnique({ where: { email: supaEmail } });
+
       if (user) {
         // Link the Supabase ID to the existing email-based account
         user = await this.prisma.user.update({
@@ -163,8 +171,8 @@ export class AuthService {
         user = await this.prisma.user.create({
           data: {
             supabase_id: supaUser.id,
-            email: supaUser.email,
-            name: supaUser.user_metadata?.full_name || supaUser.email,
+            email: supaEmail,
+            name: supaUser.user_metadata?.full_name || supaEmail,
             role: 'student',
           },
         });
@@ -236,8 +244,9 @@ export class AuthService {
     });
 
     if (error) {
-      // Don't reveal whether the email exists — always return success
-      // Silently swallow — don't reveal if email exists or not
+      // Don't reveal whether the email exists to the client — but do log so ops
+      // can see Supabase outages instead of losing the signal. Audit M1.
+      this.logger.warn(`resetPasswordForEmail failed: ${error.message}`);
     }
 
     return { message: 'If an account exists with that email, a reset link has been sent.' };
