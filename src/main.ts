@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { ThrottlerExceptionFilter } from './filters/throttler-exception.filter';
+import { HttpExceptionFilter } from './filters/http-exception.filter';
 
 // Fail fast at boot if a required secret is missing. Prior behavior was to let the
 // app start and throw on the first request that needed it — making deploy regressions
@@ -53,8 +54,16 @@ async function bootstrap() {
     }),
   );
 
-  // Global exception filter for user-friendly throttle error messages
-  app.useGlobalFilters(new ThrottlerExceptionFilter());
+  // Global exception filters. Order matters: the LAST filter registered runs
+  // FIRST for a given exception type, and Nest picks the most-specific @Catch()
+  // first regardless of registration order. ThrottlerExceptionFilter stays as a
+  // specific @Catch(ThrottlerException); HttpExceptionFilter is the catch-all
+  // with @Catch() that normalizes every other HttpException into
+  // { statusCode, message, error, timestamp, path }.
+  app.useGlobalFilters(
+    new HttpExceptionFilter(),
+    new ThrottlerExceptionFilter(),
+  );
 
   // API prefix — exclude /health so Fly.io liveness probes hit /health, not /api/health
   app.setGlobalPrefix('api', { exclude: ['health'] });

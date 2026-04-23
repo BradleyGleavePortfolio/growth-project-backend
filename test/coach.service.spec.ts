@@ -1,14 +1,11 @@
 import { CoachService } from '../src/coach/coach.service';
 
 /**
- * N+1 characterization for round-2 fix. On `main`, getAlerts loops over
- * clients and issues per-client weightLog + workoutSession queries. The
- * round-2 fix should batch these into O(1) queries (or use SQL aggregation).
- *
- * The spy test records the current query count; once round-2 merges and
- * reduces to <=3 queries regardless of client count, flip the expectation.
+ * Round-2 fix: getAlerts was 1 + 2N queries (per-client weightLog + workoutSession
+ * checks). Round-2 collapsed this to 3 queries total — regardless of client count.
+ * This spec pins that behavior.
  */
-describe('CoachService.getAlerts (N+1 characterization)', () => {
+describe('CoachService.getAlerts (round-2 batched queries)', () => {
   let prismaMock: any;
   let service: CoachService;
   let queryCount: number;
@@ -40,19 +37,28 @@ describe('CoachService.getAlerts (N+1 characterization)', () => {
           bump();
           return null;
         }),
+        groupBy: jest.fn().mockImplementation(async () => {
+          bump();
+          return [];
+        }),
       },
     };
     service = new CoachService(prismaMock as any);
   });
 
-  it('produces alerts and records query count for 3 clients', async () => {
+  it('produces alerts with a bounded number of queries for 3 clients', async () => {
     const alerts = await service.getAlerts('coach-1');
     expect(Array.isArray(alerts)).toBe(true);
-    // With round-2 N+1 fix merged, this should collapse to <= 3 total queries
-    // regardless of client count. Today on `main` it scales linearly:
-    //   1 (users.findMany) + N (weightLog per client) + N (workoutSession per client)
-    // For N=3 → 7. We pin the current value so the number moves only intentionally.
-    expect(queryCount).toBeLessThanOrEqual(7);
+    // Post round-2: 1 user.findMany + 1 weightLog.findMany + 1 workoutSession.groupBy = 3.
+    // Cap at 4 to leave a small headroom for future additions without hiding
+    // regressions back to N+1.
     expect(queryCount).toBeGreaterThan(0);
+    expect(queryCount).toBeLessThanOrEqual(4);
+  });
+
+  it('returns empty alerts when coach has no clients', async () => {
+    prismaMock.user.findMany = jest.fn().mockResolvedValue([]);
+    const alerts = await service.getAlerts('coach-solo');
+    expect(alerts).toEqual([]);
   });
 });

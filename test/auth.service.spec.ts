@@ -1,14 +1,6 @@
 import { AuthService } from '../src/auth/auth.service';
-import { UnauthorizedException } from '@nestjs/common';
+import { UnauthorizedException, ForbiddenException } from '@nestjs/common';
 
-/**
- * Regression tests for AuthService.
- *
- * These pin behavior that either already holds on `main` or that round-1
- * fixes (branch `security/critical-fixes-round-1`) are expected to introduce.
- * Scaffold `it.skip` cases are included for post-#1-merge activation —
- * flip `it.skip` to `it` once #1 lands on main.
- */
 describe('AuthService.googleAuth', () => {
   let prismaMock: any;
   let supabaseAdminMock: any;
@@ -39,10 +31,10 @@ describe('AuthService.googleAuth', () => {
     );
   });
 
-  // Once round-1 is merged, googleAuth enforces
-  // `user.app_metadata.provider === 'google'`. Test scaffold below is ready
-  // to flip `it.skip` → `it`.
-  it.skip('rejects non-Google Supabase tokens (email/password signin)', async () => {
+  // Round-1 provider check. Without this, any valid Supabase session (including
+  // email/password) would be accepted at /auth/google and used to link accounts
+  // by email. See audit C9.
+  it('rejects non-Google Supabase tokens (email/password signin)', async () => {
     supabaseAdminMock.auth.getUser.mockResolvedValue({
       data: {
         user: {
@@ -50,6 +42,7 @@ describe('AuthService.googleAuth', () => {
           email: 'a@b.com',
           app_metadata: { provider: 'email' },
           user_metadata: {},
+          identities: [],
         },
       },
       error: null,
@@ -82,14 +75,15 @@ describe('AuthService.selectRole', () => {
     });
   });
 
-  // Post round-1 merge, the CaboRules backdoor is removed — ANY coach_code
-  // passed to /auth/select-role must be rejected. Flip skip → run once #1 lands.
-  it.skip('rejects coach role elevation via coach_code (CaboRules backdoor removed)', async () => {
+  // Round-1: the CaboRules backdoor is removed. ANY coach_code passed to
+  // /auth/select-role must be rejected — coach provisioning is out-of-band.
+  it('rejects coach role elevation via coach_code (CaboRules backdoor removed)', async () => {
     await expect(
       service.selectRole('user-1', 'coach', 'CaboRules'),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
+    ).rejects.toBeInstanceOf(ForbiddenException);
     await expect(
       service.selectRole('user-1', 'coach', 'any-value'),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 });

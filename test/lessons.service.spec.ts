@@ -1,10 +1,6 @@
 import { LessonsService } from '../src/lessons/lessons.service';
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 
-/**
- * Round-1 fix target: updateLesson currently only checks role=coach; fix
- * should also verify the lesson's coach_id matches userId.
- */
 describe('LessonsService.updateLesson', () => {
   let prismaMock: any;
   let service: LessonsService;
@@ -21,7 +17,7 @@ describe('LessonsService.updateLesson', () => {
     service = new LessonsService(prismaMock as any);
   });
 
-  it('rejects non-coaches from updating lessons (role gate present on main)', async () => {
+  it('rejects non-coaches from updating lessons', async () => {
     prismaMock.user.findUnique.mockResolvedValue({ id: 'u', role: 'student' });
     await expect(
       service.updateLesson('u', 'lesson-1', { title: 'x' }),
@@ -29,19 +25,25 @@ describe('LessonsService.updateLesson', () => {
     expect(prismaMock.lesson.update).not.toHaveBeenCalled();
   });
 
-  it('allows a coach to update lessons (current behavior)', async () => {
+  it('allows a coach to update their own lesson', async () => {
     prismaMock.user.findUnique.mockResolvedValue({ id: 'coach-1', role: 'coach' });
+    prismaMock.lesson.findFirst.mockResolvedValue({ id: 'lesson-1' });
     await service.updateLesson('coach-1', 'lesson-1', { title: 'x' });
+    expect(prismaMock.lesson.findFirst).toHaveBeenCalledWith({
+      where: { id: 'lesson-1', coach_id: 'coach-1' },
+      select: { id: true },
+    });
     expect(prismaMock.lesson.update).toHaveBeenCalled();
   });
 
-  // Post round-1 merge: updateLesson must also verify that the lesson being
-  // updated belongs to THIS coach (prevents cross-coach tampering).
-  it.skip('rejects a coach updating another coach\'s lesson (round-1 ownership check)', async () => {
+  // Round-1 ownership check — a coach updating another coach's lesson now 404s
+  // because findFirst is scoped by { coach_id: userId }.
+  it("rejects a coach updating another coach's lesson", async () => {
     prismaMock.user.findUnique.mockResolvedValue({ id: 'coach-1', role: 'coach' });
-    prismaMock.lesson.findFirst = jest.fn().mockResolvedValue(null);
+    prismaMock.lesson.findFirst.mockResolvedValue(null);
     await expect(
       service.updateLesson('coach-1', 'lesson-owned-by-coach-2', { title: 'x' }),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prismaMock.lesson.update).not.toHaveBeenCalled();
   });
 });

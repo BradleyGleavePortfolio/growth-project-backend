@@ -1,5 +1,6 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { CreateLessonDto, UpdateLessonDto } from './lessons.dto';
 
 @Injectable()
 export class LessonsService {
@@ -31,16 +32,29 @@ export class LessonsService {
     });
   }
 
-  async createLesson(userId: string, data: any) {
+  async createLesson(userId: string, data: CreateLessonDto) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (user?.role !== 'coach') throw new ForbiddenException('Coach access required');
 
+    // Explicit field mapping — coach_id is ALWAYS the requester, never the client's
+    // input. Previously `{ ...data, coach_id: userId }` was safe because userId
+    // came last, but an `@Body() body: any` signature meant an attacker could
+    // still overwrite primary-key fields like `id` or `created_at`. See audit C4.
     return this.prisma.lesson.create({
-      data: { ...data, coach_id: userId },
+      data: {
+        coach_id: userId,
+        title: data.title,
+        description: data.description,
+        video_url: data.video_url,
+        article_url: data.article_url,
+        tags: data.tags ?? [],
+        goal_tags: data.goal_tags ?? [],
+        order_index: data.order_index ?? 0,
+      },
     });
   }
 
-  async updateLesson(userId: string, id: string, data: any) {
+  async updateLesson(userId: string, id: string, data: UpdateLessonDto) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (user?.role !== 'coach') throw new ForbiddenException('Coach access required');
 
@@ -54,7 +68,18 @@ export class LessonsService {
     });
     if (!lesson) throw new NotFoundException('Lesson not found');
 
-    return this.prisma.lesson.update({ where: { id }, data });
+    return this.prisma.lesson.update({
+      where: { id },
+      data: {
+        title: data.title,
+        description: data.description,
+        video_url: data.video_url,
+        article_url: data.article_url,
+        tags: data.tags,
+        goal_tags: data.goal_tags,
+        order_index: data.order_index,
+      },
+    });
   }
 
   async completeLesson(userId: string, lessonId: string) {

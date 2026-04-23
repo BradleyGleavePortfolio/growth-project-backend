@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { CreateHabitDto, LogHabitDto } from './habits.dto';
 
 @Injectable()
 export class HabitsService {
@@ -12,7 +13,7 @@ export class HabitsService {
     });
   }
 
-  async createHabit(userId: string, data: any) {
+  async createHabit(userId: string, data: CreateHabitDto) {
     // Only write columns that exist in the database schema.
     // Display fields (icon, color, frequency) are handled client-side with defaults.
     return this.prisma.habit.create({
@@ -20,13 +21,13 @@ export class HabitsService {
         user_id: userId,
         name: data.name,
         category: data.category || 'custom',
-        target_value: data.target_count ? parseFloat(data.target_count) : data.target_value || null,
+        target_value: data.target_count ?? data.target_value ?? null,
         unit: data.unit || null,
       },
     });
   }
 
-  async logHabit(userId: string, habitId: string, data: any) {
+  async logHabit(userId: string, habitId: string, data: LogHabitDto) {
     // SECURITY: verify the habit belongs to the requesting user before writing a log
     // (audit C7 — IDOR: any authenticated user could log completions against any
     // other user's habit by guessing/obtaining the habit UUID).

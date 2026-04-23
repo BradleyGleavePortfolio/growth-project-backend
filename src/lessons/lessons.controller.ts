@@ -2,6 +2,7 @@ import { Controller, Get, Post, Put, Body, Param, UseGuards, Request } from '@ne
 import type { AuthedRequest } from '../auth/auth-request';
 import { LessonsService } from './lessons.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { CreateLessonDto, UpdateLessonDto } from './lessons.dto';
 
 @Controller('lessons')
 @UseGuards(JwtAuthGuard)
@@ -14,12 +15,12 @@ export class LessonsController {
   }
 
   @Post()
-  async createLesson(@Request() req: AuthedRequest, @Body() body: any) {
+  async createLesson(@Request() req: AuthedRequest, @Body() body: CreateLessonDto) {
     return this.lessonsService.createLesson(req.user.id, body);
   }
 
   @Put(':id')
-  async updateLesson(@Request() req: AuthedRequest, @Param('id') id: string, @Body() body: any) {
+  async updateLesson(@Request() req: AuthedRequest, @Param('id') id: string, @Body() body: UpdateLessonDto) {
     return this.lessonsService.updateLesson(req.user.id, id, body);
   }
 
