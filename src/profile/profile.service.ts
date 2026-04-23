@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 
 @Injectable()
@@ -62,8 +62,6 @@ export class ProfileService {
   async computeAndSaveMacros(userId: string) {
     const profile = await this.prisma.userProfile.findUnique({ where: { user_id: userId } });
     if (!profile) return null;
-
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
     // Mifflin-St Jeor TDEE calculation
     const weightKg = (profile.current_weight_lbs || 180) * 0.453592;
