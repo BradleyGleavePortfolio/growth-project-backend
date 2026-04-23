@@ -95,7 +95,11 @@ model User {
   name               String
   phone              String?
   role               Role     @default(student)
-  coach_id           String?  // null for coaches; set for students to their coach's User.id
+  // coach_id now a proper self-relation FK instead of an orphan string column.
+  // Preserves prior behavior — still nullable, still points at another User.id.
+  coach_id           String?
+  coach              User?    @relation("CoachToStudents", fields: [coach_id], references: [id])
+  students           User[]   @relation("CoachToStudents")
   created_at         DateTime @default(now())
 
   profile            UserProfile?
@@ -108,6 +112,10 @@ model User {
   lesson_completions LessonCompletion[]
   check_ins          CheckIn[]
   water_logs         WaterLog[]
+  created_routines   WorkoutRoutine[] @relation("RoutineCreator")
+  coached_lessons    Lesson[]         @relation("LessonCoach")
+
+  @@index([coach_id])
 }
 
 model UserProfile {
@@ -168,6 +176,9 @@ model LoggedFoodEntry {
   quantity_multiplier Float     @default(1.0)
   notes               String?
   logged_at           DateTime  @default(now())
+
+  // Hot path: LogService.getDaily + CoachService.getClientSummary both query by (user_id, date).
+  @@index([user_id, date])
 }
 
 model WorkoutSession {
@@ -182,6 +193,9 @@ model WorkoutSession {
   notes            String?
   exercises        ExerciseSet[]
   created_at       DateTime     @default(now())
+
+  // Hot path: coach alerts, community leaderboard, workout history all filter by (user_id, date).
+  @@index([user_id, date])
 }
 
 model ExerciseSet {
@@ -200,12 +214,16 @@ model ExerciseSet {
 
 model WorkoutRoutine {
   id          String            @id @default(uuid())
+  // creator_id now a proper FK — previously an orphan string; app code relied on it referencing User.id.
   creator_id  String
+  creator     User              @relation("RoutineCreator", fields: [creator_id], references: [id])
   name        String
   description String?
   exercises   RoutineExercise[]
   is_template Boolean           @default(false)
   created_at  DateTime          @default(now())
+
+  @@index([creator_id])
 }
 
 model RoutineExercise {
@@ -239,6 +257,9 @@ model WeightLog {
   weight_lbs Float
   notes      String?
   logged_at  DateTime @default(now())
+
+  // Hot path: weight charts query by (user_id, date desc).
+  @@index([user_id, date])
 }
 
 model NotificationPreferences {
@@ -274,11 +295,16 @@ model HabitLog {
   value     Float?
   completed Boolean  @default(false)
   logged_at DateTime @default(now())
+
+  // Hot path: habit streak/completion queries filter by (habit_id, date).
+  @@index([habit_id, date])
 }
 
 model Lesson {
   id          String            @id @default(uuid())
+  // coach_id now a proper FK to User.id (was orphan string).
   coach_id    String
+  coach       User              @relation("LessonCoach", fields: [coach_id], references: [id])
   title       String
   description String?
   video_url   String?
@@ -288,6 +314,8 @@ model Lesson {
   order_index Int               @default(0)
   completions LessonCompletion[]
   created_at  DateTime          @default(now())
+
+  @@index([coach_id])
 }
 
 model LessonCompletion {
@@ -310,6 +338,9 @@ model CheckIn {
   notes     String?
   type      CheckInType @default(morning)
   logged_at DateTime    @default(now())
+
+  // Hot path: daily check-in lookups by (user_id, date).
+  @@index([user_id, date])
 }
 
 model WaterLog {
@@ -320,5 +351,7 @@ model WaterLog {
   logged_at  DateTime @default(now()) @db.Timestamptz
   created_at DateTime @default(now()) @db.Timestamptz
 
+  // Hot path: water intake summaries filter by (user_id, logged_at).
+  @@index([user_id, logged_at])
   @@map("water_logs")
 }

@@ -1,10 +1,30 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { ThrottlerExceptionFilter } from './filters/throttler-exception.filter';
 
+// Fail fast at boot if a required secret is missing. Prior behavior was to let the
+// app start and throw on the first request that needed it — making deploy regressions
+// silent until a user hit them. Listed in .env.example.
+function assertRequiredEnv() {
+  const required = [
+    'DATABASE_URL',
+    'SUPABASE_URL',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'USDA_API_KEY',
+  ];
+  const missing = required.filter((k) => !process.env[k]);
+  if (missing.length) {
+    const msg = `Missing required env vars: ${missing.join(', ')}`;
+    // Use Logger so the failure shows up consistently in Fly logs.
+    new Logger('Bootstrap').error(msg);
+    throw new Error(msg);
+  }
+}
+
 async function bootstrap() {
+  assertRequiredEnv();
   const app = await NestFactory.create(AppModule);
 
   // SECURITY: CORS was previously `origin: '*'` (audit C6). The React Native mobile
@@ -42,7 +62,7 @@ async function bootstrap() {
   const port = parseInt(process.env.PORT || '3000', 10);
   // Must bind to 0.0.0.0 for Fly.io — binding to localhost won't be reachable
   await app.listen(port, '0.0.0.0');
-  console.log(`The Growth Project API running on port ${port}`);
+  new Logger('Bootstrap').log(`The Growth Project API running on port ${port}`);
 }
 
 bootstrap();
