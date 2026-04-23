@@ -2,6 +2,7 @@ import { Controller, Post, Get, Put, Delete, Body, Param, Query, UseGuards, Requ
 import type { AuthedRequest } from '../auth/auth-request';
 import { LogService } from './log.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { LogFoodDto, UpdateLogEntryDto } from './log.dto';
 
 @Controller('log')
 @UseGuards(JwtAuthGuard)
@@ -9,7 +10,7 @@ export class LogController {
   constructor(private logService: LogService) {}
 
   @Post('food')
-  async logFood(@Request() req: AuthedRequest, @Body() body: any) {
+  async logFood(@Request() req: AuthedRequest, @Body() body: LogFoodDto) {
     return this.logService.logFood(req.user.id, body);
   }
 
@@ -20,7 +21,7 @@ export class LogController {
   }
 
   @Put('food/:id')
-  async updateEntry(@Request() req: AuthedRequest, @Param('id') id: string, @Body() body: any) {
+  async updateEntry(@Request() req: AuthedRequest, @Param('id') id: string, @Body() body: UpdateLogEntryDto) {
     return this.logService.updateEntry(req.user.id, id, body);
   }
 

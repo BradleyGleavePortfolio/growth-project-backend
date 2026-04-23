@@ -1,15 +1,14 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { LogWaterDto } from './water.dto';
 
 @Injectable()
 export class WaterService {
   constructor(private prisma: PrismaService) {}
 
-  async logWater(userId: string, data: { amount_ml: number; date?: string }) {
-    if (!data.amount_ml || data.amount_ml <= 0) {
-      throw new BadRequestException('amount_ml must be a positive number');
-    }
-
+  async logWater(userId: string, data: LogWaterDto) {
+    // DTO already enforces amount_ml > 0 via @Min. user_id is set from the
+    // authenticated session, never from the body.
     return this.prisma.waterLog.create({
       data: {
         user_id: userId,

@@ -1,11 +1,12 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { StartFastDto } from './fasting.dto';
 
 @Injectable()
 export class FastingService {
   constructor(private prisma: PrismaService) {}
 
-  async startFast(userId: string, data: { protocol?: string; notes?: string }) {
+  async startFast(userId: string, data: StartFastDto) {
     // Check no active fast
     const active = await this.prisma.fastingWindow.findFirst({
       where: { user_id: userId, end_time: null },
