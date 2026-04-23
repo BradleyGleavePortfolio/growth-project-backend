@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { LogWeightDto } from './weight.dto';
 
 @Injectable()
 export class WeightService {
   constructor(private prisma: PrismaService) {}
 
-  async logWeight(userId: string, data: { weight_lbs: number; date?: string; notes?: string }) {
+  async logWeight(userId: string, data: LogWeightDto) {
     return this.prisma.weightLog.create({
       data: {
         user_id: userId,

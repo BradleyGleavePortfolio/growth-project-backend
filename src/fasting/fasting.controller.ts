@@ -2,6 +2,7 @@ import { Controller, Post, Get, Body, Query, UseGuards, Request } from '@nestjs/
 import type { AuthedRequest } from '../auth/auth-request';
 import { FastingService } from './fasting.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { StartFastDto, EndFastDto } from './fasting.dto';
 
 @Controller('fasting')
 @UseGuards(JwtAuthGuard)
@@ -9,12 +10,12 @@ export class FastingController {
   constructor(private fastingService: FastingService) {}
 
   @Post('start')
-  async startFast(@Request() req: AuthedRequest, @Body() body: any) {
+  async startFast(@Request() req: AuthedRequest, @Body() body: StartFastDto) {
     return this.fastingService.startFast(req.user.id, body);
   }
 
   @Post('end')
-  async endFast(@Request() req: AuthedRequest, @Body() body: any) {
+  async endFast(@Request() req: AuthedRequest, @Body() body: EndFastDto) {
     return this.fastingService.endFast(req.user.id, body.notes);
   }
 

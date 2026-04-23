@@ -1,18 +1,38 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { CreateWorkoutDto, CreateRoutineDto, UpdateRoutineDto } from './workout.dto';
 
 @Injectable()
 export class WorkoutService {
   constructor(private prisma: PrismaService) {}
 
-  async createWorkout(userId: string, data: any) {
-    const { exercises, ...sessionData } = data;
+  async createWorkout(userId: string, data: CreateWorkoutDto) {
+    // Explicit field mapping — previously `...sessionData` spread the body into
+    // Prisma, which (combined with `@Body() body: any` on the controller) would
+    // let a client set `user_id`, `id`, etc. See audit C4/H10.
     return this.prisma.workoutSession.create({
       data: {
-        ...sessionData,
         user_id: userId,
-        date: new Date(sessionData.date || new Date()),
-        exercises: exercises ? { create: exercises } : undefined,
+        date: data.date ? new Date(data.date) : new Date(),
+        workout_name: data.workout_name,
+        workout_type: data.workout_type,
+        duration_minutes: data.duration_minutes,
+        intensity: data.intensity ?? 'moderate',
+        notes: data.notes,
+        exercises: data.exercises
+          ? {
+              create: data.exercises.map((e) => ({
+                exercise_name: e.exercise_name,
+                muscle_group: e.muscle_group,
+                sets_completed: e.sets_completed,
+                reps_per_set: e.reps_per_set,
+                weight_per_set: e.weight_per_set,
+                rpe: e.rpe,
+                notes: e.notes,
+                video_url: e.video_url,
+              })),
+            }
+          : undefined,
       },
       include: { exercises: true },
     });
@@ -62,22 +82,43 @@ export class WorkoutService {
     });
   }
 
-  async createRoutine(userId: string, data: any) {
-    const { exercises, ...routineData } = data;
+  async createRoutine(userId: string, data: CreateRoutineDto) {
+    // Explicit field mapping — previously `...routineData` spread the body into
+    // Prisma. creator_id is ALWAYS userId; `is_template` is deliberately NOT
+    // exposed in the DTO (would let a client publish routines to every user).
     return this.prisma.workoutRoutine.create({
       data: {
-        ...routineData,
         creator_id: userId,
-        exercises: exercises ? { create: exercises } : undefined,
+        name: data.name,
+        description: data.description,
+        exercises: data.exercises
+          ? {
+              create: data.exercises.map((e) => ({
+                exercise_name: e.exercise_name,
+                muscle_group: e.muscle_group,
+                default_sets: e.default_sets,
+                default_reps: e.default_reps,
+                default_rest_seconds: e.default_rest_seconds ?? 90,
+                video_url: e.video_url,
+                order_index: e.order_index,
+              })),
+            }
+          : undefined,
       },
       include: { exercises: true },
     });
   }
 
-  async updateRoutine(userId: string, id: string, data: any) {
+  async updateRoutine(userId: string, id: string, data: UpdateRoutineDto) {
     const routine = await this.prisma.workoutRoutine.findUnique({ where: { id } });
     if (!routine || routine.creator_id !== userId) throw new NotFoundException('Routine not found');
-    return this.prisma.workoutRoutine.update({ where: { id }, data });
+    return this.prisma.workoutRoutine.update({
+      where: { id },
+      data: {
+        name: data.name,
+        description: data.description,
+      },
+    });
   }
 
   async deleteRoutine(userId: string, id: string) {
