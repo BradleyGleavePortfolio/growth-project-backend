@@ -7,9 +7,19 @@ import { ThrottlerExceptionFilter } from './filters/throttler-exception.filter';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // CORS is open for React Native mobile clients — no browser CORS risk
+  // SECURITY: CORS was previously `origin: '*'` (audit C6). The React Native mobile
+  // client does not require CORS (it isn't a browser), so the only consumers of CORS
+  // are future browser-based admin/web pages. Default to a deny-all allow-list so a
+  // misconfigured deploy doesn't inadvertently expose the API to every origin.
+  // Set CORS_ORIGINS as a comma-separated list in Fly secrets when a web client needs
+  // access, e.g. `CORS_ORIGINS=https://admin.example.com,https://app.example.com`.
+  const corsOriginsEnv = process.env.CORS_ORIGINS || '';
+  const corsOrigins = corsOriginsEnv
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: '*',
+    origin: corsOrigins.length > 0 ? corsOrigins : false,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
