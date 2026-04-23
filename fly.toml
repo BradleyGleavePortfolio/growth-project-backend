@@ -9,7 +9,11 @@ primary_region = 'sjc'
 [build]
 
 [deploy]
-  
+  # Run pending Prisma migrations before booting a new release.
+  # Runs in a one-off machine; deploy aborts if this fails, so bad
+  # migrations can't take down the running machines.
+  release_command = "npx prisma migrate deploy"
+
 
 [http_service]
   internal_port = 3000

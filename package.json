@@ -6,7 +6,9 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
-    "lint": "eslint \"src/**/*.ts\""
+    "lint": "eslint \"src/**/*.ts\"",
+    "test": "jest",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
@@ -26,11 +28,15 @@
     "@flydotio/dockerfile": "^0.7.10",
     "@nestjs/cli": "^10.0.0",
     "@nestjs/testing": "^10.0.0",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
+    "@types/passport-jwt": "^4.0.0",
     "eslint": "^8.57.1",
+    "jest": "^30.3.0",
     "prisma": "^5.0.0",
+    "ts-jest": "^29.4.9",
     "ts-node": "^10.9.0",
     "typescript": "^5.0.0"
   }

@@ -82,3 +82,14 @@ src/
   health/       Liveness probe (GET /health)
   filters/      Global exception filters
 ```
+
+## Test
+
+```bash
+npm test
+```
+
+## CI
+
+`.github/workflows/ci.yml` runs on every PR and push to `main`:
+install, `prisma generate`, lint (if configured), `tsc --noEmit`, build, test.
