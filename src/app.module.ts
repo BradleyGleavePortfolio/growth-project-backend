@@ -17,7 +17,7 @@ import { CommunityModule } from './community/community.module';
 import { LessonsModule } from './lessons/lessons.module';
 import { WaterModule } from './water/water.module';
 import { SupabaseModule } from './supabase/supabase.module';
-import { PrismaService } from './prisma.service';
+import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
   imports: [
@@ -26,6 +26,9 @@ import { PrismaService } from './prisma.service';
 
     // Rate limiting: 100 requests per minute globally (AI endpoint has own tighter limit)
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
+
+    // Global Prisma module — single PrismaClient shared by every feature module.
+    PrismaModule,
 
     // Supabase singleton client (global — available to all modules)
     SupabaseModule,
@@ -46,7 +49,6 @@ import { PrismaService } from './prisma.service';
     WaterModule,
   ],
   providers: [
-    PrismaService,
     // SECURITY: register ThrottlerGuard as a global APP_GUARD so that @Throttle(...)
     // decorators (e.g. on /auth/login, /auth/register, /ai/chat) are actually enforced.
     // Without this, ThrottlerModule is imported but never wired in and every @Throttle

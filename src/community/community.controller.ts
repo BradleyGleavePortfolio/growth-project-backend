@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Body, Query, UseGuards, Request } from '@nestjs/common';
+import type { AuthedRequest } from '../auth/auth-request';
 import { CommunityService } from './community.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 
@@ -8,17 +9,17 @@ export class CommunityController {
   constructor(private communityService: CommunityService) {}
 
   @Get('leaderboard')
-  async getLeaderboard(@Request() req, @Query('period') period?: 'week' | 'month') {
+  async getLeaderboard(@Request() req: AuthedRequest, @Query('period') period?: 'week' | 'month') {
     return this.communityService.getLeaderboard(req.user.id, period || 'week');
   }
 
   @Get('feed')
-  async getFeed(@Request() req) {
+  async getFeed(@Request() req: AuthedRequest) {
     return this.communityService.getFeed(req.user.id);
   }
 
   @Post('wins')
-  async postWin(@Request() req, @Body() body: any) {
+  async postWin(@Request() req: AuthedRequest, @Body() body: any) {
     return this.communityService.postWin(req.user.id, body);
   }
 }

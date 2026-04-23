@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
 import { PrismaService } from '../prisma.service';
 
@@ -41,6 +41,7 @@ export interface UserContextPayload {
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
   constructor(private prisma: PrismaService) {}
 
   buildDietitianSystemPrompt(userContext: UserContextPayload): string {
@@ -304,8 +305,11 @@ The 15 examples above are PATTERNS, not a complete list. Handle ANY question wit
 
       return response.choices[0]?.message?.content || 'GP is taking a break. Try again in a moment.';
     } catch (error) {
-      // Perplexity API error — falling back to rule-based response
-      // Fall back to rule-based response on any API error
+      // Audit M5/M6: used to be a silent swallow + stale comment. Now we log the
+      // failure so ops can see how often Perplexity is degraded before we pivot.
+      this.logger.warn(
+        `Perplexity chat failed; falling back: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return this.generateFallbackResponse(userMessage, userContext);
     }
   }
