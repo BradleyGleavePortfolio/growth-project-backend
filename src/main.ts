@@ -56,13 +56,13 @@ async function bootstrap() {
   // Global exception filter for user-friendly throttle error messages
   app.useGlobalFilters(new ThrottlerExceptionFilter());
 
-  // API prefix
-  app.setGlobalPrefix('api');
+  // API prefix — exclude /health so Fly.io liveness probes hit /health, not /api/health
+  app.setGlobalPrefix('api', { exclude: ['health'] });
 
   const port = parseInt(process.env.PORT || '3000', 10);
   // Must bind to 0.0.0.0 for Fly.io — binding to localhost won't be reachable
   await app.listen(port, '0.0.0.0');
-  new Logger('Bootstrap').log(`The Growth Project API running on port ${port}`);
+  Logger.log(`The Growth Project API running on port ${port}`, 'Bootstrap');
 }
 
 bootstrap();
