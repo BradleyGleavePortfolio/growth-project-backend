@@ -20,16 +20,41 @@ export class ProfileService {
 
   async updateProfile(userId: string, data: any) {
     // CRITICAL: height_cm stored ONLY in UserProfile — single source of truth
+    // SECURITY: explicit allow-list mapping (audit C4). The controller DTO already
+    // strips unknown fields via ValidationPipe, but we defend-in-depth by mapping
+    // only the permitted fields into Prisma rather than spreading. This prevents
+    // any future regression (e.g. DTO drift) from letting a client overwrite
+    // `user_id`, `id`, `updated_at`, or any of the `macro_target_*` fields that
+    // should be computed server-side by `computeAndSaveMacros`.
+    const allowed = {
+      height_cm: data.height_cm,
+      current_weight_lbs: data.current_weight_lbs,
+      target_weight_lbs: data.target_weight_lbs,
+      date_of_birth: data.date_of_birth ? new Date(data.date_of_birth) : undefined,
+      sex: data.sex,
+      activity_level: data.activity_level,
+      goal_type: data.goal_type,
+      workout_experience: data.workout_experience,
+      has_gym_membership: data.has_gym_membership,
+      preferred_snacks: data.preferred_snacks,
+      avatar_url: data.avatar_url,
+    };
+    // Drop undefineds so we don't overwrite existing values with NULL.
+    const payload: Record<string, any> = {};
+    for (const [k, v] of Object.entries(allowed)) {
+      if (v !== undefined) payload[k] = v;
+    }
+
     const existing = await this.prisma.userProfile.findUnique({ where: { user_id: userId } });
 
     if (existing) {
       return this.prisma.userProfile.update({
         where: { user_id: userId },
-        data,
+        data: payload,
       });
     } else {
       return this.prisma.userProfile.create({
-        data: { user_id: userId, ...data },
+        data: { user_id: userId, ...payload },
       });
     }
   }

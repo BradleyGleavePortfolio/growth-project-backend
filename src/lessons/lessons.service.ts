@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 
 @Injectable()
@@ -43,6 +43,16 @@ export class LessonsService {
   async updateLesson(userId: string, id: string, data: any) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (user?.role !== 'coach') throw new ForbiddenException('Coach access required');
+
+    // SECURITY: verify the lesson belongs to this coach before letting them update it.
+    // Previously any coach could overwrite any other coach's lesson (audit C8). Combined
+    // with the old CaboRules backdoor this meant any user could rewrite educational
+    // content served to every student.
+    const lesson = await this.prisma.lesson.findFirst({
+      where: { id, coach_id: userId },
+      select: { id: true },
+    });
+    if (!lesson) throw new NotFoundException('Lesson not found');
 
     return this.prisma.lesson.update({ where: { id }, data });
   }

@@ -1,8 +1,6 @@
-import { Injectable, UnauthorizedException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma.service';
-
-const COACH_BACKDOOR_CODE = 'CaboRules';
 
 @Injectable()
 export class AuthService {
@@ -129,6 +127,24 @@ export class AuthService {
 
     const supaUser = userData.user;
 
+    // SECURITY: make sure the token actually came from Google before trusting it to
+    // perform an email-based account link (audit C9). Without this check, any valid
+    // Supabase session token — including one issued via email/password login — could
+    // be posted to /auth/google, and the server would happily link accounts by email.
+    // The email/password login path does not call this method (see `login()` above),
+    // so this does not affect that flow.
+    const provider = supaUser.app_metadata?.provider;
+    const providers: string[] = supaUser.app_metadata?.providers || [];
+    const identityProviders: string[] =
+      (supaUser.identities || []).map((i: any) => i.provider).filter(Boolean);
+    const isGoogle =
+      provider === 'google' ||
+      providers.includes('google') ||
+      identityProviders.includes('google');
+    if (!isGoogle) {
+      throw new UnauthorizedException('Google auth failed — token is not from Google');
+    }
+
     // Upsert user in our DB (Google users are pre-verified)
     let user = await this.prisma.user.findUnique({ where: { supabase_id: supaUser.id } });
     let isNewUser = false;
@@ -169,11 +185,18 @@ export class AuthService {
     };
   }
 
-  async selectRole(userId: string, role: 'coach' | 'student', coachCode?: string) {
+  async selectRole(userId: string, role: 'coach' | 'student', _coachCode?: string) {
+    // SECURITY: coach elevation via client-supplied code is disabled (audit C3).
+    // The previous `CaboRules` backdoor allowed any authenticated user to escalate
+    // to the `coach` role and read/write other users' data via other IDOR bugs.
+    // Self-service role selection is restricted to `student`. Elevating a user to
+    // `coach` must now happen out-of-band (direct SQL by an operator) until we
+    // build a proper invite/admin flow. Contract is preserved (body still accepts
+    // role + coach_code); we just reject coach requests.
     if (role === 'coach') {
-      if (coachCode !== COACH_BACKDOOR_CODE) {
-        throw new UnauthorizedException('Incorrect code. Contact support.');
-      }
+      throw new ForbiddenException(
+        'Coach accounts are provisioned manually. Contact support.',
+      );
     }
 
     const user = await this.prisma.user.update({

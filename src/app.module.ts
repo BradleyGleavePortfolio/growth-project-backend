@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
 import { ProfileModule } from './profile/profile.module';
 import { FoodModule } from './food/food.module';
@@ -44,6 +45,13 @@ import { PrismaService } from './prisma.service';
     LessonsModule,
     WaterModule,
   ],
-  providers: [PrismaService],
+  providers: [
+    PrismaService,
+    // SECURITY: register ThrottlerGuard as a global APP_GUARD so that @Throttle(...)
+    // decorators (e.g. on /auth/login, /auth/register, /ai/chat) are actually enforced.
+    // Without this, ThrottlerModule is imported but never wired in and every @Throttle
+    // decorator is silently inert — see audit C2.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}
