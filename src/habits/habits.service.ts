@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 
 @Injectable()
@@ -27,6 +27,15 @@ export class HabitsService {
   }
 
   async logHabit(userId: string, habitId: string, data: any) {
+    // SECURITY: verify the habit belongs to the requesting user before writing a log
+    // (audit C7 — IDOR: any authenticated user could log completions against any
+    // other user's habit by guessing/obtaining the habit UUID).
+    const habit = await this.prisma.habit.findFirst({
+      where: { id: habitId, user_id: userId },
+      select: { id: true },
+    });
+    if (!habit) throw new NotFoundException('Habit not found');
+
     const targetDate = data.date ? new Date(data.date) : new Date();
     targetDate.setHours(0, 0, 0, 0);
 
