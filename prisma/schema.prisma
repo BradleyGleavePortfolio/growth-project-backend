@@ -118,6 +118,8 @@ model User {
   coach_messages_as_coach  CoachMessage[] @relation("CoachMessagesAsCoach")
   coach_messages_as_client CoachMessage[] @relation("CoachMessagesAsClient")
   coach_messages_sent      CoachMessage[] @relation("CoachMessagesSender")
+  coach_nudges_as_coach    CoachNudge[]   @relation("CoachNudgesAsCoach")
+  coach_nudges_as_client   CoachNudge[]   @relation("CoachNudgesAsClient")
 
   @@index([coach_id])
 }
@@ -397,4 +399,28 @@ model CoachMessage {
   @@index([client_id])
   @@index([created_at])
   @@index([coach_id, client_id, created_at])
+}
+
+// In-app "nudge" notifications a coach sends to one of their clients — the
+// real backing for the mobile coach's Send Notification button (previously
+// written only to the coach's local SQLite). `read_at` is set when the client
+// marks a single nudge as read. Index on client_id + created_at backs the
+// newest-first listing; index on (client_id, read_at) backs the unread-count
+// query.
+model CoachNudge {
+  id         String    @id @default(uuid())
+  coach_id   String
+  coach      User      @relation("CoachNudgesAsCoach", fields: [coach_id], references: [id])
+  client_id  String
+  client     User      @relation("CoachNudgesAsClient", fields: [client_id], references: [id])
+  title      String
+  body       String
+  created_at DateTime  @default(now())
+  read_at    DateTime?
+
+  @@index([coach_id])
+  @@index([client_id])
+  @@index([created_at])
+  @@index([client_id, created_at])
+  @@index([client_id, read_at])
 }
