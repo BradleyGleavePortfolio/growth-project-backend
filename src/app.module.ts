@@ -21,6 +21,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
 import { InviteCodesModule } from './invite-codes/invite-codes.module';
 import { MessagingModule } from './messaging/messaging.module';
+import { NudgesModule } from './nudges/nudges.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { MessagingModule } from './messaging/messaging.module';
     HealthModule,
     InviteCodesModule,
     MessagingModule,
+    NudgesModule,
   ],
   providers: [
     // SECURITY: register ThrottlerGuard as a global APP_GUARD so that @Throttle(...)
