@@ -19,6 +19,7 @@ import { WaterModule } from './water/water.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
+import { InviteCodesModule } from './invite-codes/invite-codes.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { HealthModule } from './health/health.module';
     LessonsModule,
     WaterModule,
     HealthModule,
+    InviteCodesModule,
   ],
   providers: [
     // SECURITY: register ThrottlerGuard as a global APP_GUARD so that @Throttle(...)

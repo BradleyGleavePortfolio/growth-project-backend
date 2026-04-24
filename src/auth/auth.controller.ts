@@ -11,11 +11,16 @@ import {
   GoogleAuthDto,
   SelectRoleDto,
   ForgotPasswordDto,
+  ValidateInviteCodePublicDto,
 } from './auth.dto';
+import { InviteCodesService } from '../invite-codes/invite-codes.service';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private inviteCodes: InviteCodesService,
+  ) {}
 
   @Post('register')
   // 10/hour/IP — loosened from 3/hour because shared NAT (office, campus, coffee
@@ -46,7 +51,25 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async selectRole(@Request() req: AuthedRequest, @Body() body: SelectRoleDto) {
-    return this.authService.selectRole(req.user.id, body.role, body.coach_code);
+    // Prefer `invite_code` (new) over `coach_code` (legacy); either is honored.
+    const code = body.invite_code ?? body.coach_code;
+    return this.authService.selectRole(req.user.id, body.role, code);
+  }
+
+  // Public (unauthenticated) endpoint so the signup flow can preview the coach
+  // name before the user commits. Returns {valid, coach_id?, coach_name?}.
+  // Rate-limited to blunt brute-force enumeration of the 30-bit code space.
+  @Post('validate-invite-code')
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @HttpCode(HttpStatus.OK)
+  async validateInviteCode(@Body() body: ValidateInviteCodePublicDto) {
+    const result = await this.inviteCodes.validate(body.code);
+    if (!result.valid) return { valid: false };
+    return {
+      valid: true,
+      coach_id: result.coach_id,
+      coach_name: result.coach_name,
+    };
   }
 
   @Post('forgot-password')
