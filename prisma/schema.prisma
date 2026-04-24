@@ -120,6 +120,8 @@ model User {
   coach_messages_sent      CoachMessage[] @relation("CoachMessagesSender")
   coach_nudges_as_coach    CoachNudge[]   @relation("CoachNudgesAsCoach")
   coach_nudges_as_client   CoachNudge[]   @relation("CoachNudgesAsClient")
+  meal_plans_as_coach      MealPlan[]     @relation("MealPlanCoach")
+  meal_plans_as_client     MealPlan[]     @relation("MealPlanClient")
 
   @@index([coach_id])
 }
@@ -348,20 +350,65 @@ model LessonCompletion {
   completed_at DateTime @default(now())
 }
 
+// Daily/weekly check-ins logged by clients. Original mobile flow used `mood`,
+// `energy`, `soreness`, and `type` (morning/evening). Tier-2 adds server-side
+// upsert semantics and coach visibility, which required three additive columns:
+//   - coach_id (nullable, indexed) — denormalized from the client's current
+//     coach at creation time so historical check-ins stay attached to the
+//     coach-of-record even if the client later switches coaches. Nullable
+//     because a client may check in before being assigned to any coach.
+//   - sleep_hours (nullable) — Float hours slept
+//   - weight_kg   (nullable) — optional body-weight reading
+// The pre-existing `mood`/`energy` columns were relaxed from NOT NULL to
+// NULLABLE because the new Tier-2 POST /check-ins endpoint treats every
+// subjective field as optional; `soreness`/`type` are retained for the
+// existing mobile morning/evening flow and keep their prior NOT-NULL/defaults.
+// A unique (client_id, date) constraint turns POST /check-ins into an idempotent
+// daily upsert.
 model CheckIn {
-  id        String      @id @default(uuid())
-  user_id   String
-  user      User        @relation(fields: [user_id], references: [id])
-  date      DateTime    @db.Date
-  mood      Int         // 1-5
-  energy    Int         // 1-5
-  soreness  Int         // 1-5
-  notes     String?
-  type      CheckInType @default(morning)
-  logged_at DateTime    @default(now())
+  id          String      @id @default(uuid())
+  user_id     String
+  user        User        @relation(fields: [user_id], references: [id])
+  coach_id    String?
+  date        DateTime    @db.Date
+  mood        Int?        // 1-5, optional
+  energy      Int?        // 1-5, optional
+  soreness    Int         // 1-5 — retained for existing mobile flow
+  sleep_hours Float?
+  weight_kg   Float?
+  notes       String?
+  type        CheckInType @default(morning)
+  logged_at   DateTime    @default(now())
 
   // Hot path: daily check-in lookups by (user_id, date).
   @@index([user_id, date])
+  @@index([coach_id, date])
+  @@unique([user_id, date], name: "CheckIn_user_id_date_key")
+}
+
+// Server-persisted meal plans assigned by a coach to a specific client. Tier-2
+// addition: previously the mobile coach UI wrote these to local SQLite only,
+// so a coach's plans were per-device and never visible to the client. Schema is
+// intentionally loose on `items` (Json) so the mobile UI can evolve item shape
+// without a migration — validation enforces the expected fields at the DTO
+// boundary (name required, everything else optional). `archived_at` gives a
+// soft-delete so a plan history survives deletion.
+model MealPlan {
+  id          String    @id @default(uuid())
+  coach_id    String
+  coach       User      @relation("MealPlanCoach", fields: [coach_id], references: [id])
+  client_id   String
+  client      User      @relation("MealPlanClient", fields: [client_id], references: [id])
+  title       String
+  notes       String?
+  items       Json
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+  archived_at DateTime?
+
+  @@index([coach_id])
+  @@index([client_id])
+  @@index([coach_id, client_id, created_at])
 }
 
 model WaterLog {
