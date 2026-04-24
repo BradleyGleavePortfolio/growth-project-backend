@@ -115,6 +115,9 @@ model User {
   created_routines   WorkoutRoutine[] @relation("RoutineCreator")
   coached_lessons    Lesson[]         @relation("LessonCoach")
   invite_codes       InviteCode[]     @relation("CoachInviteCodes")
+  coach_messages_as_coach  CoachMessage[] @relation("CoachMessagesAsCoach")
+  coach_messages_as_client CoachMessage[] @relation("CoachMessagesAsClient")
+  coach_messages_sent      CoachMessage[] @relation("CoachMessagesSender")
 
   @@index([coach_id])
 }
@@ -370,4 +373,28 @@ model WaterLog {
   // Hot path: water intake summaries filter by (user_id, logged_at).
   @@index([user_id, logged_at])
   @@map("water_logs")
+}
+
+// Direct messages between a coach and one of their clients. `coach_id` /
+// `client_id` identify the thread participants (always the same two users for a
+// given thread, regardless of direction); `sender_id` records who actually
+// wrote the message. `read_at` is set when the *other* party marks the thread
+// as read. The composite index on (coach_id, client_id, created_at) makes the
+// paginated-thread query a single index seek.
+model CoachMessage {
+  id         String    @id @default(uuid())
+  coach_id   String
+  coach      User      @relation("CoachMessagesAsCoach", fields: [coach_id], references: [id])
+  client_id  String
+  client     User      @relation("CoachMessagesAsClient", fields: [client_id], references: [id])
+  sender_id  String
+  sender     User      @relation("CoachMessagesSender", fields: [sender_id], references: [id])
+  body       String
+  created_at DateTime  @default(now())
+  read_at    DateTime?
+
+  @@index([coach_id])
+  @@index([client_id])
+  @@index([created_at])
+  @@index([coach_id, client_id, created_at])
 }
