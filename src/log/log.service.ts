@@ -1,12 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { FoodService } from '../food/food.service';
+import { LogFoodDto, UpdateLogEntryDto } from './log.dto';
 
 @Injectable()
 export class LogService {
   constructor(private prisma: PrismaService, private foodService: FoodService) {}
 
-  async logFood(userId: string, data: { date: string; meal_type: string; food_item_id: string; quantity_multiplier?: number; notes?: string }) {
+  async logFood(userId: string, data: LogFoodDto) {
     // Mobile client may send synthetic ids ("usda_123", "off_456") returned by food search.
     // Resolve them to real FoodItem.id via upsert-on-log so the FK below can't blow up.
     const resolvedFoodItemId = await this.foodService.resolveOrImportId(data.food_item_id);
@@ -14,9 +15,9 @@ export class LogService {
       data: {
         user_id: userId,
         date: new Date(data.date),
-        meal_type: data.meal_type as any,
+        meal_type: data.meal_type,
         food_item_id: resolvedFoodItemId,
-        quantity_multiplier: data.quantity_multiplier || 1.0,
+        quantity_multiplier: data.quantity_multiplier ?? 1.0,
         notes: data.notes,
       },
       include: { food_item: true },
@@ -63,10 +64,20 @@ export class LogService {
     };
   }
 
-  async updateEntry(userId: string, entryId: string, data: any) {
+  async updateEntry(userId: string, entryId: string, data: UpdateLogEntryDto) {
     const entry = await this.prisma.loggedFoodEntry.findUnique({ where: { id: entryId } });
     if (!entry || entry.user_id !== userId) throw new NotFoundException('Entry not found');
-    return this.prisma.loggedFoodEntry.update({ where: { id: entryId }, data });
+    // Explicit field mapping — no spread. DTO already rejects unknown keys via
+    // the global ValidationPipe (whitelist + forbidNonWhitelisted), but the
+    // explicit map is a second line of defense against mass-assignment.
+    return this.prisma.loggedFoodEntry.update({
+      where: { id: entryId },
+      data: {
+        quantity_multiplier: data.quantity_multiplier,
+        notes: data.notes,
+        meal_type: data.meal_type,
+      },
+    });
   }
 
   async deleteEntry(userId: string, entryId: string) {

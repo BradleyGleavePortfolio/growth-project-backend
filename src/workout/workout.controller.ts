@@ -2,6 +2,7 @@ import { Controller, Post, Get, Put, Delete, Body, Param, Query, UseGuards, Requ
 import type { AuthedRequest } from '../auth/auth-request';
 import { WorkoutService } from './workout.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { CreateWorkoutDto, CreateRoutineDto, UpdateRoutineDto } from './workout.dto';
 
 @Controller()
 @UseGuards(JwtAuthGuard)
@@ -9,7 +10,7 @@ export class WorkoutController {
   constructor(private workoutService: WorkoutService) {}
 
   @Post('workouts')
-  async createWorkout(@Request() req: AuthedRequest, @Body() body: any) {
+  async createWorkout(@Request() req: AuthedRequest, @Body() body: CreateWorkoutDto) {
     return this.workoutService.createWorkout(req.user.id, body);
   }
 
@@ -29,12 +30,12 @@ export class WorkoutController {
   }
 
   @Post('routines')
-  async createRoutine(@Request() req: AuthedRequest, @Body() body: any) {
+  async createRoutine(@Request() req: AuthedRequest, @Body() body: CreateRoutineDto) {
     return this.workoutService.createRoutine(req.user.id, body);
   }
 
   @Put('routines/:id')
-  async updateRoutine(@Request() req: AuthedRequest, @Param('id') id: string, @Body() body: any) {
+  async updateRoutine(@Request() req: AuthedRequest, @Param('id') id: string, @Body() body: UpdateRoutineDto) {
     return this.workoutService.updateRoutine(req.user.id, id, body);
   }
 

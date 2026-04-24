@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Query, UseGuards, Request } from '@nestjs/
 import type { AuthedRequest } from '../auth/auth-request';
 import { CommunityService } from './community.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { PostWinDto } from './community.dto';
 
 @Controller('community')
 @UseGuards(JwtAuthGuard)
@@ -19,7 +20,7 @@ export class CommunityController {
   }
 
   @Post('wins')
-  async postWin(@Request() req: AuthedRequest, @Body() body: any) {
+  async postWin(@Request() req: AuthedRequest, @Body() body: PostWinDto) {
     return this.communityService.postWin(req.user.id, body);
   }
 }

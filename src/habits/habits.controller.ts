@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Param, Query, UseGuards, Request } from '@
 import type { AuthedRequest } from '../auth/auth-request';
 import { HabitsService } from './habits.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { CreateHabitDto, LogHabitDto } from './habits.dto';
 
 @Controller('habits')
 @UseGuards(JwtAuthGuard)
@@ -14,12 +15,12 @@ export class HabitsController {
   }
 
   @Post()
-  async createHabit(@Request() req: AuthedRequest, @Body() body: any) {
+  async createHabit(@Request() req: AuthedRequest, @Body() body: CreateHabitDto) {
     return this.habitsService.createHabit(req.user.id, body);
   }
 
   @Post(':id/log')
-  async logHabit(@Request() req: AuthedRequest, @Param('id') id: string, @Body() body: any) {
+  async logHabit(@Request() req: AuthedRequest, @Param('id') id: string, @Body() body: LogHabitDto) {
     return this.habitsService.logHabit(req.user.id, id, body);
   }
 
