@@ -6,6 +6,7 @@ import { CreateRoutineDto } from '../src/workout/workout.dto';
 import { UpdateNotificationPreferencesDto } from '../src/notifications/notifications.dto';
 import { CreateLessonDto } from '../src/lessons/lessons.dto';
 import { CreateFoodDto } from '../src/food/food.dto';
+import { CreateInviteCodeDto } from '../src/invite-codes/invite-codes.dto';
 
 // Regression tests for the round-5 mass-assignment sweep. Each case proves that
 // the ValidationPipe (whitelist + forbidNonWhitelisted + transform) strips or
@@ -75,6 +76,23 @@ describe('DTO mass-assignment lockdown', () => {
     await expect(
       run(CreateLessonDto, { title: 'L', coach_id: 'victim-coach' }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('CreateInviteCodeDto rejects coach_id / used_count / revoked', async () => {
+    // coach_id is set server-side from req.user — a client-supplied value would
+    // let one coach mint codes that redeem into another coach's roster.
+    await expect(
+      run(CreateInviteCodeDto, { coach_id: 'victim-coach' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      run(CreateInviteCodeDto, { used_count: -1000 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      run(CreateInviteCodeDto, { revoked: false }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    // Empty body is valid — both fields are optional.
+    const ok = await run(CreateInviteCodeDto, {});
+    expect(ok).toEqual({});
   });
 
   it('CreateFoodDto strips id / created_at attempts', async () => {

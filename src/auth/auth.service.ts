@@ -1,6 +1,7 @@
 import { Injectable, Logger, UnauthorizedException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma.service';
+import { InviteCodesService } from '../invite-codes/invite-codes.service';
 
 @Injectable()
 export class AuthService {
@@ -9,6 +10,7 @@ export class AuthService {
 
   constructor(
     private prisma: PrismaService,
+    private inviteCodes: InviteCodesService,
   ) {
     // Supabase Admin SDK for user management (service role key)
     this.supabaseAdmin = createClient(
@@ -193,26 +195,85 @@ export class AuthService {
     };
   }
 
-  async selectRole(userId: string, role: 'coach' | 'student', _coachCode?: string) {
+  async selectRole(userId: string, role: 'coach' | 'student', inviteCode?: string) {
     // SECURITY: coach elevation via client-supplied code is disabled (audit C3).
     // The previous `CaboRules` backdoor allowed any authenticated user to escalate
     // to the `coach` role and read/write other users' data via other IDOR bugs.
     // Self-service role selection is restricted to `student`. Elevating a user to
     // `coach` must now happen out-of-band (direct SQL by an operator) until we
     // build a proper invite/admin flow. Contract is preserved (body still accepts
-    // role + coach_code); we just reject coach requests.
+    // role + coach_code/invite_code); we just reject coach requests.
     if (role === 'coach') {
       throw new ForbiddenException(
         'Coach accounts are provisioned manually. Contact support.',
       );
     }
 
-    const user = await this.prisma.user.update({
-      where: { id: userId },
-      data: { role },
-    });
+    // No invite code — preserve the pre-invite-code behavior exactly: student
+    // role, no coach linkage. Existing clients that never sent a code keep
+    // working unchanged.
+    if (!inviteCode) {
+      const user = await this.prisma.user.update({
+        where: { id: userId },
+        data: { role },
+      });
+      return { role: user.role };
+    }
 
-    return { role: user.role };
+    // Invite-code path: validate, then atomically link the student to the
+    // coach and bump used_count. Run both writes in an interactive transaction
+    // and re-check the guard (revoked, expires_at, max_uses) inside so two
+    // concurrent redemptions can't slip through on the last seat.
+    const validation = await this.inviteCodes.validate(inviteCode);
+    if (!validation.valid) {
+      throw new BadRequestException('Invalid or expired invite code');
+    }
+
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        // updateMany is the guarded increment. `max_uses: null` means unlimited;
+        // otherwise we bump only if the row's used_count is still below its
+        // own max_uses. Prisma doesn't support column-to-column comparison in
+        // updateMany, so we fetch the current row first and include its
+        // used_count as a lower bound — effectively optimistic concurrency.
+        const current = await tx.inviteCode.findUnique({
+          where: { id: validation.invite_code_id },
+        });
+        if (!current || current.revoked) {
+          throw new BadRequestException('Invalid or expired invite code');
+        }
+        if (current.expires_at && current.expires_at.getTime() <= Date.now()) {
+          throw new BadRequestException('Invalid or expired invite code');
+        }
+        if (current.max_uses !== null && current.used_count >= current.max_uses) {
+          throw new BadRequestException('Invalid or expired invite code');
+        }
+
+        const updated = await tx.inviteCode.updateMany({
+          where: {
+            id: validation.invite_code_id,
+            revoked: false,
+            used_count: current.used_count,
+          },
+          data: { used_count: { increment: 1 } },
+        });
+        if (updated.count !== 1) {
+          // Lost the race to another concurrent redemption — fail closed.
+          throw new BadRequestException('Invalid or expired invite code');
+        }
+
+        const user = await tx.user.update({
+          where: { id: userId },
+          data: { role, coach_id: validation.coach_id },
+        });
+        return user;
+      });
+      return { role: result.role, coach_id: result.coach_id };
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      this.logger.warn(`invite code redemption failed for ${inviteCode}: ${(err as Error).message}`);
+      throw new BadRequestException('Invalid or expired invite code');
+    }
   }
 
   async getMe(userId: string) {
