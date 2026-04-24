@@ -44,7 +44,20 @@ export class CoachService {
       }),
     ]);
 
-    return { client, meals, workouts, weights, checkIns };
+    // Tier-2: merged `events` stream so the mobile coach UI can render a
+    // single chronological feed. Existing consumers that read
+    // `meals`/`workouts`/`weights`/`checkIns` directly are untouched — we
+    // only ADD the new `events` field so the shape stays backwards-compatible.
+    // Event shape is `{ type, date, ref }` where `ref` points back at the
+    // original row so callers can pull details without re-fetching.
+    const events: Array<{ type: string; date: Date; ref: unknown }> = [
+      ...meals.map((m) => ({ type: 'meal', date: m.logged_at, ref: m })),
+      ...workouts.map((w) => ({ type: 'workout', date: w.created_at, ref: w })),
+      ...weights.map((w) => ({ type: 'weight', date: w.date, ref: w })),
+      ...checkIns.map((c) => ({ type: 'check_in', date: c.date, ref: c })),
+    ].sort((a, b) => b.date.getTime() - a.date.getTime());
+
+    return { client, meals, workouts, weights, checkIns, events };
   }
 
   async postGuidelines(coachId: string, clientId: string, guidelines: string) {

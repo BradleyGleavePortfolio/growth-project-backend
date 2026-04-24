@@ -22,6 +22,8 @@ import { HealthModule } from './health/health.module';
 import { InviteCodesModule } from './invite-codes/invite-codes.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { NudgesModule } from './nudges/nudges.module';
+import { MealPlansModule } from './meal-plans/meal-plans.module';
+import { CheckInsModule } from './check-ins/check-ins.module';
 
 @Module({
   imports: [
@@ -55,6 +57,8 @@ import { NudgesModule } from './nudges/nudges.module';
     InviteCodesModule,
     MessagingModule,
     NudgesModule,
+    MealPlansModule,
+    CheckInsModule,
   ],
   providers: [
     // SECURITY: register ThrottlerGuard as a global APP_GUARD so that @Throttle(...)
