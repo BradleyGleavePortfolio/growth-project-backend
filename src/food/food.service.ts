@@ -342,8 +342,34 @@ export class FoodService {
     return item ? this.toResult(item) : null;
   }
 
-  async create(data: any) {
-    return this.prisma.foodItem.create({ data });
+  async create(data: import('./food.dto').CreateFoodDto) {
+    // Explicit field mapping — previously spread the whole body into
+    // prisma.foodItem.create, which would let a client set `id`, `created_at`,
+    // or arbitrary extra columns. See audit C4. Only DTO-whitelisted fields
+    // reach the database.
+    return this.prisma.foodItem.create({
+      data: {
+        name: data.name,
+        brand_or_restaurant: data.brand_or_restaurant,
+        category: data.category ?? 'generic',
+        serving_description: data.serving_description,
+        serving_size_grams: data.serving_size_grams,
+        calories: data.calories,
+        protein_g: data.protein_g,
+        carbs_g: data.carbs_g,
+        fat_g: data.fat_g,
+        saturated_fat_g: data.saturated_fat_g,
+        mono_fat_g: data.mono_fat_g,
+        poly_fat_g: data.poly_fat_g,
+        fiber_g: data.fiber_g,
+        sugar_g: data.sugar_g,
+        sodium_mg: data.sodium_mg,
+        tags: data.tags ?? [],
+        search_aliases: data.search_aliases ?? [],
+        image_url: data.image_url,
+        barcode: data.barcode,
+      },
+    });
   }
 
   /**

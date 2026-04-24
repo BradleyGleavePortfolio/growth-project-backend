@@ -2,6 +2,7 @@ import { Controller, Post, Get, Body, Query, UseGuards, Request } from '@nestjs/
 import type { AuthedRequest } from '../auth/auth-request';
 import { WeightService } from './weight.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { LogWeightDto } from './weight.dto';
 
 @Controller('weight')
 @UseGuards(JwtAuthGuard)
@@ -9,7 +10,7 @@ export class WeightController {
   constructor(private weightService: WeightService) {}
 
   @Post()
-  async logWeight(@Request() req: AuthedRequest, @Body() body: any) {
+  async logWeight(@Request() req: AuthedRequest, @Body() body: LogWeightDto) {
     return this.weightService.logWeight(req.user.id, body);
   }
 

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { UpdateNotificationPreferencesDto } from './notifications.dto';
 
 @Injectable()
 export class NotificationsService {
@@ -24,11 +25,31 @@ export class NotificationsService {
     return prefs;
   }
 
-  async updatePreferences(userId: string, data: any) {
+  async updatePreferences(userId: string, data: UpdateNotificationPreferencesDto) {
+    // Explicit field mapping — no spread. Previously both paths did
+    // `data: { user_id, ...data }`, which would silently let a client provide
+    // `user_id` (reassigning prefs). DTO + whitelisted ValidationPipe already
+    // strips unknown fields; this is defense-in-depth.
+    const fields = {
+      water_enabled: data.water_enabled,
+      workout_enabled: data.workout_enabled,
+      eat_enabled: data.eat_enabled,
+      mindset_enabled: data.mindset_enabled,
+      fasting_enabled: data.fasting_enabled,
+      quiet_hours_start: data.quiet_hours_start,
+      quiet_hours_end: data.quiet_hours_end,
+      timezone: data.timezone,
+    };
+
     const existing = await this.prisma.notificationPreferences.findUnique({ where: { user_id: userId } });
     if (existing) {
-      return this.prisma.notificationPreferences.update({ where: { user_id: userId }, data });
+      return this.prisma.notificationPreferences.update({ where: { user_id: userId }, data: fields });
     }
-    return this.prisma.notificationPreferences.create({ data: { user_id: userId, ...data } });
+    return this.prisma.notificationPreferences.create({
+      data: {
+        user_id: userId,
+        ...fields,
+      },
+    });
   }
 }

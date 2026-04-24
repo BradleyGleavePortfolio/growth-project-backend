@@ -2,6 +2,7 @@ import { Controller, Post, Get, Body, Query, UseGuards, Request } from '@nestjs/
 import type { AuthedRequest } from '../auth/auth-request';
 import { WaterService } from './water.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { LogWaterDto } from './water.dto';
 
 @Controller('nutrition/water')
 @UseGuards(JwtAuthGuard)
@@ -9,7 +10,7 @@ export class WaterController {
   constructor(private waterService: WaterService) {}
 
   @Post()
-  async logWater(@Request() req: AuthedRequest, @Body() body: any) {
+  async logWater(@Request() req: AuthedRequest, @Body() body: LogWaterDto) {
     return this.waterService.logWater(req.user.id, body);
   }
 

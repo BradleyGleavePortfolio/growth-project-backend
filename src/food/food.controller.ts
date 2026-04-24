@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { FoodService } from './food.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { CreateFoodDto } from './food.dto';
 
 @Controller('foods')
 @UseGuards(JwtAuthGuard)
@@ -18,7 +19,7 @@ export class FoodController {
   }
 
   @Post()
-  async create(@Body() body: any) {
+  async create(@Body() body: CreateFoodDto) {
     return this.foodService.create(body);
   }
 }
