@@ -114,8 +114,24 @@ model User {
   water_logs         WaterLog[]
   created_routines   WorkoutRoutine[] @relation("RoutineCreator")
   coached_lessons    Lesson[]         @relation("LessonCoach")
+  invite_codes       InviteCode[]     @relation("CoachInviteCodes")
 
   @@index([coach_id])
+}
+
+model InviteCode {
+  id         String    @id @default(uuid())
+  code       String    @unique
+  coach_id   String
+  coach      User      @relation("CoachInviteCodes", fields: [coach_id], references: [id])
+  created_at DateTime  @default(now())
+  expires_at DateTime?
+  max_uses   Int?
+  used_count Int       @default(0)
+  revoked    Boolean   @default(false)
+
+  @@index([coach_id])
+  @@index([code])
 }
 
 model UserProfile {
