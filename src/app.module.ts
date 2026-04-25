@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
+import { JwtAuthGuard } from './auth/auth.guard';
 import { ProfileModule } from './profile/profile.module';
 import { FoodModule } from './food/food.module';
 import { LogModule } from './log/log.module';
@@ -66,6 +67,14 @@ import { CheckInsModule } from './check-ins/check-ins.module';
     // Without this, ThrottlerModule is imported but never wired in and every @Throttle
     // decorator is silently inert — see audit C2.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+
+    // SECURITY: global JWT auth guard — every route is private by default.
+    // Routes opt out via the @Public() decorator (see common/decorators/public.decorator.ts).
+    // Previously each controller had to remember @UseGuards(JwtAuthGuard); one
+    // missed decorator = public endpoint with no warning. Now the failure mode
+    // is reversed: forgetting @Public() on an intentionally-public route
+    // surfaces as a loud 401 in tests, not a silent data leak.
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })
 export class AppModule {}
