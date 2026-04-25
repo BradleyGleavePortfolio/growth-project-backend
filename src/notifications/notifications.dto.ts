@@ -44,6 +44,14 @@ export class UpdateNotificationPreferencesDto {
   quiet_hours_end?: string;
 
   @IsOptional()
+  @IsBoolean()
+  daily_checkin_enabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  weekly_summary_enabled?: boolean;
+
+  @IsOptional()
   @IsString()
   @MaxLength(64)
   timezone?: string;

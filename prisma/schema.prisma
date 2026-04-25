@@ -290,17 +290,19 @@ model WeightLog {
 }
 
 model NotificationPreferences {
-  id                  String  @id @default(uuid())
-  user_id             String  @unique
-  user                User    @relation(fields: [user_id], references: [id])
-  water_enabled       Boolean @default(true)
-  workout_enabled     Boolean @default(true)
-  eat_enabled         Boolean @default(true)
-  mindset_enabled     Boolean @default(true)
-  fasting_enabled     Boolean @default(true)
-  quiet_hours_start   String  @default("22:00")
-  quiet_hours_end     String  @default("06:00")
-  timezone            String  @default("America/Los_Angeles")
+  id                      String  @id @default(uuid())
+  user_id                 String  @unique
+  user                    User    @relation(fields: [user_id], references: [id])
+  water_enabled           Boolean @default(true)
+  workout_enabled         Boolean @default(true)
+  eat_enabled             Boolean @default(true)
+  mindset_enabled         Boolean @default(true)
+  fasting_enabled         Boolean @default(true)
+  daily_checkin_enabled   Boolean @default(true)
+  weekly_summary_enabled  Boolean @default(true)
+  quiet_hours_start       String  @default("22:00")
+  quiet_hours_end         String  @default("06:00")
+  timezone                String  @default("America/Los_Angeles")
 }
 
 model Habit {
