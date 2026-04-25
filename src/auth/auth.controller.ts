@@ -13,6 +13,7 @@ import {
   SelectRoleDto,
   ForgotPasswordDto,
   ValidateInviteCodePublicDto,
+  BecomeCoachDto,
 } from './auth.dto';
 import { InviteCodesService } from '../invite-codes/invite-codes.service';
 
@@ -88,5 +89,12 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async getMe(@Request() req: AuthedRequest) {
     return this.authService.getMe(req.user.id);
+  }
+
+  @Post('become-coach')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async becomeCoach(@Request() req: AuthedRequest, @Body() body: BecomeCoachDto) {
+    return this.authService.becomeCoach(req.user.id, body.password);
   }
 }

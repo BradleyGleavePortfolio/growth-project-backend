@@ -316,4 +316,35 @@ export class AuthService {
   async validateSupabaseToken(supabaseId: string) {
     return this.prisma.user.findUnique({ where: { supabase_id: supabaseId } });
   }
+
+  async becomeCoach(userId: string, password: string) {
+    // Look up user so we have their email for Supabase re-auth
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    if (user.role === 'coach') {
+      // Idempotent — already a coach; return current role
+      return { role: user.role };
+    }
+
+    // Verify password against Supabase before elevating
+    const supaClient = createClient(
+      process.env.SUPABASE_URL || '',
+      process.env.SUPABASE_ANON_KEY || '',
+    );
+    const { error } = await supaClient.auth.signInWithPassword({
+      email: user.email,
+      password,
+    });
+    if (error) {
+      throw new UnauthorizedException('Password is incorrect. Provide your current password to become a coach.');
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { role: 'coach' },
+    });
+
+    return { role: updated.role };
+  }
 }
