@@ -5,11 +5,40 @@ import { PrismaService } from '../prisma.service';
 export class CoachService {
   constructor(private prisma: PrismaService) {}
 
-  async getClients(coachId: string) {
+  async getClients(coachId: string, status: 'active' | 'archived' | 'all' = 'active') {
+    let archiveFilter: object = {};
+    if (status === 'active') {
+      archiveFilter = { archived_at: null };
+    } else if (status === 'archived') {
+      archiveFilter = { archived_at: { not: null } };
+    }
+    // 'all' — no filter
     return this.prisma.user.findMany({
-      where: { coach_id: coachId, role: 'student' },
+      where: { coach_id: coachId, role: 'student', ...archiveFilter },
       include: { profile: true },
       orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async archiveClient(coachId: string, clientId: string) {
+    const client = await this.prisma.user.findFirst({
+      where: { id: clientId, coach_id: coachId },
+    });
+    if (!client) throw new Error('Client not found');
+    return this.prisma.user.update({
+      where: { id: clientId },
+      data: { archived_at: new Date() },
+    });
+  }
+
+  async unarchiveClient(coachId: string, clientId: string) {
+    const client = await this.prisma.user.findFirst({
+      where: { id: clientId, coach_id: coachId },
+    });
+    if (!client) throw new Error('Client not found');
+    return this.prisma.user.update({
+      where: { id: clientId },
+      data: { archived_at: null },
     });
   }
 
