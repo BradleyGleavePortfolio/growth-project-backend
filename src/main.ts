@@ -14,18 +14,29 @@ import { HttpExceptionFilter } from './filters/http-exception.filter';
 // app start and throw on the first request that needed it — making deploy regressions
 // silent until a user hit them. Listed in .env.example.
 function assertRequiredEnv() {
-  const required = [
+  // Hard-required: app cannot function without these — crash fast on boot.
+  const hardRequired = [
     'DATABASE_URL',
     'SUPABASE_URL',
     'SUPABASE_SERVICE_ROLE_KEY',
-    'USDA_API_KEY',
   ];
-  const missing = required.filter((k) => !process.env[k]);
-  if (missing.length) {
-    const msg = `Missing required env vars: ${missing.join(', ')}`;
-    // Use Logger so the failure shows up consistently in Fly logs.
-    new Logger('Bootstrap').error(msg);
+  // Soft-required: feature-specific keys. Missing them only breaks that
+  // feature (food.service guards them at call-time), so warn instead of
+  // crashing the whole backend.
+  const softRequired = ['USDA_API_KEY'];
+
+  const logger = new Logger('Bootstrap');
+  const missingHard = hardRequired.filter((k) => !process.env[k]);
+  if (missingHard.length) {
+    const msg = `Missing required env vars: ${missingHard.join(', ')}`;
+    logger.error(msg);
     throw new Error(msg);
+  }
+  const missingSoft = softRequired.filter((k) => !process.env[k]);
+  if (missingSoft.length) {
+    logger.warn(
+      `Optional env vars missing (related features will return errors at call time): ${missingSoft.join(', ')}`,
+    );
   }
 }
 
