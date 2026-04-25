@@ -1,6 +1,6 @@
 import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
 import type { AuthedRequest } from '../auth/auth-request';
-import { PrepGuideService } from './prep-guide.service';
+import { PrepGuideService, PrepGuideResult } from './prep-guide.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 
 @Controller('prep-guide')
@@ -20,7 +20,7 @@ export class PrepGuideController {
   async getWeeklyGuide(
     @Request() req: AuthedRequest,
     @Query('week') week?: string,
-  ) {
+  ): Promise<PrepGuideResult> {
     const weekStart = week || getMondayOfCurrentWeek();
     return this.prepGuideService.getWeeklyPrepGuide(req.user.id, weekStart);
   }
