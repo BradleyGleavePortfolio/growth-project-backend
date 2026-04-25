@@ -38,6 +38,12 @@ export class ProfileService {
       has_gym_membership: data.has_gym_membership,
       preferred_snacks: data.preferred_snacks,
       avatar_url: data.avatar_url,
+      bio: data.bio,
+      weight_unit: data.weight_unit,
+      meals_per_day: data.meals_per_day,
+      water_goal_oz: data.water_goal_oz,
+      calorie_display: data.calorie_display,
+      onboardingCompleted: data.onboardingCompleted,
     };
     // Drop undefineds so we don't overwrite existing values with NULL.
     const payload: Record<string, any> = {};
