@@ -69,4 +69,32 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   avatar_url?: string;
+
+  @IsOptional()
+  @IsString()
+  bio?: string;
+
+  @IsOptional()
+  @IsIn(['lbs', 'kg'])
+  weight_unit?: 'lbs' | 'kg';
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(10)
+  meals_per_day?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(500)
+  water_goal_oz?: number;
+
+  @IsOptional()
+  @IsIn(['net', 'gross'])
+  calorie_display?: 'net' | 'gross';
+
+  @IsOptional()
+  @IsBoolean()
+  onboardingCompleted?: boolean;
 }
