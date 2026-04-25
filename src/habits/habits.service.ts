@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { CreateHabitDto, LogHabitDto } from './habits.dto';
 
@@ -79,6 +79,18 @@ export class HabitsService {
         date: targetDate,
       },
     });
+  }
+
+  async deleteHabit(userId: string, habitId: string) {
+    const habit = await this.prisma.habit.findFirst({
+      where: { id: habitId },
+      select: { id: true, user_id: true },
+    });
+    if (!habit) throw new NotFoundException('Habit not found');
+    if (habit.user_id !== userId) throw new ForbiddenException('Not your habit');
+    // Delete logs first (cascade not guaranteed in all Prisma setups)
+    await this.prisma.habitLog.deleteMany({ where: { habit_id: habitId } });
+    await this.prisma.habit.delete({ where: { id: habitId } });
   }
 
   async getStreaks(userId: string) {
