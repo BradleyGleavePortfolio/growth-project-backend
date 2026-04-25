@@ -144,7 +144,10 @@ describe('MessagingService', () => {
       { id: 'client-other', role: 'student', coach_id: 'coach-B' },
       { id: 'client-orphan', role: 'student', coach_id: null },
     );
-    svc = new MessagingService(prisma as any);
+    // Stub the SupabaseService — Realtime broadcasts are best-effort and
+    // unrelated to the messaging-service unit under test.
+    const supabaseStub = { broadcastNewMessage: jest.fn().mockResolvedValue(undefined) } as any;
+    svc = new MessagingService(prisma as any, supabaseStub);
   });
 
   describe('send flows', () => {

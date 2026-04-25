@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { SupabaseService } from '../supabase/supabase.service';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -13,7 +14,10 @@ type ListOpts = { before?: string; limit?: number };
 
 @Injectable()
 export class MessagingService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private supabase: SupabaseService,
+  ) {}
 
   // ---- helpers ----
 
@@ -86,16 +90,25 @@ export class MessagingService {
 
   async sendAsCoach(coachId: string, clientId: string, body: string) {
     await this.assertClientOfCoach(coachId, clientId);
-    return this.prisma.coachMessage.create({
+    const created = await this.prisma.coachMessage.create({
       data: { coach_id: coachId, client_id: clientId, sender_id: coachId, body },
     });
+    // Realtime ping to the recipient (the client). No body is sent over the
+    // wire — just a refresh signal. The mobile client refetches via the
+    // authenticated REST endpoint when it receives the ping. Fire-and-
+    // forget so a Realtime hiccup never delays the API response.
+    void this.supabase.broadcastNewMessage(clientId);
+    return created;
   }
 
   async sendAsClient(clientId: string, body: string) {
     const coachId = await this.requireClientCoachId(clientId);
-    return this.prisma.coachMessage.create({
+    const created = await this.prisma.coachMessage.create({
       data: { coach_id: coachId, client_id: clientId, sender_id: clientId, body },
     });
+    // Ping the coach.
+    void this.supabase.broadcastNewMessage(coachId);
+    return created;
   }
 
   // ---- read markers ----
