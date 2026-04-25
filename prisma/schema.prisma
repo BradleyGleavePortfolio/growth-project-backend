@@ -127,6 +127,9 @@ model User {
   community_wins_as_coach  CommunityWin[] @relation("CommunityWinCoach")
   guidelines_as_coach      CoachGuideline[] @relation("CoachGuidelineCoach")
   guidelines_as_client     CoachGuideline[] @relation("CoachGuidelineClient")
+  created_recipes          Recipe[]         @relation("RecipeCreator")
+  saved_recipes            SavedRecipe[]
+  list_items               ListItem[]
 
   @@index([coach_id])
 }
@@ -526,4 +529,74 @@ model CoachGuideline {
 
   @@unique([coach_id, client_id], name: "CoachGuideline_coach_client_key")
   @@index([client_id])
+}
+
+// ============================================================
+// WAVE 3 MODELS
+// ============================================================
+
+// F12 — Recipes: coach-created recipe library with save/bookmark support.
+// ingredients and instructions stored as String[] (mapped to jsonb in Postgres).
+// tags drive filter chips in the mobile UI.
+model Recipe {
+  id             String        @id @default(uuid())
+  title          String
+  description    String?
+  image_url      String?
+  prep_time_min  Int
+  cook_time_min  Int
+  servings       Int
+  calories       Float
+  protein        Float
+  carbs          Float
+  fat            Float
+  ingredients    String[]
+  instructions   String[]
+  tags           String[]
+  is_public      Boolean       @default(true)
+  created_by_id  String
+  created_by     User          @relation("RecipeCreator", fields: [created_by_id], references: [id])
+  saved_by       SavedRecipe[]
+  created_at     DateTime      @default(now())
+  updated_at     DateTime      @updatedAt
+
+  @@index([created_by_id])
+  @@index([is_public])
+}
+
+// Join table: user bookmarks/saves a recipe.
+model SavedRecipe {
+  id         String   @id @default(uuid())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id])
+  recipe_id  String
+  recipe     Recipe   @relation(fields: [recipe_id], references: [id])
+  saved_at   DateTime @default(now())
+
+  @@unique([user_id, recipe_id])
+  @@index([user_id])
+}
+
+// F13 — Grocery & Shopping lists: per-user, per-type list items.
+// listType enum: 'grocery' | 'shopping'.
+// sourceRecipeId links items that were generated from a recipe (PrepGuide → grocery).
+
+enum ListType {
+  grocery
+  shopping
+}
+
+model ListItem {
+  id               String   @id @default(uuid())
+  user_id          String
+  user             User     @relation(fields: [user_id], references: [id])
+  list_type        ListType
+  name             String
+  quantity         Float    @default(1)
+  unit             String?
+  is_checked       Boolean  @default(false)
+  source_recipe_id String?
+  added_at         DateTime @default(now())
+
+  @@index([user_id, list_type])
 }
