@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Request, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
 import type { AuthedRequest } from '../auth/auth-request';
 import { CoachService } from './coach.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -17,6 +17,26 @@ export class CoachController {
   @Get('clients')
   async getClients(@Request() req: AuthedRequest, @Query('status') status?: string) {
     return this.coachService.getClients(req.user.id, status as any);
+  }
+
+  @Post('clients/:id/archive')
+  @HttpCode(HttpStatus.OK)
+  async archiveClient(@Request() req: AuthedRequest, @Param('id') id: string) {
+    try {
+      return await this.coachService.archiveClient(req.user.id, id);
+    } catch {
+      throw new NotFoundException('Client not found');
+    }
+  }
+
+  @Post('clients/:id/unarchive')
+  @HttpCode(HttpStatus.OK)
+  async unarchiveClient(@Request() req: AuthedRequest, @Param('id') id: string) {
+    try {
+      return await this.coachService.unarchiveClient(req.user.id, id);
+    } catch {
+      throw new NotFoundException('Client not found');
+    }
   }
 
   @Get('clients/:id/timeline')

@@ -101,6 +101,7 @@ model User {
   coach              User?    @relation("CoachToStudents", fields: [coach_id], references: [id])
   students           User[]   @relation("CoachToStudents")
   created_at         DateTime @default(now())
+  archived_at        DateTime?
 
   profile            UserProfile?
   logged_entries     LoggedFoodEntry[]
