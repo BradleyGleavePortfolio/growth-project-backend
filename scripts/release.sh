@@ -2,29 +2,32 @@
 # Fly release_command — runs once per deploy in a one-off VM with full env.
 #
 # Behavior:
-#  1. If the `_prisma_migrations` table doesn't exist (fresh DB or pre-Prisma DB),
-#     run `prisma db push --accept-data-loss` to forward-sync the schema. The
-#     `--accept-data-loss` flag is safe today because the production DB has
-#     fewer than 5 rows of test data (verified 2026-04-25). Once the DB has
-#     real users, switch back to migrate deploy + a real baseline.
-#  2. If `_prisma_migrations` exists, run `prisma migrate deploy` as normal.
-#  3. If anything fails, exit non-zero so Fly aborts the deploy and existing
-#     machines keep running on the previous release.
+#  1. Try `prisma migrate deploy` (the proper, safe path once the DB is
+#     migration-managed).
+#  2. If that fails specifically because the DB isn't migration-managed yet
+#     (P3005 / "database schema is not empty" / "is not managed by Prisma
+#     Migrate" / "No migration found"), fall back to `prisma db push
+#     --accept-data-loss` to forward-sync today's schema. `--accept-data-loss`
+#     is safe right now because the production DB has fewer than 5 rows of
+#     test data (verified 2026-04-25).
+#  3. If migrate deploy fails for any other reason, exit non-zero so Fly
+#     aborts the deploy and existing machines keep running.
 set -e
 
-echo "[release] checking migration state..."
+echo "[release] attempting prisma migrate deploy..."
 
-# Use a single Postgres query via Prisma's migrate-status output.
-# When _prisma_migrations doesn't exist, status fails with a specific message.
-STATUS_OUTPUT="$(npx prisma migrate status 2>&1 || true)"
-
-if echo "$STATUS_OUTPUT" | grep -q "is not managed by Prisma Migrate\|No migration found in prisma/migrations"; then
-  echo "[release] DB is not managed by Prisma migrations yet — doing forward db push"
-  npx prisma db push --accept-data-loss --skip-generate
-  echo "[release] schema pushed; future deploys will use migrate deploy"
-else
-  echo "[release] DB is migration-managed — running migrate deploy"
-  npx prisma migrate deploy
+LOG=/tmp/prisma_migrate.log
+if npx prisma migrate deploy 2>&1 | tee "$LOG"; then
+  echo "[release] migrate deploy succeeded"
+  exit 0
 fi
 
-echo "[release] done"
+if grep -qE "P3005|database schema is not empty|is not managed by Prisma Migrate|No migration found in prisma/migrations" "$LOG"; then
+  echo "[release] DB is not migration-managed yet — forward-syncing schema with db push"
+  npx prisma db push --accept-data-loss --skip-generate
+  echo "[release] schema pushed; future deploys will use migrate deploy once a baseline migration is added"
+  exit 0
+fi
+
+echo "[release] migrate deploy failed for a non-baseline reason — aborting"
+exit 1
