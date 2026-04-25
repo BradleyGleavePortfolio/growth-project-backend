@@ -72,3 +72,10 @@ export class ForgotPasswordDto {
   @IsEmail()
   email!: string;
 }
+
+export class BecomeCoachDto {
+  // The user must confirm their password to prevent accidental/CSRF escalation.
+  @IsString()
+  @MinLength(8)
+  password!: string;
+}
