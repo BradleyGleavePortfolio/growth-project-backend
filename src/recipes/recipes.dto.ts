@@ -13,7 +13,7 @@ import {
 export class CreateRecipeDto {
   @IsString()
   @MaxLength(200)
-  title: string;
+  title!: string;
 
   @IsOptional()
   @IsString()
@@ -28,45 +28,45 @@ export class CreateRecipeDto {
   @IsInt()
   @Min(0)
   @Max(600)
-  prepTimeMin: number;
+  prepTimeMin!: number;
 
   @IsInt()
   @Min(0)
   @Max(600)
-  cookTimeMin: number;
+  cookTimeMin!: number;
 
   @IsInt()
   @Min(1)
   @Max(100)
-  servings: number;
+  servings!: number;
 
   @IsNumber()
   @Min(0)
-  calories: number;
+  calories!: number;
 
   @IsNumber()
   @Min(0)
-  protein: number;
+  protein!: number;
 
   @IsNumber()
   @Min(0)
-  carbs: number;
+  carbs!: number;
 
   @IsNumber()
   @Min(0)
-  fat: number;
+  fat!: number;
 
   @IsArray()
   @IsString({ each: true })
-  ingredients: string[];
+  ingredients!: string[];
 
   @IsArray()
   @IsString({ each: true })
-  instructions: string[];
+  instructions!: string[];
 
   @IsArray()
   @IsString({ each: true })
-  tags: string[];
+  tags!: string[];
 
   @IsOptional()
   @IsBoolean()
