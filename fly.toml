@@ -9,10 +9,10 @@ primary_region = 'sjc'
 [build]
 
 [deploy]
-  # Run pending Prisma migrations before booting a new release.
-  # Runs in a one-off machine; deploy aborts if this fails, so bad
-  # migrations can't take down the running machines.
-  release_command = "npx prisma migrate deploy"
+  # Smart release: detects whether the DB is migration-managed yet.
+  # See scripts/release.sh for full logic. Deploy aborts on failure,
+  # so bad migrations can't take down running machines.
+  release_command = "sh ./scripts/release.sh"
 
 
 [http_service]
