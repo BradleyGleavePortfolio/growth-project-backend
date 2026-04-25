@@ -52,6 +52,10 @@ export class UpdateNotificationPreferencesDto {
   weekly_summary_enabled?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  new_client_alerts?: boolean;
+
+  @IsOptional()
   @IsString()
   @MaxLength(64)
   timezone?: string;
