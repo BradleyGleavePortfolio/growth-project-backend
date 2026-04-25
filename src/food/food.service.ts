@@ -342,6 +342,15 @@ export class FoodService {
     return item ? this.toResult(item) : null;
   }
 
+  /**
+   * Look up a food by UPC barcode via OpenFoodFacts.
+   * Caches the result in FoodItem so subsequent lookups are instant.
+   * Returns the resolved FoodItem.id.
+   */
+  async lookupByBarcode(upc: string): Promise<string> {
+    return this.upsertFromOpenFoodFacts(upc);
+  }
+
   async create(data: import('./food.dto').CreateFoodDto) {
     // Explicit field mapping — previously spread the whole body into
     // prisma.foodItem.create, which would let a client set `id`, `created_at`,
