@@ -164,6 +164,12 @@ model UserProfile {
   macro_target_carbs_g   Float?
   macro_target_fat_g     Float?
   avatar_url             String?
+  bio                    String?
+  weight_unit            String?           @default("lbs")
+  meals_per_day          Int?
+  water_goal_oz          Float?
+  calorie_display        String?           @default("net")
+  onboardingCompleted    Boolean?          @default(false)
   updated_at             DateTime          @updatedAt
 }
 
