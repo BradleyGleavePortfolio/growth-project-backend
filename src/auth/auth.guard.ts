@@ -4,8 +4,10 @@ import {
   ExecutionContext,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
 
 /**
  * JwtAuthGuard — Supabase ES256 Token Validation
@@ -24,9 +26,21 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     private prisma: PrismaService,
     private supabaseService: SupabaseService,
+    private reflector: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // SECURITY: when registered as a global APP_GUARD, every route is
+    // protected by default. Intentionally unauthenticated routes opt out
+    // with @Public() — the failure mode is now "forgot @Public() on a
+    // public route" (loud 401 in tests) instead of "forgot @UseGuards on a
+    // private route" (silent data leak).
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) return true;
+
     const req = context.switchToHttp().getRequest();
 
     // Extract Bearer token from Authorization header
