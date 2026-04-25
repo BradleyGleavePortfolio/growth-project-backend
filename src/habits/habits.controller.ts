@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards, Request, HttpCode } from '@nestjs/common';
 import type { AuthedRequest } from '../auth/auth-request';
 import { HabitsService } from './habits.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -33,5 +33,11 @@ export class HabitsController {
   @Get('streaks')
   async getStreaks(@Request() req: AuthedRequest) {
     return this.habitsService.getStreaks(req.user.id);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  async deleteHabit(@Request() req: AuthedRequest, @Param('id') id: string) {
+    return this.habitsService.deleteHabit(req.user.id, id);
   }
 }
