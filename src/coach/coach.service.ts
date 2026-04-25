@@ -163,6 +163,53 @@ export class CoachService {
     };
   }
 
+  async getDashboard(coachId: string) {
+    const today = new Date();
+    const startOfDay = new Date(today.toISOString().split('T')[0] + 'T00:00:00.000Z');
+    const endOfDay = new Date(today.toISOString().split('T')[0] + 'T23:59:59.999Z');
+
+    // All active clients for this coach
+    const clients = await this.prisma.user.findMany({
+      where: { coach_id: coachId, role: 'student' },
+      select: { id: true },
+    });
+
+    if (clients.length === 0) {
+      return { logs_today: 0, total_kcal: 0, logging_rate: 0 };
+    }
+
+    const clientIds = clients.map((c) => c.id);
+
+    // All food entries logged today across all clients
+    const todayEntries = await this.prisma.loggedFoodEntry.findMany({
+      where: {
+        user_id: { in: clientIds },
+        logged_at: { gte: startOfDay, lte: endOfDay },
+      },
+      include: { food_item: true },
+    });
+
+    // Distinct clients who logged at least one meal today
+    const clientsLoggedToday = new Set(todayEntries.map((e) => e.user_id));
+    const logs_today = clientsLoggedToday.size;
+
+    // Sum kcal across all entries
+    let total_kcal = 0;
+    for (const entry of todayEntries) {
+      const qty = entry.quantity_multiplier || 1;
+      const fi = entry.food_item;
+      if (fi) total_kcal += (fi.calories || 0) * qty;
+    }
+
+    const logging_rate = clientIds.length > 0 ? logs_today / clientIds.length : 0;
+
+    return {
+      logs_today,
+      total_kcal: Math.round(total_kcal),
+      logging_rate: Math.round(logging_rate * 100) / 100,
+    };
+  }
+
   async getAlerts(coachId: string) {
     // Before: 1 + 2N queries (findMany clients, then per client: weightLog.findMany +
     //   workoutSession.findFirst). With 50 clients that's 101 sequential round-trips.

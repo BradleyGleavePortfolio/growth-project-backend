@@ -9,9 +9,14 @@ import { CoachGuard } from '../auth/coach.guard';
 export class CoachController {
   constructor(private coachService: CoachService) {}
 
+  @Get('dashboard')
+  async getDashboard(@Request() req: AuthedRequest) {
+    return this.coachService.getDashboard(req.user.id);
+  }
+
   @Get('clients')
-  async getClients(@Request() req: AuthedRequest) {
-    return this.coachService.getClients(req.user.id);
+  async getClients(@Request() req: AuthedRequest, @Query('status') status?: string) {
+    return this.coachService.getClients(req.user.id, status as any);
   }
 
   @Get('clients/:id/timeline')
