@@ -60,27 +60,47 @@ export class CoachService {
     return { client, meals, workouts, weights, checkIns, events };
   }
 
+  // Tier-2 (Fix #9): real per-(coach, client) guidelines table. Replaces
+  // the prior hack of inserting a Lesson row tagged `client:<id>` and
+  // filtering Lessons by that tag. The unique (coach_id, client_id) makes
+  // the write an idempotent upsert: each coach has exactly one guidelines
+  // doc per client, and re-posting overwrites the content + bumps
+  // updated_at automatically.
   async postGuidelines(coachId: string, clientId: string, guidelines: string) {
-    // Store as a lesson with coach_id and tag for this specific client
-    return this.prisma.lesson.create({
-      data: {
-        coach_id: coachId,
-        title: `Guidelines for Client`,
-        description: guidelines,
-        tags: [`client:${clientId}`],
-        goal_tags: [],
+    return this.prisma.coachGuideline.upsert({
+      where: {
+        CoachGuideline_coach_client_key: { coach_id: coachId, client_id: clientId },
       },
+      create: { coach_id: coachId, client_id: clientId, content: guidelines },
+      update: { content: guidelines },
     });
   }
 
+  // Two call shapes are preserved for API back-compat:
+  //   getGuidelines(coachId, clientId) — coach reads guidelines they wrote for a client
+  //   getGuidelines(clientId)          — client reads guidelines their coach wrote for them
+  // The CoachController exposes both routes; the legacy one-arg call hits
+  // `/coach/my-guidelines` and (because the controller is gated by CoachGuard)
+  // is effectively only reachable by coaches today. We still implement it
+  // correctly here so the moment that endpoint is moved off CoachGuard the
+  // semantics are right.
   async getGuidelines(coachOrClientId: string, clientId?: string) {
-    const targetId = clientId || coachOrClientId;
-    const lessons = await this.prisma.lesson.findMany({
-      where: { tags: { has: `client:${targetId}` } },
-      orderBy: { created_at: 'desc' },
-      take: 1,
+    if (clientId) {
+      // Coach asking for what they wrote for a specific client.
+      return this.prisma.coachGuideline.findUnique({
+        where: {
+          CoachGuideline_coach_client_key: {
+            coach_id: coachOrClientId,
+            client_id: clientId,
+          },
+        },
+      });
+    }
+    // Client asking for the guidelines their coach wrote for them.
+    return this.prisma.coachGuideline.findFirst({
+      where: { client_id: coachOrClientId },
+      orderBy: { updated_at: 'desc' },
     });
-    return lessons[0] || null;
   }
 
   async getClientSummary(coachId: string, clientId: string, date?: string) {
