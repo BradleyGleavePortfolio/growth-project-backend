@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { JwksVerifierService } from '../auth/jwks.service';
 import { ClientNudgesController } from './client-nudges.controller';
 import { CoachNudgesController } from './coach-nudges.controller';
 import { NudgesService } from './nudges.service';
@@ -11,7 +12,7 @@ import { NudgesService } from './nudges.service';
 // AuthModule's controller/provider graph and avoids the circular-import risk.
 @Module({
   controllers: [CoachNudgesController, ClientNudgesController],
-  providers: [NudgesService, JwtAuthGuard, CoachGuard],
+  providers: [NudgesService, JwtAuthGuard, CoachGuard, JwksVerifierService],
   exports: [NudgesService],
 })
 export class NudgesModule {}
