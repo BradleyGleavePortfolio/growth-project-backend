@@ -5,6 +5,7 @@ import type { AuthedRequest } from './auth-request';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './auth.guard';
+import { Public } from '../common/decorators/public.decorator';
 import {
   RegisterDto,
   LoginDto,
@@ -22,6 +23,7 @@ export class AuthController {
     private inviteCodes: InviteCodesService,
   ) {}
 
+  @Public()
   @Post('register')
   // 10/hour/IP — loosened from 3/hour because shared NAT (office, campus, coffee
   // shop) easily hits 3 legitimate signups within an hour. Still tight enough
@@ -31,6 +33,7 @@ export class AuthController {
     return this.authService.register(body);
   }
 
+  @Public()
   @Post('login')
   // 10/minute/IP — loosened from 5/min. A user mistyping a password twice on a
   // shared IP was one fat-finger away from a lockout. 10/min is still an order
@@ -41,6 +44,7 @@ export class AuthController {
     return this.authService.login(body.email, body.password);
   }
 
+  @Public()
   @Post('google')
   @HttpCode(HttpStatus.OK)
   async googleAuth(@Body() body: GoogleAuthDto) {
@@ -59,6 +63,7 @@ export class AuthController {
   // Public (unauthenticated) endpoint so the signup flow can preview the coach
   // name before the user commits. Returns {valid, coach_id?, coach_name?}.
   // Rate-limited to blunt brute-force enumeration of the 30-bit code space.
+  @Public()
   @Post('validate-invite-code')
   @Throttle({ default: { ttl: 60000, limit: 20 } })
   @HttpCode(HttpStatus.OK)
@@ -72,6 +77,7 @@ export class AuthController {
     };
   }
 
+  @Public()
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   async forgotPassword(@Body() body: ForgotPasswordDto) {
