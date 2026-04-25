@@ -1,14 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 
-interface AggregatedIngredient {
+export interface AggregatedIngredient {
   name: string;
   quantity: number;
   unit: string;
   recipe_ids: string[];
 }
 
-interface PrepGuideResult {
+export interface PrepGuideResult {
   week_start: string;
   recipes: Array<{
     id: string;
