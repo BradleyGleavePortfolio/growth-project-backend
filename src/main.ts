@@ -1,6 +1,11 @@
 import 'reflect-metadata';
+// IMPORTANT: instrument.ts must be imported before any other application
+// module so Sentry's auto-instrumentation can patch the runtime. Do not
+// reorder these lines.
+import './instrument';
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
+import * as Sentry from '@sentry/node';
 import { AppModule } from './app.module';
 import { ThrottlerExceptionFilter } from './filters/throttler-exception.filter';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
@@ -60,10 +65,24 @@ async function bootstrap() {
   // specific @Catch(ThrottlerException); HttpExceptionFilter is the catch-all
   // with @Catch() that normalizes every other HttpException into
   // { statusCode, message, error, timestamp, path }.
+  // HttpExceptionFilter forwards 5xx (server) errors to Sentry internally;
+  // 4xx are deliberately not sent to avoid noise from validation failures.
   app.useGlobalFilters(
     new HttpExceptionFilter(),
     new ThrottlerExceptionFilter(),
   );
+
+  // Surface unhandled rejections / uncaught exceptions to Sentry. Without
+  // these, async errors that escape Nest's filter chain (e.g. setTimeout
+  // callbacks) would be silently swallowed in production.
+  process.on('unhandledRejection', (reason) => {
+    Sentry.captureException(reason);
+    new Logger('UnhandledRejection').error(reason);
+  });
+  process.on('uncaughtException', (err) => {
+    Sentry.captureException(err);
+    new Logger('UncaughtException').error(err);
+  });
 
   // API prefix — exclude /health so Fly.io liveness probes hit /health, not /api/health
   app.setGlobalPrefix('api', { exclude: ['health'] });
