@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { JwksVerifierService } from '../auth/jwks.service';
 import { ClientMessagingController } from './client-messaging.controller';
 import { CoachMessagingController } from './coach-messaging.controller';
 import { MessagingService } from './messaging.service';
@@ -11,7 +12,7 @@ import { MessagingService } from './messaging.service';
 // controller/provider graph and avoids the circular-import risk.
 @Module({
   controllers: [CoachMessagingController, ClientMessagingController],
-  providers: [MessagingService, JwtAuthGuard, CoachGuard],
+  providers: [MessagingService, JwtAuthGuard, CoachGuard, JwksVerifierService],
   exports: [MessagingService],
 })
 export class MessagingModule {}
