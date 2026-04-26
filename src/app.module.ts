@@ -29,6 +29,7 @@ import { RecipesModule } from './recipes/recipes.module';
 import { ListsModule } from './lists/lists.module';
 import { PrepGuideModule } from './prep-guide/prep-guide.module';
 import { UsersModule } from './users/users.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -68,6 +69,8 @@ import { UsersModule } from './users/users.module';
     ListsModule,
     PrepGuideModule,
     UsersModule,
+    // Global PostHog analytics (no-op when POSTHOG_KEY is unset)
+    AnalyticsModule,
   ],
   providers: [
     // SECURITY: register ThrottlerGuard as a global APP_GUARD so that @Throttle(...)
