@@ -3,11 +3,15 @@ import type { AuthedRequest } from '../auth/auth-request';
 import { CoachService } from './coach.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 @Controller('coach')
 @UseGuards(JwtAuthGuard, CoachGuard)
 export class CoachController {
-  constructor(private coachService: CoachService) {}
+  constructor(
+    private coachService: CoachService,
+    private analytics: AnalyticsService,
+  ) {}
 
   @Get('dashboard')
   async getDashboard(@Request() req: AuthedRequest) {
@@ -23,7 +27,10 @@ export class CoachController {
   @HttpCode(HttpStatus.OK)
   async archiveClient(@Request() req: AuthedRequest, @Param('id') id: string) {
     try {
-      return await this.coachService.archiveClient(req.user.id, id);
+      const result = await this.coachService.archiveClient(req.user.id, id);
+      // Psych Report #4: Analytics — coach_action
+      this.analytics.capture(req.user.id, 'coach_action', { action_type: 'archive_client' });
+      return result;
     } catch {
       throw new NotFoundException('Client not found');
     }
@@ -33,7 +40,10 @@ export class CoachController {
   @HttpCode(HttpStatus.OK)
   async unarchiveClient(@Request() req: AuthedRequest, @Param('id') id: string) {
     try {
-      return await this.coachService.unarchiveClient(req.user.id, id);
+      const result = await this.coachService.unarchiveClient(req.user.id, id);
+      // Psych Report #4: Analytics — coach_action
+      this.analytics.capture(req.user.id, 'coach_action', { action_type: 'unarchive_client' });
+      return result;
     } catch {
       throw new NotFoundException('Client not found');
     }
@@ -62,7 +72,10 @@ export class CoachController {
 
   @Post('guidelines/:client_id')
   async postGuidelines(@Request() req: AuthedRequest, @Param('client_id') clientId: string, @Body() body: { guidelines: string }) {
-    return this.coachService.postGuidelines(req.user.id, clientId, body.guidelines);
+    const result = await this.coachService.postGuidelines(req.user.id, clientId, body.guidelines);
+    // Psych Report #4: Analytics — coach_action
+    this.analytics.capture(req.user.id, 'coach_action', { action_type: 'post_guidelines' });
+    return result;
   }
 
   @Get('alerts')

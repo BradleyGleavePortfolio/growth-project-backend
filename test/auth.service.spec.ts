@@ -1,5 +1,6 @@
 import { AuthService } from '../src/auth/auth.service';
 import { BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { AnalyticsService } from '../src/analytics/analytics.service';
 
 const makeInviteCodesMock = () => ({
   validate: jest.fn(),
@@ -7,6 +8,10 @@ const makeInviteCodesMock = () => ({
   listForCoach: jest.fn(),
   revokeForCoach: jest.fn(),
 });
+
+/** Stub AnalyticsService — no-op for all methods */
+const makeAnalyticsMock = () =>
+  ({ capture: jest.fn(), identify: jest.fn(), onModuleDestroy: jest.fn() } as unknown as AnalyticsService);
 
 describe('AuthService.googleAuth', () => {
   let prismaMock: any;
@@ -26,7 +31,7 @@ describe('AuthService.googleAuth', () => {
     supabaseAdminMock = {
       auth: { getUser: jest.fn() },
     };
-    service = new AuthService(prismaMock as any, inviteCodesMock as any);
+    service = new AuthService(prismaMock as any, inviteCodesMock as any, makeAnalyticsMock());
     (service as any).supabaseAdmin = supabaseAdminMock;
   });
 
@@ -81,7 +86,7 @@ describe('AuthService.selectRole', () => {
       $transaction: jest.fn((cb: any) => cb(prismaMock)),
     };
     inviteCodesMock = makeInviteCodesMock();
-    service = new AuthService(prismaMock as any, inviteCodesMock as any);
+    service = new AuthService(prismaMock as any, inviteCodesMock as any, makeAnalyticsMock());
   });
 
   it('allows selecting student role without any code', async () => {

@@ -2,6 +2,7 @@ import { Injectable, Logger, UnauthorizedException, BadRequestException, Conflic
 import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma.service';
 import { InviteCodesService } from '../invite-codes/invite-codes.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 @Injectable()
 export class AuthService {
@@ -11,6 +12,7 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private inviteCodes: InviteCodesService,
+    private analytics: AnalyticsService,
   ) {
     // Supabase Admin SDK for user management (service role key)
     this.supabaseAdmin = createClient(
@@ -66,6 +68,9 @@ export class AuthService {
         role: 'student',
       },
     });
+
+    // Psych Report #4: Analytics — user_registered server-side event
+    this.analytics.capture(user.id, 'user_registered', { role: user.role });
 
     // Return pending status — mobile will show the verify email screen
     return {
