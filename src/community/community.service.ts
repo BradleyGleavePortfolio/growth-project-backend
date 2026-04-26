@@ -1,15 +1,34 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { BadgesService } from './badges.service';
+
+// Helper: anonymise a display name to "first-name + last initial" e.g. "Alex M."
+function anonymiseName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1][0]}.`;
+}
+
+// Helper: aggregate reactions array → { fire: n, clap: n }
+function sumReactions(reactions: { kind: string }[]): { fire: number; clap: number } {
+  return reactions.reduce(
+    (acc, r) => {
+      if (r.kind === 'fire') acc.fire += 1;
+      if (r.kind === 'clap') acc.clap += 1;
+      return acc;
+    },
+    { fire: 0, clap: 0 },
+  );
+}
 
 @Injectable()
 export class CommunityService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private badgesService: BadgesService,
+  ) {}
 
   async getLeaderboard(userId: string, period: 'week' | 'month' = 'week') {
-    // Before: 2 + N queries (user lookup, students.findMany, one count per student).
-    //   A team of 40 students → 42 sequential queries.
-    // After: 3 queries — user, students, one groupBy on workoutSession. Response
-    //   shape unchanged (same keys, same order).
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const coachId = user?.role === 'coach' ? user.id : user?.coach_id;
     if (!coachId) return [];
@@ -41,43 +60,94 @@ export class CommunityService {
     return leaderboard.sort((a, b) => b.workouts_completed - a.workouts_completed);
   }
 
-  // Tier-2 (Fix #9): the feed is now a real CommunityWin stream scoped to the
-  // current user's coach roster. Before this change the feed returned recent
-  // Lessons, which both (a) leaked guideline-Lessons that the coach had filed
-  // for individual clients and (b) had nothing to do with what users actually
-  // posted via postWin (which itself was a no-op — see below).
+  /**
+   * GET /community/feed — last 30 anonymised community wins.
+   * Returns: [{ id, displayName, action, createdAt, reactions: { fire, clap } }]
+   */
   async getFeed(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const coachId = user?.role === 'coach' ? user.id : user?.coach_id;
-    if (!coachId) return [];
 
-    return this.prisma.communityWin.findMany({
-      where: { coach_id: coachId },
+    // Pull from roster-scoped wins if coach exists, otherwise return public wins
+    const whereClause = coachId
+      ? { coach_id: coachId }
+      : { visibility: 'public' };
+
+    const wins = await this.prisma.communityWin.findMany({
+      where: whereClause,
       orderBy: { created_at: 'desc' },
-      take: 20,
-      include: { user: { select: { id: true, name: true } } },
+      take: 30,
+      include: {
+        user: { select: { id: true, name: true } },
+        reactions: { select: { kind: true } },
+      },
     });
+
+    return wins.map((w) => ({
+      id: w.id,
+      displayName: anonymiseName(w.user.name),
+      action: w.title, // "title" is the win action text
+      createdAt: w.created_at,
+      reactions: sumReactions(w.reactions),
+    }));
   }
 
-  // Tier-2 (Fix #9): real persistence for community wins. `coach_id` is
-  // denormalized at write time from the author's current coach so the win
-  // stays attached to the right roster feed even if the client later
-  // switches coaches. Unassigned clients can still post — their wins simply
-  // don't appear in any coach's feed (coach_id NULL).
-  async postWin(userId: string, data: { title: string; description: string }) {
+  /**
+   * POST /community/wins/:id/react — add or toggle a fire/clap reaction.
+   * Returns updated reaction counts.
+   */
+  async reactToWin(userId: string, winId: string, kind: 'fire' | 'clap'): Promise<{ fire: number; clap: number }> {
+    const win = await this.prisma.communityWin.findUnique({
+      where: { id: winId },
+    });
+    if (!win) throw new NotFoundException('Win not found');
+
+    // Upsert: if the user already reacted with this kind, toggle it off
+    const existing = await this.prisma.winReaction.findUnique({
+      where: { win_id_user_id_kind: { win_id: winId, user_id: userId, kind } },
+    });
+
+    if (existing) {
+      await this.prisma.winReaction.delete({ where: { id: existing.id } });
+    } else {
+      await this.prisma.winReaction.create({
+        data: { win_id: winId, user_id: userId, kind },
+      });
+      // Award "Encourager" badge check (react to 10 community wins)
+      await this.badgesService.checkAndAwardEncourager(userId);
+    }
+
+    const reactions = await this.prisma.winReaction.findMany({
+      where: { win_id: winId },
+      select: { kind: true },
+    });
+    return sumReactions(reactions);
+  }
+
+  /**
+   * POST /community/wins — create a community win entry.
+   */
+  async postWin(userId: string, data: { title: string; description: string; visibility?: 'circle' | 'public' }) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { coach_id: true, role: true, id: true },
     });
     const coachId = user?.role === 'coach' ? user.id : user?.coach_id ?? null;
 
-    return this.prisma.communityWin.create({
+    const win = await this.prisma.communityWin.create({
       data: {
         user_id: userId,
         coach_id: coachId,
         title: data.title,
         description: data.description,
+        visibility: data.visibility ?? 'circle',
       },
     });
+
+    // Badge checks: first win, inner circle builder (5 wins)
+    await this.badgesService.checkAndAwardFirstWin(userId);
+    await this.badgesService.checkAndAwardInnerCircleBuilder(userId);
+
+    return win;
   }
 }
