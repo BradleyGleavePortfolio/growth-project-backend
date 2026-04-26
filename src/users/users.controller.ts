@@ -1,7 +1,9 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
+  Patch,
   Post,
   Request,
   UseGuards,
@@ -9,11 +11,49 @@ import {
 import { JwtAuthGuard } from '../auth/auth.guard';
 import type { AuthedRequest } from '../auth/auth-request';
 import { UsersService } from './users.service';
+import { PreferencesService } from './preferences.service';
+import type { UserPreferencesDto } from './preferences.dto';
+import { BadgesService } from '../community/badges.service';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
 export class UsersController {
-  constructor(private usersService: UsersService) {}
+  constructor(
+    private usersService: UsersService,
+    private preferencesService: PreferencesService,
+    private badgesService: BadgesService,
+  ) {}
+
+  /**
+   * GET /users/me/preferences
+   * Returns current personalization preferences (with defaults filled in).
+   */
+  @Get('me/preferences')
+  getPreferences(@Request() req: AuthedRequest) {
+    return this.preferencesService.getPreferences(req.user.id);
+  }
+
+  /**
+   * PATCH /users/me/preferences
+   * Accepts a partial UserPreferencesDto body and merges it into the stored prefs.
+   */
+  @Patch('me/preferences')
+  patchPreferences(
+    @Request() req: AuthedRequest,
+    @Body() body: Partial<UserPreferencesDto>,
+  ) {
+    return this.preferencesService.patchPreferences(req.user.id, body);
+  }
+
+  /**
+   * GET /users/me/badges
+   * Returns all badges (earned + locked) for the current user.
+   * Earned badges include awardedAt; locked badges have awardedAt = null.
+   */
+  @Get('me/badges')
+  getBadges(@Request() req: AuthedRequest) {
+    return this.badgesService.getBadgesForUser(req.user.id);
+  }
 
   /**
    * GET /users/me/founding-number
