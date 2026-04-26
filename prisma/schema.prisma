@@ -109,6 +109,7 @@ model User {
   fasting_windows    FastingWindow[]
   weight_logs        WeightLog[]
   notification_prefs NotificationPreferences?
+  preferences        UserPreferences?
   habits             Habit[]
   lesson_completions LessonCompletion[]
   check_ins          CheckIn[]
@@ -125,6 +126,8 @@ model User {
   meal_plans_as_client     MealPlan[]     @relation("MealPlanClient")
   community_wins           CommunityWin[] @relation("CommunityWinAuthor")
   community_wins_as_coach  CommunityWin[] @relation("CommunityWinCoach")
+  user_badges              UserBadge[]
+  win_reactions            WinReaction[]
   guidelines_as_coach      CoachGuideline[] @relation("CoachGuidelineCoach")
   guidelines_as_client     CoachGuideline[] @relation("CoachGuidelineClient")
   created_recipes          Recipe[]         @relation("RecipeCreator")
@@ -505,10 +508,44 @@ model CommunityWin {
   coach       User?    @relation("CommunityWinCoach", fields: [coach_id], references: [id])
   title       String
   description String
+  visibility  String   @default("circle") // "circle" | "public"
   created_at  DateTime @default(now())
+  reactions   WinReaction[]
 
   @@index([user_id])
   @@index([coach_id, created_at])
+}
+
+model WinReaction {
+  id         String       @id @default(uuid())
+  win_id     String
+  win        CommunityWin @relation(fields: [win_id], references: [id])
+  user_id    String
+  user       User         @relation(fields: [user_id], references: [id])
+  kind       String       // "fire" | "clap"
+  created_at DateTime     @default(now())
+
+  @@unique([win_id, user_id, kind])
+  @@index([win_id])
+  @@index([user_id])
+}
+
+enum BadgeSlug {
+  first_win
+  encourager
+  inner_circle_builder
+  consistency_hero
+}
+
+model UserBadge {
+  id         String    @id @default(uuid())
+  user_id    String
+  user       User      @relation(fields: [user_id], references: [id])
+  slug       BadgeSlug
+  awarded_at DateTime  @default(now())
+
+  @@unique([user_id, slug])
+  @@index([user_id])
 }
 
 // Tier-2: Per-(coach, client) guidelines as a first-class resource. Replaces
@@ -529,6 +566,30 @@ model CoachGuideline {
 
   @@unique([coach_id, client_id], name: "CoachGuideline_coach_client_key")
   @@index([client_id])
+}
+
+// ============================================================
+// UX PSYCHOLOGY #4 — Preference-Controlled Personalization
+// ============================================================
+
+// Stores per-user UI/UX personalization preferences.
+// homeModules: ordered array of visible home sections (default full set).
+// notificationCadence: coarse cadence override (individual toggles still live in NotificationPreferences).
+// motivationalTone: drives copy variants in HeroAction.
+// units: metric vs imperial display.
+// firstDayOfWeek: 0=Sun, 1=Mon, 6=Sat.
+model UserPreferences {
+  id                    String   @id @default(uuid())
+  user_id               String   @unique
+  user                  User     @relation(fields: [user_id], references: [id])
+  home_modules          String[] @default(["hero", "milestone", "trustcues", "secondary"])
+  notification_cadence  String   @default("daily")   // "daily" | "weekly" | "off"
+  motivational_tone     String   @default("direct")  // "gentle" | "direct" | "drill"
+  units                 String   @default("imperial") // "metric" | "imperial"
+  first_day_of_week     Int      @default(1)          // 0=Sun, 1=Mon, 6=Sat
+  updated_at            DateTime @updatedAt
+
+  @@index([user_id])
 }
 
 // ============================================================
