@@ -1,0 +1,19 @@
+{
+  "id": "evt_test_invoice_paid",
+  "type": "invoice.paid",
+  "data": {
+    "object": {
+      "id": "in_test_1",
+      "customer": "cus_test_A",
+      "amount_paid": 30000,
+      "amount_due": 30000,
+      "currency": "usd",
+      "status": "paid",
+      "hosted_invoice_url": "https://stripe.example/invoice/test_1",
+      "invoice_pdf": "https://stripe.example/invoice/test_1.pdf",
+      "period_start": 1761962400,
+      "period_end": 1764554400,
+      "status_transitions": { "paid_at": 1761963000 }
+    }
+  }
+}

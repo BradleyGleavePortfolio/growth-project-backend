@@ -1,0 +1,17 @@
+{
+  "id": "evt_test_subscription_updated",
+  "type": "customer.subscription.updated",
+  "data": {
+    "object": {
+      "id": "sub_test_1",
+      "customer": "cus_test_A",
+      "status": "past_due",
+      "current_period_end": 1767146400,
+      "trial_end": null,
+      "cancel_at_period_end": false,
+      "items": {
+        "data": [{ "price": { "id": "price_test_flat300" } }]
+      }
+    }
+  }
+}

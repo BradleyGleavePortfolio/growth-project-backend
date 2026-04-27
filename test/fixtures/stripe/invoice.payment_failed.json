@@ -1,0 +1,14 @@
+{
+  "id": "evt_test_invoice_payment_failed",
+  "type": "invoice.payment_failed",
+  "data": {
+    "object": {
+      "id": "in_test_2",
+      "customer": "cus_test_A",
+      "amount_due": 30000,
+      "currency": "usd",
+      "status": "open",
+      "last_payment_error": { "message": "Your card was declined." }
+    }
+  }
+}

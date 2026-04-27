@@ -1,0 +1,16 @@
+{
+  "id": "evt_test_customer_updated",
+  "type": "customer.updated",
+  "data": {
+    "object": {
+      "id": "cus_test_A",
+      "email": "coach-a@example.com",
+      "invoice_settings": {
+        "default_payment_method": {
+          "id": "pm_test_1",
+          "card": { "last4": "4242" }
+        }
+      }
+    }
+  }
+}
