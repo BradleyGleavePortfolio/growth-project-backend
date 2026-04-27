@@ -109,6 +109,14 @@ async function bootstrap() {
       'download/android',
       'signup',
       'signup/:code',
+      // Public trust surface (privacy, terms, security, status). Mounted
+      // outside /api so they resolve as bare paths under
+      // app.trygrowthproject.com — that is the URL shape app store
+      // reviewers and early customers expect.
+      'privacy',
+      'terms',
+      'security',
+      'status',
     ],
   });
 
