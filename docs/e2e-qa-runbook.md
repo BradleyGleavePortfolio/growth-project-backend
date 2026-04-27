@@ -341,10 +341,30 @@ Smoke spec § 3 covers gate enforcement; § 7 covers billing matrix.
 
 ## 5. Re-running the smoke spec
 
+Prerequisites (clean clone of `growth-project-backend`):
+
 ```bash
-npx jest test/e2e-saas-smoke.spec.ts          # 21 tests, ~5s
-npx jest                                       # full backend suite, ~18s
+node --version    # >= 20.x (matches engines + CI)
+npm ci            # exact install from package-lock.json
 ```
 
-The spec stubs Prisma, Supabase, and Stripe. It is safe to run against
-any environment because it never opens a network connection.
+No `.env` file is required — the spec mocks Prisma, Supabase, and Stripe.
+No database, no network calls, no migrations.
+
+Run:
+
+```bash
+npx jest test/e2e-saas-smoke.spec.ts          # 21 tests, ~10s
+npx jest                                       # full backend suite (33+ suites)
+```
+
+CI runs the full suite via `npm test` in `.github/workflows/ci.yml`; the
+smoke spec is included. To re-run only the smoke spec on CI logs:
+
+```bash
+npx jest --runInBand test/e2e-saas-smoke.spec.ts
+```
+
+The spec is safe to run against any environment because it never opens a
+network connection. If it fails, `npm test` will fail too — they share
+the same Jest config.

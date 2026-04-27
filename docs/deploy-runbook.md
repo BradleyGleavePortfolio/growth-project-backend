@@ -240,8 +240,8 @@ The script (see `scripts/smoke.ts`) checks:
 - `/api/v1/webhooks/stripe` returns 400 without a Stripe signature —
   confirms the route exists and the signature gate works.
 - `/join/<code>` HTML landing page renders without 5xx.
-- `/api/ai/context/preview` (if `SMOKE_TOKEN` is set) returns a context
-  shape; otherwise asserts 401.
+- `/api/ai/context` (if `SMOKE_TOKEN` is set) returns a context shape;
+  otherwise asserts 401.
 
 Exit code is non-zero on any failure. Wire it into the deploy pipeline
 or run it manually after `fly deploy`.
