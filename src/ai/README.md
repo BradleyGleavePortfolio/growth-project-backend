@@ -26,14 +26,14 @@ endpoint always returns a usable answer.
 
 | File | What it owns |
 |---|---|
-| `ai.controller.ts` | `/ai/chat`, `/ai/context`, `/ai/structured-context` |
+| `ai.controller.ts` | `POST /api/ai/chat`, `GET /api/ai/context`, `GET /api/ai/structured-context` |
 | `ai.service.ts` | System-prompt assembly, Perplexity call, deterministic fallback |
 | `ai-guardrails.service.ts` | Post-response rewrite: calorie floor, macro contradictions, referrals, banned-substance redaction, AI-tell scrub |
 | `client-ai-context.service.ts` | Builds the typed `ClientAIContext` from Prisma; 30s per-user cache |
 | `client-ai-context.types.ts` | Type definitions used by the prompt and the guardrails |
 | `ai.module.ts` | Wires the three services |
 
-## Request flow (`/ai/chat`)
+## Request flow (`POST /api/ai/chat`)
 
 1. Controller pulls `userId` from `req.user`. The body provides
    `message` and `conversation_history`. **Profile, macros, and logs
@@ -88,7 +88,7 @@ Tests use `buildFresh(userId)` to bypass the cache.
 
 ## Throttling
 
-`POST /ai/chat`: 20 / hour / user. The throttle key is the
+`POST /api/ai/chat`: 20 / hour / user. The throttle key is the
 authenticated user, not the IP, so shared NAT does not penalize
 legitimate users.
 

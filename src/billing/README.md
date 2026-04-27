@@ -28,13 +28,13 @@ Stripe-touching path that receives untrusted input.
 
 | File | What it owns |
 |---|---|
-| `stripe-webhook.controller.ts` | `POST /v1/webhooks/stripe` — public, signature-verified |
+| `stripe-webhook.controller.ts` | `POST /api/v1/webhooks/stripe` — public, signature-verified |
 | `stripe-signature.ts` | Stripe HMAC-SHA256 v1 signature verification + a test-only signer |
 | `stripe-api.service.ts` | Outbound REST client for Customer / Subscription / BillingPortal session creation |
 | `billing.service.ts` | Event router and the mirror-table writers |
 | `subscription.guard.ts` | `SubscriptionGuard` — used by coach console write paths |
-| `coach-billing.controller.ts` | `GET /v1/coach/me/billing`, `POST /v1/coach/me/billing/portal-session` |
-| `owner-billing.controller.ts` | `POST /v1/admin/coaches/:id/start-subscription` |
+| `coach-billing.controller.ts` | `GET /api/v1/coach/me/billing`, `POST /api/v1/coach/me/billing/portal-session` |
+| `owner-billing.controller.ts` | `POST /api/v1/admin/coaches/:id/start-subscription` |
 
 ## Webhook flow
 
@@ -101,7 +101,7 @@ mode and lets the request through. Production must flip it to
 - Coach-facing billing reads only the caller's own
   `CoachSubscription`. There is no cross-tenant read path on this
   controller.
-- OWNER-only writes are mounted under `/v1/admin/...` and are explicitly
+- OWNER-only writes are mounted under `/api/v1/admin/...` and are explicitly
   separated from the coach-facing controller so role escalation is not
   a one-line mistake.
 

@@ -294,7 +294,7 @@ SMOKE_BASE_URL=https://<api-host> npm run smoke:staging
 #     - GET /api/v1/coach/me → 401 (BFF mounted + guarded)
 #     - POST /api/v1/webhooks/stripe (no signature) → 400
 #     - GET /join/<code> → text/html, no 5xx
-#     - GET /api/ai/context/preview → 401 without SMOKE_TOKEN
+#     - GET /api/ai/context → 401 without SMOKE_TOKEN
 
 # 8.2 Optional — include the AI context check with a real Supabase JWT.
 SMOKE_BASE_URL=https://<api-host> SMOKE_TOKEN="$STAGING_JWT" npm run smoke:staging
