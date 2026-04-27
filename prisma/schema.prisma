@@ -14,9 +14,26 @@ datasource db {
 // ENUMS
 // ============================================================
 
+// Phase 1A platform pivot: add the `owner` tier above `coach` so the
+// platform can be operated as Healthie-style OWNER -> COACH -> CLIENT
+// without breaking existing rows. Existing rows stay valid (`coach`,
+// `student`); the new `owner` value is opt-in and only set by the
+// bootstrap-owners script or the OWNER promote endpoint.
 enum Role {
   coach
   student
+  owner
+}
+
+// Phase 1A: subscription state for a coach's $300/mo seat. Stored as
+// strings on CoachProfile so the column reads naturally in raw SQL and
+// admin tooling without a Prisma-only enum mapping.
+enum SubscriptionStatus {
+  active
+  trialing
+  past_due
+  canceled
+  paused
 }
 
 enum Sex {
@@ -133,8 +150,53 @@ model User {
   created_recipes          Recipe[]         @relation("RecipeCreator")
   saved_recipes            SavedRecipe[]
   list_items               ListItem[]
+  // Phase 1A: 1:1 coach metadata. Only present for users with role=coach.
+  // The relation stays optional so the existing student/owner rows do not
+  // need a CoachProfile row (and the bootstrap script can backfill coaches
+  // additively).
+  coach_profile            CoachProfile?    @relation("CoachProfileUser")
+  owners_created_profiles  CoachProfile[]   @relation("CoachProfileCreatedBy")
 
   @@index([coach_id])
+}
+
+// Phase 1A: per-coach business + billing + branding metadata. The User
+// table still holds `role` and the coach->client linkage; this table holds
+// everything Healthie-style that does not belong on every user row.
+//
+// `invite_code` is the coach's shareable, URL-safe code (e.g. GP-A1B2C3).
+// It mirrors InviteCode rows (which can have many per coach with
+// expirations and per-code limits); CoachProfile.invite_code is the one
+// "default" link a coach can hand out without bookkeeping. Backfill
+// generates a unique value per coach.
+//
+// stripe_* and subscription_status are wired into Phase 2A; they are
+// nullable here so this migration can ship before Stripe is provisioned.
+model CoachProfile {
+  id                       String              @id @default(uuid())
+  user_id                  String              @unique
+  user                     User                @relation("CoachProfileUser", fields: [user_id], references: [id])
+  business_name            String?
+  bio                      String?
+  timezone                 String?
+  branding_accent_color    String?
+  branding_logo_url        String?
+  invite_code              String              @unique
+  stripe_customer_id       String?
+  stripe_subscription_id   String?
+  subscription_status      SubscriptionStatus?
+  plan_tier                String              @default("flat_300")
+  current_period_end       DateTime?
+  trial_end                DateTime?
+  ai_monthly_spend_cap_cents Int               @default(5000)
+  created_by_owner_id      String?
+  created_by_owner         User?               @relation("CoachProfileCreatedBy", fields: [created_by_owner_id], references: [id])
+  created_at               DateTime            @default(now())
+  updated_at               DateTime            @updatedAt
+
+  @@index([invite_code])
+  @@index([subscription_status])
+  @@index([created_by_owner_id])
 }
 
 model InviteCode {

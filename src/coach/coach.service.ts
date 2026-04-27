@@ -5,24 +5,43 @@ import { PrismaService } from '../prisma.service';
 export class CoachService {
   constructor(private prisma: PrismaService) {}
 
-  async getClients(coachId: string, status: 'active' | 'archived' | 'all' = 'active') {
+  // Phase 1B: when the caller is an OWNER, every list/lookup widens to
+  // the platform-wide view. When the caller is a COACH, the existing
+  // coach_id filter is preserved.
+  //
+  // `byCoach` returns the right Prisma `where` fragment for each role:
+  //   - OWNER: {}                       (sees every coach's data)
+  //   - else : { coach_id: callerId }    (existing behavior)
+  private byCoach(callerId: string, callerRole?: string): { coach_id?: string } {
+    if (callerRole === 'owner') return {};
+    return { coach_id: callerId };
+  }
+
+  async getClients(
+    coachId: string,
+    status: 'active' | 'archived' | 'all' = 'active',
+    callerRole?: string,
+  ) {
     let archiveFilter: object = {};
     if (status === 'active') {
       archiveFilter = { archived_at: null };
     } else if (status === 'archived') {
       archiveFilter = { archived_at: { not: null } };
     }
-    // 'all' — no filter
     return this.prisma.user.findMany({
-      where: { coach_id: coachId, role: 'student', ...archiveFilter },
+      where: {
+        ...this.byCoach(coachId, callerRole),
+        role: 'student',
+        ...archiveFilter,
+      },
       include: { profile: true },
       orderBy: { created_at: 'desc' },
     });
   }
 
-  async archiveClient(coachId: string, clientId: string) {
+  async archiveClient(coachId: string, clientId: string, callerRole?: string) {
     const client = await this.prisma.user.findFirst({
-      where: { id: clientId, coach_id: coachId },
+      where: { id: clientId, ...this.byCoach(coachId, callerRole) },
     });
     if (!client) throw new Error('Client not found');
     return this.prisma.user.update({
@@ -31,9 +50,9 @@ export class CoachService {
     });
   }
 
-  async unarchiveClient(coachId: string, clientId: string) {
+  async unarchiveClient(coachId: string, clientId: string, callerRole?: string) {
     const client = await this.prisma.user.findFirst({
-      where: { id: clientId, coach_id: coachId },
+      where: { id: clientId, ...this.byCoach(coachId, callerRole) },
     });
     if (!client) throw new Error('Client not found');
     return this.prisma.user.update({
@@ -42,10 +61,14 @@ export class CoachService {
     });
   }
 
-  async getClientTimeline(coachId: string, clientId: string, days: number = 90) {
-    // Verify this client belongs to this coach
+  async getClientTimeline(
+    coachId: string,
+    clientId: string,
+    days: number = 90,
+    callerRole?: string,
+  ) {
     const client = await this.prisma.user.findFirst({
-      where: { id: clientId, coach_id: coachId },
+      where: { id: clientId, ...this.byCoach(coachId, callerRole) },
     });
     if (!client) return { error: 'Client not found' };
 
@@ -73,12 +96,6 @@ export class CoachService {
       }),
     ]);
 
-    // Tier-2: merged `events` stream so the mobile coach UI can render a
-    // single chronological feed. Existing consumers that read
-    // `meals`/`workouts`/`weights`/`checkIns` directly are untouched — we
-    // only ADD the new `events` field so the shape stays backwards-compatible.
-    // Event shape is `{ type, date, ref }` where `ref` points back at the
-    // original row so callers can pull details without re-fetching.
     const events: Array<{ type: string; date: Date; ref: unknown }> = [
       ...meals.map((m) => ({ type: 'meal', date: m.logged_at, ref: m })),
       ...workouts.map((w) => ({ type: 'workout', date: w.created_at, ref: w })),
@@ -89,12 +106,6 @@ export class CoachService {
     return { client, meals, workouts, weights, checkIns, events };
   }
 
-  // Tier-2 (Fix #9): real per-(coach, client) guidelines table. Replaces
-  // the prior hack of inserting a Lesson row tagged `client:<id>` and
-  // filtering Lessons by that tag. The unique (coach_id, client_id) makes
-  // the write an idempotent upsert: each coach has exactly one guidelines
-  // doc per client, and re-posting overwrites the content + bumps
-  // updated_at automatically.
   async postGuidelines(coachId: string, clientId: string, guidelines: string) {
     return this.prisma.coachGuideline.upsert({
       where: {
@@ -105,17 +116,8 @@ export class CoachService {
     });
   }
 
-  // Two call shapes are preserved for API back-compat:
-  //   getGuidelines(coachId, clientId) — coach reads guidelines they wrote for a client
-  //   getGuidelines(clientId)          — client reads guidelines their coach wrote for them
-  // The CoachController exposes both routes; the legacy one-arg call hits
-  // `/coach/my-guidelines` and (because the controller is gated by CoachGuard)
-  // is effectively only reachable by coaches today. We still implement it
-  // correctly here so the moment that endpoint is moved off CoachGuard the
-  // semantics are right.
   async getGuidelines(coachOrClientId: string, clientId?: string) {
     if (clientId) {
-      // Coach asking for what they wrote for a specific client.
       return this.prisma.coachGuideline.findUnique({
         where: {
           CoachGuideline_coach_client_key: {
@@ -125,17 +127,20 @@ export class CoachService {
         },
       });
     }
-    // Client asking for the guidelines their coach wrote for them.
     return this.prisma.coachGuideline.findFirst({
       where: { client_id: coachOrClientId },
       orderBy: { updated_at: 'desc' },
     });
   }
 
-  async getClientSummary(coachId: string, clientId: string, date?: string) {
-    // Verify this client belongs to this coach
+  async getClientSummary(
+    coachId: string,
+    clientId: string,
+    date?: string,
+    callerRole?: string,
+  ) {
     const client = await this.prisma.user.findFirst({
-      where: { id: clientId, coach_id: coachId },
+      where: { id: clientId, ...this.byCoach(coachId, callerRole) },
       include: { profile: true },
     });
     if (!client) return { error: 'Client not found' };
@@ -164,7 +169,6 @@ export class CoachService {
       }),
     ]);
 
-    // Calculate daily totals
     let total_calories = 0, total_protein_g = 0, total_carbs_g = 0, total_fat_g = 0;
     for (const entry of todayEntries) {
       const qty = entry.quantity_multiplier || 1;
@@ -192,14 +196,13 @@ export class CoachService {
     };
   }
 
-  async getDashboard(coachId: string) {
+  async getDashboard(coachId: string, callerRole?: string) {
     const today = new Date();
     const startOfDay = new Date(today.toISOString().split('T')[0] + 'T00:00:00.000Z');
     const endOfDay = new Date(today.toISOString().split('T')[0] + 'T23:59:59.999Z');
 
-    // All active clients for this coach
     const clients = await this.prisma.user.findMany({
-      where: { coach_id: coachId, role: 'student' },
+      where: { ...this.byCoach(coachId, callerRole), role: 'student' },
       select: { id: true },
     });
 
@@ -209,7 +212,6 @@ export class CoachService {
 
     const clientIds = clients.map((c) => c.id);
 
-    // All food entries logged today across all clients
     const todayEntries = await this.prisma.loggedFoodEntry.findMany({
       where: {
         user_id: { in: clientIds },
@@ -218,11 +220,9 @@ export class CoachService {
       include: { food_item: true },
     });
 
-    // Distinct clients who logged at least one meal today
     const clientsLoggedToday = new Set(todayEntries.map((e) => e.user_id));
     const logs_today = clientsLoggedToday.size;
 
-    // Sum kcal across all entries
     let total_kcal = 0;
     for (const entry of todayEntries) {
       const qty = entry.quantity_multiplier || 1;
@@ -239,13 +239,9 @@ export class CoachService {
     };
   }
 
-  async getAlerts(coachId: string) {
-    // Before: 1 + 2N queries (findMany clients, then per client: weightLog.findMany +
-    //   workoutSession.findFirst). With 50 clients that's 101 sequential round-trips.
-    // After: 3 queries total — one client list, one batched weight-log fetch (walked in
-    //   memory), and one groupBy of recent workouts. Response shape unchanged.
+  async getAlerts(coachId: string, callerRole?: string) {
     const clients = await this.prisma.user.findMany({
-      where: { coach_id: coachId, role: 'student' },
+      where: { ...this.byCoach(coachId, callerRole), role: 'student' },
     });
 
     if (clients.length === 0) return [];
@@ -255,9 +251,6 @@ export class CoachService {
     fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
 
     const [allRecentWeightLogs, workoutGroups] = await Promise.all([
-      // Pull the most recent weight logs per client in a single query. We over-fetch
-      // up to 4 per client by ordering and then slicing in memory — we can't LIMIT
-      // per group in Prisma, but 4*N rows is still far smaller than N round-trips.
       this.prisma.weightLog.findMany({
         where: { user_id: { in: clientIds } },
         orderBy: [{ user_id: 'asc' }, { date: 'desc' }],
@@ -274,7 +267,6 @@ export class CoachService {
       workoutGroups.filter((g) => g._count._all > 0).map((g) => g.user_id),
     );
 
-    // Group weight logs per-user and keep the 4 most recent for the streak check.
     const weightLogsByUser = new Map<string, { date: Date; weight_lbs: number }[]>();
     for (const wl of allRecentWeightLogs) {
       const arr = weightLogsByUser.get(wl.user_id) ?? [];

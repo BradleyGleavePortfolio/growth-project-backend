@@ -14,6 +14,7 @@ import {
   ForgotPasswordDto,
   ValidateInviteCodePublicDto,
   BecomeCoachDto,
+  SignupWithCodeDto,
 } from './auth.dto';
 import { InviteCodesService } from '../invite-codes/invite-codes.service';
 
@@ -96,5 +97,15 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async becomeCoach(@Request() req: AuthedRequest, @Body() body: BecomeCoachDto) {
     return this.authService.becomeCoach(req.user.id, body.password);
+  }
+
+  // Phase 1C: client signup that includes the coach's invite code in the
+  // same call. Behind COACH_CODE_GATE_ENABLED=true the code is required.
+  // Public so the mobile app can hit it without a JWT.
+  @Public()
+  @Post('signup-with-code')
+  @Throttle({ default: { ttl: 3600000, limit: 10 } })
+  async signupWithCode(@Body() body: SignupWithCodeDto) {
+    return this.authService.signupWithCode(body);
   }
 }
