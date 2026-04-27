@@ -35,6 +35,25 @@ export class GoogleAuthDto {
   @IsString()
   @MinLength(10)
   token!: string;
+
+  // Optional invite code propagated through the Google OAuth roundtrip. The
+  // OAuth provider itself cannot carry it, so the mobile app sends it on the
+  // server-side exchange. When present and valid we attach the new user to
+  // that coach in the same request (no second /auth/attach-invite-code hop).
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  invite_code?: string;
+}
+
+// Mobile (#56) calls /auth/attach-invite-code; backend exposes the same
+// behavior as /auth/attach-coach-code. Alias DTO so the validation pipe
+// accepts the new field name without dropping it as unknown.
+export class AttachInviteCodeDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(32)
+  invite_code!: string;
 }
 
 export class SelectRoleDto {
