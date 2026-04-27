@@ -12,7 +12,31 @@ jobs:
     concurrency: deploy-group    # optional: ensure only one action runs at a time
     steps:
       - uses: actions/checkout@v6
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only
+
+      # Skip the rest of the job (with a clear log line) when the Fly
+      # deploy environment is intentionally unconfigured. Without this
+      # gate, every push to main fails with the opaque flyctl error
+      # "no access token available", which masks real CI failures.
+      # See docs/deploy-runbook.md §8 — Fly app/token provisioning is
+      # an operator step.
+      - name: Check Fly deploy configuration
+        id: flycheck
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "${FLY_API_TOKEN}" ]; then
+            echo "::warning::FLY_API_TOKEN is not set — skipping Fly deploy."
+            echo "Set the FLY_API_TOKEN GitHub Actions secret to enable continuous deploy."
+            echo "See docs/deploy-runbook.md for the full provisioning checklist."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.flycheck.outputs.configured == 'true'
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - if: steps.flycheck.outputs.configured == 'true'
+        run: flyctl deploy --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
