@@ -13,12 +13,27 @@ export type DownloadPlatform = 'ios' | 'android';
 
 const SUPPORT_EMAIL = 'hello@trygrowthproject.com';
 
+// Invite codes follow `GP-XXXXXX`-style minting (see InviteCodesService) and
+// are validated via ValidateInviteCodeDto at 3–32 chars. We mirror that here
+// AND constrain the alphabet to `[A-Za-z0-9-]` so an arbitrary query string
+// can never reflect into the rendered page or a mailto subject. Anything
+// outside that shape is silently dropped — the page still renders, just
+// without the code section, so a malformed link does not break the flow.
+const INVITE_CODE_RE = /^[A-Za-z0-9-]{3,32}$/;
+
+export function sanitizeInviteCode(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return INVITE_CODE_RE.test(trimmed) ? trimmed : null;
+}
+
 interface PageContent {
   title: string;
   headline: string;
   body: string;
   cta_label: string;
   cta_href: string;
+  invite_code?: string | null;
 }
 
 function pageFor(platform: DownloadPlatform): PageContent {
@@ -52,7 +67,31 @@ export function renderDownloadPage(platform: DownloadPlatform): string {
   return baseDocument(pageFor(platform));
 }
 
-export function renderSignupPage(): string {
+export function renderSignupPage(inviteCode?: string | null): string {
+  const code = sanitizeInviteCode(inviteCode);
+  if (code) {
+    // When the user arrives with a recognised invite code, the page's job
+    // changes: confirm we received the code, ask them to open it on their
+    // phone (where the universal link hands off to the app), and keep the
+    // mailto fallback so they can still reach a human if anything goes
+    // wrong. The code is rendered into the page so the user can verify it
+    // matches what their coach sent — and the mailto subject carries it so
+    // a support reply can pick up the thread without the user re-typing.
+    return baseDocument({
+      title: 'The Growth Project — Sign up',
+      headline: 'Your invite is ready',
+      body:
+        'Open this page on your phone to continue. If your coach has ' +
+        'already shared a link, tap it from your phone to launch the app. ' +
+        'If you run into trouble, email us with the code below and we will ' +
+        'help you finish setup.',
+      cta_label: 'Email us',
+      cta_href:
+        `mailto:${SUPPORT_EMAIL}` +
+        `?subject=${encodeURIComponent('Invite ' + code)}`,
+      invite_code: code,
+    });
+  }
   return baseDocument({
     title: 'The Growth Project — Sign up',
     headline: 'Sign up by invite',
@@ -74,6 +113,12 @@ function baseDocument(p: PageContent): string {
   const body = escapeHtml(p.body);
   const ctaLabel = escapeHtml(p.cta_label);
   const ctaHref = escapeAttr(p.cta_href);
+  // Only render the invite-code block when the controller has handed us a
+  // code that already passed sanitizeInviteCode — but escape again here
+  // anyway, defence in depth costs nothing.
+  const codeBlock = p.invite_code
+    ? `\n  <p class="code-label">Your invite code</p>\n  <p class="code">${escapeHtml(p.invite_code)}</p>`
+    : '';
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -88,6 +133,8 @@ function baseDocument(p: PageContent): string {
   main { max-width: 480px; width: 100%; text-align: left; }
   h1 { font-family: "Iowan Old Style", Georgia, serif; font-weight: 500; font-size: 36px; line-height: 1.15; letter-spacing: -0.01em; margin: 0 0 18px 0; }
   p { font-size: 17px; line-height: 1.55; margin: 0 0 28px 0; color: #3A332B; }
+  p.code-label { margin: 0 0 6px 0; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #8A7F6E; }
+  p.code { margin: 0 0 28px 0; font-family: "SF Mono", "Menlo", ui-monospace, monospace; font-size: 17px; color: #1F1B16; user-select: all; }
   a.cta { display: inline-block; padding: 14px 22px; border-radius: 999px; background: #1F1B16; color: #FBF8F3; text-decoration: none; font-weight: 500; font-size: 15px; }
   a.cta:hover { background: #3A332B; }
   footer { margin-top: 40px; font-size: 13px; color: #8A7F6E; }
@@ -96,7 +143,7 @@ function baseDocument(p: PageContent): string {
 <body>
 <main>
   <h1>${headline}</h1>
-  <p>${body}</p>
+  <p>${body}</p>${codeBlock}
   <a class="cta" href="${ctaHref}">${ctaLabel}</a>
   <footer>The Growth Project</footer>
 </main>

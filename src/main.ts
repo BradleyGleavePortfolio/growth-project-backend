@@ -108,6 +108,7 @@ async function bootstrap() {
       'download/ios',
       'download/android',
       'signup',
+      'signup/:code',
     ],
   });
 
