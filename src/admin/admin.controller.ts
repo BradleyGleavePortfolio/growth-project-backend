@@ -13,6 +13,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AdminService } from './admin.service';
+import { MetricsService } from './metrics.service';
 import { PromoteUserDto } from './admin.dto';
 
 // Phase 1A/1B: OWNER-only platform admin surface. Every route here is
@@ -22,7 +23,23 @@ import { PromoteUserDto } from './admin.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('owner')
 export class AdminController {
-  constructor(private admin: AdminService) {}
+  constructor(
+    private admin: AdminService,
+    private metrics: MetricsService,
+  ) {}
+
+  // OWNER-only platform metrics. Counters are derived from Postgres rows
+  // we have actually written — no synthetic revenue, no fabricated MAU.
+  // Stripe-sourced money figures come from the Invoice mirror table.
+  // Window defaults to 30 days; clamp to a sane range to keep the query
+  // cheap and bounded.
+  @Get('metrics')
+  async getMetrics(@Query('since_days') sinceDaysRaw?: string) {
+    const parsed = sinceDaysRaw ? parseInt(sinceDaysRaw, 10) : NaN;
+    const sinceDays =
+      Number.isFinite(parsed) && parsed > 0 && parsed <= 365 ? parsed : 30;
+    return this.metrics.getOverview({ sinceDays });
+  }
 
   @Get('coaches')
   async listCoaches() {

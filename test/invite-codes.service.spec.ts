@@ -25,7 +25,8 @@ describe('InviteCodesService', () => {
       },
       $transaction: jest.fn((cb: any) => cb(prismaMock)),
     };
-    service = new InviteCodesService(prismaMock as any);
+    const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
+    service = new InviteCodesService(prismaMock as any, analyticsStub);
   });
 
   describe('createForCoach', () => {

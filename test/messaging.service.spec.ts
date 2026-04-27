@@ -147,7 +147,8 @@ describe('MessagingService', () => {
     // Stub the SupabaseService — Realtime broadcasts are best-effort and
     // unrelated to the messaging-service unit under test.
     const supabaseStub = { broadcastNewMessage: jest.fn().mockResolvedValue(undefined) } as any;
-    svc = new MessagingService(prisma as any, supabaseStub);
+    const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
+    svc = new MessagingService(prisma as any, supabaseStub, analyticsStub);
   });
 
   describe('send flows', () => {

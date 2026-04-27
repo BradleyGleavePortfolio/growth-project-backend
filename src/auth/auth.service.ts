@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma.service';
 import { InviteCodesService } from '../invite-codes/invite-codes.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { Events } from '../analytics/events';
 
 @Injectable()
 export class AuthService {
@@ -70,7 +71,10 @@ export class AuthService {
     });
 
     // Psych Report #4: Analytics — user_registered server-side event
-    this.analytics.capture(user.id, 'user_registered', { role: user.role });
+    this.analytics.capture(user.id, Events.USER_REGISTERED, {
+      role: user.role,
+      provider: 'email',
+    });
 
     // Return pending status — mobile will show the verify email screen
     return {
@@ -202,6 +206,10 @@ export class AuthService {
           },
         });
         isNewUser = true;
+        this.analytics.capture(user.id, Events.USER_REGISTERED_GOOGLE, {
+          role: user.role,
+          provider: 'google',
+        });
       }
     }
 
@@ -317,6 +325,10 @@ export class AuthService {
         });
         return user;
       });
+      this.analytics.capture(userId, Events.INVITE_REDEEMED, {
+        via: 'select_role',
+        coach_id: validation.coach_id,
+      });
       return { role: result.role, coach_id: result.coach_id };
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
@@ -410,6 +422,11 @@ export class AuthService {
       }
     }
 
+    this.analytics.capture(registered.user_id, Events.USER_SIGNUP_WITH_CODE, {
+      had_invite_code: !!data.invite_code,
+      gate_enabled: gateEnabled,
+    });
+
     return registered;
   }
 
@@ -439,6 +456,10 @@ export class AuthService {
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: { role: 'coach' },
+    });
+
+    this.analytics.capture(updated.id, Events.COACH_PROMOTED, {
+      via: 'become_coach',
     });
 
     return { role: updated.role };

@@ -4,6 +4,8 @@ import { PrismaService } from '../prisma.service';
 import { ClientAIContextService } from './client-ai-context.service';
 import { AIGuardrailsService } from './ai-guardrails.service';
 import { ClientAIContext } from './client-ai-context.types';
+import { AnalyticsService } from '../analytics/analytics.service';
+import { Events } from '../analytics/events';
 
 // Perplexity API uses OpenAI-compatible endpoint
 const perplexity = new OpenAI({
@@ -59,6 +61,7 @@ export class AiService {
     private prisma: PrismaService,
     private contextSvc: ClientAIContextService,
     private guardrails: AIGuardrailsService,
+    private analytics: AnalyticsService,
   ) {}
 
   // System prompt is now built from the typed ClientAIContext. The prompt
@@ -239,6 +242,12 @@ Now answer the user's next message using the rules above. Keep the answer under 
     }
 
     const result = this.guardrails.validate(userMessage, rawReply, ctx);
+    this.analytics.capture(userId, Events.AI_CHAT_INVOKED, {
+      model_used: modelUsed,
+      guardrails_applied_count: result.applied.length,
+      message_length: userMessage.length,
+      has_coach: ctx.coach.has_coach,
+    });
     return {
       reply: result.reply,
       guardrails_applied: result.applied,

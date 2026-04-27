@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma.service';
+import { AnalyticsService } from '../analytics/analytics.service';
+import { Events } from '../analytics/events';
 
 type ValidationSuccess = {
   valid: true;
@@ -32,7 +34,10 @@ const MAX_GENERATION_ATTEMPTS = 10;
 export class InviteCodesService {
   private readonly logger = new Logger(InviteCodesService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private analytics: AnalyticsService,
+  ) {}
 
   // Generates a human-friendly `GP-XXXXXX` code. Retries on the (astronomically
   // unlikely) unique-collision so callers never see a spurious 500.
@@ -206,6 +211,10 @@ export class InviteCodesService {
       }
     | { valid: false }
   > {
+    // Anonymous preview — distinctId is the (already opaque) code itself so
+    // PostHog can deduplicate repeated previews from the same client without
+    // needing a logged-in user. The code is non-PII (random GP-XXXXXX).
+    this.analytics.capture(`code:${code}`, Events.INVITE_PREVIEWED, {});
     // 1. Try CoachProfile.invite_code first (default per-coach link).
     const profile = await this.prisma.coachProfile.findUnique({
       where: { invite_code: code },
@@ -316,6 +325,11 @@ export class InviteCodesService {
       const updated = await tx.user.update({
         where: { id: userId },
         data: { role: 'student', coach_id: resolvedCoachId },
+      });
+      this.analytics.capture(userId, Events.INVITE_REDEEMED, {
+        via: 'attach_code',
+        coach_id: resolvedCoachId,
+        legacy_invite_row: !!inviteCodeRowId,
       });
       return { role: updated.role, coach_id: updated.coach_id };
     });
