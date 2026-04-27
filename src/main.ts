@@ -95,8 +95,20 @@ async function bootstrap() {
   // without the /api prefix. The invite-landing controller's `api/invite/:code`
   // JSON alias is *not* excluded — it intentionally lives under /api alongside
   // the existing /api/invite/:code/preview JSON route.
+  // /download/* and /signup are durable public status pages used as the
+  // destinations for the APP_STORE_URL, PLAY_STORE_URL, and
+  // PUBLIC_WEB_SIGNUP_URL secrets until the real App Store / Play Store
+  // listings exist; they must be reachable as bare paths under
+  // app.trygrowthproject.com, so they are excluded from the /api prefix.
   app.setGlobalPrefix('api', {
-    exclude: ['health', 'join/:code', 'invite/:code'],
+    exclude: [
+      'health',
+      'join/:code',
+      'invite/:code',
+      'download/ios',
+      'download/android',
+      'signup',
+    ],
   });
 
   const port = parseInt(process.env.PORT || '3000', 10);

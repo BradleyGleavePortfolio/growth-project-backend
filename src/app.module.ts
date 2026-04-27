@@ -35,6 +35,7 @@ import { AdminModule } from './admin/admin.module';
 import { BillingModule } from './billing/billing.module';
 import { V1Module } from './v1/v1.module';
 import { InviteLandingModule } from './invite-landing/invite-landing.module';
+import { PublicPagesModule } from './public-pages/public-pages.module';
 
 @Module({
   imports: [
@@ -87,6 +88,10 @@ import { InviteLandingModule } from './invite-landing/invite-landing.module';
     // Public invite landing — server-rendered HTML at /join/:code and
     // /invite/:code (mounted outside the /api prefix, see main.ts).
     InviteLandingModule,
+    // Durable status pages used as the destinations for APP_STORE_URL,
+    // PLAY_STORE_URL, and PUBLIC_WEB_SIGNUP_URL until the real store
+    // listings exist (mounted outside the /api prefix, see main.ts).
+    PublicPagesModule,
   ],
   providers: [
     // SECURITY: register ThrottlerGuard as a global APP_GUARD so that @Throttle(...)
