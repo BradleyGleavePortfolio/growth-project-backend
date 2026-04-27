@@ -2,7 +2,7 @@
 
 The fitness backend now builds a server-side `ClientAIContext` and runs all
 prompts and guardrails through it. The mobile client must stop relying on
-the local keyword matcher for the main AI surfaces and call `POST /ai/chat`
+the local keyword matcher for the main AI surfaces and call `POST /api/ai/chat`
 with the user's question only.
 
 ## Contract reminder
@@ -10,7 +10,7 @@ with the user's question only.
 Mobile sends ONLY:
 
 ```json
-POST /ai/chat
+POST /api/ai/chat
 Authorization: Bearer <supabase_access_token>
 {
   "message": "string, required",
@@ -38,7 +38,7 @@ Response (always):
 Disclosure surface (optional but recommended):
 
 ```
-GET /ai/structured-context
+GET /api/ai/structured-context
 ```
 
 Returns the typed `ClientAIContext` so the mobile app can render a
@@ -63,6 +63,8 @@ export async function aiChat(
 ): Promise<{ reply: string; offline: boolean }> {
   try {
     const token = await getSupabaseAccessToken();
+    // API_BASE_URL must already include the `/api` global prefix
+    // (the backend mounts every route under `/api`, e.g. /api/ai/chat).
     const res = await fetch(`${API_BASE_URL}/ai/chat`, {
       method: 'POST',
       headers: {
@@ -108,7 +110,7 @@ const onSubmit = async (text: string) => {
 ### 3. `screens/AIDisclosureScreen.tsx` (NEW, optional)
 
 If the team wants a "what GP knows about you" surface, add a screen that
-fetches `GET /ai/structured-context` and renders the typed shape. Helps
+fetches `GET /api/ai/structured-context` and renders the typed shape. Helps
 trust and matches the requirement "AI must know X, Y, Z" by exposing it.
 
 Recommended sections (in this order):
@@ -142,7 +144,7 @@ No exclamation marks, no em-dashes, no emoji. Matches the quiet luxury tone.
 
 ## Verification checklist (mobile QA)
 
-- [ ] Chat hits `POST /ai/chat` with `Authorization` header
+- [ ] Chat hits `POST /api/ai/chat` with `Authorization` header
 - [ ] Request body contains only `message` and optional `conversation_history`
 - [ ] Replies render server-strings verbatim
 - [ ] Offline path shows premium fallback copy

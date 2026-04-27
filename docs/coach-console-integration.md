@@ -27,7 +27,7 @@ directly; deploy-time path rewriting (or pointing the console at the
 | GET    | `/v1/coach/me/billing`                            | JWT + COACH or OWNER          |
 | POST   | `/v1/coach/me/billing/portal-session`             | JWT + COACH or OWNER          |
 | POST   | `/v1/admin/coaches/:id/start-subscription`        | JWT + OWNER only              |
-| POST   | `/v1/webhooks/stripe`                             | Public + HMAC signature       |
+| POST   | `/api/v1/webhooks/stripe`                         | Public + HMAC signature       |
 
 ## Scoping rules
 
@@ -62,7 +62,7 @@ spec, billing problems on the coach side never block the client experience.
 
 ## Stripe webhook
 
-`POST /v1/webhooks/stripe` accepts HMAC-signed events from Stripe. The
+`POST /api/v1/webhooks/stripe` accepts HMAC-signed events from Stripe. The
 controller reads the raw request body (Nest 11 `rawBody: true` flag in
 `main.ts`), verifies the signature against `STRIPE_WEBHOOK_SECRET`, and
 hands the parsed event to `BillingService.handleEvent`.

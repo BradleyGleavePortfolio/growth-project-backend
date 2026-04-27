@@ -1,7 +1,12 @@
 import { Injectable, Logger, UnauthorizedException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma.service';
-import { InviteCodesService } from '../invite-codes/invite-codes.service';
+import {
+  InviteCodesService,
+  INVITE_CODE_MAX_LENGTH,
+  INVITE_CODE_MIN_LENGTH,
+  INVITE_CODE_PREFIX,
+} from '../invite-codes/invite-codes.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 
@@ -126,10 +131,21 @@ export class AuthService {
     };
   }
 
-  // Returns the signup policy in effect for this build. Mobile (#56) calls
-  // this on launch to decide whether to require the coach invite code field
-  // and which auth providers to surface. Pure read of env flags; safe to call
-  // unauthenticated.
+  // Returns the signup policy in effect for this build. Mobile calls this on
+  // launch to decide whether to require the coach invite code field, which
+  // auth providers to surface, and the format constraints for client-side
+  // invite-code validation. Pure read of env flags + invite-code constants;
+  // safe to call unauthenticated.
+  //
+  // Field guide for the mobile contract:
+  //   - `invite_code_required`: canonical flag (matches `invite_code_field`).
+  //     `coach_code_required` is preserved as a deprecated alias for older
+  //     clients still on the pre-rename build.
+  //   - `invite_code_field`: server-side body field name (`invite_code`).
+  //   - `invite_code`: format spec the client uses to gate input before
+  //     POST /auth/validate-invite-code (avoids the 32-char-overflow 400 the
+  //     mobile invite QA surfaced in PR #61).
+  //   - `providers`: ordered list of usable auth providers for this build.
   getSignupPolicy() {
     const gateEnabled =
       (process.env.COACH_CODE_GATE_ENABLED || '').toLowerCase() === 'true';
@@ -138,9 +154,15 @@ export class AuthService {
     const providers = ['email'];
     if (googleEnabled) providers.push('google');
     return {
+      invite_code_required: gateEnabled,
       coach_code_required: gateEnabled,
       providers,
       invite_code_field: 'invite_code',
+      invite_code: {
+        min_length: INVITE_CODE_MIN_LENGTH,
+        max_length: INVITE_CODE_MAX_LENGTH,
+        prefix: INVITE_CODE_PREFIX,
+      },
     };
   }
 

@@ -30,15 +30,31 @@ export class BillingService {
   // Idempotently process an event. Returns { processed: true } on first
   // delivery, { processed: false, alreadyProcessed: true } on duplicates so
   // the caller can return 200 either way (Stripe stops retrying after a 2xx).
+  //
+  // Insert-first idempotency: we claim the event id by inserting into
+  // StripeProcessedEvent before running the handler. Two concurrent
+  // deliveries of the same event id race on the @id unique constraint; the
+  // loser hits P2002 and short-circuits as already-processed. This closes
+  // the read-then-write race the previous implementation had.
+  //
+  // Handler errors *after* the claim are logged but the event stays
+  // recorded — same poison-pill protection as the prior `finally` pattern,
+  // but no longer racy.
   async handleEvent(event: StripeEvent) {
     if (!event?.id || !event?.type) {
       return { processed: false, reason: 'malformed' };
     }
-    // Idempotency: short-circuit if we've already recorded this event id.
-    const existing = await this.prisma.stripeProcessedEvent.findUnique({
-      where: { stripe_event_id: event.id },
-    });
-    if (existing) return { processed: false, alreadyProcessed: true };
+
+    try {
+      await this.prisma.stripeProcessedEvent.create({
+        data: { stripe_event_id: event.id, type: event.type },
+      });
+    } catch (err) {
+      if (this.isUniqueViolation(err)) {
+        return { processed: false, alreadyProcessed: true };
+      }
+      throw err;
+    }
 
     try {
       switch (event.type) {
@@ -61,16 +77,31 @@ export class BillingService {
         default:
           this.logger.log(`Ignoring unhandled Stripe event type: ${event.type}`);
       }
-    } finally {
-      // Record the event id even on handler errors so a poison-pill payload
-      // doesn't loop forever. Stripe retries on non-2xx responses; if a
-      // handler genuinely needs a retry we surface that via the returned
-      // status before this finally block runs.
-      await this.prisma.stripeProcessedEvent.create({
-        data: { stripe_event_id: event.id, type: event.type },
-      });
+    } catch (err) {
+      // The event id is already recorded, so a poison-pill payload won't
+      // loop through Stripe's retry queue. Surface the error in logs and
+      // return — the caller still treats this as a successful delivery
+      // because retrying would just hit the idempotency short-circuit.
+      this.logger.error(
+        `Stripe event handler failed event=${event.id} type=${event.type}: ${
+          (err as Error)?.message ?? String(err)
+        }`,
+      );
     }
     return { processed: true };
+  }
+
+  // Detects Prisma's unique-constraint violation (P2002). Falls back to a
+  // message regex so the in-memory test stub can simulate it without
+  // importing Prisma's runtime error classes.
+  private isUniqueViolation(err: unknown): boolean {
+    if (!err || typeof err !== 'object') return false;
+    const e = err as { code?: string; message?: string };
+    if (e.code === 'P2002') return true;
+    if (typeof e.message === 'string' && /unique constraint/i.test(e.message)) {
+      return true;
+    }
+    return false;
   }
 
   // Resolve coach by stripe customer id via CoachProfile.

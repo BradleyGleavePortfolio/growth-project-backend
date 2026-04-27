@@ -8,6 +8,7 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
+import { AuditAction, AuditService } from '../audit/audit.service';
 
 const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const CODE_LENGTH = 6;
@@ -20,6 +21,7 @@ export class AdminService {
   constructor(
     private prisma: PrismaService,
     private analytics: AnalyticsService,
+    private audit: AuditService,
   ) {}
 
   private generateInviteCode(): string {
@@ -74,6 +76,7 @@ export class AdminService {
     targetUserId: string,
     role: 'student' | 'coach' | 'owner',
     hints?: { business_name?: string; bio?: string; timezone?: string },
+    audit?: { ip?: string | null; userAgent?: string | null },
   ) {
     const target = await this.prisma.user.findUnique({
       where: { id: targetUserId },
@@ -84,6 +87,8 @@ export class AdminService {
       // Refuse to demote yourself — keeps at least one owner online.
       throw new BadRequestException('Cannot demote yourself');
     }
+
+    const previousRole = target.role;
 
     const updated = await this.prisma.user.update({
       where: { id: targetUserId },
@@ -97,6 +102,29 @@ export class AdminService {
       this.analytics.capture(updated.id, Events.COACH_PROMOTED, {
         via: 'admin_promote',
         promoted_by_owner_id: actingOwnerId,
+      });
+    }
+
+    // Immutable audit trail of the role change. Only write if the role
+    // actually changed — re-asserting the same role is a no-op and
+    // shouldn't pollute the audit log.
+    if (previousRole !== role) {
+      const actor = await this.prisma.user.findUnique({
+        where: { id: actingOwnerId },
+        select: { email: true, role: true },
+      });
+      await this.audit.write({
+        action: AuditAction.USER_ROLE_CHANGED,
+        actorId: actingOwnerId,
+        actorRole: actor?.role ?? null,
+        actorEmail: actor?.email ?? null,
+        targetUserId: updated.id,
+        targetType: 'user',
+        targetId: updated.id,
+        tenantCoachId: role === 'coach' ? updated.id : null,
+        ip: audit?.ip ?? null,
+        userAgent: audit?.userAgent ?? null,
+        metadata: { from: previousRole, to: role },
       });
     }
 
@@ -197,6 +225,22 @@ export class AdminService {
         messages: recentMessages,
       },
     };
+  }
+
+  async listAuditLog(params: {
+    action?: string;
+    targetUserId?: string;
+    tenantCoachId?: string;
+    before?: string;
+    limit?: number;
+  }) {
+    return this.audit.list({
+      action: params.action,
+      targetUserId: params.targetUserId,
+      tenantCoachId: params.tenantCoachId,
+      before: params.before ? new Date(params.before) : undefined,
+      limit: params.limit,
+    });
   }
 
   async listUsers(params: { role?: 'owner' | 'coach' | 'student'; q?: string; limit?: number }) {

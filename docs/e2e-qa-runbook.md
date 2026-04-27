@@ -127,15 +127,27 @@ steps confirm UI wire-up across mobile, console, and finance.
 - Response shape:
   ```json
   {
+    "invite_code_required": true,
     "coach_code_required": true,
     "providers": ["email", "google"],
-    "invite_code_field": "invite_code"
+    "invite_code_field": "invite_code",
+    "invite_code": {
+      "min_length": 3,
+      "max_length": 32,
+      "prefix": "GP-"
+    }
   }
   ```
 - When `COACH_CODE_GATE_ENABLED=true`, the **Invite code** field is
   required; with the flag unset, the field is optional.
 - App labels the field exactly using `invite_code_field` so a future rename
   flows automatically.
+- `invite_code_required` is the canonical flag; `coach_code_required` is a
+  deprecated alias kept in the response for older clients still on the
+  pre-rename build. New clients should read `invite_code_required`.
+- `invite_code.min_length` / `max_length` / `prefix` are the format spec.
+  The mobile client gates input client-side using these so a 33-char paste
+  never reaches `POST /auth/validate-invite-code`.
 
 ### Step 4 — Client previews the invite code
 
@@ -149,6 +161,21 @@ steps confirm UI wire-up across mobile, console, and finance.
 - Mobile calls `POST /auth/validate-invite-code` with `{code}`.
 - Returns `{valid:true, coach_id, coach_name}` on a live code.
 - Returns `{valid:false}` for an unknown, revoked, or paused/canceled coach.
+- Returns 400 with the polished structured body below when the code is
+  outside the documented length / character class (e.g. >32 chars). The
+  body never echoes the user's input and the same shape is returned
+  regardless of which constraint failed, so it cannot be used to probe
+  whether a malformed code resolves:
+  ```json
+  {
+    "statusCode": 400,
+    "code": "invite_code_invalid_format",
+    "message": "Invite code format is invalid.",
+    "error": "Bad Request",
+    "timestamp": "...",
+    "path": "/api/auth/validate-invite-code"
+  }
+  ```
 - Endpoint is rate-limited at 20/min/IP; rapid repeats yield 429.
 
 ### Step 5 — Client signs up with email + invite code
@@ -341,10 +368,30 @@ Smoke spec § 3 covers gate enforcement; § 7 covers billing matrix.
 
 ## 5. Re-running the smoke spec
 
+Prerequisites (clean clone of `growth-project-backend`):
+
 ```bash
-npx jest test/e2e-saas-smoke.spec.ts          # 21 tests, ~5s
-npx jest                                       # full backend suite, ~18s
+node --version    # >= 20.x (matches engines + CI)
+npm ci            # exact install from package-lock.json
 ```
 
-The spec stubs Prisma, Supabase, and Stripe. It is safe to run against
-any environment because it never opens a network connection.
+No `.env` file is required — the spec mocks Prisma, Supabase, and Stripe.
+No database, no network calls, no migrations.
+
+Run:
+
+```bash
+npx jest test/e2e-saas-smoke.spec.ts          # 21 tests, ~10s
+npx jest                                       # full backend suite (33+ suites)
+```
+
+CI runs the full suite via `npm test` in `.github/workflows/ci.yml`; the
+smoke spec is included. To re-run only the smoke spec on CI logs:
+
+```bash
+npx jest --runInBand test/e2e-saas-smoke.spec.ts
+```
+
+The spec is safe to run against any environment because it never opens a
+network connection. If it fails, `npm test` will fail too — they share
+the same Jest config.

@@ -2,12 +2,14 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../prisma.service';
 import { JwksVerifierService } from './jwks.service';
 import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
+import { ALLOW_DELETION_SCHEDULED_KEY } from '../common/decorators/allow-deletion-scheduled.decorator';
 
 /**
  * JwtAuthGuard — Supabase ES256 token validation via JWKS.
@@ -74,6 +76,28 @@ export class JwtAuthGuard implements CanActivate {
 
     if (!user) {
       throw new UnauthorizedException('User not found');
+    }
+
+    // GDPR lifecycle gate. A scrubbed account (deleted_at set) is fully
+    // off-limits — return 403 so the client can render a terminal state
+    // rather than a confusing 401 retry loop. A scheduled-for-deletion
+    // account (deletion_scheduled_at set) is also locked out from every
+    // route except the explicitly-opted-in recovery endpoints, so a
+    // logged-in client can still cancel the schedule but cannot keep
+    // mutating data during the grace window.
+    if (user.deleted_at) {
+      throw new ForbiddenException('Account has been deleted');
+    }
+    if (user.deletion_scheduled_at) {
+      const allowDuringDeletion = this.reflector.getAllAndOverride<boolean>(
+        ALLOW_DELETION_SCHEDULED_KEY,
+        [context.getHandler(), context.getClass()],
+      );
+      if (!allowDuringDeletion) {
+        throw new ForbiddenException(
+          'Account is scheduled for deletion; cancel the deletion to regain access',
+        );
+      }
     }
 
     req.user = user;

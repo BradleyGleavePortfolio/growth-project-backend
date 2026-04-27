@@ -70,10 +70,48 @@ export class AdminController {
     @Param('id') id: string,
     @Body() body: PromoteUserDto,
   ) {
-    return this.admin.promoteUser(req.user.id, id, body.role, {
-      business_name: body.business_name,
-      bio: body.bio,
-      timezone: body.timezone,
+    return this.admin.promoteUser(
+      req.user.id,
+      id,
+      body.role,
+      {
+        business_name: body.business_name,
+        bio: body.bio,
+        timezone: body.timezone,
+      },
+      auditContext(req as any),
+    );
+  }
+
+  // OWNER-only audit-log read surface. Filters cover the common forensic
+  // queries (by action, target user, tenant coach) plus a `before` cursor
+  // for pagination.
+  @Get('audit-log')
+  async listAuditLog(
+    @Query('action') action?: string,
+    @Query('target_user_id') targetUserId?: string,
+    @Query('tenant_coach_id') tenantCoachId?: string,
+    @Query('before') before?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.admin.listAuditLog({
+      action,
+      targetUserId,
+      tenantCoachId,
+      before,
+      limit: limit ? parseInt(limit, 10) : undefined,
     });
   }
+}
+
+// Best-effort extraction of remote IP + User-Agent from the express request,
+// used as audit-log context. Handles the common `x-forwarded-for` chain set
+// by Fly.io's edge proxy. Returns nulls when fields are absent — callers
+// already accept null.
+function auditContext(req: any): { ip: string | null; userAgent: string | null } {
+  const xff = (req?.headers?.['x-forwarded-for'] || '') as string;
+  const fwdIp = xff.split(',')[0]?.trim();
+  const ip = fwdIp || req?.ip || req?.socket?.remoteAddress || null;
+  const userAgent = (req?.headers?.['user-agent'] || null) as string | null;
+  return { ip: ip || null, userAgent: userAgent || null };
 }

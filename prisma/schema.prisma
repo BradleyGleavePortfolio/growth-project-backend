@@ -106,68 +106,77 @@ enum CheckInType {
 // ============================================================
 
 model User {
-  id                 String   @id @default(uuid())
-  supabase_id        String   @unique
-  email              String   @unique
-  name               String
-  phone              String?
-  role               Role     @default(student)
+  id                    String    @id @default(uuid())
+  supabase_id           String    @unique
+  email                 String    @unique
+  name                  String
+  phone                 String?
+  role                  Role      @default(student)
   // coach_id now a proper self-relation FK instead of an orphan string column.
   // Preserves prior behavior — still nullable, still points at another User.id.
-  coach_id           String?
-  coach              User?    @relation("CoachToStudents", fields: [coach_id], references: [id])
-  students           User[]   @relation("CoachToStudents")
-  created_at         DateTime @default(now())
-  archived_at        DateTime?
+  coach_id              String?
+  coach                 User?     @relation("CoachToStudents", fields: [coach_id], references: [id])
+  students              User[]    @relation("CoachToStudents")
+  created_at            DateTime  @default(now())
+  archived_at           DateTime?
+  // GDPR delete-account flow. Two-phase: deletion_scheduled_at marks the
+  // grace-period start (account locked but recoverable); deleted_at marks
+  // the irreversible PII scrub. Existing rows stay valid (both null).
+  deletion_scheduled_at DateTime?
+  deleted_at            DateTime?
 
-  profile            UserProfile?
-  logged_entries     LoggedFoodEntry[]
-  workouts           WorkoutSession[]
-  fasting_windows    FastingWindow[]
-  weight_logs        WeightLog[]
-  notification_prefs NotificationPreferences?
-  preferences        UserPreferences?
-  habits             Habit[]
-  lesson_completions LessonCompletion[]
-  check_ins          CheckIn[]
-  water_logs         WaterLog[]
-  created_routines   WorkoutRoutine[] @relation("RoutineCreator")
-  coached_lessons    Lesson[]         @relation("LessonCoach")
-  invite_codes       InviteCode[]     @relation("CoachInviteCodes")
-  coach_messages_as_coach  CoachMessage[] @relation("CoachMessagesAsCoach")
-  coach_messages_as_client CoachMessage[] @relation("CoachMessagesAsClient")
-  coach_messages_sent      CoachMessage[] @relation("CoachMessagesSender")
-  coach_nudges_as_coach    CoachNudge[]   @relation("CoachNudgesAsCoach")
-  coach_nudges_as_client   CoachNudge[]   @relation("CoachNudgesAsClient")
-  meal_plans_as_coach      MealPlan[]     @relation("MealPlanCoach")
-  meal_plans_as_client     MealPlan[]     @relation("MealPlanClient")
-  community_wins           CommunityWin[] @relation("CommunityWinAuthor")
-  community_wins_as_coach  CommunityWin[] @relation("CommunityWinCoach")
+  profile                  UserProfile?
+  logged_entries           LoggedFoodEntry[]
+  workouts                 WorkoutSession[]
+  fasting_windows          FastingWindow[]
+  weight_logs              WeightLog[]
+  notification_prefs       NotificationPreferences?
+  preferences              UserPreferences?
+  habits                   Habit[]
+  lesson_completions       LessonCompletion[]
+  check_ins                CheckIn[]
+  water_logs               WaterLog[]
+  created_routines         WorkoutRoutine[]         @relation("RoutineCreator")
+  coached_lessons          Lesson[]                 @relation("LessonCoach")
+  invite_codes             InviteCode[]             @relation("CoachInviteCodes")
+  coach_messages_as_coach  CoachMessage[]           @relation("CoachMessagesAsCoach")
+  coach_messages_as_client CoachMessage[]           @relation("CoachMessagesAsClient")
+  coach_messages_sent      CoachMessage[]           @relation("CoachMessagesSender")
+  coach_nudges_as_coach    CoachNudge[]             @relation("CoachNudgesAsCoach")
+  coach_nudges_as_client   CoachNudge[]             @relation("CoachNudgesAsClient")
+  meal_plans_as_coach      MealPlan[]               @relation("MealPlanCoach")
+  meal_plans_as_client     MealPlan[]               @relation("MealPlanClient")
+  community_wins           CommunityWin[]           @relation("CommunityWinAuthor")
+  community_wins_as_coach  CommunityWin[]           @relation("CommunityWinCoach")
   user_badges              UserBadge[]
   win_reactions            WinReaction[]
-  guidelines_as_coach      CoachGuideline[] @relation("CoachGuidelineCoach")
-  guidelines_as_client     CoachGuideline[] @relation("CoachGuidelineClient")
-  created_recipes          Recipe[]         @relation("RecipeCreator")
+  guidelines_as_coach      CoachGuideline[]         @relation("CoachGuidelineCoach")
+  guidelines_as_client     CoachGuideline[]         @relation("CoachGuidelineClient")
+  created_recipes          Recipe[]                 @relation("RecipeCreator")
   saved_recipes            SavedRecipe[]
   list_items               ListItem[]
   // Phase 1A: 1:1 coach metadata. Only present for users with role=coach.
   // The relation stays optional so the existing student/owner rows do not
   // need a CoachProfile row (and the bootstrap script can backfill coaches
   // additively).
-  coach_profile            CoachProfile?    @relation("CoachProfileUser")
-  owners_created_profiles  CoachProfile[]   @relation("CoachProfileCreatedBy")
+  coach_profile            CoachProfile?            @relation("CoachProfileUser")
+  owners_created_profiles  CoachProfile[]           @relation("CoachProfileCreatedBy")
 
   // SaaS billing additions (1:1 with coach users; null for clients/owners).
-  coach_subscription       CoachSubscription?
-  invoices                 Invoice[]
-  payment_failures         PaymentFailure[]
-  drafts_as_coach          MessageDraft[]   @relation("MessageDraftCoach")
-  drafts_as_client         MessageDraft[]   @relation("MessageDraftClient")
-  activity_events_actor    ActivityEvent[]  @relation("ActivityEventActor")
-  activity_events_coach    ActivityEvent[]  @relation("ActivityEventCoach")
-  activity_events_client   ActivityEvent[]  @relation("ActivityEventClient")
+  coach_subscription     CoachSubscription?
+  invoices               Invoice[]
+  payment_failures       PaymentFailure[]
+  drafts_as_coach        MessageDraft[]      @relation("MessageDraftCoach")
+  drafts_as_client       MessageDraft[]      @relation("MessageDraftClient")
+  activity_events_actor  ActivityEvent[]     @relation("ActivityEventActor")
+  activity_events_coach  ActivityEvent[]     @relation("ActivityEventCoach")
+  activity_events_client ActivityEvent[]     @relation("ActivityEventClient")
+  audit_logs_actor       AuditLog[]          @relation("AuditLogActor")
+  audit_logs_target      AuditLog[]          @relation("AuditLogTarget")
+  data_export_requests   DataExportRequest[]
 
   @@index([coach_id])
+  @@index([deletion_scheduled_at])
 }
 
 // Phase 1A: per-coach business + billing + branding metadata. The User
@@ -183,26 +192,26 @@ model User {
 // stripe_* and subscription_status are wired into Phase 2A; they are
 // nullable here so this migration can ship before Stripe is provisioned.
 model CoachProfile {
-  id                       String              @id @default(uuid())
-  user_id                  String              @unique
-  user                     User                @relation("CoachProfileUser", fields: [user_id], references: [id])
-  business_name            String?
-  bio                      String?
-  timezone                 String?
-  branding_accent_color    String?
-  branding_logo_url        String?
-  invite_code              String              @unique
-  stripe_customer_id       String?
-  stripe_subscription_id   String?
-  subscription_status      SubscriptionStatus?
-  plan_tier                String              @default("flat_300")
-  current_period_end       DateTime?
-  trial_end                DateTime?
-  ai_monthly_spend_cap_cents Int               @default(5000)
-  created_by_owner_id      String?
-  created_by_owner         User?               @relation("CoachProfileCreatedBy", fields: [created_by_owner_id], references: [id])
-  created_at               DateTime            @default(now())
-  updated_at               DateTime            @updatedAt
+  id                         String              @id @default(uuid())
+  user_id                    String              @unique
+  user                       User                @relation("CoachProfileUser", fields: [user_id], references: [id])
+  business_name              String?
+  bio                        String?
+  timezone                   String?
+  branding_accent_color      String?
+  branding_logo_url          String?
+  invite_code                String              @unique
+  stripe_customer_id         String?
+  stripe_subscription_id     String?
+  subscription_status        SubscriptionStatus?
+  plan_tier                  String              @default("flat_300")
+  current_period_end         DateTime?
+  trial_end                  DateTime?
+  ai_monthly_spend_cap_cents Int                 @default(5000)
+  created_by_owner_id        String?
+  created_by_owner           User?               @relation("CoachProfileCreatedBy", fields: [created_by_owner_id], references: [id])
+  created_at                 DateTime            @default(now())
+  updated_at                 DateTime            @updatedAt
 
   @@index([invite_code])
   @@index([subscription_status])
@@ -214,55 +223,55 @@ model CoachProfile {
 // without touching Stripe directly. Complements CoachProfile.stripe_* fields
 // with the longer-form mirror used by the v1 coach-console BFF.
 model CoachSubscription {
-  id                       String    @id @default(uuid())
-  coach_id                 String    @unique
-  coach                    User      @relation(fields: [coach_id], references: [id])
-  stripe_customer_id       String?
-  stripe_subscription_id   String?   @unique
-  stripe_price_id          String?
-  status                   String    @default("incomplete") // active | trialing | past_due | canceled | paused | incomplete | unpaid
-  current_period_end       DateTime?
-  trial_end                DateTime?
-  cancel_at_period_end     Boolean   @default(false)
-  last_payment_failed_at   DateTime?
-  failed_payments_this_month Int     @default(0)
-  billing_email            String?
-  card_last4               String?
-  created_at               DateTime  @default(now())
-  updated_at               DateTime  @updatedAt
+  id                         String    @id @default(uuid())
+  coach_id                   String    @unique
+  coach                      User      @relation(fields: [coach_id], references: [id])
+  stripe_customer_id         String?
+  stripe_subscription_id     String?   @unique
+  stripe_price_id            String?
+  status                     String    @default("incomplete") // active | trialing | past_due | canceled | paused | incomplete | unpaid
+  current_period_end         DateTime?
+  trial_end                  DateTime?
+  cancel_at_period_end       Boolean   @default(false)
+  last_payment_failed_at     DateTime?
+  failed_payments_this_month Int       @default(0)
+  billing_email              String?
+  card_last4                 String?
+  created_at                 DateTime  @default(now())
+  updated_at                 DateTime  @updatedAt
 
   @@index([status])
 }
 
 model Invoice {
-  id                     String   @id @default(uuid())
-  coach_id               String
-  coach                  User     @relation(fields: [coach_id], references: [id])
-  stripe_invoice_id      String   @unique
-  stripe_customer_id     String?
-  amount_paid_cents      Int      @default(0)
-  amount_due_cents       Int      @default(0)
-  currency               String   @default("usd")
-  status                 String   @default("open") // open | paid | void | uncollectible
-  hosted_invoice_url     String?
-  invoice_pdf            String?
-  period_start           DateTime?
-  period_end             DateTime?
-  paid_at                DateTime?
-  created_at             DateTime @default(now())
+  id                 String    @id @default(uuid())
+  coach_id           String
+  coach              User      @relation(fields: [coach_id], references: [id])
+  stripe_invoice_id  String    @unique
+  stripe_customer_id String?
+  amount_paid_cents  Int       @default(0)
+  amount_due_cents   Int       @default(0)
+  currency           String    @default("usd")
+  status             String    @default("open") // open | paid | void | uncollectible
+  hosted_invoice_url String?
+  invoice_pdf        String?
+  period_start       DateTime?
+  period_end         DateTime?
+  paid_at            DateTime?
+  created_at         DateTime  @default(now())
 
   @@index([coach_id, created_at])
 }
 
 model PaymentFailure {
-  id                     String   @id @default(uuid())
-  coach_id               String
-  coach                  User     @relation(fields: [coach_id], references: [id])
-  stripe_invoice_id      String?
-  stripe_event_id        String?
-  amount_due_cents       Int      @default(0)
-  reason                 String?
-  occurred_at            DateTime @default(now())
+  id                String   @id @default(uuid())
+  coach_id          String
+  coach             User     @relation(fields: [coach_id], references: [id])
+  stripe_invoice_id String?
+  stripe_event_id   String?
+  amount_due_cents  Int      @default(0)
+  reason            String?
+  occurred_at       DateTime @default(now())
 
   @@index([coach_id, occurred_at])
 }
@@ -299,18 +308,18 @@ model MessageDraft {
 // Schema follows the integration notes: actor, coach, client, type, summary,
 // payload (jsonb).
 model ActivityEvent {
-  id          String   @id @default(uuid())
-  actor_id    String?
-  actor       User?    @relation("ActivityEventActor", fields: [actor_id], references: [id])
-  actor_role  String?
-  coach_id    String?
-  coach       User?    @relation("ActivityEventCoach", fields: [coach_id], references: [id])
-  client_id   String?
-  client      User?    @relation("ActivityEventClient", fields: [client_id], references: [id])
-  type        String
-  summary     String?
-  payload     Json?
-  created_at  DateTime @default(now())
+  id         String   @id @default(uuid())
+  actor_id   String?
+  actor      User?    @relation("ActivityEventActor", fields: [actor_id], references: [id])
+  actor_role String?
+  coach_id   String?
+  coach      User?    @relation("ActivityEventCoach", fields: [coach_id], references: [id])
+  client_id  String?
+  client     User?    @relation("ActivityEventClient", fields: [client_id], references: [id])
+  type       String
+  summary    String?
+  payload    Json?
+  created_at DateTime @default(now())
 
   @@index([coach_id, created_at])
   @@index([client_id, created_at])
@@ -361,10 +370,10 @@ model UserProfile {
 }
 
 model FoodItem {
-  id                  String       @id @default(uuid())
+  id                  String            @id @default(uuid())
   name                String
   brand_or_restaurant String?
-  category            FoodCategory @default(generic)
+  category            FoodCategory      @default(generic)
   serving_description String
   serving_size_grams  Float
   calories            Float
@@ -380,39 +389,39 @@ model FoodItem {
   tags                String[]
   search_aliases      String[]
   image_url           String?
-  barcode             String?      @unique
-  created_at          DateTime     @default(now())
+  barcode             String?           @unique
+  created_at          DateTime          @default(now())
   log_entries         LoggedFoodEntry[]
 }
 
 model LoggedFoodEntry {
-  id                  String    @id @default(uuid())
+  id                  String   @id @default(uuid())
   user_id             String
-  user                User      @relation(fields: [user_id], references: [id])
-  date                DateTime  @db.Date
+  user                User     @relation(fields: [user_id], references: [id])
+  date                DateTime @db.Date
   meal_type           MealType
   food_item_id        String
-  food_item           FoodItem  @relation(fields: [food_item_id], references: [id])
-  quantity_multiplier Float     @default(1.0)
+  food_item           FoodItem @relation(fields: [food_item_id], references: [id])
+  quantity_multiplier Float    @default(1.0)
   notes               String?
-  logged_at           DateTime  @default(now())
+  logged_at           DateTime @default(now())
 
   // Hot path: LogService.getDaily + CoachService.getClientSummary both query by (user_id, date).
   @@index([user_id, date])
 }
 
 model WorkoutSession {
-  id               String       @id @default(uuid())
+  id               String        @id @default(uuid())
   user_id          String
-  user             User         @relation(fields: [user_id], references: [id])
-  date             DateTime     @db.Date
+  user             User          @relation(fields: [user_id], references: [id])
+  date             DateTime      @db.Date
   workout_name     String
   workout_type     String
   duration_minutes Int?
-  intensity        Intensity    @default(moderate)
+  intensity        Intensity     @default(moderate)
   notes            String?
   exercises        ExerciseSet[]
-  created_at       DateTime     @default(now())
+  created_at       DateTime      @default(now())
 
   // Hot path: coach alerts, community leaderboard, workout history all filter by (user_id, date).
   @@index([user_id, date])
@@ -483,20 +492,20 @@ model WeightLog {
 }
 
 model NotificationPreferences {
-  id                      String  @id @default(uuid())
-  user_id                 String  @unique
-  user                    User    @relation(fields: [user_id], references: [id])
-  water_enabled           Boolean @default(true)
-  workout_enabled         Boolean @default(true)
-  eat_enabled             Boolean @default(true)
-  mindset_enabled         Boolean @default(true)
-  fasting_enabled         Boolean @default(true)
-  daily_checkin_enabled   Boolean @default(true)
-  weekly_summary_enabled  Boolean @default(true)
-  new_client_alerts       Boolean @default(true)
-  quiet_hours_start       String  @default("22:00")
-  quiet_hours_end         String  @default("06:00")
-  timezone                String  @default("America/Los_Angeles")
+  id                     String  @id @default(uuid())
+  user_id                String  @unique
+  user                   User    @relation(fields: [user_id], references: [id])
+  water_enabled          Boolean @default(true)
+  workout_enabled        Boolean @default(true)
+  eat_enabled            Boolean @default(true)
+  mindset_enabled        Boolean @default(true)
+  fasting_enabled        Boolean @default(true)
+  daily_checkin_enabled  Boolean @default(true)
+  weekly_summary_enabled Boolean @default(true)
+  new_client_alerts      Boolean @default(true)
+  quiet_hours_start      String  @default("22:00")
+  quiet_hours_end        String  @default("06:00")
+  timezone               String  @default("America/Los_Angeles")
 }
 
 model Habit {
@@ -524,19 +533,19 @@ model HabitLog {
 }
 
 model Lesson {
-  id          String            @id @default(uuid())
+  id          String             @id @default(uuid())
   // coach_id now a proper FK to User.id (was orphan string).
   coach_id    String
-  coach       User              @relation("LessonCoach", fields: [coach_id], references: [id])
+  coach       User               @relation("LessonCoach", fields: [coach_id], references: [id])
   title       String
   description String?
   video_url   String?
   article_url String?
   tags        String[]
   goal_tags   GoalType[]
-  order_index Int               @default(0)
+  order_index Int                @default(0)
   completions LessonCompletion[]
-  created_at  DateTime          @default(now())
+  created_at  DateTime           @default(now())
 
   @@index([coach_id])
 }
@@ -571,19 +580,19 @@ model CheckIn {
   user        User        @relation(fields: [user_id], references: [id])
   coach_id    String?
   date        DateTime    @db.Date
-  mood        Int?        // 1-5, optional
-  energy      Int?        // 1-5, optional
-  soreness    Int         // 1-5 — retained for existing mobile flow
+  mood        Int? // 1-5, optional
+  energy      Int? // 1-5, optional
+  soreness    Int // 1-5 — retained for existing mobile flow
   sleep_hours Float?
   weight_kg   Float?
   notes       String?
   type        CheckInType @default(morning)
   logged_at   DateTime    @default(now())
 
+  @@unique([user_id, date], name: "CheckIn_user_id_date_key")
   // Hot path: daily check-in lookups by (user_id, date).
   @@index([user_id, date])
   @@index([coach_id, date])
-  @@unique([user_id, date], name: "CheckIn_user_id_date_key")
 }
 
 // Server-persisted meal plans assigned by a coach to a specific client. Tier-2
@@ -681,15 +690,15 @@ model CoachNudge {
 // an unassigned client can still post a personal win — those simply do not
 // appear in any coach's feed.
 model CommunityWin {
-  id          String   @id @default(uuid())
+  id          String        @id @default(uuid())
   user_id     String
-  user        User     @relation("CommunityWinAuthor", fields: [user_id], references: [id])
+  user        User          @relation("CommunityWinAuthor", fields: [user_id], references: [id])
   coach_id    String?
-  coach       User?    @relation("CommunityWinCoach", fields: [coach_id], references: [id])
+  coach       User?         @relation("CommunityWinCoach", fields: [coach_id], references: [id])
   title       String
   description String
-  visibility  String   @default("circle") // "circle" | "public"
-  created_at  DateTime @default(now())
+  visibility  String        @default("circle") // "circle" | "public"
+  created_at  DateTime      @default(now())
   reactions   WinReaction[]
 
   @@index([user_id])
@@ -702,7 +711,7 @@ model WinReaction {
   win        CommunityWin @relation(fields: [win_id], references: [id])
   user_id    String
   user       User         @relation(fields: [user_id], references: [id])
-  kind       String       // "fire" | "clap"
+  kind       String // "fire" | "clap"
   created_at DateTime     @default(now())
 
   @@unique([win_id, user_id, kind])
@@ -759,15 +768,15 @@ model CoachGuideline {
 // units: metric vs imperial display.
 // firstDayOfWeek: 0=Sun, 1=Mon, 6=Sat.
 model UserPreferences {
-  id                    String   @id @default(uuid())
-  user_id               String   @unique
-  user                  User     @relation(fields: [user_id], references: [id])
-  home_modules          String[] @default(["hero", "milestone", "trustcues", "secondary"])
-  notification_cadence  String   @default("daily")   // "daily" | "weekly" | "off"
-  motivational_tone     String   @default("direct")  // "gentle" | "direct" | "drill"
-  units                 String   @default("imperial") // "metric" | "imperial"
-  first_day_of_week     Int      @default(1)          // 0=Sun, 1=Mon, 6=Sat
-  updated_at            DateTime @updatedAt
+  id                   String   @id @default(uuid())
+  user_id              String   @unique
+  user                 User     @relation(fields: [user_id], references: [id])
+  home_modules         String[] @default(["hero", "milestone", "trustcues", "secondary"])
+  notification_cadence String   @default("daily") // "daily" | "weekly" | "off"
+  motivational_tone    String   @default("direct") // "gentle" | "direct" | "drill"
+  units                String   @default("imperial") // "metric" | "imperial"
+  first_day_of_week    Int      @default(1) // 0=Sun, 1=Mon, 6=Sat
+  updated_at           DateTime @updatedAt
 
   @@index([user_id])
 }
@@ -780,26 +789,26 @@ model UserPreferences {
 // ingredients and instructions stored as String[] (mapped to jsonb in Postgres).
 // tags drive filter chips in the mobile UI.
 model Recipe {
-  id             String        @id @default(uuid())
-  title          String
-  description    String?
-  image_url      String?
-  prep_time_min  Int
-  cook_time_min  Int
-  servings       Int
-  calories       Float
-  protein        Float
-  carbs          Float
-  fat            Float
-  ingredients    String[]
-  instructions   String[]
-  tags           String[]
-  is_public      Boolean       @default(true)
-  created_by_id  String
-  created_by     User          @relation("RecipeCreator", fields: [created_by_id], references: [id])
-  saved_by       SavedRecipe[]
-  created_at     DateTime      @default(now())
-  updated_at     DateTime      @updatedAt
+  id            String        @id @default(uuid())
+  title         String
+  description   String?
+  image_url     String?
+  prep_time_min Int
+  cook_time_min Int
+  servings      Int
+  calories      Float
+  protein       Float
+  carbs         Float
+  fat           Float
+  ingredients   String[]
+  instructions  String[]
+  tags          String[]
+  is_public     Boolean       @default(true)
+  created_by_id String
+  created_by    User          @relation("RecipeCreator", fields: [created_by_id], references: [id])
+  saved_by      SavedRecipe[]
+  created_at    DateTime      @default(now())
+  updated_at    DateTime      @updatedAt
 
   @@index([created_by_id])
   @@index([is_public])
@@ -807,12 +816,12 @@ model Recipe {
 
 // Join table: user bookmarks/saves a recipe.
 model SavedRecipe {
-  id         String   @id @default(uuid())
-  user_id    String
-  user       User     @relation(fields: [user_id], references: [id])
-  recipe_id  String
-  recipe     Recipe   @relation(fields: [recipe_id], references: [id])
-  saved_at   DateTime @default(now())
+  id        String   @id @default(uuid())
+  user_id   String
+  user      User     @relation(fields: [user_id], references: [id])
+  recipe_id String
+  recipe    Recipe   @relation(fields: [recipe_id], references: [id])
+  saved_at  DateTime @default(now())
 
   @@unique([user_id, recipe_id])
   @@index([user_id])
@@ -840,4 +849,67 @@ model ListItem {
   added_at         DateTime @default(now())
 
   @@index([user_id, list_type])
+}
+
+// ============================================================
+// COMPLIANCE / AUDIT
+// ============================================================
+
+// Append-only audit log for sensitive actions: role changes, account
+// deletions, data exports, ownership transfers, coach impersonation, etc.
+// Distinct from ActivityEvent (which feeds the coach-console activity
+// feed and is mutable in spirit) — AuditLog is the immutable record used
+// for compliance, incident review, and tenant-isolation audits. Rows are
+// never updated or deleted; PII scrub on user delete sets actor/target
+// FKs to NULL but preserves the row + actor_email_snapshot.
+//
+// `tenant_coach_id` is the coach whose tenant the action affected, so
+// queries can scope the audit log to a single coach's roster without a
+// join (e.g. owner reviews "all sensitive actions inside coach X's
+// tenant"). Nullable for platform-level events that have no tenant
+// (owner login, system jobs).
+model AuditLog {
+  id                   String   @id @default(uuid())
+  action               String // e.g. "user.role_changed", "user.account_deletion_scheduled"
+  actor_id             String?
+  actor                User?    @relation("AuditLogActor", fields: [actor_id], references: [id], onDelete: SetNull)
+  actor_role           String?
+  actor_email_snapshot String? // preserved post-PII-scrub for forensic review
+  target_user_id       String?
+  target_user          User?    @relation("AuditLogTarget", fields: [target_user_id], references: [id], onDelete: SetNull)
+  target_type          String? // "user" | "coach_profile" | "subscription" | …
+  target_id            String? // free-form id of the target resource
+  tenant_coach_id      String? // coach whose tenant the action touched, if any
+  ip                   String?
+  user_agent           String?
+  metadata             Json?
+  created_at           DateTime @default(now())
+
+  @@index([action, created_at])
+  @@index([actor_id, created_at])
+  @@index([target_user_id, created_at])
+  @@index([tenant_coach_id, created_at])
+}
+
+// GDPR / CCPA personal data export requests. A request is created when a
+// user calls POST /users/me/data-export. Status starts at `pending`;
+// when the request is fulfilled the row is updated with the rendered
+// JSON payload (kept inline for now — file-storage upload is the next
+// hardening step, but persisting the payload here is enough to honor
+// the legal request). `payload` is nullable so the row can record the
+// request even if export later fails, and so the payload can be purged
+// after delivery.
+model DataExportRequest {
+  id           String    @id @default(uuid())
+  user_id      String
+  user         User      @relation(fields: [user_id], references: [id])
+  status       String    @default("pending") // pending | ready | delivered | failed
+  payload      Json?
+  error        String?
+  requested_at DateTime  @default(now())
+  fulfilled_at DateTime?
+  delivered_at DateTime?
+
+  @@index([user_id, requested_at])
+  @@index([status])
 }
