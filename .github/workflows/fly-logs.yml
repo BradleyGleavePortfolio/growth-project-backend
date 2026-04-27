@@ -1,0 +1,73 @@
+name: Fly Logs (operator)
+
+# Read-only operator workflow for fetching recent Fly runtime logs without
+# exposing FLY_API_TOKEN locally. Triggered manually via workflow_dispatch
+# only — never on push/PR — so it cannot accidentally redeploy or mutate
+# Fly state. Use this when the app crashes during smoke checks and you
+# need to see boot output / missing env errors.
+#
+# How to run:
+#   gh workflow run "Fly Logs (operator)" \
+#     -f app=backend-spring-lake-3890 \
+#     -f instance_id=860311cee0d008
+#
+# The instance_id input is optional; omit it for a tail of all instances.
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Fly app name
+        required: true
+        default: backend-spring-lake-3890
+      instance_id:
+        description: Optional Fly machine/instance id (e.g. 860311cee0d008)
+        required: false
+        default: ''
+      lines:
+        description: Number of recent log lines to fetch
+        required: false
+        default: '500'
+
+permissions:
+  contents: read
+
+jobs:
+  fly-logs:
+    name: Fetch Fly logs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Fly token configuration
+        id: flycheck
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "${FLY_API_TOKEN}" ]; then
+            echo "::error::FLY_API_TOKEN secret is not set — cannot fetch logs."
+            exit 1
+          fi
+          echo "FLY_API_TOKEN is configured."
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Fetch recent logs (no-follow)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ inputs.app }}
+          INSTANCE_ID: ${{ inputs.instance_id }}
+          LINES: ${{ inputs.lines }}
+        run: |
+          # Disable command tracing so the token cannot leak via `set -x`
+          # output in case a future edit introduces it. flyctl itself does
+          # not echo FLY_API_TOKEN.
+          set +x
+
+          args=(logs -a "${APP}" --no-tail)
+          if [ -n "${INSTANCE_ID}" ]; then
+            args+=(-i "${INSTANCE_ID}")
+          fi
+
+          echo "Running: flyctl ${args[*]}"
+          # Cap output to the requested number of trailing lines so the
+          # action log stays readable for triage.
+          flyctl "${args[@]}" 2>&1 | tail -n "${LINES}"
