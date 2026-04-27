@@ -1,0 +1,121 @@
+import { evaluateEnv, assertEnv, isProdLike } from '../src/common/env-validation';
+
+// Silent logger — assertEnv normally writes to NestJS Logger; we don't want
+// every test that exercises a missing-var path to scribble to stdout.
+const silentLogger = {
+  log: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+};
+
+function baseHardEnv(): NodeJS.ProcessEnv {
+  return {
+    DATABASE_URL: 'postgres://x',
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'srk',
+  };
+}
+
+function fullProdEnv(): NodeJS.ProcessEnv {
+  return {
+    ...baseHardEnv(),
+    NODE_ENV: 'production',
+    PUBLIC_INVITE_BASE_URL: 'https://app.example.com/join',
+    PUBLIC_WEB_SIGNUP_URL: 'https://app.example.com/signup',
+    APP_STORE_URL: 'https://apps.apple.com/app/x',
+    PLAY_STORE_URL: 'https://play.google.com/store/apps/details?id=x',
+    CORS_ORIGINS: 'https://console.example.com',
+    STRIPE_SECRET_KEY: 'sk_test_x',
+    STRIPE_WEBHOOK_SECRET: 'whsec_x',
+    STRIPE_PRICE_ID_FITNESS: 'price_x',
+    SENTRY_DSN: 'https://abc@sentry.io/1',
+  };
+}
+
+describe('isProdLike', () => {
+  it('returns true for production / staging only', () => {
+    expect(isProdLike('production')).toBe(true);
+    expect(isProdLike('staging')).toBe(true);
+    expect(isProdLike('Production')).toBe(true);
+    expect(isProdLike('development')).toBe(false);
+    expect(isProdLike(undefined)).toBe(false);
+    expect(isProdLike('')).toBe(false);
+  });
+});
+
+describe('evaluateEnv', () => {
+  it('returns hard misses when required vars are absent', () => {
+    const r = evaluateEnv({});
+    expect(r.missingHard.sort()).toEqual([
+      'DATABASE_URL',
+      'SUPABASE_SERVICE_ROLE_KEY',
+      'SUPABASE_URL',
+    ]);
+  });
+
+  it('flags prod-only vars as missing-prod, not missing-hard', () => {
+    const r = evaluateEnv({ ...baseHardEnv(), NODE_ENV: 'production' });
+    expect(r.missingHard).toEqual([]);
+    expect(r.missingProd).toContain('CORS_ORIGINS');
+    expect(r.missingProd).toContain('STRIPE_WEBHOOK_SECRET');
+    expect(r.missingProd).toContain('SENTRY_DSN');
+  });
+
+  it('reports a clean run when fullProdEnv is supplied', () => {
+    const r = evaluateEnv(fullProdEnv());
+    expect(r.missingHard).toEqual([]);
+    expect(r.missingProd).toEqual([]);
+    expect(r.validationWarnings).toEqual([]);
+  });
+
+  it('flags CORS_ORIGINS=* as a validation warning', () => {
+    const r = evaluateEnv({ ...fullProdEnv(), CORS_ORIGINS: '*' });
+    expect(r.validationWarnings.some((w) => w.startsWith('CORS_ORIGINS:'))).toBe(true);
+  });
+
+  it('treats whitespace-only values as missing', () => {
+    const r = evaluateEnv({ ...baseHardEnv(), DATABASE_URL: '   ' });
+    expect(r.missingHard).toContain('DATABASE_URL');
+  });
+});
+
+describe('assertEnv', () => {
+  it('throws on missing hard vars regardless of NODE_ENV', () => {
+    expect(() => assertEnv({}, { logger: silentLogger as any })).toThrow(
+      /Missing required env vars/,
+    );
+  });
+
+  it('throws on missing prod vars when NODE_ENV=production', () => {
+    expect(() =>
+      assertEnv(
+        { ...baseHardEnv(), NODE_ENV: 'production' },
+        { logger: silentLogger as any },
+      ),
+    ).toThrow(/Missing production-required env vars/);
+  });
+
+  it('does not throw on missing prod vars in dev', () => {
+    expect(() =>
+      assertEnv(
+        { ...baseHardEnv(), NODE_ENV: 'development' },
+        { logger: silentLogger as any },
+      ),
+    ).not.toThrow();
+  });
+
+  it('does not throw when fullProdEnv is supplied', () => {
+    expect(() =>
+      assertEnv(fullProdEnv(), { logger: silentLogger as any }),
+    ).not.toThrow();
+  });
+
+  it('respects explicit enforceProd=false even when NODE_ENV=production', () => {
+    expect(() =>
+      assertEnv(
+        { ...baseHardEnv(), NODE_ENV: 'production' },
+        { enforceProd: false, logger: silentLogger as any },
+      ),
+    ).not.toThrow();
+  });
+});

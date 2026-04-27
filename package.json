@@ -8,7 +8,10 @@
     "start:prod": "node dist/main",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "env:check": "ts-node -e \"require('./src/common/env-validation').assertEnv()\"",
+    "smoke": "ts-node scripts/smoke.ts",
+    "smoke:staging": "SMOKE_BASE_URL=${SMOKE_BASE_URL:-https://api-staging.thegrowthproject.app} ts-node scripts/smoke.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
