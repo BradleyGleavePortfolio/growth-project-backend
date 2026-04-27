@@ -5,6 +5,8 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  // Phase 1C imports retained when previewCode/attachUserToCoachByCode are
+  // exercised below.
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma.service';
@@ -129,5 +131,193 @@ export class InviteCodesService {
       coach_name: record.coach.name,
       invite_code_id: record.id,
     };
+  }
+
+  // ---- Phase 1C: default per-coach invite link ----------------------
+  //
+  // CoachProfile carries a single human-friendly `invite_code` that the
+  // coach can hand out without bookkeeping (vs. the multi-row InviteCode
+  // table which supports expirations and per-code use limits). These two
+  // helpers cover the "default link" flow:
+  //
+  //   - getOrCreateDefaultForCoach: lazy-create on first read. Idempotent.
+  //   - regenerateDefaultForCoach: rotate the code (e.g. coach suspects
+  //     leakage). Old code stops resolving immediately.
+  //
+  // Both use a generation/retry loop on the unique constraint.
+
+  async getOrCreateDefaultForCoach(coachId: string) {
+    const existing = await this.prisma.coachProfile.findUnique({
+      where: { user_id: coachId },
+    });
+    if (existing) return existing;
+
+    for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
+      try {
+        return await this.prisma.coachProfile.create({
+          data: {
+            user_id: coachId,
+            invite_code: this.generateCode(),
+          },
+        });
+      } catch (err: any) {
+        if (err?.code === 'P2002') continue;
+        throw err;
+      }
+    }
+    throw new InternalServerErrorException(
+      'Could not generate a unique invite code',
+    );
+  }
+
+  async regenerateDefaultForCoach(coachId: string) {
+    await this.getOrCreateDefaultForCoach(coachId);
+    for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
+      try {
+        return await this.prisma.coachProfile.update({
+          where: { user_id: coachId },
+          data: { invite_code: this.generateCode() },
+        });
+      } catch (err: any) {
+        if (err?.code === 'P2002') continue;
+        throw err;
+      }
+    }
+    throw new InternalServerErrorException(
+      'Could not generate a unique invite code',
+    );
+  }
+
+  // ---- Phase 1C: public preview / validation ------------------------
+  //
+  // Resolves a code (CoachProfile.invite_code OR InviteCode.code) into a
+  // safe coach preview: name, business name, branding accents. No PII
+  // beyond what a client would see on the signup screen anyway.
+  //
+  // Returns `{valid:false}` with no leak if the code does not resolve,
+  // is revoked, or the coach is not currently in good standing.
+  async previewCode(code: string): Promise<
+    | {
+        valid: true;
+        coach_id: string;
+        coach_name: string;
+        business_name: string | null;
+        branding: { accent_color: string | null; logo_url: string | null };
+      }
+    | { valid: false }
+  > {
+    // 1. Try CoachProfile.invite_code first (default per-coach link).
+    const profile = await this.prisma.coachProfile.findUnique({
+      where: { invite_code: code },
+      include: {
+        user: { select: { id: true, name: true, role: true } },
+      },
+    });
+    if (profile && profile.user && profile.user.role === 'coach') {
+      // Block paused/canceled coaches from accepting new clients via
+      // their default link. `subscription_status` is null until Stripe
+      // is wired up, so null is treated as "still good standing" for
+      // backwards compat.
+      if (
+        profile.subscription_status === 'canceled' ||
+        profile.subscription_status === 'paused'
+      ) {
+        return { valid: false };
+      }
+      return {
+        valid: true,
+        coach_id: profile.user.id,
+        coach_name: profile.user.name,
+        business_name: profile.business_name,
+        branding: {
+          accent_color: profile.branding_accent_color,
+          logo_url: profile.branding_logo_url,
+        },
+      };
+    }
+
+    // 2. Fall back to legacy InviteCode rows.
+    const validation = await this.validate(code);
+    if (!validation.valid) return { valid: false };
+    return {
+      valid: true,
+      coach_id: validation.coach_id,
+      coach_name: validation.coach_name,
+      business_name: null,
+      branding: { accent_color: null, logo_url: null },
+    };
+  }
+
+  // ---- Phase 1C: link / attach existing user to a coach -------------
+  //
+  // Used after a client signs in via Google (no invite_code on the
+  // initial OAuth roundtrip) and then enters the coach's invite code
+  // from the post-OAuth screen. Atomic + idempotent — also used by the
+  // `signup-with-code` flow once the user record exists.
+  async attachUserToCoachByCode(userId: string, code: string) {
+    // Resolve to a coach_id, regardless of whether the code is a
+    // CoachProfile default code or a legacy InviteCode row.
+    const profile = await this.prisma.coachProfile.findUnique({
+      where: { invite_code: code },
+      include: { user: { select: { id: true, role: true } } },
+    });
+
+    let resolvedCoachId: string | null = null;
+    let inviteCodeRowId: string | null = null;
+
+    if (profile && profile.user?.role === 'coach') {
+      if (
+        profile.subscription_status === 'canceled' ||
+        profile.subscription_status === 'paused'
+      ) {
+        throw new BadRequestException('Coach is not currently accepting clients');
+      }
+      resolvedCoachId = profile.user.id;
+    } else {
+      const v = await this.validate(code);
+      if (!v.valid) throw new BadRequestException('Invalid or expired invite code');
+      resolvedCoachId = v.coach_id;
+      inviteCodeRowId = v.invite_code_id;
+    }
+
+    // OWNERs do not get coached.
+    const me = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!me) throw new NotFoundException('User not found');
+    if (me.role === 'owner') {
+      throw new ForbiddenException('Owners cannot redeem a coach invite');
+    }
+
+    // Atomic linkage + (if applicable) used_count bump.
+    return this.prisma.$transaction(async (tx) => {
+      if (inviteCodeRowId) {
+        const current = await tx.inviteCode.findUnique({ where: { id: inviteCodeRowId } });
+        if (!current || current.revoked) {
+          throw new BadRequestException('Invalid or expired invite code');
+        }
+        if (current.expires_at && current.expires_at.getTime() <= Date.now()) {
+          throw new BadRequestException('Invalid or expired invite code');
+        }
+        if (current.max_uses !== null && current.used_count >= current.max_uses) {
+          throw new BadRequestException('Invalid or expired invite code');
+        }
+        const bumped = await tx.inviteCode.updateMany({
+          where: {
+            id: inviteCodeRowId,
+            revoked: false,
+            used_count: current.used_count,
+          },
+          data: { used_count: { increment: 1 } },
+        });
+        if (bumped.count !== 1) {
+          throw new BadRequestException('Invalid or expired invite code');
+        }
+      }
+
+      const updated = await tx.user.update({
+        where: { id: userId },
+        data: { role: 'student', coach_id: resolvedCoachId },
+      });
+      return { role: updated.role, coach_id: updated.coach_id };
+    });
   }
 }

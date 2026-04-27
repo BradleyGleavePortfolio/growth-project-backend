@@ -79,3 +79,30 @@ export class BecomeCoachDto {
   @MinLength(8)
   password!: string;
 }
+
+// Phase 1C: client-side signup that includes a coach invite code in the
+// same request. Mobile uses this when the app is launched off a deep
+// link with the coach's code already in hand. Behind the
+// COACH_CODE_GATE_ENABLED flag the code is REQUIRED; otherwise the
+// flow falls back to ordinary register + later attach.
+export class SignupWithCodeDto {
+  @IsEmail()
+  email!: string;
+
+  @IsString()
+  @MinLength(8)
+  password!: string;
+
+  @IsString()
+  @MinLength(1)
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  invite_code?: string;
+}

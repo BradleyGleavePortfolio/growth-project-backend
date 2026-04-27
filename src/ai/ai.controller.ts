@@ -28,4 +28,13 @@ export class AiController {
   async getContext(@Request() req: AuthedRequest) {
     return this.aiService.getUserContext(req.user.id);
   }
+
+  // Phase 1B/3 prelude: PII-stripped, structured AI context. Same data
+  // class as the legacy `/ai/context` route, but without name and with
+  // bucketed weight bands. Web console and the upcoming context-assembly
+  // pipeline call this; the legacy route stays in place for back-compat.
+  @Get('context/structured')
+  async getStructuredContext(@Request() req: AuthedRequest) {
+    return this.aiService.getStructuredContext(req.user.id);
+  }
 }

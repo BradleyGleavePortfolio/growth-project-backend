@@ -6,7 +6,10 @@ export class CoachGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
-    if (!user || user.role !== 'coach') {
+    // Phase 1B: OWNER bypass. Owners are platform admins and can hit
+    // every coach-only route (manage any roster, view any dashboard).
+    // The narrow rule before this change rejected owners with a 403.
+    if (!user || (user.role !== 'coach' && user.role !== 'owner')) {
       throw new ForbiddenException('Coach access required');
     }
 

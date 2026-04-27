@@ -15,20 +15,19 @@ export class CoachController {
 
   @Get('dashboard')
   async getDashboard(@Request() req: AuthedRequest) {
-    return this.coachService.getDashboard(req.user.id);
+    return this.coachService.getDashboard(req.user.id, req.user.role);
   }
 
   @Get('clients')
   async getClients(@Request() req: AuthedRequest, @Query('status') status?: string) {
-    return this.coachService.getClients(req.user.id, status as any);
+    return this.coachService.getClients(req.user.id, status as any, req.user.role);
   }
 
   @Post('clients/:id/archive')
   @HttpCode(HttpStatus.OK)
   async archiveClient(@Request() req: AuthedRequest, @Param('id') id: string) {
     try {
-      const result = await this.coachService.archiveClient(req.user.id, id);
-      // Psych Report #4: Analytics — coach_action
+      const result = await this.coachService.archiveClient(req.user.id, id, req.user.role);
       this.analytics.capture(req.user.id, 'coach_action', { action_type: 'archive_client' });
       return result;
     } catch {
@@ -40,8 +39,7 @@ export class CoachController {
   @HttpCode(HttpStatus.OK)
   async unarchiveClient(@Request() req: AuthedRequest, @Param('id') id: string) {
     try {
-      const result = await this.coachService.unarchiveClient(req.user.id, id);
-      // Psych Report #4: Analytics — coach_action
+      const result = await this.coachService.unarchiveClient(req.user.id, id, req.user.role);
       this.analytics.capture(req.user.id, 'coach_action', { action_type: 'unarchive_client' });
       return result;
     } catch {
@@ -52,12 +50,12 @@ export class CoachController {
   @Get('clients/:id/timeline')
   async getClientTimeline(@Request() req: AuthedRequest, @Param('id') id: string, @Query('days') days?: string) {
     const daysNum = days ? parseInt(days, 10) : 90;
-    return this.coachService.getClientTimeline(req.user.id, id, daysNum);
+    return this.coachService.getClientTimeline(req.user.id, id, daysNum, req.user.role);
   }
 
   @Get('clients/:id/summary')
   async getClientSummary(@Request() req: AuthedRequest, @Param('id') clientId: string, @Query('date') date?: string) {
-    return this.coachService.getClientSummary(req.user.id, clientId, date);
+    return this.coachService.getClientSummary(req.user.id, clientId, date, req.user.role);
   }
 
   @Get('my-guidelines')
@@ -73,13 +71,12 @@ export class CoachController {
   @Post('guidelines/:client_id')
   async postGuidelines(@Request() req: AuthedRequest, @Param('client_id') clientId: string, @Body() body: { guidelines: string }) {
     const result = await this.coachService.postGuidelines(req.user.id, clientId, body.guidelines);
-    // Psych Report #4: Analytics — coach_action
     this.analytics.capture(req.user.id, 'coach_action', { action_type: 'post_guidelines' });
     return result;
   }
 
   @Get('alerts')
   async getAlerts(@Request() req: AuthedRequest) {
-    return this.coachService.getAlerts(req.user.id);
+    return this.coachService.getAlerts(req.user.id, req.user.role);
   }
 }

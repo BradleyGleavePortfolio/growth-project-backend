@@ -31,6 +31,7 @@ import { PrepGuideModule } from './prep-guide/prep-guide.module';
 import { UsersModule } from './users/users.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { SystemModule } from './system/system.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -74,6 +75,8 @@ import { SystemModule } from './system/system.module';
     AnalyticsModule,
     // Trust & Privacy metadata (psych report #2: Trust as Emotion)
     SystemModule,
+    // Phase 1A/1B platform admin (OWNER-only routes)
+    AdminModule,
   ],
   providers: [
     // SECURITY: register ThrottlerGuard as a global APP_GUARD so that @Throttle(...)

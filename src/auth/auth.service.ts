@@ -322,6 +322,53 @@ export class AuthService {
     return this.prisma.user.findUnique({ where: { supabase_id: supabaseId } });
   }
 
+  // Phase 1C: client signup that bundles the invite code in the same call.
+  // Behind COACH_CODE_GATE_ENABLED=true the code is required (so a
+  // platform-mode coach-gated rollout cannot be bypassed). Otherwise the
+  // code is optional and the user signs up exactly like /auth/register.
+  async signupWithCode(data: {
+    email: string;
+    password: string;
+    name: string;
+    phone?: string;
+    invite_code?: string;
+  }) {
+    const gateEnabled =
+      (process.env.COACH_CODE_GATE_ENABLED || '').toLowerCase() === 'true';
+
+    if (gateEnabled && !data.invite_code) {
+      throw new BadRequestException('Coach invite code is required');
+    }
+    if (data.invite_code) {
+      const preview = await this.inviteCodes.previewCode(data.invite_code);
+      if (!preview.valid) {
+        throw new BadRequestException('Invalid or expired invite code');
+      }
+    }
+
+    const registered = await this.register({
+      email: data.email,
+      password: data.password,
+      name: data.name,
+      phone: data.phone,
+    });
+
+    if (data.invite_code) {
+      try {
+        await this.inviteCodes.attachUserToCoachByCode(
+          registered.user_id,
+          data.invite_code,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `signupWithCode attach failed for user=${registered.user_id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    return registered;
+  }
+
   async becomeCoach(userId: string, password: string) {
     // Look up user so we have their email for Supabase re-auth
     const user = await this.prisma.user.findUnique({ where: { id: userId } });

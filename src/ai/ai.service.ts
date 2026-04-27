@@ -144,6 +144,114 @@ GP: [Uses today_summary and profile to compute weekly rate of change projection,
 The 15 examples above are PATTERNS, not a complete list. Handle ANY question with the same directness, specificity, and intelligence shown above.`;
   }
 
+  /**
+   * Phase 1B/3 prelude: structured AI context for fitness/habits/logs
+   * with no raw PII. Designed to be the only client-visible context
+   * surface so callers (web console, mobile, internal AI pipeline)
+   * see the same shape and never receive name/email/exact weight.
+   *
+   * `name` is replaced by the literal string "the client".
+   * `weight_lbs` is bucketed to the nearest 5lb band for display.
+   */
+  async getStructuredContext(userId: string): Promise<{
+    profile: {
+      goal_type: string;
+      activity_level: string;
+      workout_experience: string;
+      weight_band_lbs: string | null;
+      target_weight_band_lbs: string | null;
+    };
+    macro_targets: {
+      calories: number;
+      protein_g: number;
+      carbs_g: number;
+      fat_g: number;
+    };
+    today: {
+      total_calories: number;
+      total_protein_g: number;
+      remaining_calories: number;
+    };
+    recent: {
+      workouts_last_7d: number;
+      logs_last_7d: number;
+      check_ins_last_7d: number;
+      habits_active: number;
+    };
+  }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { profile: true },
+    });
+    const profile = user?.profile;
+
+    const today = new Date().toISOString().split('T')[0];
+    const todayStart = new Date(today);
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const [todayEntries, workoutsLast7, logsLast7, checkInsLast7, habits] =
+      await Promise.all([
+        this.prisma.loggedFoodEntry.findMany({
+          where: { user_id: userId, date: todayStart },
+          include: { food_item: true },
+        }),
+        this.prisma.workoutSession.count({
+          where: { user_id: userId, date: { gte: sevenDaysAgo } },
+        }),
+        this.prisma.loggedFoodEntry.count({
+          where: { user_id: userId, logged_at: { gte: sevenDaysAgo } },
+        }),
+        this.prisma.checkIn.count({
+          where: { user_id: userId, date: { gte: sevenDaysAgo } },
+        }),
+        this.prisma.habit.count({ where: { user_id: userId } }),
+      ]);
+
+    let total_calories = 0;
+    let total_protein_g = 0;
+    for (const e of todayEntries) {
+      total_calories += (e.food_item?.calories || 0) * (e.quantity_multiplier || 1);
+      total_protein_g += (e.food_item?.protein_g || 0) * (e.quantity_multiplier || 1);
+    }
+
+    const target_calories = profile?.macro_target_calories || 2000;
+    const target_protein = profile?.macro_target_protein_g || 180;
+
+    const band = (lbs: number | null | undefined): string | null => {
+      if (!lbs || lbs <= 0) return null;
+      const lower = Math.floor(lbs / 5) * 5;
+      return `${lower}-${lower + 5}lb`;
+    };
+
+    return {
+      profile: {
+        goal_type: profile?.goal_type || 'fat_loss',
+        activity_level: profile?.activity_level || 'moderate',
+        workout_experience: profile?.workout_experience || 'beginner',
+        weight_band_lbs: band(profile?.current_weight_lbs ?? null),
+        target_weight_band_lbs: band(profile?.target_weight_lbs ?? null),
+      },
+      macro_targets: {
+        calories: target_calories,
+        protein_g: target_protein,
+        carbs_g: profile?.macro_target_carbs_g || 200,
+        fat_g: profile?.macro_target_fat_g || 60,
+      },
+      today: {
+        total_calories: Math.round(total_calories),
+        total_protein_g: Math.round(total_protein_g),
+        remaining_calories: Math.round(target_calories - total_calories),
+      },
+      recent: {
+        workouts_last_7d: workoutsLast7,
+        logs_last_7d: logsLast7,
+        check_ins_last_7d: checkInsLast7,
+        habits_active: habits,
+      },
+    };
+  }
+
   async getUserContext(userId: string): Promise<UserContextPayload> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
