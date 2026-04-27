@@ -1,8 +1,7 @@
 -- SaaS multi-tenant billing + drafts + activity stream.
 --
--- Adds:
---   - 'owner' value to Role enum (used by SubscriptionGuard for OWNER bypass)
---   - CoachProfile (1:1 with coach users): branding + invite code + stripe customer mirror
+-- Adds (additive only — depends on the OWNER role + CoachProfile table from
+-- 20260427000000_add_owner_role_and_coach_profile, which lands first):
 --   - CoachSubscription: Stripe subscription state mirror
 --   - Invoice: Stripe invoice mirror
 --   - PaymentFailure: row per failed payment for the console billing page
@@ -11,34 +10,10 @@
 --   - ActivityEvent: audit stream feeding console activity views
 --
 -- All additions. No existing tables modified, no data migrated, no destructive
--- rewrites.
+-- rewrites. CoachProfile / Role 'owner' already exist from the earlier
+-- migration; this file only layers on top.
 
--- 1. Extend Role enum -----------------------------------------------------
-ALTER TYPE "Role" ADD VALUE IF NOT EXISTS 'owner';
-
--- 2. CoachProfile ---------------------------------------------------------
-CREATE TABLE "CoachProfile" (
-    "id"                  TEXT NOT NULL,
-    "user_id"             TEXT NOT NULL,
-    "business_name"       TEXT,
-    "bio"                 TEXT,
-    "brand_accent"        TEXT,
-    "logo_url"            TEXT,
-    "timezone"            TEXT NOT NULL DEFAULT 'America/Los_Angeles',
-    "invite_code"         TEXT,
-    "stripe_customer_id"  TEXT,
-    "created_at"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at"          TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "CoachProfile_pkey" PRIMARY KEY ("id")
-);
-CREATE UNIQUE INDEX "CoachProfile_user_id_key" ON "CoachProfile"("user_id");
-CREATE UNIQUE INDEX "CoachProfile_invite_code_key" ON "CoachProfile"("invite_code");
-CREATE UNIQUE INDEX "CoachProfile_stripe_customer_id_key" ON "CoachProfile"("stripe_customer_id");
-ALTER TABLE "CoachProfile"
-    ADD CONSTRAINT "CoachProfile_user_id_fkey"
-    FOREIGN KEY ("user_id") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- 3. CoachSubscription ----------------------------------------------------
+-- 1. CoachSubscription ----------------------------------------------------
 CREATE TABLE "CoachSubscription" (
     "id"                          TEXT NOT NULL,
     "coach_id"                    TEXT NOT NULL,
@@ -64,7 +39,7 @@ ALTER TABLE "CoachSubscription"
     ADD CONSTRAINT "CoachSubscription_coach_id_fkey"
     FOREIGN KEY ("coach_id") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- 4. Invoice --------------------------------------------------------------
+-- 2. Invoice --------------------------------------------------------------
 CREATE TABLE "Invoice" (
     "id"                  TEXT NOT NULL,
     "coach_id"            TEXT NOT NULL,
@@ -88,7 +63,7 @@ ALTER TABLE "Invoice"
     ADD CONSTRAINT "Invoice_coach_id_fkey"
     FOREIGN KEY ("coach_id") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- 5. PaymentFailure -------------------------------------------------------
+-- 3. PaymentFailure -------------------------------------------------------
 CREATE TABLE "PaymentFailure" (
     "id"                 TEXT NOT NULL,
     "coach_id"           TEXT NOT NULL,
@@ -104,7 +79,7 @@ ALTER TABLE "PaymentFailure"
     ADD CONSTRAINT "PaymentFailure_coach_id_fkey"
     FOREIGN KEY ("coach_id") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- 6. StripeProcessedEvent (webhook idempotency) ---------------------------
+-- 4. StripeProcessedEvent (webhook idempotency) ---------------------------
 CREATE TABLE "StripeProcessedEvent" (
     "stripe_event_id" TEXT NOT NULL,
     "type"            TEXT NOT NULL,
@@ -113,7 +88,7 @@ CREATE TABLE "StripeProcessedEvent" (
 );
 CREATE INDEX "StripeProcessedEvent_processed_at_idx" ON "StripeProcessedEvent"("processed_at");
 
--- 7. MessageDraft ---------------------------------------------------------
+-- 5. MessageDraft ---------------------------------------------------------
 CREATE TABLE "MessageDraft" (
     "id"         TEXT NOT NULL,
     "coach_id"   TEXT NOT NULL,
@@ -133,7 +108,7 @@ ALTER TABLE "MessageDraft"
     ADD CONSTRAINT "MessageDraft_client_id_fkey"
     FOREIGN KEY ("client_id") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- 8. ActivityEvent --------------------------------------------------------
+-- 6. ActivityEvent --------------------------------------------------------
 CREATE TABLE "ActivityEvent" (
     "id"         TEXT NOT NULL,
     "actor_id"   TEXT,

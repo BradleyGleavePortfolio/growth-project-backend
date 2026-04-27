@@ -62,8 +62,8 @@ export class V1CoachService {
         ? {
             businessName: profile.business_name,
             bio: profile.bio,
-            brandAccent: profile.brand_accent,
-            logoUrl: profile.logo_url,
+            brandAccent: profile.branding_accent_color,
+            logoUrl: profile.branding_logo_url,
             timezone: profile.timezone,
             inviteCode: profile.invite_code,
           }

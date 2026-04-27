@@ -73,6 +73,11 @@ describe('BillingService', () => {
             Object.entries(where).every(([k, v]) => (p as any)[k] === v),
           ) ?? null;
         }),
+        findFirst: jest.fn(async ({ where }: any) => {
+          return profiles.find((p) =>
+            Object.entries(where).every(([k, v]) => (p as any)[k] === v),
+          ) ?? null;
+        }),
       },
       stripeProcessedEvent: {
         findUnique: jest.fn(async ({ where }: any) =>

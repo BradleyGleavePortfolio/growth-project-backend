@@ -71,7 +71,10 @@ export class BillingService {
   // Resolve coach by stripe customer id via CoachProfile.
   private async resolveCoachByCustomer(customerId: string | undefined | null) {
     if (!customerId) return null;
-    const profile = await this.prisma.coachProfile.findUnique({
+    // CoachProfile.stripe_customer_id is not @unique on the canonical Phase 1A
+    // shape (CoachSubscription owns the @unique on its own customer mirror),
+    // so we use findFirst here.
+    const profile = await this.prisma.coachProfile.findFirst({
       where: { stripe_customer_id: customerId },
     });
     return profile?.user_id ?? null;
