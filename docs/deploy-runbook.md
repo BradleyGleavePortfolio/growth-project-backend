@@ -46,10 +46,10 @@ missing. The summary below restates the rules so you can prepare
 | `DATABASE_URL` | hard | Postgres connection string from Supabase → Settings → Database. Use the **session pooler** for runtime queries. |
 | `SUPABASE_URL` | hard | `https://<project-ref>.supabase.co`. Used for JWKS and admin API. |
 | `SUPABASE_SERVICE_ROLE_KEY` | hard | Service-role key. Treat as a secret. |
-| `PUBLIC_INVITE_BASE_URL` | prod | `https://app.thegrowthproject.app/join` (or staging equivalent). Drives invite-code URLs. |
-| `PUBLIC_WEB_SIGNUP_URL` | prod | Landing page used when no app is installed. |
-| `APP_STORE_URL` | prod | Final iOS App Store URL. |
-| `PLAY_STORE_URL` | prod | Final Play Store URL. |
+| `PUBLIC_INVITE_BASE_URL` | prod | `https://app.trygrowthproject.com/join`. Drives invite-code URLs. |
+| `PUBLIC_WEB_SIGNUP_URL` | prod | Landing page used when no app is installed. Until a marketing signup page exists, point this at the durable backend route `https://app.trygrowthproject.com/signup`. |
+| `APP_STORE_URL` | prod | Final iOS App Store URL. **Do not invent a placeholder Apple ID** — until the listing is live, point this at the durable backend route `https://app.trygrowthproject.com/download/ios`. Flip to the real URL when the App Store listing is approved. |
+| `PLAY_STORE_URL` | prod | Final Google Play URL. **Do not invent a placeholder package id** — until the listing is live, point this at the durable backend route `https://app.trygrowthproject.com/download/android`. Flip to the real URL when the Play listing is approved. |
 | `CORS_ORIGINS` | prod | Comma-separated list of allowed origins for the coach console. **Wildcard is rejected at boot.** |
 | `STRIPE_SECRET_KEY` | prod | `sk_test_…` for staging, `sk_live_…` for production. |
 | `STRIPE_WEBHOOK_SECRET` | prod | `whsec_…` from Stripe → Developers → Webhooks. |
