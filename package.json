@@ -10,6 +10,9 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "env:check": "ts-node -e \"require('./src/common/env-validation').assertEnv()\"",
+    "secrets:print": "ts-node scripts/print-required-secrets.ts",
+    "secrets:print:fly": "FORMAT=fly ts-node scripts/print-required-secrets.ts",
+    "secrets:missing": "FORMAT=missing ts-node scripts/print-required-secrets.ts",
     "smoke": "ts-node scripts/smoke.ts",
     "smoke:staging": "SMOKE_BASE_URL=${SMOKE_BASE_URL:-https://api-staging.thegrowthproject.app} ts-node scripts/smoke.ts"
   },
