@@ -122,4 +122,48 @@ describe('SubscriptionGuard', () => {
       guard.canActivate(ctxFor({ id: 'c', role: 'coach' })),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
+
+  it('observe-mode emits PostHog telemetry for would-be denies', async () => {
+    const capture = jest.fn();
+    const analytics: any = { capture };
+    const guard = new SubscriptionGuard(
+      makePrismaWithSub({ status: 'canceled', last_payment_failed_at: null }) as any,
+      analytics,
+    );
+    delete process.env.BILLING_ENFORCEMENT;
+    const req = {
+      user: { id: 'c', role: 'coach' },
+      method: 'POST',
+      route: { path: '/v1/coach/me/clients' },
+    };
+    const ctx: any = {
+      switchToHttp: () => ({ getRequest: () => req }),
+    };
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(capture).toHaveBeenCalledWith(
+      'c',
+      'server_billing_enforcement_observed',
+      expect.objectContaining({
+        status: 'canceled',
+        reason: 'canceled',
+        route: '/v1/coach/me/clients',
+        method: 'POST',
+      }),
+    );
+  });
+
+  it('observe-mode does not capture when subscription is active', async () => {
+    const capture = jest.fn();
+    const analytics: any = { capture };
+    const guard = new SubscriptionGuard(
+      makePrismaWithSub({ status: 'active', last_payment_failed_at: null }) as any,
+      analytics,
+    );
+    delete process.env.BILLING_ENFORCEMENT;
+    await expect(
+      guard.canActivate(ctxFor({ id: 'c', role: 'coach' })),
+    ).resolves.toBe(true);
+    expect(capture).not.toHaveBeenCalled();
+  });
 });

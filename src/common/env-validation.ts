@@ -143,6 +143,11 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     reason: 'Stripe price id for the finance vertical. Currently unused — set when a second price exists.',
   },
+  {
+    name: 'STRIPE_BILLING_PORTAL_RETURN_URL',
+    tier: 'optional',
+    reason: 'Return URL Stripe redirects coaches to after the Customer Portal session ends. Defaults to the console billing screen when unset.',
+  },
 ];
 
 export interface EnvValidationResult {

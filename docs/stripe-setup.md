@@ -86,9 +86,13 @@ Repeat sections 2.1–2.5 once per environment (staging and production are
 
 ### 2.3 Configure the Customer Portal
 
-The `/v1/coach/me/billing/portal-session` endpoint (today returns
-`STRIPE_PORTAL_NOT_IMPLEMENTED`; the next PR will mint sessions) requires a
-configured Portal.
+The `/v1/coach/me/billing/portal-session` endpoint mints a live Stripe
+Billing Portal session and requires a published Portal config. The
+endpoint resolves the coach's `stripe_customer_id` from
+`CoachSubscription` (or `CoachProfile` as fallback) and calls
+`POST /v1/billing_portal/sessions` with `customer` and `return_url`. The
+return URL comes from `STRIPE_BILLING_PORTAL_RETURN_URL` and defaults to
+`https://console.thegrowthproject.app/billing`.
 
 1. Stripe dashboard → **Settings → Billing → Customer portal**.
 2. Branding: upload product logo and accent colour.
@@ -126,6 +130,7 @@ Listed in `.env.example`. Production values go in `fly secrets set`.
 | `STRIPE_WEBHOOK_SECRET`      | Yes              | Endpoint signing secret | `whsec_xxx`               |
 | `STRIPE_PRICE_ID_FITNESS`    | Yes              | Product price id        | `price_xxx`               |
 | `STRIPE_PRICE_ID_FINANCE`    | No               | Future second vertical  | (unset)                   |
+| `STRIPE_BILLING_PORTAL_RETURN_URL` | No         | URL Stripe redirects coaches back to after the portal session | `https://console.thegrowthproject.app/billing` |
 | `BILLING_ENFORCEMENT`        | Yes (after rollout) | `observe` (default) or `enforce` | `enforce`        |
 
 Behavior when unset:
@@ -174,9 +179,12 @@ The mirror was designed so each step is independently revertible.
    staging DB.
 4. **Set production secrets** (without `BILLING_ENFORCEMENT`).
 5. **Onboard each existing coach** by calling
-   `POST /v1/admin/coaches/:id/start-subscription` (skeleton today;
-   Phase 2A PR completes it). Each call should result in a webhook
-   delivery and a fresh `CoachSubscription` row.
+   `POST /v1/admin/coaches/:id/start-subscription` with body
+   `{ "plan": "flat_300", "trialDays": 0 }` (or up to 90). The handler
+   creates the Stripe Customer + Subscription, mirrors immediately into
+   `CoachSubscription` and `CoachProfile`, and the
+   `customer.subscription.created` webhook idempotently re-applies the
+   same row.
 6. **Verify** every active coach has a `CoachSubscription` row with
    `status` in `(active, trialing)`.
 7. **Flip `BILLING_ENFORCEMENT=enforce`.** Re-deploy or run
