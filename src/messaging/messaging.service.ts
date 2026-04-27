@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { AnalyticsService } from '../analytics/analytics.service';
+import { Events } from '../analytics/events';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -17,6 +19,7 @@ export class MessagingService {
   constructor(
     private prisma: PrismaService,
     private supabase: SupabaseService,
+    private analytics: AnalyticsService,
   ) {}
 
   // ---- helpers ----
@@ -113,6 +116,10 @@ export class MessagingService {
     // authenticated REST endpoint when it receives the ping. Fire-and-
     // forget so a Realtime hiccup never delays the API response.
     void this.supabase.broadcastNewMessage(clientId);
+    this.analytics.capture(coachId, Events.COACH_MESSAGE_SENT, {
+      client_id: clientId,
+      body_length: body.length,
+    });
     return created;
   }
 
@@ -123,6 +130,10 @@ export class MessagingService {
     });
     // Ping the coach.
     void this.supabase.broadcastNewMessage(coachId);
+    this.analytics.capture(clientId, Events.CLIENT_MESSAGE_SENT, {
+      coach_id: coachId,
+      body_length: body.length,
+    });
     return created;
   }
 

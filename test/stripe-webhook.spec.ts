@@ -153,7 +153,8 @@ describe('BillingService', () => {
         }),
       },
     };
-    svc = new BillingService(prisma);
+    const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
+    svc = new BillingService(prisma, analyticsStub);
   });
 
   it('creates a subscription mirror row on customer.subscription.created', async () => {

@@ -89,7 +89,8 @@ function makeService() {
     new ClientAIContextService({} as any).renderForPrompt(c);
   const guardrails = new AIGuardrailsService();
   const prisma = {} as any;
-  return { svc: new AiService(prisma, ctxSvc as any, guardrails), ctxSvc };
+  const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
+  return { svc: new AiService(prisma, ctxSvc as any, guardrails, analyticsStub), ctxSvc };
 }
 
 describe('AiService.chat', () => {

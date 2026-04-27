@@ -4,6 +4,7 @@ import { CoachService } from './coach.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { Events } from '../analytics/events';
 
 @Controller('coach')
 @UseGuards(JwtAuthGuard, CoachGuard)
@@ -28,7 +29,7 @@ export class CoachController {
   async archiveClient(@Request() req: AuthedRequest, @Param('id') id: string) {
     try {
       const result = await this.coachService.archiveClient(req.user.id, id, req.user.role);
-      this.analytics.capture(req.user.id, 'coach_action', { action_type: 'archive_client' });
+      this.analytics.capture(req.user.id, Events.COACH_ACTION, { action_type: 'archive_client' });
       return result;
     } catch {
       throw new NotFoundException('Client not found');
@@ -40,7 +41,7 @@ export class CoachController {
   async unarchiveClient(@Request() req: AuthedRequest, @Param('id') id: string) {
     try {
       const result = await this.coachService.unarchiveClient(req.user.id, id, req.user.role);
-      this.analytics.capture(req.user.id, 'coach_action', { action_type: 'unarchive_client' });
+      this.analytics.capture(req.user.id, Events.COACH_ACTION, { action_type: 'unarchive_client' });
       return result;
     } catch {
       throw new NotFoundException('Client not found');
@@ -71,7 +72,7 @@ export class CoachController {
   @Post('guidelines/:client_id')
   async postGuidelines(@Request() req: AuthedRequest, @Param('client_id') clientId: string, @Body() body: { guidelines: string }) {
     const result = await this.coachService.postGuidelines(req.user.id, clientId, body.guidelines);
-    this.analytics.capture(req.user.id, 'coach_action', { action_type: 'post_guidelines' });
+    this.analytics.capture(req.user.id, Events.COACH_ACTION, { action_type: 'post_guidelines' });
     return result;
   }
 

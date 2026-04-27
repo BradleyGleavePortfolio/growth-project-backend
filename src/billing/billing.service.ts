@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { AnalyticsService } from '../analytics/analytics.service';
+import { Events } from '../analytics/events';
 
 // BillingService is the system of record for the Stripe-mirror tables. The
 // webhook controller hands it parsed Stripe event objects; this service
@@ -20,7 +22,10 @@ type StripeEvent = {
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private analytics: AnalyticsService,
+  ) {}
 
   // Idempotently process an event. Returns { processed: true } on first
   // delivery, { processed: false, alreadyProcessed: true } on duplicates so
@@ -161,6 +166,13 @@ export class BillingService {
         cancel_at_period_end: !!sub.cancel_at_period_end,
       },
     });
+    this.analytics.capture(coachId, Events.SUBSCRIPTION_UPDATED, {
+      stripe_event_type: event.type,
+      status,
+      stripe_price_id: priceId,
+      cancel_at_period_end: !!sub.cancel_at_period_end,
+      had_trial: !!sub.trial_end,
+    });
   }
 
   private async applySubscriptionDeleted(event: StripeEvent) {
@@ -171,6 +183,7 @@ export class BillingService {
       where: { coach_id: coachId },
       data: { status: 'canceled', cancel_at_period_end: false },
     });
+    this.analytics.capture(coachId, Events.SUBSCRIPTION_CANCELED, {});
   }
 
   private async applyInvoicePaid(event: StripeEvent) {
@@ -217,6 +230,11 @@ export class BillingService {
       where: { coach_id: coachId },
       data: { last_payment_failed_at: null, failed_payments_this_month: 0 },
     });
+    // Stripe-sourced amounts only — these are real revenue, not synthesized.
+    this.analytics.capture(coachId, Events.INVOICE_PAID, {
+      amount_paid_cents: inv.amount_paid ?? 0,
+      currency: inv.currency ?? 'usd',
+    });
   }
 
   private async applyInvoicePaymentFailed(event: StripeEvent) {
@@ -245,6 +263,9 @@ export class BillingService {
         last_payment_failed_at: now,
         failed_payments_this_month: { increment: 1 },
       },
+    });
+    this.analytics.capture(coachId, Events.INVOICE_PAYMENT_FAILED, {
+      amount_due_cents: inv?.amount_due ?? 0,
     });
   }
 

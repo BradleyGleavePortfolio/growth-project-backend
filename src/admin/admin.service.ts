@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma.service';
+import { AnalyticsService } from '../analytics/analytics.service';
+import { Events } from '../analytics/events';
 import { AuditAction, AuditService } from '../audit/audit.service';
 
 const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
@@ -18,6 +20,7 @@ export class AdminService {
 
   constructor(
     private prisma: PrismaService,
+    private analytics: AnalyticsService,
     private audit: AuditService,
   ) {}
 
@@ -46,7 +49,7 @@ export class AdminService {
 
     for (let attempt = 0; attempt < 8; attempt++) {
       try {
-        return await this.prisma.coachProfile.create({
+        const created = await this.prisma.coachProfile.create({
           data: {
             user_id: userId,
             invite_code: this.generateInviteCode(),
@@ -56,6 +59,10 @@ export class AdminService {
             created_by_owner_id: ownerId ?? null,
           },
         });
+        this.analytics.capture(userId, Events.COACH_PROVISIONED, {
+          provisioned_by_owner: !!ownerId,
+        });
+        return created;
       } catch (err: any) {
         if (err?.code === 'P2002') continue;
         throw err;
@@ -92,6 +99,10 @@ export class AdminService {
     // invite_code so the coach can immediately start onboarding clients.
     if (role === 'coach') {
       await this.ensureCoachProfile(updated.id, actingOwnerId, hints);
+      this.analytics.capture(updated.id, Events.COACH_PROMOTED, {
+        via: 'admin_promote',
+        promoted_by_owner_id: actingOwnerId,
+      });
     }
 
     // Immutable audit trail of the role change. Only write if the role

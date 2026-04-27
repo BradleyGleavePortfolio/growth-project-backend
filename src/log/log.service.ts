@@ -2,16 +2,22 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { FoodService } from '../food/food.service';
 import { LogFoodDto, UpdateLogEntryDto } from './log.dto';
+import { AnalyticsService } from '../analytics/analytics.service';
+import { Events } from '../analytics/events';
 
 @Injectable()
 export class LogService {
-  constructor(private prisma: PrismaService, private foodService: FoodService) {}
+  constructor(
+    private prisma: PrismaService,
+    private foodService: FoodService,
+    private analytics: AnalyticsService,
+  ) {}
 
   async logFood(userId: string, data: LogFoodDto) {
     // Mobile client may send synthetic ids ("usda_123", "off_456") returned by food search.
     // Resolve them to real FoodItem.id via upsert-on-log so the FK below can't blow up.
     const resolvedFoodItemId = await this.foodService.resolveOrImportId(data.food_item_id);
-    return this.prisma.loggedFoodEntry.create({
+    const created = await this.prisma.loggedFoodEntry.create({
       data: {
         user_id: userId,
         date: new Date(data.date),
@@ -22,6 +28,10 @@ export class LogService {
       },
       include: { food_item: true },
     });
+    this.analytics.capture(userId, Events.CLIENT_FOOD_LOGGED, {
+      meal_type: data.meal_type,
+    });
+    return created;
   }
 
   async getDaily(userId: string, date: string) {

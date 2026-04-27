@@ -48,8 +48,9 @@ describe('AdminService.promoteUser → audit log', () => {
         }),
       },
     };
+    const analytics = { capture: jest.fn(), identify: jest.fn() } as any;
     const audit = { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any;
-    return { admin: new AdminService(prisma, audit), prisma, target, profiles, audit };
+    return { admin: new AdminService(prisma, analytics, audit), prisma, target, profiles, audit };
   }
 
   it('writes USER_ROLE_CHANGED with from/to metadata + IP/UA context', async () => {
