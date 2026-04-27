@@ -289,6 +289,89 @@ Full setup lives in `docs/stripe-setup.md`. Operational summary:
 
 ---
 
+## 7b. Production secrets via the operator workflow
+
+Production Fly secrets are pushed via a workflow_dispatch-only GitHub
+Actions workflow rather than a local `fly secrets set` shell — that way
+the values never sit in an operator's terminal history and the only
+place they exist outside Fly is the GitHub Actions secret store, which
+the org already audits.
+
+Workflow file: `.github/workflows/fly-secrets-set.yml`
+Workflow name: **Fly Secrets Set (operator)**
+
+What it sets:
+
+| Variable | Source |
+| --- | --- |
+| `PUBLIC_INVITE_BASE_URL` | hardcoded — `https://app.trygrowthproject.com/join` |
+| `PUBLIC_WEB_SIGNUP_URL` | hardcoded — `https://app.trygrowthproject.com/signup` |
+| `APP_STORE_URL` | hardcoded — `https://app.trygrowthproject.com/download/ios` |
+| `PLAY_STORE_URL` | hardcoded — `https://app.trygrowthproject.com/download/android` |
+| `CORS_ORIGINS` | hardcoded — `https://console.trygrowthproject.com` |
+| `STRIPE_PRICE_ID_FITNESS` | hardcoded — `price_1TQij2DUoC5CCVhSDxe9Bin1` |
+| `STRIPE_SECRET_KEY` | GitHub Actions secret of the same name |
+| `STRIPE_WEBHOOK_SECRET` | GitHub Actions secret of the same name |
+| `SENTRY_DSN` | GitHub Actions secret of the same name |
+
+What it does NOT set: `DATABASE_URL`, `SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY`, `USDA_API_KEY`, `PERPLEXITY_API_KEY`,
+`POSTHOG_KEY`, `POSTHOG_HOST`. Those are scoped to a different operator
+because they belong to other vendors' dashboards; set them with a
+direct `fly secrets set` from a trusted shell. The env-validation tier
+in `src/common/env-validation.ts` is unchanged, so a missing hard-tier
+var still fails boot loudly.
+
+Prerequisites:
+
+1. The repo already has a `FLY_API_TOKEN` Actions secret (used by
+   `Fly Deploy`).
+2. Add three Actions secrets under
+   Settings → Secrets and variables → Actions:
+   - `STRIPE_SECRET_KEY` — `sk_live_…` from Stripe (live mode).
+   - `STRIPE_WEBHOOK_SECRET` — `whsec_…` from the live webhook
+     endpoint in Stripe → Developers → Webhooks.
+   - `SENTRY_DSN` — server DSN from the production Sentry project.
+   The workflow fails with a list of missing names if any of these
+   are absent.
+
+To run:
+
+```sh
+gh workflow run "Fly Secrets Set (operator)" \
+  -f app=backend-spring-lake-3890 \
+  -f confirm=SET
+```
+
+The `confirm=SET` input is a literal-string guard against accidental
+dispatches from the GitHub UI.
+
+What it logs:
+
+- The names of the secrets that were set, and the output of
+  `fly secrets list -a <app>` (which only includes name, digest, and
+  created-at — never values).
+- Validation that every expected name appears in the list.
+
+What it does NOT do:
+
+- It does not run `fly deploy`. `fly secrets set` itself triggers a
+  Fly machine restart so the new env reaches the running process; no
+  separate deploy is needed for a config-only change.
+- It does not rotate keys. Rotation flow: rotate in the vendor
+  dashboard → update the GitHub Actions secret → re-run this workflow
+  → verify with `flyctl secrets list -a <app>` that the digest changed.
+
+When to re-run:
+
+- After rotating any of the Stripe or Sentry credentials.
+- After changing one of the hardcoded public URLs (e.g. flipping
+  `APP_STORE_URL` to the real App Store listing once it is approved).
+  Update the workflow file in the same PR — the values are intentionally
+  in source so the change is reviewable.
+
+---
+
 ## 8. Manual infra steps that this runbook does NOT automate
 
 These are operator-only — the backend cannot do them on its own:
@@ -301,6 +384,8 @@ These are operator-only — the backend cannot do them on its own:
 - Configure Supabase project (auth providers, JWT expiry, email templates).
 - Configure Stripe account (products, webhook endpoint, customer portal).
 - Configure Sentry / PostHog projects and copy DSN/key into Fly secrets.
+  For production, push `SENTRY_DSN` (and the Stripe credentials) via the
+  operator workflow described in §7b instead of a local shell.
 - Wire DNS records for `api.*`, `console.*`, `app.*`.
 - Provision the iOS Apple Universal Link / Android App Links files at
   `https://app.tgp.com/.well-known/apple-app-site-association` and
