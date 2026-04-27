@@ -32,6 +32,7 @@ import { UsersModule } from './users/users.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { SystemModule } from './system/system.module';
 import { AdminModule } from './admin/admin.module';
+import { AuditModule } from './audit/audit.module';
 import { BillingModule } from './billing/billing.module';
 import { V1Module } from './v1/v1.module';
 import { InviteLandingModule } from './invite-landing/invite-landing.module';
@@ -79,6 +80,9 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
     AnalyticsModule,
     // Trust & Privacy metadata (psych report #2: Trust as Emotion)
     SystemModule,
+    // Global immutable audit log (compliance + sensitive-action trail).
+    // Must precede AdminModule + UsersModule so AuditService is in DI scope.
+    AuditModule,
     // Phase 1A/1B platform admin (OWNER-only routes)
     AdminModule,
     // Stripe billing mirror + SubscriptionGuard (Phase 2A foundation).

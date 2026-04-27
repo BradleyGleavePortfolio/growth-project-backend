@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Param,
   Patch,
   Post,
   Request,
@@ -12,8 +13,10 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import type { AuthedRequest } from '../auth/auth-request';
 import { UsersService } from './users.service';
 import { PreferencesService } from './preferences.service';
+import { AccountService } from './account.service';
 import type { UserPreferencesDto } from './preferences.dto';
 import { BadgesService } from '../community/badges.service';
+import { AllowDeletionScheduled } from '../common/decorators/allow-deletion-scheduled.decorator';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -21,6 +24,7 @@ export class UsersController {
   constructor(
     private usersService: UsersService,
     private preferencesService: PreferencesService,
+    private accountService: AccountService,
     private badgesService: BadgesService,
   ) {}
 
@@ -78,42 +82,66 @@ export class UsersController {
   /**
    * POST /users/me/data-export
    *
-   * Kicks off a GDPR/CCPA-style personal data export.  Currently a stub
-   * that acknowledges the request — a background job / email pipeline should
-   * be wired here when the export feature is fully built.
-   *
-   * TODO: enqueue an async job that packages the user's data and emails it
-   *       within the 24-hour SLA window stated in the response.
+   * GDPR/CCPA personal-data export. Synchronously assembles the user's
+   * personal data into a JSON snapshot, persists it to DataExportRequest,
+   * and returns a handle the client can poll. The payload itself is
+   * available via GET /users/me/data-export/:id.
    */
   @Post('me/data-export')
   requestDataExport(@Request() req: AuthedRequest) {
-    void req.user.id; // Will be used once real export job is wired
-    return {
-      requested: true,
-      eta: 'within 24h',
-      note: 'Stub — async export job not yet wired. Wire to a queue + email step.',
-    };
+    return this.accountService.requestDataExport(
+      req.user.id,
+      auditContext(req as any),
+    );
+  }
+
+  @Get('me/data-export/:id')
+  getDataExport(@Request() req: AuthedRequest, @Param('id') id: string) {
+    return this.accountService.getDataExport(req.user.id, id);
   }
 
   /**
    * DELETE /users/me/account
    *
-   * Initiates a soft-delete / grace-period account deletion.
-   * Currently a stub — production implementation should:
-   *   1. Mark the account as `deletionScheduledAt = now + 30 days`
-   *   2. Revoke all active sessions
-   *   3. Send a confirmation email with a cancellation link
+   * Schedules a soft-delete with a 30-day grace period. Idempotent — a
+   * second call within the grace window returns the same scheduled_at.
+   * Use POST /users/me/account/cancel-deletion to undo.
    *
-   * TODO: check for existing soft-delete field on User model; if absent,
-   *       add a migration adding `deletion_scheduled_at DateTime?`.
+   * Hard delete (PII scrub) runs out-of-band after the grace window
+   * expires; that worker is intentionally out of scope for this PR — see
+   * docs/audit-and-gdpr.md for the operator runbook.
    */
   @Delete('me/account')
   deleteAccount(@Request() req: AuthedRequest) {
-    void req.user.id; // Will be used once real soft-delete is wired
-    return {
-      scheduled: true,
-      gracePeriodDays: 30,
-      note: 'Stub — soft-delete not yet wired to DB. Add deletion_scheduled_at field and session revocation.',
-    };
+    return this.accountService.scheduleDeletion(
+      req.user.id,
+      auditContext(req as any),
+    );
   }
+
+  @Post('me/account/cancel-deletion')
+  @AllowDeletionScheduled()
+  cancelDeletion(@Request() req: AuthedRequest) {
+    return this.accountService.cancelDeletion(
+      req.user.id,
+      auditContext(req as any),
+    );
+  }
+
+  @Get('me/account/deletion-status')
+  @AllowDeletionScheduled()
+  deletionStatus(@Request() req: AuthedRequest) {
+    return this.accountService.getDeletionStatus(req.user.id);
+  }
+}
+
+// Best-effort extraction of remote IP + User-Agent. Mirrors the helper in
+// admin.controller.ts; kept inline here to avoid an extra util module for
+// two callers.
+function auditContext(req: any): { ip: string | null; userAgent: string | null } {
+  const xff = (req?.headers?.['x-forwarded-for'] || '') as string;
+  const fwdIp = xff.split(',')[0]?.trim();
+  const ip = fwdIp || req?.ip || req?.socket?.remoteAddress || null;
+  const userAgent = (req?.headers?.['user-agent'] || null) as string | null;
+  return { ip: ip || null, userAgent: userAgent || null };
 }
