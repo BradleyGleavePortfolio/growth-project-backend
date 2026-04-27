@@ -42,7 +42,14 @@ function assertRequiredEnv() {
 
 async function bootstrap() {
   assertRequiredEnv();
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    // Capture raw request bodies so the Stripe webhook controller can verify
+    // HMAC signatures over the exact byte sequence Stripe signed. Nest's
+    // express adapter exposes this via `bodyParser: false` + manual parsing,
+    // but the simpler `rawBody: true` flag is supported on Nest 11 and adds
+    // `req.rawBody` to every request without disabling JSON parsing.
+    rawBody: true,
+  });
 
   // SECURITY: CORS was previously `origin: '*'` (audit C6). The React Native mobile
   // client does not require CORS (it isn't a browser), so the only consumers of CORS

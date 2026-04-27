@@ -33,8 +33,23 @@ export class MessagingService {
   }
 
   // Look up a client and verify they belong to this coach. 404 on missing /
-  // foreign — the existence of a foreign client must not leak.
-  private async assertClientOfCoach(coachId: string, clientId: string) {
+  // foreign — the existence of a foreign client must not leak. When the caller
+  // is OWNER, the coach scoping check is bypassed (OWNER reads any thread).
+  // The returned coach_id is the thread's coach (the client's assigned coach
+  // for OWNERs; the caller for normal coaches).
+  private async assertClientOfCoach(
+    coachId: string,
+    clientId: string,
+    opts: { ownerBypass?: boolean } = {},
+  ): Promise<{ id: string; coach_id: string | null }> {
+    if (opts.ownerBypass) {
+      const client = await this.prisma.user.findFirst({
+        where: { id: clientId, role: 'student' },
+        select: { id: true, coach_id: true },
+      });
+      if (!client) throw new NotFoundException('Client not found');
+      return client;
+    }
     const client = await this.prisma.user.findFirst({
       where: { id: clientId, coach_id: coachId, role: 'student' },
       select: { id: true, coach_id: true },
