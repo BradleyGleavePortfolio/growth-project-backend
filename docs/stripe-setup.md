@@ -86,13 +86,24 @@ Repeat sections 2.1–2.5 once per environment (staging and production are
 
 ### 2.3 Configure the Customer Portal
 
-The `/v1/coach/me/billing/portal-session` endpoint mints a live Stripe
-Billing Portal session and requires a published Portal config. The
-endpoint resolves the coach's `stripe_customer_id` from
-`CoachSubscription` (or `CoachProfile` as fallback) and calls
-`POST /v1/billing_portal/sessions` with `customer` and `return_url`. The
-return URL comes from `STRIPE_BILLING_PORTAL_RETURN_URL` and defaults to
-`https://console.thegrowthproject.app/billing`.
+The `/v1/coach/me/billing/portal-session` endpoint requires a configured
+Portal. The endpoint has two paths:
+
+- **Per-coach SDK session** (preferred). When `STRIPE_SECRET_KEY` is set,
+  the endpoint resolves the coach's `stripe_customer_id` from
+  `CoachSubscription` (or `CoachProfile` as fallback) and calls
+  `POST /v1/billing_portal/sessions` with `customer` and `return_url`,
+  taking each coach straight into their own account with no extra auth.
+  The return URL comes from `STRIPE_BILLING_PORTAL_RETURN_URL` and
+  defaults to `https://console.thegrowthproject.app/billing`. Returns
+  `{ url }`.
+- **Hosted login-link fallback**. When `STRIPE_SECRET_KEY` is unset but
+  `STRIPE_CUSTOMER_PORTAL_LOGIN_URL` is set, the endpoint returns the
+  hosted Customer Portal login link with `fallback: true`. The coach
+  authenticates by entering the email Stripe has on file. Useful for
+  environments without server-side Stripe credentials, and as a break-glass
+  while the SDK path is rolled out. When neither is set the endpoint
+  returns `STRIPE_NOT_CONFIGURED` and the console renders the empty state.
 
 1. Stripe dashboard → **Settings → Billing → Customer portal**.
 2. Branding: upload product logo and accent colour.
@@ -106,7 +117,15 @@ return URL comes from `STRIPE_BILLING_PORTAL_RETURN_URL` and defaults to
    - Pause subscriptions: ❌
 4. **Business information**: privacy policy URL, terms of service URL,
    support email/phone.
-5. Save.
+5. **Login link**: enable the hosted login page. Copy the resulting URL
+   (shape `https://billing.stripe.com/p/login/<token>`) — this becomes
+   `STRIPE_CUSTOMER_PORTAL_LOGIN_URL`. The current production link is
+   `https://billing.stripe.com/p/login/28EbJ1bSi0VVf9keaG4Ni00`; treat
+   this as the source of truth for the prod value and never paste it
+   into a non-prod environment. Login links are not secrets (they are
+   safe to share with end users) but environment separation still
+   matters — staging coaches must not be sent to a prod portal.
+6. Save.
 
 ### 2.4 Configure Stripe Tax (optional but recommended)
 
@@ -131,6 +150,7 @@ Listed in `.env.example`. Production values go in `fly secrets set`.
 | `STRIPE_PRICE_ID_FITNESS`    | Yes              | Product price id        | `price_xxx`               |
 | `STRIPE_PRICE_ID_FINANCE`    | No               | Future second vertical  | (unset)                   |
 | `STRIPE_BILLING_PORTAL_RETURN_URL` | No         | URL Stripe redirects coaches back to after the portal session | `https://console.thegrowthproject.app/billing` |
+| `STRIPE_CUSTOMER_PORTAL_LOGIN_URL` | No (recommended) | Stripe dashboard → Settings → Billing → Customer portal → Login link | `https://billing.stripe.com/p/login/...` |
 | `BILLING_ENFORCEMENT`        | Yes (after rollout) | `observe` (default) or `enforce` | `enforce`        |
 
 Behavior when unset:
@@ -140,6 +160,16 @@ Behavior when unset:
   start-subscription endpoints return `STRIPE_NOT_CONFIGURED`. The webhook
   endpoint rejects every request with `400`. Tests do not require any of
   these to be set.
+- **`STRIPE_CUSTOMER_PORTAL_LOGIN_URL` set, `STRIPE_SECRET_KEY` unset.**
+  `/v1/coach/me/billing/portal-session` returns
+  `{ url, fallback: true, coachId }` pointing at the hosted Customer
+  Portal login page. The coach authenticates with the email Stripe has on
+  file. The webhook and start-subscription endpoints still report
+  `STRIPE_NOT_CONFIGURED` — only the portal-session path uses this var.
+- **Both `STRIPE_SECRET_KEY` and `STRIPE_CUSTOMER_PORTAL_LOGIN_URL` set.**
+  The per-coach SDK session takes precedence (returns `fallback: false`).
+  The login URL is unused but keeping it set is fine and gives operators
+  a documented break-glass if the SDK path ever needs to be disabled.
 - **`BILLING_ENFORCEMENT` unset or anything other than `enforce`.**
   `SubscriptionGuard` runs in observe-only mode: the lookup happens but
   every request is allowed through. This is the correct posture during

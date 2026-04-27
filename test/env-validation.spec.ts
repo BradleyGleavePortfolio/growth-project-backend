@@ -78,6 +78,26 @@ describe('evaluateEnv', () => {
     expect(r.validationWarnings.some((w) => w.startsWith('CORS_ORIGINS:'))).toBe(true);
   });
 
+  it('accepts a hosted Stripe Customer Portal login link without warning', () => {
+    const r = evaluateEnv({
+      ...fullProdEnv(),
+      STRIPE_CUSTOMER_PORTAL_LOGIN_URL: 'https://billing.stripe.com/p/login/test_abc123',
+    });
+    expect(
+      r.validationWarnings.some((w) => w.startsWith('STRIPE_CUSTOMER_PORTAL_LOGIN_URL:')),
+    ).toBe(false);
+  });
+
+  it('warns when STRIPE_CUSTOMER_PORTAL_LOGIN_URL points outside billing.stripe.com', () => {
+    const r = evaluateEnv({
+      ...fullProdEnv(),
+      STRIPE_CUSTOMER_PORTAL_LOGIN_URL: 'https://evil.example.com/login',
+    });
+    expect(
+      r.validationWarnings.some((w) => w.startsWith('STRIPE_CUSTOMER_PORTAL_LOGIN_URL:')),
+    ).toBe(true);
+  });
+
   it('treats whitespace-only values as missing', () => {
     const r = evaluateEnv({ ...baseHardEnv(), DATABASE_URL: '   ' });
     expect(r.missingHard).toContain('DATABASE_URL');
