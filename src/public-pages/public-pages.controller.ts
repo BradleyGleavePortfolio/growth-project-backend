@@ -8,6 +8,7 @@ import {
   sanitizeInviteCode,
   type DownloadPlatform,
 } from './public-pages.html';
+import { renderTrustPage } from './trust-pages.html';
 
 // Durable, server-rendered status pages used as the operator-facing
 // destinations for the prod-tier env vars APP_STORE_URL, PLAY_STORE_URL,
@@ -84,7 +85,49 @@ export class PublicPagesController {
     res.status(HttpStatus.OK).send(renderSignupPage(code));
   }
 
+  // Trust pages — durable, server-rendered policy/status surface used as
+  // the public destinations expected by app store reviewers and early
+  // customers. See ./trust-pages.html.ts for editorial guard rails.
+
+  @Public()
+  @Get('privacy')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  privacy(@Res() res: Response) {
+    return this.sendTrust(res, renderTrustPage('privacy'));
+  }
+
+  @Public()
+  @Get('terms')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  terms(@Res() res: Response) {
+    return this.sendTrust(res, renderTrustPage('terms'));
+  }
+
+  @Public()
+  @Get('security')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  security(@Res() res: Response) {
+    return this.sendTrust(res, renderTrustPage('security'));
+  }
+
+  @Public()
+  @Get('status')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  status(@Res() res: Response) {
+    return this.sendTrust(res, renderTrustPage('status'));
+  }
+
   private send(res: Response, html: string) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.status(HttpStatus.OK).send(html);
+  }
+
+  // Trust pages share the same caching posture as the static download
+  // pages (5 min edge cache; copy edits propagate quickly) but live in a
+  // separate helper so a future change to one surface (e.g. longer cache
+  // for /privacy if the copy stabilises) does not affect the other.
+  private sendTrust(res: Response, html: string) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=300');
     res.status(HttpStatus.OK).send(html);

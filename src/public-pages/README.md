@@ -1,9 +1,19 @@
 # public-pages
 
-Durable, server-rendered status pages used as the operator-facing
-destinations for the prod-tier env vars `APP_STORE_URL`,
-`PLAY_STORE_URL`, and `PUBLIC_WEB_SIGNUP_URL` until the real App Store
-/ Play Store listings and the marketing signup page exist.
+Durable, server-rendered status and trust pages mounted under the
+public host `app.trygrowthproject.com`. Two clusters live here:
+
+- **Status pages** — `/download/ios`, `/download/android`, `/signup`,
+  `/signup/:code`. Used as the destinations for the prod-tier env
+  vars `APP_STORE_URL`, `PLAY_STORE_URL`, and
+  `PUBLIC_WEB_SIGNUP_URL` until the real App Store / Play Store
+  listings and the marketing signup page exist.
+- **Trust pages** — `/privacy`, `/terms`, `/security`, `/status`.
+  Real public pages used as the privacy policy, terms of service,
+  security posture, and operational status URLs filed with the App
+  Store / Play Store, the Stripe Customer Portal, and shared with
+  early customers. See `trust-pages.html.ts` for editorial guard
+  rails.
 
 ## Purpose
 
@@ -21,8 +31,9 @@ destinations for the prod-tier env vars `APP_STORE_URL`,
 
 | File | What it owns |
 |---|---|
-| `public-pages.controller.ts` | `GET /download/ios`, `GET /download/android`, `GET /signup`, `GET /signup/:code` |
-| `public-pages.html.ts` | Page templates, code sanitizer, page text |
+| `public-pages.controller.ts` | `GET /download/ios`, `GET /download/android`, `GET /signup`, `GET /signup/:code`, `GET /privacy`, `GET /terms`, `GET /security`, `GET /status` |
+| `public-pages.html.ts` | Status-page templates (download / signup), invite-code sanitizer |
+| `trust-pages.html.ts` | Trust-page templates (privacy / terms / security / status), support email constant |
 | `public-pages.module.ts` | Wires the controller (no service needed) |
 
 ## Routing
@@ -36,6 +47,10 @@ app, the URLs resolve as bare paths under the public hostname:
 - `https://app.trygrowthproject.com/signup`
 - `https://app.trygrowthproject.com/signup?code=GP-A1B2C3`
 - `https://app.trygrowthproject.com/signup/GP-A1B2C3`
+- `https://app.trygrowthproject.com/privacy`
+- `https://app.trygrowthproject.com/terms`
+- `https://app.trygrowthproject.com/security`
+- `https://app.trygrowthproject.com/status`
 
 ## Invite-code passthrough
 
@@ -93,11 +108,42 @@ swap over without a code change.
 - Body / headers exhausted by middleware → unreachable in practice; the
   controller writes the response directly via `@Res()`.
 
+## Trust pages
+
+`/privacy`, `/terms`, `/security`, `/status` are real public pages
+used as the privacy policy, terms of service, security posture, and
+operational status URLs filed with the App Store, the Play Store, and
+the Stripe Customer Portal. They live in `trust-pages.html.ts`.
+
+Editorial guard rails (see `test/trust-pages.spec.ts`):
+
+- The official support contact (`Bradley@Bradleytgpcoaching.com`,
+  exported as `SUPPORT_EMAIL`) appears on every page so a reviewer or
+  customer always has a real human to email.
+- The Security page describes practical controls and explicitly states
+  we do **not** currently hold SOC 2 / ISO 27001 / HIPAA
+  certifications. Making a fake certification claim is the failure
+  mode this module is designed to prevent.
+- No AI fingerprints. Copy is human-written, concrete, and free of
+  boilerplate hedging.
+- The Status page lists today's real public endpoints and points at
+  the support email for incidents. When a third-party monitoring feed
+  is wired in, it can be embedded under the same URL without changing
+  the contract.
+- Every page carries a `Last reviewed` date (`POLICY_LAST_REVIEWED` in
+  `trust-pages.html.ts`) so reviewers and customers see freshness.
+  Bump it when copy changes.
+
+The pages are written as a company-drafted statement of practice and
+each ends with a footnote recommending formal legal review before any
+public launch outside an invite-only beta.
+
 ## Tests
 
 | File | Covers |
 |---|---|
 | `test/public-pages.spec.ts` | Render shape, code sanitizer, cache headers, route mounting under bare paths |
+| `test/trust-pages.spec.ts` | Privacy / terms / security / status render shape, key copy, no fake certifications, no AI fingerprints |
 
 ## Operational notes
 

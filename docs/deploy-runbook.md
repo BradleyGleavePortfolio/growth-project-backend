@@ -460,3 +460,69 @@ store and in `fly tokens`.
 > is necessary but not sufficient — the deploy job must have actually
 > uploaded an image. The `Fly Deploy` workflow is the contract; its red
 > state is load-bearing.
+
+---
+
+## 9. App store readiness — public trust pages
+
+The App Store and Google Play review processes require that the
+listing point at real, reachable URLs for privacy policy, terms of
+service, support contact, and (for Apple) a marketing/landing page.
+We satisfy that requirement by serving durable, server-rendered
+"trust" pages from this backend at the same `app.trygrowthproject.com`
+host the invite-landing and download status pages already use.
+
+| Page | URL | Purpose |
+| --- | --- | --- |
+| Privacy | `https://app.trygrowthproject.com/privacy` | Plain-language privacy policy. App Store / Play Store privacy URL. |
+| Terms | `https://app.trygrowthproject.com/terms` | Terms of service. Required by Stripe Customer Portal business info and by app review. |
+| Security | `https://app.trygrowthproject.com/security` | Practical security posture and incident-reporting channel. |
+| Status | `https://app.trygrowthproject.com/status` | Honest description of public surface today; replace with a live status feed when monitoring is wired in. |
+
+These pages live in `src/public-pages/` next to the existing
+`/download/*` and `/signup` status pages, and they are excluded from
+the `/api` global prefix in `src/main.ts` so they resolve as bare
+paths under the public hostname.
+
+What the operator should do when filing the App Store / Play Store
+listing:
+
+1. **Privacy URL** — paste `https://app.trygrowthproject.com/privacy`
+   into App Store Connect → App Privacy and into Play Console →
+   Policy → App content → Privacy policy.
+2. **Terms / EULA URL** — paste
+   `https://app.trygrowthproject.com/terms`. App Store Connect uses
+   the standard Apple EULA by default; if you want to override it,
+   point the EULA URL at `/terms`.
+3. **Marketing / support URL** — paste
+   `https://app.trygrowthproject.com/signup` (App Store Connect →
+   App Information → Marketing URL) and `Bradley@Bradleytgpcoaching.com`
+   as the support email.
+4. **Stripe Customer Portal** — under Business Information, set
+   privacy policy URL to `/privacy`, terms of service URL to `/terms`,
+   and support email to `Bradley@Bradleytgpcoaching.com`.
+
+Editorial guard rails (enforced by `test/trust-pages.spec.ts`):
+
+- The pages name the **operator-confirmed** support contact
+  (`Bradley@Bradleytgpcoaching.com`) on every page so a reviewer or
+  customer always has a real human to email.
+- The Security page lists transport, storage, auth, logging, vendor
+  posture, and incident response in concrete terms. It explicitly
+  states we do **not** currently hold SOC 2 / ISO 27001 / HIPAA
+  certifications — making a fake claim is the failure mode this
+  module is designed to prevent.
+- The Status page lists today's real public endpoints and points at
+  the support email for incident reporting. When a third-party
+  monitoring feed is wired in, it can be embedded under the same URL
+  without changing the contract published to the stores.
+- Each page carries a `Last reviewed` date so reviewers and customers
+  see freshness. Bump `POLICY_LAST_REVIEWED` in
+  `src/public-pages/trust-pages.html.ts` when copy changes.
+
+Reviewing copy with counsel: the pages are written as a company-drafted
+statement of practice, not as legal text. Before any public launch
+outside an invite-only beta, route the rendered copy through legal
+review and update the file in a follow-up PR. A footnote on each page
+already says this; counsel can sign off on or replace the language
+without moving the URLs.
