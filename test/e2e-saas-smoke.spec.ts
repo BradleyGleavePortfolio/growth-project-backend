@@ -126,7 +126,14 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
           }),
         },
       };
-      return { admin: new AdminService(prisma), prisma, target, profiles };
+      const auditMock: any = { write: jest.fn(async () => {}), list: jest.fn(async () => []) };
+      return {
+        admin: new AdminService(prisma, auditMock),
+        prisma,
+        target,
+        profiles,
+        auditMock,
+      };
     }
 
     it('promotes student → coach and creates a unique GP- invite_code', async () => {
