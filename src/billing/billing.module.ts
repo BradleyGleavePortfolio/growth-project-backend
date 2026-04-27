@@ -3,6 +3,7 @@ import { JwksVerifierService } from '../auth/jwks.service';
 import { BillingService } from './billing.service';
 import { CoachBillingController } from './coach-billing.controller';
 import { OwnerBillingController } from './owner-billing.controller';
+import { StripeApiService } from './stripe-api.service';
 import { StripeWebhookController } from './stripe-webhook.controller';
 import { SubscriptionGuard } from './subscription.guard';
 
@@ -15,7 +16,12 @@ import { SubscriptionGuard } from './subscription.guard';
     CoachBillingController,
     OwnerBillingController,
   ],
-  providers: [BillingService, SubscriptionGuard, JwksVerifierService],
+  providers: [
+    BillingService,
+    SubscriptionGuard,
+    JwksVerifierService,
+    StripeApiService,
+  ],
   exports: [BillingService, SubscriptionGuard],
 })
 export class BillingModule {}

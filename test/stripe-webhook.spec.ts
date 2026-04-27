@@ -83,7 +83,17 @@ describe('BillingService', () => {
         findUnique: jest.fn(async ({ where }: any) =>
           processed.find((e) => e.stripe_event_id === where.stripe_event_id) ?? null,
         ),
+        // Simulates Prisma's P2002 unique-constraint violation when the same
+        // event id is written twice — exercises the insert-first idempotency
+        // path in BillingService.handleEvent.
         create: jest.fn(async ({ data }: any) => {
+          if (processed.find((e) => e.stripe_event_id === data.stripe_event_id)) {
+            const err: any = new Error(
+              'Unique constraint failed on stripe_event_id',
+            );
+            err.code = 'P2002';
+            throw err;
+          }
           processed.push({ ...data, processed_at: new Date() });
           return data;
         }),

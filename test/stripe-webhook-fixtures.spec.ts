@@ -50,6 +50,15 @@ function makePrismaStub() {
         null,
       ),
       create: jest.fn(async ({ data }: any) => {
+        if (
+          processed.find((e) => e.stripe_event_id === data.stripe_event_id)
+        ) {
+          const err: any = new Error(
+            'Unique constraint failed on stripe_event_id',
+          );
+          err.code = 'P2002';
+          throw err;
+        }
         processed.push(data);
         return data;
       }),
