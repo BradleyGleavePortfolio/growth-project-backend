@@ -32,6 +32,8 @@ import { UsersModule } from './users/users.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { SystemModule } from './system/system.module';
 import { AdminModule } from './admin/admin.module';
+import { BillingModule } from './billing/billing.module';
+import { V1Module } from './v1/v1.module';
 
 @Module({
   imports: [
@@ -77,6 +79,10 @@ import { AdminModule } from './admin/admin.module';
     SystemModule,
     // Phase 1A/1B platform admin (OWNER-only routes)
     AdminModule,
+    // Stripe billing mirror + SubscriptionGuard (Phase 2A foundation).
+    BillingModule,
+    // V1 Backend-For-Frontend for tgp-coach-console.
+    V1Module,
   ],
   providers: [
     // SECURITY: register ThrottlerGuard as a global APP_GUARD so that @Throttle(...)

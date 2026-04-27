@@ -157,6 +157,16 @@ model User {
   coach_profile            CoachProfile?    @relation("CoachProfileUser")
   owners_created_profiles  CoachProfile[]   @relation("CoachProfileCreatedBy")
 
+  // SaaS billing additions (1:1 with coach users; null for clients/owners).
+  coach_subscription       CoachSubscription?
+  invoices                 Invoice[]
+  payment_failures         PaymentFailure[]
+  drafts_as_coach          MessageDraft[]   @relation("MessageDraftCoach")
+  drafts_as_client         MessageDraft[]   @relation("MessageDraftClient")
+  activity_events_actor    ActivityEvent[]  @relation("ActivityEventActor")
+  activity_events_coach    ActivityEvent[]  @relation("ActivityEventCoach")
+  activity_events_client   ActivityEvent[]  @relation("ActivityEventClient")
+
   @@index([coach_id])
 }
 
@@ -197,6 +207,114 @@ model CoachProfile {
   @@index([invite_code])
   @@index([subscription_status])
   @@index([created_by_owner_id])
+}
+
+// Coach SaaS subscription mirror. Stripe is source of truth; this is a
+// denormalized projection so the coach console reads subscription state
+// without touching Stripe directly. Complements CoachProfile.stripe_* fields
+// with the longer-form mirror used by the v1 coach-console BFF.
+model CoachSubscription {
+  id                       String    @id @default(uuid())
+  coach_id                 String    @unique
+  coach                    User      @relation(fields: [coach_id], references: [id])
+  stripe_customer_id       String?
+  stripe_subscription_id   String?   @unique
+  stripe_price_id          String?
+  status                   String    @default("incomplete") // active | trialing | past_due | canceled | paused | incomplete | unpaid
+  current_period_end       DateTime?
+  trial_end                DateTime?
+  cancel_at_period_end     Boolean   @default(false)
+  last_payment_failed_at   DateTime?
+  failed_payments_this_month Int     @default(0)
+  billing_email            String?
+  card_last4               String?
+  created_at               DateTime  @default(now())
+  updated_at               DateTime  @updatedAt
+
+  @@index([status])
+}
+
+model Invoice {
+  id                     String   @id @default(uuid())
+  coach_id               String
+  coach                  User     @relation(fields: [coach_id], references: [id])
+  stripe_invoice_id      String   @unique
+  stripe_customer_id     String?
+  amount_paid_cents      Int      @default(0)
+  amount_due_cents       Int      @default(0)
+  currency               String   @default("usd")
+  status                 String   @default("open") // open | paid | void | uncollectible
+  hosted_invoice_url     String?
+  invoice_pdf            String?
+  period_start           DateTime?
+  period_end             DateTime?
+  paid_at                DateTime?
+  created_at             DateTime @default(now())
+
+  @@index([coach_id, created_at])
+}
+
+model PaymentFailure {
+  id                     String   @id @default(uuid())
+  coach_id               String
+  coach                  User     @relation(fields: [coach_id], references: [id])
+  stripe_invoice_id      String?
+  stripe_event_id        String?
+  amount_due_cents       Int      @default(0)
+  reason                 String?
+  occurred_at            DateTime @default(now())
+
+  @@index([coach_id, occurred_at])
+}
+
+// Idempotency table for Stripe webhook delivery. Stripe retries deliveries on
+// timeouts, so we record every event id and short-circuit duplicates.
+model StripeProcessedEvent {
+  stripe_event_id String   @id
+  type            String
+  processed_at    DateTime @default(now())
+
+  @@index([processed_at])
+}
+
+// Coach message draft. Idempotent on (coach_id, client_id) — a coach has one
+// draft per thread; autosave overwrites in place.
+model MessageDraft {
+  id         String   @id @default(uuid())
+  coach_id   String
+  coach      User     @relation("MessageDraftCoach", fields: [coach_id], references: [id])
+  client_id  String
+  client     User     @relation("MessageDraftClient", fields: [client_id], references: [id])
+  body       String
+  snippet_id String?
+  updated_at DateTime @updatedAt
+  created_at DateTime @default(now())
+
+  @@unique([coach_id, client_id], name: "MessageDraft_coach_client_key")
+  @@index([coach_id])
+}
+
+// Audit/activity event stream. Used by the coach console to render the recent
+// activity feed and by future fan-out workers for push/email notifications.
+// Schema follows the integration notes: actor, coach, client, type, summary,
+// payload (jsonb).
+model ActivityEvent {
+  id          String   @id @default(uuid())
+  actor_id    String?
+  actor       User?    @relation("ActivityEventActor", fields: [actor_id], references: [id])
+  actor_role  String?
+  coach_id    String?
+  coach       User?    @relation("ActivityEventCoach", fields: [coach_id], references: [id])
+  client_id   String?
+  client      User?    @relation("ActivityEventClient", fields: [client_id], references: [id])
+  type        String
+  summary     String?
+  payload     Json?
+  created_at  DateTime @default(now())
+
+  @@index([coach_id, created_at])
+  @@index([client_id, created_at])
+  @@index([type, created_at])
 }
 
 model InviteCode {
