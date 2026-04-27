@@ -15,6 +15,7 @@ import {
   ValidateInviteCodePublicDto,
   BecomeCoachDto,
   SignupWithCodeDto,
+  AttachInviteCodeDto,
 } from './auth.dto';
 import { InviteCodesService } from '../invite-codes/invite-codes.service';
 
@@ -50,7 +51,30 @@ export class AuthController {
   @Post('google')
   @HttpCode(HttpStatus.OK)
   async googleAuth(@Body() body: GoogleAuthDto) {
-    return this.authService.googleAuth(body.token);
+    return this.authService.googleAuth(body.token, body.invite_code);
+  }
+
+  // Mobile #56 calls GET /auth/signup-policy on launch to learn whether the
+  // coach invite code is required and which providers are usable on this
+  // build. Public so the unauth client can fetch it.
+  @Public()
+  @Get('signup-policy')
+  @HttpCode(HttpStatus.OK)
+  async getSignupPolicy() {
+    return this.authService.getSignupPolicy();
+  }
+
+  // Alias for /coach-codes/auth/attach-coach-code so mobile can hit the
+  // canonical /auth/attach-invite-code path with the new `invite_code`
+  // field name. Same behavior, same idempotency. Throttled the same way.
+  @Post('attach-invite-code')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async attachInviteCode(
+    @Request() req: AuthedRequest,
+    @Body() body: AttachInviteCodeDto,
+  ) {
+    return this.inviteCodes.attachUserToCoachByCode(req.user.id, body.invite_code);
   }
 
   @Post('select-role')

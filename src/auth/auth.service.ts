@@ -122,7 +122,25 @@ export class AuthService {
     };
   }
 
-  async googleAuth(token: string) {
+  // Returns the signup policy in effect for this build. Mobile (#56) calls
+  // this on launch to decide whether to require the coach invite code field
+  // and which auth providers to surface. Pure read of env flags; safe to call
+  // unauthenticated.
+  getSignupPolicy() {
+    const gateEnabled =
+      (process.env.COACH_CODE_GATE_ENABLED || '').toLowerCase() === 'true';
+    const googleEnabled =
+      !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const providers = ['email'];
+    if (googleEnabled) providers.push('google');
+    return {
+      coach_code_required: gateEnabled,
+      providers,
+      invite_code_field: 'invite_code',
+    };
+  }
+
+  async googleAuth(token: string, inviteCode?: string) {
     // The mobile app uses Supabase OAuth flow (expo-auth-session).
     // The token here is a Supabase access_token from the OAuth redirect.
     // We use the admin SDK to look up the user by their access token.
@@ -187,9 +205,27 @@ export class AuthService {
       }
     }
 
+    // If mobile passed an invite_code on the Google exchange, attach the
+    // user to the coach in the same call. Failures are non-fatal — we still
+    // log the user in so they can retry via /auth/attach-invite-code.
+    let invite_attached = false;
+    if (inviteCode && !user.coach_id) {
+      try {
+        await this.inviteCodes.attachUserToCoachByCode(user.id, inviteCode);
+        const refreshed = await this.prisma.user.findUnique({ where: { id: user.id } });
+        if (refreshed) user = refreshed;
+        invite_attached = true;
+      } catch (err) {
+        this.logger.warn(
+          `googleAuth invite_code attach failed for user=${user.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
     return {
       access_token: token,
       is_new_user: isNewUser,
+      invite_attached,
       user: {
         id: user.id,
         email: user.email,
