@@ -17,15 +17,37 @@ import { Logger } from '@nestjs/common';
 //
 // Each rule below carries a tier:
 //
-//   * `hard`    — required everywhere, including dev. Boot crashes if missing.
-//   * `prod`    — required in `staging` and `production` (NODE_ENV). In dev
-//                 the var is treated as optional and the absence is logged
-//                 as info-level, not warn-level.
+//   * `hard`    — required everywhere, including dev. Boot crashes if missing
+//                 (or contains an obvious placeholder). Use this *only* for
+//                 values without which the process cannot serve a single
+//                 request safely (DB connection, Supabase JWKS).
+//   * `prod`    — required in `staging` and `production` (NODE_ENV). Boot
+//                 crashes when missing under prod-like NODE_ENV. In dev the
+//                 absence is logged as info-level, not warn-level. Reserve
+//                 for things genuinely needed at boot under prod (currently
+//                 none in the default rule set; the tier remains as a hook).
+//   * `feature` — disables or degrades a single feature/route when missing.
+//                 Logged at warn-level in prod-like environments so operators
+//                 can see what's off, but boot does NOT crash. This is the
+//                 right tier for Stripe (controllers return 400 at request
+//                 time), Sentry (init no-ops), public launch URLs (fallback
+//                 strings exist in the controllers), and CORS_ORIGINS
+//                 (empty = deny-all, which is the safe mobile-only default).
 //   * `optional`— always optional; absence is logged at warn-level only when
 //                 a related feature would otherwise silently degrade
-//                 (Sentry, PostHog).
+//                 (PostHog, Perplexity, USDA).
+//
+// The tier split exists so that operators are not forced to invent
+// placeholder values to get past assertEnv on first boot. A placeholder is
+// always worse than a missing value: an absent feature returns a
+// deterministic 400 / falls back to a documented default, but a placeholder
+// that slips into a real Stripe call leaks an obviously-broken state to
+// users. See looksLikePlaceholder for the placeholder rejection that
+// applies to hard/prod rules — feature-tier rules are *not* checked for
+// placeholders because the right behavior there is "leave it unset until
+// you have the real value."
 
-export type EnvTier = 'hard' | 'prod' | 'optional';
+export type EnvTier = 'hard' | 'prod' | 'feature' | 'optional';
 
 export interface EnvRule {
   name: string;
@@ -58,58 +80,67 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Supabase service-role key for server-side admin calls.',
   },
 
-  // --- Prod-required: optional in dev, required in staging/production ---
+  // --- Feature-tier: warn in prod, never block boot. The corresponding
+  // route/feature handles the missing-value case at request time. ---
   {
     name: 'PUBLIC_INVITE_BASE_URL',
-    tier: 'prod',
-    reason: 'Base URL used in /api/invite-codes responses and invite landing pages.',
+    tier: 'feature',
+    reason:
+      'Base URL used in /api/invite-codes responses and invite landing pages. Falls back to https://app.tgp.com/join when unset; set to the real public domain before public launch.',
   },
   {
     name: 'PUBLIC_WEB_SIGNUP_URL',
-    tier: 'prod',
-    reason: 'Web signup target the invite landing page links to when the user has no app installed.',
+    tier: 'feature',
+    reason:
+      'Web signup target the invite landing page links to when the user has no app installed. Falls back to PUBLIC_INVITE_BASE_URL/<code> when unset.',
   },
   {
     name: 'APP_STORE_URL',
-    tier: 'prod',
-    reason: 'iOS App Store URL surfaced on the public invite landing page.',
+    tier: 'feature',
+    reason:
+      'iOS App Store URL surfaced on the public invite landing page. Falls back to a placeholder TestFlight-style link when unset; set once the App Store listing exists.',
   },
   {
     name: 'PLAY_STORE_URL',
-    tier: 'prod',
-    reason: 'Google Play Store URL surfaced on the public invite landing page.',
+    tier: 'feature',
+    reason:
+      'Google Play Store URL surfaced on the public invite landing page. Falls back to com.tgp.app placeholder when unset; set once the Play Store listing exists.',
   },
   {
     name: 'CORS_ORIGINS',
-    tier: 'prod',
+    tier: 'feature',
     reason:
-      'Comma-separated allow-list of browser origins. Empty = deny all browsers (mobile-only). Set to the coach console origin in prod.',
+      'Comma-separated allow-list of browser origins. Empty = deny all browsers (the safe mobile-only default). Set to the coach console origin once a browser client ships.',
     validate: (v) => {
       if (v.trim() === '*') {
-        return 'CORS_ORIGINS=* is not allowed in production — set explicit origins.';
+        return 'CORS_ORIGINS=* is not allowed — list explicit origins (the wildcard is rejected at boot in main.ts as well).';
       }
       return null;
     },
   },
   {
     name: 'STRIPE_SECRET_KEY',
-    tier: 'prod',
-    reason: 'Stripe API key used by BillingService for portal/subscription calls.',
+    tier: 'feature',
+    reason:
+      'Stripe API key used by BillingService for portal/subscription calls. Coach/owner billing routes return 400 STRIPE_NOT_CONFIGURED when unset, so leaving it unset is the right state until Stripe is provisioned.',
   },
   {
     name: 'STRIPE_WEBHOOK_SECRET',
-    tier: 'prod',
-    reason: 'HMAC signing secret for /v1/webhooks/stripe. Without it every webhook is rejected.',
+    tier: 'feature',
+    reason:
+      'HMAC signing secret for /v1/webhooks/stripe. Without it the webhook controller rejects every request with 400 — no boot dependency. Set this *before* pointing Stripe at the webhook URL.',
   },
   {
     name: 'STRIPE_PRICE_ID_FITNESS',
-    tier: 'prod',
-    reason: 'Stripe price id for the flat coach SaaS plan.',
+    tier: 'feature',
+    reason:
+      'Stripe price id for the flat coach SaaS plan. Read at request time by start-subscription / portal-session controllers; safe to leave unset until Stripe is configured.',
   },
   {
     name: 'SENTRY_DSN',
-    tier: 'prod',
-    reason: 'Sentry DSN for server-side error reporting. Without it, prod errors are invisible.',
+    tier: 'feature',
+    reason:
+      'Sentry DSN for server-side error reporting. instrument.ts no-ops when unset, so absence is safe at boot — but prod errors are invisible until set. Treat the warn as a release blocker for production traffic.',
   },
 
   // --- Optional everywhere; warn-only in prod when missing ---
@@ -192,6 +223,7 @@ export const ENV_RULES: EnvRule[] = [
 export interface EnvValidationResult {
   missingHard: string[];
   missingProd: string[];
+  missingFeature: string[];
   missingOptional: string[];
   validationWarnings: string[];
   // Names of hard/prod-tier vars whose value looks like an unfilled placeholder
@@ -250,6 +282,7 @@ export function evaluateEnv(env: NodeJS.ProcessEnv = process.env): EnvValidation
   const isProd = isProdLike(env.NODE_ENV);
   const missingHard: string[] = [];
   const missingProd: string[] = [];
+  const missingFeature: string[] = [];
   const missingOptional: string[] = [];
   const placeholderHard: string[] = [];
   const placeholderProd: string[] = [];
@@ -262,6 +295,7 @@ export function evaluateEnv(env: NodeJS.ProcessEnv = process.env): EnvValidation
     if (!isSet) {
       if (rule.tier === 'hard') missingHard.push(rule.name);
       else if (rule.tier === 'prod') missingProd.push(rule.name);
+      else if (rule.tier === 'feature') missingFeature.push(rule.name);
       else missingOptional.push(rule.name);
       continue;
     }
@@ -283,6 +317,7 @@ export function evaluateEnv(env: NodeJS.ProcessEnv = process.env): EnvValidation
   return {
     missingHard,
     missingProd,
+    missingFeature,
     missingOptional,
     placeholderHard,
     placeholderProd,
@@ -344,6 +379,14 @@ export function assertEnv(
     }
   }
 
+  // Feature-tier vars never block boot. Warn loudly under prod-like
+  // NODE_ENV so operators see what's degraded; stay quiet in dev.
+  if (result.missingFeature.length && enforceProd) {
+    logger.warn(
+      `Feature-tier env vars missing — related features are disabled or return 4xx at call time (NODE_ENV=${env.NODE_ENV}): ${result.missingFeature.join(', ')}`,
+    );
+  }
+
   if (result.missingOptional.length) {
     logger.warn(
       `Optional env vars missing (related features will be disabled or return errors at call time): ${result.missingOptional.join(', ')}`,
@@ -359,6 +402,7 @@ export function assertEnv(
       ENV_RULES.length -
       result.missingHard.length -
       result.missingProd.length -
+      result.missingFeature.length -
       result.missingOptional.length -
       result.placeholderHard.length -
       result.placeholderProd.length;
