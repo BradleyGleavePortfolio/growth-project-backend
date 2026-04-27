@@ -85,7 +85,14 @@ hierarchy. Every authenticated request in the API passes through this module.
 | `SUPABASE_ANON_KEY` | yes | Anon key — used for `signInWithPassword`, `signUp`, and `resetPasswordForEmail`. |
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | Admin SDK key — used by the Google handler to call `auth.getUser(token)` and resolve the Supabase user. |
 | `SUPABASE_REDIRECT_URL` | yes | Email-confirm deep link target (e.g. `tgp://verified`). |
-| `COACH_CODE_GATE_ENABLED` | optional | When `true`, `/auth/signup-with-code` requires a coach invite code. `/auth/signup-policy` reflects this so mobile can hide/show the field. |
+| `COACH_CODE_GATE_ENABLED` | optional | When `true`, `/auth/signup-with-code` requires a coach invite code. `/auth/signup-policy` reflects this via `invite_code_required` (canonical) and `coach_code_required` (deprecated alias) so mobile can hide/show the field. |
+
+`/auth/signup-policy` also exposes the invite-code format spec
+(`invite_code.min_length`, `max_length`, `prefix`) so the mobile client
+can gate input client-side. `/auth/validate-invite-code` rejects
+out-of-spec input with a polished structured 400 carrying
+`code: 'invite_code_invalid_format'` — no input echo, no DB lookup, the
+same shape regardless of which constraint failed.
 
 `JWT_SECRET` is reserved and currently unused — verification is JWKS-based.
 

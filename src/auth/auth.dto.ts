@@ -80,10 +80,15 @@ export class SelectRoleDto {
   invite_code?: string;
 }
 
+// Public invite-code preview body. Length / format checks are deliberately
+// loose here so the controller can return a polished structured 400 (with a
+// stable `code: 'invite_code_invalid_format'`) instead of class-validator's
+// raw error array. The hard 256-char ceiling is just a payload sanity bound
+// to keep the body small; the user-facing format spec lives in the controller
+// + /auth/signup-policy and is the single source of truth.
 export class ValidateInviteCodePublicDto {
   @IsString()
-  @MinLength(3)
-  @MaxLength(32)
+  @MaxLength(256)
   code!: string;
 }
 

@@ -28,6 +28,17 @@ const CODE_LENGTH = 6;
 const CODE_PREFIX = 'GP-';
 const MAX_GENERATION_ATTEMPTS = 10;
 
+// Public format constants surfaced via /auth/signup-policy so the mobile
+// client can validate input before round-tripping. Server-side DTOs (and the
+// controller's polished format guard on /auth/validate-invite-code) enforce
+// the same bounds, so any drift is a one-line fix here.
+export const INVITE_CODE_PREFIX = CODE_PREFIX;
+export const INVITE_CODE_MIN_LENGTH = 3;
+export const INVITE_CODE_MAX_LENGTH = 32;
+// Whitespace-trimmed, case-insensitive shape check. Letters, digits, and
+// dashes only. Mobile mirrors this to gate input before POST.
+export const INVITE_CODE_PATTERN = /^[A-Za-z0-9-]+$/;
+
 @Injectable()
 export class InviteCodesService {
   private readonly logger = new Logger(InviteCodesService.name);

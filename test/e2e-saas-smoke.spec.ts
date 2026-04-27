@@ -180,19 +180,30 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       return { auth, inviteCodes, prisma };
     }
 
-    it('signup-policy reflects COACH_CODE_GATE_ENABLED=true and exposes invite_code field name', async () => {
+    it('signup-policy reflects COACH_CODE_GATE_ENABLED=true and exposes the canonical mobile contract', async () => {
       process.env.COACH_CODE_GATE_ENABLED = 'true';
       const { auth } = buildAuth();
       const policy = auth.getSignupPolicy();
+      // Canonical name aligned with `invite_code_field`. The legacy
+      // `coach_code_required` alias mirrors the same value for older clients.
+      expect(policy.invite_code_required).toBe(true);
       expect(policy.coach_code_required).toBe(true);
       expect(policy.invite_code_field).toBe('invite_code');
       expect(policy.providers).toContain('email');
+      // Mobile uses these to gate input client-side and avoid the 32-char
+      // overflow 400 the invite QA surfaced on PR #61.
+      expect(policy.invite_code).toEqual({
+        min_length: 3,
+        max_length: 32,
+        prefix: 'GP-',
+      });
     });
 
     it('signup-policy false when gate disabled', async () => {
       delete process.env.COACH_CODE_GATE_ENABLED;
       const { auth } = buildAuth();
       const policy = auth.getSignupPolicy();
+      expect(policy.invite_code_required).toBe(false);
       expect(policy.coach_code_required).toBe(false);
     });
 
