@@ -294,10 +294,11 @@ Full setup lives in `docs/stripe-setup.md`. Operational summary:
 These are operator-only — the backend cannot do them on its own:
 
 - Provision the Fly app, region, and IPv4/IPv6 addresses.
-- Add a `FLY_API_TOKEN` GitHub Actions repo secret (Settings → Secrets and
-  variables → Actions → New repository secret). Until this is set, the
-  `Fly Deploy` workflow logs a warning and skips the deploy step rather
-  than failing the run with "no access token available".
+- **Add a `FLY_API_TOKEN` GitHub Actions repo secret.** Until this is set,
+  the `Fly Deploy` workflow now **fails red** on every push to `main` —
+  see §8.1 below. A red workflow is the intended signal that production
+  is not deploying; a stale production binary running while the workflow
+  silently green-skips is a release-blocker.
 - Configure Supabase project (auth providers, JWT expiry, email templates).
 - Configure Stripe account (products, webhook endpoint, customer portal).
 - Configure Sentry / PostHog projects and copy DSN/key into Fly secrets.
@@ -307,3 +308,70 @@ These are operator-only — the backend cannot do them on its own:
   `assetlinks.json` so deep links resolve to the installed app.
 
 When these are complete, the deploy pipeline above takes over.
+
+### 8.1 Provisioning `FLY_API_TOKEN` and triggering the first deploy
+
+Run these steps once per repo+app pair. The token never lives in this
+repo or in any `.env` file — it lives only in the GitHub Actions secret
+store and in `fly tokens`.
+
+1. **Generate a Fly deploy token scoped to the target app.** Deploy
+   tokens are app-scoped and can be revoked individually, so prefer them
+   over personal access tokens.
+
+   ```sh
+   fly tokens create deploy -a <app-name> --expiry 8760h
+   ```
+
+   Copy the token from the command output. It is shown only once.
+
+2. **Add the token as a repository secret.** GitHub UI path:
+
+   - Repository → **Settings** → **Secrets and variables** → **Actions**
+   - **New repository secret**
+   - Name: `FLY_API_TOKEN` (exact, case-sensitive)
+   - Secret: paste the token from step 1
+   - **Add secret**
+
+   Or via `gh`:
+
+   ```sh
+   gh secret set FLY_API_TOKEN --app actions --body "$FLY_TOKEN_FROM_STEP_1"
+   ```
+
+3. **Trigger a deploy.** Either:
+   - Push any commit to `main` (most common), or
+   - Re-run the latest failed `Fly Deploy` workflow:
+     `gh run list --workflow="Fly Deploy" --limit 1` then
+     `gh run rerun <run-id>`.
+
+4. **Watch the run go green.** The `Verify FLY_API_TOKEN is configured`
+   step prints the token *length* (not the value) and the deploy
+   proceeds. If the run still fails red, check the step log for one of:
+
+   - `FLY_API_TOKEN GitHub Actions secret is not set` — the secret was
+     not saved against this repository (check org-level vs repo-level).
+   - `looks like a placeholder value` — the secret was saved with
+     literal `<token>` / `REPLACE_ME` / similar; replace with the real
+     token from step 1.
+   - `suspiciously short` — only a fragment of the token was pasted.
+
+5. **Confirm production is current.** After the workflow finishes:
+
+   ```sh
+   fly releases -a <app-name> | head -5
+   gh api repos/:owner/:repo/commits/main --jq .sha   # main HEAD SHA
+   ```
+
+   The latest Fly release should match the deploy that just ran. If
+   `fly releases` lags behind `main`, treat it as a stale-prod incident:
+   the workflow may be green for a no-op reason (concurrency lock,
+   manual `workflow_dispatch` against an old SHA). Re-trigger and watch
+   `fly logs -a <app-name>` for the boot banner.
+
+> **Stale production deploy is a release blocker.** Do not roll forward
+> mobile or coach-console releases that depend on backend changes until
+> `fly releases` shows the matching backend SHA. A green CI run on `main`
+> is necessary but not sufficient — the deploy job must have actually
+> uploaded an image. The `Fly Deploy` workflow is the contract; its red
+> state is load-bearing.

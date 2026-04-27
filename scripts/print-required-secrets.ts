@@ -34,7 +34,7 @@
  * any environment — only env-var *names* and *placeholder* values are emitted.
  */
 
-import { ENV_RULES, EnvRule, isProdLike } from '../src/common/env-validation';
+import { ENV_RULES, EnvRule, isProdLike, looksLikePlaceholder } from '../src/common/env-validation';
 
 type Format = 'table' | 'fly' | 'env' | 'missing';
 
@@ -132,21 +132,36 @@ function printMissing(target: string, isProd: boolean): number {
   const missingHard: string[] = [];
   const missingProd: string[] = [];
   const missingOptional: string[] = [];
+  const placeholderHard: string[] = [];
+  const placeholderProd: string[] = [];
   for (const rule of ENV_RULES) {
     const v = process.env[rule.name];
     const isSet = typeof v === 'string' && v.trim().length > 0;
-    if (isSet) continue;
-    if (rule.tier === 'hard') missingHard.push(rule.name);
-    else if (rule.tier === 'prod') missingProd.push(rule.name);
-    else missingOptional.push(rule.name);
+    if (!isSet) {
+      if (rule.tier === 'hard') missingHard.push(rule.name);
+      else if (rule.tier === 'prod') missingProd.push(rule.name);
+      else missingOptional.push(rule.name);
+      continue;
+    }
+    // Only flag placeholders for hard/prod-tier vars — same policy as the
+    // runtime env validator. Values are NEVER printed.
+    if ((rule.tier === 'hard' || rule.tier === 'prod') && looksLikePlaceholder(v!)) {
+      if (rule.tier === 'hard') placeholderHard.push(rule.name);
+      else placeholderProd.push(rule.name);
+    }
   }
 
   console.log(`[print-required-secrets] target NODE_ENV=${target} (prod-tier enforced=${isProd})`);
-  console.log(`  missing HARD       (${missingHard.length}): ${missingHard.join(', ') || '-'}`);
-  console.log(`  missing PROD-tier  (${missingProd.length}): ${missingProd.join(', ') || '-'}`);
-  console.log(`  missing optional   (${missingOptional.length}): ${missingOptional.join(', ') || '-'}`);
+  console.log(`  missing HARD          (${missingHard.length}): ${missingHard.join(', ') || '-'}`);
+  console.log(`  missing PROD-tier     (${missingProd.length}): ${missingProd.join(', ') || '-'}`);
+  console.log(`  missing optional      (${missingOptional.length}): ${missingOptional.join(', ') || '-'}`);
+  console.log(`  placeholder HARD      (${placeholderHard.length}): ${placeholderHard.join(', ') || '-'}`);
+  console.log(`  placeholder PROD-tier (${placeholderProd.length}): ${placeholderProd.join(', ') || '-'}`);
 
-  const blocking = missingHard.length + (isProd ? missingProd.length : 0);
+  const blocking =
+    missingHard.length +
+    placeholderHard.length +
+    (isProd ? missingProd.length + placeholderProd.length : 0);
   return blocking > 0 ? 1 : 0;
 }
 
