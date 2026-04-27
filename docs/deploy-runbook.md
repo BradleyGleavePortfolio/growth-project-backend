@@ -294,6 +294,10 @@ Full setup lives in `docs/stripe-setup.md`. Operational summary:
 These are operator-only — the backend cannot do them on its own:
 
 - Provision the Fly app, region, and IPv4/IPv6 addresses.
+- Add a `FLY_API_TOKEN` GitHub Actions repo secret (Settings → Secrets and
+  variables → Actions → New repository secret). Until this is set, the
+  `Fly Deploy` workflow logs a warning and skips the deploy step rather
+  than failing the run with "no access token available".
 - Configure Supabase project (auth providers, JWT expiry, email templates).
 - Configure Stripe account (products, webhook endpoint, customer portal).
 - Configure Sentry / PostHog projects and copy DSN/key into Fly secrets.
