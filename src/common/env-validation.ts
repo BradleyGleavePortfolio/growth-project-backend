@@ -150,6 +150,12 @@ export interface EnvValidationResult {
   missingProd: string[];
   missingOptional: string[];
   validationWarnings: string[];
+  // Names of hard/prod-tier vars whose value looks like an unfilled placeholder
+  // (e.g. literal `<value>`, `XXXXXXXX`, `changeme`). Treated as missing —
+  // a placeholder in prod is worse than absence because boot would otherwise
+  // appear to succeed.
+  placeholderHard: string[];
+  placeholderProd: string[];
   isProd: boolean;
 }
 
@@ -158,11 +164,51 @@ export function isProdLike(nodeEnv: string | undefined): boolean {
   return v === 'production' || v === 'staging';
 }
 
+// Detects values that look like unfilled placeholders the operator forgot to
+// replace. Compared against trimmed values; never prints the value itself.
+//
+// Examples that match: "<supabase-service-role-key>", "sk_test_XXXXXXXX",
+// "REPLACE_ME", "changeme", "TODO", "placeholder", "your-key-here".
+//
+// We intentionally keep this list narrow — false positives here brick a deploy.
+// Genuine secret values (random base64, JWT-shaped strings, sk_live_..., etc.)
+// must never match.
+export function looksLikePlaceholder(value: string): boolean {
+  const v = value.trim();
+  if (v.length === 0) return false;
+  // Wrapped in angle-brackets, e.g. "<value>", "<staging-db-url>".
+  if (/^<[^>\s]+>$/.test(v)) return true;
+  // Bare sentinels.
+  const sentinels = new Set([
+    'changeme',
+    'change_me',
+    'change-me',
+    'placeholder',
+    'replace_me',
+    'replace-me',
+    'replaceme',
+    'todo',
+    'tbd',
+    'fixme',
+    'your-key-here',
+    'your_key_here',
+    'yourkeyhere',
+  ]);
+  if (sentinels.has(v.toLowerCase())) return true;
+  // Long runs of capital X are how the secrets-printer template marks unfilled
+  // values (e.g. "sk_test_XXXXXXXXXXXXXXXX"). 8+ in a row is well past the
+  // false-positive threshold for real keys.
+  if (/X{8,}/.test(v)) return true;
+  return false;
+}
+
 export function evaluateEnv(env: NodeJS.ProcessEnv = process.env): EnvValidationResult {
   const isProd = isProdLike(env.NODE_ENV);
   const missingHard: string[] = [];
   const missingProd: string[] = [];
   const missingOptional: string[] = [];
+  const placeholderHard: string[] = [];
+  const placeholderProd: string[] = [];
   const validationWarnings: string[] = [];
 
   for (const rule of ENV_RULES) {
@@ -176,13 +222,29 @@ export function evaluateEnv(env: NodeJS.ProcessEnv = process.env): EnvValidation
       continue;
     }
 
+    // Treat obvious placeholders as missing for hard/prod-tier vars. Optional
+    // vars are left alone — a placeholder there is a no-op.
+    if ((rule.tier === 'hard' || rule.tier === 'prod') && looksLikePlaceholder(value!)) {
+      if (rule.tier === 'hard') placeholderHard.push(rule.name);
+      else placeholderProd.push(rule.name);
+      continue;
+    }
+
     if (rule.validate) {
       const err = rule.validate(value!);
       if (err) validationWarnings.push(`${rule.name}: ${err}`);
     }
   }
 
-  return { missingHard, missingProd, missingOptional, validationWarnings, isProd };
+  return {
+    missingHard,
+    missingProd,
+    missingOptional,
+    placeholderHard,
+    placeholderProd,
+    validationWarnings,
+    isProd,
+  };
 }
 
 export interface AssertOptions {
@@ -206,6 +268,14 @@ export function assertEnv(
     throw new Error(msg);
   }
 
+  // Placeholder values for hard-tier vars are always fatal — these were never
+  // intended to ship. Variable *names* are logged; values are not.
+  if (result.placeholderHard.length) {
+    const msg = `Required env vars contain placeholder values (replace with real values): ${result.placeholderHard.join(', ')}`;
+    logger.error(msg);
+    throw new Error(msg);
+  }
+
   if (result.missingProd.length) {
     if (enforceProd) {
       const msg = `Missing production-required env vars (NODE_ENV=${env.NODE_ENV}): ${result.missingProd.join(', ')}`;
@@ -214,6 +284,18 @@ export function assertEnv(
     } else {
       logger.warn(
         `Production-tier env vars missing (ok in dev, required for staging/prod): ${result.missingProd.join(', ')}`,
+      );
+    }
+  }
+
+  if (result.placeholderProd.length) {
+    if (enforceProd) {
+      const msg = `Production-tier env vars contain placeholder values (NODE_ENV=${env.NODE_ENV}): ${result.placeholderProd.join(', ')}`;
+      logger.error(msg);
+      throw new Error(msg);
+    } else {
+      logger.warn(
+        `Production-tier env vars contain placeholder values (ok in dev, required for staging/prod): ${result.placeholderProd.join(', ')}`,
       );
     }
   }
@@ -229,9 +311,16 @@ export function assertEnv(
   }
 
   if (result.isProd) {
+    const satisfied =
+      ENV_RULES.length -
+      result.missingHard.length -
+      result.missingProd.length -
+      result.missingOptional.length -
+      result.placeholderHard.length -
+      result.placeholderProd.length;
     logger.log(
       `Env validation passed for NODE_ENV=${env.NODE_ENV}. ` +
-        `${ENV_RULES.length - result.missingHard.length - result.missingProd.length - result.missingOptional.length} of ${ENV_RULES.length} rules satisfied.`,
+        `${satisfied} of ${ENV_RULES.length} rules satisfied.`,
     );
   }
 

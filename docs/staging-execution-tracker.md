@@ -145,6 +145,14 @@ Tick:
 - [ ] All HARD + PROD-tier secrets set (compare with §1 output).
 - [ ] `CORS_ORIGINS` lists explicit origins — no `*`.
 - [ ] `STRIPE_SECRET_KEY` starts with `sk_test_` (NOT `sk_live_`).
+- [ ] No secret value is a literal placeholder (`<...>`, `XXXXXXXX`,
+      `REPLACE_ME`, `changeme`). Boot rejects these by name; rerun
+      `TARGET_ENV=staging npm run secrets:missing` against the staging
+      shell to confirm the `placeholder` rows are empty.
+- [ ] `FLY_API_TOKEN` is set as a GitHub Actions repository secret. The
+      `Fly Deploy` workflow now **fails red** on push to `main` when this
+      is unset — see `docs/deploy-runbook.md` §8.1 for the provisioning
+      and trigger steps.
 
 ---
 

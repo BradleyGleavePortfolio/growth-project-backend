@@ -1,4 +1,9 @@
-import { evaluateEnv, assertEnv, isProdLike } from '../src/common/env-validation';
+import {
+  evaluateEnv,
+  assertEnv,
+  isProdLike,
+  looksLikePlaceholder,
+} from '../src/common/env-validation';
 
 // Silent logger — assertEnv normally writes to NestJS Logger; we don't want
 // every test that exercises a missing-var path to scribble to stdout.
@@ -116,6 +121,114 @@ describe('assertEnv', () => {
         { ...baseHardEnv(), NODE_ENV: 'production' },
         { enforceProd: false, logger: silentLogger as any },
       ),
+    ).not.toThrow();
+  });
+});
+
+describe('looksLikePlaceholder', () => {
+  it('flags angle-bracket placeholders', () => {
+    expect(looksLikePlaceholder('<value>')).toBe(true);
+    expect(looksLikePlaceholder('<staging-db-url>')).toBe(true);
+    expect(looksLikePlaceholder('<supabase-service-role-key>')).toBe(true);
+  });
+
+  it('flags bare sentinels regardless of case', () => {
+    expect(looksLikePlaceholder('changeme')).toBe(true);
+    expect(looksLikePlaceholder('CHANGEME')).toBe(true);
+    expect(looksLikePlaceholder('REPLACE_ME')).toBe(true);
+    expect(looksLikePlaceholder('TODO')).toBe(true);
+    expect(looksLikePlaceholder('placeholder')).toBe(true);
+  });
+
+  it('flags long runs of capital X (template marker)', () => {
+    expect(looksLikePlaceholder('sk_test_XXXXXXXXXXXXXXXX')).toBe(true);
+    expect(looksLikePlaceholder('whsec_XXXXXXXX')).toBe(true);
+  });
+
+  it('does not flag genuine secret-shaped values', () => {
+    expect(looksLikePlaceholder('sk_test_51HabcDef0123456789')).toBe(false);
+    expect(looksLikePlaceholder('sk_live_zZyYxXwWvVuUtTsSrR')).toBe(false);
+    expect(looksLikePlaceholder('postgres://user:pass@host:5432/db')).toBe(false);
+    expect(looksLikePlaceholder('https://abc.supabase.co')).toBe(false);
+    expect(looksLikePlaceholder('whsec_a1b2c3d4e5f6g7h8i9j0')).toBe(false);
+    expect(looksLikePlaceholder('eyJhbGciOiJIUzI1NiJ9.payload.sig')).toBe(false);
+  });
+
+  it('does not flag empty / whitespace (those are handled as missing)', () => {
+    expect(looksLikePlaceholder('')).toBe(false);
+    expect(looksLikePlaceholder('   ')).toBe(false);
+  });
+});
+
+describe('evaluateEnv — placeholder detection', () => {
+  it('reports hard-tier placeholders separately from missing', () => {
+    const r = evaluateEnv({
+      ...baseHardEnv(),
+      DATABASE_URL: '<staging-db-url>',
+    });
+    expect(r.missingHard).not.toContain('DATABASE_URL');
+    expect(r.placeholderHard).toContain('DATABASE_URL');
+  });
+
+  it('reports prod-tier placeholders only as placeholderProd', () => {
+    const r = evaluateEnv({
+      ...fullProdEnv(),
+      STRIPE_SECRET_KEY: 'sk_test_XXXXXXXXXXXXXXXX',
+    });
+    expect(r.missingProd).not.toContain('STRIPE_SECRET_KEY');
+    expect(r.placeholderProd).toContain('STRIPE_SECRET_KEY');
+  });
+
+  it('does not flag placeholders for optional-tier vars', () => {
+    const r = evaluateEnv({
+      ...fullProdEnv(),
+      POSTHOG_KEY: 'phc_XXXXXXXXXXXXXXXX',
+    });
+    expect(r.placeholderProd).not.toContain('POSTHOG_KEY');
+    expect(r.placeholderHard).not.toContain('POSTHOG_KEY');
+  });
+});
+
+describe('assertEnv — placeholder enforcement', () => {
+  it('throws when a hard-tier var is a placeholder, regardless of NODE_ENV', () => {
+    expect(() =>
+      assertEnv(
+        { ...baseHardEnv(), DATABASE_URL: '<value>' },
+        { logger: silentLogger as any },
+      ),
+    ).toThrow(/placeholder values/);
+  });
+
+  it('throws when a prod-tier var is a placeholder under NODE_ENV=production', () => {
+    expect(() =>
+      assertEnv(
+        { ...fullProdEnv(), STRIPE_WEBHOOK_SECRET: 'whsec_XXXXXXXX' },
+        { logger: silentLogger as any },
+      ),
+    ).toThrow(/placeholder values/);
+  });
+
+  it('warns but does not throw when prod-tier placeholder is present in dev', () => {
+    (silentLogger.warn as jest.Mock).mockClear();
+    expect(() =>
+      assertEnv(
+        {
+          ...baseHardEnv(),
+          NODE_ENV: 'development',
+          STRIPE_SECRET_KEY: 'sk_test_XXXXXXXXXXXXXXXX',
+        },
+        { logger: silentLogger as any },
+      ),
+    ).not.toThrow();
+    // Verify a warning was logged about the placeholder so the dev still sees
+    // the signal even though boot continues.
+    const warnCalls = (silentLogger.warn as jest.Mock).mock.calls.flat().join(' ');
+    expect(warnCalls).toMatch(/placeholder/);
+  });
+
+  it('does not throw when fullProdEnv has real-looking values', () => {
+    expect(() =>
+      assertEnv(fullProdEnv(), { logger: silentLogger as any }),
     ).not.toThrow();
   });
 });

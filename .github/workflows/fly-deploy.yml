@@ -13,30 +13,49 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # Skip the rest of the job (with a clear log line) when the Fly
-      # deploy environment is intentionally unconfigured. Without this
-      # gate, every push to main fails with the opaque flyctl error
-      # "no access token available", which masks real CI failures.
-      # See docs/deploy-runbook.md §8 — Fly app/token provisioning is
-      # an operator step.
-      - name: Check Fly deploy configuration
-        id: flycheck
+      # Fail loudly when the Fly deploy environment is missing the API token.
+      # A green-but-skipped run looks identical to a real deploy in the GitHub
+      # UI, which is how production drifted stale on prior pushes. We'd rather
+      # the workflow turn red and force the operator to provision the secret
+      # than mask a missing-prod-deploy as success.
+      #
+      # Operator setup (one-time): see docs/deploy-runbook.md §8.
+      #   1. Create a Fly deploy token: `fly tokens create deploy -a <app>`
+      #   2. GitHub → Settings → Secrets and variables → Actions → New
+      #      repository secret. Name: FLY_API_TOKEN. Value: the token from (1).
+      #   3. Re-run this workflow (Actions → Fly Deploy → Run workflow) or push
+      #      a new commit to main to trigger deploy.
+      #
+      # We also reject obvious placeholder values (empty / "<...>" / "changeme"
+      # / "REPLACE_ME"). The shell never prints the token value itself.
+      - name: Verify FLY_API_TOKEN is configured
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           if [ -z "${FLY_API_TOKEN}" ]; then
-            echo "::warning::FLY_API_TOKEN is not set — skipping Fly deploy."
-            echo "Set the FLY_API_TOKEN GitHub Actions secret to enable continuous deploy."
-            echo "See docs/deploy-runbook.md for the full provisioning checklist."
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "::error::FLY_API_TOKEN GitHub Actions secret is not set."
+            echo "Production deploy cannot proceed. See docs/deploy-runbook.md §8 for the provisioning steps."
+            exit 1
           fi
+          case "${FLY_API_TOKEN}" in
+            '<'*'>'|'changeme'|'REPLACE_ME'|'placeholder'|'TODO')
+              echo "::error::FLY_API_TOKEN looks like a placeholder value, not a real Fly deploy token."
+              echo "Generate a real token with: fly tokens create deploy -a <app>"
+              echo "See docs/deploy-runbook.md §8."
+              exit 1
+              ;;
+          esac
+          # Length sanity check — real Fly deploy tokens are well over 20 chars.
+          # The token itself is never printed; only its length is logged.
+          tok_len=${#FLY_API_TOKEN}
+          if [ "${tok_len}" -lt 20 ]; then
+            echo "::error::FLY_API_TOKEN is suspiciously short (length=${tok_len}). Refusing to deploy."
+            exit 1
+          fi
+          echo "FLY_API_TOKEN present (length=${tok_len})."
 
-      - if: steps.flycheck.outputs.configured == 'true'
-        uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: superfly/flyctl-actions/setup-flyctl@master
 
-      - if: steps.flycheck.outputs.configured == 'true'
-        run: flyctl deploy --remote-only
+      - run: flyctl deploy --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
