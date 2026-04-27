@@ -1,5 +1,13 @@
 import {
-  Controller, Post, Get, Body, UseGuards, Request, HttpCode, HttpStatus,
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Request,
+  UseGuards,
 } from '@nestjs/common';
 import type { AuthedRequest } from './auth-request';
 import { Throttle } from '@nestjs/throttler';
@@ -17,7 +25,12 @@ import {
   SignupWithCodeDto,
   AttachInviteCodeDto,
 } from './auth.dto';
-import { InviteCodesService } from '../invite-codes/invite-codes.service';
+import {
+  InviteCodesService,
+  INVITE_CODE_MAX_LENGTH,
+  INVITE_CODE_MIN_LENGTH,
+  INVITE_CODE_PATTERN,
+} from '../invite-codes/invite-codes.service';
 
 @Controller('auth')
 export class AuthController {
@@ -89,12 +102,31 @@ export class AuthController {
   // Public (unauthenticated) endpoint so the signup flow can preview the coach
   // name before the user commits. Returns {valid, coach_id?, coach_name?}.
   // Rate-limited to blunt brute-force enumeration of the 30-bit code space.
+  //
+  // A code outside the documented length / character class is rejected with
+  // a polished structured 400 (`code: 'invite_code_invalid_format'`) BEFORE
+  // any DB lookup — so the response is identical for "32 chars of garbage"
+  // and "200 chars of garbage" and never leaks whether a malformed code
+  // exists. We also do not echo the user's input back in the error body.
   @Public()
   @Post('validate-invite-code')
   @Throttle({ default: { ttl: 60000, limit: 20 } })
   @HttpCode(HttpStatus.OK)
   async validateInviteCode(@Body() body: ValidateInviteCodePublicDto) {
-    const result = await this.inviteCodes.validate(body.code);
+    const trimmed = body.code.trim();
+    if (
+      trimmed.length < INVITE_CODE_MIN_LENGTH ||
+      trimmed.length > INVITE_CODE_MAX_LENGTH ||
+      !INVITE_CODE_PATTERN.test(trimmed)
+    ) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        error: 'Bad Request',
+        code: 'invite_code_invalid_format',
+        message: 'Invite code format is invalid.',
+      });
+    }
+    const result = await this.inviteCodes.validate(trimmed);
     if (!result.valid) return { valid: false };
     return {
       valid: true,

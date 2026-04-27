@@ -30,6 +30,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     let message: string | string[] = 'Internal server error';
     let error = 'Internal Server Error';
+    // Optional machine-readable error code that handlers may set on the
+    // exception body (e.g. `invite_code_invalid_format`). Keep it strictly
+    // additive so existing clients that only read `message` are unaffected.
+    let code: string | undefined;
 
     if (exception instanceof HttpException) {
       const res = exception.getResponse();
@@ -37,9 +41,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message = res;
         error = exception.name.replace(/Exception$/, '');
       } else if (res && typeof res === 'object') {
-        const body = res as { message?: string | string[]; error?: string };
+        const body = res as { message?: string | string[]; error?: string; code?: string };
         message = body.message ?? exception.message;
         error = body.error ?? exception.name.replace(/Exception$/, '');
+        if (typeof body.code === 'string') code = body.code;
       }
     } else if (exception instanceof Error) {
       // Log unexpected errors; do NOT leak internal details to clients.
@@ -63,6 +68,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     response.status(status).json({
       statusCode: status,
+      ...(code ? { code } : {}),
       message,
       error,
       timestamp: new Date().toISOString(),
