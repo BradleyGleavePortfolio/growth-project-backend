@@ -69,8 +69,12 @@ function placeholderFor(name: string): string {
   if (name === 'SUPABASE_SERVICE_ROLE_KEY') return '<supabase-service-role-key>';
   if (name === 'PUBLIC_INVITE_BASE_URL') return 'https://staging.thegrowthproject.app/join';
   if (name === 'PUBLIC_WEB_SIGNUP_URL') return 'https://staging.thegrowthproject.app/signup';
-  if (name === 'APP_STORE_URL') return 'https://apps.apple.com/app/idXXXXXXXXX';
-  if (name === 'PLAY_STORE_URL') return 'https://play.google.com/store/apps/details?id=YOUR_ID';
+  // APP_STORE_URL / PLAY_STORE_URL: until real App Store / Play Store
+  // listings exist, point these at the durable backend-served interstitial
+  // (see src/get-app). Once listings are live, swap to the canonical
+  // apps.apple.com / play.google.com URLs.
+  if (name === 'APP_STORE_URL') return 'https://api-staging.thegrowthproject.app/get-app/ios';
+  if (name === 'PLAY_STORE_URL') return 'https://api-staging.thegrowthproject.app/get-app/android';
   if (name === 'CORS_ORIGINS') return 'https://console-staging.thegrowthproject.app';
   if (name === 'STRIPE_SECRET_KEY') return 'sk_test_XXXXXXXXXXXXXXXX';
   if (name === 'STRIPE_WEBHOOK_SECRET') return 'whsec_XXXXXXXXXXXXXXXX';

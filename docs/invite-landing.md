@@ -61,7 +61,10 @@ The HTML page renders three CTAs:
 
 App store fallbacks live below the primary CTA and use
 `APP_STORE_URL` / `PLAY_STORE_URL` (placeholders by default — set the
-real listing URLs as Fly secrets before launch).
+real listing URLs as Fly secrets before launch). Until the App Store /
+Play Store listings exist, point these env vars at the durable backend
+interstitial at `https://<api-host>/get-app/ios` and
+`https://<api-host>/get-app/android` (see `docs/deploy-runbook.md` §8).
 
 ## Configuration
 

@@ -35,6 +35,7 @@ import { AdminModule } from './admin/admin.module';
 import { BillingModule } from './billing/billing.module';
 import { V1Module } from './v1/v1.module';
 import { InviteLandingModule } from './invite-landing/invite-landing.module';
+import { GetAppModule } from './get-app/get-app.module';
 
 @Module({
   imports: [
@@ -87,6 +88,11 @@ import { InviteLandingModule } from './invite-landing/invite-landing.module';
     // Public invite landing — server-rendered HTML at /join/:code and
     // /invite/:code (mounted outside the /api prefix, see main.ts).
     InviteLandingModule,
+    // Durable "Get the app" interstitial at /get-app, /get-app/ios, and
+    // /get-app/android (mounted outside the /api prefix, see main.ts).
+    // Lets operators set APP_STORE_URL / PLAY_STORE_URL to a real, valid
+    // HTTPS URL we control before the App Store / Play Store listings exist.
+    GetAppModule,
   ],
   providers: [
     // SECURITY: register ThrottlerGuard as a global APP_GUARD so that @Throttle(...)

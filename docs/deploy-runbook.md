@@ -48,8 +48,8 @@ missing. The summary below restates the rules so you can prepare
 | `SUPABASE_SERVICE_ROLE_KEY` | hard | Service-role key. Treat as a secret. |
 | `PUBLIC_INVITE_BASE_URL` | prod | `https://app.thegrowthproject.app/join` (or staging equivalent). Drives invite-code URLs. |
 | `PUBLIC_WEB_SIGNUP_URL` | prod | Landing page used when no app is installed. |
-| `APP_STORE_URL` | prod | Final iOS App Store URL. |
-| `PLAY_STORE_URL` | prod | Final Play Store URL. |
+| `APP_STORE_URL` | prod | Final iOS App Store URL. Until the real listing exists, point at `https://<api-host>/get-app/ios` (durable backend interstitial — see §8). |
+| `PLAY_STORE_URL` | prod | Final Play Store URL. Until the real listing exists, point at `https://<api-host>/get-app/android`. |
 | `CORS_ORIGINS` | prod | Comma-separated list of allowed origins for the coach console. **Wildcard is rejected at boot.** |
 | `STRIPE_SECRET_KEY` | prod | `sk_test_…` for staging, `sk_live_…` for production. |
 | `STRIPE_WEBHOOK_SECRET` | prod | `whsec_…` from Stripe → Developers → Webhooks. |
@@ -92,8 +92,8 @@ If `assertEnv` throws, fix the missing/invalid vars before deploying.
      SUPABASE_SERVICE_ROLE_KEY=... \
      PUBLIC_INVITE_BASE_URL=https://staging.thegrowthproject.app/join \
      PUBLIC_WEB_SIGNUP_URL=https://staging.thegrowthproject.app/signup \
-     APP_STORE_URL=https://apps.apple.com/app/... \
-     PLAY_STORE_URL=https://play.google.com/store/apps/details?id=... \
+     APP_STORE_URL=https://api-staging.thegrowthproject.app/get-app/ios \
+     PLAY_STORE_URL=https://api-staging.thegrowthproject.app/get-app/android \
      CORS_ORIGINS=https://console-staging.thegrowthproject.app \
      STRIPE_SECRET_KEY=sk_test_... \
      STRIPE_WEBHOOK_SECRET=whsec_... \
@@ -289,7 +289,53 @@ Full setup lives in `docs/stripe-setup.md`. Operational summary:
 
 ---
 
-## 8. Manual infra steps that this runbook does NOT automate
+## 8. APP_STORE_URL / PLAY_STORE_URL bootstrap interstitial
+
+Boot validation requires `APP_STORE_URL` and `PLAY_STORE_URL` to be set in
+production / staging. Until the iOS App Store and Google Play listings are
+publicly live, the canonical store URLs (`https://apps.apple.com/...`,
+`https://play.google.com/...`) either do not resolve or point at a
+"product not found" page — neither is acceptable for users tapping the
+store CTAs on the public invite landing.
+
+The backend ships a durable interstitial at:
+
+- `https://<api-host>/get-app/ios`
+- `https://<api-host>/get-app/android`
+- `https://<api-host>/get-app` (platform-agnostic)
+
+Each renders a small "Continue on web" page that forwards an optional
+`?code=<invite>` query through to `PUBLIC_WEB_SIGNUP_URL`. The page is
+`noindex,nofollow` and `Cache-Control: no-store` so it cannot be indexed
+or pinned by a CDN.
+
+Recommended sequence:
+
+1. **Pre-launch (today):** set
+   `APP_STORE_URL=https://<api-host>/get-app/ios` and
+   `PLAY_STORE_URL=https://<api-host>/get-app/android`. Boot validation
+   passes; users tapping the store CTAs land on a quiet "app launching
+   soon" page rather than a 404.
+2. **App Store listing live:** update
+   `APP_STORE_URL=https://apps.apple.com/app/<id>`. No deploy needed —
+   `fly secrets set` re-rolls the machines.
+3. **Play Store listing live:** update
+   `PLAY_STORE_URL=https://play.google.com/store/apps/details?id=<id>`.
+4. The `/get-app/*` routes remain mounted as a fallback for QR codes
+   printed before the switchover; they are harmless.
+
+Smoke check after every change:
+
+```sh
+curl -sS -o /dev/null -w "%{http_code}\n" "https://<api-host>/get-app/ios"
+# Expected: 200
+curl -sS -o /dev/null -w "%{http_code}\n" "https://<api-host>/get-app/android"
+# Expected: 200
+```
+
+---
+
+## 9. Manual infra steps that this runbook does NOT automate
 
 These are operator-only — the backend cannot do them on its own:
 

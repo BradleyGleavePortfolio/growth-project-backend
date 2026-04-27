@@ -90,13 +90,23 @@ async function bootstrap() {
   });
 
   // API prefix — exclude /health so Fly.io liveness probes hit /health,
-  // and exclude /join/:code and /invite/:code so the public invite landing
+  // exclude /join/:code and /invite/:code so the public invite landing
   // pages match the universal-link config (https://app.tgp.com/join/...)
-  // without the /api prefix. The invite-landing controller's `api/invite/:code`
-  // JSON alias is *not* excluded — it intentionally lives under /api alongside
-  // the existing /api/invite/:code/preview JSON route.
+  // without the /api prefix, and exclude /get-app{,/ios,/android} so
+  // operators can use those URLs as APP_STORE_URL / PLAY_STORE_URL before
+  // the real store listings exist. The invite-landing controller's
+  // `api/invite/:code` JSON alias is *not* excluded — it intentionally
+  // lives under /api alongside the existing /api/invite/:code/preview
+  // JSON route.
   app.setGlobalPrefix('api', {
-    exclude: ['health', 'join/:code', 'invite/:code'],
+    exclude: [
+      'health',
+      'join/:code',
+      'invite/:code',
+      'get-app',
+      'get-app/ios',
+      'get-app/android',
+    ],
   });
 
   const port = parseInt(process.env.PORT || '3000', 10);
