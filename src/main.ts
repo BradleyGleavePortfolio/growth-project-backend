@@ -102,8 +102,15 @@ async function bootstrap() {
     new Logger('UncaughtException').error(err);
   });
 
-  // API prefix — exclude /health so Fly.io liveness probes hit /health, not /api/health
-  app.setGlobalPrefix('api', { exclude: ['health'] });
+  // API prefix — exclude /health so Fly.io liveness probes hit /health,
+  // and exclude /join/:code and /invite/:code so the public invite landing
+  // pages match the universal-link config (https://app.tgp.com/join/...)
+  // without the /api prefix. The invite-landing controller's `api/invite/:code`
+  // JSON alias is *not* excluded — it intentionally lives under /api alongside
+  // the existing /api/invite/:code/preview JSON route.
+  app.setGlobalPrefix('api', {
+    exclude: ['health', 'join/:code', 'invite/:code'],
+  });
 
   const port = parseInt(process.env.PORT || '3000', 10);
   // Must bind to 0.0.0.0 for Fly.io — binding to localhost won't be reachable
