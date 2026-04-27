@@ -65,23 +65,42 @@ Fly.io, via the GitHub Actions workflow at `.github/workflows/fly-deploy.yml`. T
 
 ```
 src/
-  auth/         Supabase-backed auth + guards
-  profile/      User profile + macro math
-  food/         Food DB (local + USDA + OpenFoodFacts)
-  log/          Logged food entries
-  workout/      Routines and sessions
-  fasting/      Fasting windows
-  weight/       Weight logs
-  habits/       Habit tracker + logs
-  ai/           AI coach chat
-  coach/        Coach-facing endpoints (clients, alerts)
-  community/    Leaderboard / wins
+  admin/         OWNER-only platform admin
+  ai/            GP assistant: context + guardrails
+  analytics/     PostHog passthrough
+  auth/          Supabase-backed auth + role gating
+  billing/       Stripe webhook + mirror + subscription gate
+  check-ins/     Weekly check-ins
+  coach/         Coach mobile surface
+  common/        Shared decorators, guards, env validation
+  community/     Leaderboard / wins
+  fasting/       Fasting windows
+  filters/       Global exception filters
+  food/          Food DB (local + USDA + OpenFoodFacts)
+  habits/        Habit tracker + logs
+  health/        Liveness probe (GET /health)
+  invite-codes/  Per-coach invite codes (default + legacy)
+  invite-landing/ HTML for /join/:code and /invite/:code
+  lessons/       Coach-authored lesson content
+  log/           Logged food entries
+  meal-plans/    Coach-authored meal plans
+  messaging/     Coach ↔ client messaging
   notifications/ User push-notification preferences
-  lessons/      Coach-authored lesson content
-  water/        Water intake tracking
-  health/       Liveness probe (GET /health)
-  filters/      Global exception filters
+  nudges/        Coach-authored nudges
+  prep-guide/    Onboarding prep guide
+  profile/       User profile + macro math
+  public-pages/  /download/* and /signup status pages
+  recipes/       Recipe library
+  supabase/      Supabase Realtime helper
+  users/         User self-service
+  v1/            Coach console BFF
+  water/         Water intake tracking
+  weight/        Weight logs
+  workout/       Routines and sessions
 ```
+
+Each major module has its own README — see [`docs/README.md`](docs/README.md)
+for the index of module-level docs and operator runbooks.
 
 ## Test
 
