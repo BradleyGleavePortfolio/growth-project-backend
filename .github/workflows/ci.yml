@@ -33,3 +33,23 @@ jobs:
 
       - name: Test
         run: npm test --if-present
+
+      # Confirm the env-validation rules accept a fully-populated prod env.
+      # Catches accidental rule additions that would brick the next deploy
+      # without the operator updating Fly secrets first.
+      - name: Env validation (simulated prod env)
+        env:
+          NODE_ENV: production
+          DATABASE_URL: postgres://ci/ci
+          SUPABASE_URL: https://ci.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ci-srk
+          PUBLIC_INVITE_BASE_URL: https://app.example.com/join
+          PUBLIC_WEB_SIGNUP_URL: https://app.example.com/signup
+          APP_STORE_URL: https://apps.apple.com/app/id0
+          PLAY_STORE_URL: https://play.google.com/store/apps/details?id=ci
+          CORS_ORIGINS: https://console.example.com
+          STRIPE_SECRET_KEY: sk_test_ci
+          STRIPE_WEBHOOK_SECRET: whsec_ci
+          STRIPE_PRICE_ID_FITNESS: price_ci
+          SENTRY_DSN: https://ci@sentry.io/1
+        run: node -e "require('./dist/src/common/env-validation').assertEnv()"

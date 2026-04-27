@@ -9,39 +9,14 @@ import * as Sentry from '@sentry/node';
 import { AppModule } from './app.module';
 import { ThrottlerExceptionFilter } from './filters/throttler-exception.filter';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
-
-// Fail fast at boot if a required secret is missing. Prior behavior was to let the
-// app start and throw on the first request that needed it — making deploy regressions
-// silent until a user hit them. Listed in .env.example.
-function assertRequiredEnv() {
-  // Hard-required: app cannot function without these — crash fast on boot.
-  const hardRequired = [
-    'DATABASE_URL',
-    'SUPABASE_URL',
-    'SUPABASE_SERVICE_ROLE_KEY',
-  ];
-  // Soft-required: feature-specific keys. Missing them only breaks that
-  // feature (food.service guards them at call-time), so warn instead of
-  // crashing the whole backend.
-  const softRequired = ['USDA_API_KEY'];
-
-  const logger = new Logger('Bootstrap');
-  const missingHard = hardRequired.filter((k) => !process.env[k]);
-  if (missingHard.length) {
-    const msg = `Missing required env vars: ${missingHard.join(', ')}`;
-    logger.error(msg);
-    throw new Error(msg);
-  }
-  const missingSoft = softRequired.filter((k) => !process.env[k]);
-  if (missingSoft.length) {
-    logger.warn(
-      `Optional env vars missing (related features will return errors at call time): ${missingSoft.join(', ')}`,
-    );
-  }
-}
+import { assertEnv } from './common/env-validation';
 
 async function bootstrap() {
-  assertRequiredEnv();
+  // Fail fast at boot if required env vars are missing. See
+  // src/common/env-validation.ts for the full rule set; in production /
+  // staging the prod-tier rules also throw, while dev only enforces hard
+  // rules and warns about the rest.
+  assertEnv();
   const app = await NestFactory.create(AppModule, {
     // Capture raw request bodies so the Stripe webhook controller can verify
     // HMAC signatures over the exact byte sequence Stripe signed. Nest's
@@ -62,10 +37,22 @@ async function bootstrap() {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+  // Reject the wildcard outright: `cors` accepts `'*'` but combined with
+  // `credentials: true` it produces a response browsers refuse. In
+  // production we want a hard failure rather than silent breakage.
+  if (corsOrigins.includes('*')) {
+    throw new Error(
+      'CORS_ORIGINS=* is not permitted — list explicit origins (e.g. https://console.example.com).',
+    );
+  }
   app.enableCors({
     origin: corsOrigins.length > 0 ? corsOrigins : false,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    // Coach console BFF reads the Supabase access token from a cookie/header
+    // depending on how the console is hosted; allow credentials so the
+    // browser will actually send them when the origin is in the allow-list.
+    credentials: true,
   });
 
   // Global validation pipe using class-validator
