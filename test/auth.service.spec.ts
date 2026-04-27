@@ -76,6 +76,8 @@ describe('AuthService.selectRole', () => {
     prismaMock = {
       user: {
         update: jest.fn().mockResolvedValue({ role: 'student', coach_id: null }),
+        // Default to a non-owner student. Tests that need OWNER override this.
+        findUnique: jest.fn().mockResolvedValue({ id: 'user-1', role: 'student' }),
       },
       inviteCode: {
         findUnique: jest.fn(),
@@ -101,6 +103,27 @@ describe('AuthService.selectRole', () => {
 
   // Round-1: the CaboRules backdoor is removed. ANY coach_code passed to
   // /auth/select-role must be rejected — coach provisioning is out-of-band.
+  // OWNER must never become a student (with or without a coach attached) via
+  // the public selectRole path. Without this guard an OWNER who happened to
+  // POST /auth/select-role with role=student + a valid invite code would be
+  // silently demoted and added to a coach's roster.
+  it('refuses to demote an OWNER to student even with a valid invite code', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: 'owner-1', role: 'owner' });
+    inviteCodesMock.validate.mockResolvedValue({
+      valid: true,
+      coach_id: 'coach-1',
+      coach_name: 'Coach One',
+      invite_code_id: 'ic-1',
+    });
+    await expect(
+      service.selectRole('owner-1', 'student', 'GP-ABC123'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    // Crucially: the invite code is NOT consumed and the user row is NOT
+    // touched — the guard runs before any side-effecting work.
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+    expect(prismaMock.inviteCode.updateMany).not.toHaveBeenCalled();
+  });
+
   it('rejects coach role elevation via invite code (backdoor stays closed)', async () => {
     await expect(
       service.selectRole('user-1', 'coach', 'CaboRules'),

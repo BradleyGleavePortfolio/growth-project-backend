@@ -250,6 +250,14 @@ export class AuthService {
       );
     }
 
+    // OWNERs cannot be coached. selectRole would otherwise silently demote
+    // an OWNER to `student` (and, with an invite code, link them to a
+    // coach's roster) — both outcomes are wrong. Refuse explicitly.
+    const me = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (me?.role === 'owner') {
+      throw new ForbiddenException('Owners cannot redeem a coach invite');
+    }
+
     // No invite code — preserve the pre-invite-code behavior exactly: student
     // role, no coach linkage. Existing clients that never sent a code keep
     // working unchanged.

@@ -34,6 +34,7 @@ import { SystemModule } from './system/system.module';
 import { AdminModule } from './admin/admin.module';
 import { BillingModule } from './billing/billing.module';
 import { V1Module } from './v1/v1.module';
+import { InviteLandingModule } from './invite-landing/invite-landing.module';
 
 @Module({
   imports: [
@@ -83,6 +84,9 @@ import { V1Module } from './v1/v1.module';
     BillingModule,
     // V1 Backend-For-Frontend for tgp-coach-console.
     V1Module,
+    // Public invite landing — server-rendered HTML at /join/:code and
+    // /invite/:code (mounted outside the /api prefix, see main.ts).
+    InviteLandingModule,
   ],
   providers: [
     // SECURITY: register ThrottlerGuard as a global APP_GUARD so that @Throttle(...)

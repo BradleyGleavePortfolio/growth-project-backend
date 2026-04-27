@@ -12,7 +12,18 @@ describe('InviteCodesService', () => {
         findMany: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
       },
+      coachProfile: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+      user: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+      },
+      $transaction: jest.fn((cb: any) => cb(prismaMock)),
     };
     service = new InviteCodesService(prismaMock as any);
   });
@@ -209,6 +220,148 @@ describe('InviteCodesService', () => {
       const args = prismaMock.inviteCode.findMany.mock.calls[0][0];
       expect(args.where).toEqual({ coach_id: 'coach-1' });
       expect(args.orderBy).toEqual({ created_at: 'desc' });
+    });
+  });
+
+  // -----------------------------------------------------------------
+  // Phase 1C: previewCode + attachUserToCoachByCode
+  //
+  // These cover the paths the public invite landing (/join/:code) and the
+  // mobile /auth/attach-invite-code endpoint sit on top of. The shape that
+  // matters most: when a coach is paused/canceled or the requester is an
+  // OWNER, the call must fail closed without leaking which case it was.
+  // -----------------------------------------------------------------
+
+  describe('previewCode (CoachProfile path)', () => {
+    it('returns the coach card when the profile is in good standing', async () => {
+      prismaMock.coachProfile.findUnique.mockResolvedValue({
+        id: 'cp-1',
+        user_id: 'coach-1',
+        business_name: 'Atelier Wellness',
+        branding_accent_color: '#7A5C3C',
+        branding_logo_url: 'https://cdn.example.com/l.png',
+        subscription_status: 'active',
+        user: { id: 'coach-1', name: 'Lara Hayes', role: 'coach' },
+      });
+      const r = await service.previewCode('GP-A1B2C3');
+      expect(r).toEqual({
+        valid: true,
+        coach_id: 'coach-1',
+        coach_name: 'Lara Hayes',
+        business_name: 'Atelier Wellness',
+        branding: {
+          accent_color: '#7A5C3C',
+          logo_url: 'https://cdn.example.com/l.png',
+        },
+      });
+    });
+
+    it('returns valid:false when the coach subscription is paused', async () => {
+      prismaMock.coachProfile.findUnique.mockResolvedValue({
+        id: 'cp-1',
+        user_id: 'coach-1',
+        business_name: null,
+        branding_accent_color: null,
+        branding_logo_url: null,
+        subscription_status: 'paused',
+        user: { id: 'coach-1', name: 'Lara', role: 'coach' },
+      });
+      expect(await service.previewCode('GP-PAUSED')).toEqual({ valid: false });
+    });
+
+    it('returns valid:false when the coach subscription is canceled', async () => {
+      prismaMock.coachProfile.findUnique.mockResolvedValue({
+        id: 'cp-1',
+        user_id: 'coach-1',
+        business_name: null,
+        branding_accent_color: null,
+        branding_logo_url: null,
+        subscription_status: 'canceled',
+        user: { id: 'coach-1', name: 'Lara', role: 'coach' },
+      });
+      expect(await service.previewCode('GP-CANCEL')).toEqual({ valid: false });
+    });
+
+    it('falls through to InviteCode when CoachProfile lookup misses', async () => {
+      prismaMock.coachProfile.findUnique.mockResolvedValue(null);
+      prismaMock.inviteCode.findUnique.mockResolvedValue({
+        id: 'ic-1',
+        coach_id: 'coach-1',
+        revoked: false,
+        expires_at: null,
+        max_uses: null,
+        used_count: 0,
+        coach: { id: 'coach-1', name: 'Coach One', role: 'coach' },
+      });
+      const r = await service.previewCode('GP-ABC123');
+      expect(r).toEqual({
+        valid: true,
+        coach_id: 'coach-1',
+        coach_name: 'Coach One',
+        business_name: null,
+        branding: { accent_color: null, logo_url: null },
+      });
+    });
+  });
+
+  describe('attachUserToCoachByCode', () => {
+    // OWNER must never end up linked to a coach. The previous failure mode
+    // (silent role demotion via selectRole) is also tested separately in
+    // auth.service.spec.ts; this is the defense-in-depth at the invite
+    // service layer that catches OWNER even if the auth layer slips.
+    it('refuses to attach an OWNER user (Forbidden, no writes)', async () => {
+      prismaMock.coachProfile.findUnique.mockResolvedValue({
+        id: 'cp-1',
+        user_id: 'coach-1',
+        subscription_status: 'active',
+        user: { id: 'coach-1', role: 'coach' },
+      });
+      prismaMock.user.findUnique.mockResolvedValue({
+        id: 'owner-1',
+        role: 'owner',
+      });
+      await expect(
+        service.attachUserToCoachByCode('owner-1', 'GP-OK1234'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
+      expect(prismaMock.inviteCode.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('refuses to attach when the coach subscription is paused', async () => {
+      prismaMock.coachProfile.findUnique.mockResolvedValue({
+        id: 'cp-1',
+        user_id: 'coach-1',
+        subscription_status: 'paused',
+        user: { id: 'coach-1', role: 'coach' },
+      });
+      await expect(
+        service.attachUserToCoachByCode('user-1', 'GP-PAUSED'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
+    });
+
+    it('attaches a STUDENT to the coach and sets coach_id', async () => {
+      prismaMock.coachProfile.findUnique.mockResolvedValue({
+        id: 'cp-1',
+        user_id: 'coach-1',
+        subscription_status: 'active',
+        user: { id: 'coach-1', role: 'coach' },
+      });
+      prismaMock.user.findUnique.mockResolvedValue({
+        id: 'student-1',
+        role: 'student',
+      });
+      prismaMock.user.update.mockResolvedValue({
+        id: 'student-1',
+        role: 'student',
+        coach_id: 'coach-1',
+      });
+      const r = await service.attachUserToCoachByCode('student-1', 'GP-OK1234');
+      expect(r).toEqual({ role: 'student', coach_id: 'coach-1' });
+      expect(prismaMock.user.update).toHaveBeenCalledWith({
+        where: { id: 'student-1' },
+        data: { role: 'student', coach_id: 'coach-1' },
+      });
     });
   });
 });
