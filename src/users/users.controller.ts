@@ -16,6 +16,7 @@ import { PreferencesService } from './preferences.service';
 import { AccountService } from './account.service';
 import type { UserPreferencesDto } from './preferences.dto';
 import { BadgesService } from '../community/badges.service';
+import { AllowDeletionScheduled } from '../common/decorators/allow-deletion-scheduled.decorator';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -119,6 +120,7 @@ export class UsersController {
   }
 
   @Post('me/account/cancel-deletion')
+  @AllowDeletionScheduled()
   cancelDeletion(@Request() req: AuthedRequest) {
     return this.accountService.cancelDeletion(
       req.user.id,
@@ -127,6 +129,7 @@ export class UsersController {
   }
 
   @Get('me/account/deletion-status')
+  @AllowDeletionScheduled()
   deletionStatus(@Request() req: AuthedRequest) {
     return this.accountService.getDeletionStatus(req.user.id);
   }

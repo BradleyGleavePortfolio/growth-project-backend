@@ -129,6 +129,15 @@ Two-phase deletion with a 30-day grace period:
 2. `POST /users/me/account/cancel-deletion` clears the flag.
 3. `GET /users/me/account/deletion-status` returns the current state.
 
+**Auth-guard lockout.** Once `deletion_scheduled_at` is set, `JwtAuthGuard`
+rejects every request from that user with `403` _except_ the two recovery
+routes (`cancel-deletion`, `deletion-status`), which opt in via the
+`@AllowDeletionScheduled()` decorator. Once `deleted_at` is set by the
+post-grace scrub, every route — including the recovery routes — returns
+`403`; the account is terminal. This prevents a logged-in client from
+continuing to mutate data during the grace window and from re-activating
+a scrubbed account by spamming requests with a still-valid token.
+
 A separate scrub worker (out of scope for this PR) will, after
 `deletion_scheduled_at + 30d`:
 
@@ -155,9 +164,8 @@ The DB schema is ready (`User.deleted_at`); the audit action
 Deleting a `User` row would either cascade through ~25 FK relations
 (losing coach-side message history, billing invoices, etc.) or fail on
 `ON DELETE RESTRICT`. The soft-delete path keeps the DB referentially
-intact while still locking the user out — the auth guard can be
-extended in a follow-up to reject tokens for users with
-`deletion_scheduled_at IS NOT NULL`.
+intact while still locking the user out via the `JwtAuthGuard` check
+described above.
 
 ## Tenant isolation
 
@@ -178,17 +186,67 @@ extended in a follow-up to reject tokens for users with
 Safe to apply via `prisma migrate deploy` at boot. No backfill, no
 table rewrites, no destructive DDL.
 
+## Operator runbook
+
+### Applying the migration
+
+The migration is forward-only and additive. Apply it via Prisma's
+deploy path — never via `migrate dev` or `db push` in production:
+
+```bash
+npx prisma migrate deploy
+```
+
+Verify it landed:
+
+```sql
+\d "User"               -- expect deletion_scheduled_at, deleted_at
+\d "AuditLog"           -- new table
+\d "DataExportRequest"  -- new table
+```
+
+No backfill is required. Existing rows have `deletion_scheduled_at = NULL`
+and `deleted_at = NULL`, which is the healthy state.
+
+### Reading the audit log
+
+```bash
+# All role changes in the last 24 h
+curl -H "Authorization: Bearer $OWNER_JWT" \
+  "$API/api/admin/audit-log?action=user.role_changed&limit=100"
+
+# Everything that happened to a single user
+curl -H "Authorization: Bearer $OWNER_JWT" \
+  "$API/api/admin/audit-log?target_user_id=u-123"
+
+# All sensitive actions inside one coach's tenant
+curl -H "Authorization: Bearer $OWNER_JWT" \
+  "$API/api/admin/audit-log?tenant_coach_id=c-42"
+```
+
+### Honoring a manual GDPR delete request
+
+If a user emails support asking to be deleted, the operator path is:
+
+1. Confirm identity out-of-band.
+2. As that user (or via support tooling that issues a token for them),
+   call `DELETE /api/users/me/account`. This is the same path the in-app
+   button uses; it sets `deletion_scheduled_at` and writes the audit
+   row, so the request is attributable.
+3. The PII scrub worker (follow-up below) will pick the row up after
+   `deletion_scheduled_at + 30d`.
+
+Do **not** edit `User.deleted_at` directly via SQL — that would skip
+the audit trail and bypass the FK semantics.
+
 ## Follow-up
 
 1. **PII scrub worker** — cron-driven, behind a feature flag, runs
    `account_deletion_scrub` for rows past the 30-day mark.
-2. **Auth lockout** — extend `JwtAuthGuard` to reject tokens for
-   `deletion_scheduled_at IS NOT NULL` so a logged-in client cannot
-   undo the schedule by spamming requests after the grace expires.
-3. **Object-storage payload** — move `DataExportRequest.payload` from
+2. **Object-storage payload** — move `DataExportRequest.payload` from
    inline JSONB to a signed S3 URL.
-4. **More audit call sites** — coach archive/unarchive, billing
+3. **More audit call sites** — coach archive/unarchive, billing
    cancellations, message deletions, owner impersonation.
-5. **Per-tenant audit-log read** — let a coach read their own tenant's
+4. **Per-tenant audit-log read** — let a coach read their own tenant's
    audit log (read-only), gated by `RolesGuard('coach')` +
    `tenant_coach_id = req.user.id`.
