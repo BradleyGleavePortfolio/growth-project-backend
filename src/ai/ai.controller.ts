@@ -14,14 +14,31 @@ export class AiController {
   @Throttle({ default: { ttl: 3600000, limit: 20 } })
   async chat(
     @Request() req: AuthedRequest,
-    @Body() body: { message: string; conversation_history?: Array<{ role: string; content: string }> },
+    @Body()
+    body: {
+      message: string;
+      conversation_history?: Array<{ role: string; content: string }>;
+    },
   ) {
-    const reply = await this.aiService.chat(
+    const result = await this.aiService.chat(
       req.user.id,
       body.message,
       body.conversation_history || [],
     );
-    return { reply, timestamp: new Date().toISOString() };
+    const includeDebug = process.env.NODE_ENV !== 'production';
+    return {
+      reply: result.reply,
+      timestamp: new Date().toISOString(),
+      ...(includeDebug
+        ? {
+            debug: {
+              guardrails_applied: result.guardrails_applied,
+              context_generated_at: result.context_generated_at,
+              model_used: result.model_used,
+            },
+          }
+        : {}),
+    };
   }
 
   @Get('context')
@@ -29,11 +46,11 @@ export class AiController {
     return this.aiService.getUserContext(req.user.id);
   }
 
-  // Phase 1B/3 prelude: PII-stripped, structured AI context. Same data
-  // class as the legacy `/ai/context` route, but without name and with
-  // bucketed weight bands. Web console and the upcoming context-assembly
-  // pipeline call this; the legacy route stays in place for back-compat.
-  @Get('context/structured')
+  // Typed ClientAIContext for the authenticated user. Surfaces the same
+  // shape the AI sees so mobile can render a "what GP knows about you"
+  // disclosure screen and QA can verify end-to-end without inspecting
+  // server logs.
+  @Get('structured-context')
   async getStructuredContext(@Request() req: AuthedRequest) {
     return this.aiService.getStructuredContext(req.user.id);
   }
