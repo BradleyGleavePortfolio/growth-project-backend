@@ -153,9 +153,9 @@ async function checkStripeWebhookSignatureGate(): Promise<CheckResult> {
 }
 
 async function checkAiContextShape(): Promise<CheckResult> {
-  const name = 'GET /api/ai/context/preview';
+  const name = 'GET /api/ai/context';
   try {
-    const r = await timedFetch('/api/ai/context/preview', {
+    const r = await timedFetch('/api/ai/context', {
       headers: TOKEN ? { authorization: `Bearer ${TOKEN}` } : {},
     });
     if (!TOKEN) {
