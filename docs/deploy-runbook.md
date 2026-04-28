@@ -371,6 +371,61 @@ The script (see `scripts/smoke.ts`) checks:
 Exit code is non-zero on any failure. Wire it into the deploy pipeline
 or run it manually after `fly deploy`.
 
+### 5.0.1 Admin + federation smoke — credentialled OWNER probe
+
+`scripts/admin-federation-smoke.ts` (`npm run smoke:admin-federation`) is
+the credentialled companion to `smoke.ts`. It hits the nine OWNER-only
+admin/federation routes the console depends on and asserts each comes
+back with a 200 and a recognisable response shape — including a finance
+status that's a member of the `FinanceFederationStatus` union (see
+`src/admin/console/finance-federation.service.ts`).
+
+Required env:
+
+- `BACKEND_URL` — same value as `SMOKE_BASE_URL`.
+- `OWNER_JWT` — a Supabase access token for an `owner`-role user. Pull
+  it from a fresh sign-in; do NOT reuse a long-lived token.
+- `SMOKE_COACH_ID` — a real coach `User.id` on the target environment.
+- `SMOKE_CLIENT_ID` — a real student `User.id` on the target environment.
+
+Optional:
+
+- `SMOKE_FINANCE_EXPECTED_STATUS` — pin the expected
+  `/api/admin/finance/health` and `/api/admin/product/usage` `status`
+  field. Use `ok` once the finance federation is wired in production;
+  use `not_configured` in environments where finance is intentionally
+  off. Without this pin, any value in the
+  `FinanceFederationStatus` union counts as a pass — the script still
+  catches a malformed response or 500.
+- `SMOKE_VERBOSE=1` — keep full ids in the log line and include
+  truncated response bodies. Off by default so terminal output stays
+  paste-safe.
+
+```sh
+BACKEND_URL=https://api-staging.thegrowthproject.app \
+OWNER_JWT=eyJ... \
+SMOKE_COACH_ID=<coach-user-id> \
+SMOKE_CLIENT_ID=<student-user-id> \
+SMOKE_FINANCE_EXPECTED_STATUS=ok \
+  npm run smoke:admin-federation
+```
+
+The script checks (in order):
+
+1. `GET /health` — 200 `{ ok: true }`.
+2. `GET /api/admin/metrics` — 200, numeric `total_users`.
+3. `GET /api/admin/users?limit=5` — 200, JSON array.
+4. `GET /api/admin/coaches` — 200, JSON array.
+5. `GET /api/admin/search?q=` — 200, federation block shape.
+6. `GET /api/admin/coaches/:id/overview` — 200, `user_id` set.
+7. `GET /api/admin/clients/:id/unified` — 200, `user_id` set.
+8. `GET /api/admin/product/usage` — 200, finance status valid.
+9. `GET /api/admin/finance/health` — 200, finance status valid.
+
+Exit code 1 on any failed assertion, 2 on missing required env or
+runtime crash. The bearer is never logged; ids are redacted to a
+prefix/suffix unless `SMOKE_VERBOSE=1` is set.
+
 ### 5.1 Migration smoke — required on every backend deploy
 
 `scripts/smoke.ts` covers HTTP shape, not schema. Every backend deploy
