@@ -8,10 +8,13 @@ import { FederationService } from './federation/federation.service';
 import { FinanceAdminClient } from './federation/finance-admin.client';
 import { AdminConsoleService } from './console/admin-console.service';
 import { FinanceFederationService } from './console/finance-federation.service';
+import { UsersModule } from '../users/users.module';
 
 // Phase 1A/1B platform admin module. AuthModule import wires
 // JwtAuthGuard + JwksVerifierService into this module's DI scope so
-// @UseGuards(JwtAuthGuard, RolesGuard) resolves locally.
+// @UseGuards(JwtAuthGuard, RolesGuard) resolves locally. UsersModule
+// is imported so the admin GDPR endpoints can call GdprScrubService
+// without re-providing it (UsersModule is the canonical owner).
 //
 // FinanceAdminClient + FederationService back the OWNER-only cross-product
 // federation endpoints under /admin/federation/*. AdminConsoleService and
@@ -19,7 +22,7 @@ import { FinanceFederationService } from './console/finance-federation.service';
 // /admin/search, /admin/coaches/:id/overview, /admin/clients/:id,
 // /admin/finance/health, and /admin/integrations/status.
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, UsersModule],
   controllers: [AdminController],
   providers: [
     AdminService,

@@ -79,6 +79,12 @@ endpoint is one round-trip per rule, not one per client.
   roster but remain readable through `/coach/clients?status=archived`.
 - The mobile-side `archiveClient` analytics event fires only after the
   database mutation succeeds.
+- Archive and unarchive are immutably audited as
+  `coach.client_archived` / `coach.client_unarchived` with
+  `tenant_coach_id` set to the *client's* coach (not the actor) so an
+  OWNER acting cross-tenant still produces a tenant-scoped row.
+  Re-archiving an already-archived client is a no-op and writes no
+  audit row, to keep double-tap noise out of the log.
 
 ## Environment variables
 

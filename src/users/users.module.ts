@@ -4,6 +4,7 @@ import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { PreferencesService } from './preferences.service';
 import { AccountService } from './account.service';
+import { GdprScrubService } from './gdpr-scrub.service';
 import { CommunityModule } from '../community/community.module';
 
 // PrismaService is provided globally via PrismaModule — no need to import here.
@@ -14,7 +15,7 @@ import { CommunityModule } from '../community/community.module';
 @Module({
   imports: [AuthModule, CommunityModule],
   controllers: [UsersController],
-  providers: [UsersService, PreferencesService, AccountService],
-  exports: [UsersService, PreferencesService, AccountService],
+  providers: [UsersService, PreferencesService, AccountService, GdprScrubService],
+  exports: [UsersService, PreferencesService, AccountService, GdprScrubService],
 })
 export class UsersModule {}

@@ -43,7 +43,7 @@ describe('CoachService.getAlerts (round-2 batched queries)', () => {
         }),
       },
     };
-    service = new CoachService(prismaMock as any);
+    service = new CoachService(prismaMock as any, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any);
   });
 
   it('produces alerts with a bounded number of queries for 3 clients', async () => {

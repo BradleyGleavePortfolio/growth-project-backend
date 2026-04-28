@@ -152,7 +152,11 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async becomeCoach(@Request() req: AuthedRequest, @Body() body: BecomeCoachDto) {
-    return this.authService.becomeCoach(req.user.id, body.password);
+    return this.authService.becomeCoach(
+      req.user.id,
+      body.password,
+      auditContext(req as any),
+    );
   }
 
   // Phase 1C: client signup that includes the coach's invite code in the
@@ -164,4 +168,14 @@ export class AuthController {
   async signupWithCode(@Body() body: SignupWithCodeDto) {
     return this.authService.signupWithCode(body);
   }
+}
+
+// Best-effort extraction of remote IP + User-Agent for audit-log context.
+// Mirrors the helper in admin.controller.ts and users.controller.ts.
+function auditContext(req: any): { ip: string | null; userAgent: string | null } {
+  const xff = (req?.headers?.['x-forwarded-for'] || '') as string;
+  const fwdIp = xff.split(',')[0]?.trim();
+  const ip = fwdIp || req?.ip || req?.socket?.remoteAddress || null;
+  const userAgent = (req?.headers?.['user-agent'] || null) as string | null;
+  return { ip: ip || null, userAgent: userAgent || null };
 }

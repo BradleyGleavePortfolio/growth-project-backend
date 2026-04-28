@@ -163,7 +163,7 @@ describe('Stripe webhook fixtures', () => {
 
     it('is accepted by BillingService.handleEvent', async () => {
       const prisma = makePrismaStub();
-      const svc = new BillingService(prisma as any, { capture: jest.fn(), identify: jest.fn() } as any);
+      const svc = new BillingService(prisma as any, { capture: jest.fn(), identify: jest.fn() } as any, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any);
       const fixture = loadFixture(name);
       // Some events (subscription.deleted, customer.updated) mutate an
       // existing CoachSubscription row in place — seed one so the handler
@@ -194,7 +194,7 @@ describe('Stripe webhook fixtures', () => {
 
   it('subscription.updated mutates an existing row in place', async () => {
     const prisma = makePrismaStub();
-    const svc = new BillingService(prisma as any, { capture: jest.fn(), identify: jest.fn() } as any);
+    const svc = new BillingService(prisma as any, { capture: jest.fn(), identify: jest.fn() } as any, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any);
     await svc.handleEvent(loadFixture('subscription.created.json'));
     expect(prisma._subscriptions[0].status).toBe('active');
     await svc.handleEvent(loadFixture('subscription.updated.json'));
@@ -204,7 +204,7 @@ describe('Stripe webhook fixtures', () => {
 
   it('customer.updated propagates billing_email and card_last4', async () => {
     const prisma = makePrismaStub();
-    const svc = new BillingService(prisma as any, { capture: jest.fn(), identify: jest.fn() } as any);
+    const svc = new BillingService(prisma as any, { capture: jest.fn(), identify: jest.fn() } as any, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any);
     await svc.handleEvent(loadFixture('subscription.created.json'));
     await svc.handleEvent(loadFixture('customer.updated.json'));
     expect(prisma._subscriptions[0].billing_email).toBe(
@@ -215,7 +215,7 @@ describe('Stripe webhook fixtures', () => {
 
   it('replaying the full sequence end-to-end is idempotent on the second pass', async () => {
     const prisma = makePrismaStub();
-    const svc = new BillingService(prisma as any, { capture: jest.fn(), identify: jest.fn() } as any);
+    const svc = new BillingService(prisma as any, { capture: jest.fn(), identify: jest.fn() } as any, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any);
     const ordered = [
       'subscription.created.json',
       'subscription.updated.json',

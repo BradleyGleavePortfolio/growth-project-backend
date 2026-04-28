@@ -18,6 +18,7 @@ import { PromoteUserDto } from './admin.dto';
 import { FederationService } from './federation/federation.service';
 import { AdminConsoleService } from './console/admin-console.service';
 import { FinanceFederationService } from './console/finance-federation.service';
+import { GdprScrubService } from '../users/gdpr-scrub.service';
 
 // Phase 1A/1B: OWNER-only platform admin surface. Every route here is
 // gated by JwtAuthGuard + RolesGuard with @Roles('owner') so a coach or
@@ -32,6 +33,7 @@ export class AdminController {
     private federation: FederationService,
     private console: AdminConsoleService,
     private financeFederation: FinanceFederationService,
+    private gdprScrub: GdprScrubService,
   ) {}
 
   // OWNER-only platform metrics. Counters are derived from Postgres rows
@@ -199,6 +201,38 @@ export class AdminController {
   @Get('product/usage')
   async consoleProductUsage() {
     return this.financeFederation.getProductUsage();
+  }
+
+  // OWNER-only manual trigger / dry-run for the GDPR scrub worker. The
+  // canonical scheduled invocation is `scripts/gdpr-scrub.ts` driven by a
+  // Fly cron; this endpoint exists so an operator can:
+  //
+  //   - Inspect candidates safely with `dry_run=true` before flipping the
+  //     cron job on for the first time.
+  //   - Run a single batch on demand from the admin console for an
+  //     out-of-band legal request that needs to land before the next cron
+  //     tick.
+  //
+  // Either way the actor is captured on the audit row so the run is
+  // attributable. Default behavior is to honor `GDPR_SCRUB_DRY_RUN` env
+  // when the query param is unset.
+  @Post('gdpr/scrub')
+  async runGdprScrub(
+    @Request() req: AuthedRequest,
+    @Query('dry_run') dryRunRaw?: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    const dryRun =
+      typeof dryRunRaw === 'string'
+        ? ['true', '1', 'yes'].includes(dryRunRaw.toLowerCase())
+        : undefined;
+    const parsedLimit = limitRaw ? parseInt(limitRaw, 10) : NaN;
+    return this.gdprScrub.run({
+      dryRun,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+      actorUserId: req.user.id,
+      actorEmail: req.user.email ?? null,
+    });
   }
 }
 

@@ -54,7 +54,7 @@ describe('analytics instrumentation — billing webhook lifecycle', () => {
         create: jest.fn(async () => ({})),
       },
     };
-    return { svc: new BillingService(prisma, analytics as any), prisma, analytics };
+    return { svc: new BillingService(prisma, analytics as any, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any), prisma, analytics };
   }
 
   it('emits subscription_updated on customer.subscription.created', async () => {

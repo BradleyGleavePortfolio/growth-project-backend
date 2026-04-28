@@ -172,6 +172,21 @@ export const ENV_RULES: EnvRule[] = [
     reason:
       'Per-call timeout for outbound finance federation requests in milliseconds. Defaults to 2500ms; clamp range is 250..15000.',
   },
+  {
+    name: 'ALLOW_SELF_SERVICE_BECOME_COACH',
+    tier: 'optional',
+    reason: 'Feature flag — when "true", re-opens POST /auth/become-coach. Hard-gated off by default; canonical promotion is OWNER-only POST /admin/users/:id/promote.',
+  },
+  {
+    name: 'GDPR_SCRUB_DRY_RUN',
+    tier: 'optional',
+    reason: 'Feature flag — when "true", the GDPR scrub worker only reports candidate rows and does not write deleted_at or PII zero-outs. Default is real scrub.',
+  },
+  {
+    name: 'GDPR_SCRUB_BATCH_LIMIT',
+    tier: 'optional',
+    reason: 'Per-run cap on candidates the GDPR scrub worker will process. Defaults to 100; clamped to [1, 1000].',
+  },
 ];
 
 export interface EnvValidationResult {

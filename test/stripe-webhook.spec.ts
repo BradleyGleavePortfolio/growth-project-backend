@@ -154,7 +154,7 @@ describe('BillingService', () => {
       },
     };
     const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
-    svc = new BillingService(prisma, analyticsStub);
+    svc = new BillingService(prisma, analyticsStub, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any);
   });
 
   it('creates a subscription mirror row on customer.subscription.created', async () => {
