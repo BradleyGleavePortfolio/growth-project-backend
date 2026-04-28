@@ -498,12 +498,43 @@ Full setup lives in `docs/stripe-setup.md`. Operational summary:
 | Symptom | Action |
 | --- | --- |
 | Deploy aborted on `release_command`. | No-op — Fly keeps the previous machines. Fix the migration, redeploy. |
+| `release_command` failed with `./scripts/release.sh: 25: set: Illegal option -` (or any `set: Illegal option -<single-char>`). | CRLF in a shell script. `dash` (Debian's `/bin/sh`) rejects `set -e\r` because it treats the `\r` as a flag character. Fix: ensure `scripts/*.sh` are committed with LF endings (enforced by `.gitattributes`), and that `fly.toml`'s `release_command` invokes the script via `bash ./scripts/release.sh` rather than `sh ./scripts/release.sh`. To audit locally: `git ls-files -z 'scripts/*.sh' \| xargs -0 file \| grep CRLF` should return nothing. To repair an in-tree CRLF script: `dos2unix scripts/release.sh && git add scripts/release.sh && git commit -m 'fix: normalize release.sh to LF'`. |
 | App boots but env-validation throws. | Add the missing secret, redeploy. Boot logs identify the missing var. |
 | Health endpoint stays red after deploy. | `fly logs -a <app>` for the stack trace. If unrelated to schema, redeploy the previous image (§3). |
 | Stripe webhooks 400-ing in production. | Verify `STRIPE_WEBHOOK_SECRET` matches the live endpoint. Check Sentry for the rejection reason. |
 | Coach console hits CORS error. | Check `CORS_ORIGINS` for the exact origin (scheme + host + port). Wildcard is rejected. |
 | Invite landing page empty. | Verify `PUBLIC_INVITE_BASE_URL`, `APP_STORE_URL`, `PLAY_STORE_URL`, `PUBLIC_WEB_SIGNUP_URL`. Empty values fall through to placeholder defaults baked into `invite-landing.controller.ts`. |
 | Need to fully roll back a destructive migration. | Restore the pre-deploy `pg_dump` snapshot, then redeploy the previous image (§3). |
+
+### 7.1 Shell script line-ending hazard (release_command)
+
+**Failure signature.** Fly release log shows the deploy aborting before any migration runs, with a line like:
+
+```
+./scripts/release.sh: 25: set: Illegal option -
+```
+
+The trailing dash is literal — there is no flag character after it because Dash (Debian's `/bin/sh`, the interpreter Fly's release VM uses for `sh ./scripts/release.sh`) is reading `set -e\r` and printing the truncated error.
+
+**Root cause.** A shell script committed with CRLF line endings. `dash` does not strip the trailing `\r` before parsing builtin arguments; `bash` is more forgiving but the only durable fix is to keep CRLF out of these files in the first place.
+
+**Standing prevention rule.** Every shell script that runs inside the Fly image (anything under `scripts/*.sh`, plus any helper sourced by `Dockerfile` or `release_command`) **must**:
+
+1. Be committed with LF line endings. Enforced repo-wide by `.gitattributes` (`*.sh text eol=lf`). A Windows clone that converts on checkout cannot push CRLF back without git rewriting it.
+2. Use `#!/usr/bin/env bash` as the shebang and be invoked through `bash` from `fly.toml`'s `release_command` (currently `bash ./scripts/release.sh`). bash is present in `node:20-slim`, tolerates the occasional stray CR more gracefully, and gives consistent semantics for `set -euo pipefail`-style guards if they are added later.
+3. Be audited locally before any Fly deploy: `git ls-files -z 'scripts/*.sh' | xargs -0 file | grep -i CRLF` should return nothing.
+
+**Repair recipe.** If a CRLF script is already in the tree:
+
+```sh
+dos2unix scripts/release.sh   # or: sed -i 's/\r$//' scripts/release.sh
+git add scripts/release.sh
+git commit -m "fix(deploy): normalize release.sh to LF (dash rejects CRLF)"
+git push
+fly deploy -a <app>           # release_command will now succeed
+```
+
+This is a **deploy hygiene rule**, not a one-off. It belongs alongside the JWT/Supabase/federation rotation rules in the operator-mismatch family — same shape, same blast radius (a clean rollback because no machines flipped), same prevention pattern (durable repo-level guard + a one-line audit command).
 
 ---
 

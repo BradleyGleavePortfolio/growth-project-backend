@@ -12,7 +12,16 @@ primary_region = 'sjc'
   # Smart release: detects whether the DB is migration-managed yet.
   # See scripts/release.sh for full logic. Deploy aborts on failure,
   # so bad migrations can't take down running machines.
-  release_command = "sh ./scripts/release.sh"
+  #
+  # Invoke with `bash`, not `sh`. The Debian image's /bin/sh is dash,
+  # and dash fails any shell script that contains a stray CR — printing
+  # `./scripts/release.sh: 25: set: Illegal option -` and aborting the
+  # release before migrations run. The script's shebang is already
+  # `#!/usr/bin/env bash`; this command pin makes the deploy
+  # interpreter explicit so a future renamed script can't silently
+  # regress to dash. .gitattributes pins *.sh to eol=lf to keep CRLF
+  # out of the build context in the first place.
+  release_command = "bash ./scripts/release.sh"
 
 
 [http_service]

@@ -1,5 +1,14 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 # Fly release_command — runs once per deploy in a one-off VM with full env.
+#
+# IMPORTANT: this file MUST be saved with LF line endings. Dash (the
+# default /bin/sh on Debian, used by Fly's release VM) treats a stray
+# CR as a flag character and fails the very first line with:
+#   ./scripts/release.sh: 25: set: Illegal option -
+# .gitattributes pins *.sh to eol=lf so a Windows commit cannot
+# reintroduce CRLF. fly.toml invokes this script via `bash` rather
+# than `sh` — bash tolerates the occasional stray CR more gracefully,
+# but the LF rule is still the authoritative fix.
 #
 # Behavior:
 #  1. Try `prisma migrate deploy` (the proper, safe path once the DB is
