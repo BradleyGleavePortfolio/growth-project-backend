@@ -582,6 +582,41 @@ Modules: [`src/coach/`](src/coach/README.md),
 | `GET` | `/admin/metrics?since_days=` | owner | Authoritative counters from Postgres. `since_days` clamped to `(0, 365]`, defaults to 30. Stripe-sourced figures come from the webhook mirror; no synthesized money figures. Documented in [`docs/metrics.md`](docs/metrics.md). |
 | `GET` | `/admin/audit-log` | owner | Cursor-paginated read over `AuditLog`. Filters: `action`, `target_user_id`, `tenant_coach_id`, `before` (ISO timestamp), `limit` (clamped `[1, 200]`, default 50). |
 | `POST` | `/admin/gdpr/scrub?dry_run=&limit=` | owner | Manual / dry-run trigger for the GDPR PII scrub worker. Same code path as `scripts/gdpr-scrub.ts`. `dry_run=true` reports candidates without writing; `limit` clamps the per-call batch. The audit row is attributed to the calling OWNER (`actor_email_snapshot`); cron-driven runs leave actor null and `actor_role='system'`. Shipped in PR #81. Full operator runbook in [`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md). |
+| `GET` | `/admin/clients/:id/consent` | owner | Read-only consent matrix for one client across every coach they have ever interacted with. Each row is `{coach_id, scope, granted, granted_at, revoked_at, updated_at}`. Backed by `ConsentService.listForClientAdmin`. See "Consent layer (client → coach data access)" below and [`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md). |
+
+### Consent layer (client → coach data access)
+
+Clients control which slices of their data their coach can see. The
+consent table (`ClientCoachConsent`) holds one row per
+`(client_id, coach_id, scope)`. Effective state is derived:
+*granted* iff `granted_at IS NOT NULL` and (`revoked_at IS NULL` or
+`revoked_at < granted_at`). Both timestamps are kept on the row so the
+last transition is recoverable; the canonical history lives in
+`AuditLog` under `consent.granted` / `consent.revoked`.
+
+Scope strings are validated in `ConsentService` (not a SQL enum), so
+adding a new scope is a code change with no migration. Today's scopes:
+
+- **Fitness**: `fitness.profile`, `fitness.body_metrics`,
+  `fitness.workouts`, `fitness.food_macros`, `fitness.habits_progress`
+- **Finance**: `finance.summary`, `finance.balances`,
+  `finance.transaction_categories`, `finance.transaction_line_items`,
+  `finance.reports`
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| `GET` | `/consent/scopes` | any | Static list of canonical scope strings for the mobile UI to render toggles against. |
+| `GET` | `/consent/me?coach_id=` | client | Full per-scope state for one coach (defaults to the caller's primary coach). Always returns one row per known scope; unset scopes are `granted: false`. |
+| `POST` | `/consent/grant` | client | Body `{coach_id, scope}`. Idempotent — re-granting an already-granted scope does not double-write the audit log. Writes a `consent.granted` audit row scoped to `tenant_coach_id`. |
+| `POST` | `/consent/revoke` | client | Body `{coach_id, scope}`. Idempotent. Writes a `consent.revoked` audit row only when transitioning away from a truly granted state. |
+| `GET` | `/consent/check/:client_id/:scope` | coach or owner | Coach-side read: is this caller granted access to `client_id` for `scope`? Owners always get `true`. |
+| `GET` | `/admin/clients/:id/consent` | owner | OWNER-only consent matrix across all coaches for one client. |
+
+Coach reads (`/coach/clients/:id/timeline`, `/coach/clients/:id/summary`)
+gate per slice: scopes the client has not granted return an empty array
+on that slice rather than 403, and the response carries a `consent`
+block so the console can render a "client revoked access" affordance.
+Owner callers bypass the check entirely (audit log records the access).
 
 ### Admin console (Healthie/EHR-style)
 

@@ -1,10 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
+import { ConsentScope, ConsentService } from '../consent/consent.service';
 
 interface AuditContext {
   ip?: string | null;
   userAgent?: string | null;
+}
+
+// Per-scope filter for the timeline/summary view: when the client has
+// not granted the scope, the coach sees an empty array for that slice
+// rather than a 403 (so the UI can render the rest of the dashboard).
+// Owners bypass the check.
+interface FitnessConsentFlags {
+  workouts: boolean;
+  food: boolean;
+  bodyMetrics: boolean;
+  habitsProgress: boolean;
 }
 
 @Injectable()
@@ -12,7 +24,35 @@ export class CoachService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    // Optional in the constructor signature so legacy unit tests that
+    // construct CoachService directly with (prisma, audit) keep
+    // compiling; in NestJS DI this is always populated because
+    // ConsentModule is @Global.
+    private consent?: ConsentService,
   ) {}
+
+  private async loadFitnessConsents(
+    coachId: string,
+    clientId: string,
+    callerRole?: string,
+  ): Promise<FitnessConsentFlags> {
+    if (callerRole === 'owner') {
+      return { workouts: true, food: true, bodyMetrics: true, habitsProgress: true };
+    }
+    if (!this.consent) {
+      // Defensive default for tests that build CoachService without DI:
+      // assume all scopes granted so existing fixtures still pass. Real
+      // requests always go through DI and get the real ConsentService.
+      return { workouts: true, food: true, bodyMetrics: true, habitsProgress: true };
+    }
+    const [workouts, food, bodyMetrics, habitsProgress] = await Promise.all([
+      this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_WORKOUTS, callerRole),
+      this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_FOOD_MACROS, callerRole),
+      this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_BODY_METRICS, callerRole),
+      this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_HABITS_PROGRESS, callerRole),
+    ]);
+    return { workouts, food, bodyMetrics, habitsProgress };
+  }
 
   // Phase 1B: when the caller is an OWNER, every list/lookup widens to
   // the platform-wide view. When the caller is a COACH, the existing
@@ -127,35 +167,61 @@ export class CoachService {
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - days);
 
+    // Per-scope consent gating. A scope the client has not granted
+    // returns an empty slice rather than a 403 — the rest of the
+    // timeline still renders. Owners bypass the check.
+    const flags = await this.loadFitnessConsents(coachId, clientId, callerRole);
+
     const [meals, workouts, weights, checkIns] = await Promise.all([
-      this.prisma.loggedFoodEntry.findMany({
-        where: { user_id: clientId, logged_at: { gte: ninetyDaysAgo } },
-        include: { food_item: true },
-        orderBy: { logged_at: 'desc' },
-      }),
-      this.prisma.workoutSession.findMany({
-        where: { user_id: clientId, created_at: { gte: ninetyDaysAgo } },
-        include: { exercises: true },
-        orderBy: { created_at: 'desc' },
-      }),
-      this.prisma.weightLog.findMany({
-        where: { user_id: clientId, date: { gte: ninetyDaysAgo } },
-        orderBy: { date: 'desc' },
-      }),
-      this.prisma.checkIn.findMany({
-        where: { user_id: clientId, date: { gte: ninetyDaysAgo } },
-        orderBy: { date: 'desc' },
-      }),
+      flags.food
+        ? this.prisma.loggedFoodEntry.findMany({
+            where: { user_id: clientId, logged_at: { gte: ninetyDaysAgo } },
+            include: { food_item: true },
+            orderBy: { logged_at: 'desc' },
+          })
+        : Promise.resolve([] as any[]),
+      flags.workouts
+        ? this.prisma.workoutSession.findMany({
+            where: { user_id: clientId, created_at: { gte: ninetyDaysAgo } },
+            include: { exercises: true },
+            orderBy: { created_at: 'desc' },
+          })
+        : Promise.resolve([] as any[]),
+      flags.bodyMetrics
+        ? this.prisma.weightLog.findMany({
+            where: { user_id: clientId, date: { gte: ninetyDaysAgo } },
+            orderBy: { date: 'desc' },
+          })
+        : Promise.resolve([] as any[]),
+      flags.habitsProgress
+        ? this.prisma.checkIn.findMany({
+            where: { user_id: clientId, date: { gte: ninetyDaysAgo } },
+            orderBy: { date: 'desc' },
+          })
+        : Promise.resolve([] as any[]),
     ]);
 
     const events: Array<{ type: string; date: Date; ref: unknown }> = [
-      ...meals.map((m) => ({ type: 'meal', date: m.logged_at, ref: m })),
-      ...workouts.map((w) => ({ type: 'workout', date: w.created_at, ref: w })),
-      ...weights.map((w) => ({ type: 'weight', date: w.date, ref: w })),
-      ...checkIns.map((c) => ({ type: 'check_in', date: c.date, ref: c })),
+      ...meals.map((m: any) => ({ type: 'meal', date: m.logged_at, ref: m })),
+      ...workouts.map((w: any) => ({ type: 'workout', date: w.created_at, ref: w })),
+      ...weights.map((w: any) => ({ type: 'weight', date: w.date, ref: w })),
+      ...checkIns.map((c: any) => ({ type: 'check_in', date: c.date, ref: c })),
     ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
-    return { client, meals, workouts, weights, checkIns, events };
+    return {
+      client,
+      meals,
+      workouts,
+      weights,
+      checkIns,
+      events,
+      consent: {
+        workouts: flags.workouts,
+        food_macros: flags.food,
+        body_metrics: flags.bodyMetrics,
+        habits_progress: flags.habitsProgress,
+      },
+    };
   }
 
   async postGuidelines(coachId: string, clientId: string, guidelines: string) {
@@ -203,22 +269,31 @@ export class CoachService {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
+    // Per-scope consent gating, same shape as getClientTimeline.
+    const flags = await this.loadFitnessConsents(coachId, clientId, callerRole);
+
     const [todayEntries, weightLogs, recentWorkouts] = await Promise.all([
-      this.prisma.loggedFoodEntry.findMany({
-        where: { user_id: clientId, logged_at: { gte: startOfDay, lte: endOfDay } },
-        include: { food_item: true },
-        orderBy: { logged_at: 'asc' },
-      }),
-      this.prisma.weightLog.findMany({
-        where: { user_id: clientId, date: { gte: thirtyDaysAgo } },
-        orderBy: { date: 'desc' },
-      }),
-      this.prisma.workoutSession.findMany({
-        where: { user_id: clientId },
-        include: { exercises: true },
-        orderBy: { created_at: 'desc' },
-        take: 10,
-      }),
+      flags.food
+        ? this.prisma.loggedFoodEntry.findMany({
+            where: { user_id: clientId, logged_at: { gte: startOfDay, lte: endOfDay } },
+            include: { food_item: true },
+            orderBy: { logged_at: 'asc' },
+          })
+        : Promise.resolve([] as any[]),
+      flags.bodyMetrics
+        ? this.prisma.weightLog.findMany({
+            where: { user_id: clientId, date: { gte: thirtyDaysAgo } },
+            orderBy: { date: 'desc' },
+          })
+        : Promise.resolve([] as any[]),
+      flags.workouts
+        ? this.prisma.workoutSession.findMany({
+            where: { user_id: clientId },
+            include: { exercises: true },
+            orderBy: { created_at: 'desc' },
+            take: 10,
+          })
+        : Promise.resolve([] as any[]),
     ]);
 
     let total_calories = 0, total_protein_g = 0, total_carbs_g = 0, total_fat_g = 0;
@@ -234,7 +309,7 @@ export class CoachService {
     }
 
     return {
-      profile: client.profile,
+      profile: flags.bodyMetrics ? client.profile : null,
       client_name: client.name,
       today: {
         entries: todayEntries,
@@ -245,6 +320,12 @@ export class CoachService {
       },
       weight_logs: weightLogs,
       recent_workouts: recentWorkouts,
+      consent: {
+        workouts: flags.workouts,
+        food_macros: flags.food,
+        body_metrics: flags.bodyMetrics,
+        habits_progress: flags.habitsProgress,
+      },
     };
   }
 

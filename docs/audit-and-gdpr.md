@@ -96,9 +96,97 @@ feature. Today the route is owner-only, which is the safe default.
   `BillingService.handleEvent`. Each row carries
   `metadata.stripe_event_id` so an operator can correlate a row back to
   the originating Stripe event in the dashboard.
+- `consent.granted` / `consent.revoked` — `ConsentService.grant` /
+  `revoke`. Actor is the client themselves (`actor_id = client_id`,
+  `actor_role = 'student'`). `tenant_coach_id` is the coach the consent
+  applies to. `metadata` carries `{scope, coach_id}`. Idempotent re-taps
+  (re-granting an already-granted scope, or revoking a never-granted
+  scope) write no audit row.
 
 Future wiring (intentional follow-up): owner-impersonation events,
 message deletion, lesson deletion.
+
+## Consent layer (client → coach data access)
+
+### Schema
+
+`ClientCoachConsent` (additive migration
+`prisma/migrations/20260428000000_add_client_coach_consent/`). One row
+per `(client_id, coach_id, scope)`. Effective state is derived:
+
+- *granted* iff `granted_at IS NOT NULL` and (`revoked_at IS NULL` or
+  `revoked_at < granted_at`).
+
+Both timestamps live on the row so the most recent transition is
+recoverable from the row alone; the canonical history is in `AuditLog`
+(`consent.granted` / `consent.revoked`). Cascading deletes follow the
+referenced user — when a client or coach is deleted, their consent rows
+go too.
+
+Scope strings are validated in `ConsentService.isKnownScope` (not a SQL
+enum), so adding a new scope is a code change with no migration. Today's
+canonical scopes:
+
+| Family  | Scope                              |
+| ------- | ---------------------------------- |
+| Fitness | `fitness.profile`                  |
+| Fitness | `fitness.body_metrics`             |
+| Fitness | `fitness.workouts`                 |
+| Fitness | `fitness.food_macros`              |
+| Fitness | `fitness.habits_progress`          |
+| Finance | `finance.summary`                  |
+| Finance | `finance.balances`                 |
+| Finance | `finance.transaction_categories`   |
+| Finance | `finance.transaction_line_items`   |
+| Finance | `finance.reports`                  |
+
+### Routes
+
+- `GET /api/consent/scopes` — static scope list. No auth scope check;
+  used by the mobile UI to render toggles.
+- `GET /api/consent/me?coach_id=` — full per-scope state for one coach.
+  Defaults to the caller's primary coach.
+- `POST /api/consent/grant` — body `{coach_id, scope}`. Idempotent.
+- `POST /api/consent/revoke` — body `{coach_id, scope}`. Idempotent.
+- `GET /api/consent/check/:client_id/:scope` — coach-side read; owner
+  always gets `granted: true`.
+- `GET /api/admin/clients/:id/consent` — OWNER-only consent matrix
+  across every coach for one client.
+
+### Coach-side enforcement
+
+`ConsentService.coachCanAccess(coachId, clientId, scope, callerRole)` is
+the single gating primitive. Owners bypass; coaches must hold a
+granted row.
+
+`CoachService.getClientTimeline` and `getClientSummary` consult the
+helper per slice:
+
+- `fitness.workouts` → workout sessions
+- `fitness.food_macros` → logged food entries
+- `fitness.body_metrics` → weight logs, profile block
+- `fitness.habits_progress` → check-ins
+
+A scope the client has not granted returns an empty array on that slice
+(rather than 403) and the response carries a `consent` block so the
+coach UI can render a "client revoked access" affordance per scope.
+
+### Operator runbook
+
+```bash
+# Inspect one client's full consent state across coaches
+curl -H "Authorization: Bearer $OWNER_JWT" \
+  "$API/api/admin/clients/$CLIENT_ID/consent"
+
+# Forensic: every consent transition for a coach's tenant
+curl -H "Authorization: Bearer $OWNER_JWT" \
+  "$API/api/admin/audit-log?tenant_coach_id=$COACH_ID&action=consent.granted"
+curl -H "Authorization: Bearer $OWNER_JWT" \
+  "$API/api/admin/audit-log?tenant_coach_id=$COACH_ID&action=consent.revoked"
+```
+
+Owners cannot grant or revoke consent on a client's behalf — only the
+client can. The admin endpoint is read-only.
 
 ## Account lifecycle
 
