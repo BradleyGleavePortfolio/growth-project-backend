@@ -188,6 +188,18 @@ export class AdminController {
   async consoleIntegrationsStatus() {
     return this.financeFederation.getIntegrationsStatus();
   }
+
+  // Aggregate product-wide usage split sourced from the finance backend's
+  // /api/admin/federation/usage/product endpoint. The console uses this to
+  // render its product-usage widget alongside the per-record federation
+  // surface; values come straight from finance Postgres aggregates and
+  // carry an explicit status field when finance is unreachable so the
+  // console can surface "finance not configured" / "degraded" instead of
+  // an empty chart.
+  @Get('product/usage')
+  async consoleProductUsage() {
+    return this.financeFederation.getProductUsage();
+  }
 }
 
 // Best-effort extraction of remote IP + User-Agent from the express request,

@@ -3,12 +3,15 @@ import { FinanceAdminClient } from '../federation/finance-admin.client';
 import {
   FinanceCallOutcome,
   FinanceDegradedReason,
+  FinanceProductUsage,
 } from '../federation/finance-contracts';
 
 // FinanceFederationService is the typed status/health face of the finance
 // federation for the admin console. It does not invent any data — every
 // field it returns is derived from the real FinanceAdminClient's
-// configuration plus an actual probe call against the finance backend.
+// configuration plus an actual probe call against the finance backend's
+// /health endpoint (a static contract object that requires the bearer
+// token but does not touch any per-record table).
 //
 // This is intentionally separate from FederationService: FederationService
 // composes per-record cross-product views, while this service answers the
@@ -36,6 +39,11 @@ export interface FinanceHealthReport {
     outcome: 'ok' | 'not_found' | 'degraded' | 'skipped';
     reason: FinanceDegradedReason | null;
     detail: string | null;
+    // Identity-mapping advertised by the finance backend's /health contract
+    // (currently always 'email'). Surfaces in the integrations board so
+    // operators can see when the join key is upgraded to a durable id.
+    identity_mapping: 'email' | null;
+    service: string | null;
   };
   checked_at: string; // ISO8601
 }
@@ -47,11 +55,13 @@ export interface IntegrationsStatusReport {
   };
 }
 
-// The probe email is intentionally a syntactically-valid address that the
-// finance backend should treat as "no record" — we only care whether the
-// outbound call resolves cleanly. Using a deterministic, well-known address
-// keeps the probe traffic identifiable in finance-side access logs.
-const PROBE_EMAIL = 'admin-console-health-probe@trygrowthproject.com';
+export interface FinanceProductUsageReport {
+  status: FinanceFederationStatus;
+  reason: FinanceDegradedReason | null;
+  detail: string | null;
+  data: FinanceProductUsage | null;
+  checked_at: string;
+}
 
 @Injectable()
 export class FinanceFederationService {
@@ -68,12 +78,7 @@ export class FinanceFederationService {
         configured: false,
         authenticated,
         base_url_present: false,
-        probe: {
-          attempted: false,
-          outcome: 'skipped',
-          reason: 'not_configured',
-          detail: 'FINANCE_API_BASE_URL is not set',
-        },
+        probe: this.skippedProbe('not_configured', 'FINANCE_API_BASE_URL is not set'),
         checked_at: checkedAt,
       };
     }
@@ -83,23 +88,18 @@ export class FinanceFederationService {
         configured: true,
         authenticated: false,
         base_url_present: true,
-        probe: {
-          attempted: false,
-          outcome: 'skipped',
-          reason: 'auth_unconfigured',
-          detail: 'FINANCE_SERVICE_TOKEN is not set',
-        },
+        probe: this.skippedProbe('auth_unconfigured', 'FINANCE_SERVICE_TOKEN is not set'),
         checked_at: checkedAt,
       };
     }
 
-    const outcome = await this.financeClient.lookupClient(PROBE_EMAIL);
+    const outcome = await this.financeClient.getHealth();
     return {
       status: this.mapOutcomeToStatus(outcome),
       configured: true,
       authenticated: true,
       base_url_present: true,
-      probe: this.summarizeProbe(outcome),
+      probe: this.summarizeHealthProbe(outcome),
       checked_at: checkedAt,
     };
   }
@@ -114,6 +114,43 @@ export class FinanceFederationService {
     };
   }
 
+  async getProductUsage(): Promise<FinanceProductUsageReport> {
+    const checkedAt = new Date().toISOString();
+    const outcome = await this.financeClient.getProductUsage();
+    if (outcome.kind === 'ok') {
+      return {
+        status: 'ok',
+        reason: null,
+        detail: null,
+        data: outcome.data,
+        checked_at: checkedAt,
+      };
+    }
+    if (outcome.kind === 'not_found') {
+      // /usage/product should never 404 on a healthy backend; treat as a
+      // degraded signal so the console can surface it instead of pretending
+      // the surface is empty.
+      return {
+        status: 'not_found',
+        reason: null,
+        detail: 'finance returned 404 for /usage/product (unexpected)',
+        data: null,
+        checked_at: checkedAt,
+      };
+    }
+    return {
+      status: outcome.reason === 'not_configured'
+        ? 'not_configured'
+        : outcome.reason === 'auth_unconfigured'
+          ? 'auth_unconfigured'
+          : 'degraded',
+      reason: outcome.reason,
+      detail: outcome.detail,
+      data: null,
+      checked_at: checkedAt,
+    };
+  }
+
   private mapOutcomeToStatus(
     outcome: FinanceCallOutcome<unknown>,
   ): FinanceFederationStatus {
@@ -124,16 +161,46 @@ export class FinanceFederationService {
     return 'degraded';
   }
 
-  private summarizeProbe(outcome: FinanceCallOutcome<unknown>): FinanceHealthReport['probe'] {
+  private skippedProbe(
+    reason: FinanceDegradedReason,
+    detail: string,
+  ): FinanceHealthReport['probe'] {
+    return {
+      attempted: false,
+      outcome: 'skipped',
+      reason,
+      detail,
+      identity_mapping: null,
+      service: null,
+    };
+  }
+
+  private summarizeHealthProbe(
+    outcome: FinanceCallOutcome<{
+      ok: boolean;
+      service: string;
+      identityMapping: 'email';
+      surface: string;
+    }>,
+  ): FinanceHealthReport['probe'] {
     if (outcome.kind === 'ok') {
-      return { attempted: true, outcome: 'ok', reason: null, detail: null };
+      return {
+        attempted: true,
+        outcome: 'ok',
+        reason: null,
+        detail: null,
+        identity_mapping: outcome.data?.identityMapping ?? null,
+        service: outcome.data?.service ?? null,
+      };
     }
     if (outcome.kind === 'not_found') {
       return {
         attempted: true,
         outcome: 'not_found',
         reason: null,
-        detail: 'finance returned 404 for probe email (expected)',
+        detail: 'finance returned 404 for /health (unexpected)',
+        identity_mapping: null,
+        service: null,
       };
     }
     return {
@@ -141,6 +208,8 @@ export class FinanceFederationService {
       outcome: 'degraded',
       reason: outcome.reason,
       detail: outcome.detail,
+      identity_mapping: null,
+      service: null,
     };
   }
 }
