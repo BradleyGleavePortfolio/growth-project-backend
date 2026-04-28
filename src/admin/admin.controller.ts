@@ -16,6 +16,8 @@ import { AdminService } from './admin.service';
 import { MetricsService } from './metrics.service';
 import { PromoteUserDto } from './admin.dto';
 import { FederationService } from './federation/federation.service';
+import { AdminConsoleService } from './console/admin-console.service';
+import { FinanceFederationService } from './console/finance-federation.service';
 
 // Phase 1A/1B: OWNER-only platform admin surface. Every route here is
 // gated by JwtAuthGuard + RolesGuard with @Roles('owner') so a coach or
@@ -28,6 +30,8 @@ export class AdminController {
     private admin: AdminService,
     private metrics: MetricsService,
     private federation: FederationService,
+    private console: AdminConsoleService,
+    private financeFederation: FinanceFederationService,
   ) {}
 
   // OWNER-only platform metrics. Counters are derived from Postgres rows
@@ -134,6 +138,67 @@ export class AdminController {
   @Get('federation/coaches/lookup')
   async federationCoachLookup(@Query('email') email?: string) {
     return this.federation.unifiedCoach(email ?? '');
+  }
+
+  // -------------------------------------------------------------------
+  // Console-friendly aliases.
+  //
+  // The admin console renders a Healthie/EHR-style account-management
+  // surface. It speaks in terms of "search", "coach overview", "client
+  // unified record", "finance health", and "integrations status" rather
+  // than the federation primitives. These routes exist so the console
+  // does not need to know about the federation/* path layout — they are
+  // thin wrappers over the same OWNER-gated services and never invent
+  // data. Every finance value comes from FederationService /
+  // FinanceFederationService and carries an explicit status field.
+  // -------------------------------------------------------------------
+
+  @Get('search')
+  async consoleSearch(
+    @Query('q') q?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.federation.unifiedSearch(
+      q ?? '',
+      limit ? parseInt(limit, 10) : undefined,
+    );
+  }
+
+  @Get('coaches/:id/overview')
+  async consoleCoachOverview(@Param('id') id: string) {
+    return this.console.getCoachOverview(id);
+  }
+
+  @Get('clients/:id')
+  async consoleClient(@Param('id') id: string) {
+    return this.console.getClientUnified(id);
+  }
+
+  @Get('clients/:id/unified')
+  async consoleClientUnified(@Param('id') id: string) {
+    return this.console.getClientUnified(id);
+  }
+
+  @Get('finance/health')
+  async consoleFinanceHealth() {
+    return this.financeFederation.getHealth();
+  }
+
+  @Get('integrations/status')
+  async consoleIntegrationsStatus() {
+    return this.financeFederation.getIntegrationsStatus();
+  }
+
+  // Aggregate product-wide usage split sourced from the finance backend's
+  // /api/admin/federation/usage/product endpoint. The console uses this to
+  // render its product-usage widget alongside the per-record federation
+  // surface; values come straight from finance Postgres aggregates and
+  // carry an explicit status field when finance is unreachable so the
+  // console can surface "finance not configured" / "degraded" instead of
+  // an empty chart.
+  @Get('product/usage')
+  async consoleProductUsage() {
+    return this.financeFederation.getProductUsage();
   }
 }
 
