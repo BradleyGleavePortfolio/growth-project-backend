@@ -148,6 +148,30 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     reason: 'Return URL Stripe redirects coaches to after the Customer Portal session ends. Defaults to the console billing screen when unset.',
   },
+  {
+    name: 'FINANCE_API_BASE_URL',
+    tier: 'optional',
+    reason:
+      'Base URL of the finance backend (e.g. https://api.finance.thegrowthproject.app). When unset, admin federation endpoints return fitness-only payloads with finance.status="not_configured" — never fake data.',
+    validate: (v) => {
+      if (!/^https?:\/\//i.test(v.trim())) {
+        return 'FINANCE_API_BASE_URL must be an absolute http(s) URL.';
+      }
+      return null;
+    },
+  },
+  {
+    name: 'FINANCE_SERVICE_TOKEN',
+    tier: 'optional',
+    reason:
+      'Service-to-service bearer token sent on every admin federation call as Authorization: Bearer <token>. Required whenever FINANCE_API_BASE_URL is set; without it, federation degrades to finance.status="auth_unconfigured".',
+  },
+  {
+    name: 'FINANCE_FEDERATION_TIMEOUT_MS',
+    tier: 'optional',
+    reason:
+      'Per-call timeout for outbound finance federation requests in milliseconds. Defaults to 2500ms; clamp range is 250..15000.',
+  },
 ];
 
 export interface EnvValidationResult {

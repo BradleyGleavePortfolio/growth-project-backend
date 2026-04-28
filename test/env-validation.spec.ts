@@ -82,6 +82,22 @@ describe('evaluateEnv', () => {
     const r = evaluateEnv({ ...baseHardEnv(), DATABASE_URL: '   ' });
     expect(r.missingHard).toContain('DATABASE_URL');
   });
+
+  it('FINANCE_API_BASE_URL accepts http(s) URLs', () => {
+    const r = evaluateEnv({
+      ...fullProdEnv(),
+      FINANCE_API_BASE_URL: 'https://finance.example.test',
+    });
+    expect(r.validationWarnings.some((w) => w.startsWith('FINANCE_API_BASE_URL:'))).toBe(false);
+  });
+
+  it('FINANCE_API_BASE_URL warns on non-http schemes', () => {
+    const r = evaluateEnv({
+      ...fullProdEnv(),
+      FINANCE_API_BASE_URL: 'finance.example.test',
+    });
+    expect(r.validationWarnings.some((w) => w.startsWith('FINANCE_API_BASE_URL:'))).toBe(true);
+  });
 });
 
 describe('assertEnv', () => {

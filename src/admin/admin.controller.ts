@@ -15,6 +15,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { AdminService } from './admin.service';
 import { MetricsService } from './metrics.service';
 import { PromoteUserDto } from './admin.dto';
+import { FederationService } from './federation/federation.service';
 
 // Phase 1A/1B: OWNER-only platform admin surface. Every route here is
 // gated by JwtAuthGuard + RolesGuard with @Roles('owner') so a coach or
@@ -26,6 +27,7 @@ export class AdminController {
   constructor(
     private admin: AdminService,
     private metrics: MetricsService,
+    private federation: FederationService,
   ) {}
 
   // OWNER-only platform metrics. Counters are derived from Postgres rows
@@ -101,6 +103,37 @@ export class AdminController {
       before,
       limit: limit ? parseInt(limit, 10) : undefined,
     });
+  }
+
+  // OWNER-only cross-product (fitness + finance) federation surface.
+  // FederationService composes a fitness Postgres read with an outbound
+  // call to the finance backend's admin federation endpoints; both blocks
+  // are returned with explicit `products` split so the admin console can
+  // render product usage without recomputing.
+  //
+  // When the finance backend is unreachable or unconfigured, `finance.status`
+  // explicitly carries the failure mode (`not_configured`, `auth_unconfigured`,
+  // `timeout`, `network_error`, `http_error`, `malformed_response`) so the
+  // console can render a degraded-state pill — no fake data is ever returned.
+  @Get('federation/search')
+  async federationSearch(
+    @Query('q') q?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.federation.unifiedSearch(
+      q ?? '',
+      limit ? parseInt(limit, 10) : undefined,
+    );
+  }
+
+  @Get('federation/clients/lookup')
+  async federationClientLookup(@Query('email') email?: string) {
+    return this.federation.unifiedClient(email ?? '');
+  }
+
+  @Get('federation/coaches/lookup')
+  async federationCoachLookup(@Query('email') email?: string) {
+    return this.federation.unifiedCoach(email ?? '');
   }
 }
 
