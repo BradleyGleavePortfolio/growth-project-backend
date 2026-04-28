@@ -775,11 +775,20 @@ The deploy contract lives in
    from a trusted shell.
 3. **Take a DB snapshot** before any deploy that includes a
    migration.
-4. **Deploy**: `fly deploy -a <app>`. The `release_command` runs
-   `prisma migrate deploy` first; if the DB has not been baselined
-   it falls back to `prisma db push --accept-data-loss` only when
+4. **Deploy**: `fly deploy -a <app>`. The `release_command`
+   (`bash ./scripts/release.sh`) runs `prisma migrate deploy` first;
+   if the DB has not been baselined it falls back to
+   `prisma db push --accept-data-loss` only when
    `RELEASE_ALLOW_DB_PUSH=1` is set and the DB has no
    `_prisma_migrations` table.
+
+   The release command invokes the script through **`bash`**, not
+   `sh`. Dash (Debian's `/bin/sh`) rejects shell scripts that contain
+   any CRLF line endings, aborting the deploy with the cryptic
+   `./scripts/release.sh: 25: set: Illegal option -`. `.gitattributes`
+   pins `*.sh` to LF endings repo-wide so a Windows commit cannot
+   reintroduce CRLF. See `docs/deploy-runbook.md` §7.1 for the failure
+   signature, prevention rule, and repair recipe.
 5. **Watch the boot log** for the env-validation banner and the
    `port` line.
 6. **Run the smoke script** (see below).

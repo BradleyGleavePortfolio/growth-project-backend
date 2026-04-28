@@ -1,0 +1,24 @@
+# Auto-detect text files; commit text with LF line endings.
+# Prevents Windows clones from injecting CRLF into files that ship into a
+# Linux-only deploy target (Fly's release_command runs in node:20-slim).
+* text=auto eol=lf
+
+# Anything that runs inside the Fly image MUST be LF, full stop. CRLF in a
+# shell script under dash produces the cryptic
+#   ./scripts/release.sh: 25: set: Illegal option -
+# and aborts the deploy before any migration runs.
+*.sh        text eol=lf
+*.bash      text eol=lf
+Dockerfile  text eol=lf
+*.dockerfile text eol=lf
+fly.toml    text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+
+# Binary assets — keep raw.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
