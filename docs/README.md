@@ -17,7 +17,7 @@ shape, and the smoke-test contract. Read it first.
 
 | Doc | What it covers |
 |---|---|
-| [`deploy-runbook.md`](./deploy-runbook.md) | End-to-end deploy procedure for staging and production: env validation tiers, migrations, OWNER bootstrap, feature-flag rollout order, Stripe wiring, smoke tests, rollback, operator workflow for production secrets. |
+| [`deploy-runbook.md`](./deploy-runbook.md) | End-to-end deploy procedure for staging and production: env validation tiers, migrations, OWNER bootstrap, feature-flag rollout order, Stripe wiring, smoke tests, rollback, operator workflow for production secrets. Also covers Supabase project/key cross-pinning (§0.1), app-`Role.owner` vs Supabase project owner (§0.2), Fly secrets being write-only (§1.1), Prisma migration baseline requirement on a non-greenfield production DB (§2.1), the post-deploy migration smoke (§5.1), federation-token rotation across both apps (§7c), and the deploy-affecting PR docs rule (§10). |
 | [`stripe-setup.md`](./stripe-setup.md) | Stripe dashboard configuration: products, prices, webhook secrets, customer portal. |
 | [`audit-and-gdpr.md`](./audit-and-gdpr.md) | `AuditLog` schema and call sites; GDPR data-export and soft-delete account-lifecycle endpoints; operator path for honoring a manual deletion request; PII scrub follow-up. |
 | [`metrics.md`](./metrics.md) | Server-side metrics: PostHog event taxonomy in `src/analytics/events.ts`, OWNER-only `/api/admin/metrics` counter shape, what is and is not synthesized. |
