@@ -5,6 +5,7 @@ import {
   UnifiedClientResponse,
   UnifiedCoachResponse,
 } from '../federation/federation.service';
+import { AccountEntitlements } from '../entitlements/entitlements.types';
 
 // AdminConsoleService is the id-keyed entry point the admin console uses
 // when an operator clicks a search result. The console hands us the
@@ -59,5 +60,31 @@ export class AdminConsoleService {
     }
     const unified = await this.federation.unifiedClient(user.email);
     return { user_id: user.id, ...unified };
+  }
+
+  // Dedicated entitlement read for the admin console's "Entitlements" tab.
+  // Returns just the AccountEntitlements block plus the user_id and email
+  // anchors so the console does not have to load the full unified record
+  // when it only needs to render the entitlement chip / status pill.
+  async getClientEntitlements(
+    clientId: string,
+  ): Promise<{ user_id: string; email: string; entitlements: AccountEntitlements }> {
+    const unified = await this.getClientUnified(clientId);
+    return {
+      user_id: unified.user_id,
+      email: unified.email,
+      entitlements: unified.entitlements,
+    };
+  }
+
+  async getCoachEntitlements(
+    coachId: string,
+  ): Promise<{ user_id: string; email: string; entitlements: AccountEntitlements }> {
+    const overview = await this.getCoachOverview(coachId);
+    return {
+      user_id: overview.user_id,
+      email: overview.email,
+      entitlements: overview.entitlements,
+    };
   }
 }

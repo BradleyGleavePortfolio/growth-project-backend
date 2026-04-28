@@ -10,6 +10,7 @@ import { AdminConsoleService } from './console/admin-console.service';
 import { FinanceFederationService } from './console/finance-federation.service';
 import { ReportsController } from './reports/reports.controller';
 import { ReportsService } from './reports/reports.service';
+import { EntitlementsService } from './entitlements/entitlements.service';
 import { UsersModule } from '../users/users.module';
 
 // Phase 1A/1B platform admin module. AuthModule import wires
@@ -39,6 +40,7 @@ import { UsersModule } from '../users/users.module';
     AdminConsoleService,
     FinanceFederationService,
     ReportsService,
+    EntitlementsService,
   ],
   exports: [
     AdminService,
@@ -48,6 +50,7 @@ import { UsersModule } from '../users/users.module';
     AdminConsoleService,
     FinanceFederationService,
     ReportsService,
+    EntitlementsService,
   ],
 })
 export class AdminModule {}

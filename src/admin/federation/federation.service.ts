@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import {
+  EntitlementsService,
+  snapshotFromUserRow,
+} from '../entitlements/entitlements.service';
+import { AccountEntitlements } from '../entitlements/entitlements.types';
 import { FinanceAdminClient } from './finance-admin.client';
 import {
   FinanceCallOutcome,
@@ -62,6 +67,13 @@ export interface UnifiedClientResponse {
   fitness: UnifiedFitnessClient | null;
   finance: { status: FederationFinanceStatus; detail?: string; data: FinanceClientSummary | null };
   products: ProductSplit;
+  // Phase 1: derived first-class entitlement read attached alongside the
+  // pre-existing `products` split. Console renders entitlement.bundle
+  // ("fitness_only" / "finance_only" / "performance_os") and the per-product
+  // status pills from entitlement.products.* directly. The legacy `products`
+  // field is preserved for backwards compatibility with consoles that have
+  // not yet upgraded.
+  entitlements: AccountEntitlements;
 }
 
 export interface UnifiedFitnessClient {
@@ -86,6 +98,7 @@ export interface UnifiedCoachResponse {
   fitness: UnifiedFitnessCoach | null;
   finance: { status: FederationFinanceStatus; detail?: string; data: FinanceCoachSummary | null };
   products: ProductSplit;
+  entitlements: AccountEntitlements;
 }
 
 export interface UnifiedFitnessCoach {
@@ -105,6 +118,7 @@ export class FederationService {
   constructor(
     private prisma: PrismaService,
     private financeClient: FinanceAdminClient,
+    private entitlements: EntitlementsService,
   ) {}
 
   async unifiedSearch(qRaw: string, limitRaw: number | undefined): Promise<UnifiedSearchResponse> {
@@ -205,6 +219,10 @@ export class FederationService {
           fitness: { active: false, reason: 'empty_email' },
           finance: { active: false, reason: 'empty_email' },
         },
+        entitlements: this.entitlements.resolve({
+          fitness: { present: false },
+          finance: { kind: 'not_found' },
+        }),
       };
     }
 
@@ -246,6 +264,10 @@ export class FederationService {
     }
 
     const financeData = financeOutcome.kind === 'ok' ? financeOutcome.data : null;
+    const entitlements = this.entitlements.resolve({
+      fitness: snapshotFromUserRow(fitnessUser, {}),
+      finance: financeOutcome,
+    });
     return {
       email,
       fitness: fitnessClient,
@@ -257,6 +279,7 @@ export class FederationService {
         fitnessActive: !!fitnessClient && !fitnessClient.archived_at,
         financeOutcome,
       }),
+      entitlements,
     };
   }
 
@@ -272,6 +295,10 @@ export class FederationService {
           fitness: { active: false, reason: 'empty_email' },
           finance: { active: false, reason: 'empty_email' },
         },
+        entitlements: this.entitlements.resolve({
+          fitness: { present: false },
+          finance: { kind: 'not_found' },
+        }),
       };
     }
 
@@ -281,6 +308,7 @@ export class FederationService {
     ]);
 
     let fitnessCoach: UnifiedFitnessCoach | null = null;
+    let coachSubscriptionStatus: string | null = null;
     if (coachUser) {
       const [activeClientCount, totalClientCount] = await Promise.all([
         this.prisma.user.count({
@@ -293,13 +321,14 @@ export class FederationService {
       const subscription = await this.prisma.coachSubscription
         .findFirst({ where: { coach_id: coachUser.id } })
         .catch(() => null);
+      coachSubscriptionStatus = subscription?.status ?? null;
       fitnessCoach = {
         user_id: coachUser.id,
         email: coachUser.email,
         name: coachUser.name,
         client_count: totalClientCount,
         active_client_count: activeClientCount,
-        subscription_status: subscription?.status ?? null,
+        subscription_status: coachSubscriptionStatus,
         current_period_end: subscription?.current_period_end
           ? new Date(subscription.current_period_end as Date).toISOString()
           : null,
@@ -309,6 +338,12 @@ export class FederationService {
     }
 
     const financeData = financeOutcome.kind === 'ok' ? financeOutcome.data : null;
+    const entitlements = this.entitlements.resolve({
+      fitness: snapshotFromUserRow(coachUser as any, {
+        coach_subscription_status: coachSubscriptionStatus,
+      }),
+      finance: financeOutcome,
+    });
     return {
       email,
       fitness: fitnessCoach,
@@ -320,6 +355,7 @@ export class FederationService {
         fitnessActive: !!fitnessCoach,
         financeOutcome,
       }),
+      entitlements,
     };
   }
 
@@ -337,6 +373,8 @@ export class FederationService {
         coach_id: true,
         archived_at: true,
         created_at: true,
+        deletion_scheduled_at: true,
+        deleted_at: true,
       },
     });
     return rows[0] ?? null;

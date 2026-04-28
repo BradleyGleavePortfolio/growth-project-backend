@@ -181,6 +181,20 @@ export class AdminController {
     return this.console.getClientUnified(id);
   }
 
+  // Dedicated entitlement read for the admin console's entitlement chip /
+  // "Plan & Access" tab. Returns just the entitlement block so the console
+  // can render the bundle and per-product status without loading the full
+  // unified record. Same OWNER-only gating as the rest of /admin/*.
+  @Get('clients/:id/entitlements')
+  async consoleClientEntitlements(@Param('id') id: string) {
+    return this.console.getClientEntitlements(id);
+  }
+
+  @Get('coaches/:id/entitlements')
+  async consoleCoachEntitlements(@Param('id') id: string) {
+    return this.console.getCoachEntitlements(id);
+  }
+
   @Get('finance/health')
   async consoleFinanceHealth() {
     return this.financeFederation.getHealth();
