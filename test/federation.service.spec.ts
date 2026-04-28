@@ -1,10 +1,17 @@
 import { FederationService } from '../src/admin/federation/federation.service';
+import { EntitlementsService } from '../src/admin/entitlements/entitlements.service';
 import {
   FinanceCallOutcome,
   FinanceClientSummary,
   FinanceCoachSummary,
   FinanceUserSearchHit,
 } from '../src/admin/federation/finance-contracts';
+
+// Real EntitlementsService used in federation tests — it is a pure resolver
+// (no DB / no HTTP), so we exercise the real logic to keep the integration
+// signal end-to-end. Dedicated unit coverage for the resolver lives in
+// entitlements.service.spec.ts.
+const entitlements = new EntitlementsService();
 
 // In-memory finance client stub. Tests configure each method's resolved
 // value directly to model ok/not_found/degraded outcomes without HTTP.
@@ -132,7 +139,7 @@ describe('FederationService.unifiedSearch', () => {
   it('returns empty result for empty query without calling finance', async () => {
     const prisma = buildPrismaStub();
     const finance = new StubFinanceClient();
-    const svc = new FederationService(prisma, finance as any);
+    const svc = new FederationService(prisma, finance as any, entitlements);
     const out = await svc.unifiedSearch('', 25);
     expect(out.results).toEqual([]);
     expect(out.finance.status).toBe('ok');
@@ -183,7 +190,7 @@ describe('FederationService.unifiedSearch', () => {
         },
       ],
     });
-    const svc = new FederationService(prisma, finance as any);
+    const svc = new FederationService(prisma, finance as any, entitlements);
     const out = await svc.unifiedSearch('exa', 25);
     expect(out.finance.status).toBe('ok');
     const byEmail = new Map(out.results.map((r) => [r.email.toLowerCase(), r]));
@@ -214,7 +221,7 @@ describe('FederationService.unifiedSearch', () => {
       reason: 'timeout',
       detail: 'timed out after 2500ms',
     });
-    const svc = new FederationService(prisma, finance as any);
+    const svc = new FederationService(prisma, finance as any, entitlements);
     const out = await svc.unifiedSearch('jay', 25);
     expect(out.finance.status).toBe('timeout');
     expect(out.results).toHaveLength(1);
@@ -225,7 +232,7 @@ describe('FederationService.unifiedSearch', () => {
     const prisma = buildPrismaStub();
     const finance = new StubFinanceClient();
     finance.searchUsers.mockResolvedValue({ kind: 'ok', data: [] });
-    const svc = new FederationService(prisma, finance as any);
+    const svc = new FederationService(prisma, finance as any, entitlements);
     await svc.unifiedSearch('q', 9999);
     expect(finance.searchUsers).toHaveBeenCalledWith('q', 50);
     await svc.unifiedSearch('q', 0);
@@ -251,7 +258,7 @@ describe('FederationService.unifiedClient', () => {
       reason: 'not_configured',
       detail: 'FINANCE_API_BASE_URL is not set',
     });
-    const svc = new FederationService(prisma, finance as any);
+    const svc = new FederationService(prisma, finance as any, entitlements);
     const out = await svc.unifiedClient('jay@example.test');
     expect(out.fitness).not.toBeNull();
     expect(out.fitness?.activity_last_7d).toEqual({
@@ -282,7 +289,7 @@ describe('FederationService.unifiedClient', () => {
       kind: 'ok',
       data: clientSummary({ net_worth: 12345, streak_days: 14 }),
     });
-    const svc = new FederationService(prisma, finance as any);
+    const svc = new FederationService(prisma, finance as any, entitlements);
     const out = await svc.unifiedClient('jay@example.test');
     expect(out.finance.status).toBe('ok');
     expect(out.finance.data?.net_worth).toBe(12345);
@@ -295,7 +302,7 @@ describe('FederationService.unifiedClient', () => {
     const prisma = buildPrismaStub();
     const finance = new StubFinanceClient();
     finance.lookupClient.mockResolvedValueOnce({ kind: 'not_found' });
-    const svc = new FederationService(prisma, finance as any);
+    const svc = new FederationService(prisma, finance as any, entitlements);
     const out = await svc.unifiedClient('ghost@example.test');
     expect(out.fitness).toBeNull();
     expect(out.finance.status).toBe('not_found');
@@ -317,7 +324,7 @@ describe('FederationService.unifiedClient', () => {
     });
     const finance = new StubFinanceClient();
     finance.lookupClient.mockResolvedValueOnce({ kind: 'not_found' });
-    const svc = new FederationService(prisma, finance as any);
+    const svc = new FederationService(prisma, finance as any, entitlements);
     const out = await svc.unifiedClient('old@example.test');
     expect(out.fitness).not.toBeNull();
     expect(out.products.fitness.active).toBe(false);
@@ -327,7 +334,7 @@ describe('FederationService.unifiedClient', () => {
   it('returns empty-email payload without calling finance', async () => {
     const prisma = buildPrismaStub();
     const finance = new StubFinanceClient();
-    const svc = new FederationService(prisma, finance as any);
+    const svc = new FederationService(prisma, finance as any, entitlements);
     const out = await svc.unifiedClient('   ');
     expect(out.fitness).toBeNull();
     expect(out.products.fitness.reason).toBe('empty_email');
@@ -383,7 +390,7 @@ describe('FederationService.unifiedCoach', () => {
       kind: 'ok',
       data: coachSummary({ student_count: 12, active_students_7d: 9 }),
     });
-    const svc = new FederationService(prisma, finance as any);
+    const svc = new FederationService(prisma, finance as any, entitlements);
     const out = await svc.unifiedCoach('c@coach.test');
     expect(out.fitness?.client_count).toBe(2);
     expect(out.fitness?.active_client_count).toBe(1);
@@ -407,12 +414,104 @@ describe('FederationService.unifiedCoach', () => {
       reason: 'http_error',
       detail: 'status=502',
     });
-    const svc = new FederationService(prisma, finance as any);
+    const svc = new FederationService(prisma, finance as any, entitlements);
     const out = await svc.unifiedCoach('absent@coach.test');
     expect(out.fitness).toBeNull();
     expect(out.finance.status).toBe('http_error');
     expect(out.products.fitness.active).toBe(false);
     expect(out.products.finance.active).toBe(false);
     expect(out.products.finance.reason).toBe('http_error');
+  });
+});
+
+describe('FederationService — entitlement attachment', () => {
+  it('client + finance ok → bundle=performance_os in entitlements', async () => {
+    const prisma = buildPrismaStub();
+    prisma._users.push({
+      id: 'u1',
+      email: 'jay@example.test',
+      name: 'Jay',
+      role: 'student',
+      coach_id: null,
+      archived_at: null,
+      created_at: new Date(),
+    });
+    const finance = new StubFinanceClient();
+    finance.lookupClient.mockResolvedValueOnce({
+      kind: 'ok',
+      data: clientSummary(),
+    });
+    const svc = new FederationService(prisma, finance as any, entitlements);
+    const out = await svc.unifiedClient('jay@example.test');
+    expect(out.entitlements.bundle).toBe('performance_os');
+    expect(out.entitlements.overall).toBe('active');
+    expect(out.entitlements.products.fitness.status).toBe('active');
+    expect(out.entitlements.products.finance.status).toBe('active');
+    expect(out.entitlements.account_suspended).toBe(false);
+  });
+
+  it('coach with paused subscription → bundle classifies as none, fitness=suspended', async () => {
+    const prisma = buildPrismaStub();
+    prisma._users.push({
+      id: 'coach-1',
+      email: 'c@coach.test',
+      name: 'Coach C',
+      role: 'coach',
+      coach_id: null,
+      archived_at: null,
+      created_at: new Date(),
+    });
+    prisma._coachProfiles.push({
+      user_id: 'coach-1',
+      business_name: 'C Fitness',
+      invite_code: 'GP-AAAAAA',
+    });
+    prisma._subscriptions.push({
+      coach_id: 'coach-1',
+      status: 'paused',
+      current_period_end: null,
+    });
+    const finance = new StubFinanceClient();
+    finance.lookupCoach.mockResolvedValueOnce({ kind: 'not_found' });
+    const svc = new FederationService(prisma, finance as any, entitlements);
+    const out = await svc.unifiedCoach('c@coach.test');
+    expect(out.entitlements.bundle).toBe('none');
+    expect(out.entitlements.products.fitness.status).toBe('suspended');
+    expect(out.entitlements.products.fitness.reason).toBe('subscription_paused');
+  });
+
+  it('finance degraded → entitlement.finance.status=unknown (not inactive)', async () => {
+    const prisma = buildPrismaStub();
+    prisma._users.push({
+      id: 'u1',
+      email: 'jay@example.test',
+      name: 'Jay',
+      role: 'student',
+      coach_id: null,
+      archived_at: null,
+      created_at: new Date(),
+    });
+    const finance = new StubFinanceClient();
+    finance.lookupClient.mockResolvedValueOnce({
+      kind: 'degraded',
+      reason: 'timeout',
+      detail: 'timed out',
+    });
+    const svc = new FederationService(prisma, finance as any, entitlements);
+    const out = await svc.unifiedClient('jay@example.test');
+    expect(out.entitlements.products.finance.status).toBe('unknown');
+    expect(out.entitlements.products.finance.reason).toBe('finance_degraded');
+    // Fitness still active so account is overall active.
+    expect(out.entitlements.overall).toBe('active');
+    expect(out.entitlements.bundle).toBe('fitness_only');
+  });
+
+  it('empty email branch still returns an entitlements block', async () => {
+    const prisma = buildPrismaStub();
+    const finance = new StubFinanceClient();
+    const svc = new FederationService(prisma, finance as any, entitlements);
+    const out = await svc.unifiedClient('   ');
+    expect(out.entitlements.bundle).toBe('none');
+    expect(out.entitlements.overall).toBe('inactive');
   });
 });

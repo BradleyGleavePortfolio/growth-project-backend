@@ -4,6 +4,20 @@ import {
   UnifiedClientResponse,
   UnifiedCoachResponse,
 } from '../src/admin/federation/federation.service';
+import { AccountEntitlements } from '../src/admin/entitlements/entitlements.types';
+
+function emptyEntitlements(): AccountEntitlements {
+  return {
+    active_products: [],
+    bundle: 'none',
+    overall: 'inactive',
+    products: {
+      fitness: { product: 'fitness', status: 'inactive', reason: 'fitness_no_record' },
+      finance: { product: 'finance', status: 'inactive', reason: 'finance_no_record' },
+    },
+    account_suspended: false,
+  };
+}
 
 class FederationStub {
   unifiedClient = jest.fn<Promise<UnifiedClientResponse>, [string]>();
@@ -30,6 +44,7 @@ function emptyClientResponse(email: string): UnifiedClientResponse {
       fitness: { active: false, reason: 'not_found' },
       finance: { active: false, reason: 'not_found' },
     },
+    entitlements: emptyEntitlements(),
   };
 }
 
@@ -42,6 +57,7 @@ function emptyCoachResponse(email: string): UnifiedCoachResponse {
       fitness: { active: false, reason: 'not_found' },
       finance: { active: false, reason: 'not_found' },
     },
+    entitlements: emptyEntitlements(),
   };
 }
 
@@ -107,6 +123,37 @@ describe('AdminConsoleService.getClientUnified', () => {
     expect(fed.unifiedClient).not.toHaveBeenCalled();
   });
 
+  it('getClientEntitlements returns just the entitlement block keyed by user_id', async () => {
+    const prisma = buildPrismaStub([
+      { id: 'user-1', email: 'jay@example.test', role: 'student' },
+    ]);
+    const fed = new FederationStub();
+    const ents = emptyEntitlements();
+    ents.bundle = 'fitness_only';
+    ents.overall = 'active';
+    ents.active_products = ['fitness'];
+    fed.unifiedClient.mockResolvedValueOnce({
+      ...emptyClientResponse('jay@example.test'),
+      entitlements: ents,
+    });
+
+    const svc = new AdminConsoleService(prisma, fed as any);
+    const out = await svc.getClientEntitlements('user-1');
+    expect(out.user_id).toBe('user-1');
+    expect(out.email).toBe('jay@example.test');
+    expect(out.entitlements.bundle).toBe('fitness_only');
+    expect(out.entitlements.overall).toBe('active');
+  });
+
+  it('getCoachEntitlements 404s for non-coach roles', async () => {
+    const prisma = buildPrismaStub([
+      { id: 'student-1', email: 's@example.test', role: 'student' },
+    ]);
+    const fed = new FederationStub();
+    const svc = new AdminConsoleService(prisma, fed as any);
+    await expect(svc.getCoachEntitlements('student-1')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
   it('passes through degraded finance status from federation', async () => {
     const prisma = buildPrismaStub([
       { id: 'user-1', email: 'jay@example.test', role: 'student' },
@@ -120,6 +167,7 @@ describe('AdminConsoleService.getClientUnified', () => {
         fitness: { active: false, reason: 'not_found' },
         finance: { active: false, reason: 'timeout' },
       },
+      entitlements: emptyEntitlements(),
     });
     const svc = new AdminConsoleService(prisma, fed as any);
     const out = await svc.getClientUnified('user-1');

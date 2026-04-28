@@ -623,6 +623,18 @@ Every response carries an explicit `finance.status`:
 `network_error`, `http_error`, `malformed_response`. `finance.data`
 is `null` for every status except `ok`.
 
+Every record-level federation response (and every console-alias record
+response) also carries a first-class `entitlements` block summarising
+*what the account has access to*: a `bundle` of `none` / `fitness_only`
+/ `finance_only` / `performance_os`, an `overall` of
+`active` / `past_due` / `canceled` / `suspended` / `inactive` /
+`unknown`, and a per-product `{status, reason}` for each of fitness and
+finance. A degraded finance call surfaces as `unknown` (never silently
+`inactive`) so the console can render "temporarily unavailable" instead
+of misleading the operator. See [`docs/entitlements.md`](docs/entitlements.md)
+for the full status table, the GDPR-grace-period suspension rule, and
+the additive Phase-2 override-table sketch (no migration in Phase 1).
+
 #### Console aliases
 
 | Method | Path | Backed by |
@@ -631,6 +643,8 @@ is `null` for every status except `ok`.
 | `GET` | `/admin/coaches/:id/overview` | `AdminConsoleService.getCoachOverview` |
 | `GET` | `/admin/clients/:id` | `AdminConsoleService.getClientUnified` |
 | `GET` | `/admin/clients/:id/unified` | `AdminConsoleService.getClientUnified` |
+| `GET` | `/admin/clients/:id/entitlements` | `AdminConsoleService.getClientEntitlements` — first-class entitlement read (bundle, per-product status). See [`docs/entitlements.md`](docs/entitlements.md). |
+| `GET` | `/admin/coaches/:id/entitlements` | `AdminConsoleService.getCoachEntitlements` — same shape, 404 for non-coach roles. |
 | `GET` | `/admin/finance/health` | `FinanceFederationService.getHealth` (real probe; status is `ok` / `not_found` (still healthy) / `not_configured` / `auth_unconfigured` / `degraded` with `reason`). |
 | `GET` | `/admin/integrations/status` | `FinanceFederationService.getIntegrationsStatus` |
 

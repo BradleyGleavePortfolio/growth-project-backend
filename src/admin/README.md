@@ -41,6 +41,8 @@ invite link.
 | `GET` | `/admin/coaches/:id/overview` | Console coach-detail screen, id-keyed. Resolves to the same federation payload as `/admin/federation/coaches/lookup`. |
 | `GET` | `/admin/clients/:id` | Console client-detail screen, id-keyed. Resolves to the same federation payload as `/admin/federation/clients/lookup`. |
 | `GET` | `/admin/clients/:id/unified` | Alias of `/admin/clients/:id` for the console's unified-record verb. |
+| `GET` | `/admin/clients/:id/entitlements` | Just the entitlement block for this client: `{ user_id, email, entitlements }`. See [`../../docs/entitlements.md`](../../docs/entitlements.md). |
+| `GET` | `/admin/coaches/:id/entitlements` | Just the entitlement block for this coach: `{ user_id, email, entitlements }`. 404 for non-coach roles. |
 | `GET` | `/admin/finance/health` | Liveness probe of the finance federation surface (real call to finance `/health`); returns `status`, `probe.identity_mapping`, `probe.service`, `probe.reason` for the operator status pill. |
 | `GET` | `/admin/integrations/status` | Aggregate integrations envelope; currently only `finance_federation` populated. |
 | `GET` | `/admin/product/usage` | Aggregate product-usage split (DAU/WAU/MAU + role split + EOD/what-if/coach-notes/milestones counters), proxied from finance `/usage/product`. Carries an explicit `status` field when finance is unreachable. |
