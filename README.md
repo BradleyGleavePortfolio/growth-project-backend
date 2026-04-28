@@ -91,6 +91,10 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 | `COACH_CODE_GATE_ENABLED` | optional | Backend operator | Feature flag. When `true`, `/auth/signup-with-code` requires a valid coach invite code. |
 | `BILLING_ENFORCEMENT` | optional | Backend operator | Feature flag. `enforce` blocks coach writes for `past_due` past grace and for `canceled` / `paused`. Anything else is observe-only. |
 | `STRIPE_PRICE_ID_FINANCE` | optional | Stripe dashboard | Reserved for the second vertical. Currently unused. |
+| `FINANCE_API_BASE_URL` | optional | Backend operator | Absolute `http(s)` base URL for the finance backend (`tgp-finance-app`). Drives the cross-product admin federation. Unset = federation reports `not_configured`; the operator console still renders the fitness block. Validated as absolute http(s); placeholders rejected at boot. |
+| `FINANCE_SERVICE_TOKEN` | optional | Finance backend operator | Static service-to-service bearer used on every federation call. Required when `FINANCE_API_BASE_URL` is set; without it federation reports `auth_unconfigured` and never reaches the network. |
+| `FINANCE_FEDERATION_TIMEOUT_MS` | optional | Backend operator | Per-call timeout for finance federation. Defaults to 2500 ms; clamped to `[250, 15000]`. |
+| `LAST_SECURITY_DEPLOY_AT` | optional | Backend operator | ISO-8601 timestamp surfaced verbatim by `/api/system/trust-meta` as `lastSecurityUpdate`. When unset, the trust meta endpoint returns `null` rather than fabricating a date. Set on every production deploy of a security fix. |
 | `JWT_SECRET` | legacy | n/a | Reserved. Token verification is JWKS-based; the value is not consulted. |
 | `RELEASE_ALLOW_DB_PUSH` | optional | Backend operator | One-time bootstrap escape hatch in `scripts/release.sh`. Allows `prisma db push --accept-data-loss` only when the DB has no `_prisma_migrations` table. Leave unset on any environment that holds real data. |
 | `BOOTSTRAP_OWNER_EMAILS` | optional | Backend operator | Comma-separated emails consumed by `scripts/bootstrap-owners.ts` to seed the initial OWNER list. Idempotent. |
@@ -129,10 +133,13 @@ real page.
 
 `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and
 `STRIPE_PRICE_ID_FITNESS` together drive the billing surface. With all
-three set, the webhook accepts events, the coach-billing controller
-returns a real mirror, the OWNER-only start-subscription endpoint can
-provision new coaches, and `SubscriptionGuard` has data to reason
-over.
+three set, the webhook accepts events and is idempotent on
+`stripe_event_id`, the coach-billing controller returns a real mirror,
+the OWNER-only `/v1/admin/coaches/:id/start-subscription` endpoint
+provisions a new coach subscription against a real Stripe customer +
+subscription, the coach-only `/v1/coach/me/billing/portal-session`
+endpoint mints a live Stripe Customer Portal session, and
+`SubscriptionGuard` has data to reason over.
 
 When any of the three is unset (the default in dev), the routes stay
 mounted but return deterministic responses: the webhook returns 400
@@ -140,6 +147,12 @@ mounted but return deterministic responses: the webhook returns 400
 portal-session endpoints return `STRIPE_NOT_CONFIGURED`, and
 `SubscriptionGuard` is observe-only. The console renders the right
 empty state without a real Stripe key.
+
+Webhook idempotency: `BillingService` records every event id on
+`StripeProcessedEvent` in a `finally` block so a Stripe retry — even
+on a poison-pill payload that throws — never double-counts. The
+processed-event row carries `event_type` and a creation timestamp so
+operators can audit which events have already been consumed.
 
 For the full setup (products, prices, webhook signing secret, customer
 portal), see [`docs/stripe-setup.md`](docs/stripe-setup.md).
@@ -321,23 +334,82 @@ fan-out workers will read it for push and email notifications. The
 combination `(actor_id, type, created_at)` is also the most useful
 audit index for incident response.
 
+### AuditLog
+
+Append-only record of sensitive actions, written by `AuditService`.
+One row per privileged event. Columns of operational interest:
+
+- `action`: canonical event name, e.g. `user.role_changed`,
+  `user.data_export_requested`, `user.account_deletion_scheduled`.
+  The full constant set lives at `AuditAction` in
+  `src/audit/audit.service.ts`.
+- `actor_id`, `actor_role`, `actor_email_snapshot`: who acted, with
+  the email captured at write time so it survives a later PII scrub.
+- `target_user_id`, `target_type`, `target_id`: what the action
+  affected.
+- `tenant_coach_id`: the coach whose tenant the action touched, so
+  OWNER queries can be scoped to one tenant.
+- `ip`, `user_agent`: best-effort transport context; `ip` is
+  `x-forwarded-for[0]` from Fly's edge.
+- `metadata` (jsonb): action-specific structured data.
+- `created_at`: indexed for cursor pagination.
+
+Append-only by convention; `AuditService.write` never updates or
+deletes. The OWNER-only read surface is `GET /api/admin/audit-log`,
+documented under the route contracts below. The full schema, index
+list, and currently wired call sites are in
+[`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md).
+
+### DataExportRequest
+
+One row per fulfilled GDPR data-export request. Holds the assembled
+JSON snapshot of the requesting user's personal data (no coach-tenant
+rows; messages or nudges sent by the user as a coach are deliberately
+excluded so a coach export does not leak other clients' data).
+Strictly scoped to `user_id = req.user.id`; cross-user reads return
+404. Schema and the inline-vs-S3 trade-off are documented in
+[`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md).
+
 ### Audit and GDPR posture
 
-The platform does not currently expose a GDPR endpoint to the user.
-The pieces in place today are:
+The self-service GDPR surface shipped in PR #73:
+
+- `POST /api/users/me/data-export` synchronously assembles a JSON
+  snapshot and persists it on `DataExportRequest`.
+- `GET /api/users/me/data-export/:id` fetches the assembled payload.
+  Cross-user reads return 404, not a redaction.
+- `DELETE /api/users/me/account` soft-deletes with a 30-day grace
+  window via `User.deletion_scheduled_at`. Idempotent within the
+  grace window.
+- `POST /api/users/me/account/cancel-deletion` clears the flag.
+- `GET /api/users/me/account/deletion-status` returns the current
+  state.
+
+Auth-guard lockout: once `deletion_scheduled_at` is set, every route
+returns 403 except the two recovery routes
+(`/users/me/account/cancel-deletion`, `/users/me/account/deletion-status`),
+which opt in via the `@AllowDeletionScheduled()` decorator. Once
+`deleted_at` is set by the post-grace scrub, every route — recovery
+included — returns 403; the account is terminal. The PII scrub
+worker is an intentional follow-up: it is irreversible and is
+landing dark behind a feature flag in a separate PR. The schema is
+ready; `User.deleted_at` exists, and the audit action
+`user.account_deleted` is reserved for the worker to write.
+
+The remaining audit / privacy posture:
 
 - `User.archived_at` for soft-archive on a roster.
-- `ActivityEvent` for actor-attributed history.
+- `ActivityEvent` for actor-attributed product-side history (used by
+  the recent-activity feed).
+- `AuditLog` for actor-attributed sensitive-action history (the
+  compliance audit trail).
 - `StripeProcessedEvent` for billing event provenance.
-- The Sentry and PostHog integrations both no-op when their
-  credentials are unset, which is the default in development; PII
-  exposure to those vendors is therefore opt-in per environment.
+- Sentry and PostHog both no-op when their credentials are unset;
+  PII exposure to those vendors is opt-in per environment.
 
-A user-facing "delete my data" path is not implemented. The
-operator-driven path is to (1) archive the row, (2) wait out the
-retention window, and (3) delete via SQL after taking a backup.
-Treat the absence of a self-service GDPR endpoint as a known gap;
-do not invent a fake one in client-facing copy.
+The full operator runbook (applying the migration, reading the audit
+log, honoring a manual GDPR delete, follow-ups) lives in
+[`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md).
 
 ### CheckIn, MealPlan, CoachGuideline, CommunityWin
 
@@ -486,6 +558,134 @@ Modules: [`src/coach/`](src/coach/README.md),
 | `POST` | `/coach/clients/:id/archive`, `/coach/clients/:id/unarchive`, `/coach/guidelines/:client_id` | coach or owner | Roster mutations and guideline upsert. |
 | `GET` | `/admin/coaches`, `/admin/coaches/:id`, `/admin/users` | owner | OWNER-only inventory. |
 | `POST` | `/admin/users/:id/promote` | owner | Role change with lazy `CoachProfile` provisioning. |
+| `GET` | `/admin/metrics?since_days=` | owner | Authoritative counters from Postgres. `since_days` clamped to `(0, 365]`, defaults to 30. Stripe-sourced figures come from the webhook mirror; no synthesized money figures. Documented in [`docs/metrics.md`](docs/metrics.md). |
+| `GET` | `/admin/audit-log` | owner | Cursor-paginated read over `AuditLog`. Filters: `action`, `target_user_id`, `tenant_coach_id`, `before` (ISO timestamp), `limit` (clamped `[1, 200]`, default 50). |
+
+### Admin console (Healthie/EHR-style)
+
+The admin console is the OWNER-only operator surface that surfaces a
+single screen across both the fitness backend (this repo) and the
+finance backend (`tgp-finance-app`). It is **admin-only** by
+definition — every route below is class-gated by
+`JwtAuthGuard + RolesGuard + @Roles('owner')`, and a coach or student
+token gets a clean 403. The console never exposes itself to client
+roles, and the federation layer never substitutes synthetic data when
+finance is unreachable.
+
+The console's backend surface is split into two cooperating layers:
+
+1. **Federation primitives** under `/api/admin/federation/*`
+   (`src/admin/federation/`). These are the canonical cross-product
+   reads, keyed on email today and forward-compatible with a durable
+   `account_id` join key once the finance backend emits one. Shipped
+   in PR #79.
+2. **Console aliases** under `/api/admin/{search,coaches/:id/overview,clients/:id,clients/:id/unified,finance/health,integrations/status}`
+   (`src/admin/console/`). These are id-keyed verbs the console
+   renders against; they translate id → fitness email and delegate to
+   the federation layer so the unified payload is identical to the
+   federation response. Shipped in PR #80.
+
+Modules: [`src/admin/federation/`](src/admin/federation/README.md),
+[`src/admin/console/`](src/admin/console/README.md).
+
+#### Federation primitives
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/admin/federation/search?q=&limit=` | Unified search across fitness Postgres and the finance backend. Hits are merged by lowercased email and carry a `products` array (`["fitness"]`, `["finance"]`, or both). `limit` clamped `[1, 50]`. |
+| `GET` | `/admin/federation/clients/lookup?email=` | One-client unified view. Returns `fitness` block (role, coach, archived, 7d activity), `finance` block, and a derived product split. |
+| `GET` | `/admin/federation/coaches/lookup?email=` | One-coach unified view. Roster + subscription side by side from each product. |
+
+Every response carries an explicit `finance.status`:
+`ok`, `not_found`, `not_configured`, `auth_unconfigured`, `timeout`,
+`network_error`, `http_error`, `malformed_response`. `finance.data`
+is `null` for every status except `ok`.
+
+#### Console aliases
+
+| Method | Path | Backed by |
+|---|---|---|
+| `GET` | `/admin/search?q=&limit=` | `FederationService.unifiedSearch` |
+| `GET` | `/admin/coaches/:id/overview` | `AdminConsoleService.getCoachOverview` |
+| `GET` | `/admin/clients/:id` | `AdminConsoleService.getClientUnified` |
+| `GET` | `/admin/clients/:id/unified` | `AdminConsoleService.getClientUnified` |
+| `GET` | `/admin/finance/health` | `FinanceFederationService.getHealth` (real probe; status is `ok` / `not_found` (still healthy) / `not_configured` / `auth_unconfigured` / `degraded` with `reason`). |
+| `GET` | `/admin/integrations/status` | `FinanceFederationService.getIntegrationsStatus` |
+
+`/admin/finance/health` runs a real probe against the finance backend's
+`lookup` endpoint with a deterministic, well-known probe email
+(`admin-console-health-probe@trygrowthproject.com`) and reports the
+actual outcome. No values are synthesized; missing config short-circuits
+the probe and surfaces the missing piece directly.
+
+#### Cross-app finance federation
+
+The finance backend (`tgp-finance-app`) is a separate service. The
+join key today is lowercased email; the wire format already carries
+an optional `account_id` so a future durable shared identity can
+replace email without a wire break. The federation layer:
+
+- **Never falls back to synthetic data.** When finance is
+  unreachable, the response carries the underlying status and
+  `finance.data: null`. The console renders a degraded-state pill
+  from the status; no fake numbers are shown to operators.
+- **Times out and retries once** on transient failures (timeout, 5xx,
+  network error). 404 maps to `not_found` and is not retried.
+- **Authenticates** with a static service-token bearer plus
+  `X-Federation-Source: fitness-backend`. The finance backend is
+  expected to verify both. When the finance backend later moves to
+  short-lived JWTs, the only swap is in
+  `FinanceAdminClient.attempt`; the contract types are unaffected.
+
+#### Product usage split
+
+Each unified client / coach payload carries a `products` field with
+the per-product blocks alongside a derived split:
+
+- **Fitness block**: role, coach assignment, `archived_at`, and the
+  7-day activity counts (logs, workouts, messages) computed from the
+  fitness Postgres in this repo. The 7-day window is hard-coded; if a
+  follow-up needs 30/90-day history, widen it server-side and do not
+  push the date filter to the client.
+- **Finance block**: the finance backend's record for the same
+  identity, with the `finance.status` envelope above.
+- **Product split**: `["fitness"]` if the user is unknown to finance
+  but exists in the fitness backend, `["finance"]` for the inverse,
+  `["fitness", "finance"]` when both blocks resolve. The split is
+  what drives the Healthie-style product-pill UI on the console.
+
+### GDPR account lifecycle
+
+Module: [`src/users/`](src/users/README.md) (lifecycle handlers),
+[`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md) (full operator
+runbook).
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| `POST` | `/users/me/data-export` | authed | Synchronously assembles the caller's data into a `DataExportRequest`. Strict `user_id = req.user.id` scoping. Audited as `user.data_export_requested` / `_fulfilled` / `_failed`. |
+| `GET` | `/users/me/data-export/:id` | authed | Fetches the assembled JSON payload. Cross-user reads return 404, not a redaction. |
+| `DELETE` | `/users/me/account` | authed | Sets `User.deletion_scheduled_at = now()` and starts the 30-day grace clock. Idempotent within the window. Audited as `user.account_deletion_scheduled`. |
+| `POST` | `/users/me/account/cancel-deletion` | authed (deletion-scheduled OK) | Clears `deletion_scheduled_at`. Audited as `user.account_deletion_canceled`. Opt-in via `@AllowDeletionScheduled()`. |
+| `GET` | `/users/me/account/deletion-status` | authed (deletion-scheduled OK) | Returns the current state (`active` / `scheduled` / `deleted`). |
+
+Once `deletion_scheduled_at` is set, `JwtAuthGuard` rejects every
+request from that user with 403 except the two recovery routes
+above. Once `deleted_at` is set by the post-grace scrub worker,
+every route — including the recovery routes — returns 403; the
+account is terminal.
+
+### Trust meta and public trust pages
+
+Module: [`src/system/`](src/system/) (read-only meta),
+[`src/public-pages/`](src/public-pages/README.md) (HTML pages).
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| `GET` | `/api/system/trust-meta` | public | Returns `{ lastSecurityUpdate }` from the `LAST_SECURITY_DEPLOY_AT` env var verbatim. When unset, `lastSecurityUpdate` is `null`; no date is fabricated. |
+
+The unprefixed public trust pages (`/privacy`, `/terms`, `/security`,
+`/status`) read from this same source so the date the page renders
+matches the JSON.
 
 ## Deployment
 
@@ -519,6 +719,108 @@ The deploy contract lives in
 `start.sh`. CI lives in `.github/workflows/ci.yml` and runs
 `npm install`, `prisma generate`, `tsc --noEmit`, build, and
 `npm test` on every PR and push to `main`.
+
+### No production migrations
+
+Production never receives a destructive Prisma operation. The deploy
+contract is forward-only `prisma migrate deploy`. The
+`db push --accept-data-loss` fallback in `scripts/release.sh` is
+gated by **two** conditions: `RELEASE_ALLOW_DB_PUSH=1` must be set,
+and the target database must have no `_prisma_migrations` table
+(i.e. it has never been baselined). Both of those are only true on a
+fresh staging shard. On a database that holds real data, the fallback
+is unreachable.
+
+Concretely:
+
+- Every recent migration ships **additive** DDL only. The
+  `add_audit_log_and_gdpr_lifecycle` migration that backs PR #73 adds
+  two nullable columns to `User` (`deletion_scheduled_at`,
+  `deleted_at`) and creates `AuditLog` + `DataExportRequest` with
+  their indexes; no existing row is mutated, no existing index is
+  touched.
+- `release_command` in `fly.toml` runs `prisma migrate deploy` before
+  traffic flips. A failed migration aborts the deploy.
+- Out-of-band SQL is forbidden. Honoring a manual GDPR delete goes
+  through `DELETE /api/users/me/account` (which writes the audit
+  row), not through hand-edits of `User.deleted_at`.
+
+## README-with-every-PR rule
+
+Every PR must update the corresponding README and module docs in the
+same change. The convention is:
+
+- **Module change** → update the module's `README.md` (e.g. a billing
+  controller change updates [`src/billing/README.md`](src/billing/README.md)).
+- **New env var, new feature flag, or contract-level surface change**
+  → also update this root README and `.env.example` so an operator
+  reading the root README sees the variable with its tier and owner.
+- **Cross-cutting policy change** (deploy steps, smoke-test contract,
+  audit posture) → also update `docs/README.md` and the relevant
+  runbook under `docs/`.
+- **No placeholders** — no `TODO`, `FIXME`, `<value>`, `REPLACE_ME`,
+  fake dates, or example secrets. The env-validation pass at boot
+  rejects these in hard / prod tiers; the docs follow the same bar.
+
+The `route-doc-drift.spec.ts` test (added in PR #78) is the
+regression net for the subset of this rule that can be machined: it
+asserts that publicly documented endpoint paths still resolve to
+controllers that mount them. It is intentionally narrow; the
+README-with-every-PR rule covers the rest.
+
+## Open work and merge order
+
+The merged-vs-open layering across the most recent shipped work, so
+operators reading this in order know which PR is the source of truth
+for each surface:
+
+| PR | Title | State | Surface |
+|---|---|---|---|
+| #69 | enterprise module READMEs | merged | per-module READMEs |
+| #72 | public trust pages | merged | `/privacy`, `/terms`, `/security`, `/status` |
+| #73 | audit log + GDPR data-export & soft-delete foundation | merged | `AuditLog`, `DataExportRequest`, `/users/me/data-export*`, `/users/me/account*`, `/admin/audit-log` |
+| #74 | PostHog event taxonomy + admin metrics endpoint | merged | `src/analytics/events.ts`, `/admin/metrics` |
+| #75 | invite-code contract aligned with mobile QA | merged | `/auth/signup-with-code`, `/auth/attach-invite-code` |
+| #76 | live Stripe Customer Portal + start-subscription + webhook idempotency | merged | `/v1/coach/me/billing/portal-session`, `/v1/admin/coaches/:id/start-subscription`, `StripeProcessedEvent` |
+| #78 | trust meta + operator-doc `/api` prefix + E2E prereqs + doc-drift regression test | merged | `/api/system/trust-meta`, `LAST_SECURITY_DEPLOY_AT`, `route-doc-drift.spec.ts` |
+| #77 | root README + docs index for enterprise vars and structures | open | this file + `docs/README.md` |
+| #79 | cross-product federation for admin console | open | `/admin/federation/*`, `FINANCE_API_BASE_URL`, `FINANCE_SERVICE_TOKEN`, `FINANCE_FEDERATION_TIMEOUT_MS` |
+| #80 | console-friendly alias routes (search / coach overview / client unified / finance health / integrations status) | open | `/admin/{search,coaches/:id/overview,clients/:id,clients/:id/unified,finance/health,integrations/status}` |
+
+Recommended merge order:
+
+1. **#77** (this PR) — pure docs, no runtime surface change. Land
+   first so the root README reflects #73 / #74 / #75 / #76 / #78
+   without waiting on the federation PRs.
+2. **#79** — federation primitives. Adds the `FINANCE_*` env vars to
+   `env-validation.ts` and `.env.example` and the federation routes
+   under `/admin/federation/*`.
+3. **#80** — console alias layer. Depends on #79's services and
+   contracts; rebase onto `main` once #79 lands.
+4. The remaining open PRs (`#64` env tier, `#71` static portal
+   fallback) are independent and can land in any order relative to
+   the above.
+
+Operator actions when these land:
+
+- After #79: set `FINANCE_API_BASE_URL`, `FINANCE_SERVICE_TOKEN`, and
+  optionally `FINANCE_FEDERATION_TIMEOUT_MS` in Fly secrets. Until
+  set, the federation surface returns `not_configured` and the
+  console renders the "finance not configured" pill.
+- After #80: no operator action required for the alias routes
+  themselves; the console picks them up via id-keyed verbs.
+- After #76 (already merged): set `STRIPE_SECRET_KEY`,
+  `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID_FITNESS` in Fly
+  secrets to flip the billing surface from `STRIPE_NOT_CONFIGURED` to
+  live.
+- After #73 (already merged): no operator action; the migration is
+  fully additive and ran at the merge deploy. Honor manual GDPR
+  delete requests via `DELETE /api/users/me/account` per
+  [`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md).
+- After #78 (already merged): set `LAST_SECURITY_DEPLOY_AT` to the
+  ISO-8601 timestamp of the deploy on every production cut that
+  ships a security fix. Until set, `/api/system/trust-meta` returns
+  `lastSecurityUpdate: null`.
 
 ## Smoke tests
 
@@ -567,7 +869,10 @@ In short: backend live equals smoke green, not full SaaS E2E green.
 ```
 src/
   admin/         OWNER-only platform admin
+                  federation/  cross-product reads (fitness + finance)
+                  console/     id-keyed alias routes the admin console renders
   ai/            GP assistant: context, prompt, guardrails, fallback
+  audit/         AuditLog writer + AuditAction constants
   analytics/    PostHog passthrough (no-op when key unset)
   auth/          Supabase-backed auth, JWKS verification, role gating
   billing/       Stripe webhook, mirror, SubscriptionGuard, OWNER + coach billing
@@ -593,7 +898,8 @@ src/
   public-pages/  /download/*, /signup, /privacy, /terms, /security, /status
   recipes/       Recipe library
   supabase/      Supabase Realtime helper
-  users/         User self-service
+  system/        Trust meta read (LAST_SECURITY_DEPLOY_AT)
+  users/         User self-service + GDPR account lifecycle
   v1/            Coach console BFF (subscription-gated)
   water/         Water intake
   weight/        Weight logs

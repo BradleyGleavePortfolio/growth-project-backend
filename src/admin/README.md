@@ -32,7 +32,8 @@ invite link.
 | `GET` | `/admin/coaches/:id` | One coach plus students and 7-day activity (logs, workouts, messages) |
 | `GET` | `/admin/users?role=&q=&limit=` | Filterable user search; max 200 |
 | `POST` | `/admin/users/:id/promote` | Promote/demote `role` and, on `coach`, ensure a `CoachProfile` |
-| `GET` | `/admin/audit-log` | OWNER-only audit log with filters and `before` cursor |
+| `GET` | `/admin/metrics?since_days=` | Authoritative platform counters from Postgres. `since_days` clamped to `(0, 365]`, defaults to 30. Stripe-sourced figures come from the webhook mirror, never synthesized. Documented in [`../../docs/metrics.md`](../../docs/metrics.md). |
+| `GET` | `/admin/audit-log` | Cursor-paginated read over `AuditLog`. Filters: `action`, `target_user_id`, `tenant_coach_id`, `before`, `limit` (clamped `[1, 200]`, default 50). Documented in [`../../docs/audit-and-gdpr.md`](../../docs/audit-and-gdpr.md). |
 | `GET` | `/admin/federation/search?q=&limit=` | Cross-product search across fitness Postgres + finance backend. See `federation/README.md`. |
 | `GET` | `/admin/federation/clients/lookup?email=` | Per-client unified view with explicit fitness/finance product split. |
 | `GET` | `/admin/federation/coaches/lookup?email=` | Per-coach unified view with explicit fitness/finance product split. |
@@ -43,6 +44,36 @@ invite link.
 | `GET` | `/admin/finance/health` | Liveness probe of the finance federation surface (real call to finance `/health`); returns `status`, `probe.identity_mapping`, `probe.service`, `probe.reason` for the operator status pill. |
 | `GET` | `/admin/integrations/status` | Aggregate integrations envelope; currently only `finance_federation` populated. |
 | `GET` | `/admin/product/usage` | Aggregate product-usage split (DAU/WAU/MAU + role split + EOD/what-if/coach-notes/milestones counters), proxied from finance `/usage/product`. Carries an explicit `status` field when finance is unreachable. |
+
+### Cross-product admin console (federation + alias layer)
+
+The Healthie/EHR-style admin console is mounted as two cooperating
+sublayers, both under `/api/admin/*`, both class-gated by
+`@Roles('owner')`:
+
+- **Federation primitives** at `/admin/federation/*`
+  (`src/admin/federation/`, see its `README.md`). The canonical
+  cross-product reads. Joins fitness Postgres rows with finance
+  backend records on lowercased email; surfaces an explicit
+  `finance.status` envelope (`ok` / `not_found` / `not_configured` /
+  `auth_unconfigured` / `timeout` / `network_error` / `http_error` /
+  `malformed_response`) so the console renders a degraded-state pill
+  instead of synthetic data when finance is unreachable. Configured
+  via `FINANCE_API_BASE_URL`, `FINANCE_SERVICE_TOKEN`,
+  `FINANCE_FEDERATION_TIMEOUT_MS`. Merged in PR #79.
+- **Console alias routes** at `/admin/{search,coaches/:id/overview,clients/:id,clients/:id/unified,finance/health,integrations/status}`
+  (`src/admin/console/`, see its `README.md`). Thin id-keyed verb
+  layer the console renders against; translates the user-id the
+  console hands us into a fitness email and delegates to
+  `FederationService` so the unified payload is identical to the
+  federation response. Adds a real `/admin/finance/health` probe
+  whose status is `ok` / `not_found` (still healthy) /
+  `not_configured` / `auth_unconfigured` / `degraded` with the
+  underlying `reason`. Merged in PR #80; depends on PR #79.
+
+The console is **admin-only by definition**. Coach and student
+tokens get a clean 403 from the class-level guard; there is no
+client-facing surface.
 
 ## Request / data flow
 

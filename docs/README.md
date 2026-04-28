@@ -19,8 +19,10 @@ shape, and the smoke-test contract. Read it first.
 |---|---|
 | [`deploy-runbook.md`](./deploy-runbook.md) | End-to-end deploy procedure for staging and production: env validation tiers, migrations, OWNER bootstrap, feature-flag rollout order, Stripe wiring, smoke tests, rollback, operator workflow for production secrets. |
 | [`stripe-setup.md`](./stripe-setup.md) | Stripe dashboard configuration: products, prices, webhook secrets, customer portal. |
+| [`audit-and-gdpr.md`](./audit-and-gdpr.md) | `AuditLog` schema and call sites; GDPR data-export and soft-delete account-lifecycle endpoints; operator path for honoring a manual deletion request; PII scrub follow-up. |
+| [`metrics.md`](./metrics.md) | Server-side metrics: PostHog event taxonomy in `src/analytics/events.ts`, OWNER-only `/api/admin/metrics` counter shape, what is and is not synthesized. |
 | [`staging-execution-tracker.md`](./staging-execution-tracker.md) | Staging cut-over checklist and validation tracker. |
-| [`e2e-qa-runbook.md`](./e2e-qa-runbook.md) | Manual end-to-end QA sweep against a deployed environment. Run after smoke green. |
+| [`e2e-qa-runbook.md`](./e2e-qa-runbook.md) | Manual end-to-end QA sweep against a deployed environment. Run after smoke green. Lists the credentialled prereqs the smoke script intentionally does not exercise. |
 | [`invite-landing.md`](./invite-landing.md) | Deep-link / universal-link contract and the QR validation harness. |
 | [`coach-console-integration.md`](./coach-console-integration.md) | BFF contract followed for `tgp-coach-console`. |
 | [`AI_MOBILE_PATCH_INSTRUCTIONS.md`](./AI_MOBILE_PATCH_INSTRUCTIONS.md) | Mobile-side patch notes for the AI assistant. |
@@ -36,7 +38,23 @@ when modifying a feature.
   role hierarchy (OWNER, COACH, STUDENT), Google OAuth bridge,
   signup-with-code, throttling.
 - [`src/admin/README.md`](../src/admin/README.md): OWNER-only
-  promotion, coach inventory, lazy `CoachProfile` provisioning.
+  promotion, coach inventory, lazy `CoachProfile` provisioning,
+  metrics counter, audit-log read.
+- [`src/admin/federation/README.md`](../src/admin/federation/README.md):
+  Cross-product federation (fitness + finance) for the
+  Healthie/EHR-style admin console. `/admin/federation/*` routes,
+  `FINANCE_*` env vars, `finance.status` envelope, the
+  email-vs-`account_id` join-key roadmap. (Open: PR #79.)
+- [`src/admin/console/README.md`](../src/admin/console/README.md):
+  Console-friendly alias routes (`/admin/search`,
+  `/admin/coaches/:id/overview`, `/admin/clients/:id`,
+  `/admin/clients/:id/unified`, `/admin/finance/health`,
+  `/admin/integrations/status`). Thin layer above the federation
+  service; delegates so the unified payload is identical. (Open:
+  PR #80, depends on #79.)
+- [`src/audit/`](../src/audit/) (no README; see
+  [`docs/audit-and-gdpr.md`](./audit-and-gdpr.md)): `AuditService.write`,
+  `AuditAction` constants, append-only convention.
 - [`src/invite-codes/README.md`](../src/invite-codes/README.md):
   Default per-coach invite link, legacy multi-row codes, atomic
   attach.
