@@ -13,6 +13,9 @@ const makeInviteCodesMock = () => ({
 const makeAnalyticsMock = () =>
   ({ capture: jest.fn(), identify: jest.fn(), onModuleDestroy: jest.fn() } as unknown as AnalyticsService);
 
+/** Stub AuditService — captures writes for assertion. */
+const makeAuditMock = () => ({ write: jest.fn(async () => {}), list: jest.fn(async () => []) }) as any;
+
 describe('AuthService.googleAuth', () => {
   let prismaMock: any;
   let inviteCodesMock: any;
@@ -31,7 +34,7 @@ describe('AuthService.googleAuth', () => {
     supabaseAdminMock = {
       auth: { getUser: jest.fn() },
     };
-    service = new AuthService(prismaMock as any, inviteCodesMock as any, makeAnalyticsMock());
+    service = new AuthService(prismaMock as any, inviteCodesMock as any, makeAnalyticsMock(), makeAuditMock());
     (service as any).supabaseAdmin = supabaseAdminMock;
   });
 
@@ -88,7 +91,7 @@ describe('AuthService.selectRole', () => {
       $transaction: jest.fn((cb: any) => cb(prismaMock)),
     };
     inviteCodesMock = makeInviteCodesMock();
-    service = new AuthService(prismaMock as any, inviteCodesMock as any, makeAnalyticsMock());
+    service = new AuthService(prismaMock as any, inviteCodesMock as any, makeAnalyticsMock(), makeAuditMock());
   });
 
   it('allows selecting student role without any code', async () => {

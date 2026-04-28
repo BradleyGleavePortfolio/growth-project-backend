@@ -34,6 +34,9 @@ function makePrisma(fixtures: {
   } as any;
 }
 
+const audit = () =>
+  ({ write: jest.fn(async () => {}), list: jest.fn(async () => []) }) as any;
+
 describe('CoachService.getClientTimeline (Tier-2 check-in integration)', () => {
   it('returns per-type arrays AND a merged `events` stream', async () => {
     const svc = new CoachService(
@@ -43,6 +46,7 @@ describe('CoachService.getClientTimeline (Tier-2 check-in integration)', () => {
         weights: [{ id: 'wt1', date: new Date('2026-04-21T00:00:00Z') }],
         checkIns: [{ id: 'c1', date: new Date('2026-04-24T00:00:00Z') }],
       }),
+      audit(),
     );
     const r = (await svc.getClientTimeline('coach-A', 'client-1')) as any;
     // Backwards-compat: per-type arrays still present
@@ -73,6 +77,7 @@ describe('CoachService.getClientTimeline (Tier-2 check-in integration)', () => {
           } as any,
         ],
       }),
+      audit(),
     );
     const r = (await svc.getClientTimeline('coach-A', 'client-1')) as any;
     expect(r.events).toHaveLength(1);
@@ -82,7 +87,7 @@ describe('CoachService.getClientTimeline (Tier-2 check-in integration)', () => {
   });
 
   it('returns empty events when client has no activity', async () => {
-    const svc = new CoachService(makePrisma({}));
+    const svc = new CoachService(makePrisma({}), audit());
     const r = (await svc.getClientTimeline('coach-A', 'client-1')) as any;
     expect(r.events).toEqual([]);
     expect(r.meals).toEqual([]);

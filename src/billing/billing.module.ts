@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwksVerifierService } from '../auth/jwks.service';
 import { BillingService } from './billing.service';
 import { CoachBillingController } from './coach-billing.controller';
+import { MobileCoachBillingController } from './mobile-coach-billing.controller';
 import { OwnerBillingController } from './owner-billing.controller';
 import { StripeApiService } from './stripe-api.service';
 import { StripeWebhookController } from './stripe-webhook.controller';
@@ -14,6 +15,7 @@ import { SubscriptionGuard } from './subscription.guard';
   controllers: [
     StripeWebhookController,
     CoachBillingController,
+    MobileCoachBillingController,
     OwnerBillingController,
   ],
   providers: [

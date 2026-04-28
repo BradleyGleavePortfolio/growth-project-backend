@@ -133,6 +133,19 @@ export class UsersController {
   deletionStatus(@Request() req: AuthedRequest) {
     return this.accountService.getDeletionStatus(req.user.id);
   }
+
+  /**
+   * GET /users/me/account/status
+   *
+   * Mobile-friendly alias of GET /users/me/account/deletion-status.
+   * Mobile PR #66 calls the shorter `/account/status` path; both
+   * routes share the same service call so the contract cannot drift.
+   */
+  @Get('me/account/status')
+  @AllowDeletionScheduled()
+  accountStatus(@Request() req: AuthedRequest) {
+    return this.accountService.getDeletionStatus(req.user.id);
+  }
 }
 
 // Best-effort extraction of remote IP + User-Agent. Mirrors the helper in

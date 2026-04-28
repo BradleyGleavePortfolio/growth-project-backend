@@ -33,8 +33,26 @@ Stripe-touching path that receives untrusted input.
 | `stripe-api.service.ts` | Outbound REST client for Customer / Subscription / BillingPortal session creation |
 | `billing.service.ts` | Event router and the mirror-table writers |
 | `subscription.guard.ts` | `SubscriptionGuard` — used by coach console write paths |
-| `coach-billing.controller.ts` | `GET /api/v1/coach/me/billing`, `POST /api/v1/coach/me/billing/portal-session` |
+| `coach-billing.controller.ts` | `GET /api/v1/coach/me/billing`, `POST /api/v1/coach/me/billing/portal-session` (admin-console BFF surface) |
+| `mobile-coach-billing.controller.ts` | `GET /api/coach/billing/status`, `POST /api/coach/billing/portal-session` (mobile-app surface; trimmed payload) |
 | `owner-billing.controller.ts` | `POST /api/v1/admin/coaches/:id/start-subscription` |
+
+## Surfaces
+
+Two controllers, one set of services. Same data, different audiences:
+
+- **Admin-console BFF** — `/api/v1/coach/me/billing` returns the full
+  payload (subscription + last 24 invoices). The console renders both.
+- **Mobile app** (PR #66) — `/api/coach/billing/status` returns only the
+  subscription summary the phone needs to render the billing pill. Both
+  routes share `BillingService.getCoachBilling` so the wire contract
+  cannot drift. `POST /api/coach/billing/portal-session` is identical
+  in behavior to the v1 portal-session route.
+
+The mobile status route returns `status='unprovisioned'` when no
+subscription mirror exists yet (e.g. a coach who was just promoted but
+where `start-subscription` has not run). It does **not** synthesize an
+"active" response — the phone renders a neutral pill in that state.
 
 ## Webhook flow
 

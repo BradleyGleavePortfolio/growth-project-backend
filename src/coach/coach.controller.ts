@@ -28,7 +28,12 @@ export class CoachController {
   @HttpCode(HttpStatus.OK)
   async archiveClient(@Request() req: AuthedRequest, @Param('id') id: string) {
     try {
-      const result = await this.coachService.archiveClient(req.user.id, id, req.user.role);
+      const result = await this.coachService.archiveClient(
+        req.user.id,
+        id,
+        req.user.role,
+        auditContext(req as any),
+      );
       this.analytics.capture(req.user.id, Events.COACH_ACTION, { action_type: 'archive_client' });
       return result;
     } catch {
@@ -40,7 +45,12 @@ export class CoachController {
   @HttpCode(HttpStatus.OK)
   async unarchiveClient(@Request() req: AuthedRequest, @Param('id') id: string) {
     try {
-      const result = await this.coachService.unarchiveClient(req.user.id, id, req.user.role);
+      const result = await this.coachService.unarchiveClient(
+        req.user.id,
+        id,
+        req.user.role,
+        auditContext(req as any),
+      );
       this.analytics.capture(req.user.id, Events.COACH_ACTION, { action_type: 'unarchive_client' });
       return result;
     } catch {
@@ -80,4 +90,14 @@ export class CoachController {
   async getAlerts(@Request() req: AuthedRequest) {
     return this.coachService.getAlerts(req.user.id, req.user.role);
   }
+}
+
+// Best-effort extraction of remote IP + User-Agent for audit-log context.
+// Mirrors the helper in admin.controller.ts and users.controller.ts.
+function auditContext(req: any): { ip: string | null; userAgent: string | null } {
+  const xff = (req?.headers?.['x-forwarded-for'] || '') as string;
+  const fwdIp = xff.split(',')[0]?.trim();
+  const ip = fwdIp || req?.ip || req?.socket?.remoteAddress || null;
+  const userAgent = (req?.headers?.['user-agent'] || null) as string | null;
+  return { ip: ip || null, userAgent: userAgent || null };
 }

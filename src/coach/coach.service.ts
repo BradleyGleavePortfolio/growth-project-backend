@@ -1,9 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { AuditAction, AuditService } from '../audit/audit.service';
+
+interface AuditContext {
+  ip?: string | null;
+  userAgent?: string | null;
+}
 
 @Injectable()
 export class CoachService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+  ) {}
 
   // Phase 1B: when the caller is an OWNER, every list/lookup widens to
   // the platform-wide view. When the caller is a COACH, the existing
@@ -39,26 +48,69 @@ export class CoachService {
     });
   }
 
-  async archiveClient(coachId: string, clientId: string, callerRole?: string) {
+  async archiveClient(
+    coachId: string,
+    clientId: string,
+    callerRole?: string,
+    ctx: AuditContext = {},
+  ) {
     const client = await this.prisma.user.findFirst({
       where: { id: clientId, ...this.byCoach(coachId, callerRole) },
     });
     if (!client) throw new Error('Client not found');
-    return this.prisma.user.update({
+    if (client.archived_at) {
+      // Idempotent — re-archive is a no-op and skips the audit row to
+      // avoid polluting the log on a double-tap.
+      return client;
+    }
+    const updated = await this.prisma.user.update({
       where: { id: clientId },
       data: { archived_at: new Date() },
     });
+    await this.audit.write({
+      action: AuditAction.COACH_CLIENT_ARCHIVED,
+      actorId: coachId,
+      actorRole: callerRole ?? null,
+      targetUserId: clientId,
+      targetType: 'user',
+      targetId: clientId,
+      tenantCoachId: client.coach_id ?? coachId,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.userAgent ?? null,
+    });
+    return updated;
   }
 
-  async unarchiveClient(coachId: string, clientId: string, callerRole?: string) {
+  async unarchiveClient(
+    coachId: string,
+    clientId: string,
+    callerRole?: string,
+    ctx: AuditContext = {},
+  ) {
     const client = await this.prisma.user.findFirst({
       where: { id: clientId, ...this.byCoach(coachId, callerRole) },
     });
     if (!client) throw new Error('Client not found');
-    return this.prisma.user.update({
+    if (!client.archived_at) {
+      // Idempotent — already active, skip audit.
+      return client;
+    }
+    const updated = await this.prisma.user.update({
       where: { id: clientId },
       data: { archived_at: null },
     });
+    await this.audit.write({
+      action: AuditAction.COACH_CLIENT_UNARCHIVED,
+      actorId: coachId,
+      actorRole: callerRole ?? null,
+      targetUserId: clientId,
+      targetType: 'user',
+      targetId: clientId,
+      tenantCoachId: client.coach_id ?? coachId,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.userAgent ?? null,
+    });
+    return updated;
   }
 
   async getClientTimeline(

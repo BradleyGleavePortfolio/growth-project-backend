@@ -13,6 +13,12 @@ export const AuditAction = {
   USER_DATA_EXPORT_FULFILLED: 'user.data_export_fulfilled',
   USER_DATA_EXPORT_FAILED: 'user.data_export_failed',
   COACH_PROFILE_CREATED: 'coach.profile_created',
+  COACH_CLIENT_ARCHIVED: 'coach.client_archived',
+  COACH_CLIENT_UNARCHIVED: 'coach.client_unarchived',
+  BILLING_SUBSCRIPTION_UPDATED: 'billing.subscription_updated',
+  BILLING_SUBSCRIPTION_CANCELED: 'billing.subscription_canceled',
+  BILLING_INVOICE_PAID: 'billing.invoice_paid',
+  BILLING_INVOICE_PAYMENT_FAILED: 'billing.invoice_payment_failed',
 } as const;
 
 export type AuditActionValue = (typeof AuditAction)[keyof typeof AuditAction];

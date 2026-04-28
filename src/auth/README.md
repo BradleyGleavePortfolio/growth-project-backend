@@ -43,8 +43,16 @@ hierarchy. Every authenticated request in the API passes through this module.
 4. `/auth/select-role` is the post-signup role picker. Self-service is
    restricted to `student` — coach elevation is operator-only (see
    `auth.service.ts` `selectRole` for the audit trail).
-5. `/auth/become-coach` lets an existing user upgrade to `coach` after a
-   password re-auth against Supabase.
+5. `/auth/become-coach` is **hard-gated off by default** on every
+   deployment. It returns a structured `403 self_service_promotion_disabled`
+   pointing the caller at the canonical owner-only path
+   (`POST /admin/users/:id/promote`). To re-open the legacy self-service
+   path for a one-off migration set `ALLOW_SELF_SERVICE_BECOME_COACH=true`;
+   in that mode the password is re-verified against Supabase, the role
+   change is audited as `user.role_changed` with
+   `metadata.via=self_service_become_coach`, and OWNERs are still refused.
+   The gate is intentionally fail-closed — a misconfigured deploy that
+   drops the env var keeps the hole shut.
 
 ## Security and tenancy rules
 

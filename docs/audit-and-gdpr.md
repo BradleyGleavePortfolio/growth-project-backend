@@ -80,15 +80,25 @@ feature. Today the route is owner-only, which is the safe default.
 
 ### Currently wired sensitive actions
 
-- `user.role_changed` — `AdminService.promoteUser`
+- `user.role_changed` — `AdminService.promoteUser` and the gated
+  `AuthService.becomeCoach` self-service path (with
+  `metadata.via='self_service_become_coach'`).
 - `user.data_export_requested` / `_fulfilled` / `_failed` —
-  `AccountService.requestDataExport`
+  `AccountService.requestDataExport`.
 - `user.account_deletion_scheduled` / `_canceled` —
-  `AccountService.scheduleDeletion` / `cancelDeletion`
+  `AccountService.scheduleDeletion` / `cancelDeletion`.
+- `user.account_deleted` — `GdprScrubService.run` (cron + admin trigger).
+- `coach.client_archived` / `coach.client_unarchived` —
+  `CoachService.archiveClient` / `unarchiveClient`. Idempotent: a re-tap
+  on an already-archived client writes no row.
+- `billing.subscription_updated` / `billing.subscription_canceled` /
+  `billing.invoice_paid` / `billing.invoice_payment_failed` —
+  `BillingService.handleEvent`. Each row carries
+  `metadata.stripe_event_id` so an operator can correlate a row back to
+  the originating Stripe event in the dashboard.
 
-Future wiring (intentional follow-up): coach-side `archive_client` /
-`unarchive_client`, billing `subscription_canceled`, owner-impersonation
-events, message-deletion, lesson-deletion.
+Future wiring (intentional follow-up): owner-impersonation events,
+message deletion, lesson deletion.
 
 ## Account lifecycle
 
@@ -138,26 +148,70 @@ post-grace scrub, every route — including the recovery routes — returns
 continuing to mutate data during the grace window and from re-activating
 a scrubbed account by spamming requests with a still-valid token.
 
-A separate scrub worker (out of scope for this PR) will, after
-`deletion_scheduled_at + 30d`:
+The scrub worker — `GdprScrubService` (`src/users/gdpr-scrub.service.ts`)
+— ships in this repo. After `deletion_scheduled_at + 30d` it:
 
-- Set `User.deleted_at`.
-- Zero out PII columns (`email` → `deleted-{id}@scrub.invalid`, `name`
-  → `Deleted user`, `phone` → `null`, `UserProfile.*` → null,
-  `NotificationPreferences.*` → defaults).
-- Anonymize `CoachMessage.sender_id` references where the user was
-  the sender.
-- Preserve aggregate analytics (counts, leaderboard ranks) but strip
-  identifying detail.
+- Sets `User.deleted_at` and `User.archived_at` to `now()`.
+- Tombstones identifying columns on the User row: `email` →
+  `deleted-{id}@scrub.invalid` (RFC 2606 reserved TLD; collides with
+  nothing real), `name` → `Deleted user`, `phone` → `null`, `supabase_id`
+  → `deleted-{id}` so the @unique constraint holds.
+- Zeros out PII on `UserProfile`: `avatar_url`, `bio`, `date_of_birth`,
+  `preferred_snacks`, `current_weight_lbs`, `target_weight_lbs`, `height_cm`.
+- Writes one immutable `user.account_deleted` audit row per scrubbed
+  user with `metadata.scope='gdpr_scrub_worker'` and the original email
+  captured in `metadata.original_email_snapshot` for forensic
+  traceability. The audit row's `actor_email_snapshot` is set when an
+  operator triggers a manual run via the admin endpoint; cron-driven
+  runs leave actor null and `actor_role='system'`.
+- Skips users whose `deletion_scheduled_at` is still inside the grace
+  window or whose `deleted_at` is already set (idempotent).
 
-The scrub worker is **not in this PR** because:
+#### Why this shape, not a hard delete?
 
-- It is irreversible and must be reviewed independently.
-- It needs a runbook for re-running safely on partial failures.
-- It needs a feature flag so QA can land it dark in staging first.
+A hard `DELETE FROM "User"` would either cascade through ~25 FK
+relations (losing coach-side message history, billing invoices, audit
+log actor refs, etc.) or fail on `ON DELETE RESTRICT`. The tombstone
+approach keeps the DB referentially intact while satisfying GDPR
+because the User row no longer carries identifying data and the unique
+indexes (`email`, `supabase_id`) cannot be re-keyed back to the
+original person.
 
-The DB schema is ready (`User.deleted_at`); the audit action
-`user.account_deleted` is reserved for the worker to write.
+#### How to run it
+
+Three invocation paths, same code:
+
+1. **Cron job (canonical)** — wire `npx ts-node scripts/gdpr-scrub.ts`
+   to a Fly cron / Kubernetes CronJob. Reads `GDPR_SCRUB_DRY_RUN` and
+   `GDPR_SCRUB_BATCH_LIMIT` from env. Exit code 0 even when individual
+   users error (so cron does not flap); exit code 1 only on a fatal
+   failure (DB unreachable, etc.).
+
+2. **Owner-only HTTP** — `POST /api/admin/gdpr/scrub?dry_run=true&limit=10`.
+   Same code path, attributed to the calling OWNER on the audit row.
+   Use `dry_run=true` to inspect candidate ids before flipping the cron
+   on for the first time.
+
+3. **Test harness** — pass `now` and `limit` to `GdprScrubService.run()`
+   in unit tests. See `test/gdpr-scrub.service.spec.ts`.
+
+#### Safe-rerun semantics
+
+The worker is fully idempotent. A second invocation in the same minute
+finds no candidates (the rows it just scrubbed have `deleted_at != null`
+so they fall out of the predicate). Per-user transaction failures are
+recorded in the report but never poison the rest of the batch — re-run
+on the next tick resumes at the failed user.
+
+#### Feature flag for staging
+
+`GDPR_SCRUB_DRY_RUN=true` keeps the worker observable but inert. Land
+the cron schedule in staging with the flag on, watch a few cron runs
+report candidates correctly, then flip the flag off.
+
+The audit action `user.account_deleted` is the contract. Operators
+querying `/api/admin/audit-log?action=user.account_deleted` get the
+canonical history of every scrub.
 
 ### Why no destructive delete today?
 

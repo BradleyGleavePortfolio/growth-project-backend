@@ -9,6 +9,17 @@ import {
 } from '../invite-codes/invite-codes.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
+import { AuditAction, AuditService } from '../audit/audit.service';
+
+// Self-service promotion to coach is the legacy behavior of POST
+// /auth/become-coach. It is a privilege-escalation hole on a sale-ready
+// enterprise tenant — any client with their password could become a coach.
+// The endpoint is hard-gated off by default. To re-enable for legacy
+// migrations, set ALLOW_SELF_SERVICE_BECOME_COACH=true; the canonical
+// path remains OWNER-only POST /admin/users/:id/promote.
+function selfServiceBecomeCoachEnabled(): boolean {
+  return (process.env.ALLOW_SELF_SERVICE_BECOME_COACH ?? '').toLowerCase() === 'true';
+}
 
 @Injectable()
 export class AuthService {
@@ -19,6 +30,7 @@ export class AuthService {
     private prisma: PrismaService,
     private inviteCodes: InviteCodesService,
     private analytics: AnalyticsService,
+    private audit: AuditService,
   ) {
     // Supabase Admin SDK for user management (service role key)
     this.supabaseAdmin = createClient(
@@ -452,14 +464,37 @@ export class AuthService {
     return registered;
   }
 
-  async becomeCoach(userId: string, password: string) {
+  async becomeCoach(
+    userId: string,
+    password: string,
+    ctx: { ip?: string | null; userAgent?: string | null } = {},
+  ) {
     // Look up user so we have their email for Supabase re-auth
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException('User not found');
 
     if (user.role === 'coach') {
-      // Idempotent — already a coach; return current role
+      // Idempotent — already a coach; return current role.
       return { role: user.role };
+    }
+
+    if (user.role === 'owner') {
+      // OWNERs already pass through every coach gate; refuse the no-op
+      // demotion-via-coach instead of silently overwriting role=owner.
+      throw new ForbiddenException('Owners cannot self-elevate to coach.');
+    }
+
+    // SECURITY: self-service promotion is the canonical privilege-escalation
+    // hole. Refuse unless an operator explicitly opts in via env var. The
+    // structured shape lets the mobile client surface the right CTA
+    // (contact your operator) without parsing free-text.
+    if (!selfServiceBecomeCoachEnabled()) {
+      throw new ForbiddenException({
+        error: 'self_service_promotion_disabled',
+        message:
+          'Self-service promotion to coach is disabled on this deployment. An OWNER must promote you via the admin console.',
+        canonical_path: '/admin/users/:id/promote',
+      });
     }
 
     // Verify password against Supabase before elevating
@@ -478,6 +513,23 @@ export class AuthService {
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: { role: 'coach' },
+    });
+
+    // Self-service elevations are reviewable: write the audit row with
+    // actor = target so an operator can scan the audit log for any
+    // surviving become-coach calls after the gate has been disabled.
+    await this.audit.write({
+      action: AuditAction.USER_ROLE_CHANGED,
+      actorId: updated.id,
+      actorRole: 'student',
+      actorEmail: updated.email,
+      targetUserId: updated.id,
+      targetType: 'user',
+      targetId: updated.id,
+      tenantCoachId: updated.id,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.userAgent ?? null,
+      metadata: { from: 'student', to: 'coach', via: 'self_service_become_coach' },
     });
 
     this.analytics.capture(updated.id, Events.COACH_PROMOTED, {

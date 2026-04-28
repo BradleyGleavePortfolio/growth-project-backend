@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
+import { AuditAction, AuditService } from '../audit/audit.service';
 
 // BillingService is the system of record for the Stripe-mirror tables. The
 // webhook controller hands it parsed Stripe event objects; this service
@@ -25,6 +26,7 @@ export class BillingService {
   constructor(
     private prisma: PrismaService,
     private analytics: AnalyticsService,
+    private audit: AuditService,
   ) {}
 
   // Idempotently process an event. Returns { processed: true } on first
@@ -173,6 +175,23 @@ export class BillingService {
       cancel_at_period_end: !!sub.cancel_at_period_end,
       had_trial: !!sub.trial_end,
     });
+    await this.audit.write({
+      action: AuditAction.BILLING_SUBSCRIPTION_UPDATED,
+      actorId: null,
+      actorRole: 'system',
+      targetUserId: coachId,
+      targetType: 'coach_subscription',
+      targetId: sub.id,
+      tenantCoachId: coachId,
+      metadata: {
+        stripe_event_id: event.id,
+        stripe_event_type: event.type,
+        stripe_customer_id: sub.customer,
+        stripe_price_id: priceId,
+        status,
+        cancel_at_period_end: !!sub.cancel_at_period_end,
+      },
+    });
   }
 
   private async applySubscriptionDeleted(event: StripeEvent) {
@@ -184,6 +203,20 @@ export class BillingService {
       data: { status: 'canceled', cancel_at_period_end: false },
     });
     this.analytics.capture(coachId, Events.SUBSCRIPTION_CANCELED, {});
+    await this.audit.write({
+      action: AuditAction.BILLING_SUBSCRIPTION_CANCELED,
+      actorId: null,
+      actorRole: 'system',
+      targetUserId: coachId,
+      targetType: 'coach_subscription',
+      targetId: sub?.id ?? null,
+      tenantCoachId: coachId,
+      metadata: {
+        stripe_event_id: event.id,
+        stripe_event_type: event.type,
+        stripe_customer_id: sub?.customer ?? null,
+      },
+    });
   }
 
   private async applyInvoicePaid(event: StripeEvent) {
@@ -235,6 +268,21 @@ export class BillingService {
       amount_paid_cents: inv.amount_paid ?? 0,
       currency: inv.currency ?? 'usd',
     });
+    await this.audit.write({
+      action: AuditAction.BILLING_INVOICE_PAID,
+      actorId: null,
+      actorRole: 'system',
+      targetUserId: coachId,
+      targetType: 'invoice',
+      targetId: inv.id,
+      tenantCoachId: coachId,
+      metadata: {
+        stripe_event_id: event.id,
+        stripe_invoice_id: inv.id,
+        amount_paid_cents: inv.amount_paid ?? 0,
+        currency: inv.currency ?? 'usd',
+      },
+    });
   }
 
   private async applyInvoicePaymentFailed(event: StripeEvent) {
@@ -266,6 +314,21 @@ export class BillingService {
     });
     this.analytics.capture(coachId, Events.INVOICE_PAYMENT_FAILED, {
       amount_due_cents: inv?.amount_due ?? 0,
+    });
+    await this.audit.write({
+      action: AuditAction.BILLING_INVOICE_PAYMENT_FAILED,
+      actorId: null,
+      actorRole: 'system',
+      targetUserId: coachId,
+      targetType: 'invoice',
+      targetId: inv?.id ?? null,
+      tenantCoachId: coachId,
+      metadata: {
+        stripe_event_id: event.id,
+        stripe_invoice_id: inv?.id ?? null,
+        amount_due_cents: inv?.amount_due ?? 0,
+        reason: inv?.last_payment_error?.message ?? null,
+      },
     });
   }
 
