@@ -21,6 +21,7 @@ shape, and the smoke-test contract. Read it first.
 | [`stripe-setup.md`](./stripe-setup.md) | Stripe dashboard configuration: products, prices, webhook secrets, customer portal. |
 | [`audit-and-gdpr.md`](./audit-and-gdpr.md) | `AuditLog` schema and call sites; GDPR data-export and soft-delete account-lifecycle endpoints; operator path for honoring a manual deletion request; PII scrub follow-up. |
 | [`metrics.md`](./metrics.md) | Server-side metrics: PostHog event taxonomy in `src/analytics/events.ts`, OWNER-only `/api/admin/metrics` counter shape, what is and is not synthesized. |
+| [`admin-reports.md`](./admin-reports.md) | OWNER-only operational reports / CSV+JSON exports under `/api/admin/reports/*`: when to use which report, common curl recipes, output envelope contract, privacy contract (no per-record activity in the clients CSV), failure modes when finance federation is degraded. |
 | [`staging-execution-tracker.md`](./staging-execution-tracker.md) | Staging cut-over checklist and validation tracker. |
 | [`e2e-qa-runbook.md`](./e2e-qa-runbook.md) | Manual end-to-end QA sweep against a deployed environment. Run after smoke green. Lists the credentialled prereqs the smoke script intentionally does not exercise. |
 | [`invite-landing.md`](./invite-landing.md) | Deep-link / universal-link contract and the QR validation harness. |

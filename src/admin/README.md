@@ -44,6 +44,8 @@ invite link.
 | `GET` | `/admin/finance/health` | Liveness probe of the finance federation surface (real call to finance `/health`); returns `status`, `probe.identity_mapping`, `probe.service`, `probe.reason` for the operator status pill. |
 | `GET` | `/admin/integrations/status` | Aggregate integrations envelope; currently only `finance_federation` populated. |
 | `GET` | `/admin/product/usage` | Aggregate product-usage split (DAU/WAU/MAU + role split + EOD/what-if/coach-notes/milestones counters), proxied from finance `/usage/product`. Carries an explicit `status` field when finance is unreachable. |
+| `GET` | `/admin/reports` | Manifest of available operational reports + supported formats. See `reports/README.md` and [`../../docs/admin-reports.md`](../../docs/admin-reports.md). |
+| `GET` | `/admin/reports/{metrics-overview,coaches,clients,billing-past-due,product-usage,federation-health,audit-summary}?format=json\|csv` | OWNER-only operational exports. Each report response is wrapped in a `{ report, generated_at, window, data }` envelope. CSV downloads name themselves `<report>-YYYYMMDD.csv`. Source data comes verbatim from the existing live endpoints / Prisma reads — no fabricated values. |
 
 ### Cross-product admin console (federation + alias layer)
 

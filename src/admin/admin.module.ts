@@ -8,6 +8,8 @@ import { FederationService } from './federation/federation.service';
 import { FinanceAdminClient } from './federation/finance-admin.client';
 import { AdminConsoleService } from './console/admin-console.service';
 import { FinanceFederationService } from './console/finance-federation.service';
+import { ReportsController } from './reports/reports.controller';
+import { ReportsService } from './reports/reports.service';
 import { UsersModule } from '../users/users.module';
 
 // Phase 1A/1B platform admin module. AuthModule import wires
@@ -21,9 +23,13 @@ import { UsersModule } from '../users/users.module';
 // FinanceFederationService back the console-friendly aliases at
 // /admin/search, /admin/coaches/:id/overview, /admin/clients/:id,
 // /admin/finance/health, and /admin/integrations/status.
+//
+// ReportsController + ReportsService back the operational export surface
+// at /admin/reports/* (CSV + JSON downloads of metrics, coaches, clients,
+// past-due billing, product usage, federation health, audit summary).
 @Module({
   imports: [AuthModule, UsersModule],
-  controllers: [AdminController],
+  controllers: [AdminController, ReportsController],
   providers: [
     AdminService,
     MetricsService,
@@ -32,6 +38,7 @@ import { UsersModule } from '../users/users.module';
     FederationService,
     AdminConsoleService,
     FinanceFederationService,
+    ReportsService,
   ],
   exports: [
     AdminService,
@@ -40,6 +47,7 @@ import { UsersModule } from '../users/users.module';
     FinanceAdminClient,
     AdminConsoleService,
     FinanceFederationService,
+    ReportsService,
   ],
 })
 export class AdminModule {}
