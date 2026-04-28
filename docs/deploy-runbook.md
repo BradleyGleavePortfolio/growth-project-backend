@@ -32,6 +32,58 @@ fly status -a <app-name>
 fly secrets list -a <app-name>
 ```
 
+### 0.1 Confirm you are pointing at the right Supabase project
+
+Every `SUPABASE_*` value must come from a **single** Supabase project.
+The most common operator mistake is mixing values across two projects
+(e.g. `SUPABASE_URL` from project A and `SUPABASE_SERVICE_ROLE_KEY`
+from project B). The boot does not detect this — the keys are valid
+JWTs, just signed by the wrong project — and every authenticated
+request then fails with `JWT verification failed: kid not in JWKS`
+because the JWKS endpoint at `SUPABASE_URL` does not know the keys
+the tokens were signed with.
+
+Pin all four `SUPABASE_*` values to the same project ref:
+
+```sh
+# Settings → API in the Supabase dashboard, scroll to Project URL.
+echo "$SUPABASE_URL"
+# Should print https://<project-ref>.supabase.co
+
+# Settings → API, "Project API keys" section.
+# anon key + service_role key are listed under the SAME project ref.
+# Copy them from this project, not from a sibling project you happen
+# to also have open in another tab.
+
+# Sanity check: the JWT `iss` of any user token in this project is
+# https://<project-ref>.supabase.co/auth/v1
+node -e "process.stdout.write(JSON.parse(Buffer.from(process.argv[1].split('.')[1],'base64').toString()).iss+'\n')" "$ANY_USER_TOKEN"
+```
+
+If staging and production use the same Supabase project, you have a
+shared-tenancy bug, not a configuration problem. Provision a second
+project and do not share keys.
+
+### 0.2 App `OWNER` role ≠ Supabase project owner
+
+Two unrelated concepts that have caused operator confusion:
+
+- **`Role.owner`** is an application-level role on the `User` table in
+  this backend. It is set by `scripts/bootstrap-owners.ts` and bypasses
+  `RolesGuard`, `CoachGuard`, `CoachOrOwnerGuard`, and
+  `SubscriptionGuard`. It has nothing to do with Supabase.
+- **Supabase project owner / member** is the dashboard-level
+  permission that lets a human log into supabase.com and edit auth
+  providers, rotate keys, or see database settings. It is configured
+  in the Supabase dashboard under Settings → Team and is unrelated to
+  the rows in the `User` table.
+
+A user being `Role.owner` in this backend grants them no Supabase
+dashboard access; granting a teammate Supabase project owner does not
+elevate their app role. Promote OWNER via `bootstrap-owners.ts` (see
+§4) and grant Supabase dashboard access via Supabase's team settings
+separately.
+
 ---
 
 ## 1. Environment variable matrix
@@ -72,6 +124,35 @@ NODE_ENV=staging node -e \
 If `assertEnv` throws, fix the missing/invalid vars before deploying.
 
 ---
+
+### 1.1 Fly secrets are write-only — plan rotation accordingly
+
+`fly secrets list -a <app>` only shows **name, digest, and created_at**.
+The values cannot be read back from Fly. Implications:
+
+- Treat the GitHub Actions secret store and Fly secrets as the
+  authoritative copies — there is no third "view current value"
+  surface to fall back on.
+- When rotating a credential, update **both** the source-of-truth
+  (vendor dashboard or Actions secret) **and** Fly. A successful
+  rotation is signalled by a changed `digest` in `fly secrets list`,
+  not by reading the new value.
+- A failed deploy that leaves Fly secrets stale cannot be diagnosed
+  by reading the secret — only by re-pushing it. If you cannot find
+  the prior value to compare, assume you have to push fresh from the
+  source.
+- Do not try to recover a lost secret by SSH-ing into a running Fly
+  machine and reading the env. The runtime sees the value, but
+  copying it out of a production shell is the security failure the
+  write-only design is meant to prevent.
+
+The corollary: rotating a Stripe / Sentry / Supabase credential is a
+two-step write. (1) rotate at the vendor and update the GitHub Actions
+secret of the same name. (2) re-run the operator workflow described in
+§7b (or for the non-workflow vars, push from a trusted shell). Then
+verify by `fly secrets list -a <app>` and watch the `digest` change.
+Until the digest changes, the app is still serving the old credential
+even if the dashboard shows the new one.
 
 ## 2. Staging deploy
 
@@ -148,6 +229,50 @@ If `assertEnv` throws, fix the missing/invalid vars before deploying.
 6. **Run the smoke script** (see §5).
 
 ---
+
+### 2.1 Production needs a Prisma migration baseline before the first deploy
+
+`prisma migrate deploy` requires the target database to either be
+empty *or* to already have a populated `_prisma_migrations` table that
+matches the repository's migration history. A production database that
+was created out-of-band (Supabase SQL editor, restored snapshot,
+sandbox copy, etc.) has neither, and `release.sh` will then refuse to
+proceed: it sees a populated schema but no `_prisma_migrations` table,
+and the `RELEASE_ALLOW_DB_PUSH=1` fallback **deliberately does not
+fire** on a populated DB (see `scripts/release.sh`).
+
+This is a one-time setup — once baselined, every subsequent deploy
+just runs `prisma migrate deploy` cleanly. The baseline contract:
+
+1. **Empty DB** (greenfield staging): no action needed. `prisma migrate
+   deploy` creates the schema and seeds `_prisma_migrations` itself.
+2. **Populated DB that was built by a prior `prisma migrate deploy`**:
+   `_prisma_migrations` already exists. No action needed.
+3. **Populated DB that was NOT built by Prisma** (manual schema, raw
+   SQL, restored from a non-Prisma source): one-time baseline required
+   before the first deploy. Run, on a maintenance window:
+
+   ```sh
+   # From a trusted shell with DATABASE_URL pointed at the DB.
+   # Lists the migrations directory; mark each as already applied.
+   for d in prisma/migrations/*/ ; do
+     name=$(basename "$d")
+     npx prisma migrate resolve --applied "$name"
+   done
+
+   # Confirm the baseline is in place.
+   psql "$DATABASE_URL" -c '\d _prisma_migrations'
+   ```
+
+   Then re-run the deploy. `release.sh` will pick up the now-baselined
+   DB and `prisma migrate deploy` will be a no-op until the next real
+   migration lands.
+
+**Never use `RELEASE_ALLOW_DB_PUSH=1` against a database that holds
+real data.** The escape hatch is for greenfield bootstraps only and is
+guarded by a presence-of-`_prisma_migrations` check precisely because
+`db push --accept-data-loss` would otherwise rewrite tables and
+silently truncate columns.
 
 ## 3. Migration backup & rollback
 
@@ -245,6 +370,44 @@ The script (see `scripts/smoke.ts`) checks:
 
 Exit code is non-zero on any failure. Wire it into the deploy pipeline
 or run it manually after `fly deploy`.
+
+### 5.1 Migration smoke — required on every backend deploy
+
+`scripts/smoke.ts` covers HTTP shape, not schema. Every backend deploy
+must additionally confirm the migration ran and the new columns/tables
+the deploy depends on are actually present. The check is two
+commands: one against `_prisma_migrations`, one against the latest
+table the deploy is supposed to have created or altered.
+
+```sh
+# 1. The most recently applied Prisma migration. Should match the
+#    newest folder under prisma/migrations/ in the deployed commit.
+psql "$DATABASE_URL" -c \
+  "select migration_name, finished_at from _prisma_migrations
+     order by finished_at desc nulls last limit 5;"
+
+# 2. Spot-check the schema for the table/column the deploy added.
+#    Pick the column the deploy actually shipped — this is a guard
+#    against a deploy that flipped traffic before release_command
+#    finished, leaving migrate-deploy "succeeded" but the columns
+#    absent on the live machine.
+psql "$DATABASE_URL" -c '\d "AuditLog"'
+psql "$DATABASE_URL" -c '\d "User"' | grep -E 'deletion_scheduled_at|deleted_at'
+```
+
+If `_prisma_migrations` does not contain the migration that landed in
+the commit you deployed, treat the deploy as failed even when
+`/health` returns 200 — Fly will keep serving against an old schema
+until the next release. Re-run `release.sh` (or `npx prisma migrate
+deploy` from a trusted shell pointed at the deployed DB) before
+proceeding to the manual QA sweep.
+
+The migration smoke is intentionally manual: putting a `psql` step in
+the smoke script would require `DATABASE_URL` and the SSL bundle in
+the smoke environment, which is the credentialled posture
+`scripts/smoke.ts` exists to avoid. Operators run the migration smoke
+from a trusted shell with `DATABASE_URL` set; keep it in your
+post-deploy checklist next to the HTTP smoke.
 
 Then run the manual QA sweep in `docs/e2e-qa-runbook.md`.
 
@@ -369,6 +532,61 @@ When to re-run:
   `APP_STORE_URL` to the real App Store listing once it is approved).
   Update the workflow file in the same PR — the values are intentionally
   in source so the change is reviewable.
+
+---
+
+## 7c. Cross-product federation token rotation
+
+`FINANCE_SERVICE_TOKEN` is a static service-to-service bearer used by
+this backend to call the finance backend (`tgp-finance-app`) for the
+admin console federation surface (`/admin/federation/*`,
+`/admin/clients/:id/unified`, `/admin/finance/health`,
+`/admin/integrations/status`). It must match on **both apps** at all
+times — it is a single shared secret, not a pair of independent
+credentials.
+
+The two-app posture is the failure mode operators hit:
+
+- Setting `FINANCE_SERVICE_TOKEN` on **only** the fitness app produces
+  401s from the finance backend, surfaced as
+  `finance.status="http_error"` on the unified payloads. The fitness
+  side looks fine; the finance side is rejecting every call.
+- Setting `FINANCE_SERVICE_TOKEN` on **only** the finance app produces
+  `auth_unconfigured` from the federation service in this repo
+  because the env var is unset; no network call is even attempted.
+- Rotating on one side without the other puts the federation surface
+  in a hard-broken state until the second side catches up. There is
+  no graceful overlap.
+
+Rotation procedure (do this in one short maintenance window):
+
+1. Generate the new shared token (any opaque, high-entropy string —
+   `openssl rand -hex 32` is fine).
+2. Update the GitHub Actions secret `FINANCE_SERVICE_TOKEN` on **both**
+   the fitness backend repo and the finance backend repo.
+3. Push the new value to both Fly apps. From a trusted shell:
+
+   ```sh
+   fly secrets set -a <fitness-app> FINANCE_SERVICE_TOKEN=$NEW_TOKEN
+   fly secrets set -a <finance-app> FINANCE_SERVICE_TOKEN=$NEW_TOKEN
+   ```
+
+4. Verify by hitting `/admin/finance/health` as an OWNER. The probe
+   should return `status: ok` (or `not_found` against the well-known
+   probe email — also healthy). `auth_unconfigured` or `http_error`
+   means one side missed the rotation.
+5. Until the digest changes on both `fly secrets list` outputs, the
+   apps are still serving the old token (Fly secrets are write-only;
+   see §1.1).
+
+When **both** apps are missing the token, the federation surface
+short-circuits to `auth_unconfigured` without making a network call —
+that is the safe default. The dangerous state is one-side-only, which
+the verification step above is designed to catch.
+
+`FINANCE_API_BASE_URL` lives only on this backend; rotating the
+finance app's hostname is a one-side change and does not require the
+two-app dance.
 
 ---
 
@@ -526,3 +744,52 @@ outside an invite-only beta, route the rendered copy through legal
 review and update the file in a follow-up PR. A footnote on each page
 already says this; counsel can sign off on or replace the language
 without moving the URLs.
+
+---
+
+## 10. Deploy-affecting PR rule — operator docs must update with the code
+
+Any PR that changes how the platform is deployed, configured, or
+operated **must** update the operator-facing docs in the same PR. The
+canonical surfaces are:
+
+- `README.md` (root) — every env var, every feature flag, every route
+  contract, and the README-with-every-PR rule itself.
+- `docs/deploy-runbook.md` (this file) — secret matrix, deploy steps,
+  rotation procedures, manual smoke.
+- `docs/audit-and-gdpr.md` — when the change touches the audit log,
+  GDPR lifecycle, scrub worker, or any privileged endpoint that writes
+  audit rows.
+- `.env.example` — when the change adds or removes an env var. The
+  comment block above each variable is part of the contract; keep it
+  current with the validator tier in `src/common/env-validation.ts`.
+- The relevant module README (`src/<module>/README.md`) — when the
+  change touches that module's surface.
+
+A "deploy-affecting" change is anything an operator must do, set, or
+verify to make the deploy land healthy. Concrete triggers:
+
+- New or removed env var, or a tier change in `env-validation.ts`.
+- New feature flag, or a default flip on an existing flag.
+- New route that an operator must smoke-check, or a contract change
+  on an existing route an operator already runs.
+- New cron / worker / script (e.g. `scripts/gdpr-scrub.ts`).
+- Migration that requires a baseline, a backfill, or an order-sensitive
+  rollout (see §2.1, §3).
+- Change to the secret-rotation procedure (Stripe, Sentry, Supabase,
+  federation token).
+- Any change that flips an external dependency (Stripe webhook URL,
+  Supabase JWKS, finance backend host, App Store / Play listing).
+
+Why this is a hard rule: the failure mode of a code-only change is a
+deploy that boots green, passes the HTTP smoke, and silently breaks an
+operator workflow that the runbook still describes the old way. The
+operator then debugs against stale docs, which is slower and more
+error-prone than reading the code directly. The fix is to keep the
+runbook tight against the merge — same PR, same review, same blast
+radius.
+
+CI does not enforce this rule end-to-end. The narrowest piece of the
+contract that is enforced is `test/route-doc-drift.spec.ts`, which
+asserts that documented endpoint paths still resolve to controllers
+that mount them. The rest is on the author and reviewer of the PR.

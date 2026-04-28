@@ -98,6 +98,9 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 | `JWT_SECRET` | legacy | n/a | Reserved. Token verification is JWKS-based; the value is not consulted. |
 | `RELEASE_ALLOW_DB_PUSH` | optional | Backend operator | One-time bootstrap escape hatch in `scripts/release.sh`. Allows `prisma db push --accept-data-loss` only when the DB has no `_prisma_migrations` table. Leave unset on any environment that holds real data. |
 | `BOOTSTRAP_OWNER_EMAILS` | optional | Backend operator | Comma-separated emails consumed by `scripts/bootstrap-owners.ts` to seed the initial OWNER list. Idempotent. |
+| `ALLOW_SELF_SERVICE_BECOME_COACH` | optional | Backend operator | Feature flag. Default unset = `POST /auth/become-coach` returns `403 self_service_promotion_disabled`. Set to `true` only for a one-off legacy migration where any logged-in non-OWNER user may self-elevate after a password re-auth; the role change is then audited as `user.role_changed` with `metadata.via=self_service_become_coach`. The canonical promotion path is OWNER-only `POST /admin/users/:id/promote`. |
+| `GDPR_SCRUB_DRY_RUN` | optional | Backend operator | When `true`, `scripts/gdpr-scrub.ts` and `POST /admin/gdpr/scrub` report candidate users without writing — no `deleted_at`, no PII tombstoning, no audit row. Used to land the cron schedule in staging observably-inert before flipping to a real scrub. |
+| `GDPR_SCRUB_BATCH_LIMIT` | optional | Backend operator | Per-run cap on `GdprScrubService.run`. Defaults to 100 candidates per tick; raise only after you have watched a few cron runs complete cleanly. |
 | `PORT` | optional | Fly.io | HTTP port. Defaults to 3000; Fly overrides this. |
 | `NODE_ENV` | optional | Backend operator | `development`, `staging`, or `production`. Drives the validation tier and the AI debug payload. |
 
@@ -107,6 +110,8 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 |---|---|---|
 | `COACH_CODE_GATE_ENABLED` | unset (off) | When `true`, `/auth/signup-with-code` rejects requests that lack a valid coach invite code. The `/auth/signup-policy` endpoint reflects this so mobile can hide or show the field. |
 | `BILLING_ENFORCEMENT` | unset (observe-only) | When `enforce`, `SubscriptionGuard` denies coach writes for `past_due` (past 7-day grace), `canceled`, `paused`, `incomplete`, and `unpaid` subscriptions. Anything else lets every request through, with the verdict still computed. |
+| `ALLOW_SELF_SERVICE_BECOME_COACH` | unset (off — hard gate) | When unset, `POST /auth/become-coach` always returns `403 self_service_promotion_disabled` and points the caller at `POST /admin/users/:id/promote`. When `true`, the legacy self-service path re-opens behind a Supabase password re-auth; OWNERs are still refused and the role change is audited as `user.role_changed` with `metadata.via=self_service_become_coach`. Production should leave this unset. |
+| `GDPR_SCRUB_DRY_RUN` | unset (real scrub) | When `true`, the GDPR scrub worker reports candidates without writing. Use to land the cron schedule in staging observably before flipping the flag off. |
 
 ### Public URL variables
 
@@ -387,14 +392,28 @@ The self-service GDPR surface shipped in PR #73:
 
 Auth-guard lockout: once `deletion_scheduled_at` is set, every route
 returns 403 except the two recovery routes
-(`/users/me/account/cancel-deletion`, `/users/me/account/deletion-status`),
-which opt in via the `@AllowDeletionScheduled()` decorator. Once
-`deleted_at` is set by the post-grace scrub, every route — recovery
-included — returns 403; the account is terminal. The PII scrub
-worker is an intentional follow-up: it is irreversible and is
-landing dark behind a feature flag in a separate PR. The schema is
-ready; `User.deleted_at` exists, and the audit action
-`user.account_deleted` is reserved for the worker to write.
+(`/users/me/account/cancel-deletion`, `/users/me/account/deletion-status`,
+plus the mobile alias `/users/me/account/status`), which opt in via
+the `@AllowDeletionScheduled()` decorator. Once `deleted_at` is set
+by the post-grace scrub, every route — recovery included — returns
+403; the account is terminal.
+
+The PII scrub worker shipped in PR #81 (`src/users/gdpr-scrub.service.ts`,
+`scripts/gdpr-scrub.ts`, OWNER-only `POST /admin/gdpr/scrub?dry_run=&limit=`).
+After `deletion_scheduled_at + 30d` it tombstones identifying columns
+on `User` (`email` → `deleted-{id}@scrub.invalid`, `name` → `Deleted user`,
+`phone` → null, `supabase_id` → `deleted-{id}` so the unique
+constraint holds), zeroes PII on `UserProfile`, sets `deleted_at` and
+`archived_at`, and writes one immutable `user.account_deleted` audit
+row per scrubbed user with `metadata.scope='gdpr_scrub_worker'` and
+the original email captured in `metadata.original_email_snapshot` for
+forensic traceability. Worker is fully idempotent and per-user
+transaction failures are reported but never poison the rest of the
+batch. Run via cron (`scripts/gdpr-scrub.ts`), the OWNER endpoint, or
+direct service call; all three share `GdprScrubService.run`. Set
+`GDPR_SCRUB_DRY_RUN=true` to land the cron schedule observably-inert
+in staging; `GDPR_SCRUB_BATCH_LIMIT` caps the per-tick batch (default
+100). Full operator runbook in [`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md).
 
 The remaining audit / privacy posture:
 
@@ -452,7 +471,7 @@ Module: [`src/auth/`](src/auth/README.md),
 | `POST` | `/auth/login` | public | 10 / minute / IP. |
 | `POST` | `/auth/google` | public | Verifies the token's provider before linking. |
 | `POST` | `/auth/signup-with-code` | public | 10 / hour / IP. Requires invite code when `COACH_CODE_GATE_ENABLED=true`. |
-| `POST` | `/auth/become-coach` | authed | Password re-auth, then role elevation. |
+| `POST` | `/auth/become-coach` | authed | **Hard-gated off by default.** Returns `403 self_service_promotion_disabled` unless `ALLOW_SELF_SERVICE_BECOME_COACH=true`. Canonical promotion is OWNER-only `POST /admin/users/:id/promote`. When the legacy gate is open, requires Supabase password re-auth and writes a `user.role_changed` audit row with `metadata.via=self_service_become_coach`; OWNERs are still refused. |
 | `POST` | `/auth/select-role` | authed | Self-service to `student` only. |
 | `POST` | `/auth/attach-invite-code` | authed | Atomic invite-code redemption. OWNER refused. |
 | `POST` | `/auth/validate-invite-code` | public | 20 / minute / IP. |
@@ -512,9 +531,11 @@ Module: [`src/billing/`](src/billing/README.md).
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| `POST` | `/v1/webhooks/stripe` | public, signature-verified | HMAC-SHA256 v1, 300s tolerance. |
-| `GET` | `/v1/coach/me/billing` | coach | Reads `CoachSubscription` for the caller. |
+| `POST` | `/v1/webhooks/stripe` | public, signature-verified | HMAC-SHA256 v1, 300s tolerance. Webhook applies emit `billing.subscription_updated` / `_canceled` / `.invoice_paid` / `.invoice_payment_failed` audit rows with `metadata.stripe_event_id`. |
+| `GET` | `/v1/coach/me/billing` | coach | Reads `CoachSubscription` for the caller. Coach-console BFF surface (full payload). |
 | `POST` | `/v1/coach/me/billing/portal-session` | coach + subscription gate | Creates a Stripe Customer Portal session. Returns `STRIPE_NOT_CONFIGURED` until `STRIPE_SECRET_KEY` is set. |
+| `GET` | `/coach/billing/status` | coach | **Mobile alias** of the BFF billing read. Trimmed payload — subscription summary only. Returns `status='unprovisioned'` when no subscription mirror exists (does not synthesize an `active` response). Shares `BillingService.getCoachBilling` with the BFF surface so the wire contract cannot drift. Shipped in PR #81. |
+| `POST` | `/coach/billing/portal-session` | coach + subscription gate | **Mobile alias** of the BFF portal-session route — identical behavior, returns `STRIPE_NOT_CONFIGURED` until Stripe is configured. Shipped in PR #81. |
 | `POST` | `/v1/admin/coaches/:id/start-subscription` | owner | Provisions a new subscription for a coach. Returns `STRIPE_NOT_CONFIGURED` until `STRIPE_SECRET_KEY` is set. |
 
 `SubscriptionGuard` policy matrix:
@@ -555,11 +576,12 @@ Modules: [`src/coach/`](src/coach/README.md),
 | Method | Path | Auth | Notes |
 |---|---|---|---|
 | `GET` | `/coach/dashboard`, `/coach/clients`, `/coach/clients/:id/timeline`, `/coach/clients/:id/summary`, `/coach/alerts`, `/coach/guidelines/:client_id`, `/coach/my-guidelines` | coach or owner | Roster, timeline, alerts, guidelines reads. |
-| `POST` | `/coach/clients/:id/archive`, `/coach/clients/:id/unarchive`, `/coach/guidelines/:client_id` | coach or owner | Roster mutations and guideline upsert. |
+| `POST` | `/coach/clients/:id/archive`, `/coach/clients/:id/unarchive`, `/coach/guidelines/:client_id` | coach or owner | Roster mutations and guideline upsert. Archive / unarchive write `coach.client_archived` / `coach.client_unarchived` audit rows scoped to the client's `tenant_coach_id`; idempotent re-archive on an already-archived client writes no audit row. |
 | `GET` | `/admin/coaches`, `/admin/coaches/:id`, `/admin/users` | owner | OWNER-only inventory. |
-| `POST` | `/admin/users/:id/promote` | owner | Role change with lazy `CoachProfile` provisioning. |
+| `POST` | `/admin/users/:id/promote` | owner | Role change with lazy `CoachProfile` provisioning. Canonical coach-promotion path; `/auth/become-coach` defers to this when the legacy self-service flag is off. |
 | `GET` | `/admin/metrics?since_days=` | owner | Authoritative counters from Postgres. `since_days` clamped to `(0, 365]`, defaults to 30. Stripe-sourced figures come from the webhook mirror; no synthesized money figures. Documented in [`docs/metrics.md`](docs/metrics.md). |
 | `GET` | `/admin/audit-log` | owner | Cursor-paginated read over `AuditLog`. Filters: `action`, `target_user_id`, `tenant_coach_id`, `before` (ISO timestamp), `limit` (clamped `[1, 200]`, default 50). |
+| `POST` | `/admin/gdpr/scrub?dry_run=&limit=` | owner | Manual / dry-run trigger for the GDPR PII scrub worker. Same code path as `scripts/gdpr-scrub.ts`. `dry_run=true` reports candidates without writing; `limit` clamps the per-call batch. The audit row is attributed to the calling OWNER (`actor_email_snapshot`); cron-driven runs leave actor null and `actor_role='system'`. Shipped in PR #81. Full operator runbook in [`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md). |
 
 ### Admin console (Healthie/EHR-style)
 
@@ -667,6 +689,7 @@ runbook).
 | `DELETE` | `/users/me/account` | authed | Sets `User.deletion_scheduled_at = now()` and starts the 30-day grace clock. Idempotent within the window. Audited as `user.account_deletion_scheduled`. |
 | `POST` | `/users/me/account/cancel-deletion` | authed (deletion-scheduled OK) | Clears `deletion_scheduled_at`. Audited as `user.account_deletion_canceled`. Opt-in via `@AllowDeletionScheduled()`. |
 | `GET` | `/users/me/account/deletion-status` | authed (deletion-scheduled OK) | Returns the current state (`active` / `scheduled` / `deleted`). |
+| `GET` | `/users/me/account/status` | authed (deletion-scheduled OK) | **Mobile alias** of `deletion-status` — same shape, same service call. Shipped in PR #81 to align with the mobile contract; both routes share `AccountService.getDeletionStatus` so the wire contract cannot drift. |
 
 Once `deletion_scheduled_at` is set, `JwtAuthGuard` rejects every
 request from that user with 403 except the two recovery routes
@@ -762,11 +785,37 @@ same change. The convention is:
   fake dates, or example secrets. The env-validation pass at boot
   rejects these in hard / prod tiers; the docs follow the same bar.
 
+### Deploy-affecting PRs are a stricter case
+
+If a PR changes how the platform is **deployed**, **configured**, or
+**operated**, the operator-facing docs must update in the same PR.
+Triggers (full list in [`docs/deploy-runbook.md`](docs/deploy-runbook.md) §10):
+
+- New / removed env var, or a tier change in
+  `src/common/env-validation.ts`.
+- New feature flag or a default flip on an existing flag.
+- New cron / worker / script (e.g. `scripts/gdpr-scrub.ts`).
+- Migration that requires a baseline, backfill, or order-sensitive
+  rollout.
+- Change to the secret-rotation procedure (Stripe, Sentry, Supabase,
+  federation token).
+- Any change that flips an external dependency (Stripe webhook URL,
+  Supabase JWKS, finance backend host, App Store / Play listing).
+
+The minimum surfaces a deploy-affecting PR must touch are this root
+README, `.env.example`, the relevant module README, and either
+`docs/deploy-runbook.md` or `docs/audit-and-gdpr.md` depending on
+which contract changed. The failure mode this rule prevents is a
+deploy that boots green and silently breaks an operator workflow the
+runbook still describes the old way.
+
 The `route-doc-drift.spec.ts` test (added in PR #78) is the
 regression net for the subset of this rule that can be machined: it
 asserts that publicly documented endpoint paths still resolve to
 controllers that mount them. It is intentionally narrow; the
-README-with-every-PR rule covers the rest.
+README-with-every-PR rule covers the rest, and the
+deploy-affecting-PR rule above is the stricter cut for the operator
+surface.
 
 ## Open work and merge order
 
@@ -783,32 +832,20 @@ for each surface:
 | #75 | invite-code contract aligned with mobile QA | merged | `/auth/signup-with-code`, `/auth/attach-invite-code` |
 | #76 | live Stripe Customer Portal + start-subscription + webhook idempotency | merged | `/v1/coach/me/billing/portal-session`, `/v1/admin/coaches/:id/start-subscription`, `StripeProcessedEvent` |
 | #78 | trust meta + operator-doc `/api` prefix + E2E prereqs + doc-drift regression test | merged | `/api/system/trust-meta`, `LAST_SECURITY_DEPLOY_AT`, `route-doc-drift.spec.ts` |
-| #77 | root README + docs index for enterprise vars and structures | open | this file + `docs/README.md` |
-| #79 | cross-product federation for admin console | open | `/admin/federation/*`, `FINANCE_API_BASE_URL`, `FINANCE_SERVICE_TOKEN`, `FINANCE_FEDERATION_TIMEOUT_MS` |
-| #80 | console-friendly alias routes (search / coach overview / client unified / finance health / integrations status) | open | `/admin/{search,coaches/:id/overview,clients/:id,clients/:id/unified,finance/health,integrations/status}` |
+| #77 | root README + docs index for enterprise vars and structures | merged | this file + `docs/README.md` |
+| #79 | cross-product federation for admin console | merged | `/admin/federation/*`, `FINANCE_API_BASE_URL`, `FINANCE_SERVICE_TOKEN`, `FINANCE_FEDERATION_TIMEOUT_MS` |
+| #80 | console-friendly alias routes (search / coach overview / client unified / finance health / integrations status) | merged | `/admin/{search,coaches/:id/overview,clients/:id,clients/:id/unified,finance/health,integrations/status}` |
+| #81 | hard-gate become-coach + GDPR scrub worker + broader audit + mobile coach billing/account aliases | merged | `ALLOW_SELF_SERVICE_BECOME_COACH`, `GDPR_SCRUB_DRY_RUN`, `GDPR_SCRUB_BATCH_LIMIT`, `/admin/gdpr/scrub`, `/coach/billing/status`, `/coach/billing/portal-session`, `/users/me/account/status`, audit actions `coach.client_archived`/`coach.client_unarchived`/`billing.subscription_updated`/`_canceled`/`.invoice_paid`/`.invoice_payment_failed` |
 
-Recommended merge order:
+Operator actions for the recently merged work:
 
-1. **#77** (this PR) — pure docs, no runtime surface change. Land
-   first so the root README reflects #73 / #74 / #75 / #76 / #78
-   without waiting on the federation PRs.
-2. **#79** — federation primitives. Adds the `FINANCE_*` env vars to
-   `env-validation.ts` and `.env.example` and the federation routes
-   under `/admin/federation/*`.
-3. **#80** — console alias layer. Depends on #79's services and
-   contracts; rebase onto `main` once #79 lands.
-4. The remaining open PRs (`#64` env tier, `#71` static portal
-   fallback) are independent and can land in any order relative to
-   the above.
-
-Operator actions when these land:
-
-- After #79: set `FINANCE_API_BASE_URL`, `FINANCE_SERVICE_TOKEN`, and
-  optionally `FINANCE_FEDERATION_TIMEOUT_MS` in Fly secrets. Until
-  set, the federation surface returns `not_configured` and the
-  console renders the "finance not configured" pill.
-- After #80: no operator action required for the alias routes
-  themselves; the console picks them up via id-keyed verbs.
+- After #79 / #80: set `FINANCE_API_BASE_URL`, `FINANCE_SERVICE_TOKEN`,
+  and optionally `FINANCE_FEDERATION_TIMEOUT_MS` in Fly secrets on
+  **both** this backend and the finance backend; the token is shared
+  and a one-side-only set produces 401s on the federation surface.
+  Rotation procedure in [`docs/deploy-runbook.md`](docs/deploy-runbook.md) §7c.
+  Until configured, the federation surface returns `not_configured`
+  and the console renders the "finance not configured" pill.
 - After #76 (already merged): set `STRIPE_SECRET_KEY`,
   `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID_FITNESS` in Fly
   secrets to flip the billing surface from `STRIPE_NOT_CONFIGURED` to
@@ -821,6 +858,16 @@ Operator actions when these land:
   ISO-8601 timestamp of the deploy on every production cut that
   ships a security fix. Until set, `/api/system/trust-meta` returns
   `lastSecurityUpdate: null`.
+- After #81 (already merged): leave `ALLOW_SELF_SERVICE_BECOME_COACH`
+  unset so `/auth/become-coach` stays hard-gated to its
+  `403 self_service_promotion_disabled` response — coach promotion
+  goes through OWNER-only `/admin/users/:id/promote`. Wire
+  `scripts/gdpr-scrub.ts` to a Fly cron / Kubernetes CronJob with
+  `GDPR_SCRUB_DRY_RUN=true` initially; watch a few cron runs report
+  candidates correctly, then flip the flag off. The mobile coach
+  aliases (`/coach/billing/status`, `/coach/billing/portal-session`,
+  `/users/me/account/status`) require no operator action — they are
+  thin aliases over services already in use.
 
 ## Smoke tests
 
