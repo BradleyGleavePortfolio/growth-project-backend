@@ -49,7 +49,7 @@ describe('FinanceAdminClient', () => {
   it('returns degraded(not_configured) when FINANCE_API_BASE_URL is unset', async () => {
     delete process.env.FINANCE_API_BASE_URL;
     const svc = new TestFinanceClient();
-    const out = await svc.searchClients('jay', 10);
+    const out = await svc.searchUsers('jay', 10);
     expect(out.kind).toBe('degraded');
     if (out.kind === 'degraded') {
       expect(out.reason).toBe('not_configured');
@@ -68,14 +68,14 @@ describe('FinanceAdminClient', () => {
     expect(svc.fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('searchClients sends bearer auth + accept header to /admin/federation/clients/search', async () => {
+  it('searchUsers calls /api/admin/federation/users/search with bearer + headers', async () => {
     const svc = new TestFinanceClient();
-    svc.fetchImpl.mockResolvedValueOnce(jsonResponse(200, { clients: [] }));
-    const out = await svc.searchClients('jay', 25);
+    svc.fetchImpl.mockResolvedValueOnce(jsonResponse(200, []));
+    const out = await svc.searchUsers('jay', 25);
     expect(out.kind).toBe('ok');
     const [url, init] = svc.fetchImpl.mock.calls[0];
     expect(url).toBe(
-      'https://finance.example.test/admin/federation/clients/search?q=jay&limit=25',
+      'https://finance.example.test/api/admin/federation/users/search?q=jay&limit=25',
     );
     expect(init.method).toBe('GET');
     expect(init.headers.Authorization).toBe('Bearer svc-token-abc');
@@ -84,20 +84,91 @@ describe('FinanceAdminClient', () => {
     expect(init.signal).toBeDefined();
   });
 
-  it('lookupClient returns ok with parsed body', async () => {
+  it('lookupClient hits /clients/by-email/:email with URL-encoded email', async () => {
     const svc = new TestFinanceClient();
     const summary = {
-      email: 'a@b.test',
+      id: 'u1',
+      email: 'a+beta@b.test',
       name: 'A B',
-      subscription_status: 'active',
-      current_period_end: '2026-05-01T00:00:00Z',
-      last_active_at: null,
-      usage_last_7d: { transactions: 4, sessions: 2 },
+      role: 'client',
+      net_worth: 1000,
+      asset_total: 2000,
+      debt_total: 1000,
+      cash_total: 500,
+      streak_days: 7,
+      last_eod_date: '2026-04-27',
+      wealth_velocity_score: 0.42,
+      activity_last_7d: { eod_submissions: 5, what_if_scenarios: 2, coach_notes: 1 },
+      coach: null,
     };
     svc.fetchImpl.mockResolvedValueOnce(jsonResponse(200, summary));
-    const out = await svc.lookupClient('a@b.test');
+    const out = await svc.lookupClient('a+beta@b.test');
     expect(out.kind).toBe('ok');
-    if (out.kind === 'ok') expect(out.data.email).toBe('a@b.test');
+    if (out.kind === 'ok') expect(out.data.email).toBe('a+beta@b.test');
+    const [url] = svc.fetchImpl.mock.calls[0];
+    expect(url).toBe(
+      'https://finance.example.test/api/admin/federation/clients/by-email/a%2Bbeta%40b.test',
+    );
+  });
+
+  it('lookupCoach hits /coaches/by-email/:email', async () => {
+    const svc = new TestFinanceClient();
+    svc.fetchImpl.mockResolvedValueOnce(
+      jsonResponse(200, {
+        id: 'c1',
+        email: 'c@coach.test',
+        name: 'Coach',
+        role: 'coach',
+        invite_code: 'GP-XYZ',
+        student_count: 4,
+        active_students_7d: 3,
+        eod_submissions_7d: 22,
+        coach_notes_total: 100,
+        program_templates_total: 6,
+      }),
+    );
+    const out = await svc.lookupCoach('c@coach.test');
+    expect(out.kind).toBe('ok');
+    const [url] = svc.fetchImpl.mock.calls[0];
+    expect(url).toBe(
+      'https://finance.example.test/api/admin/federation/coaches/by-email/c%40coach.test',
+    );
+  });
+
+  it('getHealth hits /health', async () => {
+    const svc = new TestFinanceClient();
+    svc.fetchImpl.mockResolvedValueOnce(
+      jsonResponse(200, {
+        ok: true,
+        service: 'tgp-finance',
+        identityMapping: 'email',
+        surface: 'admin-federation',
+      }),
+    );
+    const out = await svc.getHealth();
+    expect(out.kind).toBe('ok');
+    const [url] = svc.fetchImpl.mock.calls[0];
+    expect(url).toBe('https://finance.example.test/api/admin/federation/health');
+  });
+
+  it('getProductUsage hits /usage/product', async () => {
+    const svc = new TestFinanceClient();
+    svc.fetchImpl.mockResolvedValueOnce(
+      jsonResponse(200, {
+        users: { total: 10, by_role: { client: 7, coach: 3 }, onboarding_complete: 5 },
+        engagement: { dau: 2, wau: 5, mau: 8 },
+        product: {
+          eod_submissions_last_7_days: 12,
+          what_if_scenarios_last_30_days: 4,
+          coach_notes_total: 200,
+          milestones_unlocked_total: 9,
+        },
+      }),
+    );
+    const out = await svc.getProductUsage();
+    expect(out.kind).toBe('ok');
+    const [url] = svc.fetchImpl.mock.calls[0];
+    expect(url).toBe('https://finance.example.test/api/admin/federation/usage/product');
   });
 
   it('returns not_found on 404 (no retry)', async () => {
@@ -119,12 +190,12 @@ describe('FinanceAdminClient', () => {
     expect(svc.fetchImpl).toHaveBeenCalledTimes(2);
   });
 
-  it('retry recovers when second attempt succeeds', async () => {
+  it('retry recovers when second attempt succeeds (array endpoint)', async () => {
     const svc = new TestFinanceClient();
     svc.fetchImpl
       .mockResolvedValueOnce(jsonResponse(502, { error: 'bad_gateway' }))
-      .mockResolvedValueOnce(jsonResponse(200, { clients: [] }));
-    const out = await svc.searchClients('q', 10);
+      .mockResolvedValueOnce(jsonResponse(200, []));
+    const out = await svc.searchUsers('q', 10);
     expect(out.kind).toBe('ok');
     expect(svc.fetchImpl).toHaveBeenCalledTimes(2);
   });
@@ -137,7 +208,6 @@ describe('FinanceAdminClient', () => {
     const out = await svc.lookupClient('a@b.test');
     expect(out.kind).toBe('degraded');
     if (out.kind === 'degraded') expect(out.reason).toBe('timeout');
-    // timeout is retryable, so two attempts
     expect(svc.fetchImpl).toHaveBeenCalledTimes(2);
   });
 
@@ -149,9 +219,29 @@ describe('FinanceAdminClient', () => {
       text: async () => 'not json',
     } as unknown as Response;
     svc.fetchImpl.mockResolvedValueOnce(badResponse);
-    const out = await svc.searchClients('q', 5);
+    const out = await svc.searchUsers('q', 5);
     expect(out.kind).toBe('degraded');
     if (out.kind === 'degraded') expect(out.reason).toBe('malformed_response');
+  });
+
+  it('rejects non-array body for searchUsers (array endpoint contract)', async () => {
+    const svc = new TestFinanceClient();
+    svc.fetchImpl.mockResolvedValueOnce(jsonResponse(200, { not: 'an array' }));
+    const out = await svc.searchUsers('q', 5);
+    expect(out.kind).toBe('degraded');
+    if (out.kind === 'degraded') {
+      expect(out.reason).toBe('malformed_response');
+    }
+  });
+
+  it('rejects array body for object endpoints (lookupClient)', async () => {
+    const svc = new TestFinanceClient();
+    svc.fetchImpl.mockResolvedValueOnce(jsonResponse(200, []));
+    const out = await svc.lookupClient('a@b.test');
+    expect(out.kind).toBe('degraded');
+    if (out.kind === 'degraded') {
+      expect(out.reason).toBe('malformed_response');
+    }
   });
 
   it('clamps timeout to range and uses default when env unset', () => {
@@ -170,9 +260,9 @@ describe('FinanceAdminClient', () => {
   it('strips trailing slash from base URL', async () => {
     process.env.FINANCE_API_BASE_URL = 'https://finance.example.test///';
     const svc = new TestFinanceClient();
-    svc.fetchImpl.mockResolvedValueOnce(jsonResponse(200, { clients: [] }));
-    await svc.searchClients('q', 1);
+    svc.fetchImpl.mockResolvedValueOnce(jsonResponse(200, []));
+    await svc.searchUsers('q', 1);
     const [url] = svc.fetchImpl.mock.calls[0];
-    expect(url.startsWith('https://finance.example.test/admin/federation/')).toBe(true);
+    expect(url.startsWith('https://finance.example.test/api/admin/federation/')).toBe(true);
   });
 });

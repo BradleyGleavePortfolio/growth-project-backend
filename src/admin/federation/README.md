@@ -28,9 +28,9 @@ All paths are mounted under the existing `/api/admin` prefix.
 
 | Method | Path | Behavior |
 |---|---|---|
-| `GET` | `/admin/federation/search?q=&limit=` | Unified search across fitness Postgres and finance backend. `limit` clamped to 1..50. |
-| `GET` | `/admin/federation/clients/lookup?email=` | One-client view. Returns fitness block + finance block + product split. |
-| `GET` | `/admin/federation/coaches/lookup?email=` | One-coach view. Roster + subscription from each product side by side. |
+| `GET` | `/api/admin/federation/search?q=&limit=` | Unified search across fitness Postgres and finance backend. `limit` clamped to 1..50. |
+| `GET` | `/api/admin/federation/clients/lookup?email=` | One-client view. Returns fitness block + finance block + product split. |
+| `GET` | `/api/admin/federation/coaches/lookup?email=` | One-coach view. Roster + subscription from each product side by side. |
 
 Every response carries a `finance.status` field with one of:
 
@@ -105,23 +105,45 @@ attached. The contract types and service shape are unaffected.
 | `test/finance-admin.client.spec.ts` | Header shaping, retry on 5xx + timeout, 404 mapping, malformed body, env-driven configuration, timeout clamping. |
 | `test/federation.service.spec.ts` | Unified search merge by email, finance degraded does not block fitness, client/coach product split derivation, archived users, empty-email short-circuit. |
 
+## Finance backend wire contract
+
+`FinanceAdminClient` calls the following endpoints on the finance backend
+(`tgp-finance-app`, PR #93). All paths are absolute under
+`FINANCE_API_BASE_URL` and require a `Authorization: Bearer
+<FINANCE_SERVICE_TOKEN>` header plus `X-Federation-Source: fitness-backend`.
+The same secret value must be configured on the finance side under
+`FEDERATION_SERVICE_TOKEN` (env name differs per side; the value is shared).
+
+| Method | Path | Returns |
+|---|---|---|
+| `GET` | `/api/admin/federation/health` | `{ ok, service: 'tgp-finance', identityMapping: 'email', surface: 'admin-federation' }` |
+| `GET` | `/api/admin/federation/users/search?q=&limit=` | Bare JSON array of `{ id, email, name, role, has_coach, created_at }`. Limit clamped to 1..100 on the finance side. |
+| `GET` | `/api/admin/federation/clients/by-email/:email` | Client finance summary: `net_worth`, `asset_total`, `debt_total`, `cash_total`, `streak_days`, `last_eod_date`, `wealth_velocity_score`, `activity_last_7d`, optional `coach` pointer. |
+| `GET` | `/api/admin/federation/coaches/by-email/:email` | Coach business summary: `invite_code`, `student_count`, `active_students_7d`, `eod_submissions_7d`, `coach_notes_total`, `program_templates_total`. |
+| `GET` | `/api/admin/federation/usage/product` | Aggregate product usage: `users.{total, by_role, onboarding_complete}`, `engagement.{dau,wau,mau}`, `product.{eod_submissions_last_7_days, what_if_scenarios_last_30_days, coach_notes_total, milestones_unlocked_total}`. |
+
+Email path params are URL-encoded by the client (`alice+beta@x.test` →
+`alice%2Bbeta%40x.test`). Search returns a bare array, every other endpoint
+returns a JSON object; the client validates this on the way in and surfaces
+unexpected shapes as `degraded(malformed_response)`.
+
 ## Remaining integration steps
 
-1. **Finance backend** must expose three endpoints with the shapes in
-   `finance-contracts.ts` — `/admin/federation/clients/search`,
-   `/admin/federation/clients/lookup`,
-   `/admin/federation/coaches/lookup`. The contract types here are the
-   single source of truth; copy them into the finance repo or share via
-   a small published package once the surface stabilizes.
-2. **Service-token issuance**: provision a finance-side service-account
-   token, set it as `FINANCE_SERVICE_TOKEN` in this backend's Fly
-   secrets, and list this backend's source label
-   (`fitness-backend`) in the finance backend's allow-list.
+1. **Finance backend deployment** — `tgp-finance-app` PR #93 ships the
+   five endpoints above. The contract types in `finance-contracts.ts`
+   are the single source of truth on the fitness side; finance has its
+   own typed handlers. Keep both sides in sync when the contract evolves.
+2. **Service-token issuance**: provision a single shared secret
+   (`openssl rand -hex 32`), set it as `FEDERATION_SERVICE_TOKEN` on the
+   finance backend and `FINANCE_SERVICE_TOKEN` on this backend. Both
+   names must point at the same value; the finance side rejects with
+   401 `FEDERATION_UNAUTHENTICATED` when the bearer mismatches and 503
+   `FEDERATION_DISABLED` when its own token env is unset.
 3. **Durable identity**: when finance starts emitting a shared
-   `account_id`, switch `FederationService` to prefer the durable id and
-   keep email as a fallback for legacy records.
-4. **Console wiring**: the admin console (`tgp-admin-console`) should
-   call these three endpoints with the operator's bearer token and
-   render the `finance.status` field as a status pill. No console
-   changes are required to deploy this PR — the endpoints fail closed
-   when the operator role is missing.
+   `account_id`, populate the optional `account_id` field on the client
+   /coach summary contracts and switch `FederationService` to prefer
+   the durable id, keeping email as a fallback for legacy records.
+4. **Console wiring**: the admin console calls the alias surface in
+   `src/admin/console/` with the operator's bearer token. The alias
+   routes fan out into this federation layer so the console only needs
+   to know about the console-facing path layout.

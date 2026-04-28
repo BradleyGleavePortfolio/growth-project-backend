@@ -6,7 +6,7 @@ import {
   FinanceClientSummary,
   FinanceCoachSummary,
   FinanceDegradedReason,
-  FinanceSearchResponse,
+  FinanceUserSearchHit,
 } from './finance-contracts';
 
 // FederationService composes the OWNER-only admin views the console renders
@@ -45,7 +45,9 @@ export interface UnifiedSearchHit {
   } | null;
   finance: {
     account_id: string | null;
-    subscription_status: string | null;
+    user_id: string | null;
+    role: string | null;
+    has_coach: boolean | null;
   } | null;
 }
 
@@ -111,7 +113,7 @@ export class FederationService {
     if (q.length === 0) {
       return {
         query: q,
-        finance: this.statusEnvelope({ kind: 'ok', data: { clients: [] } }),
+        finance: this.statusEnvelope({ kind: 'ok', data: [] }),
         results: [],
       };
     }
@@ -134,7 +136,7 @@ export class FederationService {
           coach_id: true,
         },
       }),
-      this.financeClient.searchClients(q, limit),
+      this.financeClient.searchUsers(q, limit),
     ]);
 
     const merged = new Map<string, UnifiedSearchHit>();
@@ -155,15 +157,17 @@ export class FederationService {
     }
 
     if (financeOutcome.kind === 'ok') {
-      for (const fc of financeOutcome.data.clients) {
+      for (const fc of financeOutcome.data as FinanceUserSearchHit[]) {
         const key = (fc.email ?? '').trim().toLowerCase();
         if (!key) continue;
         const existing = merged.get(key);
         if (existing) {
           existing.products = uniqueProducts([...existing.products, PRODUCT_FINANCE]);
           existing.finance = {
-            account_id: fc.account_id ?? null,
-            subscription_status: fc.subscription_status,
+            account_id: null,
+            user_id: fc.id,
+            role: fc.role,
+            has_coach: fc.has_coach,
           };
         } else {
           merged.set(key, {
@@ -172,8 +176,10 @@ export class FederationService {
             products: [PRODUCT_FINANCE],
             fitness: null,
             finance: {
-              account_id: fc.account_id ?? null,
-              subscription_status: fc.subscription_status,
+              account_id: null,
+              user_id: fc.id,
+              role: fc.role,
+              has_coach: fc.has_coach,
             },
           });
         }
@@ -182,7 +188,7 @@ export class FederationService {
 
     return {
       query: q,
-      finance: this.statusEnvelope(financeOutcome as FinanceCallOutcome<FinanceSearchResponse>),
+      finance: this.statusEnvelope(financeOutcome),
       results: Array.from(merged.values()).slice(0, limit),
     };
   }

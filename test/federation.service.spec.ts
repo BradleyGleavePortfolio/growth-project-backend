@@ -3,13 +3,13 @@ import {
   FinanceCallOutcome,
   FinanceClientSummary,
   FinanceCoachSummary,
-  FinanceSearchResponse,
+  FinanceUserSearchHit,
 } from '../src/admin/federation/finance-contracts';
 
-// In-memory finance client stub. Tests configure `next` directly to model
-// each outcome (ok/not_found/degraded) without touching HTTP.
+// In-memory finance client stub. Tests configure each method's resolved
+// value directly to model ok/not_found/degraded outcomes without HTTP.
 class StubFinanceClient {
-  searchClients = jest.fn<Promise<FinanceCallOutcome<FinanceSearchResponse>>, [string, number]>();
+  searchUsers = jest.fn<Promise<FinanceCallOutcome<FinanceUserSearchHit[]>>, [string, number]>();
   lookupClient = jest.fn<Promise<FinanceCallOutcome<FinanceClientSummary>>, [string]>();
   lookupCoach = jest.fn<Promise<FinanceCallOutcome<FinanceCoachSummary>>, [string]>();
 }
@@ -93,6 +93,41 @@ function buildPrismaStub() {
   return prisma;
 }
 
+function clientSummary(over: Partial<FinanceClientSummary> = {}): FinanceClientSummary {
+  return {
+    id: 'fin-1',
+    email: 'jay@example.test',
+    name: 'Jay',
+    role: 'client',
+    net_worth: 1000,
+    asset_total: 2000,
+    debt_total: 1000,
+    cash_total: 500,
+    streak_days: 7,
+    last_eod_date: '2026-04-27',
+    wealth_velocity_score: 0.42,
+    activity_last_7d: { eod_submissions: 5, what_if_scenarios: 2, coach_notes: 1 },
+    coach: null,
+    ...over,
+  };
+}
+
+function coachSummary(over: Partial<FinanceCoachSummary> = {}): FinanceCoachSummary {
+  return {
+    id: 'fin-coach-1',
+    email: 'c@coach.test',
+    name: 'Coach C',
+    role: 'coach',
+    invite_code: 'GP-FIN-1',
+    student_count: 12,
+    active_students_7d: 9,
+    eod_submissions_7d: 50,
+    coach_notes_total: 100,
+    program_templates_total: 6,
+    ...over,
+  };
+}
+
 describe('FederationService.unifiedSearch', () => {
   it('returns empty result for empty query without calling finance', async () => {
     const prisma = buildPrismaStub();
@@ -101,7 +136,7 @@ describe('FederationService.unifiedSearch', () => {
     const out = await svc.unifiedSearch('', 25);
     expect(out.results).toEqual([]);
     expect(out.finance.status).toBe('ok');
-    expect(finance.searchClients).not.toHaveBeenCalled();
+    expect(finance.searchUsers).not.toHaveBeenCalled();
   });
 
   it('merges fitness + finance results by lowercased email', async () => {
@@ -127,30 +162,26 @@ describe('FederationService.unifiedSearch', () => {
       },
     );
     const finance = new StubFinanceClient();
-    finance.searchClients.mockResolvedValueOnce({
+    finance.searchUsers.mockResolvedValueOnce({
       kind: 'ok',
-      data: {
-        clients: [
-          {
-            email: 'jay@example.test',
-            name: 'Jay',
-            account_id: 'fin-acct-1',
-            subscription_status: 'active',
-            current_period_end: null,
-            last_active_at: null,
-            usage_last_7d: { transactions: 4, sessions: 2 },
-          },
-          {
-            email: 'leon@example.test',
-            name: 'Leon',
-            account_id: 'fin-acct-2',
-            subscription_status: 'trialing',
-            current_period_end: null,
-            last_active_at: null,
-            usage_last_7d: { transactions: 0, sessions: 0 },
-          },
-        ],
-      },
+      data: [
+        {
+          id: 'fin-u1',
+          email: 'jay@example.test',
+          name: 'Jay',
+          role: 'client',
+          has_coach: true,
+          created_at: '2026-03-15T00:00:00Z',
+        },
+        {
+          id: 'fin-u3',
+          email: 'leon@example.test',
+          name: 'Leon',
+          role: 'client',
+          has_coach: false,
+          created_at: '2026-04-10T00:00:00Z',
+        },
+      ],
     });
     const svc = new FederationService(prisma, finance as any);
     const out = await svc.unifiedSearch('exa', 25);
@@ -162,7 +193,8 @@ describe('FederationService.unifiedSearch', () => {
     ]);
     expect(byEmail.get('kate@example.test')?.products).toEqual(['fitness']);
     expect(byEmail.get('leon@example.test')?.products).toEqual(['finance']);
-    expect(byEmail.get('jay@example.test')?.finance?.account_id).toBe('fin-acct-1');
+    expect(byEmail.get('jay@example.test')?.finance?.user_id).toBe('fin-u1');
+    expect(byEmail.get('jay@example.test')?.finance?.has_coach).toBe(true);
   });
 
   it('surfaces finance.status when finance is degraded but still returns fitness rows', async () => {
@@ -177,7 +209,7 @@ describe('FederationService.unifiedSearch', () => {
       created_at: new Date(),
     });
     const finance = new StubFinanceClient();
-    finance.searchClients.mockResolvedValueOnce({
+    finance.searchUsers.mockResolvedValueOnce({
       kind: 'degraded',
       reason: 'timeout',
       detail: 'timed out after 2500ms',
@@ -192,12 +224,12 @@ describe('FederationService.unifiedSearch', () => {
   it('clamps limit to 1..50', async () => {
     const prisma = buildPrismaStub();
     const finance = new StubFinanceClient();
-    finance.searchClients.mockResolvedValue({ kind: 'ok', data: { clients: [] } });
+    finance.searchUsers.mockResolvedValue({ kind: 'ok', data: [] });
     const svc = new FederationService(prisma, finance as any);
     await svc.unifiedSearch('q', 9999);
-    expect(finance.searchClients).toHaveBeenCalledWith('q', 50);
+    expect(finance.searchUsers).toHaveBeenCalledWith('q', 50);
     await svc.unifiedSearch('q', 0);
-    expect(finance.searchClients).toHaveBeenCalledWith('q', 1);
+    expect(finance.searchUsers).toHaveBeenCalledWith('q', 1);
   });
 });
 
@@ -234,7 +266,7 @@ describe('FederationService.unifiedClient', () => {
     expect(out.products.finance.reason).toBe('not_configured');
   });
 
-  it('marks finance.active=true when finance returns ok', async () => {
+  it('marks finance.active=true when finance returns ok and exposes the rich shape', async () => {
     const prisma = buildPrismaStub();
     prisma._users.push({
       id: 'u1',
@@ -248,19 +280,13 @@ describe('FederationService.unifiedClient', () => {
     const finance = new StubFinanceClient();
     finance.lookupClient.mockResolvedValueOnce({
       kind: 'ok',
-      data: {
-        email: 'jay@example.test',
-        name: 'Jay',
-        subscription_status: 'active',
-        current_period_end: '2026-05-01T00:00:00Z',
-        last_active_at: null,
-        usage_last_7d: { transactions: 7, sessions: 3 },
-      },
+      data: clientSummary({ net_worth: 12345, streak_days: 14 }),
     });
     const svc = new FederationService(prisma, finance as any);
     const out = await svc.unifiedClient('jay@example.test');
     expect(out.finance.status).toBe('ok');
-    expect(out.finance.data?.subscription_status).toBe('active');
+    expect(out.finance.data?.net_worth).toBe(12345);
+    expect(out.finance.data?.streak_days).toBe(14);
     expect(out.products.fitness.active).toBe(true);
     expect(out.products.finance.active).toBe(true);
   });
@@ -355,14 +381,7 @@ describe('FederationService.unifiedCoach', () => {
     const finance = new StubFinanceClient();
     finance.lookupCoach.mockResolvedValueOnce({
       kind: 'ok',
-      data: {
-        email: 'c@coach.test',
-        name: 'Coach C',
-        subscription_status: 'active',
-        current_period_end: '2026-06-01T00:00:00Z',
-        client_count: 12,
-        active_client_count: 9,
-      },
+      data: coachSummary({ student_count: 12, active_students_7d: 9 }),
     });
     const svc = new FederationService(prisma, finance as any);
     const out = await svc.unifiedCoach('c@coach.test');
@@ -372,7 +391,8 @@ describe('FederationService.unifiedCoach', () => {
     expect(out.fitness?.business_name).toBe('C Fitness');
     expect(out.fitness?.invite_code).toBe('GP-AAAAAA');
     expect(out.finance.status).toBe('ok');
-    expect(out.finance.data?.client_count).toBe(12);
+    expect(out.finance.data?.student_count).toBe(12);
+    expect(out.finance.data?.active_students_7d).toBe(9);
     expect(out.products).toEqual({
       fitness: { active: true },
       finance: { active: true },

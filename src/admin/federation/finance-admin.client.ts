@@ -3,7 +3,9 @@ import {
   FinanceCallOutcome,
   FinanceClientSummary,
   FinanceCoachSummary,
-  FinanceSearchResponse,
+  FinanceHealthContract,
+  FinanceProductUsage,
+  FinanceUserSearchHit,
 } from './finance-contracts';
 
 // Thin REST client over `fetch` for the finance backend's admin federation
@@ -42,32 +44,38 @@ export class FinanceAdminClient {
     return !!process.env.FINANCE_SERVICE_TOKEN?.trim();
   }
 
-  async searchClients(
+  async getHealth(): Promise<FinanceCallOutcome<FinanceHealthContract>> {
+    return this.get<FinanceHealthContract>('/api/admin/federation/health');
+  }
+
+  async searchUsers(
     q: string,
     limit: number,
-  ): Promise<FinanceCallOutcome<FinanceSearchResponse>> {
+  ): Promise<FinanceCallOutcome<FinanceUserSearchHit[]>> {
     const params = new URLSearchParams({ q, limit: String(limit) });
-    return this.get<FinanceSearchResponse>(
-      `/admin/federation/clients/search?${params.toString()}`,
+    return this.getArray<FinanceUserSearchHit>(
+      `/api/admin/federation/users/search?${params.toString()}`,
     );
   }
 
   async lookupClient(
     email: string,
   ): Promise<FinanceCallOutcome<FinanceClientSummary>> {
-    const params = new URLSearchParams({ email });
     return this.get<FinanceClientSummary>(
-      `/admin/federation/clients/lookup?${params.toString()}`,
+      `/api/admin/federation/clients/by-email/${encodeURIComponent(email)}`,
     );
   }
 
   async lookupCoach(
     email: string,
   ): Promise<FinanceCallOutcome<FinanceCoachSummary>> {
-    const params = new URLSearchParams({ email });
     return this.get<FinanceCoachSummary>(
-      `/admin/federation/coaches/lookup?${params.toString()}`,
+      `/api/admin/federation/coaches/by-email/${encodeURIComponent(email)}`,
     );
+  }
+
+  async getProductUsage(): Promise<FinanceCallOutcome<FinanceProductUsage>> {
+    return this.get<FinanceProductUsage>('/api/admin/federation/usage/product');
   }
 
   private resolveTimeoutMs(): number {
@@ -77,7 +85,18 @@ export class FinanceAdminClient {
     return Math.min(Math.max(parsed, MIN_TIMEOUT_MS), MAX_TIMEOUT_MS);
   }
 
-  private async get<T>(path: string): Promise<FinanceCallOutcome<T>> {
+  private get<T>(path: string): Promise<FinanceCallOutcome<T>> {
+    return this.request<T>(path, { expectArray: false });
+  }
+
+  private getArray<T>(path: string): Promise<FinanceCallOutcome<T[]>> {
+    return this.request<T[]>(path, { expectArray: true });
+  }
+
+  private async request<T>(
+    path: string,
+    opts: { expectArray: boolean },
+  ): Promise<FinanceCallOutcome<T>> {
     const base = process.env.FINANCE_API_BASE_URL?.trim();
     if (!base) {
       return {
@@ -100,7 +119,7 @@ export class FinanceAdminClient {
 
     let lastDegraded: FinanceCallOutcome<T> | null = null;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const outcome = await this.attempt<T>(url, token, timeoutMs);
+      const outcome = await this.attempt<T>(url, token, timeoutMs, opts.expectArray);
       if (outcome.kind === 'ok' || outcome.kind === 'not_found') {
         return outcome;
       }
@@ -127,6 +146,7 @@ export class FinanceAdminClient {
     url: string,
     token: string,
     timeoutMs: number,
+    expectArray: boolean,
   ): Promise<FinanceCallOutcome<T>> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -169,6 +189,20 @@ export class FinanceAdminClient {
           kind: 'degraded',
           reason: 'malformed_response',
           detail: 'expected JSON object',
+        };
+      }
+      if (expectArray && !Array.isArray(parsed)) {
+        return {
+          kind: 'degraded',
+          reason: 'malformed_response',
+          detail: 'expected JSON array',
+        };
+      }
+      if (!expectArray && Array.isArray(parsed)) {
+        return {
+          kind: 'degraded',
+          reason: 'malformed_response',
+          detail: 'expected JSON object, got array',
         };
       }
       return { kind: 'ok', data: parsed as T };
