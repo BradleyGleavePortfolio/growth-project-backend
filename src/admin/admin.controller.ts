@@ -19,6 +19,7 @@ import { FederationService } from './federation/federation.service';
 import { AdminConsoleService } from './console/admin-console.service';
 import { FinanceFederationService } from './console/finance-federation.service';
 import { GdprScrubService } from '../users/gdpr-scrub.service';
+import { ConsentService } from '../consent/consent.service';
 
 // Phase 1A/1B: OWNER-only platform admin surface. Every route here is
 // gated by JwtAuthGuard + RolesGuard with @Roles('owner') so a coach or
@@ -34,6 +35,7 @@ export class AdminController {
     private console: AdminConsoleService,
     private financeFederation: FinanceFederationService,
     private gdprScrub: GdprScrubService,
+    private consent: ConsentService,
   ) {}
 
   // OWNER-only platform metrics. Counters are derived from Postgres rows
@@ -215,6 +217,15 @@ export class AdminController {
   @Get('product/usage')
   async consoleProductUsage() {
     return this.financeFederation.getProductUsage();
+  }
+
+  // OWNER-only consent visibility. Returns the full per-(coach, scope)
+  // consent matrix for one client so the admin console can render the
+  // client's privacy state across every coach they have ever interacted
+  // with. Read-only — owners do not flip consent on a client's behalf.
+  @Get('clients/:id/consent')
+  async getClientConsent(@Param('id') id: string) {
+    return this.consent.listForClientAdmin(id);
   }
 
   // OWNER-only manual trigger / dry-run for the GDPR scrub worker. The

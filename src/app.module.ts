@@ -33,6 +33,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { SystemModule } from './system/system.module';
 import { AdminModule } from './admin/admin.module';
 import { AuditModule } from './audit/audit.module';
+import { ConsentModule } from './consent/consent.module';
 import { BillingModule } from './billing/billing.module';
 import { V1Module } from './v1/v1.module';
 import { InviteLandingModule } from './invite-landing/invite-landing.module';
@@ -83,6 +84,10 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
     // Global immutable audit log (compliance + sensitive-action trail).
     // Must precede AdminModule + UsersModule so AuditService is in DI scope.
     AuditModule,
+    // Consent layer v1 — client→coach data-access toggles. Global so
+    // CoachService and AdminService can inject ConsentService without a
+    // local import in their modules.
+    ConsentModule,
     // Phase 1A/1B platform admin (OWNER-only routes)
     AdminModule,
     // Stripe billing mirror + SubscriptionGuard (Phase 2A foundation).
