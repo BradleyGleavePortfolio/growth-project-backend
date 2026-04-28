@@ -32,6 +32,10 @@ invite link.
 | `GET` | `/admin/coaches/:id` | One coach plus students and 7-day activity (logs, workouts, messages) |
 | `GET` | `/admin/users?role=&q=&limit=` | Filterable user search; max 200 |
 | `POST` | `/admin/users/:id/promote` | Promote/demote `role` and, on `coach`, ensure a `CoachProfile` |
+| `GET` | `/admin/audit-log` | OWNER-only audit log with filters and `before` cursor |
+| `GET` | `/admin/federation/search?q=&limit=` | Cross-product search across fitness Postgres + finance backend. See `federation/README.md`. |
+| `GET` | `/admin/federation/clients/lookup?email=` | Per-client unified view with explicit fitness/finance product split. |
+| `GET` | `/admin/federation/coaches/lookup?email=` | Per-coach unified view with explicit fitness/finance product split. |
 
 ## Request / data flow
 
