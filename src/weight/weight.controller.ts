@@ -1,9 +1,11 @@
 import { Controller, Post, Get, Body, Query, UseGuards, Request } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { WeightService } from './weight.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { LogWeightDto } from './weight.dto';
 
+@ApiTags('weight')
 @Controller('weight')
 @UseGuards(JwtAuthGuard)
 export class WeightController {

@@ -1,8 +1,10 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards, NotFoundException } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { FoodService } from './food.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CreateFoodDto } from './food.dto';
 
+@ApiTags('food')
 @Controller('foods')
 @UseGuards(JwtAuthGuard)
 export class FoodController {

@@ -1,8 +1,10 @@
 import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { PrepGuideService, PrepGuideResult } from './prep-guide.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 
+@ApiTags('prep-guide')
 @Controller('prep-guide')
 @UseGuards(JwtAuthGuard)
 export class PrepGuideController {

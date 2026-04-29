@@ -9,6 +9,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
@@ -19,6 +20,7 @@ import { MealPlansService } from './meal-plans.service';
 // existing coach routes but kept in its own controller so none of the
 // already-shipped coach endpoint metadata/guards move (matches the pattern
 // used by CoachMessagingController / CoachNudgesController).
+@ApiTags('meal-plans')
 @Controller('coach')
 @UseGuards(JwtAuthGuard, CoachGuard)
 export class CoachMealPlansController {

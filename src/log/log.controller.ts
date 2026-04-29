@@ -1,9 +1,11 @@
 import { Controller, Post, Get, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { LogService } from './log.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { LogFoodDto, UpdateLogEntryDto } from './log.dto';
 
+@ApiTags('log')
 @Controller('log')
 @UseGuards(JwtAuthGuard)
 export class LogController {

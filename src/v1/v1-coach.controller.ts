@@ -7,6 +7,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -22,6 +23,7 @@ import { V1CoachService } from './v1-coach.service';
 // Auth: every route requires a JWT and a coach-or-owner role. SubscriptionGuard
 // gates write paths so a coach whose subscription is canceled or past_due
 // cannot continue sending messages; OWNER bypasses both checks.
+@ApiTags('coach-v1')
 @Controller('v1/coach/me')
 @UseGuards(JwtAuthGuard, CoachOrOwnerGuard)
 export class V1CoachController {

@@ -9,6 +9,12 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { UsersService } from './users.service';
@@ -18,6 +24,9 @@ import type { UserPreferencesDto } from './preferences.dto';
 import { BadgesService } from '../community/badges.service';
 import { AllowDeletionScheduled } from '../common/decorators/allow-deletion-scheduled.decorator';
 
+@ApiTags('users')
+@ApiBearerAuth('bearer')
+@ApiResponse({ status: 401, description: 'Missing or invalid bearer token.' })
 @Controller('users')
 @UseGuards(JwtAuthGuard)
 export class UsersController {
@@ -28,19 +37,22 @@ export class UsersController {
     private badgesService: BadgesService,
   ) {}
 
-  /**
-   * GET /users/me/preferences
-   * Returns current personalization preferences (with defaults filled in).
-   */
+  @ApiOperation({
+    summary: 'Get personalization preferences',
+    description: 'Returns current preferences with defaults filled in.',
+  })
+  @ApiResponse({ status: 200, description: 'Preferences object.' })
   @Get('me/preferences')
   getPreferences(@Request() req: AuthedRequest) {
     return this.preferencesService.getPreferences(req.user.id);
   }
 
-  /**
-   * PATCH /users/me/preferences
-   * Accepts a partial UserPreferencesDto body and merges it into the stored prefs.
-   */
+  @ApiOperation({
+    summary: 'Patch personalization preferences',
+    description: 'Merges a partial UserPreferencesDto into the stored prefs.',
+  })
+  @ApiResponse({ status: 200, description: 'Updated preferences object.' })
+  @ApiResponse({ status: 400, description: 'Validation error.' })
   @Patch('me/preferences')
   patchPreferences(
     @Request() req: AuthedRequest,
@@ -49,44 +61,43 @@ export class UsersController {
     return this.preferencesService.patchPreferences(req.user.id, body);
   }
 
-  /**
-   * GET /users/me/badges
-   * Returns all badges (earned + locked) for the current user.
-   * Earned badges include awardedAt; locked badges have awardedAt = null.
-   */
+  @ApiOperation({
+    summary: 'List badges (earned + locked) for the caller',
+    description: 'Earned badges include awardedAt; locked badges have awardedAt = null.',
+  })
+  @ApiResponse({ status: 200, description: 'Badge list.' })
   @Get('me/badges')
   getBadges(@Request() req: AuthedRequest) {
     return this.badgesService.getBadgesForUser(req.user.id);
   }
 
-  /**
-   * GET /users/me/founding-number
-   * Returns the user's 1-indexed join rank, total user count,
-   * and whether they are a "Founding Member" (rank ≤ 1000).
-   */
+  @ApiOperation({
+    summary: 'Founding-member rank',
+    description: 'Returns 1-indexed join rank, total user count, and whether the user is a Founding Member (rank ≤ 1000).',
+  })
+  @ApiResponse({ status: 200, description: 'Founding-member info.' })
   @Get('me/founding-number')
   getFoundingNumber(@Request() req: AuthedRequest) {
     return this.usersService.getFoundingNumber(req.user.id);
   }
 
-  /**
-   * GET /users/me/circle-stats
-   * Returns how many users in the caller's "circle" (coach→student group,
-   * or global if no relationship) trained today, plus the total member count.
-   */
+  @ApiOperation({
+    summary: 'Stats for the caller’s circle',
+    description: 'How many users in the caller’s coach→student group trained today, plus group size.',
+  })
+  @ApiResponse({ status: 200, description: 'Circle stats.' })
   @Get('me/circle-stats')
   getCircleStats(@Request() req: AuthedRequest) {
     return this.usersService.getCircleStats(req.user.id);
   }
 
-  /**
-   * POST /users/me/data-export
-   *
-   * GDPR/CCPA personal-data export. Synchronously assembles the user's
-   * personal data into a JSON snapshot, persists it to DataExportRequest,
-   * and returns a handle the client can poll. The payload itself is
-   * available via GET /users/me/data-export/:id.
-   */
+  @ApiOperation({
+    summary: 'Request a GDPR/CCPA personal-data export',
+    description:
+      'Synchronously assembles the snapshot, persists a DataExportRequest row, ' +
+      'and returns a handle. Fetch the payload at GET /users/me/data-export/:id.',
+  })
+  @ApiResponse({ status: 201, description: 'Export request handle.' })
   @Post('me/data-export')
   requestDataExport(@Request() req: AuthedRequest) {
     return this.accountService.requestDataExport(
@@ -95,22 +106,21 @@ export class UsersController {
     );
   }
 
+  @ApiOperation({ summary: 'Fetch a previously requested data export by id' })
+  @ApiResponse({ status: 200, description: 'Data export payload.' })
+  @ApiResponse({ status: 404, description: 'Export not found or not owned by caller.' })
   @Get('me/data-export/:id')
   getDataExport(@Request() req: AuthedRequest, @Param('id') id: string) {
     return this.accountService.getDataExport(req.user.id, id);
   }
 
-  /**
-   * DELETE /users/me/account
-   *
-   * Schedules a soft-delete with a 30-day grace period. Idempotent — a
-   * second call within the grace window returns the same scheduled_at.
-   * Use POST /users/me/account/cancel-deletion to undo.
-   *
-   * Hard delete (PII scrub) runs out-of-band after the grace window
-   * expires; that worker is intentionally out of scope for this PR — see
-   * docs/audit-and-gdpr.md for the operator runbook.
-   */
+  @ApiOperation({
+    summary: 'Schedule account deletion (30-day grace period)',
+    description:
+      'Idempotent — a second call within the grace window returns the same scheduled_at. ' +
+      'Use POST /users/me/account/cancel-deletion to undo.',
+  })
+  @ApiResponse({ status: 200, description: 'Deletion scheduled (or already scheduled).' })
   @Delete('me/account')
   deleteAccount(@Request() req: AuthedRequest) {
     return this.accountService.scheduleDeletion(
@@ -119,6 +129,9 @@ export class UsersController {
     );
   }
 
+  @ApiOperation({ summary: 'Cancel a scheduled account deletion' })
+  @ApiResponse({ status: 200, description: 'Deletion canceled.' })
+  @ApiResponse({ status: 404, description: 'No deletion scheduled.' })
   @Post('me/account/cancel-deletion')
   @AllowDeletionScheduled()
   cancelDeletion(@Request() req: AuthedRequest) {
@@ -128,19 +141,19 @@ export class UsersController {
     );
   }
 
+  @ApiOperation({ summary: 'Get deletion status (canonical path)' })
+  @ApiResponse({ status: 200, description: 'Deletion status.' })
   @Get('me/account/deletion-status')
   @AllowDeletionScheduled()
   deletionStatus(@Request() req: AuthedRequest) {
     return this.accountService.getDeletionStatus(req.user.id);
   }
 
-  /**
-   * GET /users/me/account/status
-   *
-   * Mobile-friendly alias of GET /users/me/account/deletion-status.
-   * Mobile PR #66 calls the shorter `/account/status` path; both
-   * routes share the same service call so the contract cannot drift.
-   */
+  @ApiOperation({
+    summary: 'Get deletion status (mobile-friendly alias)',
+    description: 'Same body as GET /users/me/account/deletion-status.',
+  })
+  @ApiResponse({ status: 200, description: 'Deletion status.' })
   @Get('me/account/status')
   @AllowDeletionScheduled()
   accountStatus(@Request() req: AuthedRequest) {

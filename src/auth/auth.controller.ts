@@ -9,6 +9,12 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { AuditableRequest, AuthedRequest } from './auth-request';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
@@ -32,6 +38,7 @@ import {
   INVITE_CODE_PATTERN,
 } from '../invite-codes/invite-codes.service';
 
+@ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -39,6 +46,15 @@ export class AuthController {
     private inviteCodes: InviteCodesService,
   ) {}
 
+  @ApiOperation({
+    summary: 'Register a new user with email + password',
+    description:
+      'Creates a Supabase user and the corresponding application User row. ' +
+      'Rate-limited to 10/hour/IP to blunt enumeration and spam signup loops.',
+  })
+  @ApiResponse({ status: 200, description: 'Session tokens for the new user.' })
+  @ApiResponse({ status: 400, description: 'Validation error.' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('register')
   // Named throttler `auth-signup`: 5/hour. Tracker is IP for unauthed
@@ -48,6 +64,13 @@ export class AuthController {
     return this.authService.register(body);
   }
 
+  @ApiOperation({
+    summary: 'Email + password login',
+    description: 'Returns Supabase access/refresh tokens. Rate-limited 10/min/IP.',
+  })
+  @ApiResponse({ status: 200, description: 'Authenticated session.' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials.' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('login')
   // Named throttler `auth-login`: 10/minute. Tracker is IP (login is
@@ -59,6 +82,14 @@ export class AuthController {
     return this.authService.login(body.email, body.password);
   }
 
+  @ApiOperation({
+    summary: 'Google OAuth exchange',
+    description:
+      'Exchanges a Google ID token for a Supabase session. Optional ' +
+      '`invite_code` attaches the new user to a coach in the same call.',
+  })
+  @ApiResponse({ status: 200, description: 'Authenticated session.' })
+  @ApiResponse({ status: 401, description: 'Invalid Google token.' })
   @Public()
   @Post('google')
   @HttpCode(HttpStatus.OK)
@@ -66,6 +97,13 @@ export class AuthController {
     return this.authService.googleAuth(body.token, body.invite_code);
   }
 
+  @ApiOperation({
+    summary: 'Get the active signup policy',
+    description:
+      'Returns whether an invite code is required and which auth providers ' +
+      'are usable on this build. Mobile calls this on launch.',
+  })
+  @ApiResponse({ status: 200, description: 'Signup policy.' })
   // Mobile #56 calls GET /auth/signup-policy on launch to learn whether the
   // coach invite code is required and which providers are usable on this
   // build. Public so the unauth client can fetch it.
@@ -76,6 +114,14 @@ export class AuthController {
     return this.authService.getSignupPolicy();
   }
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({
+    summary: 'Attach the caller to a coach via invite code',
+    description: 'Idempotent — re-running with the same code is a no-op.',
+  })
+  @ApiResponse({ status: 200, description: 'Attached to coach.' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid bearer token.' })
+  @ApiResponse({ status: 404, description: 'Invite code not found.' })
   // Alias for /coach-codes/auth/attach-coach-code so mobile can hit the
   // canonical /auth/attach-invite-code path with the new `invite_code`
   // field name. Same behavior, same idempotency. Throttled the same way.
@@ -89,6 +135,15 @@ export class AuthController {
     return this.inviteCodes.attachUserToCoachByCode(req.user.id, body.invite_code);
   }
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({
+    summary: 'Select role + optionally attach invite code',
+    description:
+      'Only `student` is honored — coach elevation must be done by an OWNER ' +
+      'admin. A `coach` value will be rejected with 403.',
+  })
+  @ApiResponse({ status: 200, description: 'Role applied.' })
+  @ApiResponse({ status: 403, description: 'Role elevation rejected.' })
   @Post('select-role')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
@@ -107,6 +162,16 @@ export class AuthController {
   // any DB lookup — so the response is identical for "32 chars of garbage"
   // and "200 chars of garbage" and never leaks whether a malformed code
   // exists. We also do not echo the user's input back in the error body.
+  @ApiOperation({
+    summary: 'Preview an invite code',
+    description:
+      'Returns `{ valid, coach_id?, coach_name? }`. Format-validates the code ' +
+      'before any DB lookup so the response is identical for malformed input. ' +
+      'Rate-limited 20/min/IP.',
+  })
+  @ApiResponse({ status: 200, description: 'Invite code preview result.' })
+  @ApiResponse({ status: 400, description: 'Invite code format is invalid.' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('validate-invite-code')
   @Throttle({ default: { ttl: 60000, limit: 20 } })
@@ -134,6 +199,12 @@ export class AuthController {
     };
   }
 
+  @ApiOperation({
+    summary: 'Trigger a password-reset email',
+    description:
+      'Always returns 200 to avoid leaking whether an email is registered.',
+  })
+  @ApiResponse({ status: 200, description: 'Email dispatched if user exists.' })
   @Public()
   @Post('forgot-password')
   // SECURITY (audit S-1): 5/15min on POST /auth/forgot-password. Without this
@@ -146,12 +217,25 @@ export class AuthController {
     return this.authService.forgotPassword(body.email);
   }
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Get the authenticated user' })
+  @ApiResponse({ status: 200, description: 'Caller profile.' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid bearer token.' })
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async getMe(@Request() req: AuthedRequest) {
     return this.authService.getMe(req.user.id);
   }
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({
+    summary: 'Self-elevate to coach role',
+    description:
+      'Requires re-entering the current password. Gated by COACH_SELF_ELEVATION_ENABLED.',
+  })
+  @ApiResponse({ status: 200, description: 'Coach role granted.' })
+  @ApiResponse({ status: 401, description: 'Wrong password.' })
+  @ApiResponse({ status: 403, description: 'Self-elevation disabled.' })
   @Post('become-coach')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
@@ -166,6 +250,14 @@ export class AuthController {
   // Phase 1C: client signup that includes the coach's invite code in the
   // same call. Behind COACH_CODE_GATE_ENABLED=true the code is required.
   // Public so the mobile app can hit it without a JWT.
+  @ApiOperation({
+    summary: 'Signup including a coach invite code in one call',
+    description:
+      'Behind COACH_CODE_GATE_ENABLED=true the invite_code is required.',
+  })
+  @ApiResponse({ status: 201, description: 'New session, attached to coach.' })
+  @ApiResponse({ status: 400, description: 'Invite code missing or invalid.' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('signup-with-code')
   // Named throttler `auth-signup`: 5/hour. Same signup surface as

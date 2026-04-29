@@ -9,11 +9,13 @@ import {
   Request,
   HttpCode,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { RecipesService } from './recipes.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CreateRecipeDto } from './recipes.dto';
 
+@ApiTags('recipes')
 @Controller('recipes')
 @UseGuards(JwtAuthGuard)
 export class RecipesController {

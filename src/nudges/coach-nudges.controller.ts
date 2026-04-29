@@ -6,6 +6,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -18,6 +19,7 @@ import { NudgesService } from './nudges.service';
 // without modifying CoachController (same reasoning as CoachMessagingController
 // — a separate controller isolates throttle rules and avoids reordering the
 // already-shipped coach-endpoint guards/metadata).
+@ApiTags('nudges')
 @Controller('coach')
 @UseGuards(JwtAuthGuard, CoachGuard)
 export class CoachNudgesController {

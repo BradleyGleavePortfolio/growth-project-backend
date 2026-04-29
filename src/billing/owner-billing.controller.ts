@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { SubscriptionStatus } from '@prisma/client';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { OwnerGuard } from '../common/guards/owner.guard';
@@ -43,6 +44,7 @@ const ACTIVE_BLOCKING_STATUSES = new Set([
   'past_due',
 ]);
 
+@ApiTags('billing-admin')
 @Controller('v1/admin')
 @UseGuards(JwtAuthGuard, OwnerGuard)
 export class OwnerBillingController {

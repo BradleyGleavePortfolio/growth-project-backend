@@ -1,9 +1,11 @@
 import { Controller, Post, Get, Body, UseGuards, Request } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { Throttle } from '@nestjs/throttler';
 import { AiService } from './ai.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 
+@ApiTags('ai')
 @Controller('ai')
 @UseGuards(JwtAuthGuard)
 export class AiController {

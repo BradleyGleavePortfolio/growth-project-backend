@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/;
@@ -26,6 +27,7 @@ function readLastSecurityUpdate(env: NodeJS.ProcessEnv = process.env): string {
  * in, or if a token refresh fails.
  */
 @Public()
+@ApiTags('system')
 @Controller('system')
 export class SystemController {
   /**

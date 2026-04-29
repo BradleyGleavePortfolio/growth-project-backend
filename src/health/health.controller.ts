@@ -1,4 +1,5 @@
 import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma.service';
@@ -17,6 +18,7 @@ import { PrismaService } from '../prisma.service';
 //                   (a quick `SELECT 1`). Returns 503 otherwise so that load
 //                   balancers can stop sending traffic to a machine whose
 //                   DB connection is down without restarting it.
+@ApiTags('health')
 @Public()
 @Controller()
 export class HealthController {
@@ -24,11 +26,27 @@ export class HealthController {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  @ApiOperation({
+    summary: 'Liveness probe (legacy alias)',
+    description: 'Unauthenticated. Equivalent to GET /healthz. Returns process uptime + timestamp.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '`{ ok: true, uptime: number, timestamp: ISO8601 }`',
+  })
   @Get('health')
   check() {
     return this.liveness();
   }
 
+  @ApiOperation({
+    summary: 'Liveness probe',
+    description: 'Unauthenticated. Returns process uptime + timestamp.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '`{ ok: true, uptime: number, timestamp: ISO8601 }`',
+  })
   @Get('healthz')
   liveness() {
     return {

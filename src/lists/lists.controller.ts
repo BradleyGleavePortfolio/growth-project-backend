@@ -11,6 +11,7 @@ import {
   HttpCode,
   BadRequestException,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { ListsService } from './lists.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -22,6 +23,7 @@ function parseListType(type: string): ListType {
   throw new BadRequestException('List type must be "grocery" or "shopping"');
 }
 
+@ApiTags('lists')
 @Controller('lists')
 @UseGuards(JwtAuthGuard)
 export class ListsController {

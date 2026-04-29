@@ -8,11 +8,13 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { CommunityService } from './community.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { PostWinDto, ReactToWinDto } from './community.dto';
 
+@ApiTags('community')
 @Controller('community')
 @UseGuards(JwtAuthGuard)
 export class CommunityController {

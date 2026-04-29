@@ -15,7 +15,8 @@
     "secrets:missing": "FORMAT=missing ts-node scripts/print-required-secrets.ts",
     "smoke": "ts-node scripts/smoke.ts",
     "smoke:staging": "SMOKE_BASE_URL=${SMOKE_BASE_URL:-https://api-staging.thegrowthproject.app} ts-node scripts/smoke.ts",
-    "smoke:admin-federation": "ts-node scripts/admin-federation-smoke.ts"
+    "smoke:admin-federation": "ts-node scripts/admin-federation-smoke.ts",
+    "openapi:export": "ts-node scripts/export-openapi.ts"
   },
   "dependencies": {
     "@nest-lab/throttler-storage-redis": "^1.2.0",
@@ -24,6 +25,7 @@
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
     "@nestjs/schedule": "^6.1.3",
+    "@nestjs/swagger": "^11.4.2",
     "@nestjs/throttler": "^6.0.0",
     "@prisma/client": "^5.0.0",
     "@sentry/node": "~9.5.0",

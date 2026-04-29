@@ -1,0 +1,4246 @@
+{
+  "openapi": "3.1.0",
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "description": "Creates a Supabase user and the corresponding application User row. Rate-limited to 10/hour/IP to blunt enumeration and spam signup loops.",
+        "operationId": "AuthController_register",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Session tokens for the new user."
+          },
+          "400": {
+            "description": "Validation error."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          }
+        },
+        "summary": "Register a new user with email + password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "description": "Returns Supabase access/refresh tokens. Rate-limited 10/min/IP.",
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated session."
+          },
+          "401": {
+            "description": "Invalid credentials."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          }
+        },
+        "summary": "Email + password login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/google": {
+      "post": {
+        "description": "Exchanges a Google ID token for a Supabase session. Optional `invite_code` attaches the new user to a coach in the same call.",
+        "operationId": "AuthController_googleAuth",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleAuthDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated session."
+          },
+          "401": {
+            "description": "Invalid Google token."
+          }
+        },
+        "summary": "Google OAuth exchange",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/signup-policy": {
+      "get": {
+        "description": "Returns whether an invite code is required and which auth providers are usable on this build. Mobile calls this on launch.",
+        "operationId": "AuthController_getSignupPolicy",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Signup policy."
+          }
+        },
+        "summary": "Get the active signup policy",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/attach-invite-code": {
+      "post": {
+        "description": "Idempotent — re-running with the same code is a no-op.",
+        "operationId": "AuthController_attachInviteCode",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachInviteCodeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Attached to coach."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          },
+          "404": {
+            "description": "Invite code not found."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Attach the caller to a coach via invite code",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/select-role": {
+      "post": {
+        "description": "Only `student` is honored — coach elevation must be done by an OWNER admin. A `coach` value will be rejected with 403.",
+        "operationId": "AuthController_selectRole",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Role applied."
+          },
+          "403": {
+            "description": "Role elevation rejected."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Select role + optionally attach invite code",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/validate-invite-code": {
+      "post": {
+        "description": "Returns `{ valid, coach_id?, coach_name? }`. Format-validates the code before any DB lookup so the response is identical for malformed input. Rate-limited 20/min/IP.",
+        "operationId": "AuthController_validateInviteCode",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateInviteCodePublicDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Invite code preview result."
+          },
+          "400": {
+            "description": "Invite code format is invalid."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          }
+        },
+        "summary": "Preview an invite code",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/forgot-password": {
+      "post": {
+        "description": "Always returns 200 to avoid leaking whether an email is registered.",
+        "operationId": "AuthController_forgotPassword",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgotPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Email dispatched if user exists."
+          }
+        },
+        "summary": "Trigger a password-reset email",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "operationId": "AuthController_getMe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Caller profile."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the authenticated user",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/become-coach": {
+      "post": {
+        "description": "Requires re-entering the current password. Gated by COACH_SELF_ELEVATION_ENABLED.",
+        "operationId": "AuthController_becomeCoach",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BecomeCoachDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Coach role granted."
+          },
+          "401": {
+            "description": "Wrong password."
+          },
+          "403": {
+            "description": "Self-elevation disabled."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Self-elevate to coach role",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/signup-with-code": {
+      "post": {
+        "description": "Behind COACH_CODE_GATE_ENABLED=true the invite_code is required.",
+        "operationId": "AuthController_signupWithCode",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupWithCodeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "New session, attached to coach."
+          },
+          "400": {
+            "description": "Invite code missing or invalid."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          }
+        },
+        "summary": "Signup including a coach invite code in one call",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/coach/invite-codes": {
+      "post": {
+        "operationId": "InviteCodesController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInviteCodeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "invite-codes"
+        ]
+      },
+      "get": {
+        "operationId": "InviteCodesController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "invite-codes"
+        ]
+      }
+    },
+    "/coach/invite-codes/{id}": {
+      "delete": {
+        "operationId": "InviteCodesController_revoke",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "invite-codes"
+        ]
+      }
+    },
+    "/coaches/me/invite-link": {
+      "get": {
+        "operationId": "InviteCodesController_getMyInviteLink",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "invite-codes"
+        ]
+      }
+    },
+    "/coaches/me/invite-link/regenerate": {
+      "post": {
+        "operationId": "InviteCodesController_regenerateMyInviteLink",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "invite-codes"
+        ]
+      }
+    },
+    "/invite/{code}/preview": {
+      "get": {
+        "operationId": "InviteCodesController_previewInvite",
+        "parameters": [
+          {
+            "name": "code",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "invite-codes"
+        ]
+      }
+    },
+    "/auth/attach-coach-code": {
+      "post": {
+        "operationId": "InviteCodesController_attachCoachCode",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "invite-codes"
+        ]
+      }
+    },
+    "/profile": {
+      "get": {
+        "operationId": "ProfileController_getProfile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "profile"
+        ]
+      },
+      "put": {
+        "operationId": "ProfileController_updateProfile",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfileDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "profile"
+        ]
+      }
+    },
+    "/foods/search": {
+      "get": {
+        "operationId": "FoodController_search",
+        "parameters": [
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "food"
+        ]
+      }
+    },
+    "/foods/barcode/{upc}": {
+      "get": {
+        "operationId": "FoodController_getByBarcode",
+        "parameters": [
+          {
+            "name": "upc",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "food"
+        ]
+      }
+    },
+    "/foods/{id}": {
+      "get": {
+        "operationId": "FoodController_getById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "food"
+        ]
+      }
+    },
+    "/foods": {
+      "post": {
+        "operationId": "FoodController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFoodDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "food"
+        ]
+      }
+    },
+    "/log/food": {
+      "post": {
+        "operationId": "LogController_logFood",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogFoodDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "log"
+        ]
+      }
+    },
+    "/log/daily": {
+      "get": {
+        "operationId": "LogController_getDaily",
+        "parameters": [
+          {
+            "name": "date",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "log"
+        ]
+      }
+    },
+    "/log/food/{id}": {
+      "put": {
+        "operationId": "LogController_updateEntry",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLogEntryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "log"
+        ]
+      },
+      "delete": {
+        "operationId": "LogController_deleteEntry",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "log"
+        ]
+      }
+    },
+    "/log/weekly": {
+      "get": {
+        "operationId": "LogController_getWeekly",
+        "parameters": [
+          {
+            "name": "week_start",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "log"
+        ]
+      }
+    },
+    "/workouts": {
+      "post": {
+        "operationId": "WorkoutController_createWorkout",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkoutDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "workout"
+        ]
+      },
+      "get": {
+        "operationId": "WorkoutController_getWorkouts",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "workout"
+        ]
+      }
+    },
+    "/workouts/volume": {
+      "get": {
+        "operationId": "WorkoutController_getVolume",
+        "parameters": [
+          {
+            "name": "period",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "workout"
+        ]
+      }
+    },
+    "/routines": {
+      "get": {
+        "operationId": "WorkoutController_getRoutines",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "workout"
+        ]
+      },
+      "post": {
+        "operationId": "WorkoutController_createRoutine",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoutineDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "workout"
+        ]
+      }
+    },
+    "/routines/{id}": {
+      "put": {
+        "operationId": "WorkoutController_updateRoutine",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoutineDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "workout"
+        ]
+      },
+      "delete": {
+        "operationId": "WorkoutController_deleteRoutine",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "workout"
+        ]
+      }
+    },
+    "/fasting/start": {
+      "post": {
+        "operationId": "FastingController_startFast",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartFastDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "fasting"
+        ]
+      }
+    },
+    "/fasting/end": {
+      "post": {
+        "operationId": "FastingController_endFast",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EndFastDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "fasting"
+        ]
+      }
+    },
+    "/fasting/history": {
+      "get": {
+        "operationId": "FastingController_getHistory",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "fasting"
+        ]
+      }
+    },
+    "/weight": {
+      "post": {
+        "operationId": "WeightController_logWeight",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogWeightDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "weight"
+        ]
+      }
+    },
+    "/weight/history": {
+      "get": {
+        "operationId": "WeightController_getHistory",
+        "parameters": [
+          {
+            "name": "days",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "weight"
+        ]
+      }
+    },
+    "/habits": {
+      "get": {
+        "operationId": "HabitsController_getHabits",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "habits"
+        ]
+      },
+      "post": {
+        "operationId": "HabitsController_createHabit",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateHabitDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "habits"
+        ]
+      }
+    },
+    "/habits/{id}/log": {
+      "post": {
+        "operationId": "HabitsController_logHabit",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogHabitDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "habits"
+        ]
+      }
+    },
+    "/habits/logs": {
+      "get": {
+        "operationId": "HabitsController_getLogs",
+        "parameters": [
+          {
+            "name": "date",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "habits"
+        ]
+      }
+    },
+    "/habits/streaks": {
+      "get": {
+        "operationId": "HabitsController_getStreaks",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "habits"
+        ]
+      }
+    },
+    "/habits/{id}": {
+      "delete": {
+        "operationId": "HabitsController_deleteHabit",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "habits"
+        ]
+      }
+    },
+    "/ai/chat": {
+      "post": {
+        "operationId": "AiController_chat",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/ai/context": {
+      "get": {
+        "operationId": "AiController_getContext",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/ai/structured-context": {
+      "get": {
+        "operationId": "AiController_getStructuredContext",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/coach/dashboard": {
+      "get": {
+        "operationId": "CoachController_getDashboard",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach"
+        ]
+      }
+    },
+    "/coach/clients": {
+      "get": {
+        "operationId": "CoachController_getClients",
+        "parameters": [
+          {
+            "name": "status",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach"
+        ]
+      }
+    },
+    "/coach/clients/{id}/archive": {
+      "post": {
+        "operationId": "CoachController_archiveClient",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach"
+        ]
+      }
+    },
+    "/coach/clients/{id}/unarchive": {
+      "post": {
+        "operationId": "CoachController_unarchiveClient",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach"
+        ]
+      }
+    },
+    "/coach/clients/{id}/timeline": {
+      "get": {
+        "operationId": "CoachController_getClientTimeline",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "days",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach"
+        ]
+      }
+    },
+    "/coach/clients/{id}/summary": {
+      "get": {
+        "operationId": "CoachController_getClientSummary",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach"
+        ]
+      }
+    },
+    "/coach/my-guidelines": {
+      "get": {
+        "operationId": "CoachController_getMyGuidelines",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach"
+        ]
+      }
+    },
+    "/coach/guidelines/{client_id}": {
+      "get": {
+        "operationId": "CoachController_getGuidelines",
+        "parameters": [
+          {
+            "name": "client_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach"
+        ]
+      },
+      "post": {
+        "operationId": "CoachController_postGuidelines",
+        "parameters": [
+          {
+            "name": "client_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach"
+        ]
+      }
+    },
+    "/coach/alerts": {
+      "get": {
+        "operationId": "CoachController_getAlerts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach"
+        ]
+      }
+    },
+    "/notifications/preferences": {
+      "get": {
+        "operationId": "NotificationsController_getPreferences",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "notifications"
+        ]
+      },
+      "put": {
+        "operationId": "NotificationsController_updatePreferences",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationPreferencesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/community/leaderboard": {
+      "get": {
+        "operationId": "CommunityController_getLeaderboard",
+        "parameters": [
+          {
+            "name": "period",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "community"
+        ]
+      }
+    },
+    "/community/feed": {
+      "get": {
+        "operationId": "CommunityController_getFeed",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "community"
+        ]
+      }
+    },
+    "/community/wins": {
+      "post": {
+        "operationId": "CommunityController_postWin",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostWinDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "community"
+        ]
+      }
+    },
+    "/community/wins/{id}/react": {
+      "post": {
+        "operationId": "CommunityController_reactToWin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReactToWinDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "community"
+        ]
+      }
+    },
+    "/lessons": {
+      "get": {
+        "operationId": "LessonsController_getLessons",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "lessons"
+        ]
+      },
+      "post": {
+        "operationId": "LessonsController_createLesson",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLessonDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "lessons"
+        ]
+      }
+    },
+    "/lessons/{id}": {
+      "put": {
+        "operationId": "LessonsController_updateLesson",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLessonDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "lessons"
+        ]
+      }
+    },
+    "/lessons/{id}/complete": {
+      "post": {
+        "operationId": "LessonsController_completeLesson",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "lessons"
+        ]
+      }
+    },
+    "/lessons/recommended": {
+      "get": {
+        "operationId": "LessonsController_getRecommended",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "lessons"
+        ]
+      }
+    },
+    "/nutrition/water": {
+      "post": {
+        "operationId": "WaterController_logWater",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogWaterDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "nutrition"
+        ]
+      },
+      "get": {
+        "operationId": "WaterController_getDaily",
+        "parameters": [
+          {
+            "name": "date",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "nutrition"
+        ]
+      }
+    },
+    "/nutrition/water/weekly": {
+      "get": {
+        "operationId": "WaterController_getWeekly",
+        "parameters": [
+          {
+            "name": "start_date",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "nutrition"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Unauthenticated. Returns process uptime + timestamp.",
+        "operationId": "HealthController_check",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "`{ ok: true, uptime: number, timestamp: ISO8601 }`"
+          }
+        },
+        "summary": "Liveness probe",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/coach/clients/{client_id}/messages": {
+      "get": {
+        "operationId": "CoachMessagingController_listThread",
+        "parameters": [
+          {
+            "name": "client_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "messaging"
+        ]
+      },
+      "post": {
+        "operationId": "CoachMessagingController_send",
+        "parameters": [
+          {
+            "name": "client_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "messaging"
+        ]
+      }
+    },
+    "/coach/clients/{client_id}/messages/read": {
+      "post": {
+        "operationId": "CoachMessagingController_markRead",
+        "parameters": [
+          {
+            "name": "client_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "messaging"
+        ]
+      }
+    },
+    "/coach/messages/unread-count": {
+      "get": {
+        "operationId": "CoachMessagingController_unreadCount",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "messaging"
+        ]
+      }
+    },
+    "/messages": {
+      "get": {
+        "operationId": "ClientMessagingController_listThread",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "messaging"
+        ]
+      },
+      "post": {
+        "operationId": "ClientMessagingController_send",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "messaging"
+        ]
+      }
+    },
+    "/messages/read": {
+      "post": {
+        "operationId": "ClientMessagingController_markRead",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "messaging"
+        ]
+      }
+    },
+    "/messages/unread-count": {
+      "get": {
+        "operationId": "ClientMessagingController_unreadCount",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "messaging"
+        ]
+      }
+    },
+    "/coach/clients/{client_id}/nudges": {
+      "post": {
+        "operationId": "CoachNudgesController_create",
+        "parameters": [
+          {
+            "name": "client_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNudgeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "nudges"
+        ]
+      }
+    },
+    "/nudges": {
+      "get": {
+        "operationId": "ClientNudgesController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "nudges"
+        ]
+      }
+    },
+    "/nudges/unread-count": {
+      "get": {
+        "operationId": "ClientNudgesController_unreadCount",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "nudges"
+        ]
+      }
+    },
+    "/nudges/{id}/read": {
+      "post": {
+        "operationId": "ClientNudgesController_markRead",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "nudges"
+        ]
+      }
+    },
+    "/coach/clients/{client_id}/meal-plans": {
+      "get": {
+        "operationId": "CoachMealPlansController_list",
+        "parameters": [
+          {
+            "name": "client_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "meal-plans"
+        ]
+      },
+      "post": {
+        "operationId": "CoachMealPlansController_create",
+        "parameters": [
+          {
+            "name": "client_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMealPlanDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "meal-plans"
+        ]
+      }
+    },
+    "/coach/meal-plans/{id}": {
+      "patch": {
+        "operationId": "CoachMealPlansController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMealPlanDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "meal-plans"
+        ]
+      },
+      "delete": {
+        "operationId": "CoachMealPlansController_archive",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "meal-plans"
+        ]
+      }
+    },
+    "/meal-plans": {
+      "get": {
+        "operationId": "ClientMealPlansController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "meal-plans"
+        ]
+      }
+    },
+    "/meal-plans/{id}": {
+      "get": {
+        "operationId": "ClientMealPlansController_getOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "meal-plans"
+        ]
+      }
+    },
+    "/check-ins": {
+      "post": {
+        "operationId": "ClientCheckInsController_upsert",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCheckInDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "check-ins"
+        ]
+      },
+      "get": {
+        "operationId": "ClientCheckInsController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "check-ins"
+        ]
+      }
+    },
+    "/check-ins/{id}": {
+      "get": {
+        "operationId": "ClientCheckInsController_getOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "check-ins"
+        ]
+      }
+    },
+    "/coach/clients/{client_id}/check-ins": {
+      "get": {
+        "operationId": "CoachCheckInsController_list",
+        "parameters": [
+          {
+            "name": "client_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "check-ins"
+        ]
+      }
+    },
+    "/recipes": {
+      "get": {
+        "operationId": "RecipesController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "recipes"
+        ]
+      },
+      "post": {
+        "operationId": "RecipesController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRecipeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "recipes"
+        ]
+      }
+    },
+    "/recipes/saved": {
+      "get": {
+        "operationId": "RecipesController_listSaved",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "recipes"
+        ]
+      }
+    },
+    "/recipes/{id}": {
+      "get": {
+        "operationId": "RecipesController_getById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "recipes"
+        ]
+      }
+    },
+    "/recipes/{id}/save": {
+      "post": {
+        "operationId": "RecipesController_save",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "recipes"
+        ]
+      },
+      "delete": {
+        "operationId": "RecipesController_unsave",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "recipes"
+        ]
+      }
+    },
+    "/lists/{type}": {
+      "get": {
+        "operationId": "ListsController_getList",
+        "parameters": [
+          {
+            "name": "type",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "lists"
+        ]
+      },
+      "post": {
+        "operationId": "ListsController_addItem",
+        "parameters": [
+          {
+            "name": "type",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddListItemDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "lists"
+        ]
+      }
+    },
+    "/lists/{type}/clear-checked": {
+      "post": {
+        "operationId": "ListsController_clearChecked",
+        "parameters": [
+          {
+            "name": "type",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "lists"
+        ]
+      }
+    },
+    "/lists/{type}/bulk": {
+      "post": {
+        "operationId": "ListsController_bulkAdd",
+        "parameters": [
+          {
+            "name": "type",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "lists"
+        ]
+      }
+    },
+    "/lists/items/{id}": {
+      "patch": {
+        "operationId": "ListsController_updateItem",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateListItemDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "lists"
+        ]
+      },
+      "delete": {
+        "operationId": "ListsController_deleteItem",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "lists"
+        ]
+      }
+    },
+    "/prep-guide": {
+      "get": {
+        "operationId": "PrepGuideController_getWeeklyGuide",
+        "parameters": [
+          {
+            "name": "week",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "prep-guide"
+        ]
+      }
+    },
+    "/users/me/preferences": {
+      "get": {
+        "description": "Returns current preferences with defaults filled in.",
+        "operationId": "UsersController_getPreferences",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Preferences object."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get personalization preferences",
+        "tags": [
+          "users"
+        ]
+      },
+      "patch": {
+        "description": "Merges a partial UserPreferencesDto into the stored prefs.",
+        "operationId": "UsersController_patchPreferences",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Updated preferences object."
+          },
+          "400": {
+            "description": "Validation error."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Patch personalization preferences",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/me/badges": {
+      "get": {
+        "description": "Earned badges include awardedAt; locked badges have awardedAt = null.",
+        "operationId": "UsersController_getBadges",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Badge list."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List badges (earned + locked) for the caller",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/me/founding-number": {
+      "get": {
+        "description": "Returns 1-indexed join rank, total user count, and whether the user is a Founding Member (rank ≤ 1000).",
+        "operationId": "UsersController_getFoundingNumber",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Founding-member info."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Founding-member rank",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/me/circle-stats": {
+      "get": {
+        "description": "How many users in the caller’s coach→student group trained today, plus group size.",
+        "operationId": "UsersController_getCircleStats",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Circle stats."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Stats for the caller’s circle",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/me/data-export": {
+      "post": {
+        "description": "Synchronously assembles the snapshot, persists a DataExportRequest row, and returns a handle. Fetch the payload at GET /users/me/data-export/:id.",
+        "operationId": "UsersController_requestDataExport",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Export request handle."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Request a GDPR/CCPA personal-data export",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/me/data-export/{id}": {
+      "get": {
+        "operationId": "UsersController_getDataExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Data export payload."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          },
+          "404": {
+            "description": "Export not found or not owned by caller."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Fetch a previously requested data export by id",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/me/account": {
+      "delete": {
+        "description": "Idempotent — a second call within the grace window returns the same scheduled_at. Use POST /users/me/account/cancel-deletion to undo.",
+        "operationId": "UsersController_deleteAccount",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Deletion scheduled (or already scheduled)."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Schedule account deletion (30-day grace period)",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/me/account/cancel-deletion": {
+      "post": {
+        "operationId": "UsersController_cancelDeletion",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Deletion canceled."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          },
+          "404": {
+            "description": "No deletion scheduled."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Cancel a scheduled account deletion",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/me/account/deletion-status": {
+      "get": {
+        "operationId": "UsersController_deletionStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Deletion status."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get deletion status (canonical path)",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/me/account/status": {
+      "get": {
+        "description": "Same body as GET /users/me/account/deletion-status.",
+        "operationId": "UsersController_accountStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Deletion status."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get deletion status (mobile-friendly alias)",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/system/trust-meta": {
+      "get": {
+        "operationId": "SystemController_getTrustMeta",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/consent/scopes": {
+      "get": {
+        "operationId": "ConsentController_listScopes",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "consent"
+        ]
+      }
+    },
+    "/consent/me": {
+      "get": {
+        "operationId": "ConsentController_getMyConsent",
+        "parameters": [
+          {
+            "name": "coach_id",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "consent"
+        ]
+      }
+    },
+    "/consent/grant": {
+      "post": {
+        "operationId": "ConsentController_grant",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantConsentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "consent"
+        ]
+      }
+    },
+    "/consent/revoke": {
+      "post": {
+        "operationId": "ConsentController_revoke",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeConsentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "consent"
+        ]
+      }
+    },
+    "/consent/check/{client_id}/{scope}": {
+      "get": {
+        "operationId": "ConsentController_check",
+        "parameters": [
+          {
+            "name": "client_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "consent"
+        ]
+      }
+    },
+    "/admin/metrics": {
+      "get": {
+        "operationId": "AdminController_getMetrics",
+        "parameters": [
+          {
+            "name": "since_days",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/coaches": {
+      "get": {
+        "operationId": "AdminController_listCoaches",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/coaches/{id}": {
+      "get": {
+        "operationId": "AdminController_getCoach",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "operationId": "AdminController_listUsers",
+        "parameters": [
+          {
+            "name": "role",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/users/{id}/promote": {
+      "post": {
+        "operationId": "AdminController_promoteUser",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/audit-log": {
+      "get": {
+        "operationId": "AdminController_listAuditLog",
+        "parameters": [
+          {
+            "name": "action",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target_user_id",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tenant_coach_id",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/federation/search": {
+      "get": {
+        "operationId": "AdminController_federationSearch",
+        "parameters": [
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/federation/clients/lookup": {
+      "get": {
+        "operationId": "AdminController_federationClientLookup",
+        "parameters": [
+          {
+            "name": "email",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/federation/coaches/lookup": {
+      "get": {
+        "operationId": "AdminController_federationCoachLookup",
+        "parameters": [
+          {
+            "name": "email",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/search": {
+      "get": {
+        "operationId": "AdminController_consoleSearch",
+        "parameters": [
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/coaches/{id}/overview": {
+      "get": {
+        "operationId": "AdminController_consoleCoachOverview",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/clients/{id}": {
+      "get": {
+        "operationId": "AdminController_consoleClient",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/clients/{id}/unified": {
+      "get": {
+        "operationId": "AdminController_consoleClientUnified",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/clients/{id}/entitlements": {
+      "get": {
+        "operationId": "AdminController_consoleClientEntitlements",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/coaches/{id}/entitlements": {
+      "get": {
+        "operationId": "AdminController_consoleCoachEntitlements",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/finance/health": {
+      "get": {
+        "operationId": "AdminController_consoleFinanceHealth",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/integrations/status": {
+      "get": {
+        "operationId": "AdminController_consoleIntegrationsStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/product/usage": {
+      "get": {
+        "operationId": "AdminController_consoleProductUsage",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/clients/{id}/consent": {
+      "get": {
+        "operationId": "AdminController_getClientConsent",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/gdpr/scrub": {
+      "post": {
+        "operationId": "AdminController_runGdprScrub",
+        "parameters": [
+          {
+            "name": "dry_run",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/reports/metrics-overview": {
+      "get": {
+        "operationId": "ReportsController_metricsOverview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin-reports"
+        ]
+      }
+    },
+    "/admin/reports/coaches": {
+      "get": {
+        "operationId": "ReportsController_coaches",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin-reports"
+        ]
+      }
+    },
+    "/admin/reports/clients": {
+      "get": {
+        "operationId": "ReportsController_clients",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin-reports"
+        ]
+      }
+    },
+    "/admin/reports/billing-past-due": {
+      "get": {
+        "operationId": "ReportsController_billingPastDue",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin-reports"
+        ]
+      }
+    },
+    "/admin/reports/product-usage": {
+      "get": {
+        "operationId": "ReportsController_productUsage",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin-reports"
+        ]
+      }
+    },
+    "/admin/reports/federation-health": {
+      "get": {
+        "operationId": "ReportsController_federationHealth",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin-reports"
+        ]
+      }
+    },
+    "/admin/reports/audit-summary": {
+      "get": {
+        "operationId": "ReportsController_auditSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin-reports"
+        ]
+      }
+    },
+    "/admin/reports": {
+      "get": {
+        "operationId": "ReportsController_index",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin-reports"
+        ]
+      }
+    },
+    "/v1/webhooks/stripe": {
+      "post": {
+        "operationId": "StripeWebhookController_stripe",
+        "parameters": [
+          {
+            "name": "stripe-signature",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/v1/coach/me/billing": {
+      "get": {
+        "operationId": "CoachBillingController_getBilling",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/v1/coach/me/billing/portal-session": {
+      "post": {
+        "operationId": "CoachBillingController_portalSession",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/coach/billing/status": {
+      "get": {
+        "operationId": "MobileCoachBillingController_getStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/coach/billing/portal-session": {
+      "post": {
+        "operationId": "MobileCoachBillingController_portalSession",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/v1/admin/coaches/{id}/start-subscription": {
+      "post": {
+        "operationId": "OwnerBillingController_startSubscription",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "billing-admin"
+        ]
+      }
+    },
+    "/v1/coach/me": {
+      "get": {
+        "operationId": "V1CoachController_getMe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach-v1"
+        ]
+      }
+    },
+    "/v1/coach/me/clients": {
+      "get": {
+        "operationId": "V1CoachController_listClients",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach-v1"
+        ]
+      }
+    },
+    "/v1/coach/me/threads": {
+      "get": {
+        "operationId": "V1CoachController_listThreads",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach-v1"
+        ]
+      }
+    },
+    "/v1/coach/me/threads/{clientId}": {
+      "get": {
+        "operationId": "V1CoachController_getThread",
+        "parameters": [
+          {
+            "name": "clientId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach-v1"
+        ]
+      }
+    },
+    "/v1/coach/me/threads/{clientId}/messages": {
+      "post": {
+        "operationId": "V1CoachController_sendMessage",
+        "parameters": [
+          {
+            "name": "clientId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V1SendMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach-v1"
+        ]
+      }
+    },
+    "/v1/coach/me/threads/{clientId}/draft": {
+      "get": {
+        "operationId": "V1CoachController_getDraft",
+        "parameters": [
+          {
+            "name": "clientId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach-v1"
+        ]
+      },
+      "post": {
+        "operationId": "V1CoachController_saveDraft",
+        "parameters": [
+          {
+            "name": "clientId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V1SaveDraftDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "coach-v1"
+        ]
+      }
+    },
+    "/join/{code}": {
+      "get": {
+        "operationId": "InviteLandingController_joinHtml",
+        "parameters": [
+          {
+            "name": "code",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "invite-landing"
+        ]
+      }
+    },
+    "/invite/{code}": {
+      "get": {
+        "operationId": "InviteLandingController_inviteHtml",
+        "parameters": [
+          {
+            "name": "code",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "invite-landing"
+        ]
+      }
+    },
+    "/download/ios": {
+      "get": {
+        "operationId": "PublicPagesController_iosDownload",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "public-pages"
+        ]
+      }
+    },
+    "/download/android": {
+      "get": {
+        "operationId": "PublicPagesController_androidDownload",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "public-pages"
+        ]
+      }
+    },
+    "/signup": {
+      "get": {
+        "operationId": "PublicPagesController_signup",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "public-pages"
+        ]
+      }
+    },
+    "/signup/{code}": {
+      "get": {
+        "operationId": "PublicPagesController_signupWithCode",
+        "parameters": [
+          {
+            "name": "code",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "public-pages"
+        ]
+      }
+    },
+    "/privacy": {
+      "get": {
+        "operationId": "PublicPagesController_privacy",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "public-pages"
+        ]
+      }
+    },
+    "/terms": {
+      "get": {
+        "operationId": "PublicPagesController_terms",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "public-pages"
+        ]
+      }
+    },
+    "/security": {
+      "get": {
+        "operationId": "PublicPagesController_security",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "public-pages"
+        ]
+      }
+    },
+    "/status": {
+      "get": {
+        "operationId": "PublicPagesController_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "public-pages"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Growth Project API",
+    "description": "HTTP API for The Growth Project — coach/client SaaS platform covering auth, billing, messaging, check-ins, meal plans, workouts, habits, and admin/federation surfaces. Consumed by the React Native mobile app, the coach console BFF, and partner integrations.",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [
+    {
+      "url": "https://api.trygrowthproject.com",
+      "description": "Production"
+    },
+    {
+      "url": "http://localhost:3000",
+      "description": "Local development"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http",
+        "description": "Supabase-issued JWT. Send as `Authorization: Bearer <token>`. Tokens are verified against the Supabase JWKS in JwtAuthGuard."
+      }
+    },
+    "schemas": {
+      "RegisterDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "jane@example.com",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "example": "correct horse battery staple"
+          },
+          "name": {
+            "type": "string",
+            "example": "Jane Doe"
+          },
+          "phone": {
+            "type": "string",
+            "example": "+15555550100"
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "name"
+        ]
+      },
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "jane@example.com",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "example": "correct horse battery staple"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "GoogleAuthDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Google ID token from the mobile or web SDK.",
+            "minLength": 10
+          },
+          "invite_code": {
+            "type": "string",
+            "description": "Optional coach invite code attached on the same call.",
+            "example": "GP-A1B2C3",
+            "maxLength": 32
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "AttachInviteCodeDto": {
+        "type": "object",
+        "properties": {
+          "invite_code": {
+            "type": "string",
+            "example": "GP-A1B2C3",
+            "minLength": 3,
+            "maxLength": 32
+          }
+        },
+        "required": [
+          "invite_code"
+        ]
+      },
+      "SelectRoleDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "coach",
+              "student"
+            ],
+            "example": "student"
+          },
+          "coach_code": {
+            "type": "string",
+            "deprecated": true,
+            "description": "Legacy alias of invite_code; prefer invite_code on new clients.",
+            "maxLength": 32
+          },
+          "invite_code": {
+            "type": "string",
+            "example": "GP-A1B2C3",
+            "maxLength": 32
+          }
+        },
+        "required": [
+          "role"
+        ]
+      },
+      "ValidateInviteCodePublicDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Invite code to preview. Format-validated server-side.",
+            "example": "GP-A1B2C3",
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "ForgotPasswordDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "jane@example.com",
+            "format": "email"
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "BecomeCoachDto": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string",
+            "description": "Current password — required to prevent accidental escalation.",
+            "minLength": 8
+          }
+        },
+        "required": [
+          "password"
+        ]
+      },
+      "SignupWithCodeDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "jane@example.com",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8
+          },
+          "name": {
+            "type": "string",
+            "example": "Jane Doe"
+          },
+          "phone": {
+            "type": "string",
+            "example": "+15555550100"
+          },
+          "invite_code": {
+            "type": "string",
+            "description": "Required when COACH_CODE_GATE_ENABLED=true; otherwise optional.",
+            "example": "GP-A1B2C3",
+            "maxLength": 32
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "name"
+        ]
+      },
+      "CreateInviteCodeDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateProfileDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateFoodDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "LogFoodDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateLogEntryDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateWorkoutDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateRoutineDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateRoutineDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "StartFastDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "EndFastDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "LogWeightDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateHabitDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "LogHabitDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateNotificationPreferencesDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "PostWinDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "ReactToWinDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateLessonDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateLessonDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "LogWaterDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateMessageDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateNudgeDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateMealPlanDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateMealPlanDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateCheckInDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateRecipeDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "AddListItemDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateListItemDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "GrantConsentDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "RevokeConsentDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "PromoteUserDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "V1SendMessageDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "V1SaveDraftDto": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  }
+}
