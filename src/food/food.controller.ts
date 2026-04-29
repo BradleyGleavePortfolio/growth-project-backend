@@ -26,8 +26,8 @@ export class FoodController {
       // upsertFromOpenFoodFacts is private — expose via a new public method.
       const id = await this.foodService.lookupByBarcode(upc);
       return this.foodService.getById(id);
-    } catch (err: any) {
-      const msg = err?.message || 'Product not found';
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Product not found';
       if (msg.includes('not found') || msg.includes('fetch failed')) {
         throw new NotFoundException(`Barcode ${upc} not found in OpenFoodFacts`);
       }

@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import type { AuthedRequest } from '../auth/auth-request';
+import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { UsersService } from './users.service';
 import { PreferencesService } from './preferences.service';
 import { AccountService } from './account.service';
@@ -91,7 +91,7 @@ export class UsersController {
   requestDataExport(@Request() req: AuthedRequest) {
     return this.accountService.requestDataExport(
       req.user.id,
-      auditContext(req as any),
+      auditContext(req),
     );
   }
 
@@ -115,7 +115,7 @@ export class UsersController {
   deleteAccount(@Request() req: AuthedRequest) {
     return this.accountService.scheduleDeletion(
       req.user.id,
-      auditContext(req as any),
+      auditContext(req),
     );
   }
 
@@ -124,7 +124,7 @@ export class UsersController {
   cancelDeletion(@Request() req: AuthedRequest) {
     return this.accountService.cancelDeletion(
       req.user.id,
-      auditContext(req as any),
+      auditContext(req),
     );
   }
 
@@ -151,10 +151,12 @@ export class UsersController {
 // Best-effort extraction of remote IP + User-Agent. Mirrors the helper in
 // admin.controller.ts; kept inline here to avoid an extra util module for
 // two callers.
-function auditContext(req: any): { ip: string | null; userAgent: string | null } {
-  const xff = (req?.headers?.['x-forwarded-for'] || '') as string;
+function auditContext(req: AuditableRequest): { ip: string | null; userAgent: string | null } {
+  const xffRaw = req?.headers?.['x-forwarded-for'];
+  const xff = Array.isArray(xffRaw) ? xffRaw[0] : xffRaw || '';
   const fwdIp = xff.split(',')[0]?.trim();
   const ip = fwdIp || req?.ip || req?.socket?.remoteAddress || null;
-  const userAgent = (req?.headers?.['user-agent'] || null) as string | null;
+  const uaRaw = req?.headers?.['user-agent'];
+  const userAgent = Array.isArray(uaRaw) ? uaRaw[0] ?? null : uaRaw ?? null;
   return { ip: ip || null, userAgent: userAgent || null };
 }

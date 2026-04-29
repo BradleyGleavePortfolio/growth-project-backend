@@ -1,4 +1,5 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { CreateLessonDto, UpdateLessonDto } from './lessons.dto';
 
@@ -14,7 +15,7 @@ export class LessonsService {
 
     const coachId = user?.role === 'coach' ? user.id : user?.coach_id;
 
-    const where: any = {};
+    const where: Prisma.LessonWhereInput = {};
     if (coachId) where.coach_id = coachId;
 
     // Filter by user's goal type if available

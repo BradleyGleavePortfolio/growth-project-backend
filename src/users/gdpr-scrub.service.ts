@@ -167,11 +167,11 @@ export class GdprScrubService {
       try {
         await this.scrubOne(c, now, options);
         scrubbed += 1;
-      } catch (err: any) {
+      } catch (err) {
         // A failure on one user (e.g. a UserProfile constraint) must not
         // poison the rest of the batch. Record and move on; the cron job
         // will retry on the next tick.
-        const message = err?.message ?? String(err);
+        const message = err instanceof Error ? err.message : String(err);
         this.logger.error(
           `GDPR scrub failed for user=${c.user_id}: ${message}`,
         );
@@ -229,7 +229,7 @@ export class GdprScrubService {
       await tx.notificationPreferences
         .updateMany({
           where: { user_id: candidate.user_id },
-          data: {} as any,
+          data: {},
         })
         .catch(() => undefined);
 

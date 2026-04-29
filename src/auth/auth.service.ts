@@ -200,7 +200,7 @@ export class AuthService {
     const provider = supaUser.app_metadata?.provider;
     const providers: string[] = supaUser.app_metadata?.providers || [];
     const identityProviders: string[] =
-      (supaUser.identities || []).map((i: any) => i.provider).filter(Boolean);
+      (supaUser.identities || []).map((i) => i.provider).filter(Boolean);
     const isGoogle =
       provider === 'google' ||
       providers.includes('google') ||

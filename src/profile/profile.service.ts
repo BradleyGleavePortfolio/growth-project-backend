@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { UpdateProfileDto } from './profile.dto';
 
 @Injectable()
 export class ProfileService {
@@ -18,7 +20,7 @@ export class ProfileService {
     return profile;
   }
 
-  async updateProfile(userId: string, data: any) {
+  async updateProfile(userId: string, data: UpdateProfileDto) {
     // CRITICAL: height_cm stored ONLY in UserProfile — single source of truth
     // SECURITY: explicit allow-list mapping (audit C4). The controller DTO already
     // strips unknown fields via ValidationPipe, but we defend-in-depth by mapping
@@ -46,9 +48,10 @@ export class ProfileService {
       onboardingCompleted: data.onboardingCompleted,
     };
     // Drop undefineds so we don't overwrite existing values with NULL.
-    const payload: Record<string, any> = {};
+    const payload: Prisma.UserProfileUncheckedUpdateInput &
+      Prisma.UserProfileUncheckedCreateInput = { user_id: userId };
     for (const [k, v] of Object.entries(allowed)) {
-      if (v !== undefined) payload[k] = v;
+      if (v !== undefined) (payload as Record<string, unknown>)[k] = v;
     }
 
     const existing = await this.prisma.userProfile.findUnique({ where: { user_id: userId } });
@@ -60,7 +63,7 @@ export class ProfileService {
       });
     } else {
       return this.prisma.userProfile.create({
-        data: { user_id: userId, ...payload },
+        data: payload,
       });
     }
   }

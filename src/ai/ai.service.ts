@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { ClientAIContextService } from './client-ai-context.service';
 import { AIGuardrailsService } from './ai-guardrails.service';
@@ -42,9 +43,9 @@ export interface UserContextPayload {
     remaining_calories: number;
     remaining_protein_g: number;
   };
-  recent_workouts: any[];
-  recent_fasting: any[];
-  todays_logs: any[];
+  recent_workouts: Prisma.WorkoutSessionGetPayload<{ include: { exercises: true } }>[];
+  recent_fasting: Prisma.FastingWindowGetPayload<Record<string, never>>[];
+  todays_logs: Prisma.LoggedFoodEntryGetPayload<{ include: { food_item: true } }>[];
 }
 
 export interface ChatResult {
@@ -217,10 +218,16 @@ Now answer the user's next message using the rules above. Keep the answer under 
       modelUsed = 'fallback';
     } else {
       const systemPrompt = this.buildSystemPrompt(ctx);
-      const messages = [
-        { role: 'system' as const, content: systemPrompt },
-        ...conversationHistory.slice(-10).map((m) => ({ role: m.role as any, content: m.content })),
-        { role: 'user' as const, content: userMessage },
+      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+        { role: 'system', content: systemPrompt },
+        ...conversationHistory.slice(-10).map((m) => {
+          // The wire role on incoming history is a free string; narrow to the
+          // assistant/user pair that Perplexity accepts. Anything else falls
+          // back to 'user' so an unknown role can't crash the request.
+          const role: 'assistant' | 'user' = m.role === 'assistant' ? 'assistant' : 'user';
+          return { role, content: m.content };
+        }),
+        { role: 'user', content: userMessage },
       ];
       try {
         const response = await perplexity.chat.completions.create({

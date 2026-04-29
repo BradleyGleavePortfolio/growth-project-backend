@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
@@ -63,8 +64,8 @@ export class AdminService {
           provisioned_by_owner: !!ownerId,
         });
         return created;
-      } catch (err: any) {
-        if (err?.code === 'P2002') continue;
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') continue;
         throw err;
       }
     }
@@ -245,7 +246,7 @@ export class AdminService {
 
   async listUsers(params: { role?: 'owner' | 'coach' | 'student'; q?: string; limit?: number }) {
     const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
-    const where: any = {};
+    const where: Prisma.UserWhereInput = {};
     if (params.role) where.role = params.role;
     if (params.q) {
       where.OR = [

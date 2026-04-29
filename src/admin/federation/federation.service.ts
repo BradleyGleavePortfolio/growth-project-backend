@@ -339,7 +339,7 @@ export class FederationService {
 
     const financeData = financeOutcome.kind === 'ok' ? financeOutcome.data : null;
     const entitlements = this.entitlements.resolve({
-      fitness: snapshotFromUserRow(coachUser as any, {
+      fitness: snapshotFromUserRow(coachUser, {
         coach_subscription_status: coachSubscriptionStatus,
       }),
       finance: financeOutcome,

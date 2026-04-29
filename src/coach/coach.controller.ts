@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards, Request, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
-import type { AuthedRequest } from '../auth/auth-request';
+import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { CoachService } from './coach.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
@@ -21,7 +21,9 @@ export class CoachController {
 
   @Get('clients')
   async getClients(@Request() req: AuthedRequest, @Query('status') status?: string) {
-    return this.coachService.getClients(req.user.id, status as any, req.user.role);
+    const normalized: 'active' | 'archived' | 'all' =
+      status === 'archived' || status === 'all' ? status : 'active';
+    return this.coachService.getClients(req.user.id, normalized, req.user.role);
   }
 
   @Post('clients/:id/archive')
@@ -32,7 +34,7 @@ export class CoachController {
         req.user.id,
         id,
         req.user.role,
-        auditContext(req as any),
+        auditContext(req),
       );
       this.analytics.capture(req.user.id, Events.COACH_ACTION, { action_type: 'archive_client' });
       return result;
@@ -49,7 +51,7 @@ export class CoachController {
         req.user.id,
         id,
         req.user.role,
-        auditContext(req as any),
+        auditContext(req),
       );
       this.analytics.capture(req.user.id, Events.COACH_ACTION, { action_type: 'unarchive_client' });
       return result;
@@ -94,10 +96,12 @@ export class CoachController {
 
 // Best-effort extraction of remote IP + User-Agent for audit-log context.
 // Mirrors the helper in admin.controller.ts and users.controller.ts.
-function auditContext(req: any): { ip: string | null; userAgent: string | null } {
-  const xff = (req?.headers?.['x-forwarded-for'] || '') as string;
+function auditContext(req: AuditableRequest): { ip: string | null; userAgent: string | null } {
+  const xffRaw = req?.headers?.['x-forwarded-for'];
+  const xff = Array.isArray(xffRaw) ? xffRaw[0] : xffRaw || '';
   const fwdIp = xff.split(',')[0]?.trim();
   const ip = fwdIp || req?.ip || req?.socket?.remoteAddress || null;
-  const userAgent = (req?.headers?.['user-agent'] || null) as string | null;
+  const uaRaw = req?.headers?.['user-agent'];
+  const userAgent = Array.isArray(uaRaw) ? uaRaw[0] ?? null : uaRaw ?? null;
   return { ip: ip || null, userAgent: userAgent || null };
 }

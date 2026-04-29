@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
 
@@ -76,7 +77,7 @@ export class AccountService {
         where: { id: request.id },
         data: {
           status: 'ready',
-          payload: payload as any,
+          payload: payload as unknown as Prisma.InputJsonValue,
           fulfilled_at: new Date(),
         },
       });
@@ -96,13 +97,14 @@ export class AccountService {
         requested_at: fulfilled.requested_at,
         fulfilled_at: fulfilled.fulfilled_at,
       };
-    } catch (err: any) {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       this.logger.error(
-        `Data export assembly failed for user=${userId}: ${err?.message ?? err}`,
+        `Data export assembly failed for user=${userId}: ${message}`,
       );
       await this.prisma.dataExportRequest.update({
         where: { id: request.id },
-        data: { status: 'failed', error: String(err?.message ?? err) },
+        data: { status: 'failed', error: message },
       });
       await this.audit.write({
         action: AuditAction.USER_DATA_EXPORT_FAILED,
@@ -110,7 +112,7 @@ export class AccountService {
         targetUserId: userId,
         targetType: 'data_export_request',
         targetId: request.id,
-        metadata: { error: String(err?.message ?? err) },
+        metadata: { error: message },
       });
       throw err;
     }

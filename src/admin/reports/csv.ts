@@ -33,7 +33,7 @@ export function rowsToCsv<T>(
 ): string {
   const header = columns.map((c) => csvEscape(c)).join(',');
   const body = rows.map((row) =>
-    columns.map((c) => csvEscape((row as any)[c])).join(','),
+    columns.map((c) => csvEscape((row as Record<string, unknown>)[c])).join(','),
   );
   return [header, ...body].join('\r\n') + '\r\n';
 }
