@@ -40,6 +40,13 @@ async function bootstrap() {
     }),
   );
 
+  // OPS (audit M-4): forward SIGTERM/SIGINT to module lifecycle hooks so
+  // PrismaService.onModuleDestroy() (which calls $disconnect()) actually
+  // runs on Fly redeploys. Without this, in-flight requests are killed
+  // mid-flight when Fly sends SIGTERM. PrismaService already implements
+  // OnModuleDestroy → $disconnect (see src/prisma.service.ts).
+  app.enableShutdownHooks();
+
   // SECURITY: CORS was previously `origin: '*'` (audit C6). The React Native mobile
   // client does not require CORS (it isn't a browser), so the only consumers of CORS
   // are future browser-based admin/web pages. Default to a deny-all allow-list so a
