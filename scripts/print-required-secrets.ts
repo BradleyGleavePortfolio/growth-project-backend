@@ -54,6 +54,7 @@ function parseFormat(v: string | undefined): Format {
 function tierLabel(rule: EnvRule, isProd: boolean): string {
   if (rule.tier === 'hard') return 'REQUIRED';
   if (rule.tier === 'prod') return isProd ? 'REQUIRED' : 'optional (dev)';
+  if (rule.tier === 'feature') return 'feature (warn)';
   return 'optional';
 }
 
@@ -131,6 +132,7 @@ function printEnv(target: string, isProd: boolean): void {
 function printMissing(target: string, isProd: boolean): number {
   const missingHard: string[] = [];
   const missingProd: string[] = [];
+  const missingFeature: string[] = [];
   const missingOptional: string[] = [];
   const placeholderHard: string[] = [];
   const placeholderProd: string[] = [];
@@ -140,6 +142,7 @@ function printMissing(target: string, isProd: boolean): number {
     if (!isSet) {
       if (rule.tier === 'hard') missingHard.push(rule.name);
       else if (rule.tier === 'prod') missingProd.push(rule.name);
+      else if (rule.tier === 'feature') missingFeature.push(rule.name);
       else missingOptional.push(rule.name);
       continue;
     }
@@ -154,10 +157,13 @@ function printMissing(target: string, isProd: boolean): number {
   console.log(`[print-required-secrets] target NODE_ENV=${target} (prod-tier enforced=${isProd})`);
   console.log(`  missing HARD          (${missingHard.length}): ${missingHard.join(', ') || '-'}`);
   console.log(`  missing PROD-tier     (${missingProd.length}): ${missingProd.join(', ') || '-'}`);
+  console.log(`  missing feature       (${missingFeature.length}): ${missingFeature.join(', ') || '-'}`);
   console.log(`  missing optional      (${missingOptional.length}): ${missingOptional.join(', ') || '-'}`);
   console.log(`  placeholder HARD      (${placeholderHard.length}): ${placeholderHard.join(', ') || '-'}`);
   console.log(`  placeholder PROD-tier (${placeholderProd.length}): ${placeholderProd.join(', ') || '-'}`);
 
+  // Feature-tier vars warn but never block boot. Hard tier and (in prod)
+  // prod tier — including placeholder values — are blocking.
   const blocking =
     missingHard.length +
     placeholderHard.length +

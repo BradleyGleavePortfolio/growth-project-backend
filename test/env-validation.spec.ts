@@ -58,18 +58,37 @@ describe('evaluateEnv', () => {
     ]);
   });
 
-  it('flags prod-only vars as missing-prod, not missing-hard', () => {
+  it('classifies feature-tier vars as missingFeature (not missingProd or missingHard)', () => {
+    // Same shape as a real prod boot with only the hard tier provided —
+    // exactly the situation that was crashing Fly boot before this PR.
+    // None of CORS_ORIGINS / Stripe / Sentry / public-launch URLs may end
+    // up in missingHard or missingProd, otherwise assertEnv would throw
+    // and force operators to invent placeholder values.
     const r = evaluateEnv({ ...baseHardEnv(), NODE_ENV: 'production' });
     expect(r.missingHard).toEqual([]);
-    expect(r.missingProd).toContain('CORS_ORIGINS');
-    expect(r.missingProd).toContain('STRIPE_WEBHOOK_SECRET');
-    expect(r.missingProd).toContain('SENTRY_DSN');
+    expect(r.missingProd).toEqual([]);
+    for (const name of [
+      'PUBLIC_INVITE_BASE_URL',
+      'PUBLIC_WEB_SIGNUP_URL',
+      'APP_STORE_URL',
+      'PLAY_STORE_URL',
+      'CORS_ORIGINS',
+      'STRIPE_SECRET_KEY',
+      'STRIPE_WEBHOOK_SECRET',
+      'STRIPE_PRICE_ID_FITNESS',
+      'SENTRY_DSN',
+    ]) {
+      expect(r.missingFeature).toContain(name);
+      expect(r.missingProd).not.toContain(name);
+      expect(r.missingHard).not.toContain(name);
+    }
   });
 
   it('reports a clean run when fullProdEnv is supplied', () => {
     const r = evaluateEnv(fullProdEnv());
     expect(r.missingHard).toEqual([]);
     expect(r.missingProd).toEqual([]);
+    expect(r.missingFeature).toEqual([]);
     expect(r.validationWarnings).toEqual([]);
   });
 
@@ -107,13 +126,35 @@ describe('assertEnv', () => {
     );
   });
 
-  it('throws on missing prod vars when NODE_ENV=production', () => {
+  it('does NOT throw on missing feature-tier vars under NODE_ENV=production', () => {
+    // The whole point of the feature tier: prod boot must succeed when
+    // Stripe/Sentry/public-launch URLs are unset. The corresponding routes
+    // return 4xx at request time (or fall back to documented defaults);
+    // crashing the entire API on boot is the wrong default.
     expect(() =>
       assertEnv(
         { ...baseHardEnv(), NODE_ENV: 'production' },
         { logger: silentLogger as any },
       ),
-    ).toThrow(/Missing production-required env vars/);
+    ).not.toThrow();
+  });
+
+  it('warns (does not throw) when feature-tier vars are missing under prod NODE_ENV', () => {
+    const warn = jest.fn();
+    const logger = { ...silentLogger, warn };
+    assertEnv(
+      { ...baseHardEnv(), NODE_ENV: 'production' },
+      { logger: logger as any },
+    );
+    const featureWarning = warn.mock.calls.find((args) =>
+      String(args[0]).startsWith('Feature-tier env vars missing'),
+    );
+    expect(featureWarning).toBeDefined();
+    // Warning lists every missing feature-tier var by name so operators
+    // can audit what's degraded without grepping the rule list.
+    expect(String(featureWarning![0])).toContain('STRIPE_SECRET_KEY');
+    expect(String(featureWarning![0])).toContain('SENTRY_DSN');
+    expect(String(featureWarning![0])).toContain('PUBLIC_INVITE_BASE_URL');
   });
 
   it('does not throw on missing prod vars in dev', () => {
@@ -186,13 +227,17 @@ describe('evaluateEnv — placeholder detection', () => {
     expect(r.placeholderHard).toContain('DATABASE_URL');
   });
 
-  it('reports prod-tier placeholders only as placeholderProd', () => {
+  it('does not flag placeholders for feature-tier vars (warn-only tier never blocks boot)', () => {
+    // Feature-tier vars are intentionally not checked for placeholders —
+    // see env-validation.ts header. Operators should leave them unset
+    // until they have real values, rather than invent placeholder text.
     const r = evaluateEnv({
       ...fullProdEnv(),
       STRIPE_SECRET_KEY: 'sk_test_XXXXXXXXXXXXXXXX',
     });
-    expect(r.missingProd).not.toContain('STRIPE_SECRET_KEY');
-    expect(r.placeholderProd).toContain('STRIPE_SECRET_KEY');
+    expect(r.missingFeature).not.toContain('STRIPE_SECRET_KEY');
+    expect(r.placeholderProd).not.toContain('STRIPE_SECRET_KEY');
+    expect(r.placeholderHard).not.toContain('STRIPE_SECRET_KEY');
   });
 
   it('does not flag placeholders for optional-tier vars', () => {
@@ -215,17 +260,19 @@ describe('assertEnv — placeholder enforcement', () => {
     ).toThrow(/placeholder values/);
   });
 
-  it('throws when a prod-tier var is a placeholder under NODE_ENV=production', () => {
+  it('does not throw when a feature-tier var contains placeholder text under prod', () => {
+    // STRIPE_WEBHOOK_SECRET is now feature-tier — it is intentionally not
+    // placeholder-checked. The webhook controller rejects unsigned requests
+    // at runtime, so a placeholder boot is no worse than an unset boot.
     expect(() =>
       assertEnv(
         { ...fullProdEnv(), STRIPE_WEBHOOK_SECRET: 'whsec_XXXXXXXX' },
         { logger: silentLogger as any },
       ),
-    ).toThrow(/placeholder values/);
+    ).not.toThrow();
   });
 
-  it('warns but does not throw when prod-tier placeholder is present in dev', () => {
-    (silentLogger.warn as jest.Mock).mockClear();
+  it('does not throw when a feature-tier var contains placeholder text in dev', () => {
     expect(() =>
       assertEnv(
         {
@@ -236,10 +283,6 @@ describe('assertEnv — placeholder enforcement', () => {
         { logger: silentLogger as any },
       ),
     ).not.toThrow();
-    // Verify a warning was logged about the placeholder so the dev still sees
-    // the signal even though boot continues.
-    const warnCalls = (silentLogger.warn as jest.Mock).mock.calls.flat().join(' ');
-    expect(warnCalls).toMatch(/placeholder/);
   });
 
   it('does not throw when fullProdEnv has real-looking values', () => {
