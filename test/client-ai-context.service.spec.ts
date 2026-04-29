@@ -39,6 +39,9 @@ function makePrisma(opts: {
       workout_experience: 'intermediate',
       has_gym_membership: true,
       preferred_snacks: ['cottage cheese', 'almonds'],
+      dietary_pattern: null,
+      dietary_restrictions: [],
+      workout_days_per_week: null,
       macro_target_calories: 2400,
       macro_target_protein_g: 200,
       macro_target_carbs_g: 240,
@@ -173,6 +176,64 @@ describe('ClientAIContextService.buildFresh', () => {
     expect(ctx.guardrails.forbid_contradicting_macros).toBe(true);
     expect(ctx.guardrails.refer_to_coach_for_medical).toBe(true);
     expect(ctx.guardrails.forbid_calorie_recommendations_below).toBeGreaterThanOrEqual(1500);
+  });
+
+  it('surfaces dietary_pattern, dietary_restrictions, and workout_days_per_week from profile', async () => {
+    const prisma = makePrisma({
+      user: {
+        id: 'u1',
+        supabase_id: 'sb-secret',
+        name: 'Brad Gleave',
+        email: 'leak@example.com',
+        coach_id: 'coach-1',
+        profile: {
+          height_cm: 183,
+          current_weight_lbs: 192,
+          target_weight_lbs: 178,
+          date_of_birth: new Date('1992-04-12'),
+          sex: 'male',
+          activity_level: 'active',
+          goal_type: 'fat_loss',
+          workout_experience: 'intermediate',
+          has_gym_membership: true,
+          preferred_snacks: ['cottage cheese'],
+          dietary_pattern: 'vegetarian',
+          dietary_restrictions: ['peanuts', 'shellfish'],
+          workout_days_per_week: 5,
+          macro_target_calories: 2400,
+          macro_target_protein_g: 200,
+          macro_target_carbs_g: 240,
+          macro_target_fat_g: 70,
+          water_goal_oz: 100,
+          meals_per_day: 4,
+          bio: null,
+        },
+      },
+    });
+    const svc = new ClientAIContextService(prisma);
+    const ctx = await svc.buildFresh('u1');
+    expect(ctx.profile.dietary_pattern).toBe('vegetarian');
+    expect(ctx.profile.dietary_restrictions).toEqual(['peanuts', 'shellfish']);
+    expect(ctx.profile.workout_days_per_week).toBe(5);
+    const rendered = svc.renderForPrompt(ctx);
+    expect(rendered).toContain('pattern=vegetarian');
+    expect(rendered).toContain('peanuts|shellfish');
+    expect(rendered).toContain('workout_days_per_week=5');
+  });
+
+  it('reports nulls for new fields when the profile has not yet recorded them', async () => {
+    const prisma = makePrisma({});
+    const svc = new ClientAIContextService(prisma);
+    const ctx = await svc.buildFresh('u1');
+    // Default fixture leaves these unset; they must read null/[] rather than
+    // a synthesised default that the AI would treat as a real answer.
+    expect(ctx.profile.dietary_pattern).toBeNull();
+    expect(ctx.profile.dietary_restrictions).toEqual([]);
+    expect(ctx.profile.workout_days_per_week).toBeNull();
+    const rendered = svc.renderForPrompt(ctx);
+    expect(rendered).toContain('pattern=unknown');
+    expect(rendered).toContain('restrictions=none');
+    expect(rendered).toContain('workout_days_per_week=unknown');
   });
 
   it('renderForPrompt includes APP_PRESCRIBED and DO NOT CONTRADICT markers', async () => {

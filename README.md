@@ -328,7 +328,8 @@ The companion 1:1 rows on `User` are:
 
 - `UserProfile`: macros, height/weight, sex, activity level, goal
   type, workout experience, target macros, avatar, weight unit,
-  meals per day, water goal, calorie display, and the
+  meals per day, water goal, calorie display, dietary pattern,
+  dietary restrictions, weekly workout cadence, and the
   `onboardingCompleted` flag.
 - `UserPreferences`: home-module ordering, notification cadence,
   motivational tone, units, first day of week.
@@ -537,6 +538,26 @@ The remaining models (`Habit`, `Lesson`, `LessonCompletion`,
 `InviteCode`) cover the user-facing tracking surfaces and the
 messaging + invite flows. Their per-module READMEs are the source
 of truth.
+
+### Profile completeness
+
+The AI structured-context endpoint can only coach against the
+fields that actually live on `UserProfile`. The columns that
+matter for that decision today are:
+
+| Column | Purpose | Notes |
+|---|---|---|
+| `height_cm`, `current_weight_lbs`, `date_of_birth`, `sex` | Mifflin-St Jeor TDEE — without these the macro target falls back to a 30-year-old default. | Set by lean onboarding (`LeanQ4MetricsScreen`) and editable on `ProfileScreen`. |
+| `goal_type`, `activity_level`, `workout_experience` | Macro split + intensity heuristics. | Set by lean onboarding Q1–Q3. |
+| `target_weight_lbs` | Aggressiveness gauge for fat-loss / muscle-gain plans. | Editable on `ProfileScreen`. |
+| `has_gym_membership` | Routine selection (gym vs. bodyweight). | Editable on `ProfileScreen`. |
+| `dietary_pattern` | Free-form diet shape — `none`, `vegan`, `vegetarian`, `keto`, `pescatarian`, `paleo`, `other`. The DTO validates writes against that list, but the column is `String?` so future values do not require a migration. | New in this surface. AI prompt forwards it under `diet:` and treats `null` as "unknown" rather than "none". |
+| `dietary_restrictions` | Allergens / avoid-list as `String[]`. Empty array is the explicit "no restrictions" answer. | New. The AI must not fabricate restrictions when the list is absent. |
+| `workout_days_per_week` | Self-reported weekly training cadence (0–7). | New. Lets the AI size weekly volume targets without assuming "3 days a week." |
+
+Anything missing surfaces in `client-ai-context.service.ts`'s
+`renderForPrompt` as the literal token `unknown` so the AI prompt
+can decide whether to ask before answering.
 
 ## Route contracts
 

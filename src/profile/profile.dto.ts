@@ -6,6 +6,7 @@ import {
   IsIn,
   IsDateString,
   IsArray,
+  IsInt,
   Min,
   Max,
 } from 'class-validator';
@@ -65,6 +66,33 @@ export class UpdateProfileDto {
   @IsArray()
   @IsString({ each: true })
   preferred_snacks?: string[];
+
+  // The schema column is a free-form TEXT to keep room for future values
+  // (low-FODMAP, halal, kosher) without a migration. New writes are
+  // restricted to the curated list below; legacy values stored before the
+  // list grew remain readable.
+  @IsOptional()
+  @IsString()
+  @IsIn(['none', 'vegan', 'vegetarian', 'keto', 'pescatarian', 'paleo', 'other'])
+  dietary_pattern?:
+    | 'none'
+    | 'vegan'
+    | 'vegetarian'
+    | 'keto'
+    | 'pescatarian'
+    | 'paleo'
+    | 'other';
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  dietary_restrictions?: string[];
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(7)
+  workout_days_per_week?: number;
 
   @IsOptional()
   @IsString()
