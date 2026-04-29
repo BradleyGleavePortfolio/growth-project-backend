@@ -35,6 +35,8 @@ export const Events = {
   USER_REGISTERED: 'user_registered',
   /** A new user record was created via Google OAuth (post-link). */
   USER_REGISTERED_GOOGLE: 'user_registered_google',
+  /** A new user record was created via Sign in with Apple (post-link). */
+  USER_REGISTERED_APPLE: 'user_registered_apple',
   /** Signup that bundled an invite code in the same call. */
   USER_SIGNUP_WITH_CODE: 'user_signup_with_code',
 

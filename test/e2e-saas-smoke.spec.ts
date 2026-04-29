@@ -177,7 +177,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       const prisma: any = { user: { findUnique: jest.fn() } };
       const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any);
       const analytics: any = { capture: jest.fn() };
-      const auth = new AuthService(prisma, inviteCodes, analytics, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any);
+      const auth = new AuthService(prisma, inviteCodes, analytics, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any, { isConfigured: () => false, getAudiences: () => [], verify: jest.fn() } as any);
       return { auth, inviteCodes, prisma };
     }
 
@@ -277,7 +277,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       process.env.COACH_CODE_GATE_ENABLED = 'true';
       const prisma: any = { user: { findUnique: jest.fn() } };
       const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any);
-      const auth = new AuthService(prisma, inviteCodes, { capture: jest.fn() } as any, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any);
+      const auth = new AuthService(prisma, inviteCodes, { capture: jest.fn() } as any, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any, { isConfigured: () => false, getAudiences: () => [], verify: jest.fn() } as any);
       await expect(
         auth.signupWithCode({
           email: 'c@c.test',
@@ -295,7 +295,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         inviteCode: { findUnique: jest.fn(async () => null) },
       };
       const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any);
-      const auth = new AuthService(prisma, inviteCodes, { capture: jest.fn() } as any, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any);
+      const auth = new AuthService(prisma, inviteCodes, { capture: jest.fn() } as any, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any, { isConfigured: () => false, getAudiences: () => [], verify: jest.fn() } as any);
       await expect(
         auth.signupWithCode({
           email: 'c@c.test',

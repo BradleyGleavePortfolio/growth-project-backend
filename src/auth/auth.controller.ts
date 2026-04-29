@@ -24,6 +24,7 @@ import {
   RegisterDto,
   LoginDto,
   GoogleAuthDto,
+  AppleAuthDto,
   SelectRoleDto,
   ForgotPasswordDto,
   ValidateInviteCodePublicDto,
@@ -95,6 +96,33 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async googleAuth(@Body() body: GoogleAuthDto) {
     return this.authService.googleAuth(body.token, body.invite_code);
+  }
+
+  @ApiOperation({
+    summary: 'Sign in with Apple',
+    description:
+      'Exchanges an Apple identity token (JWT) for a Supabase session. ' +
+      'Optional `full_name` is required on first authorization (Apple does ' +
+      'not include it in the identity token). Optional `invite_code` ' +
+      'attaches the new user to a coach in the same call. Returns 503 when ' +
+      'APPLE_AUDIENCES is not configured on this deployment.',
+  })
+  @ApiResponse({ status: 200, description: 'Authenticated session.' })
+  @ApiResponse({ status: 401, description: 'Invalid Apple token.' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
+  @ApiResponse({
+    status: 503,
+    description: 'Sign in with Apple is not configured on this server.',
+  })
+  @Public()
+  @Post('apple')
+  // Same shared bucket as /auth/login: 10/min/IP. The endpoint is unauthed
+  // and an attacker can replay tokens, so the rate limit is the primary
+  // brake. Sharing `auth-login` means we cannot be multiplexed with /login.
+  @Throttle({ 'auth-login': { ttl: 60000, limit: 10 } })
+  @HttpCode(HttpStatus.OK)
+  async appleAuth(@Body() body: AppleAuthDto) {
+    return this.authService.appleAuth(body.token, body.full_name, body.invite_code);
   }
 
   @ApiOperation({
