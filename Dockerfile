@@ -1,7 +1,12 @@
 # syntax=docker/dockerfile:1.6
 FROM node:20-slim
 
-RUN apt-get update -qq && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+# ca-certificates is required so the Sentry sourcemap upload step
+# (RUN bash ./scripts/sentry-upload-sourcemaps.sh) can verify TLS to
+# sentry.io. node:20-slim ships without the CA bundle, which makes
+# every outbound HTTPS call from the build fail with
+# "SSL certificate problem: unable to get local issuer certificate".
+RUN apt-get update -qq && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
