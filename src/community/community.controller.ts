@@ -3,16 +3,17 @@ import {
   Get,
   Post,
   Body,
-  Param,
   Query,
   UseGuards,
   Request,
+  HttpCode,
+  GoneException,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { CommunityService } from './community.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { PostWinDto, ReactToWinDto } from './community.dto';
+import { PostWinDto } from './community.dto';
 
 @ApiTags('community')
 @Controller('community')
@@ -34,8 +35,8 @@ export class CommunityController {
 
   /**
    * GET /community/feed
-   * Returns the last 30 anonymised community wins with reaction counts.
-   * Response: [{ id, displayName, action, createdAt, reactions: { fire, clap } }]
+   * Returns the last 30 anonymised community wins.
+   * Response: [{ id, displayName, action, createdAt }]
    */
   @Get('feed')
   async getFeed(@Request() req: AuthedRequest) {
@@ -53,17 +54,16 @@ export class CommunityController {
   }
 
   /**
-   * POST /community/wins/:id/react
-   * Adds (or toggles off) a fire/clap reaction on a community win.
-   * Body: { kind: "fire" | "clap" }
-   * Returns: { fire: number, clap: number }
+   * POST /community/wins/:id/react — REMOVED (doctrine cleanup).
+   * Per-Win reactions are no longer part of the product surface; the route
+   * returns 410 Gone for one mobile release window before being deleted.
    */
+  // TODO: remove route entirely after one mobile release window.
   @Post('wins/:id/react')
-  async reactToWin(
-    @Request() req: AuthedRequest,
-    @Param('id') winId: string,
-    @Body() body: ReactToWinDto,
-  ) {
-    return this.communityService.reactToWin(req.user.id, winId, body.kind);
+  @HttpCode(410)
+  async reactToWin() {
+    throw new GoneException(
+      'This endpoint has been removed. Reactions on community wins are no longer part of the product surface.',
+    );
   }
 }

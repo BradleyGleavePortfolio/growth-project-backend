@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  GoneException,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -21,7 +23,6 @@ import { UsersService } from './users.service';
 import { PreferencesService } from './preferences.service';
 import { AccountService } from './account.service';
 import type { UserPreferencesDto } from './preferences.dto';
-import { BadgesService } from '../community/badges.service';
 import { AllowDeletionScheduled } from '../common/decorators/allow-deletion-scheduled.decorator';
 
 @ApiTags('users')
@@ -34,7 +35,6 @@ export class UsersController {
     private usersService: UsersService,
     private preferencesService: PreferencesService,
     private accountService: AccountService,
-    private badgesService: BadgesService,
   ) {}
 
   @ApiOperation({
@@ -61,14 +61,22 @@ export class UsersController {
     return this.preferencesService.patchPreferences(req.user.id, body);
   }
 
+  /**
+   * GET /users/me/badges — REMOVED (doctrine cleanup).
+   * Returns 410 Gone for one mobile release window before being deleted.
+   */
+  // TODO: remove route entirely after one mobile release window.
   @ApiOperation({
-    summary: 'List badges (earned + locked) for the caller',
-    description: 'Earned badges include awardedAt; locked badges have awardedAt = null.',
+    summary: 'Removed — returns 410 Gone',
+    description: 'Badges are no longer part of the product surface.',
   })
-  @ApiResponse({ status: 200, description: 'Badge list.' })
+  @ApiResponse({ status: 410, description: 'Endpoint removed.' })
   @Get('me/badges')
-  getBadges(@Request() req: AuthedRequest) {
-    return this.badgesService.getBadgesForUser(req.user.id);
+  @HttpCode(410)
+  async getBadges() {
+    throw new GoneException(
+      'This endpoint has been removed. Badges are no longer part of the product surface.',
+    );
   }
 
   @ApiOperation({

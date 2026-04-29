@@ -148,8 +148,6 @@ model User {
   meal_plans_as_client     MealPlan[]               @relation("MealPlanClient")
   community_wins           CommunityWin[]           @relation("CommunityWinAuthor")
   community_wins_as_coach  CommunityWin[]           @relation("CommunityWinCoach")
-  user_badges              UserBadge[]
-  win_reactions            WinReaction[]
   guidelines_as_coach      CoachGuideline[]         @relation("CoachGuidelineCoach")
   guidelines_as_client     CoachGuideline[]         @relation("CoachGuidelineClient")
   created_recipes          Recipe[]                 @relation("RecipeCreator")
@@ -166,13 +164,13 @@ model User {
   coach_subscription     CoachSubscription?
   invoices               Invoice[]
   payment_failures       PaymentFailure[]
-  drafts_as_coach        MessageDraft[]      @relation("MessageDraftCoach")
-  drafts_as_client       MessageDraft[]      @relation("MessageDraftClient")
-  activity_events_actor  ActivityEvent[]     @relation("ActivityEventActor")
-  activity_events_coach  ActivityEvent[]     @relation("ActivityEventCoach")
-  activity_events_client ActivityEvent[]     @relation("ActivityEventClient")
-  audit_logs_actor       AuditLog[]          @relation("AuditLogActor")
-  audit_logs_target      AuditLog[]          @relation("AuditLogTarget")
+  drafts_as_coach        MessageDraft[]       @relation("MessageDraftCoach")
+  drafts_as_client       MessageDraft[]       @relation("MessageDraftClient")
+  activity_events_actor  ActivityEvent[]      @relation("ActivityEventActor")
+  activity_events_coach  ActivityEvent[]      @relation("ActivityEventCoach")
+  activity_events_client ActivityEvent[]      @relation("ActivityEventClient")
+  audit_logs_actor       AuditLog[]           @relation("AuditLogActor")
+  audit_logs_target      AuditLog[]           @relation("AuditLogTarget")
   data_export_requests   DataExportRequest[]
   consents_as_client     ClientCoachConsent[] @relation("ConsentClient")
   consents_as_coach      ClientCoachConsent[] @relation("ConsentCoach")
@@ -541,7 +539,7 @@ model HabitLog {
   completed Boolean  @default(false)
   logged_at DateTime @default(now())
 
-  // Hot path: habit streak/completion queries filter by (habit_id, date).
+  // Hot path: habit completion queries filter by (habit_id, date).
   @@index([habit_id, date])
 }
 
@@ -703,51 +701,18 @@ model CoachNudge {
 // an unassigned client can still post a personal win — those simply do not
 // appear in any coach's feed.
 model CommunityWin {
-  id          String        @id @default(uuid())
+  id          String   @id @default(uuid())
   user_id     String
-  user        User          @relation("CommunityWinAuthor", fields: [user_id], references: [id])
+  user        User     @relation("CommunityWinAuthor", fields: [user_id], references: [id])
   coach_id    String?
-  coach       User?         @relation("CommunityWinCoach", fields: [coach_id], references: [id])
+  coach       User?    @relation("CommunityWinCoach", fields: [coach_id], references: [id])
   title       String
   description String
-  visibility  String        @default("circle") // "circle" | "public"
-  created_at  DateTime      @default(now())
-  reactions   WinReaction[]
+  visibility  String   @default("circle") // "circle" | "public"
+  created_at  DateTime @default(now())
 
   @@index([user_id])
   @@index([coach_id, created_at])
-}
-
-model WinReaction {
-  id         String       @id @default(uuid())
-  win_id     String
-  win        CommunityWin @relation(fields: [win_id], references: [id])
-  user_id    String
-  user       User         @relation(fields: [user_id], references: [id])
-  kind       String // "fire" | "clap"
-  created_at DateTime     @default(now())
-
-  @@unique([win_id, user_id, kind])
-  @@index([win_id])
-  @@index([user_id])
-}
-
-enum BadgeSlug {
-  first_win
-  encourager
-  inner_circle_builder
-  consistency_hero
-}
-
-model UserBadge {
-  id         String    @id @default(uuid())
-  user_id    String
-  user       User      @relation(fields: [user_id], references: [id])
-  slug       BadgeSlug
-  awarded_at DateTime  @default(now())
-
-  @@unique([user_id, slug])
-  @@index([user_id])
 }
 
 // Tier-2: Per-(coach, client) guidelines as a first-class resource. Replaces
@@ -947,7 +912,7 @@ model ClientCoachConsent {
   client_id  String
   client     User      @relation("ConsentClient", fields: [client_id], references: [id], onDelete: Cascade)
   coach_id   String
-  coach      User      @relation("ConsentCoach",  fields: [coach_id],  references: [id], onDelete: Cascade)
+  coach      User      @relation("ConsentCoach", fields: [coach_id], references: [id], onDelete: Cascade)
   scope      String
   granted_at DateTime?
   revoked_at DateTime?

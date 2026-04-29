@@ -1,6 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { BadgesService } from './badges.service';
 
 // Helper: anonymise a display name to "first-name + last initial" e.g. "Alex M."
 function anonymiseName(name: string): string {
@@ -9,24 +8,9 @@ function anonymiseName(name: string): string {
   return `${parts[0]} ${parts[parts.length - 1][0]}.`;
 }
 
-// Helper: aggregate reactions array → { fire: n, clap: n }
-function sumReactions(reactions: { kind: string }[]): { fire: number; clap: number } {
-  return reactions.reduce(
-    (acc, r) => {
-      if (r.kind === 'fire') acc.fire += 1;
-      if (r.kind === 'clap') acc.clap += 1;
-      return acc;
-    },
-    { fire: 0, clap: 0 },
-  );
-}
-
 @Injectable()
 export class CommunityService {
-  constructor(
-    private prisma: PrismaService,
-    private badgesService: BadgesService,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   async getLeaderboard(userId: string, period: 'week' | 'month' = 'week') {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -62,7 +46,7 @@ export class CommunityService {
 
   /**
    * GET /community/feed — last 30 anonymised community wins.
-   * Returns: [{ id, displayName, action, createdAt, reactions: { fire, clap } }]
+   * Returns: [{ id, displayName, action, createdAt }]
    */
   async getFeed(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -79,7 +63,6 @@ export class CommunityService {
       take: 30,
       include: {
         user: { select: { id: true, name: true } },
-        reactions: { select: { kind: true } },
       },
     });
 
@@ -88,40 +71,7 @@ export class CommunityService {
       displayName: anonymiseName(w.user.name),
       action: w.title, // "title" is the win action text
       createdAt: w.created_at,
-      reactions: sumReactions(w.reactions),
     }));
-  }
-
-  /**
-   * POST /community/wins/:id/react — add or toggle a fire/clap reaction.
-   * Returns updated reaction counts.
-   */
-  async reactToWin(userId: string, winId: string, kind: 'fire' | 'clap'): Promise<{ fire: number; clap: number }> {
-    const win = await this.prisma.communityWin.findUnique({
-      where: { id: winId },
-    });
-    if (!win) throw new NotFoundException('Win not found');
-
-    // Upsert: if the user already reacted with this kind, toggle it off
-    const existing = await this.prisma.winReaction.findUnique({
-      where: { win_id_user_id_kind: { win_id: winId, user_id: userId, kind } },
-    });
-
-    if (existing) {
-      await this.prisma.winReaction.delete({ where: { id: existing.id } });
-    } else {
-      await this.prisma.winReaction.create({
-        data: { win_id: winId, user_id: userId, kind },
-      });
-      // Award "Encourager" badge check (react to 10 community wins)
-      await this.badgesService.checkAndAwardEncourager(userId);
-    }
-
-    const reactions = await this.prisma.winReaction.findMany({
-      where: { win_id: winId },
-      select: { kind: true },
-    });
-    return sumReactions(reactions);
   }
 
   /**
@@ -143,10 +93,6 @@ export class CommunityService {
         visibility: data.visibility ?? 'circle',
       },
     });
-
-    // Badge checks: first win, inner circle builder (5 wins)
-    await this.badgesService.checkAndAwardFirstWin(userId);
-    await this.badgesService.checkAndAwardInnerCircleBuilder(userId);
 
     return win;
   }
