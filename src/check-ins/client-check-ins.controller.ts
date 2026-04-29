@@ -8,6 +8,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CreateCheckInDto, ListCheckInsQueryDto } from './check-ins.dto';
@@ -15,6 +16,7 @@ import { CheckInsService } from './check-ins.service';
 
 // Client-authenticated check-in endpoints. Every query scoped by req.user.id
 // so a client can never see/create a check-in for another user.
+@ApiTags('check-ins')
 @Controller('check-ins')
 @UseGuards(JwtAuthGuard)
 export class ClientCheckInsController {

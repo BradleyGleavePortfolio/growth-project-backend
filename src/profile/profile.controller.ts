@@ -1,9 +1,11 @@
 import { Controller, Get, Put, Body, UseGuards, Request } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { ProfileService } from './profile.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { UpdateProfileDto } from './profile.dto';
 
+@ApiTags('profile')
 @Controller('profile')
 @UseGuards(JwtAuthGuard)
 export class ProfileController {

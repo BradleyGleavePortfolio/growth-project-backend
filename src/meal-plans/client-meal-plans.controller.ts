@@ -5,12 +5,14 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { MealPlansService } from './meal-plans.service';
 
 // Client-authenticated meal-plan endpoints. A client only ever reads their own
 // plans (service scopes every query by req.user.id).
+@ApiTags('meal-plans')
 @Controller('meal-plans')
 @UseGuards(JwtAuthGuard)
 export class ClientMealPlansController {

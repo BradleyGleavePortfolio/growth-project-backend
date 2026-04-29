@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards, Request, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { CoachService } from './coach.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -6,6 +7,7 @@ import { CoachGuard } from '../auth/coach.guard';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 
+@ApiTags('coach')
 @Controller('coach')
 @UseGuards(JwtAuthGuard, CoachGuard)
 export class CoachController {

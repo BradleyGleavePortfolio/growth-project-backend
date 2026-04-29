@@ -7,6 +7,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { ListNudgesQueryDto } from './nudges.dto';
@@ -14,6 +15,7 @@ import { NudgesService } from './nudges.service';
 
 // Client-authenticated nudge endpoints. A client only ever reads their own
 // nudges (service scopes every query by req.user.id).
+@ApiTags('nudges')
 @Controller('nudges')
 @UseGuards(JwtAuthGuard)
 export class ClientNudgesController {

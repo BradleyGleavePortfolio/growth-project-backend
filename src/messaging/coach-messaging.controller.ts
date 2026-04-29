@@ -8,6 +8,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -21,6 +22,7 @@ import { MessagingService } from './messaging.service';
 // risk regressions to the already-shipped coach endpoints (see PRs #16, #17,
 // #19). Keeping a separate controller keeps the surface area small and
 // isolates throttle rules to writes only.
+@ApiTags('messaging')
 @Controller('coach')
 @UseGuards(JwtAuthGuard, CoachGuard)
 export class CoachMessagingController {

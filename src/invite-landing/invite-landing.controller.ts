@@ -1,4 +1,5 @@
 import { Controller, Get, HttpStatus, Param, Res } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
@@ -18,6 +19,7 @@ import { InviteLandingService } from './invite-landing.service';
 // unavailable" page. We intentionally do NOT distinguish between not-found
 // / revoked / paused / canceled in the HTML — confirming "this code existed
 // once" to a stranger is a small but real privacy leak.
+@ApiTags('invite-landing')
 @Controller()
 export class InviteLandingController {
   constructor(private landing: InviteLandingService) {}

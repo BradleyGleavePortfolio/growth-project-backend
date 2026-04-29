@@ -6,6 +6,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
@@ -22,6 +23,7 @@ import { objectToKeyValueCsv, rowsToCsv } from './csv';
 // Content-Disposition with a deterministic filename so a browser download
 // lands as `<report>-<YYYYMMDD>.csv`.
 
+@ApiTags('admin-reports')
 @Controller('admin/reports')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('owner')

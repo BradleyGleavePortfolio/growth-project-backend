@@ -1,9 +1,11 @@
 import { Controller, Post, Get, Body, Query, UseGuards, Request } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { WaterService } from './water.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { LogWaterDto } from './water.dto';
 
+@ApiTags('nutrition')
 @Controller('nutrition/water')
 @UseGuards(JwtAuthGuard)
 export class WaterController {

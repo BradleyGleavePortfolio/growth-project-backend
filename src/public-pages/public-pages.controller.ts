@@ -1,4 +1,5 @@
 import { Controller, Get, HttpStatus, Param, Query, Res } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
@@ -31,6 +32,7 @@ import { renderTrustPage } from './trust-pages.html';
 //   https://app.trygrowthproject.com/signup
 //   https://app.trygrowthproject.com/signup?code=GP-A1B2C3
 //   https://app.trygrowthproject.com/signup/GP-A1B2C3
+@ApiTags('public-pages')
 @Controller()
 export class PublicPagesController {
   @Public()

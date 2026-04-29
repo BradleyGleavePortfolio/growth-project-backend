@@ -1,9 +1,11 @@
 import { Controller, Get, Post, Put, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { LessonsService } from './lessons.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CreateLessonDto, UpdateLessonDto } from './lessons.dto';
 
+@ApiTags('lessons')
 @Controller('lessons')
 @UseGuards(JwtAuthGuard)
 export class LessonsController {

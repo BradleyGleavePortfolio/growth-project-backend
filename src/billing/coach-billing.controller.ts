@@ -7,6 +7,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
@@ -18,6 +19,7 @@ import { StripeApiError, StripeApiService } from './stripe-api.service';
 // writes (subscription start, plan changes) go through the OWNER endpoints
 // or the Stripe Customer Portal — coaches do not self-serve subscription
 // state changes.
+@ApiTags('billing')
 @Controller('v1/coach/me')
 @UseGuards(JwtAuthGuard, CoachOrOwnerGuard)
 export class CoachBillingController {

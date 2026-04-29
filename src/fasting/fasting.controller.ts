@@ -1,9 +1,11 @@
 import { Controller, Post, Get, Body, Query, UseGuards, Request } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { FastingService } from './fasting.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { StartFastDto, EndFastDto } from './fasting.dto';
 
+@ApiTags('fasting')
 @Controller('fasting')
 @UseGuards(JwtAuthGuard)
 export class FastingController {

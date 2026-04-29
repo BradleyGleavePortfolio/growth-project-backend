@@ -8,6 +8,7 @@ import {
   Post,
   Req,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { BillingService } from './billing.service';
@@ -35,6 +36,7 @@ import {
 // development without Stripe, leave the route unmounted by not setting any
 // of the `STRIPE_*` env vars; the controller is registered unconditionally
 // and the missing-secret check inside the handler will return 400.
+@ApiTags('webhooks')
 @Controller('v1/webhooks')
 export class StripeWebhookController {
   private readonly logger = new Logger(StripeWebhookController.name);

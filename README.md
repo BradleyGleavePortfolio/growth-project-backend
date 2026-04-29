@@ -1085,3 +1085,42 @@ CI runs the same suite plus `tsc --noEmit` on every PR.
 `GET /health` returns `{ ok: true, uptime, timestamp }` and is
 unauthenticated. It is the Fly liveness probe and is safe to call
 from anywhere.
+
+## API documentation
+
+The API publishes an OpenAPI 3.1 spec generated from controllers and
+DTOs via `@nestjs/swagger`. Two endpoints are mounted, and **both are
+gated** so production stays opt-in:
+
+| Path         | Purpose                                              |
+| ------------ | ---------------------------------------------------- |
+| `/docs`      | Interactive Swagger UI (Try-it-out, schema browser). |
+| `/docs-json` | Raw OpenAPI 3.1 JSON, for SDK generators / diffing.  |
+
+**Gating.** Docs are enabled when `NODE_ENV !== 'production'`, OR when
+`ENABLE_API_DOCS=true` is set explicitly. To turn docs on in prod:
+
+```bash
+fly secrets set ENABLE_API_DOCS=true
+```
+
+In dev, just hit `http://localhost:3000/docs` after `npm run start:dev`.
+Note: these paths are mounted **outside** the global `/api` prefix.
+
+**Auto-generated artifact.** A snapshot of the spec lives at
+[`docs/openapi.json`](docs/openapi.json). Regenerate it with:
+
+```bash
+npm run openapi:export
+```
+
+CI can use this to publish the spec to a partner portal or to diff for
+breaking changes between PRs.
+
+**Annotation convention.** Auth, user-account, and health endpoints are
+fully annotated with `@ApiOperation`, `@ApiResponse`, and DTO-level
+`@ApiProperty`. Every other controller carries an `@ApiTags(...)` so
+endpoints group correctly in Swagger UI. **All new endpoints must add
+`@ApiOperation` + `@ApiResponse`** — see
+[`docs/api-conventions.md`](docs/api-conventions.md) for the rule and
+the reference example.

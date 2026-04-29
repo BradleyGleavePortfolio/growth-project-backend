@@ -11,6 +11,7 @@ import { AppModule } from './app.module';
 import { ThrottlerExceptionFilter } from './filters/throttler-exception.filter';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
 import { assertEnv } from './common/env-validation';
+import { setupSwagger } from './common/openapi';
 
 async function bootstrap() {
   // Fail fast at boot if required env vars are missing. See
@@ -142,6 +143,11 @@ async function bootstrap() {
       'status',
     ],
   });
+
+  // OpenAPI spec + Swagger UI. No-op when ENABLE_API_DOCS!=true in
+  // production. Mounted before listen() so /docs-json and /docs are
+  // registered routes when the server starts accepting connections.
+  setupSwagger(app);
 
   const port = parseInt(process.env.PORT || '3000', 10);
   // Must bind to 0.0.0.0 for Fly.io — binding to localhost won't be reachable

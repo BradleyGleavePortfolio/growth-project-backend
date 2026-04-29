@@ -7,6 +7,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -18,6 +19,7 @@ import { MessagingService } from './messaging.service';
 // needed. When a client has no coach assigned the service throws 409 with
 // { error: 'NO_COACH_ASSIGNED' } — except on /messages/unread-count which
 // returns { total: 0 } since the mobile app polls that endpoint aggressively.
+@ApiTags('messaging')
 @Controller('messages')
 @UseGuards(JwtAuthGuard)
 export class ClientMessagingController {

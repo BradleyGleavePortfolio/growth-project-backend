@@ -10,6 +10,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -20,6 +21,7 @@ import { InviteCodesService } from './invite-codes.service';
 
 // Coach-authenticated endpoints for managing invite codes. Mounted under
 // /coach/invite-codes to sit alongside the existing coach routes.
+@ApiTags('invite-codes')
 @Controller()
 export class InviteCodesController {
   constructor(private inviteCodes: InviteCodesService) {}

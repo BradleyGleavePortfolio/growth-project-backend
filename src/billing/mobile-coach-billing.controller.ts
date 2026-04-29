@@ -7,6 +7,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
@@ -30,6 +31,7 @@ import { StripeApiError, StripeApiService } from './stripe-api.service';
 //     billing payload (which the v1 endpoint returns: subscription +
 //     last 24 invoices). This controller returns the trimmed shape so
 //     the phone doesn't pay 24 invoice rows on every app open.
+@ApiTags('billing')
 @Controller('coach/billing')
 @UseGuards(JwtAuthGuard, CoachOrOwnerGuard)
 export class MobileCoachBillingController {

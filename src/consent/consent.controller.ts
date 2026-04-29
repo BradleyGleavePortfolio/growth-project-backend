@@ -11,6 +11,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { ConsentService } from './consent.service';
@@ -20,6 +21,7 @@ import { GrantConsentDto, RevokeConsentDto } from './consent.dto';
 // has one path prefix to learn. Every route requires a logged-in user;
 // the caller is always treated as the client (clients grant/revoke for
 // themselves).
+@ApiTags('consent')
 @Controller('consent')
 @UseGuards(JwtAuthGuard)
 export class ConsentController {

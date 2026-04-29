@@ -1,9 +1,11 @@
 import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards, Request, HttpCode } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { HabitsService } from './habits.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CreateHabitDto, LogHabitDto } from './habits.dto';
 
+@ApiTags('habits')
 @Controller('habits')
 @UseGuards(JwtAuthGuard)
 export class HabitsController {

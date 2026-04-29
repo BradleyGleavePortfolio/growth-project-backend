@@ -6,6 +6,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
@@ -15,6 +16,7 @@ import { CheckInsService } from './check-ins.service';
 // Coach-authenticated check-in reads. Mounted under /coach so it sits next
 // to the existing coach routes without modifying CoachController (same
 // separation-of-concerns pattern as CoachNudgesController).
+@ApiTags('check-ins')
 @Controller('coach')
 @UseGuards(JwtAuthGuard, CoachGuard)
 export class CoachCheckInsController {

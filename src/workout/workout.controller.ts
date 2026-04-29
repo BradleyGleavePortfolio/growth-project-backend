@@ -1,9 +1,11 @@
 import { Controller, Post, Get, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { WorkoutService } from './workout.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CreateWorkoutDto, CreateRoutineDto, UpdateRoutineDto } from './workout.dto';
 
+@ApiTags('workout')
 @Controller()
 @UseGuards(JwtAuthGuard)
 export class WorkoutController {
