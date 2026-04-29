@@ -180,6 +180,19 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Return URL Stripe redirects coaches to after the Customer Portal session ends. Defaults to the console billing screen when unset.',
   },
   {
+    name: 'STRIPE_CUSTOMER_PORTAL_LOGIN_URL',
+    tier: 'optional',
+    reason:
+      'Hosted Stripe Customer Portal login link (https://billing.stripe.com/p/login/...). Used as a static fallback by /v1/coach/me/billing/portal-session when STRIPE_SECRET_KEY is unset; returns this URL with fallback=true instead of STRIPE_NOT_CONFIGURED.',
+    validate: (v) => {
+      const trimmed = v.trim();
+      if (!/^https:\/\/billing\.stripe\.com\/p\/login\//.test(trimmed)) {
+        return 'STRIPE_CUSTOMER_PORTAL_LOGIN_URL must be an https://billing.stripe.com/p/login/... link copied from the Stripe dashboard.';
+      }
+      return null;
+    },
+  },
+  {
     name: 'FINANCE_API_BASE_URL',
     tier: 'optional',
     reason:

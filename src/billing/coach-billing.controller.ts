@@ -35,19 +35,30 @@ export class CoachBillingController {
     return this.billing.getCoachBilling(req.user.id);
   }
 
-  // POST /v1/coach/me/billing/portal-session — mints a Stripe Billing Portal
-  // session URL for the authenticated coach. The Customer Portal is the
-  // canonical surface for coach self-service: update payment method, view
-  // invoices, update billing details. Plan changes and cancellation are
-  // disabled in the Portal config (see docs/stripe-setup.md §2.3) so OWNERs
-  // can reconcile state.
+  // POST /v1/coach/me/billing/portal-session — issue a Stripe Billing
+  // Portal redirect URL.
+  //
+  // Three modes, in order of preference:
+  //   1. STRIPE_SECRET_KEY set → mint a per-coach session via the Stripe
+  //      SDK. Returns { url, fallback: false }.
+  //   2. STRIPE_SECRET_KEY unset, STRIPE_CUSTOMER_PORTAL_LOGIN_URL set →
+  //      return the static hosted Customer Portal login link configured
+  //      for the environment. The coach authenticates with the email on
+  //      file with Stripe; this is the documented fallback for tenants
+  //      without server-side Stripe credentials. Returns { url, fallback: true, coachId }.
+  //   3. Neither set → STRIPE_NOT_CONFIGURED so the console renders the
+  //      empty state.
   @Post('billing/portal-session')
   async portalSession(@Request() req: AuthedRequest) {
     if (!this.stripeApi.isConfigured()) {
+      const fallbackUrl = process.env.STRIPE_CUSTOMER_PORTAL_LOGIN_URL?.trim();
+      if (fallbackUrl && /^https:\/\/billing\.stripe\.com\/p\/login\//.test(fallbackUrl)) {
+        return { url: fallbackUrl, fallback: true, coachId: req.user.id };
+      }
       throw new BadRequestException({
         error: 'STRIPE_NOT_CONFIGURED',
         message:
-          'Stripe is not configured for this environment. Set STRIPE_SECRET_KEY to enable the billing portal.',
+          'Stripe is not configured for this environment. Set STRIPE_SECRET_KEY and STRIPE_PRICE_ID_FITNESS to mint per-coach portal sessions, or set STRIPE_CUSTOMER_PORTAL_LOGIN_URL to a hosted Customer Portal login link as a fallback.',
       });
     }
 
