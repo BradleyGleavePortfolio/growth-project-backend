@@ -59,12 +59,17 @@ export class PrepGuideService {
     const referencedRecipeIds = new Set<string>();
 
     for (const plan of mealPlans) {
-      const items = plan.items as any;
+      const items: unknown = plan.items;
       // Support both array and object formats from mobile.
-      const itemArray = Array.isArray(items) ? items : Object.values(items || {});
+      const itemArray: unknown[] = Array.isArray(items)
+        ? items
+        : items && typeof items === 'object'
+          ? Object.values(items as Record<string, unknown>)
+          : [];
       for (const item of itemArray) {
-        if (item && typeof item === 'object' && item.recipe_id) {
-          referencedRecipeIds.add(item.recipe_id);
+        if (item && typeof item === 'object' && 'recipe_id' in item) {
+          const recipeId = (item as { recipe_id?: unknown }).recipe_id;
+          if (typeof recipeId === 'string') referencedRecipeIds.add(recipeId);
         }
       }
     }

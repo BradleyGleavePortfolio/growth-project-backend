@@ -12,7 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import type { AuthedRequest } from '../auth/auth-request';
+import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { ConsentService } from './consent.service';
 import { GrantConsentDto, RevokeConsentDto } from './consent.dto';
 
@@ -57,7 +57,7 @@ export class ConsentController {
       req.user.id,
       body.coach_id,
       body.scope,
-      auditContext(req as any),
+      auditContext(req),
     );
   }
 
@@ -68,7 +68,7 @@ export class ConsentController {
       req.user.id,
       body.coach_id,
       body.scope,
-      auditContext(req as any),
+      auditContext(req),
     );
   }
 
@@ -95,10 +95,12 @@ export class ConsentController {
 
 // Best-effort extraction of remote IP + User-Agent for audit-log context.
 // Mirrors helpers in coach.controller.ts and admin.controller.ts.
-function auditContext(req: any): { ip: string | null; userAgent: string | null } {
-  const xff = (req?.headers?.['x-forwarded-for'] || '') as string;
+function auditContext(req: AuditableRequest): { ip: string | null; userAgent: string | null } {
+  const xffRaw = req?.headers?.['x-forwarded-for'];
+  const xff = Array.isArray(xffRaw) ? xffRaw[0] : xffRaw || '';
   const fwdIp = xff.split(',')[0]?.trim();
   const ip = fwdIp || req?.ip || req?.socket?.remoteAddress || null;
-  const userAgent = (req?.headers?.['user-agent'] || null) as string | null;
+  const uaRaw = req?.headers?.['user-agent'];
+  const userAgent = Array.isArray(uaRaw) ? uaRaw[0] ?? null : uaRaw ?? null;
   return { ip: ip || null, userAgent: userAgent || null };
 }

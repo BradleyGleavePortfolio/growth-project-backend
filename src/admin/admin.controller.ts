@@ -8,7 +8,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import type { AuthedRequest } from '../auth/auth-request';
+import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -89,7 +89,7 @@ export class AdminController {
         bio: body.bio,
         timezone: body.timezone,
       },
-      auditContext(req as any),
+      auditContext(req),
     );
   }
 
@@ -265,10 +265,12 @@ export class AdminController {
 // used as audit-log context. Handles the common `x-forwarded-for` chain set
 // by Fly.io's edge proxy. Returns nulls when fields are absent — callers
 // already accept null.
-function auditContext(req: any): { ip: string | null; userAgent: string | null } {
-  const xff = (req?.headers?.['x-forwarded-for'] || '') as string;
+function auditContext(req: AuditableRequest): { ip: string | null; userAgent: string | null } {
+  const xffRaw = req?.headers?.['x-forwarded-for'];
+  const xff = Array.isArray(xffRaw) ? xffRaw[0] : xffRaw || '';
   const fwdIp = xff.split(',')[0]?.trim();
   const ip = fwdIp || req?.ip || req?.socket?.remoteAddress || null;
-  const userAgent = (req?.headers?.['user-agent'] || null) as string | null;
+  const uaRaw = req?.headers?.['user-agent'];
+  const userAgent = Array.isArray(uaRaw) ? uaRaw[0] ?? null : uaRaw ?? null;
   return { ip: ip || null, userAgent: userAgent || null };
 }

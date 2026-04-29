@@ -9,6 +9,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { SubscriptionStatus } from '@prisma/client';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { OwnerGuard } from '../common/guards/owner.guard';
@@ -24,13 +25,17 @@ import { StripeApiError, StripeApiService } from './stripe-api.service';
 // SubscriptionStatus enum members on CoachProfile. CoachSubscription.status
 // holds the full Stripe lifecycle (`incomplete`/`unpaid` included); the
 // CoachProfile mirror only carries the five enum values from prisma.
-const PROFILE_STATUS_VALUES = new Set([
-  'active',
-  'trialing',
-  'past_due',
-  'canceled',
-  'paused',
+const PROFILE_STATUS_VALUES: Set<SubscriptionStatus> = new Set<SubscriptionStatus>([
+  SubscriptionStatus.active,
+  SubscriptionStatus.trialing,
+  SubscriptionStatus.past_due,
+  SubscriptionStatus.canceled,
+  SubscriptionStatus.paused,
 ]);
+
+function isProfileStatus(status: string): status is SubscriptionStatus {
+  return PROFILE_STATUS_VALUES.has(status as SubscriptionStatus);
+}
 
 const ACTIVE_BLOCKING_STATUSES = new Set([
   'active',
@@ -202,9 +207,8 @@ export class OwnerBillingController {
         data: {
           stripe_customer_id: customerId,
           stripe_subscription_id: subscription.id,
-          ...(PROFILE_STATUS_VALUES.has(status)
-            ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              { subscription_status: status as any }
+          ...(isProfileStatus(status)
+            ? { subscription_status: status }
             : {}),
           current_period_end: currentPeriodEnd,
           trial_end: trialEnd,

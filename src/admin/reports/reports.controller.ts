@@ -38,7 +38,7 @@ export class ReportsController {
     const envelope = await this.reports.metricsOverview({ sinceDays });
     if (isCsv(format)) {
       writeCsvHeaders(res, 'metrics-overview');
-      return objectToKeyValueCsv(envelope as any);
+      return objectToKeyValueCsv(envelope as unknown as Record<string, unknown>);
     }
     return envelope;
   }
@@ -130,7 +130,7 @@ export class ReportsController {
     const envelope = await this.reports.productUsage();
     if (isCsv(format)) {
       writeCsvHeaders(res, 'product-usage');
-      return objectToKeyValueCsv(envelope as any);
+      return objectToKeyValueCsv(envelope as unknown as Record<string, unknown>);
     }
     return envelope;
   }
@@ -143,7 +143,7 @@ export class ReportsController {
     const envelope = await this.reports.federationHealth();
     if (isCsv(format)) {
       writeCsvHeaders(res, 'federation-health');
-      return objectToKeyValueCsv(envelope as any);
+      return objectToKeyValueCsv(envelope as unknown as Record<string, unknown>);
     }
     return envelope;
   }

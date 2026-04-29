@@ -9,7 +9,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import type { AuthedRequest } from './auth-request';
+import type { AuditableRequest, AuthedRequest } from './auth-request';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './auth.guard';
@@ -155,7 +155,7 @@ export class AuthController {
     return this.authService.becomeCoach(
       req.user.id,
       body.password,
-      auditContext(req as any),
+      auditContext(req),
     );
   }
 
@@ -172,10 +172,12 @@ export class AuthController {
 
 // Best-effort extraction of remote IP + User-Agent for audit-log context.
 // Mirrors the helper in admin.controller.ts and users.controller.ts.
-function auditContext(req: any): { ip: string | null; userAgent: string | null } {
-  const xff = (req?.headers?.['x-forwarded-for'] || '') as string;
+function auditContext(req: AuditableRequest): { ip: string | null; userAgent: string | null } {
+  const xffRaw = req?.headers?.['x-forwarded-for'];
+  const xff = Array.isArray(xffRaw) ? xffRaw[0] : xffRaw || '';
   const fwdIp = xff.split(',')[0]?.trim();
   const ip = fwdIp || req?.ip || req?.socket?.remoteAddress || null;
-  const userAgent = (req?.headers?.['user-agent'] || null) as string | null;
+  const uaRaw = req?.headers?.['user-agent'];
+  const userAgent = Array.isArray(uaRaw) ? uaRaw[0] ?? null : uaRaw ?? null;
   return { ip: ip || null, userAgent: userAgent || null };
 }

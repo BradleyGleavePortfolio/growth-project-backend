@@ -8,6 +8,70 @@ export interface FoodSearchResponse {
   query: string;
 }
 
+interface UsdaNutrient {
+  nutrientName?: string;
+  unitName?: string;
+  value?: number;
+}
+
+interface UsdaFood {
+  fdcId: number | string;
+  description: string;
+  foodNutrients?: UsdaNutrient[];
+  brandOwner?: string;
+  foodCategory?: string;
+  householdServingFullText?: string;
+  servingSize?: number;
+  servingSizeUnit?: string;
+}
+
+interface UsdaSearchResponse {
+  foods?: UsdaFood[];
+}
+
+interface OpenFoodFactsNutriments {
+  [key: string]: number | undefined;
+}
+
+interface OpenFoodFactsProduct {
+  code?: string;
+  _id?: string;
+  product_name?: string;
+  brands?: string;
+  nutriments?: OpenFoodFactsNutriments;
+  image_front_small_url?: string;
+}
+
+interface OpenFoodFactsSearchResponse {
+  products?: OpenFoodFactsProduct[];
+}
+
+interface OpenFoodFactsProductResponse {
+  product?: OpenFoodFactsProduct;
+}
+
+// Common shape produced by both Prisma's FoodItem rows and the raw $queryRaw
+// results in searchLocalDB. Numeric columns may come back as Prisma.Decimal,
+// number, or a string from the raw query path; toResult coerces with Number().
+interface FoodItemRow {
+  id: string;
+  name: string;
+  brand_or_restaurant: string | null;
+  category: string;
+  serving_description: string;
+  serving_size_grams: number | string | { toString(): string };
+  calories: number | string | { toString(): string };
+  protein_g: number | string | { toString(): string };
+  carbs_g: number | string | { toString(): string };
+  fat_g: number | string | { toString(): string };
+  fiber_g: number | string | { toString(): string } | null;
+  sugar_g: number | string | { toString(): string } | null;
+  sodium_mg: number | string | { toString(): string } | null;
+  tags?: string[] | null;
+  search_aliases?: string[] | null;
+  image_url?: string | null;
+}
+
 export interface FoodResult {
   id: string;
   name: string;
@@ -151,7 +215,7 @@ export class FoodService {
 
   private async searchLocalDB(query: string, limit: number): Promise<FoodResult[]> {
     try {
-      const trgmResults = await this.prisma.$queryRaw<any[]>`
+      const trgmResults = await this.prisma.$queryRaw<FoodItemRow[]>`
         SELECT
           id, name, brand_or_restaurant, category, serving_description,
           serving_size_grams, calories, protein_g, carbs_g, fat_g,
@@ -178,7 +242,7 @@ export class FoodService {
       // pg_trgm not installed — try ILIKE fallback
       try {
         const likeQ = `%${query}%`;
-        const ilikeResults = await this.prisma.$queryRaw<any[]>`
+        const ilikeResults = await this.prisma.$queryRaw<FoodItemRow[]>`
           SELECT DISTINCT
             id, name, brand_or_restaurant, category, serving_description,
             serving_size_grams, calories, protein_g, carbs_g, fat_g,
@@ -222,25 +286,25 @@ export class FoodService {
 
       if (!response.ok) return [];
 
-      const data = await response.json();
-      const foods: any[] = data?.foods || [];
+      const data = (await response.json()) as UsdaSearchResponse;
+      const foods: UsdaFood[] = data?.foods || [];
 
       return foods
-        .filter(f => f.description && f.description.trim())
+        .filter((f) => f.description && f.description.trim())
         .slice(0, limit)
-        .map(f => this.mapUSDAFood(f));
+        .map((f) => this.mapUSDAFood(f));
     } catch {
       clearTimeout(timeout);
       return [];
     }
   }
 
-  private mapUSDAFood(food: any): FoodResult {
-    const nutrients = food.foodNutrients || [];
+  private mapUSDAFood(food: UsdaFood): FoodResult {
+    const nutrients: UsdaNutrient[] = food.foodNutrients || [];
 
     const getNutrient = (name: string, unit?: string): number => {
-      const match = nutrients.find((n: any) =>
-        n.nutrientName === name && (!unit || n.unitName === unit)
+      const match = nutrients.find(
+        (n) => n.nutrientName === name && (!unit || n.unitName === unit),
       );
       return match ? Math.round((match.value || 0) * 10) / 10 : 0;
     };
@@ -294,8 +358,8 @@ export class FoodService {
 
       if (!response.ok) return [];
 
-      const data = await response.json();
-      const products: any[] = data?.products || [];
+      const data = (await response.json()) as OpenFoodFactsSearchResponse;
+      const products: OpenFoodFactsProduct[] = data?.products || [];
 
       return products
         .filter((p) => {
@@ -313,9 +377,14 @@ export class FoodService {
     }
   }
 
-  private mapOpenFoodFactsProduct(product: any): FoodResult {
-    const n = product.nutriments || {};
-    const calories = n['energy-kcal_100g'] ?? (n['energy_100g'] ? n['energy_100g'] / 4.184 : 0);
+  private mapOpenFoodFactsProduct(product: OpenFoodFactsProduct): FoodResult {
+    const n: OpenFoodFactsNutriments = product.nutriments || {};
+    const energyKcal = n['energy-kcal_100g'];
+    const energyKj = n['energy_100g'];
+    const calories = energyKcal ?? (energyKj != null ? energyKj / 4.184 : 0);
+    const fiber = n['fiber_100g'];
+    const sugars = n['sugars_100g'];
+    const sodium = n['sodium_100g'];
 
     return {
       id: `off_${product.code || product._id || Math.random().toString(36).slice(2)}`,
@@ -328,9 +397,9 @@ export class FoodService {
       protein_g: Math.round((n['proteins_100g'] ?? 0) * 10) / 10,
       carbs_g: Math.round((n['carbohydrates_100g'] ?? 0) * 10) / 10,
       fat_g: Math.round((n['fat_100g'] ?? 0) * 10) / 10,
-      fiber_g: n['fiber_100g'] != null ? Math.round(n['fiber_100g'] * 10) / 10 : null,
-      sugar_g: n['sugars_100g'] != null ? Math.round(n['sugars_100g'] * 10) / 10 : null,
-      sodium_mg: n['sodium_100g'] != null ? Math.round(n['sodium_100g'] * 1000) : null,
+      fiber_g: fiber != null ? Math.round(fiber * 10) / 10 : null,
+      sugar_g: sugars != null ? Math.round(sugars * 10) / 10 : null,
+      sodium_mg: sodium != null ? Math.round(sodium * 1000) : null,
       tags: [],
       search_aliases: [],
       image_url: product.image_front_small_url || null,
@@ -424,14 +493,14 @@ export class FoodService {
     const url = `https://api.nal.usda.gov/fdc/v1/food/${encodeURIComponent(fdcId)}?api_key=${apiKey}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
-    let food: any;
+    let food: UsdaFood;
     try {
       const response = await fetch(url, {
         signal: controller.signal,
         headers: { 'User-Agent': 'TheGrowthProject/1.0' },
       });
       if (!response.ok) throw new Error(`USDA fetch failed: ${response.status}`);
-      food = await response.json();
+      food = (await response.json()) as UsdaFood;
     } finally {
       clearTimeout(timeout);
     }
@@ -467,14 +536,14 @@ export class FoodService {
     const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
-    let payload: any;
+    let payload: OpenFoodFactsProductResponse;
     try {
       const response = await fetch(url, {
         signal: controller.signal,
         headers: { 'User-Agent': 'TheGrowthProject/1.0' },
       });
       if (!response.ok) throw new Error(`OpenFoodFacts fetch failed: ${response.status}`);
-      payload = await response.json();
+      payload = (await response.json()) as OpenFoodFactsProductResponse;
     } finally {
       clearTimeout(timeout);
     }
@@ -506,7 +575,7 @@ export class FoodService {
   }
 
   /** Normalize a raw DB row or Prisma object to FoodResult shape */
-  private toResult = (item: any): FoodResult => ({
+  private toResult = (item: FoodItemRow): FoodResult => ({
     id: item.id,
     name: item.name,
     brand_or_restaurant: item.brand_or_restaurant ?? null,

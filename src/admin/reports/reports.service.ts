@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { FinanceFederationService } from '../console/finance-federation.service';
@@ -140,7 +141,7 @@ export class ReportsService {
       subscription_status: c.coach_profile?.subscription_status ?? null,
       plan_tier: c.coach_profile?.plan_tier ?? null,
       client_count: c.students.length,
-      active_client_count: c.students.filter((s: any) => !s.archived_at).length,
+      active_client_count: c.students.filter((s) => !s.archived_at).length,
     }));
     return this.envelope('coaches', rows);
   }
@@ -158,7 +159,7 @@ export class ReportsService {
       take: limit,
       include: { coach: { select: { email: true } } },
     });
-    const rows: ClientRow[] = students.map((s: any) => ({
+    const rows: ClientRow[] = students.map((s) => ({
       id: s.id,
       email: s.email,
       name: s.name,
@@ -182,7 +183,7 @@ export class ReportsService {
       orderBy: { last_payment_failed_at: 'desc' },
       include: { coach: { select: { email: true } } },
     });
-    const rows: BillingPastDueRow[] = subs.map((s: any) => ({
+    const rows: BillingPastDueRow[] = subs.map((s) => ({
       coach_id: s.coach_id,
       coach_email: s.coach?.email ?? '',
       status: s.status,
@@ -233,7 +234,7 @@ export class ReportsService {
     const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
     const limit = clampLimit(params.limit);
 
-    const where: any = { created_at: { gte: since } };
+    const where: Prisma.AuditLogWhereInput = { created_at: { gte: since } };
     if (params.action) where.action = { startsWith: params.action };
     if (params.targetUserId) where.target_user_id = params.targetUserId;
     if (params.tenantCoachId) where.tenant_coach_id = params.tenantCoachId;
@@ -243,7 +244,7 @@ export class ReportsService {
       orderBy: { created_at: 'desc' },
       take: limit,
     });
-    const rows: AuditSummaryRow[] = logs.map((l: any) => ({
+    const rows: AuditSummaryRow[] = logs.map((l) => ({
       id: l.id,
       created_at: l.created_at.toISOString(),
       action: l.action,

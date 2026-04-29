@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 
 // Canonical audit-action strings. Free-form strings keep adding new actions
@@ -62,12 +63,16 @@ export class AuditService {
           tenant_coach_id: input.tenantCoachId ?? null,
           ip: input.ip ?? null,
           user_agent: input.userAgent ?? null,
-          metadata: (input.metadata as any) ?? null,
+          metadata:
+            input.metadata != null
+              ? (input.metadata as Prisma.InputJsonValue)
+              : Prisma.DbNull,
         },
       });
-    } catch (err: any) {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(
-        `Audit write failed for action=${input.action}: ${err?.message ?? err}`,
+        `Audit write failed for action=${input.action}: ${msg}`,
       );
     }
   }
@@ -83,7 +88,7 @@ export class AuditService {
     limit?: number;
   }) {
     const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
-    const where: any = {};
+    const where: Prisma.AuditLogWhereInput = {};
     if (params.action) where.action = params.action;
     if (params.targetUserId) where.target_user_id = params.targetUserId;
     if (params.tenantCoachId) where.tenant_coach_id = params.tenantCoachId;

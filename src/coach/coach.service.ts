@@ -1,7 +1,20 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { ConsentScope, ConsentService } from '../consent/consent.service';
+
+// Concrete payload shapes for the timeline/summary slices below. These
+// derive their structure from the Prisma findMany calls so adding columns
+// to the underlying tables flows through without manual updates.
+type LoggedFoodEntryWithFood = Prisma.LoggedFoodEntryGetPayload<{
+  include: { food_item: true };
+}>;
+type WorkoutSessionWithExercises = Prisma.WorkoutSessionGetPayload<{
+  include: { exercises: true };
+}>;
+type WeightLogRow = Prisma.WeightLogGetPayload<Record<string, never>>;
+type CheckInRow = Prisma.CheckInGetPayload<Record<string, never>>;
 
 interface AuditContext {
   ip?: string | null;
@@ -179,33 +192,33 @@ export class CoachService {
             include: { food_item: true },
             orderBy: { logged_at: 'desc' },
           })
-        : Promise.resolve([] as any[]),
+        : Promise.resolve<LoggedFoodEntryWithFood[]>([]),
       flags.workouts
         ? this.prisma.workoutSession.findMany({
             where: { user_id: clientId, created_at: { gte: ninetyDaysAgo } },
             include: { exercises: true },
             orderBy: { created_at: 'desc' },
           })
-        : Promise.resolve([] as any[]),
+        : Promise.resolve<WorkoutSessionWithExercises[]>([]),
       flags.bodyMetrics
         ? this.prisma.weightLog.findMany({
             where: { user_id: clientId, date: { gte: ninetyDaysAgo } },
             orderBy: { date: 'desc' },
           })
-        : Promise.resolve([] as any[]),
+        : Promise.resolve<WeightLogRow[]>([]),
       flags.habitsProgress
         ? this.prisma.checkIn.findMany({
             where: { user_id: clientId, date: { gte: ninetyDaysAgo } },
             orderBy: { date: 'desc' },
           })
-        : Promise.resolve([] as any[]),
+        : Promise.resolve<CheckInRow[]>([]),
     ]);
 
     const events: Array<{ type: string; date: Date; ref: unknown }> = [
-      ...meals.map((m: any) => ({ type: 'meal', date: m.logged_at, ref: m })),
-      ...workouts.map((w: any) => ({ type: 'workout', date: w.created_at, ref: w })),
-      ...weights.map((w: any) => ({ type: 'weight', date: w.date, ref: w })),
-      ...checkIns.map((c: any) => ({ type: 'check_in', date: c.date, ref: c })),
+      ...meals.map((m) => ({ type: 'meal', date: m.logged_at, ref: m })),
+      ...workouts.map((w) => ({ type: 'workout', date: w.created_at, ref: w })),
+      ...weights.map((w) => ({ type: 'weight', date: w.date, ref: w })),
+      ...checkIns.map((c) => ({ type: 'check_in', date: c.date, ref: c })),
     ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
     return {
@@ -279,13 +292,13 @@ export class CoachService {
             include: { food_item: true },
             orderBy: { logged_at: 'asc' },
           })
-        : Promise.resolve([] as any[]),
+        : Promise.resolve<LoggedFoodEntryWithFood[]>([]),
       flags.bodyMetrics
         ? this.prisma.weightLog.findMany({
             where: { user_id: clientId, date: { gte: thirtyDaysAgo } },
             orderBy: { date: 'desc' },
           })
-        : Promise.resolve([] as any[]),
+        : Promise.resolve<WeightLogRow[]>([]),
       flags.workouts
         ? this.prisma.workoutSession.findMany({
             where: { user_id: clientId },
@@ -293,7 +306,7 @@ export class CoachService {
             orderBy: { created_at: 'desc' },
             take: 10,
           })
-        : Promise.resolve([] as any[]),
+        : Promise.resolve<WorkoutSessionWithExercises[]>([]),
     ]);
 
     let total_calories = 0, total_protein_g = 0, total_carbs_g = 0, total_fat_g = 0;

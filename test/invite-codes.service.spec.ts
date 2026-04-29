@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { InviteCodesService } from '../src/invite-codes/invite-codes.service';
 
 describe('InviteCodesService', () => {
@@ -50,9 +51,10 @@ describe('InviteCodesService', () => {
       prismaMock.inviteCode.create.mockImplementation(async ({ data }: any) => {
         calls++;
         if (calls < 3) {
-          const err: any = new Error('unique violation');
-          err.code = 'P2002';
-          throw err;
+          throw new Prisma.PrismaClientKnownRequestError('unique violation', {
+            code: 'P2002',
+            clientVersion: 'test',
+          });
         }
         return { id: 'ic-1', ...data, created_at: new Date(), used_count: 0, revoked: false };
       });

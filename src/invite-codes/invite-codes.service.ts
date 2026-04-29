@@ -9,6 +9,7 @@ import {
   // exercised below.
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
@@ -86,8 +87,8 @@ export class InviteCodesService {
             max_uses: input.max_uses ?? null,
           },
         });
-      } catch (err: any) {
-        if (err?.code === 'P2002') {
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
           this.logger.warn(`invite code collision on ${code}, retrying`);
           continue;
         }
@@ -176,8 +177,8 @@ export class InviteCodesService {
             invite_code: this.generateCode(),
           },
         });
-      } catch (err: any) {
-        if (err?.code === 'P2002') continue;
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') continue;
         throw err;
       }
     }
@@ -194,8 +195,8 @@ export class InviteCodesService {
           where: { user_id: coachId },
           data: { invite_code: this.generateCode() },
         });
-      } catch (err: any) {
-        if (err?.code === 'P2002') continue;
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') continue;
         throw err;
       }
     }
