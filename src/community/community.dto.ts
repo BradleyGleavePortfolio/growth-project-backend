@@ -13,8 +13,3 @@ export class PostWinDto {
   @IsIn(['circle', 'public'])
   visibility?: 'circle' | 'public';
 }
-
-export class ReactToWinDto {
-  @IsIn(['fire', 'clap'])
-  kind!: 'fire' | 'clap';
-}

@@ -6,15 +6,13 @@ import { PreferencesService } from './preferences.service';
 import { AccountService } from './account.service';
 import { GdprScrubService } from './gdpr-scrub.service';
 import { GdprScrubScheduler } from './gdpr-scrub.scheduler';
-import { CommunityModule } from '../community/community.module';
 
 // PrismaService is provided globally via PrismaModule — no need to import here.
 // AuthModule must be imported so JwtAuthGuard (used in UsersController) can
 // resolve its JwksVerifierService dependency within this module context.
-// CommunityModule is imported to expose BadgesService for GET /users/me/badges.
 // AuditService is exposed via the global AuditModule (see app.module.ts).
 @Module({
-  imports: [AuthModule, CommunityModule],
+  imports: [AuthModule],
   controllers: [UsersController],
   providers: [
     UsersService,

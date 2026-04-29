@@ -92,31 +92,4 @@ export class HabitsService {
     await this.prisma.habitLog.deleteMany({ where: { habit_id: habitId } });
     await this.prisma.habit.delete({ where: { id: habitId } });
   }
-
-  async getStreaks(userId: string) {
-    const habits = await this.prisma.habit.findMany({
-      where: { user_id: userId },
-      include: { logs: { orderBy: { date: 'desc' }, take: 90 } },
-    });
-
-    return habits.map(h => {
-      let streak = 0;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      for (let i = 0; i < 90; i++) {
-        const checkDate = new Date(today);
-        checkDate.setDate(checkDate.getDate() - i);
-        const log = h.logs.find(l => {
-          const d = new Date(l.date);
-          d.setHours(0, 0, 0, 0);
-          return d.getTime() === checkDate.getTime();
-        });
-        if (log && log.completed) streak++;
-        else break;
-      }
-
-      return { habit_id: h.id, habit_name: h.name, streak };
-    });
-  }
 }

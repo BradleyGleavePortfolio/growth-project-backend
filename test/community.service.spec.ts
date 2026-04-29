@@ -41,13 +41,7 @@ describe('CommunityService.getLeaderboard (N+1 characterization)', () => {
         }),
       },
     };
-    // BadgesService dependency — stub out all methods used by CommunityService
-    const badgesMock: any = {
-      checkAndAwardFirstWin: jest.fn().mockResolvedValue(undefined),
-      checkAndAwardEncourager: jest.fn().mockResolvedValue(undefined),
-      checkAndAwardInnerCircleBuilder: jest.fn().mockResolvedValue(undefined),
-    };
-    service = new CommunityService(prismaMock as any, badgesMock);
+    service = new CommunityService(prismaMock as any);
   });
 
   it('returns a leaderboard and records query count for 3 students', async () => {

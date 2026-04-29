@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards, Request, HttpCode } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards, Request, HttpCode, GoneException } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { HabitsService } from './habits.service';
@@ -32,9 +32,15 @@ export class HabitsController {
     return this.habitsService.getLogs(req.user.id, d);
   }
 
+  // GET /habits/streaks — REMOVED (doctrine cleanup).
+  // Returns 410 Gone for one mobile release window before being deleted.
+  // TODO: remove route entirely after one mobile release window.
   @Get('streaks')
-  async getStreaks(@Request() req: AuthedRequest) {
-    return this.habitsService.getStreaks(req.user.id);
+  @HttpCode(410)
+  async getStreaks() {
+    throw new GoneException(
+      'This endpoint has been removed. Habit streaks are no longer part of the product surface.',
+    );
   }
 
   @Delete(':id')
