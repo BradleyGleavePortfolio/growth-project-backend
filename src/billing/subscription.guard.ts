@@ -13,6 +13,9 @@ import { PrismaService } from '../prisma.service';
 //
 // Policy (from build_phase2a_stripe.md):
 //   - active or trialing → allow
+//   - grandfathered      → allow (one-time backfill for coaches who pre-date
+//                          the billing system; see scripts/backfill-coach-
+//                          subscriptions.ts)
 //   - past_due           → allow during a 7-day grace then deny
 //   - canceled / paused  → deny
 //   - missing row        → allow (a coach has been provisioned in the app
@@ -73,7 +76,7 @@ export class SubscriptionGuard implements CanActivate {
     }
 
     const status = sub.status;
-    if (status === 'active' || status === 'trialing') return true;
+    if (status === 'active' || status === 'trialing' || status === 'grandfathered') return true;
 
     if (status === 'past_due') {
       const failedAt = sub.last_payment_failed_at?.getTime() ?? 0;

@@ -16,7 +16,8 @@
     "smoke": "ts-node scripts/smoke.ts",
     "smoke:staging": "SMOKE_BASE_URL=${SMOKE_BASE_URL:-https://api-staging.thegrowthproject.app} ts-node scripts/smoke.ts",
     "smoke:admin-federation": "ts-node scripts/admin-federation-smoke.ts",
-    "openapi:export": "ts-node scripts/export-openapi.ts"
+    "openapi:export": "ts-node scripts/export-openapi.ts",
+    "backfill:coach-subscriptions": "ts-node scripts/backfill-coach-subscriptions.ts"
   },
   "dependencies": {
     "@nest-lab/throttler-storage-redis": "^1.2.0",

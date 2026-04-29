@@ -94,6 +94,7 @@ clobber an unrelated row.
 | Status | Behavior |
 |---|---|
 | `active` / `trialing` | Allow |
+| `grandfathered` | Allow (one-time backfill for coaches who pre-date the billing system; see `scripts/backfill-coach-subscriptions.ts`) |
 | `past_due` | Allow within 7 days of `last_payment_failed_at`; otherwise deny when enforce mode is on |
 | `canceled` / `paused` | Deny when enforce mode is on |
 | `incomplete` / `unpaid` / unknown | Deny when enforce mode is on |
@@ -105,6 +106,13 @@ The `BILLING_ENFORCEMENT` env var controls the verdict when policy
 fails. Anything other than `enforce` puts the guard in observe-only
 mode and lets the request through. Production must flip it to
 `enforce` after Stripe goes live.
+
+Before flipping `BILLING_ENFORCEMENT=enforce`, run
+`npm run backfill:coach-subscriptions`. The script writes a
+`grandfathered` `CoachSubscription` row for every coach who does not
+already have one, so alumni and pre-billing coaches keep their
+access. The script is idempotent and logs scanned / backfilled /
+already-had counts.
 
 ## Security and tenancy rules
 
