@@ -6,6 +6,7 @@ import './instrument';
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import * as Sentry from '@sentry/node';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ThrottlerExceptionFilter } from './filters/throttler-exception.filter';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
@@ -25,6 +26,19 @@ async function bootstrap() {
     // `req.rawBody` to every request without disabling JSON parsing.
     rawBody: true,
   });
+
+  // SECURITY (audit E-1): register helmet before any routes so every response
+  // carries sensible defaults — HSTS, frameguard (X-Frame-Options: SAMEORIGIN),
+  // X-Content-Type-Options: nosniff, Referrer-Policy, X-DNS-Prefetch-Control,
+  // etc. CSP is disabled because this is a JSON API consumed by mobile and a
+  // future browser console; the default helmet CSP is HTML-oriented and would
+  // not block any meaningful attack vector for our JSON responses.
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
 
   // SECURITY: CORS was previously `origin: '*'` (audit C6). The React Native mobile
   // client does not require CORS (it isn't a browser), so the only consumers of CORS
