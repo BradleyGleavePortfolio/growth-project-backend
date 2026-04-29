@@ -16,6 +16,14 @@ const makeAnalyticsMock = () =>
 /** Stub AuditService — captures writes for assertion. */
 const makeAuditMock = () => ({ write: jest.fn(async () => {}), list: jest.fn(async () => []) }) as any;
 
+/** Stub AppleVerifierService — googleAuth/selectRole tests do not exercise it. */
+const makeAppleVerifierMock = () =>
+  ({
+    isConfigured: jest.fn(() => false),
+    getAudiences: jest.fn(() => []),
+    verify: jest.fn(),
+  }) as any;
+
 describe('AuthService.googleAuth', () => {
   let prismaMock: any;
   let inviteCodesMock: any;
@@ -34,7 +42,13 @@ describe('AuthService.googleAuth', () => {
     supabaseAdminMock = {
       auth: { getUser: jest.fn() },
     };
-    service = new AuthService(prismaMock as any, inviteCodesMock as any, makeAnalyticsMock(), makeAuditMock());
+    service = new AuthService(
+      prismaMock as any,
+      inviteCodesMock as any,
+      makeAnalyticsMock(),
+      makeAuditMock(),
+      makeAppleVerifierMock(),
+    );
     (service as any).supabaseAdmin = supabaseAdminMock;
   });
 
@@ -91,7 +105,13 @@ describe('AuthService.selectRole', () => {
       $transaction: jest.fn((cb: any) => cb(prismaMock)),
     };
     inviteCodesMock = makeInviteCodesMock();
-    service = new AuthService(prismaMock as any, inviteCodesMock as any, makeAnalyticsMock(), makeAuditMock());
+    service = new AuthService(
+      prismaMock as any,
+      inviteCodesMock as any,
+      makeAnalyticsMock(),
+      makeAuditMock(),
+      makeAppleVerifierMock(),
+    );
   });
 
   it('allows selecting student role without any code', async () => {

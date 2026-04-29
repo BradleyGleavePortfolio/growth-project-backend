@@ -62,6 +62,46 @@ export class GoogleAuthDto {
   invite_code?: string;
 }
 
+export class AppleAuthDto {
+  @ApiProperty({
+    description:
+      'Apple identity token (JWT) issued by Sign in with Apple on the mobile or web SDK.',
+    minLength: 10,
+  })
+  @IsString()
+  @MinLength(10)
+  token!: string;
+
+  // Apple only returns the user's full_name on the FIRST authorization, in the
+  // SDK response — never inside the identity token. The mobile app must pass
+  // it through on that first call so the server can persist it; subsequent
+  // logins omit the field.
+  @ApiPropertyOptional({
+    description:
+      "User's full name from the Apple SDK's first-authorization response. Apple does not include this in the identity token, so mobile must forward it explicitly on first contact.",
+    example: 'Jane Doe',
+    maxLength: 200,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  full_name?: string;
+
+  // Optional invite code propagated through the Apple OAuth roundtrip. The
+  // OAuth provider itself cannot carry it, so the mobile app sends it on the
+  // server-side exchange. When present and valid we attach the new user to
+  // that coach in the same request (no second /auth/attach-invite-code hop).
+  @ApiPropertyOptional({
+    description: 'Optional coach invite code attached on the same call.',
+    example: 'GP-A1B2C3',
+    maxLength: 32,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  invite_code?: string;
+}
+
 // Mobile (#56) calls /auth/attach-invite-code; backend exposes the same
 // behavior as /auth/attach-coach-code. Alias DTO so the validation pipe
 // accepts the new field name without dropping it as unknown.

@@ -1,4 +1,12 @@
-import { Injectable, Logger, UnauthorizedException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  UnauthorizedException,
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma.service';
 import {
@@ -10,6 +18,7 @@ import {
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AuditAction, AuditService } from '../audit/audit.service';
+import { AppleVerifierService } from './apple-verifier.service';
 
 // Self-service promotion to coach is the legacy behavior of POST
 // /auth/become-coach. It is a privilege-escalation hole on a sale-ready
@@ -31,6 +40,7 @@ export class AuthService {
     private inviteCodes: InviteCodesService,
     private analytics: AnalyticsService,
     private audit: AuditService,
+    private appleVerifier: AppleVerifierService,
   ) {
     // Supabase Admin SDK for user management (service role key)
     this.supabaseAdmin = createClient(
@@ -163,8 +173,15 @@ export class AuthService {
       (process.env.COACH_CODE_GATE_ENABLED || '').toLowerCase() === 'true';
     const googleEnabled =
       !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+    // Apple is only advertised once an APPLE_AUDIENCES allow-list is set.
+    // Without it the local defense-in-depth verifier has no audience to pin
+    // the identity token to (see AppleVerifierService) and the route returns
+    // 503; advertising it would just produce client errors at signup time.
+    const appleEnabled =
+      googleEnabled && this.appleVerifier.isConfigured();
     const providers = ['email'];
     if (googleEnabled) providers.push('google');
+    if (appleEnabled) providers.push('apple');
     return {
       invite_code_required: gateEnabled,
       coach_code_required: gateEnabled,
@@ -266,6 +283,163 @@ export class AuthService {
 
     return {
       access_token: token,
+      is_new_user: isNewUser,
+      invite_attached,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        coach_id: user.coach_id,
+      },
+    };
+  }
+
+  // Sign in with Apple. Mobile (#73) sends the identity token returned by
+  // the iOS SDK; we exchange it for a Supabase session via
+  // `signInWithIdToken({ provider: 'apple', token })` and upsert the local
+  // user row. Apple returns the user's full_name only on the FIRST
+  // authorization (and not in the identity token at all), so the mobile app
+  // forwards it through here so we can persist it on first contact.
+  async appleAuth(token: string, fullName?: string, inviteCode?: string) {
+    if (!this.appleVerifier.isConfigured()) {
+      // Feature-tier env var APPLE_AUDIENCES is not set on this deployment.
+      // 503 (rather than a 401) so mobile can distinguish "not configured
+      // yet — fall back to email or Google" from "your token is bad."
+      throw new ServiceUnavailableException(
+        'Sign in with Apple is not configured on this server',
+      );
+    }
+
+    // Defense-in-depth: verify the identity token locally before handing it
+    // to Supabase. Pins issuer (appleid.apple.com) + audience (our bundle
+    // ids) so a token issued for an unrelated Apple client cannot reach the
+    // upsert path. See AppleVerifierService.
+    let applePayload;
+    try {
+      applePayload = await this.appleVerifier.verify(token);
+    } catch (err) {
+      this.logger.warn(`apple token verify failed: ${(err as Error).message}`);
+      throw new UnauthorizedException('Apple auth failed — invalid token');
+    }
+
+    // Apple identity tokens always carry `sub`; `email` is included on first
+    // authorization and on subsequent ones for users who have not chosen
+    // "Hide My Email" + email-relay invalidation. We require email to upsert
+    // a user row (Supabase will also reject without one).
+    const appleEmail =
+      typeof applePayload.email === 'string' ? applePayload.email : null;
+    if (!appleEmail) {
+      throw new UnauthorizedException('Apple account has no email');
+    }
+
+    // Hand the same token to Supabase to mint a session. Supabase verifies
+    // the token a second time against Apple's JWKS, links it to the
+    // `auth.identities` row keyed by Apple `sub`, and returns
+    // access/refresh tokens we can pass back to the mobile client.
+    const supaClient = createClient(
+      process.env.SUPABASE_URL || '',
+      process.env.SUPABASE_ANON_KEY || '',
+    );
+    const { data: signInData, error: signInError } =
+      await supaClient.auth.signInWithIdToken({ provider: 'apple', token });
+
+    if (signInError || !signInData.session || !signInData.user) {
+      this.logger.warn(
+        `supabase signInWithIdToken(apple) failed: ${signInError?.message ?? 'no session'}`,
+      );
+      throw new UnauthorizedException('Apple auth failed — Supabase rejected the token');
+    }
+
+    const supaUser = signInData.user;
+    const supaEmail = supaUser.email || appleEmail;
+
+    // Upsert user in our DB (Apple users are pre-verified by Apple itself).
+    let user = await this.prisma.user.findUnique({
+      where: { supabase_id: supaUser.id },
+    });
+    let isNewUser = false;
+
+    if (!user) {
+      // Also check by email in case the user registered via email or Google
+      // first — link the Supabase ID onto the existing row instead of
+      // creating a duplicate. Mirrors googleAuth's email-link fallback.
+      user = await this.prisma.user.findUnique({ where: { email: supaEmail } });
+
+      if (user) {
+        const dataToUpdate: { supabase_id: string; name?: string } = {
+          supabase_id: supaUser.id,
+        };
+        // First-contact full_name persistence: if the local row was created
+        // with a placeholder name (e.g. the email itself, from a stub
+        // auto-link) and the Apple SDK gave us a real name, upgrade it now.
+        // Subsequent logins (no full_name in body) leave the existing name
+        // untouched.
+        if (
+          fullName &&
+          fullName.trim().length > 0 &&
+          (user.name === user.email || !user.name)
+        ) {
+          dataToUpdate.name = fullName.trim();
+        }
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: dataToUpdate,
+        });
+      } else {
+        const resolvedName =
+          (fullName && fullName.trim().length > 0 && fullName.trim()) ||
+          (typeof supaUser.user_metadata?.full_name === 'string' &&
+            supaUser.user_metadata.full_name) ||
+          supaEmail;
+        user = await this.prisma.user.create({
+          data: {
+            supabase_id: supaUser.id,
+            email: supaEmail,
+            name: resolvedName,
+            role: 'student',
+          },
+        });
+        isNewUser = true;
+        this.analytics.capture(user.id, Events.USER_REGISTERED_APPLE, {
+          role: user.role,
+          provider: 'apple',
+        });
+      }
+    } else if (
+      fullName &&
+      fullName.trim().length > 0 &&
+      (user.name === user.email || !user.name)
+    ) {
+      // Existing supabase-linked row with no real name yet — upgrade once.
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { name: fullName.trim() },
+      });
+    }
+
+    // If mobile passed an invite_code on the Apple exchange, attach the
+    // user to the coach in the same call. Failures are non-fatal — we still
+    // log the user in so they can retry via /auth/attach-invite-code.
+    let invite_attached = false;
+    if (inviteCode && !user.coach_id) {
+      try {
+        await this.inviteCodes.attachUserToCoachByCode(user.id, inviteCode);
+        const refreshed = await this.prisma.user.findUnique({
+          where: { id: user.id },
+        });
+        if (refreshed) user = refreshed;
+        invite_attached = true;
+      } catch (err) {
+        this.logger.warn(
+          `appleAuth invite_code attach failed for user=${user.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    return {
+      access_token: signInData.session.access_token,
+      refresh_token: signInData.session.refresh_token,
       is_new_user: isNewUser,
       invite_attached,
       user: {

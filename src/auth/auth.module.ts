@@ -5,6 +5,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './auth.guard';
 import { JwksVerifierService } from './jwks.service';
+import { AppleVerifierService } from './apple-verifier.service';
 
 /**
  * Auth module — does not use PassportModule or JwtModule.
@@ -24,7 +25,7 @@ import { JwksVerifierService } from './jwks.service';
 @Module({
   imports: [ConfigModule, InviteCodesModule],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard, JwksVerifierService],
-  exports: [AuthService, JwtAuthGuard, JwksVerifierService],
+  providers: [AuthService, JwtAuthGuard, JwksVerifierService, AppleVerifierService],
+  exports: [AuthService, JwtAuthGuard, JwksVerifierService, AppleVerifierService],
 })
 export class AuthModule {}

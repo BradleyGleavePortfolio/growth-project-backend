@@ -143,6 +143,12 @@ export const ENV_RULES: EnvRule[] = [
       'Sentry DSN for server-side error reporting. instrument.ts no-ops when unset, so absence is safe at boot — but prod errors are invisible until set. Treat the warn as a release blocker for production traffic.',
   },
   {
+    name: 'APPLE_AUDIENCES',
+    tier: 'feature',
+    reason:
+      'Comma-separated allow-list of Apple audiences (iOS bundle ids and/or Apple Services IDs) accepted by POST /auth/apple. Without it, the endpoint returns 503 and /auth/signup-policy omits "apple" from providers. Set to your iOS bundle id (e.g. com.thegrowthproject.app) before enabling Sign in with Apple in Supabase.',
+  },
+  {
     name: 'REDIS_URL',
     tier: 'feature',
     reason:

@@ -35,6 +35,7 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     STRIPE_PRICE_ID_FITNESS: 'price_x',
     SENTRY_DSN: 'https://abc@sentry.io/1',
     REDIS_URL: 'redis://localhost:6379',
+    APPLE_AUDIENCES: 'com.thegrowthproject.app',
   };
 }
 
@@ -79,6 +80,7 @@ describe('evaluateEnv', () => {
       'STRIPE_PRICE_ID_FITNESS',
       'SENTRY_DSN',
       'REDIS_URL',
+      'APPLE_AUDIENCES',
     ]) {
       expect(r.missingFeature).toContain(name);
       expect(r.missingProd).not.toContain(name);

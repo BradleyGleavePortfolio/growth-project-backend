@@ -21,6 +21,12 @@ const makeAnalyticsMock = () =>
   ({ capture: jest.fn(), identify: jest.fn(), onModuleDestroy: jest.fn() } as unknown as AnalyticsService);
 const makeAuditMock = () =>
   ({ write: jest.fn(async () => {}), list: jest.fn(async () => []) }) as any;
+const makeAppleVerifierMock = () =>
+  ({
+    isConfigured: jest.fn(() => false),
+    getAudiences: jest.fn(() => []),
+    verify: jest.fn(),
+  }) as any;
 
 function buildPrismaMock(initialUser: any) {
   const state: { user: any } = { user: initialUser };
@@ -65,6 +71,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeInviteCodesMock() as any,
       makeAnalyticsMock(),
       audit,
+      makeAppleVerifierMock(),
     );
 
     let caught: ForbiddenException | null = null;
@@ -90,6 +97,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeInviteCodesMock() as any,
       makeAnalyticsMock(),
       makeAuditMock(),
+      makeAppleVerifierMock(),
     );
     await expect(svc.becomeCoach('u-1', 'pw')).rejects.toBeInstanceOf(
       ForbiddenException,
@@ -105,6 +113,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeInviteCodesMock() as any,
       makeAnalyticsMock(),
       makeAuditMock(),
+      makeAppleVerifierMock(),
     );
     const res = await svc.becomeCoach('u-1', 'irrelevant');
     expect(res).toEqual({ role: 'coach' });
@@ -119,6 +128,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeInviteCodesMock() as any,
       makeAnalyticsMock(),
       makeAuditMock(),
+      makeAppleVerifierMock(),
     );
     await expect(svc.becomeCoach('u-missing', 'pw')).rejects.toBeInstanceOf(
       UnauthorizedException,
@@ -134,6 +144,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeInviteCodesMock() as any,
       makeAnalyticsMock(),
       audit,
+      makeAppleVerifierMock(),
     );
     // Stub the Supabase password verifier path to succeed without a network
     // round-trip. We monkey-patch the lazily-created client by replacing the
