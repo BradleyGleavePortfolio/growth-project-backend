@@ -14,6 +14,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       );
   }
 
+  // OPS (audit M-4): graceful shutdown. enableShutdownHooks() in main.ts
+  // forwards SIGTERM/SIGINT into the Nest lifecycle so this hook runs on
+  // Fly redeploys and disconnects the pool cleanly. Without that call in
+  // main.ts this method is dead code and Prisma will leak connections.
   async onModuleDestroy() {
     await this.$disconnect();
   }

@@ -137,6 +137,11 @@ export class AuthController {
 
   @Public()
   @Post('forgot-password')
+  // SECURITY (audit S-1): 5/15min/IP. Without this the endpoint is a trivial
+  // user-enumeration and password-reset-email spam vector. The in-memory
+  // throttler is acceptable here for single-instance Fly machines; a Redis-
+  // backed throttler is a separate Phase 2 task once we run >1 instance.
+  @Throttle({ default: { ttl: 900000, limit: 5 } })
   @HttpCode(HttpStatus.OK)
   async forgotPassword(@Body() body: ForgotPasswordDto) {
     return this.authService.forgotPassword(body.email);
