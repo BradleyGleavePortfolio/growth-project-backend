@@ -220,6 +220,9 @@ export class ClientAIContextService {
           'beginner',
         has_gym_membership: profile?.has_gym_membership ?? false,
         preferred_snacks: profile?.preferred_snacks ?? [],
+        dietary_pattern: profile?.dietary_pattern ?? null,
+        dietary_restrictions: profile?.dietary_restrictions ?? [],
+        workout_days_per_week: profile?.workout_days_per_week ?? null,
         bio: clampStr(profile?.bio ?? null, CONTEXT_LIMITS.BIO_CHARS),
       },
       prescribed,
@@ -269,10 +272,13 @@ export class ClientAIContextService {
       `- name: ${id.first_name} | age: ${id.age_years ?? 'unknown'} | sex: ${id.sex}`,
     );
     lines.push(
-      `- profile: goal=${p.goal_type}, activity=${p.activity_level}, experience=${p.workout_experience}, gym_member=${p.has_gym_membership}`,
+      `- profile: goal=${p.goal_type}, activity=${p.activity_level}, experience=${p.workout_experience}, gym_member=${p.has_gym_membership}, workout_days_per_week=${p.workout_days_per_week ?? 'unknown'}`,
     );
     lines.push(
       `- body: height_cm=${p.height_cm ?? '?'}, current_lbs=${p.current_weight_lbs ?? '?'}, target_lbs=${p.target_weight_lbs ?? '?'}`,
+    );
+    lines.push(
+      `- diet: pattern=${p.dietary_pattern ?? 'unknown'}, restrictions=${p.dietary_restrictions.length ? p.dietary_restrictions.join('|') : 'none'}`,
     );
     lines.push(
       `- APP_PRESCRIBED (DO NOT CONTRADICT): calories=${tx.calories ?? 'unset'}, protein_g=${tx.protein_g ?? 'unset'}, carbs_g=${tx.carbs_g ?? 'unset'}, fat_g=${tx.fat_g ?? 'unset'}, water_ml=${tx.water_ml ?? 'unset'}, meals_per_day=${tx.meals_per_day ?? 'unset'}`,
@@ -522,6 +528,9 @@ export class ClientAIContextService {
         workout_experience: 'beginner',
         has_gym_membership: false,
         preferred_snacks: [],
+        dietary_pattern: null,
+        dietary_restrictions: [],
+        workout_days_per_week: null,
         bio: null,
       },
       prescribed: {

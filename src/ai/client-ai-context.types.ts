@@ -35,6 +35,16 @@ export interface ClientAIProfile {
   workout_experience: 'beginner' | 'intermediate' | 'advanced';
   has_gym_membership: boolean;
   preferred_snacks: string[];
+  // Diet shape ("vegan", "keto", "none", …). Free-form on the schema so
+  // future values do not require a migration; null when the client has not
+  // answered yet. The AI must treat null as "unknown" and not assume "none".
+  dietary_pattern: string | null;
+  // Allergens / avoid-list. Empty array is the explicit "no restrictions"
+  // answer; the AI must not invent restrictions when absent.
+  dietary_restrictions: string[];
+  // Self-reported weekly training cadence. Null when the client has not
+  // answered; the AI must not assume "0 days" from the absence.
+  workout_days_per_week: number | null;
   // Free-text dietary notes, redactions, allergies. We forward only short,
   // user-supplied bio text — never coach-only fields.
   bio: string | null;

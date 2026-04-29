@@ -13,6 +13,9 @@ function ctxFixture(overrides: Partial<ClientAIContext> = {}): ClientAIContext {
       workout_experience: 'intermediate',
       has_gym_membership: true,
       preferred_snacks: [],
+      dietary_pattern: null,
+      dietary_restrictions: [],
+      workout_days_per_week: null,
       bio: null,
     },
     prescribed: {

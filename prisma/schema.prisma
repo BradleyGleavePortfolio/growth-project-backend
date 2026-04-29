@@ -357,6 +357,17 @@ model UserProfile {
   workout_experience     WorkoutExperience @default(beginner)
   has_gym_membership     Boolean           @default(false)
   preferred_snacks       String[]
+  // Free-form so a future "low-FODMAP", "halal", etc. value does not require
+  // a schema migration. The DTO restricts new writes to a curated list of
+  // values; legacy reads stay valid even if the list grows.
+  dietary_pattern        String?
+  // Allergens / avoid-list. Empty array is the default — explicit "no
+  // restrictions" rather than null so the AI can distinguish unset (don't
+  // know) from confirmed-empty (no restrictions).
+  dietary_restrictions   String[]
+  // Self-reported weekly training cadence. Nullable so a freshly-onboarded
+  // user without a value does not seed a misleading 0.
+  workout_days_per_week  Int?
   macro_target_calories  Float?
   macro_target_protein_g Float?
   macro_target_carbs_g   Float?
