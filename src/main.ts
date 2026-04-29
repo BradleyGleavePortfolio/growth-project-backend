@@ -117,6 +117,8 @@ async function bootstrap() {
   app.setGlobalPrefix('api', {
     exclude: [
       'health',
+      'healthz',
+      'readyz',
       'join/:code',
       'invite/:code',
       'download/ios',
