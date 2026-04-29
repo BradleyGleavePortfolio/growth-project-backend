@@ -167,7 +167,10 @@ portal), see [`docs/stripe-setup.md`](docs/stripe-setup.md).
 
 - **Sentry**: `SENTRY_DSN` is the only required variable. The Sentry
   client is initialized in `src/instrument.ts` before the Nest app is
-  created so auto-instrumentation can patch the runtime.
+  created so auto-instrumentation can patch the runtime. Sourcemaps are
+  uploaded to Sentry on every Fly deploy via
+  `scripts/sentry-upload-sourcemaps.sh`; see the **Sentry sourcemaps**
+  section below for the build-time secrets that gate the upload.
 - **PostHog**: `POSTHOG_KEY` and the optional `POSTHOG_HOST`. The
   `AnalyticsModule` is a no-op when the key is unset, so all
   `analytics.track(...)` calls in the codebase are safe to leave
@@ -184,6 +187,45 @@ portal), see [`docs/stripe-setup.md`](docs/stripe-setup.md).
   `.github/workflows/fly-secrets-set.yml`. See
   [`docs/deploy-runbook.md`](docs/deploy-runbook.md) section 7b for
   the operator workflow contract.
+
+### Sentry sourcemaps
+
+The compiled JavaScript Sentry sees on Fly is one bundled, transpiled
+file per module. Without sourcemaps, every captured stack trace is a
+list of `dist/*.js:row:col` lines that nobody can debug from. The
+deploy pipeline uploads sourcemaps to Sentry on every release so the
+dashboard renders the original TypeScript source.
+
+The upload runs in `scripts/sentry-upload-sourcemaps.sh` from inside
+the Docker build, after `npm run build`. The release name is the
+commit SHA, passed as the `RELEASE_VERSION` build arg, and is also
+exported as a runtime ENV so `src/instrument.ts` tags captured events
+with the same release. Events and sourcemaps line up by construction.
+
+The script no-ops gracefully when any of the four credentials are
+unset, so `docker build` and local `npm run build` work without Sentry
+configured. Required GitHub Actions secrets for the upload to actually
+run on prod deploys (set on the repository, not on Fly):
+
+| Secret              | Where to find it                                                                |
+| ------------------- | ------------------------------------------------------------------------------- |
+| `SENTRY_AUTH_TOKEN` | Sentry → Settings → Auth Tokens → Create. Scope: `project:releases`.            |
+| `SENTRY_ORG`        | Sentry org slug, e.g. `the-growth-project`.                                     |
+| `SENTRY_PROJECT`    | Sentry project slug for this app, e.g. `growth-project-backend`.                |
+| `SENTRY_DSN`        | Already required; reused so the build can confirm the project before uploading. |
+
+One-time operator setup (GitHub repo → Settings → Secrets → Actions):
+
+```bash
+gh secret set SENTRY_AUTH_TOKEN --body '<token>' --repo BradleyGleavePortfolio/growth-project-backend
+gh secret set SENTRY_ORG        --body 'the-growth-project' --repo BradleyGleavePortfolio/growth-project-backend
+gh secret set SENTRY_PROJECT    --body 'growth-project-backend' --repo BradleyGleavePortfolio/growth-project-backend
+```
+
+`SENTRY_DSN` is already set as a Fly secret; mirror it into the GitHub
+Actions environment with the same `gh secret set` form so the build
+can read it. The runtime DSN on Fly stays the source of truth — the
+GitHub copy is build-time only.
 
 ## Rate limiting
 
