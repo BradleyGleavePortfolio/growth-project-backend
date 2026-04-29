@@ -34,6 +34,7 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     STRIPE_WEBHOOK_SECRET: 'whsec_x',
     STRIPE_PRICE_ID_FITNESS: 'price_x',
     SENTRY_DSN: 'https://abc@sentry.io/1',
+    REDIS_URL: 'redis://localhost:6379',
   };
 }
 
@@ -77,6 +78,7 @@ describe('evaluateEnv', () => {
       'STRIPE_WEBHOOK_SECRET',
       'STRIPE_PRICE_ID_FITNESS',
       'SENTRY_DSN',
+      'REDIS_URL',
     ]) {
       expect(r.missingFeature).toContain(name);
       expect(r.missingProd).not.toContain(name);

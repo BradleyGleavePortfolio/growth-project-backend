@@ -1,8 +1,10 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { UserThrottlerGuard } from './throttler/user-throttler.guard';
+import { buildThrottlerOptions } from './throttler/throttler.config';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { ProfileModule } from './profile/profile.module';
@@ -45,8 +47,15 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
     // Global config — loads .env automatically
     ConfigModule.forRoot({ isGlobal: true }),
 
-    // Rate limiting: 100 requests per minute globally (AI endpoint has own tighter limit)
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
+    // Rate limiting: named throttlers (auth-login, auth-signup,
+    // auth-password-reset, default) backed by Redis when REDIS_URL is set,
+    // otherwise the built-in in-memory tracker. See throttler.config.ts
+    // for the limit table; see UserThrottlerGuard for the user-id-vs-IP
+    // tracker policy.
+    ThrottlerModule.forRootAsync({
+      useFactory: () =>
+        buildThrottlerOptions(process.env.REDIS_URL, new Logger('ThrottlerConfig')),
+    }),
 
     // In-process cron scheduler. Drives the daily GDPR scrub
     // (UsersModule -> GdprScrubScheduler) so the 30-day hard-delete
@@ -110,11 +119,17 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
     PublicPagesModule,
   ],
   providers: [
-    // SECURITY: register ThrottlerGuard as a global APP_GUARD so that @Throttle(...)
+    // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)
     // decorators (e.g. on /auth/login, /auth/register, /ai/chat) are actually enforced.
     // Without this, ThrottlerModule is imported but never wired in and every @Throttle
     // decorator is silently inert — see audit C2.
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    //
+    // UserThrottlerGuard extends @nestjs/throttler's ThrottlerGuard with a
+    // getTracker() override: authenticated requests are bucketed per user-id
+    // and unauthenticated ones fall back to client IP. Replaces the original
+    // IP-only ThrottlerGuard so shared-NAT / mobile-CGNAT users do not lock
+    // each other out, and so per-user fairness holds for authed routes.
+    { provide: APP_GUARD, useClass: UserThrottlerGuard },
 
     // SECURITY: global JWT auth guard — every route is private by default.
     // Routes opt out via the @Public() decorator (see common/decorators/public.decorator.ts).

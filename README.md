@@ -84,6 +84,7 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 | `STRIPE_WEBHOOK_SECRET` | prod | Stripe dashboard | HMAC signing secret for `/v1/webhooks/stripe`. Without it every webhook is rejected with 400. |
 | `STRIPE_PRICE_ID_FITNESS` | prod | Stripe dashboard | Price id of the flat coach SaaS plan. |
 | `SENTRY_DSN` | prod | Sentry dashboard | Server-side DSN. Without it, production errors are not forwarded. |
+| `REDIS_URL` | prod | Backend operator | `redis://` or `rediss://` URL used by `ThrottlerModule` for shared rate-limit state across Fly machines. When unset, the throttler falls back to in-memory tracking (safe for dev/test or single-machine deploys, but limits do **not** cross machines). Required before scaling out. See "Rate limiting" below. |
 | `POSTHOG_KEY` | optional | PostHog dashboard | Project key. AnalyticsModule no-ops when unset. |
 | `POSTHOG_HOST` | optional | PostHog dashboard | Override host (only set when self-hosting PostHog). |
 | `PERPLEXITY_API_KEY` | optional | Perplexity dashboard | API key for `/api/ai/chat`. The deterministic fallback responder runs when unset or on provider error. |
@@ -183,6 +184,47 @@ portal), see [`docs/stripe-setup.md`](docs/stripe-setup.md).
   `.github/workflows/fly-secrets-set.yml`. See
   [`docs/deploy-runbook.md`](docs/deploy-runbook.md) section 7b for
   the operator workflow contract.
+
+## Rate limiting
+
+Rate limiting is wired through `ThrottlerModule` (`src/app.module.ts`)
+with `UserThrottlerGuard` (`src/throttler/user-throttler.guard.ts`)
+registered as a global `APP_GUARD`. The guard inherits everything from
+`@nestjs/throttler`'s `ThrottlerGuard` and overrides one method —
+`getTracker(req)` — so the bucket key is **the user-id when the
+request is authenticated** (`req.user.id` set by `JwtAuthGuard`) and
+**the client IP otherwise**. This avoids shared-NAT lockouts (offices,
+campuses, coffee shops, mobile CGNAT) and keeps per-user fairness on
+authenticated routes.
+
+### Backend storage
+
+When `REDIS_URL` is set the throttler uses
+`@nest-lab/throttler-storage-redis` over `ioredis` so limits hold
+across all Fly machines in a region. When unset, the built-in
+in-memory tracker is used; that is the right default for `npm run
+dev`, Jest, and single-machine deploys, but limits will **not** cross
+machines, so production must set `REDIS_URL`. Boot logs the chosen
+backend at `LOG` level under the `ThrottlerConfig` context.
+
+### Named throttlers
+
+| Name | Limit | Surface (decorator at controller) |
+|---|---|---|
+| `auth-login` | 10 / minute | `POST /auth/login` |
+| `auth-signup` | 5 / hour | `POST /auth/register`, `POST /auth/signup-with-code` |
+| `auth-password-reset` | 5 / 15 min | `POST /auth/forgot-password` |
+| `default` | 60 / minute | every other route that uses `@Throttle({ default: ... })` |
+
+Limits live in one place — `src/throttler/throttler.config.ts` —
+imported by `app.module.ts` via `ThrottlerModule.forRootAsync()`. To
+add a new named throttler, append to `THROTTLER_LIMITS` and reference
+it from the controller via `@Throttle({ '<name>': { ttl, limit } })`.
+
+When the limit is exceeded, `ThrottlerExceptionFilter`
+(`src/filters/throttler-exception.filter.ts`) returns a 429 with a
+generic body — no leak of which named throttler tripped, no echo of
+the user's input.
 
 ## Public, unprefixed routes
 
