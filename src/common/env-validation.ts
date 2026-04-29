@@ -142,6 +142,18 @@ export const ENV_RULES: EnvRule[] = [
     reason:
       'Sentry DSN for server-side error reporting. instrument.ts no-ops when unset, so absence is safe at boot — but prod errors are invisible until set. Treat the warn as a release blocker for production traffic.',
   },
+  {
+    name: 'REDIS_URL',
+    tier: 'feature',
+    reason:
+      'Redis connection string used by ThrottlerModule for shared rate-limit state across Fly machines. When unset, throttler falls back to in-memory tracking — safe for dev/test and single-machine deploys, but limits do NOT cross machines in prod. Set to redis(s)://host:port[/db] before scaling out.',
+    validate: (v) => {
+      if (!/^rediss?:\/\//i.test(v.trim())) {
+        return 'REDIS_URL must be an absolute redis:// or rediss:// URL.';
+      }
+      return null;
+    },
+  },
 
   // --- Optional everywhere; warn-only in prod when missing ---
   {

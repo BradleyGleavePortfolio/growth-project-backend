@@ -41,20 +41,19 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  // 10/hour/IP — loosened from 3/hour because shared NAT (office, campus, coffee
-  // shop) easily hits 3 legitimate signups within an hour. Still tight enough
-  // to kill enumeration and spam signup loops.
-  @Throttle({ default: { ttl: 3600000, limit: 10 } })
+  // Named throttler `auth-signup`: 5/hour. Tracker is IP for unauthed
+  // signups, user-id for the rare authed retry (see UserThrottlerGuard).
+  @Throttle({ 'auth-signup': { ttl: 3600000, limit: 5 } })
   async register(@Body() body: RegisterDto) {
     return this.authService.register(body);
   }
 
   @Public()
   @Post('login')
-  // 10/minute/IP — loosened from 5/min. A user mistyping a password twice on a
-  // shared IP was one fat-finger away from a lockout. 10/min is still an order
-  // of magnitude below credential-stuffing economics.
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  // Named throttler `auth-login`: 10/minute. Tracker is IP (login is
+  // unauthed by definition); user-id tracking kicks in once the JWT is
+  // attached on subsequent authed routes.
+  @Throttle({ 'auth-login': { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
   async login(@Body() body: LoginDto) {
     return this.authService.login(body.email, body.password);
@@ -137,11 +136,11 @@ export class AuthController {
 
   @Public()
   @Post('forgot-password')
-  // SECURITY (audit S-1): 5/15min/IP. Without this the endpoint is a trivial
-  // user-enumeration and password-reset-email spam vector. The in-memory
-  // throttler is acceptable here for single-instance Fly machines; a Redis-
-  // backed throttler is a separate Phase 2 task once we run >1 instance.
-  @Throttle({ default: { ttl: 900000, limit: 5 } })
+  // SECURITY (audit S-1): 5/15min on POST /auth/forgot-password. Without this
+  // the endpoint is a trivial user-enumeration and password-reset-email spam
+  // vector. Routed through the named throttler `auth-password-reset` so
+  // operators can adjust the limit in one place (src/throttler/throttler.config.ts).
+  @Throttle({ 'auth-password-reset': { ttl: 900000, limit: 5 } })
   @HttpCode(HttpStatus.OK)
   async forgotPassword(@Body() body: ForgotPasswordDto) {
     return this.authService.forgotPassword(body.email);
@@ -169,7 +168,10 @@ export class AuthController {
   // Public so the mobile app can hit it without a JWT.
   @Public()
   @Post('signup-with-code')
-  @Throttle({ default: { ttl: 3600000, limit: 10 } })
+  // Named throttler `auth-signup`: 5/hour. Same signup surface as
+  // /auth/register; shares the bucket so attackers cannot multiplex
+  // across both paths.
+  @Throttle({ 'auth-signup': { ttl: 3600000, limit: 5 } })
   async signupWithCode(@Body() body: SignupWithCodeDto) {
     return this.authService.signupWithCode(body);
   }

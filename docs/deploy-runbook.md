@@ -107,6 +107,7 @@ missing. The summary below restates the rules so you can prepare
 | `STRIPE_WEBHOOK_SECRET` | prod | `whsec_…` from Stripe → Developers → Webhooks. |
 | `STRIPE_PRICE_ID_FITNESS` | prod | `price_…` of the flat coach plan. |
 | `SENTRY_DSN` | prod | Server-side DSN. Without this, prod errors are invisible. |
+| `REDIS_URL` | prod (feature-tier; warn-only) | `redis://` or `rediss://` URL backing the rate-limit storage. Required once the app runs on >1 Fly machine — without it, throttler counters are per-machine and an attacker can multiplex across replicas. Boot logs the chosen backend at LOG level under `ThrottlerConfig`. Use the Fly-managed Upstash add-on (`fly redis create`) or a managed instance. |
 | `POSTHOG_KEY` | optional | Product analytics. AnalyticsModule no-ops when unset. |
 | `PERPLEXITY_API_KEY` | optional | AI chat falls back to a deterministic responder when unset. |
 | `USDA_API_KEY` | optional | Food search returns errors at call time when unset. |
