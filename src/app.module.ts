@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/auth.guard';
@@ -46,6 +47,12 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
 
     // Rate limiting: 100 requests per minute globally (AI endpoint has own tighter limit)
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
+
+    // In-process cron scheduler. Drives the daily GDPR scrub
+    // (UsersModule -> GdprScrubScheduler) so the 30-day hard-delete
+    // window is honored automatically rather than only via the
+    // out-of-band scripts/gdpr-scrub.ts entry point.
+    ScheduleModule.forRoot(),
 
     // Global Prisma module — single PrismaClient shared by every feature module.
     PrismaModule,
