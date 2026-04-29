@@ -90,7 +90,7 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 | `PERPLEXITY_API_KEY` | optional | Perplexity dashboard | API key for `/api/ai/chat`. The deterministic fallback responder runs when unset or on provider error. |
 | `USDA_API_KEY` | optional | USDA FDC | Key for food search. Required for non-degraded food results in production; do not ship `DEMO_KEY`. |
 | `COACH_CODE_GATE_ENABLED` | optional | Backend operator | Feature flag. When `true`, `/auth/signup-with-code` requires a valid coach invite code. |
-| `BILLING_ENFORCEMENT` | optional | Backend operator | Feature flag. `enforce` blocks coach writes for `past_due` past grace and for `canceled` / `paused`. Anything else is observe-only. |
+| `BILLING_ENFORCEMENT` | optional | Backend operator | Feature flag. `enforce` blocks coach writes for `past_due` past grace and for `canceled` / `paused`. `active`, `trialing`, and `grandfathered` are always allowed. Anything else is observe-only. Run `npm run backfill:coach-subscriptions` before flipping to `enforce`. |
 | `STRIPE_PRICE_ID_FINANCE` | optional | Stripe dashboard | Reserved for the second vertical. Currently unused. |
 | `FINANCE_API_BASE_URL` | optional | Backend operator | Absolute `http(s)` base URL for the finance backend (`tgp-finance-app`). Drives the cross-product admin federation. Unset = federation reports `not_configured`; the operator console still renders the fitness block. Validated as absolute http(s); placeholders rejected at boot. |
 | `FINANCE_SERVICE_TOKEN` | optional | Finance backend operator | Static service-to-service bearer used on every federation call. Required when `FINANCE_API_BASE_URL` is set; without it federation reports `auth_unconfigured` and never reaches the network. |
@@ -110,7 +110,7 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 | Flag | Default | Effect |
 |---|---|---|
 | `COACH_CODE_GATE_ENABLED` | unset (off) | When `true`, `/auth/signup-with-code` rejects requests that lack a valid coach invite code. The `/auth/signup-policy` endpoint reflects this so mobile can hide or show the field. |
-| `BILLING_ENFORCEMENT` | unset (observe-only) | When `enforce`, `SubscriptionGuard` denies coach writes for `past_due` (past 7-day grace), `canceled`, `paused`, `incomplete`, and `unpaid` subscriptions. Anything else lets every request through, with the verdict still computed. |
+| `BILLING_ENFORCEMENT` | unset (observe-only) | When `enforce`, `SubscriptionGuard` denies coach writes for `past_due` (past 7-day grace), `canceled`, `paused`, `incomplete`, and `unpaid` subscriptions. `active`, `trialing`, and `grandfathered` are always allowed. Anything else lets every request through, with the verdict still computed. Run `npm run backfill:coach-subscriptions` before flipping this to `enforce` so existing alumni keep their access. |
 | `ALLOW_SELF_SERVICE_BECOME_COACH` | unset (off — hard gate) | When unset, `POST /auth/become-coach` always returns `403 self_service_promotion_disabled` and points the caller at `POST /admin/users/:id/promote`. When `true`, the legacy self-service path re-opens behind a Supabase password re-auth; OWNERs are still refused and the role change is audited as `user.role_changed` with `metadata.via=self_service_become_coach`. Production should leave this unset. |
 | `GDPR_SCRUB_DRY_RUN` | unset (real scrub) | When `true`, the GDPR scrub worker reports candidates without writing. Use to land the cron schedule in staging observably before flipping the flag off. |
 
@@ -878,7 +878,12 @@ The deploy contract lives in
 6. **Run the smoke script** (see below).
 7. **Bootstrap OWNERs and flip flags** in the order documented in
    the runbook (OWNER promote, then `COACH_CODE_GATE_ENABLED`, then
-   `BILLING_ENFORCEMENT=enforce`).
+   the coach-subscription backfill, then `BILLING_ENFORCEMENT=enforce`).
+   The backfill — `npm run backfill:coach-subscriptions` — gives
+   every existing coach a `grandfathered` `CoachSubscription` row so
+   the flag flip does not lock alumni out of the coach console. The
+   guard treats `grandfathered` the same as `active`. The script is
+   idempotent; safe to re-run.
 
 `Dockerfile` runs `node dist/main.js` directly. There is no
 `start.sh`. CI lives in `.github/workflows/ci.yml` and runs
@@ -1113,6 +1118,7 @@ reading order.
 | `npm test` | Run the Jest test suite. |
 | `npm run smoke:staging` | Anonymous smoke check against the staging API. |
 | `npm run smoke:prod` | Anonymous smoke check against production. |
+| `npm run backfill:coach-subscriptions` | One-time backfill that gives every existing coach a `CoachSubscription` row with status `grandfathered` so flipping `BILLING_ENFORCEMENT=enforce` does not lock alumni out of the coach console. Idempotent. Run before the flag flip. Logs scanned / backfilled / already-had counts. |
 
 ## Test
 

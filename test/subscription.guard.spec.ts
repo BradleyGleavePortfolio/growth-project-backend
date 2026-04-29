@@ -67,6 +67,16 @@ describe('SubscriptionGuard', () => {
     ).resolves.toBe(true);
   });
 
+  it('coach with grandfathered subscription is allowed in enforce mode', async () => {
+    const guard = new SubscriptionGuard(
+      makePrismaWithSub({ status: 'grandfathered', last_payment_failed_at: null }) as any,
+    );
+    process.env.BILLING_ENFORCEMENT = 'enforce';
+    await expect(
+      guard.canActivate(ctxFor({ id: 'c', role: 'coach' })),
+    ).resolves.toBe(true);
+  });
+
   it('past_due within 7-day grace is allowed (enforce mode)', async () => {
     const guard = new SubscriptionGuard(
       makePrismaWithSub({
