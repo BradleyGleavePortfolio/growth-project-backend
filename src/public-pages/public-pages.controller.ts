@@ -10,6 +10,7 @@ import {
   type DownloadPlatform,
 } from './public-pages.html';
 import { renderTrustPage } from './trust-pages.html';
+import { renderHelpPage, type HelpPage } from './help-pages.html';
 
 // Durable, server-rendered status pages used as the operator-facing
 // destinations for the prod-tier env vars APP_STORE_URL, PLAY_STORE_URL,
@@ -119,6 +120,60 @@ export class PublicPagesController {
     return this.sendTrust(res, renderTrustPage('status'));
   }
 
+  // Help surface — durable, server-rendered self-serve coach help. Source
+  // copy lives in docs/help/ and is mirrored into ./help-pages.html.ts so a
+  // coach can resolve setup, first-invite, FAQ, and support-routing
+  // questions without emailing the operator. Every page links to the
+  // others through a shared nav so the surface reads as one section.
+  @Public()
+  @Get('help')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  helpIndex(@Res() res: Response) {
+    return this.sendHelp(res, 'index');
+  }
+
+  @Public()
+  @Get('help/setup')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  helpSetup(@Res() res: Response) {
+    return this.sendHelp(res, 'setup');
+  }
+
+  @Public()
+  @Get('help/first-client')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  helpFirstClient(@Res() res: Response) {
+    return this.sendHelp(res, 'first-client');
+  }
+
+  @Public()
+  @Get('help/tour')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  helpTour(@Res() res: Response) {
+    return this.sendHelp(res, 'tour');
+  }
+
+  @Public()
+  @Get('help/faq')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  helpFaq(@Res() res: Response) {
+    return this.sendHelp(res, 'faq');
+  }
+
+  @Public()
+  @Get('help/support')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  helpSupport(@Res() res: Response) {
+    return this.sendHelp(res, 'support');
+  }
+
+  @Public()
+  @Get('help/contact')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  helpContact(@Res() res: Response) {
+    return this.sendHelp(res, 'contact');
+  }
+
   private send(res: Response, html: string) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=300');
@@ -133,6 +188,16 @@ export class PublicPagesController {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=300');
     res.status(HttpStatus.OK).send(html);
+  }
+
+  // Help pages share the same caching posture as the trust pages — they
+  // are static and edits should propagate to coaches quickly. Kept in a
+  // separate helper so a future change to one surface (longer cache once
+  // copy stabilises, for example) does not bleed into the other.
+  private sendHelp(res: Response, page: HelpPage) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.status(HttpStatus.OK).send(renderHelpPage(page));
   }
 
   // Re-exported so callers / tests can keep the platform union narrow
