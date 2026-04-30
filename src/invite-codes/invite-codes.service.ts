@@ -227,46 +227,84 @@ export class InviteCodesService {
     // PostHog can deduplicate repeated previews from the same client without
     // needing a logged-in user. The code is non-PII (random GP-XXXXXX).
     this.analytics.capture(`code:${code}`, Events.INVITE_PREVIEWED, {});
-    // 1. Try CoachProfile.invite_code first (default per-coach link).
-    const profile = await this.prisma.coachProfile.findUnique({
-      where: { invite_code: code },
-      include: {
-        user: { select: { id: true, name: true, role: true } },
-      },
-    });
-    if (profile && profile.user && profile.user.role === 'coach') {
-      // Block paused/canceled coaches from accepting new clients via
-      // their default link. `subscription_status` is null until Stripe
-      // is wired up, so null is treated as "still good standing" for
-      // backwards compat.
-      if (
-        profile.subscription_status === 'canceled' ||
-        profile.subscription_status === 'paused'
-      ) {
-        return { valid: false };
-      }
-      return {
-        valid: true,
-        coach_id: profile.user.id,
-        coach_name: profile.user.name,
-        business_name: profile.business_name,
-        branding: {
-          accent_color: profile.branding_accent_color,
-          logo_url: profile.branding_logo_url,
-        },
-      };
+
+    // Reject obviously-invalid input before going to the database. Path
+    // params are not run through the DTO ValidationPipe, so anything could
+    // arrive here — empty string, a NUL byte, kilobytes of garbage, etc.
+    // Bound it cheaply so brute-force enumeration of malformed codes never
+    // hits Prisma. The bounds match INVITE_CODE_MIN/MAX_LENGTH and the
+    // INVITE_CODE_PATTERN allow-list (letters, digits, dashes only).
+    if (
+      !code ||
+      code.length < INVITE_CODE_MIN_LENGTH ||
+      code.length > INVITE_CODE_MAX_LENGTH ||
+      !INVITE_CODE_PATTERN.test(code)
+    ) {
+      return { valid: false };
     }
 
-    // 2. Fall back to legacy InviteCode rows.
-    const validation = await this.validate(code);
-    if (!validation.valid) return { valid: false };
-    return {
-      valid: true,
-      coach_id: validation.coach_id,
-      coach_name: validation.coach_name,
-      business_name: null,
-      branding: { accent_color: null, logo_url: null },
-    };
+    // Fail closed on any database-side failure. The preview endpoint is
+    // public and unauthenticated; a transient pool timeout or a schema/
+    // client drift incident must not turn invite onboarding into a 500.
+    // The mobile app + landing page both render the same generic
+    // "invite unavailable" state for `{valid:false}`, so the user sees a
+    // graceful surface instead of a stack-trace screen, and the original
+    // error still surfaces in Sentry via the logger.error call below.
+    try {
+      // 1. Try CoachProfile.invite_code first (default per-coach link).
+      const profile = await this.prisma.coachProfile.findUnique({
+        where: { invite_code: code },
+        include: {
+          user: { select: { id: true, name: true, role: true } },
+        },
+      });
+      if (profile && profile.user && profile.user.role === 'coach') {
+        // Block paused/canceled coaches from accepting new clients via
+        // their default link. `subscription_status` is null until Stripe
+        // is wired up, so null is treated as "still good standing" for
+        // backwards compat.
+        if (
+          profile.subscription_status === 'canceled' ||
+          profile.subscription_status === 'paused'
+        ) {
+          return { valid: false };
+        }
+        return {
+          valid: true,
+          coach_id: profile.user.id,
+          coach_name: profile.user.name,
+          business_name: profile.business_name,
+          branding: {
+            accent_color: profile.branding_accent_color,
+            logo_url: profile.branding_logo_url,
+          },
+        };
+      }
+
+      // 2. Fall back to legacy InviteCode rows.
+      const validation = await this.validate(code);
+      if (!validation.valid) return { valid: false };
+      return {
+        valid: true,
+        coach_id: validation.coach_id,
+        coach_name: validation.coach_name,
+        business_name: null,
+        branding: { accent_color: null, logo_url: null },
+      };
+    } catch (err) {
+      // Known Prisma errors (P2xxx — pool timeout, schema drift, bad
+      // bytes in input, etc.) and any other unexpected throw are coerced
+      // to {valid:false}. We log at error level so Sentry still pages on
+      // anything actually broken; we just don't blow up the caller.
+      const code_class =
+        err instanceof Prisma.PrismaClientKnownRequestError
+          ? `prisma:${err.code}`
+          : 'unknown';
+      this.logger.error(
+        `previewCode failed (${code_class}): ${(err as Error).message}`,
+      );
+      return { valid: false };
+    }
   }
 
   // ---- Phase 1C: link / attach existing user to a coach -------------
