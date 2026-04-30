@@ -397,6 +397,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
                   dietary_pattern: null,
                   dietary_restrictions: [],
                   workout_days_per_week: null,
+                  equipment_access: [],
                   macro_target_calories: 2200,
                   macro_target_protein_g: 180,
                   macro_target_carbs_g: 220,

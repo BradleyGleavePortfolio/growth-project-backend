@@ -223,6 +223,7 @@ export class ClientAIContextService {
         dietary_pattern: profile?.dietary_pattern ?? null,
         dietary_restrictions: profile?.dietary_restrictions ?? [],
         workout_days_per_week: profile?.workout_days_per_week ?? null,
+        equipment_access: profile?.equipment_access ?? [],
         bio: clampStr(profile?.bio ?? null, CONTEXT_LIMITS.BIO_CHARS),
       },
       prescribed,
@@ -279,6 +280,9 @@ export class ClientAIContextService {
     );
     lines.push(
       `- diet: pattern=${p.dietary_pattern ?? 'unknown'}, restrictions=${p.dietary_restrictions.length ? p.dietary_restrictions.join('|') : 'none'}`,
+    );
+    lines.push(
+      `- equipment: ${p.equipment_access.length ? p.equipment_access.join('|') : 'unknown'}`,
     );
     lines.push(
       `- APP_PRESCRIBED (DO NOT CONTRADICT): calories=${tx.calories ?? 'unset'}, protein_g=${tx.protein_g ?? 'unset'}, carbs_g=${tx.carbs_g ?? 'unset'}, fat_g=${tx.fat_g ?? 'unset'}, water_ml=${tx.water_ml ?? 'unset'}, meals_per_day=${tx.meals_per_day ?? 'unset'}`,
@@ -531,6 +535,7 @@ export class ClientAIContextService {
         dietary_pattern: null,
         dietary_restrictions: [],
         workout_days_per_week: null,
+        equipment_access: [],
         bio: null,
       },
       prescribed: {
