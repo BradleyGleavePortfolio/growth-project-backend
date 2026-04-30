@@ -36,6 +36,20 @@ shape, and the smoke-test contract. Read it first.
 | [`help/`](./help/README.md) | Public coach help: setup checklist, first-invite walkthrough, console tour, FAQ, support boundaries, contact intake spec. Also houses the `_tokens.md` registry and the `_decisions.md` editorial log. |
 | [`emails/onboarding/`](./emails/onboarding/README.md) | Coach onboarding email sequence. Each file is one email with frontmatter capturing trigger, subject, and CTA. The sequence is opt-in by behavior, not a fixed cadence. |
 
+## Architecture and expansion
+
+Forward-looking docs for *future* shape, kept distinct from the
+operator runbooks above. The expansion roadmap is the canonical
+ordering of expansion-track items; each in-discovery item has an
+operator-facing handoff brief that summarizes
+**WHY / WHEN / WHERE / WHO / WHAT / HOW** and links to its
+underlying RFC or ADR.
+
+| Doc | What it covers |
+|---|---|
+| [`architecture/expansion-roadmap.md`](./architecture/expansion-roadmap.md) | The 20-item expansion-roadmap index. Stable item numbers, current stage (parking lot / in discovery / in flight / shipped), and per-item links to handoff briefs and the underlying RFCs/ADRs. The single place to look for "what is the platform deliberately growing into, in what order, and why." |
+| [`architecture/handoff/README.md`](./architecture/handoff/README.md) | Operator-facing pre-work briefs for the in-discovery roadmap items. Each brief follows the WHY/WHEN/WHERE/WHO/WHAT/HOW structure and points outward to the engineer-facing RFC or ADR. Currently: AI Program Builder (#01) and Team Mode (#02). |
+
 ## Module READMEs
 
 Each major module owns a README next to its source. Read these first
