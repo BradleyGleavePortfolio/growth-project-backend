@@ -141,6 +141,17 @@ async function bootstrap() {
       'terms',
       'security',
       'status',
+      // Public help surface (coach-facing self-serve content). Mounted
+      // outside /api for the same reason as trust pages — bare URLs
+      // under the public hostname so coaches can be linked here from
+      // welcome emails and the console without an /api prefix.
+      'help',
+      'help/setup',
+      'help/first-client',
+      'help/tour',
+      'help/faq',
+      'help/support',
+      'help/contact',
     ],
   });
 
