@@ -94,6 +94,47 @@ export class UpdateProfileDto {
   @Max(7)
   workout_days_per_week?: number;
 
+  // Granular equipment availability. `has_gym_membership` already answers
+  // "gym vs no gym"; this list lets the AI workout-builder pick between
+  // barbell, dumbbell-only, band, and bodyweight programming without a
+  // follow-up clarifying question. The schema column is `String[]` so a
+  // future token (e.g. "trx", "sandbag") does not require a migration;
+  // new writes are restricted to the curated vocabulary below, and any
+  // non-curated entry is rejected before it can land in the DB. An empty
+  // array is the explicit "no extra equipment / bodyweight only" answer
+  // once the client has actually answered — the prompt treats `[]` from
+  // a fresh row as "unknown" because no write has occurred yet.
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @IsIn(
+    [
+      'full_gym',
+      'home_gym',
+      'dumbbells',
+      'kettlebells',
+      'barbell',
+      'resistance_bands',
+      'pull_up_bar',
+      'cardio_machine',
+      'bodyweight_only',
+      'other',
+    ],
+    { each: true },
+  )
+  equipment_access?: Array<
+    | 'full_gym'
+    | 'home_gym'
+    | 'dumbbells'
+    | 'kettlebells'
+    | 'barbell'
+    | 'resistance_bands'
+    | 'pull_up_bar'
+    | 'cardio_machine'
+    | 'bodyweight_only'
+    | 'other'
+  >;
+
   @IsOptional()
   @IsString()
   avatar_url?: string;

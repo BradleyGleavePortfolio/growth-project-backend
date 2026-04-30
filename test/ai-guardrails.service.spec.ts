@@ -16,6 +16,7 @@ function ctxFixture(overrides: Partial<ClientAIContext> = {}): ClientAIContext {
       dietary_pattern: null,
       dietary_restrictions: [],
       workout_days_per_week: null,
+      equipment_access: [],
       bio: null,
     },
     prescribed: {

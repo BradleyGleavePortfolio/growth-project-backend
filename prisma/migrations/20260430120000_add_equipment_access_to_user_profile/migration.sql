@@ -1,0 +1,21 @@
+-- Profile-fill UX audit follow-up: `has_gym_membership` is a binary
+-- signal — it tells the AI "gym vs no gym" but cannot distinguish a
+-- client with a full home rack from one with only resistance bands or
+-- pure bodyweight. The AI workout-builder needs that granularity to
+-- pick between barbell, dumbbell, band, and bodyweight programming
+-- without a follow-up clarifying question every time.
+--
+-- Additive only:
+--   - equipment_access defaults to '{}' (empty TEXT[]) so legacy rows
+--     read as the explicit "unset / unknown" sentinel rather than
+--     NULL. The AI prompt treats an empty array as "unknown" and the
+--     DTO accepts an empty array as a valid "no extra equipment" answer
+--     once the client has actually answered.
+--   - Column is TEXT[] (not an enum) so future tokens (trx, sandbag,
+--     sled, etc.) do not require another migration. The DTO restricts
+--     new writes to a curated vocabulary; reads of any token remain
+--     valid even if the curated list grows.
+--
+-- No backfill, no destructive change. Existing rows stay valid.
+
+ALTER TABLE "UserProfile" ADD COLUMN "equipment_access" TEXT[] DEFAULT ARRAY[]::TEXT[];

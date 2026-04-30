@@ -42,6 +42,7 @@ function makePrisma(opts: {
       dietary_pattern: null,
       dietary_restrictions: [],
       workout_days_per_week: null,
+      equipment_access: [],
       macro_target_calories: 2400,
       macro_target_protein_g: 200,
       macro_target_carbs_g: 240,
@@ -200,6 +201,7 @@ describe('ClientAIContextService.buildFresh', () => {
           dietary_pattern: 'vegetarian',
           dietary_restrictions: ['peanuts', 'shellfish'],
           workout_days_per_week: 5,
+          equipment_access: ['dumbbells', 'pull_up_bar'],
           macro_target_calories: 2400,
           macro_target_protein_g: 200,
           macro_target_carbs_g: 240,
@@ -215,10 +217,12 @@ describe('ClientAIContextService.buildFresh', () => {
     expect(ctx.profile.dietary_pattern).toBe('vegetarian');
     expect(ctx.profile.dietary_restrictions).toEqual(['peanuts', 'shellfish']);
     expect(ctx.profile.workout_days_per_week).toBe(5);
+    expect(ctx.profile.equipment_access).toEqual(['dumbbells', 'pull_up_bar']);
     const rendered = svc.renderForPrompt(ctx);
     expect(rendered).toContain('pattern=vegetarian');
     expect(rendered).toContain('peanuts|shellfish');
     expect(rendered).toContain('workout_days_per_week=5');
+    expect(rendered).toContain('equipment: dumbbells|pull_up_bar');
   });
 
   it('reports nulls for new fields when the profile has not yet recorded them', async () => {
@@ -230,10 +234,58 @@ describe('ClientAIContextService.buildFresh', () => {
     expect(ctx.profile.dietary_pattern).toBeNull();
     expect(ctx.profile.dietary_restrictions).toEqual([]);
     expect(ctx.profile.workout_days_per_week).toBeNull();
+    expect(ctx.profile.equipment_access).toEqual([]);
     const rendered = svc.renderForPrompt(ctx);
     expect(rendered).toContain('pattern=unknown');
     expect(rendered).toContain('restrictions=none');
     expect(rendered).toContain('workout_days_per_week=unknown');
+    // Empty array surfaces as the literal `unknown` token rather than an
+    // empty list, so the prompt does not mistake "unanswered" for
+    // "confirmed bodyweight only" — the explicit confirmed answer is the
+    // single-element token `["bodyweight_only"]`, asserted separately.
+    expect(rendered).toContain('equipment: unknown');
+  });
+
+  it('renders ["bodyweight_only"] as the confirmed bodyweight equipment answer', async () => {
+    const prisma = makePrisma({
+      user: {
+        id: 'u1',
+        name: 'Solo',
+        coach_id: null,
+        profile: {
+          height_cm: 175,
+          current_weight_lbs: 170,
+          target_weight_lbs: 165,
+          date_of_birth: new Date('1995-01-01'),
+          sex: 'male',
+          activity_level: 'moderate',
+          goal_type: 'maintenance',
+          workout_experience: 'beginner',
+          has_gym_membership: false,
+          preferred_snacks: [],
+          dietary_pattern: null,
+          dietary_restrictions: [],
+          workout_days_per_week: 3,
+          equipment_access: ['bodyweight_only'],
+          macro_target_calories: 2200,
+          macro_target_protein_g: 170,
+          macro_target_carbs_g: 220,
+          macro_target_fat_g: 65,
+          water_goal_oz: 90,
+          meals_per_day: 3,
+          bio: null,
+        },
+      },
+    });
+    const svc = new ClientAIContextService(prisma);
+    const ctx = await svc.buildFresh('u1');
+    expect(ctx.profile.equipment_access).toEqual(['bodyweight_only']);
+    const rendered = svc.renderForPrompt(ctx);
+    // Distinct from the empty-array `equipment: unknown` rendering: the
+    // AI must be able to tell "no answer yet" apart from "answered, and
+    // the answer is bodyweight only."
+    expect(rendered).toContain('equipment: bodyweight_only');
+    expect(rendered).not.toContain('equipment: unknown');
   });
 
   it('renderForPrompt includes APP_PRESCRIBED and DO NOT CONTRADICT markers', async () => {

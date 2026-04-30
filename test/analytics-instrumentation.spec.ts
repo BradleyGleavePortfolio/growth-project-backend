@@ -225,6 +225,7 @@ describe('analytics instrumentation — AI chat', () => {
         dietary_pattern: null,
         dietary_restrictions: [],
         workout_days_per_week: null,
+        equipment_access: [],
         activity_level: 'moderate',
       },
       prescribed: { calories: 2000, protein_g: 180, carbs_g: 200, fat_g: 60, water_ml: null },

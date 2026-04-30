@@ -42,6 +42,7 @@ export class ProfileService {
       dietary_pattern: data.dietary_pattern,
       dietary_restrictions: data.dietary_restrictions,
       workout_days_per_week: data.workout_days_per_week,
+      equipment_access: data.equipment_access,
       avatar_url: data.avatar_url,
       bio: data.bio,
       weight_unit: data.weight_unit,

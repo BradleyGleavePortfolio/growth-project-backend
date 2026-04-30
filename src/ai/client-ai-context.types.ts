@@ -45,6 +45,13 @@ export interface ClientAIProfile {
   // Self-reported weekly training cadence. Null when the client has not
   // answered; the AI must not assume "0 days" from the absence.
   workout_days_per_week: number | null;
+  // Granular equipment availability. `has_gym_membership` already says
+  // "gym vs no gym"; this answers "barbell, dumbbells, bands, or
+  // bodyweight only" so the workout-builder does not have to ask. The
+  // prompt treats an empty array as "unknown" rather than as a confirmed
+  // bodyweight-only answer — the explicit bodyweight answer is the
+  // single-element token `["bodyweight_only"]`.
+  equipment_access: string[];
   // Free-text dietary notes, redactions, allergies. We forward only short,
   // user-supplied bio text — never coach-only fields.
   bio: string | null;

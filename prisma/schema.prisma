@@ -366,6 +366,14 @@ model UserProfile {
   // Self-reported weekly training cadence. Nullable so a freshly-onboarded
   // user without a value does not seed a misleading 0.
   workout_days_per_week  Int?
+  // Granular equipment availability. `has_gym_membership` only answers
+  // "gym vs not"; this lets the AI choose between barbell, dumbbell-only,
+  // band, and pure-bodyweight programming. Free-form TEXT[] (not an enum)
+  // so future tokens (e.g. "trx", "sandbag") do not require a migration.
+  // The DTO restricts new writes to a curated vocabulary; legacy reads of
+  // any token stay valid. Default `[]` so the AI can distinguish unset
+  // (don't know) from confirmed-empty (no equipment beyond bodyweight).
+  equipment_access       String[]
   macro_target_calories  Float?
   macro_target_protein_g Float?
   macro_target_carbs_g   Float?
