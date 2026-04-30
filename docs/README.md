@@ -36,6 +36,24 @@ shape, and the smoke-test contract. Read it first.
 | [`help/`](./help/README.md) | Public coach help: setup checklist, first-invite walkthrough, console tour, FAQ, support boundaries, contact intake spec. Also houses the `_tokens.md` registry and the `_decisions.md` editorial log. |
 | [`emails/onboarding/`](./emails/onboarding/README.md) | Coach onboarding email sequence. Each file is one email with frontmatter capturing trigger, subject, and CTA. The sequence is opt-in by behavior, not a fixed cadence. |
 
+## Architecture and expansion
+
+Long-form RFCs / ADRs / specs and the operator-facing handoff
+briefs that summarize them. None of these documents map to live
+runtime today; each one is the contract a future runtime PR
+series must satisfy. The roadmap row index is canonical for
+ordering and dependencies; specs are engineer-facing; briefs are
+operator-facing.
+
+| Folder / file | What it covers |
+|---|---|
+| [`architecture/expansion-roadmap.md`](./architecture/expansion-roadmap.md) | Numbered, append-only index of expansion-track items with stage (parking lot / in discovery / in flight / shipped). Rows #01–#02 land with PR #119 (AI Program Builder + Team Mode). Lands when PR #119 merges. |
+| [`architecture/expansion-roadmap-addendum.md`](./architecture/expansion-roadmap-addendum.md) | Addendum reserving rows #21–#29 for the backend-owned pre-work (outcome check-ins, at-risk detector, weekly recap, coach AI voice, ready-to-scale checklist, intake, public coach profile, program templates, revenue dashboard). Folded into the main roadmap once PR #119 merges. |
+| [`architecture/handoff/`](./architecture/handoff/README.md) | One-page operator-facing brief per expansion row, structured around WHY / WHEN / WHERE / WHO / WHAT / HOW + top-three risks + cross-references. |
+| [`architecture/adr-0001-team-mode-foundation.md`](./architecture/adr-0001-team-mode-foundation.md) | Team Mode foundation ADR. Lands with PR #118; this link resolves once that PR merges. |
+| [`rfcs/ai-program-builder.md`](./rfcs/ai-program-builder.md) | AI Program Builder RFC. Lands with PR #117; this link resolves once that PR merges. |
+| [`specs/`](./specs/README.md) | Engineer-facing specs for backend-owned items #21–#29: full data-model + API + rollout/flags + RBAC + tests + risks + acceptance criteria + operator handoff. |
+
 ## Module READMEs
 
 Each major module owns a README next to its source. Read these first
