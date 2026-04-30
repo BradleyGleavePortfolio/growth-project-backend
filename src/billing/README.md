@@ -47,7 +47,17 @@ Two controllers, one set of services. Same data, different audiences:
   subscription summary the phone needs to render the billing pill. Both
   routes share `BillingService.getCoachBilling` so the wire contract
   cannot drift. `POST /api/coach/billing/portal-session` is identical
-  in behavior to the v1 portal-session route.
+  in behavior to the v1 portal-session route — same precedence (SDK
+  session → static `STRIPE_CUSTOMER_PORTAL_LOGIN_URL` fallback →
+  `STRIPE_NOT_CONFIGURED`), same regex guard on the fallback URL, same
+  `{ url, fallback: true, coachId }` shape when the static link is used.
+
+Neither portal-session route mounts `SubscriptionGuard`. A coach whose
+subscription is `canceled` or stuck in `past_due` past the grace window
+still needs to reach the Customer Portal to update their card; gating
+the portal behind enforcement would lock them out of fixing the very
+thing the gate is reacting to. The gate runs on coach **write** paths
+(`src/v1/v1-coach.controller.ts`), not on the billing surface.
 
 The mobile status route returns `status='unprovisioned'` when no
 subscription mirror exists yet (e.g. a coach who was just promoted but
@@ -181,9 +191,16 @@ Posture:
 
 ## Coach portal-session flow
 
-`POST /v1/coach/me/billing/portal-session` — no body.
+`POST /v1/coach/me/billing/portal-session` and the mobile alias
+`POST /coach/billing/portal-session` — no body, identical behavior.
 
-1. 400 `STRIPE_NOT_CONFIGURED` when `STRIPE_SECRET_KEY` is unset.
+1. If `STRIPE_SECRET_KEY` is unset:
+   - When `STRIPE_CUSTOMER_PORTAL_LOGIN_URL` is set and matches
+     `^https://billing\.stripe\.com/p/login/`, return `{ url, fallback:
+     true, coachId }` so the client can hand the coach the static
+     hosted login link. The regex guard prevents an operator from
+     pasting an arbitrary URL into the env var.
+   - Otherwise, 400 `STRIPE_NOT_CONFIGURED`.
 2. Resolve `stripe_customer_id` from `CoachSubscription` first, falling
    back to `CoachProfile`.
 3. 400 `BILLING_NOT_PROVISIONED` when neither has a customer id.
@@ -200,6 +217,7 @@ Posture:
 |---|---|---|
 | `STRIPE_WEBHOOK_SECRET` | prod | HMAC signing secret. Required for every webhook to be accepted. |
 | `STRIPE_SECRET_KEY` | prod | Stripe API key. Required for the portal/start-subscription handlers to do real work. |
+| `STRIPE_CUSTOMER_PORTAL_LOGIN_URL` | optional | Hosted Stripe Customer Portal login link (must match `https://billing.stripe.com/p/login/...`). Used as the fallback for both the BFF and mobile portal-session routes when `STRIPE_SECRET_KEY` is unset. Returns `{ url, fallback: true, coachId }`. |
 | `STRIPE_PRICE_ID_FITNESS` | prod | Price id for the flat coach SaaS plan. |
 | `STRIPE_PRICE_ID_FINANCE` | optional | Reserved for the second vertical. |
 | `STRIPE_BILLING_PORTAL_RETURN_URL` | optional | Where Stripe sends coaches after the portal session ends. Defaults to the production console URL. |
@@ -235,7 +253,8 @@ without a real Stripe key.
 | `test/stripe-webhook-fixtures.spec.ts` | Replays the JSON fixtures under `test/fixtures/stripe/` |
 | `test/subscription.guard.spec.ts` | Every status × `BILLING_ENFORCEMENT` matrix + observe-mode telemetry |
 | `test/stripe-api.service.spec.ts` | Outbound REST client: form encoding, idempotency keys, error envelope parsing |
-| `test/coach-billing.controller.spec.ts` | Portal-session minting: not-configured, not-provisioned, customer-id resolution, error translation |
+| `test/coach-billing.controller.spec.ts` | Portal-session minting: not-configured, not-provisioned, customer-id resolution, error translation, login-link fallback |
+| `test/mobile-coach-billing.controller.spec.ts` | Mobile alias parity: status payload shape, portal-session with the same login-link fallback contract as the BFF route |
 | `test/owner-billing.controller.spec.ts` | start-subscription: validation, idempotency keys, mirror writes, Stripe error translation |
 
 ## Operational notes

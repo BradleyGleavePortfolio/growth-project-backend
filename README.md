@@ -639,9 +639,9 @@ Module: [`src/billing/`](src/billing/README.md).
 |---|---|---|---|
 | `POST` | `/v1/webhooks/stripe` | public, signature-verified | HMAC-SHA256 v1, 300s tolerance. Webhook applies emit `billing.subscription_updated` / `_canceled` / `.invoice_paid` / `.invoice_payment_failed` audit rows with `metadata.stripe_event_id`. |
 | `GET` | `/v1/coach/me/billing` | coach | Reads `CoachSubscription` for the caller. Coach-console BFF surface (full payload). |
-| `POST` | `/v1/coach/me/billing/portal-session` | coach + subscription gate | Creates a Stripe Customer Portal session. Returns `STRIPE_NOT_CONFIGURED` until `STRIPE_SECRET_KEY` is set. |
+| `POST` | `/v1/coach/me/billing/portal-session` | coach | Creates a Stripe Customer Portal session. With `STRIPE_SECRET_KEY` set, mints a per-coach session via the Stripe SDK. With it unset and `STRIPE_CUSTOMER_PORTAL_LOGIN_URL` pointing at a hosted Stripe portal login link, returns `{ url, fallback: true, coachId }`. Otherwise returns `STRIPE_NOT_CONFIGURED`. **Not** behind `SubscriptionGuard` — `canceled`/`past_due` coaches must reach the portal to update payment. |
 | `GET` | `/coach/billing/status` | coach | **Mobile alias** of the BFF billing read. Trimmed payload — subscription summary only. Returns `status='unprovisioned'` when no subscription mirror exists (does not synthesize an `active` response). Shares `BillingService.getCoachBilling` with the BFF surface so the wire contract cannot drift. Shipped in PR #81. |
-| `POST` | `/coach/billing/portal-session` | coach + subscription gate | **Mobile alias** of the BFF portal-session route — identical behavior, returns `STRIPE_NOT_CONFIGURED` until Stripe is configured. Shipped in PR #81. |
+| `POST` | `/coach/billing/portal-session` | coach | **Mobile alias** of the BFF portal-session route — identical behavior, including the `STRIPE_CUSTOMER_PORTAL_LOGIN_URL` static-link fallback when `STRIPE_SECRET_KEY` is unset. Shipped in PR #81. **Not** behind `SubscriptionGuard` for the same reason as the BFF route. |
 | `POST` | `/v1/admin/coaches/:id/start-subscription` | owner | Provisions a new subscription for a coach. Returns `STRIPE_NOT_CONFIGURED` until `STRIPE_SECRET_KEY` is set. |
 
 `SubscriptionGuard` policy matrix:

@@ -75,13 +75,26 @@ export class MobileCoachBillingController {
   // from CoachSubscription first (post-onboarding mirror) and fall back
   // to CoachProfile (where OWNER provisioning writes the customer id
   // before the customer.subscription.created webhook lands).
+  //
+  // Three modes, in order of preference (mirrors the BFF route):
+  //   1. STRIPE_SECRET_KEY set → mint a per-coach session via the Stripe
+  //      SDK. Returns { url }.
+  //   2. STRIPE_SECRET_KEY unset, STRIPE_CUSTOMER_PORTAL_LOGIN_URL set
+  //      to a hosted Stripe portal login link → return that link.
+  //      Returns { url, fallback: true, coachId }.
+  //   3. Neither set → STRIPE_NOT_CONFIGURED so the mobile client renders
+  //      the empty state.
   @Post('portal-session')
   async portalSession(@Request() req: AuthedRequest) {
     if (!this.stripeApi.isConfigured()) {
+      const fallbackUrl = process.env.STRIPE_CUSTOMER_PORTAL_LOGIN_URL?.trim();
+      if (fallbackUrl && /^https:\/\/billing\.stripe\.com\/p\/login\//.test(fallbackUrl)) {
+        return { url: fallbackUrl, fallback: true, coachId: req.user.id };
+      }
       throw new BadRequestException({
         error: 'STRIPE_NOT_CONFIGURED',
         message:
-          'Stripe is not configured for this environment. Set STRIPE_SECRET_KEY to enable the billing portal.',
+          'Stripe is not configured for this environment. Set STRIPE_SECRET_KEY and STRIPE_PRICE_ID_FITNESS to mint per-coach portal sessions, or set STRIPE_CUSTOMER_PORTAL_LOGIN_URL to a hosted Customer Portal login link as a fallback.',
       });
     }
     const coachId = req.user.id;
