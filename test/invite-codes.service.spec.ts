@@ -305,6 +305,48 @@ describe('InviteCodesService', () => {
         branding: { accent_color: null, logo_url: null },
       });
     });
+
+    // Regression: production smoke (2026-04-30) hit a 500 from
+    // /api/invite/<code>/preview when prisma.coachProfile.findUnique threw
+    // a PrismaClientKnownRequestError. The public preview endpoint must
+    // fail closed on any DB-side failure rather than leaking a 500 to
+    // anonymous callers — the mobile app and the /join landing both
+    // render the same generic "invite unavailable" state for {valid:false},
+    // so the graceful surface is identical to a missing code.
+    it('returns {valid:false} when Prisma throws a known request error', async () => {
+      prismaMock.coachProfile.findUnique.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('connection pool timeout', {
+          code: 'P2024',
+          clientVersion: 'test',
+        }),
+      );
+      const r = await service.previewCode('GP-ABC123');
+      expect(r).toEqual({ valid: false });
+    });
+
+    it('returns {valid:false} when Prisma throws an unknown error', async () => {
+      prismaMock.coachProfile.findUnique.mockRejectedValue(
+        new Error('boom'),
+      );
+      const r = await service.previewCode('GP-ABC123');
+      expect(r).toEqual({ valid: false });
+    });
+
+    // Path params don't run through the DTO ValidationPipe, so previewCode
+    // must defend itself against malformed input before it touches the DB.
+    it.each([
+      ['empty', ''],
+      ['too short', 'GP'],
+      ['too long', 'GP-' + 'A'.repeat(40)],
+      ['contains NUL byte', 'GP-A1B2\x00C3'],
+      ['contains slash', 'GP-A1/B2C3'],
+      ['contains space', 'GP A1B2C3'],
+    ])('returns {valid:false} without hitting the DB for %s input', async (_, code) => {
+      const r = await service.previewCode(code);
+      expect(r).toEqual({ valid: false });
+      expect(prismaMock.coachProfile.findUnique).not.toHaveBeenCalled();
+      expect(prismaMock.inviteCode.findUnique).not.toHaveBeenCalled();
+    });
   });
 
   describe('attachUserToCoachByCode', () => {
