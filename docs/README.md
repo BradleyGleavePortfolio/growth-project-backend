@@ -29,6 +29,13 @@ shape, and the smoke-test contract. Read it first.
 | [`coach-console-integration.md`](./coach-console-integration.md) | BFF contract followed for `tgp-coach-console`. |
 | [`AI_MOBILE_PATCH_INSTRUCTIONS.md`](./AI_MOBILE_PATCH_INSTRUCTIONS.md) | Mobile-side patch notes for the AI assistant. |
 
+## Coach-facing content
+
+| Folder | What it covers |
+|---|---|
+| [`help/`](./help/README.md) | Public coach help: setup checklist, first-invite walkthrough, console tour, FAQ, support boundaries, contact intake spec. Also houses the `_tokens.md` registry and the `_decisions.md` editorial log. |
+| [`emails/onboarding/`](./emails/onboarding/README.md) | Coach onboarding email sequence. Each file is one email with frontmatter capturing trigger, subject, and CTA. The sequence is opt-in by behavior, not a fixed cadence. |
+
 ## Module READMEs
 
 Each major module owns a README next to its source. Read these first
