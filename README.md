@@ -1038,6 +1038,189 @@ Operator actions for the recently merged work:
   `/users/me/account/status`) require no operator action — they are
   thin aliases over services already in use.
 
+## Expansion map (living)
+
+This section is the operator-facing index of expansion work that has
+been **prepared as draft PRs from `main`** but **not merged**, the
+**wave currently being prepared in parallel**, and the **future
+plans** that the prepared specs are sequencing toward. None of the
+PRs listed here ship runtime code on their own — they are
+docs / RFC / scaffolding-only changes that an operator can read end
+to end before any merge. Treat this section as the single place
+where roadmap state is kept current.
+
+The section is intentionally a roadmap map, not a delivery commitment.
+PR numbers and titles are accurate as of writing; statuses (`draft`,
+`open`, `merged`) move on their own and the source of truth for any
+single PR is `gh pr view <n>`.
+
+### Operator rules for this expansion wave
+
+- **All listed PRs are draft and unmerged.** They are intentionally
+  reviewable in isolation. Merge only when the corresponding
+  reviewer has signed off — there is no auto-merge dependency
+  between them.
+- **No runtime code, schema, migration, env-var, or CI change** is
+  introduced by the docs PRs (`#117`, `#119`, `#120`, `#121`,
+  `#122`, `#123`, and this PR). PR `#118` adds a permission-table
+  scaffold under `src/common/team-mode/` plus tests; it does not
+  wire those types into any controller and is also opened as a
+  draft so a runtime mount is a separate, later change.
+- **Boundary: `new-website` is out of scope.** Any creator-facing
+  marketing surface, storefront UI, or public commerce front-end
+  belongs to the separate `new-website` workstream and is not
+  touched by this repo. The expansion specs here describe the
+  **backend contracts** the website will eventually consume, not
+  the website itself.
+- **Read order before merging anything in the wave:** PR `#119`
+  (roadmap + handoff briefs) → PR `#120` (cross-cutting platform
+  readiness) → the per-row spec PRs (`#117`, `#121`, `#122`,
+  `#123`, then the in-progress commerce / engagement specs once
+  opened).
+
+### DONE / PREPARED — draft PRs already opened from `main`
+
+| PR | Title | Surface | State |
+|---|---|---|---|
+| [#117](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/117) | docs(rfc): AI Program Builder — discovery RFC (no runtime) | `docs/rfcs/ai-program-builder.md`; the discovery RFC for an LLM-assisted program builder that turns a coach's intent + a client's intake into a structured program proposal. No runtime, no schema. | draft |
+| [#118](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/118) | feat(team-mode): foundation — ADR + permission scaffolding | `docs/architecture/adr-0001-team-mode-foundation.md` + `src/common/team-mode/{permissions,roles,types}.ts` + `test/team-mode-permissions.spec.ts`. Pure types and a permission matrix for an L2 / L3 multi-coach team mode; no controller mounts, no migration. | draft |
+| [#119](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/119) | docs(architecture): expansion roadmap + WHY/WHEN/WHERE/WHO/WHAT/HOW handoff briefs | `docs/architecture/expansion-roadmap.md` + `docs/architecture/handoff/{01-ai-program-builder,02-team-mode}.md`. The single roadmap doc plus the per-row handoff brief format that every later wave reuses. | draft |
+| [#120](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/120) | docs(architecture): platform readiness — 11 cross-cutting lane briefs | `docs/architecture/platform-readiness/{01..11}-*.md`. Cross-cutting lanes (feature flags + entitlements, API versioning, RBAC + tenant boundaries, data lifecycle / privacy / export / delete, billing + packaging, observability, migration safety, AI governance, support + self-serve, analytics + telemetry, release QA + regression). Every later wave references the lane its surface lives in. | draft |
+| [#121](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/121) | docs(expansion): backend-owned pre-work specs + handoff briefs (rows #21–#29) | `docs/architecture/handoff/{21..29}-*.md` + `docs/specs/{outcome-check-ins,at-risk-detector,weekly-recap,coach-ai-voice,ready-to-scale-checklist,intake-questionnaire,public-coach-profile,program-templates,revenue-dashboard}.md`. The backend-pre-work wave: the surfaces that have to land in this repo before any creator-facing front-end can be built against them. | draft |
+| [#122](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/122) | docs(masterminds): operating-model spec for paid IRL masterminds + L2/L3 SaaS tiers | `docs/masterminds-operating-model.md`. The operating-model brief for paid IRL masterminds, with the L2 / L3 tiering it implies for the SaaS surface (multi-coach team mode, application-style intake, gated cohorts). | draft |
+| [#123](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/123) | docs(expansion): coach-experience wave — specs + handoff briefs (rows #30–#37) | `docs/architecture/{expansion-wave-coach-experience,gap-map-coach-experience}.md` + `docs/architecture/handoff/{30..37}-*.md` + `docs/specs/{coach-challenges,leaderboards,avatar-media,content-boards,regimens,regimen-assignment,messaging-progress,tiering-l2-l3}.md`. The coach-experience wave: the surfaces a coach uses to run a cohort end to end. | draft |
+
+`#118` is the only PR in this list that adds any TypeScript at all,
+and the TypeScript it adds is a self-contained permission table
+under `src/common/team-mode/` with its own unit test. Everything
+else is markdown. None of these PRs change runtime behavior on the
+deployed app.
+
+### CURRENT WAVE — being prepared in parallel (PR numbers may be unassigned)
+
+The next two specification waves are being prepared in parallel with
+this README update. PR numbers are not assigned at the time of
+writing; this section is the placeholder operators can use to track
+them as they open. As each PR opens, it should be moved into the
+DONE / PREPARED table above.
+
+- **Whop-style commerce + marketplace specs.** Backend contracts for
+  native checkout against The Growth Project ("TGP checkout"),
+  per-coach storefronts, an offer builder (one-time / subscription /
+  trial / promo), application-gated offers, an affiliate / referral
+  surface, a coach-marketplace discovery surface, and the
+  merchant-of-record posture decision needed before any of those
+  ship. **No runtime in this wave** — only handoff briefs under
+  `docs/architecture/handoff/`, specs under `docs/specs/`, and a
+  cross-cutting note in `docs/architecture/platform-readiness/` for
+  the billing + entitlements lane.
+- **Engagement + AI specs.** Backend contracts for native communities
+  (per-coach + per-cohort threads), events / calls / replays, a
+  rewards / bounties surface that hangs off the existing audit and
+  metrics rails, and the AI business copilot that operates over the
+  coach revenue dashboard, at-risk detector, and weekly recap rails
+  that PR `#121` already specs. Same docs-only shape as above.
+
+These are an **active spec wave**, not an active runtime wave. They
+land as draft PRs first; runtime follows only after the per-row
+spec is reviewed and the relevant platform-readiness lanes from PR
+`#120` are signed off.
+
+### FUTURE PLANS — what the prepared specs are sequencing toward
+
+The prepared waves above are deliberately ordered so the runtime
+work that follows is mechanical rather than design-as-you-go. The
+target product surface, in the order the specs are sequencing
+toward, is:
+
+1. **Native TGP checkout.** A first-party checkout surface that
+   collects payment, mints the entitlement row, and triggers the
+   audit + analytics events the existing billing module already
+   wires. Specced against the billing + packaging lane (PR `#120`).
+2. **Coach storefronts.** Per-coach storefront contract that the
+   `new-website` workstream renders. Backend exposes the read model;
+   the website renders it. Specced against the public-coach-profile
+   row (PR `#121`).
+3. **Offer builder.** A coach-side authoring surface for offers
+   (one-time, subscription, trial, promo, bundled). Sits on top of
+   the existing `CoachSubscription` + `Invoice` mirror tables and
+   reuses the audit + analytics rails.
+4. **Applications.** Application-gated offers (the coach reviews
+   intake before checkout completes). Builds on the intake-
+   questionnaire row (PR `#121`).
+5. **Affiliates / referrals.** A first-party affiliate surface so
+   coaches can pay other coaches / clients for referrals. Sits on
+   top of the audit + metrics rails; payout sequencing is gated on
+   the merchant-of-record decision in the commerce wave.
+6. **Communities.** Native per-coach / per-cohort threads that
+   replace the Discord / Telegram-style integration today's coaches
+   stand up out of band. Specced as part of the engagement wave.
+7. **Events / calls / replays.** Scheduled events with attendance,
+   recording, and replay surfaces. Reuses the messaging + progress
+   rails specced in PR `#123`.
+8. **Rewards / bounties.** A surface where coaches set rewards (or
+   bounties) that clients earn against measurable outcomes. Hangs
+   off the existing audit + metrics rails; no new analytics
+   pipeline.
+9. **AI business copilot.** A coach-facing copilot that operates
+   over the revenue dashboard, at-risk detector, weekly recap, and
+   ready-to-scale checklist that PR `#121` already specs. The AI
+   surface is the consumer of the read models, not their producer.
+10. **Coach marketplace.** A discovery surface where new clients
+    find coaches. Read-only on the backend side; the website
+    renders it.
+11. **Merchant-of-record posture.** A separate, deliberate decision
+    about whether TGP itself is the merchant of record (as Whop
+    does — Whop acts as merchant of record and handles tax,
+    fraud, dispute, and global payment compliance on behalf of
+    the seller, see [Whop — Merchant of Record vs Seller of
+    Record](https://whop.com/blog/mor-vs-sor/)) or whether each
+    coach remains their own merchant under Stripe Connect. The
+    decision gates affiliates payout sequencing and global tax
+    compliance and is intentionally deferred until the commerce
+    spec wave is fully drafted.
+
+Whop is the public benchmark these specs use to **calibrate**
+ambition, not a copy target. The relevant Whop-public surface is the
+one-stop-shop pattern: a single platform that combines integrated
+checkout, storefront, marketplace discovery, affiliate program,
+community, content delivery, and merchant-of-record fulfillment
+under one creator login (see
+[Whop — pricing and feature overview](https://www.schoolmaker.com/blog/whop-pricing),
+[Whop — what is Whop and how to use it](https://www.superbcrew.com/what-is-whop-and-how-to-use-it/),
+and the [Whop platform deep-dive research document](https://assets-2-prod.whop.com/uploads/2026-03-14/1b2fa255-5997-488f-afd4-cd57cb8bfdba/text.html)).
+The Growth Project's expansion is shaped to match the **operator
+surface** of that benchmark — coaches should be able to run the
+business end to end on TGP — without copying its consumer brand or
+its marketplace UX. The backend contracts above are the parts of
+that benchmark that have to exist on this repo before the website
+can render any of it.
+
+### Where to read each prepared surface in detail
+
+The DONE / PREPARED PRs above are the source of truth. The
+`docs/architecture/` and `docs/specs/` folders only exist on those
+branches today; once the relevant PR merges, the corresponding file
+becomes part of the repo and is referenced from
+[`docs/README.md`](docs/README.md) under the Architecture / Specs
+sections. Until then, the PR's branch is the only place to read the
+spec — that is intentional and lets each spec be reviewed in
+isolation.
+
+Operator path for following along:
+
+```bash
+# list all open expansion PRs
+gh pr list --state open --search 'docs/expansion OR docs/architecture OR docs/masterminds OR rfc/ai-program-builder OR feat/team-mode'
+
+# view a single spec wave with its files
+gh pr view 121 --json title,headRefName,files --jq '{title, headRefName, files: [.files[].path]}'
+
+# read a spec without merging
+gh pr checkout 121
+ls docs/specs docs/architecture/handoff
+```
+
 ## Smoke tests
 
 `scripts/smoke.ts`, exposed as `npm run smoke:staging` (and a

@@ -121,6 +121,22 @@ If you are new to the codebase, read in this order:
 3. The README for the module you are modifying.
 4. The runbook closest to the change you are about to make.
 
+If you are looking for the **forward-looking roadmap** (DONE /
+PREPARED draft PRs, the wave currently being prepared in parallel,
+and the future plans those specs are sequencing toward), the single
+operator-facing index is the
+[`Expansion map (living)`](../README.md#expansion-map-living) section
+of the root README. It is intentionally kept in the root README so
+operators reading the env-var, feature-flag, and merge-order
+sections in order do not miss the roadmap context.
+
+The `docs/architecture/` and `docs/specs/` folders are populated by
+the expansion-wave PRs (`#117`, `#119`, `#120`, `#121`, `#122`,
+`#123`); on `main` those folders may not yet exist. The Expansion
+map section lists which PR introduces which folder. Once a wave is
+merged, this file should be updated to link the relevant index file
+under `docs/architecture/` directly.
+
 ## What "backend live" means
 
 The smoke script (`scripts/smoke.ts`, `npm run smoke:staging` and
