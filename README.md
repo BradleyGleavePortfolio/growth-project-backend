@@ -749,7 +749,12 @@ The console's backend surface is split into two cooperating layers:
    federation response. Shipped in PR #80.
 
 Modules: [`src/admin/federation/`](src/admin/federation/README.md),
-[`src/admin/console/`](src/admin/console/README.md).
+[`src/admin/console/`](src/admin/console/README.md). For the
+**control-room target spec** — KPI cards, ARR/MRR math, cohorts,
+retention, universal person search, person profile, support flags,
+and the endpoint gap inventory future runtime PRs are graded
+against — see
+[`docs/admin/control-room-spec.md`](docs/admin/control-room-spec.md).
 
 #### Federation primitives
 
