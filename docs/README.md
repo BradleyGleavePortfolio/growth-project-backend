@@ -29,6 +29,13 @@ shape, and the smoke-test contract. Read it first.
 | [`coach-console-integration.md`](./coach-console-integration.md) | BFF contract followed for `tgp-coach-console`. |
 | [`AI_MOBILE_PATCH_INSTRUCTIONS.md`](./AI_MOBILE_PATCH_INSTRUCTIONS.md) | Mobile-side patch notes for the AI assistant. |
 
+## Architecture / pre-work
+
+| Folder | What it covers |
+|---|---|
+| [`architecture/`](./architecture/README.md) | Cross-cutting architecture artefacts (wave addenda + gap maps) and the per-row [`handoff/`](./architecture/handoff/README.md) operator briefs. Currently houses the **engagement & retention wave** ([`expansion-wave-engagement-retention.md`](./architecture/expansion-wave-engagement-retention.md), [`gap-map-engagement-retention.md`](./architecture/gap-map-engagement-retention.md)) — rows #40–#44 (community spaces, events + live calls, replays + content library, rewards + bounties, AI Business Copilot). Docs-only; runtime descends from each spec as a separate, narrow PR. |
+| [`specs/`](./specs/README.md) | Engineer-facing specifications. The 16-section template (status banner; WHY/WHEN/WHERE/WHO/WHAT/HOW; data-model + API sketch; rollout flags; RBAC + privacy; AI governance; analytics; tests + risks + dependencies + acceptance + operator handoff). Currently carries rows #40–#44; rows #21–#37 land alongside their parent draft PRs. |
+
 ## Coach-facing content
 
 | Folder | What it covers |
