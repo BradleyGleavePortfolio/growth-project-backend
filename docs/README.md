@@ -29,6 +29,23 @@ shape, and the smoke-test contract. Read it first.
 | [`coach-console-integration.md`](./coach-console-integration.md) | BFF contract followed for `tgp-coach-console`. |
 | [`AI_MOBILE_PATCH_INSTRUCTIONS.md`](./AI_MOBILE_PATCH_INSTRUCTIONS.md) | Mobile-side patch notes for the AI assistant. |
 
+## Architecture / pre-work — Commerce & Marketplace (rows #40–#45)
+
+Discovery-stage specs and operator-facing handoff briefs for the commerce wave. **Docs only.** No runtime, schema, env-var, or module-wiring change. Each row is one runtime PR series, gated behind its own default-off feature flag.
+
+| Doc | What it covers |
+|---|---|
+| [`specs/commerce/README.md`](./specs/commerce/README.md) | Wave overview, reading order, shared design rules (Connect Express default, MoR future-flip, ledger-first, default-off flags), spec template, hard boundaries. |
+| [`specs/commerce/payments-checkout.md`](./specs/commerce/payments-checkout.md) | Foundational. Stripe Connect Express onboarding, charge / refund / dispute / payout / ledger schema, MoR flip, reconciliation, fraud/abuse, operator handoff. |
+| [`specs/commerce/coach-storefronts.md`](./specs/commerce/coach-storefronts.md) | Public coach pages at `/c/:slug`, sections, custom domains, OG images, takedown SOP. |
+| [`specs/commerce/offer-builder.md`](./specs/commerce/offer-builder.md) | First-class `Offer` schema, multi-variant pricing, fulfilment kinds (regimen / template / cohort / AI draft), pricing engine to Stripe payload. |
+| [`specs/commerce/application-funnel.md`](./specs/commerce/application-funnel.md) | Pre-purchase qualification: forms, state machine, setter attribution, one-time signed checkout token, AI scoring (advisory, S2). |
+| [`specs/commerce/affiliate-referral.md`](./specs/commerce/affiliate-referral.md) | Single-tier referrals, click → conversion attribution, hold-and-release payouts, fraud / self-referral guards. |
+| [`specs/commerce/coach-marketplace.md`](./specs/commerce/coach-marketplace.md) | Multi-sided marketplace, MoR-only, default 80/20 revshare, verified-buyer reviews, off-platform-deal scanner. |
+| [`architecture/handoff/commerce/README.md`](./architecture/handoff/commerce/README.md) | One-page operator briefs for each row (#40–#45). |
+| [`architecture/expansion-roadmap-addendum-commerce.md`](./architecture/expansion-roadmap-addendum-commerce.md) | Reserves rows #40–#45 in the same numbering scheme as PR #119 / #121 / #123. |
+| [`architecture/gap-map-commerce-marketplace.md`](./architecture/gap-map-commerce-marketplace.md) | "Do we have this already?" — per-row mapping against `main` and against in-flight draft PRs #117–#123. |
+
 ## Coach-facing content
 
 | Folder | What it covers |
