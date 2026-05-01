@@ -27,6 +27,7 @@ shape, and the smoke-test contract. Read it first.
 | [`e2e-qa-runbook.md`](./e2e-qa-runbook.md) | Manual end-to-end QA sweep against a deployed environment. Run after smoke green. Lists the credentialled prereqs the smoke script intentionally does not exercise. |
 | [`invite-landing.md`](./invite-landing.md) | Deep-link / universal-link contract and the QR validation harness. |
 | [`coach-console-integration.md`](./coach-console-integration.md) | BFF contract followed for `tgp-coach-console`. |
+| [`admin-web-dashboard.md`](./admin-web-dashboard.md) | **Draft** enterprise spec for the OWNER-only admin web dashboard (`tgp-admin-web`, repo to be created). Audience, IA, screens, KPI cards, RBAC, audit + safety, dependency map of already-merged vs future `/api/admin/*` endpoints, rollout, risks, acceptance criteria. Docs-only — no runtime/schema/env/CI changes. Distinct from `new-website` (public, anonymous) and the coach console (`/api/v1/*`). |
 | [`AI_MOBILE_PATCH_INSTRUCTIONS.md`](./AI_MOBILE_PATCH_INSTRUCTIONS.md) | Mobile-side patch notes for the AI assistant. |
 
 ## Coach-facing content
