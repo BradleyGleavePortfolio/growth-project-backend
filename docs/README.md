@@ -28,6 +28,7 @@ shape, and the smoke-test contract. Read it first.
 | [`invite-landing.md`](./invite-landing.md) | Deep-link / universal-link contract and the QR validation harness. |
 | [`coach-console-integration.md`](./coach-console-integration.md) | BFF contract followed for `tgp-coach-console`. |
 | [`AI_MOBILE_PATCH_INSTRUCTIONS.md`](./AI_MOBILE_PATCH_INSTRUCTIONS.md) | Mobile-side patch notes for the AI assistant. |
+| [`ai-gateway-design.md`](./ai-gateway-design.md) | Phase-0 design note for the private AI gateway: the `AiGatewayService` chokepoint, the additive `AiRequestLog` storage shape, the per-coach spend-cap path against the existing `CoachProfile.ai_monthly_spend_cap_cents`, the OWNER surface, and the PR-by-PR migration order. Design only — no schema or runtime change ships with this doc. |
 
 ## Coach-facing content
 
