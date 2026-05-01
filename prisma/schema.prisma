@@ -192,6 +192,9 @@ model User {
   data_export_requests   DataExportRequest[]
   consents_as_client     ClientCoachConsent[] @relation("ConsentClient")
   consents_as_coach      ClientCoachConsent[] @relation("ConsentCoach")
+  bloodwork_panels_as_client BloodworkPanel[]  @relation("BloodworkPanelClient")
+  bloodwork_panels_as_coach  BloodworkPanel[]  @relation("BloodworkPanelCoach")
+  bloodwork_panels_reviewed  BloodworkPanel[]  @relation("BloodworkPanelReviewer")
 
   // Phase 1 PTM (Predictive Tracking Model). Append-only signal log,
   // outcome labels (taught by OWNERs/coaches), and append-only score
@@ -1868,4 +1871,140 @@ model TeamAuditEvent {
   @@index([head_coach_id, occurred_at])
   @@index([head_coach_id, event_kind, occurred_at])
   @@index([target_client_id, occurred_at])
+}
+
+// Client-entered bloodwork panel. v1 is manual entry only — no EHR import,
+// no OCR, no lab integration. A panel is a logical grouping of biomarker
+// results from a single draw (so "CBC + lipid on 2026-04-15" is one panel
+// with N BloodworkResult rows).
+//
+// Tenancy: the (client_id, coach_id) pair pins the panel to the coach
+// that was current when the panel was submitted, mirroring the CheckIn
+// model. coach_id is nullable because a client can submit labs before
+// they have a coach assigned.
+//
+// Source/provenance: `source` is free-form ("manual_entry", "lab_pdf",
+// "photo_self_report"). v1 only writes "manual_entry" but the column is
+// open so future ingestion paths land in the same table.
+//
+// Review state machine (string, not SQL enum, so adding states is cheap):
+//   draft         — client is still editing; not visible to coach
+//   submitted     — client finalized; appears in coach review queue
+//   needs_info    — coach asked for clarification; back to client
+//   reviewed      — coach has read it (no clinical opinion)
+//   flagged       — coach flagged for follow-up
+//   hidden        — coach hid from active surface
+//
+// Disclaimer level (string): drives which legal copy the mobile app
+// renders. v1 always sets "educational_only" — labs are coaching context,
+// never diagnosis or treatment.
+//
+// Validation status: per-panel rollup of result-level validation
+// ("ok", "warnings", "errors"). Coach approval/visibility is gated on
+// validation_status != 'errors' AND attachment_scan_status in ('clean',
+// null) — see BloodworkService.assertReviewable.
+//
+// Encryption-aware fields: encryption_key_ref + kms_key_version are
+// metadata pointers only — the actual KMS bindings live in env/config
+// (see docs/bloodwork.md). v1 stores values in plaintext columns;
+// production deploys MUST set BLOODWORK_KMS_KEY_REF and migrate to a
+// column-level encryption strategy. Not a regression of current posture
+// since no labs exist in prod yet.
+model BloodworkPanel {
+  id                      String              @id @default(uuid())
+  client_id               String
+  client                  User                @relation("BloodworkPanelClient", fields: [client_id], references: [id], onDelete: Cascade)
+  coach_id                String?
+  coach                   User?               @relation("BloodworkPanelCoach", fields: [coach_id], references: [id], onDelete: SetNull)
+  collection_date         DateTime
+  source                  String              @default("manual_entry") // manual_entry | lab_pdf | photo_self_report | ehr_import
+  panel_label             String? // free-form ("CBC", "lipid", "annual physical")
+  notes                   String? // client-supplied context (limited to 4000 chars in DTO)
+  review_state            String              @default("draft") // draft | submitted | needs_info | reviewed | flagged | hidden
+  reviewed_by_id          String?
+  reviewed_by             User?               @relation("BloodworkPanelReviewer", fields: [reviewed_by_id], references: [id], onDelete: SetNull)
+  reviewed_at             DateTime?
+  review_note             String? // coach-supplied note attached to the most recent review action
+  disclaimer_level        String              @default("educational_only") // educational_only | none (reserved)
+  validation_status       String              @default("ok") // ok | warnings | errors
+  is_stale                Boolean             @default(false)
+  stale_marked_at         DateTime?
+  source_missing          Boolean             @default(false) // true when client could not provide an attachment / lab source
+  ai_processing_allowed   Boolean             @default(false) // mirrors per-panel AI scope at submit time; AI service must re-check live consent
+  encryption_key_ref      String? // pointer/alias for the KMS key envelope; null in non-prod
+  kms_key_version         String? // version string of the key used to encrypt sensitive fields, when applicable
+  submitted_at            DateTime?
+  created_at              DateTime            @default(now())
+  updated_at              DateTime            @updatedAt
+
+  results                 BloodworkResult[]
+  attachments             BloodworkAttachment[]
+
+  @@index([client_id, collection_date])
+  @@index([coach_id, review_state])
+  @@index([review_state, submitted_at])
+  @@index([is_stale])
+}
+
+// Per-biomarker row inside a BloodworkPanel. `marker_name` is free-form
+// ("hemoglobin", "ldl_c", …) — v1 deliberately avoids a curated dictionary
+// because the source of truth for naming is the lab printout the client
+// transcribed.
+//
+// `value_numeric` is the typed numeric value when the lab printed one;
+// `value_text` is the raw client-entered text (e.g. ">200", "see notes")
+// for cases where the value is qualitative or above-range. At least one
+// of the two is required at the DTO layer.
+model BloodworkResult {
+  id                 String         @id @default(uuid())
+  panel_id           String
+  panel              BloodworkPanel @relation(fields: [panel_id], references: [id], onDelete: Cascade)
+  marker_name        String
+  marker_code        String? // optional standardized code (LOINC etc.) — never required
+  value_numeric      Decimal?       @db.Decimal(20, 6)
+  value_text         String?
+  unit               String?
+  reference_low      Decimal?       @db.Decimal(20, 6)
+  reference_high     Decimal?       @db.Decimal(20, 6)
+  reference_text     String? // free-form when low/high don't apply ("negative", "<5")
+  out_of_range       Boolean        @default(false) // computed at write time when low/high are present
+  validation_status  String         @default("ok") // ok | warnings | errors
+  validation_message String?
+  created_at         DateTime       @default(now())
+  updated_at         DateTime       @updatedAt
+
+  @@index([panel_id])
+  @@index([marker_name])
+}
+
+// Attachment metadata pointer for a panel (e.g. a photo/PDF of the lab
+// printout). v1 does NOT implement upload/storage; this table holds the
+// metadata + scan state machine that downstream upload code can plug in.
+//
+// Scan state machine:
+//   pending_scan  — uploaded, awaiting AV / content scan
+//   clean         — passed scan; safe to expose to coach
+//   rejected      — scan failed; client must replace
+//   quarantined   — flagged for human review; not coach-visible
+//   unavailable   — file removed / link broken
+//
+// `storage_ref` is an opaque pointer (S3 key, Supabase storage path, etc).
+// Never write a presigned URL here — controllers mint short-lived URLs at
+// read time when a coach accesses a clean attachment.
+model BloodworkAttachment {
+  id              String         @id @default(uuid())
+  panel_id        String
+  panel           BloodworkPanel @relation(fields: [panel_id], references: [id], onDelete: Cascade)
+  storage_ref     String? // opaque storage pointer (bucket/key)
+  storage_backend String? // "supabase" | "s3" | "stub" — null in v1
+  content_type    String?
+  byte_size       Int?
+  scan_status     String         @default("pending_scan") // pending_scan | clean | rejected | quarantined | unavailable
+  scan_message    String?
+  scanned_at      DateTime?
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+
+  @@index([panel_id])
+  @@index([scan_status])
 }

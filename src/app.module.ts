@@ -39,6 +39,7 @@ import { SystemModule } from './system/system.module';
 import { AdminModule } from './admin/admin.module';
 import { AuditModule } from './audit/audit.module';
 import { ConsentModule } from './consent/consent.module';
+import { BloodworkModule } from './bloodwork/bloodwork.module';
 import { BillingModule } from './billing/billing.module';
 import { PtmModule } from './ptm/ptm.module';
 import { DiagnosticModule } from './diagnostic/diagnostic.module';
@@ -129,6 +130,10 @@ import { TeamModeModule } from './team-mode/team-mode.module';
     // CoachService and AdminService can inject ConsentService without a
     // local import in their modules.
     ConsentModule,
+    // Bloodwork v1 — client-entered lab panels with coach review,
+    // consent gating, and an attachment-scan state machine. Sensitive
+    // health data: see docs/bloodwork.md.
+    BloodworkModule,
     // Phase 1A/1B platform admin (OWNER-only routes)
     AdminModule,
     // Stripe billing mirror + SubscriptionGuard (Phase 2A foundation).
