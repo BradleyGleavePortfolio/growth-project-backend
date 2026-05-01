@@ -6,7 +6,7 @@
 > **Status:** docs only, **draft, NOT MERGED**. Designed to land **after** every
 > wave PR below has merged so the per-wave `PERP_HANDOFF.md` files can
 > consolidate into this index without conflicts.
-> **Last updated:** 2026-05-01 (late PDT) — safety-update with Waves 6-10 plan while parity build is in flight
+> **Last updated:** 2026-05-01 12:31 PDT — progress snapshot of Waves 6-10 mid-flight (subagents still running)
 
 ---
 
@@ -91,6 +91,111 @@ affiliate, storefront builder, native community RFC) are in flight as of
 Shared context the subagents read: `wave-context/SHARED_CONTEXT_W6_W10.md` in
 the primary agent's workspace (positioning, hard rules, 15-section enterprise
 template, per-wave §8 deliverable bullets).
+
+### Mid-flight progress snapshot (2026-05-01 12:31 PDT)
+
+File system inspection of each subagent's working directory. Subagents are
+still running — line counts will grow until each writes its `PERP_HANDOFF.md`
+log and opens its draft PR. **Total lines authored so far: ~19,294 across 22
+spec files.**
+
+#### Wave 6 — App architecture + SDK + manifest (`/tmp/gpb-w6/docs/apps/`) — 4,668 lines, 7 files
+
+| File | Lines (approx) | Status |
+|---|---:|---|
+| `README.md` | ~180 | Drafted |
+| `architecture.md` | ~970 | Drafted (iframe sandbox vs server runtime decision) |
+| `manifest-spec.md` | ~930 | Drafted (signed JSON manifest, permission model, version pinning) |
+| `sdk-spec.md` | ~740 | Drafted (typed client surface, retention/rewards/sub-coach hooks) |
+| `installation-and-billing.md` | ~890 | Drafted (per-app revenue split, Stripe Connect routing) |
+| `developer-portal-and-review.md` | ~810 | Drafted (submission, review SLA, sandbox lifecycle) |
+| `mcp-server-spec.md` | ~700 | Drafted (MCP exposure of admin data-feed read-models) |
+| `PERP_HANDOFF.md` | — | Pending |
+
+All 7 spec files in scope have draft content. PR not yet opened.
+
+#### Wave 7 — Discovery / marketplace (`/tmp/gpb-w7/docs/discovery/`) — 2,891 lines, 5 files
+
+| File | Lines (approx) | Status |
+|---|---:|---|
+| `README.md` | ~165 | Drafted |
+| `public-directory-spec.md` | ~1,090 | Drafted (coach + app cards, archetype/niche/geo filters) |
+| `recommendation-engine.md` | ~1,250 | Drafted (cold-start fallback, view-to-purchase ranking, freshness decay) |
+| `featured-placements-and-monetization.md` | ~890 | Drafted (paid + editorial slots, anti-spam) |
+| `buyer-funnel-and-attribution.md` | ~1,000 | Drafted (landing → coach card → checkout) |
+| `api-and-mobile.md` | — | Pending (planned in shared context §8) |
+| `trust-and-safety.md` | — | Pending (planned in shared context §8) |
+| `PERP_HANDOFF.md` | — | Pending |
+
+Four of the four heaviest specs are drafted; trust-and-safety + api-and-mobile + handoff log still to come.
+
+#### Wave 8 — Content Rewards + Affiliate (TWO PRs)
+
+**Backend half** (`/tmp/gpb-w8/docs/{content-rewards,affiliate}/`) — 4,718 lines, 7 files
+
+| File | Lines (approx) | Status |
+|---|---:|---|
+| `content-rewards/README.md` | ~190 | Drafted |
+| `content-rewards/rewards-spec.md` | ~1,470 | Drafted (UGC reward pools, view-verification trust ladder) |
+| `content-rewards/payout-pipeline.md` | ~890 | Drafted (anti-fraud thresholds, leaderboards) |
+| `content-rewards/buyer-discovery.md` | ~770 | Drafted (UGC → coach attribution) |
+| `affiliate/README.md` | ~165 | Drafted |
+| `affiliate/affiliate-link-spec.md` | ~1,290 | Drafted (referral codes, attribution window, multi-level v1=single/v2=two) |
+| `affiliate/dashboard-and-payouts.md` | ~940 | Drafted (commission tiers, clawback) |
+| `PERP_HANDOFF.md` | — | Pending |
+
+**Finance half** (`/tmp/tgp-finance-app/docs/billing/`) — 0 lines new
+
+Finance branch (`docs/wave-8-payout-extensions`) has not been created yet; the
+finance-side payout extensions (Decimal(14,2), Stripe Connect routing, 1099
+thresholds, clawback rules) are next on the Wave 8 subagent's queue after it
+finishes the backend handoff log. **This is the largest open gap in the
+parity layer as of this snapshot.**
+
+#### Wave 9 — Storefront block builder (`/tmp/gpb-w9/docs/storefront/`) — 2,311 lines, 4 files
+
+| File | Lines (approx) | Status |
+|---|---:|---|
+| `README.md` | ~210 | Drafted |
+| `block-editor-spec.md` | ~1,790 | Drafted (drag-and-drop block tree, validation, undo/redo) — **biggest single file in parity layer** |
+| `block-types-catalog.md` | ~1,335 | Drafted (hero, pricing, testimonial, FAQ, embed, custom-via-app-manifest) |
+| `publishing-and-versioning.md` | ~870 | Drafted (draft → preview → publish, SEO SSR) |
+| `funnel-analytics.md` | — | Pending (planned in shared context §8) |
+| `integration-with-apps.md` | — | Pending (planned in shared context §8; depends on Wave 6 manifest) |
+| `PERP_HANDOFF.md` | — | Pending |
+
+Three of six target files drafted. Funnel analytics + Wave 6 integration cross-link still pending.
+
+#### Wave 10 — Native chat / community RFC + spec (`/tmp/gpb-w10/docs/community/`) — 4,706 lines, 6 files
+
+| File | Lines (approx) | Status |
+|---|---:|---|
+| `README.md` | ~200 | Drafted |
+| `doctrine-decision-rfc.md` | ~1,030 | Drafted (THREE options A/B/C re PR #90 streak/social-proof doctrine collision) — **most important deliverable** |
+| `channel-and-thread-spec.md` | ~1,460 | Drafted (channel taxonomy, thread depth, permissions) |
+| `voice-notes-spec.md` | ~960 | Drafted (recording, transcription via sonar-pro, accessibility) |
+| `moderation-and-safety.md` | ~885 | Drafted (auto-flag rules, OWNER review queue, ban ladder) |
+| `integration-with-discord.md` | ~870 | Drafted (federated bridge for coaches who already run Discord) |
+| `PERP_HANDOFF.md` | — | Pending |
+
+All 6 spec files in scope have draft content. PR not yet opened.
+
+#### Mid-flight tally
+
+| Wave | Files drafted | Lines so far | Files pending |
+|---|---|---:|---|
+| Wave 6 | 7 of 7 | 4,668 | 0 spec + handoff log |
+| Wave 7 | 5 of 7 | 2,891 | 2 spec + handoff log |
+| Wave 8 backend | 7 of 7 | 4,718 | 0 spec + handoff log |
+| Wave 8 finance | **0 of 4** | **0** | **4 spec + handoff log + branch** |
+| Wave 9 | 4 of 6 | 2,311 | 2 spec + handoff log |
+| Wave 10 | 6 of 6 | 4,706 | 0 spec + handoff log |
+| **Totals** | **29 of 37** | **19,294** | **8 spec files + 5 handoff logs + 1 finance branch** |
+
+No PRs opened yet — every wave is still in the local-clone draft phase. PRs
+will be opened against the same three repos (`growth-project-backend`,
+`tgp-finance-app`) as Waves 1-5, all draft, all docs-only, all stay unmerged
+until OWNER approves.
 
 ---
 
