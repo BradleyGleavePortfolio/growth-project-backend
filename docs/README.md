@@ -37,6 +37,19 @@ shape, and the smoke-test contract. Read it first.
 | [`help/`](./help/README.md) | Public coach help: setup checklist, first-invite walkthrough, console tour, FAQ, support boundaries, contact intake spec. Also houses the `_tokens.md` registry and the `_decisions.md` editorial log. |
 | [`emails/onboarding/`](./emails/onboarding/README.md) | Coach onboarding email sequence. Each file is one email with frontmatter capturing trigger, subject, and CTA. The sequence is opt-in by behavior, not a fixed cadence. |
 
+## Architecture / pre-work
+
+These folders hold pre-work documentation for the expansion
+roadmap. None of them carries a runtime change today; the
+runtime PRs follow once the specs / RFCs / ADRs are reviewed.
+
+| Folder / file | What it covers |
+|---|---|
+| [`architecture/expansion-wave-coach-experience.md`](./architecture/expansion-wave-coach-experience.md) | Roadmap rows #30 — #37: coach-experience wave (challenges, leaderboards, avatars, content boards, regimens, assignment, messaging+progress, L2/L3 tiering + white-glove). Pre-work index. |
+| [`architecture/gap-map-coach-experience.md`](./architecture/gap-map-coach-experience.md) | Answers "do we have this already?" for the coach-experience wave by mapping each row to the closest existing artefact (PR #117 / #118 / #119 / #120 / #121 or a merged module). |
+| [`architecture/handoff/`](./architecture/handoff/README.md) | One-page operator-facing pre-work briefs (WHY/WHEN/WHERE/WHO/WHAT/HOW) for each roadmap row that has reached spec stage. |
+| [`specs/`](./specs/README.md) | Engineer-facing pre-work specifications — the long-form companions to the handoff briefs. Each spec covers data model, API surface, rollout, RBAC, tests, risks, dependencies, acceptance criteria, and operator handoff. |
+
 ## Module READMEs
 
 Each major module owns a README next to its source. Read these first
