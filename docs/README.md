@@ -109,6 +109,15 @@ when modifying a feature.
   `bootstrap-owners.ts`, env-secret printer, smoke, Stripe webhook
   smoke replay.
 
+## Architecture / future plans
+
+Long-form context that informs future build work but does not change
+runtime behavior today. Read these for *why*, not *how*.
+
+| Doc | What it covers |
+|---|---|
+| [`architecture/future-plans/launchpad-retention-rewards-addendum.md`](./architecture/future-plans/launchpad-retention-rewards-addendum.md) | Operator addendum distilling retention and rewards lessons from a public coaching scale-up case study (Digital Launchpad → ~$474K MRR in 50 days). Captures the tenure-keyed bonus ladder for clients (months 2/3/6/12/24), the parallel coach reward ladder (B2B mastermind, referrals, mentor proximity), and translates them into TGP product principles. Cross-references PRs #122 / #123 / #125 / #126 / #127. Reconstructed from web-search snippets, not the full transcript — see the "Provenance caveat" at the top of the page. |
+
 ## Reading order
 
 If you are new to the codebase, read in this order:
