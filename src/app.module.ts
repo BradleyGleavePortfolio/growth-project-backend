@@ -15,6 +15,7 @@ import { FastingModule } from './fasting/fasting.module';
 import { WeightModule } from './weight/weight.module';
 import { HabitsModule } from './habits/habits.module';
 import { AiModule } from './ai/ai.module';
+import { AiGatewayModule } from './ai/gateway/ai-gateway.module';
 import { CoachModule } from './coach/coach.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { CommunityModule } from './community/community.module';
@@ -78,6 +79,10 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
     WeightModule,
     HabitsModule,
     AiModule,
+    // Tenant-safe AI gateway (provider routing, redaction, audit, approval).
+    // Global so feature modules (coach messaging, meal-plan AI, finance proof)
+    // can inject AiGatewayService without re-importing.
+    AiGatewayModule,
     CoachModule,
     NotificationsModule,
     CommunityModule,
