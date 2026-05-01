@@ -6,6 +6,107 @@ touching anything. The most recent session is at the top.
 
 ---
 
+## Session 2026-05-01 (late PDT) — Wave 2 rewards layer (follow-up)
+
+**Goal:** layer tonight's OWNER decisions onto the Wave 2 retention
+engine. The Wave 2 subagent built an outcome-anchored engine
+(milestones, levels, badges, schema, state machine) but did not
+include the reward content the OWNER had not yet decided. After the
+subagent completed, the OWNER and operator hashed out the coach
+tenure ladder, the coach achievement track, the three-track client
+model, the Year One golden-ticket cross-coach exception, and the
+tier-overlap upsell policy. This follow-up commits those decisions as
+a new doc that layers on top of the engine without contradicting it.
+
+**Status:** docs-only, draft, NOT MERGED. Same branch as the main
+Wave 2 PR (`docs/wave-2-product-specs`, PR #132). Single follow-up
+commit on top of the subagent's work.
+
+### What was done
+
+| File | Action | Lines |
+|---|---|---:|
+| `docs/product/retention-progression-rewards.md` | New | ~720 |
+| `docs/product/retention-progression-system.md` | Edit — added forward-pointer to rewards layer at top | +18 |
+| `docs/product/README.md` | Edit — reading order updated to eight files; rewards layer slotted between engine and onboarding | +12 |
+| `PERP_HANDOFF.md` | Edit — this entry | (this) |
+
+### What's locked in the rewards layer
+
+**Coach Track A — tenure ladder (M1–M36):**
+
+- M1: 30-min onboarding call with TGP team
+- M3: up to 20 qualifying leads from TGP funnel (capped, with anti-broken-promise wording)
+- M6: mastermind invite (quarterly, 8–12 coaches max per cohort)
+- M9: "Coach Spotlight" on TGP site + email blast + social
+- M12: done-for-you funnel audit + tier-aware annual upgrade offer (OS-only → 2 months free; OS+team → 1 month free + quarterly biz review with OWNER; white-glove → custom outcome, no discount)
+- M18: priority feature requests channel + quarterly 1-on-1 with OWNER
+- M24: lifetime locked pricing AND lifetime referral revshare (20% recurring on referrals who stay >90 days)
+- M36: in-person retreat invite (annual, ~20 coaches max, hybrid cost model deferred)
+
+**Coach Track B — achievement ladder (composite milestones):**
+
+First Win (1 client) → Trusted (10 retained >60d) → Builder (25 active OR $5K MRR) → Operator (50 active OR $10K MRR OR first sub-coach) → Authority (100 active OR $25K MRR) → Top Performer (top 10 retention 90d) + Comeback Coach + Referrer.
+
+**Tier-overlap policy (OWNER decision):** a coach who earns Authority **but pays for OS-only or OS+team** receives a one-time "taste" of the next tier (free quarterly exec review with OWNER) as a soft upsell. White-glove + Authority gets a personal acknowledgement only — OWNER offers bespoke perks privately at their discretion. The system never feels like clawback; the achievement track is a generous, irreversible status; the pricing tier is what was paid for; when they overlap, we pull the coach toward the next tier.
+
+**Client Track 1 — Consistency:** Showing Up (7d) → Locked In (30d) → Disciplined (90d) → Relentless (180d) → Year One (365d). All same-coach scoped except Year One. Streaks computed internally but NOT surfaced numerically to UI — preserves the PR #90 doctrine that excised streak counters.
+
+**Client Track 2 — Outcome:** OS-app-specific milestones (Fitness, Finance, future) reward shareable milestone reels (auto-compiled before/after the client posts to their own social, tagging coach — free reach for both sides) and coach voice-message prompts.
+
+**Client Track 3 — Community:** same-coach cohort contributions (Helper, Cheerleader, Cohort Lead, Ambassador). Depends on a cohort feed surface in mobile (Wave 4); deferral handled via §7 Open question 4 in the rewards doc.
+
+**Year One — the one cross-coach exception (OWNER decision):** clients who hit 365 days **with their coach** AND have an "activity marker" (active in 4 of the last 8 weeks; threshold confirmed in §7 Open question 5) receive: (1) golden ticket to a premium TGP retreat as an upsell offer, NOT a free retreat, (2) admission to a private cross-coach Year One chat channel moderated by TGP team, status only — no comp data shared, no client poaching, coaches do not have visibility, (3) special social cue on profile and cohort feed. Charter Members rules apply; both badges can be held simultaneously.
+
+### What clients explicitly do NOT get
+
+- No free months. Client pays the coach, not TGP — free months would cut into coach revenue.
+- No discounts.
+- No refunds-as-reward.
+- No cross-cohort comparisons (except Year One channel).
+- No streak counters surfaced to UI.
+
+### Engine extensions introduced (no migrations in this PR — spec only)
+
+- `RewardKind` enum with 18 cases (11 coach-only, 7 client-only).
+- `RewardCatalog` (rows are seedable / OWNER-editable).
+- `RewardGrant` (state machine: pending_delivery → delivered → redeemed | expired | revoked).
+- `RewardOverlapPolicy` (the one place achievement and pricing tier interact).
+- `CompositeMilestoneRule` with discriminated-union AST (`and` / `or` / `count_active_clients` / `mrr_cents` / etc.). Evaluation cadence: event / cron_daily / cron_weekly.
+- `LeadAllocation` (Month-3 reward attribution table).
+
+### 10 deferred decisions (logged in `retention-progression-rewards.md` §7)
+
+1. Lifetime-locked-pricing terms when TGP raises base prices in year 3+ (recommendation: lock current rate, allow new SKUs to scale).
+2. Mastermind cadence + host (recommendation: quarterly, OWNER for first 4 cohorts).
+3. Retreat cost model (recommendation: hybrid — TGP covers venue+content, coach pays travel + nominal seat fee).
+4. Cohort feed UX in mobile (recommendation: full feed; Track 3 lands v2 if deferred).
+5. Year One "activity marker" threshold (recommendation: 4 of 8 weeks active).
+6. Year One golden ticket: single-redemption or annual-recurring (recommendation: single per milestone, refires on renewal to Year Two).
+7. Top Performer reward content (recommendation: free month of OS sub + leaderboard placement on coach directory + optional shoutout).
+8. "Qualifying lead" definition for Month-3 (recommendation: archetype/niche match + geo target if specified + no other coach grant in past 90d).
+9. Tier-overlap exec-review-taste copy (drafted by OWNER, not engineering).
+10. Charter Members vs Year One relationship (locked: a user can hold both; UI surfaces them as two separate badges).
+
+### Cross-repo touchpoints surfaced by the rewards layer
+
+- `growth-project-mobile` Wave 4 PR #98 — Track 3 Community requires a cohort feed; if that surface is not in Wave 4 v1, Track 3 ships v2 (engine and Tracks 1+2 are unaffected).
+- `tgp-finance-app` Wave 5 PR #109 — sub-coach-aware MRR is the source for `mrr_cents` composite expressions; the existing `finance-org-roll-ups.md` contract is the consumer.
+- `growth-project-backend/docs/admin/control-room-spec.md` (Wave 1 PR #130) — new capabilities `act:reward_revoke`, `act:year_one_moderation`, plus admin console screens for `RewardCatalog`, `RewardOverlapPolicy`, `JoiningIncentive` editors.
+- `growth-project-backend/docs/admin/data-feed-rfc.md` (Wave 3 PR #131) — the `retention_90d` leaderboard for Top Performer is a candidate for the §org observe family in the data-feed RFC.
+
+### What the next Computer should know
+
+1. **The rewards layer is reward-content-editable without schema migrations.** OWNER decisions (e.g. "actually let's make M9 a video walkthrough instead of a written spotlight") are catalog-row edits, not Prisma changes.
+2. **Adding a new reward kind requires a Zod schema** (per `RewardKind`). The runtime PR is responsible for that validator + the `@SkipDecimalNormalisation()` decorator on the lifetime-pricing-lock payload (per `tgp-finance-app/docs/billing/sub-coach-billing-split-spec.md`).
+3. **The doctrine alignment with `retention-progression-system.md` §7.1** (no streak counters, no social-reaction primitives) is preserved by computing streaks internally but presenting milestone names. Verify in code review that no UI surface ever displays a numeric streak count.
+4. **The achievement track and the pricing tier interact in exactly one place** (`RewardOverlapPolicy`). Everywhere else they are independent. Code review should reject any new place where they are coupled.
+5. **The Day-1 implementation order in §11 of the rewards doc is the recommended commit sequence** for the runtime PR. Step 5 (tenure cron + per-kind dispatchers) is feature-flag gated per kind — the system can ship to production with all kinds disabled, then incrementally enable.
+6. **The Year One golden ticket is the only cross-coach surface in the entire client experience.** Any future code that adds another cross-coach surface must justify the boundary breach in its PR description and add a new audit-action constant for it.
+7. **The OWNER's lifetime-locked-pricing promise at M24 is a binding record via the rendered `lock_terms_md` in the `RewardGrant.payload`.** Audit rows are permanently retained. Treat this as a legal-grade artifact in the runtime PR.
+
+---
+
 ## Session 2026-05-01 (mid-PDT) — Wave 2 product specs
 
 **Goal:** spec the next product layer on top of the Wave 1 admin

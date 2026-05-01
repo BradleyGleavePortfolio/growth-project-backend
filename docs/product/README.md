@@ -16,7 +16,7 @@ future runtime PR will be graded against.
 
 ## Reading order
 
-The seven files are designed to be read top-to-bottom. Each later file
+The eight files are designed to be read top-to-bottom. Each later file
 assumes the earlier ones have been internalized.
 
 1. **[`positioning-whop-ai-for-coaches.md`](./positioning-whop-ai-for-coaches.md)** —
@@ -35,25 +35,36 @@ assumes the earlier ones have been internalized.
    from today's single-coach world. Mobile and admin both depend on
    this.
 3. **[`retention-progression-system.md`](./retention-progression-system.md)** —
-   the level/milestone/badge ladder for both clients and coaches,
-   adapted from Iman Gadzhi's Digital Launchpad transcript onto The
-   Growth Project's "right-fit member, not buyer" CEO doctrine. Defines
-   `ProgressionLevel`, `Milestone`, `MilestoneCompletion`, `Badge`,
-   `BadgeAward`, `JoiningIncentive`, the Charter Members loyal-member
-   panel, the yearly-plan upsell with auto-promotion, and the
-   gamification ethics statement.
-4. **[`onboarding-clients.md`](./onboarding-clients.md)** — the
+   the **engine**: level/milestone/badge ladder for both clients and
+   coaches, adapted from Iman Gadzhi's Digital Launchpad transcript
+   onto The Growth Project's "right-fit member, not buyer" CEO
+   doctrine. Defines `ProgressionLevel`, `Milestone`,
+   `MilestoneCompletion`, `Badge`, `BadgeAward`, `JoiningIncentive`,
+   the Charter Members loyal-member panel, the yearly-plan upsell with
+   auto-promotion, and the gamification ethics statement.
+4. **[`retention-progression-rewards.md`](./retention-progression-rewards.md)** —
+   the **rewards layer** the engine evaluates against. Captures the
+   OWNER-decided coach tenure ladder (M1–M36 — onboarding call,
+   leads, mastermind, spotlight, funnel audit, priority requests,
+   lifetime pricing, retreat), the coach achievement track (First
+   Win, Trusted, Builder, Operator, Authority, Top Performer,
+   Comeback Coach, Referrer), the three-track client model
+   (Consistency / Outcome / Community), the Year One golden-ticket
+   cross-coach exception, and the tier-overlap upsell policy. Split
+   from the engine doc on purpose so reward content can iterate
+   without schema migrations.
+5. **[`onboarding-clients.md`](./onboarding-clients.md)** — the
    first-win moment design and the 5-step product layer that sits on
    top of the existing 10-step + 4-step Lean mobile onboarding. Defines
    what "first win" looks like per archetype, drop-off recovery
    (24h/72h/7d), funnel telemetry, and acceptance criteria.
-5. **[`onboarding-coaches.md`](./onboarding-coaches.md)** — the
+6. **[`onboarding-coaches.md`](./onboarding-coaches.md)** — the
    6-step coach setup flow, archetype-specific templates, and time-to-
    first-client targets. Cross-references the mobile coach screens
    already shipped (`audit-mobile.md` §2 lists `CoachHomeScreen`,
    `ClientsListScreen`, `InviteCodesScreen`, `ProgramTemplatesScreen`,
    `ClientDetailScreen`).
-6. **[`data-tracking-contract.md`](./data-tracking-contract.md)** —
+7. **[`data-tracking-contract.md`](./data-tracking-contract.md)** —
    the "we track everything" contract. Maps every progression event,
    onboarding step, and org action to the existing PostHog +
    `AuditLog` stack, defines the analytics events vocabulary

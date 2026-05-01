@@ -2,10 +2,23 @@
 
 Status: **draft, docs-only**. Companion to [`README.md`](./README.md),
 [`positioning-whop-ai-for-coaches.md`](./positioning-whop-ai-for-coaches.md),
-and [`sub-coach-hierarchy.md`](./sub-coach-hierarchy.md). Defines the
-level / milestone / badge ladder for both clients and coaches, the
-Charter Members loyal-member program, the yearly-plan upsell path,
-and the gamification-ethics statement that gates the runtime.
+[`sub-coach-hierarchy.md`](./sub-coach-hierarchy.md), and the
+**rewards layer** in
+[`retention-progression-rewards.md`](./retention-progression-rewards.md).
+Defines the level / milestone / badge ladder for both clients and
+coaches, the Charter Members loyal-member program, the yearly-plan
+upsell path, and the gamification-ethics statement that gates the
+runtime.
+
+> **Reader note (2026-05-01):** this doc defines the **engine** —
+> milestones, levels, badges, the state machine, the schema. The
+> **reward content** the engine evaluates against is layered in
+> [`retention-progression-rewards.md`](./retention-progression-rewards.md),
+> which captures the OWNER-decided coach tenure ladder (M1–M36),
+> coach achievement track, three-track client model (Consistency /
+> Outcome / Community), the Year One golden-ticket cross-coach
+> exception, and the tier-overlap upsell policy. The split is
+> intentional so reward content can iterate without schema changes.
 
 The progression system is adapted from the Iman Gadzhi
 *Digital Launchpad* operator transcript shared with this session. The
