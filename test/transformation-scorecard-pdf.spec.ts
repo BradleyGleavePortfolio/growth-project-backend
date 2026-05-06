@@ -128,8 +128,9 @@ describe('buildScorecardPdf — byte signature', () => {
 
     const firstBytes = await new Promise<string>((resolve, reject) => {
       const chunks: Buffer[] = [];
-      doc.on('data', (chunk: Buffer) => {
-        chunks.push(chunk);
+      doc.on('data', (chunk: unknown) => {
+        const buf = chunk as Buffer;
+        chunks.push(buf);
         const total = Buffer.concat(chunks);
         if (total.length >= 5) {
           resolve(total.slice(0, 5).toString('ascii'));
@@ -139,7 +140,7 @@ describe('buildScorecardPdf — byte signature', () => {
         const total = Buffer.concat(chunks);
         resolve(total.slice(0, 5).toString('ascii'));
       });
-      doc.on('error', (err: Error) => reject(err));
+      doc.on('error', (err: unknown) => reject(err as Error));
     });
 
     expect(firstBytes).toBe('%PDF-');
