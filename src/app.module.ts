@@ -44,6 +44,7 @@ import { BuildWeekModule } from './build-week/build-week.module';
 import { V1Module } from './v1/v1.module';
 import { InviteLandingModule } from './invite-landing/invite-landing.module';
 import { PublicPagesModule } from './public-pages/public-pages.module';
+import { TimelineModule } from './timeline/timeline.module';
 
 @Module({
   imports: [
@@ -132,6 +133,11 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
     BuildWeekModule,
     // Phase 3 — public 40-point diagnostic + AI roadmap.
     DiagnosticModule,
+    // Phase 7B — Transformation Timeline. 4-lane chronological event
+    // feed computed on the fly from existing tables (WeightLog,
+    // ClientSignal, CoachMessage, BuildWeekEnrollment). No new migrations.
+    // Endpoint: GET /me/timeline. See src/timeline/README.md.
+    TimelineModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)
