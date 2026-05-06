@@ -10,8 +10,8 @@ sees `risk_score` or factor breakdowns.
 - Persist every observed behavioral signal in `ClientSignal` so a later
   scoring pass can reconstruct any historical window.
 - Expose a single fire-and-forget `PtmService.emit` that callers in the
-  five emitting modules (check-ins, weight, workout, food, messaging)
-  drop into existing handler success paths.
+  emitting modules (check-ins, weight, workout, food, messaging, auth
+  guard, finance federation) drop into existing handler success paths.
 - Hold the shared types — signal-type strings, outcome-type strings,
   prediction-basis strings, factor and result shapes, and window
   constants — that the heuristic engine (Phase 1B), the admin teaching
@@ -21,7 +21,7 @@ sees `risk_score` or factor breakdowns.
 
 | File | What it owns |
 |---|---|
-| `ptm.module.ts` | `@Global()` Nest module exporting `PtmService`. The five emitting modules inject `PtmService` directly without listing this module among their imports. |
+| `ptm.module.ts` | `@Global()` Nest module exporting `PtmService`. All emitting modules inject `PtmService` directly without listing this module among their imports. |
 | `ptm.service.ts` | Fire-and-forget `recordSignal` / `emit` + score reads (`getLatestPrediction`, `listPredictionHistory`). Catches and logs every DB failure so a PTM table outage cannot bubble back into a user-facing 5xx. |
 | `ptm.types.ts` | Shared type table: `PtmSignalTypeT`, `PtmOutcomeTypeT`, `PtmPredictionBasisT`, `PtmScoreResult`, `PtmFactor`, `PTM_WINDOWS`, `PTM_SCORE_BUCKETS`, `bucketize`. Single source of truth — keep aligned with the Postgres `PtmSignalType` / `PtmOutcomeType` / `PtmPredictionBasis` enums in `prisma/schema.prisma`. |
 
@@ -35,11 +35,11 @@ HTTP surface). Phase 1D activates the weighted v2 engine when at least
 
 ## Signal hooks
 
-Phase 1A wires `PtmService.emit` into the success paths of five
-existing modules. Each entry is fire-and-forget — the call returns
-synchronously and any failure is logged inside `recordSignal`.
+Phase 1A wires `PtmService.emit` into the success paths of the emitting
+modules. Each entry is fire-and-forget — the call returns synchronously
+and any failure is logged inside `recordSignal`.
 
-| `signal_type` | Emitting module | Trigger | `value` | `metadata` |
+| `signal_type` | Emitting module / site | Trigger | `value` | `metadata` |
 |---|---|---|---|---|
 | `checkin_streak` | `check-ins` | `CheckInsService.upsertForClient` after the upsert succeeds | consecutive-day streak ending today | none |
 | `checkin_miss` | `check-ins` | same path, when the latest prior check-in is `>= 3` calendar days behind today | gap in days | none |
@@ -49,11 +49,14 @@ synchronously and any failure is logged inside `recordSignal`.
 | `message_sent` | `messaging` | `MessagingService.sendAsClient` after the create | `body.length` | none |
 | `message_received` | `messaging` | `MessagingService.sendAsCoach` after the create — `userId` is the **client**, never the coach | `body.length` | none |
 | `coach_note_received` | `messaging` | same path, alongside `message_received` | `1` | none |
+| `app_open` | `JwtAuthGuard` (`src/auth/auth.guard.ts`) | First authenticated request per user after a 4-hour quiet period (dedup-gated in-memory Map). Only fires for non-deleted accounts. | `1` | `{ source: 'jwt_validate' }` |
+| `finance_eod` | `FederationInboundService` (`src/admin/federation/`) | Finance backend posts to `POST /admin/federation/ptm-signal` with `signal_type: 'finance_eod'`. Verified via `FINANCE_SERVICE_TOKEN` bearer + `X-Federation-Source: finance-backend`. | caller-supplied (`default 1`) | `{ source: 'finance_federation', ...caller metadata }` |
+| `finance_milestone` | `FederationInboundService` (`src/admin/federation/`) | Same inbound endpoint, `signal_type: 'finance_milestone'`. | caller-supplied (`default 1`) | `{ source: 'finance_federation', ...caller metadata }` |
 
 Other signal types declared in `ptm.types.ts`
-(`weight_skipped`, `workout_skipped`, `meal_skipped`, `finance_eod`,
-`finance_milestone`, `app_open`, `consistency_low`, `streak_dropped`)
-are reserved for later phases and currently have no emitter.
+(`weight_skipped`, `workout_skipped`, `meal_skipped`, `consistency_low`,
+`streak_dropped`) are reserved for later phases and currently have no
+emitter.
 
 ## Design notes
 
@@ -75,6 +78,38 @@ are reserved for later phases and currently have no emitter.
 - **`@Global()` module.** Emitters do not need to import `PtmModule`.
   This matches the audit module's pattern and keeps the dependency
   graph free of cycles when a future module starts emitting.
+
+## Why app_open in the auth guard?
+
+The `app_open` signal plugs the single largest scoring gap: the
+`app_open_gap_7d` factor carries a +0.25 risk contribution — the
+highest individual weight in the heuristic engine. Before this wiring,
+every client always had +0.25 added to their risk score, making the
+risk board a false-positive wall.
+
+The auth guard is the correct hook site because it fires on every
+authenticated request, requires no client release, and already has the
+`User` row in scope. The 4-hour dedup window ensures one meaningful
+data point per user per multi-hour session without flooding the
+`ClientSignal` table. See `src/auth/README.md` for the full design
+rationale.
+
+## Why finance signals via an inbound federation endpoint?
+
+`finance_eod` and `finance_milestone` are produced by a separate backend
+(`tgp-finance-app`). The inbound endpoint at
+`POST /admin/federation/ptm-signal` lets the finance backend push these
+signals over a service-to-service call rather than a direct DB write.
+Benefits:
+
+- The fitness backend remains the single owner of `ClientSignal`.
+- Auth is explicit and auditable (service-token bearer +
+  `X-Federation-Source` header).
+- The endpoint rejects any signal type it doesn't own (400), so the
+  surface cannot be widened by the caller.
+
+See `src/admin/federation/README.md` for the full inbound-endpoint
+contract.
 
 ## Weighted engine (1D)
 
