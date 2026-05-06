@@ -113,6 +113,8 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 | `COACH_ALERT_BATCH_LIMIT` | optional | Backend operator | Per-request cap on `/coach/alerts` and `/admin/coach-alerts`. Defaults to 50; clamped to `[1, 200]`. |
 | `DIAGNOSTIC_AI_ENABLED` | optional | Backend operator | Set to `false` to skip Perplexity calls for `POST /api/diagnostic/submit` and store a placeholder roadmap. Defaults to `true`. Useful for CI / preview deploys without a Perplexity key. |
 | `DIAGNOSTIC_RATE_LIMIT_PER_HOUR` | optional | Backend operator | Per-IP hourly cap on `POST /api/diagnostic/submit` (named throttler `diagnostic-submit`). Defaults to 5; clamped to `[1, 1000]`. The endpoint is unauthenticated by design (lead capture), so the limit is the primary defense. |
+| `BUILD_WEEK_ENABLED` | optional | Backend operator | Feature flag — when `false`, the Phase 4 Build Week controllers refuse new writes and the admin funnel reports zeroed counts. Defaults to `true`. See [`src/build-week/README.md`](src/build-week/README.md) and [`docs/build-week.md`](docs/build-week.md). |
+| `BUILD_WEEK_AUTO_START_ON_SIGNUP` | optional | Backend operator | Feature flag — when `true`, new client signups auto-enrol in Build Week. Defaults to `false`. The flag is exposed for staged rollout; auto-enrolment wiring lands in a follow-on PR. |
 | `PORT` | optional | Fly.io | HTTP port. Defaults to 3000; Fly overrides this. |
 | `NODE_ENV` | optional | Backend operator | `development`, `staging`, or `production`. Drives the validation tier and the AI debug payload. |
 
@@ -1108,6 +1110,7 @@ src/
   analytics/    PostHog passthrough (no-op when key unset)
   auth/          Supabase-backed auth, JWKS verification, role gating
   billing/       Stripe webhook, mirror, SubscriptionGuard, OWNER + coach billing
+  build-week/    7-day Build Week guided experience (catalog + enrolment + funnel)
   check-ins/     Daily and weekly check-ins
   coach/         Coach mobile surface (roster, timeline, alerts, guidelines)
   common/        Shared decorators, guards, env validation

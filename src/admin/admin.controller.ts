@@ -23,6 +23,7 @@ import { GdprScrubService } from '../users/gdpr-scrub.service';
 import { ConsentService } from '../consent/consent.service';
 import { CoachEffectivenessService } from '../coach/coach-effectiveness.service';
 import { CoachAlertsService } from '../coach/coach-alerts.service';
+import { CoachOnboardingService } from '../coach/coach-onboarding.service';
 import { BuildWeekService } from '../build-week/build-week.service';
 
 // Phase 1A/1B: OWNER-only platform admin surface. Every route here is
@@ -43,6 +44,7 @@ export class AdminController {
     private consent: ConsentService,
     private coachEffectiveness: CoachEffectivenessService,
     private coachAlerts: CoachAlertsService,
+    private coachOnboarding: CoachOnboardingService,
     private buildWeek: BuildWeekService,
   ) {}
 
@@ -288,6 +290,24 @@ export class AdminController {
       this.coachEffectiveness.listHistory(coachId, limit ?? 30),
     ]);
     return { latest, history };
+  }
+
+  // Phase 6D — OWNER list of every coach's onboarding wizard progress.
+  // Filter ?completed=true|false to slice to finished / in-flight only.
+  // Used by the admin console to spot stalled coaches and re-engage.
+  @Get('coach-onboarding')
+  async listCoachOnboarding(
+    @Query('completed') completed?: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    const completedFilter =
+      completed === 'true' ? 'true' : completed === 'false' ? 'false' : undefined;
+    const parsed = limitRaw ? parseInt(limitRaw, 10) : NaN;
+    const limit = Number.isFinite(parsed) ? parsed : undefined;
+    return this.coachOnboarding.listAllProgress({
+      completed: completedFilter,
+      limit,
+    });
   }
 
   // Phase 6B — OWNER-only red-flag alert aggregator across coaches.

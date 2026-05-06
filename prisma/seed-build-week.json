@@ -1,0 +1,124 @@
+[
+  {
+    "day_number": 1,
+    "title": "Audit",
+    "focus_area": "Diagnostic + Baseline",
+    "narrative": "Day 1 is an audit. Before strategy, before action, you take an honest inventory of where you are right now across body, income, and environment. The 40-point diagnostic, the starting body weight, and the income baseline together form the snapshot you will measure every future week against.",
+    "prompt_questions": [
+      "What does success look like in 90 days?",
+      "What is your current monthly income, and how many hours per week are you free to work on this?",
+      "What is your starting body weight today?"
+    ],
+    "action_items": [
+      { "title": "Complete the 40-point diagnostic", "description": "Work through the diagnostic form end-to-end. Honest answers only — this becomes the baseline every later week is measured against.", "time_estimate_min": 25 },
+      { "title": "Log starting body weight", "description": "Record your starting weight today. A photo is optional but recommended — you will compare against it on Day 7 and at the 30/60/90-day marks.", "time_estimate_min": 5 },
+      { "title": "Income baseline", "description": "Capture current monthly income and the hours per week you can realistically commit. This sets the expansion target for Day 3.", "time_estimate_min": 10 },
+      { "title": "Define 90-day success", "description": "Write at least 100 words on what success looks like in 90 days. Specifics beat abstractions — name a number, a body, a place.", "time_estimate_min": 15 }
+    ],
+    "expected_artifact": "Diagnostic + baseline snapshot: weight, income, hours, and a 100-word success statement."
+  },
+  {
+    "day_number": 2,
+    "title": "Strategy",
+    "focus_area": "90-Day Arc + Calendar Cuts",
+    "narrative": "Day 2 turns the audit into a plan. You review the AI-generated 90-day arc, confirm the primary income lever you will lean into, and decide what gets cut from your calendar to make the next 90 days possible. Strategy without subtraction is wishful thinking.",
+    "prompt_questions": [
+      "Which income lever fits your skills and bandwidth: freelance, paid offer, remote job, content, or other?",
+      "What gets cut from your calendar this week to make room for the work?",
+      "Where in the AI-generated 90-day arc do you have the most doubt — and why?"
+    ],
+    "action_items": [
+      { "title": "Review your AI-generated 90-day arc", "description": "Read through the arc end-to-end. Mark anything that does not fit your reality before Day 3.", "time_estimate_min": 20 },
+      { "title": "Confirm primary income lever", "description": "Pick exactly one of: freelance, paid offer, remote job, content, other. Day 3 builds on this choice.", "time_estimate_min": 10 },
+      { "title": "Cut from calendar", "description": "List at least one recurring commitment you are removing this week to free time for the build. Be specific.", "time_estimate_min": 15 }
+    ],
+    "expected_artifact": "Confirmed income lever and a written list of calendar cuts for the week."
+  },
+  {
+    "day_number": 3,
+    "title": "Income Setup",
+    "focus_area": "Offer + Outreach",
+    "narrative": "Day 3 is execution day on the income side. You define the offer in concrete terms — name, price, deliverable, target client — and you do something most people never do: you actually send the first five outreach messages. The day ends with a tracker so the next 90 days are measurable.",
+    "prompt_questions": [
+      "What is the name, price, deliverable, and target client of your offer?",
+      "What does your LinkedIn headline say in the language of your offer?",
+      "Who are the first five people you are reaching out to, and why each of them?"
+    ],
+    "action_items": [
+      { "title": "Define your offer", "description": "Write down: offer name, price, the deliverable, and the exact target client. One sentence per field.", "time_estimate_min": 25 },
+      { "title": "Build LinkedIn headline using offer language", "description": "Rewrite your LinkedIn headline so a target client recognises themselves in it within five seconds.", "time_estimate_min": 15 },
+      { "title": "Send first 5 outreach messages", "description": "Send five outreach messages today. Capture screenshots as evidence — Day 6 reviews the responses.", "time_estimate_min": 30 },
+      { "title": "Set up outreach tracker", "description": "Open the outreach tracker template, copy it to your own drive, and log the five sends with date, channel, and status.", "time_estimate_min": 10 }
+    ],
+    "expected_artifact": "Offer brief, updated LinkedIn headline, five outreach sends, and a populated tracker link."
+  },
+  {
+    "day_number": 4,
+    "title": "Body Protocol",
+    "focus_area": "Macros + Training + Sleep",
+    "narrative": "Day 4 protects the body that has to carry the work. Macros, training schedule, and sleep are not vanity — they are the floor under everything else. Set the protocol now so you are not negotiating with yourself in week three.",
+    "prompt_questions": [
+      "What are your weight, goal, and activity level — and the macro split they imply?",
+      "How many days a week will you train, and which type each day?",
+      "What is your average bedtime, wake time, and a self-rated sleep quality from 1 to 10?"
+    ],
+    "action_items": [
+      { "title": "Confirm macro targets", "description": "Run the macro calculator with your weight, goal, and activity level. Lock the protein, carb, and fat targets for the week.", "time_estimate_min": 15 },
+      { "title": "Log training schedule", "description": "Commit the days per week and the training type each day (resistance, conditioning, mobility). Put it in your calendar.", "time_estimate_min": 10 },
+      { "title": "Sleep audit", "description": "Record average bedtime, wake time, and a 1–10 sleep quality score. Identify one habit to change this week.", "time_estimate_min": 10 },
+      { "title": "Confirm Week 1 body target", "description": "Write down the one specific body outcome you are tracking this week (a weight delta, a session count, a sleep average).", "time_estimate_min": 5 }
+    ],
+    "expected_artifact": "Macro targets, training schedule, sleep audit, and a Week 1 body target."
+  },
+  {
+    "day_number": 5,
+    "title": "Environment",
+    "focus_area": "Calendar + Surroundings",
+    "narrative": "Day 5 redesigns the environment so the protocol survives contact with real life. Training, deep work, and outreach become recurring calendar slots. One environmental change happens this week — and the relocation question stays open as a longer arc for those choosing it.",
+    "prompt_questions": [
+      "Which time blocks will hold training, deep work, and outreach as recurring slots this week?",
+      "What is the single environment change you will make this week?",
+      "If you are considering relocation, which target country is on the shortlist?"
+    ],
+    "action_items": [
+      { "title": "Calendar redesign", "description": "Block training, deep work, and outreach as recurring slots in your calendar for the next 7 days. Confirm with a checkbox once the events exist.", "time_estimate_min": 20 },
+      { "title": "Identify one environment change", "description": "Pick one environmental change to make this week — workspace setup, a kitchen reset, a phone-distance habit. Write it down.", "time_estimate_min": 10 },
+      { "title": "Optional: target relocation country", "description": "If relocation is part of your arc, select a target country from the supported list. Optional.", "time_estimate_min": 5 }
+    ],
+    "expected_artifact": "A redesigned weekly calendar, a documented environment change, and an optional relocation target."
+  },
+  {
+    "day_number": 6,
+    "title": "Integration",
+    "focus_area": "Operating Rhythm + Tooling",
+    "narrative": "Day 6 ties the three pillars together. You schedule the coaching call, you write the operating rhythm doc that captures how your week actually runs, and you confirm the tools that will track your progress. Integration is what makes the next 83 days repeatable.",
+    "prompt_questions": [
+      "When is your scheduled coaching call this cycle?",
+      "What is your operating rhythm — the times of day each pillar gets attention?",
+      "Which tracking tools are confirmed: weight app, income spreadsheet, calendar?"
+    ],
+    "action_items": [
+      { "title": "Coaching call schedule confirmed", "description": "Pick a date and time for your coaching call this cycle and put it in the calendar. Confirm with a coach response.", "time_estimate_min": 10 },
+      { "title": "Complete operating rhythm doc", "description": "Write or upload your operating rhythm doc — how each day flows across body, income, and environment.", "time_estimate_min": 30 },
+      { "title": "Link tracking tools", "description": "Confirm the three trackers are live: weight app, income spreadsheet, calendar. Tick each off only once it is genuinely set up.", "time_estimate_min": 15 }
+    ],
+    "expected_artifact": "Scheduled coaching call, an operating rhythm doc, and three confirmed tracking tools."
+  },
+  {
+    "day_number": 7,
+    "title": "Lock-In",
+    "focus_area": "Self-Assessment + Certificate",
+    "narrative": "Day 7 is the lock-in. You self-assess each of the three pillars — income setup, body protocol, environment — and you record a 60-second video describing what you actually built this week. The completion certificate is generated when the assessment, the video, and the coach sign-off all line up. This is the moment Build Week becomes a baseline you can come back to.",
+    "prompt_questions": [
+      "Income setup — done or not done? In one sentence, what is the evidence?",
+      "Body protocol — done or not done? In one sentence, what is the evidence?",
+      "Environment — done or not done? In one sentence, what is the evidence?"
+    ],
+    "action_items": [
+      { "title": "Self-assess all 3 pillars", "description": "Mark income setup, body protocol, and environment as done or not done. Write one sentence of evidence for each.", "time_estimate_min": 15 },
+      { "title": "Record a 60-second \"Here's what I built\" video", "description": "Record a 60-second video describing what you built this week. Upload it. This is the artifact future-you will rewatch.", "time_estimate_min": 20 },
+      { "title": "Generate completion certificate", "description": "Once self-assessment and video are submitted and the coach has signed off, generate the completion certificate.", "time_estimate_min": 5 }
+    ],
+    "expected_artifact": "Three-pillar self-assessment, a 60-second build video, and the generated completion certificate."
+  }
+]

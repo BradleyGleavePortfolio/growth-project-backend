@@ -126,9 +126,11 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
     // heuristic + weighted scoring engines and the nightly recompute
     // scheduler. See src/ptm/README.md.
     PtmModule,
-    // Phase 3 — public 40-point diagnostic + AI roadmap. Lead-capture
-    // funnel; routes are @Public() and rate-limited via the
-    // `diagnostic-submit` named throttler. See src/diagnostic/README.md.
+    // Phase 4 — Build Week. 7-day guided coaching arc. Catalog seeded
+    // by the migration; per-user enrollment + completion tracking with
+    // a PTM milestone signal on Day 7. See src/build-week/README.md.
+    BuildWeekModule,
+    // Phase 3 — public 40-point diagnostic + AI roadmap.
     DiagnosticModule,
   ],
   providers: [
