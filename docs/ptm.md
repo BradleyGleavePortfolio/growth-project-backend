@@ -201,6 +201,160 @@ curl -sS "https://api.thegrowthproject.app/api/admin/ptm/risk-board?bucket=red&l
   internals (the `WEIGHTS` table, the activation threshold) are not
   exposed via the API.
 
+## Phase 1D — weighted engine
+
+The weighted engine is a frequency-analysis model that learns from the
+OWNER's outcome labels. No external ML dependency, no API call — it is
+a few hundred lines of TypeScript that re-trains on cache miss or when
+the recompute orchestrator calls `refresh()`.
+
+### Activation
+
+The orchestrator picks an engine per recompute call:
+
+| Condition | Engine | `prediction_basis` written |
+|---|---|---|
+| Total labelled outcomes < `PTM_WEIGHTED_ACTIVATION_OUTCOMES` (default 20) | Heuristic | `heuristic_v1` |
+| Total >= threshold but SUCCESS or FAILURE cohort has 0 rows | Heuristic | `heuristic_v1` |
+| Total >= threshold and both cohorts populated | Weighted | `weighted_v2` |
+
+### SUCCESS / FAILURE cohorts
+
+| Cohort | Outcome labels |
+|---|---|
+| SUCCESS | `completed_90day`, `upgraded`, `referred`, `milestone_hit`, `renewed` |
+| FAILURE | `churned`, `dropped_off` |
+
+These are intentionally narrow. New `PtmOutcomeType` values require a
+Prisma migration AND a follow-up here so the trainer does not silently
+ignore a label.
+
+### Training set
+
+The trainer reads `ClientOutcome.signal_snapshot` — a JSON blob the
+Phase 1C label endpoint captures at label time. Each snapshot is the
+client's last-30-day count per signal type, frozen at the moment the
+OWNER taught the system what happened.
+
+This is deliberate: a client's raw `ClientSignal` rows can be
+GDPR-scrubbed, but the snapshot lives on the outcome row. A
+sample-size-1 GDPR-scrubbed client still contributes to training as
+long as the snapshot was captured.
+
+Snapshots that are null (rows labelled before Phase 1C shipped) are
+skipped. `getCurrentWeights()` and the
+`/admin/reports/ptm-signal-weights` report both surface
+`skipped_no_snapshot` so an operator can see how much of the teaching
+set is older-than-1C.
+
+### The weight formula
+
+For each signal type:
+
+```
+weight = (avg_in_FAILURE - avg_in_SUCCESS)
+       / max(avg_in_FAILURE + avg_in_SUCCESS, 0.1)
+```
+
+The `0.1` floor on the denominator guards against signals that simply
+do not appear in any snapshot — without it the formula would divide by
+zero.
+
+Range is roughly `[-1, +1]`:
+
+- `+1` — appears only in churns / drop-offs.
+- `0` — appears equally in both cohorts (no signal).
+- `-1` — appears only in completions / upgrades.
+
+### Worked example
+
+Imagine 25 labelled outcomes:
+
+- 15 SUCCESS rows (`completed_90day`), each with snapshot
+  `{ checkin_miss: 0, message_received: 12 }`.
+- 10 FAILURE rows (`churned`), each with snapshot
+  `{ checkin_miss: 8, message_received: 1 }`.
+
+The trainer computes:
+
+| Signal | `success_avg` | `failure_avg` | numerator | denominator | weight |
+|---|---|---|---|---|---|
+| `checkin_miss` | 0 | 8 | 8 | max(8 + 0, 0.1) = 8 | **+1.00** |
+| `message_received` | 12 | 1 | -11 | max(1 + 12, 0.1) = 13 | **-0.85** |
+
+A user whose last-30-day counts are
+`{checkin_miss: 8, message_received: 1}` scores:
+
+```
+contribution_checkin_miss = +1.00 * (8 / 8)  = +1.00
+contribution_message_recv = -0.85 * (1 / 12) ≈ -0.07
+rawRisk      = clamp(+1.00 - 0.07, -1, +1) = +0.93
+riskScore    = (0.93 + 1) / 2              = 0.965
+successScore = 1 - 0.965                   = 0.035
+```
+
+`factors[]` surfaces the top-5 signals by absolute contribution, so the
+operator sees a `+1.00` row for `checkin_miss` front-and-center.
+
+### How to interpret a `weighted_v2` prediction vs `heuristic_v1`
+
+| Engine | Reasoning | When to trust it more |
+|---|---|---|
+| `heuristic_v1` | Hand-tuned weights from the brief. No prior data needed. Risk and success are independent axes (a client can be both high-risk and high-success). | First weeks of a coach's deployment, before they have labelled 20 outcomes. |
+| `weighted_v2` | Frequency analysis of the actual SUCCESS / FAILURE cohorts. Risk and success are linked (`successScore = 1 - riskScore`) because the weight encodes both signs. | Once the coach has labelled at least 20 outcomes with non-trivial cohort balance. |
+
+When the basis flips from `heuristic_v1` to `weighted_v2`, expect the
+score to move — sometimes substantially — because the engines weight
+signals differently. The score-history drawer shows the
+`prediction_basis` per row so the operator can see exactly when the
+flip happened.
+
+A weighted_v2 weight that diverges sharply from the heuristic intuition
+is not a bug — it means the OWNER's actual outcome history disagreed
+with the brief. The first action is to read `success_avg` and
+`failure_avg` for that signal in the
+`/admin/reports/ptm-signal-weights` report and confirm the cohort sizes
+look representative; a thin slice (say, two rows) is the most common
+cause.
+
+### Caching and refresh
+
+Trained weights are cached in-memory for one hour. Two consecutive
+score calls within the hour share a single training pass. The
+recompute orchestrator calls `PtmWeightedService.refresh()` after the
+1C label endpoint triggers a `recomputeOne` so a fresh outcome takes
+effect immediately; the 1-hour TTL guarantees correctness even if a
+caller forgets to call refresh.
+
+### Operator commands
+
+```bash
+# Inspect the current trained weights as JSON.
+curl -fsS \
+  -H "Authorization: Bearer $OWNER_JWT" \
+  "https://api.thegrowthproject.app/api/admin/reports/ptm-signal-weights" | jq .
+
+# Same data as CSV — drop into a spreadsheet.
+curl -fsS \
+  -H "Authorization: Bearer $OWNER_JWT" \
+  "https://api.thegrowthproject.app/api/admin/reports/ptm-signal-weights?format=csv" \
+  -o ptm-signal-weights-$(date -u +%Y%m%d).csv
+```
+
+When the engine is below threshold the JSON response carries
+`basis: 'heuristic_v1'`, an empty `data` array, and a `reason` field
+(`below_activation_threshold` or `empty_cohort`). The CSV form is a
+header line with no rows in that case — the file is still valid CSV.
+
+### Failure modes
+
+| Symptom | Cause | What to do |
+|---|---|---|
+| Report carries `reason: 'below_activation_threshold'` | Fewer than `PTM_WEIGHTED_ACTIVATION_OUTCOMES` labelled outcomes | Label more outcomes via the 1C label endpoint, or lower the threshold via env if you accept the reduced confidence. |
+| Report carries `reason: 'empty_cohort'` | All labelled outcomes are SUCCESS-only or FAILURE-only | Wait for the missing cohort to accumulate, or relabel an outcome. |
+| `skipped_no_snapshot > 0` | Some outcomes were labelled before Phase 1C shipped | Expected for older labels — the trainer cannot reconstruct a frozen snapshot, so those rows are silently skipped. The remaining rows still produce valid weights. |
+| A weight's sign surprises the operator | Cohort imbalance or a thin cohort | Read `success_avg` / `failure_avg` / `training_count` on that row. A `training_count` under ~5 should be treated as noise. |
+
 ## Mobile surface (Phase 1E)
 
 The mobile app (`growth-project-mobile`, branch `feat/ptm-risk-board`) adds

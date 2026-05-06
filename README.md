@@ -102,6 +102,11 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 | `ALLOW_SELF_SERVICE_BECOME_COACH` | optional | Backend operator | Feature flag. Default unset = `POST /auth/become-coach` returns `403 self_service_promotion_disabled`. Set to `true` only for a one-off legacy migration where any logged-in non-OWNER user may self-elevate after a password re-auth; the role change is then audited as `user.role_changed` with `metadata.via=self_service_become_coach`. The canonical promotion path is OWNER-only `POST /admin/users/:id/promote`. |
 | `GDPR_SCRUB_DRY_RUN` | optional | Backend operator | When `true`, `scripts/gdpr-scrub.ts` and `POST /admin/gdpr/scrub` report candidate users without writing — no `deleted_at`, no PII tombstoning, no audit row. Used to land the cron schedule in staging observably-inert before flipping to a real scrub. |
 | `GDPR_SCRUB_BATCH_LIMIT` | optional | Backend operator | Per-run cap on `GdprScrubService.run`. Defaults to 100 candidates per tick; raise only after you have watched a few cron runs complete cleanly. |
+| `PTM_SCORING_ENABLED` | optional | Backend operator | Feature flag — when `false`, the nightly PTM recompute cron is a no-op and the admin teaching endpoints are disabled. Defaults to engine-runs. Use as a kill switch when a heuristic regression ships. |
+| `PTM_SCORING_CRON` | optional | Backend operator | Override for the nightly PTM recompute cron expression. Defaults to `0 4 * * *` (04:00 UTC, one hour after the GDPR scrub at 03:00 UTC). Must be a valid 5-field cron expression. |
+| `PTM_RECOMPUTE_BATCH_LIMIT` | optional | Backend operator | Per-run cap on the number of clients the PTM nightly cron recomputes. Defaults to 5000; clamped to `[1, 50000]`. Larger rosters are processed across multiple nights. |
+| `PTM_WEIGHTED_ACTIVATION_OUTCOMES` | optional | Backend operator | Override the minimum number of labelled `ClientOutcome` rows before the weighted v2 engine activates. Defaults to 20. Below this threshold every recompute uses `heuristic_v1`. |
+| `PTM_RISK_BOARD_PAGE_SIZE` | optional | Backend operator | Default page size for `GET /admin/ptm/risk-board`. Defaults to 50; clamped to `[1, 100]` regardless of caller-supplied limit. |
 | `PORT` | optional | Fly.io | HTTP port. Defaults to 3000; Fly overrides this. |
 | `NODE_ENV` | optional | Backend operator | `development`, `staging`, or `production`. Drives the validation tier and the AI debug payload. |
 
@@ -1111,6 +1116,7 @@ src/
   nudges/        Coach-authored nudges
   prep-guide/    Onboarding prep guide
   profile/       User profile, macro math
+  ptm/           Predictive Tracking Model: signal collection, scoring, recompute
   public-pages/  /download/*, /signup, /privacy, /terms, /security, /status
   recipes/       Recipe library
   supabase/      Supabase Realtime helper
