@@ -21,6 +21,9 @@ import { AdminConsoleService } from './console/admin-console.service';
 import { FinanceFederationService } from './console/finance-federation.service';
 import { GdprScrubService } from '../users/gdpr-scrub.service';
 import { ConsentService } from '../consent/consent.service';
+import { CoachEffectivenessService } from '../coach/coach-effectiveness.service';
+import { CoachAlertsService } from '../coach/coach-alerts.service';
+import { BuildWeekService } from '../build-week/build-week.service';
 
 // Phase 1A/1B: OWNER-only platform admin surface. Every route here is
 // gated by JwtAuthGuard + RolesGuard with @Roles('owner') so a coach or
@@ -38,6 +41,9 @@ export class AdminController {
     private financeFederation: FinanceFederationService,
     private gdprScrub: GdprScrubService,
     private consent: ConsentService,
+    private coachEffectiveness: CoachEffectivenessService,
+    private coachAlerts: CoachAlertsService,
+    private buildWeek: BuildWeekService,
   ) {}
 
   // OWNER-only platform metrics. Counters are derived from Postgres rows
@@ -261,6 +267,82 @@ export class AdminController {
       actorEmail: req.user.email ?? null,
     });
   }
+
+  // Phase 6A — Coach effectiveness scoreboard. Latest score per active
+  // coach, sorted by score DESC by default (null scores last). The
+  // "score history" detail endpoint returns up to the trailing N rows.
+  @Get('coach-effectiveness')
+  async listCoachEffectiveness() {
+    return this.coachEffectiveness.listAll();
+  }
+
+  @Get('coach-effectiveness/:coachId')
+  async getCoachEffectiveness(
+    @Param('coachId') coachId: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    const parsed = limitRaw ? parseInt(limitRaw, 10) : NaN;
+    const limit = Number.isFinite(parsed) ? parsed : undefined;
+    const [latest, history] = await Promise.all([
+      this.coachEffectiveness.getLatest(coachId),
+      this.coachEffectiveness.listHistory(coachId, limit ?? 30),
+    ]);
+    return { latest, history };
+  }
+
+  // Phase 6B — OWNER-only red-flag alert aggregator across coaches.
+  // Optional ?coach_id and ?since filters; default returns the most
+  // recent COACH_ALERT_BATCH_LIMIT-bounded slice.
+  @Get('coach-alerts')
+  async listCoachAlerts(
+    @Query('coach_id') coachId?: string,
+    @Query('since') sinceRaw?: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    const since = sinceRaw ? new Date(sinceRaw) : undefined;
+    const safeSince =
+      since instanceof Date && !Number.isNaN(since.getTime())
+        ? since
+        : undefined;
+    const parsedLimit = limitRaw ? parseInt(limitRaw, 10) : NaN;
+    return this.coachAlerts.listAllForOwner({
+      coachId: coachId ?? undefined,
+      since: safeSince,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+    });
+  }
+
+  // Phase 4 — OWNER-only Build Week visibility.
+  //
+  // /admin/build-week/enrollments   — list with status / completed_after /
+  //                                   before-cursor / limit. Cursor is the
+  //                                   started_at of the previous page's
+  //                                   last row (descending order).
+  // /admin/build-week/funnel        — total enrolled, completion rate, and
+  //                                   per-day reached/dropped counts. Used
+  //                                   by the admin console funnel chart.
+  @Get('build-week/enrollments')
+  async listBuildWeekEnrollments(
+    @Query('status') status?: string,
+    @Query('completed_after') completedAfterRaw?: string,
+    @Query('before') beforeRaw?: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    const completedAfter = parseDateParam(completedAfterRaw);
+    const before = parseDateParam(beforeRaw);
+    const parsedLimit = limitRaw ? parseInt(limitRaw, 10) : NaN;
+    return this.buildWeek.listEnrollments({
+      status,
+      completedAfter,
+      before,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+    });
+  }
+
+  @Get('build-week/funnel')
+  async getBuildWeekFunnel() {
+    return this.buildWeek.funnel();
+  }
 }
 
 // Best-effort extraction of remote IP + User-Agent from the express request,
@@ -275,4 +357,12 @@ function auditContext(req: AuditableRequest): { ip: string | null; userAgent: st
   const uaRaw = req?.headers?.['user-agent'];
   const userAgent = Array.isArray(uaRaw) ? uaRaw[0] ?? null : uaRaw ?? null;
   return { ip: ip || null, userAgent: userAgent || null };
+}
+
+// Parse an ISO-8601 date string from a query param. Returns undefined for
+// missing or unparseable input — callers treat undefined as "no filter".
+function parseDateParam(value?: string): Date | undefined {
+  if (!value) return undefined;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d;
 }

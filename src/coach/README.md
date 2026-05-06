@@ -118,3 +118,103 @@ vars; everything is database-driven.
   surface the web coach console talks to. It pulls in
   `SubscriptionGuard` from `BillingModule` so writes are gated on
   subscription state — this controller intentionally does not.
+
+## Coach Effectiveness Score (Phase 6A)
+
+`CoachEffectivenessService` computes a per-coach scalar in `[0, 100]`
+nightly. The service is OWNER-only at the consumer layer — coaches do
+not see their own score (avoids gaming).
+
+### Algorithm (basis `v1`)
+
+| Component   | Weight | What it measures |
+|---|---|---|
+| `completion` | 0.30 | `completed_90day` outcomes / clients enrolled in trailing 120 days |
+| `risk_delta` | 0.25 | Average reduction in PTM `risk_score` over each client's first 60 days (clamped to `[-1, 1]`, normalized to `[0, 1]`) |
+| `retention`  | 0.25 | Clients still active 60+ days after assignment / clients assigned in trailing 90 days who have crossed the 60-day horizon |
+| `engagement` | 0.20 | Capped per-client messages-per-week over the trailing 28 days. Cap (default 5 msg/wk per client) prevents a single noisy thread from gaming the score. |
+
+`score = (sum of weighted contributions) * 100`, clamped to `[0, 100]`.
+Each component is also recorded in the `factors` JSON blob so the
+admin "why" drawer can render the breakdown without re-running the
+math.
+
+### Buckets
+
+| Range   | Bucket          |
+|---|---|
+| `0–49`   | `developing`     |
+| `50–74`  | `consistent`     |
+| `75–100` | `high-performer` |
+
+### Schedule
+
+`CoachEffectivenessScheduler` fires at `0 5 * * *` UTC by default (one
+hour after the PTM recompute at `0 4 * * *`). Override with
+`COACH_EFFECTIVENESS_CRON`. Disable with `COACH_EFFECTIVENESS_ENABLED=false`.
+The cron walks every active coach, calls `score(coachId)`, and logs a
+report. Per-coach failures are caught and counted; one bad coach does
+not abort the run.
+
+`CoachEffectivenessScore` is APPEND-ONLY. Each tick inserts a fresh
+row; the latest read uses `ORDER BY computed_at DESC LIMIT 1`. The
+admin console reads via `GET /admin/coach-effectiveness` (sorted) and
+`GET /admin/coach-effectiveness/:coachId` (latest + history).
+
+## Red Flag Alerts (Phase 6B)
+
+`CoachAlertsService` writes proactive `CoachAlert` rows when a client
+crosses a behavioral threshold. The current emitter is the PTM
+recompute hook (green/amber → red transition); future emitters
+(consecutive miss detector, finance-EOD gap, streak-drop) will land
+under the same `alert_type` enum.
+
+### Alert types
+
+| `alert_type`            | Severity   | Triggered by |
+|---|---|---|
+| `risk_red_transition`  | `critical` | PTM recompute when a client's bucket flips to `red` from `green` or `amber` |
+| `consecutive_misses`   | `warning`  | (reserved) ≥ 5 consecutive `checkin_miss` signals |
+| `streak_dropped`       | `info`     | (reserved) `streak_dropped` signal observed |
+| `finance_eod_gap`      | `warning`  | (reserved) ≥ 14 days without a `finance_eod` signal |
+
+### Dedup window
+
+`createAlert` short-circuits when an unacknowledged row with the same
+`(coach_id, client_id, alert_type)` exists within the last 24h. A
+flapping signal can therefore not produce a notification storm; the
+prior row is returned instead. After acknowledgement (or the 24h
+window passes), the next call writes a fresh row.
+
+### Acknowledge flow
+
+`POST /coach/alerts/:id/acknowledge` flips `acknowledged_at` to `now()`.
+The call is idempotent — a repeated ack returns the existing row
+without writing. A foreign coach (alert.coach_id ≠ caller) gets a
+404, never a 403, to avoid leaking alert existence.
+
+### Push delivery (stub)
+
+`tryPush` currently logs `would push to coach=… type=… sev=…: <message>`.
+Real per-coach push delivery lands when `NotificationsModule` grows
+the transport; until then, alerts are still stored and visible via the
+in-app inbox. No external dep is added until that hook is ready.
+
+### Env flags
+
+| Variable | Default | What it does |
+|---|---|---|
+| `COACH_EFFECTIVENESS_ENABLED`        | `true`        | Set to `false` to skip the nightly recompute. |
+| `COACH_EFFECTIVENESS_CRON`           | `0 5 * * *`   | Override the cron expression. |
+| `COACH_ALERT_RED_TRANSITION_ENABLED` | `true`        | Set to `false` to silence the PTM red-transition emitter without disabling the recompute. |
+| `COACH_ALERT_BATCH_LIMIT`            | `50` (cap 200) | Per-request cap on `/coach/alerts` and `/admin/coach-alerts`. |
+
+### Endpoints
+
+| Method | Path | Who | Behavior |
+|---|---|---|---|
+| `GET`  | `/coach/alerts`                       | coach (or OWNER bypass) | Paginated own-coach inbox. `?acknowledged=true|false&limit=&before=`. |
+| `POST` | `/coach/alerts/:id/acknowledge`       | coach                   | Idempotent ack. |
+| `GET`  | `/admin/coach-effectiveness`          | OWNER                    | Latest score per coach, sorted score DESC. |
+| `GET`  | `/admin/coach-effectiveness/:coachId` | OWNER                    | `{ latest, history }` for one coach. |
+| `GET`  | `/admin/coach-alerts`                 | OWNER                    | Cross-coach aggregator. `?coach_id=&since=&limit=`. |

@@ -274,6 +274,46 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     reason: 'Default page size for GET /admin/ptm/risk-board. Defaults to 50; clamped to [1, 100] regardless of caller-supplied limit.',
   },
+  {
+    name: 'DIAGNOSTIC_AI_ENABLED',
+    tier: 'optional',
+    reason: 'Set to "false" to skip Perplexity calls for /diagnostic/submit and store a placeholder roadmap. Defaults to true. Useful for CI / preview deploys without a Perplexity key.',
+  },
+  {
+    name: 'DIAGNOSTIC_RATE_LIMIT_PER_HOUR',
+    tier: 'optional',
+    reason: 'Per-IP hourly cap on POST /diagnostic/submit (named throttler `diagnostic-submit`). Defaults to 5; clamped to [1, 1000].',
+  },
+  {
+    name: 'COACH_EFFECTIVENESS_ENABLED',
+    tier: 'optional',
+    reason: 'Feature flag — when "false", the nightly Coach Effectiveness recompute cron is disabled. Defaults to true. Use to quickly disable scoring if an algorithm regression ships.',
+  },
+  {
+    name: 'COACH_EFFECTIVENESS_CRON',
+    tier: 'optional',
+    reason: 'Override for the nightly Coach Effectiveness recompute cron expression. Defaults to "0 5 * * *" (05:00 UTC, one hour after the PTM recompute at 04:00 UTC).',
+  },
+  {
+    name: 'COACH_ALERT_RED_TRANSITION_ENABLED',
+    tier: 'optional',
+    reason: 'Feature flag — when "false", the PTM-recompute hook does NOT create CoachAlert rows on green/amber → red transitions. Defaults to true. Use to silence the alert channel without disabling the underlying recompute.',
+  },
+  {
+    name: 'COACH_ALERT_BATCH_LIMIT',
+    tier: 'optional',
+    reason: 'Per-request cap on the number of CoachAlert rows the OWNER aggregator and coach inbox endpoints return. Defaults to 50; clamped to [1, 200].',
+  },
+  {
+    name: 'BUILD_WEEK_ENABLED',
+    tier: 'optional',
+    reason: 'Feature flag — when "false", the Build Week controllers refuse new writes and the admin funnel reports zeroed counts. Defaults to true (module is live). Use to quickly disable the surface if a copy regression or seed bug ships.',
+  },
+  {
+    name: 'BUILD_WEEK_AUTO_START_ON_SIGNUP',
+    tier: 'optional',
+    reason: 'Feature flag — when "true", new client signups auto-enroll in Build Week. Defaults to false. Wiring is a follow-on PR; this PR only exposes the flag so deployment configs can be staged ahead of the implementation.',
+  },
 ];
 
 export interface EnvValidationResult {

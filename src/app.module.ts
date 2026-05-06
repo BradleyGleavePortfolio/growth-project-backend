@@ -39,6 +39,7 @@ import { AuditModule } from './audit/audit.module';
 import { ConsentModule } from './consent/consent.module';
 import { BillingModule } from './billing/billing.module';
 import { PtmModule } from './ptm/ptm.module';
+import { DiagnosticModule } from './diagnostic/diagnostic.module';
 import { BuildWeekModule } from './build-week/build-week.module';
 import { V1Module } from './v1/v1.module';
 import { InviteLandingModule } from './invite-landing/invite-landing.module';
@@ -125,6 +126,10 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
     // heuristic + weighted scoring engines and the nightly recompute
     // scheduler. See src/ptm/README.md.
     PtmModule,
+    // Phase 3 — public 40-point diagnostic + AI roadmap. Lead-capture
+    // funnel; routes are @Public() and rate-limited via the
+    // `diagnostic-submit` named throttler. See src/diagnostic/README.md.
+    DiagnosticModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)

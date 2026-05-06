@@ -107,6 +107,10 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 | `PTM_RECOMPUTE_BATCH_LIMIT` | optional | Backend operator | Per-run cap on the number of clients the PTM nightly cron recomputes. Defaults to 5000; clamped to `[1, 50000]`. Larger rosters are processed across multiple nights. |
 | `PTM_WEIGHTED_ACTIVATION_OUTCOMES` | optional | Backend operator | Override the minimum number of labelled `ClientOutcome` rows before the weighted v2 engine activates. Defaults to 20. Below this threshold every recompute uses `heuristic_v1`. |
 | `PTM_RISK_BOARD_PAGE_SIZE` | optional | Backend operator | Default page size for `GET /admin/ptm/risk-board`. Defaults to 50; clamped to `[1, 100]` regardless of caller-supplied limit. |
+| `COACH_EFFECTIVENESS_ENABLED` | optional | Backend operator | Feature flag — when `false`, the nightly Coach Effectiveness recompute cron is disabled. Defaults to `true`. See [`src/coach/README.md`](src/coach/README.md#coach-effectiveness-score-phase-6a) and [`docs/coach-signals.md`](docs/coach-signals.md). |
+| `COACH_EFFECTIVENESS_CRON` | optional | Backend operator | Override for the nightly Coach Effectiveness recompute cron. Defaults to `0 5 * * *` (05:00 UTC, one hour after the PTM recompute). |
+| `COACH_ALERT_RED_TRANSITION_ENABLED` | optional | Backend operator | Feature flag — when `false`, the PTM-recompute hook does NOT create `CoachAlert` rows on green/amber → red transitions. Defaults to `true`. Use to silence the alert channel without disabling the underlying recompute. |
+| `COACH_ALERT_BATCH_LIMIT` | optional | Backend operator | Per-request cap on `/coach/alerts` and `/admin/coach-alerts`. Defaults to 50; clamped to `[1, 200]`. |
 | `DIAGNOSTIC_AI_ENABLED` | optional | Backend operator | Set to `false` to skip Perplexity calls for `POST /api/diagnostic/submit` and store a placeholder roadmap. Defaults to `true`. Useful for CI / preview deploys without a Perplexity key. |
 | `DIAGNOSTIC_RATE_LIMIT_PER_HOUR` | optional | Backend operator | Per-IP hourly cap on `POST /api/diagnostic/submit` (named throttler `diagnostic-submit`). Defaults to 5; clamped to `[1, 1000]`. The endpoint is unauthenticated by design (lead capture), so the limit is the primary defense. |
 | `PORT` | optional | Fly.io | HTTP port. Defaults to 3000; Fly overrides this. |
@@ -696,6 +700,11 @@ Modules: [`src/coach/`](src/coach/README.md),
 | `GET` | `/admin/audit-log` | owner | Cursor-paginated read over `AuditLog`. Filters: `action`, `target_user_id`, `tenant_coach_id`, `before` (ISO timestamp), `limit` (clamped `[1, 200]`, default 50). |
 | `POST` | `/admin/gdpr/scrub?dry_run=&limit=` | owner | Manual / dry-run trigger for the GDPR PII scrub worker. Same code path as `scripts/gdpr-scrub.ts`. `dry_run=true` reports candidates without writing; `limit` clamps the per-call batch. The audit row is attributed to the calling OWNER (`actor_email_snapshot`); cron-driven runs leave actor null and `actor_role='system'`. Shipped in PR #81. Full operator runbook in [`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md). |
 | `GET` | `/admin/clients/:id/consent` | owner | Read-only consent matrix for one client across every coach they have ever interacted with. Each row is `{coach_id, scope, granted, granted_at, revoked_at, updated_at}`. Backed by `ConsentService.listForClientAdmin`. See "Consent layer (client → coach data access)" below and [`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md). |
+| `GET` | `/coach/alerts?acknowledged=&limit=&before=` | coach or owner | Phase 6B — own-coach red-flag inbox. Cursor on `created_at`. See [`src/coach/README.md`](src/coach/README.md#red-flag-alerts-phase-6b) and [`docs/coach-signals.md`](docs/coach-signals.md). |
+| `POST` | `/coach/alerts/:id/acknowledge` | coach | Phase 6B — idempotent ack. Foreign-coach calls 404. |
+| `GET` | `/admin/coach-effectiveness` | owner | Phase 6A — latest score per active coach, sorted score DESC. |
+| `GET` | `/admin/coach-effectiveness/:coachId` | owner | Phase 6A — `{ latest, history }` for one coach. `?limit=` clamped `[1, 365]`. |
+| `GET` | `/admin/coach-alerts?coach_id=&since=&limit=` | owner | Phase 6B — cross-coach red-flag aggregator. |
 
 ### Consent layer (client → coach data access)
 
