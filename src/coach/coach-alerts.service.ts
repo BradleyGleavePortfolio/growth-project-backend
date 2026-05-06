@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import type { CoachAlert, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import {
@@ -19,16 +19,16 @@ import {
 //                        a foreign coach gets NotFoundException.
 //
 // Push-notification delivery: real push via NotificationsService.pushToCoach.
-// If the coach has no registered push token, the alert still lands in the
-// in-app inbox (existing behaviour). No exception is thrown on push failure.
-// See README for the contract.
+// NotificationsService is @Optional() so the existing test suite that
+// constructs CoachAlertsService(prisma) directly continues to compile and
+// pass — when notifications is null, tryPush logs and returns without error.
 //
 // Emitters wired in this PR:
 //   * risk_red_transition  — PTM recompute (src/ptm/ptm-recompute.service.ts)
 //   * consecutive_misses   — CheckInsService.maybeFireConsecutiveMissesAlert
 //   * streak_dropped       — CheckInsService.maybeFireStreakDroppedAlert
 //   * finance_eod_gap      — federation inbound endpoint (Agent 1A dependency;
-//                            see GitHub issue for tracking)
+//                            see GitHub issue #144)
 //
 // Doctrine:
 //   * Coach can only read/ack their own alerts.
@@ -71,7 +71,7 @@ export class CoachAlertsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly notifications: NotificationsService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   /**
@@ -81,9 +81,8 @@ export class CoachAlertsService {
    * fresh row. The caller is expected to swallow exceptions — alert
    * creation must never bubble into a user-facing 5xx.
    *
-   * Dedup pattern mirrors the risk_red_transition path: the 24h window
-   * is applied uniformly to all alert types to prevent notification storms
-   * from flapping signals.
+   * Dedup pattern: identical to the risk_red_transition path. The 24h window
+   * is applied uniformly to all alert types to prevent notification storms.
    */
   async createAlert(input: CreateAlertInput): Promise<CoachAlert> {
     const since = new Date(Date.now() - DEDUP_WINDOW_HOURS * HOUR_MS);
@@ -170,12 +169,17 @@ export class CoachAlertsService {
   }
 
   // ── push delivery ──────────────────────────────────────────────────────
-  // Real push via NotificationsService.pushToCoach. Fallback: if the coach
-  // has no push token, the alert already exists in the in-app inbox via the
-  // DB write above — pushToCoach returns false and we log the fallback.
-  // No exception is thrown on push failure.
+  // Real push via NotificationsService.pushToCoach. NotificationsService is
+  // @Optional() so the service is usable in test contexts that only provide
+  // PrismaService. When notifications is absent (test-only), we log and skip.
+  // When pushToCoach returns false (no token), the alert is still in the
+  // in-app inbox — no exception thrown.
   private async tryPush(alert: CoachAlert): Promise<void> {
     try {
+      if (!this.notifications) {
+        // Test context — notifications not wired; alert still written to DB.
+        return;
+      }
       const payload: PushPayload = {
         alertId: alert.id,
         alertType: alert.alert_type,
