@@ -64,14 +64,25 @@ const STUB_ENVELOPE = {
 
 function makeRes() {
   const headers = new Map<string, string>();
-  return {
+  // Provide the minimal Writable-stream interface that Node's pipe() and
+  // our controller call on the response object.  Using a plain object (not
+  // a real PassThrough) keeps the test synchronous-friendly while avoiding
+  // "dest.once is not a function" / "dest.on is not a function" crashes
+  // when pdfStream.pipe(res) is invoked by the controller.
+  const res: any = {
     setHeader: jest.fn((k: string, v: string) => headers.set(k, v)),
-    // write/end are called by pdfkit stream piping machinery
     write: jest.fn(),
     end: jest.fn(),
+    // Node stream pipe() calls these on the destination
     on: jest.fn(),
+    once: jest.fn(),
+    emit: jest.fn(),
+    removeListener: jest.fn(),
+    // writable flag checked by some stream implementations
+    writable: true,
     headers,
-  } as any;
+  };
+  return res;
 }
 
 function buildController() {
