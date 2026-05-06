@@ -1,4 +1,5 @@
 import { ReportsController } from '../src/admin/reports/reports.controller';
+import { BadRequestException } from '@nestjs/common';
 
 // Controller-level tests: verifies the controller hands the right options
 // to the service, switches between JSON and CSV based on ?format=, and
@@ -11,6 +12,7 @@ function makeRes() {
   const headers = new Map<string, string>();
   return {
     setHeader: jest.fn((k: string, v: string) => headers.set(k, v)),
+    pipe: jest.fn(),
     headers,
   } as any;
 }
@@ -23,6 +25,38 @@ function envelope<T>(data: T, extras: Partial<{ window: any }> = {}) {
     data,
   };
 }
+
+// Minimal stub scorecard row for PDF/CSV tests
+const STUB_SCORECARD_ROW = {
+  user_id: 'u-1',
+  email: 'a@x.test',
+  name: 'Alice',
+  role: 'student',
+  coach_email: null,
+  days_active: 42,
+  latest_mood: null,
+  latest_energy: null,
+  latest_sleep_hrs: null,
+  starting_weight_lbs: null,
+  current_weight_lbs: null,
+  weight_delta_lbs: null,
+  workout_volume_30d: 0,
+  meals_logged_30d: 0,
+  meal_consistency_pct_30d: 0,
+  messages_sent_30d: 0,
+  messages_received_30d: 0,
+  ptm_risk_score: 0.4,
+  ptm_success_score: 0.6,
+  ptm_bucket: 'amber',
+  latest_outcome: null,
+  diagnostic_overall_score: null,
+  diagnostic_bucket: null,
+  build_week_status: null,
+  wealth_velocity_score: null,
+  net_worth_delta: null,
+  milestones_hit: null,
+  generated_at: '2026-04-28T00:00:00.000Z',
+};
 
 function build() {
   const reports: any = {
@@ -80,10 +114,17 @@ function build() {
   // The controller now also injects TransformationScorecardService —
   // pass a no-op stub so the constructor signature is satisfied. The
   // scorecard surface has its own spec.
-  const scorecard: any = { run: jest.fn() };
+  const scorecard: any = {
+    build: jest.fn(async () =>
+      envelope([STUB_SCORECARD_ROW], {
+        window: { since_days: 90, since: '2026-01-28T00:00:00.000Z' },
+      }),
+    ),
+  };
   return {
     ctrl: new ReportsController(reports as any, scorecard),
     reports,
+    scorecard,
   };
 }
 
@@ -151,12 +192,59 @@ describe('ReportsController — CSV format', () => {
     expect(body).toContain('data.users.total,1\r\n');
   });
 
-  it('treats unknown ?format values as JSON (no CSV headers, no string body)', async () => {
+  it('treats unknown ?format values as JSON (no CSV headers, no string body) for non-scorecard endpoints', async () => {
     const { ctrl } = build();
     const res = makeRes();
     const out = await ctrl.coaches('xml', res);
     expect(typeof out).toBe('object');
     expect(res.setHeader).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReportsController — transformation scorecard format handling', () => {
+  it('returns JSON envelope for format=json', async () => {
+    const { ctrl } = build();
+    const out = await ctrl.transformationScorecard('json', undefined, undefined, undefined, makeRes());
+    expect(typeof (out as any).report).toBe('string');
+  });
+
+  it('returns JSON envelope when format is undefined', async () => {
+    const { ctrl } = build();
+    const out = await ctrl.transformationScorecard(undefined, undefined, undefined, undefined, makeRes());
+    expect(typeof (out as any).report).toBe('string');
+  });
+
+  it('returns CSV string for format=csv', async () => {
+    const { ctrl } = build();
+    const res = makeRes();
+    const body = await ctrl.transformationScorecard('csv', undefined, undefined, undefined, res);
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
+    expect(typeof body).toBe('string');
+  });
+
+  it('throws BadRequestException for unknown format values', async () => {
+    const { ctrl } = build();
+    await expect(
+      ctrl.transformationScorecard('xlsx', undefined, undefined, undefined, makeRes()),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('throws BadRequestException for format=html', async () => {
+    const { ctrl } = build();
+    await expect(
+      ctrl.transformationScorecard('html', undefined, undefined, undefined, makeRes()),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('sets PDF headers and calls res.pipe for format=pdf', async () => {
+    const { ctrl } = build();
+    const res = makeRes();
+    await ctrl.transformationScorecard('pdf', undefined, undefined, undefined, res);
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
+    const cd = res.headers.get('Content-Disposition');
+    expect(cd).toMatch(/transformation-scorecard-\d{8}\.pdf/);
+    // The PDF stream pipes directly into res
+    expect(res.pipe).toHaveBeenCalled();
   });
 });
 
@@ -178,9 +266,14 @@ describe('ReportsController — index manifest', () => {
         'transformation-scorecard',
       ].sort(),
     );
+    // All reports support json and csv
     for (const r of out.reports) {
-      expect(r.formats).toEqual(['json', 'csv']);
+      expect(r.formats).toContain('json');
+      expect(r.formats).toContain('csv');
     }
+    // transformation-scorecard additionally supports pdf
+    const scorecard = out.reports.find((r) => r.name === 'transformation-scorecard');
+    expect(scorecard?.formats).toContain('pdf');
   });
 });
 
