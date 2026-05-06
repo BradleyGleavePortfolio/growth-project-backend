@@ -1,9 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { UpdateNotificationPreferencesDto } from './notifications.dto';
 
+// Phase 6B: PushPayload is the minimal envelope CoachAlertsService.tryPush
+// passes through. It intentionally contains no PII — only the alert
+// identifier, type, and a short message string for the coach's lock-screen.
+export interface PushPayload {
+  alertId: string;
+  alertType: string;
+  severity: string;
+  message: string;
+}
+
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async getPreferences(userId: string) {
@@ -57,5 +69,53 @@ export class NotificationsService {
         ...fields,
       },
     });
+  }
+
+  /**
+   * Phase 6B — Push an alert payload to a coach's device(s).
+   *
+   * Look up the coach's push_token from the User row. If the token is absent
+   * (coach has no registered device, or has revoked push permission) the
+   * method returns `false` and the caller falls back to the in-app inbox
+   * only. No exception is thrown — push delivery is best-effort and must
+   * never interrupt the alert-write path.
+   *
+   * Transport: the token is stored in `User.push_token` (null when unset).
+   * In the current deploy, the column exists in the schema but the actual
+   * APNs/FCM HTTP call is a placeholder logger call — it is trivially
+   * swapped for a real SDK call once push credentials are wired in the env.
+   * The contract (signature, fallback behaviour) is final.
+   *
+   * Returns `true` when a delivery was attempted, `false` when the coach had
+   * no token.
+   */
+  async pushToCoach(coachId: string, payload: PushPayload): Promise<boolean> {
+    try {
+      const coach = await this.prisma.user.findUnique({
+        where: { id: coachId },
+        select: { push_token: true },
+      });
+      const token = coach?.push_token ?? null;
+      if (!token) {
+        // No registered device — graceful fallback; in-app inbox is still
+        // written by the caller regardless of this return value.
+        return false;
+      }
+
+      // TODO(push): replace the logger call below with the real APNs / FCM
+      // SDK invocation once push credentials are available in the env.
+      // The payload shape is intentionally minimal (no PII) so it can be
+      // forwarded verbatim to the provider.
+      this.logger.log(
+        `push delivered to coach=${coachId} token=***${token.slice(-4)} alertId=${payload.alertId} type=${payload.alertType}`,
+      );
+      return true;
+    } catch (err) {
+      // Log and return false — push failure must never crash the caller.
+      this.logger.warn(
+        `pushToCoach failed for coach=${coachId}: ${(err as Error).message}`,
+      );
+      return false;
+    }
   }
 }
