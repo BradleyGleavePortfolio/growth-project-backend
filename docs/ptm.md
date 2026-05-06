@@ -10,8 +10,10 @@ file focuses on what an OWNER reading the risk board needs to know.
 
 ## Pipeline at a glance
 
-1. **Signal collection (Phase 1A).** Six emitting modules — check-ins,
-   weight, workout, food/log, messaging, finance — call
+1. **Signal collection (Phase 1A).** Eight emit sites — check-ins,
+   weight, workout, food/log, messaging, the JWT auth guard (`app_open`),
+   and the finance-federation inbound endpoint (`finance_eod`,
+   `finance_milestone`) — call
    `PtmService.emit(userId, signalType, value?, metadata?)` whenever a
    user-observable event happens. Writes are fire-and-forget.
 2. **Heuristic scoring (Phase 1B).** A nightly cron at 04:00 UTC walks

@@ -6,6 +6,8 @@ import { AdminService } from './admin.service';
 import { MetricsService } from './metrics.service';
 import { FederationService } from './federation/federation.service';
 import { FinanceAdminClient } from './federation/finance-admin.client';
+import { FederationInboundController } from './federation/federation-inbound.controller';
+import { FederationInboundService } from './federation/federation-inbound.service';
 import { AdminConsoleService } from './console/admin-console.service';
 import { FinanceFederationService } from './console/finance-federation.service';
 import { ReportsController } from './reports/reports.controller';
@@ -30,6 +32,12 @@ import { CoachModule } from '../coach/coach.module';
 // /admin/search, /admin/coaches/:id/overview, /admin/clients/:id,
 // /admin/finance/health, and /admin/integrations/status.
 //
+// FederationInboundController + FederationInboundService back the inbound
+// finance-to-fitness PTM signal endpoint at
+// POST /admin/federation/ptm-signal. Auth is a service-to-service bearer
+// token (FINANCE_SERVICE_TOKEN) — JwtAuthGuard is bypassed via @Public()
+// on the controller. PtmService resolves through the @Global PtmModule.
+//
 // ReportsController + ReportsService back the operational export surface
 // at /admin/reports/* (CSV + JSON downloads of metrics, coaches, clients,
 // past-due billing, product usage, federation health, audit summary).
@@ -41,13 +49,19 @@ import { CoachModule } from '../coach/coach.module';
 // resolve through the @Global PtmModule.
 @Module({
   imports: [AuthModule, UsersModule, BuildWeekModule, CoachModule],
-  controllers: [AdminController, ReportsController, AdminPtmController],
+  controllers: [
+    AdminController,
+    ReportsController,
+    AdminPtmController,
+    FederationInboundController,
+  ],
   providers: [
     AdminService,
     MetricsService,
     RolesGuard,
     FinanceAdminClient,
     FederationService,
+    FederationInboundService,
     AdminConsoleService,
     FinanceFederationService,
     ReportsService,
