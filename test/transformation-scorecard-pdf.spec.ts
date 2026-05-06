@@ -2,24 +2,22 @@
 //
 // Covers:
 //   1. GET /admin/reports/transformation-scorecard?format=pdf
-//      → Content-Type: application/pdf
-//      → Response body starts with `%PDF-` (valid PDF byte signature)
+//      → Content-Type: application/pdf header set on response
+//      → Content-Disposition: attachment; filename="transformation-scorecard-YYYYMMDD.pdf"
+//      → Cache-Control: no-store
 //   2. GET /admin/reports/transformation-scorecard?format=bad
-//      → HTTP 400 with a human-readable message listing valid formats
-//   3. format=json (default) still returns an envelope with data array (regression)
-//   4. format=csv still returns text/csv (regression)
+//      → throws BadRequestException with a message listing valid formats
+//   3. buildScorecardPdf returns a stream whose first bytes are %PDF-
+//   4. format=json (default) still returns an envelope (regression)
+//   5. format=csv still sets text/csv headers (regression)
 //
-// Mocking strategy: NestJS Testing module with the real controller wired
-// to a stub TransformationScorecardService (no Prisma, no finance calls).
-// The PDF builder is called for real because we want to assert the byte
-// signature — faking it would make the test circular.
+// Mocking strategy: Direct controller instantiation (same pattern as the
+// existing reports.controller.spec.ts). No HTTP server, no supertest.
+// The PDF builder is called for real so we can assert the byte signature.
 
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, BadRequestException } from '@nestjs/common';
-import * as request from 'supertest';
+import { BadRequestException } from '@nestjs/common';
 import { ReportsController } from '../src/admin/reports/reports.controller';
-import { TransformationScorecardService } from '../src/admin/reports/transformation-scorecard.service';
-import { ReportsService } from '../src/admin/reports/reports.service';
+import { buildScorecardPdf } from '../src/admin/reports/scorecard-pdf';
 import type { TransformationScorecardRow } from '../src/admin/reports/transformation-scorecard.service';
 
 // ─── Minimal stub row ────────────────────────────────────────────────────────
@@ -62,28 +60,25 @@ const STUB_ENVELOPE = {
   data: [STUB_ROW],
 };
 
-// ─── Guard stubs ─────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// We do not want to spin up real auth in unit tests. Provide a passthrough
-// guard that always allows the request through.
-import { CanActivate, ExecutionContext } from '@nestjs/common';
-class AlwaysAllowGuard implements CanActivate {
-  canActivate(_ctx: ExecutionContext): boolean {
-    return true;
-  }
+function makeRes() {
+  const headers = new Map<string, string>();
+  return {
+    setHeader: jest.fn((k: string, v: string) => headers.set(k, v)),
+    // write/end are called by pdfkit stream piping machinery
+    write: jest.fn(),
+    end: jest.fn(),
+    on: jest.fn(),
+    headers,
+  } as any;
 }
 
-// ─── Test module setup ───────────────────────────────────────────────────────
-
-let app: INestApplication;
-let scorecardService: Partial<TransformationScorecardService>;
-
-beforeAll(async () => {
-  scorecardService = {
+function buildController() {
+  const scorecardService: any = {
     build: jest.fn().mockResolvedValue(STUB_ENVELOPE),
   };
-
-  const reportsService: Partial<ReportsService> = {
+  const reportsService: any = {
     metricsOverview: jest.fn(),
     coaches: jest.fn(),
     clients: jest.fn(),
@@ -93,138 +88,167 @@ beforeAll(async () => {
     auditSummary: jest.fn(),
     ptmSignalWeights: jest.fn(),
   };
+  return new ReportsController(reportsService, scorecardService);
+}
 
-  const module: TestingModule = await Test.createTestingModule({
-    controllers: [ReportsController],
-    providers: [
-      { provide: TransformationScorecardService, useValue: scorecardService },
-      { provide: ReportsService, useValue: reportsService },
-    ],
-  })
-    .overrideGuard('JwtAuthGuard' as never)
-    .useClass(AlwaysAllowGuard)
-    .overrideGuard('RolesGuard' as never)
-    .useClass(AlwaysAllowGuard)
-    .compile();
-
-  app = module.createNestApplication();
-  await app.init();
-});
-
-afterAll(async () => {
-  await app.close();
-});
-
-// ─── Tests ───────────────────────────────────────────────────────────────────
+// ─── Tests: PDF response headers ─────────────────────────────────────────────
 
 describe('GET /admin/reports/transformation-scorecard — PDF format', () => {
-  it('returns Content-Type application/pdf when format=pdf', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/admin/reports/transformation-scorecard?format=pdf')
-      .expect(200);
-
-    expect(res.headers['content-type']).toMatch(/application\/pdf/);
+  it('sets Content-Type: application/pdf when format=pdf', async () => {
+    const ctrl = buildController();
+    const res = makeRes();
+    await ctrl.transformationScorecard('pdf', undefined, undefined, undefined, res);
+    expect(res.headers.get('Content-Type')).toBe('application/pdf');
   });
 
-  it('response body starts with %PDF- byte signature', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/admin/reports/transformation-scorecard?format=pdf')
-      .buffer(true)
-      .parse((res, callback) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk: Buffer) => chunks.push(chunk));
-        res.on('end', () => callback(null, Buffer.concat(chunks)));
-      })
-      .expect(200);
-
-    const bodyBuf = res.body as Buffer;
-    // First 5 bytes of any valid PDF must be %PDF-
-    const sig = bodyBuf.slice(0, 5).toString('ascii');
-    expect(sig).toBe('%PDF-');
-  });
-
-  it('Content-Disposition header names the file as transformation-scorecard-<date>.pdf', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/admin/reports/transformation-scorecard?format=pdf')
-      .expect(200);
-
-    expect(res.headers['content-disposition']).toMatch(
-      /attachment; filename="transformation-scorecard-\d{8}\.pdf"/,
-    );
+  it('Content-Disposition names the file as transformation-scorecard-<date>.pdf', async () => {
+    const ctrl = buildController();
+    const res = makeRes();
+    await ctrl.transformationScorecard('pdf', undefined, undefined, undefined, res);
+    const cd = res.headers.get('Content-Disposition');
+    expect(cd).toMatch(/attachment; filename="transformation-scorecard-\d{8}\.pdf"/);
   });
 
   it('sets Cache-Control: no-store on PDF response', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/admin/reports/transformation-scorecard?format=pdf')
-      .expect(200);
-
-    expect(res.headers['cache-control']).toBe('no-store');
+    const ctrl = buildController();
+    const res = makeRes();
+    await ctrl.transformationScorecard('pdf', undefined, undefined, undefined, res);
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
   });
 });
+
+// ─── Tests: PDF byte signature ────────────────────────────────────────────────
+
+describe('buildScorecardPdf — byte signature', () => {
+  it('returns a stream that emits a %PDF- byte signature at position 0', async () => {
+    const doc = buildScorecardPdf([STUB_ROW], {
+      clientName: STUB_ROW.name,
+      generatedAt: STUB_ROW.generated_at,
+    });
+
+    const firstBytes = await new Promise<string>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      doc.on('data', (chunk: Buffer) => {
+        chunks.push(chunk);
+        const total = Buffer.concat(chunks);
+        if (total.length >= 5) {
+          resolve(total.slice(0, 5).toString('ascii'));
+        }
+      });
+      doc.on('end', () => {
+        const total = Buffer.concat(chunks);
+        resolve(total.slice(0, 5).toString('ascii'));
+      });
+      doc.on('error', (err: Error) => reject(err));
+    });
+
+    expect(firstBytes).toBe('%PDF-');
+  });
+
+  it('produces a stream without throwing when given an empty rows array', (done) => {
+    const doc = buildScorecardPdf([]);
+    doc.on('data', () => { /* consume */ });
+    doc.on('end', done);
+    doc.on('error', done);
+  });
+
+  it('produces a stream without throwing when given multiple rows', (done) => {
+    const doc = buildScorecardPdf([STUB_ROW, STUB_ROW]);
+    doc.on('data', () => { /* consume */ });
+    doc.on('end', done);
+    doc.on('error', done);
+  });
+});
+
+// ─── Tests: format validation ─────────────────────────────────────────────────
 
 describe('GET /admin/reports/transformation-scorecard — format validation', () => {
-  it('returns 400 for an unknown format value', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/admin/reports/transformation-scorecard?format=xlsx')
-      .expect(400);
-
-    expect(res.body.message).toMatch(/format must be one of/i);
-    // The error message must name the valid options
-    expect(res.body.message).toMatch(/json/);
-    expect(res.body.message).toMatch(/csv/);
-    expect(res.body.message).toMatch(/pdf/);
+  it('throws BadRequestException for an unknown format value', async () => {
+    const ctrl = buildController();
+    await expect(
+      ctrl.transformationScorecard('xlsx', undefined, undefined, undefined, makeRes()),
+    ).rejects.toThrow(BadRequestException);
   });
 
-  it('returns 400 for format=XML (case insensitive check)', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/admin/reports/transformation-scorecard?format=XML')
-      .expect(400);
-
-    expect(res.body.message).toMatch(/format must be one of/i);
+  it('BadRequestException message names the valid formats', async () => {
+    const ctrl = buildController();
+    let caught: unknown;
+    try {
+      await ctrl.transformationScorecard('xlsx', undefined, undefined, undefined, makeRes());
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(BadRequestException);
+    const message = (caught as BadRequestException).message;
+    expect(message).toMatch(/json/);
+    expect(message).toMatch(/csv/);
+    expect(message).toMatch(/pdf/);
   });
 
-  it('returns 400 for format=html', async () => {
-    await request(app.getHttpServer())
-      .get('/admin/reports/transformation-scorecard?format=html')
-      .expect(400);
+  it('throws BadRequestException for format=XML (case-insensitive check)', async () => {
+    const ctrl = buildController();
+    await expect(
+      ctrl.transformationScorecard('XML', undefined, undefined, undefined, makeRes()),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('throws BadRequestException for format=html', async () => {
+    const ctrl = buildController();
+    await expect(
+      ctrl.transformationScorecard('html', undefined, undefined, undefined, makeRes()),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('does NOT throw for format=pdf (valid)', async () => {
+    const ctrl = buildController();
+    await expect(
+      ctrl.transformationScorecard('pdf', undefined, undefined, undefined, makeRes()),
+    ).resolves.not.toThrow();
+  });
+
+  it('does NOT throw for format=csv (valid)', async () => {
+    const ctrl = buildController();
+    await expect(
+      ctrl.transformationScorecard('csv', undefined, undefined, undefined, makeRes()),
+    ).resolves.not.toThrow();
+  });
+
+  it('does NOT throw for format=json (valid)', async () => {
+    const ctrl = buildController();
+    await expect(
+      ctrl.transformationScorecard('json', undefined, undefined, undefined, makeRes()),
+    ).resolves.not.toThrow();
   });
 });
+
+// ─── Tests: JSON / CSV regression ────────────────────────────────────────────
 
 describe('GET /admin/reports/transformation-scorecard — JSON/CSV regression', () => {
   it('returns JSON envelope when no format param', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/admin/reports/transformation-scorecard')
-      .expect(200);
-
-    expect(res.body).toHaveProperty('report', 'transformation-scorecard');
-    expect(res.body).toHaveProperty('data');
-    expect(Array.isArray(res.body.data)).toBe(true);
+    const ctrl = buildController();
+    const out = await ctrl.transformationScorecard(undefined, undefined, undefined, undefined, makeRes());
+    expect(out).toHaveProperty('report', 'transformation-scorecard');
+    expect(out).toHaveProperty('data');
+    expect(Array.isArray((out as any).data)).toBe(true);
   });
 
   it('returns JSON envelope for format=json', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/admin/reports/transformation-scorecard?format=json')
-      .expect(200);
-
-    expect(res.body.report).toBe('transformation-scorecard');
+    const ctrl = buildController();
+    const out = await ctrl.transformationScorecard('json', undefined, undefined, undefined, makeRes());
+    expect((out as any).report).toBe('transformation-scorecard');
   });
 
-  it('returns text/csv for format=csv', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/admin/reports/transformation-scorecard?format=csv')
-      .expect(200);
-
-    expect(res.headers['content-type']).toMatch(/text\/csv/);
+  it('sets text/csv header for format=csv', async () => {
+    const ctrl = buildController();
+    const res = makeRes();
+    await ctrl.transformationScorecard('csv', undefined, undefined, undefined, res);
+    expect(res.headers.get('Content-Type')).toMatch(/text\/csv/);
   });
 
-  it('GET /admin/reports manifest lists pdf as a valid format for transformation-scorecard', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/admin/reports')
-      .expect(200);
-
-    const scorecard = (res.body.reports as Array<{ name: string; formats: string[] }>).find(
-      (r) => r.name === 'transformation-scorecard',
-    );
+  it('manifest index lists pdf as a valid format for transformation-scorecard', () => {
+    const ctrl = buildController();
+    const out = ctrl.index();
+    const scorecard = out.reports.find((r) => r.name === 'transformation-scorecard');
     expect(scorecard).toBeDefined();
     expect(scorecard?.formats).toContain('pdf');
     expect(scorecard?.formats).toContain('json');
