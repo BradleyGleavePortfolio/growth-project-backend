@@ -12,6 +12,10 @@ import { JwtAuthGuard } from '../../auth/auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ReportsService } from './reports.service';
+import {
+  TransformationScorecardService,
+  TRANSFORMATION_SCORECARD_COLUMNS,
+} from './transformation-scorecard.service';
 import { objectToKeyValueCsv, rowsToCsv } from './csv';
 
 // OWNER-only operational reports. The class-level guard pair is the same
@@ -28,7 +32,10 @@ import { objectToKeyValueCsv, rowsToCsv } from './csv';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('owner')
 export class ReportsController {
-  constructor(private reports: ReportsService) {}
+  constructor(
+    private reports: ReportsService,
+    private scorecard: TransformationScorecardService,
+  ) {}
 
   @Get('metrics-overview')
   async metricsOverview(
@@ -189,6 +196,60 @@ export class ReportsController {
     return envelope;
   }
 
+  @Get('ptm-signal-weights')
+  async ptmSignalWeights(
+    @Query('format') format: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const envelope = await this.reports.ptmSignalWeights();
+    if (isCsv(format)) {
+      writeCsvHeaders(res, 'ptm-signal-weights');
+      // CSV columns match the documented row shape. When the engine is
+      // not active (basis=heuristic_v1) the rows array is empty — the
+      // file is still valid CSV with just the header line, which the
+      // operator reads as "no trained weights yet".
+      return rowsToCsv(
+        [
+          'signal_type',
+          'weight',
+          'training_count',
+          'training_max',
+          'success_avg',
+          'failure_avg',
+          'basis',
+        ],
+        envelope.data,
+      );
+    }
+    return envelope;
+  }
+
+  // Phase 5 — Transformation scorecard. Per-client (or per-coach rollup)
+  // composition off live data: identity, latest check-in, weight delta,
+  // 30-day workout / meal / messaging engagement, latest PTM scores +
+  // outcome, optional Phase-3 diagnostic and Phase-4 build-week status.
+  // OWNER-only by class-level guard. With no `user_id` / `coach_id` the
+  // report walks the OWNER's full client list, clamped to 1000.
+  @Get('transformation-scorecard')
+  async transformationScorecard(
+    @Query('format') format: string | undefined,
+    @Query('user_id') userId: string | undefined,
+    @Query('coach_id') coachId: string | undefined,
+    @Query('since_days') sinceDaysRaw: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const envelope = await this.scorecard.build({
+      userId,
+      coachId,
+      sinceDays: parsePositiveInt(sinceDaysRaw),
+    });
+    if (isCsv(format)) {
+      writeCsvHeaders(res, 'transformation-scorecard');
+      return rowsToCsv(TRANSFORMATION_SCORECARD_COLUMNS, envelope.data);
+    }
+    return envelope;
+  }
+
   // Manifest of available reports. Useful for the console to render a
   // dynamic export menu without hard-coding the list.
   @Get()
@@ -202,6 +263,8 @@ export class ReportsController {
         { name: 'product-usage', formats: ['json', 'csv'] },
         { name: 'federation-health', formats: ['json', 'csv'] },
         { name: 'audit-summary', formats: ['json', 'csv'] },
+        { name: 'ptm-signal-weights', formats: ['json', 'csv'] },
+        { name: 'transformation-scorecard', formats: ['json', 'csv'] },
       ],
     };
   }

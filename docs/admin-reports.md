@@ -15,6 +15,8 @@ the operator-facing companion to the developer notes in
 | Coach roster + plan tier / invite_code rollup | `coaches` | CSV |
 | Cross-product usage (DAU/WAU/MAU + product split, sourced from finance) | `product-usage` | JSON |
 | Operator status pill / incident postmortem (is finance reachable?) | `federation-health` | JSON |
+| PTM weighted v2 trained weights (which signals correlate with churn vs success?) | `ptm-signal-weights` | JSON for inspection, CSV for spreadsheet review |
+| Per-client / per-coach transformation snapshot (body + engagement + PTM + outcome) | `transformation-scorecard` | CSV → spreadsheet, JSON for ad-hoc |
 
 ## Authentication
 
@@ -62,6 +64,103 @@ curl -fsS \
   -H "Authorization: Bearer $OWNER_JWT" \
   "https://api.thegrowthproject.app/api/admin/reports/federation-health" | jq '.data.integrations.finance_federation'
 ```
+
+**Inspect the PTM weighted v2 trained weights (which signals correlate
+with churn vs success?):**
+
+```bash
+# JSON — quick eyeball check.
+curl -fsS \
+  -H "Authorization: Bearer $OWNER_JWT" \
+  "https://api.thegrowthproject.app/api/admin/reports/ptm-signal-weights" | jq .
+
+# CSV — for a side-by-side comparison across runs.
+curl -fsS \
+  -H "Authorization: Bearer $OWNER_JWT" \
+  "https://api.thegrowthproject.app/api/admin/reports/ptm-signal-weights?format=csv" \
+  -o ptm-signal-weights-$(date -u +%Y%m%d).csv
+```
+
+Below the activation threshold the response carries
+`basis: 'heuristic_v1'`, an empty `data` array, and a `reason` field
+(`below_activation_threshold` or `empty_cohort`). See
+[`docs/ptm.md`](./ptm.md) for the full algorithm and a worked example.
+
+## Transformation scorecard (Phase 5)
+
+Per-client (and per-coach rollup) snapshot composed from authoritative
+live data — there are **no fabricated metrics**. Every numeric column
+either reads off a source row directly or is derived from a small set of
+those reads (weight delta = latest − earliest WeightLog, meal
+consistency = distinct days with `meal_logged` ÷ 30).
+
+### Source-of-truth notes
+
+| Source | Used for |
+|---|---|
+| `prisma.user` (+ `coach.email` join) | `user_id`, `email`, `name`, `role`, `coach_email`, `days_active` |
+| Latest `prisma.checkIn` | `latest_mood`, `latest_energy`, `latest_sleep_hrs` |
+| Earliest + latest `prisma.weightLog` | `starting_weight_lbs`, `current_weight_lbs`, `weight_delta_lbs` (already in lbs — no conversion) |
+| `prisma.workoutSession` + `ExerciseSet` over the rolling 30-day window | `workout_volume_30d` (Σ reps × weight across recorded arrays) |
+| `prisma.clientSignal` filtered to `signal_type = 'meal_logged'` | `meals_logged_30d` (distinct calendar days), `meal_consistency_pct_30d` |
+| `prisma.coachMessage` filtered by sender direction in the rolling window | `messages_sent_30d`, `messages_received_30d` |
+| Latest `prisma.ptmPrediction` | `ptm_risk_score`, `ptm_success_score`, `ptm_bucket` (via shared `bucketize()` from `src/ptm/ptm.types.ts`) |
+| `prisma.clientOutcome` (`@unique user_id`) | `latest_outcome` |
+| `prisma.diagnosticSubmission` (Phase 3, optional) | `diagnostic_overall_score`, `diagnostic_bucket` — defensive: missing table or read failure renders both as `null` |
+| `prisma.buildWeekEnrollment` (Phase 4, optional) | `build_week_status` — defensive: missing table or read failure renders the cell as `null` |
+
+### Columns (frozen order)
+
+```
+user_id, email, name, role, coach_email,
+days_active,
+latest_mood, latest_energy, latest_sleep_hrs,
+starting_weight_lbs, current_weight_lbs, weight_delta_lbs,
+workout_volume_30d,
+meals_logged_30d, meal_consistency_pct_30d,
+messages_sent_30d, messages_received_30d,
+ptm_risk_score, ptm_success_score, ptm_bucket,
+latest_outcome,
+diagnostic_overall_score, diagnostic_bucket,
+build_week_status,
+generated_at
+```
+
+`since_days` defaults to 90 / clamped to `[7, 365]` and **only scopes
+the rolling-window counters** (workout volume, meals, messaging).
+Identity columns, lifetime weight extremes, and PTM scores are not
+bounded by it.
+
+### Pull a single client's scorecard:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer $OWNER_JWT" \
+  "https://api.thegrowthproject.app/api/admin/reports/transformation-scorecard?user_id=$CLIENT_ID&format=json" | jq .
+```
+
+### Pull every client of a single coach as CSV (per-coach rollup):
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer $OWNER_JWT" \
+  "https://api.thegrowthproject.app/api/admin/reports/transformation-scorecard?coach_id=$COACH_ID&since_days=30&format=csv" \
+  -o transformation-scorecard-$(date -u +%Y%m%d).csv
+```
+
+### Pull every student on the platform (clamped to 1000):
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer $OWNER_JWT" \
+  "https://api.thegrowthproject.app/api/admin/reports/transformation-scorecard?format=csv" \
+  -o transformation-scorecard-all-$(date -u +%Y%m%d).csv
+```
+
+When a column reads `null` (CSV: empty cell) the source row legitimately
+does not exist for that user. The composer never substitutes a `0`
+placeholder for a missing value, so an operator can distinguish
+"never logged a weight" from "logged a weight of 0 lbs".
 
 ## Output contract
 

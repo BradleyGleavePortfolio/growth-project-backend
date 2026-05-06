@@ -16,6 +16,7 @@ import { AdminPtmController } from './ptm/admin-ptm.controller';
 import { AdminPtmService } from './ptm/admin-ptm.service';
 import { UsersModule } from '../users/users.module';
 import { BuildWeekModule } from '../build-week/build-week.module';
+import { CoachModule } from '../coach/coach.module';
 
 // Phase 1A/1B platform admin module. AuthModule import wires
 // JwtAuthGuard + JwksVerifierService into this module's DI scope so
@@ -39,7 +40,7 @@ import { BuildWeekModule } from '../build-week/build-week.module';
 // GET /admin/ptm/outcome-history. PtmService and PtmRecomputeService
 // resolve through the @Global PtmModule.
 @Module({
-  imports: [AuthModule, UsersModule, BuildWeekModule],
+  imports: [AuthModule, UsersModule, BuildWeekModule, CoachModule],
   controllers: [AdminController, ReportsController, AdminPtmController],
   providers: [
     AdminService,

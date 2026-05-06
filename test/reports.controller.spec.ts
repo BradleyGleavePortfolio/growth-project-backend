@@ -77,7 +77,14 @@ function build() {
     federationHealth: jest.fn(async () => envelope({ integrations: {} })),
     auditSummary: jest.fn(async () => envelope([])),
   };
-  return { ctrl: new ReportsController(reports as any), reports };
+  // The controller now also injects TransformationScorecardService —
+  // pass a no-op stub so the constructor signature is satisfied. The
+  // scorecard surface has its own spec.
+  const scorecard: any = { run: jest.fn() };
+  return {
+    ctrl: new ReportsController(reports as any, scorecard),
+    reports,
+  };
 }
 
 describe('ReportsController — JSON default', () => {
@@ -167,6 +174,8 @@ describe('ReportsController — index manifest', () => {
         'federation-health',
         'metrics-overview',
         'product-usage',
+        'ptm-signal-weights',
+        'transformation-scorecard',
       ].sort(),
     );
     for (const r of out.reports) {
