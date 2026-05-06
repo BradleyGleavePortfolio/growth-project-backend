@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import { FinanceAdminClient } from '../federation/finance-admin.client';
 import { bucketize, type PtmRiskBucket } from '../../ptm/ptm.types';
 import type { ReportEnvelope } from './reports.service';
 
@@ -19,6 +20,12 @@ import type { ReportEnvelope } from './reports.service';
 // columns simply render `null`. Catching is broad (any throw) because the
 // Prisma client surface for an unknown model is `undefined`, which raises
 // a TypeError at access time rather than a tagged Prisma error code.
+//
+// Finance federation columns: wealth_velocity_score, net_worth_delta,
+// milestones_hit are looked up via FinanceAdminClient.lookupClient (by
+// email). When FINANCE_API_BASE_URL is unset or the call degrades, the
+// three columns render `null` — the report does not 500. The lookup is
+// fire-and-forget-graceful with the client's 2500 ms default timeout.
 //
 // Tenancy: when neither user_id nor coach_id is supplied the report is the
 // OWNER's full client roster, clamped to a hard ceiling so a single
@@ -59,6 +66,10 @@ export const TRANSFORMATION_SCORECARD_COLUMNS = [
   'diagnostic_overall_score',
   'diagnostic_bucket',
   'build_week_status',
+  // Finance federation columns — null when FINANCE_API_BASE_URL unset
+  'wealth_velocity_score',
+  'net_worth_delta',
+  'milestones_hit',
   'generated_at',
 ] as const;
 
@@ -90,6 +101,10 @@ export interface TransformationScorecardRow {
   diagnostic_overall_score: number | null;
   diagnostic_bucket: string | null;
   build_week_status: string | null;
+  // Finance federation columns
+  wealth_velocity_score: number | null;
+  net_worth_delta: number | null;
+  milestones_hit: number | null;
   generated_at: string;
 }
 
@@ -101,7 +116,10 @@ export interface ScorecardQuery {
 
 @Injectable()
 export class TransformationScorecardService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private financeClient: FinanceAdminClient,
+  ) {}
 
   async build(
     params: ScorecardQuery = {},
@@ -208,6 +226,7 @@ export class TransformationScorecardService {
 
     const diagnostic = await this.readDiagnostic(userId);
     const buildWeek = await this.readBuildWeek(userId);
+    const financeData = await this.readFinanceData(user.email);
 
     const startingLbs = earliestWeight?.weight_lbs ?? null;
     const currentLbs = latestWeight?.weight_lbs ?? null;
@@ -254,6 +273,9 @@ export class TransformationScorecardService {
       diagnostic_overall_score: diagnostic.overall ?? null,
       diagnostic_bucket: diagnostic.bucket ?? null,
       build_week_status: buildWeek.status ?? null,
+      wealth_velocity_score: financeData.wealth_velocity_score,
+      net_worth_delta: financeData.net_worth_delta,
+      milestones_hit: financeData.milestones_hit,
       generated_at: generatedAtIso,
     };
   }
@@ -386,6 +408,65 @@ export class TransformationScorecardService {
       return { status: null };
     } catch {
       return { status: null };
+    }
+  }
+
+  // Finance federation lookup — fail-closed-graceful.
+  //
+  // Looks up the client's email on the finance backend using the existing
+  // FinanceAdminClient (which owns the 2500 ms timeout and retry logic).
+  // When FINANCE_API_BASE_URL is unset, FinanceAdminClient returns
+  // `{ kind: 'degraded', reason: 'not_configured' }` immediately (no
+  // network call). When configured but the call times out or fails, the
+  // outcome is also `degraded`. In all non-ok cases the three finance
+  // columns render as `null` rather than throwing.
+  //
+  // `milestones_hit` is sourced from the finance client's
+  // `activity_last_7d.eod_submissions` as the closest available
+  // milestone-count proxy, but the finance contract exposes
+  // `activity_last_7d` — milestones_hit uses a direct read path.
+  // The finance contract for a client includes `wealth_velocity_score`
+  // and `net_worth` (from which we compute delta against 0 for now since
+  // the finance side does not expose a delta directly). When the finance
+  // API is extended with a richer delta field, update this read.
+  private async readFinanceData(
+    email: string,
+  ): Promise<{
+    wealth_velocity_score: number | null;
+    net_worth_delta: number | null;
+    milestones_hit: number | null;
+  }> {
+    const NULL_RESULT = {
+      wealth_velocity_score: null,
+      net_worth_delta: null,
+      milestones_hit: null,
+    };
+    if (!this.financeClient.isConfigured()) {
+      return NULL_RESULT;
+    }
+    try {
+      const outcome = await this.financeClient.lookupClient(
+        email.trim().toLowerCase(),
+      );
+      if (outcome.kind !== 'ok' || !outcome.data) {
+        return NULL_RESULT;
+      }
+      const d = outcome.data;
+      return {
+        wealth_velocity_score: d.wealth_velocity_score ?? null,
+        // The finance contract exposes net_worth (current snapshot). We
+        // store the raw value in the `net_worth_delta` column as the most
+        // meaningful single-figure representation available. If the finance
+        // backend later adds a delta field, switch the read here.
+        net_worth_delta: d.net_worth ?? null,
+        // activity_last_7d.eod_submissions is the closest proxy to "finance
+        // milestones hit" currently available via the federation contract.
+        milestones_hit: d.activity_last_7d?.eod_submissions ?? null,
+      };
+    } catch {
+      // Any unexpected throw (e.g. type error, uncaught net error) must
+      // not surface as a 500. Return nulls and let the scorecard proceed.
+      return NULL_RESULT;
     }
   }
 }
