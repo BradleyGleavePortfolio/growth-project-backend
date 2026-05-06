@@ -196,6 +196,13 @@ model User {
   // idempotent. Stays null for students/owners until/unless they're promoted.
   coach_onboarding_progress CoachOnboardingProgress? @relation("CoachOnboardingCoach")
 
+  // Phase 7A — Day 1 Win Sequence. Set once on first win completion; never
+  // cleared. Gates the Day1WinScreen in the mobile app: if non-null the screen
+  // is permanently skipped on cold start. Null for all pre-existing users
+  // (they skip the screen automatically because we treat null === not a new user
+  // in the mobile gating logic by also checking created_at age).
+  first_win_completed_at DateTime?
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
