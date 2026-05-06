@@ -1,0 +1,174 @@
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import type { CoachAlert, Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma.service';
+
+// Phase 6B — Proactive Red Flag Alerts.
+//
+// Surface:
+//   * createAlert      — called by PTM recompute (and future signal
+//                        observers) to write a fresh alert row, with
+//                        24h dedup so a flapping signal does not produce
+//                        a notification storm.
+//   * listForCoach     — paginated read for the coach inbox.
+//   * acknowledge      — idempotent ack for a single alert. The coach
+//                        owning the alert is the only caller permitted;
+//                        a foreign coach gets NotFoundException.
+//
+// Push-notification delivery is currently a stub (logs only). Per the
+// brief, the actual per-coach push hook lands when NotificationsModule
+// supports it; no new external dep here. See README for the contract.
+//
+// Doctrine:
+//   * Coach can only read/ack their own alerts.
+//   * createAlert is fire-and-forget at the call site (the PTM
+//     recompute hook wraps it in try/catch).
+//   * payload is a small JSON blob with engine context; never PII.
+
+export type CoachAlertType =
+  | 'risk_red_transition'
+  | 'consecutive_misses'
+  | 'streak_dropped'
+  | 'finance_eod_gap';
+
+export type CoachAlertSeverity = 'info' | 'warning' | 'critical';
+
+const DEDUP_WINDOW_HOURS = 24;
+const HOUR_MS = 60 * 60 * 1000;
+const DEFAULT_BATCH_LIMIT = 50;
+const MAX_BATCH_LIMIT = 200;
+
+export interface CreateAlertInput {
+  coachId: string;
+  clientId: string;
+  alertType: CoachAlertType;
+  severity?: CoachAlertSeverity;
+  message: string;
+  payload?: Record<string, unknown>;
+}
+
+export interface ListAlertsOptions {
+  coachId: string;
+  acknowledged?: boolean;
+  limit?: number;
+  before?: Date;
+}
+
+@Injectable()
+export class CoachAlertsService {
+  private readonly logger = new Logger(CoachAlertsService.name);
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Idempotent within DEDUP_WINDOW_HOURS for the same
+   * (coach_id, client_id, alert_type) tuple. Returns the existing row
+   * when a recent unacknowledged alert is found, otherwise inserts a
+   * fresh row. The caller is expected to swallow exceptions — alert
+   * creation must never bubble into a user-facing 5xx.
+   */
+  async createAlert(input: CreateAlertInput): Promise<CoachAlert> {
+    const since = new Date(Date.now() - DEDUP_WINDOW_HOURS * HOUR_MS);
+    const existing = await this.prisma.coachAlert.findFirst({
+      where: {
+        coach_id: input.coachId,
+        client_id: input.clientId,
+        alert_type: input.alertType,
+        acknowledged_at: null,
+        created_at: { gte: since },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+    if (existing) {
+      return existing;
+    }
+
+    const created = await this.prisma.coachAlert.create({
+      data: {
+        coach_id: input.coachId,
+        client_id: input.clientId,
+        alert_type: input.alertType,
+        severity: input.severity ?? 'warning',
+        message: input.message,
+        payload: (input.payload ?? null) as unknown as Prisma.InputJsonValue,
+      },
+    });
+    this.tryPush(created);
+    return created;
+  }
+
+  async listForCoach(opts: ListAlertsOptions): Promise<CoachAlert[]> {
+    const limit = clamp(opts.limit ?? DEFAULT_BATCH_LIMIT, 1, MAX_BATCH_LIMIT);
+    const where: Prisma.CoachAlertWhereInput = {
+      coach_id: opts.coachId,
+    };
+    if (typeof opts.acknowledged === 'boolean') {
+      where.acknowledged_at = opts.acknowledged ? { not: null } : null;
+    }
+    if (opts.before instanceof Date) {
+      where.created_at = { lt: opts.before };
+    }
+    return this.prisma.coachAlert.findMany({
+      where,
+      orderBy: { created_at: 'desc' },
+      take: limit,
+    });
+  }
+
+  /**
+   * Idempotent ack. A repeated call against an already-acked alert
+   * returns the same row without writing again. Foreign coach calls
+   * resolve into NotFoundException so we never leak alert existence.
+   */
+  async acknowledge(alertId: string, coachId: string): Promise<CoachAlert> {
+    const row = await this.prisma.coachAlert.findFirst({
+      where: { id: alertId, coach_id: coachId },
+    });
+    if (!row) throw new NotFoundException('Alert not found');
+    if (row.acknowledged_at) return row;
+    return this.prisma.coachAlert.update({
+      where: { id: alertId },
+      data: { acknowledged_at: new Date() },
+    });
+  }
+
+  /**
+   * OWNER-only aggregator. Optional coach filter and `since` lower bound.
+   */
+  async listAllForOwner(opts: {
+    coachId?: string;
+    since?: Date;
+    limit?: number;
+  } = {}): Promise<CoachAlert[]> {
+    const limit = clamp(opts.limit ?? DEFAULT_BATCH_LIMIT, 1, MAX_BATCH_LIMIT);
+    const where: Prisma.CoachAlertWhereInput = {};
+    if (opts.coachId) where.coach_id = opts.coachId;
+    if (opts.since instanceof Date) where.created_at = { gte: opts.since };
+    return this.prisma.coachAlert.findMany({
+      where,
+      orderBy: { created_at: 'desc' },
+      take: limit,
+    });
+  }
+
+  // ── push delivery stub ─────────────────────────────────────────────────
+  // The brief allows a logging stub here until NotificationsModule grows
+  // a per-coach push transport. We log the would-be payload so an
+  // operator can grep for delivery intent in logs, and document the
+  // contract in src/coach/README.md.
+  private tryPush(alert: CoachAlert): void {
+    try {
+      this.logger.log(
+        `would push to coach=${alert.coach_id} type=${alert.alert_type} sev=${alert.severity}: ${alert.message}`,
+      );
+    } catch {
+      // Logger is in-process; this should not throw, but if it does,
+      // never let push noise crash the alert write path.
+    }
+  }
+}
+
+function clamp(n: number, lo: number, hi: number): number {
+  if (n < lo) return lo;
+  if (n > hi) return hi;
+  return n;
+}

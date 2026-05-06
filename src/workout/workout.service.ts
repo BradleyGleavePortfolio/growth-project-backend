@@ -1,16 +1,20 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { PtmService } from '../ptm/ptm.service';
 import { CreateWorkoutDto, CreateRoutineDto, UpdateRoutineDto } from './workout.dto';
 
 @Injectable()
 export class WorkoutService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private ptm: PtmService,
+  ) {}
 
   async createWorkout(userId: string, data: CreateWorkoutDto) {
     // Explicit field mapping — previously `...sessionData` spread the body into
     // Prisma, which (combined with `@Body() body: any` on the controller) would
     // let a client set `user_id`, `id`, etc. See audit C4/H10.
-    return this.prisma.workoutSession.create({
+    const created = await this.prisma.workoutSession.create({
       data: {
         user_id: userId,
         date: data.date ? new Date(data.date) : new Date(),
@@ -36,6 +40,24 @@ export class WorkoutService {
       },
       include: { exercises: true },
     });
+
+    // Sum weight*reps across every set on every exercise. Mirrors the
+    // per-muscle-group aggregation in getVolume but flattened to a single
+    // number for the PTM signal.
+    let totalVolume = 0;
+    for (const ex of created.exercises) {
+      const reps = ex.reps_per_set;
+      const weights = ex.weight_per_set;
+      for (let i = 0; i < weights.length; i++) {
+        totalVolume += weights[i] * (reps[i] ?? 0);
+      }
+    }
+    this.ptm.emit(userId, 'workout_logged', Math.round(totalVolume), {
+      exercise_count: created.exercises.length,
+      duration_min: created.duration_minutes,
+    });
+
+    return created;
   }
 
   async getWorkouts(userId: string, limit = 10) {

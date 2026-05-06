@@ -249,6 +249,93 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     reason: 'Per-run cap on candidates the GDPR scrub worker will process. Defaults to 100; clamped to [1, 1000].',
   },
+  {
+    name: 'PTM_SCORING_ENABLED',
+    tier: 'optional',
+    reason: 'Feature flag — when "false", the nightly PTM recompute cron and the admin teaching endpoints are disabled. Defaults to true (engine runs). Use to quickly disable the scoring engine if a heuristic regression is shipped.',
+  },
+  {
+    name: 'PTM_SCORING_CRON',
+    tier: 'optional',
+    reason: 'Override for the nightly PTM recompute cron expression. Defaults to "0 4 * * *" (04:00 UTC, 1h after the GDPR scrub at 03:00 UTC). Must be a valid 5-field cron expression.',
+  },
+  {
+    name: 'PTM_RECOMPUTE_BATCH_LIMIT',
+    tier: 'optional',
+    reason: 'Per-run cap on the number of clients the PTM nightly cron recomputes. Defaults to 5000; clamped to [1, 50000]. Larger rosters are processed across multiple nights with a stable cursor.',
+  },
+  {
+    name: 'PTM_WEIGHTED_ACTIVATION_OUTCOMES',
+    tier: 'optional',
+    reason: 'Override the minimum number of labelled ClientOutcome rows before the weighted v2 engine activates. Defaults to 20. Below this threshold every recompute uses heuristic_v1.',
+  },
+  {
+    name: 'PTM_RISK_BOARD_PAGE_SIZE',
+    tier: 'optional',
+    reason: 'Default page size for GET /admin/ptm/risk-board. Defaults to 50; clamped to [1, 100] regardless of caller-supplied limit.',
+  },
+  {
+    name: 'DIAGNOSTIC_AI_ENABLED',
+    tier: 'optional',
+    reason: 'Set to "false" to skip Perplexity calls for /diagnostic/submit and store a placeholder roadmap. Defaults to true. Useful for CI / preview deploys without a Perplexity key.',
+  },
+  {
+    name: 'DIAGNOSTIC_RATE_LIMIT_PER_HOUR',
+    tier: 'optional',
+    reason: 'Per-IP hourly cap on POST /diagnostic/submit (named throttler `diagnostic-submit`). Defaults to 5; clamped to [1, 1000].',
+  },
+  {
+    name: 'COACH_EFFECTIVENESS_ENABLED',
+    tier: 'optional',
+    reason: 'Feature flag — when "false", the nightly Coach Effectiveness recompute cron is disabled. Defaults to true. Use to quickly disable scoring if an algorithm regression ships.',
+  },
+  {
+    name: 'COACH_EFFECTIVENESS_CRON',
+    tier: 'optional',
+    reason: 'Override for the nightly Coach Effectiveness recompute cron expression. Defaults to "0 5 * * *" (05:00 UTC, one hour after the PTM recompute at 04:00 UTC).',
+  },
+  {
+    name: 'COACH_ALERT_RED_TRANSITION_ENABLED',
+    tier: 'optional',
+    reason: 'Feature flag — when "false", the PTM-recompute hook does NOT create CoachAlert rows on green/amber → red transitions. Defaults to true. Use to silence the alert channel without disabling the underlying recompute.',
+  },
+  {
+    name: 'COACH_ALERT_BATCH_LIMIT',
+    tier: 'optional',
+    reason: 'Per-request cap on the number of CoachAlert rows the OWNER aggregator and coach inbox endpoints return. Defaults to 50; clamped to [1, 200].',
+  },
+  {
+    name: 'BUILD_WEEK_ENABLED',
+    tier: 'optional',
+    reason: 'Feature flag — when "false", the Build Week controllers refuse new writes and the admin funnel reports zeroed counts. Defaults to true (module is live). Use to quickly disable the surface if a copy regression or seed bug ships.',
+  },
+  {
+    name: 'BUILD_WEEK_AUTO_START_ON_SIGNUP',
+    tier: 'optional',
+    reason: 'Feature flag — when "true", new client signups auto-enroll in Build Week. Defaults to false. Wiring is a follow-on PR; this PR only exposes the flag so deployment configs can be staged ahead of the implementation.',
+  },
+  // Phase 6C — Async Voice Notes
+  {
+    name: 'VOICE_NOTE_MAX_DURATION_SEC',
+    tier: 'optional',
+    reason: 'Phase 6C — server-enforced max duration for voice attachments on coach <-> client messages. Defaults to 300; clamped to [10, 600]. Validated at signed-upload issuance AND at message-send time.',
+  },
+  {
+    name: 'VOICE_NOTE_MAX_SIZE_MB',
+    tier: 'optional',
+    reason: 'Phase 6C — server-enforced max file size in megabytes for voice attachments. Defaults to 5; clamped to [1, 25].',
+  },
+  {
+    name: 'SUPABASE_VOICE_BUCKET',
+    tier: 'optional',
+    reason: 'Phase 6C — Supabase Storage bucket name for voice note objects. Defaults to "voice-notes". Bucket must exist in the Supabase project; signed-upload flow returns 501 VOICE_STORAGE_UNAVAILABLE if the bucket is unreachable or the JS SDK is too old to expose createSignedUploadUrl().',
+  },
+  // Phase 6D — Coach Onboarding Wizard
+  {
+    name: 'COACH_ONBOARDING_AUTO_START',
+    tier: 'optional',
+    reason: 'Phase 6D — when "true" (default), AdminService.promoteUser auto-starts the 6-step onboarding wizard for newly-promoted coaches. Set to "false" to suppress (e.g. during bulk back-fills). Wizard-creation failures never block promotion.',
+  },
 ];
 
 export interface EnvValidationResult {

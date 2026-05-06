@@ -162,7 +162,8 @@ describe('analytics instrumentation — messaging', () => {
       },
     };
     const supabase: any = { broadcastNewMessage: jest.fn() };
-    return { svc: new MessagingService(prisma, supabase, analytics as any), analytics };
+    const ptm: any = { emit: jest.fn() };
+    return { svc: new MessagingService(prisma, supabase, analytics as any, ptm), analytics };
   }
 
   it('emits coach_message_sent when coach sends', async () => {
@@ -191,11 +192,16 @@ describe('analytics instrumentation — log service', () => {
     const analytics = makeAnalytics();
     const prisma: any = {
       loggedFoodEntry: {
-        create: jest.fn(async ({ data }: any) => ({ id: 'l1', ...data })),
+        create: jest.fn(async ({ data }: any) => ({
+          id: 'l1',
+          ...data,
+          food_item: { calories: 100, protein_g: 0, carbs_g: 0, fat_g: 0 },
+        })),
       },
     };
     const food: any = { resolveOrImportId: jest.fn(async () => 'fi-1') };
-    const svc = new LogService(prisma, food, analytics as any);
+    const ptm: any = { emit: jest.fn() };
+    const svc = new LogService(prisma, food, analytics as any, ptm);
     await svc.logFood('user-1', {
       food_item_id: 'fi-1',
       date: '2026-04-27',

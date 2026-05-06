@@ -28,6 +28,7 @@ shape, and the smoke-test contract. Read it first.
 | [`invite-landing.md`](./invite-landing.md) | Deep-link / universal-link contract and the QR validation harness. |
 | [`coach-console-integration.md`](./coach-console-integration.md) | BFF contract followed for `tgp-coach-console`. |
 | [`AI_MOBILE_PATCH_INSTRUCTIONS.md`](./AI_MOBILE_PATCH_INSTRUCTIONS.md) | Mobile-side patch notes for the AI assistant. |
+| [`ptm.md`](./ptm.md) | Predictive Tracking Model (Phase 1) operator guide: the three tables (`ClientSignal`, `ClientOutcome`, `PtmPrediction`), the fire-and-forget signal-collection contract, score interpretation (advisory only), the privacy posture (mobile clients never see raw scores), and the forward path through Phase 1B (heuristic + nightly recompute), 1C (admin teaching surface), and 1D (weighted v2 engine). |
 
 ## Coach-facing content
 

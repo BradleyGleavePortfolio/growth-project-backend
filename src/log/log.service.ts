@@ -4,6 +4,7 @@ import { FoodService } from '../food/food.service';
 import { LogFoodDto, UpdateLogEntryDto } from './log.dto';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
+import { PtmService } from '../ptm/ptm.service';
 
 @Injectable()
 export class LogService {
@@ -11,6 +12,7 @@ export class LogService {
     private prisma: PrismaService,
     private foodService: FoodService,
     private analytics: AnalyticsService,
+    private ptm: PtmService,
   ) {}
 
   async logFood(userId: string, data: LogFoodDto) {
@@ -29,6 +31,12 @@ export class LogService {
       include: { food_item: true },
     });
     this.analytics.capture(userId, Events.CLIENT_FOOD_LOGGED, {
+      meal_type: data.meal_type,
+    });
+    const calories = Math.round(
+      created.food_item.calories * created.quantity_multiplier,
+    );
+    this.ptm.emit(userId, 'meal_logged', calories, {
       meal_type: data.meal_type,
     });
     return created;

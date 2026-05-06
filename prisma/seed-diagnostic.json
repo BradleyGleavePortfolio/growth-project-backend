@@ -1,0 +1,80 @@
+{
+  "version": "v1",
+  "scale_label": "1=Strongly disagree, 5=Strongly agree",
+  "sections": [
+    {
+      "id": "income",
+      "title": "Income Architecture",
+      "max_score": 75,
+      "question_count": 15
+    },
+    {
+      "id": "body",
+      "title": "Body Protocol",
+      "max_score": 60,
+      "question_count": 12
+    },
+    {
+      "id": "lifestyle",
+      "title": "Calendar & Lifestyle Architecture",
+      "max_score": 65,
+      "question_count": 13
+    }
+  ],
+  "buckets": {
+    "section": [
+      { "id": "stuck",        "min_pct": 0,  "max_pct": 30  },
+      { "id": "moving",       "min_pct": 31, "max_pct": 60  },
+      { "id": "compounding",  "min_pct": 61, "max_pct": 100 }
+    ],
+    "overall": [
+      { "id": "stuck",        "min": 0,   "max": 70,  "headline": "You have the raw material. The system is missing." },
+      { "id": "moving",       "min": 71,  "max": 130, "headline": "You're in motion. The question is: motion toward what?" },
+      { "id": "compounding",  "min": 131, "max": 200, "headline": "You're building. The gap is acceleration." }
+    ]
+  },
+  "questions": [
+    { "id": 1,  "section": "income",    "text": "Do you have a primary income source that doesn't require your physical presence?" },
+    { "id": 2,  "section": "income",    "text": "Have you earned money outside of a traditional salary in the last 12 months?" },
+    { "id": 3,  "section": "income",    "text": "Do you know exactly what you would sell if you lost your job tomorrow?" },
+    { "id": 4,  "section": "income",    "text": "Could you double your income without doubling your hours?" },
+    { "id": 5,  "section": "income",    "text": "Do you have a defined offer with a clear price and delivery structure?" },
+    { "id": 6,  "section": "income",    "text": "Have you had a paying client in the last 90 days outside of employment?" },
+    { "id": 7,  "section": "income",    "text": "Do you have a system for generating leads consistently?" },
+    { "id": 8,  "section": "income",    "text": "Do you know your hourly effective rate across all income sources?" },
+    { "id": 9,  "section": "income",    "text": "Could you generate £1,000 in 30 days starting from scratch?" },
+    { "id": 10, "section": "income",    "text": "Do you have a second income lever active or ready to activate?" },
+    { "id": 11, "section": "income",    "text": "Do you track your income weekly?" },
+    { "id": 12, "section": "income",    "text": "Have you raised your prices in the last 12 months?" },
+    { "id": 13, "section": "income",    "text": "Do you have a sales conversation framework you use consistently?" },
+    { "id": 14, "section": "income",    "text": "Do you know which income activity produces the highest return on your time?" },
+    { "id": 15, "section": "income",    "text": "Are you actively building toward financial independence?" },
+
+    { "id": 16, "section": "body",      "text": "Do you weigh yourself or track a body metric at least weekly?" },
+    { "id": 17, "section": "body",      "text": "Do you follow a structured nutrition approach (not perfect, just structured)?" },
+    { "id": 18, "section": "body",      "text": "Have you lost weight or improved a body metric in the last 90 days?" },
+    { "id": 19, "section": "body",      "text": "Do you train at least 3x per week consistently?" },
+    { "id": 20, "section": "body",      "text": "Do you sleep 7+ hours per night more than 5 days a week?" },
+    { "id": 21, "section": "body",      "text": "Do you know your current body fat % or a proxy metric?" },
+    { "id": 22, "section": "body",      "text": "Do you have a daily eating structure (not a diet, a structure)?" },
+    { "id": 23, "section": "body",      "text": "Has your energy level been consistently above 7/10 this month?" },
+    { "id": 24, "section": "body",      "text": "Do you track what you eat at least 4 days a week?" },
+    { "id": 25, "section": "body",      "text": "Have you completed a 30+ day consistency streak with any health habit?" },
+    { "id": 26, "section": "body",      "text": "Do you have a protocol you follow when you fall off track?" },
+    { "id": 27, "section": "body",      "text": "Is your body where you want it to be, or do you have a clear plan to get there?" },
+
+    { "id": 28, "section": "lifestyle", "text": "Do you know how many free hours you have per week to work on new income?" },
+    { "id": 29, "section": "lifestyle", "text": "Have you travelled to or lived in a country other than your home country in the last 2 years?" },
+    { "id": 30, "section": "lifestyle", "text": "Do you have a morning routine that takes less than 60 minutes and sets up your day?" },
+    { "id": 31, "section": "lifestyle", "text": "Is your calendar controlled by you, or by other people's priorities?" },
+    { "id": 32, "section": "lifestyle", "text": "Do you have a daily deep work block of 90+ minutes?" },
+    { "id": 33, "section": "lifestyle", "text": "Are you living in the city/country you want to be in right now?" },
+    { "id": 34, "section": "lifestyle", "text": "Do you have a clear 12-month location plan?" },
+    { "id": 35, "section": "lifestyle", "text": "Do you have passive or semi-passive income that runs without your daily attention?" },
+    { "id": 36, "section": "lifestyle", "text": "Is your relationship with social media intentional (scheduled, not reactive)?" },
+    { "id": 37, "section": "lifestyle", "text": "Do you have a weekly review process?" },
+    { "id": 38, "section": "lifestyle", "text": "Do you know what your ideal week looks like in precise detail?" },
+    { "id": 39, "section": "lifestyle", "text": "Are you spending time daily on activities that compound over time?" },
+    { "id": 40, "section": "lifestyle", "text": "Are you proud of how you spent last week?" }
+  ]
+}

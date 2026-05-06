@@ -513,7 +513,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       };
       const supabase: any = { broadcastNewMessage: jest.fn() };
       return {
-        svc: new MessagingService(prisma, supabase, { capture: jest.fn(), identify: jest.fn() } as any),
+        svc: new MessagingService(prisma, supabase, { capture: jest.fn(), identify: jest.fn() } as any, { emit: jest.fn() } as any),
         prisma,
         supabase,
         messages,
@@ -545,7 +545,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         },
         coachMessage: { create: jest.fn() },
       };
-      const svc = new MessagingService(prisma, { broadcastNewMessage: jest.fn() } as any, { capture: jest.fn(), identify: jest.fn() } as any);
+      const svc = new MessagingService(prisma, { broadcastNewMessage: jest.fn() } as any, { capture: jest.fn(), identify: jest.fn() } as any, { emit: jest.fn() } as any);
       await expect(svc.sendAsClient('orphan-1', 'hi')).rejects.toMatchObject({
         response: expect.objectContaining({ error: 'NO_COACH_ASSIGNED' }),
       });

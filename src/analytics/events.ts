@@ -47,6 +47,10 @@ export const Events = {
   COACH_PROMOTED: 'coach_promoted',
   /** Coach took an action against a client (archive/unarchive/guidelines). */
   COACH_ACTION: 'coach_action',
+  /** Phase 6D — Coach Onboarding Wizard lifecycle. */
+  COACH_ONBOARDING_STARTED: 'coach_onboarding_started',
+  COACH_ONBOARDING_STEP_COMPLETED: 'coach_onboarding_step_completed',
+  COACH_ONBOARDING_COMPLETED: 'coach_onboarding_completed',
 
   // ── Billing lifecycle ────────────────────────────────────────────────
   /** customer.subscription.created/updated mirrored from Stripe. */

@@ -12,6 +12,8 @@ import { ThrottlerModuleOptions } from '@nestjs/throttler';
  * auth-signup     | 5 / hour            | user-id when authed, IP otherwise
  * auth-password-  | 5 / 15 minutes      | user-id when authed, IP otherwise
  *   reset         |                     |
+ * diagnostic-     | 5 / hour (override  | IP (unauthed by definition)
+ *   submit        |   via env var)      |
  * default         | 60 / minute         | user-id when authed, IP otherwise
  *
  * The `default` throttler is consulted whenever a route does not name a
@@ -21,13 +23,27 @@ export const THROTTLER_NAMES = {
   AUTH_LOGIN: 'auth-login',
   AUTH_SIGNUP: 'auth-signup',
   AUTH_PASSWORD_RESET: 'auth-password-reset',
+  DIAGNOSTIC_SUBMIT: 'diagnostic-submit',
   DEFAULT: 'default',
 } as const;
+
+// `diagnostic-submit`: 5/hour/IP by default. The endpoint is unauthenticated
+// (lead capture) and an attacker could bulk-stuff submissions to seed the
+// AI cost line; the limit is the primary defense. Operators can raise the
+// cap with DIAGNOSTIC_RATE_LIMIT_PER_HOUR for high-traffic launches.
+const DIAGNOSTIC_RATE_LIMIT_PER_HOUR = (() => {
+  const raw = process.env.DIAGNOSTIC_RATE_LIMIT_PER_HOUR;
+  if (!raw) return 5;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return 5;
+  return Math.min(n, 1000);
+})();
 
 export const THROTTLER_LIMITS = [
   { name: THROTTLER_NAMES.AUTH_LOGIN, ttl: 60_000, limit: 10 },
   { name: THROTTLER_NAMES.AUTH_SIGNUP, ttl: 3_600_000, limit: 5 },
   { name: THROTTLER_NAMES.AUTH_PASSWORD_RESET, ttl: 900_000, limit: 5 },
+  { name: THROTTLER_NAMES.DIAGNOSTIC_SUBMIT, ttl: 3_600_000, limit: DIAGNOSTIC_RATE_LIMIT_PER_HOUR },
   { name: THROTTLER_NAMES.DEFAULT, ttl: 60_000, limit: 60 },
 ] as const;
 

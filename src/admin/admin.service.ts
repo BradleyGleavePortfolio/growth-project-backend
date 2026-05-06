@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AuditAction, AuditService } from '../audit/audit.service';
+import { CoachOnboardingService } from '../coach/coach-onboarding.service';
 
 const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const CODE_LENGTH = 6;
@@ -23,6 +24,11 @@ export class AdminService {
     private prisma: PrismaService,
     private analytics: AnalyticsService,
     private audit: AuditService,
+    // Optional in the constructor signature so legacy unit tests that
+    // construct AdminService directly (e.g. test/admin-audit.spec.ts,
+    // test/e2e-saas-smoke.spec.ts) keep compiling. In NestJS DI this is
+    // always populated because CoachModule exports CoachOnboardingService.
+    private coachOnboarding?: CoachOnboardingService,
   ) {}
 
   private generateInviteCode(): string {
@@ -104,6 +110,22 @@ export class AdminService {
         via: 'admin_promote',
         promoted_by_owner_id: actingOwnerId,
       });
+      // Phase 6D — auto-start the onboarding wizard. Idempotent on the
+      // service side (re-promoting the same user reuses the existing row).
+      // This MUST NEVER block promotion: a wizard-creation failure is logged
+      // and swallowed; the operator sees a failed promote_user otherwise,
+      // which would be a worse outcome than a coach with no wizard row.
+      if (this.coachOnboarding && CoachOnboardingService.autoStartEnabled()) {
+        try {
+          await this.coachOnboarding.startWizard(updated.id);
+        } catch (err) {
+          this.logger.warn(
+            `coachOnboarding.startWizard failed for ${updated.id}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      }
     }
 
     // Immutable audit trail of the role change. Only write if the role

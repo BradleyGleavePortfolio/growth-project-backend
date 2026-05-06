@@ -38,6 +38,9 @@ import { AdminModule } from './admin/admin.module';
 import { AuditModule } from './audit/audit.module';
 import { ConsentModule } from './consent/consent.module';
 import { BillingModule } from './billing/billing.module';
+import { PtmModule } from './ptm/ptm.module';
+import { DiagnosticModule } from './diagnostic/diagnostic.module';
+import { BuildWeekModule } from './build-week/build-week.module';
 import { V1Module } from './v1/v1.module';
 import { InviteLandingModule } from './invite-landing/invite-landing.module';
 import { PublicPagesModule } from './public-pages/public-pages.module';
@@ -117,6 +120,18 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
     // PLAY_STORE_URL, and PUBLIC_WEB_SIGNUP_URL until the real store
     // listings exist (mounted outside the /api prefix, see main.ts).
     PublicPagesModule,
+    // Phase 1 PTM (Predictive Tracking Model). @Global module exposing
+    // PtmService for fire-and-forget signal collection across check-ins,
+    // weight, workout, food, messaging, and finance hooks; plus the
+    // heuristic + weighted scoring engines and the nightly recompute
+    // scheduler. See src/ptm/README.md.
+    PtmModule,
+    // Phase 4 — Build Week. 7-day guided coaching arc. Catalog seeded
+    // by the migration; per-user enrollment + completion tracking with
+    // a PTM milestone signal on Day 7. See src/build-week/README.md.
+    BuildWeekModule,
+    // Phase 3 — public 40-point diagnostic + AI roadmap.
+    DiagnosticModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)
