@@ -44,6 +44,7 @@ import { BuildWeekModule } from './build-week/build-week.module';
 import { V1Module } from './v1/v1.module';
 import { InviteLandingModule } from './invite-landing/invite-landing.module';
 import { PublicPagesModule } from './public-pages/public-pages.module';
+import { LeaderboardModule } from './leaderboard/leaderboard.module';
 
 @Module({
   imports: [
@@ -132,6 +133,9 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
     BuildWeekModule,
     // Phase 3 — public 40-point diagnostic + AI roadmap.
     DiagnosticModule,
+    // Phase 7C — Peer Leaderboard (opt-in, coach-roster scoped).
+    // Score: combined 30-day habit completion rate, never raw health data.
+    LeaderboardModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)
