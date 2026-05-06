@@ -40,6 +40,7 @@ import { ConsentModule } from './consent/consent.module';
 import { BillingModule } from './billing/billing.module';
 import { PtmModule } from './ptm/ptm.module';
 import { DiagnosticModule } from './diagnostic/diagnostic.module';
+import { FirstWinModule } from './first-win/first-win.module';
 import { BuildWeekModule } from './build-week/build-week.module';
 import { V1Module } from './v1/v1.module';
 import { InviteLandingModule } from './invite-landing/invite-landing.module';
@@ -132,6 +133,10 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
     BuildWeekModule,
     // Phase 3 — public 40-point diagnostic + AI roadmap.
     DiagnosticModule,
+    // Phase 7A — Day 1 Win Sequence. POST /me/first-win/complete +
+    // GET /me/first-win/status. Gates the retention screen on every new
+    // client's first cold start. See src/first-win/README.md (users README).
+    FirstWinModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)
