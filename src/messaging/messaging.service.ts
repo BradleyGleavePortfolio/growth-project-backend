@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
+import { PtmService } from '../ptm/ptm.service';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -20,6 +21,7 @@ export class MessagingService {
     private prisma: PrismaService,
     private supabase: SupabaseService,
     private analytics: AnalyticsService,
+    private ptm: PtmService,
   ) {}
 
   // ---- helpers ----
@@ -120,6 +122,11 @@ export class MessagingService {
       client_id: clientId,
       body_length: body.length,
     });
+    // PTM signals: from the CLIENT's perspective, a coach send is an inbound
+    // message and a coach note. userId is the client, never the coach — the
+    // PTM model scores clients, not coaches.
+    this.ptm.emit(clientId, 'message_received', body.length);
+    this.ptm.emit(clientId, 'coach_note_received', 1);
     return created;
   }
 
@@ -134,6 +141,7 @@ export class MessagingService {
       coach_id: coachId,
       body_length: body.length,
     });
+    this.ptm.emit(clientId, 'message_sent', body.length);
     return created;
   }
 

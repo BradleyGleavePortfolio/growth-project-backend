@@ -107,6 +107,21 @@ No messaging-specific env vars beyond Supabase.
   still returns the persisted message. The receiving client picks up
   the new message on its next focus poll.
 
+## PTM signals
+
+Every send fires fire-and-forget signals into `PtmService` (see
+[`src/ptm/README.md`](../ptm/README.md)). Signals are scored by `userId`
+on the **client** side of the thread — never the coach.
+
+| Signal | Path | `value` |
+|---|---|---|
+| `message_sent` | `sendAsClient` | `body.length` |
+| `message_received` | `sendAsCoach` | `body.length` |
+| `coach_note_received` | `sendAsCoach`, alongside `message_received` | `1` |
+
+Bodies are NEVER passed to PTM — only the length. PTM doctrine forbids
+PII in `metadata`, and the `body` would qualify.
+
 ## Tests
 
 | File | Covers |

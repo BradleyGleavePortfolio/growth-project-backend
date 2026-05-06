@@ -148,7 +148,8 @@ describe('MessagingService', () => {
     // unrelated to the messaging-service unit under test.
     const supabaseStub = { broadcastNewMessage: jest.fn().mockResolvedValue(undefined) } as any;
     const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
-    svc = new MessagingService(prisma as any, supabaseStub, analyticsStub);
+    const ptmStub = { emit: jest.fn() } as any;
+    svc = new MessagingService(prisma as any, supabaseStub, analyticsStub, ptmStub);
   });
 
   describe('send flows', () => {

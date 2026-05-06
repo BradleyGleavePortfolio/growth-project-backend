@@ -107,6 +107,8 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 | `PTM_RECOMPUTE_BATCH_LIMIT` | optional | Backend operator | Per-run cap on the number of clients the PTM nightly cron recomputes. Defaults to 5000; clamped to `[1, 50000]`. Larger rosters are processed across multiple nights. |
 | `PTM_WEIGHTED_ACTIVATION_OUTCOMES` | optional | Backend operator | Override the minimum number of labelled `ClientOutcome` rows before the weighted v2 engine activates. Defaults to 20. Below this threshold every recompute uses `heuristic_v1`. |
 | `PTM_RISK_BOARD_PAGE_SIZE` | optional | Backend operator | Default page size for `GET /admin/ptm/risk-board`. Defaults to 50; clamped to `[1, 100]` regardless of caller-supplied limit. |
+| `DIAGNOSTIC_AI_ENABLED` | optional | Backend operator | Set to `false` to skip Perplexity calls for `POST /api/diagnostic/submit` and store a placeholder roadmap. Defaults to `true`. Useful for CI / preview deploys without a Perplexity key. |
+| `DIAGNOSTIC_RATE_LIMIT_PER_HOUR` | optional | Backend operator | Per-IP hourly cap on `POST /api/diagnostic/submit` (named throttler `diagnostic-submit`). Defaults to 5; clamped to `[1, 1000]`. The endpoint is unauthenticated by design (lead capture), so the limit is the primary defense. |
 | `PORT` | optional | Fly.io | HTTP port. Defaults to 3000; Fly overrides this. |
 | `NODE_ENV` | optional | Backend operator | `development`, `staging`, or `production`. Drives the validation tier and the AI debug payload. |
 
@@ -1101,6 +1103,7 @@ src/
   coach/         Coach mobile surface (roster, timeline, alerts, guidelines)
   common/        Shared decorators, guards, env validation
   community/     Leaderboard and wins
+  diagnostic/    40-point diagnostic + AI roadmap (public lead capture)
   fasting/       Fasting windows
   filters/       Global exception filters
   food/          Food DB (local + USDA + OpenFoodFacts)

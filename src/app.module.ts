@@ -38,6 +38,8 @@ import { AdminModule } from './admin/admin.module';
 import { AuditModule } from './audit/audit.module';
 import { ConsentModule } from './consent/consent.module';
 import { BillingModule } from './billing/billing.module';
+import { PtmModule } from './ptm/ptm.module';
+import { BuildWeekModule } from './build-week/build-week.module';
 import { V1Module } from './v1/v1.module';
 import { InviteLandingModule } from './invite-landing/invite-landing.module';
 import { PublicPagesModule } from './public-pages/public-pages.module';
