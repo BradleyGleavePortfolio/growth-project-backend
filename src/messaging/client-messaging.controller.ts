@@ -11,7 +11,11 @@ import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { CreateMessageDto, ListThreadQueryDto } from './messaging.dto';
+import {
+  CreateMessageDto,
+  ListThreadQueryDto,
+  VoiceUploadRequestDto,
+} from './messaging.dto';
 import { MessagingService } from './messaging.service';
 
 // Client-authenticated messaging endpoints. The client's thread is always with
@@ -39,7 +43,22 @@ export class ClientMessagingController {
     @Request() req: AuthedRequest,
     @Body() body: CreateMessageDto,
   ) {
-    return this.messaging.sendAsClient(req.user.id, body.body);
+    return this.messaging.sendAsClient(req.user.id, {
+      body: body.body,
+      voice: body.voice,
+    });
+  }
+
+  // Phase 6C — pre-signed upload URL for client-side voice attachments. The
+  // client must already have a coach (the upload endpoint shares the same
+  // 409 NO_COACH_ASSIGNED contract as send).
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @Post('voice-upload')
+  async voiceUpload(
+    @Request() req: AuthedRequest,
+    @Body() body: VoiceUploadRequestDto,
+  ) {
+    return this.messaging.createVoiceUpload(req.user.id, body);
   }
 
   @Post('read')

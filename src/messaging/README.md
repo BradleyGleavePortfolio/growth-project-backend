@@ -118,9 +118,62 @@ on the **client** side of the thread — never the coach.
 | `message_sent` | `sendAsClient` | `body.length` |
 | `message_received` | `sendAsCoach` | `body.length` |
 | `coach_note_received` | `sendAsCoach`, alongside `message_received` | `1` |
+| `message_sent` (voice) | `sendAsClient` (voice payload) | `duration_sec * 10` |
+| `message_received` (voice) | `sendAsCoach` (voice payload) | `duration_sec * 10` |
+| `coach_note_received` (voice) | `sendAsCoach` (voice payload) | `1` |
 
 Bodies are NEVER passed to PTM — only the length. PTM doctrine forbids
-PII in `metadata`, and the `body` would qualify.
+PII in `metadata`, and the `body` would qualify. Voice signals carry
+`metadata: { voice: true, duration_sec }` so the recompute service can
+distinguish text vs. voice contributions without reading the audio
+itself.
+
+## Voice notes
+
+Phase 6C adds optional voice attachments to coach <-> client messages.
+A message can be text-only (existing behavior), voice-only, or both;
+the `body` column was loosened to nullable, but at least one of
+`body` or `voice_url` MUST be present (server enforces).
+
+### Validation rules (server-side, never trusted from client)
+
+| Rule | Default | Env override | Hard cap |
+|---|---|---|---|
+| Max duration | 300 s | `VOICE_NOTE_MAX_DURATION_SEC` | clamp `[10, 600]` |
+| Max size | 5 MB | `VOICE_NOTE_MAX_SIZE_MB` | clamp `[1, 25]` |
+| Content type | — | (allowlist below) | — |
+| Storage bucket | `voice-notes` | `SUPABASE_VOICE_BUCKET` | — |
+
+Allowed `content_type` values: `audio/mp4`, `audio/m4a`, `audio/aac`,
+`audio/webm`, `audio/ogg`. Anything else returns `400 VOICE_CONTENT_TYPE_REJECTED`.
+
+### Signed-upload flow
+
+1. Client `POST /messages/voice-upload` (or
+   `POST /coach/clients/:client_id/messages/voice-upload`) with
+   `{ duration_sec, size_bytes, content_type }`. Server validates
+   against the same limits enforced at message-send time, then issues
+   a Supabase Storage signed-upload URL scoped to the caller's user id.
+2. Client uploads the audio to `upload_url` (PUT). The URL is good for
+   `expires_at` (default 10 min).
+3. Client `POST /messages` (or coach-side equivalent) with
+   `{ voice: { url: <public_url>, duration_sec, size_bytes, content_type } }`.
+   Server re-validates and persists the message + voice columns.
+
+If the Supabase JS SDK in the deployment does not expose
+`createSignedUploadUrl()`, the upload endpoint returns
+`501 VOICE_STORAGE_UNAVAILABLE` so the operator knows to upgrade the
+SDK; the rest of the messaging surface stays functional.
+
+### Error codes
+
+| Code | When |
+|---|---|
+| `MESSAGE_EMPTY` | Both `body` and `voice` absent / empty. |
+| `VOICE_CONTENT_TYPE_REJECTED` | `content_type` not in allowlist. |
+| `VOICE_DURATION_OUT_OF_RANGE` | `duration_sec` ≤ 0 or > configured max. |
+| `VOICE_SIZE_OUT_OF_RANGE` | `size_bytes` ≤ 0 or > configured max. |
+| `VOICE_STORAGE_UNAVAILABLE` | Signed-URL issuance failed (SDK / config). |
 
 ## Tests
 

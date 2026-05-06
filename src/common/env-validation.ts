@@ -314,6 +314,28 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     reason: 'Feature flag — when "true", new client signups auto-enroll in Build Week. Defaults to false. Wiring is a follow-on PR; this PR only exposes the flag so deployment configs can be staged ahead of the implementation.',
   },
+  // Phase 6C — Async Voice Notes
+  {
+    name: 'VOICE_NOTE_MAX_DURATION_SEC',
+    tier: 'optional',
+    reason: 'Phase 6C — server-enforced max duration for voice attachments on coach <-> client messages. Defaults to 300; clamped to [10, 600]. Validated at signed-upload issuance AND at message-send time.',
+  },
+  {
+    name: 'VOICE_NOTE_MAX_SIZE_MB',
+    tier: 'optional',
+    reason: 'Phase 6C — server-enforced max file size in megabytes for voice attachments. Defaults to 5; clamped to [1, 25].',
+  },
+  {
+    name: 'SUPABASE_VOICE_BUCKET',
+    tier: 'optional',
+    reason: 'Phase 6C — Supabase Storage bucket name for voice note objects. Defaults to "voice-notes". Bucket must exist in the Supabase project; signed-upload flow returns 501 VOICE_STORAGE_UNAVAILABLE if the bucket is unreachable or the JS SDK is too old to expose createSignedUploadUrl().',
+  },
+  // Phase 6D — Coach Onboarding Wizard
+  {
+    name: 'COACH_ONBOARDING_AUTO_START',
+    tier: 'optional',
+    reason: 'Phase 6D — when "true" (default), AdminService.promoteUser auto-starts the 6-step onboarding wizard for newly-promoted coaches. Set to "false" to suppress (e.g. during bulk back-fills). Wizard-creation failures never block promotion.',
+  },
 ];
 
 export interface EnvValidationResult {

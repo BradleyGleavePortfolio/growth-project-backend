@@ -56,6 +56,7 @@ invite link.
 | `GET` | `/admin/coach-effectiveness` | Phase 6A — latest `CoachEffectivenessScore` per active coach, sorted score DESC (null scores last). Each row carries `{ coach_id, coach_name, coach_email, latest }`. See [`../coach/README.md`](../coach/README.md#coach-effectiveness-score-phase-6a) and [`../../docs/coach-signals.md`](../../docs/coach-signals.md). |
 | `GET` | `/admin/coach-effectiveness/:coachId` | Phase 6A — `{ latest, history }` for one coach. `?limit=` clamped `[1, 365]`, defaults to 30. |
 | `GET` | `/admin/coach-alerts?coach_id=&since=&limit=` | Phase 6B — cross-coach red-flag alert aggregator. Optional filters; `limit` clamped `[1, 200]`, defaults to 50. |
+| `GET` | `/admin/coach-onboarding?completed=&limit=` | Phase 6D — list every coach's onboarding wizard progress. `?completed=true|false` filters to finished / in-flight. `limit` clamped `[1, 500]`, defaults to 100. See [`../coach/README.md`](../coach/README.md#coach-onboarding-wizard-phase-6d) and [`../../docs/coach-experience.md`](../../docs/coach-experience.md). |
 | `GET` | `/admin/build-week/enrollments?status=&completed_after=&before=&limit=` | Phase 4 — list Build Week enrolments, ordered by `started_at` DESC. `before` cursor on `started_at`; `limit` clamped `[1, 200]`, defaults to 50. See [`../build-week/README.md`](../build-week/README.md). |
 | `GET` | `/admin/build-week/funnel` | Phase 4 — Build Week funnel: total enrolled, completion rate, and per-day reached/dropped counts (days 1..7). |
 

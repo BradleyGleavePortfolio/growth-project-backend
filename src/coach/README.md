@@ -218,3 +218,47 @@ in-app inbox. No external dep is added until that hook is ready.
 | `GET`  | `/admin/coach-effectiveness`          | OWNER                    | Latest score per coach, sorted score DESC. |
 | `GET`  | `/admin/coach-effectiveness/:coachId` | OWNER                    | `{ latest, history }` for one coach. |
 | `GET`  | `/admin/coach-alerts`                 | OWNER                    | Cross-coach aggregator. `?coach_id=&since=&limit=`. |
+| `GET`  | `/coach/onboarding`                   | coach                    | Phase 6D — current wizard progress for the caller. 404 if not started. |
+| `POST` | `/coach/onboarding/start`             | coach                    | Idempotent start. |
+| `POST` | `/coach/onboarding/steps/:n`          | coach                    | Advance to step `n`. Body is a per-step JSON blob; persisted under `step_data[n]`. |
+| `POST` | `/coach/onboarding/complete`          | coach                    | Terminal call. Requires reaching step 6 first. |
+| `GET`  | `/admin/coach-onboarding`             | OWNER                    | List all coach progress. `?completed=true|false&limit=`. |
+
+## Coach Onboarding Wizard (Phase 6D)
+
+A 6-step guided flow that runs once per coach the first time they log
+in after promotion. Server-side state lives in `CoachOnboardingProgress`
+(1:1 with the coach `User` row, `coach_id @unique`).
+
+### Steps
+
+1. **profile** — `business_name`, `bio`, `timezone`
+2. **invite_code** — surface the coach's default invite code; record
+   that they saw it
+3. **first_invite** — coach has shared the code with their first client
+   (the actual invite send is a separate API; this step just logs the
+   action)
+4. **message_template** — coach drafts their first message template
+5. **guidelines** — coach sets their default client guidelines
+6. **confirm** — terminal step; freezes the row
+
+### Auto-start
+
+`AdminService.promoteUser` calls `CoachOnboardingService.startWizard()`
+when a user is promoted to `role='coach'`. The call is wrapped in a
+try/catch — wizard creation failures are logged and swallowed so a
+transient DB hiccup never blocks a promotion. Disable globally with
+`COACH_ONBOARDING_AUTO_START=false` (default `true`).
+
+### Step-ordering doctrine
+
+`advanceStep(n)` accepts only `n === current_step` (resume on the same
+step) or `n === current_step + 1` (forward one). Skips and rewinds
+return `400 STEP_OUT_OF_ORDER`. Once `completed_at` is set the row
+freezes — further `advanceStep` returns `409 ONBOARDING_COMPLETED`.
+
+### Admin visibility
+
+`GET /admin/coach-onboarding` returns every coach's current progress
+so the operator can spot stalled coaches and reach out. Filter
+`?completed=true|false` to slice to finished / in-flight only.

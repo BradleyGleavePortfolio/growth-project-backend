@@ -31,8 +31,13 @@ describe('CreateMessageDto', () => {
     );
   });
 
-  it('rejects missing body', async () => {
-    await expect(run(CreateMessageDto, {})).rejects.toBeInstanceOf(BadRequestException);
+  it('accepts an empty payload at the DTO layer (service enforces MESSAGE_EMPTY at send time)', async () => {
+    // Phase 6C: `body` is now optional because a message can be voice-only.
+    // The DTO no longer requires it; MessagingService.assertSendablePayload
+    // is the cross-field guard that rejects (body missing && voice missing).
+    const ok = await run(CreateMessageDto, {});
+    expect(ok.body).toBeUndefined();
+    expect(ok.voice).toBeUndefined();
   });
 
   it('rejects bodies larger than 4000 chars', async () => {
@@ -41,7 +46,7 @@ describe('CreateMessageDto', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     // exactly 4000 is fine.
     const ok = await run(CreateMessageDto, { body: 'x'.repeat(4000) });
-    expect(ok.body.length).toBe(4000);
+    expect(ok.body?.length).toBe(4000);
   });
 
   it('strips / rejects forged fields (sender_id, coach_id, read_at)', async () => {
