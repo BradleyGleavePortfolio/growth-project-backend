@@ -117,6 +117,12 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
     // PLAY_STORE_URL, and PUBLIC_WEB_SIGNUP_URL until the real store
     // listings exist (mounted outside the /api prefix, see main.ts).
     PublicPagesModule,
+    // Phase 1 PTM (Predictive Tracking Model). @Global module exposing
+    // PtmService for fire-and-forget signal collection across check-ins,
+    // weight, workout, food, messaging, and finance hooks; plus the
+    // heuristic + weighted scoring engines and the nightly recompute
+    // scheduler. See src/ptm/README.md.
+    PtmModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)

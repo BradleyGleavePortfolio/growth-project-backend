@@ -175,6 +175,14 @@ model User {
   consents_as_client     ClientCoachConsent[] @relation("ConsentClient")
   consents_as_coach      ClientCoachConsent[] @relation("ConsentCoach")
 
+  // Phase 1 PTM (Predictive Tracking Model). Append-only signal log,
+  // outcome labels (taught by OWNERs/coaches), and append-only score
+  // history. See `src/ptm/README.md` and `docs/ptm.md` for the doctrine.
+  ptm_signals            ClientSignal[]
+  ptm_outcomes_target    ClientOutcome[]      @relation("PtmOutcomeTarget")
+  ptm_outcomes_labelled  ClientOutcome[]      @relation("PtmOutcomeLabeller")
+  ptm_predictions        PtmPrediction[]
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -930,4 +938,147 @@ model ClientCoachConsent {
   @@unique([client_id, coach_id, scope], name: "ClientCoachConsent_client_coach_scope_key")
   @@index([client_id])
   @@index([coach_id])
+}
+
+// ============================================================
+// PTM — Predictive Tracking Model (Phase 1)
+// ============================================================
+//
+// Doctrine (see src/ptm/README.md and docs/ptm.md):
+//   * ClientSignal is APPEND-ONLY. Every behavioral signal (check-in
+//     submitted, check-in missed, weight logged, message sent, workout
+//     logged, meal logged, finance EOD, app open, coach note received,
+//     etc.) is recorded with its raw value + metadata. We never UPDATE
+//     a signal in place; corrections are written as a new row.
+//   * ClientOutcome is the teaching set — the labels OWNERs and coaches
+//     attach to a client's eventual journey (churned, completed_90day,
+//     upgraded, referred, milestone_hit, dropped_off, renewed). Exactly
+//     one row per (user_id) — re-labelling overwrites the prior row,
+//     and AuditLog (`ptm.outcome_labelled`) keeps the canonical history.
+//   * PtmPrediction is APPEND-ONLY. Every score recompute writes a new
+//     row so the operator can see how a client's risk drifted over
+//     time. `prediction_basis` distinguishes heuristic_v1 (Phase 1B)
+//     from weighted_v2 (Phase 1D, activates at >= 20 outcomes) and
+//     reserves model_v3 for a future ML pass.
+//
+// PTM scores are advisory-only. The mobile client never sees raw
+// risk_score or factors — those are OWNER/COACH surfaces only.
+
+// Enumerated signal types. Strings are kept Prisma-side as a Postgres
+// enum so a typo at the call site fails at the DB boundary, not at
+// dashboard read time. New signal types require a Prisma migration —
+// that is by design: the heuristic and weighted services key off this
+// enum and a silent typo would skew scores.
+enum PtmSignalType {
+  checkin_streak       // a check-in was submitted; value = streak length on submit
+  checkin_miss         // a missed-check-in window crossed (3+ days, etc.); value = missed days
+  weight_logged        // weight log; value = delta vs prior log (kg) or 0 on first log
+  weight_skipped       // a 14-day no-log threshold crossed; value = days since last log
+  message_sent         // client → coach message; value = chars
+  message_received     // coach → client message; value = chars
+  coach_note_received  // coach guideline / nudge / draft delivered; value = 1
+  workout_logged       // workout session completed; value = total volume kg
+  workout_skipped      // 10-day no-workout threshold crossed; value = days since last
+  meal_logged          // logged food entry; value = calories
+  meal_skipped         // 7-day no-meal-log threshold crossed; value = days since last
+  finance_eod          // finance app end-of-day check-in; value = 1
+  finance_milestone    // finance milestone hit; value = 1
+  app_open             // first app-open of the day; value = seconds since last open
+  consistency_low      // 30-day consistency score dropped below 60%; value = consistency_pct
+  streak_dropped       // active streak dropped 50%+ from prior week; value = drop_pct
+}
+
+// Enumerated outcome labels. The teaching set is intentionally small;
+// new outcomes require a migration so the weighted service does not
+// silently see an unweighted label.
+enum PtmOutcomeType {
+  churned          // client cancelled / disengaged before goal
+  completed_90day  // client completed the 90-day program
+  upgraded         // client upgraded plan / extended commitment
+  referred         // client referred a new client (a measurable success)
+  milestone_hit    // client hit a major personal milestone (goal weight, etc.)
+  dropped_off      // client did not formally cancel but stopped engaging
+  renewed          // client renewed for another cycle
+}
+
+// Enumerated prediction basis tags. Drives the version selector in the
+// admin dashboard and lets the recompute job log which engine produced
+// a row without parsing the factors blob.
+enum PtmPredictionBasis {
+  heuristic_v1   // Phase 1B: hand-tuned weights + protective factors
+  weighted_v2    // Phase 1D: frequency-analysis weights, activates at >= 20 outcomes
+  model_v3       // Reserved for a future ML pass; not used in Phase 1
+}
+
+// Append-only behavioral signal. One row per discrete event we observed.
+// `metadata` is JSON for engine-specific context (delta direction, source
+// module, etc.) — keep it small and never put PII there.
+//
+// All signal writes are fire-and-forget at the call site (see
+// PtmService.recordSignal): a failure to insert MUST NOT bubble back
+// into the user-facing request. The service catches and logs.
+//
+// Index on (user_id, signal_type, recorded_at) supports the heuristic
+// service's bounded windows (last 7 / 14 / 30 days, by signal type).
+model ClientSignal {
+  id           String         @id @default(uuid())
+  user_id      String
+  user         User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  signal_type  PtmSignalType
+  value        Float          @default(0)
+  metadata     Json?
+  recorded_at  DateTime       @default(now())
+
+  @@index([user_id, signal_type, recorded_at])
+  @@index([signal_type, recorded_at])
+}
+
+// One outcome label per client. `labelled_by_id` is the OWNER or COACH
+// who taught the model what happened. `signal_snapshot` captures the
+// last-30-days signal counts at label time so the weighted service
+// (1D) can train against a frozen window even if older signals are
+// later GDPR-scrubbed.
+//
+// Re-labelling: upsert by user_id, then write a fresh AuditLog row
+// (`ptm.outcome_labelled`) carrying both old and new outcomes in
+// `metadata`. Treat AuditLog as the canonical history.
+model ClientOutcome {
+  id              String          @id @default(uuid())
+  user_id         String          @unique
+  user            User            @relation("PtmOutcomeTarget", fields: [user_id], references: [id], onDelete: Cascade)
+  outcome_type    PtmOutcomeType
+  labelled_by_id  String?
+  labelled_by     User?           @relation("PtmOutcomeLabeller", fields: [labelled_by_id], references: [id], onDelete: SetNull)
+  labelled_at     DateTime        @default(now())
+  notes           String?
+  signal_snapshot Json?
+
+  @@index([outcome_type, labelled_at])
+  @@index([labelled_by_id, labelled_at])
+}
+
+// Append-only prediction history. `factors` is a JSON blob the heuristic
+// (or weighted) service writes so the admin "why is this client red?"
+// drawer can show the contributing signals. Mobile clients NEVER see
+// this row — it is OWNER/COACH-only by guard.
+//
+// risk_score and success_score are independent dimensions in [0.0, 1.0].
+// They are NOT 1 - x of each other; a high-engagement, high-risk-of-
+// burnout client can carry high success and high risk simultaneously.
+//
+// Index on (user_id, computed_at desc) supports "latest score per user"
+// without a window function: ORDER BY computed_at DESC LIMIT 1 with
+// composite index hits the single-page seek path.
+model PtmPrediction {
+  id                String              @id @default(uuid())
+  user_id           String
+  user              User                @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  risk_score        Float
+  success_score     Float
+  prediction_basis  PtmPredictionBasis
+  factors           Json?
+  computed_at       DateTime            @default(now())
+
+  @@index([user_id, computed_at])
+  @@index([prediction_basis, computed_at])
 }

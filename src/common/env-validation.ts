@@ -249,6 +249,31 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     reason: 'Per-run cap on candidates the GDPR scrub worker will process. Defaults to 100; clamped to [1, 1000].',
   },
+  {
+    name: 'PTM_SCORING_ENABLED',
+    tier: 'optional',
+    reason: 'Feature flag — when "false", the nightly PTM recompute cron and the admin teaching endpoints are disabled. Defaults to true (engine runs). Use to quickly disable the scoring engine if a heuristic regression is shipped.',
+  },
+  {
+    name: 'PTM_SCORING_CRON',
+    tier: 'optional',
+    reason: 'Override for the nightly PTM recompute cron expression. Defaults to "0 4 * * *" (04:00 UTC, 1h after the GDPR scrub at 03:00 UTC). Must be a valid 5-field cron expression.',
+  },
+  {
+    name: 'PTM_RECOMPUTE_BATCH_LIMIT',
+    tier: 'optional',
+    reason: 'Per-run cap on the number of clients the PTM nightly cron recomputes. Defaults to 5000; clamped to [1, 50000]. Larger rosters are processed across multiple nights with a stable cursor.',
+  },
+  {
+    name: 'PTM_WEIGHTED_ACTIVATION_OUTCOMES',
+    tier: 'optional',
+    reason: 'Override the minimum number of labelled ClientOutcome rows before the weighted v2 engine activates. Defaults to 20. Below this threshold every recompute uses heuristic_v1.',
+  },
+  {
+    name: 'PTM_RISK_BOARD_PAGE_SIZE',
+    tier: 'optional',
+    reason: 'Default page size for GET /admin/ptm/risk-board. Defaults to 50; clamped to [1, 100] regardless of caller-supplied limit.',
+  },
 ];
 
 export interface EnvValidationResult {
