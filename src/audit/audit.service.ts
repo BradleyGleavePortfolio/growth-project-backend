@@ -20,6 +20,7 @@ export const AuditAction = {
   BILLING_SUBSCRIPTION_CANCELED: 'billing.subscription_canceled',
   BILLING_INVOICE_PAID: 'billing.invoice_paid',
   BILLING_INVOICE_PAYMENT_FAILED: 'billing.invoice_payment_failed',
+  PTM_OUTCOME_LABELLED: 'ptm.outcome_labelled',
 } as const;
 
 export type AuditActionValue = (typeof AuditAction)[keyof typeof AuditAction];
