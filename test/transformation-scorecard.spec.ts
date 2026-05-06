@@ -18,8 +18,22 @@ import { rowsToCsv } from '../src/admin/reports/csv';
 //     render `null`, never zero.
 //   - Bucketization wires through PTM's shared cutoffs (>0.6 = red).
 //   - Empty windows / missing rows render `null`, not synthetic zeros.
+//   - Finance federation columns (wealth_velocity_score, net_worth_delta,
+//     milestones_hit) render `null` when finance is not configured. Full
+//     coverage of the federation path is in
+//     transformation-scorecard-finance-columns.spec.ts.
 
 const NOW = new Date('2026-05-06T12:00:00.000Z');
+
+// Stub FinanceAdminClient — unconfigured by default so finance columns
+// are null in tests that are not testing the finance path.
+function makeFinanceClientStub(configured = false) {
+  return {
+    isConfigured: jest.fn(() => configured),
+    hasAuth: jest.fn(() => false),
+    lookupClient: jest.fn(async () => ({ kind: 'degraded', reason: 'not_configured', detail: '' })),
+  } as any;
+}
 
 function makePrisma(overrides: {
   diagnostic?: 'present' | 'missing' | 'throws';
@@ -161,7 +175,7 @@ describe('TransformationScorecardService.build', () => {
       buildWeek: 'present',
       hasOutcome: true,
     });
-    const svc = new TransformationScorecardService(prisma);
+    const svc = new TransformationScorecardService(prisma, makeFinanceClientStub());
     const out = await svc.build({ userId: 'u-1', sinceDays: 30 });
 
     expect(out.report).toBe('transformation-scorecard');
@@ -179,7 +193,7 @@ describe('TransformationScorecardService.build', () => {
       buildWeek: 'present',
       hasOutcome: true,
     });
-    const svc = new TransformationScorecardService(prisma);
+    const svc = new TransformationScorecardService(prisma, makeFinanceClientStub());
     const out = await svc.build({ userId: 'u-1' });
     const row = out.data[0];
 
@@ -224,6 +238,11 @@ describe('TransformationScorecardService.build', () => {
     expect(row.diagnostic_bucket).toBe('amber');
     expect(row.build_week_status).toBe('day_5');
 
+    // Finance columns null when not configured (FinanceAdminClient stub)
+    expect(row.wealth_velocity_score).toBeNull();
+    expect(row.net_worth_delta).toBeNull();
+    expect(row.milestones_hit).toBeNull();
+
     // days_active is the integer days between created_at and NOW.
     // 2025-12-06 → 2026-05-06 = 25 + 31 + 28 + 31 + 30 + 6 = 151 days
     // + 12h spillover floors back to 151.
@@ -244,7 +263,7 @@ describe('TransformationScorecardService.build', () => {
       diagnostic: 'missing',
       buildWeek: 'missing',
     });
-    const svc = new TransformationScorecardService(prisma);
+    const svc = new TransformationScorecardService(prisma, makeFinanceClientStub());
     const out = await svc.build({ userId: 'u-1' });
     const row = out.data[0];
 
@@ -265,6 +284,10 @@ describe('TransformationScorecardService.build', () => {
     expect(row.diagnostic_overall_score).toBeNull();
     expect(row.diagnostic_bucket).toBeNull();
     expect(row.build_week_status).toBeNull();
+    // Finance columns also null when not configured
+    expect(row.wealth_velocity_score).toBeNull();
+    expect(row.net_worth_delta).toBeNull();
+    expect(row.milestones_hit).toBeNull();
   });
 
   it('defensively renders null when the optional Phase-3 / Phase-4 reads throw', async () => {
@@ -272,7 +295,7 @@ describe('TransformationScorecardService.build', () => {
       diagnostic: 'throws',
       buildWeek: 'throws',
     });
-    const svc = new TransformationScorecardService(prisma);
+    const svc = new TransformationScorecardService(prisma, makeFinanceClientStub());
     const out = await svc.build({ userId: 'u-1' });
     const row = out.data[0];
 
@@ -288,7 +311,7 @@ describe('TransformationScorecardService.build', () => {
 
   it('routes coach_id to a per-coach roster query', async () => {
     const { prisma } = makePrisma();
-    const svc = new TransformationScorecardService(prisma);
+    const svc = new TransformationScorecardService(prisma, makeFinanceClientStub());
     await svc.build({ coachId: 'coach-7' });
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
     expect(prisma.user.findMany).toHaveBeenCalledWith(
@@ -301,7 +324,7 @@ describe('TransformationScorecardService.build', () => {
 
   it('clamps since_days into [7, 365] (default 90)', async () => {
     const { prisma } = makePrisma();
-    const svc = new TransformationScorecardService(prisma);
+    const svc = new TransformationScorecardService(prisma, makeFinanceClientStub());
 
     const tooHigh = await svc.build({ userId: 'u-1', sinceDays: 9999 });
     expect(tooHigh.window?.since_days).toBe(365);
@@ -314,7 +337,10 @@ describe('TransformationScorecardService.build', () => {
   });
 
   it('CSV header line is frozen (column count + order)', () => {
-    expect(TRANSFORMATION_SCORECARD_COLUMNS).toHaveLength(25);
+    // Column count is 28: 25 original + 3 finance columns
+    // (wealth_velocity_score, net_worth_delta, milestones_hit)
+    // inserted before generated_at.
+    expect(TRANSFORMATION_SCORECARD_COLUMNS).toHaveLength(28);
     const header = rowsToCsv(TRANSFORMATION_SCORECARD_COLUMNS, []).split('\r\n')[0];
     // Frozen snapshot: any column rename / reorder / insertion fails this
     // assertion, forcing a docs + downstream-pipeline review before the
@@ -344,6 +370,9 @@ describe('TransformationScorecardService.build', () => {
       'diagnostic_overall_score',
       'diagnostic_bucket',
       'build_week_status',
+      'wealth_velocity_score',
+      'net_worth_delta',
+      'milestones_hit',
       'generated_at',
     ].join(',');
     expect(header).toBe(expected);
