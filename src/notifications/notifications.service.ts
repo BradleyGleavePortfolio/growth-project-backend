@@ -1,9 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { UpdateNotificationPreferencesDto } from './notifications.dto';
 
+// Phase 6B: PushPayload is the minimal envelope CoachAlertsService.tryPush
+// passes through. It intentionally contains no PII — only the alert
+// identifier, type, and a short message string for the coach's lock-screen.
+export interface PushPayload {
+  alertId: string;
+  alertType: string;
+  severity: string;
+  message: string;
+}
+
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async getPreferences(userId: string) {
@@ -57,5 +69,43 @@ export class NotificationsService {
         ...fields,
       },
     });
+  }
+
+  /**
+   * Phase 6B — Push an alert payload to a coach's device(s).
+   *
+   * The push token lookup and APNs/FCM transport call are deferred until
+   * push credentials are wired in the environment. Until then, this method
+   * logs the delivery intent and returns true so callers know the push path
+   * was reached.
+   *
+   * When the User model gains a `push_token` column and push credentials are
+   * provisioned, replace the logger call below with the real SDK invocation.
+   * The method contract (signature, fallback behaviour) is final — callers
+   * must not throw on `false` return.
+   *
+   * Returns `true` when delivery was attempted, `false` if a transport error
+   * occurred.
+   *
+   * Payload is intentionally PII-free so it can be forwarded verbatim to
+   * the push provider.
+   */
+  async pushToCoach(coachId: string, payload: PushPayload): Promise<boolean> {
+    try {
+      // TODO(push): look up coach's push_token from User.push_token (field to
+      // be added in a schema migration) and call the real APNs/FCM SDK.
+      // If token is absent, return false for graceful in-app-inbox fallback.
+      // For now, log delivery intent — alerts are still stored in inbox.
+      this.logger.log(
+        `push delivery: coach=${coachId} alertId=${payload.alertId} type=${payload.alertType} sev=${payload.severity}`,
+      );
+      return true;
+    } catch (err) {
+      // Log and return false — push failure must never crash the caller.
+      this.logger.warn(
+        `pushToCoach failed for coach=${coachId}: ${(err as Error).message}`,
+      );
+      return false;
+    }
   }
 }

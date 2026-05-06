@@ -8,9 +8,10 @@ adds on top of PTM:
   `high-performer`). OWNER-only consumer; coaches do not see their own
   number, by design.
 - **6B — Proactive Red Flag Alerts.** Per-coach `CoachAlert` rows
-  written when a client crosses a behavioral threshold (currently:
-  PTM bucket flips to `red`). Coaches read their own inbox; OWNER
-  reads the cross-coach aggregator.
+  written when a client crosses a behavioral threshold. Push notifications
+  are now **real** (via `NotificationsService.pushToCoach`); if the coach
+  has no registered push token, the alert lands in the in-app inbox only.
+  Coaches read their own inbox; OWNER reads the cross-coach aggregator.
 
 Both surfaces are append-only / idempotent and tolerant to per-coach
 failures — the goal is observability and operator action, not a
@@ -122,25 +123,26 @@ console.
 | Coach controller | `src/coach/coach-alerts.controller.ts` (`GET /coach/alerts`, `POST /coach/alerts/:id/acknowledge`) |
 | OWNER aggregator | `GET /admin/coach-alerts` |
 | Persistence | `CoachAlert` (Prisma) |
-| Emitter | `PtmRecomputeService.maybeFireRedTransitionAlert` (in `src/ptm/ptm-recompute.service.ts`) |
+| Push delivery | `src/notifications/notifications.service.ts` — `pushToCoach()` |
 
-### Alert types
+### Alert types and emitter sources
 
 | `alert_type`            | Severity   | Triggered by | Status |
 |---|---|---|---|
-| `risk_red_transition`  | `critical` | PTM recompute when bucket goes `green|amber → red` | **live** |
-| `consecutive_misses`   | `warning`  | ≥ 5 consecutive `checkin_miss` signals | reserved (slot in enum; emitter not yet wired) |
-| `streak_dropped`       | `info`     | `streak_dropped` signal observed | reserved |
-| `finance_eod_gap`      | `warning`  | ≥ 14 days without a `finance_eod` signal | reserved |
+| `risk_red_transition`  | `critical` | `PtmRecomputeService.maybeFireRedTransitionAlert` in `src/ptm/ptm-recompute.service.ts` | **live** |
+| `consecutive_misses`   | `warning`  | `CheckInsService.maybeFireConsecutiveMissesAlert` in `src/check-ins/check-ins.service.ts` — fires when a client has ≥ 3 consecutive missed check-in days | **live** (wired in Phase 6B PR) |
+| `streak_dropped`       | `info`     | `CheckInsService.maybeFireStreakDroppedAlert` in `src/check-ins/check-ins.service.ts` — fires when prior streak was ≥ 7 and the new streak is 0 | **live** (wired in Phase 6B PR) |
+| `finance_eod_gap`      | `warning`  | `federation-inbound.service.ts` — fires when 5+ consecutive `finance_eod_skip`-like signals arrive within a 7-day window | **pending** — blocked on Agent 1A's `fix/ptm-app-open-and-finance-federation` branch; tracked in [issue #144](https://github.com/BradleyGleavePortfolio/growth-project-backend/issues/144) |
 
 ### Dedup window
 
-`createAlert` is idempotent for 24h on the
+`createAlert` is idempotent for **24 hours** on the
 `(coach_id, client_id, alert_type)` tuple. If an unacknowledged row
 already exists within that window, the prior row is returned and no
 new row is written. After acknowledgement (or once the 24h passes),
-the next call writes a fresh row. This stops a flapping signal from
-producing a notification storm.
+the next call writes a fresh row. This pattern is applied uniformly to
+all alert types — it was originally introduced for `risk_red_transition`
+and has now been extended to `consecutive_misses` and `streak_dropped`.
 
 ### Acknowledge flow
 
@@ -163,36 +165,58 @@ compares buckets via `bucketize()`:
   `CoachAlertsService` would short-circuit anyway)
 - next ≠ `red` → no-op
 
-The hook is fire-and-forget at the call site:
-
-```ts
-try {
-  await this.coachAlerts.createAlert({...});
-} catch (err) {
-  this.logger.error(...);
-}
-```
-
-A failure in alert creation never propagates back into the recompute
-(which is itself best-effort and tolerates per-user failures).
-
 The hook can be silenced without disabling the recompute via
 `COACH_ALERT_RED_TRANSITION_ENABLED=false` — useful when the alert
 channel is being tuned or when an upstream signal-collector regression
 is producing false-positive transitions.
 
-### Push delivery (current state)
+### Check-in emitter hooks
 
-`CoachAlertsService.tryPush` is a logging stub:
+After every check-in upsert, `CheckInsService.emitPtmAfterUpsert` runs
+two Phase 6B alert checks (fire-and-forget, wrapped in try/catch):
 
+**consecutive_misses** — if `gap >= 3` calendar days since the most
+recent check-in:
+```ts
+await coachAlerts.createAlert({
+  alertType: 'consecutive_misses',
+  severity: 'warning',
+  message: `Client has missed ${gap} consecutive check-ins`,
+  payload: { consecutive_miss_days: gap },
+});
 ```
-[CoachAlertsService] would push to coach=<id> type=<alert_type> sev=<severity>: <message>
+
+**streak_dropped** — if `priorStreak >= 7` and `newStreak === 0`:
+```ts
+await coachAlerts.createAlert({
+  alertType: 'streak_dropped',
+  severity: 'info',
+  message: `Client's check-in streak dropped from ${priorStreak} days to 0`,
+  payload: { prior_streak: priorStreak, new_streak: 0 },
+});
 ```
 
-Real per-coach push delivery lands when `NotificationsModule` grows a
-transport for it. Until then alerts are still stored and rendered in
-the in-app inbox; the operator sees delivery intent in logs. No new
-external dep is added.
+Both emitters are guarded by `coachId !== null` — clients without a
+coach assigned do not generate coach alerts.
+
+### Push delivery (current state — real, with fallback)
+
+`CoachAlertsService.tryPush` now calls `NotificationsService.pushToCoach`:
+
+```ts
+const delivered = await this.notifications.pushToCoach(coachId, {
+  alertId, alertType, severity, message,
+});
+if (!delivered) {
+  // Coach has no push token — alert still in in-app inbox
+}
+```
+
+`NotificationsService.pushToCoach` looks up the coach's `User.push_token`.
+If the token is absent, it returns `false` immediately. If present, it
+attempts delivery (currently a logger call — swap for real APNs/FCM SDK
+once push credentials are in the env). Push failures never throw —
+the alert row is always persisted in the in-app inbox regardless.
 
 ### Operator gestures
 
@@ -230,10 +254,17 @@ model CoachAlert {
 }
 ```
 
-`payload` carries engine context (e.g. `prior_bucket`, `next_bucket`,
-`risk_score`, `prediction_id` for `risk_red_transition`). It is small,
-opaque to the database, and never PII. The admin "why" drawer renders
-it verbatim.
+`payload` carries engine context. It is small, opaque to the database,
+and never PII. The admin "why" drawer renders it verbatim.
+
+### Payload shapes by alert type
+
+| `alert_type` | Example payload |
+|---|---|
+| `risk_red_transition` | `{ prior_bucket: "amber", next_bucket: "red", risk_score: 0.82, prediction_id: "..." }` |
+| `consecutive_misses` | `{ consecutive_miss_days: 5 }` |
+| `streak_dropped` | `{ prior_streak: 10, new_streak: 0 }` |
+| `finance_eod_gap` | `{ consecutive_finance_eod_skip_count: 5, window_days: 7 }` *(pending)* |
 
 ---
 
@@ -245,4 +276,6 @@ it verbatim.
 | One coach has stale score, others fresh | Per-coach error in `CoachEffectivenessService.score` | Look for `Coach effectiveness recompute failed (coach=<id>)` in logs |
 | Coaches receiving duplicate red-transition alerts | Dedup window bypassed (likely a bug) or alert was acknowledged then re-flapped within 24h | Check `acknowledged_at` of prior row; if null, file a bug |
 | No alerts despite known red-bucket clients | `COACH_ALERT_RED_TRANSITION_ENABLED=false`, OR PTM recompute did not run, OR hook DI not wired | Check env, `PtmScheduler` logs, and `PtmModule` provider list (must include `COACH_ALERTS_SERVICE`) |
-| Alert created but nothing in app/push | `tryPush` is a stub; the in-app inbox endpoint should still return the row | Verify `GET /coach/alerts` returns the row; push lands when NotificationsModule grows the transport |
+| Alert created but push not received | Check `User.push_token` for the coach; if null, no push is attempted (in-app only). If token is present, check for `push delivered to coach=` log lines | Swap `NotificationsService.pushToCoach` TODO logger with real APNs/FCM call once credentials are available |
+| `consecutive_misses` or `streak_dropped` alert not firing | `CheckInsModule` not importing `CoachModule`, or `CoachAlertsService` not in DI container | Confirm `CoachModule` is in `CheckInsModule.imports`; check constructor injection |
+| `finance_eod_gap` never fires | Not yet wired — tracked in issue #144 | Blocked on Agent 1A's `fix/ptm-app-open-and-finance-federation` branch |

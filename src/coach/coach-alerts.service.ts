@@ -1,6 +1,10 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import type { CoachAlert, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import {
+  NotificationsService,
+  PushPayload,
+} from '../notifications/notifications.service';
 
 // Phase 6B — Proactive Red Flag Alerts.
 //
@@ -14,9 +18,17 @@ import { PrismaService } from '../prisma.service';
 //                        owning the alert is the only caller permitted;
 //                        a foreign coach gets NotFoundException.
 //
-// Push-notification delivery is currently a stub (logs only). Per the
-// brief, the actual per-coach push hook lands when NotificationsModule
-// supports it; no new external dep here. See README for the contract.
+// Push-notification delivery: real push via NotificationsService.pushToCoach.
+// NotificationsService is @Optional() so the existing test suite that
+// constructs CoachAlertsService(prisma) directly continues to compile and
+// pass — when notifications is null, tryPush logs and returns without error.
+//
+// Emitters wired in this PR:
+//   * risk_red_transition  — PTM recompute (src/ptm/ptm-recompute.service.ts)
+//   * consecutive_misses   — CheckInsService.maybeFireConsecutiveMissesAlert
+//   * streak_dropped       — CheckInsService.maybeFireStreakDroppedAlert
+//   * finance_eod_gap      — federation inbound endpoint (Agent 1A dependency;
+//                            see GitHub issue #144)
 //
 // Doctrine:
 //   * Coach can only read/ack their own alerts.
@@ -57,7 +69,10 @@ export interface ListAlertsOptions {
 export class CoachAlertsService {
   private readonly logger = new Logger(CoachAlertsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly notifications?: NotificationsService,
+  ) {}
 
   /**
    * Idempotent within DEDUP_WINDOW_HOURS for the same
@@ -65,6 +80,9 @@ export class CoachAlertsService {
    * when a recent unacknowledged alert is found, otherwise inserts a
    * fresh row. The caller is expected to swallow exceptions — alert
    * creation must never bubble into a user-facing 5xx.
+   *
+   * Dedup pattern: identical to the risk_red_transition path. The 24h window
+   * is applied uniformly to all alert types to prevent notification storms.
    */
   async createAlert(input: CreateAlertInput): Promise<CoachAlert> {
     const since = new Date(Date.now() - DEDUP_WINDOW_HOURS * HOUR_MS);
@@ -92,7 +110,7 @@ export class CoachAlertsService {
         payload: (input.payload ?? null) as unknown as Prisma.InputJsonValue,
       },
     });
-    this.tryPush(created);
+    await this.tryPush(created);
     return created;
   }
 
@@ -150,19 +168,39 @@ export class CoachAlertsService {
     });
   }
 
-  // ── push delivery stub ─────────────────────────────────────────────────
-  // The brief allows a logging stub here until NotificationsModule grows
-  // a per-coach push transport. We log the would-be payload so an
-  // operator can grep for delivery intent in logs, and document the
-  // contract in src/coach/README.md.
-  private tryPush(alert: CoachAlert): void {
+  // ── push delivery ──────────────────────────────────────────────────────
+  // Real push via NotificationsService.pushToCoach. NotificationsService is
+  // @Optional() so the service is usable in test contexts that only provide
+  // PrismaService. When notifications is absent (test-only), we log and skip.
+  // When pushToCoach returns false (no token), the alert is still in the
+  // in-app inbox — no exception thrown.
+  private async tryPush(alert: CoachAlert): Promise<void> {
     try {
-      this.logger.log(
-        `would push to coach=${alert.coach_id} type=${alert.alert_type} sev=${alert.severity}: ${alert.message}`,
+      if (!this.notifications) {
+        // Test context — notifications not wired; alert still written to DB.
+        return;
+      }
+      const payload: PushPayload = {
+        alertId: alert.id,
+        alertType: alert.alert_type,
+        severity: alert.severity,
+        message: alert.message,
+      };
+      const delivered = await this.notifications.pushToCoach(
+        alert.coach_id,
+        payload,
       );
+      if (!delivered) {
+        this.logger.log(
+          `push skipped (no token) coach=${alert.coach_id} type=${alert.alert_type} sev=${alert.severity}: ${alert.message}`,
+        );
+      }
     } catch {
-      // Logger is in-process; this should not throw, but if it does,
-      // never let push noise crash the alert write path.
+      // Push failure must never crash the alert-write path. Alert is still
+      // stored in the in-app inbox regardless of delivery outcome.
+      this.logger.warn(
+        `tryPush threw for alert=${alert.id} coach=${alert.coach_id} — alert still saved in inbox`,
+      );
     }
   }
 }

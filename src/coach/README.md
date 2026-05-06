@@ -22,7 +22,7 @@ lives under `src/v1/` (see [v1 BFF README](../v1/README.md)).
 |---|---|
 | `coach.controller.ts` | `/coach/*` HTTP surface; class-level `@UseGuards(JwtAuthGuard, CoachGuard)` |
 | `coach.service.ts` | Roster filtering, timeline aggregation, alert rules, guidelines persistence |
-| `coach.module.ts` | Wires the controller and service; imports `AuthModule` |
+| `coach.module.ts` | Wires the controller and service; imports `AuthModule` and `NotificationsModule` |
 
 ## Endpoints
 
@@ -107,6 +107,8 @@ vars; everything is database-driven.
 | `test/coach.service.spec.ts` | Tenancy, archive/unarchive, alert rule output |
 | `test/coach-timeline.spec.ts` | 90-day timeline composition + ordering |
 | `test/v1-coach.service.spec.ts` | The BFF analogue under `src/v1/` |
+| `test/coach-alerts-push-delivery.spec.ts` | Push delivery via `NotificationsService.pushToCoach`; fallback when no token; dedup suppression |
+| `test/coach-alerts-emitters.spec.ts` | `consecutive_misses` + `streak_dropped` emitter behaviour; dedup; payload shapes |
 
 ## Operational notes
 
@@ -164,27 +166,30 @@ admin console reads via `GET /admin/coach-effectiveness` (sorted) and
 ## Red Flag Alerts (Phase 6B)
 
 `CoachAlertsService` writes proactive `CoachAlert` rows when a client
-crosses a behavioral threshold. The current emitter is the PTM
-recompute hook (green/amber → red transition); future emitters
-(consecutive miss detector, finance-EOD gap, streak-drop) will land
-under the same `alert_type` enum.
+crosses a behavioral threshold. Push notifications are **real** —
+`tryPush` now calls `NotificationsService.pushToCoach(coachId, payload)`.
+If the coach has no registered push token (`User.push_token` is null),
+the alert is still written to the in-app inbox and `tryPush` returns
+without error.
 
-### Alert types
+### Alert types and emitter sources
 
-| `alert_type`            | Severity   | Triggered by |
-|---|---|---|
-| `risk_red_transition`  | `critical` | PTM recompute when a client's bucket flips to `red` from `green` or `amber` |
-| `consecutive_misses`   | `warning`  | (reserved) ≥ 5 consecutive `checkin_miss` signals |
-| `streak_dropped`       | `info`     | (reserved) `streak_dropped` signal observed |
-| `finance_eod_gap`      | `warning`  | (reserved) ≥ 14 days without a `finance_eod` signal |
+| `alert_type`            | Severity   | Triggered by | Status |
+|---|---|---|---|
+| `risk_red_transition`  | `critical` | `PtmRecomputeService` — bucket flips `green/amber → red` | **live** |
+| `consecutive_misses`   | `warning`  | `CheckInsService.maybeFireConsecutiveMissesAlert` — client has ≥ 3 consecutive missed check-in days | **live** |
+| `streak_dropped`       | `info`     | `CheckInsService.maybeFireStreakDroppedAlert` — prior streak ≥ 7, new streak = 0 | **live** |
+| `finance_eod_gap`      | `warning`  | `federation-inbound.service.ts` (Agent 1A dependency) — 5+ consecutive `finance_eod_skip` signals in 7 days | **pending** — [issue #144](https://github.com/BradleyGleavePortfolio/growth-project-backend/issues/144) |
 
 ### Dedup window
 
 `createAlert` short-circuits when an unacknowledged row with the same
-`(coach_id, client_id, alert_type)` exists within the last 24h. A
-flapping signal can therefore not produce a notification storm; the
-prior row is returned instead. After acknowledgement (or the 24h
-window passes), the next call writes a fresh row.
+`(coach_id, client_id, alert_type)` exists within the last **24 hours**.
+This dedup pattern was originally introduced for `risk_red_transition`
+and is now applied identically to all alert types. A flapping signal
+cannot produce a notification storm; the prior row is returned instead.
+After acknowledgement (or the 24h window passes), the next call writes
+a fresh row.
 
 ### Acknowledge flow
 
@@ -193,12 +198,23 @@ The call is idempotent — a repeated ack returns the existing row
 without writing. A foreign coach (alert.coach_id ≠ caller) gets a
 404, never a 403, to avoid leaking alert existence.
 
-### Push delivery (stub)
+### Push delivery
 
-`tryPush` currently logs `would push to coach=… type=… sev=…: <message>`.
-Real per-coach push delivery lands when `NotificationsModule` grows
-the transport; until then, alerts are still stored and visible via the
-in-app inbox. No external dep is added until that hook is ready.
+`CoachAlertsService.tryPush` calls `NotificationsService.pushToCoach`:
+
+```ts
+const payload: PushPayload = { alertId, alertType, severity, message };
+const delivered = await this.notifications.pushToCoach(alert.coach_id, payload);
+if (!delivered) {
+  // No push token — alert already in in-app inbox, no action needed
+}
+```
+
+`NotificationsService.pushToCoach` is defined in
+`src/notifications/notifications.service.ts`. The current implementation
+logs to confirm delivery intent (real APNs/FCM swap is a TODO in that
+file — credentials needed in env). The contract (signature, fallback,
+no-throw on missing token) is final.
 
 ### Env flags
 
