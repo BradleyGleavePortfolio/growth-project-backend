@@ -8,6 +8,7 @@ import { CoachAlertsController } from './coach-alerts.controller';
 import { CoachOnboardingService } from './coach-onboarding.service';
 import { CoachOnboardingController } from './coach-onboarding.controller';
 import { AuthModule } from '../auth/auth.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 // PrismaService provided globally via PrismaModule.
 //
@@ -16,6 +17,9 @@ import { AuthModule } from '../auth/auth.module';
 //   * CoachEffectivenessScheduler — nightly recompute (05:00 UTC default)
 //   * CoachAlertsService — proactive red-flag alert writer + ack flow
 //   * CoachAlertsController — coach-facing /coach/alerts surface
+//
+// Phase 6B push delivery: NotificationsModule imported so CoachAlertsService
+// can inject NotificationsService.pushToCoach.
 //
 // Phase 6D additions:
 //   * CoachOnboardingService — 6-step wizard state machine; exported so
@@ -26,7 +30,7 @@ import { AuthModule } from '../auth/auth.module';
 // exported so AdminModule (admin endpoints) and PtmModule (PTM-recompute →
 // alert hook) can inject them.
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, NotificationsModule],
   controllers: [CoachController, CoachAlertsController, CoachOnboardingController],
   providers: [
     CoachService,
