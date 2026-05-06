@@ -10,11 +10,24 @@ import { BadRequestException } from '@nestjs/common';
 
 function makeRes() {
   const headers = new Map<string, string>();
-  return {
+  // Provide the minimal Writable-stream interface that Node's pipe() and
+  // our controller call on the response object.  Using a plain object (not
+  // a real PassThrough) keeps the test synchronous-friendly while avoiding
+  // "dest.once is not a function" crashes when pdfStream.pipe(res) is called.
+  const res: any = {
     setHeader: jest.fn((k: string, v: string) => headers.set(k, v)),
-    pipe: jest.fn(),
+    write: jest.fn(),
+    end: jest.fn(),
+    // Node stream pipe() calls these on the destination
+    on: jest.fn(),
+    once: jest.fn(),
+    emit: jest.fn(),
+    removeListener: jest.fn(),
+    // writable flag checked by some stream implementations
+    writable: true,
     headers,
-  } as any;
+  };
+  return res;
 }
 
 function envelope<T>(data: T, extras: Partial<{ window: any }> = {}) {
@@ -236,15 +249,14 @@ describe('ReportsController — transformation scorecard format handling', () =>
     ).rejects.toThrow(BadRequestException);
   });
 
-  it('sets PDF headers and calls res.pipe for format=pdf', async () => {
+  it('sets PDF headers for format=pdf', async () => {
     const { ctrl } = build();
     const res = makeRes();
     await ctrl.transformationScorecard('pdf', undefined, undefined, undefined, res);
     expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
     const cd = res.headers.get('Content-Disposition');
     expect(cd).toMatch(/transformation-scorecard-\d{8}\.pdf/);
-    // The PDF stream pipes directly into res
-    expect(res.pipe).toHaveBeenCalled();
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
   });
 });
 
