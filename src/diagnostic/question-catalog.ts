@@ -16,7 +16,7 @@ interface RawQuestion {
   text: string;
 }
 
-interface RawCatalog {
+export interface RawCatalog {
   version: string;
   scale_label: string;
   sections: Array<{ id: string; title: string; max_score: number; question_count: number }>;

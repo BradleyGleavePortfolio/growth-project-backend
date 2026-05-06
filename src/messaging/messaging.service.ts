@@ -276,18 +276,23 @@ export class MessagingService {
       has_voice: !!voice,
       voice_duration_sec: voice?.duration_sec ?? null,
     });
-    // Phase 6C — voice messages emit PTM signals that count harder than
-    // text. Per the brief, value = duration_sec * 10 so a 30-second voice
-    // note registers like a 300-char message. The text-path PTM emits are
-    // owned by the Phase 1A agent and intentionally NOT touched here; this
-    // branch fires ONLY when a voice attachment is present. The userId on
-    // these signals is the client (the PTM model scores clients only).
+    // Phase 1A — every coach->client send produces two PTM signals on the
+    // client side (the PTM model scores clients only): message_received
+    // (cadence) + coach_note_received (intent). Phase 6C — voice messages
+    // emit value = duration_sec * 10 so a 30-second voice note registers
+    // like a 300-char message; the text path uses body.length. Both are
+    // fire-and-forget through PtmService.
     if (voice) {
       this.ptm.emit(clientId, 'message_received', voice.duration_sec * 10, {
         voice: true,
         duration_sec: voice.duration_sec,
       });
       this.ptm.emit(clientId, 'coach_note_received', 1, { voice: true });
+    } else {
+      this.ptm.emit(clientId, 'message_received', body?.length ?? 0, {
+        voice: false,
+      });
+      this.ptm.emit(clientId, 'coach_note_received', 1, { voice: false });
     }
     return created;
   }
@@ -327,6 +332,11 @@ export class MessagingService {
       this.ptm.emit(clientId, 'message_sent', voice.duration_sec * 10, {
         voice: true,
         duration_sec: voice.duration_sec,
+      });
+    } else {
+      // Phase 1A: text-path emit. value = body length, no PII (no body).
+      this.ptm.emit(clientId, 'message_sent', body?.length ?? 0, {
+        voice: false,
       });
     }
     return created;
