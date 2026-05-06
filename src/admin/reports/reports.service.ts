@@ -4,6 +4,8 @@ import { PrismaService } from '../../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { FinanceFederationService } from '../console/finance-federation.service';
 import { AuditService } from '../../audit/audit.service';
+import { PtmWeightedService } from '../../ptm/ptm-weighted.service';
+import { PTM_WINDOWS } from '../../ptm/ptm.types';
 
 // ReportsService composes operational reports for the OWNER admin surface.
 //
@@ -76,6 +78,21 @@ export interface AuditSummaryRow {
   ip: string | null;
 }
 
+// Per-row shape of the ptm-signal-weights report. One row per signal
+// type the trainer learned a weight for. CSV consumers (operators) pull
+// this into a spreadsheet to inspect which signals correlate with
+// which cohort. The shape mirrors PtmTrainedWeight verbatim, plus the
+// `basis` column so a CSV merged across runs is self-describing.
+export interface PtmSignalWeightRow {
+  signal_type: string;
+  weight: number;
+  training_count: number;
+  training_max: number;
+  success_avg: number;
+  failure_avg: number;
+  basis: 'weighted_v2';
+}
+
 const DEFAULT_LIMIT = 1000;
 const MAX_LIMIT = 5000;
 
@@ -86,6 +103,7 @@ export class ReportsService {
     private metrics: MetricsService,
     private financeFederation: FinanceFederationService,
     private audit: AuditService,
+    private ptmWeighted: PtmWeightedService,
   ) {}
 
   private envelope<T>(
@@ -262,6 +280,94 @@ export class ReportsService {
       since: since.toISOString(),
     });
   }
+
+  // PTM signal weights — surface the current trained weights of the
+  // weighted_v2 engine for the OWNER. Below the activation threshold
+  // (or with an empty cohort) the response carries
+  // `basis: 'heuristic_v1'`, an empty `weights` array, and a `reason`
+  // field so the operator can tell "0 trained weights" apart from
+  // "engine not yet active".
+  //
+  // The CSV form serialises one row per learned weight with the
+  // `basis` column included so a merged-across-runs CSV remains
+  // self-describing.
+  async ptmSignalWeights(): Promise<
+    ReportEnvelope<PtmSignalWeightRow[]> & {
+      basis: 'weighted_v2' | 'heuristic_v1';
+      training_count: number;
+      reason?: 'below_activation_threshold' | 'empty_cohort';
+      activation_threshold?: number;
+      success_count?: number;
+      failure_count?: number;
+      skipped_no_snapshot?: number;
+      skipped_unclassified?: number;
+    }
+  > {
+    const active = await this.ptmWeighted.isActive();
+    const summary = await this.ptmWeighted.getCurrentWeights();
+    const threshold = ptmActivationThreshold();
+
+    const baseEnvelope = this.envelope<PtmSignalWeightRow[]>(
+      'ptm-signal-weights',
+      [],
+    );
+
+    if (!active) {
+      const reason: 'below_activation_threshold' | 'empty_cohort' =
+        summary.training_count < threshold
+          ? 'below_activation_threshold'
+          : 'empty_cohort';
+      return {
+        ...baseEnvelope,
+        basis: 'heuristic_v1',
+        training_count: summary.training_count,
+        success_count: summary.success_count,
+        failure_count: summary.failure_count,
+        skipped_no_snapshot: summary.skipped_no_snapshot,
+        skipped_unclassified: summary.skipped_unclassified,
+        reason,
+        activation_threshold: threshold,
+      };
+    }
+
+    const rows: PtmSignalWeightRow[] = summary.weights.map((w) => ({
+      signal_type: w.signal_type,
+      weight: w.weight,
+      training_count: w.training_count,
+      training_max: w.training_max,
+      success_avg: w.success_avg,
+      failure_avg: w.failure_avg,
+      basis: 'weighted_v2',
+    }));
+
+    return {
+      ...baseEnvelope,
+      data: rows,
+      basis: 'weighted_v2',
+      training_count: summary.training_count,
+      success_count: summary.success_count,
+      failure_count: summary.failure_count,
+      skipped_no_snapshot: summary.skipped_no_snapshot,
+      skipped_unclassified: summary.skipped_unclassified,
+      activation_threshold: threshold,
+    };
+  }
+}
+
+// Mirrors the parsing logic in PtmWeightedService so the reports
+// envelope can carry the activation threshold without round-tripping
+// the env read through the service. Kept here (not in a shared util)
+// because both call sites are tiny and the logic is two lines.
+function ptmActivationThreshold(): number {
+  const raw = process.env.PTM_WEIGHTED_ACTIVATION_OUTCOMES;
+  if (raw === undefined || raw === '') {
+    return PTM_WINDOWS.WEIGHTED_ACTIVATION_OUTCOMES;
+  }
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return PTM_WINDOWS.WEIGHTED_ACTIVATION_OUTCOMES;
+  }
+  return parsed;
 }
 
 function clampLimit(raw: number | undefined): number {
