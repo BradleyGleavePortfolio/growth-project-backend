@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { UpdateNotificationPreferencesDto } from './notifications.dto';
 
@@ -74,40 +74,30 @@ export class NotificationsService {
   /**
    * Phase 6B — Push an alert payload to a coach's device(s).
    *
-   * Look up the coach's push_token from the User row. If the token is absent
-   * (coach has no registered device, or has revoked push permission) the
-   * method returns `false` and the caller falls back to the in-app inbox
-   * only. No exception is thrown — push delivery is best-effort and must
-   * never interrupt the alert-write path.
+   * The push token lookup and APNs/FCM transport call are deferred until
+   * push credentials are wired in the environment. Until then, this method
+   * logs the delivery intent and returns true so callers know the push path
+   * was reached.
    *
-   * Transport: the token is stored in `User.push_token` (null when unset).
-   * In the current deploy, the column exists in the schema but the actual
-   * APNs/FCM HTTP call is a placeholder logger call — it is trivially
-   * swapped for a real SDK call once push credentials are wired in the env.
-   * The contract (signature, fallback behaviour) is final.
+   * When the User model gains a `push_token` column and push credentials are
+   * provisioned, replace the logger call below with the real SDK invocation.
+   * The method contract (signature, fallback behaviour) is final — callers
+   * must not throw on `false` return.
    *
-   * Returns `true` when a delivery was attempted, `false` when the coach had
-   * no token.
+   * Returns `true` when delivery was attempted, `false` if a transport error
+   * occurred.
+   *
+   * Payload is intentionally PII-free so it can be forwarded verbatim to
+   * the push provider.
    */
   async pushToCoach(coachId: string, payload: PushPayload): Promise<boolean> {
     try {
-      const coach = await this.prisma.user.findUnique({
-        where: { id: coachId },
-        select: { push_token: true },
-      });
-      const token = coach?.push_token ?? null;
-      if (!token) {
-        // No registered device — graceful fallback; in-app inbox is still
-        // written by the caller regardless of this return value.
-        return false;
-      }
-
-      // TODO(push): replace the logger call below with the real APNs / FCM
-      // SDK invocation once push credentials are available in the env.
-      // The payload shape is intentionally minimal (no PII) so it can be
-      // forwarded verbatim to the provider.
+      // TODO(push): look up coach's push_token from User.push_token (field to
+      // be added in a schema migration) and call the real APNs/FCM SDK.
+      // If token is absent, return false for graceful in-app-inbox fallback.
+      // For now, log delivery intent — alerts are still stored in inbox.
       this.logger.log(
-        `push delivered to coach=${coachId} token=***${token.slice(-4)} alertId=${payload.alertId} type=${payload.alertType}`,
+        `push delivery: coach=${coachId} alertId=${payload.alertId} type=${payload.alertType} sev=${payload.severity}`,
       );
       return true;
     } catch (err) {
