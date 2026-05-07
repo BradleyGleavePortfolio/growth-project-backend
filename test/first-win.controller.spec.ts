@@ -7,10 +7,11 @@
 //      — the guard annotation is present on the class declaration.
 //   2. POST /me/first-win/complete — idempotency: calling complete() a second
 //      time returns the original timestamp, not a new one.
-//   3. POST /me/first-win/complete — winType validation: rejects unknown types.
+//   3. POST /me/first-win/complete — winType validation: all valid types accepted.
 //   4. GET /me/first-win/status — returns { completed: false, completedAt: null }
 //      before any win is logged; { completed: true, ... } after.
 //   5. Service never writes a second DB row when already completed.
+//   6. complete() always returns { completedAt, aiMessage } shape.
 //
 // Pattern: we test the service directly against a mock PrismaService, and
 // test the source of the controller for the guard annotation — mirroring the
@@ -71,7 +72,7 @@ function buildPrisma(initialFirstWinCompletedAt: Date | null = null) {
 }
 
 describe('FirstWinService — complete()', () => {
-  it('sets first_win_completed_at on first call', async () => {
+  it('sets first_win_completed_at on first call and returns { completedAt, aiMessage }', async () => {
     const prisma = buildPrisma(null);
     const service = new FirstWinService(prisma as any);
 
@@ -79,8 +80,10 @@ describe('FirstWinService — complete()', () => {
     const result = await service.complete('user-1', 'logged_first_weight');
     const after = new Date();
 
-    expect(result.getTime()).toBeGreaterThanOrEqual(before.getTime());
-    expect(result.getTime()).toBeLessThanOrEqual(after.getTime());
+    expect(result.completedAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    expect(result.completedAt.getTime()).toBeLessThanOrEqual(after.getTime());
+    expect(typeof result.aiMessage).toBe('string');
+    expect(result.aiMessage.length).toBeGreaterThan(10);
     expect(prisma.updateCallCount()).toBe(1);
   });
 
@@ -92,18 +95,21 @@ describe('FirstWinService — complete()', () => {
     const first = await service.complete('user-1', 'logged_first_weight');
     const second = await service.complete('user-1', 'first_meal');
 
-    expect(first.toISOString()).toBe(originalDate.toISOString());
-    expect(second.toISOString()).toBe(originalDate.toISOString());
+    expect(first.completedAt.toISOString()).toBe(originalDate.toISOString());
+    expect(second.completedAt.toISOString()).toBe(originalDate.toISOString());
     // No update should fire because the field was already set
     expect(prisma.updateCallCount()).toBe(0);
   });
 
-  it('accepts all four valid winTypes without throwing', async () => {
+  it('accepts all four valid winTypes and returns a non-empty aiMessage each time', async () => {
     const winTypes = ['logged_first_weight', 'set_first_goal', 'first_checkin', 'first_meal'] as const;
     for (const winType of winTypes) {
       const prisma = buildPrisma(null);
       const service = new FirstWinService(prisma as any);
-      await expect(service.complete('user-1', winType)).resolves.toBeInstanceOf(Date);
+      const result = await service.complete('user-1', winType);
+      expect(result.completedAt).toBeInstanceOf(Date);
+      expect(typeof result.aiMessage).toBe('string');
+      expect(result.aiMessage.length).toBeGreaterThan(10);
     }
   });
 });
