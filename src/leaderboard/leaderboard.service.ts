@@ -13,6 +13,8 @@
 //   * NEVER surfaces raw weight, body-fat, or finance numbers.
 //   * Display name is either the user-configured value or the derived
 //     "{firstName} {lastInitial}." — never the full name.
+//     Derivation parses the single `name` column: first token = first name,
+//     last token = last name (initial only). "Sarah Connor" → "Sarah C."
 //   * Only opted-in users appear; opt-out hides the row for all peers.
 //   * Scope is the requesting user's coach roster only — never platform-wide.
 //
@@ -92,8 +94,7 @@ export class LeaderboardService {
       where: { id: requesterId },
       select: {
         id: true,
-        first_name: true,
-        last_name: true,
+        name: true,
         coach_id: true,
         show_on_leaderboard: true,
         leaderboard_display_name: true,
@@ -112,8 +113,7 @@ export class LeaderboardService {
       },
       select: {
         id: true,
-        first_name: true,
-        last_name: true,
+        name: true,
         show_on_leaderboard: true,
         leaderboard_display_name: true,
       },
@@ -307,17 +307,27 @@ export class LeaderboardService {
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
+  /**
+   * Derives a safe display name from the user record.
+   * Priority:
+   *   1. leaderboard_display_name (explicitly set by user)
+   *   2. "{first token} {last-token initial}." derived from `name`
+   *   3. "Member" (fallback when name is blank)
+   *
+   * The derivation never exposes the full name — only "Sarah C." style.
+   * This matches the Phase 7C privacy doctrine: no full name without consent.
+   */
   private resolveDisplayName(member: {
-    first_name: string | null;
-    last_name: string | null;
+    name: string;
     leaderboard_display_name: string | null;
   }): string {
     if (member.leaderboard_display_name?.trim()) {
       return member.leaderboard_display_name.trim();
     }
-    const first = member.first_name?.trim() ?? '';
-    const lastInitial = member.last_name?.trim()?.[0] ?? '';
-    if (!first) return 'Member';
+    const parts = (member.name ?? '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return 'Member';
+    const first = parts[0];
+    const lastInitial = parts.length > 1 ? parts[parts.length - 1][0] : '';
     return lastInitial ? `${first} ${lastInitial}.` : first;
   }
 }
