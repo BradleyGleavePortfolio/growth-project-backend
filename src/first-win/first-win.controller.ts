@@ -23,8 +23,10 @@ import { CompleteFirstWinDto } from './first-win.dto';
  *
  * Two endpoints that power the first-open retention screen shown to every
  * new client. The mobile app checks GET status on cold start; if not
- * completed it shows the win-card screen. POST complete is called once the
- * client finishes any of the four quick-win actions.
+ * completed it shows the Day1WinScreen. POST complete is called once the
+ * client finishes any of the four quick-win actions. The response includes
+ * an AI-generated 2-sentence coaching message explaining what the first
+ * data point means for the client's progress.
  *
  * Both endpoints are behind JwtAuthGuard (student-scoped in practice, but
  * the guard does not restrict by role — any authenticated user can call them).
@@ -41,7 +43,8 @@ export class FirstWinController {
    * POST /me/first-win/complete
    *
    * Sets `firstWinCompletedAt = now()` if currently null. Idempotent:
-   * calling this more than once returns the original timestamp.
+   * calling this more than once returns the original timestamp. Also
+   * returns an AI-generated 2-sentence coaching message.
    *
    * Body: { winType: 'logged_first_weight' | 'set_first_goal' | 'first_checkin' | 'first_meal' }
    */
@@ -49,11 +52,12 @@ export class FirstWinController {
     summary: 'Mark the Day 1 Win as completed',
     description:
       'Sets first_win_completed_at on first call. Subsequent calls are no-ops and return the original timestamp. ' +
-      'winType is informational — it does not change behaviour.',
+      'winType is informational — it does not change behaviour. ' +
+      'Returns a 2-sentence AI coaching message contextualised to the win type.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Win recorded (or already recorded). Returns completedAt.',
+    description: 'Win recorded (or already recorded). Returns completedAt and aiMessage.',
   })
   @ApiResponse({ status: 400, description: 'Invalid winType.' })
   @Post('complete')
@@ -61,12 +65,12 @@ export class FirstWinController {
   async complete(
     @Request() req: AuthedRequest,
     @Body() body: CompleteFirstWinDto,
-  ): Promise<{ completedAt: string }> {
-    const completedAt = await this.firstWinService.complete(
+  ): Promise<{ completedAt: string; aiMessage: string }> {
+    const { completedAt, aiMessage } = await this.firstWinService.complete(
       req.user.id,
       body.winType,
     );
-    return { completedAt: completedAt.toISOString() };
+    return { completedAt: completedAt.toISOString(), aiMessage };
   }
 
   /**
