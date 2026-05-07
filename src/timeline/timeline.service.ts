@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import type {
   TimelineEvent,
-  TimelineLane,
   TimelineQuery,
   TimelineResponse,
   DecodedCursor,
@@ -132,7 +131,7 @@ export class TimelineService {
       (a, b) => a.date.getTime() - b.date.getTime(),
     );
 
-    const events: TimelineEvent[] = weights.map((w, idx) => {
+    const events: TimelineEvent[] = weights.map((w, _idx) => {
       // Compute delta vs previous log (the entry right before this in the ascending list).
       const ascIdx = dateSortedAsc.findIndex((x) => x.id === w.id);
       const prior = ascIdx > 0 ? dateSortedAsc[ascIdx - 1] : null;
@@ -186,7 +185,7 @@ export class TimelineService {
         signal_type: 'checkin_streak',
         recorded_at: { gte: since, lte: before },
         // Only signals with a value that crossed a known threshold.
-        value: { in: TimelineService.STREAK_THRESHOLDS },
+        value: { in: [...TimelineService.STREAK_THRESHOLDS] },
       },
       orderBy: { recorded_at: 'desc' },
       take: 100,
@@ -277,25 +276,24 @@ export class TimelineService {
     before: Date,
   ): Promise<TimelineEvent[]> {
     // Fetch coach messages sent TO this client FROM their coach.
-    // direction stored as to_user_id === userId (coach → client).
+    // The CoachMessage model uses sender_id to record who sent the message.
+    // Coach-to-client: sender_id is NOT the client (i.e. the coach sent it).
     const messages = await this.prisma.coachMessage.findMany({
       where: {
         client_id: userId,
-        // Coach-to-client: the message was sent by someone who is not the client.
-        // The model records sender via coach_id on the thread ownership.
-        // We select rows where the client received (from_user_id != userId).
-        from_user_id: { not: userId },
+        // Messages where the sender is not the client = coach-to-client direction.
+        sender_id: { not: userId },
         created_at: { gte: since, lte: before },
       },
       include: {
-        fromUser: { select: { name: true } },
+        sender: { select: { name: true } },
       },
       orderBy: { created_at: 'desc' },
       take: 200,
     });
 
     return messages.map((msg) => {
-      const coachName = (msg.fromUser as { name?: string | null })?.name ?? 'Coach';
+      const coachName = (msg.sender as { name?: string | null })?.name ?? 'Coach';
       const isVoice = Boolean(msg.voice_url);
 
       if (isVoice) {
