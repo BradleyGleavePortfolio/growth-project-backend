@@ -196,6 +196,14 @@ model User {
   // idempotent. Stays null for students/owners until/unless they're promoted.
   coach_onboarding_progress CoachOnboardingProgress? @relation("CoachOnboardingCoach")
 
+  // Phase 7C — Peer Leaderboard opt-in fields.
+  // show_on_leaderboard defaults to false — explicit opt-in required.
+  // leaderboard_display_name is nullable; if null, the service derives
+  // "{firstName} {lastInitial}." from the single `name` field at read time.
+  // NEVER surfaces raw weight, body-fat, or finance data on the leaderboard.
+  show_on_leaderboard       Boolean   @default(false)
+  leaderboard_display_name  String?
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
