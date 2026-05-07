@@ -13,7 +13,7 @@ import { CoachAlertsService } from '../src/coach/coach-alerts.service';
 //   * listForCoach honors the acknowledged filter.
 
 function nowMs() {
-  return new Date('2026-05-06T10:00:00Z').getTime();
+  return Date.now();
 }
 
 function buildPrisma(initial: any[] = []) {
