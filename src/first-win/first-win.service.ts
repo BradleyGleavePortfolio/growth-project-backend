@@ -24,7 +24,7 @@ export function isValidWinType(value: unknown): value is WinType {
 // emoji, no hype, numbers over adjectives.
 const FALLBACK_MESSAGES: Record<WinType, string> = {
   logged_first_weight:
-    'Your first weight log sets the baseline every future measurement is compared against. Tracking consistently — even on days you don't like the number — is the discipline that produces results over 90 days.',
+    'Your first weight log sets the baseline every future measurement is compared against. Tracking consistently, even on days the number is not where you want it, is the discipline that produces results over 90 days.',
   set_first_goal:
     'Setting a clear goal turns a direction into a destination. Every decision from here — what you eat, when you train — can now be tested against that target.',
   first_checkin:
