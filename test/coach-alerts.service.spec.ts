@@ -11,9 +11,15 @@ import { CoachAlertsService } from '../src/coach/coach-alerts.service';
 //   * acknowledge raises NotFoundException when the alert belongs to
 //     another coach (no existence leak).
 //   * listForCoach honors the acknowledged filter.
+//
+// Time-handling note: Date.now() is pinned via jest.spyOn in beforeAll so
+// the dedup-window comparisons remain deterministic regardless of when the
+// suite runs. The fixed epoch is 2026-05-06T10:00:00Z.
+
+const FIXED_EPOCH = new Date('2026-05-06T10:00:00Z').getTime();
 
 function nowMs() {
-  return new Date('2026-05-06T10:00:00Z').getTime();
+  return FIXED_EPOCH;
 }
 
 function buildPrisma(initial: any[] = []) {
@@ -69,6 +75,15 @@ function buildPrisma(initial: any[] = []) {
 }
 
 const HOUR = 60 * 60 * 1000;
+
+// Pin Date.now() for the entire suite so dedup-window math is stable.
+let dateSpy: jest.SpyInstance;
+beforeAll(() => {
+  dateSpy = jest.spyOn(Date, 'now').mockReturnValue(FIXED_EPOCH);
+});
+afterAll(() => {
+  dateSpy.mockRestore();
+});
 
 describe('CoachAlertsService', () => {
   it('createAlert dedups within 24h for the same coach/client/type', async () => {
