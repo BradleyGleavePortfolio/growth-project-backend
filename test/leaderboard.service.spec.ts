@@ -4,7 +4,7 @@
 //   1. Formula correctness — synthetic fixtures produce expected scores.
 //   2. Opt-out exclusion — opted-out users never appear in the ranked list.
 //   3. Coach-roster scoping — only members of the same coach roster appear.
-//   4. Display name derivation — "{firstName} {lastInitial}." fallback.
+//   4. Display name derivation — "{firstName} {lastInitial}." fallback from `name`.
 //   5. Score clamping — raw values above the denominator cap at 1.0.
 //   6. Kill switch — LEADERBOARD_ENABLED=off returns empty.
 
@@ -14,8 +14,7 @@ import { LeaderboardService } from '../src/leaderboard/leaderboard.service';
 
 interface FakeUser {
   id:                       string;
-  first_name:               string | null;
-  last_name:                string | null;
+  name:                     string;
   coach_id:                 string | null;
   show_on_leaderboard:      boolean;
   leaderboard_display_name: string | null;
@@ -57,7 +56,7 @@ function buildPrisma(users: FakeUser[], signals: FakeSignal[]) {
       }),
     },
     clientSignal: {
-      findFirst: jest.fn(async ({ where, orderBy }: any) => {
+      findFirst: jest.fn(async ({ where }: any) => {
         const matches = signals.filter(
           (s) => s.user_id === where.user_id && s.signal_type === where.signal_type,
         );
@@ -87,21 +86,20 @@ const WITHIN_30 = (daysAgo: number) =>
   new Date(NOW.getTime() - daysAgo * 24 * 60 * 60 * 1_000);
 
 // A requester who is opted in and has perfect activity.
+// name = "Amara Osei" → derives "Amara O." when no custom display name set.
 const USER_PERFECT: FakeUser = {
   id: 'u-perfect',
-  first_name: 'Amara',
-  last_name: 'Osei',
+  name: 'Amara Osei',
   coach_id: COACH_ID,
   show_on_leaderboard: true,
   leaderboard_display_name: null,
   deleted_at: null,
 };
 
-// A peer who is opted in with partial activity.
+// A peer who is opted in with partial activity and an explicit display name.
 const USER_PARTIAL: FakeUser = {
   id: 'u-partial',
-  first_name: 'James',
-  last_name: 'Webb',
+  name: 'James Webb',
   coach_id: COACH_ID,
   show_on_leaderboard: true,
   leaderboard_display_name: 'JW',
@@ -111,8 +109,7 @@ const USER_PARTIAL: FakeUser = {
 // A peer who is opted OUT — should never appear.
 const USER_OPTED_OUT: FakeUser = {
   id: 'u-opted-out',
-  first_name: 'Hidden',
-  last_name: 'User',
+  name: 'Hidden User',
   coach_id: COACH_ID,
   show_on_leaderboard: false,
   leaderboard_display_name: null,
@@ -122,8 +119,7 @@ const USER_OPTED_OUT: FakeUser = {
 // A user on a DIFFERENT coach — should never appear.
 const USER_OTHER_COACH: FakeUser = {
   id: 'u-other',
-  first_name: 'Other',
-  last_name: 'Person',
+  name: 'Other Person',
   coach_id: 'coach-9',
   show_on_leaderboard: true,
   leaderboard_display_name: null,
@@ -322,7 +318,9 @@ describe('LeaderboardService', () => {
       expect(partialEntry.displayName).toBe('JW');
     });
 
-    it('derives "{firstName} {lastInitial}." when no custom name set', async () => {
+    it('derives "{firstName} {lastInitial}." from the `name` field when no custom name set', async () => {
+      // USER_PERFECT has name='Amara Osei', no custom display name
+      // Service parses: parts[0]='Amara', parts[1]='Osei' → 'Amara O.'
       const allUsers = [USER_PERFECT, USER_PARTIAL];
       const allSignals = [
         ...buildPerfectSignals(USER_PERFECT.id),
