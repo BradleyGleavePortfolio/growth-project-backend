@@ -5,6 +5,9 @@ import { WorkoutService } from './workout.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import {
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
+import { CreateWorkoutDto, CreateRoutineDto, UpdateRoutineDto } from './workout.dto';
   CreateWorkoutDto,
   CreateRoutineDto,
   UpdateRoutineDto,
@@ -13,7 +16,8 @@ import {
 
 @ApiTags('workout')
 @Controller()
-@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
+@UseGuards(JwtAuthGuard, ClientEntitlementGuard, RolesGuard)
+@Roles('student')
 export class WorkoutController {
   constructor(private workoutService: WorkoutService) {}
 
