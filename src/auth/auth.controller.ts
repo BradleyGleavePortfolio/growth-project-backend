@@ -79,8 +79,8 @@ export class AuthController {
   // attached on subsequent authed routes.
   @Throttle({ 'auth-login': { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
-  async login(@Body() body: LoginDto) {
-    return this.authService.login(body.email, body.password);
+  async login(@Body() body: LoginDto, @Request() req: AuditableRequest) {
+    return this.authService.login(body.email, body.password, auditContext(req));
   }
 
   @ApiOperation({
@@ -121,8 +121,13 @@ export class AuthController {
   // brake. Sharing `auth-login` means we cannot be multiplexed with /login.
   @Throttle({ 'auth-login': { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
-  async appleAuth(@Body() body: AppleAuthDto) {
-    return this.authService.appleAuth(body.token, body.full_name, body.invite_code);
+  async appleAuth(@Body() body: AppleAuthDto, @Request() req: AuditableRequest) {
+    return this.authService.appleAuth(
+      body.token,
+      body.full_name,
+      body.invite_code,
+      auditContext(req),
+    );
   }
 
   @ApiOperation({
