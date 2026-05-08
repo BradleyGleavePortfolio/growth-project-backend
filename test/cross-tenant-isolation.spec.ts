@@ -15,6 +15,7 @@ import { PrismaService } from '../src/prisma.service';
 import { WeightService } from '../src/weight/weight.service';
 import { WaterService } from '../src/water/water.service';
 import { FastingService } from '../src/fasting/fasting.service';
+import { PtmService } from '../src/ptm/ptm.service';
 
 const USER_A = 'user-a-id-1111';
 const USER_B = 'user-b-id-2222';
@@ -61,7 +62,7 @@ describe('Cross-tenant isolation — service layer', () => {
         providers: [
           WeightService,
           { provide: PrismaService, useValue: prismaMock },
-          { provide: 'PtmService', useValue: ptmStub },
+          { provide: PtmService, useValue: ptmStub },
         ],
       })
         .overrideProvider(PrismaService)
