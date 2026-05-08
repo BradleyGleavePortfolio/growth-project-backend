@@ -6,6 +6,7 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { TimelineService } from './timeline.service';
 import { Roles } from '../common/decorators/roles.decorator';
