@@ -6,13 +6,13 @@
  *
  *   1. An explicit `@Roles(...)` decorator (gated route), OR
  *   2. A `@Public()` decorator (intentionally unauthenticated route), OR
- *   3. The controller class carries `@Roles(...)`/`@Public()` at the class
- *      level (covers all handlers in that controller), OR
+ *   3. The controller class carries `@Roles(...)`/`@Public()` at class level
+ *      (covers all handlers in that controller), OR
  *   4. The handler/class is in LEGACY_GUARD_ALLOWLIST (pre-@Roles controller
  *      that already has a bespoke role guard like CoachGuard or OwnerGuard —
  *      must include a written reason).
  *
- * If any handler has none of the above the test FAILS with a message that
+ * If any handler has none of the above the test FAILS CI with a message that
  * names the exact route so the CI log immediately tells Bradley what to fix:
  *
  *   Route is ungated: MyController.myMethod — add @Roles() or @Public()
@@ -21,18 +21,19 @@
  *
  * Pick EXACTLY ONE of the following for every new handler:
  *
- *   @Roles('student')   — any authenticated student/coach/owner
+ *   @Roles('student')   — any authenticated user (student, coach, owner)
  *   @Roles('coach')     — coach or owner only
  *   @Roles('owner')     — owner only (admin panel)
  *   @Public()           — no JWT required (health, webhooks, landing pages)
  *
  * Do NOT add to LEGACY_GUARD_ALLOWLIST unless the controller predates Phase 10
- * and already has a semantically equivalent bespoke guard.
+ * and already has an equivalent bespoke guard (CoachGuard, OwnerGuard, etc.).
  */
 
 import 'reflect-metadata';
-import { Test } from '@nestjs/testing';
+import { Test, TestingModule } from '@nestjs/testing';
 import { DiscoveryModule, DiscoveryService, MetadataScanner } from '@nestjs/core';
+import { AppModule } from '../src/app.module';
 import { IS_PUBLIC_KEY } from '../src/common/decorators/public.decorator';
 import { ROLES_KEY } from '../src/common/decorators/roles.decorator';
 
@@ -113,18 +114,26 @@ const allowlistSet = new Set(
 );
 
 describe('RolesEnforced — every route has @Roles or @Public', () => {
+  // This test compiles the full AppModule (same as openapi-spec.spec.ts)
+  // which takes ~10–15 s in CI. The 30 s timeout matches the openapi test.
+  jest.setTimeout(30_000);
+
+  let moduleRef: TestingModule;
   let discoveryService: DiscoveryService;
   let metadataScanner: MetadataScanner;
 
   beforeAll(async () => {
-    const { AppModule } = await import('../src/app.module');
-    const moduleRef = await Test.createTestingModule({
+    moduleRef = await Test.createTestingModule({
       imports: [DiscoveryModule, AppModule],
     }).compile();
 
     discoveryService = moduleRef.get(DiscoveryService);
     metadataScanner = moduleRef.get(MetadataScanner);
-  }, 30_000);
+  });
+
+  afterAll(async () => {
+    await moduleRef?.close();
+  });
 
   it('every route handler has @Roles or @Public (or is in the legacy-guard allowlist)', () => {
     const ungated: string[] = [];
@@ -146,7 +155,7 @@ describe('RolesEnforced — every route has @Roles or @Public', () => {
         const handler = (instance as any)[methodName];
         if (typeof handler !== 'function') continue;
 
-        // Only inspect route handlers (they have an HTTP method or 'path' metadata).
+        // Only inspect route handlers (they have a path metadata key).
         const httpPath = Reflect.getMetadata('path', handler);
         if (httpPath === undefined) continue;
 
