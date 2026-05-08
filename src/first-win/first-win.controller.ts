@@ -39,7 +39,7 @@ import { CompleteFirstWinDto } from './first-win.dto';
 @Controller('me/first-win')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
- FirstWinController {
+export class FirstWinController {
   constructor(private readonly firstWinService: FirstWinService) {}
 
   /**
