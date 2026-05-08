@@ -13,6 +13,7 @@ import {
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import type { Prisma } from '@prisma/client';
 
 export enum CoachCompensationTypeDto {
   COMMISSION = 'commission',
@@ -36,10 +37,12 @@ export class CreateOfferDto {
    *   rev_share:   { rate_pct: number, cap_usd?: number }
    *   flat:        { amount_usd: number, period: 'monthly' | 'weekly' }
    *   hybrid:      { base_usd: number, rate_pct: number }
+   *
+   * Must satisfy Prisma.InputJsonObject for the jsonb column.
    */
   @ApiProperty({ description: 'Structured compensation terms (see JSDoc for shape by type)' })
   @IsObject()
-  compensation_terms!: Record<string, unknown>;
+  compensation_terms!: Prisma.InputJsonObject;
 
   @ApiProperty({ example: 10 })
   @IsInt()
