@@ -11,6 +11,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { TimelineController } from '../src/timeline/timeline.controller';
 import { TimelineService } from '../src/timeline/timeline.service';
+import { JwtAuthGuard } from '../src/auth/auth.guard';
+import { RolesGuard } from '../src/auth/roles.guard';
 
 // ─── Minimal mock ──────────────────────────────────────────────────────────────
 
@@ -37,7 +39,10 @@ describe('TimelineController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [TimelineController],
       providers: [{ provide: TimelineService, useValue: mockTimelineService }],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard).useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard).useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<TimelineController>(TimelineController);
   });
