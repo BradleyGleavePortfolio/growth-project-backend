@@ -13,22 +13,22 @@ import { SignJWT, jwtVerify, JWTPayload } from 'jose';
 
 // ─── Environment variables ──────────────────────────────────────────────────
 // DATA_EXPORT_TOKEN_SECRET   — signs the download JWT. Required. Min 32 chars.
-// DATA_EXPORT_BUCKET         — S3 bucket name. Falls back to filesystem if unset.
-// DATA_EXPORT_S3_ENDPOINT    — custom S3 endpoint (Fly / MinIO). Optional.
-// AWS_ACCESS_KEY_ID          — S3 credentials. Required when S3 is used.
-// AWS_SECRET_ACCESS_KEY      — S3 credentials. Required when S3 is used.
-// AWS_REGION                 — S3 region. Defaults to 'us-east-1'.
-// DATA_EXPORT_FS_DIR         — local dir when S3 not configured. Defaults to /tmp/exports.
-// DATA_EXPORT_EXPIRY_DAYS    — signed URL / file lifetime. Defaults to 7.
+// DATA_EXPORT_FS_DIR         — local dir for export files. Defaults to /tmp/exports.
+// DATA_EXPORT_EXPIRY_DAYS    — file lifetime in days. Defaults to 7.
 // DATA_EXPORT_RATE_LIMIT_HRS — hours between requests per user. Defaults to 24.
-// SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_FROM — email delivery.
-//   When SMTP_HOST is unset the ready-notification is logged (dev mode).
+// PUBLIC_WEB_SIGNUP_URL      — base URL for the download link in logs/email.
+//
+// Future work (not yet supported — install packages first):
+//   DATA_EXPORT_BUCKET         — S3 bucket name. Requires @aws-sdk/client-s3.
+//   DATA_EXPORT_S3_ENDPOINT    — custom S3 endpoint (Fly / MinIO). Optional.
+//   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION — S3 credentials.
+//   SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_FROM — email delivery.
+//     Requires nodemailer. Until installed, download URL is logged to console.
 
 const EXPIRY_DAYS = Number(process.env.DATA_EXPORT_EXPIRY_DAYS ?? '7');
 const RATE_LIMIT_HRS = Number(process.env.DATA_EXPORT_RATE_LIMIT_HRS ?? '24');
 const TOKEN_SECRET_STR =
   process.env.DATA_EXPORT_TOKEN_SECRET ?? 'change-me-in-production-min32chars!';
-const BUCKET = process.env.DATA_EXPORT_BUCKET;
 const FS_DIR = process.env.DATA_EXPORT_FS_DIR ?? '/tmp/exports';
 
 // jose requires a KeyLike or Uint8Array — derive a symmetric key from the secret string.
@@ -136,7 +136,7 @@ export class DataExportService {
 
   /**
    * Validate the download token, check the export has not expired, and
-   * return the S3 presigned URL (or a filesystem URL) for the redirect.
+   * return the filesystem URL for the redirect.
    */
   async resolveDownloadUrl(token: string): Promise<string> {
     let payload: DownloadTokenClaims;
@@ -263,9 +263,9 @@ export class DataExportService {
         sha256,
       });
 
-      // Send email with download link
+      // Log download URL (email delivery is a future enhancement — see README)
       const downloadToken = await this._mintDownloadToken(userId, exportId);
-      await this._sendReadyEmail(userId, exportId, downloadToken, expiresAt);
+      this._logReadyNotification(userId, exportId, downloadToken, expiresAt);
     } catch (err) {
       this.logger.error(
         `Export ${exportId} failed: ${(err as Error).message}`,
@@ -522,13 +522,10 @@ export class DataExportService {
   }
 
   /**
-   * Upload the archive buffer to S3-compatible storage. Falls back to local
-   * filesystem when DATA_EXPORT_BUCKET is not configured.
+   * Store the export archive on the local filesystem.
    *
-   * S3 support requires @aws-sdk/client-s3 and @aws-sdk/s3-request-presigner
-   * to be installed as production dependencies. These packages are NOT bundled
-   * by default — see README for the installation command. Without them, the
-   * module falls back to the local filesystem path automatically.
+   * S3 support is a future enhancement — install @aws-sdk/client-s3 and
+   * @aws-sdk/s3-request-presigner, then set DATA_EXPORT_BUCKET. See README.
    *
    * NEVER serves files through the API process — always returns a URL the
    * client is redirected to.
@@ -538,79 +535,16 @@ export class DataExportService {
     buffer: Buffer,
   ): Promise<string> {
     const filename = `${exportId}.json`;
-
-    if (!BUCKET) {
-      // No S3 configured — store on filesystem and return a local token URL.
-      const { mkdir, writeFile } = await import('fs/promises');
-      const { join } = await import('path');
-      await mkdir(FS_DIR, { recursive: true });
-      const filePath = join(FS_DIR, filename);
-      await writeFile(filePath, buffer);
-      this.logger.warn(
-        `DATA_EXPORT_BUCKET not set — export stored at ${filePath}. ` +
-          'Configure S3 for production. See src/data-export/README.md.',
-      );
-      return `local://${filePath}`;
-    }
-
-    // S3 upload — requires @aws-sdk/client-s3 and @aws-sdk/s3-request-presigner.
-    // Dynamic import so the module boots even when these packages are absent (dev).
-    try {
-      const { S3Client, PutObjectCommand, GetObjectCommand } = await import(
-        '@aws-sdk/client-s3'
-      );
-      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-
-      const s3 = new S3Client({
-        region: process.env.AWS_REGION ?? 'us-east-1',
-        ...(process.env.DATA_EXPORT_S3_ENDPOINT
-          ? { endpoint: process.env.DATA_EXPORT_S3_ENDPOINT }
-          : {}),
-        credentials: {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '',
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '',
-        },
-      });
-
-      const key = `exports/${exportId}/${filename}`;
-
-      await s3.send(
-        new PutObjectCommand({
-          Bucket: BUCKET,
-          Key: key,
-          Body: buffer,
-          ContentType: 'application/json',
-          ServerSideEncryption: 'AES256',
-          Metadata: {
-            export_id: exportId,
-            content_length: String(buffer.length),
-          },
-        }),
-      );
-
-      const presignedUrl = await getSignedUrl(
-        s3,
-        new GetObjectCommand({ Bucket: BUCKET, Key: key }),
-        { expiresIn: EXPIRY_DAYS * 24 * 60 * 60 },
-      );
-
-      return presignedUrl;
-    } catch (err) {
-      // S3 SDK not installed — fall back to filesystem
-      if ((err as NodeJS.ErrnoException).code === 'MODULE_NOT_FOUND') {
-        const { mkdir, writeFile } = await import('fs/promises');
-        const { join } = await import('path');
-        await mkdir(FS_DIR, { recursive: true });
-        const filePath = join(FS_DIR, filename);
-        await writeFile(filePath, buffer);
-        this.logger.warn(
-          '@aws-sdk/client-s3 not installed — export stored at filesystem. ' +
-            'Install with: npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner',
-        );
-        return `local://${filePath}`;
-      }
-      throw err;
-    }
+    const { mkdir, writeFile } = await import('fs/promises');
+    const { join } = await import('path');
+    await mkdir(FS_DIR, { recursive: true });
+    const filePath = join(FS_DIR, filename);
+    await writeFile(filePath, buffer);
+    this.logger.log(
+      `Export ${exportId} stored at ${filePath} (${buffer.length} bytes). ` +
+        'Configure DATA_EXPORT_BUCKET for S3 storage in production — see src/data-export/README.md.',
+    );
+    return `local://${filePath}`;
   }
 
   private async _deleteStoredFile(fileUrl: string): Promise<void> {
@@ -625,31 +559,10 @@ export class DataExportService {
       return;
     }
 
-    if (!BUCKET) return;
-
-    try {
-      const { S3Client, DeleteObjectCommand } = await import('@aws-sdk/client-s3');
-      const url = new URL(fileUrl);
-      const key = decodeURIComponent(url.pathname.replace(/^\//, '')).replace(
-        `${BUCKET}/`,
-        '',
-      );
-      const s3 = new S3Client({
-        region: process.env.AWS_REGION ?? 'us-east-1',
-        ...(process.env.DATA_EXPORT_S3_ENDPOINT
-          ? { endpoint: process.env.DATA_EXPORT_S3_ENDPOINT }
-          : {}),
-        credentials: {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '',
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '',
-        },
-      });
-      await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
-    } catch (err) {
-      this.logger.warn(
-        `Could not delete S3 object for expired export: ${(err as Error).message}`,
-      );
-    }
+    // S3 deletion is a future enhancement — requires @aws-sdk/client-s3.
+    this.logger.warn(
+      `Cannot delete non-local file URL: ${fileUrl}. S3 deletion requires @aws-sdk/client-s3.`,
+    );
   }
 
   /**
@@ -673,24 +586,18 @@ export class DataExportService {
   }
 
   /**
-   * Send the "your export is ready" email. Uses nodemailer when SMTP_HOST
-   * is configured; logs the URL in dev mode when SMTP_HOST is absent.
-   * Nodemailer is a dynamic import — it only needs to be installed when
-   * SMTP_HOST is set. In dev, the download URL is logged to console.
+   * Log the download URL so it can be used manually in development.
+   *
+   * Email delivery is a future enhancement. Install nodemailer and set
+   * SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_FROM to enable it.
+   * See src/data-export/README.md for the installation steps.
    */
-  private async _sendReadyEmail(
+  private _logReadyNotification(
     userId: string,
     exportId: string,
     downloadToken: string,
     expiresAt: Date,
-  ): Promise<void> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true, name: true },
-    });
-
-    if (!user) return;
-
+  ): void {
     const baseUrl =
       process.env.PUBLIC_WEB_SIGNUP_URL ?? 'https://app.thegrowthproject.app';
     const downloadUrl = `${baseUrl}/data-export/download?token=${downloadToken}`;
@@ -700,58 +607,10 @@ export class DataExportService {
       year: 'numeric',
     });
 
-    const smtpHost = process.env.SMTP_HOST;
-    if (!smtpHost) {
-      // Dev mode — log so the URL can be used manually
-      this.logger.log(
-        `[DEV — no SMTP_HOST] Export ${exportId} ready for ${user.email}. ` +
-          `Download URL: ${downloadUrl}`,
-      );
-      return;
-    }
-
-    try {
-      // Dynamic import — only installed when email delivery is needed.
-      const nodemailer = await import('nodemailer');
-      const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: Number(process.env.SMTP_PORT ?? '587'),
-        secure: process.env.SMTP_SECURE === 'true',
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-
-      const subject = 'Your Growth Project data export is ready';
-      const html = [
-        `<p>Hi ${user.name ?? 'there'},</p>`,
-        `<p>Your personal data export is ready to download. The file contains all your account data in JSON format.</p>`,
-        `<p><a href="${downloadUrl}">Download your data</a></p>`,
-        `<p>This link expires on <strong>${expiryDate}</strong> (${EXPIRY_DAYS} days). ` +
-          `After that, you can request a new export from the Settings screen in the app.</p>`,
-        `<p>If you did not request this export, please contact support.</p>`,
-        `<p>The Growth Project team</p>`,
-      ].join('\n');
-
-      await transporter.sendMail({
-        from:
-          process.env.SMTP_FROM ??
-          '"The Growth Project" <no-reply@thegrowthproject.app>',
-        to: user.email,
-        subject,
-        html,
-      });
-
-      this.logger.log(
-        `Export-ready email sent to ${user.email} (export ${exportId})`,
-      );
-    } catch (err) {
-      // Email failure is non-fatal — the user can still find the token via /status.
-      this.logger.error(
-        `Failed to send export-ready email to ${user.email}: ${(err as Error).message}`,
-      );
-    }
+    this.logger.log(
+      `[Export ready] user=${userId} export=${exportId} expires=${expiryDate} ` +
+        `url=${downloadUrl}`,
+    );
   }
 
   /**
