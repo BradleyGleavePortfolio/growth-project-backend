@@ -263,7 +263,7 @@ export class BootstrapOwnerDto {
 /** Body for POST /auth/recent-auth-token (Phase 10 re-auth hardening). */
 export class IssueRecentAuthTokenDto {
   @ApiProperty({
-    description: 'The user\'s current password — verified against Supabase before the token is issued.',
+    description: "The user's current password — verified against Supabase before the token is issued.",
     minLength: 1,
   })
   @IsString()
