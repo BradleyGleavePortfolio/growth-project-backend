@@ -47,7 +47,10 @@ export class ExerciseLibraryService implements OnModuleInit {
   private redis: any | null = null;
 
   constructor(private readonly config: ConfigService) {
-    this.apiKey = this.config.getOrThrow<string>('EXERCISEDB_API_KEY');
+    // Use config.get() so the OpenAPI test (which boots AppModule without all
+    // env vars set) does not throw during DI construction. A missing key is
+    // caught at the first actual API call in fetchApi().
+    this.apiKey = this.config.get<string>('EXERCISEDB_API_KEY') ?? '';
     this.apiHost =
       this.config.get<string>('EXERCISEDB_API_HOST') ?? 'exercisedb.p.rapidapi.com';
     this.baseUrl = `https://${this.apiHost}`;
@@ -172,6 +175,11 @@ export class ExerciseLibraryService implements OnModuleInit {
   // ─────────────────────────────────────────────────────────────────────────
 
   private async fetchApi<T>(path: string, query: Record<string, string> = {}): Promise<T> {
+    if (!this.apiKey) {
+      throw new Error(
+        'EXERCISEDB_API_KEY is not configured. Set the env var to enable exercise catalog features.',
+      );
+    }
     const url = new URL(`${this.baseUrl}${path}`);
     for (const [k, v] of Object.entries(query)) {
       url.searchParams.set(k, v);
