@@ -5,6 +5,7 @@ import {
   NotificationsService,
   PushPayload,
 } from '../notifications/notifications.service';
+import { NotificationCategory } from '../notifications/notification-category.enum';
 
 // Phase 6B — Proactive Red Flag Alerts.
 //
@@ -185,6 +186,9 @@ export class CoachAlertsService {
         alertType: alert.alert_type,
         severity: alert.severity,
         message: alert.message,
+        // Phase 11: coach alerts are COACH_DIRECT category so they surface on
+        // the high-importance Android channel and iOS actionable category.
+        category: NotificationCategory.COACH_DIRECT,
       };
       const delivered = await this.notifications.pushToCoach(
         alert.coach_id,
