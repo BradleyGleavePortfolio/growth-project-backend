@@ -69,6 +69,8 @@ import { ObservabilityModule } from './observability/observability.module';
 import { AccountDeletionModule } from './account-deletion/account-deletion.module';
 // Phase 10 — GDPR Article 20 data portability.
 import { DataExportModule } from './data-export/data-export.module';
+// Phase 10 Track 7 — Secrets rotation playbook + zero-downtime JWT rotation.
+import { SecretsModule } from './secrets/secrets.module';
 
 @Module({
   imports: [
@@ -212,6 +214,11 @@ import { DataExportModule } from './data-export/data-export.module';
     // (coach or client) can request a JSON archive of their own data.
     // A 7-day signed download URL is emailed when the export completes.
     DataExportModule,
+    // Phase 10 Track 7 — Secrets rotation. OWNER-only surface for tracking when
+    // secrets were last rotated and whether any are overdue.
+    // Endpoints: GET /admin/secrets/status, POST /admin/secrets/:name/rotation-log.
+    // See src/secrets/README.md.
+    SecretsModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)
