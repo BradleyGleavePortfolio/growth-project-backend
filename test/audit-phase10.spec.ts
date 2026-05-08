@@ -478,8 +478,14 @@ describe('NotificationsService audit hooks', () => {
     // Metadata should only contain changed_keys (field names) and is_create flag
     expect(call.metadata.changed_keys).toContain('water_enabled');
     expect(call.metadata.changed_keys).toContain('timezone');
-    // Should NOT contain the new values themselves
+    // Should NOT contain the new preference values themselves
     expect(JSON.stringify(call.metadata)).not.toContain('Europe/London');
-    expect(JSON.stringify(call.metadata)).not.toContain('false');
+    // Verify no actual preference key/value pairs are leaked in the payload
+    // (is_create and changed_keys are allowed metadata — only pref values are forbidden)
+    const parsed = JSON.parse(JSON.stringify(call.metadata));
+    expect(parsed.changed_keys).toBeDefined();
+    for (const key of parsed.changed_keys) {
+      expect(parsed[key]).toBeUndefined();
+    }
   });
 });
