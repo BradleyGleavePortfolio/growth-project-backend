@@ -34,21 +34,22 @@ function buildPrisma() {
     user: {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({}),
     },
     coachMessage: { updateMany: jest.fn().mockResolvedValue({}) },
     auditLog: { updateMany: jest.fn().mockResolvedValue({}) },
-    mealPlan: { updateMany: jest.fn().mockResolvedValue({}) },
+    mealPlan: { deleteMany: jest.fn().mockResolvedValue({}) },
     diagnosticSubmission: { updateMany: jest.fn().mockResolvedValue({}) },
-    recipe: { updateMany: jest.fn().mockResolvedValue({}) },
-    lesson: { updateMany: jest.fn().mockResolvedValue({}) },
-    workoutRoutine: { updateMany: jest.fn().mockResolvedValue({}) },
+    recipe: { deleteMany: jest.fn().mockResolvedValue({}) },
+    lesson: { deleteMany: jest.fn().mockResolvedValue({}) },
+    workoutRoutine: { deleteMany: jest.fn().mockResolvedValue({}) },
     coachGuideline: {
       updateMany: jest.fn().mockResolvedValue({}),
       deleteMany: jest.fn().mockResolvedValue({}),
     },
-    coachNudge: { updateMany: jest.fn().mockResolvedValue({}) },
+    coachNudge: { deleteMany: jest.fn().mockResolvedValue({}) },
     coachAlert: { deleteMany: jest.fn().mockResolvedValue({}) },
     activityEvent: { deleteMany: jest.fn().mockResolvedValue({}) },
     messageDraft: { deleteMany: jest.fn().mockResolvedValue({}) },
@@ -478,18 +479,17 @@ describe('AccountDeletionService', () => {
 
   describe('runFinalizeCron', () => {
     it('does nothing when no candidates are past the grace cutoff', async () => {
-      // findMany returns empty
-      prisma.user.findMany = jest.fn().mockResolvedValue([]);
+      prisma.user.findMany.mockResolvedValue([]);
       await service.runFinalizeCron();
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('finalizes each past-grace candidate and writes audit', async () => {
-      prisma.user.findMany = jest.fn().mockResolvedValue([
+      prisma.user.findMany.mockResolvedValue([
         { id: 'user-1', email: 'test@example.com' },
         { id: 'user-2', email: 'other@example.com' },
       ]);
-      // Make findUnique succeed for each candidate (called by adminForceDelete / finalizeUserDeletion)
+      // Make findUnique succeed for each candidate (called by finalizeUserDeletion)
       prisma.user.findUnique.mockResolvedValue(mockUser());
 
       await service.runFinalizeCron();
@@ -502,7 +502,7 @@ describe('AccountDeletionService', () => {
 
     it('is idempotent: re-running on already-finalized users (deleted_at set) skips them', async () => {
       // findMany returns empty because WHERE deleted_at IS NULL filters them out
-      prisma.user.findMany = jest.fn().mockResolvedValue([]);
+      prisma.user.findMany.mockResolvedValue([]);
       await service.runFinalizeCron();
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
@@ -520,6 +520,18 @@ describe('AccountDeletionService', () => {
         }),
       );
       await expect(service.confirmDeletion('token')).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  // ── DeletionAuditEvent constants ───────────────────────────────────────────
+
+  describe('DeletionAuditEvent constants', () => {
+    it('exports the expected event strings', () => {
+      expect(DeletionAuditEvent.DELETION_REQUESTED).toBe('deletion_requested');
+      expect(DeletionAuditEvent.DELETION_CONFIRMED).toBe('deletion_confirmed');
+      expect(DeletionAuditEvent.DELETION_CANCELLED).toBe('deletion_cancelled');
+      expect(DeletionAuditEvent.DELETION_FINALIZED).toBe('deletion_finalized');
+      expect(DeletionAuditEvent.ADMIN_FORCE_DELETE).toBe('admin_force_delete');
     });
   });
 });
