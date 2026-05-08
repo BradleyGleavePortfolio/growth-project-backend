@@ -140,8 +140,16 @@ model User {
   // GDPR delete-account flow. Two-phase: deletion_scheduled_at marks the
   // grace-period start (account locked but recoverable); deleted_at marks
   // the irreversible PII scrub. Existing rows stay valid (both null).
-  deletion_scheduled_at DateTime?
-  deleted_at            DateTime?
+  deletion_scheduled_at       DateTime?
+  deleted_at                  DateTime?
+  // Phase 10 — explicit user/admin-initiated right-to-erasure flow.
+  // deletion_token_hash/expires_at drive the confirmation link email;
+  // deletion_requested_at/confirmed_at drive the state machine.
+  // Columns added by migration 20260507100000_add_gdpr_deletion_flow.
+  deletion_token_hash         String?
+  deletion_token_expires_at   DateTime?
+  deletion_requested_at       DateTime?
+  deletion_confirmed_at       DateTime?
 
   profile                  UserProfile?
   logged_entries           LoggedFoodEntry[]
