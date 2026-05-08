@@ -259,3 +259,14 @@ export class BootstrapOwnerDto {
   @MinLength(16)
   bootstrap_secret!: string;
 }
+
+/** Body for POST /auth/recent-auth-token (Phase 10 re-auth hardening). */
+export class IssueRecentAuthTokenDto {
+  @ApiProperty({
+    description: 'The user\'s current password — verified against Supabase before the token is issued.',
+    minLength: 1,
+  })
+  @IsString()
+  @MinLength(1)
+  password!: string;
+}
