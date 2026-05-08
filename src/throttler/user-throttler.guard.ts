@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { ThrottlerGuard, ThrottlerRequest } from '@nestjs/throttler';
+import { ExecutionContext, Injectable } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 
 // Paths that must NEVER be rate-limited regardless of traffic. Health check
 // endpoints are hit by the platform (Fly.io) every few seconds; counting them
@@ -8,16 +8,16 @@ import { ThrottlerGuard, ThrottlerRequest } from '@nestjs/throttler';
 const HEALTH_PATHS = new Set(['/health', '/healthz', '/readyz']);
 
 /**
- * UserThrottlerGuard — extends the built-in ThrottlerGuard with two
+ * UserThrottlerGuard -- extends the built-in ThrottlerGuard with two
  * behaviours:
  *
  * 1. Tracker key: authenticated requests bucket by user-id (`user:<id>`);
  *    unauthenticated requests bucket by client IP (`ip:<addr>`).
  *    IP extraction respects the Fly.io trusted-proxy chain:
- *      a. `Fly-Client-IP` — set by Fly's edge with the true client IP.
+ *      a. `Fly-Client-IP` -- set by Fly's edge with the true client IP.
  *         The most reliable source on Fly deployments.
- *      b. First hop of `X-Forwarded-For` — standard reverse-proxy header.
- *      c. `req.ip` / socket address — fallback for direct connections (dev).
+ *      b. First hop of `X-Forwarded-For` -- standard reverse-proxy header.
+ *      c. `req.ip` / socket address -- fallback for direct connections (dev).
  *
  * 2. Health check skip: `/health`, `/healthz`, and `/readyz` are whitelisted
  *    and never counted toward any throttler bucket. The guard returns `true`
@@ -35,9 +35,9 @@ export class UserThrottlerGuard extends ThrottlerGuard {
   // Override the canActivate to skip health check endpoints entirely.
   // We check the path before the parent's throttle logic so no counter
   // is incremented for health-probe traffic.
-  async canActivate(context: import('@nestjs/common').ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const path: string = request?.route?.path || request?.url || '';
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<Record<string, any>>();
+    const path: string = (request?.route?.path as string) || (request?.url as string) || '';
     // Strip query string for path comparison.
     const cleanPath = path.split('?')[0];
     if (HEALTH_PATHS.has(cleanPath)) {
@@ -52,7 +52,7 @@ export class UserThrottlerGuard extends ThrottlerGuard {
       return `user:${userId}`;
     }
 
-    // Trust the Fly-Client-IP header first — Fly's edge injects this with the
+    // Trust the Fly-Client-IP header first -- Fly's edge injects this with the
     // verified client IP and cannot be spoofed by the client (unlike XFF which
     // is a client-supplied header that Fly forwards verbatim). Then fall through
     // to X-Forwarded-For (standard reverse-proxy) and finally req.ip.
@@ -70,21 +70,5 @@ export class UserThrottlerGuard extends ThrottlerGuard {
     const ip =
       req?.ip || req?.socket?.remoteAddress || req?.connection?.remoteAddress;
     return `ip:${ip || 'unknown'}`;
-  }
-
-  /**
-   * Build the error response for throttled requests. Returns the standard
-   * Nest ThrottlerException; the ThrottlerExceptionFilter in
-   * src/filters/throttler-exception.filter.ts catches it and adds the
-   * Retry-After header + a sanitized body (no internal limit details).
-   *
-   * We override this method only to satisfy the ThrottlerGuard contract; the
-   * actual response formatting lives in ThrottlerExceptionFilter.
-   */
-  protected async throwThrottlingException(
-    context: import('@nestjs/common').ExecutionContext,
-    _throttlerLimitDetail: ThrottlerRequest,
-  ): Promise<void> {
-    await super.throwThrottlingException(context, _throttlerLimitDetail);
   }
 }
