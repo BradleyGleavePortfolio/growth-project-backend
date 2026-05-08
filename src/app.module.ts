@@ -47,6 +47,7 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
 import { TimelineModule } from './timeline/timeline.module';
 import { FirstWinModule } from './first-win/first-win.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
+import { TalentMarketplaceModule } from './talent-marketplace/talent-marketplace.module';
 
 @Module({
   imports: [
@@ -147,6 +148,11 @@ import { LeaderboardModule } from './leaderboard/leaderboard.module';
     // Phase 7C — Peer Leaderboard (opt-in, coach-roster scoped).
     // Score: combined 30-day habit completion rate, never raw health data.
     LeaderboardModule,
+    // Phase 11 / Track 8 — Talent Marketplace. Coach application flow,
+    // talent pool search, Stripe Connect Express onboarding, and offer
+    // lifecycle. The head-coach browse UI and revenue-split payment intents
+    // are deferred to Track 8.5.
+    TalentMarketplaceModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)
