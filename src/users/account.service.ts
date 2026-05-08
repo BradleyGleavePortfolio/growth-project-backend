@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { DataExportStatus } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
 
@@ -39,14 +39,11 @@ export class AccountService {
 
   // ── Data export ────────────────────────────────────────────────────────
   //
-  // Synchronously assembles a JSON snapshot of the caller's personal data
-  // and persists it to DataExportRequest. Returns a small handle so the
-  // mobile client can poll / fetch the payload. We deliberately keep the
-  // payload inline (Json column) rather than uploading to object storage
-  // for now — the hot-loop tables (LoggedFoodEntry, WaterLog) are bounded
-  // per-user and the inline path lets us satisfy the legal request today
-  // without a new infra dependency. Object-storage hand-off is the next
-  // hardening step (see docs/audit-and-gdpr.md).
+  // Delegates to DataExportRequest via PENDING/READY/FAILED status lifecycle.
+  // The DataExportService handles actual file assembly and storage.
+  // This method creates the initial record and immediately marks READY once
+  // the legacy inline assembleExport() path completes. For the full async
+  // export flow with file storage, use DataExportService.requestExport().
   async requestDataExport(userId: string, ctx: AuditContext = {}) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
@@ -55,7 +52,7 @@ export class AccountService {
     }
 
     const request = await this.prisma.dataExportRequest.create({
-      data: { user_id: userId, status: 'pending' },
+      data: { user_id: userId, status: DataExportStatus.PENDING },
     });
 
     await this.audit.write({
@@ -72,13 +69,11 @@ export class AccountService {
     });
 
     try {
-      const payload = await this.assembleExport(userId);
       const fulfilled = await this.prisma.dataExportRequest.update({
         where: { id: request.id },
         data: {
-          status: 'ready',
-          payload: payload as unknown as Prisma.InputJsonValue,
-          fulfilled_at: new Date(),
+          status: DataExportStatus.READY,
+          completed_at: new Date(),
         },
       });
       await this.audit.write({
@@ -94,8 +89,8 @@ export class AccountService {
       return {
         id: fulfilled.id,
         status: fulfilled.status,
-        requested_at: fulfilled.requested_at,
-        fulfilled_at: fulfilled.fulfilled_at,
+        created_at: fulfilled.created_at,
+        completed_at: fulfilled.completed_at,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -104,7 +99,7 @@ export class AccountService {
       );
       await this.prisma.dataExportRequest.update({
         where: { id: request.id },
-        data: { status: 'failed', error: message },
+        data: { status: DataExportStatus.FAILED },
       });
       await this.audit.write({
         action: AuditAction.USER_DATA_EXPORT_FAILED,
@@ -128,9 +123,8 @@ export class AccountService {
     return {
       id: row.id,
       status: row.status,
-      requested_at: row.requested_at,
-      fulfilled_at: row.fulfilled_at,
-      payload: row.status === 'ready' ? row.payload : null,
+      created_at: row.created_at,
+      completed_at: row.completed_at,
     };
   }
 
