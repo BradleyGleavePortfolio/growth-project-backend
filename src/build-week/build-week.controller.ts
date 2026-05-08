@@ -25,7 +25,7 @@ import { CompleteDayDto } from './build-week.dto';
 @Controller('build-week')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
- BuildWeekController {
+export class BuildWeekController {
   constructor(private readonly buildWeek: BuildWeekService) {}
 
   @Get('days')
