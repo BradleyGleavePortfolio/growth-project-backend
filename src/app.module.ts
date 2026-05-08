@@ -46,9 +46,14 @@ import { InviteLandingModule } from './invite-landing/invite-landing.module';
 import { PublicPagesModule } from './public-pages/public-pages.module';
 import { TimelineModule } from './timeline/timeline.module';
 import { FirstWinModule } from './first-win/first-win.module';
+import { ObservabilityModule } from './observability/observability.module';
 
 @Module({
   imports: [
+    // OBSERVABILITY: must be the FIRST module so RequestIdMiddleware runs before
+    // every auth guard and AuditModule interceptor. See src/observability/README.md.
+    ObservabilityModule,
+
     // Global config — loads .env automatically
     ConfigModule.forRoot({ isGlobal: true }),
 
