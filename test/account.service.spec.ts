@@ -52,7 +52,7 @@ function buildPrismaMock(initialUser: any) {
           id: `exp-${state.exports.length + 1}`,
           requested_at: new Date(),
           fulfilled_at: null,
-          status: 'pending',
+          status: 'PENDING',
           payload: null,
           error: null,
           ...data,
@@ -96,7 +96,7 @@ describe('AccountService', () => {
 
       const res = await svc.requestDataExport('u-1', { ip: '1.2.3.4', userAgent: 'jest' });
 
-      expect(res.status).toBe('ready');
+      expect(res.status).toBe('READY');
       expect(prisma.dataExportRequest.create).toHaveBeenCalledTimes(1);
       // requested + fulfilled = 2 audit writes on the happy path
       expect(audit.write).toHaveBeenCalledTimes(2);
