@@ -211,6 +211,11 @@ model User {
   show_on_leaderboard       Boolean   @default(false)
   leaderboard_display_name  String?
 
+  // Phase 11 — Workout Builder relations.
+  workout_plans_as_coach       WorkoutPlan[]               @relation("CoachWorkoutPlans")
+  workout_assignments_as_client ClientWorkoutAssignment[]  @relation("ClientWorkoutAssignments")
+  workout_assignments_as_coach  ClientWorkoutAssignment[]  @relation("CoachWorkoutAssignments")
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -1363,4 +1368,91 @@ model BuildWeekDayCompletion {
 
   @@unique([enrollment_id, day_number], name: "BuildWeekDayCompletion_enrollment_day_key")
   @@index([day_number])
+}
+
+// =============================================================================
+// Phase 11 — Workout Builder
+// =============================================================================
+//
+// Three tables:
+//   1. WorkoutPlan              — coach-authored plan with metadata.
+//   2. WorkoutPlanExercise      — ordered exercise rows within a plan; references
+//                                 ExerciseDB catalog by external id (no FK to an
+//                                 internal exercises table because exercises live
+//                                 in the ExerciseDB catalog, not in Postgres).
+//   3. ClientWorkoutAssignment  — per-client scheduled instances of a plan with
+//                                 optional completion feedback.
+//
+// Tenancy:
+//   * WorkoutPlan.coach_id is the owning coach's User.id.
+//   * Only that coach can read/mutate the plan rows; checked in service layer.
+//   * Assignments gate-check that client_id.coach_id === coach_id.
+//
+// Archival:
+//   * WorkoutPlan.archived_at is set on "delete" to soft-archive; excluded from
+//     default list queries. Hard delete is not supported — historical assignments
+//     must remain readable.
+
+enum WorkoutPlanType {
+  strength
+  cardio
+  mobility
+}
+
+model WorkoutPlan {
+  id                          String           @id @default(uuid())
+  coach_id                    String
+  coach                       User             @relation("CoachWorkoutPlans", fields: [coach_id], references: [id], onDelete: Cascade)
+  name                        String
+  type                        WorkoutPlanType
+  duration_estimate_minutes   Int?
+  created_at                  DateTime         @default(now())
+  updated_at                  DateTime         @updatedAt
+  archived_at                 DateTime?
+
+  exercises   WorkoutPlanExercise[]
+  assignments ClientWorkoutAssignment[]
+
+  @@index([coach_id, archived_at])
+  @@index([created_at])
+}
+
+model WorkoutPlanExercise {
+  id                      String      @id @default(uuid())
+  workout_plan_id         String
+  workout_plan            WorkoutPlan @relation(fields: [workout_plan_id], references: [id], onDelete: Cascade)
+  // ExerciseDB catalog identifier — NOT a FK to an internal table.
+  exercise_external_id    String
+  order                   Int
+  sets                    Int
+  // Dual-purpose: rep count (e.g. 12) or time-based duration (e.g. 60 seconds).
+  reps_or_duration_seconds Int
+  weight_lbs              Float?
+  rest_seconds            Int?
+  // Exercises sharing a superset_group_id are performed back-to-back.
+  superset_group_id       String?
+  notes                   String?
+
+  @@unique([workout_plan_id, order], name: "WorkoutPlanExercise_plan_order_key")
+  @@index([workout_plan_id])
+  @@index([exercise_external_id])
+}
+
+model ClientWorkoutAssignment {
+  id                      String      @id @default(uuid())
+  workout_plan_id         String
+  workout_plan            WorkoutPlan @relation(fields: [workout_plan_id], references: [id], onDelete: Cascade)
+  client_id               String
+  client                  User        @relation("ClientWorkoutAssignments", fields: [client_id], references: [id], onDelete: Cascade)
+  assigned_by_coach_id    String
+  assigned_by_coach       User        @relation("CoachWorkoutAssignments", fields: [assigned_by_coach_id], references: [id], onDelete: Cascade)
+  scheduled_for           DateTime
+  completed_at            DateTime?
+  // Rating of Perceived Exertion 1–10; null until completed.
+  post_rpe                Int?
+  post_notes              String?
+
+  @@index([client_id, scheduled_for])
+  @@index([workout_plan_id])
+  @@index([assigned_by_coach_id])
 }
