@@ -19,6 +19,7 @@ import {
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import type { Prisma } from '@prisma/client';
 
 /** Allowed preferred-client-type values — mirrors the Prisma enum. */
 export enum CoachClientTypeDto {
@@ -37,8 +38,11 @@ export enum CoachApplicationStatusDto {
   INACTIVE = 'inactive',
 }
 
-/** Shape of the preferences jsonb field. */
-export interface WorkPreferences {
+/**
+ * Shape of the preferences jsonb field.
+ * Must satisfy Prisma.InputJsonObject so we add the index signature.
+ */
+export interface WorkPreferences extends Prisma.JsonObject {
   commission: boolean;
   rev_share: boolean;
   w2: boolean;
