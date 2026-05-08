@@ -55,8 +55,31 @@ export interface RiskBoardRow {
   factors_count: number;
 }
 
+// Coach-scoped variant: risk_score and success_score are redacted to null
+// so the raw model output never leaves the server for non-owner roles.
+// The mobile coach screen renders via bucket only — Phase 1E doctrine.
+export interface CoachRiskBoardRow {
+  user_id: string;
+  email: string;
+  role: string;
+  name: string;
+  risk_score: null;
+  success_score: null;
+  bucket: PtmRiskBucket;
+  computed_at: Date;
+  factors_count: number;
+  last_signal_at: string | null;
+  outcome_label: string | null;
+}
+
 export interface RiskBoardResponse {
   data: RiskBoardRow[];
+  next_cursor: string | null;
+  generated_at: string;
+}
+
+export interface CoachRiskBoardResponse {
+  data: CoachRiskBoardRow[];
   next_cursor: string | null;
   generated_at: string;
 }
@@ -341,6 +364,144 @@ export class AdminPtmService {
       bucket: bucketize(p.risk_score),
       computed_at: p.computed_at,
       factors_count: countFactors(p.factors),
+    }));
+
+    return { data, next_cursor: next, generated_at: new Date().toISOString() };
+  }
+
+  /**
+   * Coach-scoped risk board (Phase 1E).
+   *
+   * Mirrors getRiskBoard but adds a WHERE constraint so only clients
+   * whose User.coach_id = coachId are visible. raw risk_score and
+   * success_score are redacted to null — a coach is authorised to act
+   * on the bucket but must not see the raw model internals. The mobile
+   * screen renders via RiskDot and bucket label regardless of whether
+   * the source is the owner or coach path.
+   *
+   * Privacy: the coachId scope is the ONLY access control on this
+   * path. No coach can widen the filter to another coach's roster —
+   * the controller passes req.user.id and the caller never influences
+   * the coachId value.
+   */
+  async getRiskBoardForCoach(
+    coachId: string,
+    opts: {
+      bucket?: PtmRiskBucket;
+      cursor?: string;
+      limit?: number;
+    },
+  ): Promise<CoachRiskBoardResponse> {
+    const limit = clampPageSize(
+      opts.limit,
+      envPageSize() ?? RISK_BOARD_DEFAULT_PAGE_SIZE,
+      RISK_BOARD_MIN_PAGE_SIZE,
+      RISK_BOARD_MAX_PAGE_SIZE,
+    );
+
+    const cursorDate = parseIsoCursor(opts.cursor);
+
+    // Resolve the set of client user_ids assigned to this coach before
+    // querying predictions. This two-step avoids a cross-table groupBy
+    // that Prisma does not support natively and keeps the index path on
+    // (user_id, computed_at) hot.
+    const rosterRows = await this.prisma.user.findMany({
+      where: {
+        coach_id: coachId,
+        role: 'student',
+        deleted_at: null,
+      },
+      select: { id: true },
+    });
+
+    if (rosterRows.length === 0) {
+      return { data: [], next_cursor: null, generated_at: new Date().toISOString() };
+    }
+
+    const rosterIds = rosterRows.map((u) => u.id);
+
+    // Per-user latest computed_at, scoped to this coach's roster.
+    const groups = await this.prisma.ptmPrediction.groupBy({
+      by: ['user_id'],
+      _max: { computed_at: true },
+      where: {
+        user_id: { in: rosterIds },
+        ...(cursorDate ? { computed_at: { lt: cursorDate } } : {}),
+      },
+    });
+
+    if (groups.length === 0) {
+      return { data: [], next_cursor: null, generated_at: new Date().toISOString() };
+    }
+
+    const orPairs = groups
+      .filter((g) => g._max.computed_at != null)
+      .map((g) => ({
+        user_id: g.user_id,
+        computed_at: g._max.computed_at as Date,
+      }));
+
+    const predictions = await this.prisma.ptmPrediction.findMany({
+      where: {
+        OR: orPairs.map((p) => ({
+          user_id: p.user_id,
+          computed_at: p.computed_at,
+        })),
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            name: true,
+            ptm_outcomes_target: {
+              select: { outcome_type: true },
+              take: 1,
+            },
+            ptm_signals: {
+              select: { recorded_at: true },
+              orderBy: { recorded_at: 'desc' },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+
+    // Bucket filter + sort by risk_score DESC, computed_at DESC tiebreak.
+    const filtered = predictions
+      .filter((p) =>
+        opts.bucket ? bucketize(p.risk_score) === opts.bucket : true,
+      )
+      .sort((a, b) => {
+        if (b.risk_score !== a.risk_score) return b.risk_score - a.risk_score;
+        return b.computed_at.getTime() - a.computed_at.getTime();
+      });
+
+    const page = filtered.slice(0, limit);
+    const next =
+      filtered.length > limit
+        ? page[page.length - 1]?.computed_at.toISOString() ?? null
+        : null;
+
+    // risk_score and success_score are intentionally null for this path.
+    // The mobile coach screen renders the bucket label / RiskDot and
+    // must never see the raw model percentage (Phase 1E doctrine).
+    const data: CoachRiskBoardRow[] = page.map((p) => ({
+      user_id: p.user_id,
+      email: p.user.email,
+      role: p.user.role,
+      name: p.user.name,
+      risk_score: null,
+      success_score: null,
+      bucket: bucketize(p.risk_score),
+      computed_at: p.computed_at,
+      factors_count: countFactors(p.factors),
+      last_signal_at:
+        p.user.ptm_signals[0]?.recorded_at.toISOString() ?? null,
+      outcome_label:
+        p.user.ptm_outcomes_target[0]?.outcome_type ?? null,
     }));
 
     return { data, next_cursor: next, generated_at: new Date().toISOString() };

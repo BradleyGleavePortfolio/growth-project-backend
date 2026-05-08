@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { CoachController } from './coach.controller';
 import { CoachService } from './coach.service';
 import { CoachEffectivenessService } from './coach-effectiveness.service';
@@ -9,6 +9,7 @@ import { CoachOnboardingService } from './coach-onboarding.service';
 import { CoachOnboardingController } from './coach-onboarding.controller';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AdminModule } from '../admin/admin.module';
 
 // PrismaService provided globally via PrismaModule.
 //
@@ -26,11 +27,19 @@ import { NotificationsModule } from '../notifications/notifications.module';
 //     AdminModule.promoteUser can call startWizard() at promote time.
 //   * CoachOnboardingController — coach-scoped /coach/onboarding endpoints.
 //
+// Phase 1E addition:
+//   * AdminModule is imported with forwardRef() to break the
+//     CoachModule ↔ AdminModule circular reference. CoachModule needs
+//     AdminPtmService (for the coach-scoped risk board); AdminModule
+//     needs CoachModule (for CoachOnboardingService and CoachAlertsService).
+//   * AdminPtmService is resolved from the AdminModule export rather
+//     than re-declared here so the bucket logic stays in one place.
+//
 // CoachAlertsService, CoachEffectivenessService, and CoachOnboardingService are
 // exported so AdminModule (admin endpoints) and PtmModule (PTM-recompute →
 // alert hook) can inject them.
 @Module({
-  imports: [AuthModule, NotificationsModule],
+  imports: [AuthModule, NotificationsModule, forwardRef(() => AdminModule)],
   controllers: [CoachController, CoachAlertsController, CoachOnboardingController],
   providers: [
     CoachService,

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { RolesGuard } from '../auth/roles.guard';
 import { AdminController } from './admin.controller';
@@ -47,8 +47,14 @@ import { CoachModule } from '../coach/coach.module';
 // GET /admin/clients/:id/ptm, GET /admin/ptm/risk-board, and
 // GET /admin/ptm/outcome-history. PtmService and PtmRecomputeService
 // resolve through the @Global PtmModule.
+//
+// Phase 1E: CoachModule is wrapped in forwardRef() to break the
+// AdminModule ↔ CoachModule circular reference introduced when CoachModule
+// began importing AdminModule for AdminPtmService. forwardRef() on both
+// sides is the idiomatic NestJS resolution; the runtime graph is identical
+// to the previous direct import.
 @Module({
-  imports: [AuthModule, UsersModule, BuildWeekModule, CoachModule],
+  imports: [AuthModule, UsersModule, BuildWeekModule, forwardRef(() => CoachModule)],
   controllers: [
     AdminController,
     ReportsController,
