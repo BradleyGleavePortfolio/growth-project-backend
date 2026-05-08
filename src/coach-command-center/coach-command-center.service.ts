@@ -472,7 +472,7 @@ export class CoachCommandCenterService {
           last_message_preview: last.body ? last.body.slice(0, 120) : null,
           last_message_is_voice: !!last.voice_url,
           unread_count: unreadByClient.get(g.client_id) ?? 0,
-        } satisfies InboxThread;
+        } as InboxThread;
       })
       .filter((t): t is InboxThread => t !== null)
       .sort(
