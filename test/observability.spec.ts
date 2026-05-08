@@ -13,14 +13,16 @@
  *  9. MetricsService — histogram buckets are cumulative
  * 10. HealthDeepController — DB up path returns 200
  * 11. HealthDeepController — DB down path returns 503
- * 12. MetricsController — returns plain text content type header
+ * 12. AppLoggerService — emits JSON with redacted fields
  */
 
 import { redactObject, redactLogLine } from '../src/observability/log-redaction';
 import { MetricsService } from '../src/observability/metrics.service';
 import { AppLoggerService } from '../src/observability/app-logger.service';
+import { RequestIdMiddleware } from '../src/observability/request-id.middleware';
+import { HealthDeepController } from '../src/observability/health-deep.controller';
 
-// ── 1. redactObject — sensitive keys are replaced ──────────────────────────
+// ── 1. redactObject ─────────────────────────────────────────────────────────
 
 describe('redactObject', () => {
   it('replaces password field with [REDACTED]', () => {
@@ -48,7 +50,7 @@ describe('redactObject', () => {
     const output = redactObject(input) as Record<string, unknown>;
     expect(output.blood_glucose).toBe('[REDACTED]');
     expect(output.hba1c).toBe('[REDACTED]');
-    expect(output.user_id).toBe('u-1'); // safe field preserved
+    expect(output.user_id).toBe('u-1');
   });
 
   it('strips body_fat', () => {
@@ -58,8 +60,7 @@ describe('redactObject', () => {
     expect(output.weight).toBe(75);
   });
 
-  it('preserves allowed fields even if they match a sensitive pattern prefix', () => {
-    // request_id contains "id" but must not be redacted
+  it('preserves allowed fields even if they share a prefix with sensitive names', () => {
     const input = { request_id: 'abc123', user_id: 'u-1', method: 'GET' };
     const output = redactObject(input) as Record<string, unknown>;
     expect(output.request_id).toBe('abc123');
@@ -92,7 +93,7 @@ describe('redactObject', () => {
   it('does not mutate the original object', () => {
     const input = { password: 'secret', name: 'alice' };
     redactObject(input);
-    expect(input.password).toBe('secret'); // untouched
+    expect(input.password).toBe('secret');
   });
 });
 
@@ -149,14 +150,10 @@ describe('MetricsService', () => {
   });
 
   it('histogram buckets are cumulative (observation <= bucket counts it)', () => {
-    // Observe 50ms — should fall into 50ms bucket (<=50) and all larger buckets
     svc.recordRequest('GET', '/api/test', 200, 50);
     const output = svc.render();
-    // le="50" should have count 1
     expect(output).toMatch(/le="50"[^}]*\} 1/);
-    // le="100" should also have count 1 (cumulative)
     expect(output).toMatch(/le="100"[^}]*\} 1/);
-    // le="25" should have count 0 (50ms > 25ms)
     expect(output).toMatch(/le="25"[^}]*\} 0/);
   });
 
@@ -241,19 +238,14 @@ describe('AppLoggerService', () => {
 // ── 5. RequestIdMiddleware ──────────────────────────────────────────────────
 
 describe('RequestIdMiddleware', () => {
-  // Use inline implementation to avoid NestJS DI overhead in unit tests.
-  function buildMiddleware() {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { RequestIdMiddleware: Mid } = require('../src/observability/request-id.middleware');
-    return new Mid();
-  }
-
   function buildReqRes(headers: Record<string, string> = {}) {
     const finishListeners: Array<() => void> = [];
     const res = {
       getHeader: jest.fn(),
       setHeader: jest.fn(),
-      on: jest.fn((event: string, cb: () => void) => { if (event === 'finish') finishListeners.push(cb); }),
+      on: jest.fn((event: string, cb: () => void) => {
+        if (event === 'finish') finishListeners.push(cb);
+      }),
       finishListeners,
     };
     const req = { headers, requestId: undefined as string | undefined, route: undefined };
@@ -261,49 +253,48 @@ describe('RequestIdMiddleware', () => {
   }
 
   it('attaches a generated hex id when no X-Request-ID header present', () => {
-    const mid = buildMiddleware();
+    const mid = new RequestIdMiddleware();
     const { req, res } = buildReqRes();
     const next = jest.fn();
-    mid.use(req, res, next);
+    mid.use(req as any, res as any, next);
     expect(req.requestId).toMatch(/^[0-9a-f]{32}$/);
     expect(res.setHeader).toHaveBeenCalledWith('X-Request-ID', req.requestId);
     expect(next).toHaveBeenCalled();
   });
 
   it('honours incoming X-Request-ID header', () => {
-    const mid = buildMiddleware();
+    const mid = new RequestIdMiddleware();
     const { req, res } = buildReqRes({ 'x-request-id': 'upstream-id-123' });
     const next = jest.fn();
-    mid.use(req, res, next);
+    mid.use(req as any, res as any, next);
     expect(req.requestId).toBe('upstream-id-123');
   });
 
   it('strips non-alphanumeric chars from incoming header', () => {
-    const mid = buildMiddleware();
+    const mid = new RequestIdMiddleware();
     const { req, res } = buildReqRes({ 'x-request-id': 'safe-id<script>evil</script>' });
     const next = jest.fn();
-    mid.use(req, res, next);
-    // angle brackets and slashes stripped
+    mid.use(req as any, res as any, next);
     expect(req.requestId).not.toContain('<');
     expect(req.requestId).not.toContain('>');
     expect(req.requestId).not.toContain('/');
   });
 
   it('truncates very long incoming X-Request-ID to 128 chars', () => {
-    const mid = buildMiddleware();
+    const mid = new RequestIdMiddleware();
     const long = 'a'.repeat(200);
     const { req, res } = buildReqRes({ 'x-request-id': long });
     const next = jest.fn();
-    mid.use(req, res, next);
+    mid.use(req as any, res as any, next);
     expect((req.requestId as string).length).toBe(128);
   });
 
   it('resets thread-local userId on new request', () => {
     AppLoggerService.userId = 'stale-user';
-    const mid = buildMiddleware();
+    const mid = new RequestIdMiddleware();
     const { req, res } = buildReqRes();
     const next = jest.fn();
-    mid.use(req, res, next);
+    mid.use(req as any, res as any, next);
     expect(AppLoggerService.userId).toBeUndefined();
   });
 });
@@ -312,26 +303,30 @@ describe('RequestIdMiddleware', () => {
 
 describe('HealthDeepController', () => {
   it('returns ok:true when DB query succeeds', async () => {
-    const { HealthDeepController: Ctrl } = await import('../src/observability/health-deep.controller');
     const prisma = { $queryRaw: jest.fn().mockResolvedValue([{ '?column?': 1 }]) } as any;
-    const ctrl = new Ctrl(prisma);
+    const ctrl = new HealthDeepController(prisma);
 
     const statusCodes: number[] = [];
-    const res = { status: jest.fn((code: number) => { statusCodes.push(code); return res; }) } as any;
+    const res = {
+      status: jest.fn((code: number) => { statusCodes.push(code); return res; }),
+    } as any;
 
     const result = await ctrl.deep(res);
     expect(result.ok).toBe(true);
     expect(result.db).toBe('up');
-    expect(statusCodes).toHaveLength(0); // no explicit status set = 200
+    expect(statusCodes).toHaveLength(0);
   });
 
   it('returns ok:false and sets 503 when DB is down', async () => {
-    const { HealthDeepController: Ctrl } = await import('../src/observability/health-deep.controller');
-    const prisma = { $queryRaw: jest.fn().mockRejectedValue(new Error('connection refused')) } as any;
-    const ctrl = new Ctrl(prisma);
+    const prisma = {
+      $queryRaw: jest.fn().mockRejectedValue(new Error('connection refused')),
+    } as any;
+    const ctrl = new HealthDeepController(prisma);
 
     const statusCodes: number[] = [];
-    const res = { status: jest.fn((code: number) => { statusCodes.push(code); return res; }) } as any;
+    const res = {
+      status: jest.fn((code: number) => { statusCodes.push(code); return res; }),
+    } as any;
 
     const result = await ctrl.deep(res);
     expect(result.ok).toBe(false);
@@ -340,4 +335,3 @@ describe('HealthDeepController', () => {
     expect(result.errors).toBeDefined();
   });
 });
-// end-of-file
