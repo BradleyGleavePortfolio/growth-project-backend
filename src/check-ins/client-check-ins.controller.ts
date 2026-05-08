@@ -11,6 +11,8 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { CreateCheckInDto, ListCheckInsQueryDto } from './check-ins.dto';
 import { CheckInsService } from './check-ins.service';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
@@ -19,7 +21,8 @@ import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guar
 // so a client can never see/create a check-in for another user.
 @ApiTags('check-ins')
 @Controller('check-ins')
-@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, ClientEntitlementGuard)
+@Roles('student')
 export class ClientCheckInsController {
   constructor(private checkIns: CheckInsService) {}
 
