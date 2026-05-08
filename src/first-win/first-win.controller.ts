@@ -14,6 +14,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { AuthedRequest } from '../auth/auth-request';
 import { FirstWinService } from './first-win.service';
 import { CompleteFirstWinDto } from './first-win.dto';
@@ -35,8 +37,9 @@ import { CompleteFirstWinDto } from './first-win.dto';
 @ApiBearerAuth('bearer')
 @ApiResponse({ status: 401, description: 'Missing or invalid bearer token.' })
 @Controller('me/first-win')
-@UseGuards(JwtAuthGuard)
-export class FirstWinController {
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('student')
+ FirstWinController {
   constructor(private readonly firstWinService: FirstWinService) {}
 
   /**
