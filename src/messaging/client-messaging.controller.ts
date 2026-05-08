@@ -12,6 +12,8 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import {
   CreateMessageDto,
   ListThreadQueryDto,
@@ -37,8 +39,9 @@ import { MessagingService } from './messaging.service';
 //       students; coaches/owners short-circuit through the guard).
 @ApiTags('messaging')
 @Controller('messages')
-@UseGuards(JwtAuthGuard)
-export class ClientMessagingController {
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('student')
+export class ClientMessagingController {
   constructor(private messaging: MessagingService) {}
 
   @Get()
