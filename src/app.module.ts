@@ -47,6 +47,8 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
 import { TimelineModule } from './timeline/timeline.module';
 import { FirstWinModule } from './first-win/first-win.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
+import { ExerciseLibraryModule } from './exercise-library/exercise-library.module';
+import { WorkoutBuilderModule } from './workout-builder/workout-builder.module';
 
 @Module({
   imports: [
@@ -147,6 +149,10 @@ import { LeaderboardModule } from './leaderboard/leaderboard.module';
     // Phase 7C — Peer Leaderboard (opt-in, coach-roster scoped).
     // Score: combined 30-day habit completion rate, never raw health data.
     LeaderboardModule,
+    // Phase 11 Track 6 — Exercise Library (ExerciseDB proxy + cache) and
+    // Workout Builder (plan CRUD + client assignment endpoints).
+    ExerciseLibraryModule,
+    WorkoutBuilderModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)
