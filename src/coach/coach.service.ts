@@ -83,6 +83,8 @@ export class CoachService {
     coachId: string,
     status: 'active' | 'archived' | 'all' = 'active',
     callerRole?: string,
+    cursor?: string,
+    take?: number,
   ) {
     let archiveFilter: object = {};
     if (status === 'active') {
@@ -98,6 +100,8 @@ export class CoachService {
       },
       include: { profile: true },
       orderBy: { created_at: 'desc' },
+      take: take ?? 20,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
   }
 
