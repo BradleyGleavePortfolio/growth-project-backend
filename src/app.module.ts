@@ -97,6 +97,8 @@ import { RlsContextInterceptor } from './common/interceptors/rls-context.interce
 // see common/security/security-guards.module.ts for the prevention rationale
 // (hotfix #243, prod-down 2026-05-20).
 import { SecurityGuardsModule } from './common/security/security-guards.module';
+// Phase 11 Track 7 — Sub-coach roster, analytics, and reassignment.
+import { SubCoachModule } from './sub-coach/sub-coach.module';
 
 @Module({
   imports: [
@@ -280,6 +282,8 @@ import { SecurityGuardsModule } from './common/security/security-guards.module';
     // Endpoints: GET /admin/secrets/status, POST /admin/secrets/:name/rotation-log.
     // See src/secrets/README.md.
     SecretsModule,
+    // Phase 11 Track 7 — Sub-coach roster, analytics, and reassignment.
+    SubCoachModule,
   ],
   providers: [
     // SECURITY: global JWT auth guard — every route is private by default.
