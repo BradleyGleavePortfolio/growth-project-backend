@@ -540,5 +540,3 @@ The evidence-snapshot endpoint reads existing env vars (`FLY_APP_NAME`, `FLY_PRI
 - Apply `RecentAuthGuard` to `POST /admin/users/:id/promote` and the Phase 10 GDPR force-delete endpoint when those PRs land.
 - Migrate legacy bespoke guards (`CoachGuard`, `CoachOrOwnerGuard`, `OwnerGuard`) to `@Roles(...)` to eliminate the legacy-guard allowlist in `roles-enforced.spec.ts`.
 - Add biometric re-auth token path on mobile (currently password-only).
-
-<!-- CI trigger: 2026-05-08T02:35:24Z -->
