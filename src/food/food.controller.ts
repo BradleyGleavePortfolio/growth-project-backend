@@ -11,7 +11,7 @@ import { CreateFoodDto } from './food.dto';
 @Controller('foods')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
- FoodController {
+export class FoodController {
   constructor(private foodService: FoodService) {}
 
   @Get('search')
