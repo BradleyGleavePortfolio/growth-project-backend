@@ -21,7 +21,7 @@ describe('digest-client template snapshot', () => {
   beforeAll(() => {
     const tplPath = path.join(
       __dirname,
-      '../templates/digest-client.hbs',
+      '../src/notifications/templates/digest-client.hbs',
     );
     const src = fs.readFileSync(tplPath, 'utf-8');
     template = Handlebars.compile(src);
