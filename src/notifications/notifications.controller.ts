@@ -16,6 +16,8 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import {
   UpdateNotificationPreferencesDto,
   GetNotificationsQueryDto,
@@ -43,7 +45,8 @@ import { THROTTLER_NAMES } from '../throttler/throttler.config';
  */
 @ApiTags('notifications')
 @Controller('notifications')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('student')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
