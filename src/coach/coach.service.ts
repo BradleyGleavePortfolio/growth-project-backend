@@ -32,6 +32,15 @@ interface FitnessConsentFlags {
   habitsProgress: boolean;
 }
 
+// Row shape returned by the $queryRaw aggregate in getDashboard.
+interface FoodTotalsRow {
+  user_id: string;
+  total_kcal: number;
+  total_protein_g: number;
+  total_carbs_g: number;
+  total_fat_g: number;
+}
+
 @Injectable()
 export class CoachService {
   constructor(
@@ -362,23 +371,29 @@ export class CoachService {
 
     const clientIds = clients.map((c) => c.id);
 
-    const todayEntries = await this.prisma.loggedFoodEntry.findMany({
-      where: {
-        user_id: { in: clientIds },
-        logged_at: { gte: startOfDay, lte: endOfDay },
-      },
-      include: { food_item: true },
-    });
+    // Push aggregation into Postgres: one row per client instead of
+    // fetching every food entry + food_item join and summing in JS.
+    // This eliminates an O(N × entries) round-trip at the 30-second
+    // dashboard polling interval.
+    const totals = await this.prisma.$queryRaw<FoodTotalsRow[]>`
+      SELECT
+        lfe.user_id,
+        COALESCE(SUM(fi.calories * lfe.quantity_multiplier), 0)::float   AS total_kcal,
+        COALESCE(SUM(fi.protein_g * lfe.quantity_multiplier), 0)::float  AS total_protein_g,
+        COALESCE(SUM(fi.carbs_g   * lfe.quantity_multiplier), 0)::float  AS total_carbs_g,
+        COALESCE(SUM(fi.fat_g     * lfe.quantity_multiplier), 0)::float  AS total_fat_g
+      FROM "LoggedFoodEntry" lfe
+      JOIN "FoodItem" fi ON fi.id = lfe.food_item_id
+      WHERE lfe.user_id = ANY(${clientIds}::uuid[])
+        AND lfe.logged_at BETWEEN ${startOfDay} AND ${endOfDay}
+      GROUP BY lfe.user_id
+    `;
 
-    const clientsLoggedToday = new Set(todayEntries.map((e) => e.user_id));
-    const logs_today = clientsLoggedToday.size;
+    // Clients with at least one log entry today have a row in `totals`.
+    const logs_today = totals.length;
 
-    let total_kcal = 0;
-    for (const entry of todayEntries) {
-      const qty = entry.quantity_multiplier || 1;
-      const fi = entry.food_item;
-      if (fi) total_kcal += (fi.calories || 0) * qty;
-    }
+    // Sum kcal across all clients; default to 0 for clients with no entries.
+    const total_kcal = totals.reduce((acc, row) => acc + row.total_kcal, 0);
 
     const logging_rate = clientIds.length > 0 ? logs_today / clientIds.length : 0;
 
