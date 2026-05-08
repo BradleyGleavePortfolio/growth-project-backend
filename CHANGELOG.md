@@ -225,3 +225,4 @@ Added a complete two-phase deletion flow in `src/account-deletion/`.
 - Data export (Phase 10 Wave C) must ship before this flow is enabled in production — GDPR Art. 20 portability must precede erasure.
 - Email confirmation is logged to console in this PR; wire to Phase 9 transactional mailer before go-live.
 - Supabase Auth user cleanup (delete auth row when account is finalized) is a follow-up.
+
