@@ -442,6 +442,7 @@ export class DataExportService {
       return [];
     }
 
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       const page: unknown[] = await delegate.findMany({
         where,
@@ -466,6 +467,7 @@ export class DataExportService {
     const results: unknown[] = [];
     let skip = 0;
 
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       const page = await this.prisma.coachMessage.findMany({
         where: {
