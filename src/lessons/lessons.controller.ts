@@ -11,7 +11,7 @@ import { CreateLessonDto, UpdateLessonDto } from './lessons.dto';
 @Controller('lessons')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
- LessonsController {
+export class LessonsController {
   constructor(private lessonsService: LessonsService) {}
 
   @Get()
