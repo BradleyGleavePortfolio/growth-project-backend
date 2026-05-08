@@ -1018,4 +1018,56 @@ export class AuthService {
       user: { id: user.id, email: user.email, role: user.role },
     };
   }
+
+  /**
+   * Issue a recent-auth token for the authenticated user.
+   *
+   * The token is a short-lived HMAC proof that the user just re-entered their
+   * password (or passed biometric auth). It must be passed as the
+   * `X-Recent-Auth-Token` header on sensitive endpoints guarded by
+   * `RecentAuthGuard`.
+   *
+   * ## Why verify the password here?
+   *
+   * The mobile client calls this endpoint with the user's current password.
+   * We verify against Supabase before issuing the token — this ensures the
+   * "recent auth" proof is tied to actual credential knowledge, not just a
+   * valid session cookie.
+   *
+   * ## Token lifetime
+   *
+   * Configured by `RECENT_AUTH_TTL_MS` (default 5 min). The token is
+   * stateless — no server-side storage — so revocation requires waiting
+   * out the TTL. The short window limits blast radius.
+   */
+  async issueRecentAuthToken(userId: string, password: string): Promise<{ token: string; expires_in_ms: number }> {
+    const secret = process.env.RECENT_AUTH_SECRET;
+    if (!secret) {
+      throw new Error('RECENT_AUTH_SECRET is not configured');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    // Verify the password is correct against Supabase before issuing the token.
+    const supaClient = createClient(
+      process.env.SUPABASE_URL || '',
+      process.env.SUPABASE_ANON_KEY || '',
+    );
+    const { error } = await supaClient.auth.signInWithPassword({
+      email: user.email,
+      password,
+    });
+    if (error) {
+      throw new UnauthorizedException('Password is incorrect');
+    }
+
+    const { issueRecentAuthToken: issue } = await import('./recent-auth.guard');
+    const token = issue(userId, secret);
+    const ttl = process.env.RECENT_AUTH_TTL_MS
+      ? parseInt(process.env.RECENT_AUTH_TTL_MS, 10)
+      : 5 * 60 * 1000;
+
+    return { token, expires_in_ms: ttl };
+  }
 }
