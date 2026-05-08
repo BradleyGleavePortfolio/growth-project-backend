@@ -97,6 +97,17 @@ export async function buildThrottlerOptions(
       .join(', ')}).`,
   );
 
+  // Surface the host so operators can confirm the correct Redis instance is
+  // wired up after `fly secrets set REDIS_URL=... && fly deploy`.
+  const redisHost = (() => {
+    try {
+      return new URL(redisUrl).hostname;
+    } catch {
+      return redisUrl;
+    }
+  })();
+  logger.log(`Throttler using Redis store at ${redisHost}`);
+
   return {
     throttlers,
     storage: new (ThrottlerStorageRedisService as any)(client),
