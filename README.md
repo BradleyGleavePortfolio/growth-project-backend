@@ -1181,6 +1181,38 @@ CI runs the same suite plus `tsc --noEmit` on every PR.
 unauthenticated. It is the Fly liveness probe and is safe to call
 from anywhere.
 
+## Production observability
+
+Structured JSON logging, request tracing, Prometheus metrics, deep health
+checks, and CPU profiling are owned by [`src/observability/`](src/observability/README.md).
+
+### Quick reference
+
+| What | Where |
+|---|---|
+| Structured log shape | Every request emits a JSON line with `timestamp`, `level`, `request_id`, `user_id`, `method`, `path`, `status`, `latency_ms` |
+| Request tracing | `RequestIdMiddleware` adds `X-Request-ID` to every request and response |
+| Metrics scrape | `GET /metrics` — Prometheus text format, no auth required |
+| Deep health check | `GET /health/deep` — checks DB + Redis connectivity, no auth required |
+| CPU profiler | `GET /debug/profile` — OWNER role + `PROFILE_ENABLED=on` required |
+| Sentry wiring | `src/instrument.ts` (imported first in `main.ts`) — gated by `SENTRY_DSN` |
+
+### Key env vars
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LOG_LEVEL` | `log` | Minimum log severity |
+| `LOG_FORMAT` | `json` | `json` or `pretty` |
+| `METRICS_ENABLED` | `on` | Enable `/metrics` endpoint |
+| `SENTRY_DSN` | _(unset)_ | Sentry project DSN — Sentry is a no-op when unset |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.1` | Transaction sampling rate (0.0–1.0) |
+| `PROFILE_ENABLED` | `off` | Enable `/debug/profile` CPU profiler |
+
+See [`src/observability/README.md`](src/observability/README.md) for the full
+doctrine, log shape specification, Prometheus metric names and label schemas,
+Sentry PII-stripping rules, health check response shapes, and future work
+(log shipping, Grafana Cloud, OpenTelemetry).
+
 ## API documentation
 
 The API publishes an OpenAPI 3.1 spec generated from controllers and
