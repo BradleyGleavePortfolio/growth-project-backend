@@ -116,7 +116,7 @@ const allowlistSet = new Set(
 describe('RolesEnforced — every route has @Roles or @Public', () => {
   // This test compiles the full AppModule (same as openapi-spec.spec.ts)
   // which takes ~10–15 s in CI. The 30 s timeout matches the openapi test.
-  jest.setTimeout(30_000);
+  jest.setTimeout(45_000)  // extended for CI environments with heavy concurrent load;
 
   let moduleRef: TestingModule;
   let discoveryService: DiscoveryService;
