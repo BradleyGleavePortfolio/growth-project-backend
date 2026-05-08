@@ -203,6 +203,14 @@ model User {
   // in the mobile gating logic by also checking created_at age).
   first_win_completed_at DateTime?
 
+  // Phase 7C — Peer Leaderboard opt-in fields.
+  // show_on_leaderboard defaults to false — explicit opt-in required.
+  // leaderboard_display_name is nullable; if null, the service derives
+  // "{firstName} {lastInitial}." from the single `name` field at read time.
+  // NEVER surfaces raw weight, body-fat, or finance data on the leaderboard.
+  show_on_leaderboard       Boolean   @default(false)
+  leaderboard_display_name  String?
+
   // Phase 9 — Notification Center + Digest
   // notifications receives all inbox rows; digest_logs tracks sent digest windows.
   notifications   Notification[]
@@ -558,6 +566,36 @@ model NotificationPreferences {
   quiet_hours_start      String  @default("22:00")
   quiet_hours_end        String  @default("06:00")
   timezone               String  @default("America/Los_Angeles")
+
+  // Phase 9 — Per-kind × per-channel preference flags.
+  // muted=true overrides all per-kind settings (master kill switch).
+  // Each kind has three channel flags: _email, _push, _inapp.
+  // Defaults match the Kind × Channel × Default matrix in the README.
+  muted                   Boolean @default(false)
+  milestone_email         Boolean @default(true)
+  milestone_push          Boolean @default(true)
+  milestone_inapp         Boolean @default(true)
+  message_email           Boolean @default(false)
+  message_push            Boolean @default(true)
+  message_inapp           Boolean @default(true)
+  missed_checkin_email    Boolean @default(false)
+  missed_checkin_push     Boolean @default(true)
+  missed_checkin_inapp    Boolean @default(true)
+  weight_trend_email      Boolean @default(false)
+  weight_trend_push       Boolean @default(true)
+  weight_trend_inapp      Boolean @default(true)
+  checkin_submitted_email Boolean @default(false)
+  checkin_submitted_push  Boolean @default(false)
+  checkin_submitted_inapp Boolean @default(true)
+  build_week_email        Boolean @default(true)
+  build_week_push         Boolean @default(true)
+  build_week_inapp        Boolean @default(true)
+  coach_alert_email       Boolean @default(false)
+  coach_alert_push        Boolean @default(true)
+  coach_alert_inapp       Boolean @default(true)
+  digest_email            Boolean @default(true)
+  digest_push             Boolean @default(false)
+  digest_inapp            Boolean @default(false)
 }
 
 model Habit {
@@ -1361,6 +1399,7 @@ model BuildWeekDayCompletion {
   @@unique([enrollment_id, day_number], name: "BuildWeekDayCompletion_enrollment_day_key")
   @@index([day_number])
 }
+
 
 // ──────────────────────────────────────────────────────────────────────────
 // Phase 9 — Notification Center + Digest Idempotency

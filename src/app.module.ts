@@ -17,6 +17,7 @@ import { HabitsModule } from './habits/habits.module';
 import { AiModule } from './ai/ai.module';
 import { CoachModule } from './coach/coach.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { CommunityModule } from './community/community.module';
 import { LessonsModule } from './lessons/lessons.module';
 import { WaterModule } from './water/water.module';
@@ -84,6 +85,9 @@ import { FirstWinModule } from './first-win/first-win.module';
     HabitsModule,
     AiModule,
     CoachModule,
+    // Phase 7C — Peer Leaderboard (opt-in, coach-roster scoped).
+    // Score: combined 30-day habit completion rate, never raw health data.
+    LeaderboardModule,
     NotificationsModule,
     CommunityModule,
     LessonsModule,
