@@ -396,9 +396,11 @@ export class CoachService {
     const fiveDaysAgo = new Date();
     fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
 
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
     const [allRecentWeightLogs, workoutGroups] = await Promise.all([
       this.prisma.weightLog.findMany({
-        where: { user_id: { in: clientIds } },
+        where: { user_id: { in: clientIds }, date: { gte: thirtyDaysAgo } },
         orderBy: [{ user_id: 'asc' }, { date: 'desc' }],
         select: { user_id: true, date: true, weight_lbs: true },
       }),
