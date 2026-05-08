@@ -292,6 +292,7 @@ export class AdminPtmService {
     bucket?: PtmRiskBucket;
     cursor?: string;
     limit?: number;
+    actor?: { actorId?: string; actorRole?: string; actorEmail?: string; ip?: string | null; userAgent?: string | null };
   }): Promise<RiskBoardResponse> {
     const limit = clampPageSize(
       opts.limit,
@@ -299,6 +300,22 @@ export class AdminPtmService {
       RISK_BOARD_MIN_PAGE_SIZE,
       RISK_BOARD_MAX_PAGE_SIZE,
     );
+
+    // Audit: log risk board access. Fire-and-forget. This event is owner-
+    // only (the controller gate enforces this); high-frequency access
+    // from the same actor is acceptable — a single indexed insert is
+    // cheap and the operator surface is not expected to be polled.
+    if (opts.actor?.actorId) {
+      void this.audit.write({
+        action: AuditAction.PTM_RISK_BOARD_VIEW,
+        actorId: opts.actor.actorId,
+        actorRole: opts.actor.actorRole ?? 'owner',
+        actorEmail: opts.actor.actorEmail ?? null,
+        ip: opts.actor.ip ?? null,
+        userAgent: opts.actor.userAgent ?? null,
+        metadata: { bucket: opts.bucket ?? null, cursor: opts.cursor ?? null },
+      });
+    }
 
     // Step 1: per-user latest computed_at via groupBy. Bounded by cursor
     // (rows with max(computed_at) < cursor) so the seek scans only the
