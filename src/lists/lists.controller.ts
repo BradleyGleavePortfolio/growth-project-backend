@@ -29,7 +29,7 @@ function parseListType(type: string): ListType {
 @Controller('lists')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
- ListsController {
+export class ListsController {
   constructor(private listsService: ListsService) {}
 
   /** GET /lists/:type — get all items in the list (ordered: unchecked first) */
