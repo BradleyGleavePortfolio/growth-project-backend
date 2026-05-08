@@ -10,7 +10,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 @Controller('prep-guide')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
- PrepGuideController {
+export class PrepGuideController {
   constructor(private prepGuideService: PrepGuideService) {}
 
   /**
