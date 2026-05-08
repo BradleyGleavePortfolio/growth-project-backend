@@ -54,3 +54,4 @@ All notable changes to `growth-project-backend` are recorded here. Entries are g
 - Wire real APNs/FCM SDK in `NotificationsService.pushToCoach` once `User.push_token` column is added
 - Migrate in-process push rate-limit to Redis for multi-replica deployments
 - Add `GET /notifications/digest-log` (owner-only) for send-history inspection
+
