@@ -15,6 +15,8 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { ListsService } from './lists.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { AddListItemDto, UpdateListItemDto } from './lists.dto';
 import { ListType } from '@prisma/client';
 
@@ -25,8 +27,9 @@ function parseListType(type: string): ListType {
 
 @ApiTags('lists')
 @Controller('lists')
-@UseGuards(JwtAuthGuard)
-export class ListsController {
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('student')
+ ListsController {
   constructor(private listsService: ListsService) {}
 
   /** GET /lists/:type — get all items in the list (ordered: unchecked first) */
