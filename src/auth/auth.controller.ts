@@ -32,6 +32,7 @@ import {
   SignupWithCodeDto,
   AttachInviteCodeDto,
   BootstrapOwnerDto,
+  IssueRecentAuthTokenDto,
 } from './auth.dto';
 import {
   InviteCodesService,
@@ -321,6 +322,26 @@ export class AuthController {
       name: body.name,
       bootstrapSecret: body.bootstrap_secret,
     });
+  }
+
+  @ApiBearerAuth('bearer')
+  @ApiOperation({
+    summary: 'Issue a short-lived re-auth token for sensitive actions',
+    description:
+      'Verifies the user\'s current password against Supabase then returns a ' +
+      'short-lived HMAC token to pass as X-Recent-Auth-Token on guarded endpoints. ' +
+      'Token is valid for RECENT_AUTH_TTL_MS (default 5 min) and bound to the caller.',
+  })
+  @ApiResponse({ status: 200, description: 'Recent-auth token issued.' })
+  @ApiResponse({ status: 401, description: 'Password incorrect.' })
+  @UseGuards(JwtAuthGuard)
+  @Post('recent-auth-token')
+  @HttpCode(HttpStatus.OK)
+  async issueRecentAuthToken(
+    @Request() req: AuthedRequest,
+    @Body() body: IssueRecentAuthTokenDto,
+  ) {
+    return this.authService.issueRecentAuthToken(req.user.id, body.password);
   }
 }
 
