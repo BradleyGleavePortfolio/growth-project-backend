@@ -2,8 +2,8 @@ import {
   MiddlewareConsumer,
   Module,
   NestModule,
-  APP_INTERCEPTOR,
 } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { RequestIdMiddleware } from './request-id.middleware';
 import { LoggingInterceptor } from './logging.interceptor';
 import { MetricsService } from './metrics.service';
