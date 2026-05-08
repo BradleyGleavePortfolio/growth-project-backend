@@ -43,28 +43,7 @@ export class HealthDeepController {
 
     // -- Redis check (optional — only when REDIS_URL is set) --
     if (process.env.REDIS_URL) {
-      try {
-        // Dynamic import so we don't hard-require ioredis when Redis is off.
-        // ioredis is already in package.json (used by the throttler).
-        // We create a throwaway client for a single PING to avoid cross-
-        // contaminating the throttler's connection pool.
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { default: Redis } = require('ioredis') as { default: new (url: string, opts: object) => { ping: () => Promise<string>; disconnect: () => void } };
-        const client = new Redis(process.env.REDIS_URL, {
-          connectTimeout: 2000,
-          commandTimeout: 2000,
-          maxRetriesPerRequest: 0,
-          enableOfflineQueue: false,
-          lazyConnect: true,
-        });
-        const pong = await client.ping();
-        client.disconnect();
-        redisStatus = pong === 'PONG' ? 'up' : 'down';
-        if (redisStatus === 'down') errors.push('redis: unexpected PING response');
-      } catch (err) {
-        redisStatus = 'down';
-        errors.push(`redis: ${err instanceof Error ? err.message : String(err)}`);
-      }
+      redisStatus = await this.checkRedis(process.env.REDIS_URL, errors);
     }
 
     const ok = errors.length === 0;
@@ -78,5 +57,37 @@ export class HealthDeepController {
       timestamp: new Date().toISOString(),
       ...(errors.length ? { errors } : {}),
     };
+  }
+
+  /**
+   * Fire a single PING to Redis using a throwaway ioredis client.
+   * ioredis is already in package.json (used by the throttler).
+   * We create a dedicated client so we don't contaminate the throttler pool.
+   */
+  private async checkRedis(
+    url: string,
+    errors: string[],
+  ): Promise<'up' | 'down'> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const Redis = require('ioredis') as typeof import('ioredis').default;
+      const client = new Redis(url, {
+        connectTimeout: 2000,
+        commandTimeout: 2000,
+        maxRetriesPerRequest: 0,
+        enableOfflineQueue: false,
+        lazyConnect: true,
+      });
+      const pong = await client.ping();
+      client.disconnect();
+      if (pong !== 'PONG') {
+        errors.push('redis: unexpected PING response');
+        return 'down';
+      }
+      return 'up';
+    } catch (err) {
+      errors.push(`redis: ${err instanceof Error ? err.message : String(err)}`);
+      return 'down';
+    }
   }
 }
