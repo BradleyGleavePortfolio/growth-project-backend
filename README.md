@@ -70,7 +70,7 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 
 | Variable | Tier | Owner | Purpose |
 |---|---|---|---|
-| `DATABASE_URL` | hard | Supabase | Postgres connection string used by Prisma. Use the session pooler for runtime queries. |
+| `DATABASE_URL` | hard | Supabase | Postgres connection string used by Prisma. Use the session pooler for runtime queries. Append `?connection_limit=10&pool_timeout=10` for production pool sizing — see [`docs/database-pool.md`](docs/database-pool.md). |
 | `SUPABASE_URL` | hard | Supabase | Project URL. Used as the JWKS source, the admin SDK base, and the pinned token issuer. |
 | `SUPABASE_SERVICE_ROLE_KEY` | hard | Supabase | Service-role key. Used by the auth admin SDK and by `SupabaseService` for realtime broadcast. Treat as a secret. |
 | `SUPABASE_ANON_KEY` | hard | Supabase | Anon key. Used by the auth controller for `signInWithPassword`, `signUp`, and `resetPasswordForEmail`. |
