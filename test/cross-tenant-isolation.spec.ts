@@ -28,6 +28,9 @@ function makePrismaMock() {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
     },
+    userProfile: {
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
     waterLog: {
       findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
