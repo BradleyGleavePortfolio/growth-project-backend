@@ -25,10 +25,16 @@ export class CoachController {
   }
 
   @Get('clients')
-  async getClients(@Request() req: AuthedRequest, @Query('status') status?: string) {
+  async getClients(
+    @Request() req: AuthedRequest,
+    @Query('status') status?: string,
+    @Query('cursor') cursor?: string,
+    @Query('take') takeRaw?: string,
+  ) {
     const normalized: 'active' | 'archived' | 'all' =
       status === 'archived' || status === 'all' ? status : 'active';
-    return this.coachService.getClients(req.user.id, normalized, req.user.role);
+    const take = takeRaw ? Math.min(parseInt(takeRaw, 10) || 20, 50) : undefined;
+    return this.coachService.getClients(req.user.id, normalized, req.user.role, cursor, take);
   }
 
   // ------------------------------------------------------------------ //
