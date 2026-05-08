@@ -45,6 +45,7 @@ import { V1Module } from './v1/v1.module';
 import { InviteLandingModule } from './invite-landing/invite-landing.module';
 import { PublicPagesModule } from './public-pages/public-pages.module';
 import { TimelineModule } from './timeline/timeline.module';
+import { FirstWinModule } from './first-win/first-win.module';
 
 @Module({
   imports: [
@@ -138,6 +139,10 @@ import { TimelineModule } from './timeline/timeline.module';
     // ClientSignal, CoachMessage, BuildWeekEnrollment). No new migrations.
     // Endpoint: GET /me/timeline. See src/timeline/README.md.
     TimelineModule,
+    // Phase 7A — Day 1 Win Sequence. POST /me/first-win/complete +
+    // GET /me/first-win/status. Gates the retention screen on every new
+    // client's first cold start. See src/first-win/README.md (users README).
+    FirstWinModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)
