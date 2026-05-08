@@ -11,7 +11,7 @@ import { LogWaterDto } from './water.dto';
 @Controller('nutrition/water')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
- WaterController {
+export class WaterController {
   constructor(private waterService: WaterService) {}
 
   @Post()
