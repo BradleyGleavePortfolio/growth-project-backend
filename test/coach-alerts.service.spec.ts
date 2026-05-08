@@ -12,8 +12,14 @@ import { CoachAlertsService } from '../src/coach/coach-alerts.service';
 //     another coach (no existence leak).
 //   * listForCoach honors the acknowledged filter.
 
+// Pin a stable "now" so the 24h dedup window arithmetic is deterministic
+// regardless of when CI runs. The service calls Date.now() internally; we
+// override it so fixture timestamps remain within (or outside) the window
+// as intended by each test.
+const PINNED_NOW = new Date('2026-05-06T10:00:00Z').getTime();
+
 function nowMs() {
-  return Date.now();
+  return PINNED_NOW;
 }
 
 function buildPrisma(initial: any[] = []) {
@@ -69,6 +75,15 @@ function buildPrisma(initial: any[] = []) {
 }
 
 const HOUR = 60 * 60 * 1000;
+
+// Pin Date.now() for the whole suite so the 24h dedup window is stable.
+beforeAll(() => {
+  jest.spyOn(Date, 'now').mockReturnValue(PINNED_NOW);
+});
+
+afterAll(() => {
+  jest.restoreAllMocks();
+});
 
 describe('CoachAlertsService', () => {
   it('createAlert dedups within 24h for the same coach/client/type', async () => {
