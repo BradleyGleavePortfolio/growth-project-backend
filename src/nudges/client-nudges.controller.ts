@@ -21,7 +21,7 @@ import { NudgesService } from './nudges.service';
 @Controller('nudges')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
- ClientNudgesController {
+export class ClientNudgesController {
   constructor(private nudges: NudgesService) {}
 
   @Get()
