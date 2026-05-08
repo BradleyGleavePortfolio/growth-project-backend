@@ -13,6 +13,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { ConsentService } from './consent.service';
 import { GrantConsentDto, RevokeConsentDto } from './consent.dto';
@@ -23,8 +25,9 @@ import { GrantConsentDto, RevokeConsentDto } from './consent.dto';
 // themselves).
 @ApiTags('consent')
 @Controller('consent')
-@UseGuards(JwtAuthGuard)
-export class ConsentController {
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('student')
+ ConsentController {
   constructor(private readonly consent: ConsentService) {}
 
   // GET /consent/scopes — static list of canonical scope strings, so the
