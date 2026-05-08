@@ -58,13 +58,21 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // see them in production. Skip 4xx — they're caller mistakes (validation,
     // auth, not-found) and would just create noise.
     if (status >= 500) {
+      const sentryReq = request as Request & { requestId?: string };
       Sentry.withScope((scope) => {
         scope.setTag('http.method', request.method);
         scope.setTag('http.path', request.url);
         scope.setExtra('responseStatus', status);
+        if (sentryReq.requestId) scope.setTag('request_id', sentryReq.requestId);
         Sentry.captureException(exception);
       });
     }
+
+    // Include the request_id so support engineers can correlate this error
+    // with the structured log lines and Sentry events for the same request.
+    // Cast to any because req.requestId is injected by RequestIdMiddleware
+    // which extends the Express Request type at runtime.
+    const reqWithId = request as Request & { requestId?: string };
 
     response.status(status).json({
       statusCode: status,
@@ -73,6 +81,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       error,
       timestamp: new Date().toISOString(),
       path: request.url,
+      ...(reqWithId.requestId ? { request_id: reqWithId.requestId } : {}),
     });
   }
 }
