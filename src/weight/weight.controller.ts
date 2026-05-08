@@ -11,7 +11,7 @@ import { LogWeightDto } from './weight.dto';
 @Controller('weight')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
- WeightController {
+export class WeightController {
   constructor(private weightService: WeightService) {}
 
   @Post()
