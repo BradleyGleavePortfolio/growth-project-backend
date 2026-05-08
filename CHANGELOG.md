@@ -261,3 +261,65 @@ Added a complete two-phase deletion flow in `src/account-deletion/`.
 | `DATA_EXPORT_EXPIRY_DAYS` | `7` | Days the download link stays valid. |
 | `DATA_EXPORT_RATE_LIMIT_HRS` | `24` | Hours between requests per user. |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | — | Email delivery for the ready notification. |
+
+---
+
+## [Unreleased] — Phase 10: Audit Logging Expansion
+
+### Added
+
+- **`AuditAction` enum expanded** — 16 new action constants in `src/audit/audit.service.ts`:
+  `auth.login`, `auth.login_failed`, `auth.apple_signin`, `auth.password_change`,
+  `auth.biometric_unlock_setup`, `coach.assigned_client_change`, `coach.viewed_client_data`,
+  `ptm.risk_board_view`, `notification.pref_change`, `bloodwork.view`,
+  `bloodwork.disclaimer_acked`, `bloodwork.entry_created`, `bloodwork.entry_updated`,
+  `leaderboard.optin_changed`, `consent.granted`, `consent.revoked`.
+
+- **`AuditController`** — new `GET /admin/audit/log` endpoint (owner-only, JWT + RolesGuard).
+  Identical filter and pagination contract to the legacy `/admin/audit-log`. Added to
+  `AuditModule` controllers array.
+
+- **`AUDIT_LOGGING_ENABLED` kill switch** — optional env var read on every `AuditService.write()`
+  call. Set to `off` to suppress audit writes without touching call sites. Documented in
+  `.env.example` and `src/audit/README.md`.
+
+- **Auth hooks** — `auth.service.ts` writes `auth.login` on successful email/password login,
+  `auth.login_failed` on credential failure (metadata: `{ reason: "invalid_credentials" }` —
+  password never stored), and `auth.apple_signin` on successful Apple Sign-In. Controller
+  passes `auditContext(req)` for IP and user-agent capture.
+
+- **Coach hooks** — `coach.service.ts` writes `coach.viewed_client_data` after the client
+  ownership check passes in `getClientTimeline()` and `getClientSummary()`. Fire-and-forget
+  (`void`), so failures never block the response.
+
+- **PTM hooks** — `admin-ptm.service.ts` writes `ptm.risk_board_view` when the controller
+  supplies an actor context. Existing `ptm.outcome_labelled` hook unchanged.
+
+- **Notification hooks** — `notifications.service.ts` writes `notification.pref_change` on
+  `updatePreferences()`. Metadata contains only the changed key names, never the new values.
+
+- **`src/audit/README.md`** — full module README covering the endpoint contract, Prisma model,
+  the complete action enum table with metadata fields, redaction policy, services wired,
+  test coverage, retention policy, and future work.
+
+- **`test/audit-phase10.spec.ts`** — 11 test groups covering kill switch behavior, action
+  constant correctness, append-only contract enforcement, `AuditController` role guard, auth
+  audit payload shapes (login, login_failed never contains password, apple_signin never
+  contains token), coach/PTM/notification audit payload shapes.
+
+### Changed
+
+- **`src/audit/audit.module.ts`** — added `AuditController` to the `controllers` array.
+- **Root `README.md`** — added `AUDIT_LOGGING_ENABLED` to the variable matrix; updated the
+  `AuditLog` section to reference Phase 10 wiring; added `GET /admin/audit/log` to route
+  contracts; added Phase 10 row to the Open Work / merge-order table.
+
+### Notes
+
+- No new Prisma migration required — the `AuditLog` model and all required indexes already
+  existed on `main` from PR #73.
+- Bloodwork (`bloodwork.*`) and leaderboard (`leaderboard.optin_changed`) constants are defined
+  in this PR; wiring lives in PR #103 (`feat-bloodwork-rails`) and PR #148
+  (`feat/phase-7c-peer-leaderboard`) respectively.
+- All new service method params use `= {}` defaults to preserve backward compatibility with
+  existing tests that construct services without the audit context argument.
