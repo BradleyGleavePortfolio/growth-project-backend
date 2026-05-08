@@ -11,7 +11,7 @@ import { CreateHabitDto, LogHabitDto } from './habits.dto';
 @Controller('habits')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
- HabitsController {
+export class HabitsController {
   constructor(private habitsService: HabitsService) {}
 
   @Get()
