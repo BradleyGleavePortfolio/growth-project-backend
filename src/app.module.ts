@@ -46,6 +46,7 @@ import { InviteLandingModule } from './invite-landing/invite-landing.module';
 import { PublicPagesModule } from './public-pages/public-pages.module';
 import { TimelineModule } from './timeline/timeline.module';
 import { FirstWinModule } from './first-win/first-win.module';
+import { LeaderboardModule } from './leaderboard/leaderboard.module';
 
 @Module({
   imports: [
@@ -143,6 +144,9 @@ import { FirstWinModule } from './first-win/first-win.module';
     // GET /me/first-win/status. Gates the retention screen on every new
     // client's first cold start. See src/first-win/README.md (users README).
     FirstWinModule,
+    // Phase 7C — Peer Leaderboard (opt-in, coach-roster scoped).
+    // Score: combined 30-day habit completion rate, never raw health data.
+    LeaderboardModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)
