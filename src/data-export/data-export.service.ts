@@ -9,13 +9,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { DataExportStatus } from '@prisma/client';
 import * as crypto from 'crypto';
-import * as stream from 'stream';
-import * as zlib from 'zlib';
-import { promisify } from 'util';
-import * as jwt from 'jsonwebtoken';
-import * as nodemailer from 'nodemailer';
-
-const pipeline = promisify(stream.pipeline);
+import { SignJWT, jwtVerify, JWTPayload } from 'jose';
 
 // ─── Environment variables ──────────────────────────────────────────────────
 // DATA_EXPORT_TOKEN_SECRET   — signs the download JWT. Required. Min 32 chars.
@@ -28,19 +22,24 @@ const pipeline = promisify(stream.pipeline);
 // DATA_EXPORT_EXPIRY_DAYS    — signed URL / file lifetime. Defaults to 7.
 // DATA_EXPORT_RATE_LIMIT_HRS — hours between requests per user. Defaults to 24.
 // SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_FROM — email delivery.
+//   When SMTP_HOST is unset the ready-notification is logged (dev mode).
 
 const EXPIRY_DAYS = Number(process.env.DATA_EXPORT_EXPIRY_DAYS ?? '7');
 const RATE_LIMIT_HRS = Number(process.env.DATA_EXPORT_RATE_LIMIT_HRS ?? '24');
-const TOKEN_SECRET =
+const TOKEN_SECRET_STR =
   process.env.DATA_EXPORT_TOKEN_SECRET ?? 'change-me-in-production-min32chars!';
 const BUCKET = process.env.DATA_EXPORT_BUCKET;
 const FS_DIR = process.env.DATA_EXPORT_FS_DIR ?? '/tmp/exports';
 
-// Download token payload shape
-interface DownloadTokenPayload {
-  sub: string; // user_id
-  eid: string; // export request id
-  type: 'data_export_download';
+// jose requires a KeyLike or Uint8Array — derive a symmetric key from the secret string.
+function getTokenKey(): Uint8Array {
+  return new TextEncoder().encode(TOKEN_SECRET_STR);
+}
+
+// Download token additional claims
+interface DownloadTokenClaims extends JWTPayload {
+  eid: string;        // export request id
+  type: string;       // 'data_export_download'
 }
 
 @Injectable()
@@ -89,7 +88,7 @@ export class DataExportService {
     });
 
     // Fire-and-forget — do not await so the HTTP response returns immediately.
-    this._runExport(record.id, userId).catch((err) => {
+    this._runExport(record.id, userId).catch((err: Error) => {
       this.logger.error(
         `Export ${record.id} for user ${userId} failed: ${err.message}`,
         err.stack,
@@ -97,20 +96,9 @@ export class DataExportService {
     });
 
     // Audit: wrap in try/catch so a missing audit module never breaks the export.
-    try {
-      if (typeof (this.prisma as any).auditLog !== 'undefined') {
-        await this.prisma.auditLog.create({
-          data: {
-            actor_id: userId,
-            target_id: userId,
-            event_type: 'data_export_requested',
-            metadata: { export_id: record.id },
-          },
-        });
-      }
-    } catch (_auditErr) {
-      // Audit is best-effort; never fail the export request because of it.
-    }
+    this._tryAudit(userId, userId, 'data_export_requested', {
+      export_id: record.id,
+    });
 
     return record;
   }
@@ -141,7 +129,7 @@ export class DataExportService {
       // token via email and use the /download?token= endpoint.
       download_token:
         record.status === DataExportStatus.READY
-          ? this._mintDownloadToken(record.user_id, record.id)
+          ? await this._mintDownloadToken(record.user_id, record.id)
           : null,
     };
   }
@@ -151,10 +139,11 @@ export class DataExportService {
    * return the S3 presigned URL (or a filesystem URL) for the redirect.
    */
   async resolveDownloadUrl(token: string): Promise<string> {
-    let payload: DownloadTokenPayload;
+    let payload: DownloadTokenClaims;
 
     try {
-      payload = jwt.verify(token, TOKEN_SECRET) as DownloadTokenPayload;
+      const result = await jwtVerify(token, getTokenKey());
+      payload = result.payload as DownloadTokenClaims;
     } catch {
       throw new UnauthorizedException('Invalid or expired download token.');
     }
@@ -194,24 +183,10 @@ export class DataExportService {
     }
 
     // Audit download event
-    try {
-      if (typeof (this.prisma as any).auditLog !== 'undefined') {
-        await this.prisma.auditLog.create({
-          data: {
-            actor_id: record.user_id,
-            target_id: record.user_id,
-            event_type: 'data_export_downloaded',
-            metadata: { export_id: record.id },
-          },
-        });
-      }
-    } catch (_auditErr) {
-      // Best-effort audit.
-    }
+    this._tryAudit(record.user_id, record.user_id, 'data_export_downloaded', {
+      export_id: record.id,
+    });
 
-    // If S3 is configured, return the stored presigned URL (generated at
-    // upload time). If the URL has since expired at the S3 layer, generate
-    // a fresh presigned URL from the stored S3 key.
     return record.file_url;
   }
 
@@ -236,7 +211,9 @@ export class DataExportService {
           where: { id: record.id },
           data: { status: DataExportStatus.EXPIRED },
         });
-        this.logger.log(`Expired export ${record.id} for user ${record.user_id}`);
+        this.logger.log(
+          `Expired export ${record.id} for user ${record.user_id}`,
+        );
       } catch (err) {
         this.logger.error(
           `Failed to expire export ${record.id}: ${(err as Error).message}`,
@@ -266,7 +243,7 @@ export class DataExportService {
       const expiresAt = new Date(
         Date.now() + EXPIRY_DAYS * 24 * 60 * 60 * 1000,
       );
-      const fileUrl = await this._uploadFile(exportId, buffer, userId);
+      const fileUrl = await this._uploadFile(exportId, buffer);
 
       await this.prisma.dataExportRequest.update({
         where: { id: exportId },
@@ -280,28 +257,14 @@ export class DataExportService {
         },
       });
 
-      // Audit
-      try {
-        if (typeof (this.prisma as any).auditLog !== 'undefined') {
-          await this.prisma.auditLog.create({
-            data: {
-              actor_id: userId,
-              target_id: userId,
-              event_type: 'data_export_completed',
-              metadata: {
-                export_id: exportId,
-                file_size_bytes: buffer.length,
-                sha256,
-              },
-            },
-          });
-        }
-      } catch (_auditErr) {
-        // Best-effort.
-      }
+      this._tryAudit(userId, userId, 'data_export_completed', {
+        export_id: exportId,
+        file_size_bytes: buffer.length,
+        sha256,
+      });
 
       // Send email with download link
-      const downloadToken = this._mintDownloadToken(userId, exportId);
+      const downloadToken = await this._mintDownloadToken(userId, exportId);
       await this._sendReadyEmail(userId, exportId, downloadToken, expiresAt);
     } catch (err) {
       this.logger.error(
@@ -320,9 +283,6 @@ export class DataExportService {
    * Assemble the full JSON archive. Each top-level key maps to one Prisma
    * model. Streams 500 rows at a time per model to avoid loading the entire
    * dataset into memory at once.
-   *
-   * The manifest at the top captures export metadata so consumers can verify
-   * integrity without parsing the full payload.
    */
   private async _buildArchive(
     userId: string,
@@ -330,7 +290,6 @@ export class DataExportService {
   ): Promise<{ buffer: Buffer; sha256: string }> {
     const startedAt = new Date();
 
-    // ── Collect data per model ──────────────────────────────────────────
     const [
       user,
       profile,
@@ -361,7 +320,6 @@ export class DataExportService {
       auditLogs,
       dataExportRequests,
     ] = await Promise.all([
-      // User (PII fields; sensitive fields documented in README)
       this.prisma.user.findUnique({
         where: { id: userId },
         select: {
@@ -375,108 +333,54 @@ export class DataExportService {
           deletion_scheduled_at: true,
         },
       }),
-
-      // UserProfile
       this._streamAll('userProfile', { user_id: userId }),
-
-      // UserPreferences
       this._streamAll('userPreferences', { user_id: userId }),
-
-      // NotificationPreferences
       this._streamAll('notificationPreferences', { user_id: userId }),
-
-      // WeightLog
       this._streamAll('weightLog', { user_id: userId }),
-
-      // LoggedFoodEntry
       this._streamAll('loggedFoodEntry', { user_id: userId }),
-
-      // WorkoutSession
       this._streamAll('workoutSession', { user_id: userId }),
-
-      // FastingWindow
       this._streamAll('fastingWindow', { user_id: userId }),
-
-      // WaterLog
       this._streamAll('waterLog', { user_id: userId }),
-
-      // Habit
       this._streamAll('habit', { user_id: userId }),
-
-      // LessonCompletion
       this._streamAll('lessonCompletion', { user_id: userId }),
-
-      // CheckIn
       this._streamAll('checkIn', { user_id: userId }),
-
-      // SavedRecipe
       this._streamAll('savedRecipe', { user_id: userId }),
-
-      // ListItem
       this._streamAll('listItem', { user_id: userId }),
-
-      // CoachMessage — only messages where this user is sender, coach, or client.
-      // Other parties' messages are redacted to {id, sent_at, redacted: true}.
       this._streamCoachMessages(userId),
-
-      // CoachNudge — only nudges for/by this user
       this._streamAll('coachNudge', {
         OR: [{ coach_id: userId }, { client_id: userId }],
       }),
-
-      // MessageDraft
       this._streamAll('messageDraft', {
         OR: [{ coach_id: userId }, { client_id: userId }],
       }),
-
-      // MealPlan
       this._streamAll('mealPlan', {
         OR: [{ coach_id: userId }, { client_id: userId }],
       }),
-
-      // CommunityWin — wins authored by this user
       this._streamAll('communityWin', { author_id: userId }),
-
-      // CoachGuideline
       this._streamAll('coachGuideline', {
         OR: [{ coach_id: userId }, { client_id: userId }],
       }),
-
-      // BuildWeekEnrollment (1:1)
       this.prisma.buildWeekEnrollment.findUnique({ where: { user_id: userId } }),
-
-      // BuildWeekDayCompletion — via enrollment
       this._streamBuildWeekCompletions(userId),
-
-      // InviteCode — only codes created by coaches; clients won't have these
       this._streamAll('inviteCode', { coach_id: userId }),
-
-      // DiagnosticSubmission — by user_id (may be null for anonymous submissions)
       this._streamAll('diagnosticSubmission', { user_id: userId }),
-
-      // ClientSignal (PTM)
       this._streamAll('clientSignal', { user_id: userId }),
-
-      // PtmPrediction
       this._streamAll('ptmPrediction', { user_id: userId }),
-
-      // AuditLog entries WHERE the user is the target (what was logged ABOUT them)
       this._streamAuditLogs(userId),
-
-      // DataExportRequest history
       this._streamAll('dataExportRequest', { user_id: userId }),
     ]);
 
     const completedAt = new Date();
 
-    const archive = {
+    // Build with placeholder sha256 first, then replace
+    const archive: Record<string, unknown> = {
       manifest: {
         export_id: exportId,
         user_id: userId,
         schema_version: '1.0',
         requested_at: startedAt.toISOString(),
         completed_at: completedAt.toISOString(),
-        sha256: null as string | null, // filled in below after serialisation
+        sha256: null,
       },
       user,
       profile,
@@ -492,8 +396,8 @@ export class DataExportService {
       check_ins: checkIns,
       saved_recipes: savedRecipes,
       list_items: listItems,
-      // Messages: own messages are included verbatim; other parties' messages
-      // appear redacted. See README for the redaction contract.
+      // Messages: own messages verbatim; third-party messages redacted.
+      // See README for the redaction contract.
       coach_messages: coachMessages,
       coach_nudges: coachNudges,
       message_drafts: messageDrafts,
@@ -506,17 +410,15 @@ export class DataExportService {
       diagnostic_submissions: diagnosticSubmissions,
       ptm_signals: ptmSignals,
       ptm_predictions: ptmPredictions,
-      // AuditLog: only entries where the user is the target. Actor entries
-      // (what the user did to others) are excluded for privacy.
+      // AuditLog: only entries where the user is the target.
       audit_log_entries_about_user: auditLogs,
       data_export_requests: dataExportRequests,
     };
 
-    const json = JSON.stringify(archive, null, 2);
-    const sha256 = crypto.createHash('sha256').update(json).digest('hex');
-    archive.manifest.sha256 = sha256;
+    const jsonForHash = JSON.stringify(archive);
+    const sha256 = crypto.createHash('sha256').update(jsonForHash).digest('hex');
+    (archive.manifest as Record<string, unknown>).sha256 = sha256;
 
-    // Re-serialise with the SHA included
     const finalJson = JSON.stringify(archive, null, 2);
     const buffer = Buffer.from(finalJson, 'utf-8');
 
@@ -525,8 +427,6 @@ export class DataExportService {
 
   /**
    * Generic helper: page through a model's rows 500 at a time.
-   * Uses prisma's `findMany` with `skip`/`take` for forward-only streaming.
-   * Never loads the full dataset into memory at once.
    */
   private async _streamAll(
     model: string,
@@ -539,7 +439,6 @@ export class DataExportService {
     const delegate = (this.prisma as any)[model];
 
     if (!delegate) {
-      // Model may not exist in this version of the schema (e.g. beta flags).
       return [];
     }
 
@@ -559,14 +458,10 @@ export class DataExportService {
 
   /**
    * CoachMessage export. Messages sent by the requesting user are returned
-   * verbatim. Messages visible to the user (as coach or client) but authored
-   * by a third party are redacted: only id, sent_at, and redacted=true are
-   * exposed. This preserves the user's timeline while protecting the privacy
-   * of other parties.
+   * verbatim. Messages sent by a third party that are visible to the user
+   * are redacted to protect the other party's privacy rights under GDPR.
    */
-  private async _streamCoachMessages(
-    userId: string,
-  ): Promise<unknown[]> {
+  private async _streamCoachMessages(userId: string): Promise<unknown[]> {
     const PAGE = 500;
     const results: unknown[] = [];
     let skip = 0;
@@ -585,15 +480,16 @@ export class DataExportService {
       });
 
       for (const msg of page) {
-        if ((msg as any).sender_id === userId) {
+        if ((msg as Record<string, unknown>).sender_id === userId) {
           results.push(msg);
         } else {
-          // Redact third-party content
           results.push({
-            id: (msg as any).id,
-            sent_at: (msg as any).sent_at ?? (msg as any).created_at,
+            id: (msg as Record<string, unknown>).id,
+            sent_at:
+              (msg as Record<string, unknown>).sent_at ??
+              (msg as Record<string, unknown>).created_at,
             redacted: true,
-            note: "This message was sent by another party. Its content is redacted to protect their privacy.",
+            note: 'This message was sent by another party. Its content is redacted to protect their privacy.',
           });
         }
       }
@@ -605,29 +501,17 @@ export class DataExportService {
     return results;
   }
 
-  /**
-   * BuildWeekDayCompletion export — stream via enrollment join.
-   */
-  private async _streamBuildWeekCompletions(
-    userId: string,
-  ): Promise<unknown[]> {
+  private async _streamBuildWeekCompletions(userId: string): Promise<unknown[]> {
     const enrollment = await this.prisma.buildWeekEnrollment.findUnique({
       where: { user_id: userId },
     });
     if (!enrollment) return [];
-
     return this._streamAll('buildWeekDayCompletion', {
       enrollment_id: enrollment.id,
     });
   }
 
-  /**
-   * AuditLog export — only entries where the user is the TARGET (what was
-   * logged ABOUT them). Actor entries are excluded because they may reference
-   * other users' sensitive data.
-   */
   private async _streamAuditLogs(userId: string): Promise<unknown[]> {
-    // AuditLog may not exist in all schema versions
     try {
       return this._streamAll('auditLog', { target_id: userId });
     } catch {
@@ -637,8 +521,12 @@ export class DataExportService {
 
   /**
    * Upload the archive buffer to S3-compatible storage. Falls back to local
-   * filesystem when DATA_EXPORT_BUCKET is not configured (documented as future
-   * work in the README).
+   * filesystem when DATA_EXPORT_BUCKET is not configured.
+   *
+   * S3 support requires @aws-sdk/client-s3 and @aws-sdk/s3-request-presigner
+   * to be installed as production dependencies. These packages are NOT bundled
+   * by default — see README for the installation command. Without them, the
+   * module falls back to the local filesystem path automatically.
    *
    * NEVER serves files through the API process — always returns a URL the
    * client is redirected to.
@@ -646,82 +534,91 @@ export class DataExportService {
   private async _uploadFile(
     exportId: string,
     buffer: Buffer,
-    _userId: string,
   ): Promise<string> {
     const filename = `${exportId}.json`;
 
     if (!BUCKET) {
       // No S3 configured — store on filesystem and return a local token URL.
-      // The /download endpoint will serve the redirect using the stored path.
-      const fs = await import('fs/promises');
-      const path = await import('path');
-      await fs.mkdir(FS_DIR, { recursive: true });
-      const filePath = path.join(FS_DIR, filename);
-      await fs.writeFile(filePath, buffer);
+      const { mkdir, writeFile } = await import('fs/promises');
+      const { join } = await import('path');
+      await mkdir(FS_DIR, { recursive: true });
+      const filePath = join(FS_DIR, filename);
+      await writeFile(filePath, buffer);
       this.logger.warn(
         `DATA_EXPORT_BUCKET not set — export stored at ${filePath}. ` +
           'Configure S3 for production. See src/data-export/README.md.',
       );
-      // Return a local token URL that the download endpoint can resolve.
       return `local://${filePath}`;
     }
 
-    // S3 upload using AWS SDK v3 (dynamic import to keep package optional in dev)
-    const { S3Client, PutObjectCommand, GetObjectCommand } = await import(
-      '@aws-sdk/client-s3'
-    );
-    const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+    // S3 upload — requires @aws-sdk/client-s3 and @aws-sdk/s3-request-presigner.
+    // Dynamic import so the module boots even when these packages are absent (dev).
+    try {
+      const { S3Client, PutObjectCommand, GetObjectCommand } = await import(
+        '@aws-sdk/client-s3'
+      );
+      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
 
-    const s3 = new S3Client({
-      region: process.env.AWS_REGION ?? 'us-east-1',
-      ...(process.env.DATA_EXPORT_S3_ENDPOINT
-        ? { endpoint: process.env.DATA_EXPORT_S3_ENDPOINT }
-        : {}),
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '',
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '',
-      },
-    });
-
-    const key = `exports/${exportId}/${filename}`;
-
-    await s3.send(
-      new PutObjectCommand({
-        Bucket: BUCKET,
-        Key: key,
-        Body: buffer,
-        ContentType: 'application/json',
-        // Server-side encryption at rest
-        ServerSideEncryption: 'AES256',
-        // Metadata for audit
-        Metadata: {
-          export_id: exportId,
-          content_length: String(buffer.length),
+      const s3 = new S3Client({
+        region: process.env.AWS_REGION ?? 'us-east-1',
+        ...(process.env.DATA_EXPORT_S3_ENDPOINT
+          ? { endpoint: process.env.DATA_EXPORT_S3_ENDPOINT }
+          : {}),
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '',
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '',
         },
-      }),
-    );
+      });
 
-    // Generate a presigned URL that expires in EXPIRY_DAYS days.
-    const presignedUrl = await getSignedUrl(
-      s3,
-      new GetObjectCommand({ Bucket: BUCKET, Key: key }),
-      { expiresIn: EXPIRY_DAYS * 24 * 60 * 60 },
-    );
+      const key = `exports/${exportId}/${filename}`;
 
-    return presignedUrl;
+      await s3.send(
+        new PutObjectCommand({
+          Bucket: BUCKET,
+          Key: key,
+          Body: buffer,
+          ContentType: 'application/json',
+          ServerSideEncryption: 'AES256',
+          Metadata: {
+            export_id: exportId,
+            content_length: String(buffer.length),
+          },
+        }),
+      );
+
+      const presignedUrl = await getSignedUrl(
+        s3,
+        new GetObjectCommand({ Bucket: BUCKET, Key: key }),
+        { expiresIn: EXPIRY_DAYS * 24 * 60 * 60 },
+      );
+
+      return presignedUrl;
+    } catch (err) {
+      // S3 SDK not installed — fall back to filesystem
+      if ((err as NodeJS.ErrnoException).code === 'MODULE_NOT_FOUND') {
+        const { mkdir, writeFile } = await import('fs/promises');
+        const { join } = await import('path');
+        await mkdir(FS_DIR, { recursive: true });
+        const filePath = join(FS_DIR, filename);
+        await writeFile(filePath, buffer);
+        this.logger.warn(
+          '@aws-sdk/client-s3 not installed — export stored at filesystem. ' +
+            'Install with: npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner',
+        );
+        return `local://${filePath}`;
+      }
+      throw err;
+    }
   }
 
-  /**
-   * Delete a stored export file. Handles both S3 and filesystem paths.
-   */
   private async _deleteStoredFile(fileUrl: string): Promise<void> {
     if (fileUrl.startsWith('local://')) {
       const filePath = fileUrl.replace('local://', '');
-      const fs = await import('fs/promises');
+      const { unlink } = await import('fs/promises');
       try {
-        await fs.unlink(filePath);
+        await unlink(filePath);
       } catch {
-        // File may already be gone — not an error.
+        // File may already be gone.
       }
       return;
     }
@@ -729,11 +626,11 @@ export class DataExportService {
     if (!BUCKET) return;
 
     try {
-      // Extract key from presigned URL or direct path
+      const { S3Client, DeleteObjectCommand } = await import('@aws-sdk/client-s3');
       const url = new URL(fileUrl);
-      const key = url.pathname.replace(/^\//, '').replace(`${BUCKET}/`, '');
-      const { S3Client, DeleteObjectCommand } = await import(
-        '@aws-sdk/client-s3'
+      const key = decodeURIComponent(url.pathname.replace(/^\//, '')).replace(
+        `${BUCKET}/`,
+        '',
       );
       const s3 = new S3Client({
         region: process.env.AWS_REGION ?? 'us-east-1',
@@ -754,23 +651,30 @@ export class DataExportService {
   }
 
   /**
-   * Mint a short-lived, user-bound JWT for the download endpoint. Expires in
-   * EXPIRY_DAYS days so it stays valid for the full lifetime of the export.
+   * Mint a short-lived, user-bound JWT for the download endpoint using jose.
+   * Expires in EXPIRY_DAYS days so it stays valid for the full lifetime of
+   * the export file.
    */
-  private _mintDownloadToken(userId: string, exportId: string): string {
-    const payload: DownloadTokenPayload = {
-      sub: userId,
+  private async _mintDownloadToken(
+    userId: string,
+    exportId: string,
+  ): Promise<string> {
+    return new SignJWT({
       eid: exportId,
       type: 'data_export_download',
-    };
-    return jwt.sign(payload, TOKEN_SECRET, {
-      expiresIn: `${EXPIRY_DAYS}d`,
-    });
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setSubject(userId)
+      .setIssuedAt()
+      .setExpirationTime(`${EXPIRY_DAYS}d`)
+      .sign(getTokenKey());
   }
 
   /**
-   * Send the "your export is ready" email. Uses nodemailer; falls back to
-   * a log-only mode when SMTP_HOST is not configured (local dev).
+   * Send the "your export is ready" email. Uses nodemailer when SMTP_HOST
+   * is configured; logs the URL in dev mode when SMTP_HOST is absent.
+   * Nodemailer is a dynamic import — it only needs to be installed when
+   * SMTP_HOST is set. In dev, the download URL is logged to console.
    */
   private async _sendReadyEmail(
     userId: string,
@@ -785,7 +689,8 @@ export class DataExportService {
 
     if (!user) return;
 
-    const baseUrl = process.env.PUBLIC_WEB_SIGNUP_URL ?? 'https://app.tgp.com';
+    const baseUrl =
+      process.env.PUBLIC_WEB_SIGNUP_URL ?? 'https://app.thegrowthproject.app';
     const downloadUrl = `${baseUrl}/data-export/download?token=${downloadToken}`;
     const expiryDate = expiresAt.toLocaleDateString('en-GB', {
       day: 'numeric',
@@ -793,42 +698,85 @@ export class DataExportService {
       year: 'numeric',
     });
 
-    const subject = 'Your Growth Project data export is ready';
-    const html = `
-<p>Hi ${user.name ?? 'there'},</p>
-<p>Your personal data export is ready to download. The file contains all your account data in JSON format.</p>
-<p><a href="${downloadUrl}">Download your data</a></p>
-<p>This link expires on <strong>${expiryDate}</strong> (7 days). After that, you can request a new export from the Settings screen in the app.</p>
-<p>If you did not request this export, please contact support.</p>
-<p>The Growth Project team</p>
-    `.trim();
-
     const smtpHost = process.env.SMTP_HOST;
     if (!smtpHost) {
-      // No SMTP configured — log the URL so it can be used in dev
+      // Dev mode — log so the URL can be used manually
       this.logger.log(
-        `[DEV — no SMTP] Export ready for ${user.email}. Download URL: ${downloadUrl}`,
+        `[DEV — no SMTP_HOST] Export ${exportId} ready for ${user.email}. ` +
+          `Download URL: ${downloadUrl}`,
       );
       return;
     }
 
-    const transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: Number(process.env.SMTP_PORT ?? '587'),
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
+    try {
+      // Dynamic import — only installed when email delivery is needed.
+      const nodemailer = await import('nodemailer');
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: Number(process.env.SMTP_PORT ?? '587'),
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      });
 
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM ?? '"The Growth Project" <no-reply@thegrowthproject.app>',
-      to: user.email,
-      subject,
-      html,
-    });
+      const subject = 'Your Growth Project data export is ready';
+      const html = [
+        `<p>Hi ${user.name ?? 'there'},</p>`,
+        `<p>Your personal data export is ready to download. The file contains all your account data in JSON format.</p>`,
+        `<p><a href="${downloadUrl}">Download your data</a></p>`,
+        `<p>This link expires on <strong>${expiryDate}</strong> (${EXPIRY_DAYS} days). ` +
+          `After that, you can request a new export from the Settings screen in the app.</p>`,
+        `<p>If you did not request this export, please contact support.</p>`,
+        `<p>The Growth Project team</p>`,
+      ].join('\n');
 
-    this.logger.log(`Export-ready email sent to ${user.email} (export ${exportId})`);
+      await transporter.sendMail({
+        from:
+          process.env.SMTP_FROM ??
+          '"The Growth Project" <no-reply@thegrowthproject.app>',
+        to: user.email,
+        subject,
+        html,
+      });
+
+      this.logger.log(
+        `Export-ready email sent to ${user.email} (export ${exportId})`,
+      );
+    } catch (err) {
+      // Email failure is non-fatal — the user can still find the token via /status.
+      this.logger.error(
+        `Failed to send export-ready email to ${user.email}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * Best-effort audit log. Silently swallowed if the AuditLog model is absent
+   * or if the audit service throws — audit must never block the export flow.
+   */
+  private _tryAudit(
+    actorId: string,
+    targetId: string,
+    eventType: string,
+    metadata: Record<string, unknown>,
+  ): void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const auditDelegate = (this.prisma as any).auditLog;
+    if (!auditDelegate) return;
+
+    auditDelegate
+      .create({
+        data: {
+          actor_id: actorId,
+          target_id: targetId,
+          event_type: eventType,
+          metadata,
+        },
+      })
+      .catch((_err: Error) => {
+        // Intentionally swallowed.
+      });
   }
 }
