@@ -29,7 +29,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import type { AuthedRequest } from '../../auth/auth-request';
+import type { AuditableRequest, AuthedRequest } from '../../auth/auth-request';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -87,11 +87,17 @@ export class AdminPtmController {
   })
   @ApiResponse({ status: 200, description: 'Page of risk-board rows.' })
   @ApiResponse({ status: 403, description: 'Caller is not an OWNER.' })
-  async getRiskBoard(@Query() query: RiskBoardQueryDto) {
+  async getRiskBoard(@Request() req: AuthedRequest, @Query() query: RiskBoardQueryDto) {
     return this.ptmAdmin.getRiskBoard({
       bucket: query.bucket,
       cursor: query.cursor,
       limit: query.limit,
+      actor: {
+        actorId: req.user.id,
+        actorRole: req.user.role,
+        actorEmail: req.user.email,
+        ...auditContext(req),
+      },
     });
   }
 
@@ -108,4 +114,14 @@ export class AdminPtmController {
       limit: query.limit,
     });
   }
+}
+
+function auditContext(req: AuditableRequest): { ip: string | null; userAgent: string | null } {
+  const xffRaw = req?.headers?.['x-forwarded-for'];
+  const xff = Array.isArray(xffRaw) ? xffRaw[0] : xffRaw || '';
+  const fwdIp = xff.split(',')[0]?.trim();
+  const ip = fwdIp || req?.ip || req?.socket?.remoteAddress || null;
+  const uaRaw = req?.headers?.['user-agent'];
+  const userAgent = Array.isArray(uaRaw) ? uaRaw[0] ?? null : uaRaw ?? null;
+  return { ip: ip || null, userAgent: userAgent || null };
 }
