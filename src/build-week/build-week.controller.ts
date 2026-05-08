@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { AuthedRequest } from '../auth/auth-request';
 import { BuildWeekService } from './build-week.service';
 import { CompleteDayDto } from './build-week.dto';
@@ -21,8 +23,9 @@ import { CompleteDayDto } from './build-week.dto';
 // reading another user's enrollment.
 @ApiTags('build-week')
 @Controller('build-week')
-@UseGuards(JwtAuthGuard)
-export class BuildWeekController {
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('student')
+ BuildWeekController {
   constructor(private readonly buildWeek: BuildWeekService) {}
 
   @Get('days')
