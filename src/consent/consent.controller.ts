@@ -27,7 +27,7 @@ import { GrantConsentDto, RevokeConsentDto } from './consent.dto';
 @Controller('consent')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
- ConsentController {
+export class ConsentController {
   constructor(private readonly consent: ConsentService) {}
 
   // GET /consent/scopes — static list of canonical scope strings, so the
