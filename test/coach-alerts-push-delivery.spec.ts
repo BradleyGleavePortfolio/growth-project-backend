@@ -12,6 +12,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CoachAlertsService, CreateAlertInput } from '../src/coach/coach-alerts.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
+import { NotificationCategory } from '../src/notifications/notification-category.enum';
 import { PrismaService } from '../src/prisma.service';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -98,6 +99,7 @@ describe('CoachAlertsService — push delivery (Phase 6B)', () => {
         alertType: alert.alert_type,
         severity: alert.severity,
         message: alert.message,
+        category: NotificationCategory.COACH_DIRECT,
       });
     });
 
@@ -164,6 +166,7 @@ describe('CoachAlertsService — push delivery (Phase 6B)', () => {
         alertType: 'consecutive_misses',
         severity: 'warning',
         message: 'Client has missed 3 consecutive check-ins',
+        category: NotificationCategory.COACH_DIRECT,
       });
       // Must include alertId
       expect(payload.alertId).toBe(alert.id);
