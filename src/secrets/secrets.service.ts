@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../prisma.service';
 
 // The full list of secrets the application reads at runtime, with metadata.
 // This is the canonical inventory — update it whenever a new secret is added.
