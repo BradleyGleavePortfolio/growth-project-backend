@@ -99,9 +99,11 @@ export class SecretsController {
     @Body() dto: RecordRotationDto,
     @Request() req: AuthedRequest,
   ) {
+    // req.user is the Prisma User record attached by JwtAuthGuard.
+    // We use user.id (the database UUID) as the rotated_by_user_id.
     const result = await this.secrets.recordRotation(
       secretName,
-      req.user.sub,
+      req.user.id,
       dto.notes,
     );
     return {
