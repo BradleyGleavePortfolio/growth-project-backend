@@ -12,6 +12,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -19,6 +20,7 @@ import {
   UpdateNotificationPreferencesDto,
   GetNotificationsQueryDto,
 } from './notifications.dto';
+import { THROTTLER_NAMES } from '../throttler/throttler.config';
 
 /**
  * Notification Center endpoints.
@@ -81,6 +83,10 @@ export class NotificationsController {
     return this.notificationsService.getPreferences(req.user.id);
   }
 
+  // Rate-limited at 30/min per user. Preference writes touch push-token
+  // registration and notification schedule; a runaway client or misconfigured
+  // mobile loop should not be able to saturate the write path.
+  @Throttle({ [THROTTLER_NAMES.NOTIFICATIONS_PREFS]: { ttl: 60_000, limit: 30 } })
   @Patch('preferences')
   @ApiOperation({ summary: 'Update notification channel preferences' })
   async updatePreferences(
