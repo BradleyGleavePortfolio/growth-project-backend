@@ -8,14 +8,14 @@
 
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { CoachApplicationService } from './coach-application.service';
-import { PrismaService } from '../prisma.service';
+import { CoachApplicationService } from '../coach-application.service';
+import { PrismaService } from '../../prisma.service';
 import {
   SubmitCoachApplicationDto,
   ReviewCoachApplicationDto,
   CoachApplicationStatusDto,
   CoachClientTypeDto,
-} from './coach-application.dto';
+} from '../coach-application.dto';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
