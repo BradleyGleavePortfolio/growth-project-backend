@@ -41,7 +41,7 @@ import { MessagingService } from './messaging.service';
 @Controller('messages')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
-export class ClientMessagingController {
+export class ClientMessagingController {
   constructor(private messaging: MessagingService) {}
 
   @Get()
