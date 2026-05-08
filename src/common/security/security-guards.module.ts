@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { JwksVerifierService } from '../../auth/jwks.service';
+import { RecentAuthGuard } from '../../auth/recent-auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { CoachGuard } from '../../auth/coach.guard';
 import { ServiceTokenGuard } from '../../auth/service-token.guard';
@@ -108,6 +109,7 @@ import { HeadCoachOnlyGuard } from '../../sub-coaches/head-coach-only.guard';
   providers: [
     JwksVerifierService,
     JwtAuthGuard,
+    RecentAuthGuard,
     RolesGuard,
     CoachGuard,
     CoachOrOwnerGuard,
@@ -121,6 +123,7 @@ import { HeadCoachOnlyGuard } from '../../sub-coaches/head-coach-only.guard';
   exports: [
     JwksVerifierService,
     JwtAuthGuard,
+    RecentAuthGuard,
     RolesGuard,
     CoachGuard,
     CoachOrOwnerGuard,
