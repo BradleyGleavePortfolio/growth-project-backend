@@ -1,21 +1,15 @@
 /**
  * ConnectAccountService — unit tests
  *
- * The Stripe HTTP calls are mocked at the `fetch` level (jest.spyOn on global
- * fetch) so tests remain hermetic and never touch the Stripe API.
+ * Tests are written against the public API of ConnectAccountService.
+ * The Stripe HTTP calls are replaced by jest.spyOn so tests remain
+ * hermetic and never touch the Stripe API.
  */
 
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConnectAccountService } from './connect-account.service';
-import { PrismaService } from '../prisma.service';
-
-// Helper to build a testable ConnectAccountService subclass that exposes
-// the protected stripePost / stripeFetch as public for easier mocking.
-class TestableConnectAccountService extends ConnectAccountService {
-  public override stripePost = jest.fn();
-  public override stripeFetch = jest.fn();
-}
+import { ConnectAccountService } from '../connect-account.service';
+import { PrismaService } from '../../prisma.service';
 
 function makePrismaService(): PrismaService {
   return {
@@ -31,22 +25,32 @@ function makePrismaService(): PrismaService {
 }
 
 describe('ConnectAccountService', () => {
-  let service: TestableConnectAccountService;
+  let service: ConnectAccountService;
   let prisma: PrismaService;
+  let stripePostSpy: jest.SpyInstance;
+  let stripeFetchSpy: jest.SpyInstance;
 
   beforeEach(async () => {
     prisma = makePrismaService();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        { provide: ConnectAccountService, useClass: TestableConnectAccountService },
+        ConnectAccountService,
         { provide: PrismaService, useValue: prisma },
       ],
     }).compile();
 
-    service = module.get<ConnectAccountService>(
-      ConnectAccountService,
-    ) as TestableConnectAccountService;
+    service = module.get<ConnectAccountService>(ConnectAccountService);
+
+    // Spy on the protected Stripe helpers so tests stay hermetic.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    stripePostSpy = jest.spyOn(service as any, 'stripePost');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    stripeFetchSpy = jest.spyOn(service as any, 'stripeFetch');
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   describe('createConnectAccount', () => {
@@ -58,7 +62,7 @@ describe('ConnectAccountService', () => {
       const result = await service.createConnectAccount('user-1');
 
       expect(result).toBe('acct_existing');
-      expect(service.stripePost).not.toHaveBeenCalled();
+      expect(stripePostSpy).not.toHaveBeenCalled();
     });
 
     it('throws NotFoundException when user does not exist', async () => {
@@ -76,7 +80,7 @@ describe('ConnectAccountService', () => {
         id: 'user-1',
         email: 'coach@example.com',
       });
-      (service.stripePost as jest.Mock).mockResolvedValue({
+      stripePostSpy.mockResolvedValue({
         id: 'acct_new123',
         country: 'US',
         default_currency: 'usd',
@@ -88,7 +92,7 @@ describe('ConnectAccountService', () => {
 
       const result = await service.createConnectAccount('user-1');
 
-      expect(service.stripePost).toHaveBeenCalledWith(
+      expect(stripePostSpy).toHaveBeenCalledWith(
         '/accounts',
         expect.any(URLSearchParams),
       );
@@ -103,7 +107,7 @@ describe('ConnectAccountService', () => {
       (prisma.coachConnectAccount.findUnique as jest.Mock).mockResolvedValue({
         stripe_account_id: 'acct_exist',
       });
-      (service.stripePost as jest.Mock).mockResolvedValue({
+      stripePostSpy.mockResolvedValue({
         url: 'https://connect.stripe.com/express/onboarding/abc123',
         expires_at: 9999999999,
       });
@@ -129,7 +133,7 @@ describe('ConnectAccountService', () => {
         onboarding_completed: false,
         capabilities: null,
       });
-      (service.stripeFetch as jest.Mock).mockResolvedValue({
+      stripeFetchSpy.mockResolvedValue({
         id: 'acct_123',
         details_submitted: true,
         capabilities: { transfers: 'active', card_payments: 'active' },
@@ -142,13 +146,25 @@ describe('ConnectAccountService', () => {
 
       const result = await service.getAccountStatus('user-1');
 
-      expect(service.stripeFetch).toHaveBeenCalledWith('/accounts/acct_123');
+      expect(stripeFetchSpy).toHaveBeenCalledWith('/accounts/acct_123');
       expect(prisma.coachConnectAccount.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ onboarding_completed: true }),
         }),
       );
       expect(result?.onboarding_completed).toBe(true);
+    });
+
+    it('does not call Stripe when onboarding is already completed', async () => {
+      (prisma.coachConnectAccount.findUnique as jest.Mock).mockResolvedValue({
+        stripe_account_id: 'acct_done',
+        onboarding_completed: true,
+        capabilities: { transfers: 'active' },
+      });
+
+      await service.getAccountStatus('user-1');
+
+      expect(stripeFetchSpy).not.toHaveBeenCalled();
     });
   });
 });
