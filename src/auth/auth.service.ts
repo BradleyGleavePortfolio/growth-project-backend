@@ -18,7 +18,7 @@ import {
 } from '../invite-codes/invite-codes.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
-import { AuditAction, AuditService } from '../audit/audit.service';
+import { AuditAction, AuditService, AuditWriteInput } from '../audit/audit.service';
 import { AppleVerifierService } from './apple-verifier.service';
 
 // Self-service promotion to coach is the legacy behavior of POST
@@ -117,7 +117,11 @@ export class AuthService {
     };
   }
 
-  async login(email: string, password: string) {
+  async login(
+    email: string,
+    password: string,
+    ctx: { ip?: string | null; userAgent?: string | null } = {},
+  ) {
     // Authenticate via Supabase
     const supaClient = createClient(
       process.env.SUPABASE_URL || '',
@@ -130,6 +134,29 @@ export class AuthService {
     if (error) {
       // Surface specific errors so the mobile client can handle them
       const msg = error.message || '';
+
+      // Audit the failure — best-effort, fire-and-forget. We look up the
+      // user row to capture actor_id if the account exists (e.g. wrong
+      // password scenario). We deliberately do NOT reveal in the thrown
+      // error whether the email exists; the audit log is for ops only.
+      void this.prisma.user
+        .findUnique({ where: { email }, select: { id: true, email: true } })
+        .then((u) => {
+          const auditInput: AuditWriteInput = {
+            action: AuditAction.AUTH_LOGIN_FAILED,
+            actorId: u?.id ?? null,
+            actorEmail: u?.email ?? email,
+            ip: ctx.ip ?? null,
+            userAgent: ctx.userAgent ?? null,
+            // Redacted: reason only (never the password or full error message)
+            metadata: { reason: 'invalid_credentials' },
+          };
+          return this.audit.write(auditInput);
+        })
+        .catch(() => {
+          // Swallow — audit failure must never affect the auth response.
+        });
+
       if (msg.toLowerCase().includes('email') && msg.toLowerCase().includes('confirm')) {
         throw new UnauthorizedException('Email not confirmed. Please check your inbox and verify your email first.');
       }
@@ -143,6 +170,20 @@ export class AuthService {
     });
 
     if (!user) throw new UnauthorizedException('User not found');
+
+    // Audit successful login — fire-and-forget.
+    void this.audit.write({
+      action: AuditAction.AUTH_LOGIN,
+      actorId: user.id,
+      actorRole: user.role,
+      actorEmail: user.email,
+      targetUserId: user.id,
+      targetType: 'user',
+      targetId: user.id,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.userAgent ?? null,
+      metadata: { via: 'email_password' },
+    });
 
     // Return Supabase tokens + our user record
     return {
@@ -307,7 +348,12 @@ export class AuthService {
   // user row. Apple returns the user's full_name only on the FIRST
   // authorization (and not in the identity token at all), so the mobile app
   // forwards it through here so we can persist it on first contact.
-  async appleAuth(token: string, fullName?: string, inviteCode?: string) {
+  async appleAuth(
+    token: string,
+    fullName?: string,
+    inviteCode?: string,
+    ctx: { ip?: string | null; userAgent?: string | null } = {},
+  ) {
     if (!this.appleVerifier.isConfigured()) {
       // Feature-tier env var APPLE_AUDIENCES is not set on this deployment.
       // 503 (rather than a 401) so mobile can distinguish "not configured
@@ -443,6 +489,20 @@ export class AuthService {
         );
       }
     }
+
+    // Audit Apple sign-in — fire-and-forget.
+    void this.audit.write({
+      action: AuditAction.AUTH_APPLE_SIGNIN,
+      actorId: user.id,
+      actorRole: user.role,
+      actorEmail: user.email,
+      targetUserId: user.id,
+      targetType: 'user',
+      targetId: user.id,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.userAgent ?? null,
+      metadata: { is_new_user: isNewUser, invite_attached },
+    });
 
     return {
       access_token: signInData.session.access_token,
