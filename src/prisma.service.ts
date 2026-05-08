@@ -6,6 +6,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   private readonly logger = new Logger(PrismaService.name);
 
   async onModuleInit() {
+    if (process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('connection_limit=')) {
+      this.logger.warn('DATABASE_URL has no connection_limit — Prisma will use its default. See docs/database-pool.md');
+    }
     // Fire-and-forget — don't block app startup on DB connection
     this.$connect()
       .then(() => this.logger.log('Database connected successfully'))
