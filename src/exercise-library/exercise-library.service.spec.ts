@@ -41,11 +41,8 @@ describe('ExerciseLibraryService', () => {
         {
           provide: ConfigService,
           useValue: {
-            getOrThrow: (key: string) => {
-              if (key === 'EXERCISEDB_API_KEY') return 'test-key';
-              throw new Error(`Unexpected key: ${key}`);
-            },
             get: (key: string) => {
+              if (key === 'EXERCISEDB_API_KEY') return 'test-key';
               if (key === 'EXERCISEDB_API_HOST') return undefined; // use default
               if (key === 'REDIS_URL') return undefined;            // no Redis
               return undefined;
