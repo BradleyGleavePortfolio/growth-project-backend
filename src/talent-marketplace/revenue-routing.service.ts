@@ -58,11 +58,13 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 
 /** Compensation configuration from a CoachOffer. */
 export interface CompensationConfig {
   type: 'commission' | 'rev_share' | 'flat' | 'hybrid';
-  terms: Record<string, unknown>;
+  /** Terms as stored in the database (Prisma.JsonValue). */
+  terms: Prisma.JsonValue;
 }
 
 /** Result of a fee calculation. */
@@ -90,9 +92,17 @@ export class RevenueRoutingService {
     let applicationFeeCents = 0;
     let platformCutPct = 0;
 
+    // Extract terms safely — stored as Prisma.JsonValue which may be null or non-object.
+    const terms: Record<string, unknown> =
+      config.terms !== null &&
+      typeof config.terms === 'object' &&
+      !Array.isArray(config.terms)
+        ? (config.terms as Record<string, unknown>)
+        : {};
+
     switch (config.type) {
       case 'commission': {
-        const ratePct = Number(config.terms['rate_pct'] ?? 0);
+        const ratePct = Number(terms['rate_pct'] ?? 0);
         // Platform keeps the complement of the commission rate.
         // e.g. 85% commission means platform takes 15%.
         platformCutPct = 100 - ratePct;
@@ -100,10 +110,10 @@ export class RevenueRoutingService {
         break;
       }
       case 'rev_share': {
-        const ratePct = Number(config.terms['rate_pct'] ?? 0);
+        const ratePct = Number(terms['rate_pct'] ?? 0);
         platformCutPct = ratePct;
         applicationFeeCents = Math.round(totalAmountCents * (ratePct / 100));
-        const capUsd = config.terms['cap_usd'];
+        const capUsd = terms['cap_usd'];
         if (typeof capUsd === 'number') {
           applicationFeeCents = Math.min(applicationFeeCents, Math.round(capUsd * 100));
         }
@@ -116,7 +126,7 @@ export class RevenueRoutingService {
         break;
       }
       case 'hybrid': {
-        const ratePct = Number(config.terms['rate_pct'] ?? 0);
+        const ratePct = Number(terms['rate_pct'] ?? 0);
         platformCutPct = ratePct;
         applicationFeeCents = Math.round(totalAmountCents * (ratePct / 100));
         break;
