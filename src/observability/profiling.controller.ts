@@ -11,6 +11,16 @@ import { ApiExcludeController } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { OwnerGuard } from '../common/guards/owner.guard';
 
+/** Minimal type shape for v8-profiler-next (optional dep). */
+interface V8Profiler {
+  startProfiling(name: string, recsamples?: boolean): void;
+  stopProfiling(name: string): V8Profile;
+}
+interface V8Profile {
+  export(callback: (err: Error | null, result: Buffer) => void): void;
+  delete(): void;
+}
+
 /**
  * ProfilingController — GET /debug/profile
  *
@@ -44,10 +54,10 @@ export class ProfilingController {
 
     // v8-profiler-next is an optional native addon.  If not installed the
     // endpoint returns 503 with a clear message so operators know what's missing.
-    let profiler: { startProfiling: (n: string) => void; stopProfiling: (n: string) => { export: (cb: (err: Error | null, result: Buffer) => void) => void; delete: () => void } };
+    let profiler: V8Profiler;
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      profiler = require('v8-profiler-next');
+      profiler = require('v8-profiler-next') as V8Profiler;
     } catch {
       throw new ServiceUnavailableException(
         'v8-profiler-next is not installed. Run `npm install v8-profiler-next` on the server.',
@@ -61,11 +71,11 @@ export class ProfilingController {
 
     await new Promise<void>((resolve) => setTimeout(resolve, PROFILE_DURATION_MS));
 
-    const profile = profiler.stopProfiling(label);
+    const cpuProfile = profiler.stopProfiling(label);
 
     await new Promise<void>((resolve, reject) => {
-      profile.export((err: Error | null, result: Buffer) => {
-        profile.delete();
+      cpuProfile.export((err: Error | null, result: Buffer) => {
+        cpuProfile.delete();
         if (err) {
           reject(err);
           return;
