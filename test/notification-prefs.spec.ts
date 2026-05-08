@@ -53,7 +53,7 @@ const mockPrisma = {
     create: jest.fn().mockResolvedValue({ id: 'log-1' }),
     update: jest.fn().mockResolvedValue({}),
   },
-} as never;
+} as any;
 
 // ── Service under test ────────────────────────────────────────────────────────
 

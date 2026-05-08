@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { UpdateNotificationPreferencesDto, GetNotificationsQueryDto } from './notifications.dto';
 import { NotificationKindValue } from './notification-kind';
@@ -199,7 +200,7 @@ export class NotificationsService {
         user_id: input.user_id,
         kind: input.kind,
         body: input.body.slice(0, 160),
-        payload: input.payload ?? undefined,
+        payload: (input.payload ?? undefined) as Prisma.InputJsonValue | undefined,
         deep_link: input.deep_link,
         channel,
       },
