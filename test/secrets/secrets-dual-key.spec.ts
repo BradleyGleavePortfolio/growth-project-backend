@@ -15,7 +15,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import * as crypto from 'crypto';
 import { SecretsService, SECRET_INVENTORY, STALE_THRESHOLD_DAYS } from '../../src/secrets/secrets.service';
-import { PrismaService } from '../../src/prisma/prisma.service';
+import { PrismaService } from '../../src/prisma.service';
 
 // ─── JWT dual-key helpers (mirrors what the app does) ─────────────────────────
 
@@ -61,7 +61,7 @@ function verifyJwt(
       .update(sigInput)
       .digest('base64url');
     if (expected === sigB64) {
-      return JSON.parse(Buffer.from(bodyB64, 'base64url').toString('utf-8'));
+      return JSON.parse(Buffer.from(bodyB64, 'base64url').toString('utf-8')) as Record<string, unknown>;
     }
   }
 
@@ -147,7 +147,6 @@ describe('JWT dual-key rotation logic', () => {
 
 describe('SecretsService', () => {
   let service: SecretsService;
-  let prisma: PrismaService;
 
   const mockPrisma = {
     secretRotationLog: {
@@ -165,7 +164,6 @@ describe('SecretsService', () => {
     }).compile();
 
     service = module.get<SecretsService>(SecretsService);
-    prisma = module.get<PrismaService>(PrismaService);
   });
 
   afterEach(() => {
@@ -198,11 +196,11 @@ describe('SecretsService', () => {
       ]);
 
       const statuses = await service.getSecretsStatus();
-      const jwt = statuses.find((s) => s.name === 'JWT_SIGNING_KEY')!;
-
-      expect(jwt.isStale).toBe(false);
-      expect(jwt.daysSinceRotation).toBe(5);
-      expect(jwt.lastRotatedAt).toEqual(recentDate);
+      const jwt = statuses.find((s) => s.name === 'JWT_SIGNING_KEY');
+      expect(jwt).toBeDefined();
+      expect(jwt!.isStale).toBe(false);
+      expect(jwt!.daysSinceRotation).toBe(5);
+      expect(jwt!.lastRotatedAt).toEqual(recentDate);
     });
 
     it('marks an overdue secret as stale', async () => {
@@ -218,11 +216,11 @@ describe('SecretsService', () => {
       ]);
 
       const statuses = await service.getSecretsStatus();
-      const jwt = statuses.find((s) => s.name === 'JWT_SIGNING_KEY')!;
-
+      const jwt = statuses.find((s) => s.name === 'JWT_SIGNING_KEY');
+      expect(jwt).toBeDefined();
       // JWT_SIGNING_KEY cadence is 90 days; 100 days > 90 → stale
-      expect(jwt.isStale).toBe(true);
-      expect(jwt.daysSinceRotation).toBe(100);
+      expect(jwt!.isStale).toBe(true);
+      expect(jwt!.daysSinceRotation).toBe(100);
     });
 
     it('returns all secrets from the inventory', async () => {
@@ -329,7 +327,7 @@ describe('SECRET_INVENTORY', () => {
   });
 });
 
-// ─── Staleness check script output test ────────────────────────────────────────
+// ─── Staleness check script behavior (unit) ────────────────────────────────────
 
 describe('staleness check script behavior (unit)', () => {
   // We test the staleness logic directly (the script itself is a thin wrapper
@@ -344,8 +342,9 @@ describe('staleness check script behavior (unit)', () => {
     let isStale = true;
 
     if (lastRotatedAt !== null) {
+      const last = lastRotatedAt as Date;
       daysSinceRotation = Math.floor(
-        (now.getTime() - lastRotatedAt.getTime()) / (1000 * 60 * 60 * 24),
+        (now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24),
       );
       isStale = daysSinceRotation > cadenceDays;
     }
