@@ -127,17 +127,24 @@ export class CoachController {
     @Query('checkInsCursor') checkInsCursor?: string,
   ) {
     const daysNum = days ? parseInt(days, 10) : 90;
-    return this.coachService.getClientTimeline(req.user.id, id, daysNum, req.user.role, {
-      mealsCursor,
-      workoutsCursor,
-      weightsCursor,
-      checkInsCursor,
-    });
+    return this.coachService.getClientTimeline(
+      req.user.id,
+      id,
+      daysNum,
+      req.user.role,
+      {
+        mealsCursor,
+        workoutsCursor,
+        weightsCursor,
+        checkInsCursor,
+      },
+      auditContext(req),
+    );
   }
 
   @Get('clients/:id/summary')
   async getClientSummary(@Request() req: AuthedRequest, @Param('id') clientId: string, @Query('date') date?: string) {
-    return this.coachService.getClientSummary(req.user.id, clientId, date, req.user.role);
+    return this.coachService.getClientSummary(req.user.id, clientId, date, req.user.role, auditContext(req));
   }
 
   @Get('my-guidelines')
