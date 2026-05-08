@@ -50,7 +50,7 @@ function makeGuardContext(role: string | null) {
     switchToHttp: () => ({ getRequest: () => req }),
     getHandler: () => CoachCommandCenterController.prototype.getOverview,
     getClass: () => CoachCommandCenterController,
-  } as Parameters<CoachGuard['canActivate']>[0];
+  } as unknown as Parameters<CoachGuard['canActivate']>[0];
 }
 
 function makeReq(coachId: string, role = 'coach') {
