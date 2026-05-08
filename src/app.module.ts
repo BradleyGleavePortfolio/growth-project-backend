@@ -65,9 +65,14 @@ import { TeamModeModule } from './team-mode/team-mode.module';
 // with optional Google Calendar two-way sync. See
 // docs/rfcs/142-concierge-scheduling.md.
 import { SchedulingModule } from './scheduling/scheduling.module';
+import { ObservabilityModule } from './observability/observability.module';
 
 @Module({
   imports: [
+    // OBSERVABILITY: must be the FIRST module so RequestIdMiddleware runs before
+    // every auth guard and AuditModule interceptor. See src/observability/README.md.
+    ObservabilityModule,
+
     // Global config — loads .env automatically
     ConfigModule.forRoot({ isGlobal: true }),
 
