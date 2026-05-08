@@ -22,6 +22,7 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AuditAction, AuditService, AuditWriteInput } from '../audit/audit.service';
 import { AppleVerifierService } from './apple-verifier.service';
+import { issueRecentAuthToken } from './recent-auth.guard';
 
 // Self-service promotion to coach is the legacy behavior of POST
 // /auth/become-coach. It is a privilege-escalation hole on a sale-ready
@@ -1062,8 +1063,7 @@ export class AuthService {
       throw new UnauthorizedException('Password is incorrect');
     }
 
-    const { issueRecentAuthToken: issue } = await import('./recent-auth.guard');
-    const token = issue(userId, secret);
+    const token = issueRecentAuthToken(userId, secret);
     const ttl = process.env.RECENT_AUTH_TTL_MS
       ? parseInt(process.env.RECENT_AUTH_TTL_MS, 10)
       : 5 * 60 * 1000;
