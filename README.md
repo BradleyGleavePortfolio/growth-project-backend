@@ -1219,3 +1219,33 @@ endpoints group correctly in Swagger UI. **All new endpoints must add
 `@ApiOperation` + `@ApiResponse`** — see
 [`docs/api-conventions.md`](docs/api-conventions.md) for the rule and
 the reference example.
+
+## Phase 11 / Track 8 — Talent Marketplace
+
+Foundation for the coach talent marketplace: application ingestion, admin review queue, talent pool search, Stripe Connect Express onboarding scaffolding, and offer lifecycle.
+
+Full documentation: [`src/talent-marketplace/README.md`](src/talent-marketplace/README.md)
+
+### New env vars (Track 8)
+
+| Variable | Tier | Purpose |
+|----------|------|---------|
+| `STRIPE_CONNECT_CLIENT_ID` | prod | Stripe Connect platform client ID (`ca_xxx`) from the Stripe Dashboard under Connect settings. Required before any `/talent/connect/onboarding-link` call succeeds in production. |
+| `TALENT_POOL_PRICE_ID` | optional | Stripe price ID for the Scale+ plan that grants talent pool access. If unset, any active subscriber can browse the pool (dev/staging permissive mode). |
+
+Provision in production:
+
+```bash
+fly secrets set STRIPE_CONNECT_CLIENT_ID=ca_xxx
+fly secrets set TALENT_POOL_PRICE_ID=price_xxx
+```
+
+### Migration
+
+```bash
+npx prisma migrate deploy  # applies 20260507000000_phase11_talent_marketplace automatically
+```
+
+New tables: `CoachApplication`, `CoachConnectAccount`, `CoachOffer`.
+New enums: `CoachClientType`, `CoachApplicationStatus`, `CoachCompensationType`, `CoachOfferStatus`.
+
