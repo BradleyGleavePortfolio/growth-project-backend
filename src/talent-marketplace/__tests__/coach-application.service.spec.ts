@@ -14,6 +14,7 @@ import {
   SubmitCoachApplicationDto,
   ReviewCoachApplicationDto,
   CoachApplicationStatusDto,
+  CoachClientTypeDto,
 } from './coach-application.dto';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -29,13 +30,13 @@ function makeSubmitDto(
     specializations: ['strength', 'weight-loss'],
     years_experience: 4,
     availability_hours_per_week: 20,
-    preferred_client_type: 'fitness' as SubmitCoachApplicationDto['preferred_client_type'],
+    preferred_client_type: CoachClientTypeDto.FITNESS,
     preferences: { commission: true, rev_share: false, w2: false, hybrid: false },
     ...overrides,
   };
 }
 
-function makePrismaService(overrides: Partial<PrismaService> = {}): PrismaService {
+function makePrismaService(): PrismaService {
   return {
     coachApplication: {
       create: jest.fn(),
@@ -43,7 +44,6 @@ function makePrismaService(overrides: Partial<PrismaService> = {}): PrismaServic
       findUnique: jest.fn(),
       update: jest.fn(),
     },
-    ...overrides,
   } as unknown as PrismaService;
 }
 
