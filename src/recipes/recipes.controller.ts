@@ -21,7 +21,7 @@ import { CreateRecipeDto } from './recipes.dto';
 @Controller('recipes')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
- RecipesController {
+export class RecipesController {
   constructor(private recipesService: RecipesService) {}
 
   /** GET /recipes — list public + user's own + saved */
