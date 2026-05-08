@@ -6,14 +6,21 @@ import * as Sentry from '@sentry/node';
 const dsn = process.env.SENTRY_DSN;
 
 if (dsn) {
+  // OBSERVABILITY (Phase 10): tracesSampleRate is now configurable via the
+  // SENTRY_TRACES_SAMPLE_RATE env var (default 0.1 = 10%).  Errors are always
+  // captured at rate 1.0 regardless of this setting.  Increase to 0.5 or 1.0
+  // once traffic baselines are established — see src/observability/README.md.
+  const tracesSampleRate = parseFloat(
+    process.env.SENTRY_TRACES_SAMPLE_RATE ?? '0.1',
+  );
+
   Sentry.init({
     dsn,
     environment: process.env.NODE_ENV || 'production',
     release: process.env.RELEASE_VERSION || undefined,
-    // Performance — sampling kept conservative for cost control. Bump once
-    // we have real traffic baselines.
-    tracesSampleRate: 0.1,
-    // Strip secrets from common headers before transmission.
+    tracesSampleRate: isNaN(tracesSampleRate) ? 0.1 : Math.min(1, Math.max(0, tracesSampleRate)),
+    // Strip PII from common headers before transmission.  The request_id is
+    // retained so Sentry events can be correlated with structured log lines.
     beforeSend(event) {
       if (event.request?.headers) {
         delete (event.request.headers as Record<string, unknown>).authorization;
