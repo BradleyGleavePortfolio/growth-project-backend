@@ -205,11 +205,27 @@ export class CoachService {
     days: number = 90,
     callerRole?: string,
     opts: TimelineCursors = {},
+    auditCtx: { ip?: string | null; userAgent?: string | null } = {},
   ) {
     const client = await this.prisma.user.findFirst({
       where: { id: clientId, ...this.byCoach(coachId, callerRole) },
     });
     if (!client) return { error: 'Client not found' };
+
+    // Audit: log coach data access. Fire-and-forget so a log write cannot
+    // block or fail the primary timeline response.
+    void this.audit.write({
+      action: AuditAction.COACH_VIEWED_CLIENT_DATA,
+      actorId: coachId,
+      actorRole: callerRole ?? 'coach',
+      targetUserId: clientId,
+      targetType: 'user',
+      targetId: clientId,
+      tenantCoachId: coachId,
+      ip: auditCtx.ip ?? null,
+      userAgent: auditCtx.userAgent ?? null,
+      metadata: { view: 'timeline', days },
+    });
 
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - days);
@@ -311,12 +327,27 @@ export class CoachService {
     clientId: string,
     date?: string,
     callerRole?: string,
+    auditCtx: { ip?: string | null; userAgent?: string | null } = {},
   ) {
     const client = await this.prisma.user.findFirst({
       where: { id: clientId, ...this.byCoach(coachId, callerRole) },
       include: { profile: true },
     });
     if (!client) return { error: 'Client not found' };
+
+    // Audit: log coach data access. Fire-and-forget.
+    void this.audit.write({
+      action: AuditAction.COACH_VIEWED_CLIENT_DATA,
+      actorId: coachId,
+      actorRole: callerRole ?? 'coach',
+      targetUserId: clientId,
+      targetType: 'user',
+      targetId: clientId,
+      tenantCoachId: coachId,
+      ip: auditCtx.ip ?? null,
+      userAgent: auditCtx.userAgent ?? null,
+      metadata: { view: 'summary', date: date ?? null },
+    });
 
     const today = date || new Date().toISOString().split('T')[0];
     const startOfDay = new Date(today + 'T00:00:00.000Z');
