@@ -1,49 +1,48 @@
 import { Logger } from '@nestjs/common';
 import { ThrottlerModuleOptions } from '@nestjs/throttler';
 
-/**
- * Named throttler limits applied across the API.
- *
- * Design principles:
- * - Per-user buckets (not per-IP) for authenticated routes. Avoids shared-NAT
- *   lockout (offices, campus Wi-Fi, carrier CGNAT) while keeping per-user
- *   fairness. UserThrottlerGuard switches the tracker key automatically.
- * - Per-IP buckets for unauthenticated surfaces (auth endpoints) because there
- *   is no user identity to key on yet.
- * - Health check endpoints (/health, /healthz, /readyz) are whitelisted in
- *   UserThrottlerGuard and NEVER count toward any bucket.
- * - Successful login RESETS the auth-login counter so a real user on bad
- *   WiFi (retry storms) is not locked out after the session is issued.
- *
- * Route / surface                      | Throttler name         | Limit
- * -------------------------------------|------------------------|-------------------
- * Global authenticated default         | default                | RATELIMIT_AUTHED_PER_MIN / min
- * Global unauthenticated default        | default                | RATELIMIT_ANON_PER_MIN / min
- * POST /auth/login                     | auth-login-per-min     | AUTH_LOGIN_PER_MIN / min (IP)
- *                                      | auth-login-per-hour    | AUTH_LOGIN_PER_HOUR / hour (IP)
- * POST /auth/apple                     | auth-login-per-min     | shared (IP)
- *                                      | auth-login-per-hour    | shared (IP)
- * POST /auth/google (OAuth exchange)   | auth-login-per-min     | shared (IP)
- *                                      | auth-login-per-hour    | shared (IP)
- * POST /auth/forgot-password           | auth-password-reset    | AUTH_PWD_RESET_PER_HOUR / hour (email key)
- * POST /auth/register                  | auth-signup            | 5 / hour (IP)
- * POST /auth/signup-with-code          | auth-signup            | shared (IP)
- * POST /coach/clients/*/messages       | coach-messages         | COACH_MESSAGES_PER_MIN / min (user)
- * PUT  /notifications/preferences      | notifications-prefs    | NOTIF_PREFS_PER_MIN / min (user)
- * POST /bloodwork/*                    | bloodwork-write        | BLOODWORK_WRITE_PER_MIN / min (user)
- * GET  /coach/command-center/*         | coach-command-center   | COACH_CMD_CENTER_PER_MIN / min (user)
- * POST /diagnostic/submit              | diagnostic-submit      | DIAGNOSTIC_RATE_LIMIT_PER_HOUR / hour (IP)
- */
+// Named throttler limits applied across the API.
+//
+// Design principles:
+// - Per-user buckets (not per-IP) for authenticated routes. Avoids shared-NAT
+//   lockout (offices, campus Wi-Fi, carrier CGNAT) while keeping per-user
+//   fairness. UserThrottlerGuard switches the tracker key automatically.
+// - Per-IP buckets for unauthenticated surfaces (auth endpoints) because there
+//   is no user identity to key on yet.
+// - Health check endpoints (/health, /healthz, /readyz) are whitelisted in
+//   UserThrottlerGuard and NEVER count toward any bucket.
+// - Successful login RESETS the auth-login counter so a real user on bad
+//   WiFi (retry storms) is not locked out after the session is issued.
+//
+// Route surface                              | Throttler name          | Limit
+// ------------------------------------------|-------------------------|------------------------
+// Global authenticated default              | default                 | RATELIMIT_AUTHED_PER_MIN / min
+// Global unauthenticated default            | default                 | RATELIMIT_ANON_PER_MIN / min
+// POST /auth/login                          | auth-login-per-min      | AUTH_LOGIN_PER_MIN / min (IP)
+//                                           | auth-login-per-hour     | AUTH_LOGIN_PER_HOUR / hour (IP)
+// POST /auth/apple                          | auth-login-per-min      | shared (IP)
+//                                           | auth-login-per-hour     | shared (IP)
+// POST /auth/google                         | auth-login-per-min      | shared (IP)
+//                                           | auth-login-per-hour     | shared (IP)
+// POST /auth/forgot-password                | auth-password-reset     | AUTH_PWD_RESET_PER_HOUR / hour (IP)
+// POST /auth/register                       | auth-signup             | 5 / hour (IP)
+// POST /auth/signup-with-code               | auth-signup             | shared (IP)
+// POST /coach/clients/:id/messages          | coach-messages          | COACH_MESSAGES_PER_MIN / min (user)
+// PUT  /notifications/preferences           | notifications-prefs     | NOTIF_PREFS_PER_MIN / min (user)
+// POST /bloodwork/:id                       | bloodwork-write         | BLOODWORK_WRITE_PER_MIN / min (user)
+// GET  /coach/command-center/:path          | coach-command-center    | COACH_CMD_CENTER_PER_MIN / min (user)
+// POST /diagnostic/submit                   | diagnostic-submit       | DIAGNOSTIC_RATE_LIMIT_PER_HOUR / hour (IP)
+
 export const THROTTLER_NAMES = {
   /** Per-minute hard cap on login attempts per IP (credential stuffing brake). */
   AUTH_LOGIN_PER_MIN: 'auth-login-per-min',
   /** Per-hour rolling cap on login attempts per IP (sustained attack brake). */
   AUTH_LOGIN_PER_HOUR: 'auth-login-per-hour',
-  /** Per-hour cap on password-reset requests — keyed by email in PasswordResetThrottlerGuard. */
+  /** Per-hour cap on password-reset requests — keyed by IP, future: by email. */
   AUTH_PASSWORD_RESET: 'auth-password-reset',
   /** Per-hour cap on signup attempts per IP. */
   AUTH_SIGNUP: 'auth-signup',
-  /** Per-minute cap on coach→client messages per user. */
+  /** Per-minute cap on coach->client messages per user. */
   COACH_MESSAGES: 'coach-messages',
   /** Per-minute cap on notification-preference writes per user. */
   NOTIFICATIONS_PREFS: 'notifications-prefs',
@@ -105,11 +104,11 @@ export const THROTTLER_ROUTE_LIMITS = {
 } as const;
 
 export const THROTTLER_LIMITS = [
-  // Per-minute login limit (IP-keyed — shared by login/apple/google)
+  // Per-minute login limit (IP-keyed -- shared by login/apple/google)
   { name: THROTTLER_NAMES.AUTH_LOGIN_PER_MIN,  ttl: 60_000,       limit: AUTH_LOGIN_PER_MIN  },
-  // Per-hour login limit (IP-keyed — sustained-attack brake)
+  // Per-hour login limit (IP-keyed -- sustained-attack brake)
   { name: THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR, ttl: 3_600_000,    limit: AUTH_LOGIN_PER_HOUR },
-  // Password-reset: 3/hour by default, keyed by email in the controller guard
+  // Password-reset: 3/hour by default, keyed by IP
   { name: THROTTLER_NAMES.AUTH_PASSWORD_RESET, ttl: 3_600_000,    limit: AUTH_PWD_RESET_PER_HOUR },
   // Signup: 5/hour/IP (unchanged from original)
   { name: THROTTLER_NAMES.AUTH_SIGNUP,         ttl: 3_600_000,    limit: 5 },
@@ -126,21 +125,18 @@ export const THROTTLER_LIMITS = [
   // Default catch-all: applies to every route that carries no explicit @Throttle decorator.
   // The guard in getTracker() buckets authed requests by user-id (300/min) and
   // unauthenticated requests by IP (100/min). Both share this one named throttler;
-  // the differentiation is in the tracker key, not the limit — because the typical
-  // authed-vs-anon ratio makes a shared limit the safe choice at this bucket size.
+  // the differentiation is in the tracker key, not the limit.
   { name: THROTTLER_NAMES.DEFAULT,             ttl: 60_000,       limit: Math.max(RATELIMIT_AUTHED_PER_MIN, RATELIMIT_ANON_PER_MIN) },
 ] as const;
 
 /**
  * Build ThrottlerModule options. When REDIS_URL is set we lazily import
- * ioredis + the redis storage adapter and wire them as the throttler's
+ * ioredis and the redis storage adapter and wire them as the throttler's
  * shared backend; when unset we return only `throttlers`, and
  * ThrottlerModule defaults to its built-in in-memory tracker.
  *
  * The dynamic import keeps `ioredis` out of the boot path for dev/test
- * runs that never construct a Redis client — Jest workers don't pay the
- * tcp-handshake/teardown tax, and `npm run start` in dev stays
- * fully self-contained.
+ * runs that never construct a Redis client.
  *
  * RATELIMIT_ENABLED=off completely disables all throttling (useful for
  * load-test runs against staging). Defaults to on.
@@ -153,7 +149,7 @@ export async function buildThrottlerOptions(
 
   if (!redisUrl || redisUrl.trim().length === 0) {
     logger.log(
-      'REDIS_URL not set — using in-memory throttler tracker. Limits do NOT cross Fly machines.',
+      'REDIS_URL not set -- using in-memory throttler tracker. Limits do NOT cross Fly machines.',
     );
     return { throttlers };
   }
@@ -167,8 +163,7 @@ export async function buildThrottlerOptions(
   );
 
   const client = new (Redis as any)(redisUrl, {
-    // Background reconnects keep failures isolated to the throttler — we'd
-    // rather degrade open than reject every request when Redis blips.
+    // Background reconnects keep failures isolated to the throttler.
     maxRetriesPerRequest: 1,
     enableOfflineQueue: false,
     lazyConnect: false,
