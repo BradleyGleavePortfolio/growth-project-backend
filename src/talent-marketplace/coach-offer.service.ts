@@ -79,6 +79,7 @@ export class CoachOfferService {
         applicant_user_id: application.applicant_user_id ?? null,
         application_id: dto.application_id,
         compensation_type: dto.compensation_type,
+        // dto.compensation_terms is already typed as Prisma.InputJsonObject
         compensation_terms: dto.compensation_terms,
         client_capacity: dto.client_capacity,
         onboarding_message: dto.onboarding_message ?? null,
