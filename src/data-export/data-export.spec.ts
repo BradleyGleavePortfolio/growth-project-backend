@@ -2,23 +2,30 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DataExportService } from './data-export.service';
 import { DataExportCleanupCron } from './data-export-cleanup.cron';
 import { PrismaService } from '../prisma/prisma.service';
-import { ConflictException, NotFoundException, UnauthorizedException, GoneException } from '@nestjs/common';
+import {
+  ConflictException,
+  NotFoundException,
+  UnauthorizedException,
+  GoneException,
+} from '@nestjs/common';
 import { DataExportStatus } from '@prisma/client';
-import * as jwt from 'jsonwebtoken';
+import { SignJWT } from 'jose';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeExportRecord(overrides: Partial<{
-  id: string;
-  user_id: string;
-  status: DataExportStatus;
-  file_url: string | null;
-  created_at: Date;
-  completed_at: Date | null;
-  expires_at: Date | null;
-  file_size_bytes: number | null;
-  sha256: string | null;
-}> = {}) {
+function makeExportRecord(
+  overrides: Partial<{
+    id: string;
+    user_id: string;
+    status: DataExportStatus;
+    file_url: string | null;
+    created_at: Date;
+    completed_at: Date | null;
+    expires_at: Date | null;
+    file_size_bytes: number | null;
+    sha256: string | null;
+  }> = {},
+) {
   return {
     id: overrides.id ?? 'export-1',
     user_id: overrides.user_id ?? 'user-1',
@@ -72,8 +79,35 @@ function buildPrismaMock() {
     diagnosticSubmission: { findMany: jest.fn().mockResolvedValue([]) },
     clientSignal: { findMany: jest.fn().mockResolvedValue([]) },
     ptmPrediction: { findMany: jest.fn().mockResolvedValue([]) },
-    auditLog: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({}) },
+    auditLog: {
+      findMany: jest.fn().mockResolvedValue([]),
+      create: jest.fn().mockResolvedValue({}),
+    },
   };
+}
+
+// ─── JWT helper ───────────────────────────────────────────────────────────────
+
+const TOKEN_SECRET_STR =
+  process.env.DATA_EXPORT_TOKEN_SECRET ?? 'change-me-in-production-min32chars!';
+
+async function mintToken(
+  overrides: Partial<{
+    sub: string;
+    eid: string;
+    type: string;
+    expiresIn: string;
+  }> = {},
+): Promise<string> {
+  return new SignJWT({
+    eid: overrides.eid ?? 'export-1',
+    type: overrides.type ?? 'data_export_download',
+  })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setSubject(overrides.sub ?? 'user-1')
+    .setIssuedAt()
+    .setExpirationTime(overrides.expiresIn ?? '7d')
+    .sign(new TextEncoder().encode(TOKEN_SECRET_STR));
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -107,13 +141,20 @@ describe('DataExportService', () => {
       const created = makeExportRecord({ status: DataExportStatus.PENDING });
       prismaMock.dataExportRequest.create.mockResolvedValue(created);
       prismaMock.dataExportRequest.update.mockResolvedValue(created);
-      prismaMock.user.findUnique.mockResolvedValue({ id: 'user-1', email: 'a@b.com', name: 'Alice' });
+      prismaMock.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        email: 'a@b.com',
+        name: 'Alice',
+      });
 
       const result = await service.requestExport('user-1');
 
       expect(prismaMock.dataExportRequest.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ user_id: 'user-1', status: DataExportStatus.PENDING }),
+          data: expect.objectContaining({
+            user_id: 'user-1',
+            status: DataExportStatus.PENDING,
+          }),
         }),
       );
       expect(result.status).toBe(DataExportStatus.PENDING);
@@ -139,13 +180,16 @@ describe('DataExportService', () => {
       );
     });
 
-    it('allows a new request after a FAILED export', async () => {
-      // FAILED exports are excluded from the rate-limit query
+    it('allows a new request when no PENDING/READY export exists (FAILED excluded)', async () => {
       prismaMock.dataExportRequest.findFirst.mockResolvedValue(null);
       const created = makeExportRecord();
       prismaMock.dataExportRequest.create.mockResolvedValue(created);
       prismaMock.dataExportRequest.update.mockResolvedValue(created);
-      prismaMock.user.findUnique.mockResolvedValue({ id: 'user-1', email: 'a@b.com', name: 'Alice' });
+      prismaMock.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        email: 'a@b.com',
+        name: 'Alice',
+      });
 
       const result = await service.requestExport('user-1');
       expect(result.status).toBe(DataExportStatus.PENDING);
@@ -180,7 +224,7 @@ describe('DataExportService', () => {
       // Download token must be present for READY exports
       expect(result.download_token).toBeTruthy();
       // Raw file_url must NOT be returned
-      expect((result as any).file_url).toBeUndefined();
+      expect((result as Record<string, unknown>).file_url).toBeUndefined();
     });
 
     it('returns null download_token for PENDING exports', async () => {
@@ -196,79 +240,63 @@ describe('DataExportService', () => {
   // ── resolveDownloadUrl ────────────────────────────────────────────────────
 
   describe('resolveDownloadUrl', () => {
-    const USER_ID = 'user-1';
-    const EXPORT_ID = 'export-1';
-    const TOKEN_SECRET = process.env.DATA_EXPORT_TOKEN_SECRET ?? 'change-me-in-production-min32chars!';
-
-    function mintToken(overrides: Partial<{ sub: string; eid: string; type: string }> = {}) {
-      return jwt.sign(
-        {
-          sub: overrides.sub ?? USER_ID,
-          eid: overrides.eid ?? EXPORT_ID,
-          type: overrides.type ?? 'data_export_download',
-        },
-        TOKEN_SECRET,
-        { expiresIn: '7d' },
-      );
-    }
-
     it('returns the file URL for a valid token + READY export', async () => {
       const record = makeExportRecord({
-        id: EXPORT_ID,
-        user_id: USER_ID,
+        id: 'export-1',
+        user_id: 'user-1',
         status: DataExportStatus.READY,
         file_url: 'https://s3.example.com/export.json',
         expires_at: new Date(Date.now() + 7 * 86400 * 1000),
       });
       prismaMock.dataExportRequest.findUnique.mockResolvedValue(record);
 
-      const url = await service.resolveDownloadUrl(mintToken());
+      const token = await mintToken();
+      const url = await service.resolveDownloadUrl(token);
       expect(url).toBe('https://s3.example.com/export.json');
     });
 
     it('throws UnauthorizedException for an invalid token', async () => {
-      await expect(service.resolveDownloadUrl('not-a-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        service.resolveDownloadUrl('not-a-valid-jwt'),
+      ).rejects.toThrow(UnauthorizedException);
     });
 
     it('throws UnauthorizedException when token user does not match record user', async () => {
       const record = makeExportRecord({
-        id: EXPORT_ID,
-        user_id: 'other-user', // different from token sub
+        id: 'export-1',
+        user_id: 'other-user',
         status: DataExportStatus.READY,
         file_url: 'https://s3.example.com/export.json',
         expires_at: new Date(Date.now() + 7 * 86400 * 1000),
       });
       prismaMock.dataExportRequest.findUnique.mockResolvedValue(record);
 
-      await expect(service.resolveDownloadUrl(mintToken())).rejects.toThrow(
+      const token = await mintToken({ sub: 'user-1' }); // token sub != record user_id
+      await expect(service.resolveDownloadUrl(token)).rejects.toThrow(
         UnauthorizedException,
       );
     });
 
     it('throws GoneException (410) for an EXPIRED export', async () => {
       const record = makeExportRecord({
-        id: EXPORT_ID,
-        user_id: USER_ID,
+        id: 'export-1',
+        user_id: 'user-1',
         status: DataExportStatus.EXPIRED,
-        file_url: 'https://s3.example.com/export.json',
-        expires_at: new Date(Date.now() - 1000),
       });
       prismaMock.dataExportRequest.findUnique.mockResolvedValue(record);
 
-      await expect(service.resolveDownloadUrl(mintToken())).rejects.toThrow(
+      const token = await mintToken();
+      await expect(service.resolveDownloadUrl(token)).rejects.toThrow(
         GoneException,
       );
     });
 
     it('throws GoneException and marks expired when wall-clock expiry passes', async () => {
       const record = makeExportRecord({
-        id: EXPORT_ID,
-        user_id: USER_ID,
+        id: 'export-1',
+        user_id: 'user-1',
         status: DataExportStatus.READY,
         file_url: 'https://s3.example.com/export.json',
-        // Expires in the past
         expires_at: new Date(Date.now() - 1000),
       });
       prismaMock.dataExportRequest.findUnique.mockResolvedValue(record);
@@ -277,12 +305,13 @@ describe('DataExportService', () => {
         status: DataExportStatus.EXPIRED,
       });
 
-      await expect(service.resolveDownloadUrl(mintToken())).rejects.toThrow(
+      const token = await mintToken();
+      await expect(service.resolveDownloadUrl(token)).rejects.toThrow(
         GoneException,
       );
       expect(prismaMock.dataExportRequest.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: EXPORT_ID },
+          where: { id: 'export-1' },
           data: { status: DataExportStatus.EXPIRED },
         }),
       );
