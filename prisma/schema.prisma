@@ -1050,24 +1050,49 @@ model AuditLog {
 // GDPR / CCPA personal data export requests. A request is created when a
 // user calls POST /users/me/data-export. Status starts at `pending`;
 // when the request is fulfilled the row is updated with the rendered
-// JSON payload (kept inline for now — file-storage upload is the next
-// hardening step, but persisting the payload here is enough to honor
-// the legal request). `payload` is nullable so the row can record the
-// request even if export later fails, and so the payload can be purged
-// after delivery.
-model DataExportRequest {
-  id           String    @id @default(uuid())
-  user_id      String
-  user         User      @relation(fields: [user_id], references: [id])
-  status       String    @default("pending") // pending | ready | delivered | failed
-  payload      Json?
-  error        String?
-  requested_at DateTime  @default(now())
-  fulfilled_at DateTime?
-  delivered_at DateTime?
+// Phase 10 — GDPR data portability. Status lifecycle for DataExportRequest.
+enum DataExportStatus {
+  PENDING  // Request received; export not yet started.
+  RUNNING  // Export is being assembled.
+  READY    // File uploaded to storage; signed URL available for 7 days.
+  EXPIRED  // 7-day window has passed; file deleted from storage.
+  FAILED   // Export failed; user can request again.
+}
 
-  @@index([user_id, requested_at])
-  @@index([status])
+// Phase 10 — GDPR Article 20 right to data portability. One row per export
+// request. The file lives in S3-compatible storage; this table tracks
+// its lifecycle. Only the requesting user can download via a signed URL
+// that expires after 7 days. The nightly cleanup cron marks READY rows
+// EXPIRED and deletes the file from storage when expires_at passes.
+//
+// Rate limit: one PENDING or READY request per user per 24 h is enforced
+// in DataExportService.requestExport — the controller returns 409 when
+// the guard fires.
+//
+// GDPR dependency: this module is a hard dependency for the GDPR delete
+// flow. Users should download their data BEFORE requesting account
+// deletion. The delete-account module (src/gdpr/) checks for a READY
+// export and surfaces a warning if none exists in the last 7 days.
+model DataExportRequest {
+  id              String           @id @default(uuid())
+  user_id         String
+  user            User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  status          DataExportStatus @default(PENDING)
+  // Signed S3 URL stored for status polling. Never served through the API
+  // process — clients are redirected to this URL directly. Null until READY.
+  file_url        String?
+  created_at      DateTime         @default(now())
+  completed_at    DateTime?
+  // 7 days after completed_at. Nightly cron expires rows past this point.
+  expires_at      DateTime?
+  file_size_bytes Int?
+  // SHA-256 hex digest of the JSON file for integrity verification.
+  sha256          String?
+
+  @@index([user_id, created_at])
+  @@index([status, expires_at])
+
+  @@map("data_export_request")
 }
 
 // Consent layer v1: per-(client, coach, scope) record of whether the
