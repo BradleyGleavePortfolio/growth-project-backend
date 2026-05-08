@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataExportService } from './data-export.service';
 import { DataExportCleanupCron } from './data-export-cleanup.cron';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../prisma.service';
 import {
   ConflictException,
   NotFoundException,
