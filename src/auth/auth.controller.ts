@@ -328,7 +328,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Issue a short-lived re-auth token for sensitive actions',
     description:
-      'Verifies the user\'s current password against Supabase then returns a ' +
+      "Verifies the user's current password against Supabase then returns a " +
       'short-lived HMAC token to pass as X-Recent-Auth-Token on guarded endpoints. ' +
       'Token is valid for RECENT_AUTH_TTL_MS (default 5 min) and bound to the caller.',
   })
