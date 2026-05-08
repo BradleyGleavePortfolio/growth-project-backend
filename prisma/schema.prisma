@@ -203,6 +203,11 @@ model User {
   // in the mobile gating logic by also checking created_at age).
   first_win_completed_at DateTime?
 
+  // Phase 9 — Notification Center + Digest
+  // notifications receives all inbox rows; digest_logs tracks sent digest windows.
+  notifications   Notification[]
+  digest_logs     NotificationDigestLog[]
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -1355,4 +1360,58 @@ model BuildWeekDayCompletion {
 
   @@unique([enrollment_id, day_number], name: "BuildWeekDayCompletion_enrollment_day_key")
   @@index([day_number])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Phase 9 — Notification Center + Digest Idempotency
+// ──────────────────────────────────────────────────────────────────────────
+//
+// Notification — per-user in-app inbox row. One row per discrete event.
+// Emitters write here; the controller serves GET /notifications + mark-read.
+//
+// NotificationDigestLog — idempotency guard for digest email sends.
+// One row per (user, kind, window_date). Unique constraint prevents duplicate
+// emails when the cron fires more than once for the same day.
+
+model Notification {
+  id         String    @id @default(uuid())
+  user_id    String
+  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  // kind: milestone_reached | message_received | missed_checkin |
+  //   weight_trend_alert | checkin_submitted | build_week_day_unlocked |
+  //   coach_alert | client_digest | coach_digest
+  kind       String
+  // Structured deep-link context. Never contains another user's PII.
+  payload    Json?
+  // Plain-text body, max 160 chars enforced by NotificationsService.createNotification.
+  body       String
+  // tgp:// deep-link, e.g. tgp://checkin/today
+  deep_link  String?
+  // Delivery channel: 'push' | 'email' | 'inapp'
+  channel    String    @default("inapp")
+  read_at    DateTime?
+  created_at DateTime  @default(now())
+
+  @@index([user_id, created_at])
+  @@index([user_id, read_at])
+  @@index([kind, created_at])
+}
+
+model NotificationDigestLog {
+  id          String    @id @default(uuid())
+  user_id     String
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  // digest_kind: client_daily | coach_daily | weekly_client | weekly_coach
+  digest_kind String
+  // ISO-8601 date of the window, e.g. "2026-05-07"
+  window_date String
+  // status: sending | sent | failed | skipped
+  status      String    @default("sending")
+  sent_at     DateTime?
+  error       String?
+  created_at  DateTime  @default(now())
+
+  @@unique([user_id, digest_kind, window_date])
+  @@index([user_id, digest_kind, window_date])
+  @@index([status, created_at])
 }
