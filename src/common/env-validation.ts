@@ -336,6 +336,42 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     reason: 'Phase 6D — when "true" (default), AdminService.promoteUser auto-starts the 6-step onboarding wizard for newly-promoted coaches. Set to "false" to suppress (e.g. during bulk back-fills). Wizard-creation failures never block promotion.',
   },
+
+  // ============================================================
+  // Phase 10 — Observability
+  // ============================================================
+  {
+    name: 'LOG_LEVEL',
+    tier: 'optional',
+    reason: 'Phase 10 — minimum log severity to emit. One of error, warn, log, debug, verbose. Defaults to "log". Lower levels add volume; "warn" is a good production minimum once the system is stable.',
+  },
+  {
+    name: 'LOG_FORMAT',
+    tier: 'optional',
+    reason: 'Phase 10 — "json" (default) for machine-readable structured logs (Fly, Better Stack, Datadog). "pretty" for human-friendly dev console output. JSON mode is always used in production.',
+  },
+  {
+    name: 'METRICS_ENABLED',
+    tier: 'optional',
+    reason: 'Phase 10 — "on" (default) enables the Prometheus /metrics endpoint and in-process counter tracking. "off" disables both. Set to "off" if you have no Prometheus scraper configured and want to avoid the minor per-request overhead.',
+  },
+  {
+    name: 'SENTRY_TRACES_SAMPLE_RATE',
+    tier: 'optional',
+    reason: 'Phase 10 — fraction of transactions sampled for Sentry Performance (0.0–1.0). Defaults to 0.1 (10%). Errors are always captured at 1.0 regardless of this value. Increase to 1.0 once traffic baselines are established.',
+    validate: (v) => {
+      const n = parseFloat(v.trim());
+      if (isNaN(n) || n < 0 || n > 1) {
+        return 'SENTRY_TRACES_SAMPLE_RATE must be a number between 0.0 and 1.0.';
+      }
+      return null;
+    },
+  },
+  {
+    name: 'PROFILE_ENABLED',
+    tier: 'optional',
+    reason: 'Phase 10 — "on" activates GET /debug/profile (30-second V8 CPU profile). Requires OWNER role. Defaults to "off". Leave off in production unless actively profiling — the endpoint blocks a Node.js event-loop thread for 30 seconds.',
+  },
 ];
 
 export interface EnvValidationResult {
