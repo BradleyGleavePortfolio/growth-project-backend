@@ -213,6 +213,13 @@ model User {
 
   @@index([coach_id])
   @@index([deletion_scheduled_at])
+
+  // Phase 11 Track 8 — Talent Marketplace relations
+  coach_applications_submitted  CoachApplication[]   @relation("CoachApplicationApplicant")
+  coach_applications_reviewed   CoachApplication[]   @relation("CoachApplicationReviewer")
+  coach_connect_account         CoachConnectAccount? @relation("CoachConnectAccountUser")
+  coach_offers_as_head_coach    CoachOffer[]         @relation("CoachOfferHeadCoach")
+  coach_offers_as_applicant     CoachOffer[]         @relation("CoachOfferApplicantUser")
 }
 
 // Phase 1A: per-coach business + billing + branding metadata. The User
@@ -1363,4 +1370,169 @@ model BuildWeekDayCompletion {
 
   @@unique([enrollment_id, day_number], name: "BuildWeekDayCompletion_enrollment_day_key")
   @@index([day_number])
+}
+
+// =============================================================================
+// Phase 11 / Track 8 — Talent Marketplace
+// =============================================================================
+//
+// Three tables support the coach talent marketplace:
+//
+//   CoachApplication    — public application form; reviewed by OWNER admins;
+//                         approved coaches are moved to the talent pool.
+//   CoachConnectAccount — Stripe Connect Express account mirror; one per coach
+//                         user. Onboarding URL is generated via the backend;
+//                         mobile holds no Stripe keys.
+//   CoachOffer          — head-coach makes offer to an applicant; on accept the
+//                         applicant is linked and Connect onboarding is triggered.
+//
+// Doctrine:
+//   * preferred_client_type uses a string enum to keep migrations lightweight.
+//     See CoachClientType for the valid values enforced at the service layer.
+//   * preferences and compensation_terms are jsonb so the schema is not
+//     re-migrated every time a new work arrangement type is introduced.
+//   * CoachConnectAccount.capabilities mirrors the Stripe account object field
+//     so the backend can check payout readiness without re-fetching Stripe on
+//     every request.
+
+// Preferred client focus for marketplace matching.
+enum CoachClientType {
+  fitness
+  wellness
+  both
+}
+
+// Application lifecycle state machine.
+// pending   → reviewer reads the application
+// reviewed  → reviewer has scored and left notes; not yet pooled
+// approved  → OWNER has approved; not yet in public pool
+// pool      → visible to Scale+ head-coaches in talent pool search
+// placed    → offer accepted; coach has been assigned to a head-coach
+// inactive  → withdrawn / removed by admin
+enum CoachApplicationStatus {
+  pending
+  reviewed
+  approved
+  pool
+  placed
+  inactive
+}
+
+// Compensation structure on a CoachOffer.
+enum CoachCompensationType {
+  commission
+  rev_share
+  flat
+  hybrid
+}
+
+// Offer lifecycle.
+enum CoachOfferStatus {
+  pending
+  accepted
+  rejected
+  withdrawn
+}
+
+// ─── CoachApplication ─────────────────────────────────────────────────────────
+//
+// Submitted publicly (no auth required). `applicant_user_id` is populated if
+// the applicant already has a User row (signed-up user); it stays null for
+// anonymous applicants until they register and the backend back-fills.
+//
+// `preferences` shape: { commission: bool, rev_share: bool, w2: bool, hybrid: bool }
+// `certifications` and `specializations` are text arrays for free-form values;
+// keep validation in the DTO layer so the schema does not need migrations for
+// new cert names.
+model CoachApplication {
+  id                        String                @id @default(uuid())
+  applicant_user_id         String?
+  applicant_user            User?                 @relation("CoachApplicationApplicant", fields: [applicant_user_id], references: [id], onDelete: SetNull)
+  email                     String
+  first_name                String
+  last_name                 String
+  certifications            String[]
+  specializations           String[]
+  years_experience          Int
+  sample_program_url        String?
+  preferences               Json
+  availability_hours_per_week Int
+  preferred_client_type     CoachClientType       @default(fitness)
+  background_verified       Boolean               @default(false)
+  status                    CoachApplicationStatus @default(pending)
+  reviewer_user_id          String?
+  reviewer_user             User?                 @relation("CoachApplicationReviewer", fields: [reviewer_user_id], references: [id], onDelete: SetNull)
+  reviewer_score            Int?
+  reviewer_notes            String?
+  created_at                DateTime              @default(now())
+  updated_at                DateTime              @updatedAt
+
+  offers CoachOffer[] @relation("CoachOfferApplicant")
+
+  @@index([status, created_at])
+  @@index([applicant_user_id])
+  @@index([email])
+}
+
+// ─── CoachConnectAccount ──────────────────────────────────────────────────────
+//
+// Mirrors the Stripe Connect Express account for a coach user. Created when
+// a coach first requests an onboarding link. `onboarding_completed` is set to
+// true by the webhook handler when Stripe fires `account.updated` with
+// `details_submitted = true`.
+//
+// `capabilities` is a json mirror of the Stripe account.capabilities object
+// so the backend can check `transfers` + `card_payments` status without a
+// live Stripe call on every request.
+model CoachConnectAccount {
+  id                   String   @id @default(uuid())
+  user_id              String   @unique
+  user                 User     @relation("CoachConnectAccountUser", fields: [user_id], references: [id], onDelete: Cascade)
+  stripe_account_id    String   @unique
+  onboarding_completed Boolean  @default(false)
+  capabilities         Json?
+  country              String   @default("US")
+  default_currency     String   @default("usd")
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  @@index([stripe_account_id])
+}
+
+// ─── CoachOffer ───────────────────────────────────────────────────────────────
+//
+// A head-coach (role=coach, Scale+ subscription tier) extends an offer to a
+// CoachApplication that is in `pool` or `approved` status. One application can
+// receive multiple offers from different head-coaches; only one may be accepted.
+//
+// On `acceptOffer`:
+//   1. Status set to `accepted`, accepted_at stamped.
+//   2. CoachApplication.status set to `placed`.
+//   3. If the applicant has no CoachConnectAccount, service returns a
+//      `onboarding_url` for the client to complete Stripe Express onboarding.
+//
+// `compensation_terms` shape:
+//   commission:  { rate_pct: number }
+//   rev_share:   { rate_pct: number, cap_usd?: number }
+//   flat:        { amount_usd: number, period: 'monthly' | 'weekly' }
+//   hybrid:      { base_usd: number, rate_pct: number }
+model CoachOffer {
+  id                  String               @id @default(uuid())
+  head_coach_id       String
+  head_coach          User                 @relation("CoachOfferHeadCoach", fields: [head_coach_id], references: [id], onDelete: Cascade)
+  applicant_user_id   String?
+  applicant_user      User?                @relation("CoachOfferApplicantUser", fields: [applicant_user_id], references: [id], onDelete: SetNull)
+  application_id      String
+  application         CoachApplication     @relation("CoachOfferApplicant", fields: [application_id], references: [id], onDelete: Cascade)
+  compensation_type   CoachCompensationType
+  compensation_terms  Json
+  client_capacity     Int
+  onboarding_message  String?
+  status              CoachOfferStatus     @default(pending)
+  accepted_at         DateTime?
+  created_at          DateTime             @default(now())
+  updated_at          DateTime             @updatedAt
+
+  @@index([head_coach_id, status])
+  @@index([application_id, status])
 }
