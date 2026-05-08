@@ -20,8 +20,6 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
  * (as specified in the Phase 10 brief).
  */
 
-const ENABLED = (process.env.METRICS_ENABLED ?? 'on').toLowerCase() !== 'off';
-
 // Latency histogram buckets in milliseconds.
 export const LATENCY_BUCKETS = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000];
 
@@ -115,8 +113,13 @@ export class MetricsService implements OnModuleInit {
     return h;
   }
 
+  /** Read env at call-time so tests can toggle METRICS_ENABLED between cases. */
+  private get enabled(): boolean {
+    return (process.env.METRICS_ENABLED ?? 'on').toLowerCase() !== 'off';
+  }
+
   private incCounter(vec: CounterVec, labels: Record<string, string>): void {
-    if (!ENABLED) return;
+    if (!this.enabled) return;
     const key = labelKey(labels);
     vec.counts.set(key, (vec.counts.get(key) ?? 0) + 1);
   }
@@ -126,7 +129,7 @@ export class MetricsService implements OnModuleInit {
     labels: Record<string, string>,
     value: number,
   ): void {
-    if (!ENABLED) return;
+    if (!this.enabled) return;
     const key = labelKey(labels);
     // Cumulative counts per bucket (Prometheus convention: each bucket counts
     // all observations <= upper bound)
@@ -171,7 +174,7 @@ export class MetricsService implements OnModuleInit {
    * directly at GET /metrics.
    */
   render(): string {
-    if (!ENABLED) return '# Metrics disabled (METRICS_ENABLED=off)\n';
+    if (!this.enabled) return '# Metrics disabled (METRICS_ENABLED=off)\n';
 
     const lines: string[] = [];
 
