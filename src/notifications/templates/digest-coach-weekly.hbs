@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Coach weekly summary — The Growth Project</title>
+  <style>
+    body { font-family: Georgia, 'Times New Roman', serif; background: #f5f1eb; color: #1a1a1a; margin: 0; padding: 0; }
+    .wrapper { max-width: 600px; margin: 0 auto; background: #ffffff; }
+    .header { background: #1a1a1a; padding: 28px 40px; }
+    .header-title { color: #f5f1eb; font-family: Georgia, serif; font-size: 22px; margin: 0; letter-spacing: 0.02em; }
+    .header-sub { color: #9a9a8a; font-size: 13px; margin: 4px 0 0; }
+    .section { padding: 32px 40px; border-bottom: 1px solid #ede8e0; }
+    .section-title { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #6b0f1a; margin: 0 0 16px; }
+    .metric-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0ece4; font-size: 15px; }
+    .metric-label { color: #4a4a4a; }
+    .metric-value { font-weight: 600; color: #1a1a1a; }
+    .client-row { padding: 10px 0; border-bottom: 1px solid #f0ece4; font-size: 14px; }
+    .client-name { font-weight: 600; color: #1a1a1a; margin-bottom: 2px; }
+    .client-detail { color: #6a6a6a; font-size: 13px; }
+    .cta-section { padding: 28px 40px; text-align: center; }
+    .cta-button { display: inline-block; background: #1a1a1a; color: #f5f1eb; text-decoration: none; padding: 14px 32px; font-size: 14px; letter-spacing: 0.04em; }
+    .footer { padding: 20px 40px; text-align: center; font-size: 12px; color: #9a9a8a; }
+    .footer a { color: #6b0f1a; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <p class="header-title">The Growth Project</p>
+      <p class="header-sub">Coach weekly summary &mdash; week ending {{date}}</p>
+    </div>
+
+    <div class="section">
+      <p class="section-title">Roster — week in numbers</p>
+      <div class="metric-row">
+        <span class="metric-label">Active clients</span>
+        <span class="metric-value">{{rosterStats.activeCount}}</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Check-ins this week</span>
+        <span class="metric-value">{{rosterStats.weeklyCheckinsCount}}</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Roster check-in consistency</span>
+        <span class="metric-value">{{rosterStats.avgConsistencyPct}}%</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Clients needing check-in this week</span>
+        <span class="metric-value">{{rosterStats.needCheckin}}</span>
+      </div>
+    </div>
+
+    {{#if topPerformers}}
+    <div class="section">
+      <p class="section-title">Top performers this week</p>
+      {{#each topPerformers}}
+      <div class="client-row">
+        <div class="client-name">{{this.displayName}}</div>
+        <div class="client-detail">{{this.highlight}}</div>
+      </div>
+      {{/each}}
+    </div>
+    {{/if}}
+
+    {{#if needingAttention}}
+    <div class="section">
+      <p class="section-title">{{needingAttention.length}} client{{#if (gt needingAttention.length 1)}}s{{/if}} need check-in this week</p>
+      {{#each needingAttention}}
+      <div class="client-row">
+        <div class="client-name">{{this.displayName}}</div>
+        <div class="client-detail">{{this.reason}}</div>
+      </div>
+      {{/each}}
+    </div>
+    {{/if}}
+
+    <div class="cta-section">
+      <a href="{{consoleUrl}}" class="cta-button">Open coach console</a>
+    </div>
+
+    <div class="footer">
+      <p>You are receiving this because weekly coach summaries are enabled for your account.</p>
+      <p><a href="{{unsubscribeUrl}}">Unsubscribe</a> or manage preferences in the app.</p>
+      <p>The Growth Project &mdash; {{currentYear}}</p>
+    </div>
+  </div>
+</body>
+</html>
