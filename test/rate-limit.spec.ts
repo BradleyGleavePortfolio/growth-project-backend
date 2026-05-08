@@ -24,24 +24,24 @@ import { ThrottlerException } from '@nestjs/throttler';
  * Returns a flat map of { [throttlerName]: { ttl, limit } }.
  */
 function readThrottleMetadata(
-  handler: unknown,
+  handler: object,
 ): Record<string, { ttl: number; limit: number }> {
   const out: Record<string, { ttl: number; limit: number }> = {};
   for (const t of THROTTLER_LIMITS) {
-    const ttl = Reflect.getMetadata(`THROTTLER:TTL${t.name}`, handler);
-    const limit = Reflect.getMetadata(`THROTTLER:LIMIT${t.name}`, handler);
+    const ttl = Reflect.getMetadata(`THROTTLER:TTL${t.name}`, handler) as number | undefined;
+    const limit = Reflect.getMetadata(`THROTTLER:LIMIT${t.name}`, handler) as number | undefined;
     if (ttl !== undefined || limit !== undefined) {
-      out[t.name] = { ttl, limit };
+      out[t.name] = { ttl: ttl as number, limit: limit as number };
     }
   }
   return out;
 }
 
 // ---------------------------------------------------------------------------
-// 1. Named throttler table — limits must match spec
+// 1. Named throttler table -- limits must match spec
 // ---------------------------------------------------------------------------
 
-describe('throttler.config — named limit table', () => {
+describe('throttler.config -- named limit table', () => {
   const byName = Object.fromEntries(THROTTLER_LIMITS.map((t) => [t.name, t]));
 
   it('has auth-login-per-min: 5/min default', () => {
@@ -107,33 +107,33 @@ describe('throttler.config — named limit table', () => {
     });
   });
 
-  it('has a default catch-all throttler', () => {
+  it('has a default catch-all throttler with limit >= 100', () => {
     expect(byName[THROTTLER_NAMES.DEFAULT]).toBeDefined();
     expect(byName[THROTTLER_NAMES.DEFAULT].ttl).toBe(60_000);
-    // Default limit should be at least 100 (RATELIMIT_ANON_PER_MIN default).
     expect(byName[THROTTLER_NAMES.DEFAULT].limit).toBeGreaterThanOrEqual(100);
   });
 
-  it('auth-login-per-min is tighter than auth-login-per-hour on a rate-per-second basis', () => {
+  it('auth-login-per-hour is tighter on a rate-per-second basis than auth-login-per-min', () => {
     const perMin  = byName[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN];
     const perHour = byName[THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR];
     const rpsMin  = perMin.limit  / (perMin.ttl  / 1000);
     const rpsHour = perHour.limit / (perHour.ttl / 1000);
-    // 5/60s = 0.083/s; 30/3600s = 0.0083/s — per-minute is a burst cap,
-    // per-hour is the sustained cap. The hour limit should be tighter on a
-    // rate-per-second basis so sustained hammering is caught.
     expect(rpsHour).toBeLessThan(rpsMin);
   });
 });
 
 // ---------------------------------------------------------------------------
-// 2. Auth controller — @Throttle metadata on each handler
+// 2. Auth controller -- @Throttle metadata on each handler
 // ---------------------------------------------------------------------------
 
 describe('AuthController @Throttle metadata', () => {
-  it('POST /auth/login uses auth-login-per-min (5/min) AND auth-login-per-hour (30/hr)', () => {
+  it('POST /auth/login uses auth-login-per-min (5/min)', () => {
     const meta = readThrottleMetadata(AuthController.prototype.login);
     expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toEqual({ ttl: 60_000, limit: 5 });
+  });
+
+  it('POST /auth/login uses auth-login-per-hour (30/hr)', () => {
+    const meta = readThrottleMetadata(AuthController.prototype.login);
     expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]).toEqual({ ttl: 3_600_000, limit: 30 });
   });
 
@@ -167,7 +167,7 @@ describe('AuthController @Throttle metadata', () => {
     expect(meta[THROTTLER_NAMES.AUTH_SIGNUP]).toEqual({ ttl: 3_600_000, limit: 5 });
   });
 
-  it('auth-login-per-min is tighter than the default bucket (fewer reqs/sec)', () => {
+  it('auth-login-per-min is tighter than the default bucket', () => {
     const loginMeta   = readThrottleMetadata(AuthController.prototype.login);
     const loginLimit  = loginMeta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN];
     const defaultBucket = THROTTLER_LIMITS.find((t) => t.name === THROTTLER_NAMES.DEFAULT)!;
@@ -178,7 +178,7 @@ describe('AuthController @Throttle metadata', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3. Coach messaging — @Throttle metadata
+// 3. Coach messaging -- @Throttle metadata
 // ---------------------------------------------------------------------------
 
 describe('CoachMessagingController @Throttle metadata', () => {
@@ -189,7 +189,7 @@ describe('CoachMessagingController @Throttle metadata', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. Notifications — @Throttle metadata
+// 4. Notifications -- @Throttle metadata
 // ---------------------------------------------------------------------------
 
 describe('NotificationsController @Throttle metadata', () => {
@@ -199,23 +199,20 @@ describe('NotificationsController @Throttle metadata', () => {
   });
 
   it('GET /notifications/preferences carries no explicit throttle (falls through to default)', () => {
-    // Reads should not be throttled at the route level — the global default
-    // bucket applies. A positive assertion here would be: readThrottleMetadata
-    // returns an empty map for the read handler.
     const meta = readThrottleMetadata(NotificationsController.prototype.getPreferences);
     expect(Object.keys(meta).length).toBe(0);
   });
 });
 
 // ---------------------------------------------------------------------------
-// 5. UserThrottlerGuard — tracker key resolution
+// 5. UserThrottlerGuard -- tracker key resolution
 // ---------------------------------------------------------------------------
 
 describe('UserThrottlerGuard.getTracker', () => {
   const buildGuard = (): UserThrottlerGuard =>
     Object.create(UserThrottlerGuard.prototype) as UserThrottlerGuard;
-  const callTracker = (g: UserThrottlerGuard, req: Record<string, unknown>) =>
-    (g as any).getTracker(req);
+  const callTracker = (g: UserThrottlerGuard, req: object) =>
+    (g as any).getTracker(req) as Promise<string>;
 
   it('keys on user.id when an authenticated user is on the request', async () => {
     expect(await callTracker(buildGuard(), { user: { id: 'user_abc' }, ip: '1.2.3.4', headers: {} }))
@@ -254,7 +251,7 @@ describe('UserThrottlerGuard.getTracker', () => {
     })).toBe('ip:203.0.113.42');
   });
 
-  it('prefers Fly-Client-IP over X-Forwarded-For (Fly header is injected by the edge, XFF is client-supplied)', async () => {
+  it('prefers Fly-Client-IP over X-Forwarded-For', async () => {
     expect(await callTracker(buildGuard(), {
       ip: '10.0.0.1',
       headers: {
@@ -266,55 +263,15 @@ describe('UserThrottlerGuard.getTracker', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. UserThrottlerGuard — health check skip
+// 6. ThrottlerExceptionFilter -- 429 response shape + Retry-After
 // ---------------------------------------------------------------------------
 
-describe('UserThrottlerGuard.canActivate — health check paths are never throttled', () => {
-  // We cannot call canActivate easily without a full NestJS context, so we
-  // verify the whitelist constant is correct by reading it from the source.
-  // The HEALTH_PATHS Set lives in user-throttler.guard.ts.
-  const EXPECTED_HEALTH_PATHS = ['/health', '/healthz', '/readyz'];
-
-  it('whitelist covers exactly the documented health-probe paths', () => {
-    // Re-import the source and check the exported constant (the guard uses a
-    // module-level Set that is not exported, but we can verify the behavior
-    // by asserting the guard returns true for health paths via a mock context).
-    for (const path of EXPECTED_HEALTH_PATHS) {
-      const guard = Object.create(UserThrottlerGuard.prototype) as UserThrottlerGuard & {
-        canActivate: (ctx: any) => Promise<boolean>;
-      };
-      // Patch super.canActivate to throw so we can distinguish "skipped" from
-      // "passed through to throttler".
-      (guard as any).__proto__.canActivate = async (ctx: any) => {
-        const req = ctx.switchToHttp().getRequest();
-        const reqPath: string = req?.route?.path || req?.url || '';
-        const clean = reqPath.split('?')[0];
-        const healthPaths = new Set(['/health', '/healthz', '/readyz']);
-        if (healthPaths.has(clean)) return true;
-        throw new Error('throttler would have been consulted');
-      };
-      const mockCtx = {
-        switchToHttp: () => ({
-          getRequest: () => ({ route: { path }, url: path, headers: {} }),
-        }),
-      };
-      // Just verify the path logic — the guard must return true without
-      // consulting the parent throttler.
-      expect(EXPECTED_HEALTH_PATHS).toContain(path);
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 7. ThrottlerExceptionFilter — 429 response shape + Retry-After
-// ---------------------------------------------------------------------------
-
-describe('ThrottlerExceptionFilter — 429 response shape', () => {
+describe('ThrottlerExceptionFilter -- 429 response shape', () => {
   it('returns statusCode 429 with Retry-After header and retryAfter body field', () => {
     const filter = new ThrottlerExceptionFilter();
     const responseObj: Record<string, unknown> = {};
     let statusCode = 0;
-    let setHeader: Record<string, string> = {};
+    const setHeader: Record<string, string> = {};
 
     const mockHost = {
       switchToHttp: () => ({
@@ -344,7 +301,6 @@ describe('ThrottlerExceptionFilter — 429 response shape', () => {
     expect(Number.isFinite(retryAfterSeconds)).toBe(true);
     expect(retryAfterSeconds).toBeGreaterThan(0);
 
-    // Body shape
     expect(responseObj).toMatchObject({
       statusCode: 429,
       error: 'Too Many Requests',
@@ -352,11 +308,10 @@ describe('ThrottlerExceptionFilter — 429 response shape', () => {
       retryAfter: expect.any(Number),
     });
 
-    // retryAfter in body must match the Retry-After header value
     expect(responseObj['retryAfter']).toBe(retryAfterSeconds);
   });
 
-  it('does not expose internal limit details in the body (no bucket name, no limit count)', () => {
+  it('does not expose internal limit details in the body', () => {
     const filter = new ThrottlerExceptionFilter();
     let capturedBody: unknown;
 
@@ -378,7 +333,6 @@ describe('ThrottlerExceptionFilter — 429 response shape', () => {
 
     const body = capturedBody as Record<string, unknown>;
     const bodyStr = JSON.stringify(body).toLowerCase();
-    // Must not leak throttler name, limit value in a way that helps an attacker.
     expect(bodyStr).not.toContain('auth-login');
     expect(bodyStr).not.toContain('throttler_name');
     expect(bodyStr).not.toContain('"limit"');
@@ -386,10 +340,10 @@ describe('ThrottlerExceptionFilter — 429 response shape', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 8. APP_GUARD wiring — UserThrottlerGuard is registered globally
+// 7. APP_GUARD wiring -- UserThrottlerGuard is registered globally
 // ---------------------------------------------------------------------------
 
-describe('AppModule — UserThrottlerGuard is registered as APP_GUARD', () => {
+describe('AppModule -- UserThrottlerGuard is registered as APP_GUARD', () => {
   it('registers UserThrottlerGuard as APP_GUARD (global throttling)', () => {
     const providers = Reflect.getMetadata('providers', AppModule) as Array<{
       provide?: unknown;
@@ -407,10 +361,10 @@ describe('AppModule — UserThrottlerGuard is registered as APP_GUARD', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 9. buildThrottlerOptions — Redis / in-memory fallback
+// 8. buildThrottlerOptions -- Redis / in-memory fallback
 // ---------------------------------------------------------------------------
 
-describe('buildThrottlerOptions — storage fallback', () => {
+describe('buildThrottlerOptions -- storage fallback', () => {
   it('returns in-memory options (no storage key) when REDIS_URL is unset', async () => {
     const opts = await buildThrottlerOptions(undefined);
     expect(opts).toHaveProperty('throttlers');
@@ -432,7 +386,7 @@ describe('buildThrottlerOptions — storage fallback', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 10. RATELIMIT_ENABLED env-var check
+// 9. THROTTLER_NAMES completeness
 // ---------------------------------------------------------------------------
 
 describe('THROTTLER_NAMES constant completeness', () => {
