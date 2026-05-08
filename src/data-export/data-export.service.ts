@@ -6,7 +6,7 @@ import {
   GoneException,
   Logger,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../prisma.service';
 import { DataExportStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 import { SignJWT, jwtVerify, JWTPayload } from 'jose';
