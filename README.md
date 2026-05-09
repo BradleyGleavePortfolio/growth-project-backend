@@ -12,6 +12,38 @@ app and the coach console depend on, and the deployment + smoke-test
 shape of a live environment. For per-module behavior, follow the
 links into [`docs/README.md`](docs/README.md) and the module READMEs.
 
+## Current status
+
+| Field | Value |
+|---|---|
+| Repo | `BradleyGleavePortfolio/growth-project-backend` (public) |
+| Default branch | `main` |
+| Latest commit on `main` | `16638670 feat(stage-3): coach-facing cross-pillar federation surface` |
+| Tests passing | 1,049 (last verified 2026-05-09) |
+| Deploy target | Fly.io app `backend-spring-lake-3890` (region `sjc`) |
+| CI | GitHub Actions (`.github/workflows/`) — typecheck, lint, build, test, OpenAPI export |
+| Stage | Stage 3 federation shipped (coach-facing cross-pillar surface). Sprint B in flight on `feat/phase-11-workout-builder` (exercise library plus workout builder plus assignment models) |
+| Open audit findings | Holistic Insights surface in mobile is presently four hardcoded if-statements; Sprint B Build 5 replaces this end-to-end |
+
+## Architecture
+
+```
+Mobile / Coach Console
+        |
+        +-- HTTPS --> Fly.io edge --> NestJS app (backend-spring-lake-3890)
+                                          |
+                                          +-- Prisma 5 --> Supabase Postgres
+                                          +-- Redis (Upstash) — throttler + cache
+                                          +-- Supabase Auth JWKS (token verify, no round-trip)
+                                          +-- Stripe webhook receiver (HMAC verified locally)
+                                          +-- Perplexity (AI coach) with deterministic fallback
+                                          +-- Sentry, PostHog (no-op without keys)
+                                          +-- Federation egress to tgp-finance-api (FEDERATION_SERVICE_TOKEN)
+                                          +-- Resend (transactional email)
+```
+
+The release pipeline runs `bash ./scripts/release.sh` in a temporary release-VM before traffic flips, applying `prisma migrate deploy` with baseline-recovery fallback for P3005/P3009/P3018. Failure aborts the deploy.
+
 ## Stack
 
 - **NestJS 10** for the HTTP framework, `APP_GUARD` global auth,
@@ -1219,3 +1251,51 @@ endpoints group correctly in Swagger UI. **All new endpoints must add
 `@ApiOperation` + `@ApiResponse`** — see
 [`docs/api-conventions.md`](docs/api-conventions.md) for the rule and
 the reference example.
+
+---
+
+## Workflows
+
+GitHub Actions live under `.github/workflows/`. Key workflows:
+
+| Workflow | Purpose |
+|---|---|
+| CI on PR / push | Typecheck, lint, build, full Jest suite (1,049 tests as of 2026-05-09), OpenAPI spec drift check |
+| Smoke staging | `npm run smoke:staging` — staging environment health check |
+| Smoke admin federation | `npm run smoke:admin-federation` — cross-pillar federation surface |
+| Deploy | Fly.io reads `fly.toml`; `release_command = bash ./scripts/release.sh` runs `prisma migrate deploy` in a release-VM with baseline-recovery fallback before traffic flips |
+| Dependabot | Weekly grouped minor/patch update PRs |
+
+## Known issues
+
+| ID | Issue | Severity | Notes |
+|---|---|---|---|
+| 1 | Holistic Insights surface in mobile is hardcoded if-statements | High | Sprint B Build 5 replaces with Pearson-correlation engine across pillars; this backend exposes the engine at `/insights/holistic` |
+| 2 | Coach toolset gap: no coach-side workout builder before Sprint B | Resolving | `feat/phase-11-workout-builder` PR #182 in flight; Exercise Library + WorkoutPlan + Assignment Prisma models added |
+| 3 | Audit-flagged 2 / 10 peer-rec at $1,079 / mo — coach toolset breadth | Resolving | Sprint B closing breadth gap (workout builder, macro setter, bulk invite, meal plan templates, holistic insights) |
+
+## Roadmap
+
+| Item | T-shirt | Notes |
+|---|---|---|
+| Phase 11 / workout builder finish (PR #182 ship-ready) | M | Exercise Library + WorkoutPlan + ClientWorkoutAssignment plus seed data |
+| Macro setter endpoints + tests | M | `/coach/clients/:id/macros` POST/GET/PUT plus `MacroTarget` Prisma model |
+| Bulk invite endpoint | S | `/coach/invite-codes/bulk` accepting `[{email, name?, optionalNote?}]`; reuse Resend |
+| Meal plan templates plus daily plan plus assignment | M | `MealTemplate` + `MealPlan` + `MealAssignment` extending the existing `meal-plans` module |
+| Holistic Insights v1 engine | L | `HolisticInsightsService` with Pearson correlation, 4-week minimum, 24h cache, federation-fail empty state |
+| Federation surface hardening (rate limit, audit log) | S | Already gated by `FEDERATION_SERVICE_TOKEN`; tighten on the v1 cut |
+| Reversible migration audit across recent waves | S | Confirm down-migrations exist for Stage 3 schema |
+| Redis throttler quotas tuned to Upstash plan | S | See `docs/deploy-runbook.md` Redis section |
+| Sentry release surfacing on every deploy | XS | Already wired; verify `RELEASE_SHA` propagation |
+| OpenAPI spec publication | S | `npm run openapi:export` exists; route to partner portal pending |
+
+## Contribution guide
+
+- Branch naming: `feat/<scope>-<topic>`, `fix/<scope>-<topic>`, `docs/<topic>`. Sprints use `feat/sprint-<letter>-<theme>`.
+- Conventional commits: `feat(scope): subject`, `fix(scope): subject`, `chore(scope): subject`. No emoji. No exclamation points. Anywhere.
+- Strict TypeScript — no `any`, no `@ts-ignore`. Prisma fields are `snake_case`; DTOs use `class-validator`; ValidationPipe runs `whitelist=true, forbidNonWhitelisted=true` globally so DTOs are allow-lists, not models.
+- Every PR updates the matching README or module README. README staleness is a review-gate, not a soft convention. New env var = update `.env.example` plus the env table here plus the module README in the same PR.
+- Endpoints touching coach role require rate limiting and audit logging. See `src/throttler/` and the audit log helpers used by the coach module.
+- Migrations are forward-only in production but must be reversible — write the down step before the up step. Never edit a migration that has shipped.
+- Tests required for every new endpoint and every new service method. Unit (Jest) plus integration (`test/`) plus e2e where the contract is mobile-visible.
+- Bradley merges. Do not self-merge.
