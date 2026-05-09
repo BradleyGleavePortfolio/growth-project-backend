@@ -78,6 +78,27 @@ export class FinanceAdminClient {
     return this.get<FinanceProductUsage>('/api/admin/federation/usage/product');
   }
 
+  // Sprint A — symmetric practice-type write. Calls the finance
+  // backend's federation surface to mirror the coach's practice
+  // selection on both sides in a single user action.
+  //
+  // Returns `not_found` when finance has no matching coach by email
+  // (e.g. the user has not registered finance yet) — caller treats
+  // that as a soft skip rather than a hard failure.
+  async setCoachPracticeByEmail(
+    email: string,
+    practiceType: 'fitness_only' | 'finance_only' | 'both',
+  ): Promise<FinanceCallOutcome<{ email: string; practice_type: string }>> {
+    return this.put<{ email: string; practice_type: string }>(
+      `/api/admin/federation/coaches/by-email/${encodeURIComponent(email)}/practice`,
+      { practice_type: practiceType },
+    );
+  }
+
+  private put<T>(path: string, body: unknown): Promise<FinanceCallOutcome<T>> {
+    return this.request<T>(path, { expectArray: false, method: 'PUT', body });
+  }
+
   private resolveTimeoutMs(): number {
     const raw = process.env.FINANCE_FEDERATION_TIMEOUT_MS;
     const parsed = raw ? parseInt(raw, 10) : NaN;
@@ -95,7 +116,11 @@ export class FinanceAdminClient {
 
   private async request<T>(
     path: string,
-    opts: { expectArray: boolean },
+    opts: {
+      expectArray: boolean;
+      method?: 'GET' | 'PUT' | 'POST';
+      body?: unknown;
+    },
   ): Promise<FinanceCallOutcome<T>> {
     const base = process.env.FINANCE_API_BASE_URL?.trim();
     if (!base) {
@@ -117,9 +142,17 @@ export class FinanceAdminClient {
     const url = `${base.replace(/\/+$/, '')}${path}`;
     const timeoutMs = this.resolveTimeoutMs();
 
+    const method = opts.method ?? 'GET';
     let lastDegraded: FinanceCallOutcome<T> | null = null;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const outcome = await this.attempt<T>(url, token, timeoutMs, opts.expectArray);
+      const outcome = await this.attempt<T>(
+        url,
+        token,
+        timeoutMs,
+        opts.expectArray,
+        method,
+        opts.body,
+      );
       if (outcome.kind === 'ok' || outcome.kind === 'not_found') {
         return outcome;
       }
@@ -147,17 +180,24 @@ export class FinanceAdminClient {
     token: string,
     timeoutMs: number,
     expectArray: boolean,
+    method: 'GET' | 'PUT' | 'POST' = 'GET',
+    body?: unknown,
   ): Promise<FinanceCallOutcome<T>> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+        'X-Federation-Source': 'fitness-backend',
+      };
+      if (method !== 'GET' && body !== undefined) {
+        headers['Content-Type'] = 'application/json';
+      }
       const res = await this.fetchImpl(url, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-          'X-Federation-Source': 'fitness-backend',
-        },
+        method,
+        headers,
+        body: method === 'GET' || body === undefined ? undefined : JSON.stringify(body),
         signal: controller.signal,
       });
 

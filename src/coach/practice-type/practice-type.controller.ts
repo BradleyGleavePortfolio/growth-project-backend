@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Put,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -46,6 +47,7 @@ export class PracticeTypeController {
   async set(
     @Request() req: AuthedRequest,
     @Body() body: { practice_type?: string } | undefined,
+    @Query('propagate') propagate?: string,
   ) {
     const v = body?.practice_type;
     if (!v || !(ALLOWED as string[]).includes(v)) {
@@ -54,6 +56,12 @@ export class PracticeTypeController {
         code: 'INVALID_PRACTICE_TYPE',
       });
     }
-    return this.service.set(req.user.id, v as CoachPracticeType);
+    // ?propagate=false suppresses the federation hop. Used by the
+    // finance backend when it mirrors a finance-originated change
+    // back to fitness so the symmetric flow does not loop forever.
+    const propagateFlag = propagate !== 'false';
+    return this.service.set(req.user.id, v as CoachPracticeType, {
+      propagate: propagateFlag,
+    });
   }
 }
