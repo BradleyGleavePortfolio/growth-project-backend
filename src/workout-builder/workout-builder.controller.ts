@@ -97,10 +97,23 @@ export class WorkoutBuilderController {
   }
 }
 
-/** Separate controller for assignment completion (client-facing). */
+/** Separate controller for assignment listing/completion (client-facing). */
 @Controller('assignments')
 export class AssignmentController {
   constructor(private readonly workoutBuilder: WorkoutBuilderService) {}
+
+  // Sprint B — client list of their own workout assignments. Returns
+  // each assignment with its plan and exercise rows so the mobile app
+  // can render "today's workout" without a second round-trip.
+  @Get('me')
+  listMine(@Req() req: AuthRequest) {
+    return this.workoutBuilder.listAssignmentsForClient(req.user.id);
+  }
+
+  @Get(':assignmentId')
+  getMine(@Req() req: AuthRequest, @Param('assignmentId') assignmentId: string) {
+    return this.workoutBuilder.getAssignmentForClient(req.user.id, assignmentId);
+  }
 
   @Patch(':assignmentId/complete')
   complete(

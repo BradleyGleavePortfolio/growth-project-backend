@@ -49,6 +49,9 @@ import { FirstWinModule } from './first-win/first-win.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { ExerciseLibraryModule } from './exercise-library/exercise-library.module';
 import { WorkoutBuilderModule } from './workout-builder/workout-builder.module';
+import { MacrosModule } from './macros/macros.module';
+import { RealMealPlansModule } from './real-meal-plans/real-meal-plans.module';
+import { InsightsModule } from './insights/insights.module';
 
 @Module({
   imports: [
@@ -153,6 +156,13 @@ import { WorkoutBuilderModule } from './workout-builder/workout-builder.module';
     // Workout Builder (plan CRUD + client assignment endpoints).
     ExerciseLibraryModule,
     WorkoutBuilderModule,
+    // Sprint B — coach-prescribed macro targets, real meal plans
+    // (templates + daily plans + assignments), and the holistic
+    // insights engine v1 (Pearson correlation across pillars with
+    // a 24h cache and an honest empty-state on insufficient data).
+    MacrosModule,
+    RealMealPlansModule,
+    InsightsModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)

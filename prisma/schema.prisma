@@ -216,6 +216,15 @@ model User {
   workout_assignments_as_client ClientWorkoutAssignment[]  @relation("ClientWorkoutAssignments")
   workout_assignments_as_coach  ClientWorkoutAssignment[]  @relation("CoachWorkoutAssignments")
 
+  // Sprint B — Macro targets, real meal plans, holistic insights cache.
+  macro_targets_as_client          MacroTarget[]              @relation("MacroTargetClient")
+  macro_targets_as_coach           MacroTarget[]              @relation("MacroTargetCoach")
+  meal_templates_as_coach          MealTemplate[]             @relation("MealTemplateCoach")
+  daily_meal_plans_as_coach        DailyMealPlan[]            @relation("DailyMealPlanCoach")
+  daily_meal_assignments_as_client DailyMealPlanAssignment[]  @relation("DailyMealPlanAssignmentClient")
+  daily_meal_assignments_as_coach  DailyMealPlanAssignment[]  @relation("DailyMealPlanAssignmentCoach")
+  holistic_insights_caches         HolisticInsightCache[]
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -1455,4 +1464,112 @@ model ClientWorkoutAssignment {
   @@index([client_id, scheduled_for])
   @@index([workout_plan_id])
   @@index([assigned_by_coach_id])
+}
+
+// ─── Sprint B: Macro targets ──────────────────────────────────────────────
+//
+// A coach sets calorie/macro targets for a client. effective_from is
+// the start date for the target; we keep history (previous rows are
+// not archived) so a client can see how their macros evolved over
+// time. The "current" target for a client is the most recent row
+// whose effective_from is <= today.
+model MacroTarget {
+  id              String    @id @default(uuid())
+  client_id       String
+  client          User      @relation("MacroTargetClient", fields: [client_id], references: [id], onDelete: Cascade)
+  coach_id        String
+  coach           User      @relation("MacroTargetCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  calories_kcal   Int
+  protein_g       Int
+  carbs_g         Int
+  fats_g          Int
+  fiber_g         Int?
+  notes           String?
+  effective_from  DateTime  @default(now())
+  created_at      DateTime  @default(now())
+  archived_at     DateTime?
+
+  @@index([client_id, effective_from])
+  @@index([coach_id, created_at])
+}
+
+// ─── Sprint B: Real Meal Plans (templates + plans + assignments) ──────────
+model MealTemplate {
+  id            String    @id @default(uuid())
+  coach_id      String
+  coach         User      @relation("MealTemplateCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
+  calories_kcal Int
+  protein_g     Int
+  carbs_g       Int
+  fats_g        Int
+  fiber_g       Int?
+  items         Json?
+  created_at    DateTime  @default(now())
+  archived_at   DateTime?
+
+  meal_plan_slots DailyMealPlanSlot[]
+
+  @@index([coach_id, archived_at])
+}
+
+model DailyMealPlan {
+  id          String    @id @default(uuid())
+  coach_id    String
+  coach       User      @relation("DailyMealPlanCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  name        String
+  notes       String?
+  created_at  DateTime  @default(now())
+  archived_at DateTime?
+
+  slots       DailyMealPlanSlot[]
+  assignments DailyMealPlanAssignment[]
+
+  @@index([coach_id, archived_at])
+}
+
+model DailyMealPlanSlot {
+  id                  String        @id @default(uuid())
+  daily_meal_plan_id  String
+  daily_meal_plan     DailyMealPlan @relation(fields: [daily_meal_plan_id], references: [id], onDelete: Cascade)
+  meal_template_id    String
+  meal_template       MealTemplate  @relation(fields: [meal_template_id], references: [id], onDelete: Restrict)
+  slot_label          String
+  order               Int           @default(0)
+
+  @@unique([daily_meal_plan_id, slot_label, order])
+  @@index([daily_meal_plan_id])
+  @@index([meal_template_id])
+}
+
+model DailyMealPlanAssignment {
+  id                   String        @id @default(uuid())
+  daily_meal_plan_id   String
+  daily_meal_plan      DailyMealPlan @relation(fields: [daily_meal_plan_id], references: [id], onDelete: Cascade)
+  client_id            String
+  client               User          @relation("DailyMealPlanAssignmentClient", fields: [client_id], references: [id], onDelete: Cascade)
+  assigned_by_coach_id String
+  assigned_by_coach    User          @relation("DailyMealPlanAssignmentCoach", fields: [assigned_by_coach_id], references: [id], onDelete: Cascade)
+  starts_on            DateTime      @db.Date
+  ends_on              DateTime?     @db.Date
+  created_at           DateTime      @default(now())
+
+  @@index([client_id, starts_on])
+  @@index([daily_meal_plan_id])
+  @@index([assigned_by_coach_id])
+}
+
+// ─── Sprint B: Holistic Insights cache ────────────────────────────────────
+model HolisticInsightCache {
+  id            String   @id @default(uuid())
+  user_id       String
+  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  window_days   Int
+  payload       Json
+  generated_at  DateTime @default(now())
+  expires_at    DateTime
+
+  @@unique([user_id, window_days])
+  @@index([expires_at])
 }

@@ -21,6 +21,7 @@ import {
   ExerciseSearchParams,
   ExerciseSearchResult,
 } from './exercise.entity';
+import { findSeedById, searchSeed } from './seed-catalog';
 import * as crypto from 'crypto';
 
 /** In-memory LRU cache entry. */
@@ -90,6 +91,27 @@ export class ExerciseLibraryService implements OnModuleInit {
     const limit = Math.min(params.limit ?? 20, 100);
     const offset = params.cursor ? this.decodeCursor(params.cursor) : 0;
 
+    // Seed-catalog fallback. Used when no EXERCISEDB_API_KEY is set so
+    // the workout builder is functional on day one without an external
+    // dependency. Once a key is configured the proxy below takes over.
+    if (!this.apiKey) {
+      const seedKey = this.buildCacheKey('seed-search', { ...params, limit, offset });
+      const seedCached = await this.getCache<ExerciseSearchResult>(seedKey);
+      if (seedCached) return seedCached;
+      const { items, total } = searchSeed({
+        q: params.q,
+        muscleGroup: params.muscleGroup,
+        equipment: params.equipment,
+        limit,
+        offset,
+      });
+      const nextCursor =
+        offset + items.length < total ? this.encodeCursor(offset + limit) : null;
+      const result: ExerciseSearchResult = { items, nextCursor, total };
+      await this.setCache(seedKey, result);
+      return result;
+    }
+
     const cacheKey = this.buildCacheKey('search', { ...params, limit, offset });
     const cached = await this.getCache<ExerciseSearchResult>(cacheKey);
     if (cached) return cached;
@@ -156,8 +178,18 @@ export class ExerciseLibraryService implements OnModuleInit {
     return result;
   }
 
-  /** Fetch a single exercise by ExerciseDB id. */
+  /** Fetch a single exercise by id. seed: ids are resolved locally;
+   * everything else proxies to ExerciseDB. When no API key is set,
+   * non-seed ids return 404 rather than the env-var error. */
   async getExerciseById(id: string): Promise<Exercise> {
+    if (id.startsWith('seed:')) {
+      const seed = findSeedById(id);
+      if (!seed) throw new NotFoundException(`Exercise with id "${id}" not found`);
+      return seed;
+    }
+    if (!this.apiKey) {
+      throw new NotFoundException(`Exercise with id "${id}" not found`);
+    }
     const cacheKey = this.buildCacheKey('byId', { id });
     const cached = await this.getCache<Exercise>(cacheKey);
     if (cached) return cached;

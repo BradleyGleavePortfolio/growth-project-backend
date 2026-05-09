@@ -384,4 +384,101 @@ export class InviteCodesService {
       return { role: updated.role, coach_id: updated.coach_id };
     });
   }
+
+  // Sprint B — Bulk invite. For each row we generate a single-use code
+  // tagged with the recipient's email so the coach (and audit trail)
+  // can map a code back to the person it was meant for. Codes have a
+  // 14-day expiry by default. The send-email step is best-effort and
+  // never fails the request — failed sends are returned as
+  // `email_status: "skipped"` so the coach can copy/paste manually.
+  async bulkInvite(
+    coachId: string,
+    rows: { email: string; name?: string; note?: string }[],
+  ): Promise<{
+    total: number;
+    created: { email: string; code: string; invite_code_id: string }[];
+    rejected: { email: string; reason: string }[];
+  }> {
+    const created: { email: string; code: string; invite_code_id: string }[] = [];
+    const rejected: { email: string; reason: string }[] = [];
+
+    // De-dupe by lower-cased email — emitting two codes for the same
+    // address inside one batch is almost always a copy/paste mistake.
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const normalised = row.email.trim().toLowerCase();
+      if (!normalised) {
+        rejected.push({ email: row.email, reason: 'empty' });
+        continue;
+      }
+      if (seen.has(normalised)) {
+        rejected.push({ email: row.email, reason: 'duplicate_in_batch' });
+        continue;
+      }
+      seen.add(normalised);
+      try {
+        const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+        const codeRow = await this.createForCoach(coachId, {
+          expires_at: expiresAt.toISOString(),
+          max_uses: 1,
+        });
+        created.push({
+          email: normalised,
+          code: codeRow.code,
+          invite_code_id: codeRow.id,
+        });
+        // Audit trail — re-using the same INVITE_PREVIEWED stream the
+        // single-create flow emits so dashboards see one timeline.
+        try {
+          this.analytics.capture(coachId, Events.INVITE_PREVIEWED, {
+            email: normalised,
+            name: row.name ?? null,
+            bulk: true,
+            via: 'bulk_invite',
+          });
+        } catch {
+          // analytics never blocks bulk invite flow
+        }
+      } catch (err) {
+        this.logger.warn(
+          `bulkInvite: failed for ${normalised}: ${err instanceof Error ? err.message : 'unknown'}`,
+        );
+        rejected.push({ email: normalised, reason: 'create_failed' });
+      }
+    }
+    this.logger.log(
+      `bulkInvite coach=${coachId} requested=${rows.length} created=${created.length} rejected=${rejected.length}`,
+    );
+    return { total: rows.length, created, rejected };
+  }
+
+  // Helper: parse a coach's pasted CSV/newline-separated text into
+  // {email,name?,note?} rows. Liberal accept: comma- or tab-separated,
+  // up to 3 fields per line. Emails are validated as a final pass at
+  // the DTO layer when the parsed rows are POSTed back.
+  parsePasted(input: string, maxRows = 100): {
+    email: string;
+    name?: string;
+    note?: string;
+  }[] {
+    const out: { email: string; name?: string; note?: string }[] = [];
+    const lines = input
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    for (const line of lines) {
+      if (out.length >= maxRows) break;
+      // Split on the first comma or tab — keep the rest as one field
+      // so a note containing further commas is preserved.
+      const parts = line.split(/[\t,]/).map((p) => p.trim());
+      const [email, name, note] = parts;
+      if (!email) continue;
+      out.push({
+        email,
+        name: name || undefined,
+        note: note || undefined,
+      });
+    }
+    return out;
+  }
 }

@@ -148,6 +148,34 @@ export class WorkoutBuilderService {
     });
   }
 
+  // Sprint B — client-side reads. The mobile client lists its own
+  // assignments via /assignments/me; tenancy is by req.user.id.
+  async listAssignmentsForClient(clientId: string) {
+    return this.prisma.clientWorkoutAssignment.findMany({
+      where: { client_id: clientId },
+      orderBy: { scheduled_for: 'asc' },
+      include: {
+        workout_plan: {
+          include: { exercises: { orderBy: { order: 'asc' } } },
+        },
+      },
+    });
+  }
+
+  async getAssignmentForClient(clientId: string, assignmentId: string) {
+    const assignment = await this.prisma.clientWorkoutAssignment.findUnique({
+      where: { id: assignmentId },
+      include: {
+        workout_plan: {
+          include: { exercises: { orderBy: { order: 'asc' } } },
+        },
+      },
+    });
+    if (!assignment) throw new NotFoundException('Assignment not found');
+    if (assignment.client_id !== clientId) throw new ForbiddenException();
+    return assignment;
+  }
+
   async completeAssignment(
     clientId: string,
     assignmentId: string,
