@@ -207,9 +207,12 @@ backend (see Inbound endpoint contract above) with
    user submits an EOD review (`finance_eod`) or achieves a financial
    milestone (`finance_milestone`).
 3. **Service-token issuance**: provision a single shared secret
-   (`openssl rand -hex 32`), set it as `FEDERATION_SERVICE_TOKEN` on the
-   finance backend and `FINANCE_SERVICE_TOKEN` on this backend. Both
-   names must point at the same value.
+   (`openssl rand -hex 32`) and set it as `FINANCE_SERVICE_TOKEN` on
+   both this backend and the finance backend. The variable name is
+   identical on both sides — the legacy `FEDERATION_SERVICE_TOKEN`
+   alias was renamed in audit fix H-2 (see commit history). Operators
+   rotating this secret should set it under the same name in both
+   `fly secrets set` calls.
 4. **Durable identity**: when finance starts emitting a shared
    `account_id`, populate the optional `account_id` field on the client
    /coach summary contracts and switch `FederationService` to prefer
