@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
 import { Public } from '../common/decorators/public.decorator';
 import { CreateInviteCodeDto } from './invite-codes.dto';
+import { BulkInviteDto } from './bulk-invite.dto';
 import { InviteCodesService } from './invite-codes.service';
 
 // Coach-authenticated endpoints for managing invite codes. Mounted under
@@ -46,6 +47,35 @@ export class InviteCodesController {
   @UseGuards(JwtAuthGuard, CoachGuard)
   async revoke(@Request() req: AuthedRequest, @Param('id') id: string) {
     return this.inviteCodes.revokeForCoach(req.user.id, id);
+  }
+
+  // Sprint B — Bulk invite. Accepts a structured array of recipients
+  // and generates one single-use, 14-day code per row. Throttled to
+  // make a malicious coach unable to flood the table; legit coaches
+  // rarely need >100 invites per minute.
+  @Post('coach/invite-codes/bulk')
+  @UseGuards(JwtAuthGuard, CoachGuard)
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @HttpCode(HttpStatus.OK)
+  async bulk(
+    @Request() req: AuthedRequest,
+    @Body() body: BulkInviteDto,
+  ) {
+    return this.inviteCodes.bulkInvite(req.user.id, body.rows);
+  }
+
+  // POST /coach/invite-codes/bulk/parse — server-side parser for the
+  // mobile paste box. Lets the mobile UI render a preview without
+  // duplicating the parsing rules. Pure function; no DB writes.
+  @Post('coach/invite-codes/bulk/parse')
+  @UseGuards(JwtAuthGuard, CoachGuard)
+  @HttpCode(HttpStatus.OK)
+  parseBulk(
+    @Request() _req: AuthedRequest,
+    @Body() body: { input: string },
+  ) {
+    if (typeof body.input !== 'string') return { rows: [] };
+    return { rows: this.inviteCodes.parsePasted(body.input, 100) };
   }
 
   // ----- Phase 1C: per-coach default invite link --------------------
