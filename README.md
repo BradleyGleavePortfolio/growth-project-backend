@@ -1219,3 +1219,38 @@ endpoints group correctly in Swagger UI. **All new endpoints must add
 `@ApiOperation` + `@ApiResponse`** — see
 [`docs/api-conventions.md`](docs/api-conventions.md) for the rule and
 the reference example.
+
+## Sprint A — Audit fixes
+
+GPT-5.5 client + coach audits ran against the post-Sprint-A merge
+and scored TGP at 71/100 on each side with verdict DO NOT SHIP. This
+section lists the backend fixes that landed on
+`feat/sprint-a-audit-fixes` to clear those audits before the next
+TestFlight push. Each item cites the audit ID it resolves.
+
+- **Coach #6 — Federation inbound bearer compare is constant time.**
+  `src/admin/federation/federation-inbound.service.ts` now wraps
+  `crypto.timingSafeEqual` in a `constantTimeEqual` helper with a
+  length-equality precheck (timingSafeEqual throws on length
+  mismatch otherwise). The Step-2 bearer compare on the inbound PTM
+  signal endpoint goes through the helper. The configured token is
+  high-entropy so practical timing exploitation is hard, but a
+  service-to-service auth path should not ship a non-constant-time
+  compare on a long-lived secret.
+- **H-2 — Federation env-var naming canonicalised.**
+  `FINANCE_SERVICE_TOKEN` is the canonical name on both backends.
+  The legacy `FEDERATION_SERVICE_TOKEN` alias has been removed from
+  `src/admin/federation/README.md` and `.env.example` carries an
+  explicit "same name on both backends" note plus the audit-ID
+  pointer for ops engineers reading old runbooks.
+
+Tests added: 5 new assertions in `test/federation-inbound-constant-time.spec.ts`,
+all pass. Suite total post-audit-fix: 1060 tests, 0 failing.
+Typecheck: clean.
+
+### Items deferred to a follow-up
+
+- The audit's **Coach #5** (finance backend coach client list is
+  unpaginated), **Coach #7** (`coach_promotion_audits` retention),
+  and **Coach #15** (sparse finance admin endpoints) live on the
+  finance repo and are being handled by a parallel agent.
