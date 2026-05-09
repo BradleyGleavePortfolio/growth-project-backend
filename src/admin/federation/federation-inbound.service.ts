@@ -7,9 +7,25 @@ import {
   ServiceUnavailableException,
   BadRequestException,
 } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { PrismaService } from '../../prisma.service';
 import { PtmService } from '../../ptm/ptm.service';
 import { InboundSignalDto, ALLOWED_FINANCE_SIGNAL_TYPES } from './federation-inbound.dto';
+
+/**
+ * Constant-time bearer-token compare. Falls back to a length-equality
+ * precheck so `timingSafeEqual` never sees mismatched buffer lengths
+ * (which would throw rather than return false). The precheck itself
+ * is constant time over the inputs supplied — both lengths are read
+ * once each. Audit fix Coach #6.
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 /**
  * FederationInboundService — validates service-token auth and dispatches
@@ -54,11 +70,11 @@ export class FederationInboundService {
       throw new ServiceUnavailableException('FEDERATION_DISABLED');
     }
 
-    // --- Step 2: bearer token ---
+    // --- Step 2: bearer token (constant-time compare, audit fix Coach #6) ---
     const bearerToken = authHeader?.startsWith('Bearer ')
       ? authHeader.slice(7).trim()
       : undefined;
-    if (!bearerToken || bearerToken !== configuredToken) {
+    if (!bearerToken || !constantTimeEqual(bearerToken, configuredToken)) {
       throw new UnauthorizedException('FEDERATION_UNAUTHENTICATED');
     }
 
