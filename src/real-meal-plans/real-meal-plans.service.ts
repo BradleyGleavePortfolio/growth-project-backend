@@ -57,7 +57,7 @@ export class RealMealPlansService {
         carbs_g: dto.carbs_g,
         fats_g: dto.fats_g,
         fiber_g: dto.fiber_g ?? null,
-        items: (dto.items ?? null) as unknown as object | null,
+        ...(dto.items !== undefined && { items: dto.items as unknown as object }),
       },
     });
   }
