@@ -7,6 +7,13 @@ import { CoachAlertsService } from './coach-alerts.service';
 import { CoachAlertsController } from './coach-alerts.controller';
 import { CoachOnboardingService } from './coach-onboarding.service';
 import { CoachOnboardingController } from './coach-onboarding.controller';
+// Stage 3 — coach-facing cross-pillar federation. Reuses FederationService
+// and FinanceAdminClient from AdminModule (already imported via forwardRef).
+import { CrossPillarController } from './cross-pillar/cross-pillar.controller';
+import { CrossPillarService } from './cross-pillar/cross-pillar.service';
+import { CrossPillarPracticeGuard } from './cross-pillar/cross-pillar-practice.guard';
+import { PracticeTypeController } from './practice-type/practice-type.controller';
+import { PracticeTypeService } from './practice-type/practice-type.service';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AdminModule } from '../admin/admin.module';
@@ -40,13 +47,24 @@ import { AdminModule } from '../admin/admin.module';
 // alert hook) can inject them.
 @Module({
   imports: [AuthModule, NotificationsModule, forwardRef(() => AdminModule)],
-  controllers: [CoachController, CoachAlertsController, CoachOnboardingController],
+  controllers: [
+    CoachController,
+    CoachAlertsController,
+    CoachOnboardingController,
+    // Stage 3
+    CrossPillarController,
+    PracticeTypeController,
+  ],
   providers: [
     CoachService,
     CoachEffectivenessService,
     CoachEffectivenessScheduler,
     CoachAlertsService,
     CoachOnboardingService,
+    // Stage 3
+    CrossPillarService,
+    CrossPillarPracticeGuard,
+    PracticeTypeService,
   ],
   exports: [
     CoachEffectivenessService,

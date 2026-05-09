@@ -101,6 +101,21 @@ enum CheckInType {
   evening
 }
 
+// CoachPracticeType — Stage-3 cross-pillar federation gate.
+//
+// What kind of practice the coach runs across the TGP product family
+// (Body / Wealth). The cross-pillar surface in `/api/coach/cross-pillar/*`
+// is gated on `both`; coaches with `fitness_only` or `finance_only` see
+// their existing single-product coach console unchanged. `null` on the
+// User row means the coach has not yet selected — the cross-pillar
+// surface returns `403 PRACTICE_NOT_SELECTED` and the mobile app routes
+// them through the practice-selection flow.
+enum CoachPracticeType {
+  fitness_only
+  finance_only
+  both
+}
+
 // ============================================================
 // MODELS
 // ============================================================
@@ -117,6 +132,9 @@ model User {
   coach_id              String?
   coach                 User?     @relation("CoachToStudents", fields: [coach_id], references: [id])
   students              User[]    @relation("CoachToStudents")
+  // Stage-3 cross-pillar federation. Only meaningful when `role = coach`
+  // or `owner`; ignored for students. Null = not yet selected.
+  coach_practice_type   CoachPracticeType?
   created_at            DateTime  @default(now())
   archived_at           DateTime?
   // GDPR delete-account flow. Two-phase: deletion_scheduled_at marks the
