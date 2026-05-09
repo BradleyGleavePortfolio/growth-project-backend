@@ -1,4 +1,7 @@
 import { Module } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/auth.guard';
+import { CoachGuard } from '../auth/coach.guard';
+import { JwksVerifierService } from '../auth/jwks.service';
 import { PrismaService } from '../prisma.service';
 import {
   ClientMealPlanController,
@@ -13,7 +16,13 @@ import { RealMealPlansService } from './real-meal-plans.service';
     CoachDailyMealPlansController,
     ClientMealPlanController,
   ],
-  providers: [RealMealPlansService, PrismaService],
+  providers: [
+    RealMealPlansService,
+    PrismaService,
+    JwtAuthGuard,
+    CoachGuard,
+    JwksVerifierService,
+  ],
   exports: [RealMealPlansService],
 })
 export class RealMealPlansModule {}
