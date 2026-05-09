@@ -1254,3 +1254,76 @@ Typecheck: clean.
   unpaginated), **Coach #7** (`coach_promotion_audits` retention),
   and **Coach #15** (sparse finance admin endpoints) live on the
   finance repo and are being handled by a parallel agent.
+
+## Sprint B — Coach toolset and holistic insights
+
+Sprint B closes the toolset gap flagged in the GPT-5.5 audit (peer-rec
+score 2/10 for the fitness coach toolset) by shipping five additive
+backend features. Mobile and finance counterparts ship as Sprint B-2
+and Sprint B-3 in their own repos.
+
+### Workout Builder + Exercise Library
+
+`src/exercise-library/` proxies ExerciseDB through a small Nest module
+with an LRU+Redis cache and a 340-line offline seed catalog (push,
+pull, legs, cardio, mobility) that becomes the source when
+`EXERCISEDB_API_KEY` is unset. This means the workout builder is
+functional on day one without an external dependency.
+
+`src/workout-builder/` adds three Prisma models — `WorkoutPlan`,
+`WorkoutPlanExercise`, `ClientWorkoutAssignment` — and CRUD + assign
++ complete endpoints under `/workout-plans` and `/assignments`. The
+client side gets `GET /assignments/me` and `GET /assignments/:id`
+to render today's prescribed workout.
+
+### Macro setter (`/coach/clients/:id/macros`)
+
+`src/macros/` adds a `MacroTarget` Prisma model and a service with a
+Mifflin-St Jeor TDEE preset calculator (`computePreset`). The "current"
+target for a client is the most recent row whose `effective_from <=
+now`; history is preserved.
+
+### Real meal plans
+
+`src/real-meal-plans/` adds reusable `MealTemplate` rows, a
+`DailyMealPlan` (slots × meal templates), and a per-client
+`DailyMealPlanAssignment` over a date range. Coach surface lives under
+`/coach/meal-templates` and `/coach/daily-meal-plans`. Client surface
+is `GET /me/meal-plan/today`.
+
+### Bulk client invite
+
+Two additive routes on `InviteCodesController`:
+
+- `POST /coach/invite-codes/bulk` — generates one single-use 14-day
+  code per row, deduplicates by lower-cased email, returns
+  `{total, created[], rejected[]}`. Throttled to 5/min.
+- `POST /coach/invite-codes/bulk/parse` — pure paste-area parser
+  used by the mobile preview UI.
+
+### Holistic Insights engine v1 (`/insights/holistic`)
+
+`src/insights/` replaces the four hardcoded if-statements that drew the
+"screenshot risk" comment in the audit. Pulls fitness data from
+Postgres and finance data from the federation surface, buckets weekly,
+runs a Pearson correlation per fitness/finance pair, and surfaces
+insights only when `|r| >= 0.30` AND at least 4 weeks of overlapping
+data. When the threshold is missed, returns an honest empty-state
+note rather than fabricating. Cached 24h per user via the
+`HolisticInsightCache` table; finance unreachable returns
+`status='finance_unavailable'` with paused copy.
+
+### Migrations
+
+- `prisma/migrations/20260507000000_add_workout_builder/` — adds
+  `WorkoutPlanType` enum + 3 workout-builder tables.
+- `prisma/migrations/20260509000000_add_sprint_b_macros_meals_insights/`
+  — adds 6 tables (MacroTarget, MealTemplate, DailyMealPlan,
+  DailyMealPlanSlot, DailyMealPlanAssignment, HolisticInsightCache).
+
+Both are reversible (drop tables in reverse order).
+
+### Required env vars
+
+- `EXERCISEDB_API_KEY` — optional; without it the seed catalog is
+  used. See `.env.example` for the full set.

@@ -47,6 +47,14 @@ import { InviteLandingModule } from './invite-landing/invite-landing.module';
 import { PublicPagesModule } from './public-pages/public-pages.module';
 import { TimelineModule } from './timeline/timeline.module';
 import { FirstWinModule } from './first-win/first-win.module';
+// Sprint B — coach toolset (workout builder, macros, real meal plans,
+// holistic insights). See sprint-b PR description for the audit
+// findings each module addresses.
+import { ExerciseLibraryModule } from './exercise-library/exercise-library.module';
+import { WorkoutBuilderModule } from './workout-builder/workout-builder.module';
+import { MacrosModule } from './macros/macros.module';
+import { RealMealPlansModule } from './real-meal-plans/real-meal-plans.module';
+import { InsightsModule } from './insights/insights.module';
 
 @Module({
   imports: [
@@ -147,6 +155,13 @@ import { FirstWinModule } from './first-win/first-win.module';
     // GET /me/first-win/status. Gates the retention screen on every new
     // client's first cold start. See src/first-win/README.md (users README).
     FirstWinModule,
+    // Sprint B — coach toolset and holistic insights engine. Order is
+    // not load-bearing; grouped here for discoverability.
+    ExerciseLibraryModule,
+    WorkoutBuilderModule,
+    MacrosModule,
+    RealMealPlansModule,
+    InsightsModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)
