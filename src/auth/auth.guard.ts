@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma.service';
 import { JwksVerifierService } from './jwks.service';
 import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
 import { ALLOW_DELETION_SCHEDULED_KEY } from '../common/decorators/allow-deletion-scheduled.decorator';
+import { PtmService } from '../ptm/ptm.service';
 
 /**
  * JwtAuthGuard — Supabase ES256 token validation via JWKS.
@@ -27,13 +28,44 @@ import { ALLOW_DELETION_SCHEDULED_KEY } from '../common/decorators/allow-deletio
  * Registered globally as APP_GUARD: every route is authenticated by
  * default; routes that must be reachable without a JWT opt out with
  * `@Public()`.
+ *
+ * ## app_open signal (Phase 1A)
+ *
+ * After a successful authentication the guard fires a fire-and-forget
+ * `app_open` PTM signal at most once every 4 hours per user per process.
+ * The dedup window is per-pod (in-memory Map) — on a multi-pod deploy
+ * each pod may emit at most one signal per user per 4 hours, which is
+ * acceptable: the heuristic engine only asks "did app_open happen in the
+ * last 7 days?", so per-pod dedup retains full fidelity while keeping the
+ * write volume reasonable.
+ *
+ * The Map is evicted lazily when it exceeds APP_OPEN_DEDUP_MAX_SIZE entries;
+ * the oldest half of entries (by last-emit timestamp) is pruned on each
+ * overflow. This bounds memory on a long-lived process with a large roster.
+ *
+ * Signal is only emitted for non-deleted, non-scheduled-for-deletion users
+ * — the GDPR lifecycle gates already enforced above. Signal metadata is
+ * PII-free: `{ source: 'jwt_validate' }`.
  */
+
+/** In-memory dedup state. Lives at module scope so it is shared across all
+ * guard invocations inside a single process (one entry per live user). */
+const appOpenDedup = new Map<string, number>();
+
+/** Window in which a second emit for the same user is suppressed (ms). */
+const APP_OPEN_DEDUP_WINDOW_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+/** When the map grows beyond this size, prune the oldest 50% of entries to
+ * avoid unbounded memory growth on large rosters. */
+const APP_OPEN_DEDUP_MAX_SIZE = 10_000;
+
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
     private prisma: PrismaService,
     private jwks: JwksVerifierService,
     private reflector: Reflector,
+    private ptm: PtmService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -101,6 +133,52 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     req.user = user;
+
+    // Fire-and-forget app_open signal. Only runs after the GDPR gates so
+    // deleted / scheduled-deletion users never generate a signal. Wrapped
+    // in try/catch so any unexpected error is silently discarded — this
+    // must never block or 5xx the upstream request.
+    try {
+      this.maybeEmitAppOpen(user.id);
+    } catch {
+      // Intentionally swallowed — signal emission is advisory.
+    }
+
     return true;
   }
+
+  /**
+   * Emit an `app_open` signal for `userId` unless one was already emitted
+   * within the last APP_OPEN_DEDUP_WINDOW_MS. Pruning happens when the map
+   * overflows APP_OPEN_DEDUP_MAX_SIZE.
+   *
+   * Exposed as a non-private method so unit tests can inspect / reset the
+   * dedup map via the exported `appOpenDedup` symbol without monkey-patching
+   * the guard instance.
+   */
+  maybeEmitAppOpen(userId: string): void {
+    const now = Date.now();
+    const last = appOpenDedup.get(userId);
+    if (last !== undefined && now - last < APP_OPEN_DEDUP_WINDOW_MS) {
+      return; // Already emitted within the window — suppress.
+    }
+
+    // Overflow guard: prune oldest 50% before inserting.
+    if (appOpenDedup.size >= APP_OPEN_DEDUP_MAX_SIZE) {
+      const entries = Array.from(appOpenDedup.entries()).sort(
+        ([, a], [, b]) => a - b,
+      );
+      const pruneCount = Math.floor(entries.length / 2);
+      for (let i = 0; i < pruneCount; i++) {
+        appOpenDedup.delete(entries[i][0]);
+      }
+    }
+
+    appOpenDedup.set(userId, now);
+    this.ptm.emit(userId, 'app_open', 1, { source: 'jwt_validate' });
+  }
 }
+
+/** Exported for test isolation — tests can clear the map between cases
+ * without reaching into the class instance. */
+export { appOpenDedup, APP_OPEN_DEDUP_WINDOW_MS, APP_OPEN_DEDUP_MAX_SIZE };

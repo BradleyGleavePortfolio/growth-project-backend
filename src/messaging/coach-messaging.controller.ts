@@ -13,7 +13,11 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
-import { CreateMessageDto, ListThreadQueryDto } from './messaging.dto';
+import {
+  CreateMessageDto,
+  ListThreadQueryDto,
+  VoiceUploadRequestDto,
+} from './messaging.dto';
 import { MessagingService } from './messaging.service';
 
 // Coach-authenticated messaging endpoints. Mounted under /coach so they sit
@@ -46,7 +50,32 @@ export class CoachMessagingController {
     @Param('client_id') clientId: string,
     @Body() body: CreateMessageDto,
   ) {
-    return this.messaging.sendAsCoach(req.user.id, clientId, body.body);
+    return this.messaging.sendAsCoach(req.user.id, clientId, {
+      body: body.body,
+      voice: body.voice,
+    });
+  }
+
+  // Phase 6C — pre-signed upload URL for voice attachments. Tighter throttle
+  // than the send endpoint so a runaway client can't pin storage. The URL
+  // expires in 10 minutes; the client must POST /messages within that window
+  // attaching the returned public_url + duration + size + content_type.
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @Post('clients/:client_id/messages/voice-upload')
+  async voiceUpload(
+    @Request() req: AuthedRequest,
+    @Param('client_id') clientId: string,
+    @Body() body: VoiceUploadRequestDto,
+  ) {
+    // Object path is namespaced by the SENDER (coach) so a coach cannot
+    // overwrite another coach's pending uploads. The clientId path param
+    // exists for symmetry with the send endpoint and lets the controller
+    // verify the coach actually has this client (defence-in-depth before we
+    // burn a signed URL).
+    await this.messaging.listThreadForCoach(req.user.id, clientId, {
+      limit: 1,
+    });
+    return this.messaging.createVoiceUpload(req.user.id, body);
   }
 
   @Post('clients/:client_id/messages/read')

@@ -1,13 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { PtmService } from '../ptm/ptm.service';
 import { LogWeightDto } from './weight.dto';
 
 @Injectable()
 export class WeightService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private ptm: PtmService,
+  ) {}
 
   async logWeight(userId: string, data: LogWeightDto) {
-    return this.prisma.weightLog.create({
+    const prior = await this.prisma.weightLog.findFirst({
+      where: { user_id: userId },
+      orderBy: { date: 'desc' },
+      select: { weight_lbs: true },
+    });
+    const created = await this.prisma.weightLog.create({
       data: {
         user_id: userId,
         date: data.date ? new Date(data.date) : new Date(),
@@ -15,6 +24,13 @@ export class WeightService {
         notes: data.notes,
       },
     });
+    const priorLbs = prior?.weight_lbs ?? null;
+    const delta = priorLbs == null ? 0 : data.weight_lbs - priorLbs;
+    this.ptm.emit(userId, 'weight_logged', delta, {
+      weight_lbs: data.weight_lbs,
+      prior_weight_lbs: priorLbs,
+    });
+    return created;
   }
 
   async getHistory(userId: string, days = 30) {

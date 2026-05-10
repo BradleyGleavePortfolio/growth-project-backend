@@ -101,23 +101,41 @@ enum CheckInType {
   evening
 }
 
+// CoachPracticeType — Stage-3 cross-pillar federation gate.
+//
+// What kind of practice the coach runs across the TGP product family
+// (Body / Wealth). The cross-pillar surface in `/api/coach/cross-pillar/*`
+// is gated on `both`; coaches with `fitness_only` or `finance_only` see
+// their existing single-product coach console unchanged. `null` on the
+// User row means the coach has not yet selected — the cross-pillar
+// surface returns `403 PRACTICE_NOT_SELECTED` and the mobile app routes
+// them through the practice-selection flow.
+enum CoachPracticeType {
+  fitness_only
+  finance_only
+  both
+}
+
 // ============================================================
 // MODELS
 // ============================================================
 
 model User {
-  id                    String    @id @default(uuid())
-  supabase_id           String    @unique
-  email                 String    @unique
+  id                    String             @id @default(uuid())
+  supabase_id           String             @unique
+  email                 String             @unique
   name                  String
   phone                 String?
-  role                  Role      @default(student)
+  role                  Role               @default(student)
   // coach_id now a proper self-relation FK instead of an orphan string column.
   // Preserves prior behavior — still nullable, still points at another User.id.
   coach_id              String?
-  coach                 User?     @relation("CoachToStudents", fields: [coach_id], references: [id])
-  students              User[]    @relation("CoachToStudents")
-  created_at            DateTime  @default(now())
+  coach                 User?              @relation("CoachToStudents", fields: [coach_id], references: [id])
+  students              User[]             @relation("CoachToStudents")
+  // Stage-3 cross-pillar federation. Only meaningful when `role = coach`
+  // or `owner`; ignored for students. Null = not yet selected.
+  coach_practice_type   CoachPracticeType?
+  created_at            DateTime           @default(now())
   archived_at           DateTime?
   // GDPR delete-account flow. Two-phase: deletion_scheduled_at marks the
   // grace-period start (account locked but recoverable); deleted_at marks
@@ -175,6 +193,60 @@ model User {
   consents_as_client     ClientCoachConsent[] @relation("ConsentClient")
   consents_as_coach      ClientCoachConsent[] @relation("ConsentCoach")
 
+  // Phase 1 PTM (Predictive Tracking Model). Append-only signal log,
+  // outcome labels (taught by OWNERs/coaches), and append-only score
+  // history. See `src/ptm/README.md` and `docs/ptm.md` for the doctrine.
+  ptm_signals           ClientSignal[]
+  ptm_outcomes_target   ClientOutcome[] @relation("PtmOutcomeTarget")
+  ptm_outcomes_labelled ClientOutcome[] @relation("PtmOutcomeLabeller")
+  ptm_predictions       PtmPrediction[]
+
+  // Phase 6A/6B coach signals. Effectiveness scores (per coach, append-
+  // only history) and red-flag alerts (per coach about a specific client).
+  // Both relations stay optional — students/owners do not own rows here.
+  coach_effectiveness_scores CoachEffectivenessScore[] @relation("CoachEffectivenessOwner")
+  coach_alerts_as_coach      CoachAlert[]              @relation("CoachAlertCoach")
+  coach_alerts_as_client     CoachAlert[]              @relation("CoachAlertClient")
+
+  // Phase 6D — Coach Onboarding Wizard. 1:1 with users that have ever held
+  // role='coach'. Auto-created by AdminService.promoteUser when a user is
+  // promoted (gated by COACH_ONBOARDING_AUTO_START); subsequent promotes are
+  // idempotent. Stays null for students/owners until/unless they're promoted.
+  coach_onboarding_progress CoachOnboardingProgress? @relation("CoachOnboardingCoach")
+
+  // Phase 7A — Day 1 Win Sequence. Set once on first win completion; never
+  // cleared. Gates the Day1WinScreen in the mobile app: if non-null the screen
+  // is permanently skipped on cold start. Null for all pre-existing users
+  // (they skip the screen automatically because we treat null === not a new user
+  // in the mobile gating logic by also checking created_at age).
+  first_win_completed_at DateTime?
+
+  // Phase 7C — Peer Leaderboard opt-in fields.
+  // show_on_leaderboard defaults to false — explicit opt-in required.
+  // leaderboard_display_name is nullable; if null, the service derives
+  // "{firstName} {lastInitial}." from the single `name` field at read time.
+  // NEVER surfaces raw weight, body-fat, or finance data on the leaderboard.
+  show_on_leaderboard      Boolean @default(false)
+  leaderboard_display_name String?
+
+  // Phase 9 — Notification Center + Digest
+  // notifications receives all inbox rows; digest_logs tracks sent digest windows.
+  notifications Notification[]
+  digest_logs   NotificationDigestLog[]
+
+  // Sprint B — Workout Builder relations.
+  workout_plans_as_coach        WorkoutPlan[]             @relation("CoachWorkoutPlans")
+  workout_assignments_as_client ClientWorkoutAssignment[] @relation("ClientWorkoutAssignments")
+  workout_assignments_as_coach  ClientWorkoutAssignment[] @relation("CoachWorkoutAssignments")
+
+  // Sprint B — Macro targets, real meal plans, holistic insights cache.
+  macro_targets_as_client          MacroTarget[]             @relation("MacroTargetClient")
+  macro_targets_as_coach           MacroTarget[]             @relation("MacroTargetCoach")
+  meal_templates_as_coach          MealTemplate[]            @relation("MealTemplateCoach")
+  daily_meal_plans_as_coach        DailyMealPlan[]           @relation("DailyMealPlanCoach")
+  daily_meal_assignments_as_client DailyMealPlanAssignment[] @relation("DailyMealPlanAssignmentClient")
+  daily_meal_assignments_as_coach  DailyMealPlanAssignment[] @relation("DailyMealPlanAssignmentCoach")
+  holistic_insights_caches         HolisticInsightCache[]
   // AI gateway: requester / subject of an AI call, and approver / drafter of
   // a human-approval-gated AI action. All optional; rows are SetNull on
   // user delete so audit history survives PII scrub.
@@ -533,6 +605,36 @@ model NotificationPreferences {
   quiet_hours_start      String  @default("22:00")
   quiet_hours_end        String  @default("06:00")
   timezone               String  @default("America/Los_Angeles")
+
+  // Phase 9 — Per-kind × per-channel preference flags.
+  // muted=true overrides all per-kind settings (master kill switch).
+  // Each kind has three channel flags: _email, _push, _inapp.
+  // Defaults match the Kind × Channel × Default matrix in the README.
+  muted                   Boolean @default(false)
+  milestone_email         Boolean @default(true)
+  milestone_push          Boolean @default(true)
+  milestone_inapp         Boolean @default(true)
+  message_email           Boolean @default(false)
+  message_push            Boolean @default(true)
+  message_inapp           Boolean @default(true)
+  missed_checkin_email    Boolean @default(false)
+  missed_checkin_push     Boolean @default(true)
+  missed_checkin_inapp    Boolean @default(true)
+  weight_trend_email      Boolean @default(false)
+  weight_trend_push       Boolean @default(true)
+  weight_trend_inapp      Boolean @default(true)
+  checkin_submitted_email Boolean @default(false)
+  checkin_submitted_push  Boolean @default(false)
+  checkin_submitted_inapp Boolean @default(true)
+  build_week_email        Boolean @default(true)
+  build_week_push         Boolean @default(true)
+  build_week_inapp        Boolean @default(true)
+  coach_alert_email       Boolean @default(false)
+  coach_alert_push        Boolean @default(true)
+  coach_alert_inapp       Boolean @default(true)
+  digest_email            Boolean @default(true)
+  digest_push             Boolean @default(false)
+  digest_inapp            Boolean @default(false)
 }
 
 model Habit {
@@ -667,16 +769,25 @@ model WaterLog {
 // as read. The composite index on (coach_id, client_id, created_at) makes the
 // paginated-thread query a single index seek.
 model CoachMessage {
-  id         String    @id @default(uuid())
-  coach_id   String
-  coach      User      @relation("CoachMessagesAsCoach", fields: [coach_id], references: [id])
-  client_id  String
-  client     User      @relation("CoachMessagesAsClient", fields: [client_id], references: [id])
-  sender_id  String
-  sender     User      @relation("CoachMessagesSender", fields: [sender_id], references: [id])
-  body       String
-  created_at DateTime  @default(now())
-  read_at    DateTime?
+  id                 String    @id @default(uuid())
+  coach_id           String
+  coach              User      @relation("CoachMessagesAsCoach", fields: [coach_id], references: [id])
+  client_id          String
+  client             User      @relation("CoachMessagesAsClient", fields: [client_id], references: [id])
+  sender_id          String
+  sender             User      @relation("CoachMessagesSender", fields: [sender_id], references: [id])
+  // Phase 6C: body becomes optional when a voice attachment is present. The
+  // service still requires at least one of `body` or `voice_url` to be set so
+  // we never persist an empty thread row. Doctrine: voice metadata
+  // (duration_sec, size_bytes, content_type) is set server-side from the
+  // accepted upload — never trusted from the client at send time.
+  body               String?
+  voice_url          String?
+  voice_duration_sec Int?
+  voice_size_bytes   Int?
+  voice_content_type String?
+  created_at         DateTime  @default(now())
+  read_at            DateTime?
 
   @@index([coach_id])
   @@index([client_id])
@@ -941,6 +1052,624 @@ model ClientCoachConsent {
 }
 
 // ============================================================
+// PTM — Predictive Tracking Model (Phase 1)
+// ============================================================
+//
+// Doctrine (see src/ptm/README.md and docs/ptm.md):
+//   * ClientSignal is APPEND-ONLY. Every behavioral signal (check-in
+//     submitted, check-in missed, weight logged, message sent, workout
+//     logged, meal logged, finance EOD, app open, coach note received,
+//     etc.) is recorded with its raw value + metadata. We never UPDATE
+//     a signal in place; corrections are written as a new row.
+//   * ClientOutcome is the teaching set — the labels OWNERs and coaches
+//     attach to a client's eventual journey (churned, completed_90day,
+//     upgraded, referred, milestone_hit, dropped_off, renewed). Exactly
+//     one row per (user_id) — re-labelling overwrites the prior row,
+//     and AuditLog (`ptm.outcome_labelled`) keeps the canonical history.
+//   * PtmPrediction is APPEND-ONLY. Every score recompute writes a new
+//     row so the operator can see how a client's risk drifted over
+//     time. `prediction_basis` distinguishes heuristic_v1 (Phase 1B)
+//     from weighted_v2 (Phase 1D, activates at >= 20 outcomes) and
+//     reserves model_v3 for a future ML pass.
+//
+// PTM scores are advisory-only. The mobile client never sees raw
+// risk_score or factors — those are OWNER/COACH surfaces only.
+
+// Enumerated signal types. Strings are kept Prisma-side as a Postgres
+// enum so a typo at the call site fails at the DB boundary, not at
+// dashboard read time. New signal types require a Prisma migration —
+// that is by design: the heuristic and weighted services key off this
+// enum and a silent typo would skew scores.
+enum PtmSignalType {
+  checkin_streak // a check-in was submitted; value = streak length on submit
+  checkin_miss // a missed-check-in window crossed (3+ days, etc.); value = missed days
+  weight_logged // weight log; value = delta vs prior log (kg) or 0 on first log
+  weight_skipped // a 14-day no-log threshold crossed; value = days since last log
+  message_sent // client → coach message; value = chars
+  message_received // coach → client message; value = chars
+  coach_note_received // coach guideline / nudge / draft delivered; value = 1
+  workout_logged // workout session completed; value = total volume kg
+  workout_skipped // 10-day no-workout threshold crossed; value = days since last
+  meal_logged // logged food entry; value = calories
+  meal_skipped // 7-day no-meal-log threshold crossed; value = days since last
+  finance_eod // finance app end-of-day check-in; value = 1
+  finance_milestone // finance milestone hit; value = 1
+  app_open // first app-open of the day; value = seconds since last open
+  consistency_low // 30-day consistency score dropped below 60%; value = consistency_pct
+  streak_dropped // active streak dropped 50%+ from prior week; value = drop_pct
+}
+
+// Enumerated outcome labels. The teaching set is intentionally small;
+// new outcomes require a migration so the weighted service does not
+// silently see an unweighted label.
+enum PtmOutcomeType {
+  churned // client cancelled / disengaged before goal
+  completed_90day // client completed the 90-day program
+  upgraded // client upgraded plan / extended commitment
+  referred // client referred a new client (a measurable success)
+  milestone_hit // client hit a major personal milestone (goal weight, etc.)
+  dropped_off // client did not formally cancel but stopped engaging
+  renewed // client renewed for another cycle
+}
+
+// Enumerated prediction basis tags. Drives the version selector in the
+// admin dashboard and lets the recompute job log which engine produced
+// a row without parsing the factors blob.
+enum PtmPredictionBasis {
+  heuristic_v1 // Phase 1B: hand-tuned weights + protective factors
+  weighted_v2 // Phase 1D: frequency-analysis weights, activates at >= 20 outcomes
+  model_v3 // Reserved for a future ML pass; not used in Phase 1
+}
+
+// Append-only behavioral signal. One row per discrete event we observed.
+// `metadata` is JSON for engine-specific context (delta direction, source
+// module, etc.) — keep it small and never put PII there.
+//
+// All signal writes are fire-and-forget at the call site (see
+// PtmService.recordSignal): a failure to insert MUST NOT bubble back
+// into the user-facing request. The service catches and logs.
+//
+// Index on (user_id, signal_type, recorded_at) supports the heuristic
+// service's bounded windows (last 7 / 14 / 30 days, by signal type).
+model ClientSignal {
+  id          String        @id @default(uuid())
+  user_id     String
+  user        User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  signal_type PtmSignalType
+  value       Float         @default(0)
+  metadata    Json?
+  recorded_at DateTime      @default(now())
+
+  @@index([user_id, signal_type, recorded_at])
+  @@index([signal_type, recorded_at])
+}
+
+// One outcome label per client. `labelled_by_id` is the OWNER or COACH
+// who taught the model what happened. `signal_snapshot` captures the
+// last-30-days signal counts at label time so the weighted service
+// (1D) can train against a frozen window even if older signals are
+// later GDPR-scrubbed.
+//
+// Re-labelling: upsert by user_id, then write a fresh AuditLog row
+// (`ptm.outcome_labelled`) carrying both old and new outcomes in
+// `metadata`. Treat AuditLog as the canonical history.
+model ClientOutcome {
+  id              String         @id @default(uuid())
+  user_id         String         @unique
+  user            User           @relation("PtmOutcomeTarget", fields: [user_id], references: [id], onDelete: Cascade)
+  outcome_type    PtmOutcomeType
+  labelled_by_id  String?
+  labelled_by     User?          @relation("PtmOutcomeLabeller", fields: [labelled_by_id], references: [id], onDelete: SetNull)
+  labelled_at     DateTime       @default(now())
+  notes           String?
+  signal_snapshot Json?
+
+  @@index([outcome_type, labelled_at])
+  @@index([labelled_by_id, labelled_at])
+}
+
+// Append-only prediction history. `factors` is a JSON blob the heuristic
+// (or weighted) service writes so the admin "why is this client red?"
+// drawer can show the contributing signals. Mobile clients NEVER see
+// this row — it is OWNER/COACH-only by guard.
+//
+// risk_score and success_score are independent dimensions in [0.0, 1.0].
+// They are NOT 1 - x of each other; a high-engagement, high-risk-of-
+// burnout client can carry high success and high risk simultaneously.
+//
+// Index on (user_id, computed_at desc) supports "latest score per user"
+// without a window function: ORDER BY computed_at DESC LIMIT 1 with
+// composite index hits the single-page seek path.
+model PtmPrediction {
+  id               String             @id @default(uuid())
+  user_id          String
+  user             User               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  risk_score       Float
+  success_score    Float
+  prediction_basis PtmPredictionBasis
+  factors          Json?
+  computed_at      DateTime           @default(now())
+
+  @@index([user_id, computed_at])
+  @@index([prediction_basis, computed_at])
+}
+
+// Phase 6A — Coach Effectiveness Score. Computed nightly by the
+// CoachEffectivenessScheduler (default 05:00 UTC, one hour after the
+// PTM recompute). APPEND-ONLY: every run inserts a fresh row so the
+// admin console can chart drift over time. The latest row is read by
+// ORDER BY computed_at DESC LIMIT 1; the composite index supports it.
+//
+// `factors` is a JSON blob containing each component's contribution
+// (completion, risk_delta, retention, engagement) with both the raw
+// observed value and the weighted contribution. The admin "why" drawer
+// renders straight from this blob.
+//
+// Visible to OWNER only — coaches do not see their own score (avoids
+// gaming). The /admin/coach-effectiveness endpoints are RolesGuard'd.
+model CoachEffectivenessScore {
+  id          String   @id @default(uuid())
+  coach_id    String
+  coach       User     @relation("CoachEffectivenessOwner", fields: [coach_id], references: [id], onDelete: Cascade)
+  score       Float
+  bucket      String // 'developing' | 'consistent' | 'high-performer'
+  factors     Json?
+  basis       String   @default("v1")
+  computed_at DateTime @default(now())
+
+  @@index([coach_id, computed_at])
+  @@index([computed_at])
+}
+
+// Phase 6B — Proactive Red Flag Alert. Created by the PTM recompute
+// hook when a client transitions green/amber → red, by the consecutive-
+// miss detector, or by future signal observers. Coaches read their own
+// alerts; OWNER sees aggregated.
+//
+// Dedup window: CoachAlertsService.createAlert short-circuits when an
+// unacknowledged alert with the same (coach_id, client_id, alert_type)
+// exists within the last 24h, so a flapping signal does not produce a
+// notification storm.
+//
+// Index on (coach_id, created_at desc) supports the coach inbox view;
+// (coach_id, acknowledged_at) supports the "unread only" filter.
+model CoachAlert {
+  id              String    @id @default(uuid())
+  coach_id        String
+  coach           User      @relation("CoachAlertCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  client_id       String
+  client          User      @relation("CoachAlertClient", fields: [client_id], references: [id], onDelete: Cascade)
+  alert_type      String // 'risk_red_transition' | 'consecutive_misses' | 'streak_dropped' | 'finance_eod_gap'
+  severity        String    @default("warning") // 'info' | 'warning' | 'critical'
+  message         String
+  payload         Json?
+  created_at      DateTime  @default(now())
+  acknowledged_at DateTime?
+
+  @@index([coach_id, created_at])
+  @@index([coach_id, acknowledged_at])
+  @@index([client_id, alert_type, created_at])
+}
+
+// Phase 6D — Coach Onboarding Wizard. Tracks where a newly promoted coach
+// is in the 6-step setup flow:
+//   1. Profile basics (business_name, bio, timezone)
+//   2. Default invite code shown + copy reminder
+//   3. Send first invite (action logged here; the actual invite send is a
+//      separate API)
+//   4. Create first message draft template
+//   5. Set coach guideline preferences
+//   6. Confirm completion
+//
+// Doctrine:
+//   * 1:1 with the coach User row (`coach_id @unique`). Re-promoting the same
+//     user is idempotent — the existing row is reused.
+//   * `current_step` is enforced server-side: advanceStep(n) requires
+//     n === current_step + 1 (or === current_step for resume on the same
+//     step). Out-of-order writes return 400.
+//   * `step_data` is a per-step JSON map keyed by step number. We never UPDATE
+//     a key in place at completion; we keep the most recent value the coach
+//     submitted for that step so the wizard can be resumed mid-flow.
+//   * `completed_at` is set once and the row freezes — POST /steps/:n returns
+//     409 after that.
+model CoachOnboardingProgress {
+  id           String    @id @default(uuid())
+  coach_id     String    @unique
+  coach        User      @relation("CoachOnboardingCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  started_at   DateTime  @default(now())
+  completed_at DateTime?
+  current_step Int       @default(1)
+  step_data    Json?
+
+  @@index([completed_at])
+}
+
+// =============================================================================
+// Phase 3 — 40-point Diagnostic + AI roadmap
+// =============================================================================
+//
+// Public lead-capture funnel: an anonymous visitor answers 40 Likert-scale
+// questions (Income / Body / Lifestyle), the service computes per-section
+// scores + an overall bucket, and an async AI call generates a personalized
+// roadmap that lands on the same submission row.
+//
+// Design notes:
+//   * `email` is captured for ALL submissions, including signed-up users — it
+//     is the join key for "claim this lead later" and for the GDPR scrub. It
+//     is NEVER returned by GET /diagnostic/questions and never echoed back in
+//     /diagnostic/:id/result without authentication of the submitter.
+//   * `user_id` is null until the lead signs up; on signup the existing
+//     onboarding flow upserts by email and back-fills the column. No FK
+//     cascade — if a user is deleted we keep the lead row so churn analytics
+//     can still attribute it to a coach.
+//   * `answers` and `scores` are JSON blobs. The shape is owned by the
+//     diagnostic service; consumers must read through the typed DTOs in
+//     src/diagnostic/diagnostic.dto.ts rather than touching `Json` directly.
+//   * AiRoadmap is a separate row (1:1 with submission, but optional) so
+//     a failed AI generation can leave the submission valid and the user
+//     can hit a "retry" button without we re-write the scores.
+//   * Append-only by convention. Re-submitting writes a fresh
+//     DiagnosticSubmission (and a fresh AiRoadmap when the retry succeeds);
+//     we never UPDATE in place. This keeps the lead history honest.
+model DiagnosticSubmission {
+  id           String   @id @default(uuid())
+  email        String
+  name         String?
+  age          Int?
+  // Free-form source tag. Examples: 'web', 'mobile_signup', 'invite_link',
+  // 'lead_magnet'. Do not over-validate — operators add new sources via
+  // marketing UTM links, and we do not want to ship a migration for each.
+  source       String?
+  // Full {question_id, answer} array, validated upstream against the seed
+  // catalog. Stored verbatim so we can re-score historical submissions if
+  // the bucket boundaries ever move.
+  answers      Json
+  // { income: 0-100, body: 0-100, lifestyle: 0-100, overall: 0-200 }
+  scores       Json
+  // { income: 'stuck'|'moving'|'compounding', body: ..., lifestyle: ..., overall: 'stuck'|'moving'|'compounding' }
+  bucket       Json
+  submitted_at DateTime @default(now())
+  // Nullable FK to User. Anonymous lead → null. Signed-up lead → the user
+  // we upserted by email. NO cascade so deleting a user does not delete
+  // historical leads (we want the funnel attribution to survive).
+  user_id      String?
+  ip           String?
+  user_agent   String?
+
+  roadmap AiRoadmap?
+
+  @@index([email, submitted_at])
+  @@index([user_id])
+  @@index([submitted_at])
+}
+
+// One AI roadmap per submission. Generation is async and fire-and-forget:
+// the controller returns the submission_id immediately, the service kicks
+// off the AI call in the background, and the row is upserted on completion.
+// On failure the row is still written with payload=null and status='failed'
+// so the GET endpoint can serve a deterministic "retry" state.
+//
+// `prompt_version` lets us A/B prompts without ambiguity in audit. Increment
+// when the prompt template changes; the doctrine spec pins the canonical
+// opening line so a silent edit fails CI.
+model AiRoadmap {
+  id             String               @id @default(uuid())
+  submission_id  String               @unique
+  submission     DiagnosticSubmission @relation(fields: [submission_id], references: [id], onDelete: Cascade)
+  generated_at   DateTime             @default(now())
+  prompt_version String               @default("v1")
+  status         String               @default("ready")
+  // The structured AI response. Shape: { summary, top_strength,
+  // biggest_gap, ninety_day_focus, raw_text }. Null when status='failed'.
+  payload        Json?
+  tokens_used    Int?
+  model          String               @default("sonar-pro")
+  error_message  String?
+
+  @@index([submission_id])
+}
+
+// ─── Phase 4: Build Week (7-day guided coaching arc) ───────────────────────
+//
+// Three tables:
+//   1. BuildWeekDay            — global day catalog (rows 1..7), seeded from
+//                                prisma/seed-build-week.json by the migration.
+//                                Read-only at runtime; new copy = new
+//                                migration.
+//   2. BuildWeekEnrollment     — one row per user. `current_day` advances as
+//                                the user completes each day. Re-enrolling
+//                                resets the same row in place (the unique
+//                                constraint on user_id keeps history
+//                                collapsed; the AuditLog is the durable
+//                                history of state transitions).
+//   3. BuildWeekDayCompletion  — one row per (enrollment, day_number). Holds
+//                                the user's responses to the day's
+//                                prompt_questions and their
+//                                expected_artifact text.
+//
+// Tenancy:
+//   * Catalog rows are global — no tenant scoping.
+//   * Enrollment + completion rows belong to the user (FK to User.id).
+//   * Coach reads go through the coach-build-week controller, which asserts
+//     the target client belongs to the requesting coach (CoachGuard +
+//     coach_id check). Owners bypass tenancy via the OWNER bypass on
+//     CoachGuard — see src/auth/coach.guard.ts.
+//
+// PTM hook:
+//   * Day 7 completion fires a `finance_milestone` PTM signal with
+//     metadata { source: 'build_week', day_number: 7, total_days: 7 }.
+//   * Days 1–6 do NOT emit PTM signals — the catalogue tracks itself; we
+//     only emit when meaning matches a doctrine signal type.
+model BuildWeekDay {
+  id                String @id @default(uuid())
+  day_number        Int    @unique
+  title             String
+  focus_area        String
+  narrative         String
+  prompt_questions  Json
+  action_items      Json
+  expected_artifact String
+
+  @@index([day_number])
+}
+
+model BuildWeekEnrollment {
+  id           String    @id @default(uuid())
+  user_id      String    @unique
+  started_at   DateTime  @default(now())
+  current_day  Int       @default(1)
+  status       String    @default("active")
+  completed_at DateTime?
+
+  completions BuildWeekDayCompletion[]
+
+  @@index([status])
+}
+
+model BuildWeekDayCompletion {
+  id            String              @id @default(uuid())
+  enrollment_id String
+  enrollment    BuildWeekEnrollment @relation(fields: [enrollment_id], references: [id], onDelete: Cascade)
+  day_number    Int
+  completed_at  DateTime            @default(now())
+  responses     Json
+  artifact_text String?
+
+  @@unique([enrollment_id, day_number], name: "BuildWeekDayCompletion_enrollment_day_key")
+  @@index([day_number])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Phase 9 — Notification Center + Digest Idempotency
+// ──────────────────────────────────────────────────────────────────────────
+//
+// Notification — per-user in-app inbox row. One row per discrete event.
+// Emitters write here; the controller serves GET /notifications + mark-read.
+//
+// NotificationDigestLog — idempotency guard for digest email sends.
+// One row per (user, kind, window_date). Unique constraint prevents duplicate
+// emails when the cron fires more than once for the same day.
+
+model Notification {
+  id         String    @id @default(uuid())
+  user_id    String
+  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  // kind: milestone_reached | message_received | missed_checkin |
+  //   weight_trend_alert | checkin_submitted | build_week_day_unlocked |
+  //   coach_alert | client_digest | coach_digest
+  kind       String
+  // Structured deep-link context. Never contains another user's PII.
+  payload    Json?
+  // Plain-text body, max 160 chars enforced by NotificationsService.createNotification.
+  body       String
+  // tgp:// deep-link, e.g. tgp://checkin/today
+  deep_link  String?
+  // Delivery channel: 'push' | 'email' | 'inapp'
+  channel    String    @default("inapp")
+  read_at    DateTime?
+  created_at DateTime  @default(now())
+
+  @@index([user_id, created_at])
+  @@index([user_id, read_at])
+  @@index([kind, created_at])
+}
+
+model NotificationDigestLog {
+  id          String    @id @default(uuid())
+  user_id     String
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  // digest_kind: client_daily | coach_daily | weekly_client | weekly_coach
+  digest_kind String
+  // ISO-8601 date of the window, e.g. "2026-05-07"
+  window_date String
+  // status: sending | sent | failed | skipped
+  status      String    @default("sending")
+  sent_at     DateTime?
+  error       String?
+  created_at  DateTime  @default(now())
+
+  @@unique([user_id, digest_kind, window_date])
+  @@index([user_id, digest_kind, window_date])
+  @@index([status, created_at])
+}
+
+// ============================================================
+// Sprint B — coach toolset (workout builder, macros, real meal
+// plans, holistic insights cache)
+// ============================================================
+
+enum WorkoutPlanType {
+  strength
+  cardio
+  mobility
+}
+
+model WorkoutPlan {
+  id                        String          @id @default(uuid())
+  coach_id                  String
+  coach                     User            @relation("CoachWorkoutPlans", fields: [coach_id], references: [id], onDelete: Cascade)
+  name                      String
+  type                      WorkoutPlanType
+  duration_estimate_minutes Int?
+  created_at                DateTime        @default(now())
+  updated_at                DateTime        @updatedAt
+  archived_at               DateTime?
+
+  exercises   WorkoutPlanExercise[]
+  assignments ClientWorkoutAssignment[]
+
+  @@index([coach_id, archived_at])
+  @@index([created_at])
+}
+
+model WorkoutPlanExercise {
+  id                       String      @id @default(uuid())
+  workout_plan_id          String
+  workout_plan             WorkoutPlan @relation(fields: [workout_plan_id], references: [id], onDelete: Cascade)
+  // ExerciseDB catalog identifier — NOT a FK to an internal table.
+  exercise_external_id     String
+  order                    Int
+  sets                     Int
+  // Dual-purpose: rep count (e.g. 12) or time-based duration (e.g. 60 seconds).
+  reps_or_duration_seconds Int
+  weight_lbs               Float?
+  rest_seconds             Int?
+  // Exercises sharing a superset_group_id are performed back-to-back.
+  superset_group_id        String?
+  notes                    String?
+
+  @@unique([workout_plan_id, order], name: "WorkoutPlanExercise_plan_order_key")
+  @@index([workout_plan_id])
+  @@index([exercise_external_id])
+}
+
+model ClientWorkoutAssignment {
+  id                   String      @id @default(uuid())
+  workout_plan_id      String
+  workout_plan         WorkoutPlan @relation(fields: [workout_plan_id], references: [id], onDelete: Cascade)
+  client_id            String
+  client               User        @relation("ClientWorkoutAssignments", fields: [client_id], references: [id], onDelete: Cascade)
+  assigned_by_coach_id String
+  assigned_by_coach    User        @relation("CoachWorkoutAssignments", fields: [assigned_by_coach_id], references: [id], onDelete: Cascade)
+  scheduled_for        DateTime
+  completed_at         DateTime?
+  // Rating of Perceived Exertion 1–10; null until completed.
+  post_rpe             Int?
+  post_notes           String?
+
+  @@index([client_id, scheduled_for])
+  @@index([workout_plan_id])
+  @@index([assigned_by_coach_id])
+}
+
+// ─── Sprint B: Macro targets ──────────────────────────────────────────────
+//
+// A coach sets calorie/macro targets for a client. effective_from is
+// the start date for the target; we keep history (previous rows are
+// not archived) so a client can see how their macros evolved over
+// time. The "current" target for a client is the most recent row
+// whose effective_from is <= today.
+model MacroTarget {
+  id             String    @id @default(uuid())
+  client_id      String
+  client         User      @relation("MacroTargetClient", fields: [client_id], references: [id], onDelete: Cascade)
+  coach_id       String
+  coach          User      @relation("MacroTargetCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  calories_kcal  Int
+  protein_g      Int
+  carbs_g        Int
+  fats_g         Int
+  fiber_g        Int?
+  notes          String?
+  effective_from DateTime  @default(now())
+  created_at     DateTime  @default(now())
+  archived_at    DateTime?
+
+  @@index([client_id, effective_from])
+  @@index([coach_id, created_at])
+}
+
+// ─── Sprint B: Real Meal Plans (templates + plans + assignments) ──────────
+model MealTemplate {
+  id            String    @id @default(uuid())
+  coach_id      String
+  coach         User      @relation("MealTemplateCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
+  calories_kcal Int
+  protein_g     Int
+  carbs_g       Int
+  fats_g        Int
+  fiber_g       Int?
+  items         Json?
+  created_at    DateTime  @default(now())
+  archived_at   DateTime?
+
+  meal_plan_slots DailyMealPlanSlot[]
+
+  @@index([coach_id, archived_at])
+}
+
+model DailyMealPlan {
+  id          String    @id @default(uuid())
+  coach_id    String
+  coach       User      @relation("DailyMealPlanCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  name        String
+  notes       String?
+  created_at  DateTime  @default(now())
+  archived_at DateTime?
+
+  slots       DailyMealPlanSlot[]
+  assignments DailyMealPlanAssignment[]
+
+  @@index([coach_id, archived_at])
+}
+
+model DailyMealPlanSlot {
+  id                 String        @id @default(uuid())
+  daily_meal_plan_id String
+  daily_meal_plan    DailyMealPlan @relation(fields: [daily_meal_plan_id], references: [id], onDelete: Cascade)
+  meal_template_id   String
+  meal_template      MealTemplate  @relation(fields: [meal_template_id], references: [id], onDelete: Restrict)
+  slot_label         String
+  order              Int           @default(0)
+
+  @@unique([daily_meal_plan_id, slot_label, order])
+  @@index([daily_meal_plan_id])
+  @@index([meal_template_id])
+}
+
+model DailyMealPlanAssignment {
+  id                   String        @id @default(uuid())
+  daily_meal_plan_id   String
+  daily_meal_plan      DailyMealPlan @relation(fields: [daily_meal_plan_id], references: [id], onDelete: Cascade)
+  client_id            String
+  client               User          @relation("DailyMealPlanAssignmentClient", fields: [client_id], references: [id], onDelete: Cascade)
+  assigned_by_coach_id String
+  assigned_by_coach    User          @relation("DailyMealPlanAssignmentCoach", fields: [assigned_by_coach_id], references: [id], onDelete: Cascade)
+  starts_on            DateTime      @db.Date
+  ends_on              DateTime?     @db.Date
+  created_at           DateTime      @default(now())
+
+  @@index([client_id, starts_on])
+  @@index([daily_meal_plan_id])
+  @@index([assigned_by_coach_id])
+}
+
+// ─── Sprint B: Holistic Insights cache ────────────────────────────────────
+model HolisticInsightCache {
+  id           String   @id @default(uuid())
+  user_id      String
+  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  window_days  Int
+  payload      Json
+  generated_at DateTime @default(now())
+  expires_at   DateTime
+
+  @@unique([user_id, window_days])
+  @@index([expires_at])
+}
+
 // AI GATEWAY — request audit + human-approval drafts
 // ============================================================
 

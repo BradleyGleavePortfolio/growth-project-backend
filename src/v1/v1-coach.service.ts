@@ -177,6 +177,9 @@ export class V1CoachService {
     });
 
     type Bucket = {
+      // Phase 6C: `body` may be null when the message is voice-only. The
+      // BFF surfaces an empty string in that case so the existing UI does
+      // not break; future surfaces should branch on `voice_url` instead.
       lastMessage: string;
       lastAt: Date;
       lastFrom: 'coach' | 'client';
@@ -187,7 +190,7 @@ export class V1CoachService {
       const b = byClient.get(m.client_id);
       if (!b) {
         byClient.set(m.client_id, {
-          lastMessage: m.body,
+          lastMessage: m.body ?? '',
           lastAt: m.created_at,
           lastFrom: m.sender_id === coachId ? 'coach' : 'client',
           unread:

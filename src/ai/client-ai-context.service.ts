@@ -459,7 +459,10 @@ export class ClientAIContextService {
 
   private buildCoachRelationship(
     coachRecord: { name: string } | null,
-    lastMsg: { body: string; created_at: Date } | null,
+    // Phase 6C — `body` is now nullable (voice-only messages persist with
+    // body=null). The excerpt builder gracefully degrades to null in that
+    // case; the AI context surface intentionally does not transcribe voice.
+    lastMsg: { body: string | null; created_at: Date } | null,
     guidelines: { content: string } | null,
   ): CoachRelationship {
     const has_coach = !!coachRecord;

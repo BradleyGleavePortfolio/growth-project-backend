@@ -8,6 +8,11 @@ import { ALLOW_DELETION_SCHEDULED_KEY } from '../src/common/decorators/allow-del
 // with @AllowDeletionScheduled(); a fully-scrubbed user (deleted_at set)
 // is locked out of every route, period. Without these checks a logged-in
 // client could keep mutating data through the 30-day grace window.
+//
+// NOTE: JwtAuthGuard now also fires a fire-and-forget app_open PTM signal
+// after the GDPR gates pass. The ptm mock injected below ensures the signal
+// path is exercised safely — any emission for deleted/scheduled users would
+// be a regression because those code paths throw before reaching emit.
 describe('JwtAuthGuard — GDPR lifecycle lockout', () => {
   function buildContext(metadataFlag: boolean) {
     const handler = () => undefined;
@@ -32,7 +37,10 @@ describe('JwtAuthGuard — GDPR lifecycle lockout', () => {
   function buildGuard(user: any, reflector: Reflector) {
     const prisma: any = { user: { findUnique: jest.fn(async () => user) } };
     const jwks: any = { verify: jest.fn(async () => ({ sub: 'sup-1' })) };
-    return new JwtAuthGuard(prisma, jwks, reflector);
+    // PtmService stub — emit is fire-and-forget; the stub captures calls so
+    // tests can assert it was NOT invoked for deleted / locked-out users.
+    const ptm: any = { emit: jest.fn() };
+    return new JwtAuthGuard(prisma, jwks, reflector, ptm);
   }
 
   const baseUser = {

@@ -159,7 +159,29 @@ function build(opts: {
     ),
   };
   const audit: any = { write: jest.fn(), list: jest.fn() };
-  const svc = new ReportsService(prisma, metrics, financeFederation, audit);
+  // PTM weighted service is unused by the existing report specs; pass a
+  // bare stub so the constructor signature is satisfied. The 1D-specific
+  // ptm-signal-weights tests live in test/ptm-weighted-report.spec.ts
+  // and seed a real-shaped stub there.
+  const ptmWeighted: any = {
+    isActive: jest.fn(async () => false),
+    getCurrentWeights: jest.fn(async () => ({
+      generated_at: '2026-05-06T00:00:00.000Z',
+      training_count: 0,
+      skipped_no_snapshot: 0,
+      skipped_unclassified: 0,
+      success_count: 0,
+      failure_count: 0,
+      weights: [],
+    })),
+  };
+  const svc = new ReportsService(
+    prisma,
+    metrics,
+    financeFederation,
+    audit,
+    ptmWeighted,
+  );
   return { svc, prisma, metrics, financeFederation };
 }
 

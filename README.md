@@ -70,7 +70,7 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 
 | Variable | Tier | Owner | Purpose |
 |---|---|---|---|
-| `DATABASE_URL` | hard | Supabase | Postgres connection string used by Prisma. Use the session pooler for runtime queries. |
+| `DATABASE_URL` | hard | Supabase | Postgres connection string used by Prisma. Use the session pooler for runtime queries. Append `?connection_limit=10&pool_timeout=10` for production pool sizing — see [`docs/database-pool.md`](docs/database-pool.md). |
 | `SUPABASE_URL` | hard | Supabase | Project URL. Used as the JWKS source, the admin SDK base, and the pinned token issuer. |
 | `SUPABASE_SERVICE_ROLE_KEY` | hard | Supabase | Service-role key. Used by the auth admin SDK and by `SupabaseService` for realtime broadcast. Treat as a secret. |
 | `SUPABASE_ANON_KEY` | hard | Supabase | Anon key. Used by the auth controller for `signInWithPassword`, `signUp`, and `resetPasswordForEmail`. |
@@ -102,6 +102,23 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 | `ALLOW_SELF_SERVICE_BECOME_COACH` | optional | Backend operator | Feature flag. Default unset = `POST /auth/become-coach` returns `403 self_service_promotion_disabled`. Set to `true` only for a one-off legacy migration where any logged-in non-OWNER user may self-elevate after a password re-auth; the role change is then audited as `user.role_changed` with `metadata.via=self_service_become_coach`. The canonical promotion path is OWNER-only `POST /admin/users/:id/promote`. |
 | `GDPR_SCRUB_DRY_RUN` | optional | Backend operator | When `true`, `scripts/gdpr-scrub.ts` and `POST /admin/gdpr/scrub` report candidate users without writing — no `deleted_at`, no PII tombstoning, no audit row. Used to land the cron schedule in staging observably-inert before flipping to a real scrub. |
 | `GDPR_SCRUB_BATCH_LIMIT` | optional | Backend operator | Per-run cap on `GdprScrubService.run`. Defaults to 100 candidates per tick; raise only after you have watched a few cron runs complete cleanly. |
+| `PTM_SCORING_ENABLED` | optional | Backend operator | Feature flag — when `false`, the nightly PTM recompute cron is a no-op and the admin teaching endpoints are disabled. Defaults to engine-runs. Use as a kill switch when a heuristic regression ships. |
+| `PTM_SCORING_CRON` | optional | Backend operator | Override for the nightly PTM recompute cron expression. Defaults to `0 4 * * *` (04:00 UTC, one hour after the GDPR scrub at 03:00 UTC). Must be a valid 5-field cron expression. |
+| `PTM_RECOMPUTE_BATCH_LIMIT` | optional | Backend operator | Per-run cap on the number of clients the PTM nightly cron recomputes. Defaults to 5000; clamped to `[1, 50000]`. Larger rosters are processed across multiple nights. |
+| `PTM_WEIGHTED_ACTIVATION_OUTCOMES` | optional | Backend operator | Override the minimum number of labelled `ClientOutcome` rows before the weighted v2 engine activates. Defaults to 20. Below this threshold every recompute uses `heuristic_v1`. |
+| `PTM_RISK_BOARD_PAGE_SIZE` | optional | Backend operator | Default page size for `GET /admin/ptm/risk-board`. Defaults to 50; clamped to `[1, 100]` regardless of caller-supplied limit. |
+| `COACH_EFFECTIVENESS_ENABLED` | optional | Backend operator | Feature flag — when `false`, the nightly Coach Effectiveness recompute cron is disabled. Defaults to `true`. See [`src/coach/README.md`](src/coach/README.md#coach-effectiveness-score-phase-6a) and [`docs/coach-signals.md`](docs/coach-signals.md). |
+| `COACH_EFFECTIVENESS_CRON` | optional | Backend operator | Override for the nightly Coach Effectiveness recompute cron. Defaults to `0 5 * * *` (05:00 UTC, one hour after the PTM recompute). |
+| `COACH_ALERT_RED_TRANSITION_ENABLED` | optional | Backend operator | Feature flag — when `false`, the PTM-recompute hook does NOT create `CoachAlert` rows on green/amber → red transitions. Defaults to `true`. Use to silence the alert channel without disabling the underlying recompute. |
+| `COACH_ALERT_BATCH_LIMIT` | optional | Backend operator | Per-request cap on `/coach/alerts` and `/admin/coach-alerts`. Defaults to 50; clamped to `[1, 200]`. |
+| `COACH_ONBOARDING_AUTO_START` | optional | Backend operator | Phase 6D — when `true` (default), `AdminService.promoteUser` auto-starts the 6-step onboarding wizard for newly-promoted coaches. Set to `false` to disable (e.g. during bulk back-fills). Wizard creation failures never block promotion regardless of this flag. |
+| `VOICE_NOTE_MAX_DURATION_SEC` | optional | Backend operator | Phase 6C — server-enforced max duration for voice attachments on coach <-> client messages. Defaults to `300` s; clamped to `[10, 600]`. Validated at upload-URL issuance and again at message-send. |
+| `VOICE_NOTE_MAX_SIZE_MB` | optional | Backend operator | Phase 6C — server-enforced max file size for voice attachments. Defaults to `5` MB; clamped to `[1, 25]`. |
+| `SUPABASE_VOICE_BUCKET` | optional | Backend operator | Phase 6C — Supabase Storage bucket name for voice attachments. Defaults to `voice-notes`. Bucket must exist in Supabase Storage; the signed-upload flow returns `501 VOICE_STORAGE_UNAVAILABLE` if the bucket is unreachable or the JS SDK is too old. |
+| `DIAGNOSTIC_AI_ENABLED` | optional | Backend operator | Set to `false` to skip Perplexity calls for `POST /api/diagnostic/submit` and store a placeholder roadmap. Defaults to `true`. Useful for CI / preview deploys without a Perplexity key. |
+| `DIAGNOSTIC_RATE_LIMIT_PER_HOUR` | optional | Backend operator | Per-IP hourly cap on `POST /api/diagnostic/submit` (named throttler `diagnostic-submit`). Defaults to 5; clamped to `[1, 1000]`. The endpoint is unauthenticated by design (lead capture), so the limit is the primary defense. |
+| `BUILD_WEEK_ENABLED` | optional | Backend operator | Feature flag — when `false`, the Phase 4 Build Week controllers refuse new writes and the admin funnel reports zeroed counts. Defaults to `true`. See [`src/build-week/README.md`](src/build-week/README.md) and [`docs/build-week.md`](docs/build-week.md). |
+| `BUILD_WEEK_AUTO_START_ON_SIGNUP` | optional | Backend operator | Feature flag — when `true`, new client signups auto-enrol in Build Week. Defaults to `false`. The flag is exposed for staged rollout; auto-enrolment wiring lands in a follow-on PR. |
 | `PORT` | optional | Fly.io | HTTP port. Defaults to 3000; Fly overrides this. |
 | `NODE_ENV` | optional | Backend operator | `development`, `staging`, or `production`. Drives the validation tier and the AI debug payload. |
 
@@ -689,6 +706,11 @@ Modules: [`src/coach/`](src/coach/README.md),
 | `GET` | `/admin/audit-log` | owner | Cursor-paginated read over `AuditLog`. Filters: `action`, `target_user_id`, `tenant_coach_id`, `before` (ISO timestamp), `limit` (clamped `[1, 200]`, default 50). |
 | `POST` | `/admin/gdpr/scrub?dry_run=&limit=` | owner | Manual / dry-run trigger for the GDPR PII scrub worker. Same code path as `scripts/gdpr-scrub.ts`. `dry_run=true` reports candidates without writing; `limit` clamps the per-call batch. The audit row is attributed to the calling OWNER (`actor_email_snapshot`); cron-driven runs leave actor null and `actor_role='system'`. Shipped in PR #81. Full operator runbook in [`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md). |
 | `GET` | `/admin/clients/:id/consent` | owner | Read-only consent matrix for one client across every coach they have ever interacted with. Each row is `{coach_id, scope, granted, granted_at, revoked_at, updated_at}`. Backed by `ConsentService.listForClientAdmin`. See "Consent layer (client → coach data access)" below and [`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md). |
+| `GET` | `/coach/alerts?acknowledged=&limit=&before=` | coach or owner | Phase 6B — own-coach red-flag inbox. Cursor on `created_at`. See [`src/coach/README.md`](src/coach/README.md#red-flag-alerts-phase-6b) and [`docs/coach-signals.md`](docs/coach-signals.md). |
+| `POST` | `/coach/alerts/:id/acknowledge` | coach | Phase 6B — idempotent ack. Foreign-coach calls 404. |
+| `GET` | `/admin/coach-effectiveness` | owner | Phase 6A — latest score per active coach, sorted score DESC. |
+| `GET` | `/admin/coach-effectiveness/:coachId` | owner | Phase 6A — `{ latest, history }` for one coach. `?limit=` clamped `[1, 365]`. |
+| `GET` | `/admin/coach-alerts?coach_id=&since=&limit=` | owner | Phase 6B — cross-coach red-flag aggregator. |
 
 ### Consent layer (client → coach data access)
 
@@ -1092,10 +1114,12 @@ src/
   analytics/    PostHog passthrough (no-op when key unset)
   auth/          Supabase-backed auth, JWKS verification, role gating
   billing/       Stripe webhook, mirror, SubscriptionGuard, OWNER + coach billing
+  build-week/    7-day Build Week guided experience (catalog + enrolment + funnel)
   check-ins/     Daily and weekly check-ins
   coach/         Coach mobile surface (roster, timeline, alerts, guidelines)
   common/        Shared decorators, guards, env validation
   community/     Leaderboard and wins
+  diagnostic/    40-point diagnostic + AI roadmap (public lead capture)
   fasting/       Fasting windows
   filters/       Global exception filters
   food/          Food DB (local + USDA + OpenFoodFacts)
@@ -1111,6 +1135,7 @@ src/
   nudges/        Coach-authored nudges
   prep-guide/    Onboarding prep guide
   profile/       User profile, macro math
+  ptm/           Predictive Tracking Model: signal collection, scoring, recompute
   public-pages/  /download/*, /signup, /privacy, /terms, /security, /status
   recipes/       Recipe library
   supabase/      Supabase Realtime helper
@@ -1194,3 +1219,111 @@ endpoints group correctly in Swagger UI. **All new endpoints must add
 `@ApiOperation` + `@ApiResponse`** — see
 [`docs/api-conventions.md`](docs/api-conventions.md) for the rule and
 the reference example.
+
+## Sprint A — Audit fixes
+
+GPT-5.5 client + coach audits ran against the post-Sprint-A merge
+and scored TGP at 71/100 on each side with verdict DO NOT SHIP. This
+section lists the backend fixes that landed on
+`feat/sprint-a-audit-fixes` to clear those audits before the next
+TestFlight push. Each item cites the audit ID it resolves.
+
+- **Coach #6 — Federation inbound bearer compare is constant time.**
+  `src/admin/federation/federation-inbound.service.ts` now wraps
+  `crypto.timingSafeEqual` in a `constantTimeEqual` helper with a
+  length-equality precheck (timingSafeEqual throws on length
+  mismatch otherwise). The Step-2 bearer compare on the inbound PTM
+  signal endpoint goes through the helper. The configured token is
+  high-entropy so practical timing exploitation is hard, but a
+  service-to-service auth path should not ship a non-constant-time
+  compare on a long-lived secret.
+- **H-2 — Federation env-var naming canonicalised.**
+  `FINANCE_SERVICE_TOKEN` is the canonical name on both backends.
+  The legacy `FEDERATION_SERVICE_TOKEN` alias has been removed from
+  `src/admin/federation/README.md` and `.env.example` carries an
+  explicit "same name on both backends" note plus the audit-ID
+  pointer for ops engineers reading old runbooks.
+
+Tests added: 5 new assertions in `test/federation-inbound-constant-time.spec.ts`,
+all pass. Suite total post-audit-fix: 1060 tests, 0 failing.
+Typecheck: clean.
+
+### Items deferred to a follow-up
+
+- The audit's **Coach #5** (finance backend coach client list is
+  unpaginated), **Coach #7** (`coach_promotion_audits` retention),
+  and **Coach #15** (sparse finance admin endpoints) live on the
+  finance repo and are being handled by a parallel agent.
+
+## Sprint B — Coach toolset and holistic insights
+
+Sprint B closes the toolset gap flagged in the GPT-5.5 audit (peer-rec
+score 2/10 for the fitness coach toolset) by shipping five additive
+backend features. Mobile and finance counterparts ship as Sprint B-2
+and Sprint B-3 in their own repos.
+
+### Workout Builder + Exercise Library
+
+`src/exercise-library/` proxies ExerciseDB through a small Nest module
+with an LRU+Redis cache and a 340-line offline seed catalog (push,
+pull, legs, cardio, mobility) that becomes the source when
+`EXERCISEDB_API_KEY` is unset. This means the workout builder is
+functional on day one without an external dependency.
+
+`src/workout-builder/` adds three Prisma models — `WorkoutPlan`,
+`WorkoutPlanExercise`, `ClientWorkoutAssignment` — and CRUD + assign
++ complete endpoints under `/workout-plans` and `/assignments`. The
+client side gets `GET /assignments/me` and `GET /assignments/:id`
+to render today's prescribed workout.
+
+### Macro setter (`/coach/clients/:id/macros`)
+
+`src/macros/` adds a `MacroTarget` Prisma model and a service with a
+Mifflin-St Jeor TDEE preset calculator (`computePreset`). The "current"
+target for a client is the most recent row whose `effective_from <=
+now`; history is preserved.
+
+### Real meal plans
+
+`src/real-meal-plans/` adds reusable `MealTemplate` rows, a
+`DailyMealPlan` (slots × meal templates), and a per-client
+`DailyMealPlanAssignment` over a date range. Coach surface lives under
+`/coach/meal-templates` and `/coach/daily-meal-plans`. Client surface
+is `GET /me/meal-plan/today`.
+
+### Bulk client invite
+
+Two additive routes on `InviteCodesController`:
+
+- `POST /coach/invite-codes/bulk` — generates one single-use 14-day
+  code per row, deduplicates by lower-cased email, returns
+  `{total, created[], rejected[]}`. Throttled to 5/min.
+- `POST /coach/invite-codes/bulk/parse` — pure paste-area parser
+  used by the mobile preview UI.
+
+### Holistic Insights engine v1 (`/insights/holistic`)
+
+`src/insights/` replaces the four hardcoded if-statements that drew the
+"screenshot risk" comment in the audit. Pulls fitness data from
+Postgres and finance data from the federation surface, buckets weekly,
+runs a Pearson correlation per fitness/finance pair, and surfaces
+insights only when `|r| >= 0.30` AND at least 4 weeks of overlapping
+data. When the threshold is missed, returns an honest empty-state
+note rather than fabricating. Cached 24h per user via the
+`HolisticInsightCache` table; finance unreachable returns
+`status='finance_unavailable'` with paused copy.
+
+### Migrations
+
+- `prisma/migrations/20260508000000_add_workout_builder/` — adds
+  `WorkoutPlanType` enum + 3 workout-builder tables.
+- `prisma/migrations/20260509000000_add_sprint_b_macros_meals_insights/`
+  — adds 6 tables (MacroTarget, MealTemplate, DailyMealPlan,
+  DailyMealPlanSlot, DailyMealPlanAssignment, HolisticInsightCache).
+
+Both are reversible (drop tables in reverse order).
+
+### Required env vars
+
+- `EXERCISEDB_API_KEY` — optional; without it the seed catalog is
+  used. See `.env.example` for the full set.

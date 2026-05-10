@@ -18,6 +18,7 @@ import { AiModule } from './ai/ai.module';
 import { AiGatewayModule } from './ai/gateway/ai-gateway.module';
 import { CoachModule } from './coach/coach.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { CommunityModule } from './community/community.module';
 import { LessonsModule } from './lessons/lessons.module';
 import { WaterModule } from './water/water.module';
@@ -39,9 +40,22 @@ import { AdminModule } from './admin/admin.module';
 import { AuditModule } from './audit/audit.module';
 import { ConsentModule } from './consent/consent.module';
 import { BillingModule } from './billing/billing.module';
+import { PtmModule } from './ptm/ptm.module';
+import { DiagnosticModule } from './diagnostic/diagnostic.module';
+import { BuildWeekModule } from './build-week/build-week.module';
 import { V1Module } from './v1/v1.module';
 import { InviteLandingModule } from './invite-landing/invite-landing.module';
 import { PublicPagesModule } from './public-pages/public-pages.module';
+import { TimelineModule } from './timeline/timeline.module';
+import { FirstWinModule } from './first-win/first-win.module';
+// Sprint B — coach toolset (workout builder, macros, real meal plans,
+// holistic insights). See sprint-b PR description for the audit
+// findings each module addresses.
+import { ExerciseLibraryModule } from './exercise-library/exercise-library.module';
+import { WorkoutBuilderModule } from './workout-builder/workout-builder.module';
+import { MacrosModule } from './macros/macros.module';
+import { RealMealPlansModule } from './real-meal-plans/real-meal-plans.module';
+import { InsightsModule } from './insights/insights.module';
 
 @Module({
   imports: [
@@ -84,6 +98,9 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
     // can inject AiGatewayService without re-importing.
     AiGatewayModule,
     CoachModule,
+    // Phase 7C — Peer Leaderboard (opt-in, coach-roster scoped).
+    // Score: combined 30-day habit completion rate, never raw health data.
+    LeaderboardModule,
     NotificationsModule,
     CommunityModule,
     LessonsModule,
@@ -122,6 +139,34 @@ import { PublicPagesModule } from './public-pages/public-pages.module';
     // PLAY_STORE_URL, and PUBLIC_WEB_SIGNUP_URL until the real store
     // listings exist (mounted outside the /api prefix, see main.ts).
     PublicPagesModule,
+    // Phase 1 PTM (Predictive Tracking Model). @Global module exposing
+    // PtmService for fire-and-forget signal collection across check-ins,
+    // weight, workout, food, messaging, and finance hooks; plus the
+    // heuristic + weighted scoring engines and the nightly recompute
+    // scheduler. See src/ptm/README.md.
+    PtmModule,
+    // Phase 4 — Build Week. 7-day guided coaching arc. Catalog seeded
+    // by the migration; per-user enrollment + completion tracking with
+    // a PTM milestone signal on Day 7. See src/build-week/README.md.
+    BuildWeekModule,
+    // Phase 3 — public 40-point diagnostic + AI roadmap.
+    DiagnosticModule,
+    // Phase 7B — Transformation Timeline. 4-lane chronological event
+    // feed computed on the fly from existing tables (WeightLog,
+    // ClientSignal, CoachMessage, BuildWeekEnrollment). No new migrations.
+    // Endpoint: GET /me/timeline. See src/timeline/README.md.
+    TimelineModule,
+    // Phase 7A — Day 1 Win Sequence. POST /me/first-win/complete +
+    // GET /me/first-win/status. Gates the retention screen on every new
+    // client's first cold start. See src/first-win/README.md (users README).
+    FirstWinModule,
+    // Sprint B — coach toolset and holistic insights engine. Order is
+    // not load-bearing; grouped here for discoverability.
+    ExerciseLibraryModule,
+    WorkoutBuilderModule,
+    MacrosModule,
+    RealMealPlansModule,
+    InsightsModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)

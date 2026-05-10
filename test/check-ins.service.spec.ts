@@ -142,7 +142,8 @@ describe('CheckInsService', () => {
       { id: 'client-other', role: 'student', coach_id: 'coach-B' },
       { id: 'client-solo', role: 'student', coach_id: null },
     );
-    svc = new CheckInsService(prisma as any);
+    const ptmStub = { emit: jest.fn() } as any;
+    svc = new CheckInsService(prisma as any, ptmStub);
   });
 
   describe('upsert', () => {

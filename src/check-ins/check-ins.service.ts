@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { PtmService } from '../ptm/ptm.service';
+import { CoachAlertsService } from '../coach/coach-alerts.service';
 import type { CreateCheckInDto, ListCheckInsQueryDto } from './check-ins.dto';
 
 const DEFAULT_LIMIT = 30;
@@ -8,9 +10,35 @@ const MAX_LIMIT = 365;
 // `from` is supplied. Value mirrors the 30-day window used by getClientSummary.
 const COACH_DEFAULT_WINDOW_DAYS = 30;
 
+// PTM streak window — how many recent check-in rows we read after the upsert
+// to compute the consecutive-day streak. 60 covers ~2 months of perfect
+// adherence and is plenty for the heuristic engine.
+const PTM_STREAK_LOOKBACK = 60;
+// PTM miss threshold — emit checkin_miss only when the latest check-in is at
+// least this many calendar days behind today. Below the threshold the gap is
+// noise.
+const PTM_MISS_MIN_DAYS = 3;
+
+// Phase 6B emitter thresholds
+// consecutive_misses: fire when the client has missed 3+ consecutive check-ins
+// (i.e. the gap between the most recent check-in and today is ≥ 3 days).
+// Per the brief: "3+ consecutive missed check-ins."
+const CONSECUTIVE_MISSES_THRESHOLD = 3;
+// streak_dropped: fire when the previous streak was 7+ and the current computed
+// streak has fallen to 0 (client broke a week-long streak). We approximate the
+// prior streak by looking at the history starting from index 1 (skipping the
+// just-upserted entry).
+const STREAK_DROP_PRIOR_MIN = 7;
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class CheckInsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private ptm: PtmService,
+    @Optional() private readonly coachAlerts?: CoachAlertsService,
+  ) {}
 
   // ---- helpers ----
 
@@ -74,7 +102,7 @@ export class CheckInsService {
     if (dto.weight_kg !== undefined) updateData.weight_kg = dto.weight_kg;
     if (dto.notes !== undefined) updateData.notes = dto.notes;
 
-    return this.prisma.checkIn.upsert({
+    const row = await this.prisma.checkIn.upsert({
       where: {
         CheckIn_user_id_date_key: { user_id: clientId, date: day },
       },
@@ -93,6 +121,144 @@ export class CheckInsService {
       },
       update: updateData,
     });
+
+    await this.emitPtmAfterUpsert(clientId, coachId, day);
+
+    return row;
+  }
+
+  // PTM signal emission. Fire-and-forget: read the recent check-in dates,
+  // compute consecutive-day streak ending on `day`, and emit checkin_streak.
+  // If the gap from the most recent prior check-in to today exceeds the miss
+  // threshold, emit checkin_miss with the gap length.
+  //
+  // Phase 6B alert emitters (only when coachAlerts is injected and coachId
+  // is non-null):
+  //   * consecutive_misses — fired when gap ≥ CONSECUTIVE_MISSES_THRESHOLD
+  //   * streak_dropped     — fired when priorStreak ≥ 7 and newStreak = 0
+  //
+  // Failures here MUST NOT bubble — the upsert has already succeeded.
+  private async emitPtmAfterUpsert(
+    clientId: string,
+    coachId: string | null,
+    day: Date,
+  ): Promise<void> {
+    try {
+      const recent = await this.prisma.checkIn.findMany({
+        where: { user_id: clientId },
+        orderBy: { date: 'desc' },
+        take: PTM_STREAK_LOOKBACK,
+        select: { date: true },
+      });
+      const streak = this.computeStreak(recent.map((r) => r.date));
+      this.ptm.emit(clientId, 'checkin_streak', streak);
+
+      const today = this.midnightUtc(new Date());
+      const latest = recent[0]?.date;
+      if (latest) {
+        const gap = Math.floor(
+          (today.getTime() - this.midnightUtc(latest).getTime()) / ONE_DAY_MS,
+        );
+        if (gap >= PTM_MISS_MIN_DAYS) {
+          this.ptm.emit(clientId, 'checkin_miss', gap);
+
+          // Phase 6B — consecutive_misses alert emitter.
+          if (this.coachAlerts && coachId && gap >= CONSECUTIVE_MISSES_THRESHOLD) {
+            void this.maybeFireConsecutiveMissesAlert(clientId, coachId, gap);
+          }
+        }
+      }
+
+      // Phase 6B — streak_dropped alert emitter.
+      if (this.coachAlerts && coachId) {
+        const priorStreak = this.computeStreak(
+          recent.slice(1).map((r) => r.date),
+        );
+        if (priorStreak >= STREAK_DROP_PRIOR_MIN && streak === 0) {
+          void this.maybeFireStreakDroppedAlert(clientId, coachId, priorStreak);
+        }
+      }
+    } catch {
+      // Swallow — PtmService.emit is already fire-and-forget. This catch
+      // protects against the prior findMany failing.
+    }
+    // Acknowledge `day` is consumed by callers' tests via the upsert path; it
+    // is not used directly here because the streak is anchored to today.
+    void day;
+  }
+
+  /**
+   * Phase 6B — emit consecutive_misses alert.
+   * Dedup (24h per coach+client+type) lives in CoachAlertsService.createAlert.
+   * This method is fire-and-forget — any thrown exception is swallowed.
+   */
+  private async maybeFireConsecutiveMissesAlert(
+    clientId: string,
+    coachId: string,
+    missCount: number,
+  ): Promise<void> {
+    try {
+      await this.coachAlerts!.createAlert({
+        coachId,
+        clientId,
+        alertType: 'consecutive_misses',
+        severity: 'warning',
+        message: `Client has missed ${missCount} consecutive check-ins`,
+        payload: { consecutive_miss_days: missCount },
+      });
+    } catch {
+      // Alert failures must never surface to the caller.
+    }
+  }
+
+  /**
+   * Phase 6B — emit streak_dropped alert.
+   * Fires when a client's streak fell from ≥ 7 to 0.
+   * Dedup (24h per coach+client+type) lives in CoachAlertsService.createAlert.
+   * This method is fire-and-forget — any thrown exception is swallowed.
+   */
+  private async maybeFireStreakDroppedAlert(
+    clientId: string,
+    coachId: string,
+    priorStreak: number,
+  ): Promise<void> {
+    try {
+      await this.coachAlerts!.createAlert({
+        coachId,
+        clientId,
+        alertType: 'streak_dropped',
+        severity: 'info',
+        message: `Client's check-in streak dropped from ${priorStreak} days to 0`,
+        payload: { prior_streak: priorStreak, new_streak: 0 },
+      });
+    } catch {
+      // Alert failures must never surface to the caller.
+    }
+  }
+
+  private midnightUtc(d: Date): Date {
+    return new Date(
+      Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
+    );
+  }
+
+  // Count consecutive calendar days starting from the most recent date and
+  // walking backwards. `dates` must already be sorted desc.
+  private computeStreak(dates: Date[]): number {
+    if (dates.length === 0) return 0;
+    let streak = 1;
+    let prev = this.midnightUtc(dates[0]);
+    for (let i = 1; i < dates.length; i++) {
+      const cur = this.midnightUtc(dates[i]);
+      const gap = Math.round((prev.getTime() - cur.getTime()) / ONE_DAY_MS);
+      if (gap === 1) {
+        streak++;
+        prev = cur;
+      } else {
+        break;
+      }
+    }
+    return streak;
   }
 
   // Client reads their own check-ins. `from`/`to` are inclusive-exclusive

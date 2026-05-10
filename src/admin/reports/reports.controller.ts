@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Header,
@@ -12,6 +13,11 @@ import { JwtAuthGuard } from '../../auth/auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ReportsService } from './reports.service';
+import {
+  TransformationScorecardService,
+  TRANSFORMATION_SCORECARD_COLUMNS,
+} from './transformation-scorecard.service';
+import { buildScorecardPdf } from './scorecard-pdf';
 import { objectToKeyValueCsv, rowsToCsv } from './csv';
 
 // OWNER-only operational reports. The class-level guard pair is the same
@@ -22,13 +28,24 @@ import { objectToKeyValueCsv, rowsToCsv } from './csv';
 // back to JSON for ad-hoc inspection in the console. CSV output sets
 // Content-Disposition with a deterministic filename so a browser download
 // lands as `<report>-<YYYYMMDD>.csv`.
+//
+// The transformation-scorecard report additionally supports `?format=pdf`
+// which returns a branded A4 PDF (application/pdf, streaming). The PDF
+// renders all rows in the result set (one client per page). Unknown or
+// misspelled format values return HTTP 400.
+
+// Allowed format values for endpoints that support PDF.
+const ALLOWED_SCORECARD_FORMATS = new Set(['json', 'csv', 'pdf']);
 
 @ApiTags('admin-reports')
 @Controller('admin/reports')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('owner')
 export class ReportsController {
-  constructor(private reports: ReportsService) {}
+  constructor(
+    private reports: ReportsService,
+    private scorecard: TransformationScorecardService,
+  ) {}
 
   @Get('metrics-overview')
   async metricsOverview(
@@ -189,6 +206,96 @@ export class ReportsController {
     return envelope;
   }
 
+  @Get('ptm-signal-weights')
+  async ptmSignalWeights(
+    @Query('format') format: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const envelope = await this.reports.ptmSignalWeights();
+    if (isCsv(format)) {
+      writeCsvHeaders(res, 'ptm-signal-weights');
+      // CSV columns match the documented row shape. When the engine is
+      // not active (basis=heuristic_v1) the rows array is empty — the
+      // file is still valid CSV with just the header line, which the
+      // operator reads as "no trained weights yet".
+      return rowsToCsv(
+        [
+          'signal_type',
+          'weight',
+          'training_count',
+          'training_max',
+          'success_avg',
+          'failure_avg',
+          'basis',
+        ],
+        envelope.data,
+      );
+    }
+    return envelope;
+  }
+
+  // Phase 5 — Transformation scorecard. Per-client (or per-coach rollup)
+  // composition off live data: identity, latest check-in, weight delta,
+  // 30-day workout / meal / messaging engagement, latest PTM scores +
+  // outcome, optional Phase-3 diagnostic and Phase-4 build-week status,
+  // and finance federation columns (wealth_velocity_score, net_worth_delta,
+  // milestones_hit — null when FINANCE_API_BASE_URL is unset).
+  //
+  // OWNER-only by class-level guard. With no `user_id` / `coach_id` the
+  // report walks the OWNER's full client list, clamped to 1000.
+  //
+  // Supported formats: json (default), csv, pdf.
+  // Unknown format values are rejected with 400.
+  @Get('transformation-scorecard')
+  async transformationScorecard(
+    @Query('format') format: string | undefined,
+    @Query('user_id') userId: string | undefined,
+    @Query('coach_id') coachId: string | undefined,
+    @Query('since_days') sinceDaysRaw: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    // Validate format value early so a typo returns a clear 400 rather than
+    // silently falling back to JSON.
+    if (
+      format !== undefined &&
+      !ALLOWED_SCORECARD_FORMATS.has(format.toLowerCase())
+    ) {
+      throw new BadRequestException(
+        `format must be one of: ${Array.from(ALLOWED_SCORECARD_FORMATS).join(', ')}`,
+      );
+    }
+
+    const envelope = await this.scorecard.build({
+      userId,
+      coachId,
+      sinceDays: parsePositiveInt(sinceDaysRaw),
+    });
+
+    if (isCsv(format)) {
+      writeCsvHeaders(res, 'transformation-scorecard');
+      return rowsToCsv(TRANSFORMATION_SCORECARD_COLUMNS, envelope.data);
+    }
+
+    if (isPdf(format)) {
+      writePdfHeaders(res, 'transformation-scorecard');
+      const clientName = envelope.data[0]?.name ?? undefined;
+      const since = envelope.window?.since ?? undefined;
+      const pdfStream = buildScorecardPdf(envelope.data, {
+        clientName,
+        since,
+        generatedAt: envelope.generated_at,
+      });
+      // Pipe the PDFDocument stream directly into the Express response.
+      // passthrough: true is required so NestJS does not attempt to JSON-
+      // serialize the stream itself.
+      pdfStream.pipe(res);
+      // Return undefined; NestJS passthrough mode hands off to the pipe.
+      return;
+    }
+
+    return envelope;
+  }
+
   // Manifest of available reports. Useful for the console to render a
   // dynamic export menu without hard-coding the list.
   @Get()
@@ -202,6 +309,8 @@ export class ReportsController {
         { name: 'product-usage', formats: ['json', 'csv'] },
         { name: 'federation-health', formats: ['json', 'csv'] },
         { name: 'audit-summary', formats: ['json', 'csv'] },
+        { name: 'ptm-signal-weights', formats: ['json', 'csv'] },
+        { name: 'transformation-scorecard', formats: ['json', 'csv', 'pdf'] },
       ],
     };
   }
@@ -209,6 +318,10 @@ export class ReportsController {
 
 function isCsv(format: string | undefined): boolean {
   return typeof format === 'string' && format.toLowerCase() === 'csv';
+}
+
+function isPdf(format: string | undefined): boolean {
+  return typeof format === 'string' && format.toLowerCase() === 'pdf';
 }
 
 function parsePositiveInt(raw: string | undefined): number | undefined {
@@ -226,5 +339,15 @@ function writeCsvHeaders(res: Response, reportName: string): void {
   );
   // Defense in depth — a CSV downloaded into Excel should not be cached by
   // an intermediary, since these are tied to a point-in-time snapshot.
+  res.setHeader('Cache-Control', 'no-store');
+}
+
+function writePdfHeaders(res: Response, reportName: string): void {
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="${reportName}-${stamp}.pdf"`,
+  );
   res.setHeader('Cache-Control', 'no-store');
 }
