@@ -107,10 +107,12 @@ describe('ConsentService', () => {
 
   it('listScopes returns all known scopes', () => {
     const scopes = ConsentService.listScopes();
-    // 5 fitness + 5 finance
-    expect(scopes).toHaveLength(10);
+    // 5 fitness + 5 finance + 2 health
+    expect(scopes).toHaveLength(12);
     expect(scopes).toContain(ConsentScope.FITNESS_WORKOUTS);
     expect(scopes).toContain(ConsentScope.FINANCE_REPORTS);
+    expect(scopes).toContain(ConsentScope.HEALTH_BLOODWORK);
+    expect(scopes).toContain(ConsentScope.HEALTH_BLOODWORK_AI);
   });
 
   describe('grant', () => {
@@ -289,7 +291,7 @@ describe('ConsentService', () => {
       const svc = new ConsentService(prisma, buildAudit());
       await svc.grant('client-1', 'coach-1', ConsentScope.FITNESS_PROFILE);
       const rows = await svc.listForClient('client-1', 'coach-1');
-      expect(rows).toHaveLength(10);
+      expect(rows).toHaveLength(12);
       const profile = rows.find((r) => r.scope === ConsentScope.FITNESS_PROFILE);
       expect(profile?.granted).toBe(true);
       const balances = rows.find((r) => r.scope === ConsentScope.FINANCE_BALANCES);

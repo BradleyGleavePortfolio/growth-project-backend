@@ -25,6 +25,14 @@ export const ConsentScope = {
   FINANCE_TRANSACTION_CATEGORIES: 'finance.transaction_categories',
   FINANCE_TRANSACTION_LINE_ITEMS: 'finance.transaction_line_items',
   FINANCE_REPORTS: 'finance.reports',
+  // Health/lab scopes. Treated as PHI-grade. HEALTH_BLOODWORK is the
+  // explicit "I consent to storing lab values and letting my coach see
+  // them" toggle; HEALTH_BLOODWORK_AI is the separate, narrower toggle
+  // that lets the AI gateway include lab context in coaching prompts.
+  // Both must be granted before the AI path will read labs; the storage
+  // toggle alone does NOT imply AI processing.
+  HEALTH_BLOODWORK: 'health.bloodwork',
+  HEALTH_BLOODWORK_AI: 'health.bloodwork_ai',
 } as const;
 
 export type ConsentScopeValue = (typeof ConsentScope)[keyof typeof ConsentScope];
