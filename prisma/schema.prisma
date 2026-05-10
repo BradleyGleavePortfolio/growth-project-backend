@@ -121,21 +121,21 @@ enum CoachPracticeType {
 // ============================================================
 
 model User {
-  id                    String    @id @default(uuid())
-  supabase_id           String    @unique
-  email                 String    @unique
+  id                    String             @id @default(uuid())
+  supabase_id           String             @unique
+  email                 String             @unique
   name                  String
   phone                 String?
-  role                  Role      @default(student)
+  role                  Role               @default(student)
   // coach_id now a proper self-relation FK instead of an orphan string column.
   // Preserves prior behavior — still nullable, still points at another User.id.
   coach_id              String?
-  coach                 User?     @relation("CoachToStudents", fields: [coach_id], references: [id])
-  students              User[]    @relation("CoachToStudents")
+  coach                 User?              @relation("CoachToStudents", fields: [coach_id], references: [id])
+  students              User[]             @relation("CoachToStudents")
   // Stage-3 cross-pillar federation. Only meaningful when `role = coach`
   // or `owner`; ignored for students. Null = not yet selected.
   coach_practice_type   CoachPracticeType?
-  created_at            DateTime  @default(now())
+  created_at            DateTime           @default(now())
   archived_at           DateTime?
   // GDPR delete-account flow. Two-phase: deletion_scheduled_at marks the
   // grace-period start (account locked but recoverable); deleted_at marks
@@ -226,13 +226,27 @@ model User {
   // leaderboard_display_name is nullable; if null, the service derives
   // "{firstName} {lastInitial}." from the single `name` field at read time.
   // NEVER surfaces raw weight, body-fat, or finance data on the leaderboard.
-  show_on_leaderboard       Boolean   @default(false)
-  leaderboard_display_name  String?
+  show_on_leaderboard      Boolean @default(false)
+  leaderboard_display_name String?
 
   // Phase 9 — Notification Center + Digest
   // notifications receives all inbox rows; digest_logs tracks sent digest windows.
-  notifications   Notification[]
-  digest_logs     NotificationDigestLog[]
+  notifications Notification[]
+  digest_logs   NotificationDigestLog[]
+
+  // Sprint B — Workout Builder relations.
+  workout_plans_as_coach        WorkoutPlan[]             @relation("CoachWorkoutPlans")
+  workout_assignments_as_client ClientWorkoutAssignment[] @relation("ClientWorkoutAssignments")
+  workout_assignments_as_coach  ClientWorkoutAssignment[] @relation("CoachWorkoutAssignments")
+
+  // Sprint B — Macro targets, real meal plans, holistic insights cache.
+  macro_targets_as_client          MacroTarget[]             @relation("MacroTargetClient")
+  macro_targets_as_coach           MacroTarget[]             @relation("MacroTargetCoach")
+  meal_templates_as_coach          MealTemplate[]            @relation("MealTemplateCoach")
+  daily_meal_plans_as_coach        DailyMealPlan[]           @relation("DailyMealPlanCoach")
+  daily_meal_assignments_as_client DailyMealPlanAssignment[] @relation("DailyMealPlanAssignmentClient")
+  daily_meal_assignments_as_coach  DailyMealPlanAssignment[] @relation("DailyMealPlanAssignmentCoach")
+  holistic_insights_caches         HolisticInsightCache[]
 
   @@index([coach_id])
   @@index([deletion_scheduled_at])
@@ -1418,7 +1432,6 @@ model BuildWeekDayCompletion {
   @@index([day_number])
 }
 
-
 // ──────────────────────────────────────────────────────────────────────────
 // Phase 9 — Notification Center + Digest Idempotency
 // ──────────────────────────────────────────────────────────────────────────
@@ -1471,4 +1484,181 @@ model NotificationDigestLog {
   @@unique([user_id, digest_kind, window_date])
   @@index([user_id, digest_kind, window_date])
   @@index([status, created_at])
+}
+
+// ============================================================
+// Sprint B — coach toolset (workout builder, macros, real meal
+// plans, holistic insights cache)
+// ============================================================
+
+enum WorkoutPlanType {
+  strength
+  cardio
+  mobility
+}
+
+model WorkoutPlan {
+  id                        String          @id @default(uuid())
+  coach_id                  String
+  coach                     User            @relation("CoachWorkoutPlans", fields: [coach_id], references: [id], onDelete: Cascade)
+  name                      String
+  type                      WorkoutPlanType
+  duration_estimate_minutes Int?
+  created_at                DateTime        @default(now())
+  updated_at                DateTime        @updatedAt
+  archived_at               DateTime?
+
+  exercises   WorkoutPlanExercise[]
+  assignments ClientWorkoutAssignment[]
+
+  @@index([coach_id, archived_at])
+  @@index([created_at])
+}
+
+model WorkoutPlanExercise {
+  id                       String      @id @default(uuid())
+  workout_plan_id          String
+  workout_plan             WorkoutPlan @relation(fields: [workout_plan_id], references: [id], onDelete: Cascade)
+  // ExerciseDB catalog identifier — NOT a FK to an internal table.
+  exercise_external_id     String
+  order                    Int
+  sets                     Int
+  // Dual-purpose: rep count (e.g. 12) or time-based duration (e.g. 60 seconds).
+  reps_or_duration_seconds Int
+  weight_lbs               Float?
+  rest_seconds             Int?
+  // Exercises sharing a superset_group_id are performed back-to-back.
+  superset_group_id        String?
+  notes                    String?
+
+  @@unique([workout_plan_id, order], name: "WorkoutPlanExercise_plan_order_key")
+  @@index([workout_plan_id])
+  @@index([exercise_external_id])
+}
+
+model ClientWorkoutAssignment {
+  id                   String      @id @default(uuid())
+  workout_plan_id      String
+  workout_plan         WorkoutPlan @relation(fields: [workout_plan_id], references: [id], onDelete: Cascade)
+  client_id            String
+  client               User        @relation("ClientWorkoutAssignments", fields: [client_id], references: [id], onDelete: Cascade)
+  assigned_by_coach_id String
+  assigned_by_coach    User        @relation("CoachWorkoutAssignments", fields: [assigned_by_coach_id], references: [id], onDelete: Cascade)
+  scheduled_for        DateTime
+  completed_at         DateTime?
+  // Rating of Perceived Exertion 1–10; null until completed.
+  post_rpe             Int?
+  post_notes           String?
+
+  @@index([client_id, scheduled_for])
+  @@index([workout_plan_id])
+  @@index([assigned_by_coach_id])
+}
+
+// ─── Sprint B: Macro targets ──────────────────────────────────────────────
+//
+// A coach sets calorie/macro targets for a client. effective_from is
+// the start date for the target; we keep history (previous rows are
+// not archived) so a client can see how their macros evolved over
+// time. The "current" target for a client is the most recent row
+// whose effective_from is <= today.
+model MacroTarget {
+  id             String    @id @default(uuid())
+  client_id      String
+  client         User      @relation("MacroTargetClient", fields: [client_id], references: [id], onDelete: Cascade)
+  coach_id       String
+  coach          User      @relation("MacroTargetCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  calories_kcal  Int
+  protein_g      Int
+  carbs_g        Int
+  fats_g         Int
+  fiber_g        Int?
+  notes          String?
+  effective_from DateTime  @default(now())
+  created_at     DateTime  @default(now())
+  archived_at    DateTime?
+
+  @@index([client_id, effective_from])
+  @@index([coach_id, created_at])
+}
+
+// ─── Sprint B: Real Meal Plans (templates + plans + assignments) ──────────
+model MealTemplate {
+  id            String    @id @default(uuid())
+  coach_id      String
+  coach         User      @relation("MealTemplateCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
+  calories_kcal Int
+  protein_g     Int
+  carbs_g       Int
+  fats_g        Int
+  fiber_g       Int?
+  items         Json?
+  created_at    DateTime  @default(now())
+  archived_at   DateTime?
+
+  meal_plan_slots DailyMealPlanSlot[]
+
+  @@index([coach_id, archived_at])
+}
+
+model DailyMealPlan {
+  id          String    @id @default(uuid())
+  coach_id    String
+  coach       User      @relation("DailyMealPlanCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  name        String
+  notes       String?
+  created_at  DateTime  @default(now())
+  archived_at DateTime?
+
+  slots       DailyMealPlanSlot[]
+  assignments DailyMealPlanAssignment[]
+
+  @@index([coach_id, archived_at])
+}
+
+model DailyMealPlanSlot {
+  id                 String        @id @default(uuid())
+  daily_meal_plan_id String
+  daily_meal_plan    DailyMealPlan @relation(fields: [daily_meal_plan_id], references: [id], onDelete: Cascade)
+  meal_template_id   String
+  meal_template      MealTemplate  @relation(fields: [meal_template_id], references: [id], onDelete: Restrict)
+  slot_label         String
+  order              Int           @default(0)
+
+  @@unique([daily_meal_plan_id, slot_label, order])
+  @@index([daily_meal_plan_id])
+  @@index([meal_template_id])
+}
+
+model DailyMealPlanAssignment {
+  id                   String        @id @default(uuid())
+  daily_meal_plan_id   String
+  daily_meal_plan      DailyMealPlan @relation(fields: [daily_meal_plan_id], references: [id], onDelete: Cascade)
+  client_id            String
+  client               User          @relation("DailyMealPlanAssignmentClient", fields: [client_id], references: [id], onDelete: Cascade)
+  assigned_by_coach_id String
+  assigned_by_coach    User          @relation("DailyMealPlanAssignmentCoach", fields: [assigned_by_coach_id], references: [id], onDelete: Cascade)
+  starts_on            DateTime      @db.Date
+  ends_on              DateTime?     @db.Date
+  created_at           DateTime      @default(now())
+
+  @@index([client_id, starts_on])
+  @@index([daily_meal_plan_id])
+  @@index([assigned_by_coach_id])
+}
+
+// ─── Sprint B: Holistic Insights cache ────────────────────────────────────
+model HolisticInsightCache {
+  id           String   @id @default(uuid())
+  user_id      String
+  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  window_days  Int
+  payload      Json
+  generated_at DateTime @default(now())
+  expires_at   DateTime
+
+  @@unique([user_id, window_days])
+  @@index([expires_at])
 }
