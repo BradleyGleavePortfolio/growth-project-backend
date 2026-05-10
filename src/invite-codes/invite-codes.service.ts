@@ -64,7 +64,17 @@ export class InviteCodesService {
 
   async createForCoach(
     coachId: string,
-    input: { expires_at?: string; max_uses?: number },
+    input: {
+      expires_at?: string;
+      max_uses?: number;
+      // Team Mode (ADR-0001 §10 Q5). Set to a sub-coach's user id when
+      // the sub-coach issues the invite under their head coach. The
+      // resulting row carries coach_id = head coach (so existing
+      // tenancy checks keep working) AND invited_by_user_id = sub-coach
+      // (so the audit feed can show "Invited by sub-coach <name>").
+      // Null on a head-coach-direct invite — preserves legacy shape.
+      invited_by_user_id?: string | null;
+    },
   ) {
     const expiresAt = input.expires_at ? new Date(input.expires_at) : null;
     if (expiresAt && Number.isNaN(expiresAt.getTime())) {
@@ -83,6 +93,7 @@ export class InviteCodesService {
           data: {
             code,
             coach_id: coachId,
+            invited_by_user_id: input.invited_by_user_id ?? null,
             expires_at: expiresAt,
             max_uses: input.max_uses ?? null,
           },

@@ -473,6 +473,77 @@ The remainder of the open issues — UI surfaces, email copy, how
 self-service invite emails are rate-limited, etc. — are deferred to
 the implementation ADRs.
 
+## 10a. §10 resolutions (locked 2026-05-10)
+
+Bradley resolved the six product questions inside the foundation PR
+itself. The resolutions superseded the v1 defaults proposed above
+and are the source of truth for the implementation.
+
+| # | Question | Resolution |
+|---|----------|------------|
+| Q1 | Staff seat billing | Pro: each staff seat is a paid Stripe quantity line. Enterprise: included unlimited. Growth: feature blocked at the controller. |
+| Q2 | Sub-coach assignment relationships | Sub-coach is many-to-many of head coaches, capped at 2. Enforced by service-layer guard + DB trigger. |
+| Q3 | Sub-coach removal | Auto-reassign clients to the initiating head coach in a single transaction. One audit row per reassigned client + one `sub_coach_removed` event. |
+| Q4 | Audit log scope | Curated 15-event_kind ledger. Not a CRUD firehose. See `team_audit_event_kind` enum in the migration. |
+| Q5 | Sub-coach client invite permissions | Sub-coaches may invite clients directly. Attribution lives on `InviteCode.invited_by_user_id`. |
+| Q6 | Tier gating | Pro and Enterprise pass. Growth and unknown blocked with `{ kind: 'team_mode_locked', current_tier, required_tier: 'pro', upsell_url: '/pricing' }` envelope. |
+
+The earlier v1-default proposals in the table above (e.g. "staff are
+free", "every team unbounded head-coach count") were superseded.
+The current proposal model retains them only as historical record.
+
+### Tier label mapping
+
+The three canonical tiers (verified 2026-05-10 from public
+`/llms.txt`) are:
+
+| Tier | Price | Sub-coaches |
+|------|-------|-------------|
+| Growth | $1,079 / mo | Not available (upsell to Pro) |
+| Pro | $2,499 / mo | Paid Stripe staff seat per sub-coach |
+| Enterprise | $6,225 / mo | Included, unlimited |
+
+The fitness backend resolves tier from `CoachSubscription.stripe_price_id`
+via env-var mapping (`STRIPE_PRICE_GROWTH`, `STRIPE_PRICE_PRO`,
+`STRIPE_PRICE_ENTERPRISE`). When the price id does not match any
+configured value the resolver returns `unknown` and the team-mode
+controllers deny by default — paid features default to closed.
+
+### Required env vars (set in production secrets before launch)
+
+- `STRIPE_PRICE_GROWTH` — Growth tier price id
+- `STRIPE_PRICE_PRO` — Pro tier price id
+- `STRIPE_PRICE_ENTERPRISE` — Enterprise tier price id
+- `STRIPE_PRICE_STAFF_SEAT` — recurring price id for the Pro paid
+  staff seat line item (one quantity = one sub-coach)
+
+When `STRIPE_PRICE_STAFF_SEAT` is unset OR `STRIPE_SECRET_KEY` is
+unset, the assignment service still creates the local row and audit
+events but logs a warning and skips the Stripe call. This is
+intentional — preview deploys without Stripe credentials must not
+500. Production must set all four.
+
+### Endpoints shipped in this PR
+
+- `POST   /team/sub-coaches`           assign a sub-coach (Q1, Q2, Q6 enforced)
+- `GET    /team/sub-coaches`           list active sub-coaches under the head coach
+- `DELETE /team/sub-coaches/:subCoachId` remove + auto-reassign (Q3)
+- `GET    /team/audit-events`          paginated curated audit feed (Q4)
+
+All four require `JwtAuthGuard + CoachGuard` (per-route) matching
+the pattern enforced by Sprint B v2.1 fix sprint. Throttled at 30/min
+on writes.
+
+### Schema additions (migration `20260510000000_add_team_mode`)
+
+- `TeamSubCoachAssignment(id, head_coach_id, sub_coach_id, stripe_subscription_item_id, created_at, archived_at)`
+  with unique `(head_coach_id, sub_coach_id)`, indexes on both ids
+  and `archived_at`, and a Postgres trigger enforcing the 2-head-cap.
+- `TeamAuditEvent(id, head_coach_id, actor_user_id, target_client_id?, event_kind, summary, metadata?, occurred_at)`
+  with indexes for the head-coach feed read and per-client drill-down.
+- `TeamAuditEventKind` enum with 15 values.
+- `InviteCode.invited_by_user_id` nullable column + FK + index.
+
 ## 11. Risks
 
 1. **Permission drift.** A permission matrix maintained in two places

@@ -56,6 +56,9 @@ import { WorkoutBuilderModule } from './workout-builder/workout-builder.module';
 import { MacrosModule } from './macros/macros.module';
 import { RealMealPlansModule } from './real-meal-plans/real-meal-plans.module';
 import { InsightsModule } from './insights/insights.module';
+// Team Mode foundation — sub-coach assignments, curated audit feed,
+// Pro-tier paid staff seats. See docs/architecture/adr-0001-team-mode-foundation.md.
+import { TeamModeModule } from './team-mode/team-mode.module';
 
 @Module({
   imports: [
@@ -167,6 +170,10 @@ import { InsightsModule } from './insights/insights.module';
     MacrosModule,
     RealMealPlansModule,
     InsightsModule,
+    // Team Mode v1 — head-coach -> sub-coach assignments, curated
+    // audit feed, Pro-tier paid staff seats, Enterprise included,
+    // Growth blocked at the controller with a structured upsell.
+    TeamModeModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)

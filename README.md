@@ -1332,3 +1332,49 @@ Both are reversible (drop tables in reverse order).
 
 - `EXERCISEDB_API_KEY` — optional; without it the seed catalog is
   used. See `.env.example` for the full set.
+
+## Team Mode (foundation)
+
+Pro and Enterprise coaches can run a multi-coach team out of one
+account. ADR-0001 §10 resolutions (locked 2026-05-10):
+
+- Q1 — Pro: each staff seat is a paid Stripe quantity line (one
+  `subscription_item` per sub-coach). Enterprise: included unlimited.
+  Growth: feature blocked at the controller with a structured upsell
+  envelope.
+- Q2 — A sub-coach may be assigned under up to 2 head coaches at
+  once. Cap enforced by service-layer guard + DB trigger.
+- Q3 — Removal auto-reassigns the sub-coach's clients to the
+  initiating head coach in a single transaction, with one
+  `client_reassigned` audit event per reassigned client and one
+  `sub_coach_removed` summary event.
+- Q4 — Audit log is a curated 15-event_kind ledger
+  (`session_held`, `message_sent`, `plan_assigned`, `checkin_logged`,
+  `macro_target_set`, `meal_plan_assigned`, `workout_assigned`,
+  `client_progress_logged`, `sub_coach_assigned`, `sub_coach_removed`,
+  `client_reassigned`, `invite_sent_by_sub_coach`, `tier_changed`,
+  `staff_seat_added`, `staff_seat_removed`). Not a CRUD firehose.
+- Q5 — Sub-coaches may issue client invites directly. Attribution
+  carried by `InviteCode.invited_by_user_id`.
+- Q6 — Pro and Enterprise allowed; Growth and unknown tiers blocked.
+
+Endpoints (all under `JwtAuthGuard + CoachGuard`):
+
+- `POST   /team/sub-coaches`              assign
+- `GET    /team/sub-coaches`              list active
+- `DELETE /team/sub-coaches/:subCoachId`  remove + reassign
+- `GET    /team/audit-events`             paginated curated feed
+
+Migration: `prisma/migrations/20260510000000_add_team_mode/`. Adds
+`TeamSubCoachAssignment`, `TeamAuditEvent`, the `TeamAuditEventKind`
+enum, and `InviteCode.invited_by_user_id`. Reversible by dropping in
+reverse order.
+
+Required env vars: `STRIPE_PRICE_GROWTH`, `STRIPE_PRICE_PRO`,
+`STRIPE_PRICE_ENTERPRISE`, `STRIPE_PRICE_STAFF_SEAT`. See
+`.env.example` for the full block. Preview deploys without Stripe
+credentials still create assignment rows and audit events locally;
+the outbound Stripe call is skipped with a logged warning.
+
+See `docs/architecture/adr-0001-team-mode-foundation.md` for the
+full ADR including §10a resolutions and the permission matrix.

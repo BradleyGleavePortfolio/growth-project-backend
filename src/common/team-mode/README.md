@@ -1,16 +1,12 @@
 # Team Mode scaffolding
 
-This directory contains the **pure** TypeScript scaffolding for the
-Team Mode foundation described in
-[`docs/architecture/adr-0001-team-mode-foundation.md`](../../../docs/architecture/adr-0001-team-mode-foundation.md).
+Pure TypeScript scaffolding for the Team Mode permission matrix
+(see [`docs/architecture/adr-0001-team-mode-foundation.md`](../../../docs/architecture/adr-0001-team-mode-foundation.md)).
 
-**Nothing in this directory is wired into the runtime.** No module
-imports it; no controller calls it; no migration depends on it. It
-exists so that the permission contract for Team Mode can be reviewed
-and unit-tested ahead of the schema and controller work.
-
-Removing this directory and its accompanying test
-(`test/team-mode-permissions.spec.ts`) is a clean revert.
+The matrix is referenced conceptually by the wiring layer in
+`src/team-mode/`, but `src/common/team-mode` itself remains a pure
+module with no runtime imports — keeping the matrix reviewable in
+isolation from the controllers and schema.
 
 ## Files
 
@@ -19,24 +15,22 @@ Removing this directory and its accompanying test
   the `can(...)` resolver. Pure function; no I/O. The single source of
   truth for §8 of the ADR.
 - `types.ts` — DTO-shaped TypeScript types for `Team`, `TeamMembership`,
-  and `ClientAssignment`. These are *contracts*, not Prisma models —
-  they describe the shape the API will return once the schema lands.
+  and `ClientAssignment`. Contracts only; the live Prisma models added
+  by the v1 migration (`TeamSubCoachAssignment`, `TeamAuditEvent`)
+  live in the runtime layer.
 
-## Wiring
+## Runtime wiring
 
-The wiring PR (a *separate* PR, not this one) will:
+`src/team-mode/` is the v1 runtime. It registers `TeamModeModule`
+(see `src/app.module.ts`) and ships:
 
-1. Add the migration that introduces `Team`, `TeamMembership`, and
-   `ClientAssignment` plus the `TeamRole` enum.
-2. Add a `TeamPermissionGuard` that calls `can(...)` from this
-   directory.
-3. Add a `@TeamPermission(...)` decorator that the guard reads.
-4. Wire the guard into the controllers that need team-aware gates.
+- `TeamModeService` — assign / remove / list sub-coaches; write and
+  read curated audit events.
+- `TeamModeTierResolverService` — resolves the head coach's tier
+  (`growth | pro | enterprise | unknown`) from
+  `CoachSubscription.stripe_price_id` via env-var mapping.
+- `TeamModeController` — REST surface under `/team/*` with per-route
+  `JwtAuthGuard + CoachGuard`.
 
-Until that PR lands, the value of this directory is exactly:
-
-- The matrix is reviewable as code, not as prose.
-- The `can(...)` function is unit-tested with high coverage on a
-  pure input/output shape.
-- The wiring PR can land as a smaller, mechanical change against an
-  already-agreed contract.
+The §10 resolutions (Q1–Q6, locked 2026-05-10) drove the schema and
+service shape; see ADR §10a for the resolution table.
