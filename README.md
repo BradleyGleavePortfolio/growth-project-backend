@@ -1387,3 +1387,142 @@ the outbound Stripe call is skipped with a logged warning.
 See `docs/architecture/adr-0001-team-mode-foundation.md` for the
 full ADR including §10a resolutions and the permission matrix, and
 `CHANGELOG.md` for the v1 ship notes.
+
+## AI Gateway (foundation)
+
+Tenant-safe gateway between feature modules and external LLM providers.
+Merged 2026-05-10 in PR #140 (squash `acbec56b`). All future AI
+inference paths (coach-message drafting, meal-plan AI, holistic-insights
+narrative, bloodwork trend summaries) must route through this module —
+direct provider SDK calls in feature code are no longer permitted.
+
+Posture:
+
+- **Fail-closed by default**. With `AI_GATEWAY_ENABLED` unset or
+  `false`, the gateway returns a stub envelope. No outbound provider
+  traffic. Every feature module sees the same shape whether AI is on
+  or off, so a tier rollout is a config flip rather than a code path.
+- **Per-request audit**. `AiRequestAudit` records request id,
+  capability (e.g. `chat.client_coach`, `draft.coach_message`),
+  requester id and role, subject and tenant ids, provider routed
+  to, model id, redaction summary, token estimates, prompt and
+  response hashes (not bodies), and approval status. Safe to retain
+  long-term; no PII accumulates.
+- **Human-approval gate for consequential outputs**. `AiActionDraft`
+  rows land as `pending` for capabilities flagged as
+  approval-required (drafted coach messages, meal-plan adjustments,
+  flag escalations). An authorized human (coach or owner) must
+  approve before downstream action. The service guards against
+  self-approval (`decided_by_id != requester_id`).
+- **Redaction layer**. Inbound text is run through the redactor
+  before it reaches a provider; the gateway records a counts-only
+  summary (`{ email: n, phone: n, ssn: n, ... }`) on every audit
+  row so reviewers can verify what the model actually saw.
+
+See `src/ai/gateway/` for the module, `docs/ai-gateway.md` for the
+operator runbook, and the `AiRequestAudit` and `AiActionDraft` models
+in `prisma/schema.prisma` for the storage shape.
+
+## Bloodwork Rails
+
+Client-entered bloodwork panels with coach review. Merged 2026-05-10
+in PR #141 (squash `02e1541e`). v1 is manual entry only — no EHR
+import, no OCR, no lab integration, and no LLM inference path today.
+
+What ships:
+
+- **`BloodworkPanel`**, **`BloodworkResult`**, **`BloodworkAttachment`**
+  Prisma models. Tenancy is the `(client_id, coach_id)` pair on the
+  panel; `coach_id` is nullable because a client can submit labs
+  before they have a coach assigned.
+- **Review state machine** on the panel:
+  `draft -> submitted -> needs_info | reviewed | flagged | hidden`.
+  Coach approval is blocked when attachment `scan_status` is not
+  `clean` or panel `validation_status` is `errors`.
+- **AI-actor guard**. AI / non-human callers cannot mutate
+  authoritative state. The bloodwork module rejects mutation by
+  `actorRole === 'ai'` at the service boundary regardless of consent.
+- **Consent scopes** wired into `ConsentService`:
+  - `health.bloodwork` — storage scope (gates write paths).
+  - `health.bloodwork_ai` — captured as `ai_processing_allowed` on
+    the panel at submit time. The AI gateway must re-check live
+    consent per request rather than trusting the snapshot.
+- **KMS-aware columns**. `encryption_key_ref` and `kms_key_version`
+  are metadata pointers only. v1 stores values in plaintext;
+  production deploys must set `BLOODWORK_KMS_KEY_REF` and migrate
+  sensitive columns to column-level encryption before storing real
+  labs.
+- **Daily stale-marker cron** marks panels as `is_stale` after
+  `BLOODWORK_STALE_AFTER_DAYS`; reviewed panels are preserved.
+
+When the trend-summary feature ships in v2, it must route through
+`src/ai/gateway/AiGatewayService` per the gateway doctrine above —
+direct provider calls in the bloodwork module are prohibited. See
+`docs/bloodwork.md` for the full v1 surface area, the real-vs-stub
+matrix, and the mobile contract.
+
+## Admin Console (docs canonicalised)
+
+PR #130 (merged 2026-05-10 as squash `fdf88bd5`) reconciled the
+earlier draft admin-console specs (PR #127 admin-web-dashboard, PR
+#128 control-room-spec) into a single canonical source. The
+specification now lives under `docs/admin/` and is the authoritative
+reference for the future `tgp-admin-web` app. Highlights:
+
+- `docs/admin/control-room-spec.md` — operator surface specification,
+  byte-identical to PR #128's source.
+- `docs/admin/pr-sequence.md` — supersedes the stale #117 through
+  #126 admin PR map; reserves `TBD-admin-A` through `TBD-admin-O`
+  placeholder slots for the implementation tranche.
+- `docs/admin/rbac-matrix.md`, `docs/admin/capability-matrix.md`,
+  `docs/admin/coaches-surface.md`, `docs/admin/future-endpoints.md`,
+  `docs/admin/overview.md` — composed from PR #127's section
+  structure with the upgrades noted in the PR body.
+
+The implementation app does not exist yet; this PR locks the spec
+so future implementation PRs reference a stable target.
+
+## House rules
+
+`docs/HOUSE_RULES.md` is the canonical doctrine for code, copy, and
+commit discipline on this repository. Every PR must comply.
+Highlights — see the file for the authoritative version:
+
+- No emoji and no exclamation points anywhere — code, comments,
+  copy, commit messages, PR bodies, log lines, error strings.
+- Strict TypeScript posture. No `any`, no `@ts-ignore`. Lint must
+  pass (`no-empty` is `error` with `allowEmptyCatch: false`).
+- Forbidden token list with explicit carve-outs (notably `finance`
+  is permitted because it names the cross-pillar product domain).
+- HTTP status semantics — pick the code that describes what is
+  actually wrong (400 for malformed input, 403 for permission
+  gates, 404 for tenancy boundary, 409 for invariant violations).
+- Migrations are additive only. No `DROP TABLE`, no `DROP COLUMN`,
+  no destructive `ALTER COLUMN` against tables with rows in prod.
+- Migration directory names are `YYYYMMDDHHMMSS_short_slug` and
+  must be monotonic above `main` HEAD.
+- Per-route `@UseGuards(JwtAuthGuard, CoachGuard)` on every
+  coach-only surface, matching the pattern enforced in PR #188's
+  Sprint B v2.1 fix sprint.
+
+## Canonical migration sequence on `main` HEAD (2026-05-10)
+
+The migrations listed below are the ones that landed in the
+2026-05-07 through 2026-05-11 window. Earlier migrations are
+documented inline in their own ship notes.
+
+| Timestamp | Slug | Source PR |
+|-----------|------|-----------|
+| `20260507000000` | `add_notification_center` | Phase 9 |
+| `20260508000000` | `add_workout_builder` | Sprint B v2 (#188) |
+| `20260509000000` | `add_sprint_b_macros_meals_insights` | Sprint B v2 (#188) |
+| `20260509120000` | `coach_practice_type_stage3` | Stage 3 federation |
+| `20260510000000` | `add_ai_gateway_audit_and_drafts` | AI Gateway (#140) |
+| `20260510000000` | `add_team_mode` | Team Mode v1 (#118) |
+| `20260511000000` | `add_bloodwork` | Bloodwork Rails (#141) |
+
+Note: the two `20260510000000` directories share a numeric prefix
+because PR #140 and PR #118 landed on the same day. Prisma keys on
+the full directory name, so both apply correctly; tooling that
+sorts by prefix alone should be aware. Future migrations must pick
+a fresh monotonic slot.
