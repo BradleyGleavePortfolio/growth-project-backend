@@ -4,7 +4,7 @@ This file is the canonical doctrine for code, copy, and commit
 discipline on this repository. Every PR must comply.
 
 It is owned by Bradley Gleave and updated as the rules evolve.
-Last revised: 2026-05-10 (Sprint B v2.1).
+Last revised: 2026-05-10 (Team Mode v1 audit — added HTTP status semantics).
 
 ## Code discipline
 
@@ -152,3 +152,46 @@ either:
 Squash-merge is the default merge mode on this repo specifically
 because it lets a clean PR body subject become the main commit
 message regardless of branch commit hygiene. Use it.
+
+## HTTP status semantics
+
+Pick the status code based on what is actually wrong, not what feels
+"protective". Mobile clients route on status code first and envelope
+second; conflating them sends users to the wrong screen.
+
+- **400 BadRequest** — the request body or query string is malformed
+  (e.g. unknown enum value, missing required field after DTO bypass,
+  out-of-range integer). The fix is on the caller: change the
+  request shape.
+- **401 Unauthorized** — no valid authentication token. The caller
+  needs to log in.
+- **403 Forbidden** — authenticated, but the role or tier or
+  ownership boundary forbids this action. The fix is account-side:
+  upgrade tier, request access, or be added to the team. Mobile
+  clients show an upsell or "ask your coach" screen.
+- **404 NotFound** — the resource does not exist OR is owned by a
+  different tenant. Return 404 (not 403) when leaking existence
+  itself would breach tenancy.
+- **409 Conflict** — the request would violate a stable invariant
+  (e.g. cap exceeded, idempotency key collision, optimistic-lock
+  failure). The fix is to check current state and try again.
+- **422 UnprocessableEntity** — the request is well-formed but the
+  business rule rejects it (rarely needed in NestJS — class-validator
+  failures emit 400 by default; keep it that way unless you have a
+  specific reason).
+- **429 TooManyRequests** — throttler. Set automatically by
+  `@Throttle`; do not throw manually.
+- **5xx** — never thrown by service code on a known failure path.
+  Reserve for unhandled exceptions.
+
+Concrete examples from this repo:
+
+- `event_kind=not_a_real_kind` on `GET /team/audit-events` -> 400 with
+  `{ kind: 'invalid_event_kind', allowed: [...] }`. NOT 403.
+- Growth coach calling `POST /team/sub-coaches` -> 403 with
+  `{ kind: 'team_mode_locked', current_tier: 'growth', required_tier: 'pro', upsell_url: '/pricing' }`.
+- Pro coach trying to assign a 3rd head coach to a sub-coach already
+  capped at 2 -> 409 with
+  `{ kind: 'sub_coach_head_cap_exceeded', cap: 2, message: '...' }`.
+- Coach A's subscription rows are not visible to Coach B -> 404, not
+  403, when Coach B asks for them by id.

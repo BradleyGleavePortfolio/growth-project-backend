@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -112,7 +113,12 @@ export class TeamModeController {
     let eventKind: TeamAuditEventKind | undefined;
     if (eventKindRaw) {
       if (!TEAM_AUDIT_EVENT_KINDS.includes(eventKindRaw as TeamAuditEventKind)) {
-        throw new ForbiddenException({
+        // 400, not 403. A malformed query string is a validation
+        // problem, not a permission gate. The response shape mirrors
+        // class-validator output so mobile clients can consume it
+        // through the same error renderer they already use for DTO
+        // validation failures.
+        throw new BadRequestException({
           kind: 'invalid_event_kind',
           allowed: TEAM_AUDIT_EVENT_KINDS,
         });

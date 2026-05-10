@@ -73,6 +73,11 @@ export class InviteCodesService {
       // tenancy checks keep working) AND invited_by_user_id = sub-coach
       // (so the audit feed can show "Invited by sub-coach <name>").
       // Null on a head-coach-direct invite — preserves legacy shape.
+      //
+      // When the caller does NOT supply this field but is a sub-coach
+      // (has at least one active TeamSubCoachAssignment row), we
+      // auto-detect attribution and route the invite under their head
+      // coach. Single source for this is resolveTeamAttribution() below.
       invited_by_user_id?: string | null;
     },
   ) {
@@ -84,20 +89,62 @@ export class InviteCodesService {
       throw new BadRequestException('expires_at must be in the future');
     }
 
+    // Q5 attribution. If the caller explicitly supplied
+    // invited_by_user_id we trust that (the team-mode service's own
+    // helpers may want to pre-resolve attribution). Otherwise, auto-
+    // detect: if the caller is a sub-coach, redirect coach_id to their
+    // head coach and stamp attribution.
+    const attribution =
+      input.invited_by_user_id !== undefined
+        ? {
+            effective_coach_id: coachId,
+            invited_by_user_id: input.invited_by_user_id,
+          }
+        : await this.resolveTeamAttribution(coachId);
+
     // Retry loop for the (extremely rare) unique-index collision on `code`.
     // Prisma throws P2002 on unique violation; anything else bubbles.
     for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
       const code = this.generateCode();
       try {
-        return await this.prisma.inviteCode.create({
+        const created = await this.prisma.inviteCode.create({
           data: {
             code,
-            coach_id: coachId,
-            invited_by_user_id: input.invited_by_user_id ?? null,
+            coach_id: attribution.effective_coach_id,
+            invited_by_user_id: attribution.invited_by_user_id,
             expires_at: expiresAt,
             max_uses: input.max_uses ?? null,
           },
         });
+        // Q4 + Q5: write the curated audit event when this invite was
+        // sub-coach-attributed. Best-effort — a failure here does not
+        // roll back the invite create. Same posture as the existing
+        // analytics calls in bulkInvite.
+        if (
+          attribution.invited_by_user_id &&
+          attribution.invited_by_user_id !== attribution.effective_coach_id
+        ) {
+          try {
+            await this.prisma.teamAuditEvent.create({
+              data: {
+                head_coach_id: attribution.effective_coach_id,
+                actor_user_id: attribution.invited_by_user_id,
+                target_client_id: null,
+                event_kind: 'invite_sent_by_sub_coach',
+                summary: 'Invite code issued by sub-coach.',
+                metadata: {
+                  invite_code_id: created.id,
+                  sub_coach_id: attribution.invited_by_user_id,
+                } as Prisma.InputJsonValue,
+              },
+            });
+          } catch (err) {
+            this.logger.warn(
+              `team audit event write failed for invite ${created.id}: ${err instanceof Error ? err.message : 'unknown'}`,
+            );
+          }
+        }
+        return created;
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
           this.logger.warn(`invite code collision on ${code}, retrying`);
@@ -108,6 +155,33 @@ export class InviteCodesService {
     }
     // Astronomically unlikely: 10 consecutive collisions against a 30-bit space.
     throw new InternalServerErrorException('Could not generate a unique invite code');
+  }
+
+  // Q5 attribution resolver. Pure DB lookup — given the calling user's
+  // id, returns whether they are a sub-coach and, if so, which head
+  // coach owns the team they are inviting under. When the caller has
+  // multiple active head coaches (the cap is 2), the most-recently-
+  // created assignment wins. Deterministic without requiring the caller
+  // to pre-decide.
+  //
+  // Returned shape:
+  //   - head coach (no active sub-coach assignment): {effective_coach_id: callerId, invited_by_user_id: null}
+  //   - sub-coach (>=1 active assignment): {effective_coach_id: head_coach_id, invited_by_user_id: callerId}
+  private async resolveTeamAttribution(
+    callerId: string,
+  ): Promise<{ effective_coach_id: string; invited_by_user_id: string | null }> {
+    const subAssignment = await this.prisma.teamSubCoachAssignment.findFirst({
+      where: { sub_coach_id: callerId, archived_at: null },
+      orderBy: { created_at: 'desc' },
+      select: { head_coach_id: true },
+    });
+    if (!subAssignment) {
+      return { effective_coach_id: callerId, invited_by_user_id: null };
+    }
+    return {
+      effective_coach_id: subAssignment.head_coach_id,
+      invited_by_user_id: callerId,
+    };
   }
 
   async listForCoach(coachId: string) {

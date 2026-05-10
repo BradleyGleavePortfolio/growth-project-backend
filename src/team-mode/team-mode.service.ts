@@ -84,11 +84,16 @@ export class TeamModeService {
     }
 
     const tierResult = await this.tierResolver.resolveTier(headCoachId);
-    if (tierResult.tier === 'growth') {
-      // Defence in depth — controller already returns the upsell envelope.
+    // Defence in depth. The controller's assertTeamModeAllowed blocks
+    // both "growth" AND "unknown"; the service mirrors that set so an
+    // internal call site (e.g. a future admin tooling path) cannot
+    // bypass the gate by skipping the controller. "pro" and
+    // "enterprise" are the only allowed tiers; everything else returns
+    // the same envelope shape the controller emits.
+    if (tierResult.tier !== 'pro' && tierResult.tier !== 'enterprise') {
       throw new ForbiddenException({
         kind: 'team_mode_locked',
-        current_tier: 'growth',
+        current_tier: tierResult.tier,
         required_tier: 'pro',
         upsell_url: '/pricing',
       });

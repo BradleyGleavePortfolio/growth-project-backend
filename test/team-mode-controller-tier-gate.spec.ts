@@ -98,4 +98,30 @@ describe('TeamModeController tier gate', () => {
       ctrl.removeSubCoach(req, 'sub-1'),
     ).rejects.toThrow(ForbiddenException);
   });
+
+  it('Q4: invalid event_kind returns 400 BadRequest, not 403 Forbidden', async () => {
+    const { ctrl, req, teamModeService } = makeController('pro');
+    let thrown: unknown = null;
+    try {
+      await ctrl.listAuditEvents(
+        req,
+        undefined,
+        undefined,
+        'not_a_real_event_kind',
+      );
+    } catch (err) {
+      thrown = err;
+    }
+    // 400 is the right semantic for a malformed query parameter; a
+    // mobile client must not treat this as an upsell prompt.
+    const { BadRequestException } = await import('@nestjs/common');
+    expect(thrown).toBeInstanceOf(BadRequestException);
+    const body = (thrown as InstanceType<typeof BadRequestException>).getResponse() as {
+      kind: string;
+      allowed: string[];
+    };
+    expect(body.kind).toBe('invalid_event_kind');
+    expect(Array.isArray(body.allowed)).toBe(true);
+    expect(teamModeService.listAuditEvents).not.toHaveBeenCalled();
+  });
 });

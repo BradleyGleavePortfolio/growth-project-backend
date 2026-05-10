@@ -24,6 +24,17 @@ describe('InviteCodesService', () => {
         findUnique: jest.fn(),
         update: jest.fn(),
       },
+      // Team Mode (PR #118) — createForCoach now auto-detects sub-
+      // coach attribution via this lookup. Default returns null so
+      // the existing tests behave as if the caller is a head coach.
+      // The dedicated team-mode-invite-attribution.spec covers the
+      // sub-coach path.
+      teamSubCoachAssignment: {
+        findFirst: jest.fn(async () => null),
+      },
+      teamAuditEvent: {
+        create: jest.fn(async () => ({ id: 'evt-stub' })),
+      },
       $transaction: jest.fn((cb: any) => cb(prismaMock)),
     };
     const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;

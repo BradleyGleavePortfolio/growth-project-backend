@@ -21,7 +21,13 @@ documentation:
 
 | ADR | Status | Title |
 |---|---|---|
-| [`adr-0001-team-mode-foundation.md`](./adr-0001-team-mode-foundation.md) | Draft | Team Mode foundation: multi-staff coaching businesses |
+| [`adr-0001-team-mode-foundation.md`](./adr-0001-team-mode-foundation.md) | Implemented (v1, 2026-05-10) | Team Mode foundation: multi-staff coaching businesses |
+
+ADR-0001 §10 was resolved on 2026-05-10 by Bradley; the resolutions
+are recorded inline as §10a of the ADR. The v1 implementation
+shipped in PR #118 covers the head_coach / sub_coach surface and the
+curated audit feed; the broader 6-role matrix (`team_owner`,
+`setter`, `ops`, etc.) remains a documented future phase.
 
 ## Conventions
 

@@ -1333,7 +1333,7 @@ Both are reversible (drop tables in reverse order).
 - `EXERCISEDB_API_KEY` — optional; without it the seed catalog is
   used. See `.env.example` for the full set.
 
-## Team Mode (foundation)
+## Team Mode v1
 
 Pro and Enterprise coaches can run a multi-coach team out of one
 account. ADR-0001 §10 resolutions (locked 2026-05-10):
@@ -1347,16 +1347,24 @@ account. ADR-0001 §10 resolutions (locked 2026-05-10):
 - Q3 — Removal auto-reassigns the sub-coach's clients to the
   initiating head coach in a single transaction, with one
   `client_reassigned` audit event per reassigned client and one
-  `sub_coach_removed` summary event.
+  `sub_coach_removed` summary event. Stripe failure does not roll
+  back the local archive.
 - Q4 — Audit log is a curated 15-event_kind ledger
   (`session_held`, `message_sent`, `plan_assigned`, `checkin_logged`,
   `macro_target_set`, `meal_plan_assigned`, `workout_assigned`,
   `client_progress_logged`, `sub_coach_assigned`, `sub_coach_removed`,
   `client_reassigned`, `invite_sent_by_sub_coach`, `tier_changed`,
   `staff_seat_added`, `staff_seat_removed`). Not a CRUD firehose.
-- Q5 — Sub-coaches may issue client invites directly. Attribution
-  carried by `InviteCode.invited_by_user_id`.
-- Q6 — Pro and Enterprise allowed; Growth and unknown tiers blocked.
+  Invalid `event_kind` query params return 400 (BadRequest), not
+  403, with `{ kind: 'invalid_event_kind', allowed: [...] }`.
+- Q5 — Sub-coaches may issue client invites directly. The invite-
+  codes service auto-detects sub-coach context via a
+  `TeamSubCoachAssignment` lookup and stamps `coach_id = head coach`,
+  `invited_by_user_id = sub-coach`. A matching
+  `invite_sent_by_sub_coach` audit event is written best-effort.
+- Q6 — Pro and Enterprise allowed; Growth and unknown tiers blocked
+  with the same envelope from both controller and service (defence
+  in depth).
 
 Endpoints (all under `JwtAuthGuard + CoachGuard`):
 
@@ -1367,8 +1375,8 @@ Endpoints (all under `JwtAuthGuard + CoachGuard`):
 
 Migration: `prisma/migrations/20260510000000_add_team_mode/`. Adds
 `TeamSubCoachAssignment`, `TeamAuditEvent`, the `TeamAuditEventKind`
-enum, and `InviteCode.invited_by_user_id`. Reversible by dropping in
-reverse order.
+enum, and `InviteCode.invited_by_user_id`. Additive only; reversible
+by dropping in reverse order (documented in the migration header).
 
 Required env vars: `STRIPE_PRICE_GROWTH`, `STRIPE_PRICE_PRO`,
 `STRIPE_PRICE_ENTERPRISE`, `STRIPE_PRICE_STAFF_SEAT`. See
@@ -1377,4 +1385,5 @@ credentials still create assignment rows and audit events locally;
 the outbound Stripe call is skipped with a logged warning.
 
 See `docs/architecture/adr-0001-team-mode-foundation.md` for the
-full ADR including §10a resolutions and the permission matrix.
+full ADR including §10a resolutions and the permission matrix, and
+`CHANGELOG.md` for the v1 ship notes.
