@@ -1,14 +1,39 @@
 # Gap map — coach-experience wave (rows #30–#37)
 
+> ## Reconciliation Note (2026-05-10)
+>
+> This file was authored 2026-05-01 with the answer "no" for every
+> row. Since then, three rows have shipped runtime that
+> intersects (but does not fully implement) the spec:
+>
+> - **Row #31 leaderboards** — PR #161 (merged 2026-05-08) and
+>   migration `20260506060000_add_leaderboard` ship a
+>   roster-scoped peer leaderboard. Different surface from the
+>   spec's challenge-scoped variant. Block annotated below.
+> - **Row #35 per-client regimen assignment** — Sprint B (PR
+>   #188) shipped `ClientWorkoutAssignment` and
+>   `DailyMealPlanAssignment` (single-day, silo-specific).
+>   Block annotated below.
+> - **Row #36 messaging + progress** — voice notes shipped via
+>   migration `20260506040000_add_voice_notes_and_coach_onboarding`.
+>   The spec's three primitives (progress envelope, deep-link,
+>   visibility preference) did NOT ship. Block annotated below.
+>
+> The "what is reused" / "what is genuinely new" framing still
+> applies — the shipped runtime is a reusable substrate, not a
+> replacement for the spec.
+
 > **TL;DR — Do we have this already?**
-> No. The eight items in this wave are not implemented and not
-> spec'd anywhere else in the repo as of `main` at the time this
-> file was authored. The closest existing artefacts are the four
-> in-flight draft PRs #117 / #118 / #119 / #120 and the
-> just-landed-in-draft PR #121. This file maps each new row to
-> the nearest existing artefact so a reviewer can see, at a
-> glance, **what is reused, what is forward-compatible, and what
-> is genuinely new**.
+> Mostly no, with three partial exceptions noted above. The
+> eight items in this wave are still primarily forward-looking,
+> with the shipped runtime on rows #31, #35, and #36 covering
+> narrow slices of each. The closest existing artefacts are the
+> four in-flight draft PRs #117 / #118 / #119 / #120, the
+> just-landed-in-draft PR #121, and (new since this file was
+> authored) the merged Sprint A / Sprint B work on `main`. This
+> file maps each new row to the nearest existing artefact so a
+> reviewer can see, at a glance, **what is reused, what is
+> forward-compatible, and what is genuinely new**.
 
 This file is the answer to the reviewer question: "before we
 write nine more specs, are we sure we don't already have this?"
@@ -65,7 +90,20 @@ For each row #30–#37 the table below records:
 
 ### Row #31 — Public/private leaderboards
 
-- **Closest existing artefact.** PR #121 spec
+> **Shipped 2026-05-10:** PR #161 (merged 2026-05-08) shipped
+> `src/leaderboard/` plus migration
+> `20260506060000_add_leaderboard`. The shipped surface is a
+> roster-scoped peer leaderboard (opt-in, integer combined-score
+> in `[0, 100]`, weekly delta, nightly recompute). It does NOT
+> implement the challenge-scoped snapshot variant in this spec —
+> no `CoachChallengeSubmission` source, no public widget, no
+> moderation surface. Both primitives are useful and answer
+> different questions; the spec stays open and Phase 1 should
+> be re-scoped to live alongside the shipped roster module
+> rather than replace it.
+
+- **Closest existing artefact.** Shipped: `src/leaderboard/`
+  (PR #161). Spec-side: PR #121 spec
   `public-coach-profile.md` (#27); the merged `CommunityWin` row
   (`prisma/schema.prisma:711`); PR #120 platform-readiness lane
   03 (security/RBAC/tenancy) and lane 04 (data lifecycle).
@@ -158,10 +196,25 @@ For each row #30–#37 the table below records:
 
 ### Row #35 — Per-client regimen assignment
 
-- **Closest existing artefact.** PR #121 spec `program-templates.md`
-  (#28) §"Clone transaction"; the merged `MealPlan.client_id` /
-  `WorkoutRoutine.client_id` foreign keys; the merged
-  `ClientCoachConsent` row (`prisma/schema.prisma:918`).
+> **Shipped 2026-05-10:** Sprint B (PR #188) shipped two narrow
+> per-client assignment primitives — `ClientWorkoutAssignment`
+> (single workout plan to one client on one date) via migration
+> `20260508000000_add_workout_builder`, and
+> `DailyMealPlanAssignment` (one daily meal plan to one client
+> over a date range) via
+> `20260509000000_add_sprint_b_macros_meals_insights`. Neither
+> covers the multi-week, multi-pillar regimen-assignment surface
+> this spec describes. When the runtime PR for #34 (regimens)
+> lands, the assignment row described in this spec sits *above*
+> the two Sprint B primitives — the regimen assignment fans out
+> into per-day rows during its publish step.
+
+- **Closest existing artefact.** Shipped: `ClientWorkoutAssignment`
+  and `DailyMealPlanAssignment` (Sprint B, PR #188). Spec-side:
+  PR #121 spec `program-templates.md` (#28) §"Clone transaction";
+  the merged `MealPlan.client_id` / `WorkoutRoutine.client_id`
+  foreign keys; the merged `ClientCoachConsent` row
+  (`prisma/schema.prisma:918`).
 - **What is reused.** The clone-transaction shape from #28; the
   consent gate from `ClientCoachConsent`; the existing
   per-client foreign keys on the workout/meal/lesson families.
@@ -181,9 +234,25 @@ For each row #30–#37 the table below records:
 
 ### Row #36 — Messaging + progress visibility
 
-- **Closest existing artefact.** The merged `messaging` module
-  (`src/messaging/README.md`) and `CoachMessage`
-  (`prisma/schema.prisma:661`); the merged `coach` module
+> **Shipped 2026-05-10:** Voice notes shipped via migration
+> `20260506040000_add_voice_notes_and_coach_onboarding`,
+> adding `voice_url`, `voice_duration_sec`, `voice_size_bytes`,
+> `voice_content_type` columns to `CoachMessage` and loosening
+> `body` to nullable. The spec's three primitives — progress
+> envelope endpoint, `subject_kind`/`subject_id` deep-link,
+> `ProgressVisibilityPreference` table — did NOT ship and remain
+> open. Adjacent infrastructure that the runtime PR for this
+> spec should reuse: the Notification Center
+> (`src/notifications/`, migration
+> `20260507000000_add_notification_center`) ships emitters for
+> `message-received`, `missed-checkin`, `weight-trend-alert`,
+> `coach-alert`, `milestone-reached`, etc. The progress envelope
+> can subscribe to these emitters rather than poll source
+> tables.
+
+- **Closest existing artefact.** Shipped: `src/messaging/`
+  (with voice columns since `20260506040000`), `src/notifications/`.
+  Spec-side: the merged `coach` module
   (`src/coach/README.md`) and the timeline / alerts / roster
   surface; PR #121 specs `at-risk-detector.md` (#22),
   `weekly-recap.md` (#23), and `outcome-check-ins.md` (#21).

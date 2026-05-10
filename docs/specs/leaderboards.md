@@ -3,6 +3,26 @@
 **Roadmap row:** #31.
 **Status:** Pre-work — spec only; no runtime, no migration, no
 module wiring.
+
+> **Status update (2026-05-10):** A roster-scoped peer leaderboard
+> shipped in PR #161 (merged 2026-05-08) under `src/leaderboard/`
+> with migration `20260506060000_add_leaderboard`. That work is
+> **not** the surface this spec describes; it is a different
+> primitive that happens to share the word "leaderboard". The
+> shipped feature is opt-in, ranks the requester's coach roster
+> by an integer combined-score in `[0, 100]`, exposes
+> `GET /me/leaderboard` and `POST /me/leaderboard/opt-in`, and
+> recomputes nightly via a scheduler. It does not read
+> `CoachChallengeSubmission`, has no public widget, has no
+> moderation surface, and does not address the abuse / handle /
+> takedown primitives in §11 below.
+>
+> This spec stays open. Once row #30 (coach-created challenges)
+> ships, the snapshot projection described here is still
+> required. Phase 1 of this spec (the coach-only full-view
+> endpoint) should be re-scoped to live alongside the shipped
+> roster-leaderboard module rather than replace it — both
+> primitives are useful, they answer different questions.
 **Handoff brief:** [`../architecture/handoff/31-leaderboards.md`](../architecture/handoff/31-leaderboards.md).
 **Cross-references:** [`coach-challenges.md`](./coach-challenges.md)
 (#30 — source of truth for submissions),

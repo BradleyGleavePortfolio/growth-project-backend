@@ -3,6 +3,32 @@
 **Roadmap row:** #35.
 **Status:** Pre-work — spec only; no runtime, no migration, no
 module wiring.
+
+> **Status update (2026-05-10):** Sprint B (PR #188, merged) ships
+> two narrow per-client assignment primitives:
+>
+> - `ClientWorkoutAssignment` — assigns one `WorkoutPlan` to one
+>   client for one scheduled date. Source: migration
+>   `20260508000000_add_workout_builder`, model in
+>   `prisma/schema.prisma`, controller at
+>   `src/workout-builder/workout-builder.controller.ts`.
+> - `DailyMealPlanAssignment` — assigns one `DailyMealPlan` to
+>   one client over a `starts_on` / `ends_on` date range.
+>   Source: migration
+>   `20260509000000_add_sprint_b_macros_meals_insights`,
+>   controller at
+>   `src/real-meal-plans/real-meal-plans.controller.ts`.
+>
+> Both are single-day-granular and silo-specific (workouts only,
+> meals only). Neither covers the multi-week, multi-pillar
+> regimen-assignment surface this spec describes — a single
+> durable row that ties a client to a versioned regimen
+> containing workouts, meals, lessons, and challenges. This spec
+> stays open. When the runtime PR for #34 (regimens) lands, the
+> assignment row described here will sit *above* the two Sprint B
+> primitives, not replace them: the regimen assignment fans out
+> into per-day workout and meal assignment rows during its
+> publish/transaction step.
 **Handoff brief:** [`../architecture/handoff/35-regimen-assignment.md`](../architecture/handoff/35-regimen-assignment.md).
 **Cross-references:** [`regimens.md`](./regimens.md) (#34 — regimen
 recipe); PR #121 spec

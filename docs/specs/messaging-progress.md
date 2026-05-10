@@ -3,6 +3,41 @@
 **Roadmap row:** #36.
 **Status:** Pre-work — spec only; no runtime, no migration, no
 module wiring.
+
+> **Status update (2026-05-10):** Voice notes shipped via migration
+> `20260506040000_add_voice_notes_and_coach_onboarding` on top of
+> the pre-existing `src/messaging/` text surface. The migration
+> adds `voice_url`, `voice_duration_sec`, `voice_size_bytes`,
+> `voice_content_type` columns to `CoachMessage` and loosens
+> `body` to nullable so voice-only messages can persist. The
+> service layer enforces a content-type whitelist of
+> `audio/mp4 | m4a | aac | webm | ogg` and clamps size/duration
+> from `VOICE_NOTE_MAX_*` env vars (defaults: 5 MB / 300 s).
+>
+> The spec's three primitives are **NOT** shipped:
+>
+> - **Progress envelope endpoint** — no
+>   `GET /coach/clients/:id/progress` or equivalent. Adherence
+>   signals (regimen, check-ins, content boards, challenges,
+>   weight log, fasting log) remain scattered.
+> - **Deep-link convention** — `CoachMessage` has no
+>   `subject_kind` / `subject_id` columns. A coach DM cannot
+>   link back to "the missed check-in" today.
+> - **`ProgressVisibilityPreference`** — no per-client
+>   visibility row. The current model is still binary via
+>   `ClientCoachConsent`.
+>
+> Adjacent shipped infrastructure that this spec's runtime PR
+> should reuse rather than re-derive:
+>
+> - **Notification Center** (`src/notifications/`, migration
+>   `20260507000000_add_notification_center`) — digest scheduler
+>   plus emitters for `message-received`, `missed-checkin`,
+>   `weight-trend-alert`, `coach-alert`, etc. The progress
+>   envelope can subscribe to these emitters rather than
+>   polling source tables.
+>
+> Spec stays open for the three remaining primitives.
 **Handoff brief:** [`../architecture/handoff/36-messaging-progress.md`](../architecture/handoff/36-messaging-progress.md).
 **Cross-references:** merged `messaging` module
 ([`src/messaging/README.md`](../../src/messaging/README.md)) and

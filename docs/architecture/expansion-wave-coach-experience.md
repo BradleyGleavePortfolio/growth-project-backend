@@ -1,5 +1,57 @@
 # Expansion wave — coach experience (rows #30–#37)
 
+> ## Reconciliation Note (2026-05-10)
+>
+> The original spec body of this PR called every row "in discovery —
+> spec drafted; runtime work not started." That is no longer true.
+> Two rows have shipped runtime since this PR was opened, two more
+> have shipped a partial slice via Sprint A and Sprint B, and the
+> remaining four are still pre-runtime. The index table below has
+> been re-stamped to reflect actual state on `main` as of
+> 2026-05-10. Per-row spec files have been annotated with a
+> "Status update (2026-05-10)" block where shipped runtime
+> intersects the spec.
+>
+> Summary of intersections:
+>
+> - **Row #31 leaderboards** — `src/leaderboard/` (PR #161, merged
+>   2026-05-08, migration `20260506060000_add_leaderboard`) ships a
+>   roster-scoped peer leaderboard with a combined-score metric.
+>   The spec's challenge-scoped snapshot variant with moderation
+>   and public widget is NOT shipped — different surface, same row
+>   number. Spec stays open for the challenge variant.
+> - **Row #35 regimen assignment** — Sprint B (PR #188) ships
+>   `ClientWorkoutAssignment` and `DailyMealPlanAssignment`
+>   (single-day granularity) via migrations
+>   `20260508000000_add_workout_builder` and
+>   `20260509000000_add_sprint_b_macros_meals_insights`. The
+>   spec's multi-week regimen assignment (workouts + meals +
+>   lessons + challenges in one durable assignment row) is NOT
+>   shipped.
+> - **Row #36 messaging + progress** — voice notes shipped via
+>   migration `20260506040000_add_voice_notes_and_coach_onboarding`
+>   on top of the pre-existing `src/messaging/` text surface. The
+>   spec's three primitives (progress envelope endpoint,
+>   `subject_kind`/`subject_id` deep-link convention,
+>   `ProgressVisibilityPreference` table) are NOT shipped.
+> - **Rows #30, #32, #33, #34, #37** — no runtime intersection.
+>   Specs unchanged.
+>
+> Adjacent shipped work, not row-mapped but worth noting for spec
+> authors who reference "what already exists":
+>
+> - **Notification Center** (`src/notifications/`, migration
+>   `20260507000000_add_notification_center`) — digest scheduler
+>   plus per-event emitters. Row #36's progress-envelope work
+>   should reuse this emitter pattern rather than build a parallel
+>   one.
+> - **Coach Onboarding Wizard** (`CoachOnboardingProgress` table,
+>   shipped alongside voice notes in
+>   `20260506040000_add_voice_notes_and_coach_onboarding`).
+> - **First Win** (`src/first-win/`, migration
+>   `20260506050000_add_first_win`) — adjacent to row #30
+>   challenges in framing, distinct in surface.
+
 **Status:** Living index extension — appends rows #30–#37 to the
 expansion roadmap introduced by PR #119
 ([`expansion-roadmap.md`](./expansion-roadmap.md)) and extended by
@@ -9,7 +61,8 @@ This file exists as a separate "wave" addendum so the three PRs
 (#119, #121, and this one) remain trivially mergeable in any
 order.
 
-**Last updated:** 2026-05-01.
+**Last updated:** 2026-05-10 (reconciliation pass; runtime state
+re-stamped against `main`). Original spec authored 2026-05-01.
 **Owner:** Backend platform.
 **Audience:** Future operators and engineers who need to understand
 the next wave of coach-experience expansion items, in what order,
@@ -43,15 +96,15 @@ Future expansion items continue from #38.
 
 ## Index — rows #30 through #37
 
-| # | Item | Stage | Brief | Underlying spec |
-|---|------|-------|-------|-----------------|
+| # | Item | Stage (as of 2026-05-10) | Brief | Underlying spec |
+|---|------|--------------------------|-------|-----------------|
 | 30 | Coach-created challenges (fitness + finance) | In discovery — spec drafted; runtime work not started | [`./handoff/30-coach-challenges.md`](./handoff/30-coach-challenges.md) | [`../specs/coach-challenges.md`](../specs/coach-challenges.md) |
-| 31 | Public/private leaderboards | In discovery — spec drafted; runtime work not started | [`./handoff/31-leaderboards.md`](./handoff/31-leaderboards.md) | [`../specs/leaderboards.md`](../specs/leaderboards.md) |
-| 32 | Profile pictures / avatar media | In discovery — spec drafted; runtime work not started | [`./handoff/32-avatar-media.md`](./handoff/32-avatar-media.md) | [`../specs/avatar-media.md`](../specs/avatar-media.md) |
+| 31 | Public/private leaderboards | **Adjacent runtime shipped (different scope)** — `src/leaderboard/` (PR #161) ships a roster-scoped peer leaderboard. Spec's challenge-scoped variant with moderation/public widget remains pre-runtime. | [`./handoff/31-leaderboards.md`](./handoff/31-leaderboards.md) | [`../specs/leaderboards.md`](../specs/leaderboards.md) |
+| 32 | Profile pictures / avatar media | In discovery — spec drafted; runtime work not started (one nullable `User.avatar_url` field exists with no upload pipeline) | [`./handoff/32-avatar-media.md`](./handoff/32-avatar-media.md) | [`../specs/avatar-media.md`](../specs/avatar-media.md) |
 | 33 | Coach content boards (PDFs / newsletters / videos / links) | In discovery — spec drafted; runtime work not started | [`./handoff/33-content-boards.md`](./handoff/33-content-boards.md) | [`../specs/content-boards.md`](../specs/content-boards.md) |
-| 34 | Coach-created regimens / programs (multi-week orchestration) | In discovery — spec drafted; runtime work not started | [`./handoff/34-regimens.md`](./handoff/34-regimens.md) | [`../specs/regimens.md`](../specs/regimens.md) |
-| 35 | Per-client regimen assignment | In discovery — spec drafted; runtime work not started | [`./handoff/35-regimen-assignment.md`](./handoff/35-regimen-assignment.md) | [`../specs/regimen-assignment.md`](../specs/regimen-assignment.md) |
-| 36 | Coach ↔ client messaging + progress visibility | In discovery — spec drafted; runtime work not started | [`./handoff/36-messaging-progress.md`](./handoff/36-messaging-progress.md) | [`../specs/messaging-progress.md`](../specs/messaging-progress.md) |
+| 34 | Coach-created regimens / programs (multi-week orchestration) | In discovery — spec drafted; runtime work not started. Sprint B's single-day `WorkoutPlan` is the closest existing artefact and is NOT a multi-week regimen. | [`./handoff/34-regimens.md`](./handoff/34-regimens.md) | [`../specs/regimens.md`](../specs/regimens.md) |
+| 35 | Per-client regimen assignment | **Partial runtime shipped (workout + meal slice)** — Sprint B (PR #188) ships `ClientWorkoutAssignment` and `DailyMealPlanAssignment` at single-day granularity. Spec's multi-week regimen assignment (incl. lessons, challenges) remains pre-runtime. | [`./handoff/35-regimen-assignment.md`](./handoff/35-regimen-assignment.md) | [`../specs/regimen-assignment.md`](../specs/regimen-assignment.md) |
+| 36 | Coach ↔ client messaging + progress visibility | **Adjacent runtime shipped (voice notes only)** — voice attachment columns added to `CoachMessage` via migration `20260506040000`. Spec's three primitives (progress envelope, deep-link convention, `ProgressVisibilityPreference`) remain pre-runtime. | [`./handoff/36-messaging-progress.md`](./handoff/36-messaging-progress.md) | [`../specs/messaging-progress.md`](../specs/messaging-progress.md) |
 | 37 | L2 / L3 tiering, entitlements, and white-glove | In discovery — spec drafted; runtime work not started | [`./handoff/37-tiering-l2-l3.md`](./handoff/37-tiering-l2-l3.md) | [`../specs/tiering-l2-l3.md`](../specs/tiering-l2-l3.md) |
 
 ## Dependencies between these rows
