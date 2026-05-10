@@ -138,7 +138,7 @@ export class AiGatewayController {
 function extractIp(req: AuthedRequest): string | null {
   const xff = (req.headers?.['x-forwarded-for'] as string) ?? '';
   if (xff) return xff.split(',')[0].trim();
-  return (req as any).ip ?? null;
+  return req.ip ?? null;
 }
 
 function extractUserAgent(req: AuthedRequest): string | null {

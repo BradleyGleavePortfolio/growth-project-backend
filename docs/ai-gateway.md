@@ -42,7 +42,7 @@ time.
 
 ## Persistence
 
-Two new tables (migration `20260501000000_add_ai_gateway_audit_and_drafts`):
+Two new tables (migration `20260510000000_add_ai_gateway_audit_and_drafts`):
 
 - `AiRequestAudit` — one row per AI gateway call. Captures requester,
   subject, tenant, provider, model, enabled flag, retrieval source

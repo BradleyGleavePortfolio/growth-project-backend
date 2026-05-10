@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import type { User } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../prisma.service';
 import { ProvenanceRef } from './data-quality.types';
@@ -21,7 +22,11 @@ export interface ClientContextResult {
 
 interface CallerScope {
   id: string;
-  role: string;
+  // Tightened from `string` so callerMaySee can pass straight through to
+  // canCoachActOnClient (which expects the Prisma Role enum, not a free
+  // string). Real callers pass req.user.role which already has this
+  // narrower type; tests pass the same string literals.
+  role: User['role'];
   // For coach callers we use the User row's coach_id linkage to verify
   // ownership of the client. Owners bypass the tenant check.
   coach_id?: string | null;
@@ -131,7 +136,7 @@ export class PrivateContextService {
   ): boolean {
     if (caller.id === subject.id) return true; // self
     return canCoachActOnClient(
-      { id: caller.id, role: caller.role as any, coach_id: caller.coach_id ?? null },
+      { id: caller.id, role: caller.role, coach_id: caller.coach_id ?? null },
       { coach_id: subject.coach_id },
     );
   }
