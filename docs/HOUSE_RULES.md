@@ -107,3 +107,48 @@ The carve-out applies repository-wide. There is no need to escape
 - Each new controller class ships with at least one guard test
   and at least one happy-path test. Tenancy edge cases are
   covered when the service is non-trivial.
+
+## Agentic commit messages and PR bodies
+
+Claude Code, Cursor, and similar coding agents emit a default
+trailer on commits and PR bodies that looks like one of:
+
+```
+Generated with Claude Code  (with a robot emoji prefix)
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+Both forms are forbidden on this repository. The emoji breaks the
+no-emoji rule. The `Co-Authored-By: Claude` line is misleading
+attribution on a commit Bradley owns and reviews; the agent is a
+tool, not a co-author. There is no `.gitmessage`, husky hook, or
+`.claude/` config in this repository that adds these — they come
+from the agent's own default behaviour and must be suppressed at
+the agent layer.
+
+Agents working on this repo MUST:
+
+- Strip every robot emoji and any `Generated with [Claude Code]`
+  block from commit messages BEFORE running `git commit`.
+- Strip every `Co-Authored-By: Claude` (and variants:
+  `Co-authored-by: Claude Code`, `Claude Agent`, `Claude Opus`,
+  etc.) line from commit messages BEFORE running `git commit`.
+- Strip the same trailer from PR bodies BEFORE running
+  `gh pr create` or `gh pr edit --body`.
+- Pass commit messages via a HEREDOC literal that does not include
+  the trailer, rather than relying on the agent's default
+  template.
+
+If a PR slips through with the trailer, fix it before merge with
+either:
+
+- `gh pr edit <num> --body "<clean body>"` — works for the PR body
+  but the in-repo commits still carry the trailer until they are
+  squash-merged. Use squash-merge to keep main clean.
+- For a non-squash merge path: rewrite the offending commits with
+  `git rebase -i` and force-push (only when no one else has the
+  branch checked out).
+
+Squash-merge is the default merge mode on this repo specifically
+because it lets a clean PR body subject become the main commit
+message regardless of branch commit hygiene. Use it.

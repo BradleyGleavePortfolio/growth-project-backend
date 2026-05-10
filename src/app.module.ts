@@ -15,6 +15,7 @@ import { FastingModule } from './fasting/fasting.module';
 import { WeightModule } from './weight/weight.module';
 import { HabitsModule } from './habits/habits.module';
 import { AiModule } from './ai/ai.module';
+import { AiGatewayModule } from './ai/gateway/ai-gateway.module';
 import { CoachModule } from './coach/coach.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
@@ -92,6 +93,10 @@ import { InsightsModule } from './insights/insights.module';
     WeightModule,
     HabitsModule,
     AiModule,
+    // Tenant-safe AI gateway (provider routing, redaction, audit, approval).
+    // Global so feature modules (coach messaging, meal-plan AI, finance proof)
+    // can inject AiGatewayService without re-importing.
+    AiGatewayModule,
     CoachModule,
     // Phase 7C — Peer Leaderboard (opt-in, coach-roster scoped).
     // Score: combined 30-day habit completion rate, never raw health data.

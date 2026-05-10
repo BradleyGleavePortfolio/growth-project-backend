@@ -247,6 +247,13 @@ model User {
   daily_meal_assignments_as_client DailyMealPlanAssignment[] @relation("DailyMealPlanAssignmentClient")
   daily_meal_assignments_as_coach  DailyMealPlanAssignment[] @relation("DailyMealPlanAssignmentCoach")
   holistic_insights_caches         HolisticInsightCache[]
+  // AI gateway: requester / subject of an AI call, and approver / drafter of
+  // a human-approval-gated AI action. All optional; rows are SetNull on
+  // user delete so audit history survives PII scrub.
+  ai_requests_as_requester AiRequestAudit[] @relation("AiRequestRequester")
+  ai_requests_as_subject   AiRequestAudit[] @relation("AiRequestSubject")
+  ai_drafts_authored       AiActionDraft[]  @relation("AiDraftRequester")
+  ai_drafts_decided        AiActionDraft[]  @relation("AiDraftDecidedBy")
 
   @@index([coach_id])
   @@index([deletion_scheduled_at])
@@ -1661,4 +1668,92 @@ model HolisticInsightCache {
 
   @@unique([user_id, window_days])
   @@index([expires_at])
+}
+
+// AI GATEWAY — request audit + human-approval drafts
+// ============================================================
+
+// Per-call audit row written for every AI gateway invocation. This is
+// distinct from AuditLog (which records sensitive ADMIN actions): an AI
+// request audit captures the inputs, retrieval scope, redaction summary,
+// and the provider route. The full prompt and response bodies are
+// deliberately NOT stored — we keep counts and hashes so the row is safe
+// to retain long-term and so PII does not accumulate in the audit table.
+//
+// Tenant scoping fields (subject_user_id + tenant_coach_id) let the owner
+// surface scope an AI audit query to a single coach's roster without a
+// join, mirroring AuditLog.tenant_coach_id.
+model AiRequestAudit {
+  id                  String    @id @default(uuid())
+  request_id          String    @unique // client-supplied or generated; idempotency key
+  capability          String    // e.g. "chat.client_coach", "draft.coach_message"
+  requester_id        String?
+  requester           User?     @relation("AiRequestRequester", fields: [requester_id], references: [id], onDelete: SetNull)
+  requester_role      String?
+  subject_user_id     String?   // the client whose data was the subject of the call
+  subject_user        User?     @relation("AiRequestSubject", fields: [subject_user_id], references: [id], onDelete: SetNull)
+  tenant_coach_id     String?   // coach whose tenant the call touched, if any
+  provider            String    // "stub" | "perplexity" | "openai" | "anthropic" | …
+  model               String?   // model id reported by the provider (or "disabled")
+  enabled             Boolean   @default(false) // false = fail-closed stub path
+  context_source_count Int      @default(0)
+  context_source_refs Json?     // [{ source, ref, hash, count }] — refs only, no payload
+  redactions_applied  Json?     // { email: 2, phone: 1, ssn: 0, ... }
+  prompt_token_estimate Int?
+  response_token_estimate Int?
+  prompt_hash         String?   // sha256 of the redacted prompt for replay/dedupe
+  response_hash       String?
+  approval_status     String    @default("not_required") // not_required | pending | approved | rejected | expired
+  approval_draft_id   String?   @unique
+  approval_draft      AiActionDraft? @relation("AiAuditDraft", fields: [approval_draft_id], references: [id], onDelete: SetNull)
+  error               String?
+  ip                  String?
+  user_agent          String?
+  metadata            Json?
+  created_at          DateTime  @default(now())
+
+  @@index([capability, created_at])
+  @@index([requester_id, created_at])
+  @@index([subject_user_id, created_at])
+  @@index([tenant_coach_id, created_at])
+  @@index([approval_status, created_at])
+}
+
+// Human-approval workflow row. Consequential AI outputs (a coach message
+// the AI drafted, a meal-plan adjustment, a flag escalation) land here
+// as `pending` and require an authorized human (coach or owner) to
+// approve before downstream action. AI cannot self-approve — the
+// service guards on `decided_by_id != requester_id`.
+//
+// `expires_at` is set at creation; a sweep job (out of scope for this
+// PR) marks stale rows `expired`. `payload` carries the proposed action
+// in a capability-specific shape; `redacted_inputs` records the
+// gateway-side redaction summary so reviewers can verify what the AI
+// actually saw.
+model AiActionDraft {
+  id              String   @id @default(uuid())
+  capability      String   // e.g. "draft.coach_message"
+  status          String   @default("pending") // pending | approved | rejected | expired
+  requester_id    String?
+  requester       User?    @relation("AiDraftRequester", fields: [requester_id], references: [id], onDelete: SetNull)
+  subject_user_id String?  // client whose data the draft concerns
+  tenant_coach_id String?
+  payload         Json     // capability-specific proposed action
+  rationale       String?  // model-emitted reasoning (kept short, redacted)
+  redacted_inputs Json?    // { email: n, phone: n, ... } summary
+  provenance      Json?    // [{ source, ref, hash }] retrieval references
+  decided_by_id   String?
+  decided_by      User?    @relation("AiDraftDecidedBy", fields: [decided_by_id], references: [id], onDelete: SetNull)
+  decided_at      DateTime?
+  decision_note   String?
+  audit_row       AiRequestAudit? @relation("AiAuditDraft")
+  expires_at      DateTime?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @default(now()) @updatedAt
+
+  @@index([status, created_at])
+  @@index([requester_id, created_at])
+  @@index([subject_user_id, created_at])
+  @@index([tenant_coach_id, created_at])
+  @@index([capability, status])
 }
