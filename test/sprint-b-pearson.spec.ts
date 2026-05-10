@@ -77,6 +77,59 @@ describe('bucketWeekly', () => {
     ]);
     expect(buckets).toHaveLength(1);
   });
+
+  it('averages by default (matches historical behaviour)', () => {
+    const buckets = bucketWeekly([
+      { date: '2026-05-04T08:00:00Z', value: 30 },
+      { date: '2026-05-05T08:00:00Z', value: 60 },
+    ]);
+    expect(buckets[0].value).toBe(45);
+  });
+
+  it('sums when mode is "sum" — required for cardio-minutes-per-week', () => {
+    // Five 30-minute cardio sessions in one week is 150 minutes, not 30.
+    const buckets = bucketWeekly(
+      [
+        { date: '2026-05-04T08:00:00Z', value: 30 },
+        { date: '2026-05-04T18:00:00Z', value: 30 },
+        { date: '2026-05-05T08:00:00Z', value: 30 },
+        { date: '2026-05-06T08:00:00Z', value: 30 },
+        { date: '2026-05-07T08:00:00Z', value: 30 },
+      ],
+      'sum',
+    );
+    expect(buckets).toHaveLength(1);
+    expect(buckets[0].value).toBe(150);
+    expect(buckets[0].sampleCount).toBe(5);
+  });
+
+  it('sums strength-session counts to a usable per-week series', () => {
+    // 4 weeks at [3, 4, 2, 5] sessions/week. Each session contributes
+    // value 1; without "sum" mode the mean would always be 1 and the
+    // series would have zero variance, so pearson() would return null.
+    const samples = [
+      // week 1 — 3 sessions
+      { date: '2026-04-13T08:00:00Z', value: 1 },
+      { date: '2026-04-15T08:00:00Z', value: 1 },
+      { date: '2026-04-17T08:00:00Z', value: 1 },
+      // week 2 — 4 sessions
+      { date: '2026-04-20T08:00:00Z', value: 1 },
+      { date: '2026-04-22T08:00:00Z', value: 1 },
+      { date: '2026-04-24T08:00:00Z', value: 1 },
+      { date: '2026-04-26T08:00:00Z', value: 1 },
+      // week 3 — 2 sessions
+      { date: '2026-04-27T08:00:00Z', value: 1 },
+      { date: '2026-04-30T08:00:00Z', value: 1 },
+      // week 4 — 5 sessions
+      { date: '2026-05-04T08:00:00Z', value: 1 },
+      { date: '2026-05-05T08:00:00Z', value: 1 },
+      { date: '2026-05-06T08:00:00Z', value: 1 },
+      { date: '2026-05-07T08:00:00Z', value: 1 },
+      { date: '2026-05-08T08:00:00Z', value: 1 },
+    ];
+    const buckets = bucketWeekly(samples, 'sum');
+    expect(buckets.map((b) => b.value)).toEqual([3, 4, 2, 5]);
+  });
 });
 
 describe('alignWeekly', () => {

@@ -17,7 +17,17 @@ import {
 const DEFAULT_WINDOW_DAYS = 90;
 const MIN_WEEKS_FOR_CORRELATION = 4;
 const MIN_R_THRESHOLD = 0.3;
+// Successful envelopes (status === 'ok' or 'insufficient_data') cache
+// for 24 hours: the underlying weekly fitness/finance series only
+// updates a few times a week, so a long TTL is fine.
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+// Finance-unavailable envelopes cache for 5 minutes only. A user who
+// connects their finance account, fixes a token, or whose finance
+// backend recovers from a transient outage should NOT see the paused
+// "we could not reach your finance pillar" copy for the rest of the
+// day. Five minutes keeps the cache useful (rate-limits hot retries
+// from a stuck mobile screen) while letting recovery propagate fast.
+const FINANCE_UNAVAILABLE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 @Injectable()
 export class HolisticInsightsService {
@@ -73,7 +83,7 @@ export class HolisticInsightsService {
           'We could not reach your finance pillar right now. Cross-pillar insights pause until both pillars report in. Try again in a few minutes.',
         ],
       };
-      await this.writeCache(userId, windowDays, env);
+      await this.writeCache(userId, windowDays, env, FINANCE_UNAVAILABLE_CACHE_TTL_MS);
       return env;
     }
     if (financeOutcome.kind === 'skipped') {
@@ -84,7 +94,7 @@ export class HolisticInsightsService {
           'No finance pillar account is connected. Connect your finance account to unlock cross-pillar insights.',
         ],
       };
-      await this.writeCache(userId, windowDays, env);
+      await this.writeCache(userId, windowDays, env, FINANCE_UNAVAILABLE_CACHE_TTL_MS);
       return env;
     }
 
@@ -189,10 +199,13 @@ export class HolisticInsightsService {
     r: number,
     weekKeys: string[],
   ): HolisticInsight {
-    const direction =
-      r > 0
-        ? 'increased in the same weeks as your'
-        : 'decreased in the weeks your';
+    // Symmetric template that stays grammatical at either polarity:
+    //   r > 0: "Your savings rate rose in weeks when your cardio minutes were higher (...)"
+    //   r < 0: "Your spending fell in weeks when your cardio minutes were higher (...)"
+    // The dependent clause "in weeks when your <fitness metric> were
+    // higher" is the same in both forms; only the verb describing the
+    // finance metric flips with the sign of r.
+    const verb = r > 0 ? 'rose' : 'fell';
     const friendly = (s: string) =>
       ({
         'fitness:cardio_minutes': 'cardio minutes',
@@ -204,7 +217,7 @@ export class HolisticInsightsService {
         'finance:debt_to_income': 'debt-to-income ratio',
       })[s] ?? s;
     const text =
-      `Your ${friendly(gName)} ${direction} ${friendly(fName)} ` +
+      `Your ${friendly(gName)} ${verb} in weeks when your ${friendly(fName)} were higher ` +
       `(correlation ${r.toFixed(2)}, ${weekKeys.length} weeks).`;
     const id = crypto
       .createHash('sha256')
@@ -279,11 +292,20 @@ export class HolisticInsightsService {
       .filter((c) => typeof c.sleep_hours === 'number')
       .map((c) => ({ date: c.date, value: c.sleep_hours as number }));
 
+    // Aggregation mode by metric:
+    //   cardio minutes — sum (a week with five 30-min sessions is 150,
+    //     not the 30-min mean per session).
+    //   strength sessions — sum (the unit is sessions-per-week; each
+    //     sample contributes value 1, so the mean would always be 1
+    //     and the series would have zero variance).
+    //   weight kg — average (each daily sample is itself a measurement
+    //     of weight on that day; the weekly value is a smoothing).
+    //   sleep hours — average (per-night rate, weekly value is a mean).
     return {
-      cardio: bucketWeekly(cardioSamples),
-      strength: bucketWeekly(strengthSamples),
-      weight: bucketWeekly(weightSamples),
-      sleep: bucketWeekly(sleepSamples),
+      cardio: bucketWeekly(cardioSamples, 'sum'),
+      strength: bucketWeekly(strengthSamples, 'sum'),
+      weight: bucketWeekly(weightSamples, 'average'),
+      sleep: bucketWeekly(sleepSamples, 'average'),
     };
   }
 
@@ -306,8 +328,9 @@ export class HolisticInsightsService {
     userId: string,
     windowDays: number,
     payload: HolisticInsightsEnvelope,
+    ttlMs: number = CACHE_TTL_MS,
   ): Promise<void> {
-    const expiresAt = new Date(Date.now() + CACHE_TTL_MS);
+    const expiresAt = new Date(Date.now() + ttlMs);
     await this.prisma.holisticInsightCache.upsert({
       where: {
         user_id_window_days: { user_id: userId, window_days: windowDays },

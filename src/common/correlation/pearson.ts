@@ -53,13 +53,28 @@ export function pearson(xs: number[], ys: number[]): CorrelationResult | null {
 }
 
 /**
- * Group raw daily samples into ISO-week buckets and average each
- * bucket. Used by the insights engine to align cross-pillar series
- * onto the same coarse time axis before correlating.
+ * Group raw daily samples into ISO-week buckets. Used by the insights
+ * engine to align cross-pillar series onto the same coarse time axis
+ * before correlating.
  *
  * `samples` is an array of `{date, value}` where `date` is a JS Date
  * or an ISO string parseable by Date.
+ *
+ * Aggregation mode:
+ *   'average' — week value is the mean of contributing samples. Use
+ *     for metrics where each sample is itself a per-day rate (e.g.
+ *     sleep hours, body weight in kg, savings rate %).
+ *   'sum' — week value is the total of contributing samples. Use for
+ *     count or volume metrics (e.g. cardio minutes, strength session
+ *     count, calories logged) where averaging collapses signal — a
+ *     week with five 30-minute sessions and a week with one 30-minute
+ *     session would otherwise both report 30.
+ *
+ * Default is 'average' to match historical behaviour. Callers
+ * adopting 'sum' must pass it explicitly.
  */
+export type WeeklyAggregationMode = 'average' | 'sum';
+
 export interface DailySample {
   date: string | Date;
   value: number;
@@ -85,7 +100,10 @@ export function isoWeekKey(input: Date): string {
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
 
-export function bucketWeekly(samples: DailySample[]): WeeklyBucket[] {
+export function bucketWeekly(
+  samples: DailySample[],
+  mode: WeeklyAggregationMode = 'average',
+): WeeklyBucket[] {
   const acc = new Map<string, { sum: number; count: number }>();
   for (const s of samples) {
     const date = s.date instanceof Date ? s.date : new Date(s.date);
@@ -99,7 +117,7 @@ export function bucketWeekly(samples: DailySample[]): WeeklyBucket[] {
   return Array.from(acc.entries())
     .map(([weekKey, { sum, count }]) => ({
       weekKey,
-      value: sum / count,
+      value: mode === 'sum' ? sum : sum / count,
       sampleCount: count,
     }))
     .sort((a, b) => (a.weekKey < b.weekKey ? -1 : 1));
