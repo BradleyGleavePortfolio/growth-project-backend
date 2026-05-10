@@ -133,6 +133,81 @@ export class StripeApiService {
     return this.post<StripePortalSession>('/billing_portal/sessions', form);
   }
 
+  // Team-mode staff seats — Pro tier only (Q1).
+  //
+  // Stripe metered staff seats are modelled as a separate subscription
+  // line item on the head coach's existing subscription. Each seat is
+  // its own line item (quantity = 1) so it can be removed independently
+  // without unwinding a quantity counter. The returned id is stored on
+  // TeamSubCoachAssignment.stripe_subscription_item_id and used by the
+  // remove call below.
+  //
+  // Idempotency keys are mandatory — head coaches retry on flaky
+  // network and we must not double-bill.
+  async createSubscriptionItem(args: {
+    subscription: string;
+    priceId: string;
+    quantity?: number;
+    metadata?: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<{ id: string; [k: string]: unknown }> {
+    const form: Record<string, string> = {
+      subscription: args.subscription,
+      price: args.priceId,
+      quantity: String(args.quantity ?? 1),
+    };
+    if (args.metadata) {
+      for (const [k, v] of Object.entries(args.metadata)) {
+        form[`metadata[${k}]`] = v;
+      }
+    }
+    return this.post<{ id: string }>('/subscription_items', form, args.idempotencyKey);
+  }
+
+  async deleteSubscriptionItem(args: {
+    subscriptionItemId: string;
+    idempotencyKey: string;
+  }): Promise<{ id: string; deleted: boolean; [k: string]: unknown }> {
+    const secret = process.env.STRIPE_SECRET_KEY;
+    if (!secret) {
+      throw new StripeApiError(
+        'Stripe is not configured (STRIPE_SECRET_KEY unset)',
+        500,
+        'configuration_missing',
+        'configuration_error',
+      );
+    }
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${secret}`,
+      'Stripe-Version': STRIPE_API_VERSION,
+      'Idempotency-Key': args.idempotencyKey,
+    };
+    const res = await this.fetchImpl(
+      `${STRIPE_API_BASE}/subscription_items/${encodeURIComponent(args.subscriptionItemId)}`,
+      { method: 'DELETE', headers },
+    );
+    const text = await res.text();
+    let parsed: unknown = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      parsed = null;
+    }
+    if (!res.ok) {
+      const errEnvelope =
+        parsed && typeof parsed === 'object' && 'error' in (parsed as object)
+          ? (parsed as { error: Record<string, unknown> }).error
+          : null;
+      const message =
+        (errEnvelope?.message as string | undefined) ??
+        `Stripe API ${res.status} on /subscription_items/${args.subscriptionItemId}`;
+      const code = (errEnvelope?.code as string | undefined) ?? null;
+      const type = (errEnvelope?.type as string | undefined) ?? null;
+      throw new StripeApiError(message, res.status, code, type);
+    }
+    return parsed as { id: string; deleted: boolean };
+  }
+
   private async post<T>(
     path: string,
     form: Record<string, string>,

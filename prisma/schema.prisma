@@ -239,6 +239,17 @@ model User {
   workout_assignments_as_client ClientWorkoutAssignment[] @relation("ClientWorkoutAssignments")
   workout_assignments_as_coach  ClientWorkoutAssignment[] @relation("CoachWorkoutAssignments")
 
+  // Team Mode — head-coach <-> sub-coach assignments and audit events.
+  // A coach may appear on either side (head coach in one team, sub-coach
+  // in another). The capped many-to-many constraint (sub-coach assigned
+  // under at most 2 head coaches) is enforced both by a service-layer
+  // guard and a partial unique index added in the team-mode migration.
+  sub_coach_assignments_as_head TeamSubCoachAssignment[]  @relation("TeamSubCoachAssignmentHead")
+  sub_coach_assignments_as_sub  TeamSubCoachAssignment[]  @relation("TeamSubCoachAssignmentSub")
+  team_audit_events_as_actor    TeamAuditEvent[]          @relation("TeamAuditEventActor")
+  team_audit_events_as_target   TeamAuditEvent[]          @relation("TeamAuditEventTarget")
+  invite_codes_invited_by       InviteCode[]              @relation("InviteCodeInvitedBy")
+
   // Sprint B — Macro targets, real meal plans, holistic insights cache.
   macro_targets_as_client          MacroTarget[]             @relation("MacroTargetClient")
   macro_targets_as_coach           MacroTarget[]             @relation("MacroTargetCoach")
@@ -411,6 +422,13 @@ model InviteCode {
   code       String    @unique
   coach_id   String
   coach      User      @relation("CoachInviteCodes", fields: [coach_id], references: [id])
+  // Team Mode — sub-coach attribution. When a sub-coach creates an invite
+  // their user_id lands here while coach_id remains the head coach who
+  // owns the team. Null on legacy rows where the head coach issued the
+  // invite directly. The audit feed reads this to show "Invited by sub-
+  // coach <name>" without joining a separate ledger.
+  invited_by_user_id String?
+  invited_by         User?    @relation("InviteCodeInvitedBy", fields: [invited_by_user_id], references: [id])
   created_at DateTime  @default(now())
   expires_at DateTime?
   max_uses   Int?
@@ -419,6 +437,7 @@ model InviteCode {
 
   @@index([coach_id])
   @@index([code])
+  @@index([invited_by_user_id])
 }
 
 model UserProfile {
@@ -1670,6 +1689,7 @@ model HolisticInsightCache {
   @@index([expires_at])
 }
 
+// ============================================================
 // AI GATEWAY — request audit + human-approval drafts
 // ============================================================
 
@@ -1756,4 +1776,96 @@ model AiActionDraft {
   @@index([subject_user_id, created_at])
   @@index([tenant_coach_id, created_at])
   @@index([capability, status])
+}
+
+// ============================================================
+// Team Mode — sub-coach assignments + curated audit events
+// ============================================================
+//
+// ADR-0001 §10 resolutions (locked 2026-05-10):
+//   Q1 — Pro tier: each staff seat is a paid Stripe quantity line.
+//        Enterprise tier: included unlimited.
+//        Growth tier: feature gated (controllers return 403).
+//   Q2 — Sub-coach is a many-to-many of head coaches, capped at 2.
+//   Q3 — Removal auto-reassigns the sub-coach's clients to the
+//        initiating head coach in a single transaction.
+//   Q4 — Audit log is a curated event ledger, not a CRUD firehose.
+//        See TeamAuditEventKind below for the 15 event_kinds.
+//   Q5 — Sub-coaches may invite clients directly. Attribution is
+//        carried by InviteCode.invited_by_user_id (added above).
+//   Q6 — Tier gate at controller level via existing tier resolver.
+
+enum TeamAuditEventKind {
+  session_held
+  message_sent
+  plan_assigned
+  checkin_logged
+  macro_target_set
+  meal_plan_assigned
+  workout_assigned
+  client_progress_logged
+  sub_coach_assigned
+  sub_coach_removed
+  client_reassigned
+  invite_sent_by_sub_coach
+  tier_changed
+  staff_seat_added
+  staff_seat_removed
+}
+
+// Head coach <-> sub-coach assignment. The (sub_coach_id, head_coach_id)
+// pair is unique. The "at most 2 head coaches per sub-coach" cap is
+// enforced by the service-layer assignment path AND by a database
+// trigger added in the migration so a concurrent double-write cannot
+// exceed the cap.
+model TeamSubCoachAssignment {
+  id            String    @id @default(uuid())
+  head_coach_id String
+  head_coach    User      @relation("TeamSubCoachAssignmentHead", fields: [head_coach_id], references: [id], onDelete: Cascade)
+  sub_coach_id  String
+  sub_coach     User      @relation("TeamSubCoachAssignmentSub", fields: [sub_coach_id], references: [id], onDelete: Cascade)
+  // Stripe subscription_item id (Pro tier only — null on Enterprise
+  // because the staff seat is included; null on Growth because the
+  // assignment never lands).
+  stripe_subscription_item_id String?
+  created_at    DateTime  @default(now())
+  archived_at   DateTime?
+
+  @@unique([head_coach_id, sub_coach_id])
+  @@index([head_coach_id, archived_at])
+  @@index([sub_coach_id, archived_at])
+}
+
+// Curated audit feed for the head coach's team. NOT a generic action
+// log. Each row is a meaningful event a head coach would care about
+// in a weekly review (sessions held, plans assigned, sub-coach added/
+// removed, tier changes). 15 event_kinds total.
+//
+// Indexed for two read patterns:
+//   1. Head coach's full feed (head_coach_id, occurred_at DESC).
+//   2. Drill-down by event_kind within a head coach's feed.
+//   3. Per-client filter (target_client_id, occurred_at DESC).
+model TeamAuditEvent {
+  id              String             @id @default(uuid())
+  head_coach_id   String
+  head_coach      User               @relation("TeamAuditEventActor", fields: [head_coach_id], references: [id], onDelete: Cascade)
+  // The user who actually performed the action (may be the head coach
+  // themselves, may be a sub-coach acting under them, may be the
+  // platform OWNER for tier_changed events). Always set.
+  actor_user_id   String
+  // The client the event concerns. Null for events that are not
+  // client-scoped (e.g. sub_coach_assigned, staff_seat_added).
+  target_client_id String?
+  target_client   User?              @relation("TeamAuditEventTarget", fields: [target_client_id], references: [id], onDelete: SetNull)
+  event_kind      TeamAuditEventKind
+  // Free-form short summary for the feed UI. Service-side templates
+  // produce this so the wording stays consistent. Not user input.
+  summary         String
+  // Optional structured payload (e.g. {"reassigned_client_count": 3}).
+  metadata        Json?
+  occurred_at     DateTime           @default(now())
+
+  @@index([head_coach_id, occurred_at])
+  @@index([head_coach_id, event_kind, occurred_at])
+  @@index([target_client_id, occurred_at])
 }
