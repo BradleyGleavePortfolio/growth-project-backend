@@ -25,7 +25,10 @@ import {
   Post,
   Put,
   Req,
+  UseGuards,
 } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/auth.guard';
+import { CoachGuard } from '../auth/coach.guard';
 import { WorkoutBuilderService } from './workout-builder.service';
 import {
   CreateWorkoutPlanDto,
@@ -45,21 +48,25 @@ export class WorkoutBuilderController {
   constructor(private readonly workoutBuilder: WorkoutBuilderService) {}
 
   @Get()
+  @UseGuards(JwtAuthGuard, CoachGuard)
   listPlans(@Req() req: AuthRequest) {
     return this.workoutBuilder.listPlans(req.user.id);
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard, CoachGuard)
   createPlan(@Req() req: AuthRequest, @Body() dto: CreateWorkoutPlanDto) {
     return this.workoutBuilder.createPlan(req.user.id, dto);
   }
 
   @Get(':planId')
+  @UseGuards(JwtAuthGuard, CoachGuard)
   getPlan(@Req() req: AuthRequest, @Param('planId') planId: string) {
     return this.workoutBuilder.getPlan(req.user.id, planId);
   }
 
   @Patch(':planId')
+  @UseGuards(JwtAuthGuard, CoachGuard)
   updatePlan(
     @Req() req: AuthRequest,
     @Param('planId') planId: string,
@@ -69,11 +76,13 @@ export class WorkoutBuilderController {
   }
 
   @Delete(':planId')
+  @UseGuards(JwtAuthGuard, CoachGuard)
   archivePlan(@Req() req: AuthRequest, @Param('planId') planId: string) {
     return this.workoutBuilder.archivePlan(req.user.id, planId);
   }
 
   @Put(':planId/exercises')
+  @UseGuards(JwtAuthGuard, CoachGuard)
   setExercises(
     @Req() req: AuthRequest,
     @Param('planId') planId: string,
@@ -83,6 +92,7 @@ export class WorkoutBuilderController {
   }
 
   @Post(':planId/assignments')
+  @UseGuards(JwtAuthGuard, CoachGuard)
   assignPlan(
     @Req() req: AuthRequest,
     @Param('planId') planId: string,
@@ -92,6 +102,7 @@ export class WorkoutBuilderController {
   }
 
   @Get(':planId/assignments')
+  @UseGuards(JwtAuthGuard, CoachGuard)
   listAssignments(@Req() req: AuthRequest, @Param('planId') planId: string) {
     return this.workoutBuilder.listAssignments(req.user.id, planId);
   }
@@ -106,16 +117,19 @@ export class AssignmentController {
   // each assignment with its plan and exercise rows so the mobile app
   // can render "today's workout" without a second round-trip.
   @Get('me')
+  @UseGuards(JwtAuthGuard)
   listMine(@Req() req: AuthRequest) {
     return this.workoutBuilder.listAssignmentsForClient(req.user.id);
   }
 
   @Get(':assignmentId')
+  @UseGuards(JwtAuthGuard)
   getMine(@Req() req: AuthRequest, @Param('assignmentId') assignmentId: string) {
     return this.workoutBuilder.getAssignmentForClient(req.user.id, assignmentId);
   }
 
   @Patch(':assignmentId/complete')
+  @UseGuards(JwtAuthGuard)
   complete(
     @Req() req: AuthRequest,
     @Param('assignmentId') assignmentId: string,

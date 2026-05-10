@@ -1315,7 +1315,7 @@ note rather than fabricating. Cached 24h per user via the
 
 ### Migrations
 
-- `prisma/migrations/20260507000000_add_workout_builder/` — adds
+- `prisma/migrations/20260508000000_add_workout_builder/` — adds
   `WorkoutPlanType` enum + 3 workout-builder tables.
 - `prisma/migrations/20260509000000_add_sprint_b_macros_meals_insights/`
   — adds 6 tables (MacroTarget, MealTemplate, DailyMealPlan,
