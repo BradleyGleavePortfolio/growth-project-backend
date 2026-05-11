@@ -12,6 +12,7 @@ import { WeightTrendAlertEmitter } from './emitters/weight-trend-alert.emitter';
 import { CheckinSubmittedEmitter } from './emitters/checkin-submitted.emitter';
 import { BuildWeekDayUnlockedEmitter } from './emitters/build-week-day-unlocked.emitter';
 import { CoachAlertEmitter } from './emitters/coach-alert.emitter';
+import { BookingEmitter } from './emitters/booking.emitter';
 
 // PrismaService is provided globally via PrismaModule.
 //
@@ -36,6 +37,7 @@ import { CoachAlertEmitter } from './emitters/coach-alert.emitter';
     CheckinSubmittedEmitter,
     BuildWeekDayUnlockedEmitter,
     CoachAlertEmitter,
+    BookingEmitter,
   ],
   exports: [
     NotificationsService,
@@ -47,6 +49,7 @@ import { CoachAlertEmitter } from './emitters/coach-alert.emitter';
     CheckinSubmittedEmitter,
     BuildWeekDayUnlockedEmitter,
     CoachAlertEmitter,
+    BookingEmitter,
   ],
 })
 export class NotificationsModule {}

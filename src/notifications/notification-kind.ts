@@ -36,6 +36,17 @@ export const NotificationKind = {
   // System: daily/weekly digest email confirmation row (channel=email).
   CLIENT_DIGEST: 'client_digest',
   COACH_DIGEST: 'coach_digest',
+
+  // Concierge booking lifecycle (PR feat/concierge-booking-notifications).
+  // The seven kinds form one preference cluster ("booking_*"); a future
+  // PR can split per-event if product wants finer control.
+  BOOKING_REQUESTED: 'booking_requested',
+  BOOKING_CONFIRMED: 'booking_confirmed',
+  BOOKING_DECLINED: 'booking_declined',
+  BOOKING_CANCELLED: 'booking_cancelled',
+  BOOKING_RESCHEDULED: 'booking_rescheduled',
+  BOOKING_REMINDER_24H: 'booking_reminder_24h',
+  BOOKING_REMINDER_1H: 'booking_reminder_1h',
 } as const;
 
 export type NotificationKindValue = (typeof NotificationKind)[keyof typeof NotificationKind];

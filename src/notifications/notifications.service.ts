@@ -85,6 +85,13 @@ export class NotificationsService {
         digest_email: true,
         digest_push: false,
         digest_inapp: false,
+        // Concierge booking defaults — email off (no transactional
+        // email transport for booking events in Phase 1); push + inapp
+        // on so a Concierge client/coach is reachable for lifecycle
+        // events and reminders without flipping prefs first.
+        booking_email: false,
+        booking_push: true,
+        booking_inapp: true,
       };
     }
     return prefs;
@@ -131,6 +138,9 @@ export class NotificationsService {
       digest_email: data.digest_email,
       digest_push: data.digest_push,
       digest_inapp: data.digest_inapp,
+      booking_email: data.booking_email,
+      booking_push: data.booking_push,
+      booking_inapp: data.booking_inapp,
     };
 
     // Strip undefined entries so Prisma does not try to set them to NULL.
@@ -355,6 +365,7 @@ export class NotificationsService {
     if (kind.startsWith('checkin_submitted')) return 'checkin_submitted';
     if (kind.startsWith('build_week')) return 'build_week';
     if (kind.startsWith('coach_alert')) return 'coach_alert';
+    if (kind.startsWith('booking')) return 'booking';
     if (kind.includes('digest')) return 'digest';
     return 'digest'; // safe default — falls back to digest prefs
   }
