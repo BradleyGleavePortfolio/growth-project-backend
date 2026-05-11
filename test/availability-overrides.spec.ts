@@ -57,6 +57,7 @@ function buildService() {
     prisma as any,
     audit as AuditService,
     {} as any,
+    {} as any,
   );
   return { svc, prisma };
 }
