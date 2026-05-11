@@ -38,6 +38,7 @@ afterEach(() => {
 
 describe('Calendar OAuth KMS retrofit', () => {
   function configureOAuth() {
+    process.env.FEATURE_GOOGLE_CALENDAR_SYNC = 'true';
     process.env.GOOGLE_OAUTH_CLIENT_ID = 'client-id';
     process.env.GOOGLE_OAUTH_CLIENT_SECRET = 'client-secret';
     process.env.GOOGLE_OAUTH_REDIRECT_URI = 'https://api.test/cb';

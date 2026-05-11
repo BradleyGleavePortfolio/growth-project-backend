@@ -1,4 +1,5 @@
 import { GoogleOAuthService } from '../src/scheduling/google-oauth/google-oauth.service';
+import { KmsService } from '../src/common/kms/kms.service';
 
 // FEATURE_GOOGLE_CALENDAR_SYNC gates the Google adapter and its
 // controllers. With the flag off, isConfigured() must return false
@@ -11,6 +12,7 @@ describe('FEATURE_GOOGLE_CALENDAR_SYNC', () => {
   const originalClient = process.env.GOOGLE_OAUTH_CLIENT_ID;
   const originalSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
   const originalRedirect = process.env.GOOGLE_OAUTH_REDIRECT_URI;
+  const kms = new KmsService();
 
   afterEach(() => {
     process.env.FEATURE_GOOGLE_CALENDAR_SYNC = originalFlag;
@@ -24,7 +26,7 @@ describe('FEATURE_GOOGLE_CALENDAR_SYNC', () => {
     process.env.GOOGLE_OAUTH_CLIENT_ID = 'cid';
     process.env.GOOGLE_OAUTH_CLIENT_SECRET = 'csec';
     process.env.GOOGLE_OAUTH_REDIRECT_URI = 'https://example.com/cb';
-    const svc = new GoogleOAuthService({} as any);
+    const svc = new GoogleOAuthService({} as any, kms);
     expect(svc.isConfigured()).toBe(false);
     expect(GoogleOAuthService.isFeatureFlagOn()).toBe(false);
   });
@@ -34,7 +36,7 @@ describe('FEATURE_GOOGLE_CALENDAR_SYNC', () => {
     process.env.GOOGLE_OAUTH_CLIENT_ID = 'cid';
     process.env.GOOGLE_OAUTH_CLIENT_SECRET = 'csec';
     process.env.GOOGLE_OAUTH_REDIRECT_URI = 'https://example.com/cb';
-    const svc = new GoogleOAuthService({} as any);
+    const svc = new GoogleOAuthService({} as any, kms);
     expect(svc.isConfigured()).toBe(true);
     expect(GoogleOAuthService.isFeatureFlagOn()).toBe(true);
   });
