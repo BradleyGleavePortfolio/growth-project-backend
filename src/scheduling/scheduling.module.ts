@@ -1,4 +1,8 @@
 import { Module } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/auth.guard';
+import { JwksVerifierService } from '../auth/jwks.service';
+import { GoogleOAuthController } from './google-oauth/google-oauth.controller';
+import { GoogleOAuthService } from './google-oauth/google-oauth.service';
 import { CalendarSyncJob } from './jobs/calendar-sync.job';
 import { SessionReminderJob } from './jobs/reminder.job';
 import { GoogleCalendarAdapter } from './providers/google-calendar.adapter';
@@ -18,8 +22,16 @@ import { SchedulingWebhookController } from './scheduling-webhook.controller';
 // them via constructor injection. The webhook controller lives in this
 // module because its lifecycle and provider env-flag wiring share fate
 // with the rest of scheduling.
+//
+// Concierge (PR #142) additions: GoogleOAuthController/Service handle
+// the Calendar API code-exchange + refresh flow. They live in this
+// module so the OAuth wiring shares fate with the GoogleCalendarAdapter.
 @Module({
-  controllers: [SchedulingController, SchedulingWebhookController],
+  controllers: [
+    SchedulingController,
+    SchedulingWebhookController,
+    GoogleOAuthController,
+  ],
   providers: [
     SchedulingService,
     SchedulingProviderRegistry,
@@ -30,7 +42,13 @@ import { SchedulingWebhookController } from './scheduling-webhook.controller';
     ZoomVideoAdapter,
     SessionReminderJob,
     CalendarSyncJob,
+    GoogleOAuthService,
+    // Local guards mirror the pattern in MacrosModule / TeamModeModule:
+    // provide the JwtAuthGuard + JwksVerifierService locally rather
+    // than importing AuthModule (avoids the circular-import risk).
+    JwtAuthGuard,
+    JwksVerifierService,
   ],
-  exports: [SchedulingService],
+  exports: [SchedulingService, GoogleOAuthService],
 })
 export class SchedulingModule {}

@@ -151,3 +151,46 @@ CREATE INDEX "CalendarConnection_user_id_idx" ON "CalendarConnection"("user_id")
 ALTER TABLE "CalendarConnection"
     ADD CONSTRAINT "CalendarConnection_user_id_fkey"
     FOREIGN KEY ("user_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- ──────────────────────────────────────────────────────────────────
+-- Concierge scheduling additions (locked decisions from PR #142 RFC)
+-- ──────────────────────────────────────────────────────────────────
+-- CoachAvailabilityOverride — date-keyed exceptions to the recurring
+-- weekly availability (holidays, blocks, extras). kind is enforced by
+-- a CHECK constraint rather than a Postgres enum so adding new kinds
+-- in a follow-up is purely additive. start_minute/end_minute are
+-- nullable for all-day HOLIDAY/BLOCK rows.
+
+CREATE TABLE "CoachAvailabilityOverride" (
+    "id"           TEXT         NOT NULL,
+    "coach_id"     TEXT         NOT NULL,
+    "date"         DATE         NOT NULL,
+    "start_minute" INTEGER,
+    "end_minute"   INTEGER,
+    "kind"         TEXT         NOT NULL,
+    "note"         TEXT,
+    "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CoachAvailabilityOverride_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "CoachAvailabilityOverride_kind_check"
+        CHECK ("kind" IN ('holiday', 'block', 'extra')),
+    CONSTRAINT "CoachAvailabilityOverride_window_check"
+        CHECK (
+            ("start_minute" IS NULL AND "end_minute" IS NULL)
+            OR ("start_minute" IS NOT NULL AND "end_minute" IS NOT NULL
+                AND "start_minute" >= 0 AND "end_minute" <= 1440
+                AND "start_minute" < "end_minute")
+        )
+);
+
+ALTER TABLE "CoachAvailabilityOverride"
+    ADD CONSTRAINT "CoachAvailabilityOverride_coach_id_fkey"
+    FOREIGN KEY ("coach_id") REFERENCES "User"("id")
+    ON DELETE CASCADE ON UPDATE CASCADE;
+
+CREATE UNIQUE INDEX "CoachAvailabilityOverride_coach_date_start_kind_key"
+    ON "CoachAvailabilityOverride"("coach_id", "date", "start_minute", "kind");
+
+CREATE INDEX "CoachAvailabilityOverride_coach_id_date_idx"
+    ON "CoachAvailabilityOverride"("coach_id", "date");

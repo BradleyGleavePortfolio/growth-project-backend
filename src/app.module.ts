@@ -151,7 +151,6 @@ import { SchedulingModule } from './scheduling/scheduling.module';
     // PLAY_STORE_URL, and PUBLIC_WEB_SIGNUP_URL until the real store
     // listings exist (mounted outside the /api prefix, see main.ts).
     PublicPagesModule,
-<<<<<<< HEAD
     // Phase 1 PTM (Predictive Tracking Model). @Global module exposing
     // PtmService for fire-and-forget signal collection across check-ins,
     // weight, workout, food, messaging, and finance hooks; plus the
