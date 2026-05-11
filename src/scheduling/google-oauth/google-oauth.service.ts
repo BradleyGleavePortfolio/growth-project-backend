@@ -74,11 +74,26 @@ export class GoogleOAuthService {
   ) {}
 
   isConfigured(): boolean {
+    // FEATURE_GOOGLE_CALENDAR_SYNC — Phase 2 master switch. Defaults
+    // to false; until product flips it on per environment, every
+    // configuration probe returns false regardless of which secrets
+    // are set. This keeps Google calendar code paths inert in
+    // Phase 1 (TGP-exclusive scheduling). See RFC 142 addendum.
+    if (process.env.FEATURE_GOOGLE_CALENDAR_SYNC?.toLowerCase() !== 'true') {
+      return false;
+    }
     return (
       !!process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() &&
       !!process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() &&
       !!process.env.GOOGLE_OAUTH_REDIRECT_URI?.trim()
     );
+  }
+
+  // Probe for whether the feature flag is set, independent of
+  // OAuth secret configuration. Controllers use this to return 404
+  // (feature not available) vs 503 (configured but degraded).
+  static isFeatureFlagOn(): boolean {
+    return process.env.FEATURE_GOOGLE_CALENDAR_SYNC?.toLowerCase() === 'true';
   }
 
   buildAuthorizeUrl(args: { userId: string; state: string }): string {
