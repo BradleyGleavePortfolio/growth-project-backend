@@ -24,6 +24,7 @@ import { LessonsModule } from './lessons/lessons.module';
 import { WaterModule } from './water/water.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { KmsModule } from './common/kms/kms.module';
 import { HealthModule } from './health/health.module';
 import { InviteCodesModule } from './invite-codes/invite-codes.module';
 import { MessagingModule } from './messaging/messaging.module';
@@ -88,6 +89,13 @@ import { SchedulingModule } from './scheduling/scheduling.module';
 
     // Global Prisma module — single PrismaClient shared by every feature module.
     PrismaModule,
+
+    // Global KMS helper. Provides KmsService for at-rest encryption of
+    // sensitive fields (Bloodwork free-text, Google Calendar refresh
+    // tokens). Local AES-256-GCM provider keyed by KMS_MASTER_KEY; falls
+    // back to a "PLAINTEXT:" marker prefix when unconfigured so dev runs
+    // without secrets do not break.
+    KmsModule,
 
     // Supabase singleton client (global — available to all modules)
     SupabaseModule,
