@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -16,10 +17,12 @@ import {
   AttachManualVideoLinkDto,
   CancelSessionDto,
   CompleteSessionDto,
+  CreateAvailabilityOverrideDto,
   CreateSessionTypeDto,
   RequestSessionDto,
   RescheduleSessionDto,
   SetAvailabilityDto,
+  UpdateAvailabilityOverrideDto,
   UpdateSessionTypeDto,
 } from './dto/scheduling.dto';
 import { SchedulingService } from './scheduling.service';
@@ -221,6 +224,79 @@ export class SchedulingController {
     @Body() body: AttachManualVideoLinkDto,
   ) {
     return this.scheduling.attachManualVideoLink(toActor(req), id, body);
+  }
+
+  // ---------------- Open slots (Phase 1 — TGP-exclusive) ----------------
+
+  @ApiOperation({
+    summary: 'List concrete open slots for a coach in a date range',
+    description:
+      'Phase 1: materializes slots from TGP recurring availability, coach overrides, and active sessions. Phase 2 will optionally fold in Google Calendar free-busy when FEATURE_GOOGLE_CALENDAR_SYNC is on.',
+  })
+  @ApiResponse({ status: 200, description: 'Open slot list.' })
+  @Get('coaches/:coachId/open-slots')
+  async getOpenSlots(
+    @Request() req: AuthedRequest,
+    @Param('coachId') coachId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('duration_minutes') durationMinutes?: string,
+  ) {
+    const parsed =
+      durationMinutes !== undefined ? Number(durationMinutes) : null;
+    return this.scheduling.getOpenSlots(toActor(req), coachId, {
+      from,
+      to,
+      duration_minutes: parsed,
+    });
+  }
+
+  // ---------------- Coach availability overrides ----------------
+
+  @ApiOperation({ summary: "List the calling coach's availability overrides" })
+  @ApiResponse({ status: 200, description: 'Overrides listed.' })
+  @Get('coach/availability-overrides')
+  async listMyAvailabilityOverrides(
+    @Request() req: AuthedRequest,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.scheduling.listMyAvailabilityOverrides(toActor(req), {
+      from,
+      to,
+    });
+  }
+
+  @ApiOperation({ summary: 'Create an availability override' })
+  @ApiResponse({ status: 201, description: 'Override created.' })
+  @Post('coach/availability-overrides')
+  async createAvailabilityOverride(
+    @Request() req: AuthedRequest,
+    @Body() body: CreateAvailabilityOverrideDto,
+  ) {
+    return this.scheduling.createAvailabilityOverride(toActor(req), body);
+  }
+
+  @ApiOperation({ summary: 'Update an availability override (owner only)' })
+  @ApiResponse({ status: 200, description: 'Override updated.' })
+  @Patch('coach/availability-overrides/:id')
+  async updateAvailabilityOverride(
+    @Request() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() body: UpdateAvailabilityOverrideDto,
+  ) {
+    return this.scheduling.updateAvailabilityOverride(toActor(req), id, body);
+  }
+
+  @ApiOperation({ summary: 'Delete an availability override (owner only)' })
+  @ApiResponse({ status: 200, description: 'Override deleted.' })
+  @Delete('coach/availability-overrides/:id')
+  @HttpCode(HttpStatus.OK)
+  async deleteAvailabilityOverride(
+    @Request() req: AuthedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.scheduling.deleteAvailabilityOverride(toActor(req), id);
   }
 }
 
