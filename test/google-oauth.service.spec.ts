@@ -24,6 +24,13 @@ import { KmsService } from '../src/common/kms/kms.service';
 
 const ORIGINAL_ENV = { ...process.env };
 
+// Phase 2 master switch — these specs exercise the OAuth surface,
+// so the flag is on for every test below. Flag-off behavior has
+// its own dedicated test.
+beforeEach(() => {
+  process.env.FEATURE_GOOGLE_CALENDAR_SYNC = 'true';
+});
+
 class TestableOAuth extends GoogleOAuthService {
   // Expose the protected fetchImpl so tests can stub it.
   public setFetchImpl(impl: typeof fetch): void {
@@ -132,6 +139,24 @@ describe('GoogleOAuthService.exchangeCode', () => {
     expect(capturedBody).toContain('code=c-1');
     expect(capturedBody).toContain('client_id=client-1');
     expect(capturedBody).toContain('grant_type=authorization_code');
+  });
+});
+
+describe('GoogleOAuthService feature flag', () => {
+  it('isConfigured returns false when FEATURE_GOOGLE_CALENDAR_SYNC is off', () => {
+    delete process.env.FEATURE_GOOGLE_CALENDAR_SYNC;
+    process.env.GOOGLE_OAUTH_CLIENT_ID = 'client-1';
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = 'secret';
+    process.env.GOOGLE_OAUTH_REDIRECT_URI = 'https://api.test/cb';
+    const svc = makeService();
+    expect(svc.isConfigured()).toBe(false);
+  });
+
+  it('isFeatureFlagOn reflects env var', () => {
+    delete process.env.FEATURE_GOOGLE_CALENDAR_SYNC;
+    expect(GoogleOAuthService.isFeatureFlagOn()).toBe(false);
+    process.env.FEATURE_GOOGLE_CALENDAR_SYNC = 'true';
+    expect(GoogleOAuthService.isFeatureFlagOn()).toBe(true);
   });
 });
 

@@ -18,6 +18,14 @@ import { BadRequestException } from '@nestjs/common';
 import { GoogleCalendarWebhookController } from '../src/scheduling/google-calendar/google-calendar-webhook.controller';
 
 const ORIGINAL_ENV = { ...process.env };
+
+// Phase 2 master switch — webhook handler 404s when flag is off.
+// Tests below assert the inner validation behavior, so flag is
+// on for every test. Flag-off has its own dedicated test.
+beforeEach(() => {
+  process.env.FEATURE_GOOGLE_CALENDAR_SYNC = 'true';
+});
+
 afterEach(() => {
   process.env = { ...ORIGINAL_ENV };
 });
@@ -113,5 +121,18 @@ describe('GoogleCalendarWebhookController.receive', () => {
     });
     const out = await ctrl.receive(req);
     expect(out.ok).toBe(true);
+  });
+
+  it('returns 404 NotFound when FEATURE_GOOGLE_CALENDAR_SYNC is off', async () => {
+    delete process.env.FEATURE_GOOGLE_CALENDAR_SYNC;
+    const audit = buildAudit();
+    const ctrl = new GoogleCalendarWebhookController(audit as never);
+    const req = makeReq({
+      'x-goog-channel-id': 'ch-1',
+      'x-goog-resource-id': 'res-1',
+      'x-goog-resource-state': 'exists',
+    });
+    const { NotFoundException } = await import('@nestjs/common');
+    await expect(ctrl.receive(req)).rejects.toBeInstanceOf(NotFoundException);
   });
 });
