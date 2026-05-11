@@ -15,6 +15,7 @@ import {
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { AuditAction, AuditService } from '../audit/audit.service';
+import { BookingEmitter } from '../notifications/emitters/booking.emitter';
 import { PrismaService } from '../prisma.service';
 import {
   AttachManualVideoLinkDto,
@@ -75,7 +76,31 @@ export class SchedulingService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly providers: SchedulingProviderRegistry,
+    private readonly bookingEmitter: BookingEmitter,
   ) {}
+
+  // Resolve a User's display name for the lifecycle notifications.
+  // Returns `'Someone'` when the row is missing (deleted user / data
+  // race) — never throws, since notification dispatch must not block a
+  // state transition. Bounded to a 32-char cap to keep push payloads
+  // small.
+  private async resolveDisplayName(userId: string | null): Promise<string> {
+    if (!userId) return 'Someone';
+    // Wrap in try/catch — notification dispatch must NEVER block a
+    // lifecycle transition. Real PrismaService always has a `user`
+    // delegate; some unit-test fakes do not, and they treat
+    // notifications as out-of-scope.
+    try {
+      const u = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true },
+      });
+      if (!u || !u.name) return 'Someone';
+      return u.name.slice(0, 32);
+    } catch {
+      return 'Someone';
+    }
+  }
 
   // ---------------------------------------------------------------
   // SessionType CRUD
@@ -287,6 +312,32 @@ export class SchedulingService {
         auto_approved: initialStatus === 'scheduled',
       },
     });
+    // Notify the coach of the request. Auto-approve path skips
+    // "requested" semantics and emits a "confirmed" to the client
+    // below, since from the client's perspective there is no
+    // separate approval moment.
+    if (initialStatus === 'requested') {
+      const clientName = await this.resolveDisplayName(actor.id);
+      await this.bookingEmitter.emitRequested({
+        coachUserId: dto.coach_id,
+        clientDisplayName: clientName,
+        sessionId: session.id,
+        requestedAt: session.created_at,
+        // RequestSessionDto does not expose a notes field yet; the
+        // payload column is provisioned so a follow-up PR can pass
+        // through `dto.notes` without changing the emitter shape.
+        notes: null,
+      });
+    } else {
+      const coachName = await this.resolveDisplayName(dto.coach_id);
+      await this.bookingEmitter.emitConfirmed({
+        clientUserId: actor.id,
+        coachDisplayName: coachName,
+        sessionId: session.id,
+        scheduledAt: start,
+      });
+    }
+
     if (initialStatus === 'scheduled') {
       // Auto-approved sessions get the same provisioning step a manual
       // approval triggers — so the audit log shows both events and the
@@ -317,6 +368,15 @@ export class SchedulingService {
       userAgent: actor.userAgent,
       metadata: { from: existing.status, to: 'scheduled' },
     });
+    if (existing.client_id) {
+      const coachName = await this.resolveDisplayName(existing.coach_id);
+      await this.bookingEmitter.emitConfirmed({
+        clientUserId: existing.client_id,
+        coachDisplayName: coachName,
+        sessionId: sessionId,
+        scheduledAt: existing.start_at,
+      });
+    }
     return this.runProviderProvisioning(updated.id, actor);
   }
 
@@ -349,6 +409,16 @@ export class SchedulingService {
       userAgent: actor.userAgent,
       metadata: { from: existing.status, to: 'declined', reason: reason ?? null },
     });
+    if (existing.client_id) {
+      const coachName = await this.resolveDisplayName(existing.coach_id);
+      await this.bookingEmitter.emitDeclined({
+        clientUserId: existing.client_id,
+        coachDisplayName: coachName,
+        sessionId: sessionId,
+        requestedAt: existing.created_at,
+        declineReason: reason ?? null,
+      });
+    }
     return updated;
   }
 
@@ -398,6 +468,18 @@ export class SchedulingService {
         reason: dto.reason ?? null,
       },
     });
+    const recipientId =
+      actor.id === existing.coach_id ? existing.client_id : existing.coach_id;
+    if (recipientId) {
+      const reschedulerName = await this.resolveDisplayName(actor.id);
+      await this.bookingEmitter.emitRescheduled({
+        recipientUserId: recipientId,
+        reschedulerDisplayName: reschedulerName,
+        sessionId: sessionId,
+        oldScheduledAt: existing.start_at,
+        newScheduledAt: start,
+      });
+    }
     return updated;
   }
 
@@ -433,6 +515,18 @@ export class SchedulingService {
       userAgent: actor.userAgent,
       metadata: { from: existing.status, to: 'canceled', reason: dto.reason ?? null },
     });
+    const recipientId =
+      actor.id === existing.coach_id ? existing.client_id : existing.coach_id;
+    if (recipientId) {
+      const cancellerName = await this.resolveDisplayName(actor.id);
+      await this.bookingEmitter.emitCancelled({
+        recipientUserId: recipientId,
+        cancellingPartyDisplayName: cancellerName,
+        sessionId: sessionId,
+        scheduledAt: existing.start_at,
+        cancelReason: dto.reason ?? null,
+      });
+    }
     if (existing.calendar_event_id) {
       await this.cancelProviderArtifacts(existing);
     }

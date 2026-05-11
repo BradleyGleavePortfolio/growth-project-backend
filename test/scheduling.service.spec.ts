@@ -166,7 +166,20 @@ describe('SchedulingService — request + state machine + audit', () => {
     prisma = buildPrismaFake();
     bindTransaction(prisma);
     auditCtx = buildAudit();
-    svc = new SchedulingService(prisma, auditCtx.audit, buildRegistry());
+    // BookingEmitter is a thin pass-through to NotificationsService; for
+    // the existing scheduling.service.spec the emit calls are a no-op
+    // stub. Booking-notification coverage lives in
+    // src/notifications/__tests__/booking.emitter.spec.ts.
+    const stubEmitter = {
+      emitRequested: async () => undefined,
+      emitConfirmed: async () => undefined,
+      emitDeclined: async () => undefined,
+      emitCancelled: async () => undefined,
+      emitRescheduled: async () => undefined,
+      emitReminder24h: async () => undefined,
+      emitReminder1h: async () => undefined,
+    } as unknown as ConstructorParameters<typeof SchedulingService>[3];
+    svc = new SchedulingService(prisma, auditCtx.audit, buildRegistry(), stubEmitter);
   });
 
   it('client requests a session — written as `requested`, audit recorded', async () => {

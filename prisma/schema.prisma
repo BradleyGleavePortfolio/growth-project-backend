@@ -234,8 +234,9 @@ model User {
 
   // Phase 9 — Notification Center + Digest
   // notifications receives all inbox rows; digest_logs tracks sent digest windows.
-  notifications Notification[]
-  digest_logs   NotificationDigestLog[]
+  notifications              Notification[]
+  digest_logs                NotificationDigestLog[]
+  notification_delivery_logs NotificationDeliveryLog[]
 
   // Sprint B — Workout Builder relations.
   workout_plans_as_coach        WorkoutPlan[]             @relation("CoachWorkoutPlans")
@@ -668,6 +669,15 @@ model NotificationPreferences {
   digest_email            Boolean @default(true)
   digest_push             Boolean @default(false)
   digest_inapp            Boolean @default(false)
+  // Concierge booking notifications — cluster prefs covering all
+  // booking.* kinds (requested, confirmed, declined, cancelled,
+  // rescheduled, reminder.24h, reminder.1h). Email default-off
+  // because there is no transactional email transport for booking
+  // events in Phase 1 (digest only); the column is provisioned so
+  // a future PR can flip it on without another schema change.
+  booking_email           Boolean @default(false)
+  booking_push            Boolean @default(true)
+  booking_inapp           Boolean @default(true)
 }
 
 model Habit {
@@ -1526,6 +1536,28 @@ model NotificationDigestLog {
   @@index([status, created_at])
 }
 
+// NotificationDeliveryLog — idempotency ledger for one-shot
+// session-scoped notifications. Today used by the booking
+// reminder cron (24h + 1h before start_at): the cron INSERTs
+// before sending and treats a UniqueViolation as "already sent,
+// skip". Row stays as a sent-receipts record for support
+// debugging. Distinct from NotificationDigestLog which is
+// keyed on a window_date rather than a session.
+model NotificationDeliveryLog {
+  id         String          @id @default(uuid())
+  user_id    String
+  user       User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  session_id String
+  session    CoachingSession @relation("DeliveryLogSession", fields: [session_id], references: [id], onDelete: Cascade)
+  // kind matches NotificationKind values, e.g. booking_reminder_24h.
+  kind       String
+  created_at DateTime        @default(now())
+
+  @@unique([session_id, user_id, kind], name: "NotificationDeliveryLog_session_user_kind_key")
+  @@index([session_id])
+  @@index([user_id, created_at])
+}
+
 // ============================================================
 // Sprint B — coach toolset (workout builder, macros, real meal
 // plans, holistic insights cache)
@@ -2234,7 +2266,8 @@ model CoachingSession {
   created_at               DateTime         @default(now())
   updated_at               DateTime         @default(now()) @updatedAt
 
-  participants SessionParticipant[] @relation("SessionParticipantSession")
+  participants  SessionParticipant[]      @relation("SessionParticipantSession")
+  delivery_logs NotificationDeliveryLog[] @relation("DeliveryLogSession")
 
   // Hot paths:
   //   - "list this coach's upcoming sessions" → (coach_id, start_at)

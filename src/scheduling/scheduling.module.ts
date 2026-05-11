@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { JwksVerifierService } from '../auth/jwks.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { GoogleCalendarWebhookController } from './google-calendar/google-calendar-webhook.controller';
 import { GoogleCalendarService } from './google-calendar/google-calendar.service';
 import { GoogleOAuthController } from './google-oauth/google-oauth.controller';
@@ -29,6 +30,7 @@ import { SchedulingWebhookController } from './scheduling-webhook.controller';
 // the Calendar API code-exchange + refresh flow. They live in this
 // module so the OAuth wiring shares fate with the GoogleCalendarAdapter.
 @Module({
+  imports: [NotificationsModule],
   controllers: [
     SchedulingController,
     SchedulingWebhookController,

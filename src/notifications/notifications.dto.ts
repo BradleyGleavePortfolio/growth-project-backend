@@ -185,6 +185,20 @@ export class UpdateNotificationPreferencesDto {
   @IsOptional()
   @IsBoolean()
   digest_inapp?: boolean;
+
+  // ── booking (Concierge lifecycle + reminders) ─────────────────────────────
+
+  @IsOptional()
+  @IsBoolean()
+  booking_email?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  booking_push?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  booking_inapp?: boolean;
 }
 
 // ── Notification center query params ────────────────────────────────────────
