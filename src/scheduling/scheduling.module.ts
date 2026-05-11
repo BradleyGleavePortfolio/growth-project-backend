@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { JwksVerifierService } from '../auth/jwks.service';
+import { GoogleCalendarWebhookController } from './google-calendar/google-calendar-webhook.controller';
+import { GoogleCalendarService } from './google-calendar/google-calendar.service';
 import { GoogleOAuthController } from './google-oauth/google-oauth.controller';
 import { GoogleOAuthService } from './google-oauth/google-oauth.service';
 import { CalendarSyncJob } from './jobs/calendar-sync.job';
@@ -31,6 +33,8 @@ import { SchedulingWebhookController } from './scheduling-webhook.controller';
     SchedulingController,
     SchedulingWebhookController,
     GoogleOAuthController,
+    // Google Calendar Push Notifications receiver (#142 follow-up).
+    GoogleCalendarWebhookController,
   ],
   providers: [
     SchedulingService,
@@ -43,12 +47,16 @@ import { SchedulingWebhookController } from './scheduling-webhook.controller';
     SessionReminderJob,
     CalendarSyncJob,
     GoogleOAuthService,
+    // Real Google Calendar REST client. Stubbed adapter
+    // (GoogleCalendarAdapter above) remains for the Provider registry
+    // until the registry is migrated to consume this service directly.
+    GoogleCalendarService,
     // Local guards mirror the pattern in MacrosModule / TeamModeModule:
     // provide the JwtAuthGuard + JwksVerifierService locally rather
     // than importing AuthModule (avoids the circular-import risk).
     JwtAuthGuard,
     JwksVerifierService,
   ],
-  exports: [SchedulingService, GoogleOAuthService],
+  exports: [SchedulingService, GoogleOAuthService, GoogleCalendarService],
 })
 export class SchedulingModule {}

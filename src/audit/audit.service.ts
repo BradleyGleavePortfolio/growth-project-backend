@@ -40,6 +40,13 @@ export const AuditAction = {
   COACH_AVAILABILITY_OVERRIDE_SET: 'coach.availability_override_set',
   CALENDAR_CONNECTED: 'calendar.connected',
   CALENDAR_DISCONNECTED: 'calendar.disconnected',
+  // Concierge scheduling — Google Calendar adapter. One row per
+  // outbound Calendar API mutation; reads do not write audit rows.
+  CALENDAR_EVENT_CREATED: 'calendar.event_created',
+  CALENDAR_EVENT_UPDATED: 'calendar.event_updated',
+  CALENDAR_EVENT_DELETED: 'calendar.event_deleted',
+  CALENDAR_WATCH_STARTED: 'calendar.watch_started',
+  CALENDAR_WATCH_STOPPED: 'calendar.watch_stopped',
 } as const;
 
 export type AuditActionValue = (typeof AuditAction)[keyof typeof AuditAction];
