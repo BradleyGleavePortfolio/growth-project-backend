@@ -1,6 +1,49 @@
 # RFC 142 — Concierge scheduling
 
-Status: in flight (PR #142). v1 scope locked 2026-05-11.
+## ARCHITECTURE DECISION — TGP-EXCLUSIVE PHASE 1
+
+Locked 2026-05-11 after #142 + #192 landed. The scheduling stack now ships in two phases.
+
+### Phase 1 (this addendum)
+- TGP is the sole source of truth for coach availability and bookings.
+- Open-slot computation reads `CoachAvailability` (recurring weekly windows), `CoachAvailabilityOverride` (HOLIDAY/BLOCK/EXTRA exceptions), and active `CoachingSession` rows. Nothing else.
+- New endpoint `GET /scheduling/coaches/:id/open-slots?from&to&duration_minutes` materializes concrete UTC slots from those three inputs.
+- New override CRUD: `POST | GET | PATCH | DELETE /scheduling/coach/availability-overrides`.
+- Google Calendar adapter from #192 stays in the tree but is gated behind `FEATURE_GOOGLE_CALENDAR_SYNC` (default `false`). With the flag off, `GoogleOAuthService.isConfigured()` returns false regardless of credentials and the OAuth + webhook endpoints respond 404 (feature truly not available, not "configured but broken").
+- No external calendar sync. No free-busy lookups. No event mirroring.
+
+### Phase 2 (deferred, optional)
+- Per-coach opt-in Google Calendar connection (the OAuth + adapter wiring already in tree).
+- Free-busy conflict detection layered on top of TGP slot computation: the Phase 2 path will fetch Google free-busy for the coach over `[from, to]` and subtract the busy blocks before returning slots. The TGP-side computation in Phase 1 is the lower bound; Phase 2 only ever removes slots, never adds them.
+- Optional event mirror — when a TGP booking confirms, write a Google Calendar event on the coach's connected calendar. Already implemented in #192; wakes up when the flag flips.
+- Premium-tier opportunity: per-coach Calendar connection becomes a paid feature in the Coach plan.
+
+### Why phase it this way
+- **Speed to ship.** Phase 1 has zero external dependencies; can ship the moment the mobile UI is built. No waiting on Google verification, no app-review gauntlet for sensitive scopes.
+- **No OAuth verification gauntlet on the critical path.** The `calendar.events` scope is a sensitive scope under Google's OAuth verification policy — bootstrapping a TGP-exclusive flow lets us ship Concierge without that being a launch blocker.
+- **Premium tier opportunity.** "Google Calendar sync" is the kind of feature that justifiably sits behind the Coach paid plan in Phase 2.
+- **Lower blast radius.** A Phase 1 outage is a TGP-only outage. With Phase 2 wired everywhere, a Google API regression would propagate.
+
+### Migration path P1 → P2
+- Additive only. No data migration. No schema changes.
+- Flip `FEATURE_GOOGLE_CALENDAR_SYNC=true` per environment.
+- Existing per-coach `CalendarConnection` rows (already in schema) become consultable. Coaches who connect get Phase 2 behavior; those who don't stay on Phase 1.
+- The slot-computation path becomes: `TGP slots − Google busy blocks` for connected coaches; unchanged for unconnected coaches.
+
+### Risks
+- **Phase 1 risk removed**: Google OAuth verification timeline no longer gates Concierge launch.
+- **Phase 2 phasing risk added**: shipping the per-coach connect UI behind the flag means the surface area is not exercised in production while the flag is off. Mitigated by keeping the `GoogleCalendarService` unit tests (already in #192) and adding a smoke-test PR when the flag flips.
+- **Slot-computer correctness risk**: the pure `SlotComputerService` introduced for Phase 1 has its own unit-test suite (see `test/slot-computer.spec.ts`); DST and tz edges are covered explicitly.
+
+### Out of scope (P1 framing — supersedes the original "Out of scope" section below)
+- All Google Calendar functionality — moved from "out of scope for v1" to "Phase 2".
+- Multi-day or recurring booking flows.
+- Group sessions UI.
+- Provider-side cancellation reconciliation (still v2).
+
+---
+
+Status: in flight (PR #142). v1 scope locked 2026-05-11. Phase 1 addendum 2026-05-11.
 Owner: Bradley Gleave.
 Supersedes: the abstract "session scheduling foundation" framing in the original draft of this PR. The v1 surface is narrower (concierge only) and concrete.
 

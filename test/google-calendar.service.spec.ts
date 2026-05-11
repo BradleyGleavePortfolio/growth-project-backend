@@ -25,6 +25,14 @@ import 'reflect-metadata';
 import { GoogleCalendarService } from '../src/scheduling/google-calendar/google-calendar.service';
 
 const ORIGINAL_ENV = { ...process.env };
+
+// Phase 2 master switch — adapter short-circuits when off. Tests
+// below exercise the real adapter paths, so flag is on for every
+// test. Flag-off behavior is covered by the oauth + webhook specs.
+beforeEach(() => {
+  process.env.FEATURE_GOOGLE_CALENDAR_SYNC = 'true';
+});
+
 afterEach(() => {
   process.env = { ...ORIGINAL_ENV };
 });

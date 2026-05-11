@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Controller,
   Get,
+  NotFoundException,
   Query,
   Req,
   Res,
@@ -47,6 +48,9 @@ export class GoogleOAuthController {
   @Get('initiate')
   @UseGuards(JwtAuthGuard)
   initiate(@Req() req: AuthedRequest, @Res() res: Response): void {
+    if (!GoogleOAuthService.isFeatureFlagOn()) {
+      throw new NotFoundException();
+    }
     const nonce = crypto.randomBytes(16).toString('base64url');
     const stateKey = `${req.user.id}:${nonce}`;
     _stateNonces.set(stateKey, {
@@ -70,6 +74,9 @@ export class GoogleOAuthController {
     @Query('error') error: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
+    if (!GoogleOAuthService.isFeatureFlagOn()) {
+      throw new NotFoundException();
+    }
     if (error) {
       // User declined consent — bounce back to the app with the reason.
       res.redirect(

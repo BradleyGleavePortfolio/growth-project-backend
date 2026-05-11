@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -20,11 +21,15 @@ import {
   AvailabilityWindowDto,
   CancelSessionDto,
   CompleteSessionDto,
+  CreateAvailabilityOverrideDto,
   CreateSessionTypeDto,
   RequestSessionDto,
   RescheduleSessionDto,
+  UpdateAvailabilityOverrideDto,
   UpdateSessionTypeDto,
+  validateOverridePayload,
 } from './dto/scheduling.dto';
+import { computeOpenSlots, validateRange } from './slot-computer.service';
 import { SchedulingProviderRegistry } from './providers/scheduling-provider.registry';
 import {
   assertCanApproveOrDecline,
@@ -716,4 +721,260 @@ export class SchedulingService {
       );
     }
   }
+
+  // ---------------- Open slots (Phase 1 — TGP-exclusive) ----------------
+  //
+  // Concrete bookable slots over [from, to] for `coachId`. Phase 1
+  // intentionally consumes only TGP state: recurring availability,
+  // coach overrides, and existing active sessions. Phase 2 will fold
+  // in Google Calendar free-busy when the feature flag is on; that
+  // path is documented in the RFC addendum but not wired here.
+  //
+  // 60s in-process cache keyed on (coach|from|to|duration). Suitable
+  // for the booking-picker UX where the same client opens a coach
+  // page repeatedly; not a substitute for a real cache layer.
+
+  private readonly _openSlotsCache = new Map<
+    string,
+    { expiresAt: number; payload: OpenSlotsPayload }
+  >();
+  private static readonly OPEN_SLOTS_TTL_MS = 60_000;
+
+  async getOpenSlots(
+    actor: ActorContext,
+    coachId: string,
+    args: { from: string; to: string; duration_minutes?: number | null },
+  ): Promise<OpenSlotsPayload> {
+    // Same auth rule as request-session: caller must be the assigned
+    // client, the coach themselves, or owner.
+    if (
+      actor.role !== 'owner' &&
+      !(actor.role === 'coach' && actor.id === coachId) &&
+      !(actor.role === 'student' && actor.coach_id === coachId)
+    ) {
+      throw new ForbiddenException(
+        'You can only view open slots for your assigned coach',
+      );
+    }
+
+    const fromDate = new Date(args.from);
+    const toDate = new Date(args.to);
+    const duration = args.duration_minutes ?? 60;
+    if (!Number.isFinite(duration) || duration <= 0 || duration > 8 * 60) {
+      throw new BadRequestException('duration_minutes must be 1..480');
+    }
+    const rangeError = validateRange(fromDate, toDate);
+    if (rangeError) throw new BadRequestException(rangeError.message);
+
+    const cacheKey = `${coachId}|${fromDate.toISOString()}|${toDate.toISOString()}|${duration}`;
+    const cached = this._openSlotsCache.get(cacheKey);
+    const now = Date.now();
+    if (cached && cached.expiresAt > now) {
+      return cached.payload;
+    }
+
+    const coach = await this.prisma.user.findUnique({
+      where: { id: coachId },
+      include: { coach_profile: true },
+    });
+    if (!coach || coach.role !== 'coach') {
+      throw new NotFoundException('Coach not found');
+    }
+    const timezone =
+      coach.coach_profile?.timezone ?? 'America/Los_Angeles';
+
+    const [rawWindows, rawOverrides, activeSessions] = await Promise.all([
+      this.prisma.coachAvailability.findMany({ where: { coach_id: coachId } }),
+      this.prisma.coachAvailabilityOverride.findMany({
+        where: {
+          coach_id: coachId,
+          date: { gte: dateOnly(fromDate, -1), lte: dateOnly(toDate, 1) },
+        },
+      }),
+      this.prisma.coachingSession.findMany({
+        where: {
+          coach_id: coachId,
+          status: { in: ['requested', 'scheduled', 'pending_provider'] },
+          start_at: { lt: toDate },
+          end_at: { gt: fromDate },
+        },
+      }),
+    ]);
+
+    const slots = computeOpenSlots({
+      from: fromDate,
+      to: toDate,
+      durationMinutes: duration,
+      coachTimezone: timezone,
+      windows: rawWindows.map((w) => ({
+        day_of_week: w.day_of_week,
+        start_minute: w.start_minute,
+        end_minute: w.end_minute,
+      })),
+      overrides: rawOverrides.map((o) => ({
+        date: o.date.toISOString().slice(0, 10),
+        start_minute: o.start_minute,
+        end_minute: o.end_minute,
+        kind: o.kind as 'holiday' | 'block' | 'extra',
+      })),
+      bookings: activeSessions.map((s) => ({
+        start_at: s.start_at,
+        end_at: s.end_at,
+      })),
+    });
+
+    const payload: OpenSlotsPayload = {
+      coach_id: coachId,
+      timezone,
+      generated_at: new Date().toISOString(),
+      slots,
+    };
+    this._openSlotsCache.set(cacheKey, {
+      expiresAt: now + SchedulingService.OPEN_SLOTS_TTL_MS,
+      payload,
+    });
+    return payload;
+  }
+
+  // ---------------- Coach availability overrides — CRUD ----------------
+
+  async listMyAvailabilityOverrides(
+    actor: ActorContext,
+    args: { from?: string; to?: string },
+  ) {
+    // Only coaches and owners list their own overrides. A student has
+    // no business reading override notes (note may be private).
+    if (actor.role !== 'coach' && actor.role !== 'owner') {
+      throw new ForbiddenException(
+        'Only coaches may list their availability overrides',
+      );
+    }
+    const where: Prisma.CoachAvailabilityOverrideWhereInput = {
+      coach_id: actor.id,
+    };
+    if (args.from || args.to) {
+      where.date = {};
+      if (args.from) (where.date as Prisma.DateTimeFilter).gte = new Date(args.from);
+      if (args.to) (where.date as Prisma.DateTimeFilter).lte = new Date(args.to);
+    }
+    return this.prisma.coachAvailabilityOverride.findMany({
+      where,
+      orderBy: [{ date: 'asc' }, { start_minute: 'asc' }],
+    });
+  }
+
+  async createAvailabilityOverride(
+    actor: ActorContext,
+    dto: CreateAvailabilityOverrideDto,
+  ) {
+    if (actor.role !== 'coach' && actor.role !== 'owner') {
+      throw new ForbiddenException(
+        'Only coaches may create availability overrides',
+      );
+    }
+    let validated: { minutes: { start: number | null; end: number | null } };
+    try {
+      validated = validateOverridePayload({
+        kind: dto.kind,
+        date: dto.date,
+        start_time: dto.start_time ?? null,
+        end_time: dto.end_time ?? null,
+      });
+    } catch (err) {
+      throw new BadRequestException(
+        err instanceof Error ? err.message : 'Invalid override payload',
+      );
+    }
+    return this.prisma.coachAvailabilityOverride.create({
+      data: {
+        coach_id: actor.id,
+        date: new Date(`${dto.date}T00:00:00.000Z`),
+        kind: dto.kind,
+        start_minute: validated.minutes.start,
+        end_minute: validated.minutes.end,
+        note: dto.note ?? null,
+      },
+    });
+  }
+
+  async updateAvailabilityOverride(
+    actor: ActorContext,
+    id: string,
+    dto: UpdateAvailabilityOverrideDto,
+  ) {
+    const existing = await this.prisma.coachAvailabilityOverride.findUnique({
+      where: { id },
+    });
+    if (!existing) throw new NotFoundException('Override not found');
+    if (actor.role !== 'owner' && existing.coach_id !== actor.id) {
+      throw new ForbiddenException(
+        'You can only update your own availability overrides',
+      );
+    }
+    const mergedKind = dto.kind ?? (existing.kind as 'holiday' | 'block' | 'extra');
+    const hasStart = dto.start_time !== undefined;
+    const hasEnd = dto.end_time !== undefined;
+    let startMin = existing.start_minute;
+    let endMin = existing.end_minute;
+    if (hasStart || hasEnd || dto.kind !== undefined) {
+      try {
+        const v = validateOverridePayload({
+          kind: mergedKind,
+          start_time: hasStart ? dto.start_time : minutesToHHMM(existing.start_minute),
+          end_time: hasEnd ? dto.end_time : minutesToHHMM(existing.end_minute),
+        });
+        startMin = v.minutes.start;
+        endMin = v.minutes.end;
+      } catch (err) {
+        throw new BadRequestException(
+          err instanceof Error ? err.message : 'Invalid override payload',
+        );
+      }
+    }
+    return this.prisma.coachAvailabilityOverride.update({
+      where: { id },
+      data: {
+        kind: mergedKind,
+        start_minute: startMin,
+        end_minute: endMin,
+        note: dto.note ?? existing.note,
+      },
+    });
+  }
+
+  async deleteAvailabilityOverride(actor: ActorContext, id: string) {
+    const existing = await this.prisma.coachAvailabilityOverride.findUnique({
+      where: { id },
+    });
+    if (!existing) throw new NotFoundException('Override not found');
+    if (actor.role !== 'owner' && existing.coach_id !== actor.id) {
+      throw new ForbiddenException(
+        'You can only delete your own availability overrides',
+      );
+    }
+    await this.prisma.coachAvailabilityOverride.delete({ where: { id } });
+    return { ok: true };
+  }
+}
+
+// ---------------- Module-private helpers ----------------
+
+export interface OpenSlotsPayload {
+  coach_id: string;
+  timezone: string;
+  generated_at: string;
+  slots: { start_at: string; end_at: string }[];
+}
+
+function dateOnly(d: Date, dayDelta: number): Date {
+  const r = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  r.setUTCDate(r.getUTCDate() + dayDelta);
+  return r;
+}
+
+function minutesToHHMM(min: number | null): string | null {
+  if (min === null) return null;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 }
