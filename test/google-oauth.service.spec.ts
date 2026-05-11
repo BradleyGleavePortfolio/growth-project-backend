@@ -20,6 +20,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { GoogleOAuthService } from '../src/scheduling/google-oauth/google-oauth.service';
+import { KmsService } from '../src/common/kms/kms.service';
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -32,9 +33,15 @@ class TestableOAuth extends GoogleOAuthService {
 
 function makeService() {
   const prisma = {
-    calendarConnection: { upsert: jest.fn() },
+    calendarConnection: {
+      upsert: jest.fn(),
+      updateMany: jest.fn(async () => ({ count: 0 })),
+      findFirst: jest.fn(async () => null),
+    },
   } as never;
-  return new TestableOAuth(prisma);
+  const kms = new KmsService();
+  kms.resetForTests();
+  return new TestableOAuth(prisma, kms);
 }
 
 afterEach(() => {
