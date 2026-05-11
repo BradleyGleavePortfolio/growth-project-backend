@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import { KmsService } from '../../common/kms/kms.service';
 
 // GoogleOAuthService — minimal OAuth 2.0 code-exchange + refresh flow
 // for Google Calendar. Concierge scheduling (PR #142) v1 only.
@@ -67,7 +68,10 @@ export class GoogleOAuthService {
   // Test seam — overridable so the spec can swap a stub fetch.
   protected fetchImpl: typeof fetch = (input, init) => fetch(input, init);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly kms: KmsService,
+  ) {}
 
   isConfigured(): boolean {
     return (
@@ -148,16 +152,61 @@ export class GoogleOAuthService {
       });
     }
     const json = (await res.json()) as GoogleTokenResponse;
-    // Stash the refresh token in-process (dev seam). Production must
-    // replace this with the KMS-backed secret store.
+    // Stash the refresh token in-process (kept as a same-process fallback
+    // for test environments and dev runs that have not yet applied the
+    // 20260516000000_kms_wrap migration). Production reads/writes go
+    // through CalendarConnection.encrypted_refresh_token via KmsService —
+    // see persistRefreshToken / loadRefreshToken below.
     if (json.refresh_token) {
       this._devTokenStash.set(args.userId, {
         refresh_token: json.refresh_token,
         obtained_at: Date.now(),
         scopes: (json.scope ?? '').split(' ').filter(Boolean),
       });
+      await this.persistRefreshToken(args.userId, json.refresh_token);
     }
     return json;
+  }
+
+  // KMS-wrapped refresh-token persistence on CalendarConnection.
+  // Safe to call before persistConnection — it will skip if there is
+  // no row yet (the controller calls persistConnection before
+  // exchangeCode in some flows and after in others; both orderings
+  // are tolerated because the dev stash is always populated first).
+  private async persistRefreshToken(
+    userId: string,
+    refreshToken: string,
+  ): Promise<void> {
+    const encrypted = this.kms.encrypt(refreshToken);
+    const updated = await this.prisma.calendarConnection.updateMany({
+      where: { user_id: userId, provider: 'google_calendar' },
+      data: { encrypted_refresh_token: encrypted },
+    });
+    if (updated.count === 0) {
+      this.logger.debug(
+        `No CalendarConnection row yet for userId=${userId}; refresh token kept in process stash for this run.`,
+      );
+    }
+  }
+
+  private async loadRefreshToken(userId: string): Promise<string | null> {
+    // DB-backed path: read the encrypted column from the most recently
+    // updated active CalendarConnection.
+    const row = await this.prisma.calendarConnection.findFirst({
+      where: {
+        user_id: userId,
+        provider: 'google_calendar',
+        disconnected_at: null,
+      },
+      orderBy: { updated_at: 'desc' },
+      select: { encrypted_refresh_token: true },
+    });
+    if (row?.encrypted_refresh_token) {
+      return this.kms.decrypt(row.encrypted_refresh_token);
+    }
+    // Fallback: in-process stash. Cleared on process restart by design.
+    const stash = this._devTokenStash.get(userId);
+    return stash?.refresh_token ?? null;
   }
 
   async refreshAccessToken(args: { userId: string }): Promise<GoogleTokenResponse> {
@@ -167,15 +216,15 @@ export class GoogleOAuthService {
         code: 'GOOGLE_OAUTH_DISABLED',
       });
     }
-    const stash = this._devTokenStash.get(args.userId);
-    if (!stash) {
+    const refreshToken = await this.loadRefreshToken(args.userId);
+    if (!refreshToken) {
       throw new UnauthorizedException({
         error: 'No refresh token stored for this user. The user must re-link Google Calendar.',
         code: 'GOOGLE_OAUTH_REFRESH_MISSING',
       });
     }
     const form = new URLSearchParams({
-      refresh_token: stash.refresh_token,
+      refresh_token: refreshToken,
       client_id: process.env.GOOGLE_OAUTH_CLIENT_ID as string,
       client_secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET as string,
       grant_type: 'refresh_token',

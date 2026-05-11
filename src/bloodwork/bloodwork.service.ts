@@ -9,6 +9,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ConsentScope, ConsentService } from '../consent/consent.service';
+import { KmsService } from '../common/kms/kms.service';
 import {
   BloodworkAuditAction,
   BloodworkDisclaimerLevel,
@@ -50,12 +51,53 @@ export class BloodworkService {
     private prisma: PrismaService,
     private audit: AuditService,
     private consent: ConsentService,
+    private kms: KmsService,
   ) {}
 
   // ---- helpers ----
 
   private toAuditCtx(ctx: ActorContext) {
     return { ip: ctx.ip ?? null, userAgent: ctx.userAgent ?? null };
+  }
+
+  // KMS dual-write helpers. The plaintext column is still written for
+  // the transition window (so old code paths and one-off queries keep
+  // working). The encrypted column is the authoritative read source —
+  // panels created after this PR will have it populated, panels created
+  // before will not and the read falls back to the plaintext column.
+  private encryptForWrite(value: string | null | undefined): string | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    return this.kms.encrypt(value);
+  }
+
+  private decryptForRead(
+    encrypted: string | null | undefined,
+    plaintextFallback: string | null | undefined,
+  ): string | null {
+    if (encrypted) {
+      return this.kms.decrypt(encrypted);
+    }
+    return plaintextFallback ?? null;
+  }
+
+  // Materializes a panel row read from Prisma with the encrypted
+  // free-text fields decrypted in place. Operates structurally so it
+  // doesn't have to know about every relation include shape.
+  private hydratePanel<
+    T extends {
+      notes: string | null;
+      review_note: string | null;
+      encrypted_notes?: string | null;
+      encrypted_review_note?: string | null;
+    },
+  >(panel: T): T {
+    return {
+      ...panel,
+      notes: this.decryptForRead(panel.encrypted_notes, panel.notes),
+      review_note: this.decryptForRead(panel.encrypted_review_note, panel.review_note),
+    };
   }
 
   private assertActorIsCoachLike(ctx: ActorContext) {
@@ -230,6 +272,9 @@ export class BloodworkService {
         source: dto.source ?? BloodworkSource.MANUAL,
         panel_label: dto.panel_label ?? null,
         notes: dto.notes ?? null,
+        encrypted_notes: this.encryptForWrite(dto.notes),
+        encryption_key_ref: this.kms.isConfigured() ? this.kms.keyAlias() : null,
+        kms_key_version: this.kms.isConfigured() ? this.kms.keyVersion() : null,
         review_state: BloodworkReviewState.DRAFT,
         disclaimer_level: BloodworkDisclaimerLevel.EDUCATIONAL_ONLY,
         validation_status: panelValidation,
@@ -279,7 +324,7 @@ export class BloodworkService {
       },
     });
 
-    return panel;
+    return this.hydratePanel(panel);
   }
 
   async updateDraftPanel(
@@ -308,7 +353,10 @@ export class BloodworkService {
     }
     if (dto.source !== undefined) data.source = dto.source;
     if (dto.panel_label !== undefined) data.panel_label = dto.panel_label;
-    if (dto.notes !== undefined) data.notes = dto.notes;
+    if (dto.notes !== undefined) {
+      data.notes = dto.notes;
+      data.encrypted_notes = this.encryptForWrite(dto.notes);
+    }
     if (dto.source_missing !== undefined) {
       data.source_missing = dto.source_missing;
     }
@@ -331,7 +379,7 @@ export class BloodworkService {
       metadata: { fields: Object.keys(data) },
     });
 
-    return updated;
+    return this.hydratePanel(updated);
   }
 
   async submitPanel(clientId: string, panelId: string, ctx: ActorContext) {
@@ -370,7 +418,7 @@ export class BloodworkService {
       metadata: { result_count: updated.results.length },
     });
 
-    return updated;
+    return this.hydratePanel(updated);
   }
 
   async deleteDraftPanel(
@@ -406,12 +454,13 @@ export class BloodworkService {
     const limit = Math.min(Math.max(query.limit ?? 50, 1), 200);
     const where: Prisma.BloodworkPanelWhereInput = { client_id: clientId };
     if (query.review_state) where.review_state = query.review_state;
-    return this.prisma.bloodworkPanel.findMany({
+    const panels = await this.prisma.bloodworkPanel.findMany({
       where,
       orderBy: { collection_date: 'desc' },
       take: limit,
       include: { results: true, attachments: true },
     });
+    return panels.map((p) => this.hydratePanel(p));
   }
 
   async getForClient(clientId: string, panelId: string) {
@@ -420,7 +469,7 @@ export class BloodworkService {
       include: { results: true, attachments: true },
     });
     if (!panel) throw new NotFoundException('Panel not found');
-    return panel;
+    return this.hydratePanel(panel);
   }
 
   // ---- coach reads ----
@@ -462,7 +511,7 @@ export class BloodworkService {
 
     // Filter by consent: a coach can only see panels for clients who
     // granted HEALTH_BLOODWORK. Owners bypass.
-    if (callerRole === 'owner') return panels;
+    if (callerRole === 'owner') return panels.map((p) => this.hydratePanel(p));
     const allowed: typeof panels = [];
     for (const p of panels) {
       const ok = await this.consent.isGranted(
@@ -472,7 +521,7 @@ export class BloodworkService {
       );
       if (ok) allowed.push(p);
     }
-    return allowed;
+    return allowed.map((p) => this.hydratePanel(p));
   }
 
   async getForCoach(coachId: string, callerRole: string, panelId: string) {
@@ -497,7 +546,7 @@ export class BloodworkService {
         );
       }
     }
-    return panel;
+    return this.hydratePanel(panel);
   }
 
   // ---- coach writes (review state machine) ----
@@ -553,6 +602,7 @@ export class BloodworkService {
         reviewed_by_id: ctx.actorId,
         reviewed_at: now,
         review_note: dto.review_note ?? null,
+        encrypted_review_note: this.encryptForWrite(dto.review_note),
         // A coach acting on a stale panel un-stales it implicitly,
         // because the review brings the data back into context.
         is_stale: false,
@@ -586,7 +636,7 @@ export class BloodworkService {
       },
     });
 
-    return updated;
+    return this.hydratePanel(updated);
   }
 
   // ---- attachments ----

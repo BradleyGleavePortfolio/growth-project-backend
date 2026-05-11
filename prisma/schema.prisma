@@ -179,22 +179,22 @@ model User {
   owners_created_profiles  CoachProfile[]           @relation("CoachProfileCreatedBy")
 
   // SaaS billing additions (1:1 with coach users; null for clients/owners).
-  coach_subscription     CoachSubscription?
-  invoices               Invoice[]
-  payment_failures       PaymentFailure[]
-  drafts_as_coach        MessageDraft[]       @relation("MessageDraftCoach")
-  drafts_as_client       MessageDraft[]       @relation("MessageDraftClient")
-  activity_events_actor  ActivityEvent[]      @relation("ActivityEventActor")
-  activity_events_coach  ActivityEvent[]      @relation("ActivityEventCoach")
-  activity_events_client ActivityEvent[]      @relation("ActivityEventClient")
-  audit_logs_actor       AuditLog[]           @relation("AuditLogActor")
-  audit_logs_target      AuditLog[]           @relation("AuditLogTarget")
-  data_export_requests   DataExportRequest[]
-  consents_as_client     ClientCoachConsent[] @relation("ConsentClient")
-  consents_as_coach      ClientCoachConsent[] @relation("ConsentCoach")
-  bloodwork_panels_as_client BloodworkPanel[]  @relation("BloodworkPanelClient")
-  bloodwork_panels_as_coach  BloodworkPanel[]  @relation("BloodworkPanelCoach")
-  bloodwork_panels_reviewed  BloodworkPanel[]  @relation("BloodworkPanelReviewer")
+  coach_subscription         CoachSubscription?
+  invoices                   Invoice[]
+  payment_failures           PaymentFailure[]
+  drafts_as_coach            MessageDraft[]       @relation("MessageDraftCoach")
+  drafts_as_client           MessageDraft[]       @relation("MessageDraftClient")
+  activity_events_actor      ActivityEvent[]      @relation("ActivityEventActor")
+  activity_events_coach      ActivityEvent[]      @relation("ActivityEventCoach")
+  activity_events_client     ActivityEvent[]      @relation("ActivityEventClient")
+  audit_logs_actor           AuditLog[]           @relation("AuditLogActor")
+  audit_logs_target          AuditLog[]           @relation("AuditLogTarget")
+  data_export_requests       DataExportRequest[]
+  consents_as_client         ClientCoachConsent[] @relation("ConsentClient")
+  consents_as_coach          ClientCoachConsent[] @relation("ConsentCoach")
+  bloodwork_panels_as_client BloodworkPanel[]     @relation("BloodworkPanelClient")
+  bloodwork_panels_as_coach  BloodworkPanel[]     @relation("BloodworkPanelCoach")
+  bloodwork_panels_reviewed  BloodworkPanel[]     @relation("BloodworkPanelReviewer")
 
   // Phase 1 PTM (Predictive Tracking Model). Append-only signal log,
   // outcome labels (taught by OWNERs/coaches), and append-only score
@@ -247,11 +247,11 @@ model User {
   // in another). The capped many-to-many constraint (sub-coach assigned
   // under at most 2 head coaches) is enforced both by a service-layer
   // guard and a partial unique index added in the team-mode migration.
-  sub_coach_assignments_as_head TeamSubCoachAssignment[]  @relation("TeamSubCoachAssignmentHead")
-  sub_coach_assignments_as_sub  TeamSubCoachAssignment[]  @relation("TeamSubCoachAssignmentSub")
-  team_audit_events_as_actor    TeamAuditEvent[]          @relation("TeamAuditEventActor")
-  team_audit_events_as_target   TeamAuditEvent[]          @relation("TeamAuditEventTarget")
-  invite_codes_invited_by       InviteCode[]              @relation("InviteCodeInvitedBy")
+  sub_coach_assignments_as_head TeamSubCoachAssignment[] @relation("TeamSubCoachAssignmentHead")
+  sub_coach_assignments_as_sub  TeamSubCoachAssignment[] @relation("TeamSubCoachAssignmentSub")
+  team_audit_events_as_actor    TeamAuditEvent[]         @relation("TeamAuditEventActor")
+  team_audit_events_as_target   TeamAuditEvent[]         @relation("TeamAuditEventTarget")
+  invite_codes_invited_by       InviteCode[]             @relation("InviteCodeInvitedBy")
 
   // Sprint B — Macro targets, real meal plans, holistic insights cache.
   macro_targets_as_client          MacroTarget[]             @relation("MacroTargetClient")
@@ -264,21 +264,21 @@ model User {
   // AI gateway: requester / subject of an AI call, and approver / drafter of
   // a human-approval-gated AI action. All optional; rows are SetNull on
   // user delete so audit history survives PII scrub.
-  ai_requests_as_requester AiRequestAudit[] @relation("AiRequestRequester")
-  ai_requests_as_subject   AiRequestAudit[] @relation("AiRequestSubject")
-  ai_drafts_authored       AiActionDraft[]  @relation("AiDraftRequester")
-  ai_drafts_decided        AiActionDraft[]  @relation("AiDraftDecidedBy")
+  ai_requests_as_requester         AiRequestAudit[]          @relation("AiRequestRequester")
+  ai_requests_as_subject           AiRequestAudit[]          @relation("AiRequestSubject")
+  ai_drafts_authored               AiActionDraft[]           @relation("AiDraftRequester")
+  ai_drafts_decided                AiActionDraft[]           @relation("AiDraftDecidedBy")
 
   // Concierge scheduling (PR #142). Back-relations only; FKs live on
   // the scheduling-side rows. Coach and client both read from User;
   // the relation name disambiguates.
-  coach_session_types          SessionType[]                @relation("SessionTypeCoach")
-  coach_availability           CoachAvailability[]          @relation("CoachAvailability")
-  coach_availability_overrides CoachAvailabilityOverride[]  @relation("CoachAvailabilityOverrideCoach")
-  sessions_as_coach            CoachingSession[]            @relation("CoachingSessionCoach")
-  sessions_as_client           CoachingSession[]            @relation("CoachingSessionClient")
-  session_participations       SessionParticipant[]         @relation("SessionParticipantUser")
-  calendar_connections         CalendarConnection[]         @relation("CalendarConnectionUser")
+  coach_session_types          SessionType[]               @relation("SessionTypeCoach")
+  coach_availability           CoachAvailability[]         @relation("CoachAvailability")
+  coach_availability_overrides CoachAvailabilityOverride[] @relation("CoachAvailabilityOverrideCoach")
+  sessions_as_coach            CoachingSession[]           @relation("CoachingSessionCoach")
+  sessions_as_client           CoachingSession[]           @relation("CoachingSessionClient")
+  session_participations       SessionParticipant[]        @relation("SessionParticipantUser")
+  calendar_connections         CalendarConnection[]        @relation("CalendarConnectionUser")
 
   @@index([coach_id])
   @@index([deletion_scheduled_at])
@@ -432,22 +432,22 @@ model ActivityEvent {
 }
 
 model InviteCode {
-  id         String    @id @default(uuid())
-  code       String    @unique
-  coach_id   String
-  coach      User      @relation("CoachInviteCodes", fields: [coach_id], references: [id])
+  id                 String    @id @default(uuid())
+  code               String    @unique
+  coach_id           String
+  coach              User      @relation("CoachInviteCodes", fields: [coach_id], references: [id])
   // Team Mode — sub-coach attribution. When a sub-coach creates an invite
   // their user_id lands here while coach_id remains the head coach who
   // owns the team. Null on legacy rows where the head coach issued the
   // invite directly. The audit feed reads this to show "Invited by sub-
   // coach <name>" without joining a separate ledger.
   invited_by_user_id String?
-  invited_by         User?    @relation("InviteCodeInvitedBy", fields: [invited_by_user_id], references: [id])
-  created_at DateTime  @default(now())
-  expires_at DateTime?
-  max_uses   Int?
-  used_count Int       @default(0)
-  revoked    Boolean   @default(false)
+  invited_by         User?     @relation("InviteCodeInvitedBy", fields: [invited_by_user_id], references: [id])
+  created_at         DateTime  @default(now())
+  expires_at         DateTime?
+  max_uses           Int?
+  used_count         Int       @default(0)
+  revoked            Boolean   @default(false)
 
   @@index([coach_id])
   @@index([code])
@@ -1718,33 +1718,33 @@ model HolisticInsightCache {
 // surface scope an AI audit query to a single coach's roster without a
 // join, mirroring AuditLog.tenant_coach_id.
 model AiRequestAudit {
-  id                  String    @id @default(uuid())
-  request_id          String    @unique // client-supplied or generated; idempotency key
-  capability          String    // e.g. "chat.client_coach", "draft.coach_message"
-  requester_id        String?
-  requester           User?     @relation("AiRequestRequester", fields: [requester_id], references: [id], onDelete: SetNull)
-  requester_role      String?
-  subject_user_id     String?   // the client whose data was the subject of the call
-  subject_user        User?     @relation("AiRequestSubject", fields: [subject_user_id], references: [id], onDelete: SetNull)
-  tenant_coach_id     String?   // coach whose tenant the call touched, if any
-  provider            String    // "stub" | "perplexity" | "openai" | "anthropic" | …
-  model               String?   // model id reported by the provider (or "disabled")
-  enabled             Boolean   @default(false) // false = fail-closed stub path
-  context_source_count Int      @default(0)
-  context_source_refs Json?     // [{ source, ref, hash, count }] — refs only, no payload
-  redactions_applied  Json?     // { email: 2, phone: 1, ssn: 0, ... }
-  prompt_token_estimate Int?
+  id                      String         @id @default(uuid())
+  request_id              String         @unique // client-supplied or generated; idempotency key
+  capability              String // e.g. "chat.client_coach", "draft.coach_message"
+  requester_id            String?
+  requester               User?          @relation("AiRequestRequester", fields: [requester_id], references: [id], onDelete: SetNull)
+  requester_role          String?
+  subject_user_id         String? // the client whose data was the subject of the call
+  subject_user            User?          @relation("AiRequestSubject", fields: [subject_user_id], references: [id], onDelete: SetNull)
+  tenant_coach_id         String? // coach whose tenant the call touched, if any
+  provider                String // "stub" | "perplexity" | "openai" | "anthropic" | …
+  model                   String? // model id reported by the provider (or "disabled")
+  enabled                 Boolean        @default(false) // false = fail-closed stub path
+  context_source_count    Int            @default(0)
+  context_source_refs     Json? // [{ source, ref, hash, count }] — refs only, no payload
+  redactions_applied      Json? // { email: 2, phone: 1, ssn: 0, ... }
+  prompt_token_estimate   Int?
   response_token_estimate Int?
-  prompt_hash         String?   // sha256 of the redacted prompt for replay/dedupe
-  response_hash       String?
-  approval_status     String    @default("not_required") // not_required | pending | approved | rejected | expired
-  approval_draft_id   String?   @unique
-  approval_draft      AiActionDraft? @relation("AiAuditDraft", fields: [approval_draft_id], references: [id], onDelete: SetNull)
-  error               String?
-  ip                  String?
-  user_agent          String?
-  metadata            Json?
-  created_at          DateTime  @default(now())
+  prompt_hash             String? // sha256 of the redacted prompt for replay/dedupe
+  response_hash           String?
+  approval_status         String         @default("not_required") // not_required | pending | approved | rejected | expired
+  approval_draft_id       String?        @unique
+  approval_draft          AiActionDraft? @relation("AiAuditDraft", fields: [approval_draft_id], references: [id], onDelete: SetNull)
+  error                   String?
+  ip                      String?
+  user_agent              String?
+  metadata                Json?
+  created_at              DateTime       @default(now())
 
   @@index([capability, created_at])
   @@index([requester_id, created_at])
@@ -1765,25 +1765,25 @@ model AiRequestAudit {
 // gateway-side redaction summary so reviewers can verify what the AI
 // actually saw.
 model AiActionDraft {
-  id              String   @id @default(uuid())
-  capability      String   // e.g. "draft.coach_message"
-  status          String   @default("pending") // pending | approved | rejected | expired
+  id              String          @id @default(uuid())
+  capability      String // e.g. "draft.coach_message"
+  status          String          @default("pending") // pending | approved | rejected | expired
   requester_id    String?
-  requester       User?    @relation("AiDraftRequester", fields: [requester_id], references: [id], onDelete: SetNull)
-  subject_user_id String?  // client whose data the draft concerns
+  requester       User?           @relation("AiDraftRequester", fields: [requester_id], references: [id], onDelete: SetNull)
+  subject_user_id String? // client whose data the draft concerns
   tenant_coach_id String?
-  payload         Json     // capability-specific proposed action
-  rationale       String?  // model-emitted reasoning (kept short, redacted)
-  redacted_inputs Json?    // { email: n, phone: n, ... } summary
-  provenance      Json?    // [{ source, ref, hash }] retrieval references
+  payload         Json // capability-specific proposed action
+  rationale       String? // model-emitted reasoning (kept short, redacted)
+  redacted_inputs Json? // { email: n, phone: n, ... } summary
+  provenance      Json? // [{ source, ref, hash }] retrieval references
   decided_by_id   String?
-  decided_by      User?    @relation("AiDraftDecidedBy", fields: [decided_by_id], references: [id], onDelete: SetNull)
+  decided_by      User?           @relation("AiDraftDecidedBy", fields: [decided_by_id], references: [id], onDelete: SetNull)
   decided_at      DateTime?
   decision_note   String?
   audit_row       AiRequestAudit? @relation("AiAuditDraft")
   expires_at      DateTime?
-  created_at      DateTime @default(now())
-  updated_at      DateTime @default(now()) @updatedAt
+  created_at      DateTime        @default(now())
+  updated_at      DateTime        @default(now()) @updatedAt
 
   @@index([status, created_at])
   @@index([requester_id, created_at])
@@ -1833,17 +1833,17 @@ enum TeamAuditEventKind {
 // trigger added in the migration so a concurrent double-write cannot
 // exceed the cap.
 model TeamSubCoachAssignment {
-  id            String    @id @default(uuid())
-  head_coach_id String
-  head_coach    User      @relation("TeamSubCoachAssignmentHead", fields: [head_coach_id], references: [id], onDelete: Cascade)
-  sub_coach_id  String
-  sub_coach     User      @relation("TeamSubCoachAssignmentSub", fields: [sub_coach_id], references: [id], onDelete: Cascade)
+  id                          String    @id @default(uuid())
+  head_coach_id               String
+  head_coach                  User      @relation("TeamSubCoachAssignmentHead", fields: [head_coach_id], references: [id], onDelete: Cascade)
+  sub_coach_id                String
+  sub_coach                   User      @relation("TeamSubCoachAssignmentSub", fields: [sub_coach_id], references: [id], onDelete: Cascade)
   // Stripe subscription_item id (Pro tier only — null on Enterprise
   // because the staff seat is included; null on Growth because the
   // assignment never lands).
   stripe_subscription_item_id String?
-  created_at    DateTime  @default(now())
-  archived_at   DateTime?
+  created_at                  DateTime  @default(now())
+  archived_at                 DateTime?
 
   @@unique([head_coach_id, sub_coach_id])
   @@index([head_coach_id, archived_at])
@@ -1860,24 +1860,24 @@ model TeamSubCoachAssignment {
 //   2. Drill-down by event_kind within a head coach's feed.
 //   3. Per-client filter (target_client_id, occurred_at DESC).
 model TeamAuditEvent {
-  id              String             @id @default(uuid())
-  head_coach_id   String
-  head_coach      User               @relation("TeamAuditEventActor", fields: [head_coach_id], references: [id], onDelete: Cascade)
+  id               String             @id @default(uuid())
+  head_coach_id    String
+  head_coach       User               @relation("TeamAuditEventActor", fields: [head_coach_id], references: [id], onDelete: Cascade)
   // The user who actually performed the action (may be the head coach
   // themselves, may be a sub-coach acting under them, may be the
   // platform OWNER for tier_changed events). Always set.
-  actor_user_id   String
+  actor_user_id    String
   // The client the event concerns. Null for events that are not
   // client-scoped (e.g. sub_coach_assigned, staff_seat_added).
   target_client_id String?
-  target_client   User?              @relation("TeamAuditEventTarget", fields: [target_client_id], references: [id], onDelete: SetNull)
-  event_kind      TeamAuditEventKind
+  target_client    User?              @relation("TeamAuditEventTarget", fields: [target_client_id], references: [id], onDelete: SetNull)
+  event_kind       TeamAuditEventKind
   // Free-form short summary for the feed UI. Service-side templates
   // produce this so the wording stays consistent. Not user input.
-  summary         String
+  summary          String
   // Optional structured payload (e.g. {"reassigned_client_count": 3}).
-  metadata        Json?
-  occurred_at     DateTime           @default(now())
+  metadata         Json?
+  occurred_at      DateTime           @default(now())
 
   @@index([head_coach_id, occurred_at])
   @@index([head_coach_id, event_kind, occurred_at])
@@ -1922,34 +1922,40 @@ model TeamAuditEvent {
 // column-level encryption strategy. Not a regression of current posture
 // since no labs exist in prod yet.
 model BloodworkPanel {
-  id                      String              @id @default(uuid())
-  client_id               String
-  client                  User                @relation("BloodworkPanelClient", fields: [client_id], references: [id], onDelete: Cascade)
-  coach_id                String?
-  coach                   User?               @relation("BloodworkPanelCoach", fields: [coach_id], references: [id], onDelete: SetNull)
-  collection_date         DateTime
-  source                  String              @default("manual_entry") // manual_entry | lab_pdf | photo_self_report | ehr_import
-  panel_label             String? // free-form ("CBC", "lipid", "annual physical")
-  notes                   String? // client-supplied context (limited to 4000 chars in DTO)
-  review_state            String              @default("draft") // draft | submitted | needs_info | reviewed | flagged | hidden
-  reviewed_by_id          String?
-  reviewed_by             User?               @relation("BloodworkPanelReviewer", fields: [reviewed_by_id], references: [id], onDelete: SetNull)
-  reviewed_at             DateTime?
-  review_note             String? // coach-supplied note attached to the most recent review action
-  disclaimer_level        String              @default("educational_only") // educational_only | none (reserved)
-  validation_status       String              @default("ok") // ok | warnings | errors
-  is_stale                Boolean             @default(false)
-  stale_marked_at         DateTime?
-  source_missing          Boolean             @default(false) // true when client could not provide an attachment / lab source
-  ai_processing_allowed   Boolean             @default(false) // mirrors per-panel AI scope at submit time; AI service must re-check live consent
-  encryption_key_ref      String? // pointer/alias for the KMS key envelope; null in non-prod
-  kms_key_version         String? // version string of the key used to encrypt sensitive fields, when applicable
-  submitted_at            DateTime?
-  created_at              DateTime            @default(now())
-  updated_at              DateTime            @updatedAt
+  id                    String    @id @default(uuid())
+  client_id             String
+  client                User      @relation("BloodworkPanelClient", fields: [client_id], references: [id], onDelete: Cascade)
+  coach_id              String?
+  coach                 User?     @relation("BloodworkPanelCoach", fields: [coach_id], references: [id], onDelete: SetNull)
+  collection_date       DateTime
+  source                String    @default("manual_entry") // manual_entry | lab_pdf | photo_self_report | ehr_import
+  panel_label           String? // free-form ("CBC", "lipid", "annual physical")
+  notes                 String? // client-supplied context (limited to 4000 chars in DTO)
+  review_state          String    @default("draft") // draft | submitted | needs_info | reviewed | flagged | hidden
+  reviewed_by_id        String?
+  reviewed_by           User?     @relation("BloodworkPanelReviewer", fields: [reviewed_by_id], references: [id], onDelete: SetNull)
+  reviewed_at           DateTime?
+  review_note           String? // coach-supplied note attached to the most recent review action
+  disclaimer_level      String    @default("educational_only") // educational_only | none (reserved)
+  validation_status     String    @default("ok") // ok | warnings | errors
+  is_stale              Boolean   @default(false)
+  stale_marked_at       DateTime?
+  source_missing        Boolean   @default(false) // true when client could not provide an attachment / lab source
+  ai_processing_allowed Boolean   @default(false) // mirrors per-panel AI scope at submit time; AI service must re-check live consent
+  encryption_key_ref    String? // pointer/alias for the KMS key envelope; null in non-prod
+  kms_key_version       String? // version string of the key used to encrypt sensitive fields, when applicable
+  // KMS-wrapped variants of the two free-text PII-bearing fields above.
+  // Application dual-writes the plaintext + encrypted columns and reads
+  // the encrypted column first with a plaintext fallback. A follow-up
+  // cutover migration drops the plaintext columns once backfilled.
+  encrypted_notes       String?
+  encrypted_review_note String?
+  submitted_at          DateTime?
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
 
-  results                 BloodworkResult[]
-  attachments             BloodworkAttachment[]
+  results     BloodworkResult[]
+  attachments BloodworkAttachment[]
 
   @@index([client_id, collection_date])
   @@index([coach_id, review_state])
@@ -2260,23 +2266,29 @@ model SessionParticipant {
 // holds an opaque pointer to whichever secret store the deployment uses
 // (Fly secrets, AWS SM, etc.). The stub adapter ignores this entirely.
 model CalendarConnection {
-  id                     String           @id @default(uuid())
-  user_id                String
-  user                   User             @relation("CalendarConnectionUser", fields: [user_id], references: [id], onDelete: Cascade)
-  provider               CalendarProvider
+  id                      String           @id @default(uuid())
+  user_id                 String
+  user                    User             @relation("CalendarConnectionUser", fields: [user_id], references: [id], onDelete: Cascade)
+  provider                CalendarProvider
   // External calendar account identifier (e.g. Google account email).
   // Deliberately *not* the raw token.
-  external_account_id    String?
+  external_account_id     String?
   // Pointer to the secret-store entry holding the OAuth credentials.
   // Null on stub connections.
-  credentials_secret_ref String?
+  credentials_secret_ref  String?
+  // KMS-wrapped Google OAuth refresh token. Encrypted via KmsService
+  // (see src/common/kms/) using AES-256-GCM with an envelope shaped as
+  // base64(JSON({v,iv,tag,ct})). Prior to this column the refresh token
+  // lived only in process memory; this column lets a process restart
+  // reuse a previously linked account without forcing a re-link.
+  encrypted_refresh_token String?
   // Last time the calendar-sync job seam successfully reconciled this
   // connection. Null until the real adapter ships.
-  last_synced_at         DateTime?
+  last_synced_at          DateTime?
   // Soft-disconnect so audit history survives a re-link.
-  disconnected_at        DateTime?
-  created_at             DateTime         @default(now())
-  updated_at             DateTime         @default(now()) @updatedAt
+  disconnected_at         DateTime?
+  created_at              DateTime         @default(now())
+  updated_at              DateTime         @default(now()) @updatedAt
 
   @@unique([user_id, provider, external_account_id], name: "CalendarConnection_user_provider_account_key")
   @@index([user_id])

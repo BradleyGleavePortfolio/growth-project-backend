@@ -7,6 +7,7 @@ import {
   BloodworkValidationStatus,
 } from '../src/bloodwork/bloodwork.constants';
 import { ConsentScope } from '../src/consent/consent.service';
+import { KmsService } from '../src/common/kms/kms.service';
 
 // In-memory Prisma stub. Just enough surface to exercise the bloodwork
 // service paths under test. Models the panel/result/attachment relations
@@ -48,18 +49,20 @@ function buildPrisma(initialUsers: Array<{ id: string; coach_id?: string | null 
           source: data.source ?? 'manual_entry',
           panel_label: data.panel_label ?? null,
           notes: data.notes ?? null,
+          encrypted_notes: data.encrypted_notes ?? null,
           review_state: data.review_state ?? 'draft',
           reviewed_by_id: null,
           reviewed_at: null,
           review_note: null,
+          encrypted_review_note: null,
           disclaimer_level: data.disclaimer_level ?? 'educational_only',
           validation_status: data.validation_status ?? 'ok',
           is_stale: false,
           stale_marked_at: null,
           source_missing: data.source_missing ?? false,
           ai_processing_allowed: data.ai_processing_allowed ?? false,
-          encryption_key_ref: null,
-          kms_key_version: null,
+          encryption_key_ref: data.encryption_key_ref ?? null,
+          kms_key_version: data.kms_key_version ?? null,
           submitted_at: null,
           created_at: new Date(),
           updated_at: new Date(),
@@ -217,7 +220,7 @@ describe('BloodworkService', () => {
     it('requires HEALTH_BLOODWORK consent when client has a coach', async () => {
       const prisma = buildPrisma([{ id: 'client-1', coach_id: 'coach-1' }]);
       const consent = buildConsent(); // no consents granted
-      const svc = new BloodworkService(prisma, buildAudit(), consent);
+      const svc = new BloodworkService(prisma, buildAudit(), consent, new KmsService());
       await expect(
         svc.createPanel(
           'client-1',
@@ -233,7 +236,7 @@ describe('BloodworkService', () => {
       const consent = buildConsent(
         new Set([`client-1:coach-1:${ConsentScope.HEALTH_BLOODWORK}`]),
       );
-      const svc = new BloodworkService(prisma, audit, consent);
+      const svc = new BloodworkService(prisma, audit, consent, new KmsService());
       const panel = await svc.createPanel(
         'client-1',
         {
@@ -281,7 +284,7 @@ describe('BloodworkService', () => {
           `client-1:coach-1:${ConsentScope.HEALTH_BLOODWORK_AI}`,
         ]),
       );
-      const svc = new BloodworkService(prisma, buildAudit(), consent);
+      const svc = new BloodworkService(prisma, buildAudit(), consent, new KmsService());
       const panel = await svc.createPanel(
         'client-1',
         { collection_date: '2026-04-01', results: [] },
@@ -295,7 +298,7 @@ describe('BloodworkService', () => {
       const consent = buildConsent(
         new Set([`client-1:coach-1:${ConsentScope.HEALTH_BLOODWORK}`]),
       );
-      const svc = new BloodworkService(prisma, buildAudit(), consent);
+      const svc = new BloodworkService(prisma, buildAudit(), consent, new KmsService());
       const panel = await svc.createPanel(
         'client-1',
         {
@@ -320,7 +323,7 @@ describe('BloodworkService', () => {
       const prisma = buildPrisma([{ id: 'client-1', coach_id: 'coach-1' }]);
       const consent = buildConsent(consentSet('client-1', 'coach-1'));
       const audit = buildAudit();
-      const svc = new BloodworkService(prisma, audit, consent);
+      const svc = new BloodworkService(prisma, audit, consent, new KmsService());
       const panel = await svc.createPanel(
         'client-1',
         {
@@ -438,7 +441,7 @@ describe('BloodworkService', () => {
           `client-b:coach-1:${ConsentScope.HEALTH_BLOODWORK}`,
         ]),
       );
-      const svc = new BloodworkService(prisma, buildAudit(), consent);
+      const svc = new BloodworkService(prisma, buildAudit(), consent, new KmsService());
 
       const a = await svc.createPanel(
         'client-a',
@@ -471,7 +474,7 @@ describe('BloodworkService', () => {
         new Set([`client-1:coach-1:${ConsentScope.HEALTH_BLOODWORK}`]),
       );
       const audit = buildAudit();
-      const svc = new BloodworkService(prisma, audit, consent);
+      const svc = new BloodworkService(prisma, audit, consent, new KmsService());
 
       // Old submitted panel.
       const old = await svc.createPanel(
@@ -514,7 +517,7 @@ describe('BloodworkService', () => {
       const consent = buildConsent(
         new Set([`client-1:coach-1:${ConsentScope.HEALTH_BLOODWORK}`]),
       );
-      const svc = new BloodworkService(prisma, buildAudit(), consent);
+      const svc = new BloodworkService(prisma, buildAudit(), consent, new KmsService());
       const panel = await svc.createPanel(
         'client-1',
         { collection_date: '2026-04-01', results: [] },
@@ -533,7 +536,7 @@ describe('BloodworkService', () => {
       const consent = buildConsent(
         new Set([`client-1:coach-1:${ConsentScope.HEALTH_BLOODWORK}`]),
       );
-      const svc = new BloodworkService(prisma, buildAudit(), consent);
+      const svc = new BloodworkService(prisma, buildAudit(), consent, new KmsService());
       const panel = await svc.createPanel(
         'client-1',
         { collection_date: '2026-04-01', results: [] },
