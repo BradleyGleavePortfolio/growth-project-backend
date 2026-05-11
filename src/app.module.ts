@@ -60,6 +60,10 @@ import { InsightsModule } from './insights/insights.module';
 // Team Mode foundation — sub-coach assignments, curated audit feed,
 // Pro-tier paid staff seats. See docs/architecture/adr-0001-team-mode-foundation.md.
 import { TeamModeModule } from './team-mode/team-mode.module';
+// Concierge scheduling (PR #142) — private 1:1 coach <-> client booking
+// with optional Google Calendar two-way sync. See
+// docs/rfcs/142-concierge-scheduling.md.
+import { SchedulingModule } from './scheduling/scheduling.module';
 
 @Module({
   imports: [
@@ -179,6 +183,11 @@ import { TeamModeModule } from './team-mode/team-mode.module';
     // audit feed, Pro-tier paid staff seats, Enterprise included,
     // Growth blocked at the controller with a structured upsell.
     TeamModeModule,
+    // Concierge scheduling — private 1:1 coach<->client booking with
+    // optional Google Calendar two-way sync. Stub adapters by default
+    // so the module loads without Google OAuth credentials configured;
+    // real GCal adapter opt-in via GOOGLE_OAUTH_CLIENT_ID + secret.
+    SchedulingModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)

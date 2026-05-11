@@ -21,6 +21,25 @@ export const AuditAction = {
   BILLING_INVOICE_PAID: 'billing.invoice_paid',
   BILLING_INVOICE_PAYMENT_FAILED: 'billing.invoice_payment_failed',
   PTM_OUTCOME_LABELLED: 'ptm.outcome_labelled',
+  // Concierge scheduling — every state transition on a CoachingSession
+  // emits one of these. See docs/rfcs/142-concierge-scheduling.md.
+  SESSION_REQUESTED: 'session.requested',
+  SESSION_APPROVED: 'session.approved',
+  SESSION_DECLINED: 'session.declined',
+  SESSION_RESCHEDULED: 'session.rescheduled',
+  SESSION_CANCELED: 'session.canceled',
+  SESSION_COMPLETED: 'session.completed',
+  SESSION_NO_SHOW: 'session.no_show',
+  SESSION_VIDEO_LINK_ATTACHED: 'session.video_link_attached',
+  SESSION_PROVIDER_CALENDAR_CREATED: 'session.provider.calendar_created',
+  SESSION_PROVIDER_VIDEO_CREATED: 'session.provider.video_created',
+  SESSION_PROVIDER_CANCELED: 'session.provider.canceled',
+  SESSION_TYPE_CREATED: 'coach.session_type_created',
+  SESSION_TYPE_UPDATED: 'coach.session_type_updated',
+  COACH_AVAILABILITY_UPDATED: 'coach.availability_updated',
+  COACH_AVAILABILITY_OVERRIDE_SET: 'coach.availability_override_set',
+  CALENDAR_CONNECTED: 'calendar.connected',
+  CALENDAR_DISCONNECTED: 'calendar.disconnected',
 } as const;
 
 export type AuditActionValue = (typeof AuditAction)[keyof typeof AuditAction];

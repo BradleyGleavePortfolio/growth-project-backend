@@ -269,6 +269,17 @@ model User {
   ai_drafts_authored       AiActionDraft[]  @relation("AiDraftRequester")
   ai_drafts_decided        AiActionDraft[]  @relation("AiDraftDecidedBy")
 
+  // Concierge scheduling (PR #142). Back-relations only; FKs live on
+  // the scheduling-side rows. Coach and client both read from User;
+  // the relation name disambiguates.
+  coach_session_types          SessionType[]                @relation("SessionTypeCoach")
+  coach_availability           CoachAvailability[]          @relation("CoachAvailability")
+  coach_availability_overrides CoachAvailabilityOverride[]  @relation("CoachAvailabilityOverrideCoach")
+  sessions_as_coach            CoachingSession[]            @relation("CoachingSessionCoach")
+  sessions_as_client           CoachingSession[]            @relation("CoachingSessionClient")
+  session_participations       SessionParticipant[]         @relation("SessionParticipantUser")
+  calendar_connections         CalendarConnection[]         @relation("CalendarConnectionUser")
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -2007,4 +2018,266 @@ model BloodworkAttachment {
 
   @@index([panel_id])
   @@index([scan_status])
+}
+
+// ============================================================
+// CONCIERGE SCHEDULING (PR #142)
+// ============================================================
+//
+// TGP is a private coaching concierge — clients schedule Zoom or Google
+// Meet calls with the coach who already manages them, coaches set their
+// availability, and admins see fulfillment org-wide. This is *not* a
+// generic Calendly clone: the only people who can request a session
+// with a coach are clients already linked via `User.coach_id`, and the
+// coach approves every booking unless they have explicitly marked a
+// SessionType as `auto_approve`.
+//
+// All provider integrations (Google Calendar, Google Meet, Zoom) ship
+// behind a stub adapter by default. No real API calls are made unless
+// the corresponding env vars are set; see docs/session-scheduling.md.
+
+enum SessionStatus {
+  // Client requested; awaiting coach approval. Default landing state
+  // for any session not auto-approved.
+  requested
+  // Coach approved (or auto-approved) — calendar/video provisioning is
+  // attempted on transition. Stays in `scheduled` once provisioned.
+  scheduled
+  // Coach (or admin) declined the requested session. Terminal.
+  declined
+  // Either party canceled before start. Terminal.
+  canceled
+  // Coach (or admin) marked the session as not-attended after start_at
+  // passed. Distinct from `canceled` for fulfillment reporting.
+  no_show
+  // Coach (or admin) marked the session complete. Terminal happy path.
+  completed
+  // Background provider call is in flight (calendar event create/update
+  // or video link mint). Used so a transient retry does not double-book.
+  pending_provider
+}
+
+enum VideoProvider {
+  // Default — no real video link, the API returns a stub URL of the form
+  // tgp-stub://session/<id>. The mobile/web client treats this as "the
+  // coach has not attached a real link yet" and surfaces a manual-link
+  // affordance to the coach.
+  stub
+  google_meet
+  zoom
+  // Coach pasted a custom link (Whereby, FaceTime, phone, etc.). The
+  // link is stored verbatim and never re-minted by a provider job.
+  manual
+}
+
+enum CalendarProvider {
+  stub
+  google_calendar
+  // Apple/Outlook reserved as future enums; intentionally commented out
+  // until adapters land — Prisma migrations forbid removing values, so
+  // we add them when we ship the adapter.
+}
+
+enum SessionParticipantRole {
+  coach
+  client
+  // Admin observer (owner role). Sub-coaches join as `assistant_coach`.
+  admin
+  assistant_coach
+}
+
+// SessionType — the offering the coach exposes (e.g. "30 min check-in",
+// "Initial intake", "Quarterly review"). Owned by a coach. Clients pick
+// from this list when requesting a session.
+model SessionType {
+  id                     String        @id @default(uuid())
+  coach_id               String
+  coach                  User          @relation("SessionTypeCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  name                   String
+  description            String?
+  duration_minutes       Int           @default(30)
+  // Auto-approve client requests (skip the `requested` -> `scheduled`
+  // gate). Defaults to false — coaches consciously turn this on per
+  // session type, since the doctrine here is "coach approves every
+  // booking" until the coach decides otherwise.
+  auto_approve           Boolean       @default(false)
+  // Default video provider for sessions of this type. Concrete sessions
+  // may override (e.g. coach pastes a manual link for one).
+  default_video_provider VideoProvider @default(stub)
+  // Soft-disable so historic sessions still link back to their type.
+  archived_at            DateTime?
+  created_at             DateTime      @default(now())
+  updated_at             DateTime      @default(now()) @updatedAt
+
+  sessions CoachingSession[] @relation("CoachingSessionType")
+
+  @@index([coach_id])
+}
+
+// CoachAvailability — recurring weekly availability windows for a coach.
+// Per-day-of-week (0 = Sunday … 6 = Saturday) plus start/end minute-of-
+// day. Stored as integers (not DateTime) so daylight-savings transitions
+// don't shift the recurring window. The coach's timezone lives on
+// CoachProfile.timezone; this row is interpreted relative to that tz.
+//
+// One-off blackouts and exceptions are deliberately *not* modeled here
+// yet — the next iteration adds CoachAvailabilityException rows. For
+// now, a coach who needs to block a single day uses the calendar-sync
+// job seam (manually) or marks individual conflicting requests declined.
+model CoachAvailability {
+  id              String   @id @default(uuid())
+  coach_id        String
+  coach           User     @relation("CoachAvailability", fields: [coach_id], references: [id], onDelete: Cascade)
+  day_of_week     Int // 0=Sun … 6=Sat
+  start_minute    Int // minutes from midnight local
+  end_minute      Int
+  // Allows the coach to mark a window as "intake only" or similar via a
+  // session-type filter. NULL = applies to any session type.
+  session_type_id String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @default(now()) @updatedAt
+
+  @@index([coach_id, day_of_week])
+}
+
+// CoachAvailabilityOverride — date-keyed exceptions to the recurring
+// weekly availability. Three semantics:
+//
+//   HOLIDAY  — the coach is OFF for this date (whole day or window).
+//              Bookings cannot be placed inside the override window.
+//   BLOCK    — same effect as HOLIDAY but the coach can attach a note
+//              ("focus time", "personal", etc.) the UI may surface.
+//   EXTRA    — the coach is AVAILABLE on this date in a window that is
+//              not part of their recurring weekly availability (e.g.
+//              "Saturday 9-11am this week only").
+//
+// One row per (coach_id, date, start_minute). The scheduling service
+// merges overrides with CoachAvailability when computing slots: EXTRA
+// adds to the recurring window, HOLIDAY/BLOCK subtract from it.
+//
+// Stored as date + minute-of-day in the coach's timezone (read from
+// CoachProfile.timezone) so daylight-savings transitions do not shift
+// the override. The migration adds a CHECK constraint on the kind
+// column rather than a Prisma enum so adding new kinds in a follow-up
+// does not require an enum migration.
+model CoachAvailabilityOverride {
+  id           String   @id @default(uuid())
+  coach_id     String
+  coach        User     @relation("CoachAvailabilityOverrideCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  // Calendar date in the coach's timezone (YYYY-MM-DD). Not a
+  // DateTime: time-of-day lives on the minute columns below so the
+  // row is unambiguous across DST.
+  date         DateTime @db.Date
+  // Minutes from midnight local. Null on a HOLIDAY/BLOCK that covers
+  // the entire day.
+  start_minute Int?
+  end_minute   Int?
+  // 'holiday' | 'block' | 'extra' — enforced by a CHECK constraint in
+  // the migration. Adding a new kind is an additive migration with no
+  // Prisma-generated enum churn.
+  kind         String
+  note         String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @default(now()) @updatedAt
+
+  @@unique([coach_id, date, start_minute, kind], name: "CoachAvailabilityOverride_coach_date_start_kind_key")
+  @@index([coach_id, date])
+}
+
+// CoachingSession — a concrete scheduled (or requested) session.
+model CoachingSession {
+  id                       String           @id @default(uuid())
+  coach_id                 String
+  coach                    User             @relation("CoachingSessionCoach", fields: [coach_id], references: [id])
+  // The primary client. Group sessions are modeled via SessionParticipant
+  // rows; the `client_id` here is the lead client (the one who requested
+  // it, or the one the coach booked it for). Nullable so admin-created
+  // group sessions without a single lead client are valid.
+  client_id                String?
+  client                   User?            @relation("CoachingSessionClient", fields: [client_id], references: [id])
+  session_type_id          String?
+  session_type             SessionType?     @relation("CoachingSessionType", fields: [session_type_id], references: [id])
+  status                   SessionStatus    @default(requested)
+  start_at                 DateTime
+  end_at                   DateTime
+  // Free-form title shown to the client (defaults to session_type.name
+  // at creation time but can be edited by the coach).
+  title                    String
+  // Internal coach-only notes; client-visible recap lives in
+  // `client_recap_md` (gated behind a human-approval step under the AI
+  // gateway doctrine — never auto-published).
+  coach_notes_md           String?
+  client_recap_md          String?
+  // Provider-side identifiers. Populated only when a real adapter
+  // attaches; stub provider leaves these null.
+  video_provider           VideoProvider    @default(stub)
+  video_url                String?
+  video_meeting_id         String?
+  calendar_provider        CalendarProvider @default(stub)
+  calendar_event_id        String?
+  // Idempotency key for provider-side create calls. The scheduler sets
+  // this once on first transition into `pending_provider`; retries reuse
+  // it so the provider does not create duplicate calendar events.
+  provider_idempotency_key String?
+  // When the coach approved the request (null while `requested`).
+  approved_at              DateTime?
+  // When the session terminated (canceled / declined / no_show / completed).
+  ended_at                 DateTime?
+  // Reason captured on cancel/decline/no_show (free-form, optional).
+  end_reason               String?
+  created_at               DateTime         @default(now())
+  updated_at               DateTime         @default(now()) @updatedAt
+
+  participants SessionParticipant[] @relation("SessionParticipantSession")
+
+  // Hot paths:
+  //   - "list this coach's upcoming sessions" → (coach_id, start_at)
+  //   - "list this client's upcoming sessions" → (client_id, start_at)
+  //   - "fulfillment dashboard, today's no-shows" → (status, start_at)
+  @@index([coach_id, start_at])
+  @@index([client_id, start_at])
+  @@index([status, start_at])
+}
+
+// SessionParticipant — extra attendees beyond the lead coach/client.
+// Used for sub-coach shadowing, admin observation, or future group
+// sessions. The lead coach + lead client are *not* duplicated here.
+model SessionParticipant {
+  id         String                 @id @default(uuid())
+  session_id String
+  session    CoachingSession        @relation("SessionParticipantSession", fields: [session_id], references: [id], onDelete: Cascade)
+  user_id    String
+  user       User                   @relation("SessionParticipantUser", fields: [user_id], references: [id])
+  role       SessionParticipantRole
+  created_at DateTime               @default(now())
+
+  @@unique([session_id, user_id], name: "SessionParticipant_session_user_key")
+  @@index([user_id])
+}
+
+// CalendarConnection — metadata only. Real OAuth tokens are deliberately
+// NOT stored in this row in this PR; the `credentials_secret_ref` field
+// holds an opaque pointer to whichever secret store the deployment uses
+// (Fly secrets, AWS SM, etc.). The stub adapter ignores this entirely.
+model CalendarConnection {
+  id                     String           @id @default(uuid())
+  user_id                String
+  user                   User             @relation("CalendarConnectionUser", fields: [user_id], references: [id], onDelete: Cascade)
+  provider               CalendarProvider
+  // External calendar account identifier (e.g. Google account email).
+  // Deliberately *not* the raw token.
+  external_account_id    String?
+  // Pointer to the secret-store entry holding the OAuth credentials.
+  // Null on stub connections.
+  credentials_secret_ref String?
+  // Last time the calendar-sync job seam successfully reconciled this
+  // connection. Null until the real adapter ships.
+  last_synced_at         DateTime?
+  // Soft-disconnect so audit history survives a re-link.
+  disconnected_at        DateTime?
+  created_at             DateTime         @default(now())
+  updated_at             DateTime         @default(now()) @updatedAt
+
+  @@unique([user_id, provider, external_account_id], name: "CalendarConnection_user_provider_account_key")
+  @@index([user_id])
 }

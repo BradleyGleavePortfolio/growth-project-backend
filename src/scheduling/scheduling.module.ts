@@ -1,0 +1,54 @@
+import { Module } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/auth.guard';
+import { JwksVerifierService } from '../auth/jwks.service';
+import { GoogleOAuthController } from './google-oauth/google-oauth.controller';
+import { GoogleOAuthService } from './google-oauth/google-oauth.service';
+import { CalendarSyncJob } from './jobs/calendar-sync.job';
+import { SessionReminderJob } from './jobs/reminder.job';
+import { GoogleCalendarAdapter } from './providers/google-calendar.adapter';
+import { GoogleMeetAdapter } from './providers/google-meet.adapter';
+import { SchedulingProviderRegistry } from './providers/scheduling-provider.registry';
+import { StubCalendarAdapter } from './providers/stub-calendar.adapter';
+import { StubVideoAdapter } from './providers/stub-video.adapter';
+import { ZoomVideoAdapter } from './providers/zoom-video.adapter';
+import { SchedulingController } from './scheduling.controller';
+import { SchedulingService } from './scheduling.service';
+import { SchedulingWebhookController } from './scheduling-webhook.controller';
+
+// PrismaService and AuditService are provided globally (PrismaModule
+// and AuditModule, both @Global()), so this module needs no imports.
+//
+// Provider adapters are registered eagerly so the registry can pull
+// them via constructor injection. The webhook controller lives in this
+// module because its lifecycle and provider env-flag wiring share fate
+// with the rest of scheduling.
+//
+// Concierge (PR #142) additions: GoogleOAuthController/Service handle
+// the Calendar API code-exchange + refresh flow. They live in this
+// module so the OAuth wiring shares fate with the GoogleCalendarAdapter.
+@Module({
+  controllers: [
+    SchedulingController,
+    SchedulingWebhookController,
+    GoogleOAuthController,
+  ],
+  providers: [
+    SchedulingService,
+    SchedulingProviderRegistry,
+    StubCalendarAdapter,
+    StubVideoAdapter,
+    GoogleCalendarAdapter,
+    GoogleMeetAdapter,
+    ZoomVideoAdapter,
+    SessionReminderJob,
+    CalendarSyncJob,
+    GoogleOAuthService,
+    // Local guards mirror the pattern in MacrosModule / TeamModeModule:
+    // provide the JwtAuthGuard + JwksVerifierService locally rather
+    // than importing AuthModule (avoids the circular-import risk).
+    JwtAuthGuard,
+    JwksVerifierService,
+  ],
+  exports: [SchedulingService, GoogleOAuthService],
+})
+export class SchedulingModule {}
