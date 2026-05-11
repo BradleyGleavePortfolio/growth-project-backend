@@ -49,8 +49,21 @@ export class FinanceInsightsClient {
     if (!base || !token) {
       return { kind: 'degraded', reason: 'not_configured' };
     }
+    // Sprint B-3: the finance app mounts insights federation at
+    // /api/federation/insights/finance-summary (matches its admin
+    // federation prefix). The path was previously /federation/...
+    // without the /api segment, which 404'd against the live finance
+    // app and silently degraded every Holistic Insights call to
+    // status='finance_unavailable'. The /api prefix is now the
+    // authoritative path; the finance side PR adds the matching
+    // controller.
+    //
+    // TODO(sprint-b-3-v2): align retry posture with FinanceAdminClient
+    // (single retry on transient timeout/network/http_error). Today
+    // this client does a single attempt and the 24h-on-ok / 5min-on-
+    // unavailable envelope cache absorbs the cost of a single miss.
     const url = new URL(
-      `${base.replace(/\/+$/, '')}/federation/insights/finance-summary`,
+      `${base.replace(/\/+$/, '')}/api/federation/insights/finance-summary`,
     );
     url.searchParams.set('email', userEmail);
     url.searchParams.set('window_days', String(windowDays));
