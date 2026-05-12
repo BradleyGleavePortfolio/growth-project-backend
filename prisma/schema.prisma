@@ -2359,3 +2359,28 @@ model CalendarConnection {
   @@unique([user_id, provider, external_account_id], name: "CalendarConnection_user_provider_account_key")
   @@index([user_id])
 }
+
+// ─── Phase 10: Secrets Rotation Log ────────────────────────────────────────
+//
+// Immutable audit trail for every secret rotation event. The admin endpoint
+// GET /admin/secrets/status reads this table to surface "last rotated" dates
+// per secret. No secret values are stored here — only metadata.
+//
+// rotated_by_user_id is nullable so that automated script rotations (e.g.
+// scripts/secrets/rotate-jwt.ts) can be recorded without a user context.
+//
+// The secret_name column is a free-text identifier matching the Fly secret
+// name exactly (e.g. "JWT_SIGNING_KEY", "DATABASE_URL"). This keeps the
+// table schema stable even as new secrets are added.
+model SecretRotationLog {
+  id                  String    @id @default(uuid())
+  secret_name         String
+  rotated_at          DateTime  @default(now())
+  rotated_by_user_id  String?
+  notes               String?
+
+  @@index([secret_name])
+  @@index([rotated_at])
+  @@index([rotated_by_user_id])
+  @@map("secret_rotation_log")
+}
