@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import ws from 'ws';
 
 @Injectable()
 export class SupabaseService {
@@ -7,9 +8,12 @@ export class SupabaseService {
   private readonly logger = new Logger(SupabaseService.name);
 
   constructor() {
+    // Node 20 lacks native WebSocket; supabase-js >=2.105 requires an explicit
+    // transport when running under Node <22.
     this.client = createClient(
       process.env.SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { realtime: { transport: ws as any } },
     );
   }
 

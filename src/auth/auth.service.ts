@@ -8,6 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
+import ws from 'ws';
 import { PrismaService } from '../prisma.service';
 import {
   InviteCodesService,
@@ -42,10 +43,13 @@ export class AuthService {
     private audit: AuditService,
     private appleVerifier: AppleVerifierService,
   ) {
-    // Supabase Admin SDK for user management (service role key)
+    // Supabase Admin SDK for user management (service role key).
+    // Node 20 lacks native WebSocket; supabase-js >=2.105 requires an explicit
+    // transport when running under Node <22.
     this.supabaseAdmin = createClient(
       process.env.SUPABASE_URL || '',
       process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+      { realtime: { transport: ws as any } },
     );
   }
 
@@ -72,6 +76,7 @@ export class AuthService {
     const supaClient = createClient(
       process.env.SUPABASE_URL || '',
       process.env.SUPABASE_ANON_KEY || '',
+      { realtime: { transport: ws as any } },
     );
 
     const { data: signupData, error } = await supaClient.auth.signUp({
@@ -117,6 +122,7 @@ export class AuthService {
     const supaClient = createClient(
       process.env.SUPABASE_URL || '',
       process.env.SUPABASE_ANON_KEY || '',
+      { realtime: { transport: ws as any } },
     );
 
     const { data, error } = await supaClient.auth.signInWithPassword({ email, password });
@@ -340,6 +346,7 @@ export class AuthService {
     const supaClient = createClient(
       process.env.SUPABASE_URL || '',
       process.env.SUPABASE_ANON_KEY || '',
+      { realtime: { transport: ws as any } },
     );
     const { data: signInData, error: signInError } =
       await supaClient.auth.signInWithIdToken({ provider: 'apple', token });
@@ -567,6 +574,7 @@ export class AuthService {
     const supaClient = createClient(
       process.env.SUPABASE_URL || '',
       process.env.SUPABASE_ANON_KEY || '',
+      { realtime: { transport: ws as any } },
     );
 
     const { error } = await supaClient.auth.resetPasswordForEmail(email, {
@@ -675,6 +683,7 @@ export class AuthService {
     const supaClient = createClient(
       process.env.SUPABASE_URL || '',
       process.env.SUPABASE_ANON_KEY || '',
+      { realtime: { transport: ws as any } },
     );
     const { error } = await supaClient.auth.signInWithPassword({
       email: user.email,
