@@ -41,6 +41,16 @@ interface FoodTotalsRow {
   total_fat_g: number;
 }
 
+// Audit-1 Fix #7: cursor-pagination options for getClientTimeline().
+// Each slice is independently cursor-paginated so the client can
+// scroll-load each data type without re-fetching the others.
+export interface TimelineCursors {
+  mealsCursor?: string;
+  workoutsCursor?: string;
+  weightsCursor?: string;
+  checkInsCursor?: string;
+}
+
 @Injectable()
 export class CoachService {
   constructor(
@@ -179,11 +189,22 @@ export class CoachService {
     return updated;
   }
 
+  // Audit-1 Fix #7: each of the 4 parallel findMany slices is now capped
+  // at 100 rows and supports cursor-based pagination. Callers that omit
+  // `opts` (or leave all cursor fields undefined) get the first page of
+  // 100 — identical to the previous unbounded behaviour for small data
+  // sets, but safe for daily-active clients with 270 + rows per slice.
+  //
+  // Pagination contract (per slice):
+  //   • First page: omit the cursor param entirely.
+  //   • Next page: pass the `id` of the last row from the previous page.
+  //   • Exhausted: response slice length < 100 means no further pages.
   async getClientTimeline(
     coachId: string,
     clientId: string,
     days: number = 90,
     callerRole?: string,
+    opts: TimelineCursors = {},
   ) {
     const client = await this.prisma.user.findFirst({
       where: { id: clientId, ...this.byCoach(coachId, callerRole) },
@@ -204,6 +225,8 @@ export class CoachService {
             where: { user_id: clientId, logged_at: { gte: ninetyDaysAgo } },
             include: { food_item: true },
             orderBy: { logged_at: 'desc' },
+            take: 100,
+            ...(opts.mealsCursor ? { cursor: { id: opts.mealsCursor }, skip: 1 } : {}),
           })
         : Promise.resolve<LoggedFoodEntryWithFood[]>([]),
       flags.workouts
@@ -211,18 +234,24 @@ export class CoachService {
             where: { user_id: clientId, created_at: { gte: ninetyDaysAgo } },
             include: { exercises: true },
             orderBy: { created_at: 'desc' },
+            take: 100,
+            ...(opts.workoutsCursor ? { cursor: { id: opts.workoutsCursor }, skip: 1 } : {}),
           })
         : Promise.resolve<WorkoutSessionWithExercises[]>([]),
       flags.bodyMetrics
         ? this.prisma.weightLog.findMany({
             where: { user_id: clientId, date: { gte: ninetyDaysAgo } },
             orderBy: { date: 'desc' },
+            take: 100,
+            ...(opts.weightsCursor ? { cursor: { id: opts.weightsCursor }, skip: 1 } : {}),
           })
         : Promise.resolve<WeightLogRow[]>([]),
       flags.habitsProgress
         ? this.prisma.checkIn.findMany({
             where: { user_id: clientId, date: { gte: ninetyDaysAgo } },
             orderBy: { date: 'desc' },
+            take: 100,
+            ...(opts.checkInsCursor ? { cursor: { id: opts.checkInsCursor }, skip: 1 } : {}),
           })
         : Promise.resolve<CheckInRow[]>([]),
     ]);

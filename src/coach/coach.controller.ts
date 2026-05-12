@@ -112,10 +112,27 @@ export class CoachController {
     }
   }
 
+  // Audit-1 Fix #7: accept optional per-slice cursor query params so the
+  // mobile timeline screen can scroll-load each data type independently.
+  // All params are optional — omitting them returns the first page of 100
+  // rows per slice (backwards-compatible with the current mobile client).
   @Get('clients/:id/timeline')
-  async getClientTimeline(@Request() req: AuthedRequest, @Param('id') id: string, @Query('days') days?: string) {
+  async getClientTimeline(
+    @Request() req: AuthedRequest,
+    @Param('id') id: string,
+    @Query('days') days?: string,
+    @Query('mealsCursor') mealsCursor?: string,
+    @Query('workoutsCursor') workoutsCursor?: string,
+    @Query('weightsCursor') weightsCursor?: string,
+    @Query('checkInsCursor') checkInsCursor?: string,
+  ) {
     const daysNum = days ? parseInt(days, 10) : 90;
-    return this.coachService.getClientTimeline(req.user.id, id, daysNum, req.user.role);
+    return this.coachService.getClientTimeline(req.user.id, id, daysNum, req.user.role, {
+      mealsCursor,
+      workoutsCursor,
+      weightsCursor,
+      checkInsCursor,
+    });
   }
 
   @Get('clients/:id/summary')
