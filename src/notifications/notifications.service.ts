@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
@@ -49,9 +49,9 @@ export class NotificationsService {
   constructor(
     private prisma: PrismaService,
     // AuditService is @Global — injected here for notification.pref_change
-    // audit events. The Optional decorator preserves backward compatibility
-    // for any test that builds NotificationsService without DI.
-    private audit: AuditService,
+    // audit events. Optional so tests that build NotificationsService
+    // without DI continue to work (audit writes become no-ops).
+    @Optional() private audit?: AuditService,
   ) {}
 
   // ── Preferences ───────────────────────────────────────────────────────────
@@ -188,7 +188,7 @@ export class NotificationsService {
     const changedKeys = (Object.keys(definedFields) as Array<keyof typeof fields>).filter(
       (k) => existing == null || (existing as Record<string, unknown>)[k] !== (definedFields as Record<string, unknown>)[k],
     );
-    void this.audit.write({
+    void this.audit?.write({
       action: AuditAction.NOTIFICATION_PREF_CHANGE,
       actorId: userId,
       actorRole: auditCtx.actorRole ?? null,

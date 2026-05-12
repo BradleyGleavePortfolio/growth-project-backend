@@ -320,7 +320,7 @@ describe('CoachService audit hooks', () => {
       habitsProgress: true,
     }));
 
-    await svc.getClientTimeline('coach-1', 'client-1', 90, 'coach', {
+    await svc.getClientTimeline('coach-1', 'client-1', 90, 'coach', {}, {
       ip: '10.0.0.1',
       userAgent: 'jest',
     });
