@@ -119,6 +119,7 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 | `DIAGNOSTIC_RATE_LIMIT_PER_HOUR` | optional | Backend operator | Per-IP hourly cap on `POST /api/diagnostic/submit` (named throttler `diagnostic-submit`). Defaults to 5; clamped to `[1, 1000]`. The endpoint is unauthenticated by design (lead capture), so the limit is the primary defense. |
 | `BUILD_WEEK_ENABLED` | optional | Backend operator | Feature flag — when `false`, the Phase 4 Build Week controllers refuse new writes and the admin funnel reports zeroed counts. Defaults to `true`. See [`src/build-week/README.md`](src/build-week/README.md) and [`docs/build-week.md`](docs/build-week.md). |
 | `BUILD_WEEK_AUTO_START_ON_SIGNUP` | optional | Backend operator | Feature flag — when `true`, new client signups auto-enrol in Build Week. Defaults to `false`. The flag is exposed for staged rollout; auto-enrolment wiring lands in a follow-on PR. |
+| `AUDIT_LOGGING_ENABLED` | optional | Backend operator | Kill switch for audit writes. Set to `off` to suppress all `AuditService.write()` calls without removing call sites. Reads via `GET /admin/audit/log` are unaffected. Use only for short-lived debugging windows; the default (`on`) is the correct production value. See [`src/audit/README.md`](src/audit/README.md). |
 | `PORT` | optional | Fly.io | HTTP port. Defaults to 3000; Fly overrides this. |
 | `NODE_ENV` | optional | Backend operator | `development`, `staging`, or `production`. Drives the validation tier and the AI debug payload. |
 
@@ -477,10 +478,20 @@ One row per privileged event. Columns of operational interest:
 - `created_at`: indexed for cursor pagination.
 
 Append-only by convention; `AuditService.write` never updates or
-deletes. The OWNER-only read surface is `GET /api/admin/audit-log`,
-documented under the route contracts below. The full schema, index
-list, and currently wired call sites are in
-[`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md).
+deletes. Two OWNER-only read surfaces: `GET /api/admin/audit-log`
+(legacy, on `AdminController`) and `GET /api/admin/audit/log`
+(new in Phase 10, on `AuditController`). Both are documented under
+the route contracts below. The full schema, index list, and currently
+wired call sites are in [`src/audit/README.md`](src/audit/README.md)
+and [`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md).
+
+Phase 10 expanded `AuditAction` with 16 new constants and wired four
+services: `auth.service.ts` (`auth.login`, `auth.login_failed`,
+`auth.apple_signin`), `coach.service.ts` (`coach.viewed_client_data`),
+`admin-ptm.service.ts` (`ptm.risk_board_view`), and
+`notifications.service.ts` (`notification.pref_change`). Constants for
+bloodwork and leaderboard actions are defined here and wired in their
+respective PRs (#103, #148).
 
 ### DataExportRequest
 
@@ -719,6 +730,7 @@ Modules: [`src/coach/`](src/coach/README.md),
 | `POST` | `/admin/users/:id/promote` | owner | Role change with lazy `CoachProfile` provisioning. Canonical coach-promotion path; `/auth/become-coach` defers to this when the legacy self-service flag is off. |
 | `GET` | `/admin/metrics?since_days=` | owner | Authoritative counters from Postgres. `since_days` clamped to `(0, 365]`, defaults to 30. Stripe-sourced figures come from the webhook mirror; no synthesized money figures. Documented in [`docs/metrics.md`](docs/metrics.md). |
 | `GET` | `/admin/audit-log` | owner | Cursor-paginated read over `AuditLog`. Filters: `action`, `target_user_id`, `tenant_coach_id`, `before` (ISO timestamp), `limit` (clamped `[1, 200]`, default 50). |
+| `GET` | `/admin/audit/log` | owner | Phase 10 alias on `AuditController`. Identical filter contract; preferred endpoint going forward. See [`src/audit/README.md`](src/audit/README.md). |
 | `POST` | `/admin/gdpr/scrub?dry_run=&limit=` | owner | Manual / dry-run trigger for the GDPR PII scrub worker. Same code path as `scripts/gdpr-scrub.ts`. `dry_run=true` reports candidates without writing; `limit` clamps the per-call batch. The audit row is attributed to the calling OWNER (`actor_email_snapshot`); cron-driven runs leave actor null and `actor_role='system'`. Shipped in PR #81. Full operator runbook in [`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md). |
 | `GET` | `/admin/clients/:id/consent` | owner | Read-only consent matrix for one client across every coach they have ever interacted with. Each row is `{coach_id, scope, granted, granted_at, revoked_at, updated_at}`. Backed by `ConsentService.listForClientAdmin`. See "Consent layer (client → coach data access)" below and [`docs/audit-and-gdpr.md`](docs/audit-and-gdpr.md). |
 | `GET` | `/coach/alerts?acknowledged=&limit=&before=` | coach or owner | Phase 6B — own-coach red-flag inbox. Cursor on `created_at`. See [`src/coach/README.md`](src/coach/README.md#red-flag-alerts-phase-6b) and [`docs/coach-signals.md`](docs/coach-signals.md). |
@@ -1047,6 +1059,7 @@ for each surface:
 | #79 | cross-product federation for admin console | merged | `/admin/federation/*`, `FINANCE_API_BASE_URL`, `FINANCE_SERVICE_TOKEN`, `FINANCE_FEDERATION_TIMEOUT_MS` |
 | #80 | console-friendly alias routes (search / coach overview / client unified / finance health / integrations status) | merged | `/admin/{search,coaches/:id/overview,clients/:id,clients/:id/unified,finance/health,integrations/status}` |
 | #81 | hard-gate become-coach + GDPR scrub worker + broader audit + mobile coach billing/account aliases | merged | `ALLOW_SELF_SERVICE_BECOME_COACH`, `GDPR_SCRUB_DRY_RUN`, `GDPR_SCRUB_BATCH_LIMIT`, `/admin/gdpr/scrub`, `/coach/billing/status`, `/coach/billing/portal-session`, `/users/me/account/status`, audit actions `coach.client_archived`/`coach.client_unarchived`/`billing.subscription_updated`/`_canceled`/`.invoice_paid`/`.invoice_payment_failed` |
+| Phase 10 | audit logging expansion: 16 new `AuditAction` constants, `AuditController`, kill switch, hooks in auth / coach / ptm / notifications | open | `AUDIT_LOGGING_ENABLED`, `/admin/audit/log`, `src/audit/README.md`, `test/audit-phase10.spec.ts` |
 
 Operator actions for the recently merged work:
 

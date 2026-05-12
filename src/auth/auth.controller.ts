@@ -85,8 +85,8 @@ export class AuthController {
     [THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]: { ttl: 3_600_000, limit: 30 },
   })
   @HttpCode(HttpStatus.OK)
-  async login(@Body() body: LoginDto, @Request() req: Record<string, any>) {
-    const result = await this.authService.login(body.email, body.password);
+  async login(@Body() body: LoginDto, @Request() req: AuditableRequest) {
+    const result = await this.authService.login(body.email, body.password, auditContext(req));
     // Reset the IP-keyed login counters on success so a retry storm from bad
     // Wi-Fi does not lock out a legitimate user.
     await this.loginThrottleReset.resetLoginCounters(extractIp(req));
@@ -136,8 +136,13 @@ export class AuthController {
     [THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]: { ttl: 3_600_000, limit: 30 },
   })
   @HttpCode(HttpStatus.OK)
-  async appleAuth(@Body() body: AppleAuthDto, @Request() req: Record<string, any>) {
-    const result = await this.authService.appleAuth(body.token, body.full_name, body.invite_code);
+  async appleAuth(@Body() body: AppleAuthDto, @Request() req: AuditableRequest) {
+    const result = await this.authService.appleAuth(
+      body.token,
+      body.full_name,
+      body.invite_code,
+      auditContext(req),
+    );
     await this.loginThrottleReset.resetLoginCounters(extractIp(req));
     return result;
   }

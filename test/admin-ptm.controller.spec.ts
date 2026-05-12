@@ -102,7 +102,10 @@ describe('AdminPtmController — handlers', () => {
   it('getRiskBoard forwards bucket / cursor / limit', async () => {
     const svc = buildSvc();
     const ctrl = new AdminPtmController(svc);
-    await ctrl.getRiskBoard({
+    const req = {
+      user: { id: 'owner-1', role: 'owner', email: 'o@o.test' },
+    } as any;
+    await ctrl.getRiskBoard(req, {
       bucket: 'red',
       cursor: '2026-05-01T00:00:00.000Z',
       limit: 25,
@@ -111,6 +114,13 @@ describe('AdminPtmController — handlers', () => {
       bucket: 'red',
       cursor: '2026-05-01T00:00:00.000Z',
       limit: 25,
+      actor: {
+        actorId: 'owner-1',
+        actorRole: 'owner',
+        actorEmail: 'o@o.test',
+        ip: null,
+        userAgent: null,
+      },
     });
   });
 

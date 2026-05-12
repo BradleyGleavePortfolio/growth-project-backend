@@ -1,6 +1,7 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { AuditAction, AuditService } from '../audit/audit.service';
 import { UpdateNotificationPreferencesDto, GetNotificationsQueryDto } from './notifications.dto';
 import { NotificationKindValue } from './notification-kind';
 import {
@@ -45,7 +46,13 @@ const recentPushes = new Map<string, number>();
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    // AuditService is @Global — injected here for notification.pref_change
+    // audit events. Optional so tests that build NotificationsService
+    // without DI continue to work (audit writes become no-ops).
+    @Optional() private audit?: AuditService,
+  ) {}
 
   // ── Preferences ───────────────────────────────────────────────────────────
 
@@ -106,7 +113,11 @@ export class NotificationsService {
     return prefs;
   }
 
-  async updatePreferences(userId: string, data: UpdateNotificationPreferencesDto) {
+  async updatePreferences(
+    userId: string,
+    data: UpdateNotificationPreferencesDto,
+    auditCtx: { ip?: string | null; userAgent?: string | null; actorRole?: string | null } = {},
+  ) {
     // Explicit field mapping — never spread `data` directly into the Prisma
     // call. Defense-in-depth alongside ValidationPipe's whitelist stripping.
     const fields = {
@@ -161,15 +172,35 @@ export class NotificationsService {
       where: { user_id: userId },
     });
 
-    if (existing) {
-      return this.prisma.notificationPreferences.update({
-        where: { user_id: userId },
-        data: definedFields,
-      });
-    }
-    return this.prisma.notificationPreferences.create({
-      data: { user_id: userId, ...definedFields },
+    const result = existing
+      ? await this.prisma.notificationPreferences.update({
+          where: { user_id: userId },
+          data: definedFields,
+        })
+      : await this.prisma.notificationPreferences.create({
+          data: { user_id: userId, ...definedFields },
+        });
+
+    // Audit: log preference change. Fire-and-forget so a log write cannot
+    // block or fail the primary preference update. Metadata captures only
+    // the keys that changed — not their new values, to avoid storing
+    // potentially-sensitive preference data in the audit log.
+    const changedKeys = (Object.keys(definedFields) as Array<keyof typeof fields>).filter(
+      (k) => existing == null || (existing as Record<string, unknown>)[k] !== (definedFields as Record<string, unknown>)[k],
+    );
+    void this.audit?.write({
+      action: AuditAction.NOTIFICATION_PREF_CHANGE,
+      actorId: userId,
+      actorRole: auditCtx.actorRole ?? null,
+      targetUserId: userId,
+      targetType: 'user',
+      targetId: userId,
+      ip: auditCtx.ip ?? null,
+      userAgent: auditCtx.userAgent ?? null,
+      metadata: { changed_keys: changedKeys, is_create: existing == null },
     });
+
+    return result;
   }
 
   // ── Notification center ───────────────────────────────────────────────────
@@ -317,6 +348,9 @@ export class NotificationsService {
     const category = payload.category ?? DEFAULT_NOTIFICATION_CATEGORY;
 
     try {
+      // Push token lookup and APNs/FCM transport are deferred until
+      // push credentials are wired in the environment. For now, log
+      // delivery intent — alerts are still stored in inbox.
       this.logger.log(
         `push delivery: coach=${coachId} alertId=${payload.alertId} type=${payload.alertType} sev=${payload.severity} category=${category}`,
       );

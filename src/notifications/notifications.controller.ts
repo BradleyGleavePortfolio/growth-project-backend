@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import type { AuthedRequest } from '../auth/auth-request';
+import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import {
@@ -90,9 +90,22 @@ export class NotificationsController {
   @Patch('preferences')
   @ApiOperation({ summary: 'Update notification channel preferences' })
   async updatePreferences(
-    @Request() req: AuthedRequest,
+    @Request() req: AuditableRequest & AuthedRequest,
     @Body() body: UpdateNotificationPreferencesDto,
   ) {
-    return this.notificationsService.updatePreferences(req.user.id, body);
+    return this.notificationsService.updatePreferences(req.user.id, body, {
+      ...auditContext(req),
+      actorRole: req.user.role,
+    });
   }
+}
+
+function auditContext(req: AuditableRequest): { ip: string | null; userAgent: string | null } {
+  const xffRaw = req?.headers?.['x-forwarded-for'];
+  const xff = Array.isArray(xffRaw) ? xffRaw[0] : xffRaw || '';
+  const fwdIp = xff.split(',')[0]?.trim();
+  const ip = fwdIp || req?.ip || req?.socket?.remoteAddress || null;
+  const uaRaw = req?.headers?.['user-agent'];
+  const userAgent = Array.isArray(uaRaw) ? uaRaw[0] ?? null : uaRaw ?? null;
+  return { ip: ip || null, userAgent: userAgent || null };
 }
