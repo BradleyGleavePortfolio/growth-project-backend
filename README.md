@@ -1526,3 +1526,102 @@ because PR #140 and PR #118 landed on the same day. Prisma keys on
 the full directory name, so both apply correctly; tooling that
 sorts by prefix alone should be aware. Future migrations must pick
 a fresh monotonic slot.
+
+## Operator Fill-Ins Required
+
+Operator-action checklist for the TestFlight / production launch. This is the subset of the [Variable matrix](#variable-matrix) that an operator must set by hand before traffic flips. Existing dev defaults / `.env.example` placeholders are NOT operator-actionable; they live in the matrix above. All `Used in` references were verified by grep against `main` HEAD on 2026-05-12.
+
+### TestFlight-blocking secrets (must be set on Fly app `backend-spring-lake-3890`)
+
+| Variable | Used in (file:line) | Where to set | How to generate / source |
+|---|---|---|---|
+| `KMS_MASTER_KEY` | `src/common/kms/kms.service.ts:165` | Fly secret (app: `backend-spring-lake-3890`) | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` — 32-byte base64. Rotate via `KMS_KEY_ALIAS` + `KMS_KEY_VERSION`. |
+| `STRIPE_PRICE_GROWTH` | `src/team-mode/tier-resolver.service.ts:60` | Fly secret (app: `backend-spring-lake-3890`) | Stripe dashboard → Products → Growth tier → copy price ID `price_XXX`. |
+| `STRIPE_PRICE_PRO` | `src/team-mode/tier-resolver.service.ts:61` | Fly secret (app: `backend-spring-lake-3890`) | Stripe dashboard → Products → Pro tier → copy price ID. |
+| `STRIPE_PRICE_ENTERPRISE` | `src/team-mode/tier-resolver.service.ts:62` | Fly secret (app: `backend-spring-lake-3890`) | Stripe dashboard → Products → Enterprise tier → copy price ID. |
+| `STRIPE_PRICE_STAFF_SEAT` | `src/team-mode/team-mode.service.ts:131` | Fly secret (app: `backend-spring-lake-3890`) | Stripe dashboard → Products → per-seat staff add-on → copy price ID. |
+| `STRIPE_PRICE_ID_FITNESS` | `src/billing/owner-billing.controller.ts:102` | Fly secret (app: `backend-spring-lake-3890`) | Stripe dashboard → Products → legacy fitness solo tier → copy price ID. |
+| `STRIPE_SECRET_KEY` | `src/billing/stripe-api.service.ts:86` | Fly secret (app: `backend-spring-lake-3890`) | Stripe dashboard → Developers → API keys → restricted key with `billing_portal:write`, `subscriptions:write`, `customers:write`. |
+| `STRIPE_WEBHOOK_SECRET` | `src/billing/stripe-webhook.controller.ts:53` | Fly secret (app: `backend-spring-lake-3890`) | Stripe dashboard → Developers → Webhooks → endpoint signing secret `whsec_XXX`. |
+| `FINANCE_API_BASE_URL` | `src/insights/finance-insights.client.ts:38` | Fly secret (app: `backend-spring-lake-3890`) | Fly URL of the finance app: `https://tgp-finance-api.fly.dev`. |
+| `FINANCE_SERVICE_TOKEN` | `src/insights/finance-insights.client.ts:39` | Fly secret (app: `backend-spring-lake-3890`) | 256-bit random hex: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Must match `FEDERATION_SERVICE_TOKEN` byte-for-byte on the finance Fly app. |
+| `DATABASE_URL` | `src/prisma.service.ts:9` | Fly secret (app: `backend-spring-lake-3890`) | Supabase dashboard → Settings → Database → Connection pooler (session mode, port 5432). Append `?connection_limit=10&pool_timeout=10`. |
+| `SUPABASE_URL` | `src/supabase/supabase.service.ts:11` | Fly secret (app: `backend-spring-lake-3890`) | Supabase dashboard → Settings → API → Project URL. |
+| `SUPABASE_SERVICE_ROLE_KEY` | `src/supabase/supabase.service.ts:12` | Fly secret (app: `backend-spring-lake-3890`) | Supabase dashboard → Settings → API → `service_role` key. Secret — never ship to clients. |
+| `SUPABASE_ANON_KEY` | `src/auth/auth.service.ts:74` | Fly secret (app: `backend-spring-lake-3890`) | Supabase dashboard → Settings → API → `anon` public key. |
+| `SUPABASE_REDIRECT_URL` | `src/auth/auth.service.ts:81` | Fly secret (app: `backend-spring-lake-3890`) | Deep-link target for email confirm (e.g. `tgp://verified`). Must also be allow-listed in Supabase Auth → URL Configuration. |
+| `CORS_ORIGINS` | `src/main.ts:57` | Fly secret (app: `backend-spring-lake-3890`) | Comma-separated list of allowed origins. Wildcard `*` is rejected at boot. |
+| `APP_URL` | `src/scheduling/google-oauth/google-oauth.controller.ts:129` | Fly secret (app: `backend-spring-lake-3890`) | Public host of the backend, e.g. `https://backend-spring-lake-3890.fly.dev`. |
+| `APPLE_AUDIENCES` | `src/auth/apple-verifier.service.ts:51` | Fly secret (app: `backend-spring-lake-3890`) | Comma-separated list of Apple bundle IDs allowed to present Sign-in-with-Apple tokens. Must include `com.growthproject.app`. |
+
+### Production secrets (already set; verify before launch)
+
+These are required in production and are already populated as Fly secrets per prior deploys. Re-verify against the Fly dashboard, do not introspect from the repo.
+
+| Variable | Used in (file:line) | Where to set | How to generate / source |
+|---|---|---|---|
+| `ANTHROPIC_API_KEY` | `src/ai/gateway/ai-gateway.config.ts:105` | Fly secret (app: `backend-spring-lake-3890`) | console.anthropic.com → API Keys. VERIFY in Fly dashboard. |
+| `OPENAI_API_KEY` | `src/ai/gateway/ai-gateway.config.ts:104` | Fly secret (app: `backend-spring-lake-3890`) | platform.openai.com → API Keys. VERIFY in Fly dashboard. |
+| `PERPLEXITY_API_KEY` | `src/first-win/first-win.service.ts:39` | Fly secret (app: `backend-spring-lake-3890`) | perplexity.ai → API. VERIFY in Fly dashboard. |
+| `USDA_API_KEY` | `src/food/food.service.ts:273` | Fly secret (app: `backend-spring-lake-3890`) | api.data.gov → sign up → request USDA FoodData Central key. VERIFY in Fly dashboard. |
+| `SENTRY_DSN` | `src/instrument.ts:6` | Fly secret (app: `backend-spring-lake-3890`) | Sentry → Project → Client Keys (DSN). VERIFY in Fly dashboard. |
+| `POSTHOG_KEY` | `src/analytics/analytics.service.ts:55` | Fly secret (app: `backend-spring-lake-3890`) | PostHog → Project Settings → Project API Key. VERIFY in Fly dashboard. |
+| `POSTHOG_HOST` | `src/analytics/analytics.service.ts:57` | Fly secret (app: `backend-spring-lake-3890`) | PostHog instance URL (defaults to `https://us.i.posthog.com`). VERIFY in Fly dashboard. |
+| `REDIS_URL` | `src/app.module.ts:81` | Fly secret (app: `backend-spring-lake-3890`) | Upstash Redis URL (`rediss://...`). VERIFY in Fly dashboard. |
+| `STRIPE_BILLING_PORTAL_RETURN_URL` | `src/billing/mobile-coach-billing.controller.ts:119` | Fly secret (app: `backend-spring-lake-3890`) | Deep link mobile uses to re-enter app after Stripe portal (e.g. `tgp://billing/return`). VERIFY in Fly dashboard. |
+| `STRIPE_CUSTOMER_PORTAL_LOGIN_URL` | `src/billing/mobile-coach-billing.controller.ts:90` | Fly secret (app: `backend-spring-lake-3890`) | Stripe dashboard → Settings → Billing → Customer portal → login link URL. VERIFY in Fly dashboard. |
+| `SUPABASE_VOICE_BUCKET` | `src/messaging/messaging.service.ts:105` | Fly secret (app: `backend-spring-lake-3890`) | Supabase Storage bucket name for voice notes (default `voice-notes`). VERIFY bucket exists + policies set. |
+| `APP_STORE_URL` | `src/invite-landing/invite-landing.controller.ts:74` | Fly secret (app: `backend-spring-lake-3890`) | `https://apps.apple.com/us/app/the-growth-project/id6765847915`. VERIFY in Fly dashboard. |
+| `PLAY_STORE_URL` | `src/invite-landing/invite-landing.controller.ts:77` | Fly secret (app: `backend-spring-lake-3890`) | Play Store URL — currently `null` per mobile `app.json`. Set when Android listing goes live. |
+| `PUBLIC_INVITE_BASE_URL` | `src/invite-landing/invite-landing.controller.ts:63` | Fly secret (app: `backend-spring-lake-3890`) | Public host base for invite links (typically same as `APP_URL`). VERIFY in Fly dashboard. |
+| `PUBLIC_WEB_SIGNUP_URL` | `src/invite-landing/invite-landing.controller.ts:64` | Fly secret (app: `backend-spring-lake-3890`) | Web signup destination from invite landing. Point at backend `/coach/signup` until marketing site ships. |
+| `RELEASE_VERSION` | `src/instrument.ts:12` | Fly env (auto-set in fly.toml) or Fly secret | Git SHA or semver tag for Sentry release. Set in Fly deploy command, not by hand. VERIFY `fly.toml`. |
+
+### Phase 2 / off-by-default (OPTIONAL — do NOT set for TestFlight)
+
+These variables exist in code but are gated behind feature flags that default to `false`. Leave unset for the TestFlight launch.
+
+| Variable | Used in (file:line) | Where to set | How to generate / source |
+|---|---|---|---|
+| `FEATURE_GOOGLE_CALENDAR_SYNC` | `src/scheduling/google-oauth/google-oauth.service.ts:82` | Fly secret (app: `backend-spring-lake-3890`) | OPTIONAL — Phase 2. Set to `true` only when Google OAuth credentials are provisioned. Default `false`. |
+| `GOOGLE_OAUTH_CLIENT_ID` | `src/scheduling/google-oauth/google-oauth.service.ts:86` | Fly secret (app: `backend-spring-lake-3890`) | OPTIONAL — Phase 2. Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID. |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | `src/scheduling/google-oauth/google-oauth.service.ts:87` | Fly secret (app: `backend-spring-lake-3890`) | OPTIONAL — Phase 2. Paired with `GOOGLE_OAUTH_CLIENT_ID` from Google Cloud Console. |
+| `GOOGLE_OAUTH_REDIRECT_URI` | `src/scheduling/google-oauth/google-oauth.service.ts:88` | Fly secret (app: `backend-spring-lake-3890`) | OPTIONAL — Phase 2. Must match the redirect URI registered in Google Cloud Console. |
+| `GOOGLE_CALENDAR_WEBHOOK_TOKEN` | `src/scheduling/google-calendar/google-calendar-webhook.controller.ts:79` | Fly secret (app: `backend-spring-lake-3890`) | OPTIONAL — Phase 2. Random hex token shared with Google for push channel verification. |
+
+## Open PRs by Status
+
+Triage of open PRs as of 2026-05-12. Pulled from `gh pr list --state open`. See parent objective doc for the closure-pass rationale.
+
+### Bucket B: Stale but relevant (needs rebase before merge)
+
+- **#164** GDPR Article 17 right to erasure (account deletion) — EU compliance, not replaced. Rebase + merge before public launch.
+- **#165** Secrets rotation playbook + zero-downtime JWT rotation — production hardening, not replaced.
+- **#166** Per-route / per-user / per-IP rate limiting — currently NO rate limiting in prod.
+- **#167** Role-gating hardening + `RecentAuthGuard` + `RolesEnforced` meta-test — security hardening.
+- **#169** SOC 2 prep stubs (policies, controls, evidence snapshot) — compliance scaffold for enterprise sales.
+- **#170** Audit logging expansion (16 actions, `AuditController`, kill switch, 4 service hooks) — partially overlaps PR #194 (AI gateway audit) but covers different surfaces.
+- **#171** GDPR Article 20 data portability — pair with #164.
+- **#173** Phase 10 observability — structured logging, request tracing, Prometheus metrics, `/health/deep`, profiling.
+- **#180** Paginate coach timeline slices — small bug fix, easy rebase.
+- **#184** Notification category enum on Expo push payloads — pairs with mobile #111.
+
+### Bucket C: N-coach gated (deferred until coach count grows)
+
+- **#181** Sub-coach management — roster + analytics + reassignment APIs. Trigger: any coach has 2+ sub-coaches.
+- **#182** Workout builder — exercise library + plan + assignment models. Trigger: when workout builder is next surface to ship.
+- **#183** Talent marketplace — application pool + Stripe Connect Express scaffold. Trigger: coach supply > demand.
+
+### Bucket D: UNSTABLE dependabots (CI failing, needs code fix)
+
+- **#105** `@prisma/client` 5.22 → 7.8 — major version, needs schema/API migration work.
+- **#150** `@supabase/supabase-js` 2.104 → 2.105 — likely quick fix.
+- **#151** `@sentry/node` 9.5 → 10.52 — major, new init API.
+- **#153** `@typescript-eslint/parser` 6 → 8 — eslint v9 compat.
+- **#154** `eslint` 8 → 10 — new flat config required.
+- **#155** `openai` 4 → 6 — major SDK rewrite.
+- **#157** `@typescript-eslint/eslint-plugin` 6 → 8 — pairs with #153.
+
+### Other open PRs (not in B/C/D buckets above)
+
+- **#156** `pdfkit` 0.15 → 0.18 — dependabot, not classified in triage; review and merge if CI green.
