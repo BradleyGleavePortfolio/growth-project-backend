@@ -16,6 +16,8 @@ import { TransformationScorecardService } from './reports/transformation-scoreca
 import { EntitlementsService } from './entitlements/entitlements.service';
 import { AdminPtmController } from './ptm/admin-ptm.controller';
 import { AdminPtmService } from './ptm/admin-ptm.service';
+import { Soc2EvidenceController } from './soc2/soc2-evidence.controller';
+import { Soc2EvidenceService } from './soc2/soc2-evidence.service';
 import { UsersModule } from '../users/users.module';
 import { BuildWeekModule } from '../build-week/build-week.module';
 import { CoachModule } from '../coach/coach.module';
@@ -53,6 +55,11 @@ import { CoachModule } from '../coach/coach.module';
 // began importing AdminModule for AdminPtmService. forwardRef() on both
 // sides is the idiomatic NestJS resolution; the runtime graph is identical
 // to the previous direct import.
+//
+// Phase 10 (SOC 2): Soc2EvidenceController + Soc2EvidenceService back the
+// OWNER-only compliance snapshot endpoint at
+// GET /admin/soc2/evidence-snapshot. See docs/soc2/ for the full
+// compliance documentation set.
 @Module({
   imports: [AuthModule, UsersModule, BuildWeekModule, forwardRef(() => CoachModule)],
   controllers: [
@@ -60,6 +67,7 @@ import { CoachModule } from '../coach/coach.module';
     ReportsController,
     AdminPtmController,
     FederationInboundController,
+    Soc2EvidenceController,
   ],
   providers: [
     AdminService,
@@ -74,6 +82,7 @@ import { CoachModule } from '../coach/coach.module';
     TransformationScorecardService,
     EntitlementsService,
     AdminPtmService,
+    Soc2EvidenceService,
   ],
   exports: [
     AdminService,
@@ -85,6 +94,7 @@ import { CoachModule } from '../coach/coach.module';
     ReportsService,
     EntitlementsService,
     AdminPtmService,
+    Soc2EvidenceService,
   ],
 })
 export class AdminModule {}

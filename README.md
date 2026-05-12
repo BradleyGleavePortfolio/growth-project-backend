@@ -1040,6 +1040,38 @@ README-with-every-PR rule covers the rest, and the
 deploy-affecting-PR rule above is the stricter cut for the operator
 surface.
 
+
+## Compliance
+
+`<<COMPANY_NAME>>` is working toward SOC 2 Type I certification. The compliance
+documentation lives at [`docs/soc2/`](docs/soc2/) and includes:
+
+- **[SOC 2 Overview](docs/soc2/README.md)** — where we are on the journey, trust services
+  criteria in scope, and the pre-audit checklist.
+- **[Policies](docs/soc2/policies/)** — eight signed policy templates (Information Security,
+  Acceptable Use, Access Control, Data Classification, Incident Response, Business
+  Continuity, Vendor Management, Change Management).
+- **[Controls Matrix](docs/soc2/controls/controls-matrix.md)** — every SOC 2 Trust Services
+  Criterion mapped to the implementing code (NestJS guards, audit log, rate limiting, etc.).
+- **[Evidence Collection Guide](docs/soc2/controls/evidence-collection.md)** — step-by-step
+  instructions for gathering auditor evidence.
+- **[Quarterly Review Runbook](docs/soc2/runbook-quarterly-review.md)** — what Bradley runs
+  every quarter to maintain the evidence trail.
+
+### Evidence snapshot endpoint
+
+```
+GET /api/admin/soc2/evidence-snapshot
+Authorization: Bearer <owner-JWT>
+```
+
+OWNER-only. Returns a JSON bundle of Fly.io app config, Prisma schema hash,
+role-decorated route list, redacted audit log sample (last 100 entries), and
+deployment history. Use this for auditor walk-throughs and quarterly snapshots.
+
+See `src/admin/soc2/` for the implementation and `test/soc2-evidence.spec.ts`
+for the test suite.
+
 ## Open work and merge order
 
 The merged-vs-open layering across the most recent shipped work, so
@@ -1142,6 +1174,7 @@ src/
   admin/         OWNER-only platform admin
                   federation/  cross-product reads (fitness + finance)
                   console/     id-keyed alias routes the admin console renders
+                  soc2/        SOC 2 evidence snapshot endpoint
   ai/            GP assistant: context, prompt, guardrails, fallback
   audit/         AuditLog writer + AuditAction constants
   analytics/    PostHog passthrough (no-op when key unset)

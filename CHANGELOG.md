@@ -374,3 +374,120 @@ Added a complete two-phase deletion flow in `src/account-deletion/`.
 - The `/admin/secrets/status` endpoint returns only metadata, never values.
 - The `POST /admin/secrets/:name/rotation-log` endpoint does not accept secret values — the `notes` field is limited to 500 characters.
 - All endpoints are OWNER-only (403 for coach/student roles).
+
+---
+
+## Phase 10 — Track 8: SOC 2 Prep Stubs (2025-05-07)
+
+**Branch:** `feat/phase-10-soc2-prep`
+
+Stages the compliance foundation for The Growth Project's eventual SOC 2 Type I audit. No audit is being conducted now — this track puts the policies, controls documentation, evidence-collection tooling, and quarterly review runbook in place so that when Bradley is ready to book an auditor, the paperwork and evidence trail are already started.
+
+### Documentation shipped
+
+| File | Purpose |
+|---|---|
+| `docs/soc2/README.md` | SOC 2 journey overview: Type I vs Type II, where we are, pre-audit checklist, expected timeline |
+| `docs/soc2/policies/information-security-policy.md` | Master security policy template — Bradley fills `<<PLACEHOLDERS>>` and signs |
+| `docs/soc2/policies/acceptable-use-policy.md` | Staff / contractor system-use rules |
+| `docs/soc2/policies/access-control-policy.md` | Logical access lifecycle (grant, review, revoke); references role-gating track |
+| `docs/soc2/policies/data-classification-policy.md` | Four-tier classification (Public → Highly Confidential); bloodwork is Highly Confidential |
+| `docs/soc2/policies/incident-response-plan.md` | P1–P4 severity tiers; 5-phase response; GDPR 72-hr notification; secrets-leak runbook cross-ref |
+| `docs/soc2/policies/business-continuity-plan.md` | RTO/RPO targets; Fly.io multi-region strategy; Supabase PITR backup discipline |
+| `docs/soc2/policies/vendor-management-policy.md` | Subprocessor table with DPA status and SOC 2 cert for each vendor |
+| `docs/soc2/policies/change-management-policy.md` | PR review gates, CI requirements, branch protection, emergency change process |
+| `docs/soc2/controls/controls-matrix.md` | AICPA Trust Services Criteria CC1–CC9, A1, P mapped to implementing code |
+| `docs/soc2/controls/evidence-collection.md` | Step-by-step guide: how to gather audit evidence for each control |
+| `docs/soc2/runbook-quarterly-review.md` | 8-step quarterly procedure: access review, snapshot, backup test, secrets rotation, vuln scan, audit log review |
+
+### Code shipped
+
+| File | Purpose |
+|---|---|
+| `src/admin/soc2/soc2-evidence.controller.ts` | OWNER-only `GET /admin/soc2/evidence-snapshot` |
+| `src/admin/soc2/soc2-evidence.service.ts` | Builds snapshot bundle: Fly config, schema hash, route list, redacted audit log, deploy history |
+| `src/admin/soc2/soc2-evidence.module.ts` | NestJS module wiring |
+| `src/admin/admin.module.ts` | Updated to register `Soc2EvidenceController` + `Soc2EvidenceService` |
+
+### Tests shipped
+
+| File | What it asserts |
+|---|---|
+| `test/soc2-evidence.spec.ts` | Role guard: owner allowed, coach/student/unauthenticated rejected with 403. Snapshot shape: all top-level keys present, `snapshotAt` is valid ISO-8601, `roleDecoratedRoutes` is non-empty with correct structure, `evidence-snapshot` route carries `owner` role. PII safety: actor email is redacted (`br...@example.com`), IP excluded, user-agent excluded, metadata (health data) excluded. Resilience: empty audit log and Prisma error both handled gracefully. |
+
+### Placeholders Bradley must fill before any policy is "live"
+
+Every policy document is a template. Before signing, fill these placeholders (search across `docs/soc2/` for `<<`):
+
+| Placeholder | Appears in | What to fill |
+|---|---|---|
+| `<<COMPANY_NAME>>` | All policies | Legal company name (e.g. "The Growth Project Ltd.") |
+| `<<EFFECTIVE_DATE>>` | All policies | Date of signing |
+| `<<POLICY_OWNER_NAME>>` | All policies | Person responsible for the policy (likely Bradley) |
+| `<<POLICY_OWNER_TITLE>>` | All policies | Job title |
+| `<<POLICY_OWNER_EMAIL>>` | Incident Response | Contact email |
+| `<<DPO_EMAIL>>` | Data Classification, Vendor Management | DPO or privacy contact email |
+| `<<CEO_NAME>>` | All policies | Founder name |
+| `<<CEO_OR_FOUNDER_TITLE>>` | All policies | Title (e.g. "Founder & CEO") |
+| `<<NEXT_REVIEW_DATE>>` | All policies | 12 months from effective date |
+| `<<JWT_EXPIRY>>` | Access Control, Controls Matrix | JWT expiry hours (check Supabase settings) |
+| `<<FLYIO_ADMINS>>` | Access Control | Names/emails with Fly.io org access |
+| `<<SUPABASE_ADMINS>>` | Access Control | Names/emails with Supabase project access |
+| `<<GITHUB_ADMINS>>` | Access Control | GitHub org admin list |
+| `<<STRIPE_ADMINS>>` | Access Control | Stripe team admin list |
+| `<<SENTRY_ADMINS>>` | Access Control | Sentry org admin list |
+| `<<ACCESS_LOG_LOCATION>>` | Access Control | Google Drive folder path or URL |
+| `<<TRAINING_LOG_LOCATION>>` | Information Security | Location of training records |
+| `<<EXCEPTION_LOG_LOCATION>>` | Information Security | Location of policy exception log |
+| `<<VULN_SLA_CRITICAL_DAYS>>` | Information Security | Days to fix critical CVEs (recommend: 7) |
+| `<<VULN_SLA_HIGH_DAYS>>` | Information Security | Days to fix high CVEs (recommend: 30) |
+| `<<UPTIME_TARGET>>` | Information Security, BCP | e.g. "99.5%" |
+| `<<RTO_HOURS>>` | BCP | Recovery Time Objective in hours (recommend: 4) |
+| `<<RPO_HOURS>>` | BCP | Recovery Point Objective in hours (recommend: 1) |
+| `<<SUPABASE_PLAN>>` | BCP | Supabase billing plan (Pro/Enterprise for PITR) |
+| `<<PITR_ENABLED>>` | BCP | Yes/No — check Supabase dashboard |
+| `<<BACKUP_RETENTION_DAYS>>` | BCP, Quarterly Runbook | Supabase backup retention window |
+| `<<PRIMARY_REGION>>` | BCP | Fly.io primary region (e.g. "iad") |
+| `<<SECONDARY_REGION>>` | BCP | Fly.io secondary region (e.g. "lhr") |
+| `<<FLY_APP_NAME>>` | BCP, IRP, Quarterly Runbook | Fly.io app name |
+| `<<STATUS_PAGE_URL>>` | BCP | Public status page URL |
+| `<<SUPPORT_EMAIL>>` | BCP | Public support email for user communication |
+| `<<INCIDENT_LOG_LOCATION>>` | IRP | Google Drive folder for incident records |
+| `<<BACKUP_STORAGE_LOCATION>>` | BCP, Quarterly Runbook | S3 or GCS bucket for manual backups |
+| `<<EVIDENCE_FOLDER>>` | Evidence Collection, Quarterly Runbook | Root path for evidence files |
+| `<<VENDOR_EVIDENCE_LOCATION>>` | Evidence Collection | Path for vendor SOC 2 reports |
+| `<<VENDOR_LOG_LOCATION>>` | Vendor Management | Log of vendor changes |
+| `<<INFRA_CHANGE_LOG_LOCATION>>` | Change Management | Log of infrastructure changes |
+| `<<REQUIRED_APPROVERS>>` | Change Management | Number of required PR reviewers |
+| `<<RECOMMENDED_PASSWORD_MANAGER>>` | Acceptable Use | Recommended password manager (e.g. "1Password") |
+| `<<BLOODWORK_MODEL>>` | Data Classification | Prisma model name for bloodwork (add when feature ships) |
+| `<<HIGHLY_CONFIDENTIAL_RETENTION_YEARS>>` | Data Classification | Health data retention (recommend: 7) |
+| `<<CONFIDENTIAL_RETENTION_YEARS>>` | Data Classification | PII retention (recommend: 3) |
+| `<<SUPABASE_REGION>>` | Vendor Management | Supabase project region |
+| `<<FLY_REGIONS>>` | Vendor Management | Active Fly.io regions |
+| `<<POSTHOG_REGION>>` | Vendor Management | PostHog cloud region |
+| `<<EMAIL_PROVIDER>>` | Vendor Management | Transactional email provider (e.g. Resend, SendGrid) |
+| `<<OBJECT_STORAGE_PROVIDER>>` | BCP | Object storage provider (e.g. AWS S3, Cloudflare R2) |
+| `<<RISK_REGISTER_LOCATION>>` | Controls Matrix | Location of formal risk register |
+| `<<DEFICIENCY_LOG_LOCATION>>` | Controls Matrix | Location of control deficiency log |
+| `<<JWKS_CACHE_TTL>>` | BCP | JwksVerifierService cache TTL (check src/auth/jwks.service.ts) |
+
+### Cross-references to other Phase 10 tracks
+
+These are referenced in the docs and code. Link to the final PR once each track merges:
+
+- `feat/phase-10-audit-logging` — `AuditLog` table and `AuditService` backing the audit log sample
+- `feat/phase-10-role-gating` — `RolesGuard`, `@Roles()` decorator, `RolesEnforced` meta-test
+- `feat/phase-10-observability` — Sentry + structured logging referenced in controls matrix
+- `feat/phase-10-rate-limiting` — `ThrottlerModule` referenced in CC6.6
+- `feat/phase-10-gdpr-delete` — `GdprScrubService` referenced in P6.6
+- `feat/phase-10-data-export` — DSAR endpoint referenced in P6.1
+- `feat/phase-10-secrets-rotation` — secrets rotation runbook referenced in IRP and quarterly review
+
+### No new env vars, no new Prisma models, no migrations
+
+This track is docs + minimal backend code only. Zero schema changes.
+
+### No new env vars added to `.env.example`
+
+The evidence-snapshot endpoint reads existing env vars (`FLY_APP_NAME`, `FLY_PRIMARY_REGION`, feature flags). A new optional var `FLY_API_TOKEN` is read by `Soc2EvidenceService` for the Fly.io releases fetch — it defaults to empty and the endpoint gracefully returns an empty `deploymentHistory` array when absent.
