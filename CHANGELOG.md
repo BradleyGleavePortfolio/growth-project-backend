@@ -196,3 +196,33 @@ Production-grade observability for The Growth Project backend.
 
 - The `bloodwork-write` and `coach-command-center` throttlers are fully configured in the limit table and tested but not yet applied as `@Throttle` decorators — those route families don't exist yet. Add the decorator to the handler when the module ships.
 - Set `REDIS_URL` before scaling beyond one Fly machine so limits are shared across the fleet.
+
+---
+
+## Phase 10 — GDPR delete (right to erasure) — 2026-05-08
+
+Added a complete two-phase deletion flow in `src/account-deletion/`.
+
+**What changed:**
+
+- New module `src/account-deletion/` with controller, service, tests, and README.
+- New endpoints:
+  - `POST /me/delete-account` — requests deletion, sends a single-use 24-hour email confirmation link.
+  - `GET /me/delete-account/confirm?token=...` — confirms deletion via one-time token; starts the 14-day grace period.
+  - `POST /me/delete-account/cancel` — cancels a pending deletion within the grace window.
+  - `GET /me/delete-account/status` — returns machine-readable deletion state (`none | requested | confirmed | deleted`).
+  - `POST /admin/users/:id/delete` — admin (OWNER role) force-delete; bypasses confirmation and grace period; fully audited.
+- New Prisma migration `20260507100000_add_gdpr_deletion_flow`:
+  - Adds `deletion_requested_at`, `deletion_confirmed_at`, `deletion_token_hash`, `deletion_token_expires_at` to `User`.
+  - Creates `deletion_audit` table for GDPR audit trail.
+- Per-model cascade strategy: documented inline in service. Hard-delete for user-owned data; delete for cross-party rows with non-nullable FKs; anonymize (null actor) for AuditLog; delete for CoachMessage threads (sender body cleared).
+- Nightly finalize cron (default 03:00 UTC via `DELETION_FINALIZE_CRON`) scrubs PII on accounts past the grace period. Idempotent.
+- New env vars: `DELETION_GRACE_DAYS=14`, `DELETION_FINALIZE_CRON`, `DELETION_TOKEN_TTL_HOURS=24`.
+- `AccountDeletionModule` wired into `AppModule`.
+
+**Dependencies / follow-ups:**
+
+- Data export (Phase 10 Wave C) must ship before this flow is enabled in production — GDPR Art. 20 portability must precede erasure.
+- Email confirmation is logged to console in this PR; wire to Phase 9 transactional mailer before go-live.
+- Supabase Auth user cleanup (delete auth row when account is finalized) is a follow-up.
+

@@ -66,6 +66,7 @@ import { TeamModeModule } from './team-mode/team-mode.module';
 // docs/rfcs/142-concierge-scheduling.md.
 import { SchedulingModule } from './scheduling/scheduling.module';
 import { ObservabilityModule } from './observability/observability.module';
+import { AccountDeletionModule } from './account-deletion/account-deletion.module';
 
 @Module({
   imports: [
@@ -201,6 +202,10 @@ import { ObservabilityModule } from './observability/observability.module';
     // so the module loads without Google OAuth credentials configured;
     // real GCal adapter opt-in via GOOGLE_OAUTH_CLIENT_ID + secret.
     SchedulingModule,
+    // Phase 10 — GDPR right to erasure. Two-phase deletion flow with
+    // email confirmation, 14-day grace period, per-model cascade strategy,
+    // and admin force-delete. See src/account-deletion/README.md.
+    AccountDeletionModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)
