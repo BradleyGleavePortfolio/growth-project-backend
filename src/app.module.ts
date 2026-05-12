@@ -67,6 +67,8 @@ import { TeamModeModule } from './team-mode/team-mode.module';
 import { SchedulingModule } from './scheduling/scheduling.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { AccountDeletionModule } from './account-deletion/account-deletion.module';
+// Phase 10 — GDPR Article 20 data portability.
+import { DataExportModule } from './data-export/data-export.module';
 
 @Module({
   imports: [
@@ -206,6 +208,10 @@ import { AccountDeletionModule } from './account-deletion/account-deletion.modul
     // email confirmation, 14-day grace period, per-model cascade strategy,
     // and admin force-delete. See src/account-deletion/README.md.
     AccountDeletionModule,
+    // Phase 10 — GDPR Article 20 right to data portability. Any user
+    // (coach or client) can request a JSON archive of their own data.
+    // A 7-day signed download URL is emailed when the export completes.
+    DataExportModule,
   ],
   providers: [
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)
