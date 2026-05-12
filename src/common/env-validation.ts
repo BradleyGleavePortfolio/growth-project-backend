@@ -372,6 +372,58 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     reason: 'Phase 10 — "on" activates GET /debug/profile (30-second V8 CPU profile). Requires OWNER role. Defaults to "off". Leave off in production unless actively profiling — the endpoint blocks a Node.js event-loop thread for 30 seconds.',
   },
+
+  // Phase 10 — Rate limiting
+  {
+    name: 'RATELIMIT_ENABLED',
+    tier: 'optional',
+    reason: 'Phase 10 — master kill switch for all rate limiting. Set to "off" only for load-test runs against staging. Any value other than "off" leaves throttling enabled. Default: on.',
+  },
+  {
+    name: 'RATELIMIT_AUTHED_PER_MIN',
+    tier: 'optional',
+    reason: 'Phase 10 — global default: max requests per minute per user-id (authenticated). Applies to every route with no explicit @Throttle decorator. Defaults to 300; clamped to [1, 10000].',
+  },
+  {
+    name: 'RATELIMIT_ANON_PER_MIN',
+    tier: 'optional',
+    reason: 'Phase 10 — global default: max requests per minute per IP (unauthenticated). Applies to every route with no explicit @Throttle decorator. Defaults to 100; clamped to [1, 10000].',
+  },
+  {
+    name: 'AUTH_LOGIN_PER_MIN',
+    tier: 'optional',
+    reason: 'Phase 10 — per-IP login attempts per minute (POST /auth/login, /auth/apple, /auth/google). Defaults to 5; clamped to [1, 1000]. A successful login resets this counter.',
+  },
+  {
+    name: 'AUTH_LOGIN_PER_HOUR',
+    tier: 'optional',
+    reason: 'Phase 10 — per-IP login attempts per hour across all login endpoints. Sustained-attack brake. Defaults to 30; clamped to [1, 5000].',
+  },
+  {
+    name: 'AUTH_PWD_RESET_PER_HOUR',
+    tier: 'optional',
+    reason: 'Phase 10 — per-IP password-reset email requests per hour (POST /auth/forgot-password). Defaults to 3; clamped to [1, 1000].',
+  },
+  {
+    name: 'COACH_MESSAGES_PER_MIN',
+    tier: 'optional',
+    reason: 'Phase 10 — per-user coach message sends per minute (POST /coach/clients/:id/messages). Defaults to 30; clamped to [1, 1000].',
+  },
+  {
+    name: 'NOTIF_PREFS_PER_MIN',
+    tier: 'optional',
+    reason: 'Phase 10 — per-user notification preference writes per minute (PUT /notifications/preferences). Defaults to 30; clamped to [1, 1000].',
+  },
+  {
+    name: 'BLOODWORK_WRITE_PER_MIN',
+    tier: 'optional',
+    reason: 'Phase 10 — per-user bloodwork POST writes per minute (POST /bloodwork/*). Defaults to 30; clamped to [1, 1000]. Applied when the bloodwork module ships.',
+  },
+  {
+    name: 'COACH_CMD_CENTER_PER_MIN',
+    tier: 'optional',
+    reason: 'Phase 10 — per-user coach command-center GET reads per minute (GET /coach/command-center/*). Defaults to 60; clamped to [1, 1000]. Applied when the command-center module ships.',
+  },
 ];
 
 export interface EnvValidationResult {

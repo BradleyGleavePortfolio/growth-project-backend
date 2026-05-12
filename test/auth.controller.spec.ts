@@ -20,7 +20,10 @@ describe('AuthController.validateInviteCode (public)', () => {
       attachUserToCoachByCode: jest.fn(),
     } as any;
     const auth = {} as any;
-    const controller = new AuthController(auth, inviteCodes);
+    // Phase 10: AuthController now accepts a third arg (LoginThrottleResetService).
+    // Provide a minimal stub so the constructor type-checks.
+    const loginThrottleReset = { resetLoginCounters: jest.fn() } as any;
+    const controller = new AuthController(auth, inviteCodes, loginThrottleReset);
     return { controller, inviteCodes };
   };
 

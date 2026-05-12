@@ -38,6 +38,8 @@ import {
   INVITE_CODE_MIN_LENGTH,
   INVITE_CODE_PATTERN,
 } from '../invite-codes/invite-codes.service';
+import { LoginThrottleResetService } from '../throttler/login-throttle-reset.service';
+import { THROTTLER_NAMES } from '../throttler/throttler.config';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -45,84 +47,99 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private inviteCodes: InviteCodesService,
+    private loginThrottleReset: LoginThrottleResetService,
   ) {}
 
   @ApiOperation({
     summary: 'Register a new user with email + password',
     description:
       'Creates a Supabase user and the corresponding application User row. ' +
-      'Rate-limited to 10/hour/IP to blunt enumeration and spam signup loops.',
+      'Rate-limited to 5/hour/IP to blunt enumeration and spam signup loops.',
   })
   @ApiResponse({ status: 200, description: 'Session tokens for the new user.' })
   @ApiResponse({ status: 400, description: 'Validation error.' })
   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('register')
-  // Named throttler `auth-signup`: 5/hour. Tracker is IP for unauthed
-  // signups, user-id for the rare authed retry (see UserThrottlerGuard).
-  @Throttle({ 'auth-signup': { ttl: 3600000, limit: 5 } })
+  @Throttle({ [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: 5 } })
   async register(@Body() body: RegisterDto) {
     return this.authService.register(body);
   }
 
   @ApiOperation({
     summary: 'Email + password login',
-    description: 'Returns Supabase access/refresh tokens. Rate-limited 10/min/IP.',
+    description:
+      'Returns Supabase access/refresh tokens. Rate-limited to 5/min and ' +
+      '30/hr per IP. A successful login resets both counters.',
   })
   @ApiResponse({ status: 200, description: 'Authenticated session.' })
   @ApiResponse({ status: 401, description: 'Invalid credentials.' })
   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('login')
-  // Named throttler `auth-login`: 10/minute. Tracker is IP (login is
-  // unauthed by definition); user-id tracking kicks in once the JWT is
-  // attached on subsequent authed routes.
-  @Throttle({ 'auth-login': { ttl: 60000, limit: 10 } })
+  // Two named throttlers: per-minute burst + per-hour sustained cap. Both are
+  // keyed by IP (login is unauthed). UserThrottlerGuard will check both.
+  // A successful login resets BOTH counters via LoginThrottleResetService.
+  @Throttle({
+    [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]:  { ttl: 60_000,    limit: 5 },
+    [THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]: { ttl: 3_600_000, limit: 30 },
+  })
   @HttpCode(HttpStatus.OK)
-  async login(@Body() body: LoginDto) {
-    return this.authService.login(body.email, body.password);
+  async login(@Body() body: LoginDto, @Request() req: Record<string, any>) {
+    const result = await this.authService.login(body.email, body.password);
+    // Reset the IP-keyed login counters on success so a retry storm from bad
+    // Wi-Fi does not lock out a legitimate user.
+    await this.loginThrottleReset.resetLoginCounters(extractIp(req));
+    return result;
   }
 
   @ApiOperation({
     summary: 'Google OAuth exchange',
     description:
       'Exchanges a Google ID token for a Supabase session. Optional ' +
-      '`invite_code` attaches the new user to a coach in the same call.',
+      'invite_code attaches the new user to a coach in the same call. ' +
+      'Rate-limited 5/min and 30/hr per IP.',
   })
   @ApiResponse({ status: 200, description: 'Authenticated session.' })
   @ApiResponse({ status: 401, description: 'Invalid Google token.' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('google')
+  @Throttle({
+    [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]:  { ttl: 60_000,    limit: 5 },
+    [THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]: { ttl: 3_600_000, limit: 30 },
+  })
   @HttpCode(HttpStatus.OK)
-  async googleAuth(@Body() body: GoogleAuthDto) {
-    return this.authService.googleAuth(body.token, body.invite_code);
+  async googleAuth(@Body() body: GoogleAuthDto, @Request() req: Record<string, any>) {
+    const result = await this.authService.googleAuth(body.token, body.invite_code);
+    await this.loginThrottleReset.resetLoginCounters(extractIp(req));
+    return result;
   }
 
   @ApiOperation({
     summary: 'Sign in with Apple',
     description:
       'Exchanges an Apple identity token (JWT) for a Supabase session. ' +
-      'Optional `full_name` is required on first authorization (Apple does ' +
-      'not include it in the identity token). Optional `invite_code` ' +
-      'attaches the new user to a coach in the same call. Returns 503 when ' +
-      'APPLE_AUDIENCES is not configured on this deployment.',
+      'Optional full_name is required on first authorization. Optional ' +
+      'invite_code attaches the new user to a coach in the same call. ' +
+      'Returns 503 when APPLE_AUDIENCES is not configured. ' +
+      'Rate-limited 5/min and 30/hr per IP.',
   })
   @ApiResponse({ status: 200, description: 'Authenticated session.' })
   @ApiResponse({ status: 401, description: 'Invalid Apple token.' })
   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
-  @ApiResponse({
-    status: 503,
-    description: 'Sign in with Apple is not configured on this server.',
-  })
+  @ApiResponse({ status: 503, description: 'Sign in with Apple is not configured.' })
   @Public()
   @Post('apple')
-  // Same shared bucket as /auth/login: 10/min/IP. The endpoint is unauthed
-  // and an attacker can replay tokens, so the rate limit is the primary
-  // brake. Sharing `auth-login` means we cannot be multiplexed with /login.
-  @Throttle({ 'auth-login': { ttl: 60000, limit: 10 } })
+  @Throttle({
+    [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]:  { ttl: 60_000,    limit: 5 },
+    [THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]: { ttl: 3_600_000, limit: 30 },
+  })
   @HttpCode(HttpStatus.OK)
-  async appleAuth(@Body() body: AppleAuthDto) {
-    return this.authService.appleAuth(body.token, body.full_name, body.invite_code);
+  async appleAuth(@Body() body: AppleAuthDto, @Request() req: Record<string, any>) {
+    const result = await this.authService.appleAuth(body.token, body.full_name, body.invite_code);
+    await this.loginThrottleReset.resetLoginCounters(extractIp(req));
+    return result;
   }
 
   @ApiOperation({
@@ -132,9 +149,6 @@ export class AuthController {
       'are usable on this build. Mobile calls this on launch.',
   })
   @ApiResponse({ status: 200, description: 'Signup policy.' })
-  // Mobile #56 calls GET /auth/signup-policy on launch to learn whether the
-  // coach invite code is required and which providers are usable on this
-  // build. Public so the unauth client can fetch it.
   @Public()
   @Get('signup-policy')
   @HttpCode(HttpStatus.OK)
@@ -145,14 +159,11 @@ export class AuthController {
   @ApiBearerAuth('bearer')
   @ApiOperation({
     summary: 'Attach the caller to a coach via invite code',
-    description: 'Idempotent — re-running with the same code is a no-op.',
+    description: 'Idempotent -- re-running with the same code is a no-op.',
   })
   @ApiResponse({ status: 200, description: 'Attached to coach.' })
   @ApiResponse({ status: 401, description: 'Missing or invalid bearer token.' })
   @ApiResponse({ status: 404, description: 'Invite code not found.' })
-  // Alias for /coach-codes/auth/attach-coach-code so mobile can hit the
-  // canonical /auth/attach-invite-code path with the new `invite_code`
-  // field name. Same behavior, same idempotency. Throttled the same way.
   @Post('attach-invite-code')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
@@ -167,7 +178,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Select role + optionally attach invite code',
     description:
-      'Only `student` is honored — coach elevation must be done by an OWNER ' +
+      'Only `student` is honored -- coach elevation must be done by an OWNER ' +
       'admin. A `coach` value will be rejected with 403.',
   })
   @ApiResponse({ status: 200, description: 'Role applied.' })
@@ -176,33 +187,22 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async selectRole(@Request() req: AuthedRequest, @Body() body: SelectRoleDto) {
-    // Prefer `invite_code` (new) over `coach_code` (legacy); either is honored.
     const code = body.invite_code ?? body.coach_code;
     return this.authService.selectRole(req.user.id, body.role, code);
   }
 
-  // Public (unauthenticated) endpoint so the signup flow can preview the coach
-  // name before the user commits. Returns {valid, coach_id?, coach_name?}.
-  // Rate-limited to blunt brute-force enumeration of the 30-bit code space.
-  //
-  // A code outside the documented length / character class is rejected with
-  // a polished structured 400 (`code: 'invite_code_invalid_format'`) BEFORE
-  // any DB lookup — so the response is identical for "32 chars of garbage"
-  // and "200 chars of garbage" and never leaks whether a malformed code
-  // exists. We also do not echo the user's input back in the error body.
   @ApiOperation({
     summary: 'Preview an invite code',
     description:
-      'Returns `{ valid, coach_id?, coach_name? }`. Format-validates the code ' +
-      'before any DB lookup so the response is identical for malformed input. ' +
-      'Rate-limited 20/min/IP.',
+      'Returns { valid, coach_id?, coach_name? }. Format-validates the code ' +
+      'before any DB lookup. Rate-limited 20/min/IP.',
   })
   @ApiResponse({ status: 200, description: 'Invite code preview result.' })
   @ApiResponse({ status: 400, description: 'Invite code format is invalid.' })
   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('validate-invite-code')
-  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: 20 } })
   @HttpCode(HttpStatus.OK)
   async validateInviteCode(@Body() body: ValidateInviteCodePublicDto) {
     const trimmed = body.code.trim();
@@ -230,16 +230,15 @@ export class AuthController {
   @ApiOperation({
     summary: 'Trigger a password-reset email',
     description:
-      'Always returns 200 to avoid leaking whether an email is registered.',
+      'Always returns 200 to avoid leaking whether an email is registered. ' +
+      'Rate-limited to 3/hr per IP.',
   })
   @ApiResponse({ status: 200, description: 'Email dispatched if user exists.' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('forgot-password')
-  // SECURITY (audit S-1): 5/15min on POST /auth/forgot-password. Without this
-  // the endpoint is a trivial user-enumeration and password-reset-email spam
-  // vector. Routed through the named throttler `auth-password-reset` so
-  // operators can adjust the limit in one place (src/throttler/throttler.config.ts).
-  @Throttle({ 'auth-password-reset': { ttl: 900000, limit: 5 } })
+  // SECURITY (audit S-1): 3/hour on POST /auth/forgot-password.
+  @Throttle({ [THROTTLER_NAMES.AUTH_PASSWORD_RESET]: { ttl: 3_600_000, limit: 3 } })
   @HttpCode(HttpStatus.OK)
   async forgotPassword(@Body() body: ForgotPasswordDto) {
     return this.authService.forgotPassword(body.email);
@@ -275,9 +274,6 @@ export class AuthController {
     );
   }
 
-  // Phase 1C: client signup that includes the coach's invite code in the
-  // same call. Behind COACH_CODE_GATE_ENABLED=true the code is required.
-  // Public so the mobile app can hit it without a JWT.
   @ApiOperation({
     summary: 'Signup including a coach invite code in one call',
     description:
@@ -288,17 +284,28 @@ export class AuthController {
   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('signup-with-code')
-  // Named throttler `auth-signup`: 5/hour. Same signup surface as
-  // /auth/register; shares the bucket so attackers cannot multiplex
-  // across both paths.
-  @Throttle({ 'auth-signup': { ttl: 3600000, limit: 5 } })
+  @Throttle({ [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: 5 } })
   async signupWithCode(@Body() body: SignupWithCodeDto) {
     return this.authService.signupWithCode(body);
   }
 }
 
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+// Best-effort extraction of remote IP for rate-limit counter resets.
+// Resolution order matches UserThrottlerGuard.getTracker().
+function extractIp(req: Record<string, any>): string {
+  const flyIp = (req?.headers?.['fly-client-ip'] || '') as string;
+  if (flyIp.trim().length > 0) return flyIp.trim();
+  const xff = (req?.headers?.['x-forwarded-for'] || '') as string;
+  const fwdIp = xff.split(',')[0]?.trim();
+  if (fwdIp && fwdIp.length > 0) return fwdIp;
+  return req?.ip || req?.socket?.remoteAddress || req?.connection?.remoteAddress || 'unknown';
+}
+
 // Best-effort extraction of remote IP + User-Agent for audit-log context.
-// Mirrors the helper in admin.controller.ts and users.controller.ts.
 function auditContext(req: AuditableRequest): { ip: string | null; userAgent: string | null } {
   const xffRaw = req?.headers?.['x-forwarded-for'];
   const xff = Array.isArray(xffRaw) ? xffRaw[0] : xffRaw || '';

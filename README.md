@@ -248,13 +248,21 @@ GitHub copy is build-time only.
 
 Rate limiting is wired through `ThrottlerModule` (`src/app.module.ts`)
 with `UserThrottlerGuard` (`src/throttler/user-throttler.guard.ts`)
-registered as a global `APP_GUARD`. The guard inherits everything from
-`@nestjs/throttler`'s `ThrottlerGuard` and overrides one method —
-`getTracker(req)` — so the bucket key is **the user-id when the
-request is authenticated** (`req.user.id` set by `JwtAuthGuard`) and
-**the client IP otherwise**. This avoids shared-NAT lockouts (offices,
-campuses, coffee shops, mobile CGNAT) and keeps per-user fairness on
-authenticated routes.
+registered as a global `APP_GUARD`. The guard overrides `getTracker()`
+so **authenticated requests are bucketed by user-id** and
+**unauthenticated requests by client IP**. This avoids shared-NAT
+lockouts (offices, campuses, coffee shops, mobile CGNAT) and keeps
+per-user fairness on authenticated routes. IP resolution respects the
+Fly.io trusted-proxy chain: `Fly-Client-IP` header first, then the
+first hop of `X-Forwarded-For`, then `req.ip`.
+
+Health check endpoints (`/health`, `/healthz`, `/readyz`) are
+whitelisted and **never count toward any bucket**, so Fly.io liveness
+probes cannot exhaust the per-IP quota.
+
+A **successful login resets both auth-login counters** for the caller's
+IP so a user who fat-fingered their password on bad Wi-Fi is not locked
+out for an hour after finally succeeding.
 
 ### Backend storage
 
@@ -266,24 +274,31 @@ dev`, Jest, and single-machine deploys, but limits will **not** cross
 machines, so production must set `REDIS_URL`. Boot logs the chosen
 backend at `LOG` level under the `ThrottlerConfig` context.
 
-### Named throttlers
+### Named throttlers (Phase 10)
 
-| Name | Limit | Surface (decorator at controller) |
-|---|---|---|
-| `auth-login` | 10 / minute | `POST /auth/login` |
-| `auth-signup` | 5 / hour | `POST /auth/register`, `POST /auth/signup-with-code` |
-| `auth-password-reset` | 5 / 15 min | `POST /auth/forgot-password` |
-| `default` | 60 / minute | every other route that uses `@Throttle({ default: ... })` |
+| Name | Default limit | Window | Surface |
+|---|---|---|---|
+| `auth-login-per-min` | 5 | 1 min | `POST /auth/login`, `/auth/apple`, `/auth/google` (IP-keyed) |
+| `auth-login-per-hour` | 30 | 1 hr | same routes (sustained-attack brake) |
+| `auth-password-reset` | 3 | 1 hr | `POST /auth/forgot-password` (IP-keyed) |
+| `auth-signup` | 5 | 1 hr | `POST /auth/register`, `/auth/signup-with-code` (IP-keyed) |
+| `coach-messages` | 30 | 1 min | `POST /coach/clients/:id/messages` (user-id keyed) |
+| `notifications-prefs` | 30 | 1 min | `PUT /notifications/preferences` (user-id keyed) |
+| `bloodwork-write` | 30 | 1 min | `POST /bloodwork/*` (user-id keyed — applied when module ships) |
+| `coach-command-center` | 60 | 1 min | `GET /coach/command-center/*` (user-id keyed — applied when module ships) |
+| `diagnostic-submit` | 5 | 1 hr | `POST /diagnostic/submit` (IP-keyed, unauthenticated) |
+| `default` | 300 (authed) / 100 (anon) | 1 min | every other route |
 
-Limits live in one place — `src/throttler/throttler.config.ts` —
-imported by `app.module.ts` via `ThrottlerModule.forRootAsync()`. To
-add a new named throttler, append to `THROTTLER_LIMITS` and reference
-it from the controller via `@Throttle({ '<name>': { ttl, limit } })`.
+Limits are overridable via env vars (see `RATELIMIT_*` and per-route
+vars). All values are clamped to sane ranges so a misconfiguration
+cannot accidentally open a DoS window. Limits live in one place —
+`src/throttler/throttler.config.ts`. See `src/throttler/README.md` for
+the full route table, 429 response shape, and future-work notes.
 
 When the limit is exceeded, `ThrottlerExceptionFilter`
 (`src/filters/throttler-exception.filter.ts`) returns a 429 with a
-generic body — no leak of which named throttler tripped, no echo of
-the user's input.
+`Retry-After` header (integer seconds) and a sanitized body — no leak
+of which named throttler fired, no echo of the user's input.
 
 ## Public, unprefixed routes
 

@@ -19,6 +19,7 @@ import {
   VoiceUploadRequestDto,
 } from './messaging.dto';
 import { MessagingService } from './messaging.service';
+import { THROTTLER_NAMES } from '../throttler/throttler.config';
 
 // Coach-authenticated messaging endpoints. Mounted under /coach so they sit
 // next to the existing coach routes. NOTE: we must NOT register this on the
@@ -41,9 +42,11 @@ export class CoachMessagingController {
     return this.messaging.listThreadForCoach(req.user.id, clientId, query);
   }
 
-  // 30/min per caller matches the spec. ThrottlerGuard is registered globally
-  // (see AppModule) so this decorator is actually enforced.
-  @Throttle({ default: { ttl: 60000, limit: 30 } })
+  // 30/min per user (coach-id keyed by UserThrottlerGuard). Named throttler
+  // `coach-messages` keeps this separate from the default bucket so it can be
+  // adjusted independently without touching the global default. Coach sends are
+  // always authenticated so the tracker key is user-id.
+  @Throttle({ [THROTTLER_NAMES.COACH_MESSAGES]: { ttl: 60_000, limit: 30 } })
   @Post('clients/:client_id/messages')
   async send(
     @Request() req: AuthedRequest,
@@ -60,7 +63,7 @@ export class CoachMessagingController {
   // than the send endpoint so a runaway client can't pin storage. The URL
   // expires in 10 minutes; the client must POST /messages within that window
   // attaching the returned public_url + duration + size + content_type.
-  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @Throttle({ [THROTTLER_NAMES.COACH_MESSAGES]: { ttl: 60_000, limit: 20 } })
   @Post('clients/:client_id/messages/voice-upload')
   async voiceUpload(
     @Request() req: AuthedRequest,
