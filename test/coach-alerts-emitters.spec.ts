@@ -17,6 +17,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CoachAlertsService } from '../src/coach/coach-alerts.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
+import { NotificationCategory } from '../src/notifications/notification-category.enum';
 import { PrismaService } from '../src/prisma.service';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -171,6 +172,7 @@ describe('Phase 6B emitter: consecutive_misses', () => {
       alertType,
       severity: 'warning',
       message: input.message,
+      category: NotificationCategory.COACH_DIRECT,
     });
   });
 });
@@ -257,6 +259,7 @@ describe('Phase 6B emitter: streak_dropped', () => {
       alertType,
       severity: 'info',
       message: input.message,
+      category: NotificationCategory.COACH_DIRECT,
     });
   });
 });

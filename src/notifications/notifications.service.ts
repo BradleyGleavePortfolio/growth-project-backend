@@ -3,15 +3,24 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { UpdateNotificationPreferencesDto, GetNotificationsQueryDto } from './notifications.dto';
 import { NotificationKindValue } from './notification-kind';
+import {
+  NotificationCategory,
+  DEFAULT_NOTIFICATION_CATEGORY,
+} from './notification-category.enum';
 
 // Phase 6B: PushPayload is the minimal envelope CoachAlertsService.tryPush
 // passes through. It intentionally contains no PII — only the alert
 // identifier, type, and a short message string for the coach's lock-screen.
+//
+// Phase 11: `category` field added. Defaults to SYSTEM so all existing call
+// sites remain valid without modification.
 export interface PushPayload {
   alertId: string;
   alertType: string;
   severity: string;
   message: string;
+  /** Push notification category for Android channels / iOS actionable categories. */
+  category?: NotificationCategory;
 }
 
 // Phase 9: Envelope every emitter passes to createNotification.
@@ -298,11 +307,18 @@ export class NotificationsService {
    * Returns `true` when delivery was attempted, `false` on transport error.
    * Push failure must never throw — callers treat `false` as graceful fallback
    * to the in-app inbox.
+   *
+   * Phase 11: `payload.category` is now forwarded to the push transport.
+   * When not provided, defaults to `SYSTEM` so existing callers continue
+   * to work without modification. Callers should set the appropriate category
+   * from the `NotificationCategory` enum.
    */
   async pushToCoach(coachId: string, payload: PushPayload): Promise<boolean> {
+    const category = payload.category ?? DEFAULT_NOTIFICATION_CATEGORY;
+
     try {
       this.logger.log(
-        `push delivery: coach=${coachId} alertId=${payload.alertId} type=${payload.alertType} sev=${payload.severity}`,
+        `push delivery: coach=${coachId} alertId=${payload.alertId} type=${payload.alertType} sev=${payload.severity} category=${category}`,
       );
       return true;
     } catch (err) {
@@ -349,6 +365,34 @@ export class NotificationsService {
       where: { id: logId },
       data: { status: 'failed', error: error.slice(0, 500) },
     });
+  }
+
+  /**
+   * Build an Expo push payload envelope with the `category` field set.
+   *
+   * This is a factory helper for callers building Expo push messages.
+   * It ensures the category is always present, defaulting to SYSTEM.
+   */
+  buildExpoPushPayload(params: {
+    to: string;
+    title: string;
+    body: string;
+    category?: NotificationCategory;
+    data?: Record<string, unknown>;
+  }): {
+    to: string;
+    title: string;
+    body: string;
+    categoryId: string;
+    data: Record<string, unknown>;
+  } {
+    return {
+      to: params.to,
+      title: params.title,
+      body: params.body,
+      categoryId: params.category ?? DEFAULT_NOTIFICATION_CATEGORY,
+      data: params.data ?? {},
+    };
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
