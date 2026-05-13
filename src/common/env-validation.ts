@@ -155,10 +155,16 @@ export const ENV_RULES: EnvRule[] = [
       'Comma-separated allow-list of Apple audiences (iOS bundle ids and/or Apple Services IDs) accepted by POST /auth/apple. Without it, the endpoint returns 503 and /auth/signup-policy omits "apple" from providers. Set to your iOS bundle id (e.g. com.thegrowthproject.app) before enabling Sign in with Apple in Supabase.',
   },
   {
+    // REDIS_URL is production-required: a single-machine in-memory throttler
+    // cannot defend a multi-machine Fly deploy and credential-stuffing
+    // attacks routinely fan out across machines. The boot-time check below
+    // refuses to start when NODE_ENV=production has no REDIS_URL. Dev/test
+    // continue to fall back to the in-memory tracker so contributors don't
+    // need a local Redis. See README's "Placeholders / TODO env vars".
     name: 'REDIS_URL',
     tier: 'feature',
     reason:
-      'Redis connection string used by ThrottlerModule for shared rate-limit state across Fly machines. When unset, throttler falls back to in-memory tracking — safe for dev/test and single-machine deploys, but limits do NOT cross machines in prod. Set to redis(s)://host:port[/db] before scaling out.',
+      'Redis connection string used by ThrottlerModule for shared rate-limit state across Fly machines. Production refuses to boot without it (see ThrottlerModule.buildThrottlerOptions). Dev/test fall back to in-memory tracking. Set to redis(s)://host:port[/db].',
     validate: (v) => {
       if (!/^rediss?:\/\//i.test(v.trim())) {
         return 'REDIS_URL must be an absolute redis:// or rediss:// URL.';
@@ -557,6 +563,22 @@ export function assertEnv(
     const msg = `Missing required env vars: ${result.missingHard.join(', ')}`;
     logger.error(msg);
     throw new Error(msg);
+  }
+
+  // REDIS_URL is feature-tier (dev/test fall back to in-memory) but is
+  // production-required: a multi-machine Fly deploy with per-process
+  // counters cannot defend against credential stuffing. Enforce here at
+  // boot rather than waiting for the throttler factory so the error
+  // message is unambiguous and exits before any other module wiring runs.
+  if ((env.NODE_ENV ?? '').toLowerCase() === 'production') {
+    const redisUrl = env.REDIS_URL;
+    if (!redisUrl || redisUrl.trim().length === 0) {
+      const msg =
+        'REDIS_URL is required in production. Set REDIS_URL=redis(s)://host:port[/db] before deploy. ' +
+        'See README.md "Placeholders / TODO env vars" section.';
+      logger.error(msg);
+      throw new Error(msg);
+    }
   }
 
   // Placeholder values for hard-tier vars are always fatal — these were never

@@ -148,6 +148,18 @@ export async function buildThrottlerOptions(
   const throttlers = THROTTLER_LIMITS.map((t) => ({ ...t }));
 
   if (!redisUrl || redisUrl.trim().length === 0) {
+    // Production refuses to boot without a shared throttler backend: an
+    // in-memory tracker on a multi-machine Fly deploy makes rate limits
+    // useless (every machine has its own counter), and credential-stuffing
+    // attacks routinely fan out across machines. Dev/test keep the
+    // in-memory fallback so contributors don't need a local Redis.
+    // See README's "Placeholders / TODO env vars" section for REDIS_URL.
+    if ((process.env.NODE_ENV ?? '').toLowerCase() === 'production') {
+      throw new Error(
+        'REDIS_URL is required in production. Set REDIS_URL=redis(s)://host:port[/db] before deploy. ' +
+          'See README.md "Placeholders / TODO env vars" section for the canonical reference.',
+      );
+    }
     logger.log(
       'REDIS_URL not set -- using in-memory throttler tracker. Limits do NOT cross Fly machines.',
     );

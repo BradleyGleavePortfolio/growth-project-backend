@@ -4,8 +4,10 @@ import { DataExportService } from './data-export.service';
 
 /**
  * Nightly cron that marks READY exports past their expiry as EXPIRED and
- * deletes the corresponding file from storage. Runs at 03:00 UTC each night
- * (one hour after the PTM recompute cron at 02:00 UTC).
+ * deletes the corresponding file from storage. Runs at 03:30 UTC — the
+ * 03:30 slot in the nightly cron stagger (see AccountDeletionService for
+ * the alphabetical-by-class-name 15-minute policy: 03:00 AccountDeletion,
+ * 03:15 BloodworkStale, 03:30 DataExportCleanup, 03:45 GdprScrub).
  *
  * Uses DataExportService.expireOldExports() so the business logic and storage
  * deletion stay in one place and are independently testable.
@@ -16,7 +18,7 @@ export class DataExportCleanupCron {
 
   constructor(private readonly dataExportService: DataExportService) {}
 
-  @Cron('0 3 * * *', { name: 'data-export-cleanup', timeZone: 'UTC' })
+  @Cron('30 3 * * *', { name: 'data-export-cleanup', timeZone: 'UTC' })
   async handleCleanup(): Promise<void> {
     this.logger.log('Starting nightly data export cleanup');
     try {

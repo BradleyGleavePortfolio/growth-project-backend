@@ -427,6 +427,16 @@ export class AccountDeletionService {
   // Idempotent: re-running against already-finalized rows is a safe no-op
   // because the WHERE predicate filters on deleted_at IS NULL.
 
+  // 03:00 UTC slot in the nightly cron stagger. The pre-Connect cleanup
+  // splits four 03:00 jobs across 15-minute windows (alphabetical by class
+  // name) so the worker doesn't fan out four heavy reads against the same
+  // Postgres connection pool at the same instant:
+  //   AccountDeletionService    -> 03:00 (this)
+  //   BloodworkStaleScheduler   -> 03:15
+  //   DataExportCleanupCron     -> 03:30
+  //   GdprScrubScheduler        -> 03:45
+  // Override via DELETION_FINALIZE_CRON only when the operator deliberately
+  // wants a different slot — the default keeps the stagger intact.
   @Cron(process.env['DELETION_FINALIZE_CRON'] ?? '0 3 * * *')
   async runFinalizeCron(): Promise<void> {
     this.logger.log('AccountDeletion finalize cron: starting');

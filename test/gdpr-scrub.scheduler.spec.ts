@@ -6,10 +6,12 @@ import type { GdprScrubService } from '../src/users/gdpr-scrub.service';
 
 // Pins the contract between the scheduler and GdprScrubService:
 //
-//   - The cron expression is exactly "0 3 * * *" (daily at 03:00 UTC).
-//     Drift here would silently miss a regulatory commitment, so the
-//     value is asserted both as the exported constant AND as the
-//     decorator metadata @nestjs/schedule reads off the method.
+//   - The cron expression is exactly "45 3 * * *" — the 03:45 UTC slot in
+//     the nightly cron stagger (see src/account-deletion/... for the full
+//     alphabetical-by-class-name 15-minute policy). Drift here would
+//     silently miss a regulatory commitment, so the value is asserted both
+//     as the exported constant AND as the decorator metadata
+//     @nestjs/schedule reads off the method.
 //   - handleCron() invokes GdprScrubService.run() exactly once per tick.
 //   - A thrown error from run() is caught and logged — the scheduler
 //     must never crash the Nest process or a single bad night would
@@ -17,7 +19,7 @@ import type { GdprScrubService } from '../src/users/gdpr-scrub.service';
 
 describe('GdprScrubScheduler', () => {
   it('cron expression is daily at 03:00 UTC', () => {
-    expect(GDPR_SCRUB_CRON_EXPRESSION).toBe('0 3 * * *');
+    expect(GDPR_SCRUB_CRON_EXPRESSION).toBe('45 3 * * *');
   });
 
   it('@Cron metadata pins the same expression and UTC timezone', () => {
@@ -29,7 +31,7 @@ describe('GdprScrubScheduler', () => {
       GdprScrubScheduler.prototype.handleCron,
     );
     expect(meta).toBeDefined();
-    expect(meta.cronTime).toBe('0 3 * * *');
+    expect(meta.cronTime).toBe('45 3 * * *');
     expect(meta.timeZone).toBe('UTC');
     expect(meta.name).toBe('gdpr-scrub-daily');
   });

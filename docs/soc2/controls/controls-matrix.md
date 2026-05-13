@@ -4,7 +4,9 @@ This matrix maps SOC 2 Trust Services Criteria (TSC) to the concrete technical a
 
 **Scope:** Security (CC) criteria are all included. Availability (A) and Privacy (P) criteria relevant to our scope are included. Processing Integrity (PI) and Confidentiality (C) criteria will be added before a Type II audit.
 
-**How to read this:** "Implemented" means the control exists and is tested. "Partial" means the control is built but not yet fully documented or tested. "Planned" means we intend to implement before audit.
+**How to read this:** "Implemented" means the control exists and is tested. "Partial" means the control is built but not yet fully documented or tested. "Planned" means we intend to implement before audit. "Needs-owner-review" means the on-paper status has not been verified by a human owner against the current codebase and may be out of date.
+
+**Last reconciliation:** 2026-05-13 (Pre-Connect cleanup PR). The pre-Connect cleanup pass replaced the `<<COMPANY_NAME>>` placeholder with the legal entity name and downgraded any control that was still asserting a `feat/phase-10-*` branch reference to a verified-on-main statement where the code was confirmed present. Items the cleanup agent could not verify are tagged **Needs-owner-review**. Target audit readiness: **Q3 2026**.
 
 ---
 
@@ -36,7 +38,7 @@ This matrix maps SOC 2 Trust Services Criteria (TSC) to the concrete technical a
 |---|---|---|---|
 | CC3.1 | Entity defines risk assessment objectives | Partial | Risk objectives defined in Information Security Policy. Formal risk register: `<<RISK_REGISTER_LOCATION>>` (to be created). |
 | CC3.2 | Entity identifies and analyzes risks | Partial | Informal risk identification during development. Formal annual risk assessment required before Type I. |
-| CC3.3 | Entity considers fraud risk | Implemented | Rate limiting on auth endpoints (Phase 10 rate limiting track, `feat/phase-10-rate-limiting`); referral fraud detection in referral track |
+| CC3.3 | Entity considers fraud risk | Implemented | Rate limiting on auth endpoints (`src/throttler/`, `src/filters/throttler-exception.filter.ts`); REDIS_URL-backed shared throttler state in production. Referral fraud detection — **Needs-owner-review**. |
 | CC3.4 | Entity identifies and assesses changes that could affect security | Implemented | Change Management Policy; PR security checklist for auth/authz changes |
 
 ---
@@ -64,12 +66,12 @@ This matrix maps SOC 2 Trust Services Criteria (TSC) to the concrete technical a
 
 | Criterion | Description | Status | Implementation |
 |---|---|---|---|
-| **CC6.1** | Entity implements logical access security to prevent unauthorized access | **Implemented** | `JwtAuthGuard` + `RolesGuard` in `src/auth/`. Every route is authenticated by default (global `APP_GUARD`). Role-gating meta-test in `src/auth/` (Phase 10 role-gating track, `feat/phase-10-role-gating`) asserts every controller route carries an explicit `@Roles()` decorator. |
+| **CC6.1** | Entity implements logical access security to prevent unauthorized access | **Implemented** | `JwtAuthGuard` + `RolesGuard` in `src/auth/`. Every route is authenticated by default (global `APP_GUARD`). Role-gating meta-test asserts every controller route carries an explicit `@Roles()` decorator — **Needs-owner-review** (verify the meta-test still runs in CI). |
 | **CC6.2** | Entity uses authentication prior to accessing resources | **Implemented** | Supabase ES256 JWT verified locally via JWKS (`JwksVerifierService` in `src/auth/jwks.service.ts`). No round-trip to Supabase on every request. Tokens expire after `<<JWT_EXPIRY>>` hours. |
 | **CC6.3** | Entity authorizes, modifies, and removes access to systems | **Implemented** | Access lifecycle in Access Control Policy. Offboarding checklist. GitHub org managed by owner. `promoteUser` writes `AuditAction.USER_ROLE_CHANGED` to `AuditLog`. |
 | CC6.4 | Entity restricts physical access to facilities | Implemented | No company-owned hardware. Cloud providers (Fly.io, Supabase) hold SOC 2 Type II for physical controls. Vendor list in Vendor Management Policy. |
 | CC6.5 | Entity disposes of assets securely | Partial | No company hardware to dispose of. Staff devices: full-disk encryption required (Acceptable Use Policy). Cloud data deletion via GDPR scrub endpoint. |
-| **CC6.6** | Entity implements logical access to protect against external threats | **Implemented** | Rate limiting on auth and public routes (Phase 10 rate limiting track, `feat/phase-10-rate-limiting`). CORS restricted to known origins (`CORS_ORIGINS` in `src/common/env-validation.ts`). |
+| **CC6.6** | Entity implements logical access to protect against external threats | **Implemented** | Rate limiting on auth and public routes (`src/throttler/throttler.config.ts`, `src/filters/throttler-exception.filter.ts`); production refuses to boot without `REDIS_URL` so shared rate-limit state is enforced. CORS restricted to known origins (`CORS_ORIGINS` in `src/common/env-validation.ts`). |
 | CC6.7 | Entity restricts transmission and movement of information | Implemented | TLS enforced by Fly.io edge. No plaintext health data in logs (see Data Classification Policy). |
 | **CC6.8** | Entity implements controls to prevent or detect malware | Partial | `npm audit` run in CI. Dependency review via Dependabot (to be enabled — see `<<DEPENDABOT_CONFIG>>`). Container base image updated regularly. |
 
@@ -80,7 +82,7 @@ This matrix maps SOC 2 Trust Services Criteria (TSC) to the concrete technical a
 | Criterion | Description | Status | Implementation |
 |---|---|---|---|
 | CC7.1 | Entity detects and monitors new vulnerabilities | Partial | `npm audit` quarterly. GitHub Dependabot alerts (to be enabled). |
-| **CC7.2** | Entity monitors for security events and anomalies | **Implemented** | Sentry captures all 500-level errors and sends alerts. Audit log captures all privileged actions. Fly.io log streaming for operational events. Observability track (`feat/phase-10-observability`) adds structured metrics. |
+| **CC7.2** | Entity monitors for security events and anomalies | **Implemented** | Sentry captures all 500-level errors and sends alerts (release tag wired from `GIT_SHA` so events map to the deployed commit — `src/instrument.ts`). Audit log captures all privileged actions (`src/audit/`). Fly.io log streaming for operational events. Structured Prometheus metrics + JSON logging in `src/observability/`. Throttler rejections emit `throttler_rejected_total` and a structured log line. |
 | CC7.3 | Entity evaluates security events for incident response | Implemented | Incident Response Plan defines P1–P4 severity classification and evaluation steps |
 | CC7.4 | Entity responds to security incidents | Implemented | Incident Response Plan (`docs/soc2/policies/incident-response-plan.md`) |
 | CC7.5 | Entity identifies, develops, and implements activities to recover from security incidents | Implemented | Incident Response Plan Phase 4 (Eradicate and Recover); Business Continuity Plan |
@@ -121,8 +123,8 @@ This matrix maps SOC 2 Trust Services Criteria (TSC) to the concrete technical a
 | P1.1 | Entity provides notice about privacy practices | Partial | Privacy Notice exists on public site. Links to `docs/soc2/policies/data-classification-policy.md` classification tiers. |
 | P3.1 | Entity collects personal information consistent with its privacy notice | Implemented | Data collected is limited to what is needed for coaching features. Bloodwork is Highly Confidential per Data Classification Policy. |
 | P4.1 | Entity limits use of personal information to stated purposes | Implemented | Health/biometric data is never passed to third-party LLMs or analytics without de-identification. See Data Classification Policy Section 5. |
-| **P6.1** | Entity provides individuals with access to their personal information | **Implemented** | DSAR endpoint (Phase 10 data export track, `feat/phase-10-data-export`): `POST /users/me/data-export`. Returns full data bundle for the authenticated user. |
-| **P6.6** | Entity destroys personal information based on policies | **Implemented** | `GdprScrubService` (`src/users/gdpr-scrub.service.ts`) performs 30-day soft-delete then hard-purge. `AuditAction.USER_ACCOUNT_DELETED` emitted. Phase 10 GDPR delete track (`feat/phase-10-gdpr-delete`). |
+| **P6.1** | Entity provides individuals with access to their personal information | **Implemented** | DSAR endpoint `POST /users/me/data-export` (`src/data-export/`). Returns full data bundle for the authenticated user; cleanup cron at 03:30 UTC expires old artifacts (`src/data-export/data-export-cleanup.cron.ts`). |
+| **P6.6** | Entity destroys personal information based on policies | **Implemented** | `GdprScrubService` (`src/users/gdpr-scrub.service.ts`) performs 30-day soft-delete then hard-purge driven by the daily `GdprScrubScheduler` (03:45 UTC slot in the nightly stagger). `AuditAction.USER_ACCOUNT_DELETED` emitted on finalize. |
 | P8.1 | Entity monitors compliance with privacy commitments | Partial | GDPR deletion requests logged. Privacy audit via quarterly review runbook. Formal privacy audit before Type I. |
 
 ---
@@ -140,4 +142,4 @@ This matrix maps SOC 2 Trust Services Criteria (TSC) to the concrete technical a
 
 ---
 
-*Cross-references: AICPA Trust Services Criteria 2017 (https://www.aicpa.org/resources/landing/system-and-organization-controls-soc-suite-of-services). Control implementation references code on `feat/phase-10-*` branches pending merge to `main`.*
+*Cross-references: AICPA Trust Services Criteria 2017 (https://www.aicpa.org/resources/landing/system-and-organization-controls-soc-suite-of-services). The `feat/phase-10-*` branches referenced in earlier revisions of this matrix have since merged to `main`; rows above point directly at the resulting `src/` paths. Items still tagged Needs-owner-review require a human walk-through against the current codebase before the Type I audit.*

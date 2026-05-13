@@ -16,7 +16,7 @@
 
 | Field | Value |
 |---|---|
-| **Company name** | `<<COMPANY_NAME>>` |
+| **Company name** | `The Growth Project, LLC` |
 | **Effective date** | `<<EFFECTIVE_DATE>>` |
 | **Policy owner** | `<<POLICY_OWNER_NAME>>`, `<<POLICY_OWNER_TITLE>>` |
 | **Next review date** | `<<NEXT_REVIEW_DATE>>` |
@@ -53,7 +53,7 @@ This policy covers all changes to:
 
 ### 3.1 Small-team exception
 
-`<<COMPANY_NAME>>` is an early-stage company. Where the team is too small for a second reviewer to be available on every PR, the following applies:
+`The Growth Project, LLC` is an early-stage company. Where the team is too small for a second reviewer to be available on every PR, the following applies:
 
 - Changes that touch security-sensitive code (authentication, authorization, encryption, secrets) require a second reviewer, even if that means scheduling async review with a contractor or advisor.
 - Changes that are purely additive (new documentation, new non-security features) may be self-merged by the sole engineer, but must still pass CI.

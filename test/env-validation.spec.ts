@@ -155,9 +155,14 @@ describe('assertEnv', () => {
     // Stripe/Sentry/public-launch URLs are unset. The corresponding routes
     // return 4xx at request time (or fall back to documented defaults);
     // crashing the entire API on boot is the wrong default.
+    //
+    // REDIS_URL is the one feature-tier exception (pre-Connect cleanup): a
+    // multi-machine prod deploy with no shared throttler backend can't
+    // defend itself, so prod refuses to boot without it. Supply it here so
+    // this test still asserts the rest of the feature-tier behavior.
     expect(() =>
       assertEnv(
-        { ...baseHardEnv(), NODE_ENV: 'production' },
+        { ...baseHardEnv(), NODE_ENV: 'production', REDIS_URL: 'redis://localhost:6379' },
         { logger: silentLogger as any },
       ),
     ).not.toThrow();
@@ -167,7 +172,7 @@ describe('assertEnv', () => {
     const warn = jest.fn();
     const logger = { ...silentLogger, warn };
     assertEnv(
-      { ...baseHardEnv(), NODE_ENV: 'production' },
+      { ...baseHardEnv(), NODE_ENV: 'production', REDIS_URL: 'redis://localhost:6379' },
       { logger: logger as any },
     );
     const featureWarning = warn.mock.calls.find((args) =>
@@ -179,6 +184,19 @@ describe('assertEnv', () => {
     expect(String(featureWarning![0])).toContain('STRIPE_SECRET_KEY');
     expect(String(featureWarning![0])).toContain('SENTRY_DSN');
     expect(String(featureWarning![0])).toContain('PUBLIC_INVITE_BASE_URL');
+  });
+
+  it('throws when REDIS_URL is missing under NODE_ENV=production', () => {
+    // Pre-Connect cleanup: REDIS_URL is feature-tier overall (dev/test fall
+    // back to in-memory throttler) but production refuses to boot without
+    // it. A single-machine in-memory tracker cannot defend a multi-machine
+    // Fly deploy from credential stuffing, so this is a fail-fast at boot.
+    expect(() =>
+      assertEnv(
+        { ...baseHardEnv(), NODE_ENV: 'production' },
+        { logger: silentLogger as any },
+      ),
+    ).toThrow(/REDIS_URL is required in production/);
   });
 
   it('does not throw on missing prod vars in dev', () => {
@@ -197,9 +215,14 @@ describe('assertEnv', () => {
   });
 
   it('respects explicit enforceProd=false even when NODE_ENV=production', () => {
+    // enforceProd=false relaxes the feature-tier warn-vs-throw split, but
+    // the REDIS_URL prod-boot guard is a hard fail-fast regardless of the
+    // flag — the multi-machine Fly deploy concern is independent of
+    // operator opt-out. Supply REDIS_URL so this test stays focused on
+    // the enforceProd=false semantics it was originally asserting.
     expect(() =>
       assertEnv(
-        { ...baseHardEnv(), NODE_ENV: 'production' },
+        { ...baseHardEnv(), NODE_ENV: 'production', REDIS_URL: 'redis://localhost:6379' },
         { enforceProd: false, logger: silentLogger as any },
       ),
     ).not.toThrow();

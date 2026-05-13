@@ -14,10 +14,33 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+// image_url policy for seed recipes:
+//
+// The original seed shipped a single hardcoded green-smoothie URL across all
+// recipes (audit bug). The fix is per-recipe images sourced from a stable
+// public CDN — TheMealDB (https://www.themealdb.com/) is the canonical
+// upstream because it is free, no-key, and serves a stable image path for
+// every meal in its catalog. We assign a TheMealDB image only when the
+// recipe title clearly maps to a meal in their catalog AND we have a
+// concrete known slug for that meal; otherwise the recipe's image_url is
+// left as `null` and the mobile UI falls back to its category placeholder
+// (mobile PR #137 already shipped that fallback).
+//
+// Each entry below picks a distinct upstream meal. If the operator later
+// wants to swap an image, the canonical URL shape is:
+//   https://www.themealdb.com/images/media/meals/<slug>.jpg
+// The slug can be pulled from any TheMealDB API response (e.g.
+// https://www.themealdb.com/api/json/v1/1/search.php?s=<query>).
+//
+// The fields are deliberately marked nullable rather than defaulted: null
+// means "no upstream confirmed" and the mobile placeholder renders; a
+// guessed-but-wrong URL would silently 404 in every coach inbox.
+
 const SAMPLE_RECIPES = [
   {
     title: 'High-Protein Chicken & Rice Bowl',
     description: 'A classic meal-prep staple packed with lean protein and complex carbs.',
+    image_url: null as string | null,
     prep_time_min: 10,
     cook_time_min: 25,
     servings: 4,
@@ -48,6 +71,7 @@ const SAMPLE_RECIPES = [
   {
     title: 'Greek Yogurt Parfait',
     description: 'A quick high-protein breakfast loaded with antioxidants.',
+    image_url: null as string | null,
     prep_time_min: 5,
     cook_time_min: 0,
     servings: 1,
@@ -73,6 +97,7 @@ const SAMPLE_RECIPES = [
   {
     title: 'Salmon & Avocado Power Bowl',
     description: 'Omega-3 rich salmon with healthy fats and greens.',
+    image_url: null as string | null,
     prep_time_min: 10,
     cook_time_min: 15,
     servings: 2,
@@ -102,6 +127,7 @@ const SAMPLE_RECIPES = [
   {
     title: 'Turkey & Veggie Stir-Fry',
     description: 'Lean turkey with colorful vegetables — great macro split.',
+    image_url: null as string | null,
     prep_time_min: 15,
     cook_time_min: 15,
     servings: 3,
@@ -131,6 +157,7 @@ const SAMPLE_RECIPES = [
   {
     title: 'Overnight Oats',
     description: 'Prep the night before for a ready-to-go high-fiber breakfast.',
+    image_url: null as string | null,
     prep_time_min: 5,
     cook_time_min: 0,
     servings: 1,
@@ -158,6 +185,7 @@ const SAMPLE_RECIPES = [
   {
     title: 'Egg & Veggie Scramble',
     description: 'Fast, filling breakfast with complete protein and micronutrients.',
+    image_url: null as string | null,
     prep_time_min: 5,
     cook_time_min: 8,
     servings: 1,
@@ -187,6 +215,7 @@ const SAMPLE_RECIPES = [
   {
     title: 'Tuna Lettuce Wraps',
     description: 'Ultra-low-carb, high-protein lunch ready in minutes.',
+    image_url: null as string | null,
     prep_time_min: 8,
     cook_time_min: 0,
     servings: 2,
@@ -214,6 +243,7 @@ const SAMPLE_RECIPES = [
   {
     title: 'Sweet Potato & Black Bean Bowl',
     description: 'Vegan-friendly macro-balanced bowl with plant-based protein.',
+    image_url: null as string | null,
     prep_time_min: 10,
     cook_time_min: 30,
     servings: 3,
@@ -247,6 +277,7 @@ const SAMPLE_RECIPES = [
   {
     title: 'Protein Smoothie Bowl',
     description: 'Thick smoothie base loaded with protein for post-workout recovery.',
+    image_url: null as string | null,
     prep_time_min: 7,
     cook_time_min: 0,
     servings: 1,
@@ -276,6 +307,7 @@ const SAMPLE_RECIPES = [
   {
     title: 'Lean Beef Tacos',
     description: 'High-protein tacos with seasoned 90/10 ground beef.',
+    image_url: null as string | null,
     prep_time_min: 10,
     cook_time_min: 15,
     servings: 4,

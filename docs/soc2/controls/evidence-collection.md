@@ -35,7 +35,7 @@ This returns a JSON bundle with:
 - `deploymentHistory` — recent deployment records from Fly.io
 - `snapshotAt` — ISO-8601 timestamp of the snapshot
 
-**Save this file** to a read-only location (e.g. S3 bucket `<<COMPANY_NAME>>-soc2-evidence/<date>-snapshot.json`) after every quarterly review. Version-controlled snapshots demonstrate that controls have been consistently in place over time — this is what an auditor means by "operating effectiveness."
+**Save this file** to a read-only location (e.g. S3 bucket `The Growth Project, LLC-soc2-evidence/<date>-snapshot.json`) after every quarterly review. Version-controlled snapshots demonstrate that controls have been consistently in place over time — this is what an auditor means by "operating effectiveness."
 
 ---
 

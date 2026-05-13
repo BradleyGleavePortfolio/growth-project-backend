@@ -17,7 +17,7 @@
 
 | Field | Value |
 |---|---|
-| **Company name** | `<<COMPANY_NAME>>` |
+| **Company name** | `The Growth Project, LLC` |
 | **Effective date** | `<<EFFECTIVE_DATE>>` |
 | **Policy owner** | `<<POLICY_OWNER_NAME>>`, `<<POLICY_OWNER_TITLE>>` |
 | **DPO / Privacy contact** | `<<DPO_EMAIL>>` |
@@ -28,7 +28,7 @@
 
 ## 1. Purpose
 
-This policy defines how `<<COMPANY_NAME>>` classifies the data it holds, and the handling requirements for each classification level. It ensures that the most sensitive data — particularly health and biometric data belonging to athletes and coaching clients — receives the strongest protections.
+This policy defines how `The Growth Project, LLC` classifies the data it holds, and the handling requirements for each classification level. It ensures that the most sensitive data — particularly health and biometric data belonging to athletes and coaching clients — receives the strongest protections.
 
 **Plain English:** Not all data needs the same level of protection. A public blog post is different from someone's blood test results. This policy defines four tiers and tells everyone how to handle each one.
 
@@ -131,7 +131,7 @@ testosterone_ng_dl Float?
 
 ## 4. Data Inventory
 
-This is the authoritative list of data types held by `<<COMPANY_NAME>>`, their classification, and their Prisma model location. Update this table whenever a new model or field is added.
+This is the authoritative list of data types held by `The Growth Project, LLC`, their classification, and their Prisma model location. Update this table whenever a new model or field is added.
 
 | Data type | Classification | Prisma model | Notes |
 |---|---|---|---|

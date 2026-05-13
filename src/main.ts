@@ -12,6 +12,8 @@ import { ThrottlerExceptionFilter } from './filters/throttler-exception.filter';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
 import { assertEnv } from './common/env-validation';
 import { setupSwagger } from './common/openapi';
+import { CacheControlInterceptor } from './common/cache-control.interceptor';
+import { MetricsService } from './observability/metrics.service';
 
 async function bootstrap() {
   // Fail fast at boot if required env vars are missing. See
@@ -94,10 +96,20 @@ async function bootstrap() {
   // { statusCode, message, error, timestamp, path }.
   // HttpExceptionFilter forwards 5xx (server) errors to Sentry internally;
   // 4xx are deliberately not sent to avoid noise from validation failures.
+  // ThrottlerExceptionFilter receives MetricsService from the DI container
+  // so each 429 increments `throttler_rejected_total`. MetricsService is
+  // resolved at module init time; if observability is not wired (tests),
+  // the filter falls back to logging-only.
+  const metrics = app.get(MetricsService, { strict: false });
   app.useGlobalFilters(
     new HttpExceptionFilter(),
-    new ThrottlerExceptionFilter(),
+    new ThrottlerExceptionFilter(metrics),
   );
+
+  // Global Cache-Control interceptor — adds `private, max-age=60` to safe
+  // GET responses, `no-store` to /auth/*, /messaging/*, /admin/*, /health*,
+  // /.well-known/*. See src/common/cache-control.interceptor.ts.
+  app.useGlobalInterceptors(new CacheControlInterceptor());
 
   // Surface unhandled rejections / uncaught exceptions to Sentry. Without
   // these, async errors that escape Nest's filter chain (e.g. setTimeout

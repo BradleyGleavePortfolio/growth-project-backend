@@ -16,7 +16,7 @@
 
 | Field | Value |
 |---|---|
-| **Company name** | `<<COMPANY_NAME>>` (e.g. "The Growth Project Ltd.") |
+| **Company name** | `The Growth Project, LLC` (e.g. "The Growth Project Ltd.") |
 | **Effective date** | `<<EFFECTIVE_DATE>>` |
 | **Policy owner** | `<<POLICY_OWNER_NAME>>`, `<<POLICY_OWNER_TITLE>>` |
 | **DPO / Privacy contact** | `<<DPO_EMAIL>>` |
@@ -27,7 +27,7 @@
 
 ## 1. Purpose
 
-This policy explains how `<<COMPANY_NAME>>` protects the information entrusted to us — by our clients (coaches), their end-users (athletes / students), and our business partners. It sets the minimum security standard for everyone who works at or with `<<COMPANY_NAME>>`.
+This policy explains how `The Growth Project, LLC` protects the information entrusted to us — by our clients (coaches), their end-users (athletes / students), and our business partners. It sets the minimum security standard for everyone who works at or with `The Growth Project, LLC`.
 
 **Plain English:** This is the document that says "here is how we keep data safe and who is responsible for what." If something bad happens, this is the first place an auditor will look to understand what we promised to do.
 
@@ -37,15 +37,15 @@ This policy explains how `<<COMPANY_NAME>>` protects the information entrusted t
 
 This policy covers:
 
-- All systems operated by `<<COMPANY_NAME>>`, including the Growth Project backend API, the mobile app, the coach console, and all third-party services listed in the Vendor Management Policy.
-- All employees, contractors, advisors, and any other person who has access to `<<COMPANY_NAME>>` systems or data.
+- All systems operated by `The Growth Project, LLC`, including the Growth Project backend API, the mobile app, the coach console, and all third-party services listed in the Vendor Management Policy.
+- All employees, contractors, advisors, and any other person who has access to `The Growth Project, LLC` systems or data.
 - All data we hold about users, coaches, and business operations — regardless of where it is stored (Supabase Postgres, Fly.io, Stripe, etc.).
 
 ---
 
 ## 3. Information Security Objectives
 
-`<<COMPANY_NAME>>` commits to:
+`The Growth Project, LLC` commits to:
 
 1. **Confidentiality** — Keeping user data private. Only people who need it for their job can see it.
 2. **Integrity** — Making sure data is accurate and has not been changed without authorization.
@@ -77,7 +77,7 @@ This policy covers:
 
 ## 6. Data Classification
 
-All data handled by `<<COMPANY_NAME>>` is classified into one of four tiers. Full definitions are in the [Data Classification Policy](data-classification-policy.md). The short version:
+All data handled by `The Growth Project, LLC` is classified into one of four tiers. Full definitions are in the [Data Classification Policy](data-classification-policy.md). The short version:
 
 | Tier | Examples | Handling |
 |---|---|---|
@@ -116,7 +116,7 @@ If a security incident occurs (data breach, unauthorized access, service outage 
 
 ## 10. Physical Security
 
-`<<COMPANY_NAME>>` operates as a remote-first company. Servers run on Fly.io (no physical hardware owned by us). Physical security controls:
+`The Growth Project, LLC` operates as a remote-first company. Servers run on Fly.io (no physical hardware owned by us). Physical security controls:
 
 - No company-owned servers. Cloud provider (Fly.io) is responsible for physical access controls to data center hardware.
 - Staff devices must use full-disk encryption (FileVault on macOS, BitLocker on Windows).
