@@ -414,7 +414,9 @@ export class CoachEffectivenessService {
     });
     const totals = new Map<string, number>();
     for (const row of messagesByClient) {
-      totals.set(row.client_id, row._count._all);
+      if (row.client_id !== null) {
+        totals.set(row.client_id, row._count._all);
+      }
     }
     let cappedSum = 0;
     for (const c of clients) {

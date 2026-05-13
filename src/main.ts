@@ -133,6 +133,10 @@ async function bootstrap() {
       'download/android',
       'signup',
       'signup/:code',
+      // Universal Links / App Links require these documents at the apex
+      // domain (not under /api). See WellKnownController.
+      '.well-known/apple-app-site-association',
+      '.well-known/assetlinks.json',
       // Public trust surface (privacy, terms, security, status). Mounted
       // outside /api so they resolve as bare paths under
       // app.trygrowthproject.com — that is the URL shape app store

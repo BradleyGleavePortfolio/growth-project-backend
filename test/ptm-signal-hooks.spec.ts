@@ -170,7 +170,9 @@ describe('PTM signal hooks — messaging', () => {
     const supabase = { broadcastNewMessage: jest.fn() } as any;
     const analytics = { capture: jest.fn(), identify: jest.fn() } as any;
     const ptm = { emit: jest.fn() } as any;
-    const svc = new MessagingService(prisma, supabase, analytics, ptm);
+    const messageReceived = { emit: jest.fn().mockResolvedValue(undefined) } as any;
+    const audit = { write: jest.fn().mockResolvedValue(undefined) } as any;
+    const svc = new MessagingService(prisma, supabase, analytics, ptm, messageReceived, audit);
 
     await svc.sendAsClient('client-1', 'hello coach');
 
@@ -186,7 +188,9 @@ describe('PTM signal hooks — messaging', () => {
     const supabase = { broadcastNewMessage: jest.fn() } as any;
     const analytics = { capture: jest.fn(), identify: jest.fn() } as any;
     const ptm = { emit: jest.fn() } as any;
-    const svc = new MessagingService(prisma, supabase, analytics, ptm);
+    const messageReceived = { emit: jest.fn().mockResolvedValue(undefined) } as any;
+    const audit = { write: jest.fn().mockResolvedValue(undefined) } as any;
+    const svc = new MessagingService(prisma, supabase, analytics, ptm, messageReceived, audit);
 
     await svc.sendAsCoach('coach-A', 'client-1', 'great work!');
 
@@ -211,7 +215,9 @@ describe('PTM signal hooks — messaging', () => {
     const supabase = { broadcastNewMessage: jest.fn() } as any;
     const analytics = { capture: jest.fn(), identify: jest.fn() } as any;
     const ptm = { emit: jest.fn() } as any;
-    const svc = new MessagingService(prisma, supabase, analytics, ptm);
+    const messageReceived = { emit: jest.fn().mockResolvedValue(undefined) } as any;
+    const audit = { write: jest.fn().mockResolvedValue(undefined) } as any;
+    const svc = new MessagingService(prisma, supabase, analytics, ptm, messageReceived, audit);
 
     await svc.sendAsClient('client-1', 'this is a sensitive thing the user said');
     for (const call of ptm.emit.mock.calls) {

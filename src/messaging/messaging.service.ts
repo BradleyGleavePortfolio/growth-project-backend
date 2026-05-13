@@ -13,6 +13,8 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PtmService } from '../ptm/ptm.service';
+import { MessageReceivedEmitter } from '../notifications/emitters/message-received.emitter';
+import { AuditService } from '../audit/audit.service';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -80,7 +82,23 @@ export class MessagingService {
     private supabase: SupabaseService,
     private analytics: AnalyticsService,
     private ptm: PtmService,
+    private messageReceived: MessageReceivedEmitter,
+    private audit: AuditService,
   ) {}
+
+  // Resolve a sender's display name for the push notification body. Falls
+  // back to a neutral label so a missing user row never crashes the send.
+  private async resolveSenderName(senderId: string): Promise<string> {
+    try {
+      const u = await this.prisma.user.findUnique({
+        where: { id: senderId },
+        select: { name: true },
+      });
+      return u?.name?.trim() || 'Your coach';
+    } catch {
+      return 'Your coach';
+    }
+  }
 
   // ---- voice config (env-driven, clamped) ----
 
@@ -270,6 +288,30 @@ export class MessagingService {
     // authenticated REST endpoint when it receives the ping. Fire-and-
     // forget so a Realtime hiccup never delays the API response.
     void this.supabase.broadcastNewMessage(clientId);
+    // Push notification. The threadId is the coach<->client pair; the mobile
+    // client deep-links to /messages/<clientId>. Fire-and-forget — the
+    // emitter swallows its own errors so a notification failure never
+    // bubbles into the message-send response.
+    void this.resolveSenderName(coachId).then((senderName) =>
+      this.messageReceived.emit(clientId, {
+        senderName,
+        threadId: clientId,
+      }),
+    );
+    void this.audit.write({
+      action: 'messaging.sent',
+      actorId: coachId,
+      actorRole: 'coach',
+      targetUserId: clientId,
+      targetType: 'coach_message',
+      targetId: created.id,
+      tenantCoachId: coachId,
+      metadata: {
+        message_kind: voice ? 'voice' : 'text',
+        body_length: body?.length ?? 0,
+        voice_duration_sec: voice?.duration_sec ?? null,
+      },
+    });
     this.analytics.capture(coachId, Events.COACH_MESSAGE_SENT, {
       client_id: clientId,
       body_length: body?.length ?? 0,
@@ -322,6 +364,26 @@ export class MessagingService {
     });
     // Ping the coach.
     void this.supabase.broadcastNewMessage(coachId);
+    void this.resolveSenderName(clientId).then((senderName) =>
+      this.messageReceived.emit(coachId, {
+        senderName,
+        threadId: clientId,
+      }),
+    );
+    void this.audit.write({
+      action: 'messaging.sent',
+      actorId: clientId,
+      actorRole: 'student',
+      targetUserId: coachId,
+      targetType: 'coach_message',
+      targetId: created.id,
+      tenantCoachId: coachId,
+      metadata: {
+        message_kind: voice ? 'voice' : 'text',
+        body_length: body?.length ?? 0,
+        voice_duration_sec: voice?.duration_sec ?? null,
+      },
+    });
     this.analytics.capture(clientId, Events.CLIENT_MESSAGE_SENT, {
       coach_id: coachId,
       body_length: body?.length ?? 0,
@@ -495,7 +557,13 @@ export class MessagingService {
     const by_client: Record<string, number> = {};
     let total = 0;
     for (const g of groups) {
-      by_client[g.client_id] = g._count._all;
+      // client_id is nullable after the SET NULL FK relaxation; rows
+      // whose recipient has been hard-deleted are still counted in the
+      // grand total but excluded from per-client breakdown (there is no
+      // recipient to badge against).
+      if (g.client_id !== null) {
+        by_client[g.client_id] = g._count._all;
+      }
       total += g._count._all;
     }
     return { total, by_client };

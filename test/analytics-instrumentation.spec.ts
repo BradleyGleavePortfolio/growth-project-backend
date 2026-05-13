@@ -163,7 +163,19 @@ describe('analytics instrumentation — messaging', () => {
     };
     const supabase: any = { broadcastNewMessage: jest.fn() };
     const ptm: any = { emit: jest.fn() };
-    return { svc: new MessagingService(prisma, supabase, analytics as any, ptm), analytics };
+    const messageReceived: any = { emit: jest.fn().mockResolvedValue(undefined) };
+    const audit: any = { write: jest.fn().mockResolvedValue(undefined) };
+    return {
+      svc: new MessagingService(
+        prisma,
+        supabase,
+        analytics as any,
+        ptm,
+        messageReceived,
+        audit,
+      ),
+      analytics,
+    };
   }
 
   it('emits coach_message_sent when coach sends', async () => {

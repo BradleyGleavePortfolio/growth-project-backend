@@ -78,7 +78,16 @@ function makeService(): {
   } as any;
   const analytics = { capture: jest.fn(), identify: jest.fn() } as any;
   const ptm = { emit: jest.fn() };
-  const svc = new MessagingService(prisma as any, supabase, analytics, ptm as any);
+  const messageReceived = { emit: jest.fn().mockResolvedValue(undefined) } as any;
+  const audit = { write: jest.fn().mockResolvedValue(undefined) } as any;
+  const svc = new MessagingService(
+    prisma as any,
+    supabase,
+    analytics,
+    ptm as any,
+    messageReceived,
+    audit,
+  );
   return { svc, ptm, prisma };
 }
 

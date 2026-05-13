@@ -278,7 +278,8 @@ describe('V1CoachService', () => {
       { id: 'client-other', name: 'C3', email: 'c3@x.com', role: 'student', coach_id: 'coach-B', archived_at: null, created_at: new Date('2026-01-04'), profile: { avatar_url: null } },
     );
     const supabaseStub = { broadcastNewMessage: jest.fn().mockResolvedValue(undefined) } as any;
-    svc = new V1CoachService(prisma as any, supabaseStub);
+    const auditStub = { write: jest.fn().mockResolvedValue(undefined) } as any;
+    svc = new V1CoachService(prisma as any, supabaseStub, auditStub);
   });
 
   const coach = (id: string) => ({ id, role: 'coach' as const });
