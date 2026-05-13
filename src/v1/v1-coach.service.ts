@@ -6,6 +6,7 @@ import {
 import type { User } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { AuditService, AuditAction } from '../audit/audit.service';
 
 // V1 BFF service for the coach console. Returns enriched payloads documented
 // in tgp-coach-console/INTEGRATION_NOTES.md. OWNER callers bypass the coach
@@ -39,6 +40,7 @@ export class V1CoachService {
   constructor(
     private prisma: PrismaService,
     private supabase: SupabaseService,
+    private audit: AuditService,
   ) {}
 
   // GET /v1/coach/me — coach profile, brand accent, invite code, billing
@@ -129,8 +131,11 @@ export class V1CoachService {
     const lastWorkoutByClient = new Map<string, Date | null>();
     for (const r of lastWorkouts) lastWorkoutByClient.set(r.user_id, r._max.date);
     const lastCoachReplyByClient = new Map<string, Date | null>();
-    for (const r of lastCoachReplies)
-      lastCoachReplyByClient.set(r.client_id, r._max.created_at);
+    for (const r of lastCoachReplies) {
+      if (r.client_id !== null) {
+        lastCoachReplyByClient.set(r.client_id, r._max.created_at);
+      }
+    }
 
     const now = new Date();
     return clients.map((c) => {
@@ -187,6 +192,9 @@ export class V1CoachService {
     };
     const byClient = new Map<string, Bucket>();
     for (const m of messages) {
+      // Skip rows whose client_id was nulled by the SET NULL FK on a
+      // hard-deleted user — there's no thread row left to render.
+      if (m.client_id === null) continue;
       const b = byClient.get(m.client_id);
       if (!b) {
         byClient.set(m.client_id, {
@@ -228,8 +236,11 @@ export class V1CoachService {
       _max: { created_at: true },
     });
     const lastCoachReplyByClient = new Map<string, Date | null>();
-    for (const r of lastCoachReplies)
-      lastCoachReplyByClient.set(r.client_id, r._max.created_at);
+    for (const r of lastCoachReplies) {
+      if (r.client_id !== null) {
+        lastCoachReplyByClient.set(r.client_id, r._max.created_at);
+      }
+    }
 
     const out = Array.from(byClient.entries()).map(([clientId, b]) => {
       const c = clientById.get(clientId);
@@ -282,6 +293,20 @@ export class V1CoachService {
         read_at: true,
       },
     });
+    // OWNER read of a coach<->client thread is a sensitive event (support
+    // dispute / impersonation investigation). Log it.
+    if (caller.role === 'owner') {
+      void this.audit.write({
+        action: AuditAction.MESSAGE_THREAD_VIEWED_BY_OWNER,
+        actorId: caller.id,
+        actorRole: 'owner',
+        targetUserId: clientId,
+        targetType: 'coach_message_thread',
+        targetId: `${threadCoachId}:${clientId}`,
+        tenantCoachId: threadCoachId,
+        metadata: { message_count: messages.length },
+      });
+    }
     const draft = await this.prisma.messageDraft.findUnique({
       where: {
         MessageDraft_coach_client_key: {
@@ -357,6 +382,22 @@ export class V1CoachService {
     });
     void this.clearDraft(threadCoachId, clientId);
     void this.supabase.broadcastNewMessage(clientId);
+    if (caller.role === 'owner') {
+      void this.audit.write({
+        action: AuditAction.MESSAGE_SENT_BY_OWNER,
+        actorId: caller.id,
+        actorRole: 'owner',
+        targetUserId: clientId,
+        targetType: 'coach_message',
+        targetId: created.id,
+        tenantCoachId: threadCoachId,
+        metadata: {
+          message_kind: 'text',
+          body_length: body.length,
+          snippet_id: snippetId ?? null,
+        },
+      });
+    }
 
     return {
       id: created.id,

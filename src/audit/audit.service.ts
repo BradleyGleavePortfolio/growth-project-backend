@@ -116,6 +116,18 @@ export const AuditAction = {
   // --- Settings / consent (future surface) ---
   CONSENT_GRANTED: 'consent.granted',
   CONSENT_REVOKED: 'consent.revoked',
+
+  // --- Messaging (OWNER-surface) ---
+  // Owners can send and read messages on any coach's thread for support
+  // / dispute investigations. Logged so the trail is queryable per OWNER.
+  // metadata: { message_id, message_kind: 'text' | 'voice' }
+  MESSAGE_SENT_BY_OWNER: 'messaging.sent_by_owner',
+  // Logged when an OWNER opens a coach<->client thread.
+  MESSAGE_THREAD_VIEWED_BY_OWNER: 'messaging.thread_viewed_by_owner',
+  // Generic "message sent" action — written by both coach and client send
+  // paths so unusual-volume / spam patterns are visible without joining
+  // analytics. No message body in metadata, just length + voice flag.
+  MESSAGE_SENT: 'messaging.sent',
 } as const;
 
 export type AuditActionValue = (typeof AuditAction)[keyof typeof AuditAction];

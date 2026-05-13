@@ -121,35 +121,35 @@ enum CoachPracticeType {
 // ============================================================
 
 model User {
-  id                    String             @id @default(uuid())
-  supabase_id           String             @unique
-  email                 String             @unique
-  name                  String
-  phone                 String?
-  role                  Role               @default(student)
+  id                        String             @id @default(uuid())
+  supabase_id               String             @unique
+  email                     String             @unique
+  name                      String
+  phone                     String?
+  role                      Role               @default(student)
   // coach_id now a proper self-relation FK instead of an orphan string column.
   // Preserves prior behavior — still nullable, still points at another User.id.
-  coach_id              String?
-  coach                 User?              @relation("CoachToStudents", fields: [coach_id], references: [id])
-  students              User[]             @relation("CoachToStudents")
+  coach_id                  String?
+  coach                     User?              @relation("CoachToStudents", fields: [coach_id], references: [id])
+  students                  User[]             @relation("CoachToStudents")
   // Stage-3 cross-pillar federation. Only meaningful when `role = coach`
   // or `owner`; ignored for students. Null = not yet selected.
-  coach_practice_type   CoachPracticeType?
-  created_at            DateTime           @default(now())
-  archived_at           DateTime?
+  coach_practice_type       CoachPracticeType?
+  created_at                DateTime           @default(now())
+  archived_at               DateTime?
   // GDPR delete-account flow. Two-phase: deletion_scheduled_at marks the
   // grace-period start (account locked but recoverable); deleted_at marks
   // the irreversible PII scrub. Existing rows stay valid (both null).
-  deletion_scheduled_at       DateTime?
-  deleted_at                  DateTime?
+  deletion_scheduled_at     DateTime?
+  deleted_at                DateTime?
   // Phase 10 — explicit user/admin-initiated right-to-erasure flow.
   // deletion_token_hash/expires_at drive the confirmation link email;
   // deletion_requested_at/confirmed_at drive the state machine.
   // Columns added by migration 20260507100000_add_gdpr_deletion_flow.
-  deletion_token_hash         String?
-  deletion_token_expires_at   DateTime?
-  deletion_requested_at       DateTime?
-  deletion_confirmed_at       DateTime?
+  deletion_token_hash       String?
+  deletion_token_expires_at DateTime?
+  deletion_requested_at     DateTime?
+  deletion_confirmed_at     DateTime?
 
   profile                  UserProfile?
   logged_entries           LoggedFoodEntry[]
@@ -784,10 +784,15 @@ model CheckIn {
 // soft-delete so a plan history survives deletion.
 model MealPlan {
   id          String    @id @default(uuid())
-  coach_id    String
-  coach       User      @relation("MealPlanCoach", fields: [coach_id], references: [id])
-  client_id   String
-  client      User      @relation("MealPlanClient", fields: [client_id], references: [id])
+  // coach_id / client_id are nullable + SetNull so a hard-deleted user
+  // does not cascade away the historical plan rows (which other coaches
+  // and operators may still want to inspect for support / compliance).
+  // GDPR scrub does NOT hard-delete users today; the nullable FK + SET
+  // NULL is the safe long-term posture if that ever changes.
+  coach_id    String?
+  coach       User?     @relation("MealPlanCoach", fields: [coach_id], references: [id], onDelete: SetNull)
+  client_id   String?
+  client      User?     @relation("MealPlanClient", fields: [client_id], references: [id], onDelete: SetNull)
   title       String
   notes       String?
   items       Json
@@ -821,12 +826,17 @@ model WaterLog {
 // paginated-thread query a single index seek.
 model CoachMessage {
   id                 String    @id @default(uuid())
-  coach_id           String
-  coach              User      @relation("CoachMessagesAsCoach", fields: [coach_id], references: [id])
-  client_id          String
-  client             User      @relation("CoachMessagesAsClient", fields: [client_id], references: [id])
-  sender_id          String
-  sender             User      @relation("CoachMessagesSender", fields: [sender_id], references: [id])
+  // FK columns are nullable + SET NULL on delete so a hard-deleted user
+  // does not cascade away the thread history. The GDPR scrub uses
+  // soft-delete + PII zero-out today, so these typically remain non-null
+  // in practice; SET NULL is the defensive posture if the worker is ever
+  // changed to issue actual DELETEs.
+  coach_id           String?
+  coach              User?     @relation("CoachMessagesAsCoach", fields: [coach_id], references: [id], onDelete: SetNull)
+  client_id          String?
+  client             User?     @relation("CoachMessagesAsClient", fields: [client_id], references: [id], onDelete: SetNull)
+  sender_id          String?
+  sender             User?     @relation("CoachMessagesSender", fields: [sender_id], references: [id], onDelete: SetNull)
   // Phase 6C: body becomes optional when a voice attachment is present. The
   // service still requires at least one of `body` or `voice_url` to be set so
   // we never persist an empty thread row. Doctrine: voice metadata
@@ -854,10 +864,10 @@ model CoachMessage {
 // query.
 model CoachNudge {
   id         String    @id @default(uuid())
-  coach_id   String
-  coach      User      @relation("CoachNudgesAsCoach", fields: [coach_id], references: [id])
-  client_id  String
-  client     User      @relation("CoachNudgesAsClient", fields: [client_id], references: [id])
+  coach_id   String?
+  coach      User?     @relation("CoachNudgesAsCoach", fields: [coach_id], references: [id], onDelete: SetNull)
+  client_id  String?
+  client     User?     @relation("CoachNudgesAsClient", fields: [client_id], references: [id], onDelete: SetNull)
   title      String
   body       String
   created_at DateTime  @default(now())
@@ -901,10 +911,10 @@ model CommunityWin {
 // extra column.
 model CoachGuideline {
   id         String   @id @default(uuid())
-  coach_id   String
-  coach      User     @relation("CoachGuidelineCoach", fields: [coach_id], references: [id])
-  client_id  String
-  client     User     @relation("CoachGuidelineClient", fields: [client_id], references: [id])
+  coach_id   String?
+  coach      User?    @relation("CoachGuidelineCoach", fields: [coach_id], references: [id], onDelete: SetNull)
+  client_id  String?
+  client     User?    @relation("CoachGuidelineClient", fields: [client_id], references: [id], onDelete: SetNull)
   content    String
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
@@ -1052,11 +1062,11 @@ model AuditLog {
 // when the request is fulfilled the row is updated with the rendered
 // Phase 10 — GDPR data portability. Status lifecycle for DataExportRequest.
 enum DataExportStatus {
-  PENDING  // Request received; export not yet started.
-  RUNNING  // Export is being assembled.
-  READY    // File uploaded to storage; signed URL available for 7 days.
-  EXPIRED  // 7-day window has passed; file deleted from storage.
-  FAILED   // Export failed; user can request again.
+  PENDING // Request received; export not yet started.
+  RUNNING // Export is being assembled.
+  READY // File uploaded to storage; signed URL available for 7 days.
+  EXPIRED // 7-day window has passed; file deleted from storage.
+  FAILED // Export failed; user can request again.
 }
 
 // Phase 10 — GDPR Article 20 right to data portability. One row per export
@@ -1091,7 +1101,6 @@ model DataExportRequest {
 
   @@index([user_id, created_at])
   @@index([status, expires_at])
-
   @@map("data_export_request")
 }
 
@@ -2373,11 +2382,11 @@ model CalendarConnection {
 // name exactly (e.g. "JWT_SIGNING_KEY", "DATABASE_URL"). This keeps the
 // table schema stable even as new secrets are added.
 model SecretRotationLog {
-  id                  String    @id @default(uuid())
-  secret_name         String
-  rotated_at          DateTime  @default(now())
-  rotated_by_user_id  String?
-  notes               String?
+  id                 String   @id @default(uuid())
+  secret_name        String
+  rotated_at         DateTime @default(now())
+  rotated_by_user_id String?
+  notes              String?
 
   @@index([secret_name])
   @@index([rotated_at])
