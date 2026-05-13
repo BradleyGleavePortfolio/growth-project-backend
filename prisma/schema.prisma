@@ -190,6 +190,9 @@ model User {
   coach_subscription         CoachSubscription?
   invoices                   Invoice[]
   payment_failures           PaymentFailure[]
+  // Phase 1 Connect — 1:1 Stripe Express account per coach. Null until the
+  // coach kicks off Connect onboarding via POST /v1/connect/accounts/create.
+  connect_account            ConnectAccount?
   drafts_as_coach            MessageDraft[]       @relation("MessageDraftCoach")
   drafts_as_client           MessageDraft[]       @relation("MessageDraftClient")
   activity_events_actor      ActivityEvent[]      @relation("ActivityEventActor")
@@ -398,6 +401,34 @@ model StripeProcessedEvent {
   processed_at    DateTime @default(now())
 
   @@index([processed_at])
+}
+
+// Phase 1 Connect — Stripe Express account per coach. The coach goes through
+// Stripe-hosted onboarding via accountLinks; we mirror the resulting account
+// state from webhooks (`account.updated`, `capability.updated`,
+// `account.application.deauthorized`). is_fully_onboarded is derived at read
+// time from (charges_enabled && payouts_enabled && details_submitted).
+//
+// requirements_due stores Stripe's `requirements` object verbatim for
+// diagnostics — never used to make business decisions, only surfaced so the
+// coach/owner knows what is still owed.
+model ConnectAccount {
+  id                String    @id @default(uuid())
+  coach_user_id     String    @unique
+  coach             User      @relation(fields: [coach_user_id], references: [id])
+  stripe_account_id String    @unique
+  country           String    @default("US")
+  default_currency  String    @default("usd")
+  charges_enabled   Boolean   @default(false)
+  payouts_enabled   Boolean   @default(false)
+  details_submitted Boolean   @default(false)
+  requirements_due  Json?
+  disabled_reason   String?
+  deauthorized_at   DateTime?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  @@index([stripe_account_id])
 }
 
 // Coach message draft. Idempotent on (coach_id, client_id) — a coach has one

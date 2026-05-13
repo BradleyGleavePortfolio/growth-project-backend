@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { JwksVerifierService } from '../auth/jwks.service';
+import { ConnectModule } from '../connect/connect.module';
 import { BillingService } from './billing.service';
 import { CoachBillingController } from './coach-billing.controller';
 import { MobileCoachBillingController } from './mobile-coach-billing.controller';
@@ -12,6 +13,12 @@ import { SubscriptionGuard } from './subscription.guard';
 // (PrismaModule, AuthModule). The module exports SubscriptionGuard so v1
 // controllers can mount it on individual write routes.
 @Module({
+  imports: [
+    // ConnectModule re-exports ConnectService so the Stripe webhook handler
+    // can forward account.* events to it. See connect.module.ts for the
+    // boot-time platform-enabled gate.
+    ConnectModule,
+  ],
   controllers: [
     StripeWebhookController,
     CoachBillingController,

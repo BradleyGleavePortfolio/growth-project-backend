@@ -42,6 +42,7 @@ import { AuditModule } from './audit/audit.module';
 import { ConsentModule } from './consent/consent.module';
 import { BloodworkModule } from './bloodwork/bloodwork.module';
 import { BillingModule } from './billing/billing.module';
+import { ConnectModule } from './connect/connect.module';
 import { PtmModule } from './ptm/ptm.module';
 import { DiagnosticModule } from './diagnostic/diagnostic.module';
 import { BuildWeekModule } from './build-week/build-week.module';
@@ -160,6 +161,10 @@ import { SecretsModule } from './secrets/secrets.module';
     AdminModule,
     // Stripe billing mirror + SubscriptionGuard (Phase 2A foundation).
     BillingModule,
+    // Stripe Connect Express — Phase 1 of the Connect master plan. Coach
+    // onboards to Stripe Express, we mirror the account state from webhooks.
+    // See /CONNECT_MASTER_PLAN.md §Phase 1 — Foundation.
+    ConnectModule,
     // V1 Backend-For-Frontend for tgp-coach-console.
     V1Module,
     // Public invite landing — server-rendered HTML at /join/:code and
