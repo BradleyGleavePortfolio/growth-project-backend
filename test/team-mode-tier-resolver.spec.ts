@@ -86,3 +86,57 @@ describe('TeamModeTierResolverService.resolveTier', () => {
     expect(r.tier).toBe('growth');
   });
 });
+
+// Pre-TestFlight smoke: catches operator misconfiguration of the tier
+// price env vars (typo, blank value, same id pasted into two tiers).
+// Audit ref: /audits/00_MASTER_REPORT.md line 194 (Payment P0).
+describe('TeamModeTierResolverService.configuredTiers', () => {
+  it('reports every tier as missing when env is empty', () => {
+    delete process.env.STRIPE_PRICE_GROWTH;
+    delete process.env.STRIPE_PRICE_PRO;
+    delete process.env.STRIPE_PRICE_ENTERPRISE;
+    const svc = new TeamModeTierResolverService(makePrisma(null));
+    const c = svc.configuredTiers();
+    expect(c.missing.sort()).toEqual(['enterprise', 'growth', 'pro']);
+    expect(c.growth).toBeNull();
+    expect(c.pro).toBeNull();
+    expect(c.enterprise).toBeNull();
+    expect(c.duplicates).toEqual([]);
+  });
+
+  it('returns the configured price ids and zero duplicates when all three tiers are wired', () => {
+    process.env.STRIPE_PRICE_GROWTH = 'price_growth_1';
+    process.env.STRIPE_PRICE_PRO = 'price_pro_1';
+    process.env.STRIPE_PRICE_ENTERPRISE = 'price_ent_1';
+    const svc = new TeamModeTierResolverService(makePrisma(null));
+    const c = svc.configuredTiers();
+    expect(c).toMatchObject({
+      growth: 'price_growth_1',
+      pro: 'price_pro_1',
+      enterprise: 'price_ent_1',
+      missing: [],
+      duplicates: [],
+    });
+  });
+
+  it('flags duplicates when an operator pastes the same price into two tiers', () => {
+    process.env.STRIPE_PRICE_GROWTH = 'price_same';
+    process.env.STRIPE_PRICE_PRO = 'price_same';
+    process.env.STRIPE_PRICE_ENTERPRISE = 'price_ent_1';
+    const svc = new TeamModeTierResolverService(makePrisma(null));
+    const c = svc.configuredTiers();
+    expect(c.duplicates).toEqual([['growth', 'pro']]);
+    expect(c.missing).toEqual([]);
+  });
+
+  it('round-trips: every configured price id resolves to the right tier label', () => {
+    process.env.STRIPE_PRICE_GROWTH = 'price_growth_1';
+    process.env.STRIPE_PRICE_PRO = 'price_pro_1';
+    process.env.STRIPE_PRICE_ENTERPRISE = 'price_ent_1';
+    const svc = new TeamModeTierResolverService(makePrisma(null));
+    const c = svc.configuredTiers();
+    expect(svc.priceIdToTier(c.growth!)).toBe('growth');
+    expect(svc.priceIdToTier(c.pro!)).toBe('pro');
+    expect(svc.priceIdToTier(c.enterprise!)).toBe('enterprise');
+  });
+});

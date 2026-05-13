@@ -305,6 +305,66 @@ script header comment for fixture names.
 
 ---
 
+## 6. Webhook secret rotation (zero-downtime)
+
+`STRIPE_WEBHOOK_SECRET` can be rotated without an in-flight delivery
+gap. The webhook controller accepts a signature that verifies against
+EITHER `STRIPE_WEBHOOK_SECRET` (steady state) or
+`STRIPE_WEBHOOK_SECRET_NEXT` (rotation window). Procedure:
+
+1. Stripe dashboard → Developers → Webhooks → endpoint → "Roll signing
+   secret". Stripe issues a new `whsec_...` and keeps the old one valid
+   for a configurable window (default 24 h).
+2. `fly secrets set STRIPE_WEBHOOK_SECRET_NEXT=whsec_NEW -a growth-project-backend`.
+   The current secret stays put. Both are now configured.
+3. Deploy / wait for restart. Confirm new deliveries verify under
+   either secret (Stripe will sign with the new one immediately; the
+   controller tries both transparently).
+4. In Stripe dashboard, flip the endpoint to the new secret only (this
+   is automatic once Stripe completes the rotation window).
+5. `fly secrets set STRIPE_WEBHOOK_SECRET=whsec_NEW STRIPE_WEBHOOK_SECRET_NEXT='' -a growth-project-backend`.
+   This promotes the new value to the steady-state slot and clears the
+   rotation slot. Confirm the next delivery verifies, then close the
+   change ticket.
+
+If a rotation needs to be aborted mid-way, simply unset
+`STRIPE_WEBHOOK_SECRET_NEXT` and the system reverts to the pre-rotation
+state.
+
+---
+
+## 6.5. Team-mode tier prices (ADR-0001 §10)
+
+The flat `$300` plan above is the legacy single-tier SKU. Team Mode adds three
+canonical tiers consumed by `TeamModeTierResolverService` for the per-coach
+tier gate and the staff-seat billing posture:
+
+| Tier         | Public price (from /llms.txt) | Env var                    |
+| ------------ | ----------------------------- | -------------------------- |
+| Growth       | $1,079 / month                | `STRIPE_PRICE_GROWTH`      |
+| Pro          | $2,499 / month                | `STRIPE_PRICE_PRO`         |
+| Enterprise   | $6,225 / month                | `STRIPE_PRICE_ENTERPRISE`  |
+
+Provision each tier as a separate Stripe Product (or as three prices on a
+shared product) and copy the resulting `price_...` ids into Fly secrets.
+The resolver maps `CoachSubscription.stripe_price_id` to one of
+`growth | pro | enterprise | unknown`. An unmatched id falls through to
+`unknown`, which the team-mode controllers treat as "deny by default".
+
+**Smoke check before flipping enforcement:** `test/team-mode-tier-resolver.spec.ts`
+contains a `configuredTiers()` round-trip that catches three common
+misconfigurations: blank env, duplicate price id pasted into two tiers,
+and resolver / mapping drift. Run the suite as part of the deploy
+pipeline; do not flip `BILLING_ENFORCEMENT=enforce` until it passes
+against the prod-equivalent env.
+
+`STRIPE_PRICE_STAFF_SEAT` is the recurring subscription-item price the
+Pro tier uses to bill per assigned sub-coach (quantity=1 per seat).
+Enterprise has staff seats bundled into the base price, so this price
+is not used for Enterprise tenants.
+
+---
+
 ## 7. Rollback
 
 The architecture supports per-component rollback. From safest to most

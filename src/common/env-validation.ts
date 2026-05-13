@@ -131,6 +131,12 @@ export const ENV_RULES: EnvRule[] = [
       'HMAC signing secret for /v1/webhooks/stripe. Without it the webhook controller rejects every request with 400 — no boot dependency. Set this *before* pointing Stripe at the webhook URL.',
   },
   {
+    name: 'STRIPE_WEBHOOK_SECRET_NEXT',
+    tier: 'optional',
+    reason:
+      'Incoming Stripe webhook signing secret during a zero-downtime rotation. When set alongside STRIPE_WEBHOOK_SECRET, a webhook request is accepted if it verifies under EITHER secret. Leave unset in steady state. See docs/stripe-setup.md §6 for the rotation runbook.',
+  },
+  {
     name: 'STRIPE_PRICE_ID_FITNESS',
     tier: 'feature',
     reason:
