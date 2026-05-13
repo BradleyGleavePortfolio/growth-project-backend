@@ -1,5 +1,37 @@
 # The Growth Project, Backend
 
+
+> Status: pre-TestFlight audit complete; NO-GO for Whop-for-coaches rails; Stripe Connect/client checkout/payouts absent; see /audits/00_MASTER_REPORT.md
+
+## Placeholders / TODO env vars
+
+The pre-TestFlight audit landed several fixes that gate on env vars the
+owner must populate on Fly before the coach-facing wave goes wide. The
+audit-wide blocker (Stripe Connect / platform-of-record) is **not** in
+this list — it is a separate human-decision item in
+`/audits/00_MASTER_REPORT.md`. The vars below cover invite deep-links,
+billing rotation, and the new admin / observability surfaces shipped in
+PRs #198 and #199.
+
+| Env var | Why it matters | Example shape |
+|---|---|---|
+| `APPLE_TEAM_ID` | Required by `GET /.well-known/apple-app-site-association`. Without it the file returns 503 and every Universal Link from a coach invite SMS/email fails silently into Safari. | 10-char Apple Team ID (e.g. `A1B2C3D4E5`) — from Apple Developer → Membership |
+| `IOS_BUNDLE_ID` | Bundle ID emitted in the AASA file. Defaults to `com.growthproject.app` if unset; override only if a separate TestFlight bundle is used. | `com.growthproject.app` |
+| `ANDROID_PACKAGE_NAME` | Package name emitted in `/.well-known/assetlinks.json`. Defaults to `com.tgp.app`; override if different. | `com.growthproject.app` |
+| `ANDROID_CERT_SHA256_FINGERPRINTS` | Comma-separated SHA-256 fingerprints of every Android signing cert (debug + Play upload + Play app-signing). Without this the assetlinks file omits the cert array and Android Intent links degrade. Pull from `keytool -list -v` or Play Console → App integrity. | `AA:BB:CC:…,DD:EE:FF:…` |
+| `STRIPE_WEBHOOK_SECRET_NEXT` | New: dual-secret rotation. Set the *next* webhook secret here, swap Stripe Dashboard to the new endpoint secret, then promote `STRIPE_WEBHOOK_SECRET_NEXT` to `STRIPE_WEBHOOK_SECRET` and clear this var. Leave unset in normal operation. | `whsec_…` |
+| `STRIPE_PRICE_GROWTH`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_ENTERPRISE`, `STRIPE_PRICE_STAFF_SEAT` | Canonical price IDs for the three coach tiers + the per-staff add-on. The new tier-resolver smoke test refuses to boot if any of these are missing or duplicated. Source of truth lives in Stripe Dashboard. | `price_…` |
+| `STRIPE_BILLING_PORTAL_RETURN_URL`, `STRIPE_CUSTOMER_PORTAL_LOGIN_URL` | Used by the new cancel-subscription / portal flow shipped in PR #199. | `https://app.trygrowthproject.com/account/billing` |
+| `REDIS_URL` | Now **required in production** for rate-limiting. The audit hardened the throttler to refuse a boot with no shared Redis when `NODE_ENV=production`. | `rediss://default:PASSWORD@<host>:6379` |
+| `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE` | DSN is required for error reporting; sample rate defaults to `0.1`. Release tag is now set from the deploy's git SHA in `src/instrument.ts`. | `https://…@o…ingest.sentry.io/…` |
+
+For every other env var the backend reads at boot, see `.env.example`
+(top to bottom is grouped by subsystem; the audit added inline comments
+above each new entry). The full feature-flag and tier matrix lives in
+`docs/stripe-setup.md`, which PR #199 updated with the dual-secret
+rotation playbook.
+
+
 NestJS 10 + Prisma 5 + Supabase API for a coaching platform with per-seat
 SaaS billing for coaches. Deployed to Fly.io. The backend hosts the
 mobile API, the coach-console BFF, the public invite landing, the public
