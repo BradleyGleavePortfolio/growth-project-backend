@@ -26,6 +26,12 @@ export class LogService {
         meal_type: data.meal_type,
         food_item_id: resolvedFoodItemId,
         quantity_multiplier: data.quantity_multiplier ?? 1.0,
+        // Persist the original user-entered qty + unit so coach views render
+        // "6 oz chicken" not "1.7008x chicken". Both columns are nullable;
+        // older entries (and clients that don't send them) leave them null
+        // and the API falls back to quantity_multiplier.
+        original_quantity: data.original_quantity,
+        original_unit: data.original_unit,
         notes: data.notes,
       },
       include: { food_item: true },

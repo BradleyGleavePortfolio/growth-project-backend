@@ -1,11 +1,18 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma.service';
+import { supportsVolumeUnits } from './food-density';
+import { parseFoodQuery } from './food-query-parser';
 
 export interface FoodSearchResponse {
   results: FoodResult[];
   suggestions: FoodResult[];
   did_you_mean: boolean;
   query: string;
+  /** Quantity extracted from the natural-language query, if any (e.g. 6 for "6oz chicken"). */
+  parsed_quantity?: number;
+  /** Canonical unit extracted from the query (g, oz, cup, tbsp, tsp, slice, piece). */
+  parsed_unit?: string;
 }
 
 interface UsdaNutrient {
@@ -70,6 +77,7 @@ interface FoodItemRow {
   tags?: string[] | null;
   search_aliases?: string[] | null;
   image_url?: string | null;
+  nutrient_basis?: 'PER_100G' | 'PER_SERVING' | null;
 }
 
 export interface FoodResult {
@@ -89,18 +97,68 @@ export interface FoodResult {
   tags: string[];
   search_aliases: string[];
   image_url: string | null;
+  /**
+   * Canonical basis for the macro fields above. PER_100G is the default for all
+   * USDA + OpenFoodFacts hits and for seeded local entries; PER_SERVING is
+   * reserved for legacy/hand-curated rows. Mobile uses this to choose between
+   * (grams / 100) * macro and (qty * macro) at log time.
+   */
+  nutrient_basis: 'PER_100G' | 'PER_SERVING';
+  /**
+   * Whether the category has a density entry in food-density.ts — mobile uses
+   * this to enable/disable the cup/tbsp/tsp unit chips. False means the
+   * picker should fall back to g/oz/serving only.
+   */
+  supports_volume_units: boolean;
 }
 
+// 24h TTL on cached search results — USDA/OFF data is effectively static at
+// the per-day level and the upstream APIs are slow + rate-limited.
+const SEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const SEARCH_CACHE_KEY_PREFIX = 'food:search:v1:';
+
 @Injectable()
-export class FoodService {
+export class FoodService implements OnModuleInit {
   private readonly logger = new Logger(FoodService.name);
 
-  constructor(private prisma: PrismaService) {}
+  /** ioredis client when REDIS_URL is set; null otherwise (in-memory fallback only). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private redis: any | null = null;
+
+  /**
+   * In-process fallback cache for environments without Redis (unit tests, dev
+   * boxes without a local Redis). Capped at 200 entries.
+   */
+  private readonly memoryCache = new Map<string, { value: FoodSearchResponse; expiresAt: number }>();
+  private readonly memoryCacheMax = 200;
+
+  constructor(
+    private prisma: PrismaService,
+    private readonly config?: ConfigService,
+  ) {}
+
+  async onModuleInit(): Promise<void> {
+    const redisUrl = this.config?.get<string>('REDIS_URL');
+    if (!redisUrl) {
+      this.logger.log('FoodService: REDIS_URL unset — using in-memory search cache (200 entries, 24h TTL)');
+      return;
+    }
+    try {
+      // Lazy import so unit tests and dev boots without ioredis still work.
+      const { default: Redis } = await import('ioredis');
+      this.redis = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1 });
+      await this.redis.connect();
+      this.logger.log('FoodService: Redis search cache connected');
+    } catch (err) {
+      this.logger.warn(`FoodService: Redis unavailable, falling back to in-memory cache: ${(err as Error).message}`);
+      this.redis = null;
+    }
+  }
 
   async search(query: string, limit: number = 50): Promise<FoodSearchResponse> {
-    const q = (query || '').trim();
+    const rawQ = (query || '').trim();
 
-    if (!q || q.length < 2) {
+    if (!rawQ || rawQ.length < 2) {
       const defaults = await this.prisma.foodItem.findMany({
         take: limit,
         orderBy: { name: 'asc' },
@@ -109,7 +167,26 @@ export class FoodService {
         results: defaults.map(this.toResult),
         suggestions: [],
         did_you_mean: false,
-        query: q,
+        query: rawQ,
+      };
+    }
+
+    // 1) Parse natural-language quantity/unit out of the query so users can
+    //    type "6oz chicken breast" and get usable results.
+    const parsed = parseFoodQuery(rawQ);
+    const q = parsed.foodName || rawQ;
+
+    // 2) Cache check — keyed off the *parsed* food name so "chicken breast"
+    //    and "6oz chicken breast" share a cache entry.
+    const cacheKey = `${SEARCH_CACHE_KEY_PREFIX}${q.toLowerCase()}`;
+    const cached = await this.getCachedSearch(cacheKey);
+    if (cached) {
+      // Splice parser output back in even on a cache hit so mobile can pre-fill.
+      return {
+        ...cached,
+        query: rawQ,
+        parsed_quantity: parsed.quantity,
+        parsed_unit: parsed.unit,
       };
     }
 
@@ -205,12 +282,63 @@ export class FoodService {
 
     const results = scored.slice(0, limit).map((s) => s.item);
 
-    return {
+    const response: FoodSearchResponse = {
+      results,
+      suggestions: [],
+      did_you_mean: false,
+      query: rawQ,
+      parsed_quantity: parsed.quantity,
+      parsed_unit: parsed.unit,
+    };
+
+    // Cache the merged+scored list (sans the query echo / parsed_* fields,
+    // which are rebuilt per-call so callers with different leading quantities
+    // still see their own parse).
+    await this.setCachedSearch(cacheKey, {
       results,
       suggestions: [],
       did_you_mean: false,
       query: q,
-    };
+    });
+
+    return response;
+  }
+
+  /** Redis GET with in-memory fallback. Returns null on miss or any error. */
+  private async getCachedSearch(key: string): Promise<FoodSearchResponse | null> {
+    try {
+      if (this.redis) {
+        const raw = await this.redis.get(key);
+        if (raw) return JSON.parse(raw) as FoodSearchResponse;
+        return null;
+      }
+      const entry = this.memoryCache.get(key);
+      if (!entry) return null;
+      if (Date.now() > entry.expiresAt) {
+        this.memoryCache.delete(key);
+        return null;
+      }
+      return entry.value;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Redis SETEX with in-memory fallback. Failures are non-fatal. */
+  private async setCachedSearch(key: string, value: FoodSearchResponse): Promise<void> {
+    try {
+      if (this.redis) {
+        await this.redis.set(key, JSON.stringify(value), 'PX', SEARCH_CACHE_TTL_MS);
+        return;
+      }
+      if (this.memoryCache.size >= this.memoryCacheMax) {
+        const oldest = this.memoryCache.keys().next().value;
+        if (oldest !== undefined) this.memoryCache.delete(oldest);
+      }
+      this.memoryCache.set(key, { value, expiresAt: Date.now() + SEARCH_CACHE_TTL_MS });
+    } catch {
+      // Cache writes are best-effort.
+    }
   }
 
   private async searchLocalDB(query: string, limit: number): Promise<FoodResult[]> {
@@ -220,6 +348,7 @@ export class FoodService {
           id, name, brand_or_restaurant, category, serving_description,
           serving_size_grams, calories, protein_g, carbs_g, fat_g,
           fiber_g, sugar_g, sodium_mg, tags, search_aliases, image_url,
+          nutrient_basis,
           similarity(
             lower(name) || ' ' ||
             lower(coalesce(brand_or_restaurant, '')) || ' ' ||
@@ -246,7 +375,8 @@ export class FoodService {
           SELECT DISTINCT
             id, name, brand_or_restaurant, category, serving_description,
             serving_size_grams, calories, protein_g, carbs_g, fat_g,
-            fiber_g, sugar_g, sodium_mg, tags, search_aliases, image_url
+            fiber_g, sugar_g, sodium_mg, tags, search_aliases, image_url,
+            nutrient_basis
           FROM "FoodItem"
           WHERE
             lower(name) LIKE lower(${likeQ})
@@ -320,11 +450,18 @@ export class FoodService {
     const servingDesc = food.householdServingFullText ||
       (food.servingSize ? `${food.servingSize}${food.servingSizeUnit || 'g'}` : '1 serving');
 
+    // CANONICAL BASIS: USDA FDC's `foodNutrients[].value` is reported per 100g
+    // for Foundation / SR Legacy / Branded entries. We keep that basis verbatim
+    // (nutrient_basis = PER_100G) and store `serving_size_grams` separately so
+    // mobile can multiply (grams_consumed / 100) * macros. The previous bug was
+    // that mobile assumed the macros were per-serving, which 3.5x'd almonds.
+    // Do NOT scale macros here — that's mobile's job, based on nutrient_basis.
+    const category = food.foodCategory || 'generic';
     return {
       id: `usda_${food.fdcId}`,
       name: food.description.trim(),
       brand_or_restaurant: food.brandOwner?.trim() || null,
-      category: food.foodCategory || 'generic',
+      category,
       serving_description: servingDesc,
       serving_size_grams: food.servingSize || 100,
       calories: Math.round(calories),
@@ -337,6 +474,8 @@ export class FoodService {
       tags: [],
       search_aliases: [],
       image_url: null,
+      nutrient_basis: 'PER_100G',
+      supports_volume_units: supportsVolumeUnits(category),
     };
   }
 
@@ -386,6 +525,9 @@ export class FoodService {
     const sugars = n['sugars_100g'];
     const sodium = n['sodium_100g'];
 
+    // CANONICAL BASIS: OpenFoodFacts returns *_100g fields per 100g. Same
+    // contract as mapUSDAFood — store the per-100g macro verbatim, set
+    // nutrient_basis = PER_100G, and let mobile scale by grams_consumed.
     return {
       id: `off_${product.code || product._id || Math.random().toString(36).slice(2)}`,
       name: (product.product_name || '').trim(),
@@ -403,6 +545,8 @@ export class FoodService {
       tags: [],
       search_aliases: [],
       image_url: product.image_front_small_url || null,
+      nutrient_basis: 'PER_100G',
+      supports_volume_units: supportsVolumeUnits('generic'),
     };
   }
 
@@ -592,5 +736,9 @@ export class FoodService {
     tags: item.tags ?? [],
     search_aliases: item.search_aliases ?? [],
     image_url: item.image_url ?? null,
+    // Default for legacy rows / raw query paths that don't select the column:
+    // PER_100G matches the assumption the rest of the system already makes.
+    nutrient_basis: item.nutrient_basis ?? 'PER_100G',
+    supports_volume_units: supportsVolumeUnits(item.category),
   });
 }

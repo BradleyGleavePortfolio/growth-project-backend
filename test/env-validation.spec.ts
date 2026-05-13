@@ -18,6 +18,10 @@ function baseHardEnv(): NodeJS.ProcessEnv {
     DATABASE_URL: 'postgres://x',
     SUPABASE_URL: 'https://example.supabase.co',
     SUPABASE_SERVICE_ROLE_KEY: 'srk',
+    // USDA_API_KEY was promoted from optional → hard as part of the
+    // food-logger Trainerize-grade floor. A missing key used to silently
+    // return [] from /foods/search; now boot fails loudly instead.
+    USDA_API_KEY: 'usda-test-key',
   };
 }
 
@@ -57,6 +61,7 @@ describe('evaluateEnv', () => {
       'DATABASE_URL',
       'SUPABASE_SERVICE_ROLE_KEY',
       'SUPABASE_URL',
+      'USDA_API_KEY',
     ]);
   });
 
