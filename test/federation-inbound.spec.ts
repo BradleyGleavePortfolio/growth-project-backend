@@ -67,6 +67,7 @@ describe('FederationInboundService', () => {
 
   beforeEach(() => {
     delete process.env.FINANCE_SERVICE_TOKEN;
+    delete process.env.FINANCE_SERVICE_TOKEN_NEXT;
   });
 
   // --- 503: token not configured ---
@@ -238,6 +239,113 @@ describe('FederationInboundService', () => {
       1,
       expect.any(Object),
     );
+  });
+
+  // --- Dual-secret rotation: FINANCE_SERVICE_TOKEN + FINANCE_SERVICE_TOKEN_NEXT ---
+  // Mirrors the Stripe webhook secret dual-secret pattern from PR #199.
+  // During a rotation window both tokens are valid; outside it, only
+  // the configured one(s) are. Matrix: primary-only, next-only, both
+  // (primary used / next used), both wrong, neither configured.
+  describe('dual-secret rotation', () => {
+    const PRIMARY = 'primary-token-aaa111';
+    const NEXT = 'next-token-bbb222';
+
+    it('accepts a request signed with FINANCE_SERVICE_TOKEN when both are set', async () => {
+      process.env.FINANCE_SERVICE_TOKEN = PRIMARY;
+      process.env.FINANCE_SERVICE_TOKEN_NEXT = NEXT;
+      const { service, ptm } = buildService(validUser);
+      const result = await service.handleSignal(
+        `Bearer ${PRIMARY}`,
+        'finance-backend',
+        makeDto(),
+      );
+      expect(result).toEqual({ ok: true });
+      expect(ptm.emit).toHaveBeenCalled();
+    });
+
+    it('accepts a request signed with FINANCE_SERVICE_TOKEN_NEXT when both are set', async () => {
+      process.env.FINANCE_SERVICE_TOKEN = PRIMARY;
+      process.env.FINANCE_SERVICE_TOKEN_NEXT = NEXT;
+      const { service, ptm } = buildService(validUser);
+      const logSpy = jest
+        .spyOn((service as any).logger, 'log')
+        .mockImplementation(() => undefined);
+      const result = await service.handleSignal(
+        `Bearer ${NEXT}`,
+        'finance-backend',
+        makeDto(),
+      );
+      expect(result).toEqual({ ok: true });
+      expect(ptm.emit).toHaveBeenCalled();
+      // Structured rotation marker — operators watch for this to confirm
+      // the new token is in use before promoting it to primary.
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'federation.auth.next-secret-used' }),
+      );
+      logSpy.mockRestore();
+    });
+
+    it('does NOT emit the rotation log line when the primary matches', async () => {
+      process.env.FINANCE_SERVICE_TOKEN = PRIMARY;
+      process.env.FINANCE_SERVICE_TOKEN_NEXT = NEXT;
+      const { service } = buildService(validUser);
+      const logSpy = jest
+        .spyOn((service as any).logger, 'log')
+        .mockImplementation(() => undefined);
+      await service.handleSignal(
+        `Bearer ${PRIMARY}`,
+        'finance-backend',
+        makeDto(),
+      );
+      expect(logSpy).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'federation.auth.next-secret-used' }),
+      );
+      logSpy.mockRestore();
+    });
+
+    it('rejects when the bearer matches neither token (both set)', async () => {
+      process.env.FINANCE_SERVICE_TOKEN = PRIMARY;
+      process.env.FINANCE_SERVICE_TOKEN_NEXT = NEXT;
+      const { service } = buildService(validUser);
+      await expect(
+        service.handleSignal(
+          'Bearer wrong-token-ccc333',
+          'finance-backend',
+          makeDto(),
+        ),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('accepts the _NEXT token when only _NEXT is set (primary fully unset)', async () => {
+      process.env.FINANCE_SERVICE_TOKEN_NEXT = NEXT;
+      const { service } = buildService(validUser);
+      const result = await service.handleSignal(
+        `Bearer ${NEXT}`,
+        'finance-backend',
+        makeDto(),
+      );
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('returns 503 when both FINANCE_SERVICE_TOKEN and FINANCE_SERVICE_TOKEN_NEXT are unset', async () => {
+      const { service } = buildService(validUser);
+      await expect(
+        service.handleSignal(
+          `Bearer ${PRIMARY}`,
+          'finance-backend',
+          makeDto(),
+        ),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('treats an empty-string _NEXT as unset (cannot bypass with `Bearer `)', async () => {
+      process.env.FINANCE_SERVICE_TOKEN = PRIMARY;
+      process.env.FINANCE_SERVICE_TOKEN_NEXT = '   ';
+      const { service } = buildService(validUser);
+      await expect(
+        service.handleSignal('Bearer ', 'finance-backend', makeDto()),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
   });
 
   // --- metadata passthrough ---

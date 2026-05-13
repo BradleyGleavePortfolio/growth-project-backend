@@ -35,10 +35,16 @@ describe('FederationInboundService bearer compare', () => {
   });
 
   it('uses constantTimeEqual on the Step-2 bearer compare', () => {
-    expect(SRC).toMatch(/!constantTimeEqual\(bearerToken, configuredToken\)/);
+    // Dual-secret rotation (PR for FINANCE_SERVICE_TOKEN_NEXT) splits
+    // the compare into a primary + next branch — pin BOTH go through
+    // constantTimeEqual so neither branch can regress to `===`.
+    expect(SRC).toMatch(/constantTimeEqual\(bearerToken, primary\)/);
+    expect(SRC).toMatch(/constantTimeEqual\(bearerToken, next\)/);
   });
 
   it('does not retain the legacy `bearerToken !== configuredToken` compare', () => {
     expect(SRC).not.toMatch(/bearerToken !== configuredToken/);
+    expect(SRC).not.toMatch(/bearerToken !== primary/);
+    expect(SRC).not.toMatch(/bearerToken !== next/);
   });
 });
