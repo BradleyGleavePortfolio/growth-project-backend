@@ -1,7 +1,7 @@
 # The Growth Project, Backend
 
 
-> Status: pre-TestFlight audit complete; NO-GO for Whop-for-coaches rails; Stripe Connect/client checkout/payouts absent; see /audits/00_MASTER_REPORT.md
+> Status: pre-TestFlight audit complete; Connect Phase 1 (Express account + onboarding links + webhook mirror) landed; client checkout/payouts still absent; see /CONNECT_MASTER_PLAN.md
 
 ## Placeholders / TODO env vars
 
@@ -26,12 +26,57 @@ PRs #198 and #199.
 | `REDIS_URL` | **Production refuses to boot without this.** Pre-Connect cleanup hardened `assertEnv()` AND `buildThrottlerOptions` to throw when `NODE_ENV=production` and `REDIS_URL` is missing — a single-machine in-memory throttler cannot defend a multi-machine Fly deploy. Dev/test still fall back to in-memory. | `rediss://default:PASSWORD@<host>:6379` |
 | `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE` | DSN is required for error reporting; sample rate defaults to `0.1`. Release tag is now set from `GIT_SHA` in `src/instrument.ts` (falls back to `RELEASE_VERSION`). | `https://…@o…ingest.sentry.io/…` |
 | `GIT_SHA` | Sentry release tag for the running image. Wired through `fly.toml` `[build.args]` → Dockerfile `ARG/ENV GIT_SHA` → `src/instrument.ts`. Pass on every deploy: `fly deploy --build-arg GIT_SHA=$(git rev-parse HEAD)`. Without it, falls back to `RELEASE_VERSION` and finally to no release. | `3ec015bd…` (40-char SHA) |
+| `STRIPE_CONNECT_REFRESH_URL` | **Connect Phase 1.** Mobile deep link Stripe redirects the coach to if they bail mid-onboarding. `/v1/connect/accounts/onboarding-link` returns 503 when unset. | `growthproject://connect/onboarding/refresh` |
+| `STRIPE_CONNECT_RETURN_URL` | **Connect Phase 1.** Mobile deep link Stripe redirects the coach to after Express onboarding completes. Same 503 if unset. | `growthproject://connect/onboarding/return` |
 
 For every other env var the backend reads at boot, see `.env.example`
 (top to bottom is grouped by subsystem; the audit added inline comments
 above each new entry). The full feature-flag and tier matrix lives in
 `docs/stripe-setup.md`, which PR #199 updated with the dual-secret
 rotation playbook.
+
+## Stripe Connect setup (one-time, by owner)
+
+Phase 1 of the Connect master plan (see `/CONNECT_MASTER_PLAN.md`) is
+deployable, but **the routes return 503 until the platform itself has
+Connect enabled**. The backend will refuse to register `/v1/connect/*`
+on boot if the platform-enabled probe fails, and the boot log will print
+the exact next step. Full step-by-step also in `docs/connect-setup.md`.
+
+1. Visit https://dashboard.stripe.com/connect/overview.
+2. Click **Get started** and choose **Platform or marketplace**.
+3. Complete the platform profile:
+   - Business name: `The Growth Project, LLC`
+   - Industry: `Health & Fitness`
+   - Description: `Personal training and coaching marketplace`.
+4. Stripe Dashboard → **Connect → Settings → Branding** — upload the TGP
+   logo, set the primary brand color. This is what coaches see inside
+   the Express onboarding webview.
+5. Stripe Dashboard → **Connect → Settings → Express** — toggle
+   **Allow Express accounts** on.
+6. Confirm the Connect API version matches the main Stripe API version
+   pinned in `src/billing/stripe-api.service.ts`
+   (`STRIPE_API_VERSION = '2024-09-30.acacia'`). Stripe Dashboard →
+   **Developers → API version**.
+7. On Fly, set `STRIPE_CONNECT_REFRESH_URL` and `STRIPE_CONNECT_RETURN_URL`:
+   ```
+   fly secrets set \
+     STRIPE_CONNECT_REFRESH_URL=growthproject://connect/onboarding/refresh \
+     STRIPE_CONNECT_RETURN_URL=growthproject://connect/onboarding/return
+   ```
+8. Confirm the existing Stripe webhook endpoint is subscribed to:
+   - `account.updated`
+   - `capability.updated`
+   - `account.application.deauthorized`
+   (already on the existing customer.subscription / invoice events.)
+9. Redeploy. The boot log will print
+   `Stripe Connect platform check passed — routes enabled.` if step 1–5
+   are complete; otherwise the warning line says exactly what is missing.
+
+Connect uses **Stripe Express** (not Standard) — Express does NOT need
+`STRIPE_CONNECT_CLIENT_ID`; OAuth is only for Standard accounts. The
+master plan's earlier mention of that env var is superseded by this
+README.
 
 
 NestJS 10 + Prisma 5 + Supabase API for a coaching platform with per-seat

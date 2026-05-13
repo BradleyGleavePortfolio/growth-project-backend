@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AuditAction, AuditService } from '../audit/audit.service';
+import { ConnectService } from '../connect/connect.service';
 
 // BillingService is the system of record for the Stripe-mirror tables. The
 // webhook controller hands it parsed Stripe event objects; this service
@@ -27,6 +28,10 @@ export class BillingService {
     private prisma: PrismaService,
     private analytics: AnalyticsService,
     private audit: AuditService,
+    // ConnectService is @Optional() so the billing webhook handler still
+    // boots in environments where ConnectModule was not imported (legacy
+    // unit tests). When present, account.* events are forwarded to it.
+    @Optional() private connect?: ConnectService,
   ) {}
 
   // Idempotently process an event. Returns { processed: true } on first
@@ -75,6 +80,16 @@ export class BillingService {
           break;
         case 'customer.updated':
           await this.applyCustomerUpdated(event);
+          break;
+        // Phase 1 Connect — Express account state mirror. Same endpoint
+        // receives both test-mode and live-mode events (livemode flag is
+        // ignored here intentionally — both modes process identically).
+        case 'account.updated':
+        case 'capability.updated':
+          await this.applyConnectAccountUpdated(event);
+          break;
+        case 'account.application.deauthorized':
+          await this.applyConnectAccountDeauthorized(event);
           break;
         default:
           this.logger.log(`Ignoring unhandled Stripe event type: ${event.type}`);
@@ -354,6 +369,84 @@ export class BillingService {
       data: {
         billing_email: cus.email ?? null,
         ...(last4 ? { card_last4: last4 } : {}),
+      },
+    });
+  }
+
+  // Phase 1 Connect — refresh the mirror on every account.updated /
+  // capability.updated event. The Stripe payload is the snapshot at event
+  // time; we re-read via ConnectService.syncFromStripe so we always reflect
+  // the freshest server state and never drift.
+  private async applyConnectAccountUpdated(event: StripeEvent) {
+    const obj = event.data.object as { id?: string; account?: string };
+    const accountId =
+      typeof obj?.id === 'string' && obj.id.startsWith('acct_')
+        ? obj.id
+        : typeof obj?.account === 'string'
+        ? obj.account
+        : null;
+    if (!accountId) {
+      this.logger.warn(
+        `Connect event ${event.id} (${event.type}) missing account id`,
+      );
+      return;
+    }
+    if (!this.connect) {
+      this.logger.warn(
+        `Connect event ${event.id} (${event.type}) received but ConnectService is not wired`,
+      );
+      return;
+    }
+    await this.connect.syncFromStripe(accountId);
+    await this.audit.write({
+      action: AuditAction.BILLING_SUBSCRIPTION_UPDATED,
+      actorId: null,
+      actorRole: 'system',
+      targetUserId: null,
+      targetType: 'connect_account',
+      targetId: accountId,
+      tenantCoachId: null,
+      metadata: {
+        stripe_event_id: event.id,
+        stripe_event_type: event.type,
+        stripe_account_id: accountId,
+      },
+    });
+  }
+
+  private async applyConnectAccountDeauthorized(event: StripeEvent) {
+    const obj = event.data.object as { id?: string; account?: string };
+    const accountId =
+      typeof obj?.id === 'string' && obj.id.startsWith('acct_')
+        ? obj.id
+        : typeof obj?.account === 'string'
+        ? obj.account
+        : null;
+    if (!accountId) {
+      this.logger.warn(
+        `Connect deauthorized event ${event.id} missing account id`,
+      );
+      return;
+    }
+    if (!this.connect) {
+      this.logger.warn(
+        `Connect deauthorized event ${event.id} received but ConnectService is not wired`,
+      );
+      return;
+    }
+    await this.connect.markDeauthorized(accountId);
+    await this.audit.write({
+      action: AuditAction.BILLING_SUBSCRIPTION_CANCELED,
+      actorId: null,
+      actorRole: 'system',
+      targetUserId: null,
+      targetType: 'connect_account',
+      targetId: accountId,
+      tenantCoachId: null,
+      metadata: {
+        stripe_event_id: event.id,
+        stripe_event_type: event.type,
+        stripe_account_id: accountId,
       },
     });
   }
