@@ -29,7 +29,14 @@ function buildSvc(prisma = buildPrisma()) {
   const config = new AiGatewayConfig();
   const redaction = new AiRedactionService();
   const stub = new StubProviderAdapter();
-  const registry = new AiProviderRegistry(stub);
+  // Coach AI v1 adds the AnthropicProviderAdapter slot in the registry.
+  // Tests still want stub-only behavior, so we pass a fake adapter that
+  // resolves to never-called and rely on the gateway's stub routing.
+  const fakeAnthropicAdapter = {
+    name: 'anthropic',
+    complete: jest.fn(),
+  } as any;
+  const registry = new AiProviderRegistry(stub, fakeAnthropicAdapter);
   const svc = new AiGatewayService(prisma, config, redaction, registry);
   return { svc, prisma, registry };
 }
