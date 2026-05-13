@@ -36,10 +36,15 @@ RUN npm run build
 # The script is a graceful no-op when any of the four secrets is unset, so
 # `docker build` works without Sentry credentials in dev / CI.
 ARG RELEASE_VERSION=""
+ARG GIT_SHA=""
 ARG SENTRY_DSN=""
 ARG SENTRY_ORG=""
 ARG SENTRY_PROJECT=""
 ENV RELEASE_VERSION=$RELEASE_VERSION
+# GIT_SHA is read by src/instrument.ts to tag Sentry events with the exact
+# commit the running image was built from. Falls back to RELEASE_VERSION
+# when unset so the existing sourcemap pipeline still works.
+ENV GIT_SHA=$GIT_SHA
 
 RUN --mount=type=secret,id=sentry_auth_token \
     SENTRY_AUTH_TOKEN="$( [ -f /run/secrets/sentry_auth_token ] && cat /run/secrets/sentry_auth_token || echo '' )" \

@@ -17,7 +17,7 @@
 
 | Field | Value |
 |---|---|
-| **Company name** | `<<COMPANY_NAME>>` |
+| **Company name** | `The Growth Project, LLC` |
 | **Effective date** | `<<EFFECTIVE_DATE>>` |
 | **Policy owner** | `<<POLICY_OWNER_NAME>>`, `<<POLICY_OWNER_TITLE>>` |
 | **DPO / Privacy contact** | `<<DPO_EMAIL>>` |
@@ -28,7 +28,7 @@
 
 ## 1. Purpose
 
-An incident is any event that actually or potentially compromises the confidentiality, integrity, or availability of `<<COMPANY_NAME>>`'s systems or user data. This plan defines exactly what to do when one happens — so that in a stressful moment, no one is improvising.
+An incident is any event that actually or potentially compromises the confidentiality, integrity, or availability of `The Growth Project, LLC`'s systems or user data. This plan defines exactly what to do when one happens — so that in a stressful moment, no one is improvising.
 
 **Plain English:** If something goes wrong — a hack, a data leak, a secret committed to GitHub, a server going down — this document tells you the exact steps to follow and who to call.
 

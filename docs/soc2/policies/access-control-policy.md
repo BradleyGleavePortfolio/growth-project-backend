@@ -17,7 +17,7 @@
 
 | Field | Value |
 |---|---|
-| **Company name** | `<<COMPANY_NAME>>` |
+| **Company name** | `The Growth Project, LLC` |
 | **Effective date** | `<<EFFECTIVE_DATE>>` |
 | **Policy owner** | `<<POLICY_OWNER_NAME>>`, `<<POLICY_OWNER_TITLE>>` |
 | **Next review date** | `<<NEXT_REVIEW_DATE>>` |
@@ -27,7 +27,7 @@
 
 ## 1. Purpose
 
-This policy defines how access to `<<COMPANY_NAME>>` systems and data is requested, granted, maintained, and revoked. Strong access control is the single most effective security control we have — it limits the damage any one compromised account or bad actor can do.
+This policy defines how access to `The Growth Project, LLC` systems and data is requested, granted, maintained, and revoked. Strong access control is the single most effective security control we have — it limits the damage any one compromised account or bad actor can do.
 
 **Plain English:** This document answers "who can see what, and how do they get that access or lose it."
 
@@ -41,7 +41,7 @@ Every person and system gets the minimum access needed to do their job — nothi
 
 ## 3. Scope
 
-This policy covers all systems operated by `<<COMPANY_NAME>>`:
+This policy covers all systems operated by `The Growth Project, LLC`:
 
 - **Application** — The Growth Project backend API (NestJS + Supabase Postgres on Fly.io)
 - **Infrastructure** — Fly.io org, Supabase project, Cloudflare

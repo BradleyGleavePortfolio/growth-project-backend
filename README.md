@@ -22,8 +22,9 @@ PRs #198 and #199.
 | `STRIPE_WEBHOOK_SECRET_NEXT` | New: dual-secret rotation. Set the *next* webhook secret here, swap Stripe Dashboard to the new endpoint secret, then promote `STRIPE_WEBHOOK_SECRET_NEXT` to `STRIPE_WEBHOOK_SECRET` and clear this var. Leave unset in normal operation. | `whsec_…` |
 | `STRIPE_PRICE_GROWTH`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_ENTERPRISE`, `STRIPE_PRICE_STAFF_SEAT` | Canonical price IDs for the three coach tiers + the per-staff add-on. The new tier-resolver smoke test refuses to boot if any of these are missing or duplicated. Source of truth lives in Stripe Dashboard. | `price_…` |
 | `STRIPE_BILLING_PORTAL_RETURN_URL`, `STRIPE_CUSTOMER_PORTAL_LOGIN_URL` | Used by the new cancel-subscription / portal flow shipped in PR #199. | `https://app.trygrowthproject.com/account/billing` |
-| `REDIS_URL` | Now **required in production** for rate-limiting. The audit hardened the throttler to refuse a boot with no shared Redis when `NODE_ENV=production`. | `rediss://default:PASSWORD@<host>:6379` |
-| `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE` | DSN is required for error reporting; sample rate defaults to `0.1`. Release tag is now set from the deploy's git SHA in `src/instrument.ts`. | `https://…@o…ingest.sentry.io/…` |
+| `REDIS_URL` | **Production refuses to boot without this.** Pre-Connect cleanup hardened `assertEnv()` AND `buildThrottlerOptions` to throw when `NODE_ENV=production` and `REDIS_URL` is missing — a single-machine in-memory throttler cannot defend a multi-machine Fly deploy. Dev/test still fall back to in-memory. | `rediss://default:PASSWORD@<host>:6379` |
+| `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE` | DSN is required for error reporting; sample rate defaults to `0.1`. Release tag is now set from `GIT_SHA` in `src/instrument.ts` (falls back to `RELEASE_VERSION`). | `https://…@o…ingest.sentry.io/…` |
+| `GIT_SHA` | Sentry release tag for the running image. Wired through `fly.toml` `[build.args]` → Dockerfile `ARG/ENV GIT_SHA` → `src/instrument.ts`. Pass on every deploy: `fly deploy --build-arg GIT_SHA=$(git rev-parse HEAD)`. Without it, falls back to `RELEASE_VERSION` and finally to no release. | `3ec015bd…` (40-char SHA) |
 
 For every other env var the backend reads at boot, see `.env.example`
 (top to bottom is grouped by subsystem; the audit added inline comments

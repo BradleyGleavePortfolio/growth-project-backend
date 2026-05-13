@@ -17,7 +17,7 @@
 
 | Field | Value |
 |---|---|
-| **Company name** | `<<COMPANY_NAME>>` |
+| **Company name** | `The Growth Project, LLC` |
 | **Effective date** | `<<EFFECTIVE_DATE>>` |
 | **Policy owner** | `<<POLICY_OWNER_NAME>>`, `<<POLICY_OWNER_TITLE>>` |
 | **DPO / Privacy contact** | `<<DPO_EMAIL>>` |
@@ -28,7 +28,7 @@
 
 ## 1. Purpose
 
-`<<COMPANY_NAME>>` relies on third-party services to deliver the Growth Project platform. Some of these services process personal data on our behalf — they are called "data processors" or "subprocessors." This policy defines how we select, assess, and monitor those vendors so that a failure at a vendor does not become a failure of our users' trust.
+`The Growth Project, LLC` relies on third-party services to deliver the Growth Project platform. Some of these services process personal data on our behalf — they are called "data processors" or "subprocessors." This policy defines how we select, assess, and monitor those vendors so that a failure at a vendor does not become a failure of our users' trust.
 
 **Plain English:** We use other companies' software to run our product. This document tracks which ones, what data they can see, and whether they have security certifications we can rely on.
 
@@ -38,7 +38,7 @@
 
 This policy covers:
 
-- Any third-party service or tool used by `<<COMPANY_NAME>>` that processes, stores, or has access to user personal data (Confidential or Highly Confidential per our Data Classification Policy).
+- Any third-party service or tool used by `The Growth Project, LLC` that processes, stores, or has access to user personal data (Confidential or Highly Confidential per our Data Classification Policy).
 - Infrastructure providers, SaaS tools, analytics platforms, and communication tools.
 
 It does NOT cover tools used for purely internal purposes where no user personal data flows (e.g. a design tool with no user data imported).
@@ -67,7 +67,7 @@ For vendors that will process Highly Confidential data (health, biometric data),
 
 ## 4. Subprocessor Table
 
-This is the canonical list of vendors that process personal data on behalf of `<<COMPANY_NAME>>`. Update this table whenever a new vendor is added or an existing one is removed.
+This is the canonical list of vendors that process personal data on behalf of `The Growth Project, LLC`. Update this table whenever a new vendor is added or an existing one is removed.
 
 | Vendor | Category | Data processed | Data location | DPA in place | SOC 2 / cert | Purpose |
 |---|---|---|---|---|---|---|
@@ -92,7 +92,7 @@ This is the canonical list of vendors that process personal data on behalf of `<
 2. Get a DPA signed or confirmed where user personal data flows.
 3. Add the vendor to the subprocessor table (Section 4) in this document.
 4. If the new vendor will process Highly Confidential data, get written approval from `<<CEO_NAME>>` before onboarding.
-5. If `<<COMPANY_NAME>>` has a public Privacy Notice that lists subprocessors (some GDPR models require this), update it.
+5. If `The Growth Project, LLC` has a public Privacy Notice that lists subprocessors (some GDPR models require this), update it.
 
 ---
 
@@ -100,7 +100,7 @@ This is the canonical list of vendors that process personal data on behalf of `<
 
 When a vendor is removed:
 
-1. Delete all `<<COMPANY_NAME>>` user data from the vendor (use their data deletion / export tools).
+1. Delete all `The Growth Project, LLC` user data from the vendor (use their data deletion / export tools).
 2. Revoke all API keys and credentials for the vendor.
 3. Remove the vendor from the subprocessor table.
 4. Update the Privacy Notice if it lists subprocessors.

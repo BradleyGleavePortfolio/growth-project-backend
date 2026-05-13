@@ -275,6 +275,11 @@ describe('ThrottlerExceptionFilter -- 429 response shape', () => {
 
     const mockHost = {
       switchToHttp: () => ({
+        getRequest: () => ({
+          method: 'POST',
+          url: '/api/auth/login',
+          ip: '203.0.113.1',
+        }),
         getResponse: () => ({
           status: (code: number) => {
             statusCode = code;
@@ -317,6 +322,11 @@ describe('ThrottlerExceptionFilter -- 429 response shape', () => {
 
     const mockHost = {
       switchToHttp: () => ({
+        getRequest: () => ({
+          method: 'GET',
+          url: '/api/coach/clients',
+          ip: '203.0.113.1',
+        }),
         getResponse: () => ({
           status: () => ({
             set: () => ({

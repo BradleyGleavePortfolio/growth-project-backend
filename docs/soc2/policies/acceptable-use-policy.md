@@ -16,7 +16,7 @@
 
 | Field | Value |
 |---|---|
-| **Company name** | `<<COMPANY_NAME>>` |
+| **Company name** | `The Growth Project, LLC` |
 | **Effective date** | `<<EFFECTIVE_DATE>>` |
 | **Policy owner** | `<<POLICY_OWNER_NAME>>`, `<<POLICY_OWNER_TITLE>>` |
 | **Next review date** | `<<NEXT_REVIEW_DATE>>` |
@@ -26,7 +26,7 @@
 
 ## 1. Purpose
 
-This policy sets the rules for using `<<COMPANY_NAME>>` systems — laptops, accounts, production infrastructure, and any tool we pay for. Following these rules protects our users, protects the business, and keeps us compliant with the security commitments we make to enterprise customers.
+This policy sets the rules for using `The Growth Project, LLC` systems — laptops, accounts, production infrastructure, and any tool we pay for. Following these rules protects our users, protects the business, and keeps us compliant with the security commitments we make to enterprise customers.
 
 **Plain English:** Don't use company tools for anything you wouldn't be comfortable explaining to a customer or a regulator. If you're unsure, ask first.
 
@@ -36,7 +36,7 @@ This policy sets the rules for using `<<COMPANY_NAME>>` systems — laptops, acc
 
 This policy applies to:
 
-- All employees, contractors, advisors, and any other person granted access to `<<COMPANY_NAME>>` systems.
+- All employees, contractors, advisors, and any other person granted access to `The Growth Project, LLC` systems.
 - All company-issued and personal devices used to access company systems.
 - All accounts: GitHub, Fly.io, Supabase, Stripe, Sentry, PostHog, Slack, Google Workspace, and any other tool in the company's stack.
 
@@ -75,7 +75,7 @@ You must not use company systems to:
 
 ### 4.4 Communication
 - Use company systems to send spam, phishing, or any unsolicited commercial communication.
-- Represent yourself as `<<COMPANY_NAME>>` without authorization.
+- Represent yourself as `The Growth Project, LLC` without authorization.
 - Share confidential company information (unreleased features, financial data, customer lists) with unauthorized parties.
 
 ### 4.5 General
@@ -119,7 +119,7 @@ If you suspect an account is compromised, a device is lost or stolen, or you acc
 
 ## 8. Monitoring
 
-`<<COMPANY_NAME>>` logs actions taken on production systems (audit log, Fly.io logs, GitHub audit log). These logs may be reviewed in the event of an incident or audit. You should have no expectation of privacy when using company systems to access production infrastructure.
+`The Growth Project, LLC` logs actions taken on production systems (audit log, Fly.io logs, GitHub audit log). These logs may be reviewed in the event of an incident or audit. You should have no expectation of privacy when using company systems to access production infrastructure.
 
 ---
 

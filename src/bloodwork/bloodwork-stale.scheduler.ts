@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { BloodworkService } from './bloodwork.service';
 
 // Daily sweep that marks bloodwork panels as stale once they cross the
@@ -15,7 +15,13 @@ export class BloodworkStaleScheduler {
 
   constructor(private readonly bloodwork: BloodworkService) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  // 03:15 UTC slot in the nightly cron stagger. The pre-Connect cleanup
+  // moved this off the original EVERY_DAY_AT_3AM shorthand so it doesn't
+  // collide with AccountDeletionService at 03:00, DataExportCleanupCron at
+  // 03:30, and GdprScrubScheduler at 03:45 (alphabetical-by-class-name
+  // 15-minute stagger — see AccountDeletionService.runFinalizeCron for the
+  // policy in full).
+  @Cron('15 3 * * *', { name: 'bloodwork-stale-daily', timeZone: 'UTC' })
   async run() {
     if (process.env.NODE_ENV === 'test') return;
     if (process.env.BLOODWORK_STALE_DISABLED === 'true') return;

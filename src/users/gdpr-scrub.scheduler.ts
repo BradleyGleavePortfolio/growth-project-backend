@@ -8,17 +8,23 @@ import { GdprScrubService } from './gdpr-scrub.service';
 // whose only job is to fire once a day, log the report, and swallow
 // any fatal error so a database hiccup never crashes the Nest process.
 //
-// Scheduled at 03:00 UTC: low-traffic window across the regions we
-// serve, and well clear of the nightly Stripe webhook reconciliation
-// (~02:00 UTC) so the two write-heavy jobs don't compete for the
-// connection pool.
+// Scheduled at 03:45 UTC: low-traffic window across the regions we
+// serve, well clear of the nightly Stripe webhook reconciliation
+// (~02:00 UTC), and the 03:45 slot in the nightly cron stagger so the
+// connection pool isn't hit by four write-heavy 03:00 sweeps at once.
+//
+// Stagger policy (alphabetical by class name, 15-minute windows):
+//   AccountDeletionService    -> 03:00
+//   BloodworkStaleScheduler   -> 03:15
+//   DataExportCleanupCron     -> 03:30
+//   GdprScrubScheduler        -> 03:45 (this)
 //
 // Idempotency: GdprScrubService.run() selects only rows whose
 // deletion_scheduled_at is past the 30-day cutoff AND whose deleted_at
 // is still null — once a user is scrubbed, deleted_at is set and the
 // row drops out of the candidate set. Re-running on the same tick (or
 // catching up after a missed tick) is therefore safe.
-export const GDPR_SCRUB_CRON_EXPRESSION = '0 3 * * *';
+export const GDPR_SCRUB_CRON_EXPRESSION = '45 3 * * *';
 
 @Injectable()
 export class GdprScrubScheduler {

@@ -17,7 +17,7 @@
 
 | Field | Value |
 |---|---|
-| **Company name** | `<<COMPANY_NAME>>` |
+| **Company name** | `The Growth Project, LLC` |
 | **Effective date** | `<<EFFECTIVE_DATE>>` |
 | **Policy owner** | `<<POLICY_OWNER_NAME>>`, `<<POLICY_OWNER_TITLE>>` |
 | **Next review date** | `<<NEXT_REVIEW_DATE>>` |
@@ -27,7 +27,7 @@
 
 ## 1. Purpose
 
-This plan ensures `<<COMPANY_NAME>>` can continue to serve coaches and athletes if a significant technical failure or external event disrupts the service. It defines our recovery targets, our backup strategy, and the step-by-step actions to take when things go wrong.
+This plan ensures `The Growth Project, LLC` can continue to serve coaches and athletes if a significant technical failure or external event disrupts the service. It defines our recovery targets, our backup strategy, and the step-by-step actions to take when things go wrong.
 
 **Plain English:** This document answers "what happens if the app goes down, the database gets corrupted, or Fly.io has a region outage — and how fast can we recover?"
 
@@ -102,7 +102,7 @@ pg_dump "$DATABASE_URL" --no-password -F c -f "backup_$(date +%Y%m%d).dump"
 # Upload to <<BACKUP_STORAGE_LOCATION>> with versioning enabled
 ```
 
-Manual backup location: `<<BACKUP_STORAGE_LOCATION>>` (e.g. S3 bucket `<<COMPANY_NAME>>-db-backups` with versioning enabled and lifecycle policy to expire after 90 days).
+Manual backup location: `<<BACKUP_STORAGE_LOCATION>>` (e.g. S3 bucket `The Growth Project, LLC-db-backups` with versioning enabled and lifecycle policy to expire after 90 days).
 
 ### Backup test cadence
 

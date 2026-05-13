@@ -63,6 +63,9 @@ export class MetricsService implements OnModuleInit {
   private httpRequestDurationMs!: HistogramVec;
   private dbQueryTotal!: CounterVec;
   private redisOpTotal!: CounterVec;
+  // Custom counters registered lazily on first increment(name, ...) call so
+  // callers don't need to pre-register at module init.
+  private readonly customCounters = new Map<string, CounterVec>();
 
   onModuleInit(): void {
     this.httpRequestsTotal = this.addCounter({
@@ -166,6 +169,33 @@ export class MetricsService implements OnModuleInit {
   /** Called by redis-aware code (throttler storage, etc.) on every op. */
   recordRedisOp(command: string): void {
     this.incCounter(this.redisOpTotal, { command });
+  }
+
+  /**
+   * Increment a custom counter by name. The counter is auto-registered on
+   * first call with the label keys present in `labels`. Subsequent calls
+   * with the same counter name must use the same label keys (extra/missing
+   * keys are silently coerced to empty strings to preserve cardinality).
+   *
+   * Counter names should follow Prometheus naming conventions: snake_case,
+   * a descriptive unit suffix where applicable. Example: `throttler_rejected_total`.
+   */
+  increment(name: string, labels: Record<string, string> = {}): void {
+    if (!this.enabled) return;
+    let vec = this.customCounters.get(name);
+    if (!vec) {
+      vec = this.addCounter({
+        name,
+        help: `Custom counter ${name}.`,
+        labels: Object.keys(labels).sort(),
+      });
+      this.customCounters.set(name, vec);
+    }
+    const normalised: Record<string, string> = {};
+    for (const key of vec.labels) {
+      normalised[key] = labels[key] ?? '';
+    }
+    this.incCounter(vec, normalised);
   }
 
   /**

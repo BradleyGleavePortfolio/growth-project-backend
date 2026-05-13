@@ -7,6 +7,14 @@ app = 'backend-spring-lake-3890'
 primary_region = 'sjc'
 
 [build]
+  # GIT_SHA is consumed by the Dockerfile ARG/ENV and read at runtime by
+  # src/instrument.ts so every Sentry event is tagged with the exact
+  # commit the running image was built from. Pass it on every deploy:
+  #   fly deploy --build-arg GIT_SHA=$(git rev-parse HEAD)
+  # When unset, instrument.ts falls back to RELEASE_VERSION (the
+  # sourcemap-upload pipeline) and finally to "no release".
+  [build.args]
+    GIT_SHA = ""
 
 [deploy]
   # Smart release: detects whether the DB is migration-managed yet.
