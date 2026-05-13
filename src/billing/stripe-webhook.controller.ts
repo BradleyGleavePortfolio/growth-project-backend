@@ -14,6 +14,7 @@ import { Public } from '../common/decorators/public.decorator';
 import { BillingService } from './billing.service';
 import {
   StripeSignatureError,
+  resolveStripeWebhookSecrets,
   verifyStripeSignature,
 } from './stripe-signature';
 
@@ -50,8 +51,12 @@ export class StripeWebhookController {
     @Req() req: Request,
     @Headers('stripe-signature') signature: string,
   ) {
-    const secret = process.env.STRIPE_WEBHOOK_SECRET;
-    if (!secret) {
+    // Dual-secret support: STRIPE_WEBHOOK_SECRET is the steady-state secret;
+    // STRIPE_WEBHOOK_SECRET_NEXT is the incoming secret during a zero-
+    // downtime rotation. A signature is accepted if it verifies under any
+    // configured secret. See docs/stripe-setup.md for the rotation runbook.
+    const secrets = resolveStripeWebhookSecrets();
+    if (secrets.length === 0) {
       // Mirror Stripe's error shape: 400 means "do not retry". A misconfigured
       // server should not loop the dead-letter queue.
       throw new BadRequestException('Stripe webhook secret not configured');
@@ -71,7 +76,7 @@ export class StripeWebhookController {
       verifyStripeSignature({
         payload: raw,
         signatureHeader: signature ?? '',
-        secret,
+        secrets,
       });
     } catch (err) {
       if (err instanceof StripeSignatureError) {

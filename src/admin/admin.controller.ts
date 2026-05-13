@@ -123,6 +123,30 @@ export class AdminController {
     });
   }
 
+  // OWNER-only Stripe webhook delivery log. Returns the rows the webhook
+  // controller wrote into the idempotency table (StripeProcessedEvent) so
+  // operators can verify deliveries landed end-to-end without bouncing
+  // through the Stripe dashboard. Supports `type` filter and `before`
+  // keyset cursor for paging.
+  //
+  // Audit reference: /audits/00_MASTER_REPORT.md line 202 (Admin/payment P0).
+  @Get('stripe/events')
+  async listStripeEvents(
+    @Query('type') type?: string,
+    @Query('before') before?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const beforeDate = before ? new Date(before) : undefined;
+    return this.admin.listStripeProcessedEvents({
+      type: type?.trim() || undefined,
+      before:
+        beforeDate && !Number.isNaN(beforeDate.getTime())
+          ? beforeDate
+          : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
   // OWNER-only cross-product (fitness + finance) federation surface.
   // FederationService composes a fitness Postgres read with an outbound
   // call to the finance backend's admin federation endpoints; both blocks

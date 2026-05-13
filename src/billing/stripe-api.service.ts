@@ -164,6 +164,82 @@ export class StripeApiService {
     return this.post<{ id: string }>('/subscription_items', form, args.idempotencyKey);
   }
 
+  // Cancel a Stripe subscription. Two modes:
+  //   - immediately = false (default): set `cancel_at_period_end=true`.
+  //     Stripe keeps the subscription active through the current period
+  //     and emits `customer.subscription.updated`; the webhook flips
+  //     CoachSubscription.cancel_at_period_end. At period end Stripe
+  //     emits `customer.subscription.deleted` which the webhook maps to
+  //     status=canceled.
+  //   - immediately = true: POST DELETE /subscriptions/{id}. Stripe cancels
+  //     in-place and emits `customer.subscription.deleted`. Use only for
+  //     owner-initiated emergency cancellation (chargeback, fraud) — coach
+  //     self-serve always goes through cancel-at-period-end.
+  async cancelSubscription(args: {
+    subscriptionId: string;
+    immediately?: boolean;
+    idempotencyKey: string;
+  }): Promise<StripeSubscription> {
+    const secret = process.env.STRIPE_SECRET_KEY;
+    if (!secret) {
+      throw new StripeApiError(
+        'Stripe is not configured (STRIPE_SECRET_KEY unset)',
+        500,
+        'configuration_missing',
+        'configuration_error',
+      );
+    }
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${secret}`,
+      'Stripe-Version': STRIPE_API_VERSION,
+      'Idempotency-Key': args.idempotencyKey,
+    };
+    if (args.immediately) {
+      const res = await this.fetchImpl(
+        `${STRIPE_API_BASE}/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
+        { method: 'DELETE', headers },
+      );
+      return this.parseSubscriptionResponse(res, args.subscriptionId);
+    }
+    // cancel-at-period-end: POST /subscriptions/{id} with the flag flipped.
+    headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    const res = await this.fetchImpl(
+      `${STRIPE_API_BASE}/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
+      {
+        method: 'POST',
+        headers,
+        body: new URLSearchParams({ cancel_at_period_end: 'true' }).toString(),
+      },
+    );
+    return this.parseSubscriptionResponse(res, args.subscriptionId);
+  }
+
+  private async parseSubscriptionResponse(
+    res: Response,
+    subId: string,
+  ): Promise<StripeSubscription> {
+    const text = await res.text();
+    let parsed: unknown = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      parsed = null;
+    }
+    if (!res.ok) {
+      const errEnvelope =
+        parsed && typeof parsed === 'object' && 'error' in (parsed as object)
+          ? (parsed as { error: Record<string, unknown> }).error
+          : null;
+      const message =
+        (errEnvelope?.message as string | undefined) ??
+        `Stripe API ${res.status} on /subscriptions/${subId}`;
+      const code = (errEnvelope?.code as string | undefined) ?? null;
+      const type = (errEnvelope?.type as string | undefined) ?? null;
+      throw new StripeApiError(message, res.status, code, type);
+    }
+    return parsed as StripeSubscription;
+  }
+
   async deleteSubscriptionItem(args: {
     subscriptionItemId: string;
     idempotencyKey: string;

@@ -62,4 +62,45 @@ export class TeamModeTierResolverService {
     if (priceId === process.env.STRIPE_PRICE_ENTERPRISE) return 'enterprise';
     return 'unknown';
   }
+
+  // Pre-flight check: returns which tier price-id env vars are configured
+  // and which are missing/empty/duplicates. Called by the boot-time resolver
+  // smoke test and the OWNER /admin/stripe/events endpoint so operators
+  // can confirm production secrets are wired before flipping enforcement.
+  //
+  // The check intentionally does NOT call Stripe — it only inspects env.
+  // A misconfigured Stripe dashboard (price exists but env points to the
+  // wrong id) is caught downstream when `priceIdToTier` returns "unknown".
+  configuredTiers(): {
+    growth: string | null;
+    pro: string | null;
+    enterprise: string | null;
+    missing: CoachTier[];
+    duplicates: CoachTier[][];
+  } {
+    const raw = {
+      growth: (process.env.STRIPE_PRICE_GROWTH ?? '').trim() || null,
+      pro: (process.env.STRIPE_PRICE_PRO ?? '').trim() || null,
+      enterprise: (process.env.STRIPE_PRICE_ENTERPRISE ?? '').trim() || null,
+    };
+    const missing: CoachTier[] = [];
+    if (!raw.growth) missing.push('growth');
+    if (!raw.pro) missing.push('pro');
+    if (!raw.enterprise) missing.push('enterprise');
+
+    // Detect operator copy-paste mistake: same price id wired into two
+    // tiers. Without this check, priceIdToTier returns the first match
+    // (growth) and the second tier is invisibly demoted.
+    const byId = new Map<string, CoachTier[]>();
+    for (const [tier, id] of Object.entries(raw) as [CoachTier, string | null][]) {
+      if (!id) continue;
+      (byId.get(id) ?? byId.set(id, []).get(id))!.push(tier);
+    }
+    const duplicates: CoachTier[][] = [];
+    for (const tiers of byId.values()) {
+      if (tiers.length > 1) duplicates.push(tiers);
+    }
+
+    return { ...raw, missing, duplicates };
+  }
 }

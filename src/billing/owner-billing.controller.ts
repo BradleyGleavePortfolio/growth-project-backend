@@ -4,6 +4,7 @@ import {
   Controller,
   HttpException,
   Logger,
+  NotFoundException,
   Param,
   Post,
   Request,
@@ -233,6 +234,113 @@ export class OwnerBillingController {
         throw new HttpException(
           {
             error: 'STRIPE_START_FAILED',
+            message: err.message,
+            stripeCode: err.stripeCode,
+          },
+          err.httpStatus >= 400 && err.httpStatus < 600 ? err.httpStatus : 502,
+        );
+      }
+      throw err;
+    }
+  }
+
+  // POST /v1/admin/coaches/:id/cancel-subscription
+  //
+  // Cancels a coach's Stripe subscription. Two modes via the body:
+  //   - { immediately: false } (default): set `cancel_at_period_end=true`.
+  //     Coach keeps access through the current period; status converges
+  //     to canceled on the period boundary via the webhook.
+  //   - { immediately: true }: hard cancel today. Reserved for OWNER use
+  //     in chargeback / fraud scenarios. Coach loses access immediately;
+  //     the webhook fires `customer.subscription.deleted` and the mirror
+  //     row's status flips to `canceled` synchronously below (the webhook
+  //     idempotently re-applies the same state on arrival).
+  //
+  // The Stripe Customer Portal does NOT expose cancellation today (see
+  // docs/stripe-setup.md §2.3 — cancellation is disabled in portal config
+  // so it routes through OWNER tooling for CoachProfile reconciliation).
+  // This endpoint is the canonical cancel surface.
+  @Post('coaches/:id/cancel-subscription')
+  async cancelSubscription(
+    @Request() req: AuthedRequest,
+    @Param('id') coachId: string,
+    @Body() body: { immediately?: boolean } = {},
+  ) {
+    if (!this.stripeApi.isConfigured()) {
+      throw new BadRequestException({
+        error: 'STRIPE_NOT_CONFIGURED',
+        message:
+          'Stripe is not configured for this environment. Set STRIPE_SECRET_KEY to enable cancellation.',
+      });
+    }
+    const sub = await this.prisma.coachSubscription.findUnique({
+      where: { coach_id: coachId },
+    });
+    if (!sub?.stripe_subscription_id) {
+      throw new NotFoundException({
+        error: 'SUBSCRIPTION_NOT_FOUND',
+        message:
+          'Coach has no Stripe subscription on file. Nothing to cancel.',
+      });
+    }
+    if (sub.status === 'canceled') {
+      // Idempotent — return the existing terminal state rather than
+      // pinging Stripe (which would 400 on a re-cancellation).
+      return {
+        coachId,
+        stripe_subscription_id: sub.stripe_subscription_id,
+        status: 'canceled',
+        cancel_at_period_end: sub.cancel_at_period_end,
+        already_canceled: true,
+      };
+    }
+    const immediately = body.immediately === true;
+    // Idempotency key is per-mode so a follow-up immediate cancel after a
+    // soft cancel is not a duplicate.
+    const idempotencyKey = `coach_cancel_${coachId}_${immediately ? 'now' : 'eop'}`;
+
+    try {
+      const updated = await this.stripeApi.cancelSubscription({
+        subscriptionId: sub.stripe_subscription_id,
+        immediately,
+        idempotencyKey,
+      });
+      const status = updated.status ?? (immediately ? 'canceled' : sub.status);
+      const cancelAtPeriodEnd =
+        typeof updated.cancel_at_period_end === 'boolean'
+          ? updated.cancel_at_period_end
+          : !immediately;
+
+      // Mirror immediately so the console reflects the cancel before the
+      // webhook arrives. The webhook handler upserts on the same key so
+      // both paths converge.
+      await this.prisma.coachSubscription.update({
+        where: { coach_id: coachId },
+        data: {
+          status,
+          cancel_at_period_end: cancelAtPeriodEnd,
+        },
+      });
+
+      this.logger.log(
+        `cancel-subscription owner=${req.user.id} coach=${coachId} mode=${immediately ? 'immediate' : 'period_end'} status=${status}`,
+      );
+
+      return {
+        coachId,
+        stripe_subscription_id: sub.stripe_subscription_id,
+        status,
+        cancel_at_period_end: cancelAtPeriodEnd,
+        immediately,
+      };
+    } catch (err) {
+      if (err instanceof StripeApiError) {
+        this.logger.warn(
+          `cancel-subscription Stripe error coach=${coachId} code=${err.stripeCode} status=${err.httpStatus}`,
+        );
+        throw new HttpException(
+          {
+            error: 'STRIPE_CANCEL_FAILED',
             message: err.message,
             stripeCode: err.stripeCode,
           },

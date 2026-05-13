@@ -1,4 +1,5 @@
 import {
+  resolveStripeWebhookSecrets,
   signStripePayload,
   StripeSignatureError,
   verifyStripeSignature,
@@ -48,6 +49,89 @@ describe('verifyStripeSignature', () => {
     expect(() =>
       verifyStripeSignature({ payload, signatureHeader: 'not-a-header', secret }),
     ).toThrow(StripeSignatureError);
+  });
+
+  // Dual-secret rotation support (audit ref: /audits/00_MASTER_REPORT.md line 195).
+  it('accepts a signature that matches the OLD secret during rotation', () => {
+    const oldSecret = 'whsec_old_111';
+    const newSecret = 'whsec_new_222';
+    const header = signStripePayload({ payload, secret: oldSecret });
+    expect(() =>
+      verifyStripeSignature({
+        payload,
+        signatureHeader: header,
+        secrets: [oldSecret, newSecret],
+      }),
+    ).not.toThrow();
+  });
+
+  it('accepts a signature that matches the NEW secret during rotation', () => {
+    const oldSecret = 'whsec_old_111';
+    const newSecret = 'whsec_new_222';
+    const header = signStripePayload({ payload, secret: newSecret });
+    expect(() =>
+      verifyStripeSignature({
+        payload,
+        signatureHeader: header,
+        secrets: [oldSecret, newSecret],
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects when no configured secret matches', () => {
+    const header = signStripePayload({ payload, secret: 'whsec_unrelated' });
+    expect(() =>
+      verifyStripeSignature({
+        payload,
+        signatureHeader: header,
+        secrets: ['whsec_a', 'whsec_b'],
+      }),
+    ).toThrow(StripeSignatureError);
+  });
+
+  it('rejects an empty secret list as not configured', () => {
+    expect(() =>
+      verifyStripeSignature({
+        payload,
+        signatureHeader: 'whatever',
+        secrets: ['', '   '],
+      }),
+    ).toThrow(/secret not configured/i);
+  });
+});
+
+describe('resolveStripeWebhookSecrets', () => {
+  it('returns a single secret when only STRIPE_WEBHOOK_SECRET is set', () => {
+    expect(
+      resolveStripeWebhookSecrets({ STRIPE_WEBHOOK_SECRET: 'whsec_a' } as any),
+    ).toEqual(['whsec_a']);
+  });
+
+  it('returns both secrets, in order, during a rotation', () => {
+    expect(
+      resolveStripeWebhookSecrets({
+        STRIPE_WEBHOOK_SECRET: 'whsec_a',
+        STRIPE_WEBHOOK_SECRET_NEXT: 'whsec_b',
+      } as any),
+    ).toEqual(['whsec_a', 'whsec_b']);
+  });
+
+  it('drops empty / whitespace-only env values', () => {
+    expect(
+      resolveStripeWebhookSecrets({
+        STRIPE_WEBHOOK_SECRET: '',
+        STRIPE_WEBHOOK_SECRET_NEXT: '   ',
+      } as any),
+    ).toEqual([]);
+  });
+
+  it('de-duplicates when both env vars hold the same secret', () => {
+    expect(
+      resolveStripeWebhookSecrets({
+        STRIPE_WEBHOOK_SECRET: 'whsec_a',
+        STRIPE_WEBHOOK_SECRET_NEXT: 'whsec_a',
+      } as any),
+    ).toEqual(['whsec_a']);
   });
 });
 

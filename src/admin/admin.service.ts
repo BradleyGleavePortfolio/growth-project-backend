@@ -160,6 +160,36 @@ export class AdminService {
     };
   }
 
+  // OWNER-only view over the Stripe webhook idempotency table. Lets
+  // operators verify that recent deliveries landed (by id + type) without
+  // jumping to the Stripe dashboard, and supports a `type` filter for
+  // narrowing during incident response (e.g. payment_failed-only).
+  // Pagination uses the indexed `processed_at` column for keyset cursor.
+  async listStripeProcessedEvents(params: {
+    type?: string;
+    before?: Date;
+    limit?: number;
+  }) {
+    const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
+    const where: Prisma.StripeProcessedEventWhereInput = {};
+    if (params.type) where.type = params.type;
+    if (params.before) where.processed_at = { lt: params.before };
+    const rows = await this.prisma.stripeProcessedEvent.findMany({
+      where,
+      orderBy: { processed_at: 'desc' },
+      take: limit,
+    });
+    return {
+      events: rows.map((r) => ({
+        stripe_event_id: r.stripe_event_id,
+        type: r.type,
+        processed_at: r.processed_at,
+      })),
+      next_before:
+        rows.length === limit ? rows[rows.length - 1].processed_at : null,
+    };
+  }
+
   async listCoaches() {
     const coaches = await this.prisma.user.findMany({
       where: { role: 'coach' },
