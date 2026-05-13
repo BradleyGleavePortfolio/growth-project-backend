@@ -60,4 +60,9 @@ jobs:
           STRIPE_WEBHOOK_SECRET: whsec_ci
           STRIPE_PRICE_ID_FITNESS: price_ci
           SENTRY_DSN: https://ci@sentry.io/1
+          # Pre-Connect cleanup made REDIS_URL production-required: a
+          # multi-machine Fly deploy with no shared throttler can't defend
+          # against credential stuffing. assertEnv refuses prod boot
+          # without it, so the simulated-prod gate must supply a value.
+          REDIS_URL: redis://ci.example.com:6379
         run: node -e "require('./dist/common/env-validation').assertEnv()"
