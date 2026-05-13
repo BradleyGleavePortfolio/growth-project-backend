@@ -241,6 +241,12 @@ export const ENV_RULES: EnvRule[] = [
       'Service-to-service bearer token sent on every admin federation call as Authorization: Bearer <token>. Required whenever FINANCE_API_BASE_URL is set; without it, federation degrades to finance.status="auth_unconfigured".',
   },
   {
+    name: 'FINANCE_SERVICE_TOKEN_NEXT',
+    tier: 'optional',
+    reason:
+      'Incoming federation bearer token during a zero-downtime rotation. When set alongside FINANCE_SERVICE_TOKEN, an inbound request to /admin/federation/ptm-signal is accepted if the bearer matches EITHER. Leave unset in steady state. See .env.example for the rotation playbook (mirrors STRIPE_WEBHOOK_SECRET_NEXT).',
+  },
+  {
     name: 'FINANCE_FEDERATION_TIMEOUT_MS',
     tier: 'optional',
     reason:

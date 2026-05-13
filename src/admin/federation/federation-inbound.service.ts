@@ -27,6 +27,26 @@ function constantTimeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
+// Resolves the configured federation inbound bearer tokens. Mirrors the
+// Stripe webhook secret rotation pattern (see `resolveStripeWebhookSecrets`
+// in src/billing/stripe-signature.ts): during a rotation window both the
+// current `FINANCE_SERVICE_TOKEN` and the incoming
+// `FINANCE_SERVICE_TOKEN_NEXT` are accepted. Empty strings are dropped so
+// a half-set env (e.g. one var trimmed to "") cannot bypass auth.
+// Returns an ordered, de-duplicated list. The first entry is the primary
+// token; subsequent entries (currently only `_NEXT`) trigger a structured
+// log line on a match so operators can confirm rotation is mid-flight.
+function resolveFederationTokens(
+  env: NodeJS.ProcessEnv = process.env,
+): { primary: string | null; next: string | null } {
+  const primary = env.FINANCE_SERVICE_TOKEN?.trim();
+  const next = env.FINANCE_SERVICE_TOKEN_NEXT?.trim();
+  return {
+    primary: primary && primary.length > 0 ? primary : null,
+    next: next && next.length > 0 ? next : null,
+  };
+}
+
 /**
  * FederationInboundService — validates service-token auth and dispatches
  * inbound finance signals to PtmService.
@@ -62,20 +82,36 @@ export class FederationInboundService {
     dto: InboundSignalDto,
   ): Promise<{ ok: true }> {
     // --- Step 1: config gate ---
-    const configuredToken = process.env.FINANCE_SERVICE_TOKEN?.trim();
-    if (!configuredToken) {
+    // Either the primary or the rotation (`_NEXT`) token alone is enough to
+    // keep the endpoint live; both unset is the only "disabled" state.
+    const { primary, next } = resolveFederationTokens();
+    if (!primary && !next) {
       this.logger.warn(
-        'Federation inbound: FINANCE_SERVICE_TOKEN is unset — rejecting with 503',
+        'Federation inbound: FINANCE_SERVICE_TOKEN (and _NEXT) are unset — rejecting with 503',
       );
       throw new ServiceUnavailableException('FEDERATION_DISABLED');
     }
 
     // --- Step 2: bearer token (constant-time compare, audit fix Coach #6) ---
+    // During a rotation window both `FINANCE_SERVICE_TOKEN` and
+    // `FINANCE_SERVICE_TOKEN_NEXT` are valid. Mirrors the Stripe webhook
+    // secret rotation pattern from PR #199. We log a structured line on a
+    // `_NEXT` match so operators can confirm the new token is in use before
+    // promoting it to primary. The token itself is never logged.
     const bearerToken = authHeader?.startsWith('Bearer ')
       ? authHeader.slice(7).trim()
       : undefined;
-    if (!bearerToken || !constantTimeEqual(bearerToken, configuredToken)) {
+    if (!bearerToken) {
       throw new UnauthorizedException('FEDERATION_UNAUTHENTICATED');
+    }
+    const matchedPrimary = !!primary && constantTimeEqual(bearerToken, primary);
+    const matchedNext =
+      !matchedPrimary && !!next && constantTimeEqual(bearerToken, next);
+    if (!matchedPrimary && !matchedNext) {
+      throw new UnauthorizedException('FEDERATION_UNAUTHENTICATED');
+    }
+    if (matchedNext) {
+      this.logger.log({ event: 'federation.auth.next-secret-used' });
     }
 
     // --- Step 3: source header ---
