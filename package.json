@@ -39,7 +39,7 @@
     "helmet": "^8.1.0",
     "ioredis": "^5.10.1",
     "jose": "^6.2.3",
-    "openai": "^4.0.0",
+    "openai": "^6.37.0",
     "pdfkit": "^0.15.2",
     "posthog-node": "^5.33.4",
     "reflect-metadata": "^0.2.0",
