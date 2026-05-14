@@ -185,9 +185,14 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Perplexity API key. AI chat falls back to a deterministic responder when unset.',
   },
   {
+    // Promoted to hard-required as part of the food logger Trainerize-grade floor:
+    // food search silently returning [] for the USDA branch is undetectable in
+    // production (operators see no error), so the boot must fail loudly instead.
+    // Free key at https://api.data.gov/signup (takes ~1 minute).
     name: 'USDA_API_KEY',
-    tier: 'optional',
-    reason: 'USDA FoodData Central API key. Food search returns errors at call time when unset.',
+    tier: 'hard',
+    reason:
+      'USDA FoodData Central API key (free at https://api.data.gov/signup). Food search depends on it; required at boot so a missing key crashes the process instead of silently returning [].',
   },
   {
     name: 'COACH_CODE_GATE_ENABLED',

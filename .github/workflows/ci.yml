@@ -65,4 +65,9 @@ jobs:
           # against credential stuffing. assertEnv refuses prod boot
           # without it, so the simulated-prod gate must supply a value.
           REDIS_URL: redis://ci.example.com:6379
+          # Food logger P0 (PR #203) promoted USDA_API_KEY to required:
+          # the search path silently returned [] without it, hiding the
+          # USDA half of the catalogue from coaches in production. The
+          # simulated-prod gate must therefore supply a value.
+          USDA_API_KEY: ci-usda-key
         run: node -e "require('./dist/common/env-validation').assertEnv()"

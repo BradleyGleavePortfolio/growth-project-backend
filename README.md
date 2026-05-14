@@ -109,6 +109,11 @@ links into [`docs/README.md`](docs/README.md) and the module READMEs.
 - **Perplexity** (OpenAI-compatible endpoint) for the in-app AI coach.
   Falls back to a deterministic responder when the API key is unset.
 - **USDA FoodData Central** + **OpenFoodFacts** for food lookup.
+  `USDA_API_KEY` is **required at boot** (free at
+  https://api.data.gov/signup, takes ~1 minute). See
+  [Food logger](#food-logger--trainerize-grade-floor) below for the
+  canonical nutrient-basis contract, density table location, and seed
+  refresh playbook.
 - **Fly.io** for deploys; `Dockerfile` + `release_command` apply
   migrations before traffic flips.
 
@@ -127,6 +132,82 @@ The API listens on `http://localhost:3000`. All routes are mounted
 under `/api/*` except the unprefixed paths listed in
 [Public, unprefixed routes](#public-unprefixed-routes) below, which
 are excluded from the global prefix in `src/main.ts`.
+
+## Food logger — Trainerize-grade floor
+
+The food logger reads from three sources (USDA FDC, OpenFoodFacts, local
+`FoodItem` table) and persists logs to `LoggedFoodEntry`. The
+"Trainerize-grade floor" PR
+(`fix/food-logger-trainerize-floor`) landed five contracts the mobile
+client now relies on:
+
+### Canonical nutrient basis: PER_100G
+
+Every `FoodItem` row carries a `nutrient_basis` enum
+(`PER_100G | PER_SERVING`). Both upstream APIs return per-100g data, so
+new rows default to `PER_100G` — the `calories / protein_g / carbs_g /
+fat_g` columns are the per-100g values verbatim, and `serving_size_grams`
+is stored alongside as a *hint* for the picker's "1 serving" chip.
+Mobile multiplies by `(grams_consumed / 100)` at log time.
+
+`PER_SERVING` is reserved for legacy / hand-curated rows where per-100g
+data isn't available. The mobile client branches on this enum and never
+guesses.
+
+### Volume → grams (cup / tbsp / tsp)
+
+`src/food/food-density.ts` carries a category-level density table
+(g/ml) keyed on USDA `foodCategory` labels plus the local `FoodCategory`
+enum values. `getGramsForVolume(category, unit, qty)` returns either a
+gram value or `null` when the category is unknown — callers MUST fail
+soft (mobile disables the cup/tbsp/tsp chips via the
+`supports_volume_units: boolean` field on `FoodResult`).
+
+Per-food density is the right long-term answer (Cronometer's approach);
+this table is the floor that stops "1 cup oats" being treated as "1
+serving (379 kcal/100g)".
+
+### Natural-language quantity parser
+
+`src/food/food-query-parser.ts` extracts a leading `<qty> <unit>` from
+the search query (`"6oz chicken breast"`, `"1/2 cup oats"`) and hands
+the remaining noun phrase to the upstream search. The parsed
+`{ quantity, unit }` is echoed in the `/foods/search` response as
+top-level `parsed_quantity` and `parsed_unit` so mobile can pre-fill
+the picker.
+
+### Persisted original quantity + unit
+
+`LoggedFoodEntry.original_quantity` and `original_unit` preserve what
+the user actually typed. Coach views render "6 oz chicken" instead of
+"1.7008x chicken". The canonical math value remains
+`quantity_multiplier`.
+
+### Redis cache for searches
+
+`FoodService` caches the merged + scored search result list in Redis
+(when `REDIS_URL` is set) or an in-process map otherwise. Key:
+`food:search:v1:<normalized food name>`, TTL 24h. Cache hits skip both
+USDA + OFF.
+
+### Seeded common foods
+
+`prisma/data/seed-foods.json` is a curated static fixture of common
+foods (per-100g, hand-verified against USDA FDC). Run:
+
+```bash
+npm run seed:foods             # idempotent insert
+npm run seed:foods -- --refresh   # update existing rows with the seed values
+```
+
+Refreshing the fixture is intentionally manual: live USDA pulls drift
+over time and we want auditable diffs. To add a food, edit the JSON,
+run with `--refresh` against staging, and PR the change.
+
+### Required env
+
+`USDA_API_KEY` is **boot-required** (was previously `optional` and
+silently degraded). Get a free key at https://api.data.gov/signup.
 
 ## Environment variables
 

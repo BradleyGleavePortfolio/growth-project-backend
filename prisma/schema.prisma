@@ -71,6 +71,20 @@ enum FoodCategory {
   recipe_ingredient
 }
 
+// Canonical basis for the macro columns on FoodItem.
+//   PER_100G    — calories/protein/carbs/fat are expressed per 100g of the food.
+//                 This is the basis USDA FDC and OpenFoodFacts return; the
+//                 backend stores them verbatim. Mobile multiplies by
+//                 (grams_consumed / 100) at log time.
+//   PER_SERVING — macros are expressed per one `serving_size_grams` unit.
+//                 Reserved for legacy / hand-curated entries where per-100g
+//                 data is unavailable. New rows default to PER_100G.
+// See README "Food logger — canonical nutrient basis" for the contract.
+enum NutrientBasis {
+  PER_100G
+  PER_SERVING
+}
+
 enum MealType {
   breakfast
   lunch
@@ -562,6 +576,11 @@ model FoodItem {
   search_aliases      String[]
   image_url           String?
   barcode             String?           @unique
+  // Canonical basis for the macro columns above. Defaults to PER_100G because
+  // both upstreams (USDA FDC, OpenFoodFacts) return per-100g values; existing
+  // rows are also per-100g (the buggy mobile code assumed as much). See the
+  // NutrientBasis enum doc and README "Food logger — canonical nutrient basis".
+  nutrient_basis      NutrientBasis     @default(PER_100G)
   created_at          DateTime          @default(now())
   log_entries         LoggedFoodEntry[]
 }
@@ -575,6 +594,11 @@ model LoggedFoodEntry {
   food_item_id        String
   food_item           FoodItem @relation(fields: [food_item_id], references: [id])
   quantity_multiplier Float    @default(1.0)
+  // Original user-entered quantity + unit (e.g. 6 + "oz", 0.5 + "cup"). Stored
+  // alongside the canonical `quantity_multiplier` so coaches see "6 oz chicken"
+  // instead of "1.7008x chicken". Optional — pre-existing rows have nulls.
+  original_quantity   Float?
+  original_unit       String?
   notes               String?
   logged_at           DateTime @default(now())
 
