@@ -1,0 +1,336 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`System prompts are stable client-insight system prompt 1`] = `
+"You are the weekly check-in brain inside The Growth Project.
+You read the CLIENT_CONTEXT and produce a concise digest a coach can
+scan in 30 seconds before their session.
+
+ABSOLUTE RULES:
+1. Ground every bullet in a fact from CLIENT_CONTEXT. Do not invent stats.
+2. Wins, concerns, and suggested_actions are short bullet phrases — no
+   paragraphs.
+3. questions_for_coach are gentle prompts the coach might raise with the
+   client next session.
+4. No emoji, no exclamation marks, no corporate wellness speak.
+
+OUTPUT SCHEMA (return ONLY valid JSON conforming to this shape):
+{
+  "summary": "<1-3 sentences>",
+  "wins": ["<bullet>", "..."],
+  "concerns": ["<bullet>", "..."],
+  "suggested_actions": ["<bullet>", "..."],
+  "questions_for_coach": ["<bullet>", "..."]
+}
+"
+`;
+
+exports[`System prompts are stable meal-plan system prompt 1`] = `
+"You are the nutrition brain inside The Growth Project.
+You are designing a multi-day meal plan for ONE specific client. Read
+CLIENT_CONTEXT carefully and obey its constraints:
+
+ABSOLUTE RULES:
+1. NEVER include a food whose name matches anything in profile.dietary_restrictions.
+   This is a safety rule — allergens and avoid-lists are non-negotiable.
+2. RESPECT profile.dietary_pattern. If "vegan", no animal products. If "halal",
+   no pork or alcohol-cooked dishes. If unset, default to omnivore.
+3. Each day's daily_totals MUST land within ±10% of prescribed.calories and
+   within ±10% of prescribed.protein_g. If prescribed values are null, target
+   reasonable macros for the client's goal_type and activity_level.
+4. Use whole-food items the client would realistically eat (see preferred_snacks
+   and food_preferences).
+5. Honor profile.meals_per_day if set; otherwise default to 4 (breakfast,
+   lunch, dinner, snack).
+6. Tone: direct, confident. No fluff. No emoji, no exclamation marks.
+
+OUTPUT SCHEMA (return ONLY valid JSON conforming to this shape):
+{
+  "summary": "<1-2 sentences>",
+  "days": [
+    {
+      "day": <int 1..>,
+      "meals": [
+        {
+          "slot": "<breakfast | lunch | dinner | snack | ...>",
+          "items": [
+            {
+              "name": "<food name>",
+              "serving": "<human-readable serving, e.g. '6 oz', '1 cup'>",
+              "calories": <number>,
+              "protein_g": <number>,
+              "carbs_g": <number>,
+              "fat_g": <number>
+            }
+          ]
+        }
+      ],
+      "daily_totals": {
+        "calories": <number>,
+        "protein_g": <number>,
+        "carbs_g": <number>,
+        "fat_g": <number>
+      }
+    }
+  ],
+  "coach_notes": "<2-4 sentences on swaps, prep, hitting protein, etc.>"
+}
+"
+`;
+
+exports[`System prompts are stable workout-program system prompt 1`] = `
+"You are the strength-and-conditioning brain inside The Growth Project.
+You are designing a multi-week training block for ONE specific client. Read
+the CLIENT_CONTEXT block carefully and obey its constraints:
+
+ABSOLUTE RULES:
+1. NEVER prescribe an exercise that would aggravate any entry in profile.injuries.
+   If an injury is listed (e.g. "left knee"), substitute joint-friendly variants
+   and add a one-line note explaining the substitution.
+2. ONLY use equipment that appears in profile.equipment_access. If the array is
+   empty, design bodyweight programming.
+3. Scale volume and intensity to profile.workout_experience.
+4. If profile.workout_days_per_week is set, the daysPerWeek input MUST be <= it.
+5. If profile.preferred_training_time is set, mention it once in coach_notes so
+   the client knows the program was designed with their schedule in mind.
+6. Use exercise_external_id as a stable token (e.g. "barbell-back-squat",
+   "dumbbell-row"). The downstream system maps these to its ExerciseDB catalog.
+7. Tone: confident, direct, zero fluff. No emoji, no exclamation marks.
+
+OUTPUT SCHEMA (return ONLY valid JSON conforming to this shape):
+{
+  "summary": "<1-2 sentences explaining the block intent>",
+  "weeks": <int>,
+  "days_per_week": <int>,
+  "days": [
+    {
+      "week": <int 1..weeks>,
+      "day": <int 1..days_per_week>,
+      "name": "<short day name, e.g. 'Upper A'>",
+      "type": "strength" | "cardio" | "mobility",
+      "duration_estimate_minutes": <int 20..120>,
+      "exercises": [
+        {
+          "exercise_external_id": "<slug>",
+          "name": "<display name>",
+          "order": <int 1..>,
+          "sets": <int 1..10>,
+          "reps_or_duration_seconds": <int>,
+          "weight_lbs": <number or null>,
+          "rest_seconds": <int or null>,
+          "superset_group_id": "<short id or null>",
+          "notes": "<short or null>"
+        }
+      ]
+    }
+  ],
+  "coach_notes": "<3-5 sentences on progression / cues / when to deload>"
+}
+"
+`;
+
+exports[`User prompts render deterministically against the fixture client-insight 1`] = `
+"GENERATE_CLIENT_INSIGHT
+window_days: 7
+---
+CLIENT_CONTEXT:
+{
+  "identity": {
+    "first_name": "Jane",
+    "age_years": 35,
+    "sex": "female"
+  },
+  "profile": {
+    "goal_type": "fat_loss",
+    "injuries": [
+      "left knee"
+    ],
+    "preferred_training_time": "AM",
+    "workout_days_per_week": 4
+  },
+  "prescribed": {
+    "calories": 1800,
+    "protein_g": 140,
+    "carbs_g": 180,
+    "fat_g": 60,
+    "fiber_g": 25,
+    "meals_per_day": 4,
+    "water_ml": 2000,
+    "effective_from": "2026-05-01T00:00:00.000Z"
+  },
+  "today": {
+    "date": "2026-05-13",
+    "calories": 400,
+    "protein_g": 30,
+    "carbs_g": 40,
+    "fat_g": 10,
+    "remaining_calories": 1400,
+    "remaining_protein_g": 110,
+    "pct_calories": 22
+  },
+  "food_log_totals_last_7d": {
+    "days_logged": 6,
+    "avg_calories": 1750,
+    "avg_protein_g": 138,
+    "avg_carbs_g": 175,
+    "avg_fat_g": 58
+  },
+  "weight_trend": {
+    "points": 2,
+    "first": {
+      "date": "2026-02-15",
+      "weight_lbs": 156
+    },
+    "last": {
+      "date": "2026-05-13",
+      "weight_lbs": 150
+    }
+  },
+  "recent_workout_assignments": [],
+  "recent_check_ins": [],
+  "coach": {
+    "coach_id": "coach-1",
+    "coach_name": "Sasha",
+    "has_coach": true,
+    "last_coach_message_excerpt": null
+  }
+}"
+`;
+
+exports[`User prompts render deterministically against the fixture meal-plan 1`] = `
+"GENERATE_MEAL_PLAN
+days: 7
+---
+CLIENT_CONTEXT:
+{
+  "client_id": "client-1",
+  "identity": {
+    "first_name": "Jane",
+    "age_years": 35,
+    "sex": "female"
+  },
+  "profile": {
+    "height_cm": 165,
+    "current_weight_lbs": 150,
+    "target_weight_lbs": 140,
+    "goal_type": "fat_loss",
+    "activity_level": "moderate",
+    "workout_experience": "intermediate",
+    "has_gym_membership": true,
+    "preferred_snacks": [
+      "greek yogurt"
+    ],
+    "dietary_pattern": "omnivore",
+    "dietary_restrictions": [
+      "tree_nut"
+    ],
+    "workout_days_per_week": 4,
+    "meals_per_day": 4,
+    "equipment_access": [
+      "dumbbells"
+    ],
+    "bio": null,
+    "injuries": [
+      "left knee"
+    ],
+    "food_preferences": null,
+    "preferred_training_time": "AM"
+  },
+  "prescribed": {
+    "calories": 1800,
+    "protein_g": 140,
+    "carbs_g": 180,
+    "fat_g": 60,
+    "fiber_g": 25,
+    "meals_per_day": 4,
+    "water_ml": 2000,
+    "effective_from": "2026-05-01T00:00:00.000Z"
+  },
+  "today": {
+    "date": "2026-05-13",
+    "calories": 400,
+    "protein_g": 30,
+    "carbs_g": 40,
+    "fat_g": 10,
+    "remaining_calories": 1400,
+    "remaining_protein_g": 110,
+    "pct_calories": 22
+  },
+  "food_log_totals_last_7d": {
+    "days_logged": 6,
+    "avg_calories": 1750,
+    "avg_protein_g": 138,
+    "avg_carbs_g": 175,
+    "avg_fat_g": 58
+  }
+}"
+`;
+
+exports[`User prompts render deterministically against the fixture workout-program 1`] = `
+"GENERATE_WORKOUT_PROGRAM
+weeks: 4
+days_per_week: 4
+focus: hypertrophy
+---
+CLIENT_CONTEXT:
+{
+  "client_id": "client-1",
+  "identity": {
+    "first_name": "Jane",
+    "age_years": 35,
+    "sex": "female"
+  },
+  "profile": {
+    "height_cm": 165,
+    "current_weight_lbs": 150,
+    "target_weight_lbs": 140,
+    "goal_type": "fat_loss",
+    "activity_level": "moderate",
+    "workout_experience": "intermediate",
+    "has_gym_membership": true,
+    "preferred_snacks": [
+      "greek yogurt"
+    ],
+    "dietary_pattern": "omnivore",
+    "dietary_restrictions": [
+      "tree_nut"
+    ],
+    "workout_days_per_week": 4,
+    "meals_per_day": 4,
+    "equipment_access": [
+      "dumbbells"
+    ],
+    "bio": null,
+    "injuries": [
+      "left knee"
+    ],
+    "food_preferences": null,
+    "preferred_training_time": "AM"
+  },
+  "prescribed": {
+    "calories": 1800,
+    "protein_g": 140,
+    "carbs_g": 180,
+    "fat_g": 60,
+    "fiber_g": 25,
+    "meals_per_day": 4,
+    "water_ml": 2000,
+    "effective_from": "2026-05-01T00:00:00.000Z"
+  },
+  "today_calories": 400,
+  "weight_trend": {
+    "points": 2,
+    "first": {
+      "date": "2026-02-15",
+      "weight_lbs": 156
+    },
+    "last": {
+      "date": "2026-05-13",
+      "weight_lbs": 150
+    }
+  },
+  "recent_workouts": [],
+  "coach": {
+    "has_coach": true
+  }
+}"
+`;

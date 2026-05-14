@@ -185,6 +185,18 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Perplexity API key. AI chat falls back to a deterministic responder when unset.',
   },
   {
+    name: 'ANTHROPIC_API_KEY',
+    tier: 'feature',
+    reason:
+      'Required for Coach AI v1 (Claude Sonnet adapter behind /coach/ai/*). Set in Fly secrets. Without it, /coach/ai/* returns 503 ai_disabled and ai.service falls back to its deterministic responder.',
+  },
+  {
+    name: 'CRON_COACH_AI_INSIGHT',
+    tier: 'optional',
+    reason:
+      'Feature flag — set to "on" to enable the weekly Coach AI insight digest cron. Default off so the cron is dormant in every environment until explicitly enabled.',
+  },
+  {
     // Promoted to hard-required as part of the food logger Trainerize-grade floor:
     // food search silently returning [] for the USDA branch is undetectable in
     // production (operators see no error), so the boot must fail loudly instead.

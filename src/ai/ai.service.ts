@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import OpenAI from 'openai';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
@@ -7,6 +7,9 @@ import { AIGuardrailsService } from './ai-guardrails.service';
 import { ClientAIContext } from './client-ai-context.types';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
+import { AnthropicAdapter } from './adapters/anthropic.adapter';
+import { CoachAIStateService } from './coach/coach-ai-state.service';
+import { COACH_AI_CAPABILITIES } from './coach/coach-ai.constants';
 
 // Perplexity API uses OpenAI-compatible endpoint
 const perplexity = new OpenAI({
@@ -52,7 +55,7 @@ export interface ChatResult {
   reply: string;
   guardrails_applied: string[];
   context_generated_at: string;
-  model_used: 'perplexity' | 'fallback';
+  model_used: 'perplexity' | 'anthropic' | 'fallback';
 }
 
 @Injectable()
@@ -63,6 +66,12 @@ export class AiService {
     private contextSvc: ClientAIContextService,
     private guardrails: AIGuardrailsService,
     private analytics: AnalyticsService,
+    // Coach AI v1 — when ANTHROPIC_API_KEY is set and the engine is
+    // ready, we prefer Claude over the deterministic responder for the
+    // client-facing /ai/chat fallback path (food audit §7). Optional so
+    // tests that boot a stripped-down AiModule still construct.
+    @Optional() private anthropic?: AnthropicAdapter,
+    @Optional() private coachAIState?: CoachAIStateService,
   ) {}
 
   // System prompt is now built from the typed ClientAIContext. The prompt
@@ -210,10 +219,47 @@ Now answer the user's next message using the rules above. Keep the answer under 
     conversationHistory: Array<{ role: string; content: string }>,
   ): Promise<ChatResult> {
     const ctx = await this.contextSvc.build(userId);
-    let modelUsed: 'perplexity' | 'fallback' = 'perplexity';
+    let modelUsed: 'perplexity' | 'anthropic' | 'fallback' = 'perplexity';
 
     let rawReply: string;
-    if (!process.env.PERPLEXITY_API_KEY || process.env.PERPLEXITY_API_KEY.trim() === '') {
+    const perplexityKey = process.env.PERPLEXITY_API_KEY?.trim();
+    const anthropicReady =
+      this.anthropic && this.coachAIState && this.coachAIState.isReady();
+
+    if (!perplexityKey && anthropicReady && this.anthropic) {
+      // Coach AI v1 — Claude Sonnet fallback for the client chat surface.
+      // We hand it the same system prompt the Perplexity branch would
+      // see so guardrails / APP_PRESCRIBED defense apply identically.
+      try {
+        const systemPrompt = this.buildSystemPrompt(ctx);
+        const historyText = conversationHistory
+          .slice(-10)
+          .map((m) => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${m.content}`)
+          .join('\n');
+        const result = await this.anthropic.complete(
+          {
+            system: systemPrompt,
+            user: historyText
+              ? `${historyText}\nUser: ${userMessage}`
+              : userMessage,
+          },
+          {
+            maxTokens: 600,
+            temperature: 0.7,
+            capability: COACH_AI_CAPABILITIES.CLIENT_CHAT_FALLBACK,
+            clientId: userId,
+          },
+        );
+        rawReply = result.text || this.generateFallbackResponse(userMessage, ctx);
+        modelUsed = result.text ? 'anthropic' : 'fallback';
+      } catch (error) {
+        this.logger.warn(
+          `Anthropic chat fallback failed; using deterministic: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        rawReply = this.generateFallbackResponse(userMessage, ctx);
+        modelUsed = 'fallback';
+      }
+    } else if (!perplexityKey) {
       rawReply = this.generateFallbackResponse(userMessage, ctx);
       modelUsed = 'fallback';
     } else {

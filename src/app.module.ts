@@ -16,6 +16,7 @@ import { WeightModule } from './weight/weight.module';
 import { HabitsModule } from './habits/habits.module';
 import { AiModule } from './ai/ai.module';
 import { AiGatewayModule } from './ai/gateway/ai-gateway.module';
+import { CoachAIModule } from './ai/coach/coach-ai.module';
 import { CoachModule } from './coach/coach.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
@@ -124,6 +125,10 @@ import { SecretsModule } from './secrets/secrets.module';
     // Global so feature modules (coach messaging, meal-plan AI, finance proof)
     // can inject AiGatewayService without re-importing.
     AiGatewayModule,
+    // Coach AI v1 — Claude Sonnet adapter + per-client workout/meal/insight
+    // generation behind /coach/ai/*. Boot-gated via CoachAIStateService;
+    // returns 503 ai_disabled when ANTHROPIC_API_KEY is unset.
+    CoachAIModule,
     CoachModule,
     // Phase 7C — Peer Leaderboard (opt-in, coach-roster scoped).
     // Score: combined 30-day habit completion rate, never raw health data.

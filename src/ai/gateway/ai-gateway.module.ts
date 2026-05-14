@@ -8,6 +8,7 @@ import { AiApprovalService } from './ai-approval.service';
 import { PrivateContextService } from './private-context.service';
 import { AiProviderRegistry } from './providers/provider-registry';
 import { StubProviderAdapter } from './providers/stub-provider.adapter';
+import { AnthropicProviderAdapter } from './providers/anthropic-provider.adapter';
 
 // @Global so feature services (coach messaging, meal-plan AI suggestions,
 // finance proof drafts, …) can inject AiGatewayService without first
@@ -23,6 +24,10 @@ import { StubProviderAdapter } from './providers/stub-provider.adapter';
     AiGatewayConfig,
     AiRedactionService,
     StubProviderAdapter,
+    // Coach AI v1 — real Claude Sonnet adapter for the gateway path.
+    // CoachAIModule is @Global so it can inject AnthropicAdapter +
+    // CoachAIStateService into this provider.
+    AnthropicProviderAdapter,
     AiProviderRegistry,
     PrivateContextService,
     AiGatewayService,

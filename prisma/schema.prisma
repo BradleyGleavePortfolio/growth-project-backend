@@ -294,6 +294,13 @@ model User {
   ai_requests_as_subject           AiRequestAudit[]          @relation("AiRequestSubject")
   ai_drafts_authored               AiActionDraft[]           @relation("AiDraftRequester")
   ai_drafts_decided                AiActionDraft[]           @relation("AiDraftDecidedBy")
+  // Coach AI v1 — generation drafts (workout / meal plan / insight) and
+  // per-call cost log. Both relations are SetNull-on-delete so the cost
+  // history and approved drafts outlive a deleted user account.
+  coach_ai_drafts_as_coach   AIDraft[]   @relation("AIDraftCoach")
+  coach_ai_drafts_as_client  AIDraft[]   @relation("AIDraftClient")
+  ai_call_logs_as_coach      AICallLog[] @relation("AICallLogCoach")
+  ai_call_logs_as_client     AICallLog[] @relation("AICallLogClient")
 
   // Concierge scheduling (PR #142). Back-relations only; FKs live on
   // the scheduling-side rows. Coach and client both read from User;
@@ -552,6 +559,12 @@ model UserProfile {
   water_goal_oz          Float?
   calorie_display        String?           @default("net")
   onboardingCompleted    Boolean?          @default(false)
+  // Coach AI v1 — structured fields the Claude prompt needs that previously
+  // only lived in coach notes or free-form `bio`. Empty-array / null defaults
+  // so an unset value is distinguishable from "confirmed none".
+  injuries               String[]          @default([])
+  food_preferences       Json?
+  preferred_training_time String?
   updated_at             DateTime          @updatedAt
 }
 
@@ -1919,6 +1932,81 @@ model AiActionDraft {
   @@index([subject_user_id, created_at])
   @@index([tenant_coach_id, created_at])
   @@index([capability, status])
+}
+
+// ============================================================
+// Coach AI v1 — per-client generation drafts + per-call cost log
+// ============================================================
+//
+// Distinct from `AiActionDraft` (the generic gateway approval row): an
+// `AIDraft` is the Coach AI v1 generation surface. A coach asks the
+// engine to draft a workout program, meal plan, or weekly client
+// insight; the row carries the snapshot of context the model saw, the
+// model identifier, the generated payload, and a small status machine
+// (DRAFT -> APPROVED|REJECTED|EXPIRED). On APPROVE the controller
+// materializes the relevant downstream rows (WorkoutPlan +
+// WorkoutPlanExercise[] for WORKOUT_PROGRAM; MealPlan for MEAL_PLAN;
+// no materialization for INSIGHT).
+enum AIDraftType {
+  WORKOUT_PROGRAM
+  MEAL_PLAN
+  INSIGHT
+}
+
+enum AIDraftStatus {
+  DRAFT
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+model AIDraft {
+  id               String         @id @default(uuid())
+  coachId          String
+  coach            User           @relation("AIDraftCoach", fields: [coachId], references: [id], onDelete: Cascade)
+  clientId         String
+  client           User           @relation("AIDraftClient", fields: [clientId], references: [id], onDelete: Cascade)
+  type             AIDraftType
+  inputContext     Json
+  modelUsed        String
+  promptVersion    String
+  generatedPayload Json
+  status           AIDraftStatus  @default(DRAFT)
+  // FK to the materialized WorkoutPlan / MealPlan id (or null for
+  // INSIGHT drafts that do not materialize). Kept as a plain string
+  // (not a relation) so a single column can point at multiple tables.
+  approvedAsId     String?
+  rejectionReason  String?
+  tokensIn         Int            @default(0)
+  tokensOut        Int            @default(0)
+  costCents        Int            @default(0)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([coachId, clientId, type, status])
+}
+
+// Per-call cost + latency log. Written for every AnthropicAdapter
+// invocation (success or failure). Powers the per-coach $20/month
+// budget alarm; aggregated by coach_id + capability + day.
+model AICallLog {
+  id           String   @id @default(uuid())
+  model        String
+  tokensIn     Int
+  tokensOut    Int
+  costCents    Int
+  latencyMs    Int
+  success      Boolean
+  errorMessage String?
+  coachId      String?
+  coach        User?    @relation("AICallLogCoach", fields: [coachId], references: [id], onDelete: SetNull)
+  clientId     String?
+  client       User?    @relation("AICallLogClient", fields: [clientId], references: [id], onDelete: SetNull)
+  capability   String
+  createdAt    DateTime @default(now())
+
+  @@index([coachId, createdAt])
+  @@index([capability, createdAt])
 }
 
 // ============================================================

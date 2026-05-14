@@ -1878,3 +1878,83 @@ Triage of open PRs as of 2026-05-12. Pulled from `gh pr list --state open`. See 
 ### Other open PRs (not in B/C/D buckets above)
 
 - **#156** `pdfkit` 0.15 → 0.18 — dependabot, not classified in triage; review and merge if CI green.
+
+
+## Coach AI v1 — Claude Sonnet engine
+
+> Status: code-complete behind `ANTHROPIC_API_KEY`. Boot-gated; the engine reports `ready=false` and every `/coach/ai/*` route returns 503 `{ error: "ai_disabled", action: "set ANTHROPIC_API_KEY in Fly secrets" }` until the secret is set.
+
+### WHY
+The pre-Connect audit (`/audits/coach_ai_capability_audit.md`) recorded that a coach could not, today, ask the backend to generate a per-client workout program or meal plan. The gateway, redaction, audit, and approval rails were already in place, but no real provider adapter was wired and no `/coach/ai/*` surface existed. v1 plugs that gap with a single Anthropic Claude Sonnet adapter, a per-client context builder, three structured prompts, a `DRAFT → APPROVED|REJECTED` flow, and a per-call cost log so $20/coach/mo budgets are observable.
+
+### WHEN
+- **On demand** — a coach taps "Generate" in the console for a workout program, meal plan, or weekly insight. Throttled at 5/hour/coach for the workout and meal-plan surfaces, 10/hour/coach for insight.
+- **Weekly digest** (dormant by default) — `WeeklyInsightCron` registered with `@Cron(EVERY_WEEK)`. Set `CRON_COACH_AI_INSIGHT=on` in Fly secrets to enable; otherwise the job exits early on every tick.
+
+### WHERE — file map
+| Concern | File |
+|---|---|
+| SDK adapter (retries, repair, cost log) | `src/ai/adapters/anthropic.adapter.ts` |
+| Boot gate + status surface | `src/ai/coach/coach-ai-state.service.ts` |
+| Per-client context builder | `src/ai/context/client-context.service.ts` |
+| Context type | `src/ai/context/client-context.types.ts` |
+| Workout program prompt | `src/ai/prompts/workout-program.prompt.ts` |
+| Meal plan prompt | `src/ai/prompts/meal-plan.prompt.ts` |
+| Client insight prompt | `src/ai/prompts/client-insight.prompt.ts` |
+| Prompt registry | `src/ai/prompts/index.ts` |
+| Coach AI service (orchestration + materialize) | `src/ai/coach/coach-ai.service.ts` |
+| Coach AI controller | `src/ai/coach/coach-ai.controller.ts` |
+| Weekly insight cron (dormant) | `src/ai/coach/weekly-insight.cron.ts` |
+| Gateway-side anthropic adapter (re-uses the same client) | `src/ai/gateway/providers/anthropic-provider.adapter.ts` |
+| Schema additions (UserProfile, AIDraft, AICallLog) | `prisma/schema.prisma` + `prisma/migrations/20260530000000_coach_ai_engine_v1/migration.sql` |
+| Model id / pricing constants | `src/ai/coach/coach-ai.constants.ts` |
+
+### HOW — enable in Fly
+```bash
+fly secrets set ANTHROPIC_API_KEY=sk-ant-...
+fly deploy
+```
+On boot the engine runs a 4-token probe against `claude-sonnet-4-6`. On success the engine logs `[coach-ai] ready (model=claude-sonnet-4-6)`; on failure it logs `[coach-ai] disabled — set ANTHROPIC_API_KEY (probe failed: <message>)` and `ready=false` is reported by `GET /coach/ai/status`. In `NODE_ENV=test` the probe is skipped — tests trust the env var presence.
+
+To enable the weekly insight digest:
+```bash
+fly secrets set CRON_COACH_AI_INSIGHT=on
+```
+Disable by clearing the secret (the cron exits early on the next tick).
+
+### WHO
+All `/coach/ai/*` routes are guarded by `JwtAuthGuard + CoachGuard` (owner role bypasses, same convention as the rest of `/coach/*`). Coaches only see drafts they generated; controller helpers refuse 404 when a coach asks for a draft they do not own. The boot gate is queried per route; if `coachAIState.isReady()` is false the controller returns 503 with `{ error: "ai_disabled", action: "set ANTHROPIC_API_KEY in Fly secrets" }`.
+
+### WHAT — endpoints
+
+| Method | Path | Throttle | Body |
+|---|---|---|---|
+| GET | `/coach/ai/status` | — | — |
+| POST | `/coach/ai/workout-program` | 5/hour | `{ clientId, weeks: 1..12, daysPerWeek: 1..7, focus?, notes? }` |
+| POST | `/coach/ai/meal-plan` | 5/hour | `{ clientId, days: 1..14, notes? }` |
+| POST | `/coach/ai/client-insight` | 10/hour | `{ clientId, windowDays?=7 }` |
+| GET | `/coach/ai/drafts/:draftId` | — | — |
+| POST | `/coach/ai/drafts/:draftId/approve` | — | — |
+| POST | `/coach/ai/drafts/:draftId/edit` | — | `{ patch: object }` |
+| POST | `/coach/ai/drafts/:draftId/reject` | — | `{ reason: string }` |
+
+Example response from `POST /coach/ai/workout-program`:
+```json
+{
+  "draftId": "9d6c…",
+  "payload": {
+    "summary": "Four-week intermediate hypertrophy block.",
+    "weeks": 4,
+    "days_per_week": 4,
+    "days": [{ "week": 1, "day": 1, "name": "Upper A", "type": "strength", "duration_estimate_minutes": 60, "exercises": [{ "exercise_external_id": "barbell-bench-press", "name": "Barbell Bench Press", "order": 1, "sets": 4, "reps_or_duration_seconds": 8 }] }],
+    "coach_notes": "…"
+  }
+}
+```
+
+### Cost ceiling
+The Claude Sonnet pricing constants live in `src/ai/coach/coach-ai.constants.ts` (input $3/Mtok, output $15/Mtok as of 2026-05-13). Every call writes an `AICallLog` row with `costCents` so a coach's monthly spend can be aggregated. v1 target: ~$20/coach/mo at 20 clients/coach.
+
+### Disable / fallback semantics
+- `ANTHROPIC_API_KEY` is the only secret that gates the engine. If unset, every `/coach/ai/*` route returns 503 `{ error: "ai_disabled" }` and the boot log emits `[coach-ai] disabled — set ANTHROPIC_API_KEY`.
+- `ai.service.ts` (the client-facing `/ai/chat` surface) prefers Perplexity when `PERPLEXITY_API_KEY` is set; otherwise it tries the Anthropic adapter when the engine is ready; otherwise it falls back to the deterministic responder. This rewires the food-logger audit §7 path so the deterministic template is the third option, not the second.

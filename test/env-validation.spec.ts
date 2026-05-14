@@ -40,6 +40,10 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     SENTRY_DSN: 'https://abc@sentry.io/1',
     REDIS_URL: 'redis://localhost:6379',
     APPLE_AUDIENCES: 'com.thegrowthproject.app',
+    // Coach AI v1 — feature-tier. Without this the engine is disabled,
+    // not crashed; but tests that assert "missingFeature is empty" need
+    // a stub value so the rule does not fire.
+    ANTHROPIC_API_KEY: 'sk-ant-test',
   };
 }
 
