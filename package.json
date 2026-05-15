@@ -18,7 +18,8 @@
     "smoke:admin-federation": "ts-node scripts/admin-federation-smoke.ts",
     "openapi:export": "ts-node scripts/export-openapi.ts",
     "backfill:coach-subscriptions": "ts-node scripts/backfill-coach-subscriptions.ts",
-    "seed:foods": "ts-node prisma/seed-foods.ts"
+    "seed:foods": "ts-node prisma/seed-foods.ts",
+    "seed:exercise-catalog": "ts-node scripts/seed-exercise-catalog.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
