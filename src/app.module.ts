@@ -78,6 +78,9 @@ import { AccountDeletionModule } from './account-deletion/account-deletion.modul
 import { DataExportModule } from './data-export/data-export.module';
 // Phase 10 Track 7 — Secrets rotation playbook + zero-downtime JWT rotation.
 import { SecretsModule } from './secrets/secrets.module';
+// Transactional email — Resend transport + 8 launch templates + idempotency
+// ledger (EmailSendLog). Global, so any feature can inject EmailService.
+import { EmailModule } from './email/email.module';
 
 @Module({
   imports: [
@@ -159,6 +162,9 @@ import { SecretsModule } from './secrets/secrets.module';
     // Global immutable audit log (compliance + sensitive-action trail).
     // Must precede AdminModule + UsersModule so AuditService is in DI scope.
     AuditModule,
+    // Transactional email (Resend + log). Must precede InviteCodesModule /
+    // BillingModule which inject EmailService for invite + dunning sends.
+    EmailModule,
     // Consent layer v1 — client→coach data-access toggles. Global so
     // CoachService and AdminService can inject ConsentService without a
     // local import in their modules.

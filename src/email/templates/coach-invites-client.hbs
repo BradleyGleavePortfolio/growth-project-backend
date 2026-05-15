@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <body style="font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a;">
+    <h1 style="font-size: 22px; margin: 0 0 16px;">{{coach_name}} invited you to The Growth Project</h1>
+    <p>Hi{{#if recipient_name}} {{recipient_name}}{{/if}},</p>
+    <p>{{coach_name}} has invited you to start coaching with them on The Growth Project — daily check-ins, workouts, and macros in one app.</p>
+    {{#if personal_note}}
+      <blockquote style="border-left: 3px solid #4f46e5; padding: 8px 16px; margin: 16px 0; color: #555; background: #f6f6ff;">{{personal_note}}</blockquote>
+    {{/if}}
+    <p style="margin: 24px 0;">
+      <a href="{{accept_url}}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 12px 22px; border-radius: 8px; text-decoration: none; font-weight: 600;">Accept your invite</a>
+    </p>
+    <p style="font-size: 13px; color: #666;">
+      Or copy this code into the app: <strong style="color: #1a1a1a;">{{invite_code}}</strong>
+    </p>
+    <p style="font-size: 13px; color: #666;">This invite expires on {{expires_at}}.</p>
+    <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 32px 0;" />
+    <p style="font-size: 12px; color: #888;">If you weren't expecting this, you can ignore the email — no account is created until you accept.</p>
+  </body>
+</html>
