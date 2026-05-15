@@ -4,6 +4,7 @@ import { JwksVerifierService } from '../auth/jwks.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { ConnectModule } from '../connect/connect.module';
 import { PackagesModule } from '../packages/packages.module';
+import { AdminAnalyticsService } from './admin-analytics.service';
 import {
   CheckoutController,
   CoachPurchasesController,
@@ -16,6 +17,7 @@ import {
   CoachPaymentOpsController,
 } from './payment-ops.controller';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
+import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 
 // CheckoutModule — Stripe Checkout session minting and ClientPurchase
 // lifecycle. Pulls in ConnectModule for StripeConnectApiService +
@@ -40,6 +42,8 @@ import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
     CheckoutWebhookHandlerService,
     PurchaseSplitHandlerService,
     DunningService,
+    RefundDisputeHandlerService,
+    AdminAnalyticsService,
     JwksVerifierService,
     RolesGuard,
   ],
@@ -48,6 +52,8 @@ import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
     CheckoutWebhookHandlerService,
     PurchaseSplitHandlerService,
     DunningService,
+    RefundDisputeHandlerService,
+    AdminAnalyticsService,
   ],
 })
 export class CheckoutModule {}

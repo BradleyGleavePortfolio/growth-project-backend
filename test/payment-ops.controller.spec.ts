@@ -120,22 +120,61 @@ function makeAdminController() {
   const splits = {
     runTransferSweeper: jest.fn(async () => ({ attempted: 0, succeeded: 0, failed: 0 })),
   } as unknown as PurchaseSplitHandlerService;
+  // Phase 6-7 stubs — tests in this file pre-date Phase 6-7. The new
+  // services are exercised in their own spec files; here we just need
+  // the constructor shapes to line up.
+  const payoutReadiness = {
+    getForCoach: jest.fn(),
+    runStaleSweep: jest.fn(),
+  } as any;
+  const reconciliation = {
+    reconcilePurchase: jest.fn(),
+    listDrift: jest.fn(),
+    runSweep: jest.fn(),
+  } as any;
+  const refundDispute = {
+    listRefunds: jest.fn(),
+    listDisputes: jest.fn(),
+    createAdminRefund: jest.fn(),
+  } as any;
+  const analytics = {
+    getEnterpriseRollup: jest.fn(),
+    getCoachEarnings: jest.fn(),
+  } as any;
+  const stripeConnect = {
+    retrieveBalance: jest.fn(),
+    listPayouts: jest.fn(),
+    listBalanceTransactions: jest.fn(),
+  } as any;
   const ctrl = new AdminPaymentOpsController(
     prisma as any,
     fee,
     ledger,
     dunning,
     splits,
+    payoutReadiness,
+    reconciliation,
+    refundDispute,
+    analytics,
+    stripeConnect,
   );
-  return { ctrl, prisma, fee, dunning, splits };
+  return { ctrl, prisma, fee, dunning, splits, payoutReadiness, reconciliation, refundDispute, analytics, stripeConnect };
 }
 
 function makeCoachController() {
   const prisma = makePrismaStub();
   const fee = new FeePolicyService(prisma as any);
   const ledger = new SplitLedgerService(prisma as any);
-  const ctrl = new CoachPaymentOpsController(prisma as any, fee, ledger);
-  return { ctrl, prisma };
+  const payoutReadiness = { getForCoach: jest.fn() } as any;
+  const analytics = { getCoachEarnings: jest.fn() } as any;
+  const ctrl = new CoachPaymentOpsController(
+    prisma as any,
+    fee,
+    ledger,
+    payoutReadiness,
+    analytics,
+  );
+  return { ctrl, prisma, payoutReadiness, analytics };
 }
 
 describe('AdminPaymentOpsController', () => {
@@ -247,6 +286,127 @@ describe('AdminPaymentOpsController', () => {
     expect((dunning.runSweeper as jest.Mock)).toHaveBeenCalled();
     expect((splits.runTransferSweeper as jest.Mock)).toHaveBeenCalled();
   });
+
+  // --- Phase 6-7 wiring ---
+
+  it('getCoachPayoutReadiness delegates to PayoutReadinessService', async () => {
+    const { ctrl, payoutReadiness } = makeAdminController();
+    payoutReadiness.getForCoach.mockResolvedValue({ readiness_status: 'ready' });
+    const out = await ctrl.getCoachPayoutReadiness('coach-1', 'true');
+    expect(payoutReadiness.getForCoach).toHaveBeenCalledWith('coach-1', {
+      forceRefresh: true,
+    });
+    expect(out.readiness_status).toBe('ready');
+  });
+
+  it('getCoachBalance returns 404 when ConnectAccount is missing', async () => {
+    const { ctrl } = makeAdminController();
+    const { NotFoundException } = await import('@nestjs/common');
+    await expect(ctrl.getCoachBalance('ghost-coach')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('getCoachBalance returns stripe balance + payouts when account exists', async () => {
+    const { ctrl, prisma, stripeConnect } = makeAdminController();
+    prisma._accounts.push({
+      coach_user_id: 'coach-1',
+      stripe_account_id: 'acct_x',
+    });
+    stripeConnect.retrieveBalance.mockResolvedValue({
+      available: [{ amount: 10_000, currency: 'usd' }],
+      pending: [],
+    });
+    stripeConnect.listPayouts.mockResolvedValue({
+      data: [{ id: 'po_1', amount: 500, status: 'paid' }],
+    });
+    const out = await ctrl.getCoachBalance('coach-1');
+    expect(out.stripe_account_id).toBe('acct_x');
+    expect(out.payouts).toHaveLength(1);
+  });
+
+  it('getReconciliation delegates to ReconciliationService', async () => {
+    const { ctrl, reconciliation } = makeAdminController();
+    reconciliation.reconcilePurchase.mockResolvedValue({
+      status: 'ok',
+      drift_cents: 0,
+    });
+    const out = await ctrl.getReconciliation('p1');
+    expect(reconciliation.reconcilePurchase).toHaveBeenCalledWith('p1');
+    expect(out.status).toBe('ok');
+  });
+
+  it('listReconciliationDrift exposes the drift feed', async () => {
+    const { ctrl, reconciliation } = makeAdminController();
+    reconciliation.listDrift.mockResolvedValue([{ purchase_id: 'p1', drift_cents: 500 }]);
+    const out = await ctrl.listReconciliationDrift();
+    expect(out.drift).toHaveLength(1);
+  });
+
+  it('listRefunds + listDisputes return rows via RefundDisputeHandlerService', async () => {
+    const { ctrl, refundDispute } = makeAdminController();
+    refundDispute.listRefunds.mockResolvedValue([{ id: 'r1' }]);
+    refundDispute.listDisputes.mockResolvedValue([{ id: 'd1' }]);
+    const refunds = await ctrl.listRefunds('succeeded');
+    const disputes = await ctrl.listDisputes();
+    expect(refunds.refunds).toHaveLength(1);
+    expect(disputes.disputes).toHaveLength(1);
+  });
+
+  it('refundPurchase validates amount_cents and forwards initiated_by_user_id', async () => {
+    const { ctrl, refundDispute } = makeAdminController();
+    refundDispute.createAdminRefund.mockResolvedValue({ id: 'rf1' });
+    const req: any = { user: { id: 'owner-1', role: 'owner' } };
+    const result = await ctrl.refundPurchase(req, 'p1', {
+      amount_cents: 5_000,
+      reason: 'requested_by_customer',
+    });
+    expect(refundDispute.createAdminRefund).toHaveBeenCalledWith(
+      expect.objectContaining({
+        purchase_id: 'p1',
+        amount_cents: 5_000,
+        initiated_by_user_id: 'owner-1',
+      }),
+    );
+    expect(result.id).toBe('rf1');
+  });
+
+  it('refundPurchase rejects bad amount_cents', async () => {
+    const { ctrl } = makeAdminController();
+    const { BadRequestException } = await import('@nestjs/common');
+    const req: any = { user: { id: 'owner-1', role: 'owner' } };
+    await expect(
+      ctrl.refundPurchase(req, 'p1', { amount_cents: -10 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('getEnterpriseRollup parses ISO dates + groupBy', async () => {
+    const { ctrl, analytics } = makeAdminController();
+    analytics.getEnterpriseRollup.mockResolvedValue({ gmv_cents: 0 });
+    await ctrl.getEnterpriseRollup('2026-01-01', '2026-02-01', 'month');
+    const call = analytics.getEnterpriseRollup.mock.calls[0][0];
+    expect(call.groupBy).toBe('month');
+    expect(call.from).toBeInstanceOf(Date);
+    expect(call.to).toBeInstanceOf(Date);
+  });
+
+  it('getEnterpriseRollup rejects an unknown groupBy', async () => {
+    const { ctrl } = makeAdminController();
+    const { BadRequestException } = await import('@nestjs/common');
+    await expect(
+      ctrl.getEnterpriseRollup(undefined, undefined, 'weekly' as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('runReconciliationSweeper + runPayoutReadinessSweeper delegate', async () => {
+    const { ctrl, reconciliation, payoutReadiness } = makeAdminController();
+    reconciliation.runSweep.mockResolvedValue({ scanned: 0, drifted: 0, unknown: 0 });
+    payoutReadiness.runStaleSweep.mockResolvedValue({ scanned: 0, refreshed: 0, failed: 0 });
+    await ctrl.runReconciliationSweeper();
+    await ctrl.runPayoutReadinessSweeper();
+    expect(reconciliation.runSweep).toHaveBeenCalled();
+    expect(payoutReadiness.runStaleSweep).toHaveBeenCalled();
+  });
 });
 
 describe('CoachPaymentOpsController', () => {
@@ -350,5 +510,24 @@ describe('CoachPaymentOpsController', () => {
     const out = await ctrl.getOwnFeePolicy(makeReq('me'));
     expect(out.policy.platform_application_fee_bps).toBe(200);
     expect(out.override).toBeNull();
+  });
+
+  it('payout-readiness is scoped to the calling coach', async () => {
+    const { ctrl, payoutReadiness } = makeCoachController();
+    payoutReadiness.getForCoach.mockResolvedValue({ readiness_status: 'ready' });
+    await ctrl.getOwnPayoutReadiness(makeReq('me'));
+    expect(payoutReadiness.getForCoach).toHaveBeenCalledWith('me', {
+      forceRefresh: false,
+    });
+  });
+
+  it('summary endpoint delegates to AdminAnalyticsService.getCoachEarnings', async () => {
+    const { ctrl, analytics } = makeCoachController();
+    analytics.getCoachEarnings.mockResolvedValue({ coach_user_id: 'me' });
+    await ctrl.getOwnEarningsSummary(makeReq('me'), '2026-04-01', '2026-05-01');
+    expect(analytics.getCoachEarnings).toHaveBeenCalledWith(
+      'me',
+      expect.objectContaining({ from: expect.any(Date), to: expect.any(Date) }),
+    );
   });
 });

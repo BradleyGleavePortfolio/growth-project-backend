@@ -535,6 +535,168 @@ export class StripeConnectApiService {
     return this.delete(`/subscriptions/${encodeURIComponent(subId)}`);
   }
 
+  // --- Phase 6 — Payout readiness, balance, refunds, disputes ---
+  //
+  // All four read methods use Stripe's `Stripe-Account` header to scope
+  // the call to the coach's connected account, so platform credentials
+  // never expose data from another coach. Refund creation runs on the
+  // platform account (refunding the charge we created on the platform).
+
+  // Stripe Balance object — { available[], pending[], connect_reserved[], ... }.
+  // Scoped to the connected account via Stripe-Account header.
+  async retrieveBalance(connectedAccountId: string): Promise<{
+    available: Array<{ amount: number; currency: string }>;
+    pending: Array<{ amount: number; currency: string }>;
+    connect_reserved?: Array<{ amount: number; currency: string }>;
+    instant_available?: Array<{ amount: number; currency: string }>;
+    [k: string]: unknown;
+  }> {
+    return this.getOnAccount(`/balance`, connectedAccountId);
+  }
+
+  // List payouts on a connected account, newest first. Used for the
+  // payout-readiness widget ("last paid out ...").
+  async listPayouts(args: {
+    connectedAccountId: string;
+    limit?: number;
+    status?: string; // pending | in_transit | paid | failed | canceled
+  }): Promise<{
+    data: Array<{
+      id: string;
+      amount: number;
+      currency: string;
+      status: string;
+      arrival_date?: number;
+      failure_message?: string | null;
+      automatic?: boolean;
+      [k: string]: unknown;
+    }>;
+    has_more?: boolean;
+  }> {
+    const params = new URLSearchParams();
+    params.set('limit', String(Math.min(args.limit ?? 10, 100)));
+    if (args.status) params.set('status', args.status);
+    return this.getOnAccount(
+      `/payouts?${params.toString()}`,
+      args.connectedAccountId,
+    );
+  }
+
+  // List balance transactions for a connected account — needed for the
+  // Stripe-fee column in the admin payment-ops view (the `fee` field on a
+  // balance transaction is the per-charge processing fee, which we don't
+  // get directly from the Charge object on Destination charges).
+  async listBalanceTransactions(args: {
+    connectedAccountId: string;
+    limit?: number;
+    type?: string; // charge | refund | payout | transfer | adjustment | ...
+    payout?: string; // filter to a specific payout id
+  }): Promise<{
+    data: Array<{
+      id: string;
+      amount: number;
+      net: number;
+      fee: number;
+      currency: string;
+      type: string;
+      source?: string;
+      created?: number;
+      [k: string]: unknown;
+    }>;
+    has_more?: boolean;
+  }> {
+    const params = new URLSearchParams();
+    params.set('limit', String(Math.min(args.limit ?? 25, 100)));
+    if (args.type) params.set('type', args.type);
+    if (args.payout) params.set('payout', args.payout);
+    return this.getOnAccount(
+      `/balance_transactions?${params.toString()}`,
+      args.connectedAccountId,
+    );
+  }
+
+  // Retrieve a single Refund (used for webhook handlers + admin lookup).
+  async retrieveRefund(refundId: string): Promise<{
+    id: string;
+    amount: number;
+    currency: string;
+    charge?: string | null;
+    payment_intent?: string | null;
+    status: string;
+    reason?: string | null;
+    failure_reason?: string | null;
+    [k: string]: unknown;
+  }> {
+    return this.get(`/refunds/${encodeURIComponent(refundId)}`);
+  }
+
+  // Create a refund on the platform charge. We always pass
+  // `reverse_transfer=true` so Stripe debits the destination account
+  // proportionally; otherwise the seller would keep funds we've refunded
+  // to the buyer. `refund_application_fee=true` returns our 2% cut so the
+  // platform isn't keeping fees on a refunded charge.
+  //
+  // Idempotency-key is REQUIRED — collapses retries to the same Refund.
+  async createRefund(args: {
+    charge_id: string;
+    amount?: number; // cents; omit = full
+    reason?: 'duplicate' | 'fraudulent' | 'requested_by_customer';
+    reverse_transfer?: boolean;
+    refund_application_fee?: boolean;
+    metadata?: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<{
+    id: string;
+    amount: number;
+    currency: string;
+    charge?: string | null;
+    status: string;
+    [k: string]: unknown;
+  }> {
+    const form: Record<string, string> = { charge: args.charge_id };
+    if (typeof args.amount === 'number') form.amount = String(args.amount);
+    if (args.reason) form.reason = args.reason;
+    if (args.reverse_transfer ?? true) form.reverse_transfer = 'true';
+    if (args.refund_application_fee ?? true) form.refund_application_fee = 'true';
+    if (args.metadata) {
+      for (const [k, v] of Object.entries(args.metadata)) {
+        form[`metadata[${k}]`] = v;
+      }
+    }
+    return this.post('/refunds', form, args.idempotencyKey);
+  }
+
+  async retrieveDispute(disputeId: string): Promise<{
+    id: string;
+    amount: number;
+    currency: string;
+    charge?: string | null;
+    status: string;
+    reason?: string | null;
+    evidence_details?: { due_by?: number; submission_count?: number; has_evidence?: boolean };
+    balance_transactions?: Array<{ id: string; amount: number; type: string }>;
+    [k: string]: unknown;
+  }> {
+    return this.get(`/disputes/${encodeURIComponent(disputeId)}`);
+  }
+
+  // GET that adds the Stripe-Account header so the request is scoped to a
+  // connected account (used for balance, payouts, balance transactions).
+  protected async getOnAccount<T>(
+    path: string,
+    connectedAccountId: string,
+  ): Promise<T> {
+    const secret = this.requireSecret();
+    const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
+      method: 'GET',
+      headers: {
+        ...this.commonHeaders(secret),
+        'Stripe-Account': connectedAccountId,
+      },
+    });
+    return this.parse<T>(res, path);
+  }
+
   private async delete<T>(path: string): Promise<T> {
     const secret = this.requireSecret();
     const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
