@@ -297,6 +297,13 @@ model User {
   team_audit_events_as_target   TeamAuditEvent[]         @relation("TeamAuditEventTarget")
   invite_codes_invited_by       InviteCode[]             @relation("InviteCodeInvitedBy")
 
+  // Phase 8 Connect — head-coach team profile (business name, public team
+  // code, capacity mirror) and sub-coach invitations. One TeamProfile per
+  // head coach. Sub-coach invites are 1:N from the issuing head coach.
+  team_profile                  TeamProfile?             @relation("TeamProfileHeadCoach")
+  sub_coach_invites_issued      SubCoachInvite[]         @relation("SubCoachInviteIssuer")
+  sub_coach_invites_accepted    SubCoachInvite[]         @relation("SubCoachInviteAccepter")
+
   // Sprint B — Macro targets, real meal plans, holistic insights cache.
   macro_targets_as_client          MacroTarget[]             @relation("MacroTargetClient")
   macro_targets_as_coach           MacroTarget[]             @relation("MacroTargetCoach")
@@ -3120,4 +3127,79 @@ model ReconciliationSnapshot {
   updated_at                  DateTime       @updatedAt
 
   @@index([status])
+}
+
+// Phase 8 Connect / Team-mode mobile-contract models.
+//
+// TeamProfile is a *minimal* org/gym record attached to the head coach.
+// We deliberately do NOT model gyms as first-class tenants — Phase 8
+// only needs a name + shareable code + cached aggregate counters so the
+// mobile coach team screen can render real numbers instead of empty
+// states. When (if) we promote gyms to first-class tenants this row will
+// migrate into a `team_id` FK; the head coach link stays around as the
+// owner pointer.
+//
+// `team_code` is the public shareable string (`GP-TEAM-XXXX` shape).
+// Unique across all teams so a client signing up with the code lands on
+// the right head coach.
+//
+// `client_capacity` + `clients_assigned` are denormalized aggregates
+// owned by service-layer math: the head-coach screen reads them with a
+// single indexed lookup. They are recomputed when sub-coaches are
+// added/removed or when a client is reassigned.
+model TeamProfile {
+  id                String   @id @default(uuid())
+  // The owning head coach. One profile per head coach (1:1).
+  head_coach_id     String   @unique
+  head_coach        User     @relation("TeamProfileHeadCoach", fields: [head_coach_id], references: [id], onDelete: Cascade)
+  business_name     String
+  // Shareable team / gym code (unique). Generated on first PUT; rotates
+  // only on explicit caller request (TBD: write endpoint not exposed in
+  // Phase 8 — the head coach edits business_name; the code is fixed at
+  // creation time so existing client signup links keep working).
+  team_code         String   @unique
+  client_capacity   Int      @default(0)
+  clients_assigned  Int      @default(0)
+  // Mirror of ConnectAccount.payouts_enabled — surfaced on the team
+  // screen as a hint that revenue/payouts are one tap away. Source of
+  // truth still ConnectAccount; this is a cached read.
+  payouts_enabled   Boolean  @default(false)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  @@index([team_code])
+}
+
+// Phase 8 — Email-based sub-coach invite.
+//
+// One row per outbound invite. `token` is a URL-safe random string the
+// invitee receives in the invite link; `accepted_at` flips when they
+// sign up + the matching TeamSubCoachAssignment row gets created. We do
+// NOT auto-create the User row here — acceptance is a separate flow.
+//
+// Revocation: `revoked_at` + `revoked_by_user_id` makes the audit trail
+// queryable; the same column also short-circuits the accept endpoint.
+//
+// Optional `max_clients` ceiling: when the sub-coach accepts, this is
+// snapshotted onto their CoachProfile so the head coach's per-seat cap
+// preference is preserved.
+model SubCoachInvite {
+  id                  String    @id @default(uuid())
+  head_coach_id       String
+  head_coach          User      @relation("SubCoachInviteIssuer", fields: [head_coach_id], references: [id], onDelete: Cascade)
+  email               String
+  name                String?
+  max_clients         Int?
+  token               String    @unique
+  expires_at          DateTime
+  accepted_at         DateTime?
+  accepted_by_user_id String?
+  accepted_by         User?     @relation("SubCoachInviteAccepter", fields: [accepted_by_user_id], references: [id], onDelete: SetNull)
+  revoked_at          DateTime?
+  revoked_by_user_id  String?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  @@index([head_coach_id, accepted_at])
+  @@index([email])
 }

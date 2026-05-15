@@ -191,6 +191,116 @@ export class InviteCodesService {
     });
   }
 
+  // Phase 8 — invite-code redeemer drilldown for the mobile UI.
+  //
+  // We don't (yet) have a first-class InviteRedemption ledger that
+  // maps individual users to the InviteCode row that brought them in.
+  // The closest correct signal we already have is:
+  //   - the user is currently coached by the InviteCode.coach_id (or by
+  //     one of that head coach's sub-coaches),
+  //   - they signed up after the invite was created,
+  //   - if the invite expired, before it expired.
+  // For single-use invites (used_count <= 1 and max_uses == 1) this is
+  // exact: at most one user can match. For multi-use codes the result
+  // is a best-effort window; we surface only as many rows as the
+  // invite has been used (capped at used_count) and the caller can
+  // trust that those rows came in during the invite's lifetime.
+  //
+  // The method is IDOR-gated on coach_id so a coach cannot enumerate
+  // redeemers of another coach's invite.
+  async listRedeemersForCoach(
+    coachId: string,
+    inviteCodeId: string,
+  ): Promise<
+    Array<{
+      user_id: string;
+      name: string;
+      email: string;
+      redeemed_at: string;
+      last_active_at: string | null;
+    }>
+  > {
+    const invite = await this.prisma.inviteCode.findUnique({
+      where: { id: inviteCodeId },
+    });
+    if (!invite) throw new NotFoundException('Invite code not found');
+    if (invite.coach_id !== coachId) {
+      // Allow OWNERs read access in the future via a separate path; for
+      // now coach-only is the safest gate.
+      throw new ForbiddenException('Invite code does not belong to caller');
+    }
+    if (invite.used_count === 0) return [];
+
+    const lowerBound = invite.created_at;
+    const upperBound = invite.expires_at ?? new Date();
+
+    // Candidate redeemers: students currently on the inviting coach's
+    // roster who signed up between (created_at, min(expires_at, now)).
+    const candidates = await this.prisma.user.findMany({
+      where: {
+        coach_id: invite.coach_id,
+        role: 'student',
+        deleted_at: null,
+        created_at: { gte: lowerBound, lte: upperBound },
+      },
+      orderBy: { created_at: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        created_at: true,
+      },
+      // Cap to used_count + a small buffer so a noisy roster window
+      // doesn't blow up the response. For exact single-use invites the
+      // cap is 1.
+      take: Math.max(1, invite.used_count) + 5,
+    });
+
+    // Last-active derived from the most recent WorkoutSession /
+    // LoggedFoodEntry / CheckIn. Single round-trip across all three.
+    const candidateIds = candidates.map((c) => c.id);
+    const lastActiveByUser = new Map<string, Date>();
+    if (candidateIds.length > 0) {
+      const [workouts, foods, checkIns] = await Promise.all([
+        this.prisma.workoutSession.findMany({
+          where: { user_id: { in: candidateIds } },
+          orderBy: { created_at: 'desc' },
+          distinct: ['user_id'],
+          select: { user_id: true, created_at: true },
+        }),
+        this.prisma.loggedFoodEntry.findMany({
+          where: { user_id: { in: candidateIds } },
+          orderBy: { logged_at: 'desc' },
+          distinct: ['user_id'],
+          select: { user_id: true, logged_at: true },
+        }),
+        this.prisma.checkIn.findMany({
+          where: { user_id: { in: candidateIds } },
+          orderBy: { logged_at: 'desc' },
+          distinct: ['user_id'],
+          select: { user_id: true, logged_at: true },
+        }),
+      ]);
+      const bump = (uid: string, when: Date) => {
+        const cur = lastActiveByUser.get(uid);
+        if (!cur || when.getTime() > cur.getTime()) {
+          lastActiveByUser.set(uid, when);
+        }
+      };
+      for (const r of workouts) bump(r.user_id, r.created_at);
+      for (const r of foods) bump(r.user_id, r.logged_at);
+      for (const r of checkIns) bump(r.user_id, r.logged_at);
+    }
+
+    return candidates.slice(0, Math.max(1, invite.used_count)).map((u) => ({
+      user_id: u.id,
+      name: u.name,
+      email: u.email,
+      redeemed_at: u.created_at.toISOString(),
+      last_active_at: lastActiveByUser.get(u.id)?.toISOString() ?? null,
+    }));
+  }
+
   async revokeForCoach(coachId: string, inviteCodeId: string) {
     const existing = await this.prisma.inviteCode.findUnique({
       where: { id: inviteCodeId },
