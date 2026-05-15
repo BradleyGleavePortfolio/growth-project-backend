@@ -1,7 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { ClientPurchase, CoachPackage } from '@prisma/client';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { PrismaService } from '../prisma.service';
+import { DunningService } from './dunning.service';
+import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 
 // Lifecycle:
 //
@@ -40,6 +42,10 @@ export class CheckoutWebhookHandlerService {
   constructor(
     private prisma: PrismaService,
     private stripeConnect: StripeConnectApiService,
+    // Phase 4-5 — split & dunning. @Optional() so legacy bootstrap tests
+    // that don't wire these still construct the handler.
+    @Optional() private splits?: PurchaseSplitHandlerService,
+    @Optional() private dunning?: DunningService,
   ) {}
 
   // Returns claimed=true iff the event was for a Connect package purchase
@@ -102,7 +108,7 @@ export class CheckoutWebhookHandlerService {
 
     const accessExpiresAt = this.computeAccessExpiry(pkg, purchase, isRecurring, null);
 
-    await this.prisma.clientPurchase.update({
+    const updated = await this.prisma.clientPurchase.update({
       where: { id: purchase.id },
       data: {
         status: newStatus,
@@ -114,6 +120,18 @@ export class CheckoutWebhookHandlerService {
         last_error: null,
       },
     });
+
+    // Phase 4 — materialize ledger + queue head-coach transfer now that
+    // the charge has actually succeeded.
+    if (this.splits) {
+      try {
+        await this.splits.onChargeSucceeded({ purchase: updated });
+      } catch (err) {
+        this.logger.warn(
+          `Split posting failed for purchase=${updated.id}: ${(err as Error).message}`,
+        );
+      }
+    }
     return { claimed: true, purchase_id: purchase.id };
   }
 
@@ -283,7 +301,10 @@ export class CheckoutWebhookHandlerService {
     event: StripeEvent,
   ): Promise<CheckoutWebhookResult> {
     const inv = event.data.object as {
+      id?: string;
       subscription?: string | null;
+      amount_paid?: number;
+      charge?: string | null;
       status_transitions?: { paid_at?: number };
     };
     if (!inv?.subscription) return { claimed: false };
@@ -293,6 +314,7 @@ export class CheckoutWebhookHandlerService {
     if (!purchase) return { claimed: false };
     // Resync subscription state from Stripe so current_period_end and
     // entitlement window are fresh after a renewal.
+    let updated = purchase;
     try {
       const sub = await this.stripeConnect.retrieveSubscription(inv.subscription);
       const pkg = await this.prisma.coachPackage.findUnique({
@@ -300,7 +322,7 @@ export class CheckoutWebhookHandlerService {
       });
       const status = this.normalizeSubscriptionStatus(sub.status);
       const currentPeriodEnd = this.toDate(sub.current_period_end);
-      await this.prisma.clientPurchase.update({
+      updated = await this.prisma.clientPurchase.update({
         where: { id: purchase.id },
         data: {
           status,
@@ -320,6 +342,31 @@ export class CheckoutWebhookHandlerService {
         `invoice.paid resync failed for sub=${inv.subscription}: ${(err as Error).message}`,
       );
     }
+    // Phase 4 — per-renewal split: each invoice.paid mints (or
+    // re-collapses-onto) the head-coach Transfer for that invoice.
+    if (this.splits) {
+      try {
+        await this.splits.onChargeSucceeded({
+          purchase: updated,
+          invoice_amount_cents: inv.amount_paid ?? undefined,
+          invoice_charge_id: inv.charge ?? null,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Split posting on renewal failed for purchase=${updated.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    // Phase 5 — clear any active dunning window.
+    if (this.dunning) {
+      try {
+        await this.dunning.recordResolution(updated.id);
+      } catch (err) {
+        this.logger.warn(
+          `dunning.recordResolution failed purchase=${updated.id}: ${(err as Error).message}`,
+        );
+      }
+    }
     return { claimed: true, purchase_id: purchase.id };
   }
 
@@ -327,7 +374,10 @@ export class CheckoutWebhookHandlerService {
     event: StripeEvent,
   ): Promise<CheckoutWebhookResult> {
     const inv = event.data.object as {
+      id?: string;
       subscription?: string | null;
+      amount_due?: number | null;
+      attempt_count?: number | null;
       last_payment_error?: { message?: string };
     };
     if (!inv?.subscription) return { claimed: false };
@@ -335,7 +385,7 @@ export class CheckoutWebhookHandlerService {
       where: { stripe_subscription_id: inv.subscription },
     });
     if (!purchase) return { claimed: false };
-    await this.prisma.clientPurchase.update({
+    const updated = await this.prisma.clientPurchase.update({
       where: { id: purchase.id },
       data: {
         status: 'past_due',
@@ -345,6 +395,23 @@ export class CheckoutWebhookHandlerService {
         last_error: inv.last_payment_error?.message ?? 'invoice_payment_failed',
       },
     });
+    // Phase 5 — open or extend the dunning window and queue a reminder.
+    if (this.dunning) {
+      try {
+        await this.dunning.recordFailure({
+          purchase: updated,
+          stripe_invoice_id: inv.id ?? null,
+          amount_due_cents: typeof inv.amount_due === 'number' ? inv.amount_due : null,
+          attempt_number:
+            typeof inv.attempt_count === 'number' ? inv.attempt_count : null,
+          reason: inv.last_payment_error?.message ?? null,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `dunning.recordFailure failed purchase=${updated.id}: ${(err as Error).message}`,
+        );
+      }
+    }
     return { claimed: true, purchase_id: purchase.id };
   }
 

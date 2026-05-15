@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -9,6 +8,7 @@ import {
 } from '@nestjs/common';
 import type { ClientPurchase, CoachPackage, ConnectCustomer } from '@prisma/client';
 import { ConnectModuleState } from '../connect/connect.module-state';
+import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import {
   StripeConnectApiError,
   StripeConnectApiService,
@@ -62,6 +62,7 @@ export class CheckoutService {
     private stripeConnect: StripeConnectApiService,
     private packages: PackagesService,
     private state: ConnectModuleState,
+    private feePolicy: FeePolicyService,
   ) {}
 
   async createCheckoutForClient(
@@ -185,6 +186,26 @@ export class CheckoutService {
     const mode: 'payment' | 'subscription' =
       pkg.billing_type === 'recurring' ? 'subscription' : 'payment';
 
+    // Phase 4: resolve the fee split BEFORE minting the checkout session
+    // so the platform application fee can be attached to the Stripe call.
+    //
+    // For mode=payment (one_time), Stripe accepts an absolute
+    // application_fee_amount in cents — we pass the platform's slice
+    // directly. The optional head-coach 5% slice is NOT attached here;
+    // it's minted as a follow-on Transfer after the charge succeeds
+    // (Stripe only supports one application fee + one destination per
+    // session). We add the head-coach amount on top of the platform fee
+    // and KEEP that delta on the platform balance until the follow-on
+    // Transfer drains it to the head coach.
+    //
+    // For mode=subscription, Stripe accepts only application_fee_percent
+    // (not amount). We compute the effective percent from the combined
+    // platform + head-coach bps, then mint the head-coach follow-on
+    // transfer per renewal off the invoice.paid webhook.
+    const plan = await this.feePolicy.planFor(coach.id, pkg.amount_cents);
+    const applicationFeeForStripe =
+      plan.application_fee_cents + plan.head_coach_split_cents;
+
     let session;
     try {
       session = await this.stripeConnect.createCheckoutSession({
@@ -195,21 +216,43 @@ export class CheckoutService {
         successUrl,
         cancelUrl,
         destinationAccount: connectAccount.stripe_account_id,
+        // One-time: pass an absolute cents amount.
+        applicationFeeAmount:
+          mode === 'payment' && applicationFeeForStripe > 0
+            ? applicationFeeForStripe
+            : undefined,
+        // Subscription: pass a percent. Recompute as percent of
+        // amount_cents — the bps math from FeePolicyService gives us
+        // floor(amount * bps / 10000), so we report the percent that
+        // corresponds to the actual cents we want to take.
+        applicationFeePercent:
+          mode === 'subscription' && applicationFeeForStripe > 0
+            ? Number(
+                ((applicationFeeForStripe / pkg.amount_cents) * 100).toFixed(2),
+              )
+            : undefined,
         clientReferenceId: client.id,
         metadata: {
           tgp_client_user_id: client.id,
           tgp_coach_user_id: coach.id,
           tgp_package_id: pkg.id,
+          tgp_platform_fee_cents: String(plan.application_fee_cents),
+          tgp_head_coach_split_cents: String(plan.head_coach_split_cents),
+          tgp_head_coach_user_id: plan.head_coach_id ?? '',
         },
         subscriptionMetadata: {
           tgp_client_user_id: client.id,
           tgp_coach_user_id: coach.id,
           tgp_package_id: pkg.id,
+          tgp_head_coach_user_id: plan.head_coach_id ?? '',
         },
         paymentIntentMetadata: {
           tgp_client_user_id: client.id,
           tgp_coach_user_id: coach.id,
           tgp_package_id: pkg.id,
+          tgp_platform_fee_cents: String(plan.application_fee_cents),
+          tgp_head_coach_split_cents: String(plan.head_coach_split_cents),
+          tgp_head_coach_user_id: plan.head_coach_id ?? '',
         },
         idempotencyKey,
       });

@@ -342,7 +342,13 @@ export class StripeConnectApiService {
     successUrl: string;
     cancelUrl: string;
     destinationAccount: string;
-    applicationFeePercent?: number;
+    // Phase 4: application fee (TGP/platform cut). For one_time we pass
+    // it as an absolute cents amount on payment_intent_data; for
+    // subscription we pass it as a percent on subscription_data
+    // (Stripe restricts subscription application fees to percent on
+    // Checkout). Both are mutually exclusive with the OTHER mode.
+    applicationFeeAmount?: number; // cents — one_time only
+    applicationFeePercent?: number; // percent — subscription only
     clientReferenceId?: string;
     metadata?: Record<string, string>;
     subscriptionMetadata?: Record<string, string>;
@@ -363,9 +369,13 @@ export class StripeConnectApiService {
     if (args.mode === 'payment') {
       form['payment_intent_data[transfer_data][destination]'] =
         args.destinationAccount;
-      if (args.applicationFeePercent) {
-        // Stripe charges a percentage as an amount per session; for one_time
-        // we compute it later in cents. Phase 2-3 omits it.
+      if (
+        typeof args.applicationFeeAmount === 'number' &&
+        args.applicationFeeAmount > 0
+      ) {
+        form['payment_intent_data[application_fee_amount]'] = String(
+          args.applicationFeeAmount,
+        );
       }
       if (args.paymentIntentMetadata) {
         for (const [k, v] of Object.entries(args.paymentIntentMetadata)) {
@@ -375,7 +385,10 @@ export class StripeConnectApiService {
     } else {
       form['subscription_data[transfer_data][destination]'] =
         args.destinationAccount;
-      if (args.applicationFeePercent) {
+      if (
+        typeof args.applicationFeePercent === 'number' &&
+        args.applicationFeePercent > 0
+      ) {
         form['subscription_data[application_fee_percent]'] = String(
           args.applicationFeePercent,
         );
@@ -404,6 +417,131 @@ export class StripeConnectApiService {
     return this.get<StripeCheckoutSessionObject>(
       `/checkout/sessions/${encodeURIComponent(sessionId)}`,
     );
+  }
+
+  // Phase 4: read the PaymentIntent so we can extract the destination
+  // charge id (`latest_charge`) used as source_transaction on follow-on
+  // transfers.
+  async retrievePaymentIntent(piId: string): Promise<{
+    id: string;
+    latest_charge?: string | null;
+    charges?: { data?: Array<{ id?: string }> };
+    [k: string]: unknown;
+  }> {
+    return this.get(`/payment_intents/${encodeURIComponent(piId)}`);
+  }
+
+  async retrieveCharge(chargeId: string): Promise<{
+    id: string;
+    amount: number;
+    amount_refunded?: number;
+    refunded?: boolean;
+    transfer?: string | null;
+    application_fee?: string | null;
+    application_fee_amount?: number | null;
+    payment_intent?: string | null;
+    [k: string]: unknown;
+  }> {
+    return this.get(`/charges/${encodeURIComponent(chargeId)}`);
+  }
+
+  // Phase 4: create a follow-on Transfer from the platform balance to a
+  // connected account. We always pass `source_transaction` so the
+  // transfer is drawn from the original charge's funds and reconciles
+  // 1:1 against the parent payment in Stripe's books.
+  //
+  // Idempotency-key is REQUIRED — Stripe will collapse retries to the
+  // same Transfer object even on a flaky network.
+  async createTransfer(args: {
+    amount: number; // cents
+    currency: string;
+    destination: string; // acct_*
+    source_transaction?: string; // ch_*
+    transfer_group?: string;
+    description?: string;
+    metadata?: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<{
+    id: string;
+    amount: number;
+    currency: string;
+    destination: string;
+    source_transaction?: string | null;
+    [k: string]: unknown;
+  }> {
+    const form: Record<string, string> = {
+      amount: String(args.amount),
+      currency: args.currency,
+      destination: args.destination,
+    };
+    if (args.source_transaction) {
+      form.source_transaction = args.source_transaction;
+    }
+    if (args.transfer_group) form.transfer_group = args.transfer_group;
+    if (args.description) form.description = args.description;
+    if (args.metadata) {
+      for (const [k, v] of Object.entries(args.metadata)) {
+        form[`metadata[${k}]`] = v;
+      }
+    }
+    return this.post('/transfers', form, args.idempotencyKey);
+  }
+
+  async retrieveTransfer(transferId: string): Promise<{
+    id: string;
+    amount: number;
+    amount_reversed?: number;
+    reversed?: boolean;
+    destination: string;
+    [k: string]: unknown;
+  }> {
+    return this.get(`/transfers/${encodeURIComponent(transferId)}`);
+  }
+
+  async reverseTransfer(args: {
+    transfer_id: string;
+    amount?: number; // cents; full reversal if omitted
+    description?: string;
+    metadata?: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<{
+    id: string;
+    transfer: string;
+    amount: number;
+    [k: string]: unknown;
+  }> {
+    const form: Record<string, string> = {};
+    if (typeof args.amount === 'number') form.amount = String(args.amount);
+    if (args.description) form.description = args.description;
+    if (args.metadata) {
+      for (const [k, v] of Object.entries(args.metadata)) {
+        form[`metadata[${k}]`] = v;
+      }
+    }
+    return this.post(
+      `/transfers/${encodeURIComponent(args.transfer_id)}/reversals`,
+      form,
+      args.idempotencyKey,
+    );
+  }
+
+  // Phase 5: cancel a subscription (used by the dunning sweeper when
+  // grace period elapses).
+  async cancelSubscription(subId: string): Promise<{
+    id: string;
+    status: string;
+    [k: string]: unknown;
+  }> {
+    return this.delete(`/subscriptions/${encodeURIComponent(subId)}`);
+  }
+
+  private async delete<T>(path: string): Promise<T> {
+    const secret = this.requireSecret();
+    const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
+      method: 'DELETE',
+      headers: this.commonHeaders(secret),
+    });
+    return this.parse<T>(res, path);
   }
 
   private commonHeaders(secret: string): Record<string, string> {

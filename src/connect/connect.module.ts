@@ -3,6 +3,9 @@ import { JwksVerifierService } from '../auth/jwks.service';
 import { ConnectController } from './connect.controller';
 import { ConnectModuleState } from './connect.module-state';
 import { ConnectService } from './connect.service';
+import { FeePolicyService } from './fees/fee-policy.service';
+import { SplitLedgerService } from './fees/split-ledger.service';
+import { TransferOrchestratorService } from './fees/transfer-orchestrator.service';
 import {
   StripeConnectApiError,
   StripeConnectApiService,
@@ -25,12 +28,23 @@ import {
     ConnectService,
     StripeConnectApiService,
     ConnectModuleState,
+    // Phase 4-5 — fee policy + split ledger + follow-on transfer worker.
+    FeePolicyService,
+    SplitLedgerService,
+    TransferOrchestratorService,
     // JwtAuthGuard (provided globally in AppModule via APP_GUARD) injects
     // JwksVerifierService. Controllers that mount JwtAuthGuard via
     // @UseGuards must have it in scope; BillingModule does the same.
     JwksVerifierService,
   ],
-  exports: [ConnectService, ConnectModuleState, StripeConnectApiService],
+  exports: [
+    ConnectService,
+    ConnectModuleState,
+    StripeConnectApiService,
+    FeePolicyService,
+    SplitLedgerService,
+    TransferOrchestratorService,
+  ],
 })
 export class ConnectModule implements OnModuleInit {
   private readonly logger = new Logger(ConnectModule.name);

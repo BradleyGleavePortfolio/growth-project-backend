@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { CheckoutService } from '../src/checkout/checkout.service';
 import { ConnectModuleState } from '../src/connect/connect.module-state';
+import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
 import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
 import { PackagesService } from '../src/packages/packages.service';
 
@@ -163,18 +164,40 @@ function makePrismaStub() {
 }
 
 function makeService() {
-  const prisma = makePrismaStub();
+  const prisma: any = makePrismaStub();
+  // Phase 4 — feePolicy + teamSubCoachAssignment stubs used by
+  // FeePolicyService when resolving the split. Solo-PT default: no
+  // override row, no head-coach assignment.
+  prisma._feePolicies = [];
+  prisma._teamAssignments = [];
+  prisma.feePolicy = {
+    findUnique: jest.fn(async ({ where }: any) =>
+      prisma._feePolicies.find((p: any) => p.coach_id === where.coach_id) ?? null,
+    ),
+    upsert: jest.fn(),
+  };
+  prisma.teamSubCoachAssignment = {
+    findFirst: jest.fn(async ({ where }: any) => {
+      const row = prisma._teamAssignments.find(
+        (a: any) =>
+          a.sub_coach_id === where.sub_coach_id && a.archived_at == null,
+      );
+      return row ?? null;
+    }),
+  };
   const stripe = new StripeStub();
   const packages = new PackagesService(prisma as any);
   const state = new ConnectModuleState();
   state.ready = true;
+  const feePolicy = new FeePolicyService(prisma as any);
   const svc = new CheckoutService(
     prisma as any,
     stripe as any,
     packages,
     state,
+    feePolicy,
   );
-  return { svc, prisma, stripe, packages, state };
+  return { svc, prisma, stripe, packages, state, feePolicy };
 }
 
 describe('CheckoutService', () => {

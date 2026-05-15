@@ -216,6 +216,12 @@ model User {
   purchases_as_client        ClientPurchase[]     @relation("ClientPurchaseClient")
   purchases_as_coach         ClientPurchase[]     @relation("ClientPurchaseCoach")
   connect_customer           ConnectCustomer?
+  // Phase 4-5 Connect — fee policy override, ledger payee back-refs,
+  // outbound transfer destination, and payment reminder recipient.
+  fee_policy                 FeePolicy?           @relation("FeePolicyCoach")
+  split_entries_as_payee     SplitLedgerEntry[]   @relation("SplitLedgerPayee")
+  transfers_as_destination   ConnectTransfer[]    @relation("ConnectTransferDestination")
+  payment_reminders          PaymentReminder[]    @relation("PaymentReminderRecipient")
   drafts_as_coach            MessageDraft[]       @relation("MessageDraftCoach")
   drafts_as_client           MessageDraft[]       @relation("MessageDraftClient")
   activity_events_actor      ActivityEvent[]      @relation("ActivityEventActor")
@@ -2685,4 +2691,239 @@ model ClientPurchase {
   @@index([package_id])
   @@index([stripe_subscription_id])
   @@index([entitlement_active, access_expires_at])
+
+  splits     SplitLedgerEntry[]
+  transfers  ConnectTransfer[]
+  dunning    DunningState?
+  reminders  PaymentReminder[]
+}
+
+// Phase 4 Connect — Per-coach fee policy override.
+//
+// Default platform policy is hard-coded in FeePolicyService:
+//   - 2% application fee to platform (TGP) on every coach-package charge.
+//   - 5% transfer to head coach when the selling coach is a sub-coach
+//     (resolved via TeamSubCoachAssignment, non-archived).
+//
+// This row lets us override either side of that for a specific coach
+// (e.g. legacy white-glove deals, enterprise gym contracts). Both basis-
+// point fields are nullable — null falls back to the global default.
+//
+// Why bps not percent: bps lets a fee like 2.5% live in an integer column.
+// 200 bps = 2.00%. The split engine always rounds toward platform safety
+// (i.e. floors the destination amount; the platform absorbs the rounding
+// fraction to avoid landing a sub-cent in the connected account).
+model FeePolicy {
+  id                              String   @id @default(uuid())
+  // Owning coach this override applies to. Same coach who sells packages.
+  // When the head-coach split is in play, this row's coach_id is the
+  // SELLER (sub-coach) — the head-coach split bps lives here because
+  // the rate is "what the sub-coach gives up", not "what the head coach
+  // takes". This keeps "I sell, I see my own policy" simple.
+  coach_id                        String   @unique
+  coach                           User     @relation("FeePolicyCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  // Override of the 2% platform fee. Null = use global default.
+  platform_application_fee_bps    Int?
+  // Override of the 5% head-coach split (only applies when coach is a
+  // sub-coach). Null = use global default.
+  head_coach_split_bps            Int?
+  // Hard cap so a bad write can't accidentally route 100% of revenue to
+  // platform/head-coach. Both halves combined must be < 5000 bps (50%).
+  // Enforced in FeePolicyService.assertSane().
+  notes                           String?
+  created_at                      DateTime @default(now())
+  updated_at                      DateTime @updatedAt
+}
+
+// Phase 4 Connect — Immutable money-split ledger.
+//
+// One row per (purchase, payee, fee_kind). Written by the webhook
+// pipeline AFTER Stripe confirms the charge succeeded, so every row
+// corresponds to real money that actually moved. Composite unique on
+// (purchase_id, kind, payee_user_id) ensures retries collapse onto the
+// same row and never double-credit.
+//
+// Lifecycle:
+//   - pending  : row written at split-plan time; no Stripe call yet.
+//   - posted   : Stripe transfer/application-fee succeeded. Has a
+//                stripe_transfer_id (for `transfer` kind) or the parent
+//                charge id (for `application_fee` and `destination`).
+//   - reversed : a refund or transfer_reversal was applied. amount_cents
+//                may differ from the original (partial reversal).
+//   - failed   : the transfer attempt errored. last_error has the
+//                Stripe-reported message. Retried by the dunning job.
+model SplitLedgerEntry {
+  id                  String         @id @default(uuid())
+  purchase_id         String
+  purchase            ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  // What this row represents — see comment block above.
+  //   application_fee : the platform's 2% cut (deducted via Stripe
+  //                     application_fee_amount on the destination charge).
+  //                     payee is platform itself (payee_user_id=null).
+  //   destination     : the selling coach's gross share routed via
+  //                     transfer_data[destination]. payee_user_id = seller.
+  //   head_coach_split: a follow-on Transfer the platform mints to the
+  //                     head coach when the seller is a sub-coach.
+  //                     payee_user_id = head coach.
+  kind                String
+  // The user receiving this slice. Null for application_fee (platform).
+  payee_user_id       String?
+  payee               User?          @relation("SplitLedgerPayee", fields: [payee_user_id], references: [id], onDelete: SetNull)
+  // Stripe connected account that received the funds. Null for
+  // application_fee (platform retains).
+  payee_stripe_account_id String?
+  amount_cents        Int
+  currency            String         @default("usd")
+  status              String         @default("pending") // pending | posted | reversed | failed
+  // Stripe ids that locate this slice in Stripe's books.
+  //  - For kind=application_fee: stripe_charge_id + stripe_application_fee_id.
+  //  - For kind=destination    : stripe_charge_id + (auto) transfer id on charge.transfer.
+  //  - For kind=head_coach_split: stripe_transfer_id (the follow-on transfer
+  //                                we minted) + stripe_charge_id as source.
+  stripe_charge_id         String?
+  stripe_application_fee_id String?
+  stripe_transfer_id       String?
+  // For partial-reversal accounting: how much of this slice has been
+  // reversed back to the platform. Always <= amount_cents.
+  reversed_cents      Int            @default(0)
+  // Idempotency-key we sent to Stripe when posting this slice. Lets the
+  // worker retry safely. Globally unique.
+  idempotency_key     String?        @unique
+  last_error          String?
+  posted_at           DateTime?
+  reversed_at         DateTime?
+  created_at          DateTime       @default(now())
+  updated_at          DateTime       @updatedAt
+
+  @@unique([purchase_id, kind, payee_user_id])
+  @@index([purchase_id])
+  @@index([status])
+  @@index([kind, status])
+  @@index([payee_user_id, status])
+}
+
+// Phase 4 Connect — Follow-on Connect transfer record.
+//
+// Distinct from SplitLedgerEntry: the ledger tells us "who owes whom how
+// much"; ConnectTransfer is the operational receipt for each Stripe
+// /v1/transfers POST. One transfer row per outgoing Stripe transfer
+// (e.g. the head-coach 5% split). application_fee splits are not
+// transfers (they're deducted at charge time) so they live only in the
+// ledger.
+//
+// Status drives the retry worker: pending -> in_flight -> succeeded |
+// failed. failed rows get retried up to max_attempts with exponential
+// backoff (next_attempt_at); the dunning sweeper picks them up.
+model ConnectTransfer {
+  id                       String         @id @default(uuid())
+  purchase_id              String
+  purchase                 ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  ledger_entry_id          String?        @unique
+  // Destination connected account (head coach for the sub-coach split).
+  destination_stripe_account_id String
+  destination_user_id      String?
+  destination              User?          @relation("ConnectTransferDestination", fields: [destination_user_id], references: [id], onDelete: SetNull)
+  amount_cents             Int
+  currency                 String         @default("usd")
+  // Source charge id (the original payment intent's charge). Stripe needs
+  // this on `source_transaction` so the transfer is paid out of that
+  // charge's available balance and reconciles against the same payment.
+  source_stripe_charge_id  String?
+  stripe_transfer_id       String?
+  status                   String         @default("pending") // pending | succeeded | failed | reversed
+  attempts                 Int            @default(0)
+  max_attempts             Int            @default(6)
+  next_attempt_at          DateTime?
+  last_attempt_at          DateTime?
+  last_error               String?
+  // Idempotency-key used on the Stripe /v1/transfers call.
+  idempotency_key          String         @unique
+  posted_at                DateTime?
+  reversed_at              DateTime?
+  reversed_amount_cents    Int            @default(0)
+  created_at               DateTime       @default(now())
+  updated_at               DateTime       @updatedAt
+
+  @@index([status, next_attempt_at])
+  @@index([destination_user_id])
+  @@index([purchase_id])
+}
+
+// Phase 5 Connect — Dunning state per recurring purchase.
+//
+// One row per ClientPurchase with billing_type=recurring once Stripe
+// reports a failed renewal. We track the dunning window (which renewal
+// attempt are we on, when does the grace period end, was a final cancel
+// scheduled). The reminder cron uses this row to drive in-app + email
+// nudges; cancel scheduling honors the dunning_status state machine.
+//
+// Lifecycle:
+//   none -> active -> resolved | abandoned
+//
+//   active: at least one payment failure has fired in the current window
+//   resolved: a subsequent invoice.paid cleared the window
+//   abandoned: max_attempts reached or grace_period_ends_at elapsed —
+//              the purchase will be canceled by the next sweeper run.
+model DunningState {
+  id                       String         @id @default(uuid())
+  purchase_id              String         @unique
+  purchase                 ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  status                   String         @default("active") // active | resolved | abandoned
+  failure_count            Int            @default(0)
+  // Highest attempt count reported by Stripe (invoice.attempt_count).
+  // Drives "this is your 3rd failed attempt" copy in reminders.
+  last_attempt_number      Int?
+  last_failed_amount_cents Int?
+  last_failure_at          DateTime?
+  last_failure_reason      String?
+  grace_period_ends_at     DateTime?
+  // Scheduled cancellation — when this fires, the recurring sub will be
+  // canceled by the sweeper and entitlement turned off. Null while still
+  // in the grace window.
+  cancel_scheduled_at      DateTime?
+  resolved_at              DateTime?
+  abandoned_at             DateTime?
+  created_at               DateTime       @default(now())
+  updated_at               DateTime       @updatedAt
+
+  @@index([status])
+  @@index([status, cancel_scheduled_at])
+}
+
+// Phase 5 Connect — Outbound reminder log.
+//
+// One row per reminder we attempted to deliver (email / in-app / push).
+// Append-only audit feed; the reminder cron uses (purchase_id, kind,
+// status) to avoid double-sending the same reminder in the same dunning
+// window. The status mirrors the delivery worker outcome.
+model PaymentReminder {
+  id                  String         @id @default(uuid())
+  purchase_id         String
+  purchase            ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  // What event we are reminding about.
+  //  payment_failed   : first failure (or first failure in window)
+  //  retry_scheduled  : Stripe will retry on date X
+  //  final_warning    : last reminder before cancel_scheduled_at fires
+  //  canceled_for_nonpayment : the sub was canceled
+  kind                String
+  // Which surface we attempted: email | inapp | push
+  channel             String
+  // Who we were notifying — typically the client; may also be the seller
+  // coach when the failure is on a high-value purchase.
+  recipient_user_id   String
+  recipient           User           @relation("PaymentReminderRecipient", fields: [recipient_user_id], references: [id], onDelete: Cascade)
+  status              String         @default("queued") // queued | sent | failed | skipped
+  sent_at             DateTime?
+  failure_reason      String?
+  // Idempotency window the reminder belongs to. For payment_failed we
+  // use the Stripe invoice id; for retry_scheduled we use the next
+  // attempt date stringified. Same (purchase_id, kind, window_key)
+  // collapses to a single row.
+  window_key          String
+  created_at          DateTime       @default(now())
+
+  @@unique([purchase_id, kind, channel, window_key])
+  @@index([purchase_id, kind])
+  @@index([status])
+  @@index([recipient_user_id])
 }
