@@ -75,6 +75,28 @@ export class InviteCodesController {
     return this.inviteCodes.bulkInvite(req.user.id, body.rows);
   }
 
+  // POST /coach/invite-codes/:id/send — re-deliver the email for an
+  // already-created invite-code row to a specified recipient. Used when:
+  //   * the coach typed the wrong email and corrects it after creating
+  //     the code, or
+  //   * the mobile UI surfaces a "resend" button next to a row whose
+  //     bulk-send email_status came back as 'failed'.
+  // Idempotency is keyed on the invite_code_id, so retries are safe.
+  @Post('coach/invite-codes/:id/send')
+  @UseGuards(JwtAuthGuard, CoachGuard)
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
+  @HttpCode(HttpStatus.OK)
+  async sendOne(
+    @Request() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() body: { email: string; name?: string; note?: string },
+  ) {
+    return this.inviteCodes.sendInviteEmailForCode(req.user.id, id, body.email, {
+      recipientName: body.name,
+      personalNote: body.note,
+    });
+  }
+
   // POST /coach/invite-codes/bulk/parse — server-side parser for the
   // mobile paste box. Lets the mobile UI render a preview without
   // duplicating the parsing rules. Pure function; no DB writes.

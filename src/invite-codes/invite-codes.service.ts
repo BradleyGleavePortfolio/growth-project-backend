@@ -13,6 +13,9 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
+import { EmailService } from '../email/email.service';
+import { EmailTemplateKey } from '../email/email.types';
+import { AuditService } from '../audit/audit.service';
 
 type ValidationSuccess = {
   valid: true;
@@ -49,6 +52,8 @@ export class InviteCodesService {
   constructor(
     private prisma: PrismaService,
     private analytics: AnalyticsService,
+    private email: EmailService,
+    private audit: AuditService,
   ) {}
 
   // Generates a human-friendly `GP-XXXXXX` code. Retries on the (astronomically
@@ -583,19 +588,49 @@ export class InviteCodesService {
   // Sprint B — Bulk invite. For each row we generate a single-use code
   // tagged with the recipient's email so the coach (and audit trail)
   // can map a code back to the person it was meant for. Codes have a
-  // 14-day expiry by default. The send-email step is best-effort and
-  // never fails the request — failed sends are returned as
-  // `email_status: "skipped"` so the coach can copy/paste manually.
+  // 14-day expiry by default. For each created code we attempt to
+  // deliver the coach-invites-client email; the per-row email outcome
+  // (sent | logged | failed | skipped) is returned alongside the code
+  // so the mobile UI can show "✓ emailed to alice@…" or "copy code".
+  //
+  // Email send doctrine (matches mobile PR #141):
+  //   - never fakes success; if Resend is misconfigured, EmailService
+  //     throws at boot — by the time we get here, the transport is real
+  //     OR EMAIL_TRANSPORT=log (dev). 'logged' is a legitimate status.
+  //   - idempotency_key = `invite:<invite_code_id>` so a retried bulk
+  //     post never sends twice.
+  //   - one failed send does NOT fail the batch — the row's status flips
+  //     to 'failed' and the coach sees the per-row outcome.
   async bulkInvite(
     coachId: string,
     rows: { email: string; name?: string; note?: string }[],
   ): Promise<{
     total: number;
-    created: { email: string; code: string; invite_code_id: string }[];
+    created: {
+      email: string;
+      code: string;
+      invite_code_id: string;
+      email_status: 'sent' | 'failed' | 'skipped' | 'logged';
+      email_error?: string;
+    }[];
     rejected: { email: string; reason: string }[];
   }> {
-    const created: { email: string; code: string; invite_code_id: string }[] = [];
+    const created: {
+      email: string;
+      code: string;
+      invite_code_id: string;
+      email_status: 'sent' | 'failed' | 'skipped' | 'logged';
+      email_error?: string;
+    }[] = [];
     const rejected: { email: string; reason: string }[] = [];
+
+    // Fetch coach display name once — used as {{coach_name}} in every
+    // email and in the audit metadata.
+    const coach = await this.prisma.user.findUnique({
+      where: { id: coachId },
+      select: { name: true, email: true },
+    });
+    const coachName = coach?.name ?? 'Your coach';
 
     // De-dupe by lower-cased email — emitting two codes for the same
     // address inside one batch is almost always a copy/paste mistake.
@@ -617,19 +652,33 @@ export class InviteCodesService {
           expires_at: expiresAt.toISOString(),
           max_uses: 1,
         });
+
+        const emailOutcome = await this._sendInviteEmail({
+          to: normalised,
+          recipientName: row.name,
+          personalNote: row.note,
+          coachId,
+          coachName,
+          inviteCode: codeRow.code,
+          inviteCodeId: codeRow.id,
+          expiresAt,
+        });
+
         created.push({
           email: normalised,
           code: codeRow.code,
           invite_code_id: codeRow.id,
+          email_status: emailOutcome.status,
+          ...(emailOutcome.error ? { email_error: emailOutcome.error } : {}),
         });
-        // Audit trail — re-using the same INVITE_PREVIEWED stream the
-        // single-create flow emits so dashboards see one timeline.
+
         try {
           this.analytics.capture(coachId, Events.INVITE_PREVIEWED, {
             email: normalised,
             name: row.name ?? null,
             bulk: true,
             via: 'bulk_invite',
+            email_status: emailOutcome.status,
           });
         } catch {
           // analytics never blocks bulk invite flow
@@ -644,7 +693,110 @@ export class InviteCodesService {
     this.logger.log(
       `bulkInvite coach=${coachId} requested=${rows.length} created=${created.length} rejected=${rejected.length}`,
     );
+
+    // One audit row per bulk call — records the request shape and the
+    // per-email outcomes (without including the codes themselves; the
+    // codes are PII-adjacent and the invite-code table is the source of
+    // truth). This is the operator's "did the launch send X invites
+    // on Y at Z" trail.
+    await this.audit.write({
+      action: 'invite.bulk_sent',
+      actorId: coachId,
+      tenantCoachId: coachId,
+      targetType: 'invite_batch',
+      metadata: {
+        total_requested: rows.length,
+        created_count: created.length,
+        rejected_count: rejected.length,
+        sent_count: created.filter((r) => r.email_status === 'sent').length,
+        failed_count: created.filter((r) => r.email_status === 'failed').length,
+        logged_count: created.filter((r) => r.email_status === 'logged').length,
+      },
+    });
+
     return { total: rows.length, created, rejected };
+  }
+
+  // Send a single invite email for an already-existing InviteCode row.
+  // Used by the bulk path and the per-row "resend" endpoint. Idempotent
+  // on (invite_code_id) — a second call with the same code id returns
+  // status:'skipped' without re-hitting Resend.
+  async sendInviteEmailForCode(
+    coachId: string,
+    inviteCodeId: string,
+    recipientEmail: string,
+    opts?: { recipientName?: string; personalNote?: string },
+  ): Promise<{
+    status: 'sent' | 'failed' | 'skipped' | 'logged';
+    error?: string;
+  }> {
+    const row = await this.prisma.inviteCode.findUnique({
+      where: { id: inviteCodeId },
+    });
+    if (!row) throw new NotFoundException('Invite code not found');
+    if (row.coach_id !== coachId) {
+      throw new ForbiddenException('Invite code does not belong to caller');
+    }
+    if (row.revoked) {
+      throw new BadRequestException('Invite code is revoked');
+    }
+    const coach = await this.prisma.user.findUnique({
+      where: { id: coachId },
+      select: { name: true },
+    });
+    return this._sendInviteEmail({
+      to: recipientEmail,
+      recipientName: opts?.recipientName,
+      personalNote: opts?.personalNote,
+      coachId,
+      coachName: coach?.name ?? 'Your coach',
+      inviteCode: row.code,
+      inviteCodeId: row.id,
+      expiresAt: row.expires_at,
+    });
+  }
+
+  // ── internal helpers ───────────────────────────────────────────────────
+
+  private async _sendInviteEmail(params: {
+    to: string;
+    recipientName?: string;
+    personalNote?: string;
+    coachId: string;
+    coachName: string;
+    inviteCode: string;
+    inviteCodeId: string;
+    expiresAt: Date | null;
+  }): Promise<{
+    status: 'sent' | 'failed' | 'skipped' | 'logged';
+    error?: string;
+  }> {
+    const acceptBase =
+      process.env.PUBLIC_INVITE_BASE_URL || 'https://app.tgp.com/join';
+    const acceptUrl = `${acceptBase}/${params.inviteCode}`;
+    const expiresAtDisplay = params.expiresAt
+      ? params.expiresAt.toISOString().slice(0, 10)
+      : 'in 14 days';
+
+    const res = await this.email.send({
+      to: params.to,
+      template: EmailTemplateKey.COACH_INVITES_CLIENT,
+      // Idempotency key is keyed on the invite-code row id (single source
+      // of truth for "this invite") so even if a buggy mobile client
+      // re-POSTs the bulk request twice, the second call is a no-op.
+      idempotencyKey: `invite:${params.inviteCodeId}`,
+      data: {
+        coach_name: params.coachName,
+        recipient_name: params.recipientName ?? null,
+        personal_note: params.personalNote ?? null,
+        accept_url: acceptUrl,
+        invite_code: params.inviteCode,
+        expires_at: expiresAtDisplay,
+      },
+    });
+    return res.error
+      ? { status: res.status, error: res.error }
+      : { status: res.status };
   }
 
   // Helper: parse a coach's pasted CSV/newline-separated text into

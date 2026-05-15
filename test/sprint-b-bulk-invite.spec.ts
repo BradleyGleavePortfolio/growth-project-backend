@@ -4,10 +4,12 @@ import { InviteCodesService } from '../src/invite-codes/invite-codes.service';
 // path of bulkInvite is exercised by the integration suite.
 
 describe('InviteCodesService.parsePasted', () => {
+  // parser path is pure; deps unused.
   const svc = new InviteCodesService(
-    // @ts-expect-error — parser path is pure; deps unused.
-    null,
-    null,
+    null as any,
+    null as any,
+    null as any,
+    null as any,
   );
 
   it('parses one email per line', () => {

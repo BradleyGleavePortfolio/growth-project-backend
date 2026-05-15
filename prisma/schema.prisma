@@ -3203,3 +3203,42 @@ model SubCoachInvite {
   @@index([head_coach_id, accepted_at])
   @@index([email])
 }
+
+// ─── Email Send Log ─────────────────────────────────────────────────────
+//
+// Idempotency + send-receipts ledger for transactional email.
+//
+// One row per send attempt. The `idempotency_key` is a stable opaque
+// caller-supplied string (e.g. "invite:<invite_code_id>"). A unique
+// constraint on the key makes EmailService.send a no-op on retry — the
+// second insert hits P2002 and the call returns status:'skipped' without
+// re-hitting the provider.
+//
+// status lifecycle:
+//   sending → sent     (provider 2xx)
+//   sending → failed   (provider non-2xx or render error)
+//   sending → logged   (EMAIL_TRANSPORT=log; payload only printed)
+//
+// We never delete rows — support uses this table to confirm "did we send
+// the X email to Y on date Z" without needing to query the provider.
+model EmailSendLog {
+  id                  String    @id @default(uuid())
+  idempotency_key     String    @unique
+  // One of EmailTemplateKey values (free-text on the DB side to keep
+  // adding new templates from a single source — src/email/email.types.ts).
+  template_key        String
+  // Lower-cased at write time. Indexed for support lookups.
+  recipient_email     String
+  // sending | sent | failed | logged
+  status              String    @default("sending")
+  // Provider message id when status='sent'. Null otherwise.
+  provider_message_id String?
+  // Truncated to 500 chars by the service layer. Null when no error.
+  error               String?
+  sent_at             DateTime?
+  created_at          DateTime  @default(now())
+
+  @@index([recipient_email, created_at])
+  @@index([template_key, created_at])
+  @@index([status, created_at])
+}
