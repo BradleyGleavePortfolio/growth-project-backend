@@ -1675,6 +1675,98 @@ Both are reversible (drop tables in reverse order).
 - `EXERCISEDB_API_KEY` — optional; without it the seed catalog is
   used. See `.env.example` for the full set.
 
+## Video library v1 — exercise catalog + Mux
+
+`src/exercise-catalog/` and `src/video/` ship the platform's own
+exercise catalog with Mux-hosted demo videos. This lives alongside the
+existing `src/exercise-library/` ExerciseDB proxy:
+
+- `/exercises/*` — legacy ExerciseDB-backed catalog. Wide, no videos.
+  Used by the workout builder for ad-hoc exercise selection.
+- `/exercise-catalog/*` — canonical, owner-curated catalog. Smaller,
+  but each row can carry a Mux HLS playback URL.
+
+We did NOT add a Wger adapter. The original brief mentioned Wger, but
+the repo already has a working ExerciseDB integration with a 50-row
+seed fallback (see Sprint B above) and the mobile app speaks to a
+brand-new contract (`/exercise-catalog/*`) anyway. Adding Wger on top
+would be a third overlapping source for the same shape of data with
+no caller. If a coach surface ever wants the much wider Wger inventory
+we can wire an adapter behind the same controllers — the
+`ExerciseCatalogItem` model is intentionally provider-agnostic.
+
+### Endpoints
+
+| Method | Route                                          | Auth        | Behavior |
+|--------|------------------------------------------------|-------------|----------|
+| GET    | `/exercise-catalog`                            | JWT         | List with `q`, `category`, `primaryMuscle`, `equipment`, `limit`, `cursor`. Returns `{ items, nextCursor, total }`. |
+| GET    | `/exercise-catalog/:idOrSlug`                  | JWT         | Detail. Returns `playbackUrl` (signed/public HLS) or `null` if no video attached. |
+| POST   | `/admin/exercise-catalog`                      | OWNER       | Create a new catalog row (slug + metadata only — videos attached separately). |
+| POST   | `/admin/exercise-catalog/:idOrSlug/video/upload` | OWNER     | Mints a Mux Direct Upload URL. Requires Mux configured — 503 with `{ error: 'mux_disabled', action }` otherwise. |
+| PUT    | `/admin/exercise-catalog/:idOrSlug/video`      | OWNER       | Attach an existing Mux asset id. Verifies the asset on Mux before persisting. |
+| DELETE | `/admin/exercise-catalog/:idOrSlug/video`      | OWNER       | Clear all Mux state from a row (does NOT delete the asset on Mux). |
+| POST   | `/v1/webhooks/mux`                             | HMAC        | Mux event receiver. Verifies `Mux-Signature` against `MUX_WEBHOOK_SECRET`. Handles `video.asset.ready`, `video.asset.errored`, `video.upload.asset_created`. |
+
+The list + detail reads tolerate Mux being unconfigured: every row's
+`playbackUrl` is just `null` until an owner attaches an asset. The
+owner-only attach + upload routes fail loud with 503 — no fake
+playback URLs, ever.
+
+### Video state machine on `ExerciseCatalogItem`
+
+```
+none  →  uploading  →  processing  →  ready
+                              ↘
+                               errored
+```
+
+- `none` — no Mux asset attached. `mux_*` columns are null.
+- `uploading` — direct-upload URL minted; client is uploading.
+- `processing` — asset created on Mux; transcoding in flight.
+- `ready` — webhook `video.asset.ready` landed; `mux_playback_id`
+  is usable. `/exercise-catalog/:idOrSlug` mints `playbackUrl` here.
+- `errored` — `video.asset.errored` arrived; `mux_error_message`
+  carries the upstream reason. Treated identically to `none` for
+  playback.
+
+### Required env vars
+
+- `MUX_TOKEN_ID`, `MUX_TOKEN_SECRET` — Required for owner upload +
+  attach + webhook (the webhook handler doesn't fetch from Mux but the
+  attach path does). Missing → 503 `mux_disabled` on those routes only.
+- `MUX_WEBHOOK_SECRET` — Required for Mux to deliver `ready` /
+  `errored` events. Missing → webhook 400's every request.
+- `MUX_SIGNING_KEY_ID`, `MUX_SIGNING_KEY_PRIVATE` — Optional. Only
+  required when a catalog row's playback policy is `signed`. v1 defaults
+  to `public`.
+
+See `.env.example` for the canonical block.
+
+### Seed
+
+`npm run seed:exercise-catalog` upserts ~50 catalog rows derived from
+`src/exercise-library/seed-catalog.ts` (the same curated list backing
+the legacy ExerciseDB fallback). The seed only manages metadata; Mux
+state on rows that already have a video is never overwritten.
+
+### Workout builder enrichment
+
+`GET /assignments/me` and `GET /assignments/:id` now enrich each plan
+exercise row with `playbackUrl` and `catalog` (full
+`ExerciseCatalogItem` DTO) when the row's `exercise_external_id`
+resolves to an internal catalog row. Legacy ExerciseDB ids pass
+through unchanged (`playbackUrl: null`, `catalog: null`).
+
+### Mobile contract (companion PR — `growth-project-mobile #140`)
+
+This PR is the backend half of mobile `feat/video-library-v1-mobile`.
+The mobile types in `src/types/exerciseCatalog.ts` and the API client
+in `src/api/exerciseCatalog.ts` were used as the contract source —
+endpoint paths, query keys, response field names, and the
+`mux_disabled` error shape are matched verbatim. The mobile PR
+documents itself as **DO NOT MERGE** pending this PR; once this lands
+both can ship in lockstep.
+
 ## Team Mode v1
 
 Pro and Enterprise coaches can run a multi-coach team out of one
