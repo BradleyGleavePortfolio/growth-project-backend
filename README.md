@@ -280,6 +280,9 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 | `BUILD_WEEK_ENABLED` | optional | Backend operator | Feature flag — when `false`, the Phase 4 Build Week controllers refuse new writes and the admin funnel reports zeroed counts. Defaults to `true`. See [`src/build-week/README.md`](src/build-week/README.md) and [`docs/build-week.md`](docs/build-week.md). |
 | `BUILD_WEEK_AUTO_START_ON_SIGNUP` | optional | Backend operator | Feature flag — when `true`, new client signups auto-enrol in Build Week. Defaults to `false`. The flag is exposed for staged rollout; auto-enrolment wiring lands in a follow-on PR. |
 | `AUDIT_LOGGING_ENABLED` | optional | Backend operator | Kill switch for audit writes. Set to `off` to suppress all `AuditService.write()` calls without removing call sites. Reads via `GET /admin/audit/log` are unaffected. Use only for short-lived debugging windows; the default (`on`) is the correct production value. See [`src/audit/README.md`](src/audit/README.md). |
+| `EMAIL_TRANSPORT` | prod | Backend operator | `resend` or `log`. `log` prints structured lines without sending (dev/test). Anything else throws at boot. See **Resend (transactional email)** above. |
+| `RESEND_API_KEY` | prod | Resend dashboard | Server-side API key. Required when `EMAIL_TRANSPORT=resend`; the app refuses to boot without it (no fake email success). |
+| `EMAIL_FROM_ADDRESS` | prod | Backend operator | The verified From: address on every transactional email. Must be on a domain that has DKIM/SPF/DMARC configured with Resend. Required when `EMAIL_TRANSPORT=resend`. |
 | `PORT` | optional | Fly.io | HTTP port. Defaults to 3000; Fly overrides this. |
 | `NODE_ENV` | optional | Backend operator | `development`, `staging`, or `production`. Drives the validation tier and the AI debug payload. |
 
@@ -365,6 +368,92 @@ portal), see [`docs/stripe-setup.md`](docs/stripe-setup.md).
   `.github/workflows/fly-secrets-set.yml`. See
   [`docs/deploy-runbook.md`](docs/deploy-runbook.md) section 7b for
   the operator workflow contract.
+
+### Resend (transactional email)
+
+All transactional email — bulk coach-invites-client sends, payment
+reminders, dunning, welcome emails, weekly digest — is delivered via
+Resend through `src/email/email.service.ts`. The doctrine is **no fake
+success**: if `EMAIL_TRANSPORT=resend` and `RESEND_API_KEY` is unset (or
+`EMAIL_FROM_ADDRESS` is unset), the app refuses to boot rather than
+silently swallowing sends.
+
+Required env (production / staging):
+
+- `EMAIL_TRANSPORT=resend`
+- `RESEND_API_KEY=re_...` — server-side API key from the Resend
+  dashboard; one key per environment.
+- `EMAIL_FROM_ADDRESS=team@thegrowthproject.app` — must be on a domain
+  you have verified with Resend.
+
+Dev default (`EMAIL_TRANSPORT=log`) prints structured log lines for
+each send without hitting the network. The 'log' transport still writes
+an `EmailSendLog` row with `status='logged'` so idempotency works the
+same way in tests.
+
+#### One-time DNS setup for the sending domain
+
+Resend will not send from a domain it has not verified. Add the
+following DNS records on your sending domain (`thegrowthproject.app` or
+whichever subdomain you pick — `send.thegrowthproject.app` is a
+common choice so the apex is reserved for marketing).
+
+1. **SPF** — TXT on the sending domain. Tells receivers that Resend is
+   authorized to send for you.
+   ```
+   TYPE  HOST                    VALUE
+   TXT   send                    v=spf1 include:amazonses.com -all
+   ```
+   (Resend uses Amazon SES under the hood. If you already publish an
+   SPF record, merge `include:amazonses.com` into it — only one SPF
+   record per domain is allowed.)
+
+2. **DKIM** — three CNAME records on the sending domain, copied
+   verbatim from the Resend dashboard after you add the domain. Each
+   record is of the form:
+   ```
+   TYPE   HOST                                  VALUE
+   CNAME  resend._domainkey.send                resend._domainkey.<region>.dkim.amazonses.com
+   CNAME  resend2._domainkey.send               resend2._domainkey.<region>.dkim.amazonses.com
+   CNAME  resend3._domainkey.send               resend3._domainkey.<region>.dkim.amazonses.com
+   ```
+   Wait for Resend to flip the domain to "Verified" before flipping
+   `EMAIL_TRANSPORT=resend` in your environment.
+
+3. **DMARC** — TXT on `_dmarc.<root-domain>`. Tells receivers what to
+   do with mail that fails SPF/DKIM and where to send the aggregate
+   reports.
+   ```
+   TYPE  HOST                    VALUE
+   TXT   _dmarc                  v=DMARC1; p=none; rua=mailto:dmarc@thegrowthproject.app; pct=100
+   ```
+   Start at `p=none` so you can read the aggregate reports for two
+   weeks without rejecting any mail. Once SPF and DKIM are aligning,
+   move to `p=quarantine` and then `p=reject`. Track aggregates with
+   Postmark DMARC monitoring or similar.
+
+#### Email send log + idempotency
+
+Every call to `EmailService.send()` requires a stable `idempotencyKey`
+(e.g. `invite:<invite_code_id>` for invite emails). A unique index on
+`EmailSendLog.idempotency_key` turns retries into no-ops — the second
+call returns `status:'skipped'` without re-hitting Resend. Use this
+table to confirm "did we send X email to Y on Z" during support
+investigations.
+
+#### Operator runbook for missing config
+
+If you see `Internal Server Error: EMAIL_TRANSPORT=resend requires
+RESEND_API_KEY` at boot, the deployment is missing email secrets.
+Either:
+
+1. Set both `RESEND_API_KEY` and `EMAIL_FROM_ADDRESS` via
+   `fly secrets set ...`, then redeploy, **or**
+2. Set `EMAIL_TRANSPORT=log` to fall back to the dev transport
+   (emails will not be delivered to real users).
+
+There is intentionally no third option — silently dropping sends is
+the failure mode this guard prevents.
 
 ### Sentry sourcemaps
 
