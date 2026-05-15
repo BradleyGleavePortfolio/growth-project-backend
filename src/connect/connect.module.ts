@@ -30,7 +30,7 @@ import {
     // @UseGuards must have it in scope; BillingModule does the same.
     JwksVerifierService,
   ],
-  exports: [ConnectService, ConnectModuleState],
+  exports: [ConnectService, ConnectModuleState, StripeConnectApiService],
 })
 export class ConnectModule implements OnModuleInit {
   private readonly logger = new Logger(ConnectModule.name);

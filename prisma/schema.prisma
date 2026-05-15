@@ -207,6 +207,15 @@ model User {
   // Phase 1 Connect — 1:1 Stripe Express account per coach. Null until the
   // coach kicks off Connect onboarding via POST /v1/connect/accounts/create.
   connect_account            ConnectAccount?
+  // Phase 2-3 Connect — coach packages, client purchases, and saved
+  // payment methods. A coach owns many CoachPackages (their offers);
+  // a client owns many ClientPurchases (their bought packages) and at
+  // most one ConnectCustomer mirror (Stripe Customer on the platform
+  // account used to attach saved payment methods).
+  coach_packages             CoachPackage[]       @relation("CoachPackageCoach")
+  purchases_as_client        ClientPurchase[]     @relation("ClientPurchaseClient")
+  purchases_as_coach         ClientPurchase[]     @relation("ClientPurchaseCoach")
+  connect_customer           ConnectCustomer?
   drafts_as_coach            MessageDraft[]       @relation("MessageDraftCoach")
   drafts_as_client           MessageDraft[]       @relation("MessageDraftClient")
   activity_events_actor      ActivityEvent[]      @relation("ActivityEventActor")
@@ -297,10 +306,10 @@ model User {
   // Coach AI v1 — generation drafts (workout / meal plan / insight) and
   // per-call cost log. Both relations are SetNull-on-delete so the cost
   // history and approved drafts outlive a deleted user account.
-  coach_ai_drafts_as_coach   AIDraft[]   @relation("AIDraftCoach")
-  coach_ai_drafts_as_client  AIDraft[]   @relation("AIDraftClient")
-  ai_call_logs_as_coach      AICallLog[] @relation("AICallLogCoach")
-  ai_call_logs_as_client     AICallLog[] @relation("AICallLogClient")
+  coach_ai_drafts_as_coach         AIDraft[]                 @relation("AIDraftCoach")
+  coach_ai_drafts_as_client        AIDraft[]                 @relation("AIDraftClient")
+  ai_call_logs_as_coach            AICallLog[]               @relation("AICallLogCoach")
+  ai_call_logs_as_client           AICallLog[]               @relation("AICallLogClient")
 
   // Concierge scheduling (PR #142). Back-relations only; FKs live on
   // the scheduling-side rows. Coach and client both read from User;
@@ -516,30 +525,30 @@ model InviteCode {
 }
 
 model UserProfile {
-  id                     String            @id @default(uuid())
-  user_id                String            @unique
-  user                   User              @relation(fields: [user_id], references: [id])
-  height_cm              Float?
-  current_weight_lbs     Float?
-  target_weight_lbs      Float?
-  date_of_birth          DateTime?
-  sex                    Sex               @default(prefer_not_to_say)
-  activity_level         ActivityLevel     @default(moderate)
-  goal_type              GoalType          @default(fat_loss)
-  workout_experience     WorkoutExperience @default(beginner)
-  has_gym_membership     Boolean           @default(false)
-  preferred_snacks       String[]
+  id                      String            @id @default(uuid())
+  user_id                 String            @unique
+  user                    User              @relation(fields: [user_id], references: [id])
+  height_cm               Float?
+  current_weight_lbs      Float?
+  target_weight_lbs       Float?
+  date_of_birth           DateTime?
+  sex                     Sex               @default(prefer_not_to_say)
+  activity_level          ActivityLevel     @default(moderate)
+  goal_type               GoalType          @default(fat_loss)
+  workout_experience      WorkoutExperience @default(beginner)
+  has_gym_membership      Boolean           @default(false)
+  preferred_snacks        String[]
   // Free-form so a future "low-FODMAP", "halal", etc. value does not require
   // a schema migration. The DTO restricts new writes to a curated list of
   // values; legacy reads stay valid even if the list grows.
-  dietary_pattern        String?
+  dietary_pattern         String?
   // Allergens / avoid-list. Empty array is the default — explicit "no
   // restrictions" rather than null so the AI can distinguish unset (don't
   // know) from confirmed-empty (no restrictions).
-  dietary_restrictions   String[]
+  dietary_restrictions    String[]
   // Self-reported weekly training cadence. Nullable so a freshly-onboarded
   // user without a value does not seed a misleading 0.
-  workout_days_per_week  Int?
+  workout_days_per_week   Int?
   // Granular equipment availability. `has_gym_membership` only answers
   // "gym vs not"; this lets the AI choose between barbell, dumbbell-only,
   // band, and pure-bodyweight programming. Free-form TEXT[] (not an enum)
@@ -547,25 +556,25 @@ model UserProfile {
   // The DTO restricts new writes to a curated vocabulary; legacy reads of
   // any token stay valid. Default `[]` so the AI can distinguish unset
   // (don't know) from confirmed-empty (no equipment beyond bodyweight).
-  equipment_access       String[]
-  macro_target_calories  Float?
-  macro_target_protein_g Float?
-  macro_target_carbs_g   Float?
-  macro_target_fat_g     Float?
-  avatar_url             String?
-  bio                    String?
-  weight_unit            String?           @default("lbs")
-  meals_per_day          Int?
-  water_goal_oz          Float?
-  calorie_display        String?           @default("net")
-  onboardingCompleted    Boolean?          @default(false)
+  equipment_access        String[]
+  macro_target_calories   Float?
+  macro_target_protein_g  Float?
+  macro_target_carbs_g    Float?
+  macro_target_fat_g      Float?
+  avatar_url              String?
+  bio                     String?
+  weight_unit             String?           @default("lbs")
+  meals_per_day           Int?
+  water_goal_oz           Float?
+  calorie_display         String?           @default("net")
+  onboardingCompleted     Boolean?          @default(false)
   // Coach AI v1 — structured fields the Claude prompt needs that previously
   // only lived in coach notes or free-form `bio`. Empty-array / null defaults
   // so an unset value is distinguishable from "confirmed none".
-  injuries               String[]          @default([])
-  food_preferences       Json?
+  injuries                String[]          @default([])
+  food_preferences        Json?
   preferred_training_time String?
-  updated_at             DateTime          @updatedAt
+  updated_at              DateTime          @updatedAt
 }
 
 model FoodItem {
@@ -1961,27 +1970,27 @@ enum AIDraftStatus {
 }
 
 model AIDraft {
-  id               String         @id @default(uuid())
+  id               String        @id @default(uuid())
   coachId          String
-  coach            User           @relation("AIDraftCoach", fields: [coachId], references: [id], onDelete: Cascade)
+  coach            User          @relation("AIDraftCoach", fields: [coachId], references: [id], onDelete: Cascade)
   clientId         String
-  client           User           @relation("AIDraftClient", fields: [clientId], references: [id], onDelete: Cascade)
+  client           User          @relation("AIDraftClient", fields: [clientId], references: [id], onDelete: Cascade)
   type             AIDraftType
   inputContext     Json
   modelUsed        String
   promptVersion    String
   generatedPayload Json
-  status           AIDraftStatus  @default(DRAFT)
+  status           AIDraftStatus @default(DRAFT)
   // FK to the materialized WorkoutPlan / MealPlan id (or null for
   // INSIGHT drafts that do not materialize). Kept as a plain string
   // (not a relation) so a single column can point at multiple tables.
   approvedAsId     String?
   rejectionReason  String?
-  tokensIn         Int            @default(0)
-  tokensOut        Int            @default(0)
-  costCents        Int            @default(0)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  tokensIn         Int           @default(0)
+  tokensOut        Int           @default(0)
+  costCents        Int           @default(0)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   @@index([coachId, clientId, type, status])
 }
@@ -2535,4 +2544,145 @@ model SecretRotationLog {
   @@index([rotated_at])
   @@index([rotated_by_user_id])
   @@map("secret_rotation_log")
+}
+
+// Phase 2 Connect — Coach offers / packages.
+//
+// A package is what a client buys from a coach. Two billing shapes:
+//   - one_time: a single Stripe Payment (PaymentIntent) — e.g. a 12-week
+//     transformation program billed up front.
+//   - recurring: a Stripe Subscription with a Price — e.g. $199/mo
+//     ongoing coaching.
+//
+// Pricing is denormalized into amount_cents + currency + interval so that
+// the package row alone is enough to render UI without round-tripping
+// Stripe. The Stripe Price id is created lazily on first checkout
+// (stripe_price_id) and cached. interval is null for one_time.
+//
+// is_active gates whether new checkouts can be opened. Past purchases
+// remain valid even after a package is deactivated.
+model CoachPackage {
+  id                String    @id @default(uuid())
+  coach_id          String
+  coach             User      @relation("CoachPackageCoach", fields: [coach_id], references: [id])
+  name              String
+  description       String?
+  amount_cents      Int
+  currency          String    @default("usd")
+  billing_type      String    @default("one_time") // one_time | recurring
+  interval          String? // month | year — only for billing_type=recurring
+  interval_count    Int       @default(1)
+  // Number of billing periods to bill for (recurring only). null = until canceled.
+  // For one_time, this is the number of weeks/sessions the program lasts (for
+  // entitlement expiry) — null means "lifetime" / no expiry.
+  duration_periods  Int?
+  // Stripe Price id, created lazily on first checkout. Cached here so
+  // subsequent checkouts reuse the same price. Re-created when amount
+  // or currency changes (the old price is preserved on Stripe's side).
+  stripe_price_id   String?
+  // Stripe Product id, parent of the Price. Created lazily with the Price.
+  stripe_product_id String?
+  is_active         Boolean   @default(true)
+  archived_at       DateTime?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  purchases ClientPurchase[]
+
+  @@index([coach_id, is_active])
+  @@index([coach_id, archived_at])
+  @@index([stripe_price_id])
+}
+
+// Phase 3 Connect — Per-client Stripe Customer on the platform account.
+//
+// Saved cards / billing identity lives on this row. Created on the first
+// checkout session, reused on every subsequent checkout for the same
+// client across coaches. One row per client user.
+//
+// We are NOT creating customers on the coach's connected account (Direct
+// charges with `customer` only work on the Direct path; we use Destination
+// charges with `transfer_data` so the platform Customer is the right shape).
+model ConnectCustomer {
+  id                        String   @id @default(uuid())
+  client_user_id            String   @unique
+  client                    User     @relation(fields: [client_user_id], references: [id])
+  stripe_customer_id        String   @unique
+  // Mirror of `invoice_settings.default_payment_method` — convenience for
+  // mobile "saved cards" UI. Updated by customer.updated webhook.
+  default_payment_method_id String?
+  default_card_brand        String?
+  default_card_last4        String?
+  default_card_exp_month    Int?
+  default_card_exp_year     Int?
+  created_at                DateTime @default(now())
+  updated_at                DateTime @updatedAt
+
+  @@index([stripe_customer_id])
+}
+
+// Phase 2-3 Connect — One row per checkout session / purchase intent.
+//
+// Created at checkout-session creation time in status=pending. Lifecycle
+// is driven by webhooks:
+//   - checkout.session.completed -> status=paid (one_time) or active
+//     (recurring) + entitlement_active=true.
+//   - customer.subscription.updated -> mirror status (active|past_due|...).
+//   - customer.subscription.deleted -> status=canceled, entitlement_active=false.
+//   - payment_intent.payment_failed -> status=payment_failed.
+//
+// Entitlement is the derived "does this client currently have access to
+// this package?" bit. Computed and persisted on every status change so
+// that authorization checks are a single indexed read.
+//
+// One row per checkout session. Failed sessions are kept (status=expired
+// or =canceled) for analytics / chargeback investigations.
+model ClientPurchase {
+  id                         String       @id @default(uuid())
+  client_user_id             String
+  client                     User         @relation("ClientPurchaseClient", fields: [client_user_id], references: [id])
+  coach_user_id              String
+  coach                      User         @relation("ClientPurchaseCoach", fields: [coach_user_id], references: [id])
+  package_id                 String
+  package                    CoachPackage @relation(fields: [package_id], references: [id])
+  // Snapshot of price at purchase time. Source of truth for what the
+  // client actually paid even if the package later changes price.
+  amount_cents               Int
+  currency                   String       @default("usd")
+  billing_type               String       @default("one_time") // one_time | recurring — snapshotted
+  // Stripe ids. checkout_session_id is set at creation; the others are
+  // populated as the lifecycle webhooks fire.
+  stripe_checkout_session_id String       @unique
+  stripe_payment_intent_id   String?
+  stripe_subscription_id     String?      @unique
+  stripe_customer_id         String?
+  // Connect destination account — the coach's Express account. Persisted
+  // for revenue reconciliation; the Stripe Charge has the same value on
+  // its `destination` field.
+  stripe_destination_account String?
+  // Lifecycle.
+  status                     String       @default("pending")
+  // ^ pending | paid | active | past_due | canceled | payment_failed | expired
+  entitlement_active         Boolean      @default(false)
+  // When does access end. Null = no expiry / open-ended.
+  // For one_time with duration_periods=N weeks, set to created_at + N weeks
+  // at purchase time. For recurring, mirrors current_period_end.
+  access_expires_at          DateTime?
+  current_period_end         DateTime?
+  cancel_at_period_end       Boolean      @default(false)
+  canceled_at                DateTime?
+  // Idempotency key used when minting the Stripe Checkout session. Stored
+  // so retries collapse to the same row.
+  idempotency_key            String       @unique
+  // Free-form error message from Stripe on the last failed transition
+  // (e.g. last_payment_error.message). Surfaced in mobile billing UI.
+  last_error                 String?
+  created_at                 DateTime     @default(now())
+  updated_at                 DateTime     @updatedAt
+
+  @@index([client_user_id, status])
+  @@index([coach_user_id, status])
+  @@index([package_id])
+  @@index([stripe_subscription_id])
+  @@index([entitlement_active, access_expires_at])
 }

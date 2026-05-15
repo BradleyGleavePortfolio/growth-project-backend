@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { JwksVerifierService } from '../auth/jwks.service';
+import { CheckoutModule } from '../checkout/checkout.module';
 import { ConnectModule } from '../connect/connect.module';
 import { BillingService } from './billing.service';
 import { CoachBillingController } from './coach-billing.controller';
@@ -18,6 +19,10 @@ import { SubscriptionGuard } from './subscription.guard';
     // can forward account.* events to it. See connect.module.ts for the
     // boot-time platform-enabled gate.
     ConnectModule,
+    // CheckoutModule re-exports CheckoutWebhookHandlerService so the
+    // Stripe webhook handler can forward checkout/session/subscription/
+    // payment events that belong to a coach-package purchase to it.
+    CheckoutModule,
   ],
   controllers: [
     StripeWebhookController,

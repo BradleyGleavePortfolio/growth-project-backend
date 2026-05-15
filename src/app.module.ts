@@ -44,6 +44,8 @@ import { ConsentModule } from './consent/consent.module';
 import { BloodworkModule } from './bloodwork/bloodwork.module';
 import { BillingModule } from './billing/billing.module';
 import { ConnectModule } from './connect/connect.module';
+import { PackagesModule } from './packages/packages.module';
+import { CheckoutModule } from './checkout/checkout.module';
 import { PtmModule } from './ptm/ptm.module';
 import { DiagnosticModule } from './diagnostic/diagnostic.module';
 import { BuildWeekModule } from './build-week/build-week.module';
@@ -170,6 +172,11 @@ import { SecretsModule } from './secrets/secrets.module';
     // onboards to Stripe Express, we mirror the account state from webhooks.
     // See /CONNECT_MASTER_PLAN.md §Phase 1 — Foundation.
     ConnectModule,
+    // Phase 2 Connect — Coach offers / packages CRUD.
+    PackagesModule,
+    // Phase 3 Connect — Stripe Checkout session creation + ClientPurchase
+    // lifecycle, driven by checkout/subscription/payment webhooks.
+    CheckoutModule,
     // V1 Backend-For-Frontend for tgp-coach-console.
     V1Module,
     // Public invite landing — server-rendered HTML at /join/:code and
