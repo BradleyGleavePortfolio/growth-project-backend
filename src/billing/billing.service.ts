@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AuditAction, AuditService } from '../audit/audit.service';
+import { CheckoutWebhookHandlerService } from '../checkout/checkout-webhook-handler.service';
 import { ConnectService } from '../connect/connect.service';
 
 // BillingService is the system of record for the Stripe-mirror tables. The
@@ -32,6 +33,11 @@ export class BillingService {
     // boots in environments where ConnectModule was not imported (legacy
     // unit tests). When present, account.* events are forwarded to it.
     @Optional() private connect?: ConnectService,
+    // CheckoutWebhookHandlerService claims checkout/session/subscription/
+    // payment events that belong to a coach-package purchase. When it
+    // claims an event, BillingService skips the SaaS-coach-subscription
+    // handler for the same event so the two streams don't collide.
+    @Optional() private checkoutWebhooks?: CheckoutWebhookHandlerService,
   ) {}
 
   // Idempotently process an event. Returns { processed: true } on first
@@ -64,22 +70,45 @@ export class BillingService {
     }
 
     try {
+      // Phase 2-3 Connect — give the checkout handler first refusal on
+      // events that may belong to a coach-package purchase. If it claims
+      // the event, skip the SaaS-coach-subscription path so the two
+      // streams don't both try to upsert state from the same payload.
+      let claimedByCheckout = false;
+      if (this.checkoutWebhooks) {
+        try {
+          const result = await this.checkoutWebhooks.handle(event);
+          claimedByCheckout = !!result.claimed;
+        } catch (err) {
+          this.logger.error(
+            `CheckoutWebhookHandler failed event=${event.id} type=${event.type}: ${(err as Error)?.message ?? String(err)}`,
+          );
+        }
+      }
+
       switch (event.type) {
         case 'customer.subscription.created':
         case 'customer.subscription.updated':
-          await this.applySubscription(event);
+          if (!claimedByCheckout) await this.applySubscription(event);
           break;
         case 'customer.subscription.deleted':
-          await this.applySubscriptionDeleted(event);
+          if (!claimedByCheckout) await this.applySubscriptionDeleted(event);
           break;
         case 'invoice.paid':
-          await this.applyInvoicePaid(event);
+          if (!claimedByCheckout) await this.applyInvoicePaid(event);
           break;
         case 'invoice.payment_failed':
-          await this.applyInvoicePaymentFailed(event);
+          if (!claimedByCheckout) await this.applyInvoicePaymentFailed(event);
           break;
         case 'customer.updated':
-          await this.applyCustomerUpdated(event);
+          if (!claimedByCheckout) await this.applyCustomerUpdated(event);
+          break;
+        // Checkout / payment events are owned entirely by
+        // CheckoutWebhookHandlerService (no SaaS-coach-subscription path).
+        case 'checkout.session.completed':
+        case 'checkout.session.expired':
+        case 'payment_intent.payment_failed':
+          // Already dispatched above; nothing more to do.
           break;
         // Phase 1 Connect — Express account state mirror. Same endpoint
         // receives both test-mode and live-mode events (livemode flag is

@@ -1,0 +1,486 @@
+import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
+import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
+
+class StripeStub extends StripeConnectApiService {
+  retrieveSubscription = jest.fn();
+  retrievePaymentMethod = jest.fn();
+}
+
+function makePrisma() {
+  const packages: any[] = [];
+  const purchases: any[] = [];
+  const customers: any[] = [];
+  return {
+    _packages: packages,
+    _purchases: purchases,
+    _customers: customers,
+    coachPackage: {
+      findUnique: jest.fn(async ({ where }: any) =>
+        packages.find((p) => p.id === where.id) ?? null,
+      ),
+    },
+    clientPurchase: {
+      findUnique: jest.fn(async ({ where }: any) =>
+        purchases.find((p) => {
+          if (where.stripe_checkout_session_id)
+            return p.stripe_checkout_session_id === where.stripe_checkout_session_id;
+          if (where.stripe_subscription_id)
+            return p.stripe_subscription_id === where.stripe_subscription_id;
+          if (where.id) return p.id === where.id;
+          return false;
+        }) ?? null,
+      ),
+      findFirst: jest.fn(async ({ where }: any) =>
+        purchases.find((p) =>
+          Object.entries(where).every(([k, v]) => {
+            if (v === null) return p[k] === null;
+            return p[k] === v;
+          }),
+        ) ?? null,
+      ),
+      update: jest.fn(async ({ where, data }: any) => {
+        const row = purchases.find((p) => p.id === where.id);
+        if (!row) throw new Error('not found');
+        Object.assign(row, data, { updated_at: new Date() });
+        return { ...row };
+      }),
+    },
+    connectCustomer: {
+      findUnique: jest.fn(async ({ where }: any) =>
+        customers.find((c) => c.stripe_customer_id === where.stripe_customer_id) ?? null,
+      ),
+      update: jest.fn(async ({ where, data }: any) => {
+        const row = customers.find(
+          (c) => c.stripe_customer_id === where.stripe_customer_id,
+        );
+        if (!row) throw new Error('not found');
+        Object.assign(row, data);
+        return { ...row };
+      }),
+    },
+  };
+}
+
+function makeHandler() {
+  const prisma = makePrisma();
+  const stripe = new StripeStub();
+  const svc = new CheckoutWebhookHandlerService(prisma as any, stripe as any);
+  return { svc, prisma, stripe };
+}
+
+describe('CheckoutWebhookHandlerService', () => {
+  describe('checkout.session.completed', () => {
+    it('flips one_time purchase to paid + entitlement_active=true with computed expiry', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._packages.push({
+        id: 'pkg-1',
+        coach_id: 'coach-1',
+        name: 'Transform 12',
+        billing_type: 'one_time',
+        duration_periods: 12,
+      });
+      const startedAt = new Date('2026-01-01T00:00:00Z');
+      prisma._purchases.push({
+        id: 'cp-1',
+        package_id: 'pkg-1',
+        stripe_checkout_session_id: 'cs_abc',
+        status: 'pending',
+        entitlement_active: false,
+        billing_type: 'one_time',
+        created_at: startedAt,
+      });
+      const result = await svc.handle({
+        id: 'evt_1',
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_abc',
+            mode: 'payment',
+            payment_intent: 'pi_test',
+            customer: 'cus_test',
+          },
+        },
+      });
+      expect(result.claimed).toBe(true);
+      expect(prisma._purchases[0].status).toBe('paid');
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+      // 12 weeks ≈ 12 * 7 * 86400 * 1000 ms = 7,257,600,000 ms after startedAt
+      const expected = new Date(
+        startedAt.getTime() + 12 * 7 * 86400 * 1000,
+      ).getTime();
+      expect(prisma._purchases[0].access_expires_at.getTime()).toBe(expected);
+    });
+
+    it('flips recurring purchase to active + entitlement_active=true', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._packages.push({
+        id: 'pkg-2',
+        coach_id: 'coach-1',
+        billing_type: 'recurring',
+      });
+      prisma._purchases.push({
+        id: 'cp-2',
+        package_id: 'pkg-2',
+        stripe_checkout_session_id: 'cs_sub',
+        status: 'pending',
+        entitlement_active: false,
+        billing_type: 'recurring',
+        created_at: new Date(),
+      });
+      await svc.handle({
+        id: 'evt_2',
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_sub',
+            mode: 'subscription',
+            subscription: 'sub_test',
+            customer: 'cus_test',
+          },
+        },
+      });
+      expect(prisma._purchases[0].status).toBe('active');
+      expect(prisma._purchases[0].stripe_subscription_id).toBe('sub_test');
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+
+    it('returns claimed=false for unknown session', async () => {
+      const { svc } = makeHandler();
+      const result = await svc.handle({
+        id: 'evt_x',
+        type: 'checkout.session.completed',
+        data: { object: { id: 'cs_unknown' } },
+      });
+      expect(result.claimed).toBe(false);
+    });
+  });
+
+  describe('checkout.session.expired', () => {
+    it('expires a pending purchase', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._purchases.push({
+        id: 'cp-1',
+        package_id: 'pkg-1',
+        stripe_checkout_session_id: 'cs_pending',
+        status: 'pending',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      const result = await svc.handle({
+        id: 'evt_exp',
+        type: 'checkout.session.expired',
+        data: { object: { id: 'cs_pending' } },
+      });
+      expect(result.claimed).toBe(true);
+      expect(prisma._purchases[0].status).toBe('expired');
+    });
+
+    it('does NOT override a paid purchase', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._purchases.push({
+        id: 'cp-2',
+        package_id: 'pkg-1',
+        stripe_checkout_session_id: 'cs_paid',
+        status: 'paid',
+        entitlement_active: true,
+      });
+      await svc.handle({
+        id: 'evt_late_exp',
+        type: 'checkout.session.expired',
+        data: { object: { id: 'cs_paid' } },
+      });
+      expect(prisma._purchases[0].status).toBe('paid');
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+  });
+
+  describe('customer.subscription.updated', () => {
+    it('mirrors status, current_period_end, cancel_at_period_end', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._packages.push({
+        id: 'pkg-2',
+        billing_type: 'recurring',
+      });
+      prisma._purchases.push({
+        id: 'cp-2',
+        package_id: 'pkg-2',
+        stripe_checkout_session_id: 'cs_sub',
+        stripe_subscription_id: 'sub_test',
+        status: 'active',
+        entitlement_active: true,
+        created_at: new Date(),
+      });
+      const periodEnd = Math.floor(Date.now() / 1000) + 30 * 86400;
+      await svc.handle({
+        id: 'evt_sub_update',
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_test',
+            status: 'active',
+            current_period_end: periodEnd,
+            cancel_at_period_end: true,
+          },
+        },
+      });
+      expect(prisma._purchases[0].cancel_at_period_end).toBe(true);
+      expect(prisma._purchases[0].current_period_end.getTime()).toBe(
+        periodEnd * 1000,
+      );
+      // access_expires_at has 24h padding past current_period_end
+      expect(prisma._purchases[0].access_expires_at.getTime()).toBe(
+        periodEnd * 1000 + 86400_000,
+      );
+    });
+
+    it('flips entitlement_active=false for canceled status', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._packages.push({ id: 'pkg', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp',
+        package_id: 'pkg',
+        stripe_subscription_id: 'sub_x',
+        status: 'active',
+        entitlement_active: true,
+        created_at: new Date(),
+      });
+      await svc.handle({
+        id: 'evt',
+        type: 'customer.subscription.updated',
+        data: { object: { id: 'sub_x', status: 'canceled' } },
+      });
+      expect(prisma._purchases[0].status).toBe('canceled');
+      expect(prisma._purchases[0].entitlement_active).toBe(false);
+    });
+
+    it('keeps entitlement_active=true for past_due (grace period)', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._packages.push({ id: 'pkg', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp',
+        package_id: 'pkg',
+        stripe_subscription_id: 'sub_x',
+        status: 'active',
+        entitlement_active: true,
+        created_at: new Date(),
+      });
+      await svc.handle({
+        id: 'evt',
+        type: 'customer.subscription.updated',
+        data: { object: { id: 'sub_x', status: 'past_due' } },
+      });
+      expect(prisma._purchases[0].status).toBe('past_due');
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+  });
+
+  describe('customer.subscription.deleted', () => {
+    it('marks status=canceled and entitlement_active=false', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._purchases.push({
+        id: 'cp',
+        package_id: 'pkg',
+        stripe_subscription_id: 'sub_done',
+        status: 'active',
+        entitlement_active: true,
+      });
+      await svc.handle({
+        id: 'evt',
+        type: 'customer.subscription.deleted',
+        data: { object: { id: 'sub_done' } },
+      });
+      expect(prisma._purchases[0].status).toBe('canceled');
+      expect(prisma._purchases[0].entitlement_active).toBe(false);
+      expect(prisma._purchases[0].canceled_at).toBeTruthy();
+    });
+  });
+
+  describe('payment_intent.payment_failed', () => {
+    it('flips a matching pending purchase to payment_failed', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._purchases.push({
+        id: 'cp',
+        package_id: 'pkg',
+        stripe_payment_intent_id: 'pi_bad',
+        status: 'pending',
+        entitlement_active: false,
+      });
+      await svc.handle({
+        id: 'evt',
+        type: 'payment_intent.payment_failed',
+        data: {
+          object: {
+            id: 'pi_bad',
+            last_payment_error: { message: 'card declined' },
+          },
+        },
+      });
+      expect(prisma._purchases[0].status).toBe('payment_failed');
+      expect(prisma._purchases[0].last_error).toBe('card declined');
+    });
+
+    it('falls back to metadata lookup when PI is not yet on the row', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._purchases.push({
+        id: 'cp',
+        client_user_id: 'c1',
+        package_id: 'pkg-1',
+        status: 'pending',
+        entitlement_active: false,
+        stripe_payment_intent_id: null,
+        created_at: new Date(),
+      });
+      await svc.handle({
+        id: 'evt',
+        type: 'payment_intent.payment_failed',
+        data: {
+          object: {
+            id: 'pi_orphan',
+            metadata: {
+              tgp_package_id: 'pkg-1',
+              tgp_client_user_id: 'c1',
+            },
+            last_payment_error: { message: 'insufficient_funds' },
+          },
+        },
+      });
+      expect(prisma._purchases[0].status).toBe('payment_failed');
+      expect(prisma._purchases[0].stripe_payment_intent_id).toBe('pi_orphan');
+    });
+  });
+
+  describe('customer.updated — saved card mirror', () => {
+    it('writes default card brand/last4 to ConnectCustomer', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._customers.push({
+        id: 'cc-1',
+        client_user_id: 'c1',
+        stripe_customer_id: 'cus_x',
+      });
+      await svc.handle({
+        id: 'evt',
+        type: 'customer.updated',
+        data: {
+          object: {
+            id: 'cus_x',
+            invoice_settings: {
+              default_payment_method: {
+                id: 'pm_test',
+                card: {
+                  brand: 'visa',
+                  last4: '4242',
+                  exp_month: 4,
+                  exp_year: 2030,
+                },
+              },
+            },
+          },
+        },
+      });
+      expect(prisma._customers[0].default_card_brand).toBe('visa');
+      expect(prisma._customers[0].default_card_last4).toBe('4242');
+      expect(prisma._customers[0].default_payment_method_id).toBe('pm_test');
+    });
+
+    it('resolves string default_payment_method via Stripe API', async () => {
+      const { svc, prisma, stripe } = makeHandler();
+      prisma._customers.push({
+        id: 'cc-1',
+        client_user_id: 'c1',
+        stripe_customer_id: 'cus_y',
+      });
+      stripe.retrievePaymentMethod.mockResolvedValueOnce({
+        id: 'pm_remote',
+        card: {
+          brand: 'mastercard',
+          last4: '5555',
+          exp_month: 1,
+          exp_year: 2031,
+        },
+      });
+      await svc.handle({
+        id: 'evt',
+        type: 'customer.updated',
+        data: {
+          object: {
+            id: 'cus_y',
+            invoice_settings: { default_payment_method: 'pm_remote' },
+          },
+        },
+      });
+      expect(stripe.retrievePaymentMethod).toHaveBeenCalledWith('pm_remote');
+      expect(prisma._customers[0].default_card_brand).toBe('mastercard');
+      expect(prisma._customers[0].default_card_last4).toBe('5555');
+    });
+  });
+
+  describe('invoice.paid', () => {
+    it('refreshes subscription state on renewal', async () => {
+      const { svc, prisma, stripe } = makeHandler();
+      prisma._packages.push({ id: 'pkg', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp',
+        package_id: 'pkg',
+        stripe_subscription_id: 'sub_renew',
+        status: 'past_due',
+        entitlement_active: true,
+        created_at: new Date(),
+      });
+      const newEnd = Math.floor(Date.now() / 1000) + 30 * 86400;
+      stripe.retrieveSubscription.mockResolvedValueOnce({
+        id: 'sub_renew',
+        status: 'active',
+        current_period_end: newEnd,
+      });
+      await svc.handle({
+        id: 'evt',
+        type: 'invoice.paid',
+        data: {
+          object: {
+            subscription: 'sub_renew',
+            status_transitions: { paid_at: Math.floor(Date.now() / 1000) },
+          },
+        },
+      });
+      expect(prisma._purchases[0].status).toBe('active');
+      expect(prisma._purchases[0].last_error).toBeNull();
+    });
+  });
+
+  describe('invoice.payment_failed', () => {
+    it('moves purchase to past_due and records last_error', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._purchases.push({
+        id: 'cp',
+        package_id: 'pkg',
+        stripe_subscription_id: 'sub_fail',
+        status: 'active',
+        entitlement_active: true,
+      });
+      await svc.handle({
+        id: 'evt',
+        type: 'invoice.payment_failed',
+        data: {
+          object: {
+            subscription: 'sub_fail',
+            last_payment_error: { message: 'card_declined' },
+          },
+        },
+      });
+      expect(prisma._purchases[0].status).toBe('past_due');
+      expect(prisma._purchases[0].last_error).toBe('card_declined');
+      // Entitlement is retained during past_due until Stripe deletes the sub.
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+  });
+
+  it('returns claimed=false for unhandled event type', async () => {
+    const { svc } = makeHandler();
+    const result = await svc.handle({
+      id: 'evt',
+      type: 'random.thing',
+      data: { object: {} },
+    });
+    expect(result.claimed).toBe(false);
+  });
+});

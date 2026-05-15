@@ -57,6 +57,54 @@ export interface StripeLoginLink {
   created: number;
 }
 
+export interface StripeCustomerObject {
+  id: string;
+  email?: string | null;
+  invoice_settings?: {
+    default_payment_method?: string | null;
+  } | null;
+  [k: string]: unknown;
+}
+
+export interface StripeProductObject {
+  id: string;
+  name: string;
+  active: boolean;
+  [k: string]: unknown;
+}
+
+export interface StripePriceObject {
+  id: string;
+  product: string;
+  active: boolean;
+  unit_amount: number;
+  currency: string;
+  recurring?: { interval: string; interval_count: number } | null;
+  [k: string]: unknown;
+}
+
+export interface StripeCheckoutSessionObject {
+  id: string;
+  url: string;
+  payment_intent?: string | null;
+  subscription?: string | null;
+  customer?: string | null;
+  status?: string;
+  [k: string]: unknown;
+}
+
+export interface StripeSubscriptionObject {
+  id: string;
+  status: string;
+  customer?: string | null;
+  current_period_end?: number;
+  cancel_at_period_end?: boolean;
+  canceled_at?: number | null;
+  items?: { data?: Array<{ price?: { id?: string } }> };
+  metadata?: Record<string, string>;
+  [k: string]: unknown;
+}
+
 @Injectable()
 export class StripeConnectApiService {
   private readonly logger = new Logger(StripeConnectApiService.name);
@@ -167,6 +215,333 @@ export class StripeConnectApiService {
       `/accounts/${encodeURIComponent(accountId)}/login_links`,
       {},
     );
+  }
+
+  // --- Phase 2-3 — Product / Price / Customer / Checkout ---
+  //
+  // These calls operate on the PLATFORM account (no Stripe-Account header).
+  // Connect destination charges live on the platform; we forward funds to
+  // the coach's connected account via `payment_intent_data[transfer_data]`
+  // (one_time) or `subscription_data[transfer_data]` (recurring) at
+  // checkout time.
+
+  async createCustomer(args: {
+    email?: string;
+    name?: string;
+    metadata?: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<StripeCustomerObject> {
+    const form: Record<string, string> = {};
+    if (args.email) form.email = args.email;
+    if (args.name) form.name = args.name;
+    if (args.metadata) {
+      for (const [k, v] of Object.entries(args.metadata)) {
+        form[`metadata[${k}]`] = v;
+      }
+    }
+    return this.post<StripeCustomerObject>(
+      '/customers',
+      form,
+      args.idempotencyKey,
+    );
+  }
+
+  async retrieveCustomer(customerId: string): Promise<StripeCustomerObject> {
+    return this.get<StripeCustomerObject>(
+      `/customers/${encodeURIComponent(customerId)}`,
+    );
+  }
+
+  async retrievePaymentMethod(paymentMethodId: string): Promise<{
+    id: string;
+    card?: {
+      brand?: string;
+      last4?: string;
+      exp_month?: number;
+      exp_year?: number;
+    };
+    [k: string]: unknown;
+  }> {
+    return this.get(
+      `/payment_methods/${encodeURIComponent(paymentMethodId)}`,
+    );
+  }
+
+  async retrieveSubscription(
+    subscriptionId: string,
+  ): Promise<StripeSubscriptionObject> {
+    return this.get<StripeSubscriptionObject>(
+      `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    );
+  }
+
+  // Stripe Product — represents the package itself (name, description).
+  // One Product per CoachPackage. The Stripe Product id is cached on the
+  // CoachPackage row.
+  async createProduct(args: {
+    name: string;
+    description?: string;
+    metadata?: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<StripeProductObject> {
+    const form: Record<string, string> = { name: args.name };
+    if (args.description) form.description = args.description;
+    if (args.metadata) {
+      for (const [k, v] of Object.entries(args.metadata)) {
+        form[`metadata[${k}]`] = v;
+      }
+    }
+    return this.post<StripeProductObject>('/products', form, args.idempotencyKey);
+  }
+
+  // Stripe Price — the dollar amount + interval. Immutable on Stripe:
+  // any change to amount/currency/interval mints a new Price. We cache
+  // the active Price id on CoachPackage.stripe_price_id; PackagesService
+  // clears the cache when price-shaping fields change so checkout mints
+  // a fresh Price on the next purchase.
+  async createPrice(args: {
+    product: string;
+    unit_amount: number;
+    currency: string;
+    recurring?: { interval: 'month' | 'year'; interval_count?: number };
+    metadata?: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<StripePriceObject> {
+    const form: Record<string, string> = {
+      product: args.product,
+      unit_amount: String(args.unit_amount),
+      currency: args.currency,
+    };
+    if (args.recurring) {
+      form['recurring[interval]'] = args.recurring.interval;
+      if (args.recurring.interval_count) {
+        form['recurring[interval_count]'] = String(args.recurring.interval_count);
+      }
+    }
+    if (args.metadata) {
+      for (const [k, v] of Object.entries(args.metadata)) {
+        form[`metadata[${k}]`] = v;
+      }
+    }
+    return this.post<StripePriceObject>('/prices', form, args.idempotencyKey);
+  }
+
+  // Checkout Session — the hosted page the client opens to pay. Two
+  // payment shapes (mode=payment | subscription) selected by the package.
+  //
+  // For Connect destination charges we attach `transfer_data[destination]`
+  // (one_time) or `subscription_data[transfer_data][destination]` (recurring)
+  // pointing at the coach's connected account. Optional
+  // application_fee_amount / application_fee_percent is the platform cut;
+  // omitted in Phase 2-3 (platform fee config is a Phase 4 concern).
+  async createCheckoutSession(args: {
+    mode: 'payment' | 'subscription';
+    customer: string;
+    priceId: string;
+    quantity?: number;
+    successUrl: string;
+    cancelUrl: string;
+    destinationAccount: string;
+    // Phase 4: application fee (TGP/platform cut). For one_time we pass
+    // it as an absolute cents amount on payment_intent_data; for
+    // subscription we pass it as a percent on subscription_data
+    // (Stripe restricts subscription application fees to percent on
+    // Checkout). Both are mutually exclusive with the OTHER mode.
+    applicationFeeAmount?: number; // cents — one_time only
+    applicationFeePercent?: number; // percent — subscription only
+    clientReferenceId?: string;
+    metadata?: Record<string, string>;
+    subscriptionMetadata?: Record<string, string>;
+    paymentIntentMetadata?: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<StripeCheckoutSessionObject> {
+    const form: Record<string, string> = {
+      mode: args.mode,
+      customer: args.customer,
+      success_url: args.successUrl,
+      cancel_url: args.cancelUrl,
+      'line_items[0][price]': args.priceId,
+      'line_items[0][quantity]': String(args.quantity ?? 1),
+    };
+    if (args.clientReferenceId) {
+      form.client_reference_id = args.clientReferenceId;
+    }
+    if (args.mode === 'payment') {
+      form['payment_intent_data[transfer_data][destination]'] =
+        args.destinationAccount;
+      if (
+        typeof args.applicationFeeAmount === 'number' &&
+        args.applicationFeeAmount > 0
+      ) {
+        form['payment_intent_data[application_fee_amount]'] = String(
+          args.applicationFeeAmount,
+        );
+      }
+      if (args.paymentIntentMetadata) {
+        for (const [k, v] of Object.entries(args.paymentIntentMetadata)) {
+          form[`payment_intent_data[metadata][${k}]`] = v;
+        }
+      }
+    } else {
+      form['subscription_data[transfer_data][destination]'] =
+        args.destinationAccount;
+      if (
+        typeof args.applicationFeePercent === 'number' &&
+        args.applicationFeePercent > 0
+      ) {
+        form['subscription_data[application_fee_percent]'] = String(
+          args.applicationFeePercent,
+        );
+      }
+      if (args.subscriptionMetadata) {
+        for (const [k, v] of Object.entries(args.subscriptionMetadata)) {
+          form[`subscription_data[metadata][${k}]`] = v;
+        }
+      }
+    }
+    if (args.metadata) {
+      for (const [k, v] of Object.entries(args.metadata)) {
+        form[`metadata[${k}]`] = v;
+      }
+    }
+    return this.post<StripeCheckoutSessionObject>(
+      '/checkout/sessions',
+      form,
+      args.idempotencyKey,
+    );
+  }
+
+  async retrieveCheckoutSession(
+    sessionId: string,
+  ): Promise<StripeCheckoutSessionObject> {
+    return this.get<StripeCheckoutSessionObject>(
+      `/checkout/sessions/${encodeURIComponent(sessionId)}`,
+    );
+  }
+
+  // Phase 4: read the PaymentIntent so we can extract the destination
+  // charge id (`latest_charge`) used as source_transaction on follow-on
+  // transfers.
+  async retrievePaymentIntent(piId: string): Promise<{
+    id: string;
+    latest_charge?: string | null;
+    charges?: { data?: Array<{ id?: string }> };
+    [k: string]: unknown;
+  }> {
+    return this.get(`/payment_intents/${encodeURIComponent(piId)}`);
+  }
+
+  async retrieveCharge(chargeId: string): Promise<{
+    id: string;
+    amount: number;
+    amount_refunded?: number;
+    refunded?: boolean;
+    transfer?: string | null;
+    application_fee?: string | null;
+    application_fee_amount?: number | null;
+    payment_intent?: string | null;
+    [k: string]: unknown;
+  }> {
+    return this.get(`/charges/${encodeURIComponent(chargeId)}`);
+  }
+
+  // Phase 4: create a follow-on Transfer from the platform balance to a
+  // connected account. We always pass `source_transaction` so the
+  // transfer is drawn from the original charge's funds and reconciles
+  // 1:1 against the parent payment in Stripe's books.
+  //
+  // Idempotency-key is REQUIRED — Stripe will collapse retries to the
+  // same Transfer object even on a flaky network.
+  async createTransfer(args: {
+    amount: number; // cents
+    currency: string;
+    destination: string; // acct_*
+    source_transaction?: string; // ch_*
+    transfer_group?: string;
+    description?: string;
+    metadata?: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<{
+    id: string;
+    amount: number;
+    currency: string;
+    destination: string;
+    source_transaction?: string | null;
+    [k: string]: unknown;
+  }> {
+    const form: Record<string, string> = {
+      amount: String(args.amount),
+      currency: args.currency,
+      destination: args.destination,
+    };
+    if (args.source_transaction) {
+      form.source_transaction = args.source_transaction;
+    }
+    if (args.transfer_group) form.transfer_group = args.transfer_group;
+    if (args.description) form.description = args.description;
+    if (args.metadata) {
+      for (const [k, v] of Object.entries(args.metadata)) {
+        form[`metadata[${k}]`] = v;
+      }
+    }
+    return this.post('/transfers', form, args.idempotencyKey);
+  }
+
+  async retrieveTransfer(transferId: string): Promise<{
+    id: string;
+    amount: number;
+    amount_reversed?: number;
+    reversed?: boolean;
+    destination: string;
+    [k: string]: unknown;
+  }> {
+    return this.get(`/transfers/${encodeURIComponent(transferId)}`);
+  }
+
+  async reverseTransfer(args: {
+    transfer_id: string;
+    amount?: number; // cents; full reversal if omitted
+    description?: string;
+    metadata?: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<{
+    id: string;
+    transfer: string;
+    amount: number;
+    [k: string]: unknown;
+  }> {
+    const form: Record<string, string> = {};
+    if (typeof args.amount === 'number') form.amount = String(args.amount);
+    if (args.description) form.description = args.description;
+    if (args.metadata) {
+      for (const [k, v] of Object.entries(args.metadata)) {
+        form[`metadata[${k}]`] = v;
+      }
+    }
+    return this.post(
+      `/transfers/${encodeURIComponent(args.transfer_id)}/reversals`,
+      form,
+      args.idempotencyKey,
+    );
+  }
+
+  // Phase 5: cancel a subscription (used by the dunning sweeper when
+  // grace period elapses).
+  async cancelSubscription(subId: string): Promise<{
+    id: string;
+    status: string;
+    [k: string]: unknown;
+  }> {
+    return this.delete(`/subscriptions/${encodeURIComponent(subId)}`);
+  }
+
+  private async delete<T>(path: string): Promise<T> {
+    const secret = this.requireSecret();
+    const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
+      method: 'DELETE',
+      headers: this.commonHeaders(secret),
+    });
+    return this.parse<T>(res, path);
   }
 
   private commonHeaders(secret: string): Record<string, string> {
