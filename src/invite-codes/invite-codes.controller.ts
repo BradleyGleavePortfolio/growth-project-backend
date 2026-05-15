@@ -49,6 +49,17 @@ export class InviteCodesController {
     return this.inviteCodes.revokeForCoach(req.user.id, id);
   }
 
+  // Phase 8 — invite-code redeemer drilldown. Returns every user who
+  // signed up under the calling coach (or one of their sub-coaches)
+  // within the invite code's effective window. The mobile contract
+  // shape is `{ redeemers: [{user_id, name, email, redeemed_at, last_active_at}] }`.
+  @Get('coach/invite-codes/:id/redeemers')
+  @UseGuards(JwtAuthGuard, CoachGuard)
+  async redeemers(@Request() req: AuthedRequest, @Param('id') id: string) {
+    const rows = await this.inviteCodes.listRedeemersForCoach(req.user.id, id);
+    return { redeemers: rows };
+  }
+
   // Sprint B — Bulk invite. Accepts a structured array of recipients
   // and generates one single-use, 14-day code per row. Throttled to
   // make a malicious coach unable to flood the table; legit coaches

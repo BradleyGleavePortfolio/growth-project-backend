@@ -70,6 +70,11 @@ import { InsightsModule } from './insights/insights.module';
 // Team Mode foundation — sub-coach assignments, curated audit feed,
 // Pro-tier paid staff seats. See docs/architecture/adr-0001-team-mode-foundation.md.
 import { TeamModeModule } from './team-mode/team-mode.module';
+// Phase 8 — Mobile coach SaaS surface (team profile, sub-coach
+// invite/revoke, coach Connect business view).
+import { TeamModule } from './team/team.module';
+import { SubCoachesModule } from './sub-coaches/sub-coaches.module';
+import { CoachConnectModule } from './coach-connect/coach-connect.module';
 // Concierge scheduling (PR #142) — private 1:1 coach <-> client booking
 // with optional Google Calendar two-way sync. See
 // docs/rfcs/142-concierge-scheduling.md.
@@ -231,6 +236,9 @@ import { EmailModule } from './email/email.module';
     // audit feed, Pro-tier paid staff seats, Enterprise included,
     // Growth blocked at the controller with a structured upsell.
     TeamModeModule,
+    TeamModule,
+    SubCoachesModule,
+    CoachConnectModule,
     // Concierge scheduling — private 1:1 coach<->client booking with
     // optional Google Calendar two-way sync. Stub adapters by default
     // so the module loads without Google OAuth credentials configured;
