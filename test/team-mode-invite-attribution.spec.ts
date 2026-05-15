@@ -59,7 +59,7 @@ function makeService(prisma: MockPrisma) {
   // touched in the createForCoach happy path; analytics is best-
   // effort and stays inert here.
   const analytics = { capture: jest.fn() } as never;
-  const svc = new InviteCodesService(prisma as never, analytics);
+  const svc = new InviteCodesService(prisma as never, analytics, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
   jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
   return svc;
 }
