@@ -5,6 +5,8 @@ import { Events } from '../analytics/events';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { CheckoutWebhookHandlerService } from '../checkout/checkout-webhook-handler.service';
 import { ConnectService } from '../connect/connect.service';
+import { EmailService } from '../email/email.service';
+import { EmailTemplateKey } from '../email/email.types';
 
 // BillingService is the system of record for the Stripe-mirror tables. The
 // webhook controller hands it parsed Stripe event objects; this service
@@ -38,6 +40,10 @@ export class BillingService {
     // claims an event, BillingService skips the SaaS-coach-subscription
     // handler for the same event so the two streams don't collide.
     @Optional() private checkoutWebhooks?: CheckoutWebhookHandlerService,
+    // EmailService is @Optional() so legacy tests that hand-construct
+    // BillingService without the email module still work. When present
+    // it dispatches dunning email on invoice.payment_failed.
+    @Optional() private email?: EmailService,
   ) {}
 
   // Idempotently process an event. Returns { processed: true } on first
@@ -374,6 +380,64 @@ export class BillingService {
         reason: inv?.last_payment_error?.message ?? null,
       },
     });
+    // QA P1-B1. Dispatch the payment-failed dunning email so the coach
+    // actually finds out their card got declined within the 7-day grace
+    // window. Pre-fix the row above wrote audit + analytics but never
+    // talked to EmailService, so the grace was meaningless. Idempotency
+    // is keyed on the Stripe event id — webhook re-deliveries are
+    // no-ops at the EmailSendLog level, and the rest of this handler
+    // already short-circuits on duplicate event id at the outer claim.
+    await this.dispatchPaymentFailedEmail({
+      coachId,
+      stripeEventId: event.id,
+      amountDueCents: inv?.amount_due ?? 0,
+      reason: inv?.last_payment_error?.message ?? null,
+    });
+  }
+
+  private async dispatchPaymentFailedEmail(args: {
+    coachId: string;
+    stripeEventId: string;
+    amountDueCents: number;
+    reason: string | null;
+  }): Promise<void> {
+    if (!this.email) return; // Legacy tests / boot configs without EmailModule
+    try {
+      const sub = await this.prisma.coachSubscription.findUnique({
+        where: { coach_id: args.coachId },
+        select: { billing_email: true },
+      });
+      const user = await this.prisma.user.findUnique({
+        where: { id: args.coachId },
+        select: { email: true, name: true },
+      });
+      const recipient = sub?.billing_email || user?.email;
+      if (!recipient) {
+        this.logger.warn(
+          `dispatchPaymentFailedEmail: no recipient email for coach ${args.coachId}; skipping send`,
+        );
+        return;
+      }
+      await this.email.send({
+        to: recipient,
+        template: EmailTemplateKey.PAYMENT_FAILED,
+        idempotencyKey: `billing-payment-failed:${args.stripeEventId}`,
+        data: {
+          coach_name: user?.name ?? 'there',
+          amount_due_cents: args.amountDueCents,
+          amount_due_display: (args.amountDueCents / 100).toFixed(2),
+          reason: args.reason ?? 'Your card was declined.',
+        },
+      });
+    } catch (err) {
+      // Email is best-effort — the mirror has already been updated and
+      // the audit row is durable. A transient Resend outage must not
+      // cause Stripe to retry the webhook and re-double-write the
+      // mirror.
+      this.logger.error(
+        `dispatchPaymentFailedEmail failed for coach ${args.coachId}: ${err instanceof Error ? err.message : 'unknown'}`,
+      );
+    }
   }
 
   private async applyCustomerUpdated(event: StripeEvent) {

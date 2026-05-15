@@ -157,7 +157,18 @@ export class MessagingService {
   // `voice` must be present — never both empty. The DTO already enforces
   // length / shape; this method enforces the cross-field invariant and the
   // server-side voice limits.
-  private assertSendablePayload(payload: SendMessagePayload): void {
+  //
+  // `senderId` is required for the voice-URL ownership check below — the
+  // signed-upload endpoint prefixes object paths with `${senderId}/`, so a
+  // legitimate voice URL must contain that prefix. Without this check the
+  // DTO's @IsUrl({require_tld:false, require_protocol:false}) accepts
+  // arbitrary URLs (including `javascript:`, attacker hosts, or another
+  // sender's object key) and the service would persist + render them. See
+  // QA P0-V1.
+  private assertSendablePayload(
+    payload: SendMessagePayload,
+    senderId: string,
+  ): void {
     const trimmedBody =
       typeof payload.body === 'string' ? payload.body.trim() : '';
     const hasBody = trimmedBody.length > 0;
@@ -167,6 +178,45 @@ export class MessagingService {
     }
     if (hasVoice && payload.voice) {
       this.assertVoiceWithinLimits(payload.voice);
+      this.assertVoiceUrlInBucket(payload.voice.url, senderId);
+    }
+  }
+
+  // Refuse voice URLs that the upload endpoint could not have produced:
+  //   * Reject any non-http(s) scheme (blocks `javascript:`, `data:`, etc.).
+  //   * Require the URL host to match SUPABASE_URL's host (the bucket lives
+  //     there). In dev/test where SUPABASE_URL is unset the upload path
+  //     returns 501 anyway, so this check is effectively skipped for those
+  //     envs by allowing any https host but still forbidding non-http(s).
+  //   * Require the object path to include `/<bucket>/<senderId>/` so a
+  //     sender cannot replay another user's object key.
+  private assertVoiceUrlInBucket(rawUrl: string, senderId: string): void {
+    let parsed: URL;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      throw new BadRequestException({ error: 'VOICE_URL_INVALID' });
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new BadRequestException({ error: 'VOICE_URL_SCHEME_REJECTED' });
+    }
+    const supabaseUrl = (process.env.SUPABASE_URL ?? '').trim();
+    if (supabaseUrl) {
+      try {
+        const supaHost = new URL(supabaseUrl).host;
+        if (parsed.host !== supaHost) {
+          throw new BadRequestException({ error: 'VOICE_URL_HOST_REJECTED' });
+        }
+      } catch (err) {
+        if (err instanceof BadRequestException) throw err;
+        // SUPABASE_URL didn't parse — treat as unconfigured, fall through
+        // to the prefix check below.
+      }
+    }
+    const bucket = this.voiceBucket();
+    const requiredPrefix = `/${bucket}/${senderId}/`;
+    if (!parsed.pathname.includes(requiredPrefix)) {
+      throw new BadRequestException({ error: 'VOICE_URL_OBJECT_KEY_REJECTED' });
     }
   }
 
@@ -265,7 +315,7 @@ export class MessagingService {
     const normalized: SendMessagePayload =
       typeof payload === 'string' ? { body: payload } : payload;
     await this.assertClientOfCoach(coachId, clientId);
-    this.assertSendablePayload(normalized);
+    this.assertSendablePayload(normalized, coachId);
     const trimmedBody =
       typeof normalized.body === 'string' ? normalized.body.trim() : '';
     const body = trimmedBody.length > 0 ? trimmedBody : null;
@@ -344,7 +394,7 @@ export class MessagingService {
     const normalized: SendMessagePayload =
       typeof payload === 'string' ? { body: payload } : payload;
     const coachId = await this.requireClientCoachId(clientId);
-    this.assertSendablePayload(normalized);
+    this.assertSendablePayload(normalized, clientId);
     const trimmedBody =
       typeof normalized.body === 'string' ? normalized.body.trim() : '';
     const body = trimmedBody.length > 0 ? trimmedBody : null;

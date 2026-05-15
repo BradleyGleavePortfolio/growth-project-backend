@@ -91,12 +91,22 @@ function makeService(): {
   return { svc, ptm, prisma };
 }
 
-const validVoice = {
-  url: 'https://storage.example/voice/abc.m4a',
+// Voice URL must include /<bucket>/<senderId>/ per QA P0-V1 — anything
+// without that prefix is rejected with VOICE_URL_OBJECT_KEY_REJECTED. The
+// default bucket is "voice-notes" so the test fixtures point at it. Each
+// test that sends a voice note picks the URL keyed on the sender.
+const voiceFor = (senderId: string, overrides: Record<string, unknown> = {}) => ({
+  // Test bootstrap sets SUPABASE_URL=http://localhost:54321, so the host
+  // half of the URL check passes; the path embeds the bucket + sender
+  // prefix so the object-key half passes.
+  url: `http://localhost:54321/storage/v1/object/public/voice-notes/${senderId}/abc.m4a`,
   duration_sec: 30,
   size_bytes: 200_000,
   content_type: 'audio/m4a',
-};
+  ...overrides,
+});
+const validVoice = voiceFor('coach-A');
+const validVoiceClient = voiceFor('client-1');
 
 describe('MessagingService — voice notes (Phase 6C)', () => {
   beforeEach(() => {
@@ -224,7 +234,7 @@ describe('MessagingService — voice notes (Phase 6C)', () => {
   it('emits PTM voice signals at duration_sec * 10 (client send)', async () => {
     const { svc, ptm } = makeService();
     await svc.sendAsClient('client-1', {
-      voice: { ...validVoice, duration_sec: 12 },
+      voice: { ...validVoiceClient, duration_sec: 12 },
     });
     expect(ptm.emit).toHaveBeenCalledWith(
       'client-1',

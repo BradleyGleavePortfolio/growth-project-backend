@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import {
   CreateVideoLinkInput,
   VideoLinkResult,
@@ -17,14 +17,23 @@ export class GoogleMeetAdapter implements VideoProvider {
   private readonly logger = new Logger(GoogleMeetAdapter.name);
 
   async createMeeting(input: CreateVideoLinkInput): Promise<VideoLinkResult> {
-    this.logger.warn(
-      `GoogleMeetAdapter.createMeeting called but real implementation is not wired up yet — returning stub-shaped meeting for idempotencyKey=${input.idempotencyKey}`,
+    // QA P0-S1. The previous behaviour returned a `pending-<key>` URL and
+    // only logged a warning. That URL was then persisted on the session,
+    // shipped in booking-reminder emails/pushes, and recorded in audit as
+    // a successful provisioning. The honest failure is the operator either
+    // (a) leaves GOOGLE_MEET_ENABLED unset (registry falls back to stub),
+    // or (b) ships the real adapter. Until (b), an explicit
+    // ServiceUnavailable forces the call site to handle it instead of
+    // silently producing fake invites.
+    this.logger.error(
+      `GoogleMeetAdapter.createMeeting called but real implementation is not wired up; idempotencyKey=${input.idempotencyKey}`,
     );
-    return {
-      joinUrl: `https://meet.google.com/pending-${input.idempotencyKey}`,
-      externalMeetingId: `gmeet-pending-${input.idempotencyKey}`,
-      resolvedProvider: 'google_meet',
-    };
+    throw new ServiceUnavailableException({
+      error: 'VIDEO_PROVIDER_NOT_IMPLEMENTED',
+      provider: 'google_meet',
+      message:
+        'Google Meet integration is enabled but the real adapter has not shipped. Set GOOGLE_MEET_ENABLED=false to route through the stub provider, or wait for the real adapter.',
+    });
   }
 
   async cancelMeeting(_externalMeetingId: string): Promise<void> {

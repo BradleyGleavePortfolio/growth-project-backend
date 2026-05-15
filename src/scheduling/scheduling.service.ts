@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -282,19 +283,65 @@ export class SchedulingService {
     const videoProvider: VideoProviderEnum =
       sessionType?.default_video_provider ?? 'stub';
 
-    const session = await this.prisma.coachingSession.create({
-      data: {
-        coach_id: dto.coach_id,
-        client_id: actor.id,
-        session_type_id: sessionType?.id ?? null,
-        status: initialStatus,
-        start_at: start,
-        end_at: end,
-        title: dto.title,
-        video_provider: videoProvider,
-        calendar_provider: 'stub',
-      },
-    });
+    // QA P0-S2. Without this check two clients hitting "request" against
+    // the same slot at the same instant would both succeed (auto-approve
+    // makes the impact worse — the coach finds out at the door). The
+    // Serializable txn upgrades the overlap-check + create to a logical
+    // unit; Postgres SSI will abort one of the racers with a 40001 and
+    // Prisma surfaces that as a P2034 we map back to 409.
+    const session = await this.prisma
+      .$transaction(
+        async (tx) => {
+          const overlap = await tx.coachingSession.findFirst({
+            where: {
+              coach_id: dto.coach_id,
+              status: { in: ['requested', 'scheduled'] },
+              start_at: { lt: end },
+              end_at: { gt: start },
+            },
+            select: { id: true },
+          });
+          if (overlap) {
+            throw new ConflictException({
+              error: 'SLOT_TAKEN',
+              message:
+                'That slot overlaps an existing pending or scheduled session.',
+            });
+          }
+          return tx.coachingSession.create({
+            data: {
+              coach_id: dto.coach_id,
+              client_id: actor.id,
+              session_type_id: sessionType?.id ?? null,
+              status: initialStatus,
+              start_at: start,
+              end_at: end,
+              title: dto.title,
+              video_provider: videoProvider,
+              calendar_provider: 'stub',
+            },
+          });
+        },
+        { isolationLevel: 'Serializable' },
+      )
+      .catch((err) => {
+        // Prisma surfaces a Postgres serialization failure (40001) as
+        // P2034 in newer versions. Map it back to the same 409 surface so
+        // the mobile client can render "slot just got booked" identically
+        // regardless of whether it lost the check or the txn race.
+        if (
+          err &&
+          typeof err === 'object' &&
+          (err as { code?: string }).code === 'P2034'
+        ) {
+          throw new ConflictException({
+            error: 'SLOT_TAKEN',
+            message:
+              'That slot was claimed by another booking; please pick another.',
+          });
+        }
+        throw err;
+      });
     await this.audit.write({
       action: AuditAction.SESSION_REQUESTED,
       actorId: actor.id,
