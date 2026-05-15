@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <body style="font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a;">
+    <h1 style="font-size: 22px; margin: 0 0 16px;">Your weekly summary</h1>
+    <p>Hi{{#if recipient_name}} {{recipient_name}}{{/if}}, here's how the last 7 days looked:</p>
+    <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+      <tr>
+        <td style="padding: 8px; border-bottom: 1px solid #eee; color: #555;">Check-ins</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right; font-weight: 600;">{{checkins_count}} / 7</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border-bottom: 1px solid #eee; color: #555;">Workouts logged</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right; font-weight: 600;">{{workouts_count}}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; color: #555;">Weight change</td>
+        <td style="padding: 8px; text-align: right; font-weight: 600;">{{weight_change_display}}</td>
+      </tr>
+    </table>
+    {{#if highlight}}
+      <p style="background: #f6f6ff; border-left: 3px solid #4f46e5; padding: 8px 16px;">{{highlight}}</p>
+    {{/if}}
+    <p style="margin: 24px 0;">
+      <a href="{{app_url}}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 12px 22px; border-radius: 8px; text-decoration: none; font-weight: 600;">Open the app</a>
+    </p>
+    <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 32px 0;" />
+    <p style="font-size: 12px; color: #888;">You're receiving this because weekly summaries are enabled. <a href="{{prefs_url}}">Unsubscribe</a>.</p>
+  </body>
+</html>
