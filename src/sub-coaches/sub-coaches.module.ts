@@ -4,6 +4,7 @@ import { CoachGuard } from '../auth/coach.guard';
 import { JwksVerifierService } from '../auth/jwks.service';
 import { PrismaService } from '../prisma.service';
 import { TeamModule } from '../team/team.module';
+import { SubCoachInvitesPublicController } from './sub-coach-invites-public.controller';
 import { SubCoachesController } from './sub-coaches.controller';
 import { SubCoachesService } from './sub-coaches.service';
 
@@ -12,7 +13,7 @@ import { SubCoachesService } from './sub-coaches.service';
 // CoachGuard the rest of the /coach/* surface uses.
 @Module({
   imports: [TeamModule],
-  controllers: [SubCoachesController],
+  controllers: [SubCoachInvitesPublicController, SubCoachesController],
   providers: [
     SubCoachesService,
     PrismaService,

@@ -17,6 +17,7 @@ import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
 import {
+  AcceptSubCoachInviteDto,
   InviteSubCoachDto,
   ReassignClientDto,
   RevokeSubCoachDto,
@@ -98,6 +99,23 @@ export class SubCoachesController {
       name: dto.name ?? null,
       max_clients: dto.max_clients ?? null,
     });
+  }
+
+  // POST /sub-coaches/invites/accept — authenticated coach accepts an
+  // invite token. Idempotent on (caller, invite) pairs.
+  @Post('invites/accept')
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  @HttpCode(HttpStatus.OK)
+  async acceptInvite(
+    @Req() req: AuthedRequest,
+    @Body() dto: AcceptSubCoachInviteDto,
+  ) {
+    return this.subCoaches.accept(
+      req.user.id,
+      req.user.role ?? 'coach',
+      req.user.email,
+      dto.token,
+    );
   }
 
   // POST /sub-coaches/:id/revoke — head-coach-only revoke + client

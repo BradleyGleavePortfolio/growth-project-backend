@@ -36,6 +36,7 @@ describe.each([
   ['SubCoachesController.invite', SubCoachesController.prototype.invite, SubCoachesController],
   ['SubCoachesController.revoke', SubCoachesController.prototype.revoke, SubCoachesController],
   ['SubCoachesController.reassign', SubCoachesController.prototype.reassign, SubCoachesController],
+  ['SubCoachesController.acceptInvite', SubCoachesController.prototype.acceptInvite, SubCoachesController],
   ['CoachConnectController.status', CoachConnectController.prototype.status, CoachConnectController],
   ['CoachConnectController.metrics', CoachConnectController.prototype.metrics, CoachConnectController],
   ['CoachConnectController.payouts', CoachConnectController.prototype.payouts, CoachConnectController],

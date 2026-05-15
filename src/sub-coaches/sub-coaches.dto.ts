@@ -54,3 +54,13 @@ export class SubCoachIdParam {
   @MinLength(1)
   id!: string;
 }
+
+// Body for POST /sub-coaches/invites/accept. Tokens are URL-safe base64
+// 24-byte randoms (32 chars), but we accept anything 16..256 chars in
+// case the format ever rotates.
+export class AcceptSubCoachInviteDto {
+  @IsString()
+  @MinLength(16)
+  @MaxLength(256)
+  token!: string;
+}

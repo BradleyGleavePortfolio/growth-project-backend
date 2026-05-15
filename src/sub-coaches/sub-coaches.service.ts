@@ -97,6 +97,36 @@ export interface ReassignResult {
   auditLogId: string;
 }
 
+// Public-shape preview of a SubCoachInvite. Returned by the unauthenticated
+// preview endpoint so the mobile deep-link landing screen can render
+// "{head coach name} invited you to join their team" without forcing the
+// user through auth first.
+export interface InvitePreviewView {
+  inviteId: string;
+  email: string;
+  name: string | null;
+  max_clients: number | null;
+  expires_at: string;
+  status: 'pending' | 'accepted' | 'revoked' | 'expired';
+  head_coach: {
+    id: string;
+    name: string;
+    business_name: string | null;
+  };
+}
+
+// Result of POST /sub-coaches/invites/accept. `already_accepted` is true
+// on the idempotent re-call path (same caller already accepted) so the
+// mobile UI can avoid double-toasting.
+export interface AcceptInviteResult {
+  ok: true;
+  inviteId: string;
+  assignmentId: string;
+  headCoachId: string;
+  subCoachId: string;
+  already_accepted: boolean;
+}
+
 @Injectable()
 export class SubCoachesService {
   private readonly logger = new Logger(SubCoachesService.name);
@@ -434,6 +464,288 @@ export class SubCoachesService {
       email,
       inviteUrl: this.buildInviteUrl(token),
       expires_at: expiresAt.toISOString(),
+    };
+  }
+
+  // GET /sub-coaches/invites/by-token/:token — unauthenticated preview.
+  // Lets the mobile deep-link landing screen show "{head coach} invited
+  // you to join their team" before the invitee has signed in or has an
+  // account. Returns a narrow status field so the UI can branch
+  // (pending → show accept CTA; expired/revoked/accepted → show terminal
+  // copy). Always returns a 200 envelope when the token shape resolves to
+  // a row; throws NotFound for an unknown token so the link is not a
+  // probe oracle.
+  async previewByToken(token: string): Promise<InvitePreviewView> {
+    const trimmed = (token ?? '').trim();
+    if (!trimmed) {
+      throw new BadRequestException({
+        kind: 'invite_token_required',
+        message: 'token is required',
+      });
+    }
+    const invite = await this.prisma.subCoachInvite.findUnique({
+      where: { token: trimmed },
+      include: {
+        head_coach: {
+          select: {
+            id: true,
+            name: true,
+            coach_profile: { select: { business_name: true } },
+          },
+        },
+      },
+    });
+    if (!invite) {
+      throw new NotFoundException({
+        kind: 'invite_not_found',
+        message: 'Invite not found.',
+      });
+    }
+    const now = new Date();
+    let status: InvitePreviewView['status'] = 'pending';
+    if (invite.revoked_at) status = 'revoked';
+    else if (invite.accepted_at) status = 'accepted';
+    else if (invite.expires_at <= now) status = 'expired';
+    return {
+      inviteId: invite.id,
+      email: invite.email,
+      name: invite.name,
+      max_clients: invite.max_clients,
+      expires_at: invite.expires_at.toISOString(),
+      status,
+      head_coach: {
+        id: invite.head_coach.id,
+        name: invite.head_coach.name,
+        business_name: invite.head_coach.coach_profile?.business_name ?? null,
+      },
+    };
+  }
+
+  // POST /sub-coaches/invites/accept — authenticated. The caller must be
+  // a coach/owner whose email matches the invite. Idempotent: a second
+  // call by the same accepter resolves the existing assignment and
+  // returns `already_accepted: true` without writing a new audit row.
+  //
+  // Refusal envelopes are { kind, message } shaped so the mobile typed
+  // client can switch on them. See `kind:` values below.
+  async accept(
+    callerId: string,
+    callerRole: string,
+    callerEmail: string,
+    token: string,
+  ): Promise<AcceptInviteResult> {
+    const trimmedToken = (token ?? '').trim();
+    if (!trimmedToken) {
+      throw new BadRequestException({
+        kind: 'invite_token_required',
+        message: 'token is required',
+      });
+    }
+    if (callerRole !== 'coach' && callerRole !== 'owner') {
+      throw new ForbiddenException({
+        kind: 'accept_role_not_coach',
+        message: 'Only coaches can accept a sub-coach invite.',
+      });
+    }
+
+    const invite = await this.prisma.subCoachInvite.findUnique({
+      where: { token: trimmedToken },
+    });
+    if (!invite) {
+      throw new NotFoundException({
+        kind: 'invite_not_found',
+        message: 'Invite not found.',
+      });
+    }
+
+    // Cannot accept your own invite.
+    if (invite.head_coach_id === callerId) {
+      throw new BadRequestException({
+        kind: 'cannot_accept_own_invite',
+        message: 'You cannot accept an invite you issued.',
+      });
+    }
+
+    // Revoked → terminal. Surfaces even if the calling user is the
+    // original accepter; revocation overrides idempotency.
+    if (invite.revoked_at) {
+      throw new ConflictException({
+        kind: 'invite_revoked',
+        message: 'This invite has been revoked.',
+      });
+    }
+
+    // Idempotent re-acceptance by the same user.
+    if (invite.accepted_at && invite.accepted_by_user_id === callerId) {
+      const existing = await this.prisma.teamSubCoachAssignment.findFirst({
+        where: {
+          head_coach_id: invite.head_coach_id,
+          sub_coach_id: callerId,
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        return {
+          ok: true,
+          inviteId: invite.id,
+          assignmentId: existing.id,
+          headCoachId: invite.head_coach_id,
+          subCoachId: callerId,
+          already_accepted: true,
+        };
+      }
+      // Accepted row exists but assignment row was wiped (e.g. by a
+      // later revoke + manual cleanup). Fall through to recreate it.
+    }
+
+    // Accepted by someone else.
+    if (invite.accepted_at && invite.accepted_by_user_id !== callerId) {
+      throw new ConflictException({
+        kind: 'invite_already_used',
+        message: 'This invite has already been accepted.',
+      });
+    }
+
+    // Expired (only if not already accepted — an accepted-then-expired
+    // invite for the same user remains idempotent above).
+    if (invite.expires_at <= new Date()) {
+      throw new ConflictException({
+        kind: 'invite_expired',
+        message: 'This invite has expired. Ask the head coach to send a new one.',
+      });
+    }
+
+    // Email gate: the invite is bound to the email it was issued to.
+    // Compared case-insensitively against the caller's current email.
+    if (
+      callerEmail.trim().toLowerCase() !== invite.email.trim().toLowerCase()
+    ) {
+      throw new ForbiddenException({
+        kind: 'invite_email_mismatch',
+        message: 'This invite was issued to a different email address.',
+      });
+    }
+
+    // Head-cap: a sub-coach can sit under at most SUB_COACH_HEAD_CAP
+    // head coaches. Same envelope shape as the TeamModeService gate.
+    const otherHeads = await this.prisma.teamSubCoachAssignment.count({
+      where: {
+        sub_coach_id: callerId,
+        archived_at: null,
+        NOT: { head_coach_id: invite.head_coach_id },
+      },
+    });
+    if (otherHeads >= SUB_COACH_HEAD_CAP) {
+      throw new ConflictException({
+        kind: 'sub_coach_head_cap_exceeded',
+        message: `You are already a sub-coach under ${SUB_COACH_HEAD_CAP} head coaches.`,
+        cap: SUB_COACH_HEAD_CAP,
+      });
+    }
+
+    const headCoach = await this.prisma.user.findUnique({
+      where: { id: invite.head_coach_id },
+      select: { id: true, name: true },
+    });
+    if (!headCoach) {
+      throw new NotFoundException({
+        kind: 'head_coach_missing',
+        message: 'Head coach no longer exists.',
+      });
+    }
+
+    const accepter = await this.prisma.user.findUnique({
+      where: { id: callerId },
+      select: { id: true, name: true },
+    });
+    if (!accepter) throw new NotFoundException('Accepting user not found');
+
+    // Existing assignment row (may be archived from a prior revoke).
+    const existingAssignment =
+      await this.prisma.teamSubCoachAssignment.findFirst({
+        where: {
+          head_coach_id: invite.head_coach_id,
+          sub_coach_id: callerId,
+        },
+      });
+    if (existingAssignment && !existingAssignment.archived_at) {
+      // Already on the team — treat as idempotent success and mark the
+      // invite consumed so the audit feed stays clean.
+      const updated = await this.prisma.$transaction(async (tx) => {
+        if (!invite.accepted_at) {
+          await tx.subCoachInvite.update({
+            where: { id: invite.id },
+            data: {
+              accepted_at: new Date(),
+              accepted_by_user_id: callerId,
+            },
+          });
+        }
+        return existingAssignment;
+      });
+      return {
+        ok: true,
+        inviteId: invite.id,
+        assignmentId: updated.id,
+        headCoachId: invite.head_coach_id,
+        subCoachId: callerId,
+        already_accepted: true,
+      };
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const acceptedAt = new Date();
+      await tx.subCoachInvite.update({
+        where: { id: invite.id },
+        data: {
+          accepted_at: acceptedAt,
+          accepted_by_user_id: callerId,
+        },
+      });
+      let assignment;
+      if (existingAssignment && existingAssignment.archived_at) {
+        // Re-activate the prior archived row instead of creating a dup,
+        // since (head_coach_id, sub_coach_id) is a unique pair.
+        assignment = await tx.teamSubCoachAssignment.update({
+          where: { id: existingAssignment.id },
+          data: { archived_at: null },
+        });
+      } else {
+        assignment = await tx.teamSubCoachAssignment.create({
+          data: {
+            head_coach_id: invite.head_coach_id,
+            sub_coach_id: callerId,
+            stripe_subscription_item_id: null,
+          },
+        });
+      }
+      await tx.teamAuditEvent.create({
+        data: {
+          head_coach_id: invite.head_coach_id,
+          actor_user_id: callerId,
+          target_client_id: null,
+          event_kind: 'sub_coach_assigned',
+          summary: `Sub-coach ${accepter.name} accepted the invite to join your team.`,
+          metadata: {
+            sub_coach_id: callerId,
+            invite_id: invite.id,
+            via: 'invite_acceptance',
+            max_clients: invite.max_clients ?? null,
+          } as Prisma.InputJsonValue,
+        },
+      });
+      return assignment;
+    });
+
+    await this.team.refreshCounters(invite.head_coach_id);
+
+    return {
+      ok: true,
+      inviteId: invite.id,
+      assignmentId: result.id,
+      headCoachId: invite.head_coach_id,
+      subCoachId: callerId,
+      already_accepted: false,
     };
   }
 
