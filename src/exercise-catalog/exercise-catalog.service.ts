@@ -83,12 +83,64 @@ export class ExerciseCatalogService {
     return { items, nextCursor, total };
   }
 
-  async getByIdOrSlug(idOrSlug: string): Promise<ExerciseCatalogDetailDto> {
+  async getByIdOrSlug(
+    idOrSlug: string,
+    caller?: { userId: string; role: string },
+  ): Promise<ExerciseCatalogDetailDto> {
     const row = await this.prisma.exerciseCatalogItem.findFirst({
       where: { OR: [{ id: idOrSlug }, { slug: idOrSlug }] },
     });
     if (!row) throw new NotFoundException(`Exercise "${idOrSlug}" not found`);
-    return this.toDetailDto(row);
+    return this.toDetailDto(row, caller ? await this.canMintForRow(row, caller) : true);
+  }
+
+  /**
+   * Authorize playback-URL minting for a caller against a catalog row.
+   *
+   * Doctrine (P0 fix): a signed HLS URL is a transferable bearer token —
+   * anyone with the link can stream for ~1h. Mint only when the caller
+   * has a product-visible reason for the video:
+   *   - owner / coach: always allowed (catalog is the coach surface)
+   *   - student (client): only when at least one of their visible workout
+   *     assignments references this catalog row, OR the row is `public`
+   *     playback policy (public HLS is by definition unauthenticated)
+   *
+   * Public-policy rows always pass — Mux serves them without a token, so
+   * gating here would not add security and would break the marketplace
+   * preview flow.
+   *
+   * Returns false → caller sees playbackUrl: null in the detail payload.
+   * No 4xx so the catalog stays browsable.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async canMintForRow(row: any, caller: { userId: string; role: string }): Promise<boolean> {
+    if (!row.mux_playback_id || row.mux_asset_status !== 'ready') return false;
+    if (row.mux_playback_policy !== 'signed') return true;
+    if (caller.role === 'owner' || caller.role === 'coach') return true;
+    // Students: require an active workout assignment whose plan references
+    // this catalog row via WorkoutPlanExercise.exercise_external_id
+    // (which stores either the catalog item id or the slug — both shapes
+    // are produced by the workout-builder seed/AI paths).
+    try {
+      const hit = await this.prisma.clientWorkoutAssignment.findFirst({
+        where: {
+          client_id: caller.userId,
+          workout_plan: {
+            exercises: {
+              some: {
+                exercise_external_id: { in: [row.id, row.slug].filter(Boolean) },
+              },
+            },
+          },
+        },
+        select: { id: true },
+      });
+      return !!hit;
+    } catch {
+      // If the schema relation isn't present (older deploy mid-migration),
+      // fail closed — student gets no signed URL until coach assigns it.
+      return false;
+    }
   }
 
   // ── owner writes ─────────────────────────────────────────────────────────
@@ -230,10 +282,10 @@ export class ExerciseCatalogService {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private toDetailDto(row: any): ExerciseCatalogDetailDto {
+  private toDetailDto(row: any, allowPlayback = true): ExerciseCatalogDetailDto {
     const base = this.toListItemDto(row);
     let playbackUrl: string | null = null;
-    if (row.mux_playback_id && row.mux_asset_status === 'ready') {
+    if (allowPlayback && row.mux_playback_id && row.mux_asset_status === 'ready') {
       try {
         playbackUrl = this.mux.mintPlaybackUrl({
           playbackId: row.mux_playback_id,

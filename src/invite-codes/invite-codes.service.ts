@@ -772,7 +772,7 @@ export class InviteCodesService {
     error?: string;
   }> {
     const acceptBase =
-      process.env.PUBLIC_INVITE_BASE_URL || 'https://app.tgp.com/join';
+      process.env.PUBLIC_INVITE_BASE_URL || 'https://app.trygrowthproject.com/join';
     const acceptUrl = `${acceptBase}/${params.inviteCode}`;
     const expiresAtDisplay = params.expiresAt
       ? params.expiresAt.toISOString().slice(0, 10)

@@ -20,6 +20,7 @@ import {
   AcceptSubCoachInviteDto,
   InviteSubCoachDto,
   ReassignClientDto,
+  ReissueSubCoachInviteDto,
   RevokeSubCoachDto,
 } from './sub-coaches.dto';
 import { SubCoachesService } from './sub-coaches.service';
@@ -116,6 +117,25 @@ export class SubCoachesController {
       req.user.email,
       dto.token,
     );
+  }
+
+  // POST /sub-coaches/invites/:id/reissue — head-coach-only recovery
+  // path when a sub-coach can't accept the original invite (typo'd
+  // email, alias swap). Generates a fresh token + 14-day expiry on the
+  // existing row, optionally rebinding the email.
+  @Post('invites/:id/reissue')
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
+  @HttpCode(HttpStatus.OK)
+  async reissueInvite(
+    @Req() req: AuthedRequest,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: ReissueSubCoachInviteDto,
+  ) {
+    this.assertHeadCoach(req);
+    return this.subCoaches.reissueInvite(req.user.id, id, {
+      email: dto.email ?? null,
+      name: dto.name ?? null,
+    });
   }
 
   // POST /sub-coaches/:id/revoke — head-coach-only revoke + client

@@ -31,11 +31,13 @@ import {
   Post,
   Put,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { OwnerGuard } from '../common/guards/owner.guard';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import type { AuthedRequest } from '../auth/auth-request';
 import { MuxDisabledError } from '../video/mux.errors';
 import {
   AttachMuxAssetDto,
@@ -72,9 +74,19 @@ export class ExerciseCatalogController {
     return this.catalog.list(query);
   }
 
+  // Pass the authenticated caller so the service can gate signed-URL
+  // minting per product policy — owners/coaches always get the URL,
+  // students only when the exercise is in one of their assignments.
+  // Public-policy items return the URL unconditionally (HLS is public).
   @Get(':idOrSlug')
-  detail(@Param('idOrSlug') idOrSlug: string): Promise<ExerciseCatalogDetailDto> {
-    return this.catalog.getByIdOrSlug(idOrSlug);
+  detail(
+    @Param('idOrSlug') idOrSlug: string,
+    @Req() req: AuthedRequest,
+  ): Promise<ExerciseCatalogDetailDto> {
+    return this.catalog.getByIdOrSlug(idOrSlug, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 }
 

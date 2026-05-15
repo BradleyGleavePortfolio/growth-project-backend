@@ -125,7 +125,7 @@ export class InviteCodesController {
     );
     return {
       code: profile.invite_code,
-      url: `${process.env.PUBLIC_INVITE_BASE_URL || 'https://app.tgp.com/join'}/${profile.invite_code}`,
+      url: `${process.env.PUBLIC_INVITE_BASE_URL || 'https://app.trygrowthproject.com/join'}/${profile.invite_code}`,
     };
   }
 
@@ -138,7 +138,7 @@ export class InviteCodesController {
     );
     return {
       code: profile.invite_code,
-      url: `${process.env.PUBLIC_INVITE_BASE_URL || 'https://app.tgp.com/join'}/${profile.invite_code}`,
+      url: `${process.env.PUBLIC_INVITE_BASE_URL || 'https://app.trygrowthproject.com/join'}/${profile.invite_code}`,
     };
   }
 

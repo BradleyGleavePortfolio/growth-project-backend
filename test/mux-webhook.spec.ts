@@ -94,7 +94,7 @@ describe('MuxWebhookController', () => {
     );
   });
 
-  it('handles video.asset.errored by storing error message', async () => {
+  it('handles video.asset.errored by storing error message (only from pre-terminal states)', async () => {
     const { controller, updateMany } = build();
     const body = {
       type: 'video.asset.errored',
@@ -107,7 +107,12 @@ describe('MuxWebhookController', () => {
     await controller.receive(body, header);
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { mux_asset_id: 'asset_bad' },
+        where: expect.objectContaining({
+          mux_asset_id: 'asset_bad',
+          // P0 fix — only transition errored from pre-terminal states so
+          // a stale errored arriving after ready does not erase playback.
+          mux_asset_status: { in: ['uploading', 'processing', 'none'] },
+        }),
         data: expect.objectContaining({
           mux_asset_status: 'errored',
           mux_error_message: 'source video is corrupt',

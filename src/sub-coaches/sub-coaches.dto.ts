@@ -64,3 +64,18 @@ export class AcceptSubCoachInviteDto {
   @MaxLength(256)
   token!: string;
 }
+
+// Body for POST /sub-coaches/invites/:id/reissue. Both fields optional —
+// omit `email` to just rotate the token, supply it to rebind the invite
+// to the correct address (the typo-recovery case).
+export class ReissueSubCoachInviteDto {
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(254)
+  email?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string | null;
+}
