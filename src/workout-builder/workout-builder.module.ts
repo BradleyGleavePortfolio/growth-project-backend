@@ -11,12 +11,13 @@ import { JwksVerifierService } from '../auth/jwks.service';
 import { WorkoutBuilderController, AssignmentController } from './workout-builder.controller';
 import { WorkoutBuilderService } from './workout-builder.service';
 import { ExerciseLibraryModule } from '../exercise-library/exercise-library.module';
+import { ExerciseCatalogModule } from '../exercise-catalog/exercise-catalog.module';
 
 // PrismaService is global. Providing JwtAuthGuard / CoachGuard /
 // JwksVerifierService locally mirrors MacrosModule / MealPlansModule
 // and avoids the circular-import risk of pulling AuthModule.
 @Module({
-  imports: [ExerciseLibraryModule],
+  imports: [ExerciseLibraryModule, ExerciseCatalogModule],
   controllers: [WorkoutBuilderController, AssignmentController],
   providers: [WorkoutBuilderService, JwtAuthGuard, CoachGuard, JwksVerifierService],
   exports: [WorkoutBuilderService],
