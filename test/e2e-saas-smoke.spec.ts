@@ -175,7 +175,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
 
     function buildAuth() {
       const prisma: any = { user: { findUnique: jest.fn() } };
-      const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any);
+      const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       const analytics: any = { capture: jest.fn() };
       const auth = new AuthService(prisma, inviteCodes, analytics, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any, { isConfigured: () => false, getAudiences: () => [], verify: jest.fn() } as any);
       return { auth, inviteCodes, prisma };
@@ -225,7 +225,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         },
         inviteCode: { findUnique: jest.fn(async () => null) },
       };
-      const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any);
+      const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       const result = await inviteCodes.previewCode('GP-ABCDEF');
       expect(result).toEqual({
         valid: true,
@@ -249,7 +249,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         },
         inviteCode: { findUnique: jest.fn(async () => null) },
       };
-      const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any);
+      const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       const result = await inviteCodes.previewCode('GP-PAUSED');
       expect(result).toEqual({ valid: false });
     });
@@ -259,7 +259,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         coachProfile: { findUnique: jest.fn(async () => null) },
         inviteCode: { findUnique: jest.fn(async () => null) },
       };
-      const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any);
+      const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       const result = await inviteCodes.previewCode('GP-GHOST0');
       expect(result).toEqual({ valid: false });
     });
@@ -276,7 +276,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
     it('rejects signup without a code when COACH_CODE_GATE_ENABLED=true', async () => {
       process.env.COACH_CODE_GATE_ENABLED = 'true';
       const prisma: any = { user: { findUnique: jest.fn() } };
-      const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any);
+      const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       const auth = new AuthService(prisma, inviteCodes, { capture: jest.fn() } as any, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any, { isConfigured: () => false, getAudiences: () => [], verify: jest.fn() } as any);
       await expect(
         auth.signupWithCode({
@@ -294,7 +294,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         coachProfile: { findUnique: jest.fn(async () => null) },
         inviteCode: { findUnique: jest.fn(async () => null) },
       };
-      const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any);
+      const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       const auth = new AuthService(prisma, inviteCodes, { capture: jest.fn() } as any, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any, { isConfigured: () => false, getAudiences: () => [], verify: jest.fn() } as any);
       await expect(
         auth.signupWithCode({
@@ -323,7 +323,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         subscription_status: 'active',
         user: { id: 'coach-1', role: 'coach' },
       };
-      const inviteCodes = new InviteCodesService(fake as any, { capture: jest.fn(), identify: jest.fn() } as any);
+      const inviteCodes = new InviteCodesService(fake as any, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       const result = await inviteCodes.attachUserToCoachByCode(
         'student-1',
         'GP-LINK01',
@@ -341,7 +341,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         subscription_status: 'active',
         user: { id: 'coach-1', role: 'coach' },
       };
-      const inviteCodes = new InviteCodesService(fake as any, { capture: jest.fn(), identify: jest.fn() } as any);
+      const inviteCodes = new InviteCodesService(fake as any, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       await expect(
         inviteCodes.attachUserToCoachByCode('owner-1', 'GP-OWN001'),
       ).rejects.toBeInstanceOf(ForbiddenException);
@@ -360,7 +360,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         subscription_status: 'paused',
         user: { id: 'coach-1', role: 'coach' },
       };
-      const inviteCodes = new InviteCodesService(fake as any, { capture: jest.fn(), identify: jest.fn() } as any);
+      const inviteCodes = new InviteCodesService(fake as any, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       await expect(
         inviteCodes.attachUserToCoachByCode('student-1', 'GP-PAUS01'),
       ).rejects.toBeInstanceOf(BadRequestException);
