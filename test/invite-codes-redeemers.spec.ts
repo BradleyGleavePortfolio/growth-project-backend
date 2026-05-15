@@ -36,7 +36,12 @@ function buildAnalytics() {
 describe('InviteCodesService.listRedeemersForCoach', () => {
   it('throws NotFoundException for an unknown invite code id', async () => {
     const prisma = buildPrisma();
-    const svc = new InviteCodesService(prisma as never, buildAnalytics() as never);
+    const svc = new InviteCodesService(
+      prisma as never,
+      buildAnalytics() as never,
+      { send: jest.fn().mockResolvedValue({ status: 'logged', providerMessageId: null, idempotencyKey: 'stub' }) } as never,
+      { write: jest.fn() } as never,
+    );
     await expect(
       svc.listRedeemersForCoach('coach-1', 'ghost-id'),
     ).rejects.toThrow(NotFoundException);
@@ -54,7 +59,12 @@ describe('InviteCodesService.listRedeemersForCoach', () => {
         })),
       },
     });
-    const svc = new InviteCodesService(prisma as never, buildAnalytics() as never);
+    const svc = new InviteCodesService(
+      prisma as never,
+      buildAnalytics() as never,
+      { send: jest.fn().mockResolvedValue({ status: 'logged', providerMessageId: null, idempotencyKey: 'stub' }) } as never,
+      { write: jest.fn() } as never,
+    );
     await expect(
       svc.listRedeemersForCoach('coach-1', 'inv-1'),
     ).rejects.toThrow(ForbiddenException);
@@ -72,7 +82,12 @@ describe('InviteCodesService.listRedeemersForCoach', () => {
         })),
       },
     });
-    const svc = new InviteCodesService(prisma as never, buildAnalytics() as never);
+    const svc = new InviteCodesService(
+      prisma as never,
+      buildAnalytics() as never,
+      { send: jest.fn().mockResolvedValue({ status: 'logged', providerMessageId: null, idempotencyKey: 'stub' }) } as never,
+      { write: jest.fn() } as never,
+    );
     const out = await svc.listRedeemersForCoach('coach-1', 'inv-1');
     expect(out).toEqual([]);
   });
@@ -112,7 +127,12 @@ describe('InviteCodesService.listRedeemersForCoach', () => {
         ]),
       },
     });
-    const svc = new InviteCodesService(prisma as never, buildAnalytics() as never);
+    const svc = new InviteCodesService(
+      prisma as never,
+      buildAnalytics() as never,
+      { send: jest.fn().mockResolvedValue({ status: 'logged', providerMessageId: null, idempotencyKey: 'stub' }) } as never,
+      { write: jest.fn() } as never,
+    );
     const out = await svc.listRedeemersForCoach('coach-1', 'inv-1');
     expect(out).toHaveLength(2);
     expect(out[0]).toMatchObject({ user_id: 'u-1', name: 'Alice' });
