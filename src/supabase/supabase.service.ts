@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import ws from 'ws';
+import { WebSocket as WS } from 'ws';
 
 @Injectable()
 export class SupabaseService {
@@ -9,11 +9,16 @@ export class SupabaseService {
 
   constructor() {
     // Node 20 lacks native WebSocket; supabase-js >=2.105 requires an explicit
-    // transport when running under Node <22.
+    // transport when running under Node <22. We use the named `WebSocket`
+    // export rather than `import ws from 'ws'` because this repo's tsconfig
+    // does not set `esModuleInterop`, so the default-import shim compiles to
+    // `ws_1.default` — which is undefined for ws (a CommonJS module whose
+    // module.exports IS the constructor). The named import is safe under
+    // both interop modes.
     this.client = createClient(
       process.env.SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      { realtime: { transport: ws as any } },
+      { realtime: { transport: WS as any } },
     );
   }
 
