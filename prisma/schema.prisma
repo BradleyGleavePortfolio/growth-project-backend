@@ -2537,6 +2537,82 @@ model SecretRotationLog {
   @@map("secret_rotation_log")
 }
 
+// ─── Video library: ExerciseCatalogItem ────────────────────────────────────
+//
+// Canonical, owner-curated exercise catalog used by the mobile workout flow.
+// Coexists with the legacy ExerciseDB proxy in src/exercise-library: this
+// table is the source of truth for any exercise the platform has its own
+// demo video for, while the ExerciseDB proxy remains as a wide-catalog
+// fallback for the workout builder.
+//
+// Video state machine:
+//
+//   none       — no Mux asset yet. mux_* columns null. playbackUrl=null.
+//   uploading  — owner created a direct-upload URL; Mux has not finalized
+//                the asset yet (no asset id in webhook fan-out).
+//   processing — asset created on Mux; transcoding in flight. mux_asset_id
+//                is set, but mux_playback_id is not yet usable.
+//   ready      — webhook `video.asset.ready` landed; mux_playback_id is
+//                usable. The /exercise-catalog/:idOrSlug detail route
+//                mints a playback URL when this state is reached.
+//   errored    — webhook `video.asset.errored` landed. mux_error_message
+//                carries the upstream reason. Treated identically to
+//                `none` for playback (playbackUrl=null).
+//
+// Slugs are hand-derived from the seed catalog (`seed:push-001` →
+// "barbell-bench-press") and used by the mobile client when navigating
+// from a workout assignment row to the exercise detail screen. Slugs are
+// unique and stable; renaming requires a migration.
+model ExerciseCatalogItem {
+  id                  String                  @id @default(uuid())
+  // Stable URL slug — e.g. "barbell-bench-press". Mobile client navigates
+  // via /exercise-catalog/:idOrSlug so either the uuid or the slug works.
+  slug                String                  @unique
+  name                String
+  category            String
+  primary_muscle      String
+  secondary_muscles   String[]                @default([])
+  equipment           String[]                @default([])
+  // Free-text label (beginner | intermediate | advanced). Not an enum so
+  // we can extend without a migration.
+  difficulty          String                  @default("beginner")
+  instructions        String[]                @default([])
+  // Optional source pointer for provenance — e.g. "seed:push-001" when the
+  // catalog row was derived from SEED_EXERCISES, or "wger:75" if a future
+  // import path lands.
+  source_ref          String?
+
+  // Mux state. All four are null until an owner attaches a video.
+  mux_asset_id        String?
+  mux_playback_id     String?
+  // 'public' (direct HLS) or 'signed' (requires MUX_SIGNING_KEY). The
+  // detail route uses this to decide whether to mint a JWT or hand back
+  // the bare URL. Defaults to 'public' for v1 simplicity.
+  mux_playback_policy String                  @default("public")
+  mux_asset_status    ExerciseVideoStatus     @default(none)
+  mux_duration_seconds Float?
+  mux_error_message   String?
+  // Direct-upload bookkeeping: when an owner POSTs /video/upload we
+  // create a Mux Direct Upload and remember its id so the webhook can
+  // resolve the upload back to the catalog row when the asset is born.
+  mux_upload_id       String?                 @unique
+
+  created_at          DateTime                @default(now())
+  updated_at          DateTime                @updatedAt
+
+  @@index([category])
+  @@index([primary_muscle])
+  @@index([mux_asset_id])
+}
+
+enum ExerciseVideoStatus {
+  none
+  uploading
+  processing
+  ready
+  errored
+}
+
 // ─── Email Send Log ─────────────────────────────────────────────────────
 //
 // Idempotency + send-receipts ledger for transactional email.

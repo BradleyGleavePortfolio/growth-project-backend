@@ -56,6 +56,11 @@ import { FirstWinModule } from './first-win/first-win.module';
 // holistic insights). See sprint-b PR description for the audit
 // findings each module addresses.
 import { ExerciseLibraryModule } from './exercise-library/exercise-library.module';
+// Video library v1 — owner-curated exercise catalog + Mux ingest. The
+// VideoModule (Mux adapter + webhook) is @Global so workout-builder can
+// inject MuxService when it enriches assignment reads with playback URLs.
+import { VideoModule } from './video/video.module';
+import { ExerciseCatalogModule } from './exercise-catalog/exercise-catalog.module';
 import { WorkoutBuilderModule } from './workout-builder/workout-builder.module';
 import { MacrosModule } from './macros/macros.module';
 import { RealMealPlansModule } from './real-meal-plans/real-meal-plans.module';
@@ -209,6 +214,8 @@ import { EmailModule } from './email/email.module';
     // Sprint B — coach toolset and holistic insights engine. Order is
     // not load-bearing; grouped here for discoverability.
     ExerciseLibraryModule,
+    VideoModule,
+    ExerciseCatalogModule,
     WorkoutBuilderModule,
     MacrosModule,
     RealMealPlansModule,
