@@ -70,4 +70,12 @@ jobs:
           # USDA half of the catalogue from coaches in production. The
           # simulated-prod gate must therefore supply a value.
           USDA_API_KEY: ci-usda-key
+          # Release-audit P0 (PR #221) added a prod-hardened gate for
+          # the Stripe Checkout redirect URLs: the code defaults to a
+          # growthproject:// mobile deep-link, which would break web
+          # checkouts in production. assertEnv refuses to boot prod
+          # without explicit values, so the simulated-prod gate must
+          # supply them too.
+          STRIPE_CHECKOUT_SUCCESS_URL: https://app.example.com/checkout/success?session_id={CHECKOUT_SESSION_ID}
+          STRIPE_CHECKOUT_CANCEL_URL: https://app.example.com/checkout/cancel
         run: node -e "require('./dist/common/env-validation').assertEnv()"
