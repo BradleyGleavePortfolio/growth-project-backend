@@ -15,6 +15,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { ExerciseCatalogService } from '../exercise-catalog/exercise-catalog.service';
 import {
   CreateWorkoutPlanDto,
   UpdateWorkoutPlanDto,
@@ -25,7 +26,10 @@ import {
 
 @Injectable()
 export class WorkoutBuilderService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly catalog: ExerciseCatalogService,
+  ) {}
 
   // ─── WorkoutPlan ──────────────────────────────────────────────────────────
 
@@ -150,8 +154,14 @@ export class WorkoutBuilderService {
 
   // Sprint B — client-side reads. The mobile client lists its own
   // assignments via /assignments/me; tenancy is by req.user.id.
+  //
+  // Video library v1 — assignment reads enrich each exercise row with
+  // `playbackUrl` and `catalog` metadata when its `exercise_external_id`
+  // resolves to an ExerciseCatalogItem. When it doesn't (legacy
+  // ExerciseDB ids), playbackUrl is null and the mobile client falls
+  // back to its existing detail-screen flow.
   async listAssignmentsForClient(clientId: string) {
-    return this.prisma.clientWorkoutAssignment.findMany({
+    const assignments = await this.prisma.clientWorkoutAssignment.findMany({
       where: { client_id: clientId },
       orderBy: { scheduled_for: 'asc' },
       include: {
@@ -160,6 +170,8 @@ export class WorkoutBuilderService {
         },
       },
     });
+    await this.attachPlaybackUrls(assignments);
+    return assignments;
   }
 
   async getAssignmentForClient(clientId: string, assignmentId: string) {
@@ -173,7 +185,52 @@ export class WorkoutBuilderService {
     });
     if (!assignment) throw new NotFoundException('Assignment not found');
     if (assignment.client_id !== clientId) throw new ForbiddenException();
+    await this.attachPlaybackUrls([assignment]);
     return assignment;
+  }
+
+  /**
+   * Mutates the given assignment-with-plan rows in place, attaching
+   * `playbackUrl` and `catalog` to every `workout_plan.exercises` entry
+   * whose `exercise_external_id` resolves to an internal
+   * ExerciseCatalogItem. Done in a single batched query rather than one
+   * lookup per row so a 12-exercise plan stays a single round-trip.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async attachPlaybackUrls(assignments: any[]) {
+    if (assignments.length === 0) return;
+    const refs = new Set<string>();
+    for (const a of assignments) {
+      for (const ex of a.workout_plan?.exercises ?? []) {
+        if (ex.exercise_external_id) refs.add(ex.exercise_external_id);
+      }
+    }
+    if (refs.size === 0) return;
+    const list = Array.from(refs);
+    // Single query: rows matching either id or slug.
+    const rows = await this.prisma.exerciseCatalogItem.findMany({
+      where: { OR: [{ id: { in: list } }, { slug: { in: list } }] },
+    });
+    const byKey = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      byKey.set(row.id, row);
+      byKey.set(row.slug, row);
+    }
+    for (const a of assignments) {
+      for (const ex of a.workout_plan?.exercises ?? []) {
+        const row = byKey.get(ex.exercise_external_id);
+        if (!row) {
+          ex.playbackUrl = null;
+          ex.catalog = null;
+          continue;
+        }
+        // Reuse the catalog service's URL-minting + DTO shaping against
+        // the row we already loaded — no second DB round-trip.
+        const info = this.catalog.playbackInfoFromRow(row);
+        ex.playbackUrl = info.playbackUrl;
+        ex.catalog = info.item;
+      }
+    }
   }
 
   async completeAssignment(
