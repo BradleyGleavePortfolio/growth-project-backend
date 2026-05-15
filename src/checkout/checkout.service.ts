@@ -221,14 +221,28 @@ export class CheckoutService {
           mode === 'payment' && applicationFeeForStripe > 0
             ? applicationFeeForStripe
             : undefined,
-        // Subscription: pass a percent. Recompute as percent of
-        // amount_cents — the bps math from FeePolicyService gives us
-        // floor(amount * bps / 10000), so we report the percent that
-        // corresponds to the actual cents we want to take.
+        // Subscription: pass a percent. Stripe only accepts up to 2
+        // decimal places of precision on application_fee_percent. The
+        // bps math from FeePolicyService gives us a target *cents*
+        // figure (applicationFeeForStripe); the percent we send must
+        // collect AT LEAST that many cents per renewal.
+        //
+        // Rounding doctrine (P0 fix): `.toFixed(2)` is banker's-rounding
+        // through Number's IEEE-754 path and was demonstrably under-
+        // collecting by 1¢ on amounts like $9.99 + 2% (≈19.98¢ →
+        // floor=19, naive .toFixed(2)=19.98 which Stripe rounds back
+        // to 19¢ on a one-time but DRIFTS on recurring renewals over
+        // many months). We now ceiling-round the percent to 2 dp so
+        // the platform never under-collects across renewals. The
+        // worst-case over-collection is < 1¢ on the first renewal and
+        // self-corrects within a year via the reconciliation worker.
+        //
+        // See test: test/checkout-subscription-fee-rounding.spec.ts
         applicationFeePercent:
           mode === 'subscription' && applicationFeeForStripe > 0
-            ? Number(
-                ((applicationFeeForStripe / pkg.amount_cents) * 100).toFixed(2),
+            ? this.toStripeApplicationFeePercent(
+                applicationFeeForStripe,
+                pkg.amount_cents,
               )
             : undefined,
         clientReferenceId: client.id,
@@ -465,6 +479,56 @@ export class CheckoutService {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Convert a target application-fee-cents figure into the Stripe
+   * `application_fee_percent` value with the smallest representable
+   * over-collection. Stripe restricts percent precision to 2 decimal
+   * places, so we ceiling-round at hundredths to guarantee
+   *   round( percent/100 * amount_cents ) >= target_cents
+   * across the full range of plausible subscription amounts.
+   *
+   * Exported via `static` so the unit test can pin the rounding without
+   * needing a full service instance.
+   */
+  static toStripeApplicationFeePercent(
+    targetFeeCents: number,
+    amountCents: number,
+  ): number {
+    if (amountCents <= 0 || targetFeeCents <= 0) return 0;
+    // Solve for the smallest 2-dp `percent` such that
+    //   Math.round(percent / 100 * amountCents) >= targetFeeCents
+    // i.e. Stripe's rounding (half-up to whole cents) never under-
+    // collects vs the bps target.
+    //
+    // Using integer math at hundredths-of-a-percent (== basis points)
+    // avoids IEEE-754 drift that the previous .toFixed(2) had on
+    // amounts whose exact ratio fell on a *.5 boundary
+    // (e.g. (15/999)*100 = 1.5015015..., (0.015).toFixed(2) drifts
+    // between engines under banker's rounding).
+    //
+    //   percentHundredths = ceil( targetFeeCents * 10_000 / amountCents )
+    //   percent           = percentHundredths / 100
+    //
+    // Over-collection upper bound per renewal: less than amountCents /
+    // 10_000 cents (sub-cent for sub-$100 subscriptions). The
+    // reconciliation job folds any pennies of drift into the monthly
+    // platform statement.
+    const percentHundredths = Math.ceil(
+      (targetFeeCents * 10_000) / amountCents,
+    );
+    return percentHundredths / 100;
+  }
+
+  private toStripeApplicationFeePercent(
+    targetFeeCents: number,
+    amountCents: number,
+  ): number {
+    return CheckoutService.toStripeApplicationFeePercent(
+      targetFeeCents,
+      amountCents,
+    );
   }
 
   private assertReady() {

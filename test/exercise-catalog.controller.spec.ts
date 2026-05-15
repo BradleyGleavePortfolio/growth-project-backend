@@ -17,7 +17,7 @@ describe('ExerciseCatalogController', () => {
     expect(svc.list).toHaveBeenCalledWith({});
   });
 
-  it('detail returns the service response unchanged (incl. playbackUrl)', async () => {
+  it('detail returns the service response unchanged (incl. playbackUrl) and passes caller for authz', async () => {
     const svc = {
       getByIdOrSlug: jest.fn().mockResolvedValue({
         id: 'x',
@@ -26,8 +26,10 @@ describe('ExerciseCatalogController', () => {
       }),
     } as unknown as ExerciseCatalogService;
     const c = new ExerciseCatalogController(svc);
-    const out = await c.detail('s');
+    const req = { user: { id: 'u_1', role: 'coach' } } as any;
+    const out = await c.detail('s', req);
     expect(out.playbackUrl).toBe('https://stream.mux.com/pb.m3u8');
+    expect(svc.getByIdOrSlug).toHaveBeenCalledWith('s', { userId: 'u_1', role: 'coach' });
   });
 });
 

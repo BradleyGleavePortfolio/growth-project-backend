@@ -617,12 +617,23 @@ export class SubCoachesService {
 
     // Email gate: the invite is bound to the email it was issued to.
     // Compared case-insensitively against the caller's current email.
+    //
+    // Recovery path (P0 fix): we surface the inviteId + head_coach_id in
+    // the refusal so the mobile UI can prompt the head coach to call
+    // POST /sub-coaches/invites/:id/reissue with the correct email
+    // (which generates a fresh token bound to the right address). Without
+    // this hook, an invite typo with no recovery was a TestFlight
+    // blocker.
     if (
       callerEmail.trim().toLowerCase() !== invite.email.trim().toLowerCase()
     ) {
       throw new ForbiddenException({
         kind: 'invite_email_mismatch',
-        message: 'This invite was issued to a different email address.',
+        message:
+          'This invite was issued to a different email address. Ask the head coach to reissue it to your current email.',
+        invite_id: invite.id,
+        head_coach_id: invite.head_coach_id,
+        recovery: 'reissue',
       });
     }
 
@@ -746,6 +757,120 @@ export class SubCoachesService {
       headCoachId: invite.head_coach_id,
       subCoachId: callerId,
       already_accepted: false,
+    };
+  }
+
+  // POST /sub-coaches/invites/:inviteId/reissue — head-coach-only safety
+  // valve when a sub-coach can't accept their invite (typo'd email,
+  // alias swap, etc.). Generates a fresh token + expiry on the existing
+  // invite row, optionally rebinding the email. Idempotency-friendly:
+  // calling twice returns the same row with a freshly-rotated token, so
+  // the head coach can re-send without producing duplicates that would
+  // trip the (head, email) outstanding-invite guard.
+  //
+  // Rules:
+  //   - Only the issuing head coach may reissue.
+  //   - Cannot reissue an already-accepted invite (would silently reset
+  //     the sub-coach's link to the team). Use revoke + invite instead.
+  //   - Revoked invites can be reissued: that's the whole point — the
+  //     head coach changed their mind about the revocation.
+  //   - When `email` is supplied, it replaces the bound address. Same
+  //     validation as invite() (lowercase, RFC-ish shape). We refuse if
+  //     the new email already has a different outstanding invite on
+  //     this head coach.
+  async reissueInvite(
+    headCoachId: string,
+    inviteId: string,
+    input: { email?: string | null; name?: string | null } = {},
+  ): Promise<InviteResult> {
+    const invite = await this.prisma.subCoachInvite.findUnique({
+      where: { id: inviteId },
+    });
+    if (!invite) {
+      throw new NotFoundException({
+        kind: 'invite_not_found',
+        message: 'Invite not found.',
+      });
+    }
+    if (invite.head_coach_id !== headCoachId) {
+      throw new ForbiddenException({
+        kind: 'invite_not_yours',
+        message: 'You are not the issuer of this invite.',
+      });
+    }
+    if (invite.accepted_at) {
+      throw new ConflictException({
+        kind: 'invite_already_accepted',
+        message:
+          'This invite has already been accepted. Revoke the sub-coach and send a new invite instead.',
+      });
+    }
+
+    const nextEmail = (input.email ?? invite.email).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail)) {
+      throw new BadRequestException('email is invalid');
+    }
+
+    // Refuse if the head coach has a DIFFERENT outstanding invite for
+    // the proposed email. Same row is fine — that's the reissue we're
+    // about to do.
+    if (nextEmail !== invite.email.trim().toLowerCase()) {
+      const conflict = await this.prisma.subCoachInvite.findFirst({
+        where: {
+          head_coach_id: headCoachId,
+          email: nextEmail,
+          accepted_at: null,
+          revoked_at: null,
+          expires_at: { gt: new Date() },
+          NOT: { id: invite.id },
+        },
+        select: { id: true },
+      });
+      if (conflict) {
+        throw new ConflictException({
+          kind: 'invite_already_outstanding',
+          message:
+            'An outstanding invite already exists for that email — revoke it before reissuing.',
+        });
+      }
+    }
+
+    const token = this.randomToken();
+    const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 86_400_000);
+    const updated = await this.prisma.subCoachInvite.update({
+      where: { id: invite.id },
+      data: {
+        token,
+        email: nextEmail,
+        name: input.name ?? invite.name,
+        expires_at: expiresAt,
+        // If we're reviving a revoked invite, clear the revocation
+        // marker so it's pending again.
+        revoked_at: null,
+      },
+    });
+
+    await this.prisma.teamAuditEvent.create({
+      data: {
+        head_coach_id: headCoachId,
+        actor_user_id: headCoachId,
+        target_client_id: null,
+        event_kind: 'invite_sent_by_sub_coach',
+        summary: `Invite to ${nextEmail} reissued (id=${invite.id}).`,
+        metadata: {
+          invite_id: invite.id,
+          invite_kind: 'sub_coach_invite_reissue',
+          previous_email: invite.email,
+          email: nextEmail,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    return {
+      inviteId: updated.id,
+      email: updated.email,
+      inviteUrl: this.buildInviteUrl(updated.token),
+      expires_at: updated.expires_at.toISOString(),
     };
   }
 
@@ -1113,7 +1238,8 @@ export class SubCoachesService {
 
   private buildInviteUrl(token: string): string {
     const base =
-      process.env.PUBLIC_INVITE_BASE_URL?.trim() || 'https://app.tgp.com/join';
+      process.env.PUBLIC_INVITE_BASE_URL?.trim() ||
+      'https://app.trygrowthproject.com/join';
     return `${base}/sub-coach/${token}`;
   }
 

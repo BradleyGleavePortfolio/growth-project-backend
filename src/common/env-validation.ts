@@ -86,7 +86,20 @@ export const ENV_RULES: EnvRule[] = [
     name: 'PUBLIC_INVITE_BASE_URL',
     tier: 'feature',
     reason:
-      'Base URL used in /api/invite-codes responses and invite landing pages. Falls back to https://app.tgp.com/join when unset; set to the real public domain before public launch.',
+      'Base URL used in /api/invite-codes responses and invite landing pages. Falls back to https://app.trygrowthproject.com/join when unset. MUST be set explicitly in staging/production — assertEnv() refuses to boot prod without it (see prodHardenedFeatureVars in this file).',
+    validate: (v) => {
+      const trimmed = v.trim();
+      if (!/^https?:\/\//i.test(trimmed)) {
+        return 'PUBLIC_INVITE_BASE_URL must be an absolute http(s) URL.';
+      }
+      // Reject the legacy placeholder hostname — it shipped as the
+      // pre-launch default and any prod deploy still pointing at it is
+      // a misconfiguration that would silently break invite links.
+      if (/\bapp\.tgp\.com\b/i.test(trimmed)) {
+        return 'PUBLIC_INVITE_BASE_URL=app.tgp.com is the legacy placeholder; set to https://app.trygrowthproject.com/join for production.';
+      }
+      return null;
+    },
   },
   {
     name: 'PUBLIC_WEB_SIGNUP_URL',
@@ -225,6 +238,33 @@ export const ENV_RULES: EnvRule[] = [
     name: 'STRIPE_BILLING_PORTAL_RETURN_URL',
     tier: 'optional',
     reason: 'Return URL Stripe redirects coaches to after the Customer Portal session ends. Defaults to the console billing screen when unset.',
+  },
+  {
+    name: 'STRIPE_CHECKOUT_SUCCESS_URL',
+    tier: 'feature',
+    reason:
+      'Stripe Checkout success_url. Used by CheckoutService when the client did not specify one inline. Falls back to growthproject://checkout/success?session_id={CHECKOUT_SESSION_ID} (mobile deep link) when unset; production MUST set this explicitly so the universal-link redirect is correct — assertEnv refuses to boot prod with this missing.',
+    validate: (v) => {
+      const trimmed = v.trim();
+      // Allow custom-scheme (mobile) or http(s) URLs; reject anything else.
+      if (!/^([a-z][a-z0-9+.-]*:\/\/)/i.test(trimmed)) {
+        return 'STRIPE_CHECKOUT_SUCCESS_URL must be an absolute URL (http(s)://... or a mobile scheme like growthproject://...).';
+      }
+      return null;
+    },
+  },
+  {
+    name: 'STRIPE_CHECKOUT_CANCEL_URL',
+    tier: 'feature',
+    reason:
+      'Stripe Checkout cancel_url. Used by CheckoutService when the client did not specify one inline. Falls back to growthproject://checkout/cancel when unset; production MUST set this explicitly — assertEnv refuses to boot prod with this missing.',
+    validate: (v) => {
+      const trimmed = v.trim();
+      if (!/^([a-z][a-z0-9+.-]*:\/\/)/i.test(trimmed)) {
+        return 'STRIPE_CHECKOUT_CANCEL_URL must be an absolute URL (http(s)://... or a mobile scheme like growthproject://...).';
+      }
+      return null;
+    },
   },
   {
     name: 'STRIPE_CUSTOMER_PORTAL_LOGIN_URL',
@@ -599,6 +639,45 @@ export function assertEnv(
       const msg =
         'REDIS_URL is required in production. Set REDIS_URL=redis(s)://host:port[/db] before deploy. ' +
         'See README.md "Placeholders / TODO env vars" section.';
+      logger.error(msg);
+      throw new Error(msg);
+    }
+
+    // Production-only hardening for feature-tier URL config: the
+    // defaults baked into the code (legacy app.tgp.com hostname, mobile
+    // deep-link cancel URL) are correct for dev/preview but unsafe in
+    // production — they would route real coaches/clients away from the
+    // public app domain. Refuse to boot prod without explicit values.
+    //
+    // Keep this list narrow: only vars whose defaults would silently
+    // misroute production traffic belong here. Anything that returns a
+    // 4xx at request time (Stripe API key) is fine to stay feature-tier
+    // without this extra gate.
+    const prodHardenedFeatureVars: Array<{ name: string; reason: string }> = [
+      {
+        name: 'PUBLIC_INVITE_BASE_URL',
+        reason:
+          'invite links would point at the legacy app.tgp.com placeholder hostname',
+      },
+      {
+        name: 'STRIPE_CHECKOUT_SUCCESS_URL',
+        reason:
+          'Stripe Checkout success redirect would only resolve via the mobile deep-link scheme, breaking web checkouts',
+      },
+      {
+        name: 'STRIPE_CHECKOUT_CANCEL_URL',
+        reason:
+          'Stripe Checkout cancel redirect would only resolve via the mobile deep-link scheme, breaking web checkouts',
+      },
+    ];
+    const missing = prodHardenedFeatureVars.filter(
+      (v) =>
+        typeof env[v.name] !== 'string' || env[v.name]!.trim().length === 0,
+    );
+    if (missing.length) {
+      const msg =
+        `Production-required URL config is missing: ` +
+        missing.map((v) => `${v.name} (${v.reason})`).join('; ');
       logger.error(msg);
       throw new Error(msg);
     }

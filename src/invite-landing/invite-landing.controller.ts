@@ -60,7 +60,7 @@ export class InviteLandingController {
     }
 
     const base =
-      process.env.PUBLIC_INVITE_BASE_URL || 'https://app.tgp.com/join';
+      process.env.PUBLIC_INVITE_BASE_URL || 'https://app.trygrowthproject.com/join';
     const webSignup = process.env.PUBLIC_WEB_SIGNUP_URL || `${base}/${code}`;
     // tgp:// is the custom scheme registered by the mobile app for cold-start
     // deep linking; the universal link works when the app is installed AND
@@ -103,7 +103,7 @@ export class InviteLandingController {
     const webSignup =
       process.env.PUBLIC_WEB_SIGNUP_URL ||
       process.env.PUBLIC_INVITE_BASE_URL ||
-      'https://app.tgp.com/join';
+      'https://app.trygrowthproject.com/join';
     const html = this.landing.renderInvalid({ web_signup_url: webSignup });
     res.setHeader('Cache-Control', 'no-store, max-age=0');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');

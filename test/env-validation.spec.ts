@@ -29,7 +29,7 @@ function fullProdEnv(): NodeJS.ProcessEnv {
   return {
     ...baseHardEnv(),
     NODE_ENV: 'production',
-    PUBLIC_INVITE_BASE_URL: 'https://app.example.com/join',
+    PUBLIC_INVITE_BASE_URL: 'https://app.trygrowthproject.com/join',
     PUBLIC_WEB_SIGNUP_URL: 'https://app.example.com/signup',
     APP_STORE_URL: 'https://apps.apple.com/app/x',
     PLAY_STORE_URL: 'https://play.google.com/store/apps/details?id=x',
@@ -44,6 +44,12 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     // not crashed; but tests that assert "missingFeature is empty" need
     // a stub value so the rule does not fire.
     ANTHROPIC_API_KEY: 'sk-ant-test',
+    // P0 audit fix — prod refuses to boot without explicit Stripe
+    // Checkout redirect URLs (their defaults are mobile-only schemes
+    // that break web checkouts).
+    STRIPE_CHECKOUT_SUCCESS_URL:
+      'https://app.trygrowthproject.com/checkout/success?session_id={CHECKOUT_SESSION_ID}',
+    STRIPE_CHECKOUT_CANCEL_URL: 'https://app.trygrowthproject.com/checkout/cancel',
   };
 }
 
@@ -159,19 +165,23 @@ describe('assertEnv', () => {
     );
   });
 
-  it('does NOT throw on missing feature-tier vars under NODE_ENV=production', () => {
-    // The whole point of the feature tier: prod boot must succeed when
-    // Stripe/Sentry/public-launch URLs are unset. The corresponding routes
-    // return 4xx at request time (or fall back to documented defaults);
-    // crashing the entire API on boot is the wrong default.
-    //
-    // REDIS_URL is the one feature-tier exception (pre-Connect cleanup): a
-    // multi-machine prod deploy with no shared throttler backend can't
-    // defend itself, so prod refuses to boot without it. Supply it here so
-    // this test still asserts the rest of the feature-tier behavior.
+  it('does NOT throw on most missing feature-tier vars under NODE_ENV=production', () => {
+    // The feature tier mostly degrades-not-crashes in prod, BUT three
+    // URL-config feature vars are prod-hardened because their defaults
+    // would silently misroute production traffic (see env-validation.ts:
+    // PUBLIC_INVITE_BASE_URL, STRIPE_CHECKOUT_SUCCESS_URL,
+    // STRIPE_CHECKOUT_CANCEL_URL). Supply those + REDIS_URL so this test
+    // exercises the "everything else is allowed to be missing" path.
     expect(() =>
       assertEnv(
-        { ...baseHardEnv(), NODE_ENV: 'production', REDIS_URL: 'redis://localhost:6379' },
+        {
+          ...baseHardEnv(),
+          NODE_ENV: 'production',
+          REDIS_URL: 'redis://localhost:6379',
+          PUBLIC_INVITE_BASE_URL: 'https://app.trygrowthproject.com/join',
+          STRIPE_CHECKOUT_SUCCESS_URL: 'https://app.trygrowthproject.com/checkout/success',
+          STRIPE_CHECKOUT_CANCEL_URL: 'https://app.trygrowthproject.com/checkout/cancel',
+        },
         { logger: silentLogger as any },
       ),
     ).not.toThrow();
@@ -181,7 +191,16 @@ describe('assertEnv', () => {
     const warn = jest.fn();
     const logger = { ...silentLogger, warn };
     assertEnv(
-      { ...baseHardEnv(), NODE_ENV: 'production', REDIS_URL: 'redis://localhost:6379' },
+      {
+        ...baseHardEnv(),
+        NODE_ENV: 'production',
+        REDIS_URL: 'redis://localhost:6379',
+        // Supply the prod-hardened URL vars so the warn path can run
+        // (the throw path is exercised separately below).
+        PUBLIC_INVITE_BASE_URL: 'https://app.trygrowthproject.com/join',
+        STRIPE_CHECKOUT_SUCCESS_URL: 'https://app.trygrowthproject.com/checkout/success',
+        STRIPE_CHECKOUT_CANCEL_URL: 'https://app.trygrowthproject.com/checkout/cancel',
+      },
       { logger: logger as any },
     );
     const featureWarning = warn.mock.calls.find((args) =>
@@ -192,7 +211,20 @@ describe('assertEnv', () => {
     // can audit what's degraded without grepping the rule list.
     expect(String(featureWarning![0])).toContain('STRIPE_SECRET_KEY');
     expect(String(featureWarning![0])).toContain('SENTRY_DSN');
-    expect(String(featureWarning![0])).toContain('PUBLIC_INVITE_BASE_URL');
+  });
+
+  it('throws when prod-hardened URL config is missing under NODE_ENV=production (P0)', () => {
+    // PUBLIC_INVITE_BASE_URL / STRIPE_CHECKOUT_SUCCESS_URL /
+    // STRIPE_CHECKOUT_CANCEL_URL are feature-tier overall but
+    // prod-hardened: the code-baked defaults (legacy app.tgp.com,
+    // mobile-only deep-link schemes) would silently misroute production
+    // traffic. Boot must fail loudly.
+    expect(() =>
+      assertEnv(
+        { ...baseHardEnv(), NODE_ENV: 'production', REDIS_URL: 'redis://localhost:6379' },
+        { logger: silentLogger as any },
+      ),
+    ).toThrow(/Production-required URL config is missing/);
   });
 
   it('throws when REDIS_URL is missing under NODE_ENV=production', () => {
@@ -225,13 +257,21 @@ describe('assertEnv', () => {
 
   it('respects explicit enforceProd=false even when NODE_ENV=production', () => {
     // enforceProd=false relaxes the feature-tier warn-vs-throw split, but
-    // the REDIS_URL prod-boot guard is a hard fail-fast regardless of the
-    // flag — the multi-machine Fly deploy concern is independent of
-    // operator opt-out. Supply REDIS_URL so this test stays focused on
+    // the REDIS_URL prod-boot guard AND the prod-hardened URL config
+    // (PUBLIC_INVITE_BASE_URL / STRIPE_CHECKOUT_*) are hard fail-fasts
+    // regardless of the flag — those defaults would silently misroute
+    // production traffic. Supply them so this test stays focused on
     // the enforceProd=false semantics it was originally asserting.
     expect(() =>
       assertEnv(
-        { ...baseHardEnv(), NODE_ENV: 'production', REDIS_URL: 'redis://localhost:6379' },
+        {
+          ...baseHardEnv(),
+          NODE_ENV: 'production',
+          REDIS_URL: 'redis://localhost:6379',
+          PUBLIC_INVITE_BASE_URL: 'https://app.trygrowthproject.com/join',
+          STRIPE_CHECKOUT_SUCCESS_URL: 'https://app.trygrowthproject.com/checkout/success',
+          STRIPE_CHECKOUT_CANCEL_URL: 'https://app.trygrowthproject.com/checkout/cancel',
+        },
         { enforceProd: false, logger: silentLogger as any },
       ),
     ).not.toThrow();
