@@ -222,6 +222,9 @@ model User {
   split_entries_as_payee     SplitLedgerEntry[]   @relation("SplitLedgerPayee")
   transfers_as_destination   ConnectTransfer[]    @relation("ConnectTransferDestination")
   payment_reminders          PaymentReminder[]    @relation("PaymentReminderRecipient")
+  // Phase 6 Connect — payout readiness snapshot per coach (cached
+  // Stripe Connect balance + pending payout), refund + dispute back-refs.
+  payout_snapshot            PayoutSnapshot?      @relation("PayoutSnapshotCoach")
   drafts_as_coach            MessageDraft[]       @relation("MessageDraftCoach")
   drafts_as_client           MessageDraft[]       @relation("MessageDraftClient")
   activity_events_actor      ActivityEvent[]      @relation("ActivityEventActor")
@@ -2696,6 +2699,9 @@ model ClientPurchase {
   transfers  ConnectTransfer[]
   dunning    DunningState?
   reminders  PaymentReminder[]
+  refunds    ChargeRefund[]
+  disputes   ChargeDispute[]
+  reconciliation ReconciliationSnapshot?
 }
 
 // Phase 4 Connect — Per-coach fee policy override.
@@ -2926,4 +2932,192 @@ model PaymentReminder {
   @@index([purchase_id, kind])
   @@index([status])
   @@index([recipient_user_id])
+}
+
+// Phase 6 Connect — Cached snapshot of a coach's Stripe Connect balance
+// and most-recent payout state. Stripe is the source of truth; this row
+// is a poll-cached read for the admin/coach UIs so dashboards don't hit
+// the Stripe API on every page load.
+//
+// Refreshed by:
+//   - The /v1/admin/payments/coaches/:id/payout-readiness endpoint (on read).
+//   - The payout.* webhook handlers (on Stripe-driven change).
+//   - A periodic sweeper (best-effort).
+//
+// stale_after is a soft TTL — readers older than this should refresh.
+// Lifecycle:
+//   "ready" : charges_enabled && payouts_enabled && no requirements && positive available.
+//   "needs_action" : Stripe requirements_due is non-empty or disabled_reason set.
+//   "no_account" : no ConnectAccount row at all (this row will not exist).
+//   "deauthorized" : ConnectAccount.deauthorized_at is set.
+//   "negative_balance" : available_cents <= 0 with pending positive.
+model PayoutSnapshot {
+  id                          String    @id @default(uuid())
+  coach_user_id               String    @unique
+  coach                       User      @relation("PayoutSnapshotCoach", fields: [coach_user_id], references: [id], onDelete: Cascade)
+  stripe_account_id           String
+  // High-level readiness verdict (see comment above).
+  readiness_status            String    @default("needs_action")
+  // Mirror of Stripe Connect account flags at snapshot time.
+  charges_enabled             Boolean   @default(false)
+  payouts_enabled             Boolean   @default(false)
+  details_submitted           Boolean   @default(false)
+  // Free-form list of Stripe requirements (currently_due, eventually_due,
+  // past_due, disabled_reason). Stored verbatim so the UI can render the
+  // exact next-action steps.
+  requirements_due            Json?
+  disabled_reason             String?
+  // Stripe Balance object — split into available + pending. Stripe returns
+  // these as arrays of {amount, currency, source_types}; we collapse to a
+  // single integer per currency (the default) and stash the raw payload
+  // on raw_balance for UIs that want the full breakdown.
+  available_cents             Int       @default(0)
+  pending_cents               Int       @default(0)
+  // Total amount currently in "in_transit" payouts (Stripe object).
+  in_transit_cents            Int       @default(0)
+  // Reserved funds Stripe has locked (rolling reserve).
+  reserved_cents              Int       @default(0)
+  currency                    String    @default("usd")
+  raw_balance                 Json?
+  // Most-recent payout from Stripe (drives the "last paid out" widget).
+  last_payout_stripe_id       String?
+  last_payout_amount_cents    Int?
+  last_payout_status          String?   // pending | in_transit | paid | failed | canceled
+  last_payout_arrival_at      DateTime?
+  last_payout_failure_message String?
+  // When the next scheduled payout will land (Stripe automatic schedule).
+  next_payout_at              DateTime?
+  // Soft TTL — UIs/cron consider a snapshot older than this for refresh.
+  refreshed_at                DateTime  @default(now())
+  stale_after                 DateTime?
+  created_at                  DateTime  @default(now())
+  updated_at                  DateTime  @updatedAt
+
+  @@index([readiness_status])
+  @@index([stripe_account_id])
+}
+
+// Phase 6 Connect — Refund record per ClientPurchase.
+//
+// Source of truth is Stripe's Refund object; this table is the local
+// mirror so admin/coach UIs can list refunds without hitting the Stripe
+// API. Refunds may be created by us (admin tooling, POST refund) OR by
+// Stripe (chargeback workflow that issues a refund automatically) — both
+// paths converge here via the charge.refunded / charge.refund.updated
+// webhook.
+//
+// A refund triggers (a) a ledger reversal on the matching destination
+// slice (b) a follow-on Transfer reversal on the head-coach slice if
+// present. Both happen in PurchaseSplitHandlerService.onRefund().
+model ChargeRefund {
+  id                       String         @id @default(uuid())
+  purchase_id              String
+  purchase                 ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  // Stripe ids — both indexed for webhook idempotency lookup.
+  stripe_refund_id         String         @unique
+  stripe_charge_id         String
+  amount_cents             Int
+  currency                 String         @default("usd")
+  // Stripe-side status: pending | requires_action | succeeded | failed | canceled
+  status                   String         @default("pending")
+  // Refund reason (Stripe: duplicate | fraudulent | requested_by_customer | expired_uncaptured_charge).
+  reason                   String?
+  // Free-form admin note (only set when we initiated the refund).
+  note                     String?
+  // Who issued the refund: admin_user_id when one of our owners did it,
+  // null when Stripe / the bank dispute workflow created it.
+  initiated_by_user_id     String?
+  failure_reason           String?
+  // Whether we've reversed the matching ledger entry / head-coach transfer.
+  ledger_reversed          Boolean        @default(false)
+  transfer_reversed        Boolean        @default(false)
+  posted_at                DateTime?
+  created_at               DateTime       @default(now())
+  updated_at               DateTime       @updatedAt
+
+  @@index([purchase_id])
+  @@index([status])
+  @@index([stripe_charge_id])
+}
+
+// Phase 6 Connect — Dispute (chargeback) record per ClientPurchase.
+//
+// Mirror of Stripe's Dispute object. Lifecycle (Stripe statuses):
+//   warning_needs_response | warning_under_review | warning_closed
+//   needs_response | under_review | charge_refunded | won | lost
+//
+// On dispute open we mark the matching ClientPurchase status as
+// `disputed` for UI display but DO NOT reverse the ledger automatically
+// — the funds remain in the destination account until Stripe issues a
+// chargeback. If the dispute is lost, Stripe withdraws funds via a
+// negative balance transaction; we then post a reversal in the ledger
+// via ReconciliationService.applyDisputeLoss(). If won, we no-op (the
+// disputed_until_resolved flag is cleared).
+model ChargeDispute {
+  id                       String         @id @default(uuid())
+  purchase_id              String
+  purchase                 ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  stripe_dispute_id        String         @unique
+  stripe_charge_id         String
+  amount_cents             Int
+  currency                 String         @default("usd")
+  status                   String         @default("needs_response")
+  reason                   String?        // generic | fraudulent | duplicate | product_not_received | ...
+  // Stripe-set deadline for responding to the dispute.
+  evidence_due_by          DateTime?
+  // Whether evidence has been submitted (by an admin, or auto-submitted).
+  evidence_submitted_at    DateTime?
+  // Final outcome ledger reversal — set when the dispute was lost and we
+  // reversed the destination ledger entry.
+  ledger_reversed          Boolean        @default(false)
+  // Final outcome flag — closed_at is set on `won` | `lost` | `charge_refunded`.
+  closed_at                DateTime?
+  // Stripe-side balance transaction id for the chargeback debit (when lost).
+  // Used to reconcile the negative balance against our ledger.
+  balance_transaction_id   String?
+  created_at               DateTime       @default(now())
+  updated_at               DateTime       @updatedAt
+
+  @@index([purchase_id])
+  @@index([status])
+  @@index([stripe_charge_id])
+}
+
+// Phase 6 Connect — Reconciliation snapshot per ClientPurchase.
+//
+// One row per purchase, written whenever ReconciliationService runs
+// against a purchase (on-demand via admin endpoint, or by the nightly
+// sweeper). Captures the diff between (a) Stripe's books for the
+// underlying Charge / Transfers / Refunds and (b) our SplitLedgerEntry
+// + ConnectTransfer rows. drift_cents=0 + status=ok means real money
+// matches our model.
+//
+// Lifecycle:
+//   - ok        : Stripe & ledger agree.
+//   - drift     : Stripe & ledger disagree by drift_cents (non-zero).
+//                 The admin UI shows this purchase as "needs review".
+//   - unknown   : Stripe call failed (network/auth) — drift_cents is
+//                 null; the snapshot is informational only.
+model ReconciliationSnapshot {
+  id                          String         @id @default(uuid())
+  purchase_id                 String         @unique
+  purchase                    ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  status                      String         @default("ok") // ok | drift | unknown
+  drift_cents                 Int?
+  // Stripe-side gross / refunded / application_fee / transfers.
+  stripe_amount_cents         Int?
+  stripe_refunded_cents       Int?
+  stripe_application_fee_cents Int?
+  stripe_transfers_cents      Int?
+  // Ledger-side rollups.
+  ledger_destination_cents    Int?
+  ledger_application_fee_cents Int?
+  ledger_head_coach_cents     Int?
+  ledger_reversed_cents       Int?
+  notes                       String?
+  last_checked_at             DateTime       @default(now())
+  created_at                  DateTime       @default(now())
+  updated_at                  DateTime       @updatedAt
+
+  @@index([status])
 }

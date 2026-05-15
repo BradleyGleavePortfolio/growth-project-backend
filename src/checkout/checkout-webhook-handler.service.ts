@@ -4,6 +4,7 @@ import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { PrismaService } from '../prisma.service';
 import { DunningService } from './dunning.service';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
+import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 
 // Lifecycle:
 //
@@ -46,6 +47,9 @@ export class CheckoutWebhookHandlerService {
     // that don't wire these still construct the handler.
     @Optional() private splits?: PurchaseSplitHandlerService,
     @Optional() private dunning?: DunningService,
+    // Phase 6 — refund / dispute / payout event handling. Optional so the
+    // legacy unit-test wiring still constructs the handler without these.
+    @Optional() private refundDispute?: RefundDisputeHandlerService,
   ) {}
 
   // Returns claimed=true iff the event was for a Connect package purchase
@@ -72,6 +76,19 @@ export class CheckoutWebhookHandlerService {
         return this.applyInvoicePaymentFailed(event);
       case 'customer.updated':
         return this.applyCustomerUpdated(event);
+      // Phase 6 — refund / dispute / transfer / payout events. Delegated
+      // to the RefundDisputeHandlerService.
+      case 'charge.refunded':
+      case 'charge.refund.updated':
+      case 'charge.dispute.created':
+      case 'charge.dispute.updated':
+      case 'charge.dispute.closed':
+      case 'transfer.reversed':
+      case 'payout.paid':
+      case 'payout.failed':
+      case 'payout.canceled':
+        if (this.refundDispute) return this.refundDispute.handle(event);
+        return { claimed: false };
       default:
         return { claimed: false };
     }

@@ -4,6 +4,8 @@ import { ConnectController } from './connect.controller';
 import { ConnectModuleState } from './connect.module-state';
 import { ConnectService } from './connect.service';
 import { FeePolicyService } from './fees/fee-policy.service';
+import { PayoutReadinessService } from './fees/payout-readiness.service';
+import { ReconciliationService } from './fees/reconciliation.service';
 import { SplitLedgerService } from './fees/split-ledger.service';
 import { TransferOrchestratorService } from './fees/transfer-orchestrator.service';
 import {
@@ -32,6 +34,9 @@ import {
     FeePolicyService,
     SplitLedgerService,
     TransferOrchestratorService,
+    // Phase 6 — payout readiness cache + Stripe-vs-ledger reconciliation.
+    PayoutReadinessService,
+    ReconciliationService,
     // JwtAuthGuard (provided globally in AppModule via APP_GUARD) injects
     // JwksVerifierService. Controllers that mount JwtAuthGuard via
     // @UseGuards must have it in scope; BillingModule does the same.
@@ -44,6 +49,8 @@ import {
     FeePolicyService,
     SplitLedgerService,
     TransferOrchestratorService,
+    PayoutReadinessService,
+    ReconciliationService,
   ],
 })
 export class ConnectModule implements OnModuleInit {
