@@ -378,7 +378,6 @@ export class CoachService {
 
     const today = date || new Date().toISOString().split('T')[0];
     const startOfDay = new Date(today + 'T00:00:00.000Z');
-    const endOfDay = new Date(today + 'T23:59:59.999Z');
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 

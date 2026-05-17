@@ -137,7 +137,7 @@ export class GoogleCalendarWebhookController {
   // Visible for tests. v1 is a no-op; replaced by the real reconciler
   // in the follow-up. Returning a Promise so the wiring change is
   // type-stable.
-  protected async triggerSync(args: {
+  protected triggerSync(args: {
     channelId: string;
     resourceId: string;
     resourceUri: string | null;
@@ -146,6 +146,7 @@ export class GoogleCalendarWebhookController {
     this.logger.debug(
       `Sync trigger is a no-op in v1 — channel=${args.channelId} state=${args.resourceState}`,
     );
+    return Promise.resolve();
   }
 }
 

@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
@@ -105,34 +106,38 @@ export class SubCoachInviteService {
     const token = this.randomToken();
     const expiresAt = new Date(now.getTime() + INVITE_TTL_DAYS * 86_400_000);
 
-    const invite = await this.prisma.subCoachInvite.create({
-      data: {
-        head_coach_id: headCoachId,
-        email,
-        name: input.name ?? null,
-        max_clients: input.max_clients ?? null,
-        token,
-        expires_at: expiresAt,
-      },
-    });
-
-    // Audit trail. We do not write a sub_coach_assigned event yet —
-    // that fires on acceptance. We do write a feed-visible event so
-    // the head coach sees outbound invites.
-    await this.prisma.teamAuditEvent.create({
-      data: {
-        head_coach_id: headCoachId,
-        actor_user_id: headCoachId,
-        target_client_id: null,
-        event_kind: 'invite_sent_by_sub_coach', // closest existing kind
-        summary: `Invite sent to ${email} to join your team as a sub-coach.`,
-        metadata: {
-          invite_id: invite.id,
-          invite_kind: 'sub_coach_invite',
+    const { invite } = await this.prisma.$transaction(async (tx) => {
+      const invite = await tx.subCoachInvite.create({
+        data: {
+          head_coach_id: headCoachId,
           email,
+          name: input.name ?? null,
           max_clients: input.max_clients ?? null,
-        } as Prisma.InputJsonValue,
-      },
+          token,
+          expires_at: expiresAt,
+        },
+      });
+
+      // Audit trail. We do not write a sub_coach_assigned event yet —
+      // that fires on acceptance. We do write a feed-visible event so
+      // the head coach sees outbound invites.
+      await tx.teamAuditEvent.create({
+        data: {
+          head_coach_id: headCoachId,
+          actor_user_id: headCoachId,
+          target_client_id: null,
+          event_kind: 'invite_sent_by_sub_coach', // closest existing kind
+          summary: `Invite sent to ${email} to join your team as a sub-coach.`,
+          metadata: {
+            invite_id: invite.id,
+            invite_kind: 'sub_coach_invite',
+            email,
+            max_clients: input.max_clients ?? null,
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      return { invite };
     });
 
     return {
@@ -513,33 +518,38 @@ export class SubCoachInviteService {
 
     const token = this.randomToken();
     const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 86_400_000);
-    const updated = await this.prisma.subCoachInvite.update({
-      where: { id: invite.id },
-      data: {
-        token,
-        email: nextEmail,
-        name: input.name ?? invite.name,
-        expires_at: expiresAt,
-        // If we're reviving a revoked invite, clear the revocation
-        // marker so it's pending again.
-        revoked_at: null,
-      },
-    });
 
-    await this.prisma.teamAuditEvent.create({
-      data: {
-        head_coach_id: headCoachId,
-        actor_user_id: headCoachId,
-        target_client_id: null,
-        event_kind: 'invite_sent_by_sub_coach',
-        summary: `Invite to ${nextEmail} reissued (id=${invite.id}).`,
-        metadata: {
-          invite_id: invite.id,
-          invite_kind: 'sub_coach_invite_reissue',
-          previous_email: invite.email,
+    const { updated } = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.subCoachInvite.update({
+        where: { id: invite.id },
+        data: {
+          token,
           email: nextEmail,
-        } as Prisma.InputJsonValue,
-      },
+          name: input.name ?? invite.name,
+          expires_at: expiresAt,
+          // If we're reviving a revoked invite, clear the revocation
+          // marker so it's pending again.
+          revoked_at: null,
+        },
+      });
+
+      await tx.teamAuditEvent.create({
+        data: {
+          head_coach_id: headCoachId,
+          actor_user_id: headCoachId,
+          target_client_id: null,
+          event_kind: 'invite_sent_by_sub_coach',
+          summary: `Invite to ${nextEmail} reissued (id=${invite.id}).`,
+          metadata: {
+            invite_id: invite.id,
+            invite_kind: 'sub_coach_invite_reissue',
+            previous_email: invite.email,
+            email: nextEmail,
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      return { updated };
     });
 
     return {
@@ -647,22 +657,20 @@ export class SubCoachInviteService {
           where: { id: { in: reassignIds } },
           data: { coach_id: headCoachId },
         });
-        for (const clientId of reassignIds) {
-          await tx.teamAuditEvent.create({
-            data: {
-              head_coach_id: headCoachId,
-              actor_user_id: headCoachId,
-              target_client_id: clientId,
-              event_kind: 'client_reassigned',
-              summary: `Client reassigned to head coach during sub-coach revoke.`,
-              metadata: {
-                from_sub_coach_id: subCoachId,
-                to_head_coach_id: headCoachId,
-                revoke_reason: payload.reason ?? null,
-              } as Prisma.InputJsonValue,
-            },
-          });
-        }
+        await tx.teamAuditEvent.createMany({
+          data: reassignIds.map((clientId) => ({
+            head_coach_id: headCoachId,
+            actor_user_id: headCoachId,
+            target_client_id: clientId,
+            event_kind: 'client_reassigned',
+            summary: `Client reassigned to head coach during sub-coach revoke.`,
+            metadata: {
+              from_sub_coach_id: subCoachId,
+              to_head_coach_id: headCoachId,
+              revoke_reason: payload.reason ?? null,
+            } as Prisma.InputJsonValue,
+          })),
+        });
       }
       await tx.teamSubCoachAssignment.update({
         where: { id: assignment.id },
@@ -692,9 +700,10 @@ export class SubCoachInviteService {
   // ── helpers ───────────────────────────────────────────────────────
 
   private buildInviteUrl(token: string): string {
-    const base =
-      process.env.PUBLIC_INVITE_BASE_URL?.trim() ||
-      'https://app.trygrowthproject.com/join';
+    const base = process.env.PUBLIC_INVITE_BASE_URL?.trim();
+    if (!base) {
+      throw new InternalServerErrorException('PUBLIC_INVITE_BASE_URL is not configured');
+    }
     return `${base}/sub-coach/${token}`;
   }
 

@@ -185,7 +185,7 @@ const HHMM_RE = /^\d{2}:\d{2}$/;
 
 export class CreateAvailabilityOverrideDto {
   // YYYY-MM-DD (no time component).
-  @IsString()
+  @IsISO8601({ strict: true })
   @MaxLength(10)
   date!: string;
 

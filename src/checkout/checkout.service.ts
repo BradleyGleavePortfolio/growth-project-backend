@@ -271,6 +271,7 @@ export class CheckoutService {
         // Re-throw with a clean shape; the controller maps to HTTP.
         throw err;
       }
+      this.logger.error('createCheckoutForClient unexpected error', err);
       throw err;
     }
 
@@ -560,9 +561,10 @@ export class CheckoutService {
       });
     }
 
+    const returnUrl = process.env.STRIPE_BILLING_PORTAL_RETURN_URL ?? 'com.growthproject.app://settings';
     const session = await this.stripeConnect.createBillingPortalSession({
       customerId: customer.stripe_customer_id,
-      returnUrl: 'com.growthproject.app://settings',
+      returnUrl,
     });
     return { url: session.url };
   }

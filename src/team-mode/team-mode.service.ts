@@ -350,21 +350,19 @@ export class TeamModeService {
         });
         // One client_reassigned event per client so the head coach can
         // filter their feed by client and see the trail.
-        for (const clientId of reassignIds) {
-          await tx.teamAuditEvent.create({
-            data: {
-              head_coach_id: headCoachId,
-              actor_user_id: headCoachId,
-              target_client_id: clientId,
-              event_kind: 'client_reassigned',
-              summary: `Client reassigned to you from sub-coach ${subCoach.name}.`,
-              metadata: {
-                from_sub_coach_id: subCoachId,
-                to_head_coach_id: headCoachId,
-              } as Prisma.InputJsonValue,
-            },
-          });
-        }
+        await tx.teamAuditEvent.createMany({
+          data: reassignIds.map((clientId) => ({
+            head_coach_id: headCoachId,
+            actor_user_id: headCoachId,
+            target_client_id: clientId,
+            event_kind: 'client_reassigned',
+            summary: `Client reassigned to you from sub-coach ${subCoach.name}.`,
+            metadata: {
+              from_sub_coach_id: subCoachId,
+              to_head_coach_id: headCoachId,
+            } as Prisma.InputJsonValue,
+          })),
+        });
       }
 
       // Archive the assignment (soft-delete so the audit trail stays

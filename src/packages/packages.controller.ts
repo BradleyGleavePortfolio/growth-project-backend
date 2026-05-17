@@ -24,6 +24,7 @@ import {
   PackagesService,
   UpdatePackageInput,
 } from './packages.service';
+import { CreatePackageDto, UpdatePackageDto } from './packages.dto';
 
 // Coach-facing CRUD for offers / packages. Coach owns their catalog and
 // can list / create / update / archive their own rows. OWNER (platform
@@ -52,17 +53,31 @@ export class CoachPackagesController {
   }
 
   @Post()
-  async create(@Request() req: AuthedRequest, @Body() body: CreatePackageInput) {
-    return this.packages.create(req.user.id, body);
+  async create(@Request() req: AuthedRequest, @Body() body: CreatePackageDto) {
+    return this.packages.create(req.user.id, {
+      name: body.name,
+      description: body.description,
+      amount_cents: body.price_cents,
+      currency: body.currency,
+      billing_type: body.billing_type as 'one_time' | 'recurring',
+      interval: body.billing_interval as 'month' | 'year' | null | undefined,
+      interval_count: body.billing_interval_count,
+    });
   }
 
   @Patch(':id')
   async update(
     @Request() req: AuthedRequest,
     @Param('id') id: string,
-    @Body() body: UpdatePackageInput,
+    @Body() body: UpdatePackageDto,
   ) {
-    return this.packages.update(req.user.id, id, body);
+    return this.packages.update(req.user.id, id, {
+      name: body.name,
+      description: body.description,
+      amount_cents: body.price_cents,
+      currency: body.currency,
+      is_active: body.is_active,
+    });
   }
 
   @Delete(':id')

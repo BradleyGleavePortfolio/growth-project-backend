@@ -75,6 +75,14 @@ export class SchedulingSessionLifecycleService {
     if (end.getTime() <= start.getTime()) {
       throw new BadRequestException('end_at must be after start_at');
     }
+    const now = new Date();
+    const minimumLeadMinutes = 5;
+    if (start.getTime() < now.getTime() + minimumLeadMinutes * 60 * 1000) {
+      throw new BadRequestException({
+        error: 'SESSION_IN_PAST',
+        message: 'Session start time must be at least 5 minutes in the future.',
+      });
+    }
     let sessionType: SessionType | null = null;
     if (dto.session_type_id) {
       sessionType = await this.prisma.sessionType.findUnique({

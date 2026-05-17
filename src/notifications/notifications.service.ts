@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import Expo, { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
@@ -486,9 +487,13 @@ export class NotificationsService {
         data: { user_id: userId, digest_kind: digestKind, window_date: windowDate },
       });
       return row.id;
-    } catch {
-      // Unique constraint violation = window already claimed.
-      return false;
+    } catch (err) {
+      if (err instanceof PrismaClientKnownRequestError && err.code === 'P2002') {
+        // Unique constraint violation = window already claimed by another process.
+        return false;
+      }
+      this.logger.error('claimDigestWindow unexpected error', err);
+      throw err;
     }
   }
 
