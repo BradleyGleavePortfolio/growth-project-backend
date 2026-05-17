@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import {
   CalendarEventResult,
   CalendarProvider,
@@ -26,13 +26,19 @@ export class GoogleCalendarAdapter implements CalendarProvider {
   async createEvent(
     input: CreateCalendarEventInput,
   ): Promise<CalendarEventResult> {
-    this.logger.warn(
-      `GoogleCalendarAdapter.createEvent called but real implementation is not wired up yet — returning stub-shaped event for idempotencyKey=${input.idempotencyKey}`,
+    // QA P0-S1. Mirror GoogleMeetAdapter / ZoomVideoAdapter — fail loud
+    // rather than silently persist a `gcal-pending-<key>` external id that
+    // every downstream surface (audit, sync job, cancellation path) would
+    // then treat as a real Google event id.
+    this.logger.error(
+      `GoogleCalendarAdapter.createEvent called but real implementation is not wired up; idempotencyKey=${input.idempotencyKey}`,
     );
-    return {
-      externalEventId: `gcal-pending-${input.idempotencyKey}`,
-      resolvedProvider: 'google_calendar',
-    };
+    throw new ServiceUnavailableException({
+      error: 'CALENDAR_PROVIDER_NOT_IMPLEMENTED',
+      provider: 'google_calendar',
+      message:
+        'Google Calendar integration is enabled but the real adapter has not shipped. Set GOOGLE_CALENDAR_ENABLED=false to route through the stub provider, or wait for the real adapter.',
+    });
   }
 
   async cancelEvent(externalEventId: string): Promise<void> {

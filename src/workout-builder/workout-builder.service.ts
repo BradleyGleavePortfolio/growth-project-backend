@@ -13,6 +13,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ExerciseCatalogService } from '../exercise-catalog/exercise-catalog.service';
@@ -96,6 +97,7 @@ export class WorkoutBuilderService {
     coachId: string,
     planId: string,
     rows: UpsertExerciseRowDto[],
+    opts: { ifUnmodifiedSince?: string } = {},
   ) {
     await this.assertPlanOwnership(coachId, planId);
 
@@ -105,27 +107,89 @@ export class WorkoutBuilderService {
       throw new BadRequestException('Exercise order values must be unique within a plan');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      await tx.workoutPlanExercise.deleteMany({ where: { workout_plan_id: planId } });
-      if (rows.length === 0) return [];
-      await tx.workoutPlanExercise.createMany({
-        data: rows.map((r) => ({
-          workout_plan_id: planId,
-          exercise_external_id: r.exercise_external_id,
-          order: r.order,
-          sets: r.sets,
-          reps_or_duration_seconds: r.reps_or_duration_seconds,
-          weight_lbs: r.weight_lbs ?? null,
-          rest_seconds: r.rest_seconds ?? null,
-          superset_group_id: r.superset_group_id ?? null,
-          notes: r.notes ?? null,
-        })),
-      });
-      return tx.workoutPlanExercise.findMany({
-        where: { workout_plan_id: planId },
-        orderBy: { order: 'asc' },
-      });
-    });
+    // Optimistic concurrency: the destructive deleteMany+createMany below
+    // would silently let a parallel edit win without any signal to either
+    // editor. When the client echoes back the plan's last-known
+    // `updated_at` via `If-Unmodified-Since`, refuse the write if the row
+    // has been mutated since. See QA P0-W2.
+    let expectedUpdatedAt: Date | null = null;
+    if (opts.ifUnmodifiedSince) {
+      const parsed = new Date(opts.ifUnmodifiedSince);
+      if (Number.isNaN(parsed.getTime())) {
+        throw new BadRequestException(
+          'If-Unmodified-Since header is not a valid date',
+        );
+      }
+      expectedUpdatedAt = parsed;
+    }
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        if (expectedUpdatedAt) {
+          const current = await tx.workoutPlan.findUnique({
+            where: { id: planId },
+            select: { updated_at: true },
+          });
+          // Compare to ms — Postgres TIMESTAMP(3); If-Unmodified-Since may
+          // round to whole seconds depending on the client. Allow a 1 s
+          // band of slop to tolerate that without opening a meaningful
+          // concurrency window.
+          if (
+            !current ||
+            Math.abs(current.updated_at.getTime() - expectedUpdatedAt.getTime()) >
+              1000
+          ) {
+            throw new ConflictException({
+              error: 'WORKOUT_PLAN_STALE',
+              message:
+                'Workout plan was modified by another editor; re-load and retry.',
+            });
+          }
+        }
+        await tx.workoutPlanExercise.deleteMany({ where: { workout_plan_id: planId } });
+        if (rows.length === 0) {
+          // Touch the plan so updated_at advances and the next caller sees
+          // a fresh token. WorkoutPlan.updated_at is @updatedAt, so any
+          // write triggers it; we use the always-present `name` field as
+          // a no-op rewrite.
+          await tx.workoutPlan.update({
+            where: { id: planId },
+            data: { name: { set: (await tx.workoutPlan.findUnique({ where: { id: planId }, select: { name: true } }))!.name } },
+          });
+          return [];
+        }
+        await tx.workoutPlanExercise.createMany({
+          data: rows.map((r) => ({
+            workout_plan_id: planId,
+            exercise_external_id: r.exercise_external_id,
+            order: r.order,
+            sets: r.sets,
+            reps_or_duration_seconds: r.reps_or_duration_seconds,
+            weight_lbs: r.weight_lbs ?? null,
+            rest_seconds: r.rest_seconds ?? null,
+            superset_group_id: r.superset_group_id ?? null,
+            notes: r.notes ?? null,
+          })),
+        });
+        // Same name-rewrite to bump updated_at when a fresh row set is
+        // created.
+        const plan = await tx.workoutPlan.findUnique({
+          where: { id: planId },
+          select: { name: true },
+        });
+        if (plan) {
+          await tx.workoutPlan.update({
+            where: { id: planId },
+            data: { name: { set: plan.name } },
+          });
+        }
+        return tx.workoutPlanExercise.findMany({
+          where: { workout_plan_id: planId },
+          orderBy: { order: 'asc' },
+        });
+      },
+      { isolationLevel: 'Serializable' },
+    );
   }
 
   // ─── ClientWorkoutAssignment ──────────────────────────────────────────────

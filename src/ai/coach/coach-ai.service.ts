@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -182,8 +181,13 @@ export class CoachAIService {
 
   async getDraft(coachId: string, draftId: string) {
     const draft = await this.prisma.aIDraft.findUnique({ where: { id: draftId } });
-    if (!draft) throw new NotFoundException('Draft not found');
-    if (draft.coachId !== coachId) throw new ForbiddenException();
+    // Collapse missing vs foreign-owned into a single 404. Returning 403 for
+    // foreign-owned IDs let a coach probe which draft IDs exist; the IDs
+    // themselves don't carry payload but they were the basis for follow-on
+    // recon. See QA P0-A2.
+    if (!draft || draft.coachId !== coachId) {
+      throw new NotFoundException('Draft not found');
+    }
     return draft;
   }
 

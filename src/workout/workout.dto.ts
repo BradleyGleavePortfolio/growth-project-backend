@@ -167,3 +167,46 @@ export class UpdateRoutineDto {
   @MaxLength(2000)
   description?: string;
 }
+
+// Patch DTO for an already-logged WorkoutSession. Mirrors the create-side
+// allow-list — every field is optional, but if present each is bounded the
+// same way as CreateWorkoutDto. `exercises` is intentionally replace-all so
+// the mobile client can send the corrected canonical list without having to
+// reason about per-row id reconciliation. See QA P0-W1.
+export class UpdateWorkoutDto {
+  @IsOptional()
+  @IsDateString()
+  date?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  workout_name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  workout_type?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1440)
+  duration_minutes?: number;
+
+  @IsOptional()
+  @IsIn(INTENSITIES)
+  intensity?: Intensity;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  notes?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => CreateExerciseSetDto)
+  exercises?: CreateExerciseSetDto[];
+}

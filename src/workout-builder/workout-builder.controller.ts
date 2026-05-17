@@ -20,6 +20,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -87,8 +88,16 @@ export class WorkoutBuilderController {
     @Req() req: AuthRequest,
     @Param('planId') planId: string,
     @Body() rows: UpsertExerciseRowDto[],
+    // Optimistic-concurrency token. When the client has previously read the
+    // plan it should echo back `If-Unmodified-Since: <plan.updated_at>` so
+    // a parallel edit from another tab/device throws 409 instead of being
+    // silently overwritten. Absent header → legacy "last write wins" path
+    // (logged at the service layer). See QA P0-W2.
+    @Headers('if-unmodified-since') ifUnmodifiedSince?: string,
   ) {
-    return this.workoutBuilder.setExercises(req.user.id, planId, rows);
+    return this.workoutBuilder.setExercises(req.user.id, planId, rows, {
+      ifUnmodifiedSince,
+    });
   }
 
   @Post(':planId/assignments')

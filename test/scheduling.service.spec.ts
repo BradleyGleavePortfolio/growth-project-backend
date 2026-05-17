@@ -77,6 +77,24 @@ function buildPrismaFake() {
           return true;
         });
       }),
+      // Phase 6E P0-S2: overlap probe in requestSession before insert.
+      findFirst: jest.fn(async ({ where }: any) => {
+        return (
+          sessions.find((s) => {
+            if (where.coach_id && s.coach_id !== where.coach_id) return false;
+            if (where.status?.in && !where.status.in.includes(s.status)) {
+              return false;
+            }
+            if (where.start_at?.lt && !(s.start_at < where.start_at.lt)) {
+              return false;
+            }
+            if (where.end_at?.gt && !(s.end_at > where.end_at.gt)) {
+              return false;
+            }
+            return true;
+          }) ?? null
+        );
+      }),
       create: jest.fn(async ({ data }: any) => {
         const row = {
           id: `sess-${sessions.length + 1}`,

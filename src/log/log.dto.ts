@@ -28,7 +28,14 @@ export class LogFoodDto {
   @IsOptional()
   @IsNumber()
   @Min(0.01)
-  @Max(100)
+  // Tightened from 100 → 50. Mobile is contracted to pre-scale to
+  // `nutrient_basis` (PER_100G / PER_SERVING) before sending; legitimate
+  // values cluster well under 10 (e.g. 6 oz of chicken = 1.7008x). 50 caps
+  // an obvious-mistake or buggy client. The wider bound let an attacker
+  // submit a multiplier of 100 against a 700 kcal/100g item and contaminate
+  // every coach dashboard / PTM signal / AI client-insight payload that
+  // reads from LoggedFoodEntry. See QA P0-F1.
+  @Max(50)
   quantity_multiplier?: number;
 
   // Trainerize-grade floor: persist what the user actually typed (e.g. 6 + "oz")
@@ -56,7 +63,14 @@ export class UpdateLogEntryDto {
   @IsOptional()
   @IsNumber()
   @Min(0.01)
-  @Max(100)
+  // Tightened from 100 → 50. Mobile is contracted to pre-scale to
+  // `nutrient_basis` (PER_100G / PER_SERVING) before sending; legitimate
+  // values cluster well under 10 (e.g. 6 oz of chicken = 1.7008x). 50 caps
+  // an obvious-mistake or buggy client. The wider bound let an attacker
+  // submit a multiplier of 100 against a 700 kcal/100g item and contaminate
+  // every coach dashboard / PTM signal / AI client-insight payload that
+  // reads from LoggedFoodEntry. See QA P0-F1.
+  @Max(50)
   quantity_multiplier?: number;
 
   @IsOptional()

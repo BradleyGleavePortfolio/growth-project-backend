@@ -1,7 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { PtmService } from '../ptm/ptm.service';
-import { CreateWorkoutDto, CreateRoutineDto, UpdateRoutineDto } from './workout.dto';
+import {
+  CreateWorkoutDto,
+  CreateRoutineDto,
+  UpdateRoutineDto,
+  UpdateWorkoutDto,
+} from './workout.dto';
 
 @Injectable()
 export class WorkoutService {
@@ -95,6 +100,82 @@ export class WorkoutService {
       total_volume: Math.round(total_volume),
       period,
     }));
+  }
+
+  // QA P0-W1. The workout instance had no edit/delete surface — a coach
+  // or client could log a workout but never correct a mistyped set,
+  // remove a duplicate-submission, or fix a wrong weight/reps. Both
+  // endpoints are guarded by ownership against `WorkoutSession.user_id`
+  // (the participating user); coach-edits-on-behalf-of-client is out of
+  // scope here and ships separately.
+  async updateWorkout(userId: string, id: string, data: UpdateWorkoutDto) {
+    const existing = await this.prisma.workoutSession.findUnique({
+      where: { id },
+      select: { id: true, user_id: true },
+    });
+    if (!existing || existing.user_id !== userId) {
+      throw new NotFoundException('Workout not found');
+    }
+    // Replace-all on `exercises` so the mobile client can send the
+    // corrected canonical list without per-row id bookkeeping. Wrapped
+    // in a single transaction so a partial failure cannot leave the
+    // session half-rewritten.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.workoutSession.update({
+        where: { id },
+        data: {
+          date: data.date ? new Date(data.date) : undefined,
+          workout_name: data.workout_name,
+          workout_type: data.workout_type,
+          duration_minutes: data.duration_minutes,
+          intensity: data.intensity,
+          notes: data.notes,
+        },
+      });
+      if (data.exercises) {
+        await tx.exerciseSet.deleteMany({ where: { workout_id: id } });
+        if (data.exercises.length > 0) {
+          await tx.exerciseSet.createMany({
+            data: data.exercises.map((e) => ({
+              workout_id: id,
+              exercise_name: e.exercise_name,
+              muscle_group: e.muscle_group,
+              sets_completed: e.sets_completed,
+              reps_per_set: e.reps_per_set,
+              weight_per_set: e.weight_per_set,
+              rpe: e.rpe,
+              notes: e.notes,
+              video_url: e.video_url,
+            })),
+          });
+        }
+      }
+      return tx.workoutSession.findUnique({
+        where: { id },
+        include: { exercises: true },
+      });
+    });
+    return updated;
+  }
+
+  async deleteWorkout(userId: string, id: string) {
+    const existing = await this.prisma.workoutSession.findUnique({
+      where: { id },
+      select: { id: true, user_id: true },
+    });
+    if (!existing || existing.user_id !== userId) {
+      throw new NotFoundException('Workout not found');
+    }
+    // Cascade is declared on ExerciseSet → WorkoutSession in schema, but
+    // we delete the children explicitly so the audit log carries both
+    // counts if/when that's added.
+    await this.prisma.$transaction([
+      this.prisma.exerciseSet.deleteMany({
+        where: { workout_id: id },
+      }),
+      this.prisma.workoutSession.delete({ where: { id } }),
+    ]);
+    return { id, deleted: true };
   }
 
   async getRoutines(userId: string) {

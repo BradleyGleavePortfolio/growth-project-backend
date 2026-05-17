@@ -290,6 +290,22 @@ export class AuthService {
       user = await this.prisma.user.findUnique({ where: { email: supaEmail } });
 
       if (user) {
+        // Account-takeover guard. Refuse to rebind a row whose supabase_id is
+        // already set: an attacker could pre-register `victim@example.com`
+        // through Supabase email/password without verifying, then come in
+        // here via Google sign-in for the same address and silently inherit
+        // the row (including any attached coach_id, billing, etc.). Only the
+        // legacy "row created before Supabase linkage existed" case has
+        // supabase_id === NULL, and that path is auditable on its own.
+        // See QA P0-A1.
+        if (user.supabase_id && user.supabase_id !== supaUser.id) {
+          this.logger.warn(
+            `googleAuth: refusing to re-bind supabase_id for existing user ${user.id} (email=${supaEmail}); supabase_id already set`,
+          );
+          throw new UnauthorizedException(
+            'This email is registered with a different sign-in method. Sign in with that method, then link your Google account from settings.',
+          );
+        }
         // Link the Supabase ID to the existing email-based account
         user = await this.prisma.user.update({
           where: { id: user.id },
@@ -421,6 +437,16 @@ export class AuthService {
       user = await this.prisma.user.findUnique({ where: { email: supaEmail } });
 
       if (user) {
+        // Account-takeover guard — see googleAuth above for rationale.
+        // QA P0-A1.
+        if (user.supabase_id && user.supabase_id !== supaUser.id) {
+          this.logger.warn(
+            `appleAuth: refusing to re-bind supabase_id for existing user ${user.id} (email=${supaEmail}); supabase_id already set`,
+          );
+          throw new UnauthorizedException(
+            'This email is registered with a different sign-in method. Sign in with that method, then link your Apple account from settings.',
+          );
+        }
         const dataToUpdate: { supabase_id: string; name?: string } = {
           supabase_id: supaUser.id,
         };
