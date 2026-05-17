@@ -29,7 +29,14 @@ primary_region = 'sjc'
   # interpreter explicit so a future renamed script can't silently
   # regress to dash. .gitattributes pins *.sh to eol=lf to keep CRLF
   # out of the build context in the first place.
+  #
+  # release_command_timeout: 300s (5 min) — Prisma migrations against
+  # Supabase us-west-1 take <10s normally; 5 min is generous headroom
+  # for cold-start connection pools without letting a hung migration
+  # block a deploy indefinitely (default Fly timeout is 60s, too short
+  # for a large migration batch).
   release_command = "bash ./scripts/release.sh"
+  release_command_timeout = "5m"
 
 
 [http_service]

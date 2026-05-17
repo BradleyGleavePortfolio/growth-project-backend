@@ -6,8 +6,16 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // DATABASE_URL  → Supabase pgbouncer pooler (port 6543, ?pgbouncer=true)
+  //                 Used by the runtime app for all query traffic.
+  // DIRECT_URL    → Supabase direct connection (port 5432, no pgbouncer param)
+  //                 Used only by `prisma migrate deploy` in the Fly release_command.
+  //                 Migrations require a real Postgres session, not a pooled one.
+  //                 Set this in Fly with:
+  //                   fly secrets set DIRECT_URL="postgres://postgres.<ref>:<pw>@aws-0-us-west-1.pooler.supabase.com:5432/postgres"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ============================================================

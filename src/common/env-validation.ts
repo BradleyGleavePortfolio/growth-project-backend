@@ -67,7 +67,14 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'DATABASE_URL',
     tier: 'hard',
-    reason: 'Postgres connection string for Prisma. Required at boot.',
+    reason:
+      'Supabase pgbouncer pooler URL (port 6543, ?pgbouncer=true). Used by the runtime app for all query traffic. Required at boot.',
+  },
+  {
+    name: 'DIRECT_URL',
+    tier: 'hard',
+    reason:
+      'Supabase direct connection URL (port 5432, no pgbouncer). Used only by `prisma migrate deploy` in the Fly release_command. Migrations require a real Postgres session, not a pooled one. Required for deploys to run migrations.',
   },
   {
     name: 'SUPABASE_URL',
