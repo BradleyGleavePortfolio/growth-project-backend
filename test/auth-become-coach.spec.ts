@@ -11,6 +11,28 @@ import { AuditAction } from '../src/audit/audit.service';
 // own password. These tests pin the hard-gate so a mistaken redeploy that
 // drops the env var cannot silently re-open the hole.
 
+// Mock @supabase/supabase-js so that createClient() inside the service
+// returns a controllable stub. Tests assign (globalThis as any).__supaSignIn
+// before each call to control the signInWithPassword response.
+// This mirrors the pattern used in auth-apple.spec.ts.
+jest.mock('@supabase/supabase-js', () => {
+  const actual = jest.requireActual('@supabase/supabase-js');
+  return {
+    ...actual,
+    createClient: jest.fn(() => ({
+      auth: {
+        signInWithPassword: (...args: any[]) =>
+          (globalThis as any).__supaSignIn?.(...args) ??
+          Promise.resolve({ error: { message: 'not mocked' } }),
+        signUp: jest.fn(),
+        signInWithIdToken: jest.fn(),
+        getUser: jest.fn(),
+        resetPasswordForEmail: jest.fn(),
+      },
+    })),
+  };
+});
+
 const makeInviteCodesMock = () => ({
   validate: jest.fn(),
   createForCoach: jest.fn(),
@@ -53,6 +75,10 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
   };
 
   const originalEnv = process.env.ALLOW_SELF_SERVICE_BECOME_COACH;
+
+  beforeEach(() => {
+    (globalThis as any).__supaSignIn = undefined;
+  });
 
   afterEach(() => {
     if (originalEnv === undefined) {
@@ -179,6 +205,8 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
         findUnique: jest.fn(async () => null), // no row
       },
     };
+    // Password check passes — subscription gate should block
+    (globalThis as any).__supaSignIn = jest.fn().mockResolvedValue({ error: null });
     const svc = new AuthService(
       prisma,
       makeInviteCodesMock() as any,
@@ -203,6 +231,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
         findUnique: jest.fn(async () => ({ status: 'incomplete' })),
       },
     };
+    (globalThis as any).__supaSignIn = jest.fn().mockResolvedValue({ error: null });
     const svc = new AuthService(
       prisma,
       makeInviteCodesMock() as any,
@@ -227,6 +256,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
         findUnique: jest.fn(async () => ({ status: 'canceled' })),
       },
     };
+    (globalThis as any).__supaSignIn = jest.fn().mockResolvedValue({ error: null });
     const svc = new AuthService(
       prisma,
       makeInviteCodesMock() as any,
@@ -250,6 +280,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
         findUnique: jest.fn(async () => ({ status: 'past_due' })),
       },
     };
+    (globalThis as any).__supaSignIn = jest.fn().mockResolvedValue({ error: null });
     const svc = new AuthService(
       prisma,
       makeInviteCodesMock() as any,
@@ -265,7 +296,11 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
     });
   });
 
-  it('passes the payment gate when CoachSubscription.status is "active" (flag ON, password check stubbed)', async () => {
+  // -------------------------------------------------------------------------
+  // Problem A (fixed): "active subscription → proceeds" actually calls
+  // becomeCoach() and asserts role update + resolution.
+  // -------------------------------------------------------------------------
+  it('passes the payment gate when CoachSubscription.status is "active" — resolves and updates role', async () => {
     process.env.ALLOW_SELF_SERVICE_BECOME_COACH = 'true';
     const userState = { ...baseStudent };
     const prisma: any = {
@@ -281,6 +316,10 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       },
     };
     const audit = makeAuditMock();
+
+    // Stub Supabase signInWithPassword to succeed
+    (globalThis as any).__supaSignIn = jest.fn().mockResolvedValue({ error: null });
+
     const svc = new AuthService(
       prisma,
       makeInviteCodesMock() as any,
@@ -288,34 +327,41 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       audit,
       makeAppleVerifierMock(),
     );
-    // Stub the internal Supabase password-verification round-trip.
-    // becomeCoach creates its own supabase client, so we monkey-patch the
-    // private property the service uses after construction to skip the
-    // network call. The assertion below confirms the role was written.
-    (svc as any).supabaseAdmin = {};
-    // Directly override the Supabase signInWithPassword path by patching
-    // the module-level createClient at the service level is impractical
-    // without DI. Instead, assert the payment-gate passed by confirming
-    // coachSubscription.findUnique was called and the user.update was NOT
-    // blocked by the payment gate (it would have been if status were invalid).
-    // We can't easily reach the Supabase step without a real network stub,
-    // so we verify the guard passed by checking coachSub was queried.
-    expect(prisma.coachSubscription.findUnique).toBeDefined();
-    // Structural check: the payment gate is the ONLY new guard between
-    // selfServiceBecomeCoachEnabled() and the Supabase password step.
-    // If status='active', the gate is cleared. Test passes because no
-    // ForbiddenException is thrown at the gate level.
-    // Full e2e happy-path is covered in integration tests (e2e-saas-smoke.spec.ts).
+
+    const result = await svc.becomeCoach('u-1', 'correct-password');
+
+    // Method resolves successfully
+    expect(result).toEqual({ role: 'coach' });
+
+    // Role was written
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ role: 'coach' }) }),
+    );
   });
 
-  it('passes the payment gate when CoachSubscription.status is "trialing" (flag ON)', async () => {
+  // -------------------------------------------------------------------------
+  // Problem B (fixed): "trialing → proceeds" actually calls becomeCoach()
+  // and asserts role update + resolution.
+  // -------------------------------------------------------------------------
+  it('passes the payment gate when CoachSubscription.status is "trialing" — resolves and updates role', async () => {
     process.env.ALLOW_SELF_SERVICE_BECOME_COACH = 'true';
+    const userState = { ...baseStudent };
     const prisma: any = {
-      ...buildPrismaMock({ ...baseStudent }),
+      user: {
+        findUnique: jest.fn(async () => userState),
+        update: jest.fn(async ({ data }: any) => {
+          Object.assign(userState, data);
+          return userState;
+        }),
+      },
       coachSubscription: {
         findUnique: jest.fn(async () => ({ status: 'trialing' })),
       },
     };
+
+    // Stub Supabase signInWithPassword to succeed
+    (globalThis as any).__supaSignIn = jest.fn().mockResolvedValue({ error: null });
+
     const svc = new AuthService(
       prisma,
       makeInviteCodesMock() as any,
@@ -323,20 +369,64 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeAuditMock(),
       makeAppleVerifierMock(),
     );
-    // With status='trialing' the payment gate should NOT throw.
-    // The Supabase password verification step follows — it will fail
-    // without a network stub, but that's a different guard (UnauthorizedException),
-    // not the payment gate (ForbiddenException with coach_subscription_required).
-    let threw: unknown = null;
+
+    const result = await svc.becomeCoach('u-1', 'correct-password');
+
+    // Method resolves successfully
+    expect(result).toEqual({ role: 'coach' });
+
+    // Role was written with coach
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ role: 'coach' }) }),
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // Problem C (new): wrong password with active subscription → auth failure,
+  // NOT promotion. Password verification must happen BEFORE subscription check
+  // so the caller never learns subscription status.
+  // -------------------------------------------------------------------------
+  it('wrong password with active subscription → auth failure, prisma.user.update never called', async () => {
+    process.env.ALLOW_SELF_SERVICE_BECOME_COACH = 'true';
+    const userState = { ...baseStudent };
+    const prisma: any = {
+      user: {
+        findUnique: jest.fn(async () => userState),
+        update: jest.fn(),
+      },
+      coachSubscription: {
+        // Even though subscription is active, this should not matter —
+        // the wrong password means auth fails first (after the reorder fix).
+        findUnique: jest.fn(async () => ({ status: 'active' })),
+      },
+    };
+
+    // Supabase rejects the password
+    (globalThis as any).__supaSignIn = jest
+      .fn()
+      .mockResolvedValue({ error: { message: 'Invalid credentials' } });
+
+    const svc = new AuthService(
+      prisma,
+      makeInviteCodesMock() as any,
+      makeAnalyticsMock(),
+      makeAuditMock(),
+      makeAppleVerifierMock(),
+    );
+
+    let caught: unknown = null;
     try {
-      await svc.becomeCoach('u-1', 'pw');
-    } catch (err: any) {
-      threw = err;
+      await svc.becomeCoach('u-1', 'wrong-password');
+    } catch (err) {
+      caught = err;
     }
-    // If an error was thrown, it must NOT be the payment gate error.
-    if (threw) {
-      const body = (threw as any)?.response ?? {};
-      expect(body.error).not.toBe('coach_subscription_required');
-    }
+
+    // Must throw an auth error — NOT the subscription gate error
+    expect(caught).toBeInstanceOf(UnauthorizedException);
+    const body: any = (caught as any)?.response ?? {};
+    expect(body?.error).not.toBe('coach_subscription_required');
+
+    // Role must never be written
+    expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });
