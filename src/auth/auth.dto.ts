@@ -214,3 +214,31 @@ export class SignupWithCodeDto {
   @MaxLength(32)
   invite_code?: string;
 }
+
+// First-gym bootstrap: creates the very first owner-role user on a fresh
+// instance. Gated by BOOTSTRAP_SECRET env var AND a "no existing owners"
+// precondition, so it cannot be used to escalate after launch.
+export class BootstrapOwnerDto {
+  @ApiProperty({ example: 'founder@example.com', format: 'email' })
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty({ minLength: 8 })
+  @IsString()
+  @MinLength(8)
+  password!: string;
+
+  @ApiProperty({ example: 'Founder Name' })
+  @IsString()
+  @MinLength(1)
+  name!: string;
+
+  @ApiProperty({
+    description:
+      'Shared secret matching BOOTSTRAP_SECRET on the server. Unset the env var after first use.',
+    minLength: 16,
+  })
+  @IsString()
+  @MinLength(16)
+  bootstrap_secret!: string;
+}

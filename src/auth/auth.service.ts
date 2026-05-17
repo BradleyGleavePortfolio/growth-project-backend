@@ -836,4 +836,107 @@ export class AuthService {
 
     return { role: updated.role };
   }
+
+  // First-gym bootstrap. Creates or promotes the very first owner-role user
+  // on a fresh instance. Guarded by two preconditions that together prevent
+  // post-launch privilege escalation:
+  //   1. BOOTSTRAP_SECRET env var must be set on the server, and the caller
+  //      must echo it back. After first use the operator should `fly secrets
+  //      unset BOOTSTRAP_SECRET` to disarm the endpoint entirely.
+  //   2. No active owner-role user may exist in the DB. Once any owner has
+  //      been created (including via this endpoint), every subsequent call
+  //      returns 403 even with the correct secret.
+  async bootstrapFirstOwner(input: {
+    email: string;
+    password: string;
+    name: string;
+    bootstrapSecret: string;
+  }): Promise<{
+    access_token: string;
+    user: { id: string; email: string; role: string };
+  }> {
+    const expectedSecret = process.env.BOOTSTRAP_SECRET;
+    if (!expectedSecret) {
+      throw new ForbiddenException(
+        'Bootstrap endpoint is not enabled on this instance.',
+      );
+    }
+    if (input.bootstrapSecret !== expectedSecret) {
+      throw new ForbiddenException('Invalid bootstrap secret.');
+    }
+
+    // Only allow when no owner exists yet.
+    const existingOwner = await this.prisma.user.findFirst({
+      where: { role: 'owner', deleted_at: null, deletion_scheduled_at: null },
+      select: { id: true },
+    });
+    if (existingOwner) {
+      throw new ForbiddenException(
+        'An owner already exists. Use the standard admin promotion flow.',
+      );
+    }
+
+    // Register or find existing user.
+    let user = await this.prisma.user.findUnique({
+      where: { email: input.email },
+    });
+
+    if (!user) {
+      // Create a confirmed Supabase user via the admin SDK — the operator
+      // running bootstrap does not have an inbox waiting on a verification
+      // email loop.
+      const { data, error } = await this.supabaseAdmin.auth.admin.createUser({
+        email: input.email,
+        password: input.password,
+        email_confirm: true,
+      });
+      if (error || !data?.user) {
+        throw new BadRequestException(
+          error?.message ?? 'Failed to create Supabase user.',
+        );
+      }
+      user = await this.prisma.user.upsert({
+        where: { supabase_id: data.user.id },
+        create: {
+          supabase_id: data.user.id,
+          email: input.email,
+          name: input.name,
+          role: 'owner',
+        },
+        update: { role: 'owner', name: input.name },
+      });
+    } else {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { role: 'owner' },
+      });
+    }
+
+    // Sign in to mint a JWT for the new owner.
+    const supaClient = createClient(
+      process.env.SUPABASE_URL || '',
+      process.env.SUPABASE_ANON_KEY || '',
+      { realtime: { transport: WS as any } },
+    );
+    const { data: signInData, error: signInError } =
+      await supaClient.auth.signInWithPassword({
+        email: input.email,
+        password: input.password,
+      });
+    if (signInError || !signInData?.session?.access_token) {
+      throw new UnauthorizedException(
+        'Created owner but could not sign in: ' +
+          (signInError?.message ?? 'unknown'),
+      );
+    }
+
+    this.logger.warn(
+      `bootstrapFirstOwner: promoted ${user.email} (id=${user.id}) to owner. Unset BOOTSTRAP_SECRET now.`,
+    );
+
+    return {
+      access_token: signInData.session.access_token,
+      user: { id: user.id, email: user.email, role: user.role },
+    };
+  }
 }
