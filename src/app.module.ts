@@ -1,5 +1,5 @@
-import { Logger, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { Logger, Module } from '@nestjs/common';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -88,7 +88,7 @@ import { SecretsModule } from './secrets/secrets.module';
 // Transactional email — Resend transport + 8 launch templates + idempotency
 // ledger (EmailSendLog). Global, so any feature can inject EmailService.
 import { EmailModule } from './email/email.module';
-import { RlsContextMiddleware } from './common/middleware/rls-context.middleware';
+import { RlsContextInterceptor } from './common/interceptors/rls-context.interceptor';
 
 @Module({
   imports: [
@@ -279,13 +279,13 @@ import { RlsContextMiddleware } from './common/middleware/rls-context.middleware
     // is reversed: forgetting @Public() on an intentionally-public route
     // surfaces as a loud 401 in tests, not a silent data leak.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+
+    // RLS context interceptor — runs AFTER JwtAuthGuard so req.user is populated.
+    // Sets app.current_user_id + app.current_user_role as transaction-scoped
+    // PostgreSQL session variables consumed by RLS policies.
+    // Replaces the old RlsContextMiddleware which ran before guards and therefore
+    // could never observe a valid req.user (Bug 1 fix).
+    { provide: APP_INTERCEPTOR, useClass: RlsContextInterceptor },
   ],
 })
-export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer): void {
-    // RLS context is defense-in-depth for future non-service-role query paths.
-    // Register globally so any authenticated request that has req.user populated
-    // can expose app.current_user_id to PostgreSQL policies.
-    consumer.apply(RlsContextMiddleware).forRoutes('*');
-  }
-}
+export class AppModule {}

@@ -162,9 +162,12 @@ export class BillingService {
     if (!customerId) return null;
     // CoachProfile.stripe_customer_id is not @unique on the canonical Phase 1A
     // shape (CoachSubscription owns the @unique on its own customer mirror),
-    // so we use findFirst here.
+    // so we use findFirst here. Order by created_at desc so that if two
+    // profiles share the same customer id (duplicate Stripe customer creation
+    // race) we consistently pick the most-recently created one.
     const profile = await this.prisma.coachProfile.findFirst({
       where: { stripe_customer_id: customerId },
+      orderBy: { created_at: 'desc' },
     });
     return profile?.user_id ?? null;
   }
@@ -188,37 +191,48 @@ export class BillingService {
       this.logger.warn(`Subscription event ${event.id} missing id/customer`);
       return;
     }
-    const coachId = await this.resolveCoachByCustomer(sub.customer);
+    const priceId = sub.items?.data?.[0]?.price?.id ?? null;
+    const status = sub.status ?? 'incomplete';
+    // Wrap the profile lookup and subscription upsert in a transaction so that
+    // concurrent customer.subscription.created + customer.subscription.updated
+    // deliveries cannot interleave the read and the write, which would
+    // cross-link subscription IDs to the wrong coach row.
+    const coachId = await this.prisma.$transaction(async (tx) => {
+      const profile = await tx.coachProfile.findFirst({
+        where: { stripe_customer_id: sub.customer },
+        orderBy: { created_at: 'desc' },
+      });
+      if (!profile) return null;
+      await tx.coachSubscription.upsert({
+        where: { coach_id: profile.user_id },
+        create: {
+          coach_id: profile.user_id,
+          stripe_customer_id: sub.customer,
+          stripe_subscription_id: sub.id,
+          stripe_price_id: priceId,
+          status,
+          current_period_end: this.toDate(sub.current_period_end),
+          trial_end: this.toDate(sub.trial_end ?? null),
+          cancel_at_period_end: !!sub.cancel_at_period_end,
+        },
+        update: {
+          stripe_customer_id: sub.customer,
+          stripe_subscription_id: sub.id,
+          stripe_price_id: priceId,
+          status,
+          current_period_end: this.toDate(sub.current_period_end),
+          trial_end: this.toDate(sub.trial_end ?? null),
+          cancel_at_period_end: !!sub.cancel_at_period_end,
+        },
+      });
+      return profile.user_id;
+    });
     if (!coachId) {
       this.logger.warn(
         `Subscription ${sub.id} for unknown customer ${sub.customer}`,
       );
       return;
     }
-    const priceId = sub.items?.data?.[0]?.price?.id ?? null;
-    const status = sub.status ?? 'incomplete';
-    await this.prisma.coachSubscription.upsert({
-      where: { coach_id: coachId },
-      create: {
-        coach_id: coachId,
-        stripe_customer_id: sub.customer,
-        stripe_subscription_id: sub.id,
-        stripe_price_id: priceId,
-        status,
-        current_period_end: this.toDate(sub.current_period_end),
-        trial_end: this.toDate(sub.trial_end ?? null),
-        cancel_at_period_end: !!sub.cancel_at_period_end,
-      },
-      update: {
-        stripe_customer_id: sub.customer,
-        stripe_subscription_id: sub.id,
-        stripe_price_id: priceId,
-        status,
-        current_period_end: this.toDate(sub.current_period_end),
-        trial_end: this.toDate(sub.trial_end ?? null),
-        cancel_at_period_end: !!sub.cancel_at_period_end,
-      },
-    });
     this.analytics.capture(coachId, Events.SUBSCRIPTION_UPDATED, {
       stripe_event_type: event.type,
       status,

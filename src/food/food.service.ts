@@ -650,33 +650,45 @@ export class FoodService implements OnModuleInit {
     }
 
     const mapped = this.mapUSDAFood(food);
-    const created = await this.prisma.foodItem.create({
-      data: {
-        name: mapped.name,
-        brand_or_restaurant: mapped.brand_or_restaurant,
-        category: 'generic',
-        serving_description: mapped.serving_description,
-        serving_size_grams: mapped.serving_size_grams,
-        calories: mapped.calories,
-        protein_g: mapped.protein_g,
-        carbs_g: mapped.carbs_g,
-        fat_g: mapped.fat_g,
-        fiber_g: mapped.fiber_g,
-        sugar_g: mapped.sugar_g,
-        sodium_mg: mapped.sodium_mg,
-        tags: [tag],
-        search_aliases: [],
-        image_url: mapped.image_url,
-      },
-    });
-    return created.id;
+    // Guard against mid-flush races: if two concurrent flush calls try to
+    // create the same USDA item, the second create will throw a unique
+    // constraint violation on the tags GIN index (not available as a Prisma
+    // upsert key). Catch that case and fall back to a fresh findFirst.
+    try {
+      const created = await this.prisma.foodItem.create({
+        data: {
+          name: mapped.name,
+          brand_or_restaurant: mapped.brand_or_restaurant,
+          category: 'generic',
+          serving_description: mapped.serving_description,
+          serving_size_grams: mapped.serving_size_grams,
+          calories: mapped.calories,
+          protein_g: mapped.protein_g,
+          carbs_g: mapped.carbs_g,
+          fat_g: mapped.fat_g,
+          fiber_g: mapped.fiber_g,
+          sugar_g: mapped.sugar_g,
+          sodium_mg: mapped.sodium_mg,
+          tags: [tag],
+          search_aliases: [],
+          image_url: mapped.image_url,
+        },
+      });
+      return created.id;
+    } catch (err) {
+      // P2002 = Prisma unique constraint violation — a concurrent flush already
+      // inserted this row. Re-query to get the winning row's id.
+      if ((err as { code?: string }).code === 'P2002') {
+        const race = await this.prisma.foodItem.findFirst({ where: { tags: { has: tag } } });
+        if (race) return race.id;
+      }
+      throw err;
+    }
   }
 
   private async upsertFromOpenFoodFacts(code: string): Promise<string> {
-    // Barcode is unique in FoodItem — use upsert by barcode for idempotency.
-    const existing = await this.prisma.foodItem.findUnique({ where: { barcode: code } });
-    if (existing) return existing.id;
-
+    // Barcode is unique in FoodItem — use a true Prisma upsert so concurrent
+    // flush calls don't race to create a duplicate row (Fix 3).
     const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
@@ -695,8 +707,11 @@ export class FoodService implements OnModuleInit {
     if (!payload?.product) throw new Error(`OpenFoodFacts product ${code} not found`);
     const mapped = this.mapOpenFoodFactsProduct(payload.product);
 
-    const created = await this.prisma.foodItem.create({
-      data: {
+    // upsert on barcode (unique) — no-op update so a race just returns the
+    // existing row's id rather than throwing a unique constraint violation.
+    const upserted = await this.prisma.foodItem.upsert({
+      where: { barcode: code },
+      create: {
         name: mapped.name,
         brand_or_restaurant: mapped.brand_or_restaurant,
         category: 'generic',
@@ -714,8 +729,9 @@ export class FoodService implements OnModuleInit {
         image_url: mapped.image_url,
         barcode: code,
       },
+      update: {}, // no-op if the row already exists
     });
-    return created.id;
+    return upserted.id;
   }
 
   /** Normalize a raw DB row or Prisma object to FoodResult shape */

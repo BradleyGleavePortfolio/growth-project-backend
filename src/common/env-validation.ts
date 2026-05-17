@@ -683,6 +683,11 @@ export function assertEnv(
           'invite links would point at the legacy app.tgp.com placeholder hostname',
       },
       {
+        name: 'STRIPE_WEBHOOK_SECRET',
+        reason:
+          'without it every inbound Stripe webhook returns 400 silently — Stripe stops retrying and billing events are lost',
+      },
+      {
         name: 'STRIPE_CHECKOUT_SUCCESS_URL',
         reason:
           'Stripe Checkout success redirect would only resolve via the mobile deep-link scheme, breaking web checkouts',

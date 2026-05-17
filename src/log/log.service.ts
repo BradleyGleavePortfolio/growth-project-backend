@@ -22,21 +22,30 @@ export class LogService {
     // Mobile client may send synthetic ids ("usda_123", "off_456") returned by food search.
     // Resolve them to real FoodItem.id via upsert-on-log so the FK below can't blow up.
     const resolvedFoodItemId = await this.foodService.resolveOrImportId(data.food_item_id);
-    const created = await this.prisma.loggedFoodEntry.create({
-      data: {
-        user_id: userId,
-        date: new Date(data.date),
-        meal_type: data.meal_type,
-        food_item_id: resolvedFoodItemId,
-        quantity_multiplier: data.quantity_multiplier ?? 1.0,
-        // Persist the original user-entered qty + unit so coach views render
-        // "6 oz chicken" not "1.7008x chicken". Both columns are nullable;
-        // older entries (and clients that don't send them) leave them null
-        // and the API falls back to quantity_multiplier.
-        original_quantity: data.original_quantity,
-        original_unit: data.original_unit,
-        notes: data.notes,
+    const entryData = {
+      user_id: userId,
+      date: new Date(data.date),
+      meal_type: data.meal_type,
+      food_item_id: resolvedFoodItemId,
+      quantity_multiplier: data.quantity_multiplier ?? 1.0,
+      // Persist the original user-entered qty + unit so coach views render
+      // "6 oz chicken" not "1.7008x chicken". Both columns are nullable;
+      // older entries (and clients that don't send them) leave them null
+      // and the API falls back to quantity_multiplier.
+      original_quantity: data.original_quantity,
+      original_unit: data.original_unit,
+      notes: data.notes,
+    };
+    // Upsert on client_uuid so a flush retry after a mobile crash is idempotent.
+    // When client_uuid is absent we fall back to the sentinel '__none__' which
+    // can never collide (real UUIDs use a different character space).
+    const created = await this.prisma.loggedFoodEntry.upsert({
+      where: { client_uuid: data.client_uuid ?? '__none__' },
+      create: {
+        ...entryData,
+        client_uuid: data.client_uuid ?? null,
       },
+      update: {}, // no-op if already exists — idempotent on retry
       include: { food_item: true },
     });
     this.analytics.capture(userId, Events.CLIENT_FOOD_LOGGED, {
@@ -105,6 +114,11 @@ export class LogService {
         quantity_multiplier: data.quantity_multiplier,
         notes: data.notes,
         meal_type: data.meal_type,
+        // Preserve the human-readable quantity + unit so coach views keep
+        // showing "6 oz" after an edit. Fall back to the stored value when
+        // the caller omits the field (e.g. only changing meal_type). See Fix 5.
+        original_quantity: data.original_quantity ?? entry.original_quantity,
+        original_unit: data.original_unit ?? entry.original_unit,
       },
     });
   }

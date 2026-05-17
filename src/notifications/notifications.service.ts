@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import Expo, { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { UpdateNotificationPreferencesDto, GetNotificationsQueryDto } from './notifications.dto';
@@ -45,6 +46,7 @@ const recentPushes = new Map<string, number>();
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
+  private readonly expo = new Expo();
 
   constructor(
     private prisma: PrismaService,
@@ -357,19 +359,110 @@ export class NotificationsService {
   async pushToCoach(coachId: string, payload: PushPayload): Promise<boolean> {
     const category = payload.category ?? DEFAULT_NOTIFICATION_CATEGORY;
 
+    this.logger.log(
+      `push delivery: coach=${coachId} alertId=${payload.alertId} type=${payload.alertType} sev=${payload.severity} category=${category}`,
+    );
+
     try {
-      // Push token lookup and APNs/FCM transport are deferred until
-      // push credentials are wired in the environment. For now, log
-      // delivery intent — alerts are still stored in inbox.
-      this.logger.log(
-        `push delivery: coach=${coachId} alertId=${payload.alertId} type=${payload.alertType} sev=${payload.severity} category=${category}`,
-      );
+      const coach = await this.prisma.user.findUnique({
+        where: { id: coachId },
+        select: { expo_push_token: true },
+      });
+      if (!coach?.expo_push_token) return true;
+      if (!Expo.isExpoPushToken(coach.expo_push_token)) {
+        this.logger.warn(`Invalid Expo push token for coach ${coachId}`);
+        return true;
+      }
+      const message: ExpoPushMessage = {
+        to: coach.expo_push_token,
+        title: payload.message,
+        body: payload.alertType,
+        data: { alertId: payload.alertId, alertType: payload.alertType, category },
+        sound: 'default',
+      };
+      const chunks = this.expo.chunkPushNotifications([message]);
+      const tickets: ExpoPushTicket[] = [];
+      for (const chunk of chunks) {
+        const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
+        tickets.push(...ticketChunk);
+      }
+      await this.pollReceipts(tickets, coachId);
       return true;
     } catch (err) {
-      this.logger.warn(
+      this.logger.error(
         `pushToCoach failed for coach=${coachId}: ${(err as Error).message}`,
+        err,
       );
       return false;
+    }
+  }
+
+  /**
+   * Send a push notification to any user (coach or client) by userId.
+   * Identical delivery logic to pushToCoach but accepts a plain title/body
+   * envelope instead of the PushPayload coach-alert envelope.
+   */
+  async pushToUser(
+    userId: string,
+    title: string,
+    body: string,
+    data?: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { expo_push_token: true },
+      });
+      if (!user?.expo_push_token) return;
+      if (!Expo.isExpoPushToken(user.expo_push_token)) return;
+      const message: ExpoPushMessage = {
+        to: user.expo_push_token,
+        title,
+        body,
+        data: data ?? {},
+        sound: 'default',
+      };
+      const chunks = this.expo.chunkPushNotifications([message]);
+      for (const chunk of chunks) {
+        await this.expo.sendPushNotificationsAsync(chunk);
+      }
+    } catch (err) {
+      this.logger.error(`Push notification failed for user ${userId}`, err);
+    }
+  }
+
+  /**
+   * Poll Expo receipts for a batch of tickets and clear any tokens that
+   * Expo reports as DeviceNotRegistered. Called after every pushToCoach send.
+   */
+  private async pollReceipts(
+    tickets: ExpoPushTicket[],
+    userId: string,
+  ): Promise<void> {
+    const receiptIds: string[] = [];
+    for (const ticket of tickets) {
+      if ('id' in ticket) receiptIds.push(ticket.id);
+    }
+    if (receiptIds.length === 0) return;
+    try {
+      const chunks = this.expo.chunkPushNotificationReceiptIds(receiptIds);
+      for (const chunk of chunks) {
+        const receipts = await this.expo.getPushNotificationReceiptsAsync(chunk);
+        for (const [, receipt] of Object.entries(receipts)) {
+          if (receipt.status === 'error') {
+            if (receipt.details?.error === 'DeviceNotRegistered') {
+              // Token is stale — clear it so we don't waste sends.
+              await this.prisma.user.updateMany({
+                where: { id: userId },
+                data: { expo_push_token: null },
+              });
+            }
+            this.logger.error('Push receipt error:', receipt.message);
+          }
+        }
+      }
+    } catch (err) {
+      this.logger.warn('Failed to poll push receipts', err);
     }
   }
 

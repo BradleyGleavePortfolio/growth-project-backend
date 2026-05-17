@@ -45,16 +45,13 @@ export class FoodController {
     return this.foodService.getById(id);
   }
 
-  // Gated to coach + owner. The previous JwtAuthGuard-only posture let any
-  // logged-in student write to the *shared* FoodItem catalog (no role gate,
-  // no `created_by`, no rate limit), so they could spam-pollute the catalog
-  // every other coach searches against. Coaches still need to be able to
-  // create one-off custom foods for their clients, so we don't lock this
-  // down to owners alone. Throttled per-user to keep the typo-bots out.
-  // See QA P0-F2.
+  // Gated to coach + owner + client. Coaches/owners create one-off custom foods
+  // for client meal plans; clients need this for their offline food-log queue
+  // (the flush path calls POST /foods to materialise a FoodItem before logging
+  // it). Throttled per-user to keep the typo-bots out. See QA P0-F2.
   @Post()
   @UseGuards(RolesGuard)
-  @Roles('coach', 'owner')
+  @Roles('coach', 'owner', 'client')
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async create(@Body() body: CreateFoodDto) {
     return this.foodService.create(body);

@@ -24,6 +24,7 @@ import { PreferencesService } from './preferences.service';
 import { AccountService } from './account.service';
 import type { UserPreferencesDto } from './preferences.dto';
 import { AllowDeletionScheduled } from '../common/decorators/allow-deletion-scheduled.decorator';
+import { UpdatePushTokenDto } from './dto/update-push-token.dto';
 
 @ApiTags('users')
 @ApiBearerAuth('bearer')
@@ -166,6 +167,22 @@ export class UsersController {
   @AllowDeletionScheduled()
   accountStatus(@Request() req: AuthedRequest) {
     return this.accountService.getDeletionStatus(req.user.id);
+  }
+
+  @ApiOperation({
+    summary: 'Register or clear Expo push token',
+    description:
+      'Stores the Expo push token for the authenticated user so the backend can ' +
+      'deliver push notifications. Send token: null to clear (e.g. on sign-out).',
+  })
+  @ApiResponse({ status: 200, description: 'Token updated.' })
+  @ApiResponse({ status: 400, description: 'Validation error.' })
+  @Patch('me/push-token')
+  async updatePushToken(
+    @Request() req: AuthedRequest,
+    @Body() dto: UpdatePushTokenDto,
+  ) {
+    return this.usersService.updatePushToken(req.user.id, dto.token);
   }
 }
 

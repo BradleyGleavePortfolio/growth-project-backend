@@ -238,9 +238,14 @@ export class CoachService {
     const [meals, workouts, weights, checkIns] = await Promise.all([
       flags.food
         ? this.prisma.loggedFoodEntry.findMany({
-            where: { user_id: clientId, logged_at: { gte: ninetyDaysAgo } },
+            // Use `date` (the actual eat date the user recorded) for timeline
+            // filtering and ordering, not `logged_at` (server sync timestamp).
+            // An offline queue flush may sync days-old entries with a recent
+            // logged_at, which would make them disappear from the coach's
+            // 90-day window or appear out of order. See Fix 5.
+            where: { user_id: clientId, date: { gte: ninetyDaysAgo } },
             include: { food_item: true },
-            orderBy: { logged_at: 'desc' },
+            orderBy: { date: 'desc' },
             take: 100,
             ...(opts.mealsCursor ? { cursor: { id: opts.mealsCursor }, skip: 1 } : {}),
           })
@@ -273,7 +278,9 @@ export class CoachService {
     ]);
 
     const events: Array<{ type: string; date: Date; ref: unknown }> = [
-      ...meals.map((m) => ({ type: 'meal', date: m.logged_at, ref: m })),
+      // Use `date` (eat date) not `logged_at` (sync timestamp) for timeline
+      // event ordering so offline-queued entries sort correctly. See Fix 5.
+      ...meals.map((m) => ({ type: 'meal', date: m.date, ref: m })),
       ...workouts.map((w) => ({ type: 'workout', date: w.created_at, ref: w })),
       ...weights.map((w) => ({ type: 'weight', date: w.date, ref: w })),
       ...checkIns.map((c) => ({ type: 'check_in', date: c.date, ref: c })),
@@ -361,7 +368,10 @@ export class CoachService {
     const [todayEntries, weightLogs, recentWorkouts] = await Promise.all([
       flags.food
         ? this.prisma.loggedFoodEntry.findMany({
-            where: { user_id: clientId, logged_at: { gte: startOfDay, lte: endOfDay } },
+            // Filter by `date` (eat date) not `logged_at` (server sync time)
+            // so offline-queued entries that flush late still show up on the
+            // correct day in the coach's daily view. See Fix 5.
+            where: { user_id: clientId, date: startOfDay },
             include: { food_item: true },
             orderBy: { logged_at: 'asc' },
           })

@@ -172,6 +172,9 @@ model User {
   deletion_token_expires_at DateTime?
   deletion_requested_at     DateTime?
   deletion_confirmed_at     DateTime?
+  // Push notifications — Expo push token registered from the mobile app.
+  // Null means the user has not granted permission or has signed out.
+  expo_push_token           String?
 
   profile                  UserProfile?
   logged_entries           LoggedFoodEntry[]
@@ -439,7 +442,7 @@ model PaymentFailure {
   coach_id          String
   coach             User     @relation(fields: [coach_id], references: [id])
   stripe_invoice_id String?
-  stripe_event_id   String?
+  stripe_event_id   String?  @unique
   amount_due_cents  Int      @default(0)
   reason            String?
   occurred_at       DateTime @default(now())
@@ -647,6 +650,9 @@ model LoggedFoodEntry {
   original_unit       String?
   notes               String?
   logged_at           DateTime @default(now())
+  // Idempotency key set by the mobile offline queue. Allows the backend to
+  // upsert on flush so a crash-then-retry does not create duplicate entries.
+  client_uuid         String?  @unique
 
   // Hot path: LogService.getDaily + CoachService.getClientSummary both query by (user_id, date).
   @@index([user_id, date])
