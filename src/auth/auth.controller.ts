@@ -31,6 +31,7 @@ import {
   BecomeCoachDto,
   SignupWithCodeDto,
   AttachInviteCodeDto,
+  BootstrapOwnerDto,
 } from './auth.dto';
 import {
   InviteCodesService,
@@ -292,6 +293,32 @@ export class AuthController {
   @Throttle({ [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: 5 } })
   async signupWithCode(@Body() body: SignupWithCodeDto) {
     return this.authService.signupWithCode(body);
+  }
+
+  @ApiOperation({
+    summary: 'First-gym bootstrap — create the initial owner',
+    description:
+      'Gated by BOOTSTRAP_SECRET env var AND a "no existing owners" precondition. ' +
+      'Returns 403 once any owner exists or if BOOTSTRAP_SECRET is unset. ' +
+      'After first use, the operator should unset BOOTSTRAP_SECRET in Fly secrets.',
+  })
+  @ApiResponse({ status: 200, description: 'Owner created and signed in.' })
+  @ApiResponse({ status: 403, description: 'Bootstrap disabled or owner already exists.' })
+  @ApiResponse({ status: 400, description: 'Validation error.' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
+  @Public()
+  @Post('bootstrap-owner')
+  // Same per-IP signup throttle so a leaked secret can't be brute-forced
+  // against email enumeration before the operator notices.
+  @Throttle({ [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: 5 } })
+  @HttpCode(HttpStatus.OK)
+  async bootstrapOwner(@Body() body: BootstrapOwnerDto) {
+    return this.authService.bootstrapFirstOwner({
+      email: body.email,
+      password: body.password,
+      name: body.name,
+      bootstrapSecret: body.bootstrap_secret,
+    });
   }
 }
 

@@ -131,9 +131,15 @@ export class TimelineService {
       (a, b) => a.date.getTime() - b.date.getTime(),
     );
 
+    // Pre-compute id → ascending-index map so the inner loop is O(1)
+    // instead of O(n) findIndex, giving O(n) total vs previous O(n²).
+    const ascIdxById = new Map<string, number>(
+      dateSortedAsc.map((w, i) => [w.id, i]),
+    );
+
     const events: TimelineEvent[] = weights.map((w, _idx) => {
       // Compute delta vs previous log (the entry right before this in the ascending list).
-      const ascIdx = dateSortedAsc.findIndex((x) => x.id === w.id);
+      const ascIdx = ascIdxById.get(w.id) ?? 0;
       const prior = ascIdx > 0 ? dateSortedAsc[ascIdx - 1] : null;
       const deltaLbs = prior ? w.weight_lbs - prior.weight_lbs : null;
 

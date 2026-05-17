@@ -1,11 +1,4 @@
 /**
- * PATCH — exercise.entity.ts
- *
- * Add video_url field to Exercise interface and ExerciseWithVideo type.
- * Replace the original file content with this.
- */
-
-/**
  * Exercise entity — typed representation of an ExerciseDB API exercise.
  * This is a DTO/value-object, not a Prisma model: exercises live in the
  * ExerciseDB catalog (external), not in our Postgres database. We cache

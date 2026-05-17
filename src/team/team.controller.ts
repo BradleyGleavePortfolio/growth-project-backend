@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  Param,
+  Patch,
   Put,
   Req,
   UseGuards,
@@ -55,5 +57,25 @@ export class TeamController {
   @Get('members')
   async members(@Req() req: AuthedRequest) {
     return this.team.listMembers(req.user.id);
+  }
+
+  // GET /coach/team/members/:sub_coach_id/revenue-sharing
+  @Get('members/:sub_coach_id/revenue-sharing')
+  async getRevenueSharing(
+    @Req() req: AuthedRequest,
+    @Param('sub_coach_id') subCoachId: string,
+  ) {
+    return this.team.getRevenueSharing(req.user.id, subCoachId);
+  }
+
+  // PATCH /coach/team/members/:sub_coach_id/revenue-sharing
+  @Patch('members/:sub_coach_id/revenue-sharing')
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
+  async setRevenueSharing(
+    @Req() req: AuthedRequest,
+    @Param('sub_coach_id') subCoachId: string,
+    @Body() body: { enabled: boolean },
+  ) {
+    return this.team.setRevenueSharing(req.user.id, subCoachId, body.enabled);
   }
 }

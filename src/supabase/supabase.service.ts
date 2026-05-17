@@ -57,8 +57,16 @@ export class SupabaseService {
                 event: 'new-message',
                 payload: {},
               });
-            } catch {
-              /* swallow */
+            } catch (sendErr) {
+              // Log the delivery failure so it appears in Fly logs / Datadog.
+              // We do NOT surface this to the caller — Realtime is best-effort
+              // and the client's 60s backstop poll will catch up — but we want
+              // visibility into Supabase Realtime degradation events.
+              this.logger.warn(
+                `broadcastNewMessage send failed for ${userId}: ${
+                  (sendErr as Error).message
+                }`,
+              );
             }
             clearTimeout(timeout);
             resolve();

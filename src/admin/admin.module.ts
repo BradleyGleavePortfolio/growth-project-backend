@@ -2,6 +2,8 @@ import { Module, forwardRef } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { RolesGuard } from '../auth/roles.guard';
 import { AdminController } from './admin.controller';
+import { OwnerConsoleController } from './owner-console.controller';
+import { ServiceTokenGuard } from '../auth/service-token.guard';
 import { AdminService } from './admin.service';
 import { MetricsService } from './metrics.service';
 import { FederationService } from './federation/federation.service';
@@ -64,6 +66,7 @@ import { CoachModule } from '../coach/coach.module';
   imports: [AuthModule, UsersModule, BuildWeekModule, forwardRef(() => CoachModule)],
   controllers: [
     AdminController,
+    OwnerConsoleController,
     ReportsController,
     AdminPtmController,
     FederationInboundController,
@@ -73,6 +76,7 @@ import { CoachModule } from '../coach/coach.module';
     AdminService,
     MetricsService,
     RolesGuard,
+    ServiceTokenGuard,
     FinanceAdminClient,
     FederationService,
     FederationInboundService,

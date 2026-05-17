@@ -17,6 +17,7 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
+import { PrismaService } from '../prisma.service';
 import {
   CreatePackageInput,
   PackagesService,
@@ -77,7 +78,45 @@ export class CoachPackagesController {
 @Controller('v1/clients/me/coach')
 @UseGuards(JwtAuthGuard)
 export class ClientPackagesController {
-  constructor(private packages: PackagesService) {}
+  constructor(
+    private packages: PackagesService,
+    private prisma: PrismaService,
+  ) {}
+
+  // GET /v1/clients/me/coach — returns the current client's coach profile.
+  // Used by CoachIntroductionBanner on the client HomeScreen to display
+  // the coach's name and avatar on day one.
+  // 404 when the client has no coach assigned (expected — banner shows
+  // the "waiting for coach" state instead).
+  @Get()
+  async coachProfile(@Request() req: AuthedRequest) {
+    const coachId = req.user.coach_id;
+    if (!coachId) {
+      throw new NotFoundException({
+        error: 'COACH_NOT_ASSIGNED',
+        message: 'No coach assigned to this client',
+      });
+    }
+    const coach = await this.prisma.user.findUnique({
+      where: { id: coachId },
+      select: {
+        id: true,
+        name: true,
+        profile: { select: { avatar_url: true } },
+      },
+    });
+    if (!coach) {
+      throw new NotFoundException({
+        error: 'COACH_NOT_FOUND',
+        message: 'Assigned coach not found',
+      });
+    }
+    return {
+      id: coach.id,
+      name: coach.name ?? 'Your coach',
+      avatar_url: coach.profile?.avatar_url ?? null,
+    };
+  }
 
   @Get('packages')
   async list(@Request() req: AuthedRequest) {

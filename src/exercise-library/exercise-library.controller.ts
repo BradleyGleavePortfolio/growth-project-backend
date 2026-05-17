@@ -30,20 +30,6 @@ export class ExerciseLibraryController {
     private readonly videoFallback: ExerciseVideoFallbackService,
   ) {}
 
-  /**
-   * Search the ExerciseDB catalog.
-   *
-   * Query params:
-   *   q           — free-text name search (optional)
-   *   muscleGroup — filter by body part (optional)
-   *   equipment   — filter by equipment (optional)
-   *   limit       — page size 1–100 (default 20)
-   *   cursor      — opaque pagination cursor from a prior response
-   *
-   * Note: video_url is NOT enriched on list results to keep list
-   * responses fast. Clients fetch /exercises/:id for video-enriched
-   * detail view.
-   */
   @Get('search')
   async search(
     @Query('q') q?: string,
@@ -63,7 +49,6 @@ export class ExerciseLibraryController {
       cursor,
     });
 
-    // Stamp video_url: null on list items — video enrichment only on detail.
     return {
       ...result,
       items: result.items.map((item) => ({
@@ -74,26 +59,10 @@ export class ExerciseLibraryController {
     };
   }
 
-  /**
-   * Retrieve a single exercise by its ExerciseDB catalog id.
-   *
-   * Appends `video_url` from the video provider fallback chain:
-   *   1. YMove (HLS, pre-signed, 3h cache)
-   *   2. MuscleWiki (stable MP4, 24h cache)
-   *   3. null → caller renders gifUrl as fallback
-   *
-   * The lookup is non-blocking: if both providers fail or are
-   * unconfigured, the endpoint still returns the exercise with
-   * `video_url: null`. No 5xx is surfaced to the client.
-   */
   @Get(':id')
   async getById(@Param('id') id: string): Promise<Exercise> {
-    // Fetch exercise first (sequential — we need the name to do provider matching).
-    // If the exercise fetch fails, getExerciseById already throws NotFoundException.
     const exercise = await this.exerciseLibrary.getExerciseById(id);
 
-    // Use the exercise name for provider matching (normalised internally by the
-    // fallback service). The Redis key is exercise-video:<normalised-name>.
     const video = await this.videoFallback
       .getVideoUrl(exercise.name)
       .catch(() => ({ url: null, provider: null }));

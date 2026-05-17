@@ -68,6 +68,8 @@ export class CheckoutWebhookHandlerService {
         return this.applySubscriptionUpdated(event);
       case 'customer.subscription.deleted':
         return this.applySubscriptionDeleted(event);
+      case 'payment_intent.succeeded':
+        return this.applyPaymentIntentSucceeded(event);
       case 'payment_intent.payment_failed':
         return this.applyPaymentIntentFailed(event);
       case 'invoice.paid':
@@ -262,6 +264,50 @@ export class CheckoutWebhookHandlerService {
         canceled_at: this.toDate(sub.canceled_at) ?? new Date(),
       },
     });
+    return { claimed: true, purchase_id: purchase.id };
+  }
+
+  // B3: PaymentSheet flow path. CheckoutSession-completed already covers the
+  // hosted-checkout case, but PaymentIntent (created via
+  // /v1/checkout/payment-intent for the in-app PaymentSheet) never gets a
+  // checkout.session.completed event — only payment_intent.succeeded. Without
+  // this case the matching ClientPurchase row stays in `pending` forever.
+  private async applyPaymentIntentSucceeded(
+    event: StripeEvent,
+  ): Promise<CheckoutWebhookResult> {
+    const pi = event.data.object as {
+      id?: string;
+      metadata?: Record<string, string>;
+    };
+    if (!pi?.id) return { claimed: false, reason: 'no_pi_id' };
+
+    // Only claim if a pending purchase row references this payment intent.
+    // PaymentSheet flow creates a pending ClientPurchase with the PI id set
+    // by checkout.service.ts createPaymentIntentForClient().
+    const purchase = await this.prisma.clientPurchase.findFirst({
+      where: { stripe_payment_intent_id: pi.id, status: 'pending' },
+    });
+    if (!purchase) return { claimed: false, reason: 'no_matching_purchase' };
+
+    const updated = await this.prisma.clientPurchase.update({
+      where: { id: purchase.id },
+      data: {
+        status: 'paid',
+        entitlement_active: true,
+        last_error: null,
+      },
+    });
+
+    if (this.splits) {
+      try {
+        await this.splits.onChargeSucceeded({ purchase: updated });
+      } catch (err) {
+        this.logger.warn(
+          `Split posting failed for purchase=${updated.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
     return { claimed: true, purchase_id: purchase.id };
   }
 

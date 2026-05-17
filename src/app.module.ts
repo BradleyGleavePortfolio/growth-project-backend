@@ -1,4 +1,4 @@
-import { Logger, Module } from '@nestjs/common';
+import { Logger, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -88,6 +88,7 @@ import { SecretsModule } from './secrets/secrets.module';
 // Transactional email — Resend transport + 8 launch templates + idempotency
 // ledger (EmailSendLog). Global, so any feature can inject EmailService.
 import { EmailModule } from './email/email.module';
+import { RlsContextMiddleware } from './common/middleware/rls-context.middleware';
 
 @Module({
   imports: [
@@ -280,4 +281,11 @@ import { EmailModule } from './email/email.module';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    // RLS context is defense-in-depth for future non-service-role query paths.
+    // Register globally so any authenticated request that has req.user populated
+    // can expose app.current_user_id to PostgreSQL policies.
+    consumer.apply(RlsContextMiddleware).forRoutes('*');
+  }
+}

@@ -83,6 +83,18 @@ export interface StripePriceObject {
   [k: string]: unknown;
 }
 
+export interface StripePaymentIntentObject {
+  id: string;
+  client_secret: string;
+  [k: string]: unknown;
+}
+
+export interface StripeEphemeralKeyObject {
+  id: string;
+  secret: string;
+  [k: string]: unknown;
+}
+
 export interface StripeCheckoutSessionObject {
   id: string;
   url: string;
@@ -109,8 +121,21 @@ export interface StripeSubscriptionObject {
 export class StripeConnectApiService {
   private readonly logger = new Logger(StripeConnectApiService.name);
 
+  // Timeout for all Stripe API calls. Stripe's p99 is well under 5s;
+  // 10s gives headroom for retries without tying up a Fly worker indefinitely.
+  // Overridable in tests via subclass.
+  protected readonly stripeTimeoutMs = 10_000;
+
   // Overridable in tests via subclass to avoid monkey-patching globalThis.fetch.
-  protected fetchImpl: typeof fetch = (input, init) => fetch(input, init);
+  // Wraps every call with an AbortController so hung Stripe connections never
+  // block a request thread past stripeTimeoutMs.
+  protected fetchImpl: typeof fetch = (input, init) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.stripeTimeoutMs);
+    return fetch(input, { ...init, signal: controller.signal }).finally(() =>
+      clearTimeout(timer),
+    );
+  };
 
   isConfigured(): boolean {
     return !!process.env.STRIPE_SECRET_KEY;
@@ -411,6 +436,55 @@ export class StripeConnectApiService {
     );
   }
 
+  // Phase 7 — Payment Sheet (in-app checkout). Creates a PaymentIntent
+  // directly on the platform account with destination charges so the
+  // mobile Payment Sheet can complete without a browser redirect.
+  async createPaymentIntent(params: {
+    amount: number;
+    currency: string;
+    customer: string;
+    applicationFeeAmount: number;
+    transferDestination: string;
+    metadata: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<StripePaymentIntentObject> {
+    const form: Record<string, string> = {
+      amount: String(params.amount),
+      currency: params.currency,
+      customer: params.customer,
+      application_fee_amount: String(params.applicationFeeAmount),
+      'transfer_data[destination]': params.transferDestination,
+    };
+    for (const [k, v] of Object.entries(params.metadata)) {
+      form[`metadata[${k}]`] = v;
+    }
+    return this.post<StripePaymentIntentObject>(
+      '/payment_intents',
+      form,
+      params.idempotencyKey,
+    );
+  }
+
+  // Phase 7 — create an EphemeralKey scoped to a customer so the mobile
+  // Payment Sheet can read saved payment methods without a full server call.
+  // The Stripe-Version header must match the SDK version used on the client.
+  async createEphemeralKey(customerId: string): Promise<{ secret: string }> {
+    const secret = this.requireSecret();
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${secret}`,
+      'Stripe-Version': '2024-09-30.acacia',
+      'Content-Type': 'application/x-www-form-urlencoded',
+    };
+    const body = new URLSearchParams({ customer: customerId }).toString();
+    const res = await this.fetchImpl(`${STRIPE_API_BASE}/ephemeral_keys`, {
+      method: 'POST',
+      headers,
+      body,
+    });
+    const parsed = await this.parse<StripeEphemeralKeyObject>(res, '/ephemeral_keys');
+    return { secret: parsed.secret };
+  }
+
   async retrieveCheckoutSession(
     sessionId: string,
   ): Promise<StripeCheckoutSessionObject> {
@@ -687,23 +761,31 @@ export class StripeConnectApiService {
     connectedAccountId: string,
   ): Promise<T> {
     const secret = this.requireSecret();
-    const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
-      method: 'GET',
-      headers: {
-        ...this.commonHeaders(secret),
-        'Stripe-Account': connectedAccountId,
-      },
-    });
-    return this.parse<T>(res, path);
+    try {
+      const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
+        method: 'GET',
+        headers: {
+          ...this.commonHeaders(secret),
+          'Stripe-Account': connectedAccountId,
+        },
+      });
+      return this.parse<T>(res, path);
+    } catch (err) {
+      this.handleFetchError(err, path);
+    }
   }
 
   private async delete<T>(path: string): Promise<T> {
     const secret = this.requireSecret();
-    const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
-      method: 'DELETE',
-      headers: this.commonHeaders(secret),
-    });
-    return this.parse<T>(res, path);
+    try {
+      const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
+        method: 'DELETE',
+        headers: this.commonHeaders(secret),
+      });
+      return this.parse<T>(res, path);
+    } catch (err) {
+      this.handleFetchError(err, path);
+    }
   }
 
   private commonHeaders(secret: string): Record<string, string> {
@@ -715,11 +797,15 @@ export class StripeConnectApiService {
 
   private async get<T>(path: string): Promise<T> {
     const secret = this.requireSecret();
-    const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
-      method: 'GET',
-      headers: this.commonHeaders(secret),
-    });
-    return this.parse<T>(res, path);
+    try {
+      const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
+        method: 'GET',
+        headers: this.commonHeaders(secret),
+      });
+      return this.parse<T>(res, path);
+    } catch (err) {
+      this.handleFetchError(err, path);
+    }
   }
 
   private async post<T>(
@@ -733,12 +819,34 @@ export class StripeConnectApiService {
       'Content-Type': 'application/x-www-form-urlencoded',
     };
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
-    const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
-      method: 'POST',
-      headers,
-      body: new URLSearchParams(form).toString(),
-    });
-    return this.parse<T>(res, path);
+    try {
+      const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
+        method: 'POST',
+        headers,
+        body: new URLSearchParams(form).toString(),
+      });
+      return this.parse<T>(res, path);
+    } catch (err) {
+      this.handleFetchError(err, path);
+    }
+  }
+
+  // Map fetch-level AbortError (timeout) to a clean StripeConnectApiError
+  // with status 503 so callers can surface a typed 503 instead of a raw
+  // DOMException bubbling up through NestJS.
+  private handleFetchError(err: unknown, path: string): never {
+    const isAbort =
+      err instanceof Error &&
+      (err.name === 'AbortError' || err.name === 'TimeoutError');
+    if (isAbort) {
+      throw new StripeConnectApiError(
+        `Stripe API timed out after ${this.stripeTimeoutMs}ms on ${path}`,
+        503,
+        'request_timeout',
+        'api_connection_error',
+      );
+    }
+    throw err;
   }
 
   private async parse<T>(res: Response, path: string): Promise<T> {

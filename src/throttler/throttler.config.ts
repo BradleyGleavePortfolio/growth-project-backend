@@ -32,6 +32,8 @@ import { ThrottlerModuleOptions } from '@nestjs/throttler';
 // POST /bloodwork/:id                       | bloodwork-write         | BLOODWORK_WRITE_PER_MIN / min (user)
 // GET  /coach/command-center/:path          | coach-command-center    | COACH_CMD_CENTER_PER_MIN / min (user)
 // POST /diagnostic/submit                   | diagnostic-submit       | DIAGNOSTIC_RATE_LIMIT_PER_HOUR / hour (IP)
+// POST /v1/checkout/sessions               | checkout-mint           | CHECKOUT_MINT_PER_HOUR / hour (user)
+// POST /v1/checkout/payment-intent         | checkout-mint           | shared
 
 export const THROTTLER_NAMES = {
   /** Per-minute hard cap on login attempts per IP (credential stuffing brake). */
@@ -52,6 +54,9 @@ export const THROTTLER_NAMES = {
   COACH_COMMAND_CENTER: 'coach-command-center',
   /** Per-hour diagnostic submit cap per IP. */
   DIAGNOSTIC_SUBMIT: 'diagnostic-submit',
+  /** Per-hour cap on checkout session / payment-intent minting per user.
+   *  Prevents a compromised client account from spam-minting Stripe sessions. */
+  CHECKOUT_MINT: 'checkout-mint',
   /** Catch-all: every route that carries no explicit @Throttle decorator. */
   DEFAULT: 'default',
 } as const;
@@ -89,6 +94,11 @@ const COACH_CMD_CENTER_PER_MIN  = readIntEnv('COACH_CMD_CENTER_PER_MIN', 60, 1, 
 // Diagnostic submit (unauthenticated lead-capture endpoint)
 const DIAGNOSTIC_RATE_LIMIT_PER_HOUR = readIntEnv('DIAGNOSTIC_RATE_LIMIT_PER_HOUR', 5, 1, 1_000);
 
+// Checkout minting: per-user, per-hour. 20/hr is generous for normal clients
+// (nobody buys 20 packages in an hour) but stops automated abuse from a
+// compromised account spinning up Stripe sessions in a loop.
+const CHECKOUT_MINT_PER_HOUR = readIntEnv('CHECKOUT_MINT_PER_HOUR', 20, 1, 500);
+
 // Export per-route constants so controllers can reference them for @Throttle
 // decorators without repeating magic numbers inline.
 export const THROTTLER_ROUTE_LIMITS = {
@@ -101,6 +111,7 @@ export const THROTTLER_ROUTE_LIMITS = {
   COACH_CMD_CENTER_PER_MIN,
   RATELIMIT_AUTHED_PER_MIN,
   RATELIMIT_ANON_PER_MIN,
+  CHECKOUT_MINT_PER_HOUR,
 } as const;
 
 export const THROTTLER_LIMITS = [
@@ -122,6 +133,8 @@ export const THROTTLER_LIMITS = [
   { name: THROTTLER_NAMES.COACH_COMMAND_CENTER, ttl: 60_000,      limit: COACH_CMD_CENTER_PER_MIN },
   // Diagnostic submit: 5/hour/IP
   { name: THROTTLER_NAMES.DIAGNOSTIC_SUBMIT,   ttl: 3_600_000,    limit: DIAGNOSTIC_RATE_LIMIT_PER_HOUR },
+  // Checkout minting: 20/hour/user
+  { name: THROTTLER_NAMES.CHECKOUT_MINT,       ttl: 3_600_000,    limit: CHECKOUT_MINT_PER_HOUR },
   // Default catch-all: applies to every route that carries no explicit @Throttle decorator.
   // The guard in getTracker() buckets authed requests by user-id (300/min) and
   // unauthenticated requests by IP (100/min). Both share this one named throttler;

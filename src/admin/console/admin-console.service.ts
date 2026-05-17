@@ -87,4 +87,18 @@ export class AdminConsoleService {
       entitlements: overview.entitlements,
     };
   }
+
+  // B5 owner-console stub. The owner-side payment/payout list needs a
+  // unified shape across ClientPurchase + ConnectTransfer + Stripe payouts
+  // that the OwnerConsole UI can paginate. The real implementation will
+  // delegate to the payment-ops admin endpoints; until then return an
+  // explicit empty page so the owner console renders a "no rows yet"
+  // state rather than failing.
+  async listPayments(_opts: { cursor?: string; limit?: number } = {}) {
+    return { not_implemented: true, items: [], next_cursor: null };
+  }
+
+  async listPayouts(_opts: { cursor?: string; limit?: number } = {}) {
+    return { not_implemented: true, items: [], next_cursor: null };
+  }
 }

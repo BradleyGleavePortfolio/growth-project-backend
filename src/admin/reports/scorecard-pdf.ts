@@ -81,6 +81,7 @@ const INK = '#1A1A1A';
 const OXBLOOD = '#4A0404';
 const MID = '#888888';
 const WHITE = '#FFFFFF';
+const LINE = '#D6D1C4'; // bone-adjacent hairline — matches app divider color
 
 const MARGIN = 48;
 const CONTENT_WIDTH = 595 - MARGIN * 2; // A4 width – margins
@@ -359,7 +360,7 @@ function renderSection(
     .moveTo(MARGIN, y)
     .lineTo(MARGIN + CONTENT_WIDTH, y)
     .lineWidth(0.5)
-    .stroke('#D6D1C4')
+    .stroke(LINE)
     .restore();
 
   y += 10;

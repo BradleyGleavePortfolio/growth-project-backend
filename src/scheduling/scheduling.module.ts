@@ -14,8 +14,11 @@ import { SchedulingProviderRegistry } from './providers/scheduling-provider.regi
 import { StubCalendarAdapter } from './providers/stub-calendar.adapter';
 import { StubVideoAdapter } from './providers/stub-video.adapter';
 import { ZoomVideoAdapter } from './providers/zoom-video.adapter';
+import { SchedulingAvailabilityService } from './scheduling-availability.service';
 import { SchedulingController } from './scheduling.controller';
+import { SchedulingOpenSlotsService } from './scheduling-open-slots.service';
 import { SchedulingService } from './scheduling.service';
+import { SchedulingSessionLifecycleService } from './scheduling-session-lifecycle.service';
 import { SchedulingWebhookController } from './scheduling-webhook.controller';
 
 // PrismaService and AuditService are provided globally (PrismaModule
@@ -40,6 +43,10 @@ import { SchedulingWebhookController } from './scheduling-webhook.controller';
   ],
   providers: [
     SchedulingService,
+    // M9 refactor — focused services that SchedulingService delegates to.
+    SchedulingSessionLifecycleService,
+    SchedulingOpenSlotsService,
+    SchedulingAvailabilityService,
     SchedulingProviderRegistry,
     StubCalendarAdapter,
     StubVideoAdapter,

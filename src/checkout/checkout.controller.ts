@@ -7,13 +7,64 @@ import {
   Query,
   Request,
   UseGuards,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
 import { StripeConnectApiError } from '../connect/stripe-connect-api.service';
-import { CheckoutService, CreateCheckoutInput } from './checkout.service';
+import { THROTTLER_NAMES, THROTTLER_ROUTE_LIMITS } from '../throttler/throttler.config';
+import { CheckoutService } from './checkout.service';
+
+// Allowed URL schemes for redirect URLs. We only accept our own deep-link
+// scheme and https so Stripe cannot be tricked into redirecting to arbitrary
+// origins. This is an allow-list, not a regex: the value must START with one
+// of these prefixes.
+const ALLOWED_URL_PREFIXES = [
+  'growthproject://',
+  'com.growthproject.app://',
+  'https://',
+] as const;
+
+function isAllowedUrl(url: string | undefined): boolean {
+  if (!url) return true; // undefined is fine — we use the env default
+  return ALLOWED_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
+}
+
+// Runtime-validated request body for session creation.
+// class-validator decorators run at the controller boundary via ValidationPipe
+// so TypeScript types alone no longer protect us at runtime.
+export class CreateCheckoutDto {
+  @IsUUID()
+  package_id!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  // Only our deep-link scheme or https are valid redirect targets.
+  // String form avoids the //:// comment ambiguity in TS regex literals.
+  @Matches(new RegExp('^(growthproject:\/\/|com\.growthproject\.app:\/\/|https:\/\/)'), {
+    message: 'success_url must start with growthproject://, com.growthproject.app://, or https://',
+  })
+  success_url?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  @Matches(new RegExp('^(growthproject:\/\/|com\.growthproject\.app:\/\/|https:\/\/)'), {
+    message: 'cancel_url must start with growthproject://, com.growthproject.app://, or https://',
+  })
+  cancel_url?: string;
+}
+
+export class CreatePaymentIntentDto {
+  @IsUUID()
+  package_id!: string;
+}
 
 // Client-facing: open a Stripe Checkout session for a package and read
 // the list of past / current purchases.
@@ -25,14 +76,29 @@ import { CheckoutService, CreateCheckoutInput } from './checkout.service';
 @ApiTags('checkout')
 @Controller('v1/checkout')
 @UseGuards(JwtAuthGuard)
+@UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
 export class CheckoutController {
   constructor(private checkout: CheckoutService) {}
 
   @Post('sessions')
+  @Throttle({
+    [THROTTLER_NAMES.CHECKOUT_MINT]: {
+      ttl: 3_600_000,
+      limit: THROTTLER_ROUTE_LIMITS.CHECKOUT_MINT_PER_HOUR,
+    },
+  })
   async createSession(
     @Request() req: AuthedRequest,
-    @Body() body: CreateCheckoutInput,
+    @Body() body: CreateCheckoutDto,
   ) {
+    // Double-check URL allow-list (belt-and-suspenders; class-validator
+    // Matches decorator above is the first gate).
+    if (!isAllowedUrl(body.success_url) || !isAllowedUrl(body.cancel_url)) {
+      throw new HttpException(
+        { error: 'INVALID_URL', message: 'Redirect URLs must use the growthproject:// scheme or https://' },
+        400,
+      );
+    }
     try {
       return await this.checkout.createCheckoutForClient(req.user.id, body);
     } catch (err) {
@@ -40,10 +106,35 @@ export class CheckoutController {
     }
   }
 
+  @Post('payment-intent')
+  @Throttle({
+    [THROTTLER_NAMES.CHECKOUT_MINT]: {
+      ttl: 3_600_000,
+      limit: THROTTLER_ROUTE_LIMITS.CHECKOUT_MINT_PER_HOUR,
+    },
+  })
+  async createPaymentIntent(
+    @Request() req: AuthedRequest,
+    @Body() body: CreatePaymentIntentDto,
+  ) {
+    try {
+      return await this.checkout.createPaymentIntentForClient(req.user.id, body);
+    } catch (err) {
+      throw this.mapStripeError(err);
+    }
+  }
+
   @Get('purchases')
-  async listPurchases(@Request() req: AuthedRequest) {
-    const rows = await this.checkout.listForClient(req.user.id);
-    return { purchases: rows };
+  async listPurchases(
+    @Request() req: AuthedRequest,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const rows = await this.checkout.listForClient(req.user.id, {
+      cursor,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+    return { purchases: rows, next_cursor: rows.length > 0 ? rows[rows.length - 1].id : null };
   }
 
   @Get('entitlement')
@@ -93,8 +184,15 @@ export class CoachPurchasesController {
   constructor(private checkout: CheckoutService) {}
 
   @Get()
-  async list(@Request() req: AuthedRequest) {
-    const rows = await this.checkout.listForCoach(req.user.id);
-    return { purchases: rows };
+  async list(
+    @Request() req: AuthedRequest,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const rows = await this.checkout.listForCoach(req.user.id, {
+      cursor,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+    return { purchases: rows, next_cursor: rows.length > 0 ? rows[rows.length - 1].id : null };
   }
 }
