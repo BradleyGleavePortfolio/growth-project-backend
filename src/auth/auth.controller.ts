@@ -157,6 +157,7 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Signup policy.' })
   @Public()
   @Get('signup-policy')
+  @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: 100 } })
   @HttpCode(HttpStatus.OK)
   async getSignupPolicy() {
     return this.authService.getSignupPolicy();

@@ -30,6 +30,7 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { SubscriptionGuard } from '../billing/subscription.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import { WorkoutBuilderService } from './workout-builder.service';
 import {
@@ -50,25 +51,25 @@ export class WorkoutBuilderController {
   constructor(private readonly workoutBuilder: WorkoutBuilderService) {}
 
   @Get()
-  @UseGuards(JwtAuthGuard, CoachGuard)
+  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
   listPlans(@Req() req: AuthRequest) {
     return this.workoutBuilder.listPlans(req.user.id);
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard, CoachGuard)
+  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
   createPlan(@Req() req: AuthRequest, @Body() dto: CreateWorkoutPlanDto) {
     return this.workoutBuilder.createPlan(req.user.id, dto);
   }
 
   @Get(':planId')
-  @UseGuards(JwtAuthGuard, CoachGuard)
+  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
   getPlan(@Req() req: AuthRequest, @Param('planId') planId: string) {
     return this.workoutBuilder.getPlan(req.user.id, planId);
   }
 
   @Patch(':planId')
-  @UseGuards(JwtAuthGuard, CoachGuard)
+  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
   updatePlan(
     @Req() req: AuthRequest,
     @Param('planId') planId: string,
@@ -78,13 +79,13 @@ export class WorkoutBuilderController {
   }
 
   @Delete(':planId')
-  @UseGuards(JwtAuthGuard, CoachGuard)
+  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
   archivePlan(@Req() req: AuthRequest, @Param('planId') planId: string) {
     return this.workoutBuilder.archivePlan(req.user.id, planId);
   }
 
   @Put(':planId/exercises')
-  @UseGuards(JwtAuthGuard, CoachGuard)
+  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
   setExercises(
     @Req() req: AuthRequest,
     @Param('planId') planId: string,
@@ -102,7 +103,7 @@ export class WorkoutBuilderController {
   }
 
   @Post(':planId/assignments')
-  @UseGuards(JwtAuthGuard, CoachGuard)
+  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
   assignPlan(
     @Req() req: AuthRequest,
     @Param('planId') planId: string,
@@ -112,7 +113,7 @@ export class WorkoutBuilderController {
   }
 
   @Get(':planId/assignments')
-  @UseGuards(JwtAuthGuard, CoachGuard)
+  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
   listAssignments(@Req() req: AuthRequest, @Param('planId') planId: string) {
     return this.workoutBuilder.listAssignments(req.user.id, planId);
   }

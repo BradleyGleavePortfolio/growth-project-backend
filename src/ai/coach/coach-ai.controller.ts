@@ -13,6 +13,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { CoachGuard } from '../../auth/coach.guard';
+import { SubscriptionGuard } from '../../billing/subscription.guard';
 import { CoachAIService } from './coach-ai.service';
 import { CoachAIStateService } from './coach-ai-state.service';
 import {
@@ -31,7 +32,7 @@ import {
 // the rate-limit budget.
 @ApiTags('coach-ai')
 @Controller('coach/ai')
-@UseGuards(JwtAuthGuard, CoachGuard)
+@UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
 export class CoachAIController {
   constructor(
     private readonly svc: CoachAIService,

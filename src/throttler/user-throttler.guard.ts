@@ -47,15 +47,35 @@ export class UserThrottlerGuard extends ThrottlerGuard {
   }
 
   protected async getTracker(req: Record<string, any>): Promise<string> {
+    // Priority 1: req.user already populated (guard order may vary in future).
     const userId = req?.user?.id;
     if (typeof userId === 'string' && userId.length > 0) {
       return `user:${userId}`;
     }
 
-    // Trust the Fly-Client-IP header first -- Fly's edge injects this with the
-    // verified client IP and cannot be spoofed by the client (unlike XFF which
-    // is a client-supplied header that Fly forwards verbatim). Then fall through
-    // to X-Forwarded-For (standard reverse-proxy) and finally req.ip.
+    // Priority 2: Decode Bearer token to get user id WITHOUT full verification.
+    // Full JWT verification happens in JwtAuthGuard — here we only need a
+    // stable bucket key for rate limiting. Forgery just means the forger gets
+    // their own bucket, which is acceptable (they still hit the per-bucket limit).
+    const auth = (req?.headers?.authorization ?? '') as string;
+    if (auth.startsWith('Bearer ')) {
+      try {
+        const token = auth.slice(7);
+        const parts = token.split('.');
+        if (parts.length === 3) {
+          const payloadJson = Buffer.from(parts[1], 'base64url').toString('utf8');
+          const payload = JSON.parse(payloadJson) as Record<string, unknown>;
+          const sub = (payload.sub ?? payload.id) as string | undefined;
+          if (typeof sub === 'string' && sub.length > 0) {
+            return `user:${sub}`;
+          }
+        }
+      } catch {
+        // Malformed token — fall through to IP
+      }
+    }
+
+    // Priority 3: IP-based for unauthenticated requests.
     const flyClientIp = (req?.headers?.['fly-client-ip'] || '') as string;
     if (flyClientIp.trim().length > 0) {
       return `ip:${flyClientIp.trim()}`;

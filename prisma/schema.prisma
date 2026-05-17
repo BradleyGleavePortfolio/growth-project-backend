@@ -545,6 +545,9 @@ model InviteCode {
   max_uses           Int?
   used_count         Int       @default(0)
   revoked            Boolean   @default(false)
+  intended_email       String?   @db.Text
+  accepted_by_user_id  String?
+  accepted_at          DateTime?
 
   @@index([coach_id])
   @@index([code])

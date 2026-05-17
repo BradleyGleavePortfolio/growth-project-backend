@@ -47,18 +47,27 @@ export class DataExportService {
   private readonly logger = new Logger(DataExportService.name);
 
   constructor(private readonly prisma: PrismaService) {
-    // Startup guard: using the default secret in production is a security risk
-    // because any instance of the app would accept tokens signed by any other
-    // instance (or by an attacker who knows the default). Log loudly but do not
-    // throw — we keep the app running so this feature alone can't cause a full
-    // outage. Rotate the secret immediately if this log appears in production.
-    if (
-      process.env.NODE_ENV === 'production' &&
-      TOKEN_SECRET_STR === 'change-me-in-production-min32chars!'
+    // Fail closed in production: if the secret is missing or is the hardcoded
+    // default, the entire service is unusable and we must not silently mint
+    // tokens with a known-value secret.
+    if (process.env.NODE_ENV === 'production') {
+      if (
+        !process.env.DATA_EXPORT_TOKEN_SECRET ||
+        process.env.DATA_EXPORT_TOKEN_SECRET.length < 32 ||
+        process.env.DATA_EXPORT_TOKEN_SECRET === 'change-me-in-production-min32chars!'
+      ) {
+        throw new Error(
+          'DATA_EXPORT_TOKEN_SECRET must be a random 32+ character secret in production. ' +
+            'Set this value in Fly secrets before deploying.',
+        );
+      }
+    } else if (
+      !process.env.DATA_EXPORT_TOKEN_SECRET ||
+      process.env.DATA_EXPORT_TOKEN_SECRET === 'change-me-in-production-min32chars!'
     ) {
-      this.logger.error(
-        'DATA_EXPORT_TOKEN_SECRET must be set in production. ' +
-          'Using the default secret is a security risk — set a random 32+ character value.',
+      this.logger.warn(
+        'DATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. ' +
+          'Set DATA_EXPORT_TOKEN_SECRET before going to production.',
       );
     }
   }

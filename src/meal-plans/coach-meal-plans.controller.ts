@@ -13,6 +13,7 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { SubscriptionGuard } from '../billing/subscription.guard';
 import { CreateMealPlanDto, UpdateMealPlanDto } from './meal-plans.dto';
 import { MealPlansService } from './meal-plans.service';
 
@@ -22,7 +23,7 @@ import { MealPlansService } from './meal-plans.service';
 // used by CoachMessagingController / CoachNudgesController).
 @ApiTags('meal-plans')
 @Controller('coach')
-@UseGuards(JwtAuthGuard, CoachGuard)
+@UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
 export class CoachMealPlansController {
   constructor(private plans: MealPlansService) {}
 

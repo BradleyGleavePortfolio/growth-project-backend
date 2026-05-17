@@ -17,6 +17,7 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
+import { SubscriptionGuard } from '../billing/subscription.guard';
 import { SkipClientEntitlement } from '../common/decorators/skip-client-entitlement.decorator';
 import { PrismaService } from '../prisma.service';
 import {
@@ -37,7 +38,7 @@ import { CreatePackageDto, UpdatePackageDto } from './packages.dto';
 
 @ApiTags('packages')
 @Controller('v1/coach/packages')
-@UseGuards(JwtAuthGuard, CoachOrOwnerGuard)
+@UseGuards(JwtAuthGuard, CoachOrOwnerGuard, SubscriptionGuard)
 export class CoachPackagesController {
   constructor(private packages: PackagesService) {}
 

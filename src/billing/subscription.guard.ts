@@ -69,10 +69,16 @@ export class SubscriptionGuard implements CanActivate {
       where: { coach_id: user.id },
     });
     if (!sub) {
-      // No mirror row yet — allowed during rollout. Once enforcement is on
-      // and Stripe is live, every coach has a CoachSubscription row written
-      // at customer.subscription.created time, so this branch becomes dead.
-      return true;
+      if (enforce) {
+        // In enforce mode a missing row means billing was never set up.
+        // Deny with the same body as other inactive states.
+        throw new ForbiddenException({
+          error: 'SUBSCRIPTION_REQUIRED',
+          message: 'Active coach subscription required',
+        });
+      }
+      // Observe mode: allow but log so we can quantify missing rows before cutover.
+      return this.observe(req, user.id, 'none', 'missing_subscription');
     }
 
     const status = sub.status;
@@ -103,6 +109,30 @@ export class SubscriptionGuard implements CanActivate {
       message: 'Subscription not active',
       status,
     });
+  }
+
+  private observe(
+    req: { method?: string; route?: { path?: string }; url?: string },
+    coachId: string,
+    status: string,
+    reason: string,
+  ): true {
+    const route = req.route?.path ?? req.url ?? 'unknown';
+    const method = req.method ?? 'unknown';
+    this.logger.warn(
+      `[observe] coach=${coachId} status=${status} reason=${reason} route=${method} ${route}`,
+    );
+    try {
+      this.analytics?.capture(coachId, 'server_billing_enforcement_observed', {
+        status,
+        reason,
+        route,
+        method,
+      });
+    } catch {
+      // analytics best-effort
+    }
+    return true;
   }
 
   // Centralizes the deny/observe branch so every policy reason goes through

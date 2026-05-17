@@ -139,6 +139,13 @@ export const THROTTLER_LIMITS = [
   // The guard in getTracker() buckets authed requests by user-id (300/min) and
   // unauthenticated requests by IP (100/min). Both share this one named throttler;
   // the differentiation is in the tracker key, not the limit.
+  //
+  // IMPORTANT: Public (@Public()) endpoints that have no dedicated throttler name
+  // MUST carry an explicit @Throttle({ default: { ttl: 60_000, limit: 100 } })
+  // decorator so they are bounded by the anonymous per-IP limit (100/min) rather
+  // than the more permissive authenticated limit (300/min). Without an explicit
+  // decorator the default catch-all uses Math.max(authed, anon) which may be
+  // higher than desired for unauthenticated surfaces.
   { name: THROTTLER_NAMES.DEFAULT,             ttl: 60_000,       limit: Math.max(RATELIMIT_AUTHED_PER_MIN, RATELIMIT_ANON_PER_MIN) },
 ] as const;
 

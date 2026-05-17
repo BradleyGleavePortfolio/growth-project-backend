@@ -12,6 +12,7 @@ import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { SupabaseService } from '../supabase/supabase.service';
 
 // ─── State machine ────────────────────────────────────────────────────────────
 // User-initiated two-phase deletion:
@@ -80,6 +81,7 @@ export class AccountDeletionService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly config: ConfigService,
+    private readonly supabase: SupabaseService,
   ) {}
 
   // ── Env helpers ─────────────────────────────────────────────────────────────
@@ -577,30 +579,21 @@ export class AccountDeletionService {
     // These operations are NOT transactional in the DB sense, but they are
     // idempotent so re-running after a partial failure is safe.
 
-    // ── 1. Anonymize CoachMessage rows ──────────────────────────────────────
-    // Replace sender_id / client_id / coach_id with sentinel, clear body text
-    // so the deleted user's words are removed but the thread structure holds.
-    // Rationale: the coach or other participant still owns their half of the
-    // conversation; deleting the row entirely would break their inbox.
-    await this.prisma.coachMessage
-      .updateMany({
-        where: { OR: [{ client_id: userId }, { sender_id: userId }] },
-        data: {
-          client_id: userId, // keep client_id as-is (it's the deleted user or will become sentinel)
-          // body: cleared below per-row since we need conditional logic
-        },
-      })
-      .catch(() => undefined);
-
-    // Clear body text on messages where deleted user was the sender (their words)
-    // We use updateMany with a filter to clear body on sender rows.
+    // ── 1. Anonymize CoachMessage rows ────────────────────────────────────
+    // Anonymize all CoachMessage rows where the deleted user is client, sender,
+    // or coach. Body text is cleared on rows where they were the sender.
+    // FK columns (client_id, coach_id, sender_id) are left pointing at the
+    // tombstoned user row — the tombstone email/name are scrubbed so no PII leaks.
+    // This preserves thread structure for the other participant.
     await this.prisma.coachMessage
       .updateMany({
         where: { sender_id: userId },
         data: { body: null },
       })
       .catch(() => undefined);
-
+    // coach_id rows: body is NOT cleared (coach authored these; no other participant's
+    // data is affected — only the relationship is preserved for billing/audit).
+    // No additional update needed for coach_id; FK stays tombstoned.
     // ── 2. Nullify AuditLog actor_id for rows where actor is deleted user ───
     // Compliance: the event record stays; just the actor attribution is removed.
     await this.prisma.auditLog
@@ -701,7 +694,29 @@ export class AccountDeletionService {
       .updateMany({ where: { coach_id: userId }, data: { coach_id: null } })
       .catch(() => undefined);
 
-    // ── 11. Final transaction: delete user-owned rows + tombstone User ────────
+    // ── 11. Revoke Supabase auth identity ──────────────────────────────────
+    // Best-effort: a failure here is logged but does not block local deletion.
+    // Placed OUTSIDE the $transaction because Supabase is an external call.
+    try {
+      const originalUser = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { supabase_id: true },
+      });
+      if (
+        originalUser?.supabase_id &&
+        !originalUser.supabase_id.startsWith('deleted-')
+      ) {
+        const adminClient = this.supabase.getClient();
+        await adminClient.auth.admin.deleteUser(originalUser.supabase_id);
+      }
+    } catch (supabaseErr) {
+      this.logger.error(
+        `Failed to delete Supabase auth user for ${userId}: ${(supabaseErr as Error).message}. ` +
+          'Local deletion proceeding — Supabase user may need manual cleanup.',
+      );
+    }
+
+    // ── 12. Final transaction: delete user-owned rows + tombstone User ────────
     await this.prisma.$transaction(async (tx) => {
       // Hard-delete rows that are purely owned by this user (no cross-user FK dep):
       await tx.loggedFoodEntry.deleteMany({ where: { user_id: userId } });
@@ -738,6 +753,13 @@ export class AccountDeletionService {
       await tx.notificationPreferences.deleteMany({ where: { user_id: userId } });
       await tx.userPreferences.deleteMany({ where: { user_id: userId } });
       await tx.userProfile.deleteMany({ where: { user_id: userId } });
+
+      // Detach any students still assigned to this coach so they are not
+      // orphaned against a tombstoned coach_id.
+      await tx.user.updateMany({
+        where: { coach_id: userId, role: 'student' },
+        data: { coach_id: null },
+      });
 
       // Tombstone the User row (PII scrub + mark deleted). We do NOT DELETE
       // the row to preserve referential integrity on coach-side tables (billing,

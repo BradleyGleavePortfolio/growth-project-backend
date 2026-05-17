@@ -371,8 +371,9 @@ export class BillingService {
       },
     });
     await this.prisma.coachSubscription.updateMany({
-      where: { coach_id: coachId },
+      where: { coach_id: coachId, status: { notIn: ['canceled', 'paused'] } },
       data: {
+        status: 'past_due',
         last_payment_failed_at: now,
         failed_payments_this_month: { increment: 1 },
       },

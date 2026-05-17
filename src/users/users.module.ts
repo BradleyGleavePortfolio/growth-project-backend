@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { AccountDeletionModule } from '../account-deletion/account-deletion.module';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { PreferencesService } from './preferences.service';
@@ -12,7 +13,7 @@ import { GdprScrubScheduler } from './gdpr-scrub.scheduler';
 // resolve its JwksVerifierService dependency within this module context.
 // AuditService is exposed via the global AuditModule (see app.module.ts).
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, AccountDeletionModule],
   controllers: [UsersController],
   providers: [
     UsersService,

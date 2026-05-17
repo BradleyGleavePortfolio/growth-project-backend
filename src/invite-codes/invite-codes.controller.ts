@@ -15,6 +15,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { SubscriptionGuard } from '../billing/subscription.guard';
 import { Public } from '../common/decorators/public.decorator';
 import { CreateInviteCodeDto } from './invite-codes.dto';
 import { BulkInviteDto } from './bulk-invite.dto';
@@ -29,7 +30,7 @@ export class InviteCodesController {
 
   // ----- existing legacy InviteCode CRUD (unchanged) -----------------
   @Post('coach/invite-codes')
-  @UseGuards(JwtAuthGuard, CoachGuard)
+  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
   async create(
     @Request() req: AuthedRequest,
     @Body() body: CreateInviteCodeDto,
@@ -65,7 +66,7 @@ export class InviteCodesController {
   // make a malicious coach unable to flood the table; legit coaches
   // rarely need >100 invites per minute.
   @Post('coach/invite-codes/bulk')
-  @UseGuards(JwtAuthGuard, CoachGuard)
+  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @HttpCode(HttpStatus.OK)
   async bulk(
@@ -182,6 +183,7 @@ export class InviteCodesController {
   //
   // Hidden behind COACH_CODE_GATE_ENABLED so the backend can ship this
   // additively; flag flip enables the gate without a new release.
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Post('auth/attach-coach-code')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)

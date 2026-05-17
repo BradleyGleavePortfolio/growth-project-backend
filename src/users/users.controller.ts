@@ -22,6 +22,7 @@ import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { UsersService } from './users.service';
 import { PreferencesService } from './preferences.service';
 import { AccountService } from './account.service';
+import { AccountDeletionService } from '../account-deletion/account-deletion.service';
 import type { UserPreferencesDto } from './preferences.dto';
 import { AllowDeletionScheduled } from '../common/decorators/allow-deletion-scheduled.decorator';
 import { UpdatePushTokenDto } from './dto/update-push-token.dto';
@@ -36,6 +37,7 @@ export class UsersController {
     private usersService: UsersService,
     private preferencesService: PreferencesService,
     private accountService: AccountService,
+    private readonly accountDeletionService: AccountDeletionService,
   ) {}
 
   @ApiOperation({
@@ -131,8 +133,12 @@ export class UsersController {
   })
   @ApiResponse({ status: 200, description: 'Deletion scheduled (or already scheduled).' })
   @Delete('me/account')
-  deleteAccount(@Request() req: AuthedRequest) {
-    return this.accountService.scheduleDeletion(
+  async deleteAccount(@Request() req: AuthedRequest) {
+    // Delegate to the canonical deletion pipeline so all data is cleaned up
+    // consistently. The legacy AccountService.scheduleDeletion() only tombstoned
+    // shallow profile fields; AccountDeletionService.requestDeletion() runs
+    // the full grace-period and finalization flow.
+    return this.accountDeletionService.requestDeletion(
       req.user.id,
       auditContext(req),
     );

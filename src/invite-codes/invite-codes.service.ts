@@ -56,6 +56,26 @@ export class InviteCodesService {
     private audit: AuditService,
   ) {}
 
+  /**
+   * Authoritative check: a coach may only accept new clients when their
+   * CoachSubscription is active, trialing, or grandfathered.
+   * CoachProfile.subscription_status is a stale mirror — always use
+   * CoachSubscription directly for access-control decisions.
+   */
+  private async assertCoachCanAcceptClients(coachId: string): Promise<void> {
+    const sub = await this.prisma.coachSubscription.findUnique({
+      where: { coach_id: coachId },
+      select: { status: true },
+    });
+    const allowed =
+      sub && ['active', 'trialing', 'grandfathered'].includes(sub.status);
+    if (!allowed) {
+      throw new BadRequestException(
+        'Coach is not currently accepting clients',
+      );
+    }
+  }
+
   // Generates a human-friendly `GP-XXXXXX` code. Retries on the (astronomically
   // unlikely) unique-collision so callers never see a spurious 500.
   private generateCode(): string {
@@ -72,6 +92,9 @@ export class InviteCodesService {
     input: {
       expires_at?: string;
       max_uses?: number;
+      // Bulk-invite recipient binding. When set, redemption validates that
+      // the redeeming user's email matches to prevent forwarded-code abuse.
+      intended_email?: string | null;
       // Team Mode (ADR-0001 §10 Q5). Set to a sub-coach's user id when
       // the sub-coach issues the invite under their head coach. The
       // resulting row carries coach_id = head coach (so existing
@@ -117,8 +140,9 @@ export class InviteCodesService {
             code,
             coach_id: attribution.effective_coach_id,
             invited_by_user_id: attribution.invited_by_user_id,
-            expires_at: expiresAt,
-            max_uses: input.max_uses ?? null,
+            expires_at: expiresAt ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+            max_uses: input.max_uses ?? 1,
+            intended_email: input.intended_email ?? null,
           },
         });
         // Q4 + Q5: write the curated audit event when this invite was
@@ -459,14 +483,12 @@ export class InviteCodesService {
         },
       });
       if (profile && profile.user && profile.user.role === 'coach') {
-        // Block paused/canceled coaches from accepting new clients via
-        // their default link. `subscription_status` is null until Stripe
-        // is wired up, so null is treated as "still good standing" for
-        // backwards compat.
-        if (
-          profile.subscription_status === 'canceled' ||
-          profile.subscription_status === 'paused'
-        ) {
+        // Block coaches without an active subscription from accepting new
+        // clients via their default link. Uses CoachSubscription as the
+        // authoritative source rather than the stale mirror on CoachProfile.
+        try {
+          await this.assertCoachCanAcceptClients(profile.user.id);
+        } catch {
           return { valid: false };
         }
         return {
@@ -525,12 +547,7 @@ export class InviteCodesService {
     let inviteCodeRowId: string | null = null;
 
     if (profile && profile.user?.role === 'coach') {
-      if (
-        profile.subscription_status === 'canceled' ||
-        profile.subscription_status === 'paused'
-      ) {
-        throw new BadRequestException('Coach is not currently accepting clients');
-      }
+      await this.assertCoachCanAcceptClients(profile.user.id);
       resolvedCoachId = profile.user.id;
     } else {
       const v = await this.validate(code);
@@ -558,6 +575,16 @@ export class InviteCodesService {
         }
         if (current.max_uses !== null && current.used_count >= current.max_uses) {
           throw new BadRequestException('Invalid or expired invite code');
+        }
+        // Validate intended recipient — prevents forwarded-code abuse.
+        if (current.intended_email) {
+          const redeemerEmail = (me?.email ?? '').toLowerCase().trim();
+          const intendedEmail = current.intended_email.toLowerCase().trim();
+          if (redeemerEmail !== intendedEmail) {
+            throw new BadRequestException(
+              'This invite was sent to a different email address',
+            );
+          }
         }
         const bumped = await tx.inviteCode.updateMany({
           where: {
@@ -651,6 +678,7 @@ export class InviteCodesService {
         const codeRow = await this.createForCoach(coachId, {
           expires_at: expiresAt.toISOString(),
           max_uses: 1,
+          intended_email: normalised,
         });
 
         const emailOutcome = await this._sendInviteEmail({
@@ -832,10 +860,9 @@ export class InviteCodesService {
         include: { user: { select: { id: true, name: true, role: true } } },
       });
       if (profile && profile.user && profile.user.role === 'coach') {
-        if (
-          profile.subscription_status === 'canceled' ||
-          profile.subscription_status === 'paused'
-        ) {
+        try {
+          await this.assertCoachCanAcceptClients(profile.user.id);
+        } catch {
           return { accepted: false, reason: 'invalid', message: 'This coach is not currently accepting clients.' };
         }
         return {
