@@ -106,18 +106,252 @@ export class MetricsService {
     };
   }
 
-  // B5 owner-console stub. The MRR/ARR calc requires resolving each
-  // active CoachSubscription's price interval and currency to a normalized
-  // monthly figure; that pipeline hasn't shipped yet. Return a
-  // not_implemented marker so the owner console can render an honest empty
-  // state instead of fabricating a number.
+  // ---------------------------------------------------------------------------
+  // MRR / ARR
+  //
+  // Strategy: for each ACTIVE (not trialing) coach subscription, find their
+  // most recent paid Invoice for the current billing cycle and normalise to
+  // a monthly amount.
+  //
+  // Normalisation rules:
+  //   - Invoice period is ≥28 days (monthly cycle): normalise to 30.44 days.
+  //   - Invoice period is ≥300 days (annual cycle): divide by 12.
+  //   - Invoice period < 28 days or missing: treat the raw amount as monthly.
+  //     (Avoids the ×30 inflation bug on same-day or trial-conversion invoices.)
+  //
+  // Trialing coaches are intentionally excluded from MRR — they have not paid
+  // for the current period. They are counted separately so the owner console
+  // can show "X trialing" alongside the MRR figure.
+  //
+  // Multi-currency: amounts are grouped by currency and returned as a map.
+  // The `mrr_cents` / `arr_cents` top-level fields are the USD total; all
+  // other currencies appear in `by_currency` for display purposes.
+  //
+  // Source: Stripe webhook pipeline writes Invoice rows. No Stripe API call.
   async getMrrArr() {
-    return { not_implemented: true };
+    // Only active (paying) subscriptions contribute to MRR.
+    // Trialing is surfaced as a separate counter, not added to revenue.
+    const [activeSubs, trialingCount] = await Promise.all([
+      this.prisma.coachSubscription.findMany({
+        where: { status: 'active' },
+        select: {
+          coach_id: true,
+          coach: {
+            select: {
+              invoices: {
+                where: { status: 'paid' },
+                orderBy: { paid_at: 'desc' },
+                take: 1,
+                select: {
+                  amount_paid_cents: true,
+                  period_start: true,
+                  period_end: true,
+                  currency: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.coachSubscription.count({ where: { status: 'trialing' } }),
+    ]);
+
+    // Per-currency MRR accumulator
+    const byCurrency: Record<string, number> = {};
+    let activePayingCount = 0;
+    let coachesWithNoInvoice = 0;
+
+    for (const sub of activeSubs) {
+      const inv = sub.coach.invoices[0];
+
+      if (!inv || inv.amount_paid_cents <= 0) {
+        coachesWithNoInvoice++;
+        continue;
+      }
+
+      const currency = (inv.currency ?? 'usd').toLowerCase();
+      let monthlyAmountCents: number;
+
+      if (inv.period_start && inv.period_end) {
+        const periodDays =
+          (inv.period_end.getTime() - inv.period_start.getTime()) /
+          (1000 * 60 * 60 * 24);
+
+        if (periodDays >= 300) {
+          // Annual invoice — divide by 12 to get monthly
+          monthlyAmountCents = Math.round(inv.amount_paid_cents / 12);
+        } else if (periodDays >= 28) {
+          // Monthly invoice — normalise to 30.44-day month
+          monthlyAmountCents = Math.round(
+            (inv.amount_paid_cents / periodDays) * 30.44,
+          );
+        } else {
+          // Period too short to normalise safely (same-day, trial conversion, etc.)
+          // Treat the raw amount as a monthly figure to avoid ×30 inflation.
+          monthlyAmountCents = inv.amount_paid_cents;
+        }
+      } else {
+        // No period dates on this invoice — treat as monthly (most common cycle).
+        monthlyAmountCents = inv.amount_paid_cents;
+      }
+
+      byCurrency[currency] = (byCurrency[currency] ?? 0) + monthlyAmountCents;
+      activePayingCount++;
+    }
+
+    const mrrCents = byCurrency['usd'] ?? 0;
+    const arrCents = mrrCents * 12;
+    const arpuCents =
+      activePayingCount > 0 ? Math.round(mrrCents / activePayingCount) : 0;
+
+    return {
+      // USD totals (primary currency for the platform)
+      mrr_cents: mrrCents,
+      arr_cents: arrCents,
+      arpu_cents: arpuCents,
+      // Per-currency breakdown for non-USD coaches
+      by_currency: byCurrency,
+      active_paying_coaches: activePayingCount,
+      trialing_coaches: trialingCount,
+      coaches_with_no_invoice: coachesWithNoInvoice,
+      methodology:
+        'MRR includes only coaches with status=active (trialing excluded). ' +
+        'Each coach contributes their most recent paid Invoice, normalised to monthly: ' +
+        'annual invoices (≥300 days) are divided by 12; monthly invoices (28–299 days) ' +
+        'are scaled to 30.44 days; short/missing-period invoices are used as-is. ' +
+        'ARR = MRR × 12. ARPU = MRR ÷ active paying coach count.',
+    };
   }
 
-  // B5 owner-console stub. Same rationale as getMrrArr — churn over a
-  // rolling window requires denominator state that hasn't been backfilled.
-  async getChurn(_opts: { sinceDays?: number } = {}) {
-    return { not_implemented: true };
+  // ---------------------------------------------------------------------------
+  // Churn
+  //
+  // Strategy: identify churned coaches via CoachSubscription rows where
+  // status = 'canceled' AND current_period_end is within the lookback window.
+  //
+  // Why current_period_end, not updated_at:
+  //   - `updated_at` is @updatedAt — any write (even unrelated) refreshes it,
+  //     making old cancellations appear as newly churned.
+  //   - `current_period_end` is set by the customer.subscription.deleted webhook
+  //     to the date Stripe actually ended the subscription. A canceled sub whose
+  //     current_period_end falls within [since, now] definitively churned in
+  //     this window.
+  //   - Coaches who canceled but are still in their grace period
+  //     (current_period_end > now) are NOT counted as churned yet.
+  //
+  // Denominator (cohort size): active + trialing NOW + churned in window.
+  // This is an approximation — a true cohort would require a snapshot of
+  // subscriptions at period_start. The methodology field surfaces this caveat.
+  //
+  // Revenue churn: sum of each churned coach's last paid invoice (normalised
+  // monthly, same rules as getMrrArr) as a fraction of estimated MRR at
+  // period start (current MRR + churned MRR).
+  async getChurn(opts: { sinceDays?: number } = {}) {
+    const sinceDays = opts.sinceDays ?? 30;
+    const now = new Date();
+    const since = new Date(now.getTime() - sinceDays * 24 * 60 * 60 * 1000);
+
+    // Churned in window: canceled subscriptions whose access definitively
+    // ended within [since, now] — i.e. current_period_end is in the window.
+    const churnedSubs = await this.prisma.coachSubscription.findMany({
+      where: {
+        status: 'canceled',
+        current_period_end: { gte: since, lte: now },
+      },
+      select: {
+        coach_id: true,
+        coach: {
+          select: {
+            invoices: {
+              where: { status: 'paid' },
+              orderBy: { paid_at: 'desc' },
+              take: 1,
+              select: {
+                amount_paid_cents: true,
+                period_start: true,
+                period_end: true,
+                currency: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Current active + trialing for denominator approximation
+    const [activeCount, trialingCount] = await Promise.all([
+      this.prisma.coachSubscription.count({ where: { status: 'active' } }),
+      this.prisma.coachSubscription.count({ where: { status: 'trialing' } }),
+    ]);
+
+    const churnedCount = churnedSubs.length;
+    // Denominator: best approximation of cohort at period start
+    const cohortSize = activeCount + trialingCount + churnedCount;
+    const logoChurnRate =
+      cohortSize > 0
+        ? parseFloat(((churnedCount / cohortSize) * 100).toFixed(2))
+        : 0;
+
+    // Revenue lost: apply same normalisation rules as getMrrArr
+    const revenueLostByCurrency: Record<string, number> = {};
+    for (const sub of churnedSubs) {
+      const inv = sub.coach.invoices[0];
+      if (!inv || inv.amount_paid_cents <= 0) continue;
+
+      const currency = (inv.currency ?? 'usd').toLowerCase();
+      let monthlyAmountCents: number;
+
+      if (inv.period_start && inv.period_end) {
+        const periodDays =
+          (inv.period_end.getTime() - inv.period_start.getTime()) /
+          (1000 * 60 * 60 * 24);
+        if (periodDays >= 300) {
+          monthlyAmountCents = Math.round(inv.amount_paid_cents / 12);
+        } else if (periodDays >= 28) {
+          monthlyAmountCents = Math.round(
+            (inv.amount_paid_cents / periodDays) * 30.44,
+          );
+        } else {
+          monthlyAmountCents = inv.amount_paid_cents;
+        }
+      } else {
+        monthlyAmountCents = inv.amount_paid_cents;
+      }
+
+      revenueLostByCurrency[currency] =
+        (revenueLostByCurrency[currency] ?? 0) + monthlyAmountCents;
+    }
+
+    const revenueChurnCents = revenueLostByCurrency['usd'] ?? 0;
+    const { mrr_cents: currentMrrCents } = await this.getMrrArr();
+    const mrrAtPeriodStartCents = currentMrrCents + revenueChurnCents;
+    const revenueChurnRate =
+      mrrAtPeriodStartCents > 0
+        ? parseFloat(
+            ((revenueChurnCents / mrrAtPeriodStartCents) * 100).toFixed(2),
+          )
+        : 0;
+
+    return {
+      window: { since_days: sinceDays, since: since.toISOString() },
+      logo_churn: {
+        churned_coaches: churnedCount,
+        cohort_size: cohortSize,
+        churn_rate_pct: logoChurnRate,
+      },
+      revenue_churn: {
+        lost_mrr_cents: revenueChurnCents,
+        lost_by_currency: revenueLostByCurrency,
+        mrr_at_period_start_cents: mrrAtPeriodStartCents,
+        churn_rate_pct: revenueChurnRate,
+      },
+      methodology:
+        'Churned coaches = subscriptions with status=canceled whose current_period_end ' +
+        'falls within the lookback window (avoids updated_at false positives from unrelated writes). ' +
+        'Coaches still in their cancellation grace period (current_period_end > now) are excluded. ' +
+        'Cohort size = currently active + trialing + churned in window (approximation; a snapshot ' +
+        'table would give a precise period-start denominator). ' +
+        'Revenue churn uses the same invoice normalisation as getMrrArr.',
+    };
   }
 }
