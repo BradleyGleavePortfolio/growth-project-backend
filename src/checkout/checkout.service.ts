@@ -78,13 +78,31 @@ export class CheckoutService {
       });
     }
 
-    const pkg = await this.packages.getById(input.package_id);
-    if (!pkg || !pkg.is_active || pkg.archived_at) {
+    const client = await this.prisma.user.findUnique({
+      where: { id: clientUserId },
+      select: { id: true, email: true, name: true, coach_id: true },
+    });
+    if (!client) {
       throw new NotFoundException({
-        error: 'PACKAGE_NOT_FOUND',
-        message: 'Package not available',
+        error: 'CLIENT_NOT_FOUND',
+        message: 'Client account not found',
       });
     }
+
+    if (!client.coach_id) {
+      throw new BadRequestException({ error: 'COACH_NOT_ASSIGNED', message: 'No coach assigned to this client.' });
+    }
+
+    const packageId = input.package_id;
+    const pkg = await this.prisma.coachPackage.findFirst({
+      where: {
+        id: packageId,
+        coach_id: client.coach_id,
+        is_active: true,
+        archived_at: null,
+      },
+    });
+    if (!pkg) throw new NotFoundException({ error: 'PACKAGE_NOT_FOUND', message: 'Package not found or not available.' });
 
     const coach = await this.prisma.user.findUnique({
       where: { id: pkg.coach_id },
@@ -113,29 +131,6 @@ export class CheckoutService {
         message:
           'The coach has not finished Stripe onboarding. Charges are not yet enabled on their account.',
       });
-    }
-
-    const client = await this.prisma.user.findUnique({
-      where: { id: clientUserId },
-      select: { id: true, email: true, name: true, coach_id: true },
-    });
-    if (!client) {
-      throw new NotFoundException({
-        error: 'CLIENT_NOT_FOUND',
-        message: 'Client account not found',
-      });
-    }
-
-    // Soft check: client must already be assigned to the coach. This
-    // prevents random users from buying packages from coaches they don't
-    // have a relationship with. Owners are allowed regardless.
-    if (client.coach_id && client.coach_id !== coach.id) {
-      // Allow it but log — the client may be switching coaches and the
-      // assignment will update post-purchase. Hard-blocking would break
-      // the marketplace flow.
-      this.logger.log(
-        `client=${client.id} buying from coach=${coach.id} but assigned to coach=${client.coach_id}`,
-      );
     }
 
     const customer = await this.ensureCustomer(client.id, client.email, client.name);
@@ -333,13 +328,31 @@ export class CheckoutService {
       });
     }
 
-    const pkg = await this.packages.getById(input.package_id);
-    if (!pkg || !pkg.is_active || pkg.archived_at) {
+    const client = await this.prisma.user.findUnique({
+      where: { id: clientUserId },
+      select: { id: true, email: true, name: true, coach_id: true },
+    });
+    if (!client) {
       throw new NotFoundException({
-        error: 'PACKAGE_NOT_FOUND',
-        message: 'Package not available',
+        error: 'CLIENT_NOT_FOUND',
+        message: 'Client account not found',
       });
     }
+
+    if (!client.coach_id) {
+      throw new BadRequestException({ error: 'COACH_NOT_ASSIGNED', message: 'No coach assigned to this client.' });
+    }
+
+    const packageId = input.package_id;
+    const pkg = await this.prisma.coachPackage.findFirst({
+      where: {
+        id: packageId,
+        coach_id: client.coach_id,
+        is_active: true,
+        archived_at: null,
+      },
+    });
+    if (!pkg) throw new NotFoundException({ error: 'PACKAGE_NOT_FOUND', message: 'Package not found or not available.' });
 
     const coach = await this.prisma.user.findUnique({
       where: { id: pkg.coach_id },
@@ -368,23 +381,6 @@ export class CheckoutService {
         message:
           'The coach has not finished Stripe onboarding. Charges are not yet enabled on their account.',
       });
-    }
-
-    const client = await this.prisma.user.findUnique({
-      where: { id: clientUserId },
-      select: { id: true, email: true, name: true, coach_id: true },
-    });
-    if (!client) {
-      throw new NotFoundException({
-        error: 'CLIENT_NOT_FOUND',
-        message: 'Client account not found',
-      });
-    }
-
-    if (client.coach_id && client.coach_id !== coach.id) {
-      this.logger.log(
-        `client=${client.id} buying (payment-intent) from coach=${coach.id} but assigned to coach=${client.coach_id}`,
-      );
     }
 
     const customer = await this.ensureCustomer(client.id, client.email, client.name);

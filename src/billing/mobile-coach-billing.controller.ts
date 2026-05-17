@@ -11,6 +11,7 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
+import { NoActiveSubCoachGuard } from '../common/guards/no-active-sub-coach.guard';
 import { PrismaService } from '../prisma.service';
 import { BillingService } from './billing.service';
 import { StripeApiError, StripeApiService } from './stripe-api.service';
@@ -33,7 +34,7 @@ import { StripeApiError, StripeApiService } from './stripe-api.service';
 //     the phone doesn't pay 24 invoice rows on every app open.
 @ApiTags('billing')
 @Controller('coach/billing')
-@UseGuards(JwtAuthGuard, CoachOrOwnerGuard)
+@UseGuards(JwtAuthGuard, CoachOrOwnerGuard, NoActiveSubCoachGuard)
 export class MobileCoachBillingController {
   constructor(
     private billing: BillingService,

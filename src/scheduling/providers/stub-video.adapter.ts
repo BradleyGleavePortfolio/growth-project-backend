@@ -21,7 +21,7 @@ export class StubVideoAdapter implements VideoProvider {
     return {
       // Intentionally null: no video link is provisioned by the stub.
       // Coaches must attach a manual link via the dedicated endpoint.
-      joinUrl: null as unknown as string,
+      joinUrl: null,
       externalMeetingId: `stub-vid-${input.idempotencyKey}`,
       resolvedProvider: 'stub',
     };

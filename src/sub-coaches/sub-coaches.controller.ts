@@ -24,6 +24,7 @@ import {
   RevokeSubCoachDto,
 } from './sub-coaches.dto';
 import { SubCoachesService } from './sub-coaches.service';
+import { HeadCoachOnlyGuard } from './head-coach-only.guard';
 
 // Phase 8 — Top-level /sub-coaches surface for the mobile coach app.
 //
@@ -72,6 +73,7 @@ export class SubCoachesController {
 
   // POST /sub-coaches/:id/reassign-client — head-coach-only.
   @Post(':id/reassign-client')
+  @UseGuards(JwtAuthGuard, HeadCoachOnlyGuard)
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @HttpCode(HttpStatus.OK)
   async reassign(
@@ -88,6 +90,7 @@ export class SubCoachesController {
 
   // POST /sub-coaches/invites — head-coach-only outbound invite.
   @Post('invites')
+  @UseGuards(JwtAuthGuard, HeadCoachOnlyGuard)
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @HttpCode(HttpStatus.OK)
   async invite(
@@ -124,6 +127,7 @@ export class SubCoachesController {
   // email, alias swap). Generates a fresh token + 14-day expiry on the
   // existing row, optionally rebinding the email.
   @Post('invites/:id/reissue')
+  @UseGuards(JwtAuthGuard, HeadCoachOnlyGuard)
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @HttpCode(HttpStatus.OK)
   async reissueInvite(
@@ -141,6 +145,7 @@ export class SubCoachesController {
   // POST /sub-coaches/:id/revoke — head-coach-only revoke + client
   // reassignment.
   @Post(':id/revoke')
+  @UseGuards(JwtAuthGuard, HeadCoachOnlyGuard)
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @HttpCode(HttpStatus.OK)
   async revoke(

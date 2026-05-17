@@ -13,6 +13,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { NoActiveSubCoachGuard } from '../common/guards/no-active-sub-coach.guard';
 import { UpsertTeamProfileDto } from './team.dto';
 import { TeamService } from './team.service';
 
@@ -61,6 +62,7 @@ export class TeamController {
 
   // GET /coach/team/members/:sub_coach_id/revenue-sharing
   @Get('members/:sub_coach_id/revenue-sharing')
+  @UseGuards(JwtAuthGuard, NoActiveSubCoachGuard)
   async getRevenueSharing(
     @Req() req: AuthedRequest,
     @Param('sub_coach_id') subCoachId: string,
@@ -70,6 +72,7 @@ export class TeamController {
 
   // PATCH /coach/team/members/:sub_coach_id/revenue-sharing
   @Patch('members/:sub_coach_id/revenue-sharing')
+  @UseGuards(JwtAuthGuard, NoActiveSubCoachGuard)
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
   async setRevenueSharing(
     @Req() req: AuthedRequest,

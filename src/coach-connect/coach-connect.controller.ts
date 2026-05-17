@@ -15,6 +15,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { NoActiveSubCoachGuard } from '../common/guards/no-active-sub-coach.guard';
 import { StripeConnectApiError } from '../connect/stripe-connect-api.service';
 import { CoachConnectService } from './coach-connect.service';
 
@@ -27,7 +28,7 @@ import { CoachConnectService } from './coach-connect.service';
 // that gives the mobile app the typed shape it expects.
 @ApiTags('coach-connect')
 @Controller('coach/connect')
-@UseGuards(JwtAuthGuard, CoachGuard)
+@UseGuards(JwtAuthGuard, CoachGuard, NoActiveSubCoachGuard)
 export class CoachConnectController {
   constructor(private readonly svc: CoachConnectService) {}
 

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
 import { JwksVerifierService } from '../auth/jwks.service';
+import { NoActiveSubCoachGuard } from '../common/guards/no-active-sub-coach.guard';
 import { PrismaService } from '../prisma.service';
 import { ConnectModule } from '../connect/connect.module';
 import { CheckoutModule } from '../checkout/checkout.module';
@@ -21,6 +22,7 @@ import { CoachConnectService } from './coach-connect.service';
     JwtAuthGuard,
     CoachGuard,
     JwksVerifierService,
+    NoActiveSubCoachGuard,
   ],
   exports: [CoachConnectService],
 })

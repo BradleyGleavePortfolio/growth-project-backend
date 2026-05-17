@@ -11,6 +11,7 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
+import { NoActiveSubCoachGuard } from '../common/guards/no-active-sub-coach.guard';
 import { PrismaService } from '../prisma.service';
 import { BillingService } from './billing.service';
 import { StripeApiError, StripeApiService } from './stripe-api.service';
@@ -21,7 +22,7 @@ import { StripeApiError, StripeApiService } from './stripe-api.service';
 // state changes.
 @ApiTags('billing')
 @Controller('v1/coach/me')
-@UseGuards(JwtAuthGuard, CoachOrOwnerGuard)
+@UseGuards(JwtAuthGuard, CoachOrOwnerGuard, NoActiveSubCoachGuard)
 export class CoachBillingController {
   constructor(
     private billing: BillingService,

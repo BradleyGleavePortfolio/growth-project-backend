@@ -49,7 +49,7 @@ export interface CreateVideoLinkInput {
 
 export interface VideoLinkResult {
   // The URL the client opens in their browser / app to join.
-  joinUrl: string;
+  joinUrl: string | null;
   // Provider-side meeting id (stub returns a deterministic stub).
   externalMeetingId: string;
   resolvedProvider: 'stub' | 'google_meet' | 'zoom' | 'manual';

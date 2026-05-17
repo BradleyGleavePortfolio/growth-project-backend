@@ -9,6 +9,7 @@ import { SubCoachInviteService } from './sub-coach-invite.service';
 import { SubCoachInvitesPublicController } from './sub-coach-invites-public.controller';
 import { SubCoachesController } from './sub-coaches.controller';
 import { SubCoachesService } from './sub-coaches.service';
+import { HeadCoachOnlyGuard } from './head-coach-only.guard';
 
 // Phase 8 — /sub-coaches mobile surface. Imports TeamModule for
 // counter refresh after a revoke. Reuses the same JwtAuthGuard +
@@ -28,6 +29,7 @@ import { SubCoachesService } from './sub-coaches.service';
     JwtAuthGuard,
     CoachGuard,
     JwksVerifierService,
+    HeadCoachOnlyGuard,
   ],
   exports: [SubCoachesService],
 })

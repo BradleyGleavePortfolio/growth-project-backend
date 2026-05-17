@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { JwksVerifierService } from '../auth/jwks.service';
 import { CheckoutModule } from '../checkout/checkout.module';
+import { NoActiveSubCoachGuard } from '../common/guards/no-active-sub-coach.guard';
 import { ConnectModule } from '../connect/connect.module';
 import { EmailModule } from '../email/email.module';
+import { PrismaService } from '../prisma.service';
 import { BillingService } from './billing.service';
 import { CoachBillingController } from './coach-billing.controller';
 import { MobileCoachBillingController } from './mobile-coach-billing.controller';
@@ -39,6 +41,8 @@ import { SubscriptionGuard } from './subscription.guard';
     SubscriptionGuard,
     JwksVerifierService,
     StripeApiService,
+    PrismaService,
+    NoActiveSubCoachGuard,
   ],
   exports: [BillingService, SubscriptionGuard],
 })

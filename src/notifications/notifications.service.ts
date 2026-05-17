@@ -110,6 +110,7 @@ export class NotificationsService {
         booking_email: false,
         booking_push: true,
         booking_inapp: true,
+        coach_direct_enabled: true,
       };
     }
     return prefs;
@@ -163,6 +164,7 @@ export class NotificationsService {
       booking_email: data.booking_email,
       booking_push: data.booking_push,
       booking_inapp: data.booking_inapp,
+      coach_direct_enabled: data.coach_direct_enabled,
     };
 
     // Strip undefined entries so Prisma does not try to set them to NULL.
@@ -547,6 +549,7 @@ export class NotificationsService {
     if (kind.startsWith('build_week')) return 'build_week';
     if (kind.startsWith('coach_alert')) return 'coach_alert';
     if (kind.startsWith('booking')) return 'booking';
+    if (kind.startsWith('fasting')) return 'fasting';
     if (kind.includes('digest')) return 'digest';
     return 'digest'; // safe default — falls back to digest prefs
   }

@@ -20,6 +20,7 @@ import { CoachGuard } from '../auth/coach.guard';
 import { AssignSubCoachDto } from './team-mode.dto';
 import { TeamModeService } from './team-mode.service';
 import { TeamModeTierResolverService } from './tier-resolver.service';
+import { HeadCoachOnlyGuard } from '../sub-coaches/head-coach-only.guard';
 
 // ADR-0001 §10 Q6 — tier gate.
 //
@@ -58,7 +59,7 @@ export class TeamModeController {
   // Q1, Q2: assign a sub-coach. Pro: paid Stripe seat. Enterprise: free.
   // Q6: Growth blocked with upsell envelope.
   @Post('sub-coaches')
-  @UseGuards(JwtAuthGuard, CoachGuard)
+  @UseGuards(JwtAuthGuard, CoachGuard, HeadCoachOnlyGuard)
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async assignSubCoach(
     @Req() req: AuthedRequest,
