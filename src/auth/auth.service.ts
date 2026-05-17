@@ -766,6 +766,23 @@ export class AuthService {
       });
     }
 
+    // Verify password against Supabase FIRST — a wrong-password caller must
+    // never learn whether a CoachSubscription exists (that reveals billing
+    // state). Only after the caller has proven they own the account do we
+    // check the subscription gate.
+    const supaClient = createClient(
+      process.env.SUPABASE_URL || '',
+      process.env.SUPABASE_ANON_KEY || '',
+      { realtime: { transport: WS as any } },
+    );
+    const { error } = await supaClient.auth.signInWithPassword({
+      email: user.email,
+      password,
+    });
+    if (error) {
+      throw new UnauthorizedException('Password is incorrect. Provide your current password to become a coach.');
+    }
+
     // PAYMENT GATE: require an active (or trialing) CoachSubscription before
     // granting the coach role. Without this check, any client who knows their
     // password can self-promote for free when ALLOW_SELF_SERVICE_BECOME_COACH=true.
@@ -774,6 +791,8 @@ export class AuthService {
     // Statuses 'active' and 'trialing' are the only two that confirm payment
     // or a legitimate trial has started; all other statuses (incomplete, canceled,
     // past_due, paused, or missing row) must block promotion.
+    // NOTE: current_status is safe to return here — the caller has already
+    // proven they own the account via password verification above.
     const coachSub = await this.prisma.coachSubscription.findUnique({
       where: { coach_id: userId },
       select: { status: true },
@@ -787,20 +806,6 @@ export class AuthService {
           'Complete checkout first, then call this endpoint.',
         current_status: coachSub?.status ?? 'none',
       });
-    }
-
-    // Verify password against Supabase before elevating
-    const supaClient = createClient(
-      process.env.SUPABASE_URL || '',
-      process.env.SUPABASE_ANON_KEY || '',
-      { realtime: { transport: WS as any } },
-    );
-    const { error } = await supaClient.auth.signInWithPassword({
-      email: user.email,
-      password,
-    });
-    if (error) {
-      throw new UnauthorizedException('Password is incorrect. Provide your current password to become a coach.');
     }
 
     const updated = await this.prisma.user.update({
