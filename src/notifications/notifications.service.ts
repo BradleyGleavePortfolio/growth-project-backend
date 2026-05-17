@@ -426,9 +426,14 @@ export class NotificationsService {
         sound: 'default',
       };
       const chunks = this.expo.chunkPushNotifications([message]);
+      const tickets: ExpoPushTicket[] = [];
       for (const chunk of chunks) {
-        await this.expo.sendPushNotificationsAsync(chunk);
+        const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
+        tickets.push(...ticketChunk);
       }
+      // Poll receipts so DeviceNotRegistered tokens are cleared for this
+      // user — mirrors the same pattern used in pushToCoach().
+      await this.pollReceipts(tickets, userId);
     } catch (err) {
       this.logger.error(`Push notification failed for user ${userId}`, err);
     }

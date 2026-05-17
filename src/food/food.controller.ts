@@ -45,13 +45,13 @@ export class FoodController {
     return this.foodService.getById(id);
   }
 
-  // Gated to coach + owner + client. Coaches/owners create one-off custom foods
-  // for client meal plans; clients need this for their offline food-log queue
+  // Gated to coach + owner + student. Coaches/owners create one-off custom foods
+  // for client meal plans; students need this for their offline food-log queue
   // (the flush path calls POST /foods to materialise a FoodItem before logging
   // it). Throttled per-user to keep the typo-bots out. See QA P0-F2.
   @Post()
   @UseGuards(RolesGuard)
-  @Roles('coach', 'owner', 'client')
+  @Roles('coach', 'owner', 'student')
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async create(@Body() body: CreateFoodDto) {
     return this.foodService.create(body);

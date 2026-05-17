@@ -154,7 +154,10 @@ export class CheckoutController {
       packageId,
       coachUserId,
     });
-    return { entitlement_active: active };
+    // Compatibility: mobile EntitlementProvider reads `result.active`; legacy
+    // callers read `result.entitlement_active`. Return both during the
+    // transition window so neither side breaks.
+    return { active, entitlement_active: active };
   }
 
   @Get('payment-method')

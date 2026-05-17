@@ -1,5 +1,44 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 
+/**
+ * WHY A CUSTOM HMAC VERIFIER INSTEAD OF stripe.webhooks.constructEvent
+ * -----------------------------------------------------------------------
+ * The Stripe Node SDK's `stripe.webhooks.constructEvent` is perfectly valid
+ * for single-secret deployments, but it does not support verifying against
+ * more than one secret simultaneously. We need that capability for
+ * zero-downtime webhook secret rotation:
+ *
+ *   During a rotation, Stripe continues signing with the OLD secret while
+ *   we also configure the NEW secret. Both `STRIPE_WEBHOOK_SECRET` (the
+ *   current/old secret) and `STRIPE_WEBHOOK_SECRET_NEXT` (the incoming new
+ *   secret) are read from the environment. A signature is accepted if it
+ *   verifies under ANY of the configured secrets, so we can deploy the new
+ *   secret, let Stripe complete the rotation, then remove the old one —
+ *   without any downtime or rejected events.
+ *
+ * ALGORITHM FIDELITY
+ * ------------------
+ * The implementation exactly matches Stripe's documented verification
+ * algorithm (https://docs.stripe.com/webhooks#verify-manually):
+ *
+ *   1. Extract `t` (timestamp) and `v1` (hex-encoded HMAC digest) from the
+ *      `Stripe-Signature` header: "t=<unix_ts>,v1=<hex_sig>[,v0=...]"
+ *   2. Build the signed payload string: "<unix_ts>.<raw_request_body>"
+ *   3. Compute HMAC-SHA256 of the signed payload, keyed by the webhook
+ *      secret.
+ *   4. Compare the expected digest to every `v1` value in the header using
+ *      `timingSafeEqual` (Node crypto) to prevent timing-based side-channel
+ *      attacks.
+ *   5. Reject if the absolute difference between `t` and `now()` exceeds the
+ *      tolerance (default 300 s — Stripe's own default).
+ *
+ * EMPTY-SECRET SAFETY
+ * -------------------
+ * `resolveStripeWebhookSecrets` trims and filters empty strings from env
+ * vars so an unset or blank `STRIPE_WEBHOOK_SECRET_NEXT` cannot accidentally
+ * cause every signature to verify (an empty-string HMAC key is never used).
+ */
+
 // Verifies a Stripe webhook signature header without pulling in the Stripe
 // SDK. Stripe documents the algorithm at https://docs.stripe.com/webhooks#verify-manually
 //
