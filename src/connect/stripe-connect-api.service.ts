@@ -121,8 +121,21 @@ export interface StripeSubscriptionObject {
 export class StripeConnectApiService {
   private readonly logger = new Logger(StripeConnectApiService.name);
 
+  // Timeout for all Stripe API calls. Stripe's p99 is well under 5s;
+  // 10s gives headroom for retries without tying up a Fly worker indefinitely.
+  // Overridable in tests via subclass.
+  protected readonly stripeTimeoutMs = 10_000;
+
   // Overridable in tests via subclass to avoid monkey-patching globalThis.fetch.
-  protected fetchImpl: typeof fetch = (input, init) => fetch(input, init);
+  // Wraps every call with an AbortController so hung Stripe connections never
+  // block a request thread past stripeTimeoutMs.
+  protected fetchImpl: typeof fetch = (input, init) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.stripeTimeoutMs);
+    return fetch(input, { ...init, signal: controller.signal }).finally(() =>
+      clearTimeout(timer),
+    );
+  };
 
   isConfigured(): boolean {
     return !!process.env.STRIPE_SECRET_KEY;
@@ -748,23 +761,31 @@ export class StripeConnectApiService {
     connectedAccountId: string,
   ): Promise<T> {
     const secret = this.requireSecret();
-    const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
-      method: 'GET',
-      headers: {
-        ...this.commonHeaders(secret),
-        'Stripe-Account': connectedAccountId,
-      },
-    });
-    return this.parse<T>(res, path);
+    try {
+      const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
+        method: 'GET',
+        headers: {
+          ...this.commonHeaders(secret),
+          'Stripe-Account': connectedAccountId,
+        },
+      });
+      return this.parse<T>(res, path);
+    } catch (err) {
+      this.handleFetchError(err, path);
+    }
   }
 
   private async delete<T>(path: string): Promise<T> {
     const secret = this.requireSecret();
-    const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
-      method: 'DELETE',
-      headers: this.commonHeaders(secret),
-    });
-    return this.parse<T>(res, path);
+    try {
+      const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
+        method: 'DELETE',
+        headers: this.commonHeaders(secret),
+      });
+      return this.parse<T>(res, path);
+    } catch (err) {
+      this.handleFetchError(err, path);
+    }
   }
 
   private commonHeaders(secret: string): Record<string, string> {
@@ -776,11 +797,15 @@ export class StripeConnectApiService {
 
   private async get<T>(path: string): Promise<T> {
     const secret = this.requireSecret();
-    const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
-      method: 'GET',
-      headers: this.commonHeaders(secret),
-    });
-    return this.parse<T>(res, path);
+    try {
+      const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
+        method: 'GET',
+        headers: this.commonHeaders(secret),
+      });
+      return this.parse<T>(res, path);
+    } catch (err) {
+      this.handleFetchError(err, path);
+    }
   }
 
   private async post<T>(
@@ -794,12 +819,34 @@ export class StripeConnectApiService {
       'Content-Type': 'application/x-www-form-urlencoded',
     };
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
-    const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
-      method: 'POST',
-      headers,
-      body: new URLSearchParams(form).toString(),
-    });
-    return this.parse<T>(res, path);
+    try {
+      const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
+        method: 'POST',
+        headers,
+        body: new URLSearchParams(form).toString(),
+      });
+      return this.parse<T>(res, path);
+    } catch (err) {
+      this.handleFetchError(err, path);
+    }
+  }
+
+  // Map fetch-level AbortError (timeout) to a clean StripeConnectApiError
+  // with status 503 so callers can surface a typed 503 instead of a raw
+  // DOMException bubbling up through NestJS.
+  private handleFetchError(err: unknown, path: string): never {
+    const isAbort =
+      err instanceof Error &&
+      (err.name === 'AbortError' || err.name === 'TimeoutError');
+    if (isAbort) {
+      throw new StripeConnectApiError(
+        `Stripe API timed out after ${this.stripeTimeoutMs}ms on ${path}`,
+        503,
+        'request_timeout',
+        'api_connection_error',
+      );
+    }
+    throw err;
   }
 
   private async parse<T>(res: Response, path: string): Promise<T> {

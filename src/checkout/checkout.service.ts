@@ -396,6 +396,36 @@ export class CheckoutService {
     const dayBucket = new Date().toISOString().slice(0, 10);
     const idempotencyKey = `pi-${client.id}-${pkg.id}-${dayBucket}`;
 
+    // Write the ClientPurchase row in status=pending BEFORE calling Stripe.
+    // This is the outbox pattern: if Stripe succeeds but our DB write fails,
+    // the purchase is still auditable via Stripe metadata + idempotency key.
+    // If the DB write fails here, no money is moved — safe to surface the error.
+    //
+    // stripe_payment_intent_id is left null until Stripe returns the PI id;
+    // the webhook (payment_intent.succeeded) also upserts it, so both paths
+    // converge correctly.
+    let purchase = await this.prisma.clientPurchase.findUnique({
+      where: { idempotency_key: idempotencyKey },
+    });
+    if (!purchase) {
+      purchase = await this.prisma.clientPurchase.create({
+        data: {
+          client_user_id: client.id,
+          coach_user_id: coach.id,
+          package_id: pkg.id,
+          amount_cents: pkg.amount_cents,
+          currency: pkg.currency,
+          billing_type: pkg.billing_type,
+          stripe_checkout_session_id: idempotencyKey, // placeholder until PI id known
+          stripe_customer_id: customer.stripe_customer_id,
+          stripe_destination_account: connectAccount.stripe_account_id,
+          status: 'pending',
+          entitlement_active: false,
+          idempotency_key: idempotencyKey,
+        },
+      });
+    }
+
     const [paymentIntent, ephemeralKey] = await Promise.all([
       this.stripeConnect.createPaymentIntent({
         amount: pkg.amount_cents,
@@ -416,26 +446,11 @@ export class CheckoutService {
       this.stripeConnect.createEphemeralKey(customer.stripe_customer_id),
     ]);
 
-    // Upsert a ClientPurchase row (status=pending). The schema has a
-    // dedicated stripe_payment_intent_id column (String?) for this path.
-    await this.prisma.clientPurchase.upsert({
-      where: { idempotency_key: idempotencyKey },
-      create: {
-        client_user_id: client.id,
-        coach_user_id: coach.id,
-        package_id: pkg.id,
-        amount_cents: pkg.amount_cents,
-        currency: pkg.currency,
-        billing_type: pkg.billing_type,
+    // Stripe returned successfully — patch the real PI id onto the row.
+    await this.prisma.clientPurchase.update({
+      where: { id: purchase.id },
+      data: {
         stripe_checkout_session_id: paymentIntent.id,
-        stripe_payment_intent_id: paymentIntent.id,
-        stripe_customer_id: customer.stripe_customer_id,
-        stripe_destination_account: connectAccount.stripe_account_id,
-        status: 'pending',
-        entitlement_active: false,
-        idempotency_key: idempotencyKey,
-      },
-      update: {
         stripe_payment_intent_id: paymentIntent.id,
       },
     });
@@ -449,18 +464,34 @@ export class CheckoutService {
   }
 
   // List purchases for a client (their own bought packages).
-  async listForClient(clientUserId: string): Promise<ClientPurchase[]> {
+  // Hard cap at 100 rows; cursor-based pagination via `cursor` (purchase id).
+  // Clients rarely have more than a handful of purchases so this is mostly
+  // a safety guard against unbounded growth causing slow queries.
+  async listForClient(
+    clientUserId: string,
+    opts: { cursor?: string; limit?: number } = {},
+  ): Promise<ClientPurchase[]> {
+    const take = Math.min(opts.limit ?? 50, 100);
     return this.prisma.clientPurchase.findMany({
       where: { client_user_id: clientUserId },
       orderBy: { created_at: 'desc' },
+      take,
+      ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
     });
   }
 
   // List purchases on a coach's roster (for revenue / activity views).
-  async listForCoach(coachUserId: string): Promise<ClientPurchase[]> {
+  // Cap at 100 rows per page. Revenue views page through this with a cursor.
+  async listForCoach(
+    coachUserId: string,
+    opts: { cursor?: string; limit?: number } = {},
+  ): Promise<ClientPurchase[]> {
+    const take = Math.min(opts.limit ?? 50, 100);
     return this.prisma.clientPurchase.findMany({
       where: { coach_user_id: coachUserId },
       orderBy: { created_at: 'desc' },
+      take,
+      ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
     });
   }
 
