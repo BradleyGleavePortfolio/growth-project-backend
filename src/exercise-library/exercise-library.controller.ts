@@ -6,6 +6,8 @@
  * Routes:
  *   GET /exercises/search   — paginated search with optional filters
  *   GET /exercises/:id      — single exercise by ExerciseDB id
+ *                             Appends `video_url` from ExerciseVideoFallbackService
+ *                             (YMove HLS preferred, MuscleWiki MP4 fallback, then null)
  */
 
 import {
@@ -19,10 +21,14 @@ import {
 } from '@nestjs/common';
 import { ExerciseLibraryService } from './exercise-library.service';
 import { ExerciseSearchResult, Exercise } from './exercise.entity';
+import { ExerciseVideoFallbackService } from '../exercise-catalog/exercise-video-provider.service';
 
 @Controller('exercises')
 export class ExerciseLibraryController {
-  constructor(private readonly exerciseLibrary: ExerciseLibraryService) {}
+  constructor(
+    private readonly exerciseLibrary: ExerciseLibraryService,
+    private readonly videoFallback: ExerciseVideoFallbackService,
+  ) {}
 
   /**
    * Search the ExerciseDB catalog.
@@ -33,6 +39,10 @@ export class ExerciseLibraryController {
    *   equipment   — filter by equipment (optional)
    *   limit       — page size 1–100 (default 20)
    *   cursor      — opaque pagination cursor from a prior response
+   *
+   * Note: video_url is NOT enriched on list results to keep list
+   * responses fast. Clients fetch /exercises/:id for video-enriched
+   * detail view.
    */
   @Get('search')
   async search(
@@ -45,20 +55,53 @@ export class ExerciseLibraryController {
     if (limit !== undefined && (limit < 1 || limit > 100)) {
       throw new BadRequestException('limit must be between 1 and 100');
     }
-    return this.exerciseLibrary.searchExercises({
+    const result = await this.exerciseLibrary.searchExercises({
       q: q?.trim() || undefined,
       muscleGroup: muscleGroup?.trim() || undefined,
       equipment: equipment?.trim() || undefined,
       limit,
       cursor,
     });
+
+    // Stamp video_url: null on list items — video enrichment only on detail.
+    return {
+      ...result,
+      items: result.items.map((item) => ({
+        ...item,
+        video_url: null,
+        video_provider: null,
+      })),
+    };
   }
 
   /**
    * Retrieve a single exercise by its ExerciseDB catalog id.
+   *
+   * Appends `video_url` from the video provider fallback chain:
+   *   1. YMove (HLS, pre-signed, 3h cache)
+   *   2. MuscleWiki (stable MP4, 24h cache)
+   *   3. null → caller renders gifUrl as fallback
+   *
+   * The lookup is non-blocking: if both providers fail or are
+   * unconfigured, the endpoint still returns the exercise with
+   * `video_url: null`. No 5xx is surfaced to the client.
    */
   @Get(':id')
   async getById(@Param('id') id: string): Promise<Exercise> {
-    return this.exerciseLibrary.getExerciseById(id);
+    // Fetch exercise first (sequential — we need the name to do provider matching).
+    // If the exercise fetch fails, getExerciseById already throws NotFoundException.
+    const exercise = await this.exerciseLibrary.getExerciseById(id);
+
+    // Use the exercise name for provider matching (normalised internally by the
+    // fallback service). The Redis key is exercise-video:<normalised-name>.
+    const video = await this.videoFallback
+      .getVideoUrl(exercise.name)
+      .catch(() => ({ url: null, provider: null }));
+
+    return {
+      ...exercise,
+      video_url: video.url,
+      video_provider: video.provider as 'ymove' | 'musclewiki' | null,
+    };
   }
 }
