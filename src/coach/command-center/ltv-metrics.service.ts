@@ -4,7 +4,7 @@
 //
 // Data sources (real):
 //   ClientPurchase  — billing_type, amount_cents, status, created_at, canceled_at,
-//                     current_period_end, interval, interval_count
+//                     current_period_end
 //   CoachPackage    — amount_cents, interval, interval_count
 //
 // Stubs (clearly marked with TODO):
@@ -75,6 +75,8 @@ export class LtvMetricsService {
 
     // ── Fetch all ClientPurchase rows for this coach ─────────────────────────
     // We pull all non-draft statuses so we can compute historical metrics.
+    // Issue 1 fix: interval and interval_count live on CoachPackage, not
+    // ClientPurchase. Join via the `package` relation.
     const allPurchases = await this.prisma.clientPurchase.findMany({
       where: { coach_user_id: coachUserId },
       select: {
@@ -83,14 +85,19 @@ export class LtvMetricsService {
         amount_cents: true,
         currency: true,
         billing_type: true,
-        interval: true,
-        interval_count: true,
         status: true,
         entitlement_active: true,
         created_at: true,
         canceled_at: true,
         current_period_end: true,
         cancel_at_period_end: true,
+        // Issue 1: join CoachPackage to get interval fields
+        package: {
+          select: {
+            interval: true,
+            interval_count: true,
+          },
+        },
       },
     });
 
@@ -115,9 +122,14 @@ export class LtvMetricsService {
       (p) => p.billing_type === 'recurring' && p.status === 'active',
     );
     const mrrCents = activeRecurring.reduce((sum, p) => {
+      // Issue 1: read interval fields from the joined package
       return (
         sum +
-        toMonthlyAmountCents(p.amount_cents, p.interval, p.interval_count ?? 1)
+        toMonthlyAmountCents(
+          p.amount_cents,
+          p.package.interval,
+          p.package.interval_count ?? 1,
+        )
       );
     }, 0);
 
@@ -133,9 +145,14 @@ export class LtvMetricsService {
         (p.canceled_at === null || p.canceled_at > thirtyDaysAgo),
     );
     const mrr30dAgoCents = recurringActiveThen.reduce((sum, p) => {
+      // Issue 1: read interval fields from the joined package
       return (
         sum +
-        toMonthlyAmountCents(p.amount_cents, p.interval, p.interval_count ?? 1)
+        toMonthlyAmountCents(
+          p.amount_cents,
+          p.package.interval,
+          p.package.interval_count ?? 1,
+        )
       );
     }, 0);
 
@@ -185,37 +202,58 @@ export class LtvMetricsService {
     const estimatedLtvCents = Math.round(rpcmCents * avgLifespanMonths);
 
     // ── Churn Rate (this calendar month) ─────────────────────────────────────
-    // Clients active at start of month = those with a recurring purchase
-    // that was active on startOfMonth.
-    const activeAtStartOfMonth = allPurchases.filter(
-      (p) =>
-        p.billing_type === 'recurring' &&
-        p.created_at < startOfMonth &&
-        (p.canceled_at === null || p.canceled_at >= startOfMonth),
+    // Issue 2 fix: group by client_user_id before counting so a client with
+    // two purchases counts as ONE client, not two.
+    //
+    // Issue 3 fix: only include rows where status is one of (active, trialing)
+    // for the "active at start of month" cohort. Excludes past_due, canceled,
+    // expired, payment_failed rows that were never truly active.
+    const activeStatusesForCohort = new Set(['active', 'trialing']);
+
+    // Clients active at start of month (unique client_user_id).
+    const activeAtStartClientIds = new Set(
+      allPurchases
+        .filter(
+          (p) =>
+            p.billing_type === 'recurring' &&
+            activeStatusesForCohort.has(p.status) && // Issue 3: status filter
+            p.created_at < startOfMonth &&
+            (p.canceled_at === null || p.canceled_at >= startOfMonth),
+        )
+        .map((p) => p.client_user_id), // Issue 2: deduplicate by client
     );
-    const canceledThisMonth = allPurchases.filter(
-      (p) =>
-        p.billing_type === 'recurring' &&
-        p.canceled_at !== null &&
-        (p.canceled_at as Date) >= startOfMonth,
+
+    // Clients who canceled this month (unique client_user_id).
+    const canceledThisMonthClientIds = new Set(
+      allPurchases
+        .filter(
+          (p) =>
+            p.billing_type === 'recurring' &&
+            p.canceled_at !== null &&
+            (p.canceled_at as Date) >= startOfMonth,
+        )
+        .map((p) => p.client_user_id), // Issue 2: deduplicate by client
     );
+
     const churnRatePct =
-      activeAtStartOfMonth.length > 0
+      activeAtStartClientIds.size > 0
         ? parseFloat(
             (
-              (canceledThisMonth.length / activeAtStartOfMonth.length) *
+              (canceledThisMonthClientIds.size / activeAtStartClientIds.size) *
               100
             ).toFixed(1),
           )
         : 0;
 
     // ── Net Revenue Retention ─────────────────────────────────────────────────
-    // TODO: True NRR requires tracking MRR changes (upgrades, downgrades) per
-    // cohort. Until upgrade/downgrade events are modeled in ClientPurchase
-    // (a plan_change event table), we approximate NRR as:
-    //   NRR ≈ (1 - monthly_churn_rate) × 100
-    // This underestimates NRR for coaches with expansion revenue (upsells).
-    const nrrPct = parseFloat(
+    // Issue 4 fix: rename internal variable to grossRetentionPct and add
+    // honest comments. The field name net_revenue_retention_pct is preserved
+    // for API compatibility; nrr_is_stub=true signals the frontend.
+    //
+    // STUB: gross_logo_retention approximation (1 - churn_rate).
+    // True NRR requires expansion/contraction MRR data not yet available.
+    // Will be accurate once upgrade/downgrade events are tracked.
+    const grossRetentionPct = parseFloat(
       Math.max(0, 100 - churnRatePct).toFixed(1),
     );
 
@@ -261,7 +299,10 @@ export class LtvMetricsService {
     dto.estimated_ltv_label = formatMoney(estimatedLtvCents, currency);
 
     dto.churn_rate_pct = churnRatePct;
-    dto.net_revenue_retention_pct = nrrPct;
+    // Issue 4: field name kept for API compat; gross retention approximation
+    dto.net_revenue_retention_pct = grossRetentionPct;
+    // Issue 4: signal to frontend that this is a stub, not true NRR
+    dto.nrr_is_stub = true;
 
     dto.projected_annual_revenue_cents = projectedAnnualCents;
     dto.projected_annual_revenue_label = formatMoney(projectedAnnualCents, currency);
@@ -307,11 +348,17 @@ export class LtvMetricsService {
   /**
    * Compute consecutive months of zero churn going backwards from last month.
    * Current month is excluded (may not be complete).
+   *
+   * Issue 5 fix: before crediting a month as "zero churn", verify that at
+   * least one client existed at the START of that month (created_at <=
+   * monthStart). Months before the coach had any clients are skipped entirely
+   * (neither counted forward nor backward in the streak).
    */
   private computeZeroChurnStreak(
     purchases: Array<{
       billing_type: string;
       canceled_at: Date | null;
+      created_at: Date;
     }>,
     now: Date,
   ): number {
@@ -320,6 +367,20 @@ export class LtvMetricsService {
     for (let offset = 1; offset <= 24; offset++) {
       const monthStart = new Date(now.getFullYear(), now.getMonth() - offset, 1);
       const monthEnd = new Date(now.getFullYear(), now.getMonth() - offset + 1, 1);
+
+      // Issue 5: check that at least one recurring client existed at the
+      // start of this month (created_at <= monthStart).
+      const hadClientsAtStart = purchases.some(
+        (p) =>
+          p.billing_type === 'recurring' &&
+          p.created_at <= monthStart,
+      );
+
+      if (!hadClientsAtStart) {
+        // No clients existed yet — skip this month entirely (don't count it
+        // in either direction) and stop the streak walk.
+        break;
+      }
 
       const canceledThatMonth = purchases.some(
         (p) =>
@@ -331,23 +392,7 @@ export class LtvMetricsService {
 
       if (canceledThatMonth) break;
 
-      // Only count months where there was at least 1 active recurring client
-      // (a streak of zero-churn on zero clients is meaningless).
-      const hadActiveClients = purchases.some(
-        (p) =>
-          p.billing_type === 'recurring' &&
-          p.canceled_at !== null
-            ? (p.canceled_at as Date) >= monthEnd
-            : true,
-      );
-
-      if (hadActiveClients) {
-        streak++;
-      } else {
-        // No clients that month — don't extend streak, don't break it.
-        // Just stop counting.
-        break;
-      }
+      streak++;
     }
     return streak;
   }
@@ -368,8 +413,7 @@ export class LtvMetricsService {
     purchases: Array<{
       billing_type: string;
       amount_cents: number;
-      interval: string | null;
-      interval_count: number | null;
+      package: { interval: string | null; interval_count: number };
       status: string;
       entitlement_active: boolean;
       client_user_id: string;

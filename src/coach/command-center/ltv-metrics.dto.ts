@@ -110,14 +110,22 @@ export class LtvMetricsResponseDto {
   @ApiProperty({
     description:
       'Net Revenue Retention as a percentage (0–200+). ' +
-      'Formula: (MRR from 30 days ago\'s cohort, after upgrades/downgrades/churn) / ' +
-      '(MRR from 30 days ago\'s cohort) × 100. ' +
-      '>100 means expansion revenue (clients upgrading) outpaces churn. ' +
-      'STUB: Currently approximated as (1 - churn_rate_pct/100) × 100 until ' +
-      'upgrade/downgrade tracking lands (see TODO in LtvMetricsService).',
+      'STUB: gross_logo_retention approximation (1 - churn_rate). ' +
+      'True NRR requires expansion/contraction MRR data not yet available. ' +
+      'Will be accurate once upgrade/downgrade events are tracked. ' +
+      'See nrr_is_stub flag.',
     example: 91.7,
   })
   net_revenue_retention_pct!: number;
+
+  @ApiProperty({
+    description:
+      'True when net_revenue_retention_pct is a gross-logo-retention stub ' +
+      '(1 - churn_rate), not true Net Revenue Retention. ' +
+      'Frontend should display a disclaimer when this is true.',
+    example: true,
+  })
+  nrr_is_stub!: boolean;
 
   // ─── Projections ───────────────────────────────────────────────────────────
 
