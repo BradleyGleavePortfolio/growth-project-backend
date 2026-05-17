@@ -766,6 +766,29 @@ export class AuthService {
       });
     }
 
+    // PAYMENT GATE: require an active (or trialing) CoachSubscription before
+    // granting the coach role. Without this check, any client who knows their
+    // password can self-promote for free when ALLOW_SELF_SERVICE_BECOME_COACH=true.
+    // A CoachSubscription row is only created after Stripe checkout completes
+    // (via OWNER /v1/admin/coaches/:id/start-subscription or webhook mirror).
+    // Statuses 'active' and 'trialing' are the only two that confirm payment
+    // or a legitimate trial has started; all other statuses (incomplete, canceled,
+    // past_due, paused, or missing row) must block promotion.
+    const coachSub = await this.prisma.coachSubscription.findUnique({
+      where: { coach_id: userId },
+      select: { status: true },
+    });
+    const PAID_STATUSES = new Set(['active', 'trialing']);
+    if (!coachSub || !PAID_STATUSES.has(coachSub.status)) {
+      throw new ForbiddenException({
+        error: 'coach_subscription_required',
+        message:
+          'A paid coach subscription is required before self-promotion. ' +
+          'Complete checkout first, then call this endpoint.',
+        current_status: coachSub?.status ?? 'none',
+      });
+    }
+
     // Verify password against Supabase before elevating
     const supaClient = createClient(
       process.env.SUPABASE_URL || '',
