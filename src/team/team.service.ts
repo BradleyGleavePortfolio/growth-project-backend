@@ -8,6 +8,7 @@ import {
 import { randomBytes } from 'node:crypto';
 import type { TeamProfile, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { FeePolicyService } from '../connect/fees/fee-policy.service';
 
 // Phase 8 Team Profile service.
 //
@@ -52,7 +53,10 @@ export interface TeamProfileView {
 export class TeamService {
   private readonly logger = new Logger(TeamService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly feePolicy: FeePolicyService,
+  ) {}
 
   // GET /coach/team — return the calling head coach's profile or 404.
   async getProfile(headCoachId: string): Promise<TeamProfileView> {
@@ -204,6 +208,68 @@ export class TeamService {
       })),
     ];
     return result;
+  }
+
+  // ── Revenue sharing toggle ──────────────────────────────────────────
+  //
+  // Controls whether a sub-coach's sales trigger the 5% head-coach split.
+  // Implemented via the FeePolicy override row for the sub-coach:
+  //   enabled=true  → head_coach_split_bps=null (default 500 bps = 5%)
+  //   enabled=false → head_coach_split_bps=0 (no split)
+
+  // GET /coach/team/members/:sub_coach_id/revenue-sharing
+  async getRevenueSharing(
+    headCoachId: string,
+    subCoachId: string,
+  ): Promise<{ revenue_sharing_enabled: boolean }> {
+    await this.assertSubCoachRelationship(headCoachId, subCoachId);
+
+    const override = await this.prisma.feePolicy.findUnique({
+      where: { coach_id: subCoachId },
+      select: { head_coach_split_bps: true },
+    });
+
+    // No row OR null bps → default 5% split is active → enabled
+    const enabled =
+      !override || override.head_coach_split_bps === null || override.head_coach_split_bps !== 0;
+    return { revenue_sharing_enabled: enabled };
+  }
+
+  // PATCH /coach/team/members/:sub_coach_id/revenue-sharing
+  async setRevenueSharing(
+    headCoachId: string,
+    subCoachId: string,
+    enabled: boolean,
+  ): Promise<{ revenue_sharing_enabled: boolean }> {
+    await this.assertSubCoachRelationship(headCoachId, subCoachId);
+
+    // enabled=true  → clear override (null falls back to default 5%)
+    // enabled=false → hard-zero the split
+    await this.feePolicy.upsertOverride(subCoachId, {
+      head_coach_split_bps: enabled ? null : 0,
+    });
+
+    return { revenue_sharing_enabled: enabled };
+  }
+
+  private async assertSubCoachRelationship(
+    headCoachId: string,
+    subCoachId: string,
+  ): Promise<void> {
+    const assignment = await this.prisma.teamSubCoachAssignment.findFirst({
+      where: {
+        head_coach_id: headCoachId,
+        sub_coach_id: subCoachId,
+        archived_at: null,
+      },
+      select: { id: true },
+    });
+    if (!assignment) {
+      throw new NotFoundException({
+        error: 'SUB_COACH_NOT_FOUND',
+        message: 'No active sub-coach assignment found for the given IDs',
+      });
+    }
   }
 
   // ── helpers ───────────────────────────────────────────────────────

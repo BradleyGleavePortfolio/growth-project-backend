@@ -80,7 +80,7 @@ function buildPrisma(overrides: Partial<MockPrisma> = {}): MockPrisma {
 describe('TeamService.getProfile', () => {
   it('throws NotFoundException with typed kind when no profile exists', async () => {
     const prisma = buildPrisma();
-    const svc = new TeamService(prisma as never);
+    const svc = new TeamService(prisma as never, null as never);
     await expect(svc.getProfile('head-1')).rejects.toThrow(NotFoundException);
     try {
       await svc.getProfile('head-1');
@@ -113,7 +113,7 @@ describe('TeamService.getProfile', () => {
         count: jest.fn(async () => 5),
       },
     });
-    const svc = new TeamService(prisma as never);
+    const svc = new TeamService(prisma as never, null as never);
     const view = await svc.getProfile('head-1');
     expect(view.business_name).toBe('Acme Fitness');
     expect(view.team_code).toBe('GP-TEAM-AAAA');
@@ -126,7 +126,7 @@ describe('TeamService.getProfile', () => {
 describe('TeamService.upsertProfile', () => {
   it('rejects empty business_name with BadRequestException', async () => {
     const prisma = buildPrisma();
-    const svc = new TeamService(prisma as never);
+    const svc = new TeamService(prisma as never, null as never);
     await expect(
       svc.upsertProfile('head-1', { business_name: '   ' }),
     ).rejects.toThrow(BadRequestException);
@@ -134,7 +134,7 @@ describe('TeamService.upsertProfile', () => {
 
   it('generates a unique team_code on first create', async () => {
     const prisma = buildPrisma();
-    const svc = new TeamService(prisma as never);
+    const svc = new TeamService(prisma as never, null as never);
     const result = await svc.upsertProfile('head-1', {
       business_name: 'Acme Fitness',
     });
@@ -165,7 +165,7 @@ describe('TeamService.upsertProfile', () => {
         update: jest.fn(),
       },
     });
-    const svc = new TeamService(prisma as never);
+    const svc = new TeamService(prisma as never, null as never);
     const result = await svc.upsertProfile('head-1', {
       business_name: 'New Name',
     });
@@ -213,7 +213,7 @@ describe('TeamService.listMembers', () => {
         ]),
       },
     });
-    const svc = new TeamService(prisma as never);
+    const svc = new TeamService(prisma as never, null as never);
     const members = await svc.listMembers('head-1');
     expect(members).toHaveLength(3);
     expect(members[0].role).toBe('head_coach');
@@ -227,7 +227,7 @@ describe('TeamService.listMembers', () => {
 
   it('returns just the head coach when there are no sub-coaches', async () => {
     const prisma = buildPrisma();
-    const svc = new TeamService(prisma as never);
+    const svc = new TeamService(prisma as never, null as never);
     const members = await svc.listMembers('head-1');
     expect(members).toHaveLength(1);
     expect(members[0].role).toBe('head_coach');
@@ -240,7 +240,7 @@ describe('TeamService.listMembers', () => {
         findUnique: jest.fn(async () => null),
       },
     });
-    const svc = new TeamService(prisma as never);
+    const svc = new TeamService(prisma as never, null as never);
     await expect(svc.listMembers('ghost')).rejects.toThrow(NotFoundException);
   });
 });

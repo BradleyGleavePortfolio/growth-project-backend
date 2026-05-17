@@ -40,6 +40,18 @@ export class CheckoutController {
     }
   }
 
+  @Post('payment-intent')
+  async createPaymentIntent(
+    @Request() req: AuthedRequest,
+    @Body() body: { package_id: string },
+  ) {
+    try {
+      return await this.checkout.createPaymentIntentForClient(req.user.id, body);
+    } catch (err) {
+      throw this.mapStripeError(err);
+    }
+  }
+
   @Get('purchases')
   async listPurchases(@Request() req: AuthedRequest) {
     const rows = await this.checkout.listForClient(req.user.id);

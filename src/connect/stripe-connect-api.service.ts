@@ -83,6 +83,18 @@ export interface StripePriceObject {
   [k: string]: unknown;
 }
 
+export interface StripePaymentIntentObject {
+  id: string;
+  client_secret: string;
+  [k: string]: unknown;
+}
+
+export interface StripeEphemeralKeyObject {
+  id: string;
+  secret: string;
+  [k: string]: unknown;
+}
+
 export interface StripeCheckoutSessionObject {
   id: string;
   url: string;
@@ -409,6 +421,55 @@ export class StripeConnectApiService {
       form,
       args.idempotencyKey,
     );
+  }
+
+  // Phase 7 — Payment Sheet (in-app checkout). Creates a PaymentIntent
+  // directly on the platform account with destination charges so the
+  // mobile Payment Sheet can complete without a browser redirect.
+  async createPaymentIntent(params: {
+    amount: number;
+    currency: string;
+    customer: string;
+    applicationFeeAmount: number;
+    transferDestination: string;
+    metadata: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<StripePaymentIntentObject> {
+    const form: Record<string, string> = {
+      amount: String(params.amount),
+      currency: params.currency,
+      customer: params.customer,
+      application_fee_amount: String(params.applicationFeeAmount),
+      'transfer_data[destination]': params.transferDestination,
+    };
+    for (const [k, v] of Object.entries(params.metadata)) {
+      form[`metadata[${k}]`] = v;
+    }
+    return this.post<StripePaymentIntentObject>(
+      '/payment_intents',
+      form,
+      params.idempotencyKey,
+    );
+  }
+
+  // Phase 7 — create an EphemeralKey scoped to a customer so the mobile
+  // Payment Sheet can read saved payment methods without a full server call.
+  // The Stripe-Version header must match the SDK version used on the client.
+  async createEphemeralKey(customerId: string): Promise<{ secret: string }> {
+    const secret = this.requireSecret();
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${secret}`,
+      'Stripe-Version': '2024-09-30.acacia',
+      'Content-Type': 'application/x-www-form-urlencoded',
+    };
+    const body = new URLSearchParams({ customer: customerId }).toString();
+    const res = await this.fetchImpl(`${STRIPE_API_BASE}/ephemeral_keys`, {
+      method: 'POST',
+      headers,
+      body,
+    });
+    const parsed = await this.parse<StripeEphemeralKeyObject>(res, '/ephemeral_keys');
+    return { secret: parsed.secret };
   }
 
   async retrieveCheckoutSession(

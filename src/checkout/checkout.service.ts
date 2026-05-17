@@ -313,6 +313,141 @@ export class CheckoutService {
     };
   }
 
+  // Phase 7 — Payment Sheet: mint a PaymentIntent + EphemeralKey so the
+  // mobile client can complete a payment without a browser redirect.
+  async createPaymentIntentForClient(
+    clientUserId: string,
+    input: { package_id: string },
+  ): Promise<{
+    client_secret: string;
+    ephemeral_key: string;
+    customer_id: string;
+    publishable_key: string;
+  }> {
+    this.assertReady();
+
+    if (!input?.package_id) {
+      throw new BadRequestException({
+        error: 'PACKAGE_ID_REQUIRED',
+        message: 'package_id is required',
+      });
+    }
+
+    const pkg = await this.packages.getById(input.package_id);
+    if (!pkg || !pkg.is_active || pkg.archived_at) {
+      throw new NotFoundException({
+        error: 'PACKAGE_NOT_FOUND',
+        message: 'Package not available',
+      });
+    }
+
+    const coach = await this.prisma.user.findUnique({
+      where: { id: pkg.coach_id },
+      select: { id: true, email: true, name: true },
+    });
+    if (!coach) {
+      throw new NotFoundException({
+        error: 'COACH_NOT_FOUND',
+        message: 'Coach for this package no longer exists',
+      });
+    }
+
+    const connectAccount = await this.prisma.connectAccount.findUnique({
+      where: { coach_user_id: pkg.coach_id },
+    });
+    if (!connectAccount) {
+      throw new ConflictException({
+        error: 'COACH_NOT_CONNECTED',
+        message:
+          'The coach has not connected a Stripe account yet. Ask them to complete Stripe Connect onboarding.',
+      });
+    }
+    if (!connectAccount.charges_enabled || connectAccount.deauthorized_at) {
+      throw new ConflictException({
+        error: 'COACH_NOT_PAYOUT_READY',
+        message:
+          'The coach has not finished Stripe onboarding. Charges are not yet enabled on their account.',
+      });
+    }
+
+    const client = await this.prisma.user.findUnique({
+      where: { id: clientUserId },
+      select: { id: true, email: true, name: true, coach_id: true },
+    });
+    if (!client) {
+      throw new NotFoundException({
+        error: 'CLIENT_NOT_FOUND',
+        message: 'Client account not found',
+      });
+    }
+
+    if (client.coach_id && client.coach_id !== coach.id) {
+      this.logger.log(
+        `client=${client.id} buying (payment-intent) from coach=${coach.id} but assigned to coach=${client.coach_id}`,
+      );
+    }
+
+    const customer = await this.ensureCustomer(client.id, client.email, client.name);
+
+    const plan = await this.feePolicy.planFor(coach.id, pkg.amount_cents);
+    const applicationFeeForStripe =
+      plan.application_fee_cents + plan.head_coach_split_cents;
+
+    const dayBucket = new Date().toISOString().slice(0, 10);
+    const idempotencyKey = `pi-${client.id}-${pkg.id}-${dayBucket}`;
+
+    const [paymentIntent, ephemeralKey] = await Promise.all([
+      this.stripeConnect.createPaymentIntent({
+        amount: pkg.amount_cents,
+        currency: pkg.currency,
+        customer: customer.stripe_customer_id,
+        applicationFeeAmount: applicationFeeForStripe,
+        transferDestination: connectAccount.stripe_account_id,
+        metadata: {
+          tgp_client_user_id: client.id,
+          tgp_coach_user_id: coach.id,
+          tgp_package_id: pkg.id,
+          tgp_platform_fee_cents: String(plan.application_fee_cents),
+          tgp_head_coach_split_cents: String(plan.head_coach_split_cents),
+          tgp_head_coach_user_id: plan.head_coach_id ?? '',
+        },
+        idempotencyKey,
+      }),
+      this.stripeConnect.createEphemeralKey(customer.stripe_customer_id),
+    ]);
+
+    // Upsert a ClientPurchase row (status=pending). The schema has a
+    // dedicated stripe_payment_intent_id column (String?) for this path.
+    await this.prisma.clientPurchase.upsert({
+      where: { idempotency_key: idempotencyKey },
+      create: {
+        client_user_id: client.id,
+        coach_user_id: coach.id,
+        package_id: pkg.id,
+        amount_cents: pkg.amount_cents,
+        currency: pkg.currency,
+        billing_type: pkg.billing_type,
+        stripe_checkout_session_id: paymentIntent.id,
+        stripe_payment_intent_id: paymentIntent.id,
+        stripe_customer_id: customer.stripe_customer_id,
+        stripe_destination_account: connectAccount.stripe_account_id,
+        status: 'pending',
+        entitlement_active: false,
+        idempotency_key: idempotencyKey,
+      },
+      update: {
+        stripe_payment_intent_id: paymentIntent.id,
+      },
+    });
+
+    return {
+      client_secret: paymentIntent.client_secret,
+      ephemeral_key: ephemeralKey.secret,
+      customer_id: customer.stripe_customer_id,
+      publishable_key: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
+    };
+  }
+
   // List purchases for a client (their own bought packages).
   async listForClient(clientUserId: string): Promise<ClientPurchase[]> {
     return this.prisma.clientPurchase.findMany({
