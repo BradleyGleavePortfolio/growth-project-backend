@@ -162,7 +162,6 @@ describe('LtvMetricsService', () => {
 
     it('computes churn correctly when one client canceled this month', async () => {
       const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       const midMonth = new Date(now.getFullYear(), now.getMonth(), 10);
       const twoMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1);
 
@@ -170,25 +169,23 @@ describe('LtvMetricsService', () => {
         // Active at start of month, still active
         makePurchase({ client_user_id: 'c1', status: 'active', created_at: twoMonthsAgo, canceled_at: null }),
         makePurchase({ client_user_id: 'c2', status: 'active', created_at: twoMonthsAgo, canceled_at: null }),
-        // Active at start of month, canceled mid-month
+        // Active at start of month, canceled mid-month — status is now 'canceled'
+        // but temporal logic counts them in the denominator.
         makePurchase({ client_user_id: 'c3', status: 'canceled', entitlement_active: false, created_at: twoMonthsAgo, canceled_at: midMonth }),
       ]);
       const result = await service.getMetrics('coach-1');
-      // Issue 2: c1, c2 active at start (2 unique clients with status=active),
-      // c3 has status=canceled so it does NOT appear in activeAtStartClientIds.
+      // PR #223: temporal logic — c3 was active at start of month (created
+      // twoMonthsAgo, canceled_at >= startOfMonth), so activeAtStart = {c1, c2, c3}.
       // canceledThisMonthClientIds = {c3} (1 unique client).
-      // churn = 1 canceled / 2 active-at-start = 50%.
-      // Note: c3 was not in the activeAtStartClientIds cohort because its
-      // status is 'canceled' (Issue 3 filter). If we want 33.3% we need
-      // c3 to have status='active' at query time with canceled_at set
-      // (which is how Stripe webhooks work — status transitions on cancel).
-      // This test mirrors 2 active-at-start clients (c1, c2) → 50% churn.
-      expect(result.churn_rate_pct).toBe(50);
+      // churn = 1 canceled / 3 active-at-start = 33.3%.
+      expect(result.churn_rate_pct).toBe(33.3);
     });
 
     it('counts a client with two purchases as one churned client', async () => {
       // Issue 2 regression: two purchase rows for the same client should
       // count as ONE cancellation, not two.
+      // PR #223: temporal logic means c2 (canceled mid-month, created before
+      // month) is also counted in the denominator.
       const now = new Date();
       const midMonth = new Date(now.getFullYear(), now.getMonth(), 10);
       const twoMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1);
@@ -202,10 +199,69 @@ describe('LtvMetricsService', () => {
         makePurchase({ client_user_id: 'c2', status: 'canceled', entitlement_active: false, created_at: twoMonthsAgo, canceled_at: midMonth }),
       ]);
       const result = await service.getMetrics('coach-1');
-      // activeAtStart: {c1} (c2 is canceled), canceledThisMonth: {c2}
-      // churn = 1/1 = 100%. Without the dedup fix it would be 2/2 = 100% too,
-      // but the fix also prevents 2/2 if denominator is wrong.
+      // PR #223: activeAtStart = {c1, c2} (both created before month; c2
+      // canceled mid-month so canceled_at >= startOfMonth, still counts).
+      // canceledThisMonth = {c2} (1 unique client).
+      // churn = 1/2 = 50%. Dedup ensures two purchase rows for c2 still = 1.
+      expect(result.churn_rate_pct).toBe(50);
+    });
+
+    it('client active at start of month who cancels mid-month is counted in denominator', async () => {
+      // PR #223 regression test: the sole active client cancels mid-month.
+      // Old (status-based) logic: denominator=0 → churn=0%.
+      // New (temporal) logic: denominator=1 → churn=100%.
+      const now = new Date();
+      const midMonth = new Date(now.getFullYear(), now.getMonth(), 15);
+      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({
+          client_user_id: 'c1',
+          billing_type: 'recurring',
+          status: 'canceled',
+          entitlement_active: false,
+          created_at: lastMonth,   // existed before this month
+          canceled_at: midMonth,   // canceled during this month
+        }),
+      ]);
+      const result = await service.getMetrics('coach-1');
+      // c1 was active at start of month (created before month, canceled_at >= startOfMonth).
+      // activeAtStart = {c1}, canceledThisMonth = {c1}.
+      // churn = 1/1 = 100%, not 0%.
       expect(result.churn_rate_pct).toBe(100);
+    });
+
+    it('1 of 2 clients churns mid-month produces 50% churn rate', async () => {
+      // PR #223: with 2 clients active at start and 1 canceling mid-month,
+      // churn should be 50%.
+      const now = new Date();
+      const midMonth = new Date(now.getFullYear(), now.getMonth(), 15);
+      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        // c1 stays active
+        makePurchase({
+          client_user_id: 'c1',
+          billing_type: 'recurring',
+          status: 'active',
+          entitlement_active: true,
+          created_at: lastMonth,
+          canceled_at: null,
+        }),
+        // c2 cancels mid-month — status is now 'canceled'
+        makePurchase({
+          client_user_id: 'c2',
+          billing_type: 'recurring',
+          status: 'canceled',
+          entitlement_active: false,
+          created_at: lastMonth,
+          canceled_at: midMonth,
+        }),
+      ]);
+      const result = await service.getMetrics('coach-1');
+      // activeAtStart = {c1, c2}, canceledThisMonth = {c2}.
+      // churn = 1/2 = 50%.
+      expect(result.churn_rate_pct).toBe(50);
     });
   });
 

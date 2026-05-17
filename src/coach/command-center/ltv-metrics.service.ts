@@ -205,23 +205,28 @@ export class LtvMetricsService {
     // Issue 2 fix: group by client_user_id before counting so a client with
     // two purchases counts as ONE client, not two.
     //
-    // Issue 3 fix: only include rows where status is one of (active, trialing)
-    // for the "active at start of month" cohort. Excludes past_due, canceled,
-    // expired, payment_failed rows that were never truly active.
-    const activeStatusesForCohort = new Set(['active', 'trialing']);
+    // PR #223 fix: use temporal logic instead of current status to determine
+    // "active at start of month". A client who cancels mid-month has
+    // status='canceled' by query time, but WAS active at the start of the month.
+    // Using status here causes the denominator to exclude them, producing wrong
+    // churn (0% when the only client churns, or inflated % otherwise).
 
     // Clients active at start of month (unique client_user_id).
-    const activeAtStartClientIds = new Set(
-      allPurchases
-        .filter(
-          (p) =>
-            p.billing_type === 'recurring' &&
-            activeStatusesForCohort.has(p.status) && // Issue 3: status filter
-            p.created_at < startOfMonth &&
-            (p.canceled_at === null || p.canceled_at >= startOfMonth),
-        )
-        .map((p) => p.client_user_id), // Issue 2: deduplicate by client
-    );
+    // A client was active at start of month if:
+    //   - billing_type = 'recurring'
+    //   - created_at < startOfMonth (existed before month started)
+    //   - canceled_at IS NULL (still active) OR canceled_at >= startOfMonth
+    //     (canceled during this month — was active at the start)
+    const activeAtStartClientIds = new Set<string>();
+    for (const p of allPurchases) {
+      if (p.billing_type !== 'recurring') continue;
+      const createdBeforeMonth = p.created_at < startOfMonth;
+      const notCanceledBeforeMonth =
+        p.canceled_at === null || p.canceled_at >= startOfMonth;
+      if (createdBeforeMonth && notCanceledBeforeMonth) {
+        activeAtStartClientIds.add(p.client_user_id);
+      }
+    }
 
     // Clients who canceled this month (unique client_user_id).
     const canceledThisMonthClientIds = new Set(
