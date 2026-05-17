@@ -766,7 +766,10 @@ export class AuthService {
       });
     }
 
-    // Verify password against Supabase before elevating
+    // Verify password against Supabase FIRST — a wrong-password caller must
+    // never learn whether a CoachSubscription exists (that reveals billing
+    // state). Only after the caller has proven they own the account do we
+    // check the subscription gate.
     const supaClient = createClient(
       process.env.SUPABASE_URL || '',
       process.env.SUPABASE_ANON_KEY || '',
@@ -778,6 +781,31 @@ export class AuthService {
     });
     if (error) {
       throw new UnauthorizedException('Password is incorrect. Provide your current password to become a coach.');
+    }
+
+    // PAYMENT GATE: require an active (or trialing) CoachSubscription before
+    // granting the coach role. Without this check, any client who knows their
+    // password can self-promote for free when ALLOW_SELF_SERVICE_BECOME_COACH=true.
+    // A CoachSubscription row is only created after Stripe checkout completes
+    // (via OWNER /v1/admin/coaches/:id/start-subscription or webhook mirror).
+    // Statuses 'active' and 'trialing' are the only two that confirm payment
+    // or a legitimate trial has started; all other statuses (incomplete, canceled,
+    // past_due, paused, or missing row) must block promotion.
+    // NOTE: current_status is safe to return here — the caller has already
+    // proven they own the account via password verification above.
+    const coachSub = await this.prisma.coachSubscription.findUnique({
+      where: { coach_id: userId },
+      select: { status: true },
+    });
+    const PAID_STATUSES = new Set(['active', 'trialing']);
+    if (!coachSub || !PAID_STATUSES.has(coachSub.status)) {
+      throw new ForbiddenException({
+        error: 'coach_subscription_required',
+        message:
+          'A paid coach subscription is required before self-promotion. ' +
+          'Complete checkout first, then call this endpoint.',
+        current_status: coachSub?.status ?? 'none',
+      });
     }
 
     const updated = await this.prisma.user.update({
