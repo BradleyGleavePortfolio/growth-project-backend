@@ -113,6 +113,7 @@ export class BillingService {
         // CheckoutWebhookHandlerService (no SaaS-coach-subscription path).
         case 'checkout.session.completed':
         case 'checkout.session.expired':
+        case 'payment_intent.succeeded':
         case 'payment_intent.payment_failed':
           // Already dispatched above; nothing more to do.
           break;

@@ -105,4 +105,19 @@ export class MetricsService {
       },
     };
   }
+
+  // B5 owner-console stub. The MRR/ARR calc requires resolving each
+  // active CoachSubscription's price interval and currency to a normalized
+  // monthly figure; that pipeline hasn't shipped yet. Return a
+  // not_implemented marker so the owner console can render an honest empty
+  // state instead of fabricating a number.
+  async getMrrArr() {
+    return { not_implemented: true };
+  }
+
+  // B5 owner-console stub. Same rationale as getMrrArr — churn over a
+  // rolling window requires denominator state that hasn't been backfilled.
+  async getChurn(_opts: { sinceDays?: number } = {}) {
+    return { not_implemented: true };
+  }
 }
