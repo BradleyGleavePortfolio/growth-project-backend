@@ -17,6 +17,9 @@ import { PracticeTypeService } from './practice-type/practice-type.service';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AdminModule } from '../admin/admin.module';
+// LTV metrics suite — Coach Command Center revenue dashboard
+import { LtvMetricsController } from './command-center/ltv-metrics.controller';
+import { LtvMetricsService } from './command-center/ltv-metrics.service';
 
 // PrismaService provided globally via PrismaModule.
 //
@@ -45,6 +48,10 @@ import { AdminModule } from '../admin/admin.module';
 // CoachAlertsService, CoachEffectivenessService, and CoachOnboardingService are
 // exported so AdminModule (admin endpoints) and PtmModule (PTM-recompute →
 // alert hook) can inject them.
+//
+// LTV metrics addition:
+//   * LtvMetricsService — computes the LTV metrics suite from ClientPurchase data
+//   * LtvMetricsController — exposes GET /coach/command-center/ltv-metrics
 @Module({
   imports: [AuthModule, NotificationsModule, forwardRef(() => AdminModule)],
   controllers: [
@@ -54,6 +61,8 @@ import { AdminModule } from '../admin/admin.module';
     // Stage 3
     CrossPillarController,
     PracticeTypeController,
+    // LTV metrics
+    LtvMetricsController,
   ],
   providers: [
     CoachService,
@@ -65,6 +74,8 @@ import { AdminModule } from '../admin/admin.module';
     CrossPillarService,
     CrossPillarPracticeGuard,
     PracticeTypeService,
+    // LTV metrics
+    LtvMetricsService,
   ],
   exports: [
     CoachEffectivenessService,
