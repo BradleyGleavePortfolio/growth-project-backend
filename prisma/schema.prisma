@@ -3264,12 +3264,21 @@ model ExerciseCatalogItem {
   // resolve the upload back to the catalog row when the asset is born.
   mux_upload_id       String?                 @unique
 
+  // Third-party video provider enrichment (YMove / MuscleWiki).
+  // Populated by scripts/enrich-exercise-catalog-videos.ts.
+  // video_url stores a stable MuscleWiki MP4 CDN URL or a YMove slug
+  // sentinel (prefix: "ymove:") — never the expiring signed URL.
+  // video_provider is 'ymove' | 'musclewiki' | null.
+  video_url        String?
+  video_provider   String?
+
   created_at          DateTime                @default(now())
   updated_at          DateTime                @updatedAt
 
   @@index([category])
   @@index([primary_muscle])
   @@index([mux_asset_id])
+  @@index([video_provider])
 }
 
 enum ExerciseVideoStatus {

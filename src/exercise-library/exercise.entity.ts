@@ -33,15 +33,17 @@ export interface Exercise {
    * Video URL sourced from YMove (HLS, expires 48h) or MuscleWiki (stable MP4).
    * null when no video provider has a match for this exercise — callers should
    * display gifUrl as the fallback in that case.
+   * Optional so existing ExerciseDB responses and seed catalog objects don't
+   * need to supply these fields.
    *
    * Provider precedence: YMove (HLS) → MuscleWiki (MP4) → null
    */
-  video_url: string | null;
+  video_url?: string | null;
   /**
    * Which video provider supplied `video_url`.
-   * null when video_url is null.
+   * null when video_url is null. Optional to match video_url.
    */
-  video_provider: 'ymove' | 'musclewiki' | null;
+  video_provider?: 'ymove' | 'musclewiki' | null;
 }
 
 /** Paginated search result returned to callers. */

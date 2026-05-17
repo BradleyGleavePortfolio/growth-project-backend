@@ -21,7 +21,7 @@ import {
 } from '@nestjs/common';
 import { ExerciseLibraryService } from './exercise-library.service';
 import { ExerciseSearchResult, Exercise } from './exercise.entity';
-import { ExerciseVideoFallbackService } from './exercise-video-provider.service';
+import { ExerciseVideoFallbackService } from '../exercise-catalog/exercise-video-provider.service';
 
 @Controller('exercises')
 export class ExerciseLibraryController {
@@ -88,20 +88,15 @@ export class ExerciseLibraryController {
    */
   @Get(':id')
   async getById(@Param('id') id: string): Promise<Exercise> {
-    const [exercise, videoResult] = await Promise.all([
-      this.exerciseLibrary.getExerciseById(id),
-      this.videoFallback.getVideoUrl(id).catch(() => ({ url: null, provider: null })),
-    ]);
+    // Fetch exercise first (sequential — we need the name to do provider matching).
+    // If the exercise fetch fails, getExerciseById already throws NotFoundException.
+    const exercise = await this.exerciseLibrary.getExerciseById(id);
 
-    // We use the exercise name for provider matching, not the id. If the
-    // exercise fetch fails, getExerciseById already throws NotFoundException.
-    // Fetch the video again using the resolved name when id != name.
-    let video = videoResult;
-    if (!video.url && exercise.name) {
-      video = await this.videoFallback
-        .getVideoUrl(exercise.name)
-        .catch(() => ({ url: null, provider: null }));
-    }
+    // Use the exercise name for provider matching (normalised internally by the
+    // fallback service). The Redis key is exercise-video:<normalised-name>.
+    const video = await this.videoFallback
+      .getVideoUrl(exercise.name)
+      .catch(() => ({ url: null, provider: null }));
 
     return {
       ...exercise,
