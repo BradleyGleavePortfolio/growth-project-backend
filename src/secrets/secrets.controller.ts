@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { ServiceTokenGuard } from '../auth/service-token.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import type { AuthedRequest } from '../auth/auth-request';
@@ -30,7 +31,7 @@ import { RecordRotationDto } from './secrets.dto';
  */
 @ApiTags('admin')
 @Controller('admin/secrets')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, ServiceTokenGuard, RolesGuard)
 @Roles('owner')
 export class SecretsController {
   constructor(private readonly secrets: SecretsService) {}

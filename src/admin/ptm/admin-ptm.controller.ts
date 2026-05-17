@@ -31,6 +31,7 @@ import {
 } from '@nestjs/swagger';
 import type { AuditableRequest, AuthedRequest } from '../../auth/auth-request';
 import { JwtAuthGuard } from '../../auth/auth.guard';
+import { ServiceTokenGuard } from '../../auth/service-token.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AdminPtmService } from './admin-ptm.service';
@@ -42,7 +43,7 @@ import {
 
 @ApiTags('admin-ptm')
 @Controller('admin')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, ServiceTokenGuard, RolesGuard)
 @Roles('owner')
 export class AdminPtmController {
   constructor(private readonly ptmAdmin: AdminPtmService) {}

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
@@ -302,7 +302,24 @@ export class CoachService {
     };
   }
 
+  // Ownership check helper: throws ForbiddenException if the client is
+  // not currently assigned to the given coach. Used by postGuidelines and
+  // getGuidelines to prevent cross-coach data access.
+  private async assertCoachOwnsClient(coachId: string, clientId: string): Promise<void> {
+    const client = await this.prisma.user.findFirst({
+      where: {
+        id: clientId,
+        coach_id: coachId,
+        role: 'student',
+        deleted_at: null,
+      },
+      select: { id: true },
+    });
+    if (!client) throw new ForbiddenException('Client is not assigned to this coach');
+  }
+
   async postGuidelines(coachId: string, clientId: string, guidelines: string) {
+    await this.assertCoachOwnsClient(coachId, clientId);
     return this.prisma.coachGuideline.upsert({
       where: {
         CoachGuideline_coach_client_key: { coach_id: coachId, client_id: clientId },
@@ -312,19 +329,22 @@ export class CoachService {
     });
   }
 
-  async getGuidelines(coachOrClientId: string, clientId?: string) {
+  async getGuidelines(coachId: string, clientId?: string) {
     if (clientId) {
+      await this.assertCoachOwnsClient(coachId, clientId);
       return this.prisma.coachGuideline.findUnique({
         where: {
           CoachGuideline_coach_client_key: {
-            coach_id: coachOrClientId,
+            coach_id: coachId,
             client_id: clientId,
           },
         },
       });
     }
+    // Client-facing route: return guidelines where this user is the client.
+    // No coach scope needed here — the caller IS the client.
     return this.prisma.coachGuideline.findFirst({
-      where: { client_id: coachOrClientId },
+      where: { client_id: coachId },
       orderBy: { updated_at: 'desc' },
     });
   }

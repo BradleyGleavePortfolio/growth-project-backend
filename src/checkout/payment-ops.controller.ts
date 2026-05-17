@@ -15,6 +15,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { ServiceTokenGuard } from '../auth/service-token.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
@@ -44,7 +45,7 @@ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 // dunning state (no cross-coach data leakage).
 @ApiTags('admin-payments')
 @Controller('v1/admin/payments')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, ServiceTokenGuard, RolesGuard)
 @Roles('owner')
 export class AdminPaymentOpsController {
   constructor(

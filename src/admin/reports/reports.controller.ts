@@ -10,6 +10,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/auth.guard';
+import { ServiceTokenGuard } from '../../auth/service-token.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ReportsService } from './reports.service';
@@ -39,7 +40,7 @@ const ALLOWED_SCORECARD_FORMATS = new Set(['json', 'csv', 'pdf']);
 
 @ApiTags('admin-reports')
 @Controller('admin/reports')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, ServiceTokenGuard, RolesGuard)
 @Roles('owner')
 export class ReportsController {
   constructor(

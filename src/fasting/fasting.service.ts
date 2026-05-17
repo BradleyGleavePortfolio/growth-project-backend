@@ -1,4 +1,5 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
 import { StartFastDto } from './fasting.dto';
@@ -18,9 +19,17 @@ export class FastingService {
     });
     if (active) throw new BadRequestException('A fast is already in progress');
 
-    const created = await this.prisma.fastingWindow.create({
-      data: { user_id: userId, start_time: new Date(), protocol: data.protocol, notes: data.notes },
-    });
+    let created;
+    try {
+      created = await this.prisma.fastingWindow.create({
+        data: { user_id: userId, start_time: new Date(), protocol: data.protocol, notes: data.notes },
+      });
+    } catch (err) {
+      if (err instanceof PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException({ error: 'FAST_ALREADY_ACTIVE', message: 'A fasting window is already active.' });
+      }
+      throw err;
+    }
     // M2 — bust AI context cache so next chat sees the active fast.
     this.aiContext.invalidateForUser(userId);
     return created;

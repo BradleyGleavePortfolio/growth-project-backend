@@ -300,10 +300,45 @@ export class SchedulingSessionLifecycleService {
     if (end.getTime() <= start.getTime()) {
       throw new BadRequestException('end_at must be after start_at');
     }
-    const updated = await this.prisma.coachingSession.update({
-      where: { id: sessionId },
-      data: { start_at: start, end_at: end },
-    });
+    const updated = await this.prisma
+      .$transaction(
+        async (tx) => {
+          const overlap = await tx.coachingSession.findFirst({
+            where: {
+              id: { not: sessionId },
+              coach_id: existing.coach_id,
+              status: { in: ['requested', 'scheduled'] },
+              start_at: { lt: end },
+              end_at: { gt: start },
+            },
+            select: { id: true },
+          });
+          if (overlap) {
+            throw new ConflictException({
+              error: 'SLOT_TAKEN',
+              message: 'Time slot is not available.',
+            });
+          }
+          return tx.coachingSession.update({
+            where: { id: sessionId },
+            data: { start_at: start, end_at: end },
+          });
+        },
+        { isolationLevel: 'Serializable' },
+      )
+      .catch((err) => {
+        if (
+          err &&
+          typeof err === 'object' &&
+          (err as { code?: string }).code === 'P2034'
+        ) {
+          throw new ConflictException({
+            error: 'SLOT_TAKEN',
+            message: 'Time slot is not available.',
+          });
+        }
+        throw err;
+      });
     await this.audit.write({
       action: AuditAction.SESSION_RESCHEDULED,
       actorId: actor.id,

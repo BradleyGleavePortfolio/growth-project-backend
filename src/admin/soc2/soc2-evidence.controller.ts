@@ -1,6 +1,7 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/auth.guard';
+import { ServiceTokenGuard } from '../../auth/service-token.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Soc2EvidenceService } from './soc2-evidence.service';
@@ -18,7 +19,7 @@ import { Soc2EvidenceService } from './soc2-evidence.service';
 // Docs: docs/soc2/controls/evidence-collection.md
 @ApiTags('admin-soc2')
 @Controller('admin/soc2')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, ServiceTokenGuard, RolesGuard)
 @Roles('owner')
 export class Soc2EvidenceController {
   constructor(private soc2: Soc2EvidenceService) {}

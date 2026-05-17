@@ -584,8 +584,52 @@ export class SubCoachInviteService {
     });
     if (!subCoach) throw new NotFoundException('Sub-coach user not found');
 
+    // Cross-tenant guard: if the sub-coach works for other head coaches,
+    // we cannot safely determine which clients belong to this head coach's
+    // team (no TeamClientAssignment table yet). Archive the assignment only
+    // and leave User.coach_id untouched to avoid stealing another head
+    // coach's clients.
+    const otherHeadCount = await this.prisma.teamSubCoachAssignment.count({
+      where: {
+        sub_coach_id: subCoachId,
+        archived_at: null,
+        head_coach_id: { not: headCoachId },
+      },
+    });
+
+    if (otherHeadCount > 0) {
+      // Cannot safely reassign clients — sub-coach serves multiple heads.
+      // Archive the assignment only; do NOT touch any User.coach_id.
+      await this.prisma.$transaction(async (tx) => {
+        await tx.teamSubCoachAssignment.update({
+          where: { id: assignment.id },
+          data: { archived_at: new Date() },
+        });
+        await tx.teamAuditEvent.create({
+          data: {
+            head_coach_id: headCoachId,
+            actor_user_id: headCoachId,
+            target_client_id: null,
+            event_kind: 'sub_coach_removed',
+            summary: `Sub-coach ${subCoach.name} revoked from your team (clients not reassigned — sub-coach serves multiple head coaches).`,
+            metadata: {
+              sub_coach_id: subCoachId,
+              reassigned_client_count: 0,
+              revoke_reason: payload.reason ?? null,
+              skip_reason: 'multi_head_sub_coach',
+            } as Prisma.InputJsonValue,
+          },
+        });
+      });
+
+      await this.team.refreshCounters(headCoachId);
+
+      return { revoked: true, clients_reassigned: 0, reason: 'multi_head_sub_coach' } as unknown as { ok: true; reassignedClientCount: number };
+    }
+
+    // Safe to reassign — sub-coach only serves this head coach.
     // Find clients currently coached by this sub-coach to bounce back
-    // to the head coach. Scoped to active, non-archived students whose
+    // to the head coach. Scoped to active, non-deleted students whose
     // coach_id is the sub-coach.
     const clientsToReassign = await this.prisma.user.findMany({
       where: {

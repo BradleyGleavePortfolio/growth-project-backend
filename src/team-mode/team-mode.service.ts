@@ -228,14 +228,91 @@ export class TeamModeService {
     });
     if (!subCoach) throw new NotFoundException('Sub-coach user not found');
 
+    // Cross-tenant guard: if the sub-coach works for other head coaches,
+    // we cannot safely determine which clients belong to this head coach's
+    // team (no TeamClientAssignment table yet). Archive the assignment only
+    // and leave User.coach_id untouched to avoid stealing another head
+    // coach's clients.
+    const otherHeadCount = await this.prisma.teamSubCoachAssignment.count({
+      where: {
+        sub_coach_id: subCoachId,
+        archived_at: null,
+        head_coach_id: { not: headCoachId },
+      },
+    });
+
+    if (otherHeadCount > 0) {
+      // Cannot safely reassign clients — sub-coach serves multiple heads.
+      // Archive the assignment and Stripe seat only; do NOT touch User.coach_id.
+      let stripeError: string | null = null;
+      if (
+        assignment.stripe_subscription_item_id &&
+        this.stripeApi.isConfigured()
+      ) {
+        try {
+          await this.stripeApi.deleteSubscriptionItem({
+            subscriptionItemId: assignment.stripe_subscription_item_id,
+            idempotencyKey: `team-mode-seat-remove-${headCoachId}-${subCoachId}-${assignment.id}`,
+          });
+        } catch (err) {
+          stripeError = err instanceof Error ? err.message : 'unknown_error';
+          this.logger.error(
+            `Stripe seat removal failed for assignment=${assignment.id}: ${stripeError}`,
+          );
+        }
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.teamSubCoachAssignment.update({
+          where: { id: assignment.id },
+          data: { archived_at: new Date() },
+        });
+        await tx.teamAuditEvent.create({
+          data: {
+            head_coach_id: headCoachId,
+            actor_user_id: headCoachId,
+            target_client_id: null,
+            event_kind: 'sub_coach_removed',
+            summary: `Sub-coach ${subCoach.name} removed (clients not reassigned — sub-coach serves multiple head coaches).`,
+            metadata: {
+              sub_coach_id: subCoachId,
+              reassigned_client_count: 0,
+              skip_reason: 'multi_head_sub_coach',
+              stripe_error: stripeError,
+            } as Prisma.InputJsonValue,
+          },
+        });
+        if (assignment.stripe_subscription_item_id !== null) {
+          await tx.teamAuditEvent.create({
+            data: {
+              head_coach_id: headCoachId,
+              actor_user_id: headCoachId,
+              target_client_id: null,
+              event_kind: 'staff_seat_removed',
+              summary: `Paid staff seat removed for sub-coach ${subCoach.name}.`,
+              metadata: {
+                sub_coach_id: subCoachId,
+                stripe_subscription_item_id: assignment.stripe_subscription_item_id,
+                stripe_error: stripeError,
+              } as Prisma.InputJsonValue,
+            },
+          });
+        }
+      });
+
+      return {
+        removed: true,
+        reassignedClientCount: 0,
+        stripeSubscriptionItemId: assignment.stripe_subscription_item_id,
+      };
+    }
+
+    // Safe to reassign — sub-coach only serves this head coach.
     // Find clients currently assigned to the sub-coach. The legacy
     // single-coach model uses User.coach_id — that's the field a
     // sub-coach today writes to. Reassignment is therefore a flip of
     // coach_id from sub-coach to head-coach for clients whose
-    // coach_id === subCoachId. We deliberately scope the reassignment
-    // to clients whose existing coach_id is this sub-coach — we are
-    // NOT pulling clients away from a different head coach who also
-    // has this sub-coach (the 2-cap means up to one other).
+    // coach_id === subCoachId.
     const clientsToReassign = await this.prisma.user.findMany({
       where: { coach_id: subCoachId, role: 'student', deleted_at: null },
       select: { id: true },

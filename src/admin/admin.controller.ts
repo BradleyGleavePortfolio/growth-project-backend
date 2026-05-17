@@ -11,6 +11,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { ServiceTokenGuard } from '../auth/service-token.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AdminService } from './admin.service';
@@ -31,7 +32,7 @@ import { BuildWeekService } from '../build-week/build-week.service';
 // student hitting these gets a clean 403, not a leak.
 @ApiTags('admin')
 @Controller('admin')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, ServiceTokenGuard, RolesGuard)
 @Roles('owner')
 export class AdminController {
   constructor(

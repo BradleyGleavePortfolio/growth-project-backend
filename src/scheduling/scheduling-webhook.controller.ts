@@ -1,12 +1,15 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   HttpCode,
   HttpStatus,
   Logger,
   Post,
+  Req,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 
 // Webhook handler stubs for Google / Zoom callbacks.
@@ -43,7 +46,14 @@ export class SchedulingWebhookController {
   @Public()
   @Post('google-calendar')
   @HttpCode(HttpStatus.OK)
-  async googleCalendar(@Body() body: unknown) {
+  async googleCalendar(@Body() body: unknown, @Req() req: Request) {
+    // SECURITY: signature validation must be wired before any state mutation
+    // is added to this handler.
+    const secret = process.env.SCHEDULING_WEBHOOK_SECRET;
+    if (secret) {
+      const provided = req.headers['x-webhook-secret'];
+      if (provided !== secret) throw new ForbiddenException('Invalid webhook secret');
+    }
     this.logger.debug(
       `google-calendar webhook stub received payload (no-op): ${safeStringify(body)}`,
     );
@@ -59,7 +69,14 @@ export class SchedulingWebhookController {
   @Public()
   @Post('zoom')
   @HttpCode(HttpStatus.OK)
-  async zoom(@Body() body: unknown) {
+  async zoom(@Body() body: unknown, @Req() req: Request) {
+    // SECURITY: signature validation must be wired before any state mutation
+    // is added to this handler.
+    const secret = process.env.SCHEDULING_WEBHOOK_SECRET;
+    if (secret) {
+      const provided = req.headers['x-webhook-secret'];
+      if (provided !== secret) throw new ForbiddenException('Invalid webhook secret');
+    }
     this.logger.debug(
       `zoom webhook stub received payload (no-op): ${safeStringify(body)}`,
     );

@@ -7,6 +7,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { ClientPurchase, CoachPackage, ConnectCustomer } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { ConnectModuleState } from '../connect/connect.module-state';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import {
@@ -404,22 +405,33 @@ export class CheckoutService {
       where: { idempotency_key: idempotencyKey },
     });
     if (!purchase) {
-      purchase = await this.prisma.clientPurchase.create({
-        data: {
-          client_user_id: client.id,
-          coach_user_id: coach.id,
-          package_id: pkg.id,
-          amount_cents: pkg.amount_cents,
-          currency: pkg.currency,
-          billing_type: pkg.billing_type,
-          stripe_checkout_session_id: idempotencyKey, // placeholder until PI id known
-          stripe_customer_id: customer.stripe_customer_id,
-          stripe_destination_account: connectAccount.stripe_account_id,
-          status: 'pending',
-          entitlement_active: false,
-          idempotency_key: idempotencyKey,
-        },
-      });
+      try {
+        purchase = await this.prisma.clientPurchase.create({
+          data: {
+            client_user_id: client.id,
+            coach_user_id: coach.id,
+            package_id: pkg.id,
+            amount_cents: pkg.amount_cents,
+            currency: pkg.currency,
+            billing_type: pkg.billing_type,
+            stripe_checkout_session_id: idempotencyKey, // placeholder until PI id known
+            stripe_customer_id: customer.stripe_customer_id,
+            stripe_destination_account: connectAccount.stripe_account_id,
+            status: 'pending',
+            entitlement_active: false,
+            idempotency_key: idempotencyKey,
+          },
+        });
+      } catch (err) {
+        if (err instanceof PrismaClientKnownRequestError && err.code === 'P2002') {
+          purchase = await this.prisma.clientPurchase.findFirst({
+            where: { idempotency_key: idempotencyKey },
+          });
+          if (!purchase) throw err;
+        } else {
+          throw err;
+        }
+      }
     }
 
     const [paymentIntent, ephemeralKey] = await Promise.all([

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Controller,
+  ForbiddenException,
   HttpCode,
   HttpStatus,
   Logger,
@@ -73,15 +74,19 @@ export class GoogleCalendarWebhookController {
     }
 
     // Shared-secret token check. The watch caller sets the token; we
-    // verify it here. When unset on both sides the check is skipped
-    // (dev / preview) so an operator can hand-call the endpoint with
-    // curl while iterating.
+    // verify it here. When the feature is enabled, a webhook token MUST be
+    // configured — fail closed rather than allowing unauthenticated requests
+    // through when the env var is absent.
     const expectedToken = process.env.GOOGLE_CALENDAR_WEBHOOK_TOKEN?.trim();
+    const featureEnabled = process.env.FEATURE_GOOGLE_CALENDAR_SYNC?.toLowerCase() === 'true';
+
+    if (featureEnabled && !expectedToken) {
+      this.logger.error('GOOGLE_CALENDAR_WEBHOOK_TOKEN not set — rejecting webhook');
+      throw new ForbiddenException('Webhook token not configured');
+    }
+
     if (expectedToken && channelToken !== expectedToken) {
-      throw new BadRequestException({
-        error: 'Invalid channel token',
-        code: 'GOOGLE_CALENDAR_WEBHOOK_TOKEN_MISMATCH',
-      });
+      throw new ForbiddenException('Invalid webhook token');
     }
 
     // The very first delivery after we register a watch is always a
