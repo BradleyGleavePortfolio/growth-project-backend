@@ -7,13 +7,8 @@
 
 BEGIN;
 
--- 1) Supabase creates service_role; confirm it has BYPASSRLS for Prisma.
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
-    ALTER ROLE service_role BYPASSRLS;
-  END IF;
-END $$;
+-- 1) service_role already has BYPASSRLS on Supabase managed instances — no ALTER needed.
+-- (ALTER ROLE service_role BYPASSRLS would fail with 42501 on Supabase; it's the default.)
 
 -- Helper returns NULL when the application has not set the session variable.
 -- NULL makes every owner predicate evaluate false instead of raising on missing
@@ -150,13 +145,11 @@ CREATE POLICY "invite_code_coach_owner_access" ON "InviteCode"
   USING ("coach_id" = app.current_user_id() OR "invited_by_user_id" = app.current_user_id())
   WITH CHECK ("coach_id" = app.current_user_id() OR "invited_by_user_id" = app.current_user_id());
 
--- 4) Grants for the bypass role used by Prisma/Supabase service key.
-GRANT USAGE ON SCHEMA public TO service_role;
+-- 4) Grant the app schema helpers to all roles. Public schema grants are
+--    already managed by Supabase; repeating them here causes no harm but
+--    is unnecessary — omitted to avoid permission errors on managed instances.
 GRANT USAGE ON SCHEMA app TO service_role, anon, authenticated;
 GRANT EXECUTE ON FUNCTION app.current_user_id() TO service_role, anon, authenticated;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
-GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO service_role;
 
 COMMIT;
 
