@@ -4,6 +4,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   MaxLength,
@@ -76,6 +77,16 @@ export class CreateMealPlanDto {
   @ValidateNested({ each: true })
   @Type(() => MealPlanItemDto)
   items!: MealPlanItemDto[];
+
+  // Optional structured per-day shape (AI-generated plans only). Not
+  // validated deeply here — the AI payload is already validated by the
+  // prompt validator before reaching the materializer. The global
+  // ValidationPipe whitelist strips any extra fields callers try to sneak
+  // in via the coach CRUD endpoints; this field is only populated
+  // programmatically by the materializer, not by the mobile API surface.
+  @IsOptional()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  days?: any;
 }
 
 // PATCH body — every field optional; the service treats undefined as

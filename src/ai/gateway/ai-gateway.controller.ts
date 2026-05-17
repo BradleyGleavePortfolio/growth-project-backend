@@ -45,6 +45,12 @@ export class AiGatewayController {
     private context: PrivateContextService,
   ) {}
 
+  @Get('status')
+  async getStatus(@Request() req: AuthedRequest) {
+    // Return the gateway provider/capability status
+    return this.gateway.getStatus();
+  }
+
   // 20 calls / hour / user — same envelope as /ai/chat.
   @Post('invoke')
   @Throttle({ default: { ttl: 3600000, limit: 20 } })
@@ -107,11 +113,18 @@ export class AiGatewayController {
   @Get('drafts')
   @Roles('coach', 'owner')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  async listDrafts(@Request() req: AuthedRequest, @Query('limit') limit?: string) {
+  async listDrafts(
+    @Request() req: AuthedRequest,
+    @Query('limit') limit?: string,
+    @Query('clientId') clientId?: string,
+    @Query('status') status?: string,
+  ) {
     const limitNum = limit ? Math.max(1, Math.min(parseInt(limit, 10) || 50, 200)) : 50;
     return this.approvals.listPending({
       tenantCoachId: req.user.role === 'coach' ? req.user.id : undefined,
       limit: limitNum,
+      subjectUserId: clientId,
+      status: status,
     });
   }
 

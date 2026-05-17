@@ -179,6 +179,37 @@ export class CoachAIService {
     return { draftId: draft.id, payload: result.data };
   }
 
+  // List DRAFT-status AIDraft rows for this coach, optionally filtered to a
+  // single client. Used by the mobile "pending AI drafts" inbox and the
+  // post-timeout poll so coaches can recover orphaned drafts when the 120-
+  // second mobile timeout fires before the backend finishes generating.
+  async listDrafts(
+    coachId: string,
+    opts: { clientId?: string; limit?: number } = {},
+  ) {
+    const take = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+    return this.prisma.aIDraft.findMany({
+      where: {
+        coachId,
+        status: 'DRAFT',
+        ...(opts.clientId ? { clientId: opts.clientId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take,
+      select: {
+        id: true,
+        type: true,
+        clientId: true,
+        status: true,
+        modelUsed: true,
+        tokensIn: true,
+        tokensOut: true,
+        costCents: true,
+        createdAt: true,
+      },
+    });
+  }
+
   async getDraft(coachId: string, draftId: string) {
     const draft = await this.prisma.aIDraft.findUnique({ where: { id: draftId } });
     // Collapse missing vs foreign-owned into a single 404. Returning 403 for
@@ -246,34 +277,42 @@ export class CoachAIService {
     if (!payload || !Array.isArray(payload.days) || payload.days.length === 0) {
       throw new BadRequestException('Workout program payload has no days');
     }
-    const firstDay = payload.days[0];
-    // Materialize the FIRST day as a WorkoutPlan + exercises and assign
-    // it to the client. Multi-day programs would need a Program parent
-    // table that this codebase does not yet model; we land the first
-    // session so the coach can iterate and assign subsequent sessions
-    // manually until the program-parent schema lands.
-    const plan = await this.workouts.createPlan(coachId, {
-      name: firstDay.name || `${payload.summary?.slice(0, 60) || 'AI program'} – Day 1`,
-      type: (firstDay.type as WorkoutType) || WorkoutType.strength,
-      duration_estimate_minutes: firstDay.duration_estimate_minutes,
-    });
-    if (firstDay.exercises.length) {
-      await this.workouts.setExercises(
-        coachId,
-        plan.id,
-        firstDay.exercises.map((row) => ({
-          exercise_external_id: row.exercise_external_id,
-          order: row.order,
-          sets: row.sets,
-          reps_or_duration_seconds: row.reps_or_duration_seconds,
-          weight_lbs: row.weight_lbs ?? undefined,
-          rest_seconds: row.rest_seconds ?? undefined,
-          superset_group_id: row.superset_group_id ?? undefined,
-          notes: row.notes ?? undefined,
-        })),
-      );
+    // Materialize ALL days as individual WorkoutPlan records. The first
+    // plan's id is returned as approvedAsId so the AIDraft FK resolves to
+    // a concrete record; all plans are created under the same coach and
+    // are immediately visible in the coach's plan library for assignment.
+    let firstPlanId: string | null = null;
+    for (const day of payload.days) {
+      const dayLabel = `W${day.week}D${day.day}`;
+      const planName = (
+        `${payload.summary?.slice(0, 40) || 'AI program'} – ${day.name || dayLabel}`
+      ).slice(0, 100);
+      const plan = await this.workouts.createPlan(coachId, {
+        name: planName,
+        type: (day.type as WorkoutType) || WorkoutType.strength,
+        duration_estimate_minutes: day.duration_estimate_minutes,
+      });
+      if (day.exercises.length) {
+        await this.workouts.setExercises(
+          coachId,
+          plan.id,
+          day.exercises.map((row) => ({
+            exercise_external_id: row.exercise_external_id,
+            order: row.order,
+            sets: row.sets,
+            reps_or_duration_seconds: row.reps_or_duration_seconds,
+            weight_lbs: row.weight_lbs ?? undefined,
+            rest_seconds: row.rest_seconds ?? undefined,
+            superset_group_id: row.superset_group_id ?? undefined,
+            notes: row.notes ?? undefined,
+          })),
+        );
+      }
+      if (firstPlanId === null) {
+        firstPlanId = plan.id;
+      }
     }
-    return plan.id;
+    return firstPlanId!;
   }
 
   private async materializeMealPlan(
@@ -284,10 +323,8 @@ export class CoachAIService {
     if (!payload || !Array.isArray(payload.days) || payload.days.length === 0) {
       throw new BadRequestException('Meal plan payload has no days');
     }
-    // Flatten the multi-day payload into the existing MealPlan.items shape
-    // (a flat array of {name, calories, protein, notes, time_of_day} rows).
-    // Mobile renders this; the structured per-day shape stays available on
-    // the AIDraft.generatedPayload for the console.
+    // Build the legacy flat items[] so existing clients that read only
+    // MealPlan.items continue to work without a mobile-side change.
     const items = payload.days.flatMap((day) =>
       day.meals.flatMap((meal) =>
         meal.items.map((it) => ({
@@ -299,12 +336,16 @@ export class CoachAIService {
         })),
       ),
     );
+    // Also store the full per-day structure in MealPlan.days so mobile
+    // can render meals grouped by day (H2 fix). The shape mirrors
+    // MealPlanDay from the prompt: { day, meals[{ slot, items[] }], daily_totals }.
     const created = await this.mealPlans.createForClient(coachId, draft.clientId, {
       title: (payload.summary?.slice(0, 60) || 'AI-generated meal plan'),
       notes: payload.coach_notes ?? undefined,
       items: items.length
         ? items
         : [{ name: 'AI meal plan (no items materialized)' }],
+      days: payload.days,
     });
     return created.id;
   }

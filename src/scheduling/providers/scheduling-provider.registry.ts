@@ -79,4 +79,17 @@ export class SchedulingProviderRegistry {
     // than throwing — keeps the call site simple.
     return this.stubVideo;
   }
+
+  // Returns the video providers the product currently supports for
+  // selection by coaches. Until Google Meet and Zoom adapters ship,
+  // only 'manual' link entry is available.
+  getSupportedVideoProviders(): string[] {
+    return ['manual'];
+  }
+
+  // Returns the calendar providers the product currently supports.
+  // Until Google Calendar adapter ships, only 'manual' (stub) is available.
+  getSupportedCalendarProviders(): string[] {
+    return ['manual'];
+  }
 }

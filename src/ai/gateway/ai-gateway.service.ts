@@ -214,6 +214,39 @@ export class AiGatewayService {
       draftMode: !response.enabled || approvalRequired,
     };
   }
+
+  getStatus(): AiGatewayStatus {
+    const ALL_CAPABILITIES = [
+      'coach_brief_draft',
+      'client_path_summary',
+      'check_in_summary',
+      'food_log_explain',
+    ];
+    // Resolve config against the first known capability to get provider/enabled state.
+    const resolved = this.config.resolve(ALL_CAPABILITIES[0]);
+    const provider = resolved.provider;
+    const gatewayEnabled = this.config.resolve('__status_probe__').enabled === true
+      || ALL_CAPABILITIES.some((cap) => this.config.resolve(cap).enabled);
+    const availableCapabilities = ALL_CAPABILITIES.filter(
+      (cap) => this.config.resolve(cap).capabilityAllowed,
+    );
+    const degradedReason: string | null = !gatewayEnabled
+      ? (resolved.reason ?? 'gateway_disabled')
+      : null;
+    return {
+      available: gatewayEnabled,
+      provider,
+      capabilities: availableCapabilities,
+      degraded_reason: degradedReason,
+    };
+  }
+}
+
+export interface AiGatewayStatus {
+  available: boolean;
+  provider: string;
+  capabilities: string[];
+  degraded_reason: string | null;
 }
 
 function sha256(s: string): string {

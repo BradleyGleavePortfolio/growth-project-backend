@@ -46,7 +46,22 @@ interface DownloadTokenClaims extends JWTPayload {
 export class DataExportService {
   private readonly logger = new Logger(DataExportService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {
+    // Startup guard: using the default secret in production is a security risk
+    // because any instance of the app would accept tokens signed by any other
+    // instance (or by an attacker who knows the default). Log loudly but do not
+    // throw — we keep the app running so this feature alone can't cause a full
+    // outage. Rotate the secret immediately if this log appears in production.
+    if (
+      process.env.NODE_ENV === 'production' &&
+      TOKEN_SECRET_STR === 'change-me-in-production-min32chars!'
+    ) {
+      this.logger.error(
+        'DATA_EXPORT_TOKEN_SECRET must be set in production. ' +
+          'Using the default secret is a security risk — set a random 32+ character value.',
+      );
+    }
+  }
 
   // ─── Public API ─────────────────────────────────────────────────────────
 
@@ -118,6 +133,14 @@ export class DataExportService {
       throw new NotFoundException('No data export has been requested yet.');
     }
 
+    // A download is only servable via HTTPS redirect when the file is stored
+    // in a remote location (S3/CDN). Local filesystem files (local://) cannot
+    // be opened by a browser and must not show a download button on the client.
+    const isLocalFile =
+      record.status === DataExportStatus.READY &&
+      typeof record.file_url === 'string' &&
+      record.file_url.startsWith('local://');
+
     return {
       id: record.id,
       status: record.status,
@@ -125,10 +148,13 @@ export class DataExportService {
       completed_at: record.completed_at,
       expires_at: record.expires_at,
       file_size_bytes: record.file_size_bytes,
+      // download_available: false when file is stored locally (S3 not yet configured).
+      // The mobile uses this to show "contact support" instead of a broken download button.
+      download_available: record.status === DataExportStatus.READY && !isLocalFile,
       // Never return the raw file_url — clients receive a short-lived download
-      // token via email and use the /download?token= endpoint.
+      // token and use the /download?token= endpoint.
       download_token:
-        record.status === DataExportStatus.READY
+        record.status === DataExportStatus.READY && !isLocalFile
           ? await this._mintDownloadToken(record.user_id, record.id)
           : null,
     };
@@ -356,7 +382,7 @@ export class DataExportService {
       this._streamAll('mealPlan', {
         OR: [{ coach_id: userId }, { client_id: userId }],
       }),
-      this._streamAll('communityWin', { author_id: userId }),
+      this._streamAll('communityWin', { user_id: userId }),
       this._streamAll('coachGuideline', {
         OR: [{ coach_id: userId }, { client_id: userId }],
       }),
@@ -515,7 +541,8 @@ export class DataExportService {
 
   private async _streamAuditLogs(userId: string): Promise<unknown[]> {
     try {
-      return this._streamAll('auditLog', { target_id: userId });
+      // AuditLog uses target_user_id (FK to User) not target_id (free-form resource id)
+      return this._streamAll('auditLog', { target_user_id: userId });
     } catch {
       return [];
     }
@@ -586,7 +613,11 @@ export class DataExportService {
   }
 
   /**
-   * Log the download URL so it can be used manually in development.
+   * Log that an export is ready — without logging the download token or URL.
+   *
+   * The download token is short-lived and user-bound; logging it would expose
+   * it to anyone with access to the log aggregator. The mobile client polls
+   * /status to retrieve a fresh token via the authenticated API instead.
    *
    * Email delivery is a future enhancement. Install nodemailer and set
    * SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_FROM to enable it.
@@ -595,21 +626,19 @@ export class DataExportService {
   private _logReadyNotification(
     userId: string,
     exportId: string,
-    downloadToken: string,
+    _downloadToken: string, // intentionally unused — never log tokens
     expiresAt: Date,
   ): void {
-    const baseUrl =
-      process.env.PUBLIC_WEB_SIGNUP_URL ?? 'https://app.thegrowthproject.app';
-    const downloadUrl = `${baseUrl}/data-export/download?token=${downloadToken}`;
     const expiryDate = expiresAt.toLocaleDateString('en-GB', {
       day: 'numeric',
       month: 'long',
       year: 'numeric',
     });
 
+    // Log only non-sensitive identifiers. Never log the download token or URL.
     this.logger.log(
-      `[Export ready] user=${userId} export=${exportId} expires=${expiryDate} ` +
-        `url=${downloadUrl}`,
+      `[Export ready] exportId=${exportId} userId=${userId} expires=${expiryDate}. ` +
+        'Client will retrieve a fresh download token via GET /v1/me/data-export/status.',
     );
   }
 

@@ -59,9 +59,21 @@ export interface LeaderboardEntry {
   isRequester: boolean;
 }
 
+export interface LeaderboardViewer {
+  /** Explicit opt-in state read directly from the DB field (show_on_leaderboard).
+   *  Never inferred from list membership. */
+  is_opted_in: boolean;
+  /** The requester's current rank. Null when not opted in. */
+  rank: number | null;
+  /** The requester's current combined score (0–100). Null when not opted in. */
+  score: number | null;
+}
+
 export interface LeaderboardResponse {
   entries: LeaderboardEntry[];
   selfRank: number | null;
+  /** Explicit viewer state — always present, never inferred from entries. */
+  viewer: LeaderboardViewer;
 }
 
 @Injectable()
@@ -86,7 +98,11 @@ export class LeaderboardService {
    */
   async getLeaderboard(requesterId: string): Promise<LeaderboardResponse> {
     if ((process.env.LEADERBOARD_ENABLED ?? 'on').toLowerCase() === 'off') {
-      return { entries: [], selfRank: null };
+      return {
+        entries: [],
+        selfRank: null,
+        viewer: { is_opted_in: false, rank: null, score: null },
+      };
     }
 
     // Resolve the requester's coach so we can scope the roster.
@@ -102,8 +118,15 @@ export class LeaderboardService {
     });
     if (!requester || !requester.coach_id) {
       // No coach assigned — empty board (not an error).
-      return { entries: [], selfRank: null };
+      return {
+        entries: [],
+        selfRank: null,
+        viewer: { is_opted_in: false, rank: null, score: null },
+      };
     }
+
+    // Explicit opt-in state from the DB field — never inferred from list membership.
+    const requesterIsOptedIn = requester.show_on_leaderboard;
 
     // All clients under the same coach.
     const rosterMembers = await this.prisma.user.findMany({
@@ -119,16 +142,24 @@ export class LeaderboardService {
       },
     });
 
-    // Score every opted-in member (includes the requester for rank position).
+    // Score every opted-in member.
+    // The requester is included for rank computation only when opted in.
     const scored: Array<{ userId: string; displayName: string; score: number }> = [];
     for (const member of rosterMembers) {
-      if (!member.show_on_leaderboard && member.id !== requesterId) continue;
+      if (!member.show_on_leaderboard) continue;
       const score = await this.getCachedScore(member.id);
       scored.push({
         userId:      member.id,
         displayName: this.resolveDisplayName(member),
         score,
       });
+    }
+
+    // If the requester is not opted in, compute their score for the viewer
+    // block but do NOT include them in the ranked entries list.
+    let requesterScoreForViewer: number | null = null;
+    if (!requesterIsOptedIn) {
+      requesterScoreForViewer = await this.getCachedScore(requesterId);
     }
 
     // Sort descending by score.
@@ -161,9 +192,20 @@ export class LeaderboardService {
     }
 
     const selfEntry = entries.find((e) => e.isRequester);
+
+    // Build the explicit viewer object from the DB field.
+    const viewer: LeaderboardViewer = {
+      is_opted_in: requesterIsOptedIn,
+      rank:  requesterIsOptedIn ? (selfEntry?.rank ?? null) : null,
+      score: requesterIsOptedIn
+        ? (selfEntry?.combinedScore ?? null)
+        : requesterScoreForViewer,
+    };
+
     return {
       entries,
       selfRank: selfEntry?.rank ?? null,
+      viewer,
     };
   }
 

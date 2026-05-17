@@ -155,6 +155,24 @@ export class InviteCodesController {
     return this.inviteCodes.previewCode(code);
   }
 
+  // ----- C3: public accept-by-token -----------------------------------
+  //
+  // PUBLIC endpoint used by the mobile deep-link / landing page flow.
+  // Accepts a token (= invite code) and returns a structured result so
+  // the client can navigate to signup or show a friendly error — never
+  // a 4xx for a known-invalid code. Throttled to prevent brute-force
+  // enumeration of the 30-bit code space.
+  @Public()
+  @Post('invites/accept/:token')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  async acceptInviteToken(
+    @Param('token') token: string,
+    @Body() _body: Record<string, unknown>,
+  ) {
+    return this.inviteCodes.acceptByToken(token);
+  }
+
   // ----- Phase 1C: attach existing user to a coach via code ----------
   //
   // Used after Google OAuth (the OAuth roundtrip cannot carry the

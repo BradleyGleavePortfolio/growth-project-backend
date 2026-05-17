@@ -53,6 +53,26 @@ import { SchedulingService } from './scheduling.service';
 export class SchedulingController {
   constructor(private readonly scheduling: SchedulingService) {}
 
+  // ---------------- Provider capabilities ----------------
+
+  @ApiOperation({
+    summary: 'List available scheduling provider integrations',
+    description:
+      'Returns the video and calendar providers currently supported for selection. Until real adapters ship, only manual link entry is available.',
+  })
+  @ApiResponse({ status: 200, description: 'Supported providers.' })
+  @Get('providers')
+  getProviders() {
+    // C9: Hard-coded to manual-only. When Google Calendar / Zoom adapters
+    // ship, this should delegate to SchedulingProviderRegistry so the
+    // list stays in sync automatically.
+    return {
+      video: ['manual'],
+      calendar: ['manual'],
+      note: 'Provider integrations are coming soon. Use manual link entry for all sessions.',
+    };
+  }
+
   // ---------------- Session types ----------------
 
   @ApiOperation({ summary: "List a coach's session types" })

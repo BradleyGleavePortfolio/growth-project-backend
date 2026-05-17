@@ -50,6 +50,11 @@ export class LeaderboardController {
    *     isRequester: boolean,
    *   }>,
    *   selfRank: number | null,
+   *   viewer: {
+   *     is_opted_in: boolean,   // explicit DB field (show_on_leaderboard), NOT inferred
+   *     rank: number | null,    // null when not opted in
+   *     score: number | null,   // null when not opted in
+   *   },
    * }
    */
   @Get()

@@ -101,6 +101,18 @@ export class SchedulingService {
     if (actor.role !== 'coach' && actor.role !== 'owner') {
       throw new BadRequestException('Only coaches can create session types');
     }
+    // C9: Only 'stub' and 'manual' are supported until real provider
+    // adapters ship. Reject google_meet / zoom to prevent fake meeting
+    // links from being stored on sessions.
+    const allowedVideoProviders = ['stub', 'manual'];
+    if (
+      dto.default_video_provider &&
+      !allowedVideoProviders.includes(dto.default_video_provider)
+    ) {
+      throw new BadRequestException(
+        'Video provider not yet available. Use manual link entry.',
+      );
+    }
     const coachId = actor.id;
     const row = await this.prisma.sessionType.create({
       data: {
@@ -143,6 +155,16 @@ export class SchedulingService {
     if (!existing) throw new NotFoundException('Session type not found');
     if (existing.coach_id !== actor.id && actor.role !== 'owner') {
       throw new NotFoundException('Session type not found');
+    }
+    // C9: Same provider guard as createSessionType.
+    const allowedVideoProviders = ['stub', 'manual'];
+    if (
+      dto.default_video_provider &&
+      !allowedVideoProviders.includes(dto.default_video_provider)
+    ) {
+      throw new BadRequestException(
+        'Video provider not yet available. Use manual link entry.',
+      );
     }
     const data: Prisma.SessionTypeUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name;

@@ -330,6 +330,16 @@ export class NotificationsService {
     return { updated: result.count };
   }
 
+  /**
+   * Returns the count of unread notifications for the given user.
+   * Used by GET /notifications/unread-count for lightweight badge polling.
+   */
+  async getUnreadCount(userId: string): Promise<number> {
+    return this.prisma.notification.count({
+      where: { user_id: userId, read_at: null },
+    });
+  }
+
   // ── Push delivery (Phase 6B baseline, extended Phase 9) ──────────────────
 
   /**

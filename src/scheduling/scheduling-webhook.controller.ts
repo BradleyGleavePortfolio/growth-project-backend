@@ -11,6 +11,9 @@ import { Public } from '../common/decorators/public.decorator';
 
 // Webhook handler stubs for Google / Zoom callbacks.
 //
+// C9: Webhook handlers will be implemented when real calendar/video
+// integrations ship. Until then all handlers are no-ops.
+//
 // Real handlers will:
 //   - Verify the provider signature on the request (Google's
 //     X-Goog-Channel-Token, Zoom's signature header).

@@ -799,6 +799,99 @@ export class InviteCodesService {
       : { status: res.status };
   }
 
+  // ---- C3: public accept-by-token ----------------------------------------
+  //
+  // Called by POST /invites/accept/:token (public, no auth). The token IS
+  // the invite code (e.g. GP-XXXXXX). Resolves via CoachProfile.invite_code
+  // first (default per-coach link) then falls back to the per-row InviteCode
+  // table, exactly like previewCode() + validate().
+  //
+  // 14-day TTL is applied from created_at when no explicit expires_at is set
+  // (bulk-invite codes always set expires_at; default-link codes never expire
+  // server-side, so we treat them as always valid here).
+  async acceptByToken(token: string): Promise<
+    | { accepted: true; email: string | null; coachName: string | null; redirectTo: 'signup' | 'app_open' }
+    | { accepted: false; reason: 'expired' | 'already_accepted' | 'invalid'; message: string }
+  > {
+    // Input guard — mirrors previewCode().
+    if (
+      !token ||
+      token.length < INVITE_CODE_MIN_LENGTH ||
+      token.length > INVITE_CODE_MAX_LENGTH ||
+      !INVITE_CODE_PATTERN.test(token)
+    ) {
+      return { accepted: false, reason: 'invalid', message: 'Invalid invite code format.' };
+    }
+
+    try {
+      // 1. Try CoachProfile.invite_code (default per-coach link).
+      //    These links don't have a TTL or single-use cap — they are
+      //    always valid as long as the coach's account is active.
+      const profile = await this.prisma.coachProfile.findUnique({
+        where: { invite_code: token },
+        include: { user: { select: { id: true, name: true, role: true } } },
+      });
+      if (profile && profile.user && profile.user.role === 'coach') {
+        if (
+          profile.subscription_status === 'canceled' ||
+          profile.subscription_status === 'paused'
+        ) {
+          return { accepted: false, reason: 'invalid', message: 'This coach is not currently accepting clients.' };
+        }
+        return {
+          accepted: true,
+          email: null,
+          coachName: profile.user.name,
+          redirectTo: 'signup',
+        };
+      }
+
+      // 2. Fall back to per-row InviteCode table.
+      const record = await this.prisma.inviteCode.findUnique({
+        where: { code: token },
+        include: { coach: { select: { id: true, name: true, role: true } } },
+      });
+      if (!record) {
+        return { accepted: false, reason: 'invalid', message: 'Invite code not found.' };
+      }
+      if (record.revoked) {
+        return { accepted: false, reason: 'invalid', message: 'This invite code has been revoked.' };
+      }
+
+      // Apply 14-day TTL from creation when no explicit expires_at is set.
+      const effectiveExpiry = record.expires_at
+        ? record.expires_at
+        : new Date(record.created_at.getTime() + 14 * 24 * 60 * 60 * 1000);
+      if (effectiveExpiry.getTime() <= Date.now()) {
+        return { accepted: false, reason: 'expired', message: 'This invite has expired.' };
+      }
+
+      // max_uses check (single-use codes that are fully consumed are
+      // treated as "already_accepted" from the client's perspective).
+      if (record.max_uses !== null && record.used_count >= record.max_uses) {
+        return { accepted: false, reason: 'already_accepted', message: 'This invite has already been used.' };
+      }
+
+      if (record.coach.role !== 'coach') {
+        return { accepted: false, reason: 'invalid', message: 'This invite code is no longer valid.' };
+      }
+
+      return {
+        accepted: true,
+        email: null,
+        coachName: record.coach.name,
+        redirectTo: 'signup',
+      };
+    } catch (err) {
+      const code_class =
+        err instanceof Prisma.PrismaClientKnownRequestError
+          ? `prisma:${err.code}`
+          : 'unknown';
+      this.logger.error(`acceptByToken failed (${code_class}): ${(err as Error).message}`);
+      return { accepted: false, reason: 'invalid', message: 'Unable to validate invite at this time.' };
+    }
+  }
+
   // Helper: parse a coach's pasted CSV/newline-separated text into
   // {email,name?,note?} rows. Liberal accept: comma- or tab-separated,
   // up to 3 fields per line. Emails are validated as a final pass at

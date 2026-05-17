@@ -43,7 +43,7 @@ export class DataExportController {
       status: record.status,
       created_at: record.created_at,
       message:
-        'Export queued. You will receive an email when your file is ready. This usually takes under 60 seconds.',
+        'Export queued. Your file will be available to download from this screen when ready. This usually takes under 60 seconds.',
     };
   }
 

@@ -77,6 +77,13 @@ export class NotificationsController {
 
   // ── Preferences ───────────────────────────────────────────────────────────
 
+  @Get('unread-count')
+  @ApiOperation({ summary: 'Get unread notification count for badge polling' })
+  async getUnreadCount(@Request() req: AuthedRequest) {
+    const count = await this.notificationsService.getUnreadCount(req.user.id);
+    return { count };
+  }
+
   @Get('preferences')
   @ApiOperation({ summary: 'Get notification channel preferences' })
   async getPreferences(@Request() req: AuthedRequest) {

@@ -897,6 +897,11 @@ model MealPlan {
   title       String
   notes       String?
   items       Json
+  // Structured per-day meal plan. When an AI-generated plan is approved,
+  // this field holds the full days[] from the AI payload so mobile can
+  // render meals by day rather than a flat list. Null for manually-created
+  // plans (legacy shape) — mobile should fall back to items[] in that case.
+  days        Json?
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
   archived_at DateTime?

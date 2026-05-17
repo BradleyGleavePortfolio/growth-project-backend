@@ -31,11 +31,19 @@ export class AiApprovalService {
     private audit: AuditService,
   ) {}
 
-  async listPending(scope: { tenantCoachId?: string; subjectUserId?: string; limit?: number }) {
+  async listPending(scope: { tenantCoachId?: string; subjectUserId?: string; limit?: number; status?: string }) {
     const limit = Math.min(Math.max(scope.limit ?? 50, 1), 200);
+    // Allow filtering by explicit status; fall back to 'pending' when omitted so
+    // existing callers that don't pass a status keep their current behaviour.
+    const VALID_STATUSES = ['pending', 'approved', 'rejected', 'expired'] as const;
+    type ValidStatus = (typeof VALID_STATUSES)[number];
+    const resolvedStatus: ValidStatus =
+      scope.status && (VALID_STATUSES as readonly string[]).includes(scope.status)
+        ? (scope.status as ValidStatus)
+        : 'pending';
     return this.prisma.aiActionDraft.findMany({
       where: {
-        status: 'pending',
+        status: resolvedStatus,
         ...(scope.tenantCoachId ? { tenant_coach_id: scope.tenantCoachId } : {}),
         ...(scope.subjectUserId ? { subject_user_id: scope.subjectUserId } : {}),
       },

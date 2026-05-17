@@ -23,17 +23,25 @@ export class MealPlansService {
   // Coach creates a plan for one of their clients. `items` is stored as JSON
   // exactly as validated — we intentionally don't normalize further so the
   // mobile client can round-trip optional fields that a newer schema adds.
+  // When `days` is provided (AI-generated plans), it is stored alongside
+  // `items` so mobile can render meals grouped by day.
   async createForClient(coachId: string, clientId: string, dto: CreateMealPlanDto) {
     await this.assertClientOfCoach(coachId, clientId);
-    return this.prisma.mealPlan.create({
-      data: {
-        coach_id: coachId,
-        client_id: clientId,
-        title: dto.title,
-        notes: dto.notes ?? null,
-        items: dto.items as unknown as object,
-      },
-    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any = {
+      coach_id: coachId,
+      client_id: clientId,
+      title: dto.title,
+      notes: dto.notes ?? null,
+      items: dto.items as unknown as object,
+    };
+    // H2 fix: persist per-day structure for AI-generated plans. The `days`
+    // column is added by migration 20260605000000_add_meal_plan_days_json;
+    // cast through `any` until `prisma generate` picks up the new field.
+    if (dto.days !== undefined) {
+      data.days = dto.days;
+    }
+    return this.prisma.mealPlan.create({ data });
   }
 
   // Coach's plans for a specific client, newest first, excluding archived.

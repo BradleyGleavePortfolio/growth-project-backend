@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -71,6 +72,19 @@ export class CoachAIController {
     @Body() body: GenerateClientInsightDto,
   ) {
     return this.svc.generateClientInsight(req.user.id, body);
+  }
+
+  // List pending drafts (status=DRAFT) for the coach with optional client filter.
+  // Mobile uses this to surface the "pending AI drafts" inbox and to poll for
+  // drafts that completed after the mobile 120-second axios timeout fired.
+  @Get('drafts')
+  async listDrafts(
+    @Request() req: AuthedRequest,
+    @Query('clientId') clientId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const limitNum = limit ? Math.max(1, Math.min(parseInt(limit, 10) || 50, 200)) : 50;
+    return this.svc.listDrafts(req.user.id, { clientId, limit: limitNum });
   }
 
   @Get('drafts/:draftId')

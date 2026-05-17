@@ -144,11 +144,11 @@ export class CheckoutService {
     const successUrl =
       input.success_url ??
       process.env.STRIPE_CHECKOUT_SUCCESS_URL ??
-      'growthproject://checkout/success?session_id={CHECKOUT_SESSION_ID}';
+      'com.growthproject.app://checkout/success?session_id={CHECKOUT_SESSION_ID}';
     const cancelUrl =
       input.cancel_url ??
       process.env.STRIPE_CHECKOUT_CANCEL_URL ??
-      'growthproject://checkout/cancel';
+      'com.growthproject.app://checkout/cancel';
 
     const dayBucket = new Date().toISOString().slice(0, 10);
     const idempotencyKey = `purchase-${client.id}-${pkg.id}-${dayBucket}`;

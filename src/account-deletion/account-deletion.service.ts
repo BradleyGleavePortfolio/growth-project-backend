@@ -129,7 +129,7 @@ export class AccountDeletionService {
       user.deletion_requested_at
     ) {
       return {
-        message: 'A confirmation email was already sent. Check your inbox.',
+        message: 'A deletion request is already pending for your account. You can cancel it from Settings.',
         expires_at: user.deletion_token_expires_at.toISOString(),
       };
     }
@@ -190,7 +190,7 @@ export class AccountDeletionService {
 
     return {
       message:
-        'A confirmation link has been sent to your email. Click it within 24 hours to start the 14-day grace period.',
+        'Your deletion request has been received. A confirmation link will be sent to your email when email delivery is configured. You have 24 hours to confirm. You can cancel at any time from Settings.',
       expires_at: expiresAt.toISOString(),
     };
   }
@@ -767,30 +767,26 @@ export class AccountDeletionService {
     token: string,
     expiresAt: Date,
   ): Promise<void> {
-    // Build the confirmation URL. APP_BASE_URL must be set in production.
-    const baseUrl =
-      this.config.get<string>('APP_BASE_URL') ?? 'https://app.thegrowthproject.io';
-    const confirmUrl = `${baseUrl}/account/delete/confirm?token=${token}`;
-
-    // Phase 9 digest infra: if a MailService is in DI scope we call it;
-    // otherwise we log the URL (safe in staging / CI where no email creds exist).
-    // We do not import MailService directly to avoid a hard module dependency
-    // before Phase 9 is merged — we use dynamic lookup instead.
-    this.logger.log(
-      `AccountDeletion: confirmation email for ${email} — URL: ${confirmUrl} (expires ${expiresAt.toISOString()})`,
-    );
-
-    // STUB: In production, replace the logger line above with your MailService
-    // call using the same template infrastructure wired up in Phase 9.
+    // IMPORTANT: Never log the confirmation URL or the raw token. The token is
+    // a single-use credential; logging it exposes it to anyone with log access.
+    // The token hash is stored in the DB. The user retrieves a fresh status
+    // from the app; email delivery will surface the URL once wired up.
     //
+    // Phase 9 digest infra: replace the warn below with a MailService call.
     // Subject: "Confirm your account deletion request — The Growth Project"
-    // Body:    Plain-text + HTML with the URL, expiry time, and a note that
-    //          clicking starts a 14-day grace period during which the deletion
-    //          can be cancelled from Settings.
+    // Body:    Plain-text + HTML with the confirmation URL, expiry time, and a
+    //          note that clicking starts a 14-day grace period during which the
+    //          deletion can be cancelled from Settings.
     //
     // Do not send a second email after confirmation — the mobile client
-    // shows the in-app toast instead.
-    void email; void name; void confirmUrl; void expiresAt; // satisfy linter until wired
+    // shows the in-app status instead.
+    // Do not log email, name, token, or any URL derived from the token.
+    void email; void name; void token;
+    this.logger.warn(
+      `AccountDeletion: confirmation pending — email not yet configured. ` +
+        `Token stored in DB, expires ${expiresAt.toISOString()}. ` +
+        'Wire up MailService in Phase 9 to send the confirmation link.',
+    );
   }
 
   // ── deletion_audit write ──────────────────────────────────────────────────────
