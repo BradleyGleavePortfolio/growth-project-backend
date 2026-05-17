@@ -85,8 +85,26 @@ export class LtvMetricsResponseDto {
 
   @ApiProperty({
     description:
+      'True when avg_client_lifespan_months is a stub (fewer than 3 cancellations). ' +
+      'Frontend should display an “estimated” label when this flag is set.',
+    example: true,
+  })
+  lifespan_is_estimate!: boolean;
+
+  @ApiProperty({
+    description:
+      'Human-readable note explaining why the lifespan is estimated. ' +
+      'Only present when lifespan_is_estimate is true.',
+    example: 'Based on industry average (fewer than 3 cancellations recorded)',
+    nullable: true,
+  })
+  lifespan_estimate_note!: string | null;
+
+  @ApiProperty({
+    description:
       'Estimated average client LTV in cents. ' +
-      'Formula: revenue_per_client_month_cents × avg_client_lifespan_months.',
+      'Formula: revenue_per_client_month_cents × avg_client_lifespan_months. ' +
+      'Value is approximate when lifespan_is_estimate is true.',
     example: 150000,
   })
   estimated_ltv_cents!: number;
@@ -177,13 +195,23 @@ export class LtvMetricsResponseDto {
     description:
       'All-time highest RPCM ever recorded for this coach (in cents). ' +
       'STUB: Stored in coach_ltv_peak table (not yet migrated — returns current RPCM ' +
-      'until the peak tracking migration ships). See TODO in LtvMetricsService.',
+      'until the peak tracking migration ships). See TODO in LtvMetricsService. ' +
+      'peak_rpcm_is_estimate signals this to the frontend.',
     example: 22000,
   })
   all_time_peak_rpcm_cents!: number;
 
   @ApiProperty({ description: 'All-time peak RPCM formatted as a currency string.', example: '$220' })
   all_time_peak_rpcm_label!: string;
+
+  @ApiProperty({
+    description:
+      'True when all_time_peak_rpcm_cents is a best-effort estimate rather than a ' +
+      'persisted historical maximum (i.e. the coach_ltv_peak migration has not shipped). ' +
+      'Frontend should suppress the “All-time peak” row or mark it estimated when true.',
+    example: true,
+  })
+  peak_rpcm_is_estimate!: boolean;
 
   @ApiProperty({
     description:

@@ -12,6 +12,10 @@ import {
   AIGuardrails,
   AppPrescribedTargets,
   TodaySummary,
+  FastingSummary,
+  NextSessionSummary,
+  CommunityWinSummary,
+  LeaderboardSummary,
 } from './client-ai-context.types';
 
 // Token-budget knobs. Picked so the assembled context stays well under
@@ -23,7 +27,10 @@ export const CONTEXT_LIMITS = {
   WEIGHT_POINTS: 14,
   HABITS: 8,
   CHECK_INS: 5,
-  GUIDELINES_CHARS: 800,
+  // M15 fix: raised from 800 to 2000 — the previous 800-char cap was
+  // aggressively trimming coach guidelines, causing the AI to miss critical
+  // nutrition/training rules that appeared later in longer guidelines blobs.
+  GUIDELINES_CHARS: 2000,
   COACH_MSG_CHARS: 280,
   BIO_CHARS: 240,
   MEAL_PLAN_ITEMS: 12,
@@ -93,6 +100,13 @@ export class ClientAIContextService {
     return ctx;
   }
 
+  // M2 — Explicit cache invalidation for write-path services.
+  // Called after food log, workout, weight, fasting, check-in, and coach
+  // message events so the next chat sees fresh data without waiting for TTL.
+  invalidateForUser(userId: string): void {
+    this.cache.delete(userId);
+  }
+
   // Test seam — bypasses cache, used by tests asserting on raw output.
   async buildFresh(userId: string): Promise<ClientAIContext> {
     const user = await this.prisma.user.findUnique({
@@ -112,6 +126,7 @@ export class ClientAIContextService {
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - CONTEXT_LIMITS.ADHERENCE_DAYS);
     const fourteenDaysAgo = new Date(today);
     fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - CONTEXT_LIMITS.WEIGHT_POINTS);
+    const sevenDaysAgoFromNow = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     const [
       recentEntries,
@@ -121,9 +136,15 @@ export class ClientAIContextService {
       habits,
       checkIns,
       coachRecord,
-      lastCoachMessage,
+      recentCoachMessages,
       activeGuidelines,
       currentMealPlan,
+      // M1 additions
+      activeFast,
+      lastCompletedFast,
+      nextSession,
+      recentWins,
+      requesterProfile,
     ] = await Promise.all([
       this.prisma.loggedFoodEntry.findMany({
         where: {
@@ -164,12 +185,15 @@ export class ClientAIContextService {
       user.coach_id
         ? this.prisma.user.findUnique({ where: { id: user.coach_id } })
         : Promise.resolve(null),
+      // M14 fix: fetch last 5 messages instead of just the latest one so
+      // the AI has a thread summary rather than a single-message excerpt.
       user.coach_id
-        ? this.prisma.coachMessage.findFirst({
+        ? this.prisma.coachMessage.findMany({
             where: { coach_id: user.coach_id, client_id: userId },
             orderBy: { created_at: 'desc' },
+            take: 5,
           })
-        : Promise.resolve(null),
+        : Promise.resolve([] as Array<{ body: string | null; created_at: Date; sender_id: string | null; coach_id: string | null }>),
       user.coach_id
         ? this.prisma.coachGuideline.findUnique({
             where: {
@@ -186,6 +210,41 @@ export class ClientAIContextService {
             orderBy: { updated_at: 'desc' },
           })
         : Promise.resolve(null),
+      // M1: active fast (end_time IS NULL)
+      this.prisma.fastingWindow.findFirst({
+        where: { user_id: userId, end_time: null },
+        orderBy: { start_time: 'desc' },
+      }),
+      // M1: last completed fast
+      this.prisma.fastingWindow.findFirst({
+        where: { user_id: userId, end_time: { not: null } },
+        orderBy: { end_time: 'desc' },
+      }),
+      // M1: next upcoming coaching session
+      user.coach_id
+        ? this.prisma.coachingSession.findFirst({
+            where: { client_id: userId, start_at: { gte: new Date() } },
+            orderBy: { start_at: 'asc' },
+            select: { start_at: true, title: true, coach_notes_md: true },
+          })
+        : Promise.resolve(null),
+      // M1: last 3 community wins in the past 7 days (roster-scoped)
+      user.coach_id
+        ? this.prisma.communityWin.findMany({
+            where: {
+              coach_id: user.coach_id,
+              created_at: { gte: sevenDaysAgoFromNow },
+            },
+            orderBy: { created_at: 'desc' },
+            take: 3,
+            select: { title: true, created_at: true },
+          })
+        : Promise.resolve([] as Array<{ title: string; created_at: Date }>),
+      // M1: leaderboard opt-in state for this user
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { show_on_leaderboard: true },
+      }),
     ]);
 
     const profile = user.profile;
@@ -250,8 +309,25 @@ export class ClientAIContextService {
         sleep_hours: c.sleep_hours,
         notes: clampStr(c.notes, 200),
       })),
-      coach: this.buildCoachRelationship(coachRecord, lastCoachMessage, activeGuidelines),
+      coach: this.buildCoachRelationship(coachRecord, recentCoachMessages, activeGuidelines),
       current_meal_plan: this.summarizeMealPlan(currentMealPlan),
+      // M1 additions
+      fasting: this.buildFastingSummary(activeFast, lastCompletedFast),
+      next_session: nextSession
+        ? {
+            date: nextSession.start_at.toISOString(),
+            title: nextSession.title,
+            coach_note: clampStr(nextSession.coach_notes_md, 200),
+          }
+        : null,
+      recent_wins: (recentWins ?? []).map<CommunityWinSummary>((w) => ({
+        title: w.title,
+        created_at: w.created_at.toISOString(),
+      })),
+      leaderboard: {
+        opted_in: requesterProfile?.show_on_leaderboard ?? false,
+        rank: null, // rank is expensive to compute on every chat; AI uses opted_in signal only
+      },
       guardrails: this.buildGuardrails(prescribed, !!user.coach_id),
       generated_at: new Date().toISOString(),
     };
@@ -341,7 +417,13 @@ export class ClientAIContextService {
     lines.push(
       `- coach: ${ctx.coach.has_coach ? `assigned to ${ctx.coach.coach_name ?? 'coach'}` : 'unassigned'}`,
     );
-    if (ctx.coach.last_coach_message_excerpt) {
+    // M14 fix: surface the full thread summary when available; fall back
+    // to the single-message excerpt for backward compat.
+    if (ctx.coach.coach_thread_summary) {
+      lines.push(
+        `- coach_thread (DO NOT CONTRADICT):\n${ctx.coach.coach_thread_summary}`,
+      );
+    } else if (ctx.coach.last_coach_message_excerpt) {
       lines.push(
         `- last_coach_message (DO NOT CONTRADICT): "${ctx.coach.last_coach_message_excerpt}"`,
       );
@@ -355,6 +437,39 @@ export class ClientAIContextService {
         `- active_meal_plan: "${ctx.current_meal_plan.title}" with ${ctx.current_meal_plan.items_text.length} items`,
       );
     }
+
+    // M1: fasting
+    const f = ctx.fasting;
+    if (f.active_fast) {
+      lines.push(
+        `- fasting: ACTIVE since ${f.active_fast.start_at}, elapsed=${f.active_fast.elapsed_hours}h`,
+      );
+    } else if (f.last_fast) {
+      lines.push(
+        `- fasting: last_fast=${f.last_fast.duration_hours}h ended ${f.last_fast.ended_at}`,
+      );
+    } else {
+      lines.push('- fasting: no fasting history');
+    }
+
+    // M1: next session
+    if (ctx.next_session) {
+      const ns = ctx.next_session;
+      lines.push(
+        `- next_session: ${ns.date} "${ns.title}"${ns.coach_note ? ` (note: ${ns.coach_note})` : ''}`,
+      );
+    }
+
+    // M1: community wins
+    if (ctx.recent_wins.length) {
+      const winsStr = ctx.recent_wins.map((w) => `"${w.title}"`).join(', ');
+      lines.push(`- recent_roster_wins: ${winsStr}`);
+    }
+
+    // M1: leaderboard
+    lines.push(
+      `- leaderboard: opted_in=${ctx.leaderboard.opted_in}${ctx.leaderboard.rank !== null ? `, rank=${ctx.leaderboard.rank}` : ''}`,
+    );
 
     lines.push(
       `- GUARDRAILS: never recommend <${ctx.guardrails.forbid_calorie_recommendations_below}kcal/day; ${ctx.guardrails.forbid_contradicting_macros ? 'never recommend macros different from APP_PRESCRIBED' : 'no prescribed macros to defend'}; refer medical/injury/extreme-restriction questions to ${ctx.coach.has_coach ? 'the coach' : 'a qualified professional'}.`,
@@ -458,20 +573,36 @@ export class ClientAIContextService {
   });
 
   private buildCoachRelationship(
-    coachRecord: { name: string } | null,
-    // Phase 6C — `body` is now nullable (voice-only messages persist with
-    // body=null). The excerpt builder gracefully degrades to null in that
-    // case; the AI context surface intentionally does not transcribe voice.
-    lastMsg: { body: string | null; created_at: Date } | null,
+    coachRecord: { id?: string; name: string } | null,
+    // M14 fix: now receives last N messages (desc order) rather than just
+    // the most recent one. We reverse to chronological order and build a
+    // thread summary so the AI has conversational context.
+    // Phase 6C: body is nullable (voice-only messages). Voice messages are
+    // excluded from the AI context (no transcription).
+    recentMsgs: Array<{ body: string | null; created_at: Date; sender_id: string | null; coach_id: string | null }>,
     guidelines: { content: string } | null,
   ): CoachRelationship {
     const has_coach = !!coachRecord;
+    const lastMsg = recentMsgs.length > 0 ? recentMsgs[0] : null;
+
+    // Build thread summary: reverse msgs to chronological order, skip
+    // voice-only (null body), label each line Coach/Client.
+    const chronological = [...recentMsgs].reverse();
+    const threadLines = chronological
+      .filter((m) => m.body)
+      .map((m) => {
+        const role = m.sender_id && m.coach_id && m.sender_id === m.coach_id ? 'Coach' : 'Client';
+        return `${role}: ${(m.body ?? '').slice(0, 100)}`;
+      });
+    const threadSummary = threadLines.length > 0 ? threadLines.join('\n') : null;
+
     return {
       coach_name: coachRecord ? firstNameOf(coachRecord.name) : null,
       has_coach,
       last_coach_message_excerpt: clampStr(lastMsg?.body ?? null, CONTEXT_LIMITS.COACH_MSG_CHARS),
       last_coach_message_at: lastMsg ? lastMsg.created_at.toISOString() : null,
       active_guidelines_excerpt: clampStr(guidelines?.content ?? null, CONTEXT_LIMITS.GUIDELINES_CHARS),
+      coach_thread_summary: threadSummary,
     };
   }
 
@@ -522,6 +653,30 @@ export class ClientAIContextService {
     };
   }
 
+  // M1 — Build fasting summary from the active window and last completed window.
+  private buildFastingSummary(
+    active: { start_time: Date } | null,
+    last: { start_time: Date; end_time: Date | null } | null,
+  ): FastingSummary {
+    if (active) {
+      const elapsedMs = Date.now() - active.start_time.getTime();
+      const elapsed_hours = Math.round(elapsedMs / (1000 * 60 * 60) * 10) / 10;
+      return {
+        active_fast: { start_at: active.start_time.toISOString(), elapsed_hours },
+        last_fast: null,
+      };
+    }
+    if (last && last.end_time) {
+      const durationMs = last.end_time.getTime() - last.start_time.getTime();
+      const duration_hours = Math.round(durationMs / (1000 * 60 * 60) * 10) / 10;
+      return {
+        active_fast: null,
+        last_fast: { duration_hours, ended_at: last.end_time.toISOString() },
+      };
+    }
+    return { active_fast: null, last_fast: null };
+  }
+
   private emptyContext(): ClientAIContext {
     const today = isoDate(new Date());
     return {
@@ -570,8 +725,14 @@ export class ClientAIContextService {
         last_coach_message_excerpt: null,
         last_coach_message_at: null,
         active_guidelines_excerpt: null,
+        coach_thread_summary: null,
       },
       current_meal_plan: null,
+      // M1 defaults for empty context
+      fasting: { active_fast: null, last_fast: null },
+      next_session: null,
+      recent_wins: [],
+      leaderboard: { opted_in: false, rank: null },
       guardrails: {
         forbid_calorie_recommendations_below: CALORIE_FLOOR_FALLBACK,
         forbid_contradicting_macros: false,

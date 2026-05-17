@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { PtmService } from '../ptm/ptm.service';
 import { CoachAlertsService } from '../coach/coach-alerts.service';
+import { ClientAIContextService } from '../ai/client-ai-context.service';
 import type { CreateCheckInDto, ListCheckInsQueryDto } from './check-ins.dto';
 
 const DEFAULT_LIMIT = 30;
@@ -38,6 +39,8 @@ export class CheckInsService {
     private prisma: PrismaService,
     private ptm: PtmService,
     @Optional() private readonly coachAlerts?: CoachAlertsService,
+    // M2 — bust the AI context cache after check-in writes.
+    @Optional() private readonly aiContext?: ClientAIContextService,
   ) {}
 
   // ---- helpers ----
@@ -123,6 +126,8 @@ export class CheckInsService {
     });
 
     await this.emitPtmAfterUpsert(clientId, coachId, day);
+    // M2 — bust AI context cache so next chat sees the new check-in.
+    this.aiContext?.invalidateForUser(clientId);
 
     return row;
   }

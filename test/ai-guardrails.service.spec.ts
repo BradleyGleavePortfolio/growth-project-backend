@@ -48,6 +48,7 @@ function ctxFixture(overrides: Partial<ClientAIContext> = {}): ClientAIContext {
       last_coach_message_excerpt: null,
       last_coach_message_at: null,
       active_guidelines_excerpt: null,
+      coach_thread_summary: null,
     },
     current_meal_plan: null,
     guardrails: {
@@ -112,6 +113,7 @@ describe('AIGuardrailsService.validate', () => {
           last_coach_message_excerpt: null,
           last_coach_message_at: null,
           active_guidelines_excerpt: null,
+          coach_thread_summary: null,
         },
       }),
     );

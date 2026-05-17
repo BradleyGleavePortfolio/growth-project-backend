@@ -181,6 +181,8 @@ export class LtvMetricsService {
         p.canceled_at >= new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000),
     );
     let avgLifespanMonths: number;
+    let lifespanIsEstimate: boolean;
+    let lifespanEstimateNote: string | null;
     if (canceledRecurring.length >= 3) {
       const lifespans = canceledRecurring.map((p) => {
         const msAlive =
@@ -189,10 +191,16 @@ export class LtvMetricsService {
       });
       avgLifespanMonths =
         lifespans.reduce((a, b) => a + b, 0) / lifespans.length;
+      lifespanIsEstimate = false;
+      lifespanEstimateNote = null;
     } else {
       // TODO: Replace 6-month stub once ≥3 cancellation data points exist.
       // The 6-month default is conservative for fitness coaching (industry avg ~4–8 mo).
       avgLifespanMonths = 6;
+      lifespanIsEstimate = true;
+      lifespanEstimateNote =
+        `Based on industry average (only ${canceledRecurring.length} cancellation` +
+        `${canceledRecurring.length === 1 ? '' : 's'} recorded — need ≥3 for a real average)`;
       this.logger.log(
         `LTV lifespan stub for coach ${coachUserId}: <3 cancellations, using 6-month default`,
       );
@@ -300,6 +308,8 @@ export class LtvMetricsService {
     dto.revenue_per_client_month_label = formatMoney(rpcmCents, currency);
 
     dto.avg_client_lifespan_months = parseFloat(avgLifespanMonths.toFixed(1));
+    dto.lifespan_is_estimate = lifespanIsEstimate;
+    dto.lifespan_estimate_note = lifespanEstimateNote;
     dto.estimated_ltv_cents = estimatedLtvCents;
     dto.estimated_ltv_label = formatMoney(estimatedLtvCents, currency);
 
@@ -318,6 +328,10 @@ export class LtvMetricsService {
     dto.zero_churn_streak_months = zeroChurnStreakMonths;
     dto.all_time_peak_rpcm_cents = allTimePeakRpcmCents;
     dto.all_time_peak_rpcm_label = formatMoney(allTimePeakRpcmCents, currency);
+    // peak_rpcm_is_estimate: true until the coach_ltv_peak persistence table ships.
+    // The estimatePeakRpcm heuristic returns currentRpcmCents, so the value is
+    // always approximate until real historical data is available.
+    dto.peak_rpcm_is_estimate = true;
     dto.is_new_rpcm_record = isNewRpcmRecord;
 
     dto.ltv_cac_ratio = null; // CAC requires manual input — not yet modeled

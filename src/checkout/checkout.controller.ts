@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpException,
+  Param,
   Post,
   Query,
   Request,
@@ -130,11 +131,14 @@ export class CheckoutController {
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
   ) {
-    const rows = await this.checkout.listForClient(req.user.id, {
+    // M11 fix: use hasMore from the service (limit+1 probe) instead of
+    // inferring "more pages" from result.length === limit.
+    const { items, hasMore } = await this.checkout.listForClient(req.user.id, {
       cursor,
       limit: limit ? parseInt(limit, 10) : undefined,
     });
-    return { purchases: rows, next_cursor: rows.length > 0 ? rows[rows.length - 1].id : null };
+    const next_cursor = hasMore ? items[items.length - 1]?.id ?? null : null;
+    return { purchases: items, next_cursor };
   }
 
   @Get('entitlement')
@@ -153,6 +157,48 @@ export class CheckoutController {
   @Get('payment-method')
   async paymentMethod(@Request() req: AuthedRequest) {
     return this.checkout.getSavedPaymentMethodForClient(req.user.id);
+  }
+
+  /**
+   * POST /v1/checkout/billing-portal
+   *
+   * Creates a Stripe Billing Portal session for the requesting client so
+   * they can update their payment method during a dunning window.
+   *
+   * M10 fix: surfaces the update-card URL to past-due clients instead
+   * of leaving `dunning.update_card_url` null.
+   */
+  @Post('billing-portal')
+  async createBillingPortal(@Request() req: AuthedRequest) {
+    try {
+      return await this.checkout.createBillingPortalSession(req.user.id);
+    } catch (err) {
+      throw this.mapStripeError(err);
+    }
+  }
+
+  /**
+   * GET /v1/checkout/sessions/:sessionId/confirm
+   *
+   * Called after the client returns from the Stripe-hosted checkout page
+   * (via the success deep-link). Verifies the session belongs to the
+   * requesting user and returns the actual payment status from Stripe.
+   *
+   * M9 fix: previously the mobile client ignored the session_id entirely
+   * and just polled the generic entitlement endpoint. This endpoint
+   * uses the specific session id to confirm payment so webhook lag
+   * doesn't cause a false "pending" state.
+   */
+  @Get('sessions/:sessionId/confirm')
+  async confirmSession(
+    @Param('sessionId') sessionId: string,
+    @Request() req: AuthedRequest,
+  ) {
+    try {
+      return await this.checkout.confirmSession(sessionId, req.user.id);
+    } catch (err) {
+      throw this.mapStripeError(err);
+    }
   }
 
   private mapStripeError(err: unknown): HttpException {
@@ -189,10 +235,12 @@ export class CoachPurchasesController {
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
   ) {
-    const rows = await this.checkout.listForCoach(req.user.id, {
+    // M11 fix: same limit+1 probe pattern.
+    const { items, hasMore } = await this.checkout.listForCoach(req.user.id, {
       cursor,
       limit: limit ? parseInt(limit, 10) : undefined,
     });
-    return { purchases: rows, next_cursor: rows.length > 0 ? rows[rows.length - 1].id : null };
+    const next_cursor = hasMore ? items[items.length - 1]?.id ?? null : null;
+    return { purchases: items, next_cursor };
   }
 }

@@ -1,10 +1,15 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { ClientAIContextService } from '../ai/client-ai-context.service';
 import { StartFastDto } from './fasting.dto';
 
 @Injectable()
 export class FastingService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    // M2 — bust the AI context cache after fasting events.
+    private aiContext: ClientAIContextService,
+  ) {}
 
   async startFast(userId: string, data: StartFastDto) {
     // Check no active fast
@@ -13,9 +18,12 @@ export class FastingService {
     });
     if (active) throw new BadRequestException('A fast is already in progress');
 
-    return this.prisma.fastingWindow.create({
+    const created = await this.prisma.fastingWindow.create({
       data: { user_id: userId, start_time: new Date(), protocol: data.protocol, notes: data.notes },
     });
+    // M2 — bust AI context cache so next chat sees the active fast.
+    this.aiContext.invalidateForUser(userId);
+    return created;
   }
 
   async endFast(userId: string, notes?: string) {
@@ -25,10 +33,13 @@ export class FastingService {
     });
     if (!active) throw new BadRequestException('No active fast found');
 
-    return this.prisma.fastingWindow.update({
+    const updated = await this.prisma.fastingWindow.update({
       where: { id: active.id },
       data: { end_time: new Date(), notes: notes || active.notes },
     });
+    // M2 — bust AI context cache so next chat sees the completed fast.
+    this.aiContext.invalidateForUser(userId);
+    return updated;
   }
 
   async getHistory(userId: string, limit = 10) {

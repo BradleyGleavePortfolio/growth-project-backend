@@ -62,6 +62,7 @@ function makeContext(): ClientAIContext {
       last_coach_message_excerpt: 'Stay strict on dinner carbs.',
       last_coach_message_at: '2026-04-26T18:00:00Z',
       active_guidelines_excerpt: null,
+      coach_thread_summary: null,
     },
     current_meal_plan: null,
     guardrails: {

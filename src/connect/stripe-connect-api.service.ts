@@ -429,6 +429,11 @@ export class StripeConnectApiService {
         form[`metadata[${k}]`] = v;
       }
     }
+    // MoR — automatic tax collection. Stripe detects the customer's
+    // jurisdiction and adds the correct VAT/GST/sales tax automatically.
+    // Collected tax is remitted by TGP as the Merchant of Record.
+    form['automatic_tax[enabled]'] = 'true';
+
     return this.post<StripeCheckoutSessionObject>(
       '/checkout/sessions',
       form,
@@ -607,6 +612,18 @@ export class StripeConnectApiService {
     [k: string]: unknown;
   }> {
     return this.delete(`/subscriptions/${encodeURIComponent(subId)}`);
+  }
+
+  // Create a Stripe Billing Portal session for a customer so they can
+  // update their payment method. Used for the dunning flow (M10).
+  async createBillingPortalSession(args: {
+    customerId: string;
+    returnUrl: string;
+  }): Promise<{ id: string; url: string; [k: string]: unknown }> {
+    return this.post('/billing_portal/sessions', {
+      customer: args.customerId,
+      return_url: args.returnUrl,
+    });
   }
 
   // --- Phase 6 — Payout readiness, balance, refunds, disputes ---

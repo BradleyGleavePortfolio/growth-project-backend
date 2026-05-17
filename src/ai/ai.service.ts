@@ -74,11 +74,51 @@ export class AiService {
     @Optional() private coachAIState?: CoachAIStateService,
   ) {}
 
+  // M3 — Intent-based word budget. Returns the word cap to embed in the
+  // system prompt based on the user's message intent. A flat 220-word limit
+  // frustrated complex questions; this gives the model room to breathe on
+  // planning and explanation intents while keeping quick Q&A snappy.
+  getWordBudget(userMessage: string): number {
+    const msg = userMessage.toLowerCase();
+    // Explicit user override — honour requests for detailed responses.
+    if (
+      msg.endsWith('give me the detailed version') ||
+      msg.endsWith('full breakdown') ||
+      msg.endsWith('explain in detail') ||
+      msg.includes('give me the detailed version') ||
+      msg.includes('full breakdown') ||
+      msg.includes('explain in detail')
+    ) {
+      return 600;
+    }
+    // Planning intents — meal plan and workout plan generation.
+    if (msg.includes('meal_plan') || msg.includes('meal plan') || msg.includes('workout_plan') || msg.includes('workout plan') || msg.includes('program')) {
+      return 600;
+    }
+    // Explanation / analysis intents.
+    if (
+      msg.includes('explain') ||
+      msg.includes(' why ') ||
+      msg.startsWith('why ') ||
+      msg.includes('analyze') ||
+      msg.includes('analyse') ||
+      msg.includes('break down') ||
+      msg.includes('breakdown') ||
+      msg.includes('how does') ||
+      msg.includes('what is the difference') ||
+      msg.includes('compare')
+    ) {
+      return 350;
+    }
+    // Default — quick Q&A, status, log-assist.
+    return 220;
+  }
+
   // System prompt is now built from the typed ClientAIContext. The prompt
   // explicitly forbids contradicting APP_PRESCRIBED values and references
   // the coach by first name when present, so the model has the same data
   // the user can see in their own app.
-  buildSystemPrompt(ctx: ClientAIContext): string {
+  buildSystemPrompt(ctx: ClientAIContext, userMessage = ''): string {
     const renderedContext = this.contextSvc.renderForPrompt(ctx);
     const id = ctx.identity;
 
@@ -110,7 +150,7 @@ ABSOLUTE RULES:
 
 ${renderedContext}
 
-Now answer the user's next message using the rules above. Keep the answer under 220 words unless they explicitly asked for a meal plan.`;
+Now answer the user's next message using the rules above. Keep the answer under ${this.getWordBudget(userMessage)} words.`;
   }
 
   // Legacy method retained for /ai/context endpoint (used by the mobile
@@ -231,7 +271,7 @@ Now answer the user's next message using the rules above. Keep the answer under 
       // We hand it the same system prompt the Perplexity branch would
       // see so guardrails / APP_PRESCRIBED defense apply identically.
       try {
-        const systemPrompt = this.buildSystemPrompt(ctx);
+        const systemPrompt = this.buildSystemPrompt(ctx, userMessage);
         const historyText = conversationHistory
           .slice(-10)
           .map((m) => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${m.content}`)
@@ -263,7 +303,7 @@ Now answer the user's next message using the rules above. Keep the answer under 
       rawReply = this.generateFallbackResponse(userMessage, ctx);
       modelUsed = 'fallback';
     } else {
-      const systemPrompt = this.buildSystemPrompt(ctx);
+      const systemPrompt = this.buildSystemPrompt(ctx, userMessage);
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         { role: 'system', content: systemPrompt },
         ...conversationHistory.slice(-10).map((m) => {

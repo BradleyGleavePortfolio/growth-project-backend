@@ -24,6 +24,29 @@ export class CoachController {
     return this.coachService.getDashboard(req.user.id, req.user.role);
   }
 
+  /**
+   * GET /coach/dashboard/summary
+   *
+   * Pre-aggregated dashboard summary designed to stay performant at 100+ clients.
+   * Returns:
+   *   - stats: total_clients, active_today, unread_messages, pending_checkins
+   *   - attention_needed: up to 20 clients with a reason tag (missed_workout |
+   *     off_macros | no_checkin | weight_flag)
+   *
+   * All data is computed via parallel Prisma aggregations (no N+1 queries).
+   */
+  @Get('dashboard/summary')
+  @ApiOperation({
+    summary: 'Pre-aggregated coach dashboard summary',
+    description:
+      'Returns aggregated stats and a capped list of clients needing attention. ' +
+      'Designed for coach rosters with 100+ clients — all data is derived from ' +
+      'parallel Prisma groupBy/count queries with no N+1 patterns.',
+  })
+  async getDashboardSummary(@Request() req: AuthedRequest) {
+    return this.coachService.getDashboardSummary(req.user.id, req.user.role);
+  }
+
   @Get('clients')
   async getClients(
     @Request() req: AuthedRequest,

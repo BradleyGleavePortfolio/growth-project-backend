@@ -5,6 +5,7 @@ import { LogFoodDto, UpdateLogEntryDto } from './log.dto';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PtmService } from '../ptm/ptm.service';
+import { ClientAIContextService } from '../ai/client-ai-context.service';
 
 @Injectable()
 export class LogService {
@@ -13,6 +14,8 @@ export class LogService {
     private foodService: FoodService,
     private analytics: AnalyticsService,
     private ptm: PtmService,
+    // M2 — bust the AI context cache after food-log writes.
+    private aiContext: ClientAIContextService,
   ) {}
 
   async logFood(userId: string, data: LogFoodDto) {
@@ -45,6 +48,8 @@ export class LogService {
     this.ptm.emit(userId, 'meal_logged', calories, {
       meal_type: data.meal_type,
     });
+    // M2 — bust AI context cache so next chat sees the new log entry.
+    this.aiContext.invalidateForUser(userId);
     return created;
   }
 
@@ -107,7 +112,10 @@ export class LogService {
   async deleteEntry(userId: string, entryId: string) {
     const entry = await this.prisma.loggedFoodEntry.findUnique({ where: { id: entryId } });
     if (!entry || entry.user_id !== userId) throw new NotFoundException('Entry not found');
-    return this.prisma.loggedFoodEntry.delete({ where: { id: entryId } });
+    const deleted = await this.prisma.loggedFoodEntry.delete({ where: { id: entryId } });
+    // M2 — bust AI context cache after deletion.
+    this.aiContext.invalidateForUser(userId);
+    return deleted;
   }
 
   async getWeekly(userId: string, weekStart: string) {

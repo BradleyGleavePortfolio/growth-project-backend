@@ -15,6 +15,7 @@ import { Events } from '../analytics/events';
 import { PtmService } from '../ptm/ptm.service';
 import { MessageReceivedEmitter } from '../notifications/emitters/message-received.emitter';
 import { AuditService } from '../audit/audit.service';
+import { ClientAIContextService } from '../ai/client-ai-context.service';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -84,6 +85,8 @@ export class MessagingService {
     private ptm: PtmService,
     private messageReceived: MessageReceivedEmitter,
     private audit: AuditService,
+    // M2 — bust the client's AI context cache when a coach message arrives.
+    private aiContext: ClientAIContextService,
   ) {}
 
   // Resolve a sender's display name for the push notification body. Falls
@@ -386,6 +389,9 @@ export class MessagingService {
       });
       this.ptm.emit(clientId, 'coach_note_received', 1, { voice: false });
     }
+    // M2 — bust the client's AI context cache so the next chat reflects the
+    // new coach message in last_coach_message_excerpt.
+    this.aiContext.invalidateForUser(clientId);
     return created;
   }
 

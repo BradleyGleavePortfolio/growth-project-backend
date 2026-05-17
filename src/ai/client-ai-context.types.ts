@@ -138,8 +138,15 @@ export interface CoachRelationship {
   last_coach_message_excerpt: string | null;
   last_coach_message_at: string | null;
   // Short excerpt of the active per-client guidelines (rules the coach typed
-  // for THIS client). Trimmed to 800 chars.
+  // for THIS client). Trimmed to 2000 chars (M15 fix: raised from 800).
   active_guidelines_excerpt: string | null;
+  /**
+   * M14 fix: instead of only the last single message, include a rolling
+   * summary of the last N messages in the thread so the AI has conversational
+   * context without losing the thread.
+   * Format: "Coach: <text>\nClient: <text>\n..."
+   */
+  coach_thread_summary: string | null;
 }
 
 export interface MealPlanSummary {
@@ -150,6 +157,34 @@ export interface MealPlanSummary {
   // wrote.
   items_text: string[];
   updated_at: string;
+}
+
+// M1 — Active or most-recent fasting window summary.
+export interface FastingSummary {
+  // active_fast is set when a fast is currently in progress.
+  active_fast: { start_at: string; elapsed_hours: number } | null;
+  // last_fast is the most recent completed fast (null when none exists or an
+  // active fast is in progress and there is no prior completed window).
+  last_fast: { duration_hours: number; ended_at: string } | null;
+}
+
+// M1 — Next upcoming coaching session for the client.
+export interface NextSessionSummary {
+  date: string; // ISO-8601
+  title: string;
+  coach_note: string | null;
+}
+
+// M1 — A single community win (anonymised, roster-scoped).
+export interface CommunityWinSummary {
+  title: string;
+  created_at: string; // ISO-8601
+}
+
+// M1 — Leaderboard opt-in state + current rank for the client.
+export interface LeaderboardSummary {
+  opted_in: boolean;
+  rank: number | null;
 }
 
 // Hard guardrail signals derived from prescribed targets and profile. The
@@ -175,6 +210,11 @@ export interface ClientAIContext {
   recent_check_ins: CheckInSummary[];
   coach: CoachRelationship;
   current_meal_plan: MealPlanSummary | null;
+  // M1 additions — compact domain summaries kept to ~300 extra tokens.
+  fasting: FastingSummary;
+  next_session: NextSessionSummary | null;
+  recent_wins: CommunityWinSummary[];
+  leaderboard: LeaderboardSummary;
   guardrails: AIGuardrails;
   // ISO-8601, used for cache keys and freshness debugging in non-prod.
   generated_at: string;

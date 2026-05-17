@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { PtmService } from '../ptm/ptm.service';
+import { ClientAIContextService } from '../ai/client-ai-context.service';
 import {
   CreateWorkoutDto,
   CreateRoutineDto,
@@ -13,6 +14,8 @@ export class WorkoutService {
   constructor(
     private prisma: PrismaService,
     private ptm: PtmService,
+    // M2 — bust the AI context cache after workout writes.
+    private aiContext: ClientAIContextService,
   ) {}
 
   async createWorkout(userId: string, data: CreateWorkoutDto) {
@@ -61,6 +64,8 @@ export class WorkoutService {
       exercise_count: created.exercises.length,
       duration_min: created.duration_minutes,
     });
+    // M2 — bust AI context cache so next chat sees the new workout.
+    this.aiContext.invalidateForUser(userId);
 
     return created;
   }

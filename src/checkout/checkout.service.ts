@@ -467,32 +467,44 @@ export class CheckoutService {
   // Hard cap at 100 rows; cursor-based pagination via `cursor` (purchase id).
   // Clients rarely have more than a handful of purchases so this is mostly
   // a safety guard against unbounded growth causing slow queries.
+  //
+  // M11 fix: fetch limit+1 rows to detect whether a next page exists.
+  // Previously the cursor was set to the last row id whenever any rows were
+  // returned, which implied a next page even when the result was the exact
+  // final page. Now `next_cursor` is only non-null when there are truly
+  // more rows beyond the returned page.
   async listForClient(
     clientUserId: string,
     opts: { cursor?: string; limit?: number } = {},
-  ): Promise<ClientPurchase[]> {
+  ): Promise<{ items: ClientPurchase[]; hasMore: boolean }> {
     const take = Math.min(opts.limit ?? 50, 100);
-    return this.prisma.clientPurchase.findMany({
+    const rows = await this.prisma.clientPurchase.findMany({
       where: { client_user_id: clientUserId },
       orderBy: { created_at: 'desc' },
-      take,
+      take: take + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
     });
+    const hasMore = rows.length > take;
+    return { items: hasMore ? rows.slice(0, take) : rows, hasMore };
   }
 
   // List purchases on a coach's roster (for revenue / activity views).
   // Cap at 100 rows per page. Revenue views page through this with a cursor.
+  //
+  // M11 fix: same limit+1 probe pattern as listForClient.
   async listForCoach(
     coachUserId: string,
     opts: { cursor?: string; limit?: number } = {},
-  ): Promise<ClientPurchase[]> {
+  ): Promise<{ items: ClientPurchase[]; hasMore: boolean }> {
     const take = Math.min(opts.limit ?? 50, 100);
-    return this.prisma.clientPurchase.findMany({
+    const rows = await this.prisma.clientPurchase.findMany({
       where: { coach_user_id: coachUserId },
       orderBy: { created_at: 'desc' },
-      take,
+      take: take + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
     });
+    const hasMore = rows.length > take;
+    return { items: hasMore ? rows.slice(0, take) : rows, hasMore };
   }
 
   // Entitlement check: does this client currently have an active purchase
@@ -516,6 +528,80 @@ export class CheckoutService {
       select: { id: true },
     });
     return !!row;
+  }
+
+  // Create a Stripe Billing Portal session for a client so they can
+  // update their payment method during dunning. The portal URL is
+  // Stripe-hosted and short-lived (single use, expires after the session
+  // redirect). We store no URL in the DB — each request mints a fresh one.
+  //
+  // M10 fix: this allows past-due clients to self-serve card updates
+  // without contacting their coach.
+  async createBillingPortalSession(
+    clientUserId: string,
+  ): Promise<{ url: string }> {
+    this.assertReady();
+
+    const customer = await this.prisma.connectCustomer.findUnique({
+      where: { client_user_id: clientUserId },
+    });
+    if (!customer) {
+      throw new NotFoundException({
+        error: 'CUSTOMER_NOT_FOUND',
+        message: 'No Stripe customer record found for this client. Purchase a package first.',
+      });
+    }
+
+    const session = await this.stripeConnect.createBillingPortalSession({
+      customerId: customer.stripe_customer_id,
+      returnUrl: 'com.growthproject.app://settings',
+    });
+    return { url: session.url };
+  }
+
+  // Confirm a specific Stripe Checkout session and return its payment status.
+  // This is called after the client returns from the Stripe-hosted page via
+  // the success deep-link so the app can confirm the session actually belongs
+  // to this user and what the payment status is.
+  async confirmSession(
+    sessionId: string,
+    userId: string,
+  ): Promise<{ paid: boolean; status: string; package_name: string | null }> {
+    // 1. Fetch the Stripe session
+    const session = await this.stripeConnect.retrieveCheckoutSession(sessionId);
+
+    // 2. Verify it belongs to this user by checking our purchase row.
+    //    We do NOT trust Stripe metadata alone — the purchase row is our
+    //    authoritative ledger that the session was minted for this client.
+    const purchase = await this.prisma.clientPurchase.findFirst({
+      where: {
+        stripe_checkout_session_id: sessionId,
+        client_user_id: userId,
+      },
+      include: { package: { select: { name: true } } },
+    });
+
+    // Coerce Stripe's typed enum to a plain string for the response shape.
+    const stripeStatus: string = (session.payment_status as string | null | undefined) ?? 'unknown';
+
+    if (!purchase) {
+      // Session doesn't exist in our DB for this user — could be a stale
+      // link from a different user or an unknown session id.
+      return { paid: false, status: stripeStatus, package_name: null };
+    }
+
+    const paid =
+      stripeStatus === 'paid' ||
+      purchase.entitlement_active ||
+      purchase.status === 'paid' ||
+      purchase.status === 'active';
+
+    const pkgWithRelation = purchase as typeof purchase & { package?: { name: string } | null };
+    return {
+      paid,
+      status: stripeStatus,
+      package_name: pkgWithRelation.package?.name ?? null,
+    };
   }
 
   // Saved-card listing for a client. Reads ConnectCustomer mirror only —

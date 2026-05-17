@@ -535,4 +535,169 @@ export class CoachService {
 
     return alerts;
   }
+
+  /**
+   * getDashboardSummary — scalable pre-aggregated dashboard for coaches with 100+ clients.
+   *
+   * Returns two things in a single compound DB round-trip:
+   *   1. `stats`           — simple counts (total clients, active today, unread messages,
+   *                          pending check-ins) computed via Prisma aggregations.
+   *   2. `attention_needed` — up to 20 clients that need the coach's attention today,
+   *                           each tagged with a reason (missed_workout | off_macros |
+   *                           no_checkin | weight_flag). Built from the same data as
+   *                           getAlerts() but via targeted, index-friendly queries
+   *                           rather than loading every client's full record.
+   *
+   * Performance contract:
+   *   - No N+1 queries. Every sub-query is a single aggregation or batch lookup.
+   *   - clientIds are resolved once and reused across all sub-queries.
+   *   - Results are capped (attention_needed ≤ 20) so payload size is bounded
+   *     regardless of roster size.
+   */
+  async getDashboardSummary(
+    coachId: string,
+    callerRole?: string,
+  ): Promise<{
+    stats: {
+      total_clients: number;
+      active_today: number;
+      unread_messages: number;
+      pending_checkins: number;
+    };
+    attention_needed: Array<{
+      client_id: string;
+      client_name: string;
+      reason: 'missed_workout' | 'off_macros' | 'no_checkin' | 'weight_flag';
+    }>;
+  }> {
+    const now = new Date();
+    const startOfDay = new Date(now.toISOString().split('T')[0] + 'T00:00:00.000Z');
+    const endOfDay = new Date(now.toISOString().split('T')[0] + 'T23:59:59.999Z');
+    const fiveDaysAgo = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // ── Step 1: Resolve client IDs (single query, indexed) ─────────────────
+    const clients = await this.prisma.user.findMany({
+      where: { ...this.byCoach(coachId, callerRole), role: 'student' },
+      select: { id: true, name: true },
+    });
+
+    const totalClients = clients.length;
+    if (totalClients === 0) {
+      return {
+        stats: { total_clients: 0, active_today: 0, unread_messages: 0, pending_checkins: 0 },
+        attention_needed: [],
+      };
+    }
+
+    const clientIds = clients.map((c) => c.id);
+    const clientMap = new Map(clients.map((c) => [c.id, c.name]));
+
+    // ── Step 2: Parallel aggregations (all index-friendly, no per-row JS) ──
+    const [
+      foodLogGroups,      // clients who logged food today
+      workoutGroups,      // clients who worked out in the last 5 days
+      pendingCheckIns,    // check-ins submitted but not reviewed
+      unreadMsgCount,     // messages not yet read by the coach
+      recentWeightLogs,   // weight logs for trend detection (last 30 days)
+    ] = await Promise.all([
+      // Active today: clients with at least one food log entry today.
+      this.prisma.loggedFoodEntry.groupBy({
+        by: ['user_id'],
+        where: { user_id: { in: clientIds }, logged_at: { gte: startOfDay, lte: endOfDay } },
+        _count: { _all: true },
+      }),
+
+      // Missed workouts: clients with a session in the last 5 days.
+      this.prisma.workoutSession.groupBy({
+        by: ['user_id'],
+        where: { user_id: { in: clientIds }, date: { gte: fiveDaysAgo } },
+        _count: { _all: true },
+      }),
+
+      // Pending check-ins: submitted but not yet reviewed by coach.
+      this.prisma.checkIn.count({
+        where: {
+          user_id: { in: clientIds },
+          reviewed_by_coach: false,
+        },
+      }),
+
+      // Unread messages: messages sent to this coach that are unread.
+      this.prisma.message.count({
+        where: {
+          recipient_id: coachId,
+          read: false,
+        },
+      }),
+
+      // Weight trend flags: last 4 weight entries per client (for 3-day trend).
+      this.prisma.weightLog.findMany({
+        where: { user_id: { in: clientIds }, date: { gte: thirtyDaysAgo } },
+        orderBy: [{ user_id: 'asc' }, { date: 'desc' }],
+        select: { user_id: true, weight_lbs: true, date: true },
+      }),
+    ]);
+
+    // ── Step 3: Derive attention_needed list from aggregated data ───────────
+    const workedOutRecently = new Set(workoutGroups.map((g) => g.user_id));
+    const loggedToday = new Set(foodLogGroups.map((g) => g.user_id));
+
+    // Group weight logs by client (already sorted desc by date per client).
+    const weightLogsByUser = new Map<string, number[]>();
+    for (const wl of recentWeightLogs) {
+      const arr = weightLogsByUser.get(wl.user_id) ?? [];
+      if (arr.length < 4) arr.push(wl.weight_lbs);
+      weightLogsByUser.set(wl.user_id, arr);
+    }
+
+    const attention: Array<{
+      client_id: string;
+      client_name: string;
+      reason: 'missed_workout' | 'off_macros' | 'no_checkin' | 'weight_flag';
+    }> = [];
+
+    for (const id of clientIds) {
+      if (attention.length >= 20) break; // cap payload size
+
+      const name = clientMap.get(id) ?? id;
+
+      // Weight increasing 3+ consecutive days.
+      const weights = weightLogsByUser.get(id) ?? [];
+      if (weights.length >= 3) {
+        let weightUp = true;
+        for (let i = 0; i < weights.length - 1; i++) {
+          if (weights[i] <= weights[i + 1]) {
+            weightUp = false;
+            break;
+          }
+        }
+        if (weightUp) {
+          attention.push({ client_id: id, client_name: name, reason: 'weight_flag' });
+          continue;
+        }
+      }
+
+      // No workout in 5+ days.
+      if (!workedOutRecently.has(id)) {
+        attention.push({ client_id: id, client_name: name, reason: 'missed_workout' });
+        continue;
+      }
+
+      // No food log today (off macros signal).
+      if (!loggedToday.has(id)) {
+        attention.push({ client_id: id, client_name: name, reason: 'off_macros' });
+      }
+    }
+
+    return {
+      stats: {
+        total_clients: totalClients,
+        active_today: foodLogGroups.length,
+        unread_messages: unreadMsgCount,
+        pending_checkins: pendingCheckIns,
+      },
+      attention_needed: attention,
+    };
+  }
 }

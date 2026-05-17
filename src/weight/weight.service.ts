@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { PtmService } from '../ptm/ptm.service';
+import { ClientAIContextService } from '../ai/client-ai-context.service';
 import { LogWeightDto } from './weight.dto';
 
 @Injectable()
@@ -8,6 +9,8 @@ export class WeightService {
   constructor(
     private prisma: PrismaService,
     private ptm: PtmService,
+    // M2 — bust the AI context cache after weight writes.
+    private aiContext: ClientAIContextService,
   ) {}
 
   async logWeight(userId: string, data: LogWeightDto) {
@@ -30,6 +33,8 @@ export class WeightService {
       weight_lbs: data.weight_lbs,
       prior_weight_lbs: priorLbs,
     });
+    // M2 — bust AI context cache so next chat sees the new weight.
+    this.aiContext.invalidateForUser(userId);
     return created;
   }
 
