@@ -89,6 +89,7 @@ import { SecretsModule } from './secrets/secrets.module';
 // ledger (EmailSendLog). Global, so any feature can inject EmailService.
 import { EmailModule } from './email/email.module';
 import { RlsContextInterceptor } from './common/interceptors/rls-context.interceptor';
+import { ClientEntitlementGuard } from './common/guards/client-entitlement.guard';
 
 @Module({
   imports: [
@@ -286,6 +287,12 @@ import { RlsContextInterceptor } from './common/interceptors/rls-context.interce
     // Replaces the old RlsContextMiddleware which ran before guards and therefore
     // could never observe a valid req.user (Bug 1 fix).
     { provide: APP_INTERCEPTOR, useClass: RlsContextInterceptor },
+
+    // CLIENT ENTITLEMENT: registered here so DI can resolve PrismaService and
+    // Reflector into the guard when it is applied via @UseGuards() on individual
+    // controllers. Not registered as APP_GUARD — guard is applied selectively
+    // at controller class level only to paid client surfaces.
+    ClientEntitlementGuard,
   ],
 })
 export class AppModule {}

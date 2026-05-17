@@ -14,6 +14,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import { CreateMacroTargetDto } from './macros.dto';
 import { MacrosService, type Goal } from './macros.service';
 
@@ -110,13 +111,13 @@ export class CoachMacrosController {
 
 @ApiTags('macros')
 @Controller()
+@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
 export class ClientMacrosController {
   constructor(private readonly macros: MacrosService) {}
 
   // GET /me/macros/current — the client reads their own active target,
   // shown in the nutrition log header.
   @Get('me/macros/current')
-  @UseGuards(JwtAuthGuard)
   current(@Req() req: AuthedRequest) {
     return this.macros.getCurrentForSelf(req.user.id);
   }

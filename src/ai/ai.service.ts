@@ -56,6 +56,7 @@ export interface ChatResult {
   guardrails_applied: string[];
   context_generated_at: string;
   model_used: 'perplexity' | 'anthropic' | 'fallback';
+  degraded: boolean;
 }
 
 @Injectable()
@@ -214,7 +215,9 @@ Now answer the user's next message using the rules above. Keep the answer under 
   // Fallback used when the AI provider is unavailable or returns an error.
   // Speaks the new context shape directly so it stays consistent with what
   // the model would have seen.
-  private generateFallbackResponse(userMessage: string, ctx: ClientAIContext): string {
+  // Returns an object with text + degraded marker so callers can propagate
+  // the degraded flag without an out-of-band boolean.
+  private generateFallbackResponse(userMessage: string, ctx: ClientAIContext): { text: string; degraded: true } {
     const msg = userMessage.toLowerCase().trim();
     const tx = ctx.prescribed;
     const today = ctx.today;
@@ -223,6 +226,7 @@ Now answer the user's next message using the rules above. Keep the answer under 
     const remaining = today.remaining_calories ?? cal - today.calories;
     const pct = today.pct_calories ?? Math.round((today.calories / cal) * 100);
 
+    let text: string;
     if (/(on track|how am i|my progress|doing (well|good|okay)|calorie|macros today)/.test(msg)) {
       const tail =
         pct < 40
@@ -230,23 +234,22 @@ Now answer the user's next message using the rules above. Keep the answer under 
           : pct > 95
           ? `You are close to your limit. Keep dinner lean: grilled protein and vegetables.`
           : `You are on pace. Hit your protein before worrying about anything else.`;
-      return `Today: ${today.calories}/${cal} kcal (${pct}%), ${today.protein_g}/${pro}g protein. ${tail}`;
-    }
-    if (/(meal plan|what should i eat|what to eat|plan (my|for) day|food today)/.test(msg)) {
-      return `Your ${cal} kcal / ${pro}g protein plan for today:\n\nBreakfast (~${Math.round(cal * 0.25)} kcal): 4-5 eggs scrambled with oatmeal and black coffee. ~${Math.round(pro * 0.22)}g protein.\n\nLunch (~${Math.round(cal * 0.35)} kcal): chicken breast or 2 cans tuna with rice and any vegetables.\n\nDinner (~${Math.round(cal * 0.3)} kcal): salmon or 90% lean beef with sweet potato.\n\nSnack (~${Math.round(cal * 0.1)} kcal): Greek yogurt and almonds.\n\nTotal hits your prescribed targets.`;
-    }
-    if (/(protein|how much protein|protein target|hit (my |my daily )?protein)/.test(msg)) {
+      text = `Today: ${today.calories}/${cal} kcal (${pct}%), ${today.protein_g}/${pro}g protein. ${tail}`;
+    } else if (/(meal plan|what should i eat|what to eat|plan (my|for) day|food today)/.test(msg)) {
+      text = `Your ${cal} kcal / ${pro}g protein plan for today:\n\nBreakfast (~${Math.round(cal * 0.25)} kcal): 4-5 eggs scrambled with oatmeal and black coffee. ~${Math.round(pro * 0.22)}g protein.\n\nLunch (~${Math.round(cal * 0.35)} kcal): chicken breast or 2 cans tuna with rice and any vegetables.\n\nDinner (~${Math.round(cal * 0.3)} kcal): salmon or 90% lean beef with sweet potato.\n\nSnack (~${Math.round(cal * 0.1)} kcal): Greek yogurt and almonds.\n\nTotal hits your prescribed targets.`;
+    } else if (/(protein|how much protein|protein target|hit (my |my daily )?protein)/.test(msg)) {
       const left = pro - today.protein_g;
-      return `Your prescribed target is ${pro}g protein. You have logged ${today.protein_g}g, ${left > 0 ? `${left}g remaining` : 'on target'}. Best per-gram sources: chicken breast, 90% lean beef, eggs, Greek yogurt, canned tuna.`;
+      text = `Your prescribed target is ${pro}g protein. You have logged ${today.protein_g}g, ${left > 0 ? `${left}g remaining` : 'on target'}. Best per-gram sources: chicken breast, 90% lean beef, eggs, Greek yogurt, canned tuna.`;
+    } else {
+      const goalMsg =
+        ctx.profile.goal_type === 'fat_loss'
+          ? `You are in a fat loss phase (${cal} kcal target). Protect muscle by hitting ${pro}g protein and training hard.`
+          : ctx.profile.goal_type === 'muscle_gain'
+          ? `You are in a muscle gain phase (${cal} kcal target). Hit your protein, train progressively, sleep 7-9 hours.`
+          : `You are maintaining (${cal} kcal target). Focus on body recomposition.`;
+      text = `${goalMsg}\n\nToday you logged ${today.calories} kcal and ${today.protein_g}g protein. Ask me anything specific about nutrition, training, or training schedule and I will give you a direct answer.`;
     }
-
-    const goalMsg =
-      ctx.profile.goal_type === 'fat_loss'
-        ? `You are in a fat loss phase (${cal} kcal target). Protect muscle by hitting ${pro}g protein and training hard.`
-        : ctx.profile.goal_type === 'muscle_gain'
-        ? `You are in a muscle gain phase (${cal} kcal target). Hit your protein, train progressively, sleep 7-9 hours.`
-        : `You are maintaining (${cal} kcal target). Focus on body recomposition.`;
-    return `${goalMsg}\n\nToday you logged ${today.calories} kcal and ${today.protein_g}g protein. Ask me anything specific about nutrition, training, or training schedule and I will give you a direct answer.`;
+    return { text, degraded: true };
   }
 
   // Single entry point used by /ai/chat. The controller passes the
@@ -290,17 +293,25 @@ Now answer the user's next message using the rules above. Keep the answer under 
             clientId: userId,
           },
         );
-        rawReply = result.text || this.generateFallbackResponse(userMessage, ctx);
-        modelUsed = result.text ? 'anthropic' : 'fallback';
+        if (result.text) {
+          rawReply = result.text;
+          modelUsed = 'anthropic';
+        } else {
+          const fb = this.generateFallbackResponse(userMessage, ctx);
+          rawReply = fb.text;
+          modelUsed = 'fallback';
+        }
       } catch (error) {
         this.logger.warn(
           `Anthropic chat fallback failed; using deterministic: ${error instanceof Error ? error.message : String(error)}`,
         );
-        rawReply = this.generateFallbackResponse(userMessage, ctx);
+        const fb = this.generateFallbackResponse(userMessage, ctx);
+        rawReply = fb.text;
         modelUsed = 'fallback';
       }
     } else if (!perplexityKey) {
-      rawReply = this.generateFallbackResponse(userMessage, ctx);
+      const fb = this.generateFallbackResponse(userMessage, ctx);
+      rawReply = fb.text;
       modelUsed = 'fallback';
     } else {
       const systemPrompt = this.buildSystemPrompt(ctx, userMessage);
@@ -322,18 +333,24 @@ Now answer the user's next message using the rules above. Keep the answer under 
           temperature: 0.7,
           max_tokens: 600,
         });
-        rawReply =
-          response.choices[0]?.message?.content || this.generateFallbackResponse(userMessage, ctx);
-        if (!response.choices[0]?.message?.content) modelUsed = 'fallback';
+        if (response.choices[0]?.message?.content) {
+          rawReply = response.choices[0].message.content;
+        } else {
+          const fb = this.generateFallbackResponse(userMessage, ctx);
+          rawReply = fb.text;
+          modelUsed = 'fallback';
+        }
       } catch (error) {
         this.logger.warn(
           `Perplexity chat failed; falling back: ${error instanceof Error ? error.message : String(error)}`,
         );
-        rawReply = this.generateFallbackResponse(userMessage, ctx);
+        const fb = this.generateFallbackResponse(userMessage, ctx);
+        rawReply = fb.text;
         modelUsed = 'fallback';
       }
     }
 
+    const isFallback = modelUsed === 'fallback';
     const result = this.guardrails.validate(userMessage, rawReply, ctx);
     this.analytics.capture(userId, Events.AI_CHAT_INVOKED, {
       model_used: modelUsed,
@@ -341,11 +358,29 @@ Now answer the user's next message using the rules above. Keep the answer under 
       message_length: userMessage.length,
       has_coach: ctx.coach.has_coach,
     });
+
+    // Audit log — non-fatal. Write every legacy /ai/chat call to AiRequestAudit
+    // so fallback usage is visible to operators alongside the gateway path.
+    try {
+      await this.prisma.aiRequestAudit.create({
+        data: {
+          request_id: `chat-${userId}-${Date.now()}`,
+          capability: 'chat.client_coach',
+          requester_id: userId,
+          subject_user_id: userId,
+          provider: isFallback ? 'stub' : modelUsed,
+          model: modelUsed === 'perplexity' ? 'sonar-pro' : modelUsed === 'anthropic' ? 'claude-sonnet' : 'disabled',
+          enabled: !isFallback,
+        },
+      });
+    } catch { /* non-fatal */ }
+
     return {
       reply: result.reply,
       guardrails_applied: result.applied,
       context_generated_at: ctx.generated_at,
       model_used: modelUsed,
+      degraded: isFallback,
     };
   }
 }

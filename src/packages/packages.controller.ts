@@ -17,6 +17,7 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
+import { SkipClientEntitlement } from '../common/decorators/skip-client-entitlement.decorator';
 import { PrismaService } from '../prisma.service';
 import {
   CreatePackageInput,
@@ -119,6 +120,7 @@ export class ClientPackagesController {
   }
 
   @Get('packages')
+  @SkipClientEntitlement()
   async list(@Request() req: AuthedRequest) {
     const coachId = req.user.coach_id;
     if (!coachId) {
@@ -131,6 +133,7 @@ export class ClientPackagesController {
   }
 
   @Get('packages/:id')
+  @SkipClientEntitlement()
   async detail(@Request() req: AuthedRequest, @Param('id') id: string) {
     const coachId = req.user.coach_id;
     const row = await this.packages.getById(id);

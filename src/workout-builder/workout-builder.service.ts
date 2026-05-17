@@ -308,6 +308,9 @@ export class WorkoutBuilderService {
     if (!assignment) throw new NotFoundException('Assignment not found');
     if (assignment.client_id !== clientId) throw new ForbiddenException();
     if (assignment.completed_at) {
+      if (dto.idempotency_key && assignment.idempotency_key === dto.idempotency_key) {
+        return assignment; // idempotent success
+      }
       throw new BadRequestException('Assignment already completed');
     }
 
@@ -317,6 +320,9 @@ export class WorkoutBuilderService {
         completed_at: new Date(),
         post_rpe: dto.post_rpe ?? null,
         post_notes: dto.post_notes ?? null,
+        idempotency_key: dto.idempotency_key ?? null,
+        completion_payload: dto.completion_payload ?? null,
+        started_at: dto.started_at ? new Date(dto.started_at) : null,
       },
     });
   }

@@ -4,10 +4,11 @@ import type { AuthedRequest } from '../auth/auth-request';
 import { Throttle } from '@nestjs/throttler';
 import { AiService } from './ai.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 
 @ApiTags('ai')
 @Controller('ai')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
 export class AiController {
   constructor(private aiService: AiService) {}
 
@@ -28,9 +29,12 @@ export class AiController {
       body.conversation_history || [],
     );
     const includeDebug = process.env.NODE_ENV !== 'production';
+    const isFallback = result.model_used === 'fallback';
     return {
       reply: result.reply,
       timestamp: new Date().toISOString(),
+      model: result.model_used,
+      degraded: isFallback,
       ...(includeDebug
         ? {
             debug: {

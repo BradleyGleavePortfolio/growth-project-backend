@@ -19,6 +19,8 @@ import type { AuthedRequest } from '../../auth/auth-request';
 import { AiGatewayService } from './ai-gateway.service';
 import { AiApprovalService } from './ai-approval.service';
 import { PrivateContextService } from './private-context.service';
+import { ClientEntitlementGuard } from '../../common/guards/client-entitlement.guard';
+import { SkipClientEntitlement } from '../../common/decorators/skip-client-entitlement.decorator';
 
 // Thin HTTP surface for the gateway. Two intentional split-points:
 //
@@ -37,7 +39,7 @@ import { PrivateContextService } from './private-context.service';
 // without each capability requiring its own controller.
 @ApiTags('ai-gateway')
 @Controller('ai/gateway')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
 export class AiGatewayController {
   constructor(
     private gateway: AiGatewayService,
@@ -46,6 +48,7 @@ export class AiGatewayController {
   ) {}
 
   @Get('status')
+  @SkipClientEntitlement()
   async getStatus(@Request() req: AuthedRequest) {
     // Return the gateway provider/capability status
     return this.gateway.getStatus();

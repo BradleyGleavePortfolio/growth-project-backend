@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { WorkoutService } from './workout.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import {
   CreateWorkoutDto,
   CreateRoutineDto,
@@ -12,7 +13,7 @@ import {
 
 @ApiTags('workout')
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
 export class WorkoutController {
   constructor(private workoutService: WorkoutService) {}
 

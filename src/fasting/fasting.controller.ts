@@ -4,10 +4,11 @@ import type { AuthedRequest } from '../auth/auth-request';
 import { FastingService } from './fasting.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { StartFastDto, EndFastDto } from './fasting.dto';
+import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 
 @ApiTags('fasting')
 @Controller('fasting')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
 export class FastingController {
   constructor(private fastingService: FastingService) {}
 

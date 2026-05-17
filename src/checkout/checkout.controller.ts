@@ -17,6 +17,7 @@ import { IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validato
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
+import { SkipClientEntitlement } from '../common/decorators/skip-client-entitlement.decorator';
 import { StripeConnectApiError } from '../connect/stripe-connect-api.service';
 import { THROTTLER_NAMES, THROTTLER_ROUTE_LIMITS } from '../throttler/throttler.config';
 import { CheckoutService } from './checkout.service';
@@ -126,6 +127,7 @@ export class CheckoutController {
   }
 
   @Get('purchases')
+  @SkipClientEntitlement()
   async listPurchases(
     @Request() req: AuthedRequest,
     @Query('cursor') cursor?: string,
@@ -142,6 +144,7 @@ export class CheckoutController {
   }
 
   @Get('entitlement')
+  @SkipClientEntitlement()
   async checkEntitlement(
     @Request() req: AuthedRequest,
     @Query('package_id') packageId?: string,
@@ -155,6 +158,7 @@ export class CheckoutController {
   }
 
   @Get('payment-method')
+  @SkipClientEntitlement()
   async paymentMethod(@Request() req: AuthedRequest) {
     return this.checkout.getSavedPaymentMethodForClient(req.user.id);
   }
@@ -169,6 +173,7 @@ export class CheckoutController {
    * of leaving `dunning.update_card_url` null.
    */
   @Post('billing-portal')
+  @SkipClientEntitlement()
   async createBillingPortal(@Request() req: AuthedRequest) {
     try {
       return await this.checkout.createBillingPortalSession(req.user.id);
@@ -190,6 +195,7 @@ export class CheckoutController {
    * doesn't cause a false "pending" state.
    */
   @Get('sessions/:sessionId/confirm')
+  @SkipClientEntitlement()
   async confirmSession(
     @Param('sessionId') sessionId: string,
     @Request() req: AuthedRequest,

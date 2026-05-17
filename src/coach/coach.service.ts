@@ -365,7 +365,7 @@ export class CoachService {
     // Per-scope consent gating, same shape as getClientTimeline.
     const flags = await this.loadFitnessConsents(coachId, clientId, callerRole);
 
-    const [todayEntries, weightLogs, recentWorkouts] = await Promise.all([
+    const [todayEntries, weightLogs, recentWorkouts, recentAssignments] = await Promise.all([
       flags.food
         ? this.prisma.loggedFoodEntry.findMany({
             // Filter by `date` (eat date) not `logged_at` (server sync time)
@@ -390,6 +390,16 @@ export class CoachService {
             take: 10,
           })
         : Promise.resolve<WorkoutSessionWithExercises[]>([]),
+      flags.workouts
+        ? this.prisma.clientWorkoutAssignment.findMany({
+            where: { client_id: clientId },
+            include: {
+              workout_plan: { include: { exercises: true } },
+            },
+            orderBy: { scheduled_for: 'desc' },
+            take: 20,
+          })
+        : Promise.resolve([]),
     ]);
 
     let total_calories = 0, total_protein_g = 0, total_carbs_g = 0, total_fat_g = 0;
@@ -416,6 +426,7 @@ export class CoachService {
       },
       weight_logs: weightLogs,
       recent_workouts: recentWorkouts,
+      recent_assignments: recentAssignments,
       consent: {
         workouts: flags.workouts,
         food_macros: flags.food,

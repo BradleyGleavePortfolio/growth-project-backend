@@ -17,6 +17,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import {
   AssignDailyPlanDto,
   CreateDailyMealPlanDto,
@@ -128,13 +129,13 @@ export class CoachDailyMealPlansController {
 
 @ApiTags('real-meal-plans')
 @Controller()
+@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
 export class ClientMealPlanController {
   constructor(private readonly meals: RealMealPlansService) {}
 
   // GET /me/meal-plan/today — today's plan(s). Optional ?date=YYYY-MM-DD
   // for selectively viewing a future or past day.
   @Get('me/meal-plan/today')
-  @UseGuards(JwtAuthGuard)
   today(@Req() req: AuthedRequest, @Query('date') date?: string) {
     return this.meals.getTodayForClient(req.user.id, date);
   }

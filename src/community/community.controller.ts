@@ -14,10 +14,11 @@ import type { AuthedRequest } from '../auth/auth-request';
 import { CommunityService } from './community.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { PostWinDto } from './community.dto';
+import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 
 @ApiTags('community')
 @Controller('community')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
 export class CommunityController {
   constructor(private communityService: CommunityService) {}
 

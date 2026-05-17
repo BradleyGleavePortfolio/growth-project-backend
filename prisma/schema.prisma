@@ -1775,6 +1775,9 @@ model ClientWorkoutAssignment {
   // Rating of Perceived Exertion 1–10; null until completed.
   post_rpe             Int?
   post_notes           String?
+  idempotency_key      String?  @unique
+  completion_payload   Json?
+  started_at           DateTime?
 
   @@index([client_id, scheduled_for])
   @@index([workout_plan_id])

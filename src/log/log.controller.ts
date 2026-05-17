@@ -4,10 +4,11 @@ import type { AuthedRequest } from '../auth/auth-request';
 import { LogService } from './log.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { LogFoodDto, UpdateLogEntryDto } from './log.dto';
+import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 
 @ApiTags('log')
 @Controller('log')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
 export class LogController {
   constructor(private logService: LogService) {}
 

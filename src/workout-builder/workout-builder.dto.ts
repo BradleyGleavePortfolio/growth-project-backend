@@ -14,6 +14,7 @@ import {
   IsDateString,
   IsNotEmpty,
   MaxLength,
+  IsObject,
 } from 'class-validator';
 
 // ─── Enums (mirror Prisma) ────────────────────────────────────────────────────
@@ -133,4 +134,16 @@ export class CompleteAssignmentDto {
   @IsString()
   @MaxLength(1000)
   post_notes?: string;
+
+  @IsOptional()
+  @IsString()
+  idempotency_key?: string;
+
+  @IsOptional()
+  @IsObject()
+  completion_payload?: Record<string, any>;
+
+  @IsOptional()
+  @IsDateString()
+  started_at?: string;
 }

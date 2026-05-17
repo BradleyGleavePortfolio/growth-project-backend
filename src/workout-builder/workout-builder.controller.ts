@@ -30,6 +30,7 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import { WorkoutBuilderService } from './workout-builder.service';
 import {
   CreateWorkoutPlanDto,
@@ -119,6 +120,7 @@ export class WorkoutBuilderController {
 
 /** Separate controller for assignment listing/completion (client-facing). */
 @Controller('assignments')
+@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
 export class AssignmentController {
   constructor(private readonly workoutBuilder: WorkoutBuilderService) {}
 

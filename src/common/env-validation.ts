@@ -697,6 +697,10 @@ export function assertEnv(
         reason:
           'Stripe Checkout cancel redirect would only resolve via the mobile deep-link scheme, breaking web checkouts',
       },
+      {
+        name: 'ANTHROPIC_API_KEY',
+        reason: 'Primary AI provider; app boots without it but all client AI guide responses fall back to deterministic local content indistinguishable from real AI.',
+      },
     ];
     const missing = prodHardenedFeatureVars.filter(
       (v) =>
