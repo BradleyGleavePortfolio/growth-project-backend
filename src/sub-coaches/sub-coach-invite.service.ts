@@ -634,7 +634,7 @@ export class SubCoachInviteService {
 
       await this.team.refreshCounters(headCoachId);
 
-      return { revoked: true, clients_reassigned: 0, reason: 'multi_head_sub_coach' } as unknown as { ok: true; reassignedClientCount: number };
+      return { ok: true, reassignedClientCount: 0 };
     }
 
     // Safe to reassign — sub-coach only serves this head coach.

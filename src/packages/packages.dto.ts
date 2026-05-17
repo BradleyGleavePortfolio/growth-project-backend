@@ -13,7 +13,7 @@ export class CreatePackageDto {
 
   @IsInt()
   @Min(50) // 50 cents minimum
-  price_cents!: number;
+  amount_cents!: number;
 
   @IsString()
   @IsIn(['usd', 'gbp', 'eur', 'aud', 'cad'])
@@ -34,11 +34,6 @@ export class CreatePackageDto {
   billing_interval_count?: number;
 
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  session_count?: number;
-
-  @IsOptional()
   @IsBoolean()
   is_active?: boolean;
 }
@@ -57,7 +52,7 @@ export class UpdatePackageDto {
   @IsOptional()
   @IsInt()
   @Min(50)
-  price_cents?: number;
+  amount_cents?: number;
 
   @IsOptional()
   @IsString()

@@ -5,7 +5,6 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
-  NotFoundException,
   Post,
   Req,
 } from '@nestjs/common';
@@ -56,7 +55,7 @@ export class GoogleCalendarWebhookController {
   @HttpCode(HttpStatus.OK)
   async receive(@Req() req: Request): Promise<{ ok: true }> {
     if (!GoogleOAuthService.isFeatureFlagOn()) {
-      throw new NotFoundException();
+      return { ok: true };
     }
     const channelId = headerOf(req, 'x-goog-channel-id');
     const resourceId = headerOf(req, 'x-goog-resource-id');

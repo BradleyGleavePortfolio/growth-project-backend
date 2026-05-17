@@ -29,7 +29,7 @@ import { TeamService } from './team.service';
 // the admin web console).
 @ApiTags('coach-team')
 @Controller('coach/team')
-@UseGuards(JwtAuthGuard, CoachGuard)
+@UseGuards(JwtAuthGuard, CoachGuard, NoActiveSubCoachGuard)
 export class TeamController {
   constructor(private readonly team: TeamService) {}
 

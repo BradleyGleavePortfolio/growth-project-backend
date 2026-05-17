@@ -57,7 +57,7 @@ export class CoachPackagesController {
     return this.packages.create(req.user.id, {
       name: body.name,
       description: body.description,
-      amount_cents: body.price_cents,
+      amount_cents: body.amount_cents,
       currency: body.currency,
       billing_type: body.billing_type as 'one_time' | 'recurring',
       interval: body.billing_interval as 'month' | 'year' | null | undefined,
@@ -74,7 +74,7 @@ export class CoachPackagesController {
     return this.packages.update(req.user.id, id, {
       name: body.name,
       description: body.description,
-      amount_cents: body.price_cents,
+      amount_cents: body.amount_cents,
       currency: body.currency,
       is_active: body.is_active,
     });
