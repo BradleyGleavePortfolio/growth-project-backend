@@ -685,7 +685,23 @@ export function assertEnv(
         reason:
           'Stripe Checkout cancel redirect would only resolve via the mobile deep-link scheme, breaking web checkouts',
       },
-    ];
+    
+  // ============================================================
+  // Exercise Video Providers
+  // ============================================================
+  {
+    name: 'YMOVE_API_KEY',
+    tier: 'optional',
+    reason:
+      'YMove exercise video API key (prefix: ym_). When set, the YMove provider returns HLS video URLs (via Bunny CDN) for up to 698 exercises. When unset, YMove is skipped and the system falls back to MuscleWiki then ExerciseDB GIF. NOTE: YMove v2 returns pre-signed URLs that expire after 48 hours — they are cached with a 3-hour Redis TTL, not persisted to the database.',
+  },
+  {
+    name: 'MUSCLEWIKI_API_KEY',
+    tier: 'optional',
+    reason:
+      'MuscleWiki exercise video API key (RapidAPI key). When set, the MuscleWiki provider returns stable MP4 video URLs for 1,800+ exercises. When unset, the system falls back to ExerciseDB GIF. MuscleWiki URLs are stable CDN paths cached for 24 hours and safe to persist in ExerciseCatalogItem.video_url.',
+  },
+];
     const missing = prodHardenedFeatureVars.filter(
       (v) =>
         typeof env[v.name] !== 'string' || env[v.name]!.trim().length === 0,
