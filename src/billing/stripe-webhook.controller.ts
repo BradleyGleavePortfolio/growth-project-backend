@@ -9,6 +9,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { BillingService } from './billing.service';
@@ -45,6 +46,7 @@ export class StripeWebhookController {
   constructor(private billing: BillingService) {}
 
   @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 500 } })
   @Post('stripe')
   @HttpCode(HttpStatus.OK)
   async stripe(

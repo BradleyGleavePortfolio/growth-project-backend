@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { BillingModule } from '../billing/billing.module';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
 import { JwksVerifierService } from '../auth/jwks.service';
@@ -10,6 +11,7 @@ import { MealPlansService } from './meal-plans.service';
 // locally (rather than `imports: [AuthModule]`) follows NudgesModule /
 // MessagingModule and avoids AuthModule's circular-import risk.
 @Module({
+  imports: [BillingModule],
   controllers: [CoachMealPlansController, ClientMealPlansController],
   providers: [MealPlansService, JwtAuthGuard, CoachGuard, JwksVerifierService],
   exports: [MealPlansService],

@@ -323,10 +323,21 @@ export class BillingService {
         paid_at: this.toDate(inv.status_transitions?.paid_at) ?? new Date(),
       },
     });
-    // Clear last_payment_failed_at — we have a fresh paid invoice.
+    // Clear payment failure state. If the subscription was past_due (set by
+    // invoice.payment_failed), restore it to active so the guard allows
+    // access immediately without waiting for a customer.subscription.updated
+    // event (which Stripe may deliver slightly later).
     await this.prisma.coachSubscription.updateMany({
       where: { coach_id: coachId },
       data: { last_payment_failed_at: null, failed_payments_this_month: 0 },
+    });
+    // Restore status if invoice payment resolved a past_due state.
+    // We only upgrade past_due → active, never touch canceled/paused/trialing.
+    // The authoritative status arrives via customer.subscription.updated;
+    // this is a best-effort recovery that removes the lockout immediately.
+    await this.prisma.coachSubscription.updateMany({
+      where: { coach_id: coachId, status: 'past_due' },
+      data: { status: 'active' },
     });
     // Stripe-sourced amounts only — these are real revenue, not synthesized.
     this.analytics.capture(coachId, Events.INVOICE_PAID, {

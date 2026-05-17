@@ -18,9 +18,8 @@ import { PrismaService } from '../prisma.service';
 //                          subscriptions.ts)
 //   - past_due           → allow during a 7-day grace then deny
 //   - canceled / paused  → deny
-//   - missing row        → allow (a coach has been provisioned in the app
-//                          but has not yet been onboarded to billing — this
-//                          is the expected state during preview/dev rollout)
+//   - missing row        → allow during rollout (observe mode)
+//                          deny in enforce mode (BILLING_ENFORCEMENT=enforce)
 //
 // OWNER bypasses subscription checks entirely (Tier-0 platform admin).
 //

@@ -10,6 +10,7 @@ import { CoachGuard } from '../auth/coach.guard';
 import { JwksVerifierService } from '../auth/jwks.service';
 import { WorkoutBuilderController, AssignmentController } from './workout-builder.controller';
 import { WorkoutBuilderService } from './workout-builder.service';
+import { BillingModule } from '../billing/billing.module';
 import { ExerciseLibraryModule } from '../exercise-library/exercise-library.module';
 import { ExerciseCatalogModule } from '../exercise-catalog/exercise-catalog.module';
 
@@ -17,7 +18,7 @@ import { ExerciseCatalogModule } from '../exercise-catalog/exercise-catalog.modu
 // JwksVerifierService locally mirrors MacrosModule / MealPlansModule
 // and avoids the circular-import risk of pulling AuthModule.
 @Module({
-  imports: [ExerciseLibraryModule, ExerciseCatalogModule],
+  imports: [BillingModule, ExerciseLibraryModule, ExerciseCatalogModule],
   controllers: [WorkoutBuilderController, AssignmentController],
   providers: [WorkoutBuilderService, JwtAuthGuard, CoachGuard, JwksVerifierService],
   exports: [WorkoutBuilderService],

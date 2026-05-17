@@ -8,6 +8,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { DataExportService } from './data-export.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -73,6 +74,7 @@ export class DataExportController {
    */
   @Get('download')
   @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
   async download(
     @Query('token') token: string,
     @Res() res: Response,

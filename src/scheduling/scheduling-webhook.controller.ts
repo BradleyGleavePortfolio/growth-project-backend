@@ -9,6 +9,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 
@@ -44,6 +45,7 @@ export class SchedulingWebhookController {
   })
   @ApiResponse({ status: 200, description: 'Webhook acknowledged.' })
   @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 500 } })
   @Post('google-calendar')
   @HttpCode(HttpStatus.OK)
   async googleCalendar(@Body() body: unknown, @Req() req: Request) {
@@ -67,6 +69,7 @@ export class SchedulingWebhookController {
   })
   @ApiResponse({ status: 200, description: 'Webhook acknowledged.' })
   @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 500 } })
   @Post('zoom')
   @HttpCode(HttpStatus.OK)
   async zoom(@Body() body: unknown, @Req() req: Request) {

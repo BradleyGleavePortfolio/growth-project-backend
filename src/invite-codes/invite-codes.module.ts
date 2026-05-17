@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { BillingModule } from '../billing/billing.module';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
 import { JwksVerifierService } from '../auth/jwks.service';
@@ -11,6 +12,7 @@ import { InviteCodesService } from './invite-codes.service';
 // Providing the guards locally avoids the circular import AuthModule ↔ InviteCodesModule
 // that would otherwise arise from AuthService needing InviteCodesService.
 @Module({
+  imports: [BillingModule],
   controllers: [InviteCodesController],
   providers: [InviteCodesService, JwtAuthGuard, CoachGuard, JwksVerifierService],
   exports: [InviteCodesService],

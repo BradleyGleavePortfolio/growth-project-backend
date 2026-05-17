@@ -554,6 +554,10 @@ export class InviteCodesService {
       if (!v.valid) throw new BadRequestException('Invalid or expired invite code');
       resolvedCoachId = v.coach_id;
       inviteCodeRowId = v.invite_code_id;
+      // Enforce subscription check on per-row InviteCode path too.
+      if (resolvedCoachId) {
+        await this.assertCoachCanAcceptClients(resolvedCoachId);
+      }
     }
 
     // OWNERs do not get coached.
@@ -901,6 +905,13 @@ export class InviteCodesService {
 
       if (record.coach.role !== 'coach') {
         return { accepted: false, reason: 'invalid', message: 'This invite code is no longer valid.' };
+      }
+
+      // Verify the coach still has an active subscription before accepting the invite.
+      try {
+        await this.assertCoachCanAcceptClients(record.coach.id);
+      } catch {
+        return { accepted: false, reason: 'invalid', message: 'This coach is not currently accepting clients.' };
       }
 
       return {

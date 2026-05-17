@@ -7,6 +7,7 @@ import { CoachAIService } from './coach-ai.service';
 import { CoachAIStateService } from './coach-ai-state.service';
 import { WeeklyInsightCron } from './weekly-insight.cron';
 import { AuthModule } from '../../auth/auth.module';
+import { BillingModule } from '../../billing/billing.module';
 import { MealPlansModule } from '../../meal-plans/meal-plans.module';
 import { WorkoutBuilderModule } from '../../workout-builder/workout-builder.module';
 
@@ -17,7 +18,7 @@ import { WorkoutBuilderModule } from '../../workout-builder/workout-builder.modu
 // without re-importing this module everywhere.
 @Global()
 @Module({
-  imports: [ConfigModule, AuthModule, MealPlansModule, WorkoutBuilderModule],
+  imports: [ConfigModule, AuthModule, BillingModule, MealPlansModule, WorkoutBuilderModule],
   controllers: [CoachAIController],
   providers: [
     AnthropicAdapter,

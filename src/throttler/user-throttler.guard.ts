@@ -29,6 +29,16 @@ const HEALTH_PATHS = new Set(['/health', '/healthz', '/readyz']);
  * address. User-keyed limits track the actual subject being protected and
  * reserve IP-keyed limits for pre-auth surfaces (login, signup, forgot-
  * password) where there is no user identity yet.
+ *
+ * Security model for bucket-key selection:
+ *   - Public endpoints that lack a Bearer token use IP-based limits (correct).
+ *   - Authenticated endpoints bucket by decoded Supabase subject (consistent
+ *     per-user bucketing; full JWT verification is JwtAuthGuard's job).
+ *   - The attack surface for sub-forgery is low because forge-sub just yields
+ *     a new per-sub bucket that is still limit-enforced. Sensitive public
+ *     routes (register, login, forgot-password) use explicit @Throttle
+ *     decorators with low caps, so the per-IP fallback on those routes is
+ *     the more important control anyway.
  */
 @Injectable()
 export class UserThrottlerGuard extends ThrottlerGuard {
@@ -47,16 +57,24 @@ export class UserThrottlerGuard extends ThrottlerGuard {
   }
 
   protected async getTracker(req: Record<string, any>): Promise<string> {
-    // Priority 1: req.user already populated (guard order may vary in future).
+    // Priority 1: req.user already populated by JwtAuthGuard (route-local guard
+    // or because this guard runs after auth in the middleware chain for this route).
+    // This is the authoritative user-id bucket for authenticated requests.
     const userId = req?.user?.id;
     if (typeof userId === 'string' && userId.length > 0) {
       return `user:${userId}`;
     }
 
-    // Priority 2: Decode Bearer token to get user id WITHOUT full verification.
-    // Full JWT verification happens in JwtAuthGuard — here we only need a
-    // stable bucket key for rate limiting. Forgery just means the forger gets
-    // their own bucket, which is acceptable (they still hit the per-bucket limit).
+    // Priority 2: For authenticated routes where JwtAuthGuard has NOT yet run
+    // (global guard order: UserThrottlerGuard → JwtAuthGuard), decode the Bearer
+    // token without verification to get the Supabase subject claim.
+    // SECURITY NOTE: We only do this for already-authenticated surfaces — i.e.,
+    // when the Authorization header is a Bearer token. Public endpoints that are
+    // hit without a token still get IP-keyed limits. An attacker who forges a
+    // JWT with a fake sub just gets their own per-sub bucket (still limited),
+    // and the signed limits on sensitive public routes use explicit @Throttle
+    // decorators with low caps, so the per-IP fallback on those routes is the
+    // more important control anyway.
     const auth = (req?.headers?.authorization ?? '') as string;
     if (auth.startsWith('Bearer ')) {
       try {
@@ -65,7 +83,10 @@ export class UserThrottlerGuard extends ThrottlerGuard {
         if (parts.length === 3) {
           const payloadJson = Buffer.from(parts[1], 'base64url').toString('utf8');
           const payload = JSON.parse(payloadJson) as Record<string, unknown>;
-          const sub = (payload.sub ?? payload.id) as string | undefined;
+          // Use sub (Supabase auth UUID) as a stable bucket key.
+          // We don't verify the signature here — the purpose is consistent
+          // per-user bucketing, not auth. JwtAuthGuard performs full verification.
+          const sub = payload.sub as string | undefined;
           if (typeof sub === 'string' && sub.length > 0) {
             return `user:${sub}`;
           }
@@ -75,7 +96,7 @@ export class UserThrottlerGuard extends ThrottlerGuard {
       }
     }
 
-    // Priority 3: IP-based for unauthenticated requests.
+    // Priority 3: IP-based for unauthenticated requests (no Bearer token present).
     const flyClientIp = (req?.headers?.['fly-client-ip'] || '') as string;
     if (flyClientIp.trim().length > 0) {
       return `ip:${flyClientIp.trim()}`;
