@@ -405,8 +405,8 @@ export class AuthService {
         .digest('hex');
       const tokenNonce = applePayload.nonce as string | undefined;
       if (!tokenNonce) {
-        this.logger.warn(
-          `appleAuth: raw_nonce provided but token contains no nonce claim — possible old token format`,
+        throw new UnauthorizedException(
+          'Apple auth failed — nonce provided by client but token contains no nonce claim',
         );
       } else if (tokenNonce !== expectedNonceHash) {
         throw new UnauthorizedException(
@@ -414,7 +414,13 @@ export class AuthService {
         );
       }
     } else {
-      // Log missing nonce so we can track client adoption.
+      if (process.env.APPLE_NONCE_REQUIRED === 'true') {
+        throw new UnauthorizedException(
+          'Apple auth failed — nonce is required but was not provided',
+        );
+      }
+      // Log missing nonce to track client adoption. Set APPLE_NONCE_REQUIRED=true
+      // in Fly once all mobile clients are updated to send raw_nonce.
       this.logger.warn(
         `appleAuth: no raw_nonce provided — token replay protection not active for this sign-in`,
       );

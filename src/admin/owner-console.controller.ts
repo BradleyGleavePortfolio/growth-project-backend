@@ -1,25 +1,24 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../auth/auth.guard';
 import { ServiceTokenGuard } from '../auth/service-token.guard';
-import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator';
 import { AdminConsoleService } from './console/admin-console.service';
 import { MetricsService } from './metrics.service';
 
 /**
- * OwnerConsoleController — server-to-server surface for the tgp-platform-site
- * owner console. Protected by ServiceTokenGuard (shared secret in
- * ADMIN_SERVICE_TOKEN) rather than a Supabase JWT, since the owner console
- * runs server-side in Next.js RSC/route handlers without a user session.
+ * OwnerConsoleController — server-to-server (S2S) surface for the
+ * tgp-platform-site owner console.
  *
- * All routes are read-only. Mutation (promote, scrub, etc.) requires a real
- * owner JWT via AdminController.
+ * Authentication: ServiceTokenGuard only (ADMIN_SERVICE_TOKEN bearer secret).
+ * This controller is intentionally NOT mixed with JWT-owner admin routes:
+ * the owner console runs server-side in Next.js RSC/route handlers without
+ * a user session, so a Supabase JWT is unavailable.
+ *
+ * Do NOT add JwtAuthGuard, RolesGuard, or @Roles here. Mutations (promote,
+ * scrub, etc.) that require a real owner JWT live in AdminController instead.
  */
 @ApiTags('owner-console')
-@Controller('admin')
-@UseGuards(JwtAuthGuard, ServiceTokenGuard, RolesGuard)
-@Roles('owner')
+@Controller('internal/owner-console')
+@UseGuards(ServiceTokenGuard)
 export class OwnerConsoleController {
   constructor(
     private console: AdminConsoleService,

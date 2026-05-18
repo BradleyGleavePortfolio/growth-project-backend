@@ -130,18 +130,28 @@ export class ClientContextService {
       activity_level: profile?.activity_level ?? 'moderate',
       workout_experience: profile?.workout_experience ?? 'beginner',
       has_gym_membership: profile?.has_gym_membership ?? false,
-      preferred_snacks: profile?.preferred_snacks ?? [],
+      preferred_snacks: (profile?.preferred_snacks ?? []).map((s) =>
+        typeof s === 'string' ? sanitizePromptInput(s, 200) : s,
+      ),
       dietary_pattern: profile?.dietary_pattern ?? null,
-      dietary_restrictions: profile?.dietary_restrictions ?? [],
+      dietary_restrictions: (profile?.dietary_restrictions ?? []).map((s) =>
+        typeof s === 'string' ? sanitizePromptInput(s, 200) : s,
+      ),
       workout_days_per_week: profile?.workout_days_per_week ?? null,
       meals_per_day: profile?.meals_per_day ?? null,
-      equipment_access: profile?.equipment_access ?? [],
+      equipment_access: (profile?.equipment_access ?? []).map((s) =>
+        typeof s === 'string' ? sanitizePromptInput(s, 200) : s,
+      ),
       bio: profile?.bio ? sanitizePromptInput(clampStr(profile.bio, 240) ?? '') || null : null,
       injuries: (profile?.injuries ?? []).map((inj) =>
         typeof inj === 'string' ? sanitizePromptInput(inj, 200) : inj,
       ),
-      food_preferences: (profile?.food_preferences as unknown) ?? null,
-      preferred_training_time: profile?.preferred_training_time ?? null,
+      food_preferences: profile?.food_preferences
+        ? sanitizePromptInput(String(profile.food_preferences), 400)
+        : null,
+      preferred_training_time: profile?.preferred_training_time
+        ? sanitizePromptInput(profile.preferred_training_time, 100)
+        : null,
     };
 
     const todayTotals = this.totalsOf(foodEntriesToday);

@@ -57,6 +57,7 @@ export const VOICE_CONTENT_TYPE_ALLOWLIST: ReadonlySet<string> = new Set([
   'audio/mp4',
   'audio/m4a',
   'audio/aac',
+  'audio/mpeg',
   'audio/webm',
   'audio/ogg',
 ]);
@@ -561,6 +562,8 @@ export class MessagingService {
         return 'm4a';
       case 'audio/aac':
         return 'aac';
+      case 'audio/mpeg':
+        return 'mp3';
       case 'audio/webm':
         return 'webm';
       case 'audio/ogg':

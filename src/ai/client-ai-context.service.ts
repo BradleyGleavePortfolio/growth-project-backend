@@ -356,10 +356,10 @@ export class ClientAIContextService {
       `- body: height_cm=${p.height_cm ?? '?'}, current_lbs=${p.current_weight_lbs ?? '?'}, target_lbs=${p.target_weight_lbs ?? '?'}`,
     );
     lines.push(
-      `- diet: pattern=${p.dietary_pattern ?? 'unknown'}, restrictions=${p.dietary_restrictions.length ? p.dietary_restrictions.join('|') : 'none'}`,
+      `- diet: pattern=${p.dietary_pattern ?? 'unknown'}, restrictions=${p.dietary_restrictions.length ? p.dietary_restrictions.map((s) => sanitizePromptInput(s, 200)).join('|') : 'none'}`,
     );
     lines.push(
-      `- equipment: ${p.equipment_access.length ? p.equipment_access.join('|') : 'unknown'}`,
+      `- equipment: ${p.equipment_access.length ? p.equipment_access.map((s) => sanitizePromptInput(s, 200)).join('|') : 'unknown'}`,
     );
     lines.push(
       `- APP_PRESCRIBED (DO NOT CONTRADICT): calories=${tx.calories ?? 'unset'}, protein_g=${tx.protein_g ?? 'unset'}, carbs_g=${tx.carbs_g ?? 'unset'}, fat_g=${tx.fat_g ?? 'unset'}, water_ml=${tx.water_ml ?? 'unset'}, meals_per_day=${tx.meals_per_day ?? 'unset'}`,
@@ -403,7 +403,7 @@ export class ClientAIContextService {
 
     if (ctx.habits.length) {
       const h = ctx.habits
-        .map((x) => `${x.name}=${x.completed_last_14d}/14d`)
+        .map((x) => `${sanitizePromptInput(x.name, 200)}=${x.completed_last_14d}/14d`)
         .join(', ');
       lines.push(`- habits: ${h}`);
     }

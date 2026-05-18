@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import {
   CanActivate,
   ExecutionContext,
@@ -32,7 +33,14 @@ export class ServiceTokenGuard implements CanActivate {
     }
 
     const token = authHeader.slice('Bearer '.length).trim();
-    if (token !== expectedToken) {
+
+    // Use timing-safe comparison to prevent timing-based token enumeration.
+    const expectedBuf = Buffer.from(expectedToken);
+    const tokenBuf = Buffer.from(token);
+    if (
+      expectedBuf.length !== tokenBuf.length ||
+      !crypto.timingSafeEqual(expectedBuf, tokenBuf)
+    ) {
       throw new UnauthorizedException('Invalid service token');
     }
 
