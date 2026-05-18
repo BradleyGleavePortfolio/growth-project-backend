@@ -1,5 +1,6 @@
 import { ClientContext } from '../context/client-context.types';
 import { CoachAIPrompt } from './prompt.types';
+import { sanitizePromptInput } from '../utils/sanitize-prompt-input';
 
 // Coach AI v1 — meal plan generation prompt.
 //
@@ -108,7 +109,7 @@ export const MealPlanPrompt: CoachAIPrompt<MealPlanInput, MealPlanPayload> = {
     const lines: string[] = [];
     lines.push('GENERATE_MEAL_PLAN');
     lines.push(`days: ${input.days}`);
-    if (input.notes) lines.push(`coach_notes: ${input.notes}`);
+    if (input.notes) lines.push(`coach_notes: ${sanitizePromptInput(input.notes)}`);
     lines.push('---');
     lines.push('CLIENT_CONTEXT:');
     lines.push(JSON.stringify(serializeContextForPrompt(ctx), null, 2));

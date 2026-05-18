@@ -180,6 +180,7 @@ export class CheckoutWebhookHandlerService {
     const sub = event.data.object as {
       id?: string;
       status?: string;
+      customer?: string | { id?: string };
       current_period_end?: number;
       cancel_at_period_end?: boolean;
       canceled_at?: number | null;
@@ -194,26 +195,54 @@ export class CheckoutWebhookHandlerService {
       where: { stripe_subscription_id: sub.id },
     });
     if (!purchase) {
-      // Heuristic 2: metadata may carry tgp_package_id if the subscription
+      // Heuristic 2: metadata may carry binding fields if the subscription
       // was minted by our checkout but the webhook arrived before the
-      // checkout.session.completed event populated the FK. Look it up by
-      // metadata then.
+      // checkout.session.completed event populated the FK.
+      // Require all binding identifiers from metadata before claiming.
+      // Matching only on package_id risks cross-binding two clients who bought
+      // the same package in a short window.
       const pkgIdFromMeta = sub.metadata?.tgp_package_id;
-      if (!pkgIdFromMeta) return { claimed: false };
-      // Stash the subscription id on the matching pending purchase if any.
+      const clientIdFromMeta = sub.metadata?.tgp_client_user_id;
+      const coachIdFromMeta = sub.metadata?.tgp_coach_user_id;
+      const customerIdFromMeta =
+        typeof sub.customer === 'string' ? sub.customer : (sub as any).customer?.id;
+
+      if (!pkgIdFromMeta || !clientIdFromMeta || !coachIdFromMeta || !customerIdFromMeta) {
+        this.logger.warn(
+          `applySubscriptionUpdated: missing binding metadata on sub ${sub.id} — skipping fallback`,
+        );
+        return { claimed: false, reason: 'missing_binding_metadata' };
+      }
+
       const pending = await this.prisma.clientPurchase.findFirst({
         where: {
           package_id: pkgIdFromMeta,
+          client_user_id: clientIdFromMeta,
+          coach_user_id: coachIdFromMeta,
+          stripe_customer_id: customerIdFromMeta,
           status: 'pending',
           stripe_subscription_id: null,
         },
         orderBy: { created_at: 'desc' },
       });
-      if (!pending) return { claimed: false };
-      await this.prisma.clientPurchase.update({
-        where: { id: pending.id },
+      if (!pending) return { claimed: false, reason: 'no_pending_purchase_for_metadata' };
+
+      // Use updateMany with the same where clause to guard against races —
+      // only one concurrent call can win the stripe_subscription_id: null check.
+      const bound = await this.prisma.clientPurchase.updateMany({
+        where: {
+          id: pending.id,
+          stripe_subscription_id: null,
+        },
         data: { stripe_subscription_id: sub.id },
       });
+      if (bound.count === 0) {
+        // Another event already claimed this row.
+        this.logger.warn(
+          `applySubscriptionUpdated: race-lost binding for purchase ${pending.id}`,
+        );
+        return { claimed: false, reason: 'race_lost' };
+      }
       return this.applySubscriptionUpdated(event);
     }
 

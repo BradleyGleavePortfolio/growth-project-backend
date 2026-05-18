@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  IsIn,
   IsInt,
   IsISO8601,
   IsOptional,
@@ -43,10 +44,11 @@ export class CreateMessageVoiceDto {
   @Max(25 * 1024 * 1024)
   size_bytes!: number;
 
-  // Allowlist enforced server-side; the DTO only bounds the length so we
-  // never persist a 1KB string here.
-  @IsString()
-  @MaxLength(64)
+  // Allowlist enforced at the DTO level (R7 Fix 4.1) and again in
+  // assertVoiceWithinLimits. Dual validation ensures the content_type is
+  // rejected before it touches service logic even when the DTO is reused
+  // in future code paths that bypass the service guard.
+  @IsIn(['audio/m4a', 'audio/mp4', 'audio/aac', 'audio/mpeg', 'audio/webm', 'audio/ogg'])
   content_type!: string;
 }
 
@@ -101,7 +103,8 @@ export class VoiceUploadRequestDto {
   @Max(25 * 1024 * 1024)
   size_bytes!: number;
 
-  @IsString()
-  @MaxLength(64)
+  // Allowlist enforced at the DTO level (R7 Fix 4.1) and again in
+  // assertVoiceWithinLimits inside MessagingService.
+  @IsIn(['audio/m4a', 'audio/mp4', 'audio/aac', 'audio/mpeg', 'audio/webm', 'audio/ogg'])
   content_type!: string;
 }

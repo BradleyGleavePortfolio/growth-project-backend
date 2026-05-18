@@ -1,6 +1,9 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/auth.guard';
 import { ServiceTokenGuard } from '../auth/service-token.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { AdminConsoleService } from './console/admin-console.service';
 import { MetricsService } from './metrics.service';
 
@@ -15,7 +18,8 @@ import { MetricsService } from './metrics.service';
  */
 @ApiTags('owner-console')
 @Controller('admin')
-@UseGuards(ServiceTokenGuard)
+@UseGuards(JwtAuthGuard, ServiceTokenGuard, RolesGuard)
+@Roles('owner')
 export class OwnerConsoleController {
   constructor(
     private console: AdminConsoleService,

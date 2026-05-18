@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { sanitizePromptInput } from './utils/sanitize-prompt-input';
 import {
   ClientAIContext,
   DailyAdherence,
@@ -421,15 +422,15 @@ export class ClientAIContextService {
     // to the single-message excerpt for backward compat.
     if (ctx.coach.coach_thread_summary) {
       lines.push(
-        `- coach_thread (DO NOT CONTRADICT):\n${ctx.coach.coach_thread_summary}`,
+        `- coach_thread (DO NOT CONTRADICT):\n${sanitizePromptInput(ctx.coach.coach_thread_summary)}`,
       );
     } else if (ctx.coach.last_coach_message_excerpt) {
       lines.push(
-        `- last_coach_message (DO NOT CONTRADICT): "${ctx.coach.last_coach_message_excerpt}"`,
+        `- last_coach_message (DO NOT CONTRADICT): "${sanitizePromptInput(ctx.coach.last_coach_message_excerpt)}"`,
       );
     }
     if (ctx.coach.active_guidelines_excerpt) {
-      lines.push(`- coach_guidelines: ${ctx.coach.active_guidelines_excerpt}`);
+      lines.push(`- coach_guidelines: ${sanitizePromptInput(ctx.coach.active_guidelines_excerpt, CONTEXT_LIMITS.GUIDELINES_CHARS)}`);
     }
 
     if (ctx.current_meal_plan) {
@@ -456,13 +457,13 @@ export class ClientAIContextService {
     if (ctx.next_session) {
       const ns = ctx.next_session;
       lines.push(
-        `- next_session: ${ns.date} "${ns.title}"${ns.coach_note ? ` (note: ${ns.coach_note})` : ''}`,
+        `- next_session: ${ns.date} "${sanitizePromptInput(ns.title)}"${ns.coach_note ? ` (note: ${sanitizePromptInput(ns.coach_note)})` : ''}`,
       );
     }
 
     // M1: community wins
     if (ctx.recent_wins.length) {
-      const winsStr = ctx.recent_wins.map((w) => `"${w.title}"`).join(', ');
+      const winsStr = ctx.recent_wins.map((w) => `"${sanitizePromptInput(w.title)}"`).join(', ');
       lines.push(`- recent_roster_wins: ${winsStr}`);
     }
 
@@ -592,7 +593,7 @@ export class ClientAIContextService {
       .filter((m) => m.body)
       .map((m) => {
         const role = m.sender_id && m.coach_id && m.sender_id === m.coach_id ? 'Coach' : 'Client';
-        return `${role}: ${(m.body ?? '').slice(0, 100)}`;
+        return `${role}: ${sanitizePromptInput((m.body ?? '').slice(0, 100))}`;
       });
     const threadSummary = threadLines.length > 0 ? threadLines.join('\n') : null;
 

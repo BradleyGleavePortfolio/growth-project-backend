@@ -477,6 +477,14 @@ export class MessagingService {
   ): Promise<SignedVoiceUploadResponse> {
     this.assertVoiceWithinLimits(request);
 
+    // SECURITY NOTE: The signed URL allows the client to upload any content to
+    // this storage path within the URL's validity window. We validate the
+    // client-claimed MIME type and size here, but we do not verify the actual
+    // uploaded object's content-type or size after upload. Full remediation
+    // requires a pending-upload tracking table and a post-upload verification
+    // step before the object is accepted into a CoachMessage. This is tracked
+    // as a known gap (R7 Finding 4.1).
+
     const supabase = this.supabase.getClient();
     const bucket = this.voiceBucket();
     const ext = this.contentTypeToExt(request.content_type);

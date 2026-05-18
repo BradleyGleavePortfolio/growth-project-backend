@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import {
   Injectable,
   Logger,
@@ -370,6 +371,7 @@ export class AuthService {
     fullName?: string,
     inviteCode?: string,
     ctx: { ip?: string | null; userAgent?: string | null } = {},
+    raw_nonce?: string,
   ) {
     if (!this.appleVerifier.isConfigured()) {
       // Feature-tier env var APPLE_AUDIENCES is not set on this deployment.
@@ -392,6 +394,32 @@ export class AuthService {
       throw new UnauthorizedException('Apple auth failed — invalid token');
     }
 
+    // Nonce binding: verify the raw nonce from the client matches the
+    // SHA-256 nonce embedded in the Apple identity token.
+    // Optional for now (migration period) — log missing nonces but don't
+    // hard-block. Once all clients are updated, make this a hard throw.
+    if (raw_nonce) {
+      const expectedNonceHash = crypto
+        .createHash('sha256')
+        .update(raw_nonce)
+        .digest('hex');
+      const tokenNonce = applePayload.nonce as string | undefined;
+      if (!tokenNonce) {
+        this.logger.warn(
+          `appleAuth: raw_nonce provided but token contains no nonce claim — possible old token format`,
+        );
+      } else if (tokenNonce !== expectedNonceHash) {
+        throw new UnauthorizedException(
+          'Apple auth failed — nonce mismatch',
+        );
+      }
+    } else {
+      // Log missing nonce so we can track client adoption.
+      this.logger.warn(
+        `appleAuth: no raw_nonce provided — token replay protection not active for this sign-in`,
+      );
+    }
+
     // Apple identity tokens always carry `sub`; `email` is included on first
     // authorization and on subsequent ones for users who have not chosen
     // "Hide My Email" + email-relay invalidation. We require email to upsert
@@ -412,7 +440,11 @@ export class AuthService {
       { realtime: { transport: WS as any } },
     );
     const { data: signInData, error: signInError } =
-      await supaClient.auth.signInWithIdToken({ provider: 'apple', token });
+      await supaClient.auth.signInWithIdToken({
+        provider: 'apple',
+        token,
+        ...(raw_nonce ? { nonce: raw_nonce } : {}),
+      });
 
     if (signInError || !signInData.session || !signInData.user) {
       this.logger.warn(

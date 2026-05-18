@@ -1,5 +1,6 @@
 import { ClientContext } from '../context/client-context.types';
 import { CoachAIPrompt } from './prompt.types';
+import { sanitizePromptInput } from '../utils/sanitize-prompt-input';
 
 // Coach AI v1 — workout program generation prompt.
 //
@@ -131,8 +132,8 @@ export const WorkoutProgramPrompt: CoachAIPrompt<WorkoutProgramInput, WorkoutPro
     lines.push('GENERATE_WORKOUT_PROGRAM');
     lines.push(`weeks: ${input.weeks}`);
     lines.push(`days_per_week: ${input.daysPerWeek}`);
-    if (input.focus) lines.push(`focus: ${input.focus}`);
-    if (input.notes) lines.push(`coach_notes: ${input.notes}`);
+    if (input.focus) lines.push(`focus: ${sanitizePromptInput(input.focus)}`);
+    if (input.notes) lines.push(`coach_notes: ${sanitizePromptInput(input.notes)}`);
     lines.push('---');
     lines.push('CLIENT_CONTEXT:');
     lines.push(JSON.stringify(serializeContextForPrompt(ctx), null, 2));

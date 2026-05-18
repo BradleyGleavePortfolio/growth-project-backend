@@ -143,6 +143,7 @@ export class AuthController {
       body.full_name,
       body.invite_code,
       auditContext(req),
+      body.raw_nonce,
     );
     await this.loginThrottleReset.resetLoginCounters(extractIp(req));
     return result;

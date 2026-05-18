@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import { sanitizePromptInput } from '../utils/sanitize-prompt-input';
 import {
   ClientContext,
   ClientContextCheckIn,
@@ -135,8 +136,10 @@ export class ClientContextService {
       workout_days_per_week: profile?.workout_days_per_week ?? null,
       meals_per_day: profile?.meals_per_day ?? null,
       equipment_access: profile?.equipment_access ?? [],
-      bio: clampStr(profile?.bio ?? null, 240),
-      injuries: profile?.injuries ?? [],
+      bio: profile?.bio ? sanitizePromptInput(clampStr(profile.bio, 240) ?? '') || null : null,
+      injuries: (profile?.injuries ?? []).map((inj) =>
+        typeof inj === 'string' ? sanitizePromptInput(inj, 200) : inj,
+      ),
       food_preferences: (profile?.food_preferences as unknown) ?? null,
       preferred_training_time: profile?.preferred_training_time ?? null,
     };
@@ -190,7 +193,7 @@ export class ClientContextService {
         date: isoDate(a.scheduled_for),
         completed_at: a.completed_at ? a.completed_at.toISOString() : null,
         post_rpe: a.post_rpe,
-        post_notes: clampStr(a.post_notes, 200),
+        post_notes: a.post_notes ? sanitizePromptInput(clampStr(a.post_notes, 200) ?? '') || null : null,
         plan_name: a.workout_plan?.name ?? 'Unknown plan',
         plan_type: a.workout_plan?.type ?? 'strength',
       })),
@@ -202,13 +205,15 @@ export class ClientContextService {
         energy: c.energy,
         soreness: c.soreness,
         sleep_hours: c.sleep_hours,
-        notes: clampStr(c.notes, 200),
+        notes: c.notes ? sanitizePromptInput(clampStr(c.notes, 200) ?? '') || null : null,
       })),
       coach: {
         coach_id: user.coach_id ?? null,
         coach_name: coachUser ? firstNameOf(coachUser.name) : null,
         has_coach: !!user.coach_id,
-        last_coach_message_excerpt: clampStr(lastCoachMessage?.body ?? null, 240),
+        last_coach_message_excerpt: lastCoachMessage?.body
+          ? sanitizePromptInput(clampStr(lastCoachMessage.body, 240) ?? '') || null
+          : null,
       },
       generated_at: new Date().toISOString(),
     };
