@@ -680,8 +680,8 @@ export class CoachService {
     ]);
 
     // ── Step 3: Derive attention_needed list from aggregated data ───────────
-    const workedOutRecently = new Set(workoutGroups.map((g) => g.user_id));
-    const loggedToday = new Set(foodLogGroups.map((g) => g.user_id));
+    const workedOutRecently = new Set(workoutGroups.map((g: { user_id: string }) => g.user_id));
+    const loggedToday = new Set(foodLogGroups.map((g: { user_id: string }) => g.user_id));
 
     // Group weight logs by client (already sorted desc by date per client).
     const weightLogsByUser = new Map<string, number[]>();

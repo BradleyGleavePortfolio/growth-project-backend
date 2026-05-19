@@ -238,6 +238,10 @@ model User {
   payout_snapshot            PayoutSnapshot?      @relation("PayoutSnapshotCoach")
   drafts_as_coach            MessageDraft[]       @relation("MessageDraftCoach")
   drafts_as_client           MessageDraft[]       @relation("MessageDraftClient")
+  // Phase 11 — Coach↔Client direct messaging. Sender/recipient are both Users
+  // (coach or client); RLS enforces per-row access (see Message model).
+  messages_sent              Message[]            @relation("MessageSender")
+  messages_received          Message[]            @relation("MessageRecipient")
   activity_events_actor      ActivityEvent[]      @relation("ActivityEventActor")
   activity_events_coach      ActivityEvent[]      @relation("ActivityEventCoach")
   activity_events_client     ActivityEvent[]      @relation("ActivityEventClient")
@@ -311,9 +315,9 @@ model User {
   // Phase 8 Connect — head-coach team profile (business name, public team
   // code, capacity mirror) and sub-coach invitations. One TeamProfile per
   // head coach. Sub-coach invites are 1:N from the issuing head coach.
-  team_profile                  TeamProfile?             @relation("TeamProfileHeadCoach")
-  sub_coach_invites_issued      SubCoachInvite[]         @relation("SubCoachInviteIssuer")
-  sub_coach_invites_accepted    SubCoachInvite[]         @relation("SubCoachInviteAccepter")
+  team_profile               TeamProfile?     @relation("TeamProfileHeadCoach")
+  sub_coach_invites_issued   SubCoachInvite[] @relation("SubCoachInviteIssuer")
+  sub_coach_invites_accepted SubCoachInvite[] @relation("SubCoachInviteAccepter")
 
   // Sprint B — Macro targets, real meal plans, holistic insights cache.
   macro_targets_as_client          MacroTarget[]             @relation("MacroTargetClient")
@@ -505,6 +509,27 @@ model MessageDraft {
   @@index([coach_id])
 }
 
+// Coach ↔ client direct messages. Two-party only (no group threads in v1).
+// `read` is set true the moment the recipient opens the thread; coaches see
+// a per-client unread count derived from rows where recipient_id = coach AND
+// read = false. RLS (next migration) enforces sender OR recipient access only.
+model Message {
+  id           String    @id @default(uuid())
+  sender_id    String
+  sender       User      @relation("MessageSender", fields: [sender_id], references: [id])
+  recipient_id String
+  recipient    User      @relation("MessageRecipient", fields: [recipient_id], references: [id])
+  body         String
+  read         Boolean   @default(false)
+  read_at      DateTime?
+  created_at   DateTime  @default(now())
+
+  // Dashboard hot path: count unread messages addressed to a coach.
+  @@index([recipient_id, read])
+  // Conversation hot path: load thread between two users ordered by time.
+  @@index([sender_id, recipient_id, created_at])
+}
+
 // Audit/activity event stream. Used by the coach console to render the recent
 // activity feed and by future fan-out workers for push/email notifications.
 // Schema follows the integration notes: actor, coach, client, type, summary,
@@ -529,25 +554,25 @@ model ActivityEvent {
 }
 
 model InviteCode {
-  id                 String    @id @default(uuid())
-  code               String    @unique
-  coach_id           String
-  coach              User      @relation("CoachInviteCodes", fields: [coach_id], references: [id])
+  id                  String    @id @default(uuid())
+  code                String    @unique
+  coach_id            String
+  coach               User      @relation("CoachInviteCodes", fields: [coach_id], references: [id])
   // Team Mode — sub-coach attribution. When a sub-coach creates an invite
   // their user_id lands here while coach_id remains the head coach who
   // owns the team. Null on legacy rows where the head coach issued the
   // invite directly. The audit feed reads this to show "Invited by sub-
   // coach <name>" without joining a separate ledger.
-  invited_by_user_id String?
-  invited_by         User?     @relation("InviteCodeInvitedBy", fields: [invited_by_user_id], references: [id])
-  created_at         DateTime  @default(now())
-  expires_at         DateTime?
-  max_uses           Int?
-  used_count         Int       @default(0)
-  revoked            Boolean   @default(false)
-  intended_email       String?   @db.Text
-  accepted_by_user_id  String?
-  accepted_at          DateTime?
+  invited_by_user_id  String?
+  invited_by          User?     @relation("InviteCodeInvitedBy", fields: [invited_by_user_id], references: [id])
+  created_at          DateTime  @default(now())
+  expires_at          DateTime?
+  max_uses            Int?
+  used_count          Int       @default(0)
+  revoked             Boolean   @default(false)
+  intended_email      String?   @db.Text
+  accepted_by_user_id String?
+  accepted_at         DateTime?
 
   @@index([coach_id])
   @@index([code])
@@ -866,19 +891,23 @@ model LessonCompletion {
 // A unique (client_id, date) constraint turns POST /check-ins into an idempotent
 // daily upsert.
 model CheckIn {
-  id          String      @id @default(uuid())
-  user_id     String
-  user        User        @relation(fields: [user_id], references: [id])
-  coach_id    String?
-  date        DateTime    @db.Date
-  mood        Int? // 1-5, optional
-  energy      Int? // 1-5, optional
-  soreness    Int // 1-5 — retained for existing mobile flow
-  sleep_hours Float?
-  weight_kg   Float?
-  notes       String?
-  type        CheckInType @default(morning)
-  logged_at   DateTime    @default(now())
+  id                String      @id @default(uuid())
+  user_id           String
+  user              User        @relation(fields: [user_id], references: [id])
+  coach_id          String?
+  date              DateTime    @db.Date
+  mood              Int? // 1-5, optional
+  energy            Int? // 1-5, optional
+  soreness          Int // 1-5 — retained for existing mobile flow
+  sleep_hours       Float?
+  weight_kg         Float?
+  notes             String?
+  type              CheckInType @default(morning)
+  logged_at         DateTime    @default(now())
+  // Phase 11 — coach dashboard summary tracks whether a coach has
+  // acknowledged this check-in. Defaults to false; flipped to true when
+  // the coach reviews. Filtered on by getDashboardSummary in CoachService.
+  reviewed_by_coach Boolean     @default(false)
 
   @@unique([user_id, date], name: "CheckIn_user_id_date_key")
   // Hot path: daily check-in lookups by (user_id, date).
@@ -1779,7 +1808,7 @@ model ClientWorkoutAssignment {
   // Rating of Perceived Exertion 1–10; null until completed.
   post_rpe             Int?
   post_notes           String?
-  idempotency_key      String?  @unique
+  idempotency_key      String?     @unique
   completion_payload   Json?
   started_at           DateTime?
 
@@ -2722,19 +2751,19 @@ model ClientPurchase {
   created_at                 DateTime     @default(now())
   updated_at                 DateTime     @updatedAt
 
+  splits         SplitLedgerEntry[]
+  transfers      ConnectTransfer[]
+  dunning        DunningState?
+  reminders      PaymentReminder[]
+  refunds        ChargeRefund[]
+  disputes       ChargeDispute[]
+  reconciliation ReconciliationSnapshot?
+
   @@index([client_user_id, status])
   @@index([coach_user_id, status])
   @@index([package_id])
   @@index([stripe_subscription_id])
   @@index([entitlement_active, access_expires_at])
-
-  splits     SplitLedgerEntry[]
-  transfers  ConnectTransfer[]
-  dunning    DunningState?
-  reminders  PaymentReminder[]
-  refunds    ChargeRefund[]
-  disputes   ChargeDispute[]
-  reconciliation ReconciliationSnapshot?
 }
 
 // Phase 4 Connect — Per-coach fee policy override.
@@ -2753,25 +2782,25 @@ model ClientPurchase {
 // (i.e. floors the destination amount; the platform absorbs the rounding
 // fraction to avoid landing a sub-cent in the connected account).
 model FeePolicy {
-  id                              String   @id @default(uuid())
+  id                           String   @id @default(uuid())
   // Owning coach this override applies to. Same coach who sells packages.
   // When the head-coach split is in play, this row's coach_id is the
   // SELLER (sub-coach) — the head-coach split bps lives here because
   // the rate is "what the sub-coach gives up", not "what the head coach
   // takes". This keeps "I sell, I see my own policy" simple.
-  coach_id                        String   @unique
-  coach                           User     @relation("FeePolicyCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  coach_id                     String   @unique
+  coach                        User     @relation("FeePolicyCoach", fields: [coach_id], references: [id], onDelete: Cascade)
   // Override of the 2% platform fee. Null = use global default.
-  platform_application_fee_bps    Int?
+  platform_application_fee_bps Int?
   // Override of the 5% head-coach split (only applies when coach is a
   // sub-coach). Null = use global default.
-  head_coach_split_bps            Int?
+  head_coach_split_bps         Int?
   // Hard cap so a bad write can't accidentally route 100% of revenue to
   // platform/head-coach. Both halves combined must be < 5000 bps (50%).
   // Enforced in FeePolicyService.assertSane().
-  notes                           String?
-  created_at                      DateTime @default(now())
-  updated_at                      DateTime @updatedAt
+  notes                        String?
+  created_at                   DateTime @default(now())
+  updated_at                   DateTime @updatedAt
 }
 
 // Phase 4 Connect — Immutable money-split ledger.
@@ -2792,9 +2821,9 @@ model FeePolicy {
 //   - failed   : the transfer attempt errored. last_error has the
 //                Stripe-reported message. Retried by the dunning job.
 model SplitLedgerEntry {
-  id                  String         @id @default(uuid())
-  purchase_id         String
-  purchase            ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  id                        String         @id @default(uuid())
+  purchase_id               String
+  purchase                  ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
   // What this row represents — see comment block above.
   //   application_fee : the platform's 2% cut (deducted via Stripe
   //                     application_fee_amount on the destination charge).
@@ -2804,35 +2833,35 @@ model SplitLedgerEntry {
   //   head_coach_split: a follow-on Transfer the platform mints to the
   //                     head coach when the seller is a sub-coach.
   //                     payee_user_id = head coach.
-  kind                String
+  kind                      String
   // The user receiving this slice. Null for application_fee (platform).
-  payee_user_id       String?
-  payee               User?          @relation("SplitLedgerPayee", fields: [payee_user_id], references: [id], onDelete: SetNull)
+  payee_user_id             String?
+  payee                     User?          @relation("SplitLedgerPayee", fields: [payee_user_id], references: [id], onDelete: SetNull)
   // Stripe connected account that received the funds. Null for
   // application_fee (platform retains).
-  payee_stripe_account_id String?
-  amount_cents        Int
-  currency            String         @default("usd")
-  status              String         @default("pending") // pending | posted | reversed | failed
+  payee_stripe_account_id   String?
+  amount_cents              Int
+  currency                  String         @default("usd")
+  status                    String         @default("pending") // pending | posted | reversed | failed
   // Stripe ids that locate this slice in Stripe's books.
   //  - For kind=application_fee: stripe_charge_id + stripe_application_fee_id.
   //  - For kind=destination    : stripe_charge_id + (auto) transfer id on charge.transfer.
   //  - For kind=head_coach_split: stripe_transfer_id (the follow-on transfer
   //                                we minted) + stripe_charge_id as source.
-  stripe_charge_id         String?
+  stripe_charge_id          String?
   stripe_application_fee_id String?
-  stripe_transfer_id       String?
+  stripe_transfer_id        String?
   // For partial-reversal accounting: how much of this slice has been
   // reversed back to the platform. Always <= amount_cents.
-  reversed_cents      Int            @default(0)
+  reversed_cents            Int            @default(0)
   // Idempotency-key we sent to Stripe when posting this slice. Lets the
   // worker retry safely. Globally unique.
-  idempotency_key     String?        @unique
-  last_error          String?
-  posted_at           DateTime?
-  reversed_at         DateTime?
-  created_at          DateTime       @default(now())
-  updated_at          DateTime       @updatedAt
+  idempotency_key           String?        @unique
+  last_error                String?
+  posted_at                 DateTime?
+  reversed_at               DateTime?
+  created_at                DateTime       @default(now())
+  updated_at                DateTime       @updatedAt
 
   @@unique([purchase_id, kind, payee_user_id])
   @@index([purchase_id])
@@ -2854,34 +2883,34 @@ model SplitLedgerEntry {
 // failed. failed rows get retried up to max_attempts with exponential
 // backoff (next_attempt_at); the dunning sweeper picks them up.
 model ConnectTransfer {
-  id                       String         @id @default(uuid())
-  purchase_id              String
-  purchase                 ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
-  ledger_entry_id          String?        @unique
+  id                            String         @id @default(uuid())
+  purchase_id                   String
+  purchase                      ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  ledger_entry_id               String?        @unique
   // Destination connected account (head coach for the sub-coach split).
   destination_stripe_account_id String
-  destination_user_id      String?
-  destination              User?          @relation("ConnectTransferDestination", fields: [destination_user_id], references: [id], onDelete: SetNull)
-  amount_cents             Int
-  currency                 String         @default("usd")
+  destination_user_id           String?
+  destination                   User?          @relation("ConnectTransferDestination", fields: [destination_user_id], references: [id], onDelete: SetNull)
+  amount_cents                  Int
+  currency                      String         @default("usd")
   // Source charge id (the original payment intent's charge). Stripe needs
   // this on `source_transaction` so the transfer is paid out of that
   // charge's available balance and reconciles against the same payment.
-  source_stripe_charge_id  String?
-  stripe_transfer_id       String?
-  status                   String         @default("pending") // pending | succeeded | failed | reversed
-  attempts                 Int            @default(0)
-  max_attempts             Int            @default(6)
-  next_attempt_at          DateTime?
-  last_attempt_at          DateTime?
-  last_error               String?
+  source_stripe_charge_id       String?
+  stripe_transfer_id            String?
+  status                        String         @default("pending") // pending | succeeded | failed | reversed
+  attempts                      Int            @default(0)
+  max_attempts                  Int            @default(6)
+  next_attempt_at               DateTime?
+  last_attempt_at               DateTime?
+  last_error                    String?
   // Idempotency-key used on the Stripe /v1/transfers call.
-  idempotency_key          String         @unique
-  posted_at                DateTime?
-  reversed_at              DateTime?
-  reversed_amount_cents    Int            @default(0)
-  created_at               DateTime       @default(now())
-  updated_at               DateTime       @updatedAt
+  idempotency_key               String         @unique
+  posted_at                     DateTime?
+  reversed_at                   DateTime?
+  reversed_amount_cents         Int            @default(0)
+  created_at                    DateTime       @default(now())
+  updated_at                    DateTime       @updatedAt
 
   @@index([status, next_attempt_at])
   @@index([destination_user_id])
@@ -2936,30 +2965,30 @@ model DunningState {
 // status) to avoid double-sending the same reminder in the same dunning
 // window. The status mirrors the delivery worker outcome.
 model PaymentReminder {
-  id                  String         @id @default(uuid())
-  purchase_id         String
-  purchase            ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  id                String         @id @default(uuid())
+  purchase_id       String
+  purchase          ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
   // What event we are reminding about.
   //  payment_failed   : first failure (or first failure in window)
   //  retry_scheduled  : Stripe will retry on date X
   //  final_warning    : last reminder before cancel_scheduled_at fires
   //  canceled_for_nonpayment : the sub was canceled
-  kind                String
+  kind              String
   // Which surface we attempted: email | inapp | push
-  channel             String
+  channel           String
   // Who we were notifying — typically the client; may also be the seller
   // coach when the failure is on a high-value purchase.
-  recipient_user_id   String
-  recipient           User           @relation("PaymentReminderRecipient", fields: [recipient_user_id], references: [id], onDelete: Cascade)
-  status              String         @default("queued") // queued | sent | failed | skipped
-  sent_at             DateTime?
-  failure_reason      String?
+  recipient_user_id String
+  recipient         User           @relation("PaymentReminderRecipient", fields: [recipient_user_id], references: [id], onDelete: Cascade)
+  status            String         @default("queued") // queued | sent | failed | skipped
+  sent_at           DateTime?
+  failure_reason    String?
   // Idempotency window the reminder belongs to. For payment_failed we
   // use the Stripe invoice id; for retry_scheduled we use the next
   // attempt date stringified. Same (purchase_id, kind, window_key)
   // collapses to a single row.
-  window_key          String
-  created_at          DateTime       @default(now())
+  window_key        String
+  created_at        DateTime       @default(now())
 
   @@unique([purchase_id, kind, channel, window_key])
   @@index([purchase_id, kind])
@@ -3015,7 +3044,7 @@ model PayoutSnapshot {
   // Most-recent payout from Stripe (drives the "last paid out" widget).
   last_payout_stripe_id       String?
   last_payout_amount_cents    Int?
-  last_payout_status          String?   // pending | in_transit | paid | failed | canceled
+  last_payout_status          String? // pending | in_transit | paid | failed | canceled
   last_payout_arrival_at      DateTime?
   last_payout_failure_message String?
   // When the next scheduled payout will land (Stripe automatic schedule).
@@ -3043,30 +3072,30 @@ model PayoutSnapshot {
 // slice (b) a follow-on Transfer reversal on the head-coach slice if
 // present. Both happen in PurchaseSplitHandlerService.onRefund().
 model ChargeRefund {
-  id                       String         @id @default(uuid())
-  purchase_id              String
-  purchase                 ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  id                   String         @id @default(uuid())
+  purchase_id          String
+  purchase             ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
   // Stripe ids — both indexed for webhook idempotency lookup.
-  stripe_refund_id         String         @unique
-  stripe_charge_id         String
-  amount_cents             Int
-  currency                 String         @default("usd")
+  stripe_refund_id     String         @unique
+  stripe_charge_id     String
+  amount_cents         Int
+  currency             String         @default("usd")
   // Stripe-side status: pending | requires_action | succeeded | failed | canceled
-  status                   String         @default("pending")
+  status               String         @default("pending")
   // Refund reason (Stripe: duplicate | fraudulent | requested_by_customer | expired_uncaptured_charge).
-  reason                   String?
+  reason               String?
   // Free-form admin note (only set when we initiated the refund).
-  note                     String?
+  note                 String?
   // Who issued the refund: admin_user_id when one of our owners did it,
   // null when Stripe / the bank dispute workflow created it.
-  initiated_by_user_id     String?
-  failure_reason           String?
+  initiated_by_user_id String?
+  failure_reason       String?
   // Whether we've reversed the matching ledger entry / head-coach transfer.
-  ledger_reversed          Boolean        @default(false)
-  transfer_reversed        Boolean        @default(false)
-  posted_at                DateTime?
-  created_at               DateTime       @default(now())
-  updated_at               DateTime       @updatedAt
+  ledger_reversed      Boolean        @default(false)
+  transfer_reversed    Boolean        @default(false)
+  posted_at            DateTime?
+  created_at           DateTime       @default(now())
+  updated_at           DateTime       @updatedAt
 
   @@index([purchase_id])
   @@index([status])
@@ -3087,29 +3116,29 @@ model ChargeRefund {
 // via ReconciliationService.applyDisputeLoss(). If won, we no-op (the
 // disputed_until_resolved flag is cleared).
 model ChargeDispute {
-  id                       String         @id @default(uuid())
-  purchase_id              String
-  purchase                 ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
-  stripe_dispute_id        String         @unique
-  stripe_charge_id         String
-  amount_cents             Int
-  currency                 String         @default("usd")
-  status                   String         @default("needs_response")
-  reason                   String?        // generic | fraudulent | duplicate | product_not_received | ...
+  id                     String         @id @default(uuid())
+  purchase_id            String
+  purchase               ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  stripe_dispute_id      String         @unique
+  stripe_charge_id       String
+  amount_cents           Int
+  currency               String         @default("usd")
+  status                 String         @default("needs_response")
+  reason                 String? // generic | fraudulent | duplicate | product_not_received | ...
   // Stripe-set deadline for responding to the dispute.
-  evidence_due_by          DateTime?
+  evidence_due_by        DateTime?
   // Whether evidence has been submitted (by an admin, or auto-submitted).
-  evidence_submitted_at    DateTime?
+  evidence_submitted_at  DateTime?
   // Final outcome ledger reversal — set when the dispute was lost and we
   // reversed the destination ledger entry.
-  ledger_reversed          Boolean        @default(false)
+  ledger_reversed        Boolean        @default(false)
   // Final outcome flag — closed_at is set on `won` | `lost` | `charge_refunded`.
-  closed_at                DateTime?
+  closed_at              DateTime?
   // Stripe-side balance transaction id for the chargeback debit (when lost).
   // Used to reconcile the negative balance against our ledger.
-  balance_transaction_id   String?
-  created_at               DateTime       @default(now())
-  updated_at               DateTime       @updatedAt
+  balance_transaction_id String?
+  created_at             DateTime       @default(now())
+  updated_at             DateTime       @updatedAt
 
   @@index([purchase_id])
   @@index([status])
@@ -3132,25 +3161,25 @@ model ChargeDispute {
 //   - unknown   : Stripe call failed (network/auth) — drift_cents is
 //                 null; the snapshot is informational only.
 model ReconciliationSnapshot {
-  id                          String         @id @default(uuid())
-  purchase_id                 String         @unique
-  purchase                    ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
-  status                      String         @default("ok") // ok | drift | unknown
-  drift_cents                 Int?
+  id                           String         @id @default(uuid())
+  purchase_id                  String         @unique
+  purchase                     ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  status                       String         @default("ok") // ok | drift | unknown
+  drift_cents                  Int?
   // Stripe-side gross / refunded / application_fee / transfers.
-  stripe_amount_cents         Int?
-  stripe_refunded_cents       Int?
+  stripe_amount_cents          Int?
+  stripe_refunded_cents        Int?
   stripe_application_fee_cents Int?
-  stripe_transfers_cents      Int?
+  stripe_transfers_cents       Int?
   // Ledger-side rollups.
-  ledger_destination_cents    Int?
+  ledger_destination_cents     Int?
   ledger_application_fee_cents Int?
-  ledger_head_coach_cents     Int?
-  ledger_reversed_cents       Int?
-  notes                       String?
-  last_checked_at             DateTime       @default(now())
-  created_at                  DateTime       @default(now())
-  updated_at                  DateTime       @updatedAt
+  ledger_head_coach_cents      Int?
+  ledger_reversed_cents        Int?
+  notes                        String?
+  last_checked_at              DateTime       @default(now())
+  created_at                   DateTime       @default(now())
+  updated_at                   DateTime       @updatedAt
 
   @@index([status])
 }
@@ -3174,24 +3203,24 @@ model ReconciliationSnapshot {
 // single indexed lookup. They are recomputed when sub-coaches are
 // added/removed or when a client is reassigned.
 model TeamProfile {
-  id                String   @id @default(uuid())
+  id               String   @id @default(uuid())
   // The owning head coach. One profile per head coach (1:1).
-  head_coach_id     String   @unique
-  head_coach        User     @relation("TeamProfileHeadCoach", fields: [head_coach_id], references: [id], onDelete: Cascade)
-  business_name     String
+  head_coach_id    String   @unique
+  head_coach       User     @relation("TeamProfileHeadCoach", fields: [head_coach_id], references: [id], onDelete: Cascade)
+  business_name    String
   // Shareable team / gym code (unique). Generated on first PUT; rotates
   // only on explicit caller request (TBD: write endpoint not exposed in
   // Phase 8 — the head coach edits business_name; the code is fixed at
   // creation time so existing client signup links keep working).
-  team_code         String   @unique
-  client_capacity   Int      @default(0)
-  clients_assigned  Int      @default(0)
+  team_code        String   @unique
+  client_capacity  Int      @default(0)
+  clients_assigned Int      @default(0)
   // Mirror of ConnectAccount.payouts_enabled — surfaced on the team
   // screen as a hint that revenue/payouts are one tap away. Source of
   // truth still ConnectAccount; this is a cached read.
-  payouts_enabled   Boolean  @default(false)
-  created_at        DateTime @default(now())
-  updated_at        DateTime @updatedAt
+  payouts_enabled  Boolean  @default(false)
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
 
   @@index([team_code])
 }
@@ -3257,49 +3286,49 @@ model SubCoachInvite {
 // from a workout assignment row to the exercise detail screen. Slugs are
 // unique and stable; renaming requires a migration.
 model ExerciseCatalogItem {
-  id                  String                  @id @default(uuid())
+  id                String   @id @default(uuid())
   // Stable URL slug — e.g. "barbell-bench-press". Mobile client navigates
   // via /exercise-catalog/:idOrSlug so either the uuid or the slug works.
-  slug                String                  @unique
-  name                String
-  category            String
-  primary_muscle      String
-  secondary_muscles   String[]                @default([])
-  equipment           String[]                @default([])
+  slug              String   @unique
+  name              String
+  category          String
+  primary_muscle    String
+  secondary_muscles String[] @default([])
+  equipment         String[] @default([])
   // Free-text label (beginner | intermediate | advanced). Not an enum so
   // we can extend without a migration.
-  difficulty          String                  @default("beginner")
-  instructions        String[]                @default([])
+  difficulty        String   @default("beginner")
+  instructions      String[] @default([])
   // Optional source pointer for provenance — e.g. "seed:push-001" when the
   // catalog row was derived from SEED_EXERCISES, or "wger:75" if a future
   // import path lands.
-  source_ref          String?
+  source_ref        String?
 
   // Mux state. All four are null until an owner attaches a video.
-  mux_asset_id        String?
-  mux_playback_id     String?
+  mux_asset_id         String?
+  mux_playback_id      String?
   // 'public' (direct HLS) or 'signed' (requires MUX_SIGNING_KEY). The
   // detail route uses this to decide whether to mint a JWT or hand back
   // the bare URL. Defaults to 'public' for v1 simplicity.
-  mux_playback_policy String                  @default("public")
-  mux_asset_status    ExerciseVideoStatus     @default(none)
+  mux_playback_policy  String              @default("public")
+  mux_asset_status     ExerciseVideoStatus @default(none)
   mux_duration_seconds Float?
-  mux_error_message   String?
+  mux_error_message    String?
   // Direct-upload bookkeeping: when an owner POSTs /video/upload we
   // create a Mux Direct Upload and remember its id so the webhook can
   // resolve the upload back to the catalog row when the asset is born.
-  mux_upload_id       String?                 @unique
+  mux_upload_id        String?             @unique
 
   // Third-party video provider enrichment (YMove / MuscleWiki).
   // Populated by scripts/enrich-exercise-catalog-videos.ts.
   // video_url stores a stable MuscleWiki MP4 CDN URL or a YMove slug
   // sentinel (prefix: "ymove:") — never the expiring signed URL.
   // video_provider is 'ymove' | 'musclewiki' | null.
-  video_url        String?
-  video_provider   String?
+  video_url      String?
+  video_provider String?
 
-  created_at          DateTime                @default(now())
-  updated_at          DateTime                @updatedAt
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
   @@index([category])
   @@index([primary_muscle])

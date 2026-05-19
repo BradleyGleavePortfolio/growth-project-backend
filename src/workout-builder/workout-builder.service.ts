@@ -15,6 +15,7 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { ExerciseCatalogService } from '../exercise-catalog/exercise-catalog.service';
 import {
@@ -321,7 +322,10 @@ export class WorkoutBuilderService {
         post_rpe: dto.post_rpe ?? null,
         post_notes: dto.post_notes ?? null,
         idempotency_key: dto.idempotency_key ?? null,
-        completion_payload: dto.completion_payload ?? null,
+        // Prisma JSON nullable fields require Prisma.DbNull (DB NULL) or
+        // Prisma.JsonNull (JSON null); plain `null` is not assignable. We
+        // want a true SQL NULL when the client omits the payload.
+        completion_payload: dto.completion_payload ?? Prisma.DbNull,
         started_at: dto.started_at ? new Date(dto.started_at) : null,
       },
     });
