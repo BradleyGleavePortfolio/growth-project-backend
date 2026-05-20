@@ -137,7 +137,7 @@ export class SubscriptionGuard implements CanActivate {
         'missing_subscription',
         enforce,
         {
-          error: 'TIER_UPGRADE_REQUIRED',
+          code: 'TIER_UPGRADE_REQUIRED',
           required_tier: requiredTier,
           current_tier: 'free',
         },
@@ -157,7 +157,7 @@ export class SubscriptionGuard implements CanActivate {
         'tier_too_low',
         enforce,
         {
-          error: 'TIER_UPGRADE_REQUIRED',
+          code: 'TIER_UPGRADE_REQUIRED',
           required_tier: requiredTier,
           current_tier: currentTier,
         },

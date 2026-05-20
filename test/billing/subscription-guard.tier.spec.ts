@@ -85,7 +85,7 @@ describe('SubscriptionGuard — tier logic (spec §10)', () => {
     }
     expect(caught).toBeInstanceOf(ForbiddenException);
     const body = caught?.getResponse() as Record<string, unknown>;
-    expect(body.error).toBe('TIER_UPGRADE_REQUIRED');
+    expect(body.code).toBe('TIER_UPGRADE_REQUIRED');
     expect(body.required_tier).toBe('pro');
     expect(body.current_tier).toBe('free');
   });
@@ -222,7 +222,7 @@ describe('SubscriptionGuard — tier logic (spec §10)', () => {
     }
     expect(caught).toBeInstanceOf(ForbiddenException);
     const body = caught?.getResponse() as Record<string, unknown>;
-    expect(body.error).toBe('TIER_UPGRADE_REQUIRED');
+    expect(body.code).toBe('TIER_UPGRADE_REQUIRED');
     expect(body.required_tier).toBe('pro');
   });
 
@@ -247,7 +247,7 @@ describe('SubscriptionGuard — tier logic (spec §10)', () => {
     }
     expect(caught).toBeInstanceOf(ForbiddenException);
     const body = caught?.getResponse() as Record<string, unknown>;
-    expect(body.error).toBe('TIER_UPGRADE_REQUIRED');
+    expect(body.code).toBe('TIER_UPGRADE_REQUIRED');
     expect(body.required_tier).toBe('enterprise');
     expect(body.current_tier).toBe('pro');
   });
