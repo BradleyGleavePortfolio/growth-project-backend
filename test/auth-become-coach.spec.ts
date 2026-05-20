@@ -134,8 +134,9 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
-  it('is idempotent for an existing coach — returns role without touching the gate', async () => {
+  it('is idempotent for an existing coach — returns role and tier without touching the gate', async () => {
     delete process.env.ALLOW_SELF_SERVICE_BECOME_COACH;
+    // coachSubRow=null → no subscription row → impl defaults tier to 'free' (spec §4)
     const prisma: any = buildPrismaMock({ ...baseStudent, role: 'coach' });
     const svc = new AuthService(
       prisma,
@@ -145,7 +146,26 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeAppleVerifierMock(),
     );
     const res = await svc.becomeCoach('u-1', 'irrelevant');
-    expect(res).toEqual({ role: 'coach' });
+    expect(res).toEqual({ role: 'coach', tier: 'free' });
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('is idempotent for an existing coach with Pro sub — returns role:coach and tier:pro', async () => {
+    delete process.env.ALLOW_SELF_SERVICE_BECOME_COACH;
+    // coachSubRow has tier='pro' → impl reads it and returns tier:'pro' (spec §4)
+    const prisma: any = buildPrismaMock(
+      { ...baseStudent, role: 'coach' },
+      { tier: 'pro', status: 'active' },
+    );
+    const svc = new AuthService(
+      prisma,
+      makeInviteCodesMock() as any,
+      makeAnalyticsMock(),
+      makeAuditMock(),
+      makeAppleVerifierMock(),
+    );
+    const res = await svc.becomeCoach('u-1', 'irrelevant');
+    expect(res).toEqual({ role: 'coach', tier: 'pro' });
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
