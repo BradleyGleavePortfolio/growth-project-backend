@@ -41,6 +41,7 @@ function makeStripeEvent(
 function makeSvc(
   upsertCapture: jest.Mock,
   currentTier = 'pro',
+  options: { updateManyCapture?: jest.Mock } = {},
 ) {
   const coachId = 'coach-tier-test-1';
   const prisma: any = {
@@ -55,6 +56,7 @@ function makeSvc(
     },
     coachSubscription: {
       upsert: upsertCapture,
+      updateMany: options.updateManyCapture ?? jest.fn().mockResolvedValue({ count: 0 }),
       findUnique: jest.fn().mockResolvedValue({ tier: currentTier, status: 'active' }),
     },
     $transaction: jest.fn().mockImplementation(async (fn: any) => fn(prisma)),
@@ -68,6 +70,34 @@ function makeSvc(
     prisma,
     coachId,
   };
+}
+
+/**
+ * Build a service for subscription.deleted tests (uses updateMany, not upsert).
+ */
+function makeDeletedSvc(updateManyCapture: jest.Mock, profileResult: any | null = null) {
+  const coachId = 'coach-deleted-test-1';
+  const prisma: any = {
+    stripeProcessedEvent: {
+      create: jest.fn().mockResolvedValue({}),
+    },
+    coachProfile: {
+      findFirst: jest.fn().mockResolvedValue(
+        profileResult ?? { user_id: coachId, stripe_customer_id: 'cus_del' },
+      ),
+    },
+    coachSubscription: {
+      upsert: jest.fn(),
+      updateMany: updateManyCapture,
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    $transaction: jest.fn().mockImplementation(async (fn: any) => fn(prisma)),
+  };
+
+  const analytics: any = { capture: jest.fn() };
+  const audit: any = { write: jest.fn().mockResolvedValue(undefined) };
+
+  return { svc: new BillingService(prisma, analytics, audit), prisma, coachId };
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -127,5 +157,40 @@ describe('BillingService — webhook tier transitions (spec §9)', () => {
     const call = upsert.mock.calls[0][0];
     expect(call.update).toMatchObject({ tier: 'pro' });
     expect(call.create).toMatchObject({ tier: 'pro' });
+  });
+});
+
+describe('BillingService — subscription.deleted uses updateMany (spec should-fix #1)', () => {
+  it('subscription.deleted for existing coach → updateMany called with tier=free, status=canceled', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const { svc } = makeDeletedSvc(updateMany);
+
+    await svc.handleEvent({
+      id: 'evt_del_1',
+      type: 'customer.subscription.deleted',
+      data: { object: { id: 'sub_gone', customer: 'cus_del' } },
+    } as any);
+
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    const call = updateMany.mock.calls[0][0];
+    expect(call.data).toMatchObject({ status: 'canceled', tier: 'free' });
+  });
+
+  it('subscription.deleted for non-existent coach_id → no throw, no-op (updateMany count=0)', async () => {
+    // Simulate: coach profile found but no subscription row → updateMany returns count=0
+    const updateMany = jest.fn().mockResolvedValue({ count: 0 });
+    const { svc } = makeDeletedSvc(updateMany);
+
+    // Should not throw even when count=0
+    await expect(
+      svc.handleEvent({
+        id: 'evt_del_noop',
+        type: 'customer.subscription.deleted',
+        data: { object: { id: 'sub_missing', customer: 'cus_del' } },
+      } as any),
+    ).resolves.toEqual({ processed: true });
+
+    // updateMany was still called (not update, which would throw P2025)
+    expect(updateMany).toHaveBeenCalledTimes(1);
   });
 });

@@ -301,9 +301,13 @@ export class BillingService {
     //   past_due = transient payment failure. The 7-day grace window in
     //   SubscriptionGuard (§6) handles past_due. The tier in DB stays 'pro'
     //   during past_due so a card update can restore access without re-checkout.
-    await (this.prisma.coachSubscription.update as any)({
+    //
+    // Use updateMany (not update) so that an out-of-order delete event for a
+    // coach with no subscription row is a graceful no-op rather than a P2025
+    // throw. updateMany with 0 matching rows silently does nothing.
+    await (this.prisma.coachSubscription.updateMany as any)({
       where: { coach_id: coachId },
-      data: { status: 'canceled', cancel_at_period_end: false, tier: 'free' },
+      data: { status: 'canceled', cancel_at_period_end: false, tier: 'free', updated_at: new Date() },
     });
     this.analytics.capture(coachId, Events.SUBSCRIPTION_CANCELED, {});
     await this.audit.write({
