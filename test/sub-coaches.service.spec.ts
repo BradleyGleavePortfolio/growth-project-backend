@@ -16,15 +16,25 @@ import {
 } from '@nestjs/common';
 import { SubCoachesService } from '../src/sub-coaches/sub-coaches.service';
 
+const ORIGINAL_ENV = { ...process.env };
+beforeAll(() => {
+  process.env.PUBLIC_INVITE_BASE_URL = 'https://test.example.com/join';
+});
+afterAll(() => {
+  process.env = { ...ORIGINAL_ENV };
+});
+
 interface MockPrisma {
   teamSubCoachAssignment: {
     findMany: jest.Mock;
     findUnique: jest.Mock;
     findFirst: jest.Mock;
     update: jest.Mock;
+    count: jest.Mock;
   };
   teamAuditEvent: {
     create: jest.Mock;
+    createMany: jest.Mock;
   };
   user: {
     findUnique: jest.Mock;
@@ -54,9 +64,11 @@ function buildPrisma(overrides: Partial<MockPrisma> = {}): MockPrisma {
       findUnique: jest.fn(async () => null),
       findFirst: jest.fn(async () => null),
       update: jest.fn(async () => ({})),
+      count: jest.fn(async () => 0),
     },
     teamAuditEvent: {
       create: jest.fn(async () => ({ id: 'evt-1' })),
+      createMany: jest.fn(async () => ({ count: 0 })),
     },
     user: {
       findUnique: jest.fn(async () => null),
@@ -256,8 +268,9 @@ describe('SubCoachesService.revoke', () => {
       where: { id: { in: ['client-1', 'client-2'] } },
       data: { coach_id: 'head-1' },
     });
-    // 2 client_reassigned + 1 sub_coach_removed = 3 audit rows.
-    expect(prisma.teamAuditEvent.create).toHaveBeenCalledTimes(3);
+    // 2 client_reassigned written via createMany; 1 sub_coach_removed via create.
+    expect(prisma.teamAuditEvent.createMany).toHaveBeenCalledTimes(1);
+    expect(prisma.teamAuditEvent.create).toHaveBeenCalledTimes(1);
     expect(prisma.teamSubCoachAssignment.update).toHaveBeenCalled();
     expect(team.refreshCounters).toHaveBeenCalledWith('head-1');
   });

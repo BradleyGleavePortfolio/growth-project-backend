@@ -15,7 +15,7 @@ function buildPrisma() {
   const processed: any[] = [];
   const profiles = [{ user_id: 'coach-A', stripe_customer_id: 'cus_A' }];
 
-  return {
+  const stub: any = {
     _subscriptions: subscriptions,
     _invoices: invoices,
     _failures: failures,
@@ -74,7 +74,9 @@ function buildPrisma() {
         return row;
       }),
     },
+    $transaction: jest.fn(async (cb: (tx: any) => Promise<any>) => cb(stub)),
   };
+  return stub;
 }
 
 function buildAudit() {

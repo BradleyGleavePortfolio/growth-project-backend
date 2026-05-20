@@ -237,6 +237,10 @@ describe('BillingService', () => {
         }),
       },
     };
+    // BillingService.handleEvent() wraps coachProfile.findFirst + coachSubscription.upsert
+    // in this.prisma.$transaction(cb). The mock must invoke the callback with the same
+    // prisma object so that upserts accumulate in _subscriptions.
+    prisma.$transaction = jest.fn(async (cb: (tx: any) => Promise<any>) => cb(prisma));
     const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
     svc = new BillingService(prisma, analyticsStub, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any);
   });

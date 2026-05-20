@@ -22,6 +22,9 @@ function baseHardEnv(): NodeJS.ProcessEnv {
     // food-logger Trainerize-grade floor. A missing key used to silently
     // return [] from /foods/search; now boot fails loudly instead.
     USDA_API_KEY: 'usda-test-key',
+    // DIRECT_URL was promoted from feature to hard tier (security hardening).
+    // Required by `prisma migrate deploy` in the Fly release_command.
+    DIRECT_URL: 'postgres://x:5432/db',
   };
 }
 
@@ -69,6 +72,7 @@ describe('evaluateEnv', () => {
     const r = evaluateEnv({});
     expect(r.missingHard.sort()).toEqual([
       'DATABASE_URL',
+      'DIRECT_URL',
       'SUPABASE_SERVICE_ROLE_KEY',
       'SUPABASE_URL',
       'USDA_API_KEY',
@@ -181,6 +185,9 @@ describe('assertEnv', () => {
           PUBLIC_INVITE_BASE_URL: 'https://app.trygrowthproject.com/join',
           STRIPE_CHECKOUT_SUCCESS_URL: 'https://app.trygrowthproject.com/checkout/success',
           STRIPE_CHECKOUT_CANCEL_URL: 'https://app.trygrowthproject.com/checkout/cancel',
+          // Added: prod-hardened feature vars promoted since this test was written
+          STRIPE_WEBHOOK_SECRET: 'whsec_test',
+          ANTHROPIC_API_KEY: 'sk-ant-test',
         },
         { logger: silentLogger as any },
       ),
@@ -200,6 +207,9 @@ describe('assertEnv', () => {
         PUBLIC_INVITE_BASE_URL: 'https://app.trygrowthproject.com/join',
         STRIPE_CHECKOUT_SUCCESS_URL: 'https://app.trygrowthproject.com/checkout/success',
         STRIPE_CHECKOUT_CANCEL_URL: 'https://app.trygrowthproject.com/checkout/cancel',
+        // Added: prod-hardened feature vars promoted since this test was written
+        STRIPE_WEBHOOK_SECRET: 'whsec_test',
+        ANTHROPIC_API_KEY: 'sk-ant-test',
       },
       { logger: logger as any },
     );
@@ -271,6 +281,9 @@ describe('assertEnv', () => {
           PUBLIC_INVITE_BASE_URL: 'https://app.trygrowthproject.com/join',
           STRIPE_CHECKOUT_SUCCESS_URL: 'https://app.trygrowthproject.com/checkout/success',
           STRIPE_CHECKOUT_CANCEL_URL: 'https://app.trygrowthproject.com/checkout/cancel',
+          // Added: prod-hardened feature vars promoted since this test was written
+          STRIPE_WEBHOOK_SECRET: 'whsec_test',
+          ANTHROPIC_API_KEY: 'sk-ant-test',
         },
         { enforceProd: false, logger: silentLogger as any },
       ),
