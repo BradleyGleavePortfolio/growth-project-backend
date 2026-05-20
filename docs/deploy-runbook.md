@@ -880,3 +880,82 @@ CI does not enforce this rule end-to-end. The narrowest piece of the
 contract that is enforced is `test/route-doc-drift.spec.ts`, which
 asserts that documented endpoint paths still resolve to controllers
 that mount them. The rest is on the author and reviewer of the PR.
+
+## 11. Release-command contract (scripts/release.sh)
+
+The `release_command` declared in `fly.toml` runs `bash scripts/release.sh`
+in a one-off Fly VM every time `flyctl deploy` ships a new image. It is
+the only mechanism that applies Prisma migrations to production.
+
+This script is the load-bearing safety rail between "the code in `main`"
+and "the schema in `db.rpyfdsgxxltzutgqeouk.supabase.co`". It MUST:
+
+- **Succeed visibly** — exit 0 only after Prisma confirms the DB is up to
+  date. The success line `[release] ALL_APPLIED=<n>` is what monitoring
+  greps for.
+- **Fail visibly** — exit non-zero on any unhandled error. The `trap on_error`
+  prints the failing line and the last 60 lines of Prisma's output. Fly
+  aborts the deploy on non-zero exit and existing machines keep running.
+- **Be idempotent** — re-running with no new migrations is a no-op.
+
+### 11.1. Why `set -Eeuo pipefail` is non-negotiable
+
+A prior version of this script used `if cmd | tee log; then`. Without
+`pipefail` a pipeline returns the exit code of the LAST command (always
+`tee` → always 0). `prisma migrate deploy` failed silently for **weeks**
+in May 2026 — production drifted ~25 migrations behind without any
+deploy turning red. The shell flags now in place make that mode of
+silent failure structurally impossible.
+
+| Flag | What it catches |
+|------|-----------------|
+| `-E` | ERR trap inherited by functions / subshells / `$(...)` |
+| `-e` | Exit on any unhandled non-zero exit code |
+| `-u` | Unset variable = error (catches typos in env var names) |
+| `-o pipefail` | Pipeline exit = first non-zero, not last command |
+
+If you ever need to "tolerate" a failure (e.g. `migrate status` returning 1
+when migrations are pending), guard the specific call with `|| true` and
+inspect the captured output. Never `set +e`.
+
+### 11.2. The three steps
+
+1. **Status check** — `prisma migrate status` enumerates pending migrations
+   and (critically) surfaces a P3005 "not baselined" error before we touch
+   anything. P3005 aborts the release with a runbook pointer to §9.2 of
+   this document; we never auto-`db push --accept-data-loss` from CI.
+2. **Apply** — `prisma migrate deploy`. Forward-only. Never resets the DB.
+   Stops at the first migration that fails and propagates the exit code.
+3. **Verify** — re-run `migrate status` and require the literal string
+   `Database schema is up to date` or `No pending migrations`. This catches
+   the (rare) class of failure where `migrate deploy` claims success but
+   leaves a partially-applied migration row in `_prisma_migrations`.
+
+### 11.3. Observing a release
+
+```
+fly logs -a backend-spring-lake-3890 --no-tail \
+    | grep '\[release\]'
+```
+
+The structured banner at the top of each run prints `machine_id`, `git_sha`,
+`release_ver`, Node and Prisma versions. On success the script emits a single
+grep-able final line:
+
+```
+[release] ALL_APPLIED=<count> pending_before=<n> release_id=<machine-id>
+```
+
+### 11.4. Recovery — what to do if a release_command fails
+
+1. Read the `[release] ❌ FAIL` block in `fly logs`. It contains the failing
+   line in `release.sh` and the last 60 lines of Prisma's output.
+2. The deploy is aborted by Fly. Existing app machines are not touched.
+3. If the failure is a transient DB connectivity issue (P1001), re-run the
+   workflow from GitHub Actions — no code change needed.
+4. If a migration is genuinely broken: revert the PR that introduced it
+   (or push a follow-up fix-forward migration), let the next deploy retry.
+5. If `_prisma_migrations` is wedged with a `started_at`/`finished_at IS NULL`
+   row, the operator must `prisma migrate resolve --applied <name>` or
+   `--rolled-back <name>` manually using `DIRECT_URL`. This is a deliberate
+   manual step — CI never resolves migrations.
