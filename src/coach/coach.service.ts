@@ -751,6 +751,15 @@ export class CoachService {
       // Priority order: weight_flag > missed_workout > off_macros > no_checkin.
       // We use `continue` above so a client flagged for a higher-priority reason
       // is never double-counted here. (Finding 6 — MEDIUM, audit 2026-05-19)
+      //
+      // SEMANTIC NOTE (re-audit 2026-05-19 followup B):
+      // The reason label 'no_checkin' here means "client has at least one
+      // UNREVIEWED check-in" (i.e. a submission is waiting for coach review),
+      // NOT "client has not submitted a recent check-in" (absence of any
+      // submission). If the product requirement ever changes to the absence
+      // semantic, a separate query is needed — e.g. find clients whose latest
+      // check-in date is older than a threshold, or who have no check-in rows
+      // at all — and this block should be replaced or supplemented.
       if (hasUnreviewedCheckin.has(id)) {
         attention.push({ client_id: id, client_name: name, reason: 'no_checkin' });
       }
