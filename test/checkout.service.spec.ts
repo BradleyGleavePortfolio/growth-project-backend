@@ -61,6 +61,15 @@ function makePrismaStub() {
       findUnique: jest.fn(async ({ where }: any) =>
         packages.find((p) => p.id === where.id) ?? null,
       ),
+      findFirst: jest.fn(async ({ where }: any) =>
+        packages.find(
+          (p) =>
+            p.id === where.id &&
+            (where.coach_id === undefined || p.coach_id === where.coach_id) &&
+            p.is_active !== false &&
+            !p.archived_at,
+        ) ?? null,
+      ),
       update: jest.fn(async ({ where, data }: any) => {
         const row = packages.find((p) => p.id === where.id);
         Object.assign(row, data);
