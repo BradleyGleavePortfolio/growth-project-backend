@@ -18,7 +18,7 @@ function makePrisma(opts: {
   habits?: any[];
   checkIns?: any[];
   coach?: any;
-  lastMsg?: any;
+  lastMsg?: any; // single message object or array; wrapped into array if object
   guidelines?: any;
   mealPlan?: any;
 }) {
@@ -80,13 +80,31 @@ function makePrisma(opts: {
       findMany: jest.fn().mockResolvedValue(opts.checkIns ?? []),
     },
     coachMessage: {
-      findFirst: jest.fn().mockResolvedValue(opts.lastMsg ?? null),
+      // M14: service now calls findMany (last 5 messages). Wrap single-object
+      // lastMsg into an array for backward compat with existing test fixtures.
+      findMany: jest.fn().mockResolvedValue(
+        opts.lastMsg == null
+          ? []
+          : Array.isArray(opts.lastMsg)
+          ? opts.lastMsg
+          : [opts.lastMsg],
+      ),
     },
     coachGuideline: {
       findUnique: jest.fn().mockResolvedValue(opts.guidelines ?? null),
     },
     mealPlan: {
       findFirst: jest.fn().mockResolvedValue(opts.mealPlan ?? null),
+    },
+    // M1 additions — new models fetched by buildFresh()
+    fastingWindow: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    coachingSession: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    communityWin: {
+      findMany: jest.fn().mockResolvedValue([]),
     },
   } as any;
 }
@@ -127,6 +145,8 @@ describe('ClientAIContextService.buildFresh', () => {
       lastMsg: {
         body: 'Great work this week. Stick to the protein target. ' + 'x'.repeat(500),
         created_at: new Date('2026-04-25T18:00:00Z'),
+        sender_id: null,
+        coach_id: null,
       },
       guidelines: { content: 'No alcohol weekdays. Lift 4x. Walk 8k steps daily.' },
       coach: { name: 'Sasha Lin', email: 'coach@example.com' },
@@ -293,6 +313,8 @@ describe('ClientAIContextService.buildFresh', () => {
       lastMsg: {
         body: 'Stay strict on dinner carbs this week.',
         created_at: new Date('2026-04-26T18:00:00Z'),
+        sender_id: null,
+        coach_id: null,
       },
     });
     const svc = new ClientAIContextService(prisma);
@@ -321,8 +343,9 @@ describe('ClientAIContextService.buildFresh', () => {
     const a = await svc.build('u1');
     const b = await svc.build('u1');
     expect(b.generated_at).toBe(a.generated_at);
-    // user.findUnique called once for u1 plus once for coach lookup on the
-    // first build only. Second build should re-use the cache and not refetch.
-    expect((prisma.user.findUnique as jest.Mock).mock.calls.length).toBeLessThanOrEqual(2);
+    // user.findUnique called: (1) initial u1 fetch, (2) coach-1 lookup,
+    // (3) leaderboard opt-in select (M1) — all on first build only.
+    // Second build re-uses the cache and does not refetch.
+    expect((prisma.user.findUnique as jest.Mock).mock.calls.length).toBeLessThanOrEqual(3);
   });
 });

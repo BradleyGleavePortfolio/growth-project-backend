@@ -45,6 +45,26 @@ const clampStr = (s: string | null | undefined, max: number): string | null => {
   return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
 };
 
+// Sanitize a Prisma `Json?` value while preserving structure. String leaves are
+// run through sanitizePromptInput; arrays/objects recurse; primitives pass
+// through. The previous implementation called `String(value)` on objects which
+// produced "[object Object]" and discarded the data — the leak the test caught.
+const STRING_LEAF_MAX = 400;
+const sanitizeJsonValue = (value: unknown): unknown => {
+  if (value == null) return null;
+  if (typeof value === 'string') return sanitizePromptInput(value, STRING_LEAF_MAX);
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (Array.isArray(value)) return value.map(sanitizeJsonValue);
+  if (typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = sanitizeJsonValue(v);
+    }
+    return out;
+  }
+  return null;
+};
+
 @Injectable()
 export class ClientContextService {
   private readonly logger = new Logger(ClientContextService.name);
@@ -146,8 +166,8 @@ export class ClientContextService {
       injuries: (profile?.injuries ?? []).map((inj) =>
         typeof inj === 'string' ? sanitizePromptInput(inj, 200) : inj,
       ),
-      food_preferences: profile?.food_preferences
-        ? sanitizePromptInput(String(profile.food_preferences), 400)
+      food_preferences: profile?.food_preferences != null
+        ? sanitizeJsonValue(profile.food_preferences)
         : null,
       preferred_training_time: profile?.preferred_training_time
         ? sanitizePromptInput(profile.preferred_training_time, 100)
