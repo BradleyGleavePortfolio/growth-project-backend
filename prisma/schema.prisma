@@ -2595,6 +2595,20 @@ model CalendarConnection {
   // lived only in process memory; this column lets a process restart
   // reuse a previously linked account without forcing a re-link.
   encrypted_refresh_token String?
+  // Google Calendar push-channel tracking (B3). Populated after a
+  // successful events.watch() call; null until the watch is opened.
+  //   channel_id       — UUID we minted when calling watch(); Google
+  //                      echoes it back on every push notification via
+  //                      X-Goog-Channel-ID. Used to look up the owning
+  //                      connection on inbound webhooks.
+  //   resource_id      — Opaque Google identifier for the resource
+  //                      being watched. Required for stopWatch() calls.
+  //   channel_expires_at — Google channels expire after ≤7 days. The
+  //                      channel-renewal cron (B5) queries this column
+  //                      to find channels that need refreshing.
+  channel_id              String?          @unique
+  resource_id             String?
+  channel_expires_at      DateTime?
   // Last time the calendar-sync job seam successfully reconciled this
   // connection. Null until the real adapter ships.
   last_synced_at          DateTime?
