@@ -29,7 +29,9 @@ describe('Scheduling provider stubs', () => {
       startAt: new Date(),
       endAt: new Date(),
     });
-    expect(result.joinUrl).toBe('tgp-stub://session/fixed-key-2');
+    // StubVideoAdapter intentionally returns joinUrl: null to prevent
+    // fake tgp-stub:// URLs from leaking into production rows.
+    expect(result.joinUrl).toBeNull();
     expect(result.resolvedProvider).toBe('stub');
   });
 });

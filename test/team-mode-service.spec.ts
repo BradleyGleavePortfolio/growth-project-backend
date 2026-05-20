@@ -29,6 +29,7 @@ interface MockPrisma {
   };
   teamAuditEvent: {
     create: jest.Mock;
+    createMany: jest.Mock;
     findMany: jest.Mock;
   };
   user: {
@@ -52,6 +53,7 @@ function buildPrisma(overrides: Partial<MockPrisma> = {}): MockPrisma {
     },
     teamAuditEvent: {
       create: jest.fn(async () => ({ id: 'evt-1' })),
+      createMany: jest.fn(async () => ({ count: 0 })),
     },
     user: {
       updateMany: jest.fn(async () => ({ count: 0 })),
@@ -67,6 +69,7 @@ function buildPrisma(overrides: Partial<MockPrisma> = {}): MockPrisma {
     },
     teamAuditEvent: {
       create: txFns.teamAuditEvent.create,
+      createMany: txFns.teamAuditEvent.createMany,
       findMany: jest.fn(async () => []),
     },
     user: {
@@ -321,10 +324,12 @@ describe('TeamModeService.removeSubCoach', () => {
         data: { coach_id: 'head-1' },
       }),
     );
-    const kinds = prisma.teamAuditEvent.create.mock.calls.map(
-      (c) => (c[0] as { data: { event_kind: string } }).data.event_kind,
-    );
-    expect(kinds.filter((k) => k === 'client_reassigned')).toHaveLength(1);
+    // client_reassigned events are written via createMany (bulk).
+    expect(prisma.teamAuditEvent.createMany).toHaveBeenCalledTimes(1);
+    const createManyCall = prisma.teamAuditEvent.createMany.mock.calls[0][0] as {
+      data: Array<{ event_kind: string }>;
+    };
+    expect(createManyCall.data.filter((d) => d.event_kind === 'client_reassigned')).toHaveLength(1);
   });
 
   it('Q3: N-client removal reassigns all + writes N client_reassigned events', async () => {
@@ -335,13 +340,18 @@ describe('TeamModeService.removeSubCoach', () => {
       subCoachId: 'sub-1',
     });
     expect(result.reassignedClientCount).toBe(3);
-    const kinds = prisma.teamAuditEvent.create.mock.calls.map(
+    // client_reassigned events are written via createMany (bulk).
+    expect(prisma.teamAuditEvent.createMany).toHaveBeenCalledTimes(1);
+    const createManyCall = prisma.teamAuditEvent.createMany.mock.calls[0][0] as {
+      data: Array<{ event_kind: string }>;
+    };
+    expect(createManyCall.data.filter((d) => d.event_kind === 'client_reassigned')).toHaveLength(3);
+    // sub_coach_removed and staff_seat_removed written via individual create calls.
+    const createKinds = prisma.teamAuditEvent.create.mock.calls.map(
       (c) => (c[0] as { data: { event_kind: string } }).data.event_kind,
     );
-    expect(kinds.filter((k) => k === 'client_reassigned')).toHaveLength(3);
-    // Plus the sub_coach_removed and staff_seat_removed events.
-    expect(kinds).toContain('sub_coach_removed');
-    expect(kinds).toContain('staff_seat_removed');
+    expect(createKinds).toContain('sub_coach_removed');
+    expect(createKinds).toContain('staff_seat_removed');
   });
 
   it('Q3: Stripe failure does not block reassignment — error stored in audit metadata', async () => {
@@ -377,6 +387,7 @@ describe('TeamModeService.listAuditEvents', () => {
     const prisma = buildPrisma({
       teamAuditEvent: {
         create: jest.fn(),
+        createMany: jest.fn(async () => ({ count: 0 })),
         findMany: jest.fn(async () => rows),
       },
     });
@@ -409,6 +420,7 @@ describe('TeamModeService.listAuditEvents', () => {
     const prisma = buildPrisma({
       teamAuditEvent: {
         create: jest.fn(),
+        createMany: jest.fn(async () => ({ count: 0 })),
         findMany: jest.fn(async () => make(11)),
       },
     });
@@ -429,6 +441,7 @@ describe('TeamModeService.listAuditEvents', () => {
     const prisma = buildPrisma({
       teamAuditEvent: {
         create: jest.fn(),
+        createMany: jest.fn(async () => ({ count: 0 })),
         findMany: jest.fn(async () => []),
       },
     });

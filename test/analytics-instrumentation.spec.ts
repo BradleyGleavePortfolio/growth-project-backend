@@ -53,6 +53,7 @@ describe('analytics instrumentation — billing webhook lifecycle', () => {
         findUnique: jest.fn(async () => null),
         create: jest.fn(async () => ({})),
       },
+      $transaction: jest.fn(async (cb: (tx: any) => Promise<any>) => cb(prisma)),
     };
     return { svc: new BillingService(prisma, analytics as any, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any), prisma, analytics };
   }
@@ -205,7 +206,7 @@ describe('analytics instrumentation — log service', () => {
     const analytics = makeAnalytics();
     const prisma: any = {
       loggedFoodEntry: {
-        create: jest.fn(async ({ data }: any) => ({
+        upsert: jest.fn(async ({ create: data }: any) => ({
           id: 'l1',
           ...data,
           food_item: { calories: 100, protein_g: 0, carbs_g: 0, fat_g: 0 },
