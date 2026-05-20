@@ -4,3 +4,7 @@ dist/
 .env.*
 !.env.example
 *.log
+
+# AI audit working notes — never commit to repo
+audit-*.md
+/tmp-audit-*.md
