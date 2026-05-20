@@ -35,6 +35,9 @@ describe('InviteCodesService', () => {
       teamAuditEvent: {
         create: jest.fn(async () => ({ id: 'evt-stub' })),
       },
+      coachSubscription: {
+        findUnique: jest.fn(async () => ({ status: 'active' })),
+      },
       $transaction: jest.fn((cb: any) => cb(prismaMock)),
     };
     const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
@@ -280,6 +283,7 @@ describe('InviteCodesService', () => {
         subscription_status: 'paused',
         user: { id: 'coach-1', name: 'Lara', role: 'coach' },
       });
+      prismaMock.coachSubscription.findUnique.mockResolvedValue({ status: 'paused' });
       expect(await service.previewCode('GP-PAUSED')).toEqual({ valid: false });
     });
 
@@ -293,6 +297,7 @@ describe('InviteCodesService', () => {
         subscription_status: 'canceled',
         user: { id: 'coach-1', name: 'Lara', role: 'coach' },
       });
+      prismaMock.coachSubscription.findUnique.mockResolvedValue({ status: 'canceled' });
       expect(await service.previewCode('GP-CANCEL')).toEqual({ valid: false });
     });
 
@@ -390,6 +395,7 @@ describe('InviteCodesService', () => {
         subscription_status: 'paused',
         user: { id: 'coach-1', role: 'coach' },
       });
+      prismaMock.coachSubscription.findUnique.mockResolvedValue({ status: 'paused' });
       await expect(
         service.attachUserToCoachByCode('user-1', 'GP-PAUSED'),
       ).rejects.toBeInstanceOf(BadRequestException);
