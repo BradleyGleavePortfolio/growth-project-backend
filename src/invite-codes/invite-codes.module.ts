@@ -1,20 +1,20 @@
 import { Module } from '@nestjs/common';
 import { BillingModule } from '../billing/billing.module';
-import { JwtAuthGuard } from '../auth/auth.guard';
-import { CoachGuard } from '../auth/coach.guard';
-import { JwksVerifierService } from '../auth/jwks.service';
 import { InviteCodesController } from './invite-codes.controller';
 import { InviteCodesService } from './invite-codes.service';
 
-// PrismaService and SupabaseService are provided globally (PrismaModule,
-// SupabaseModule). JwtAuthGuard now depends on JwksVerifierService (PR #25
-// switched auth to local JWKS verification) so we provide it locally too.
-// Providing the guards locally avoids the circular import AuthModule ↔ InviteCodesModule
-// that would otherwise arise from AuthService needing InviteCodesService.
+// PrismaService and SupabaseService are provided globally. Guards
+// (JwtAuthGuard, CoachGuard) and JwksVerifierService are provided by the
+// @Global SecurityGuardsModule — InviteCodesModule does NOT import AuthModule
+// (that would re-open the AuthModule ↔ InviteCodesModule cycle that
+// AuthService → InviteCodesService closes on the runtime side).
+//
+// BillingModule is imported so the invite-code controller can read coach
+// subscription state when redeeming a coach invite.
 @Module({
   imports: [BillingModule],
   controllers: [InviteCodesController],
-  providers: [InviteCodesService, JwtAuthGuard, CoachGuard, JwksVerifierService],
+  providers: [InviteCodesService],
   exports: [InviteCodesService],
 })
 export class InviteCodesModule {}

@@ -1,7 +1,5 @@
 import { Module } from '@nestjs/common';
-import { JwksVerifierService } from '../auth/jwks.service';
 import { CheckoutModule } from '../checkout/checkout.module';
-import { NoActiveSubCoachGuard } from '../common/guards/no-active-sub-coach.guard';
 import { ConnectModule } from '../connect/connect.module';
 import { EmailModule } from '../email/email.module';
 import { PrismaService } from '../prisma.service';
@@ -11,11 +9,11 @@ import { MobileCoachBillingController } from './mobile-coach-billing.controller'
 import { OwnerBillingController } from './owner-billing.controller';
 import { StripeApiService } from './stripe-api.service';
 import { StripeWebhookController } from './stripe-webhook.controller';
-import { SubscriptionGuard } from './subscription.guard';
 
-// PrismaService and the global JwtAuthGuard are provided elsewhere
-// (PrismaModule, AuthModule). The module exports SubscriptionGuard so v1
-// controllers can mount it on individual write routes.
+// Guards used by controllers in this module (SubscriptionGuard,
+// NoActiveSubCoachGuard, JwtAuthGuard, …) are provided by the @Global
+// SecurityGuardsModule. JwksVerifierService is colocated there too.
+// PrismaService is provided by the global PrismaModule.
 @Module({
   imports: [
     // ConnectModule re-exports ConnectService so the Stripe webhook handler
@@ -38,12 +36,9 @@ import { SubscriptionGuard } from './subscription.guard';
   ],
   providers: [
     BillingService,
-    SubscriptionGuard,
-    JwksVerifierService,
     StripeApiService,
     PrismaService,
-    NoActiveSubCoachGuard,
   ],
-  exports: [BillingService, SubscriptionGuard],
+  exports: [BillingService],
 })
 export class BillingModule {}

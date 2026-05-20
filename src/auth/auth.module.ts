@@ -4,17 +4,29 @@ import { InviteCodesModule } from '../invite-codes/invite-codes.module';
 import { ThrottlerModule } from '../throttler/throttler.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { JwtAuthGuard } from './auth.guard';
-import { JwksVerifierService } from './jwks.service';
 import { AppleVerifierService } from './apple-verifier.service';
 
 /**
  * Auth module — does not use PassportModule or JwtModule.
  *
- * Token validation is handled by JwtAuthGuard, which delegates ES256
- * signature verification to JwksVerifierService. The verifier fetches
- * Supabase's public JWK set once and verifies tokens locally — no per-
- * request round-trip to Supabase Auth.
+ * Token validation is handled by `JwtAuthGuard`, which delegates ES256
+ * signature verification to `JwksVerifierService`. The verifier fetches
+ * Supabase's published JWK set once and verifies tokens locally — no
+ * per-request round-trip to Supabase Auth.
+ *
+ * `JwtAuthGuard` and `JwksVerifierService` are provided by the @Global
+ * `SecurityGuardsModule` (see `src/common/security/security-guards.module.ts`).
+ * That module is loaded before AuthModule in AppModule, so the guards
+ * are in DI scope for both `@UseGuards(JwtAuthGuard)` in this module's
+ * controller and for every downstream feature module — without anyone
+ * needing to import AuthModule itself.
+ *
+ * Keeping guards out of AuthModule's provider list is load-bearing for
+ * cycle prevention: hotfix #243 (prod-down 2026-05-20) traced a boot
+ * crash to AuthModule ↔ InviteCodesModule ↔ BillingModule ↔ CheckoutModule
+ * cycles formed because feature modules imported AuthModule *only* to put
+ * the guards into local DI. With the guards globalised, those edges no
+ * longer need to exist.
  *
  * PrismaService is provided by the global PrismaModule.
  *
@@ -31,7 +43,7 @@ import { AppleVerifierService } from './apple-verifier.service';
 @Module({
   imports: [ConfigModule, InviteCodesModule, ThrottlerModule],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard, JwksVerifierService, AppleVerifierService],
-  exports: [AuthService, JwtAuthGuard, JwksVerifierService, AppleVerifierService],
+  providers: [AuthService, AppleVerifierService],
+  exports: [AuthService, AppleVerifierService],
 })
 export class AuthModule {}
