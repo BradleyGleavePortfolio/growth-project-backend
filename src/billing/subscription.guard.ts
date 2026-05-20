@@ -254,8 +254,9 @@ export class SubscriptionGuard implements CanActivate {
         'server_billing_enforcement_observed',
         { currentState, reason, route, method },
       );
-    } catch {
-      // analytics is best-effort; never block the request
+    } catch (err) {
+      // analytics is best-effort; never block the request — but log the failure
+      this.logger.warn({ err }, 'analytics_capture_failed');
     }
     return true;
   }
