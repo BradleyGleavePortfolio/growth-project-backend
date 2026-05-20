@@ -800,8 +800,15 @@ export class AuthService {
     if (!user) throw new UnauthorizedException('User not found');
 
     if (user.role === 'coach') {
-      // Idempotent — already a coach; return current role.
-      return { role: user.role };
+      // Idempotent — already a coach; return current role and tier per spec §4.
+      // Read the caller's own CoachSubscription row for the authoritative tier.
+      // If no row exists (edge case: coach pre-dating the billing migration),
+      // fall back to 'free' rather than throwing.
+      const existingSub = await (this.prisma.coachSubscription.findUnique as any)({
+        where: { coach_id: user.id },
+        select: { tier: true },
+      });
+      return { role: user.role, tier: (existingSub?.tier ?? 'free') as string };
     }
 
     if (user.role === 'owner') {
