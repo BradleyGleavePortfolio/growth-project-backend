@@ -66,6 +66,9 @@ function fakeClientAttach() {
         return row;
       }),
     },
+    coachSubscription: {
+      findUnique: jest.fn(async () => ({ status: 'active' })),
+    },
     $transaction: jest.fn(async (fn: any) => fn({
       inviteCode: { findUnique: jest.fn(), updateMany: jest.fn() },
       user: {
@@ -224,6 +227,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
           ),
         },
         inviteCode: { findUnique: jest.fn(async () => null) },
+        coachSubscription: { findUnique: jest.fn(async () => ({ status: 'active' })) },
       };
       const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       const result = await inviteCodes.previewCode('GP-ABCDEF');
@@ -248,6 +252,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
           })),
         },
         inviteCode: { findUnique: jest.fn(async () => null) },
+        coachSubscription: { findUnique: jest.fn(async () => ({ status: 'paused' })) },
       };
       const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       const result = await inviteCodes.previewCode('GP-PAUSED');
@@ -360,6 +365,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         subscription_status: 'paused',
         user: { id: 'coach-1', role: 'coach' },
       };
+      fake.coachSubscription.findUnique = jest.fn(async () => ({ status: 'paused' }));
       const inviteCodes = new InviteCodesService(fake as any, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       await expect(
         inviteCodes.attachUserToCoachByCode('student-1', 'GP-PAUS01'),
@@ -435,15 +441,24 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         habit: { findMany: jest.fn(async () => []) },
         checkIn: { findMany: jest.fn(async () => []) },
         coachMessage: {
-          findFirst: jest.fn(async () => ({
-            body: 'Push hard on protein this week.',
-            created_at: new Date(),
-          })),
+          // M14: service now calls findMany (last 5 messages)
+          findMany: jest.fn(async () => [
+            {
+              body: 'Push hard on protein this week.',
+              created_at: new Date(),
+              sender_id: null,
+              coach_id: null,
+            },
+          ]),
         },
         coachGuideline: {
           findUnique: jest.fn(async () => ({ content: 'No alcohol on training days.' })),
         },
         mealPlan: { findFirst: jest.fn(async () => null) },
+        // M1 additions — new models fetched by buildFresh()
+        fastingWindow: { findFirst: jest.fn(async () => null) },
+        coachingSession: { findFirst: jest.fn(async () => null) },
+        communityWin: { findMany: jest.fn(async () => []) },
       };
 
       const svc = new ClientAIContextService(prisma);
