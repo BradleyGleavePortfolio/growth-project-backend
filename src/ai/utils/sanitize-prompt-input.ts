@@ -56,8 +56,14 @@ export function sanitizePromptInput(
     // Legitimate user content (names, addresses) may use accented Latin — those
     // are preserved by NFC normalization above. Characters entirely outside
     // Latin Extended are stripped.
+    // Security: deliberately match control characters to strip Unicode confusables
+    // that attackers use to obfuscate prompt injection payloads.
+    // eslint-disable-next-line no-control-regex
     .replace(/[^\x00-\x7F\u00C0-\u024F\u1E00-\u1EFF]/g, ' ')
     // Strip null bytes and other control characters (except newlines/tabs)
+    // Security: deliberately match null bytes and ASCII control chars (0x00-0x1F, 0x7F) —
+    // these are the exact bytes attackers embed to obfuscate prompt injection payloads.
+    // eslint-disable-next-line no-control-regex
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
     // Normalize whitespace runs
     .replace(/[ \t]{3,}/g, '  ')
