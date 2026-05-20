@@ -157,10 +157,14 @@ fi
 
 # Count successfully applied (rolled_back_at IS NULL) rows in _prisma_migrations
 # so the log emits a single grep-able line for monitoring/observability.
+# 2>&1 (not 2>/dev/null) ensures any DB connection error or prisma stderr is
+# captured in this log rather than silently discarded. If the query fails, the
+# fallback warns explicitly instead of logging a misleading bare "unknown".
+# (Finding 7 — MEDIUM, audit 2026-05-19)
 APPLIED_COUNT=$(
-  npx prisma db execute --stdin <<'SQL' 2>/dev/null \
+  npx prisma db execute --stdin <<'SQL' 2>&1 \
     | awk '/^[[:space:]]*[0-9]+/ { print $1; exit }' \
-    || echo "unknown"
+    || { echo "[release] WARNING: could not query _prisma_migrations count"; echo "unknown"; }
 SELECT COUNT(*) FROM _prisma_migrations WHERE rolled_back_at IS NULL;
 SQL
 )
