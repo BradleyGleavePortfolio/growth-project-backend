@@ -516,9 +516,9 @@ model MessageDraft {
 model Message {
   id           String    @id @default(uuid())
   sender_id    String
-  sender       User      @relation("MessageSender", fields: [sender_id], references: [id])
+  sender       User      @relation("MessageSender", fields: [sender_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
   recipient_id String
-  recipient    User      @relation("MessageRecipient", fields: [recipient_id], references: [id])
+  recipient    User      @relation("MessageRecipient", fields: [recipient_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
   body         String
   read         Boolean   @default(false)
   read_at      DateTime?

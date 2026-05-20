@@ -718,6 +718,25 @@ export class AccountDeletionService {
 
     // ── 12. Final transaction: delete user-owned rows + tombstone User ────────
     await this.prisma.$transaction(async (tx) => {
+      // Belt-and-suspenders: explicitly delete Message rows where the user is
+      // sender OR recipient BEFORE the User tombstone below.
+      //
+      // WHY explicit even though FKs are CASCADE?
+      //   The FK cascade (added in migration 20260613000001_message_fk_cascade)
+      //   guarantees no FK violation when the User row is deleted. However, the
+      //   explicit deleteMany here serves two additional purposes:
+      //     1. Gives us a concrete `count` we can log for GDPR audit trails.
+      //     2. Makes the intent self-documenting — a future engineer reading
+      //        this function can see that Message cleanup is intentional, not
+      //        accidentally omitted.
+      // (Finding 2 — CRITICAL, audit 2026-05-19)
+      const deletedMessages = await tx.message.deleteMany({
+        where: { OR: [{ sender_id: userId }, { recipient_id: userId }] },
+      });
+      this.logger.log(
+        `[finalizeUserDeletion] deleted ${deletedMessages.count} Message row(s) for user ${userId}`,
+      );
+
       // Hard-delete rows that are purely owned by this user (no cross-user FK dep):
       await tx.loggedFoodEntry.deleteMany({ where: { user_id: userId } });
       await tx.workoutSession.deleteMany({ where: { user_id: userId } });
