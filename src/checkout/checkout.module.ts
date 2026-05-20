@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
-import { AuthModule } from '../auth/auth.module';
+import { JwtAuthGuard } from '../auth/auth.guard';
 import { JwksVerifierService } from '../auth/jwks.service';
 import { RolesGuard } from '../auth/roles.guard';
+import { ServiceTokenGuard } from '../auth/service-token.guard';
 import { ConnectModule } from '../connect/connect.module';
 import { PackagesModule } from '../packages/packages.module';
 import { AdminAnalyticsService } from './admin-analytics.service';
@@ -29,8 +30,22 @@ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 //
 // Phase 4-5: DunningService + PurchaseSplitHandlerService own the split
 // ledger / head-coach transfer / payment-failure-and-retry lifecycle.
+//
+// IMPORTANT — circular-dependency fix (hotfix 2026-05-20):
+// We previously imported `AuthModule` to obtain the JWT/Roles/Service-token
+// guards. That created a real boot-time cycle:
+//   AuthModule → InviteCodesModule → BillingModule → CheckoutModule → AuthModule
+// Nest tries to evaluate CheckoutModule.imports[0] (= AuthModule) while
+// AuthModule itself is still mid-construction up the chain, so the value
+// is `undefined`, throwing UndefinedModuleException at boot. The Fly
+// machine then crash-loops and the app is unreachable in production.
+//
+// Same fix InviteCodesModule already documents: provide the auth guards
+// locally instead of importing the whole AuthModule. CheckoutModule does
+// not need AuthService — only the guards + JwksVerifierService. PrismaService
+// and PtmService are provided by global modules, so guards still wire up.
 @Module({
-  imports: [AuthModule, ConnectModule, PackagesModule],
+  imports: [ConnectModule, PackagesModule],
   controllers: [
     CheckoutController,
     CoachPurchasesController,
@@ -44,8 +59,10 @@ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
     DunningService,
     RefundDisputeHandlerService,
     AdminAnalyticsService,
+    JwtAuthGuard,
     JwksVerifierService,
     RolesGuard,
+    ServiceTokenGuard,
   ],
   exports: [
     CheckoutService,
