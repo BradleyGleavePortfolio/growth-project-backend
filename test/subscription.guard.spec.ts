@@ -186,9 +186,11 @@ describe('SubscriptionGuard', () => {
   it('observe-mode emits PostHog telemetry for would-be denies (Pro endpoint)', async () => {
     const capture = jest.fn();
     const analytics: any = { capture };
-    // Use a Pro endpoint reflector so the deny path is reached (canceled coach).
+    // Use tier='pro' so the guard reaches the canceled-status path (tier check
+    // passes first per spec §6 invariant order). With tier='free' the guard
+    // would emit tier_too_low telemetry instead of 'canceled'.
     const guard = new SubscriptionGuard(
-      makePrismaWithSub({ status: 'canceled', tier: 'free', last_payment_failed_at: null }) as any,
+      makePrismaWithSub({ status: 'canceled', tier: 'pro', last_payment_failed_at: null }) as any,
       makeProReflector(),
       analytics,
     );
