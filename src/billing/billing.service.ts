@@ -194,19 +194,26 @@ export class BillingService {
     const priceId = sub.items?.data?.[0]?.price?.id ?? null;
     const status = sub.status ?? 'incomplete';
 
-    // Hybrid pricing (spec §9): set tier='pro' only on active/trialing.
-    // If status is something else (e.g. incomplete, past_due) on this event,
-    // do NOT set tier='pro' — fall through without a tier upgrade.
+    // Hybrid pricing (spec §9): set tier based on subscription status.
+    //   active | trialing      → tier='pro' (subscribe/upgrade)
+    //   canceled | incomplete_expired → tier='free' (explicit downgrade)
+    //   past_due               → no tier change (guard handles 7-day grace)
+    //   incomplete | unpaid    → no tier change
     //
     // IMPORTANT — no accidental Pro→free downgrade on past_due:
     //   past_due → tier stays 'pro' in the DB
     //   → SubscriptionGuard handles the 7-day grace window (spec §6)
-    //   → Only customer.subscription.deleted fires the tier='free' drop
     // This ensures a momentary payment failure does not strip Pro access.
-    // The DB tier is only lowered explicitly via applySubscriptionDeleted().
-    const tierForActiveSubscription = (
-      status === 'active' || status === 'trialing'
-    ) ? 'pro' : undefined;
+    let tierUpdate: { tier?: string } = {};
+    if (status === 'active' || status === 'trialing') {
+      tierUpdate = { tier: 'pro' };
+    } else if (status === 'canceled' || status === 'incomplete_expired') {
+      tierUpdate = { tier: 'free' };
+    }
+    // past_due: no tier change — guard handles grace
+    // incomplete/unpaid: no tier change
+    // Keep backward-compat alias for the create/update spread below:
+    const tierForActiveSubscription = tierUpdate.tier;
 
     // Wrap the profile lookup and subscription upsert in a transaction so that
     // concurrent customer.subscription.created + customer.subscription.updated
@@ -226,8 +233,9 @@ export class BillingService {
           stripe_subscription_id: sub.id,
           stripe_price_id: priceId,
           status,
-          // Set tier=pro on active/trialing; otherwise default 'free' from schema.
-          ...(tierForActiveSubscription ? { tier: tierForActiveSubscription } : {}),
+          // Set tier per status: pro on active/trialing, free on canceled/
+          // incomplete_expired, schema-default 'free' on first create otherwise.
+          ...(tierForActiveSubscription !== undefined ? { tier: tierForActiveSubscription } : {}),
           current_period_end: this.toDate(sub.current_period_end),
           trial_end: this.toDate(sub.trial_end ?? null),
           cancel_at_period_end: !!sub.cancel_at_period_end,
@@ -237,10 +245,10 @@ export class BillingService {
           stripe_subscription_id: sub.id,
           stripe_price_id: priceId,
           status,
-          // Only upgrade to pro when status is active|trialing.
-          // Do NOT include tier in the update if status is past_due, incomplete,
-          // etc. — leaving the existing tier value unchanged in the DB.
-          ...(tierForActiveSubscription ? { tier: tierForActiveSubscription } : {}),
+          // Set tier per status: active|trialing → pro, canceled|
+          // incomplete_expired → free, past_due/incomplete → no change
+          // (leave existing tier value unchanged in the DB).
+          ...(tierForActiveSubscription !== undefined ? { tier: tierForActiveSubscription } : {}),
           current_period_end: this.toDate(sub.current_period_end),
           trial_end: this.toDate(sub.trial_end ?? null),
           cancel_at_period_end: !!sub.cancel_at_period_end,
