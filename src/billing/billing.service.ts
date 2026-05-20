@@ -193,6 +193,21 @@ export class BillingService {
     }
     const priceId = sub.items?.data?.[0]?.price?.id ?? null;
     const status = sub.status ?? 'incomplete';
+
+    // Hybrid pricing (spec §9): set tier='pro' only on active/trialing.
+    // If status is something else (e.g. incomplete, past_due) on this event,
+    // do NOT set tier='pro' — fall through without a tier upgrade.
+    //
+    // IMPORTANT — no accidental Pro→free downgrade on past_due:
+    //   past_due → tier stays 'pro' in the DB
+    //   → SubscriptionGuard handles the 7-day grace window (spec §6)
+    //   → Only customer.subscription.deleted fires the tier='free' drop
+    // This ensures a momentary payment failure does not strip Pro access.
+    // The DB tier is only lowered explicitly via applySubscriptionDeleted().
+    const tierForActiveSubscription = (
+      status === 'active' || status === 'trialing'
+    ) ? 'pro' : undefined;
+
     // Wrap the profile lookup and subscription upsert in a transaction so that
     // concurrent customer.subscription.created + customer.subscription.updated
     // deliveries cannot interleave the read and the write, which would
@@ -203,7 +218,7 @@ export class BillingService {
         orderBy: { created_at: 'desc' },
       });
       if (!profile) return null;
-      await tx.coachSubscription.upsert({
+      await (tx.coachSubscription.upsert as any)({
         where: { coach_id: profile.user_id },
         create: {
           coach_id: profile.user_id,
@@ -211,6 +226,8 @@ export class BillingService {
           stripe_subscription_id: sub.id,
           stripe_price_id: priceId,
           status,
+          // Set tier=pro on active/trialing; otherwise default 'free' from schema.
+          ...(tierForActiveSubscription ? { tier: tierForActiveSubscription } : {}),
           current_period_end: this.toDate(sub.current_period_end),
           trial_end: this.toDate(sub.trial_end ?? null),
           cancel_at_period_end: !!sub.cancel_at_period_end,
@@ -220,6 +237,10 @@ export class BillingService {
           stripe_subscription_id: sub.id,
           stripe_price_id: priceId,
           status,
+          // Only upgrade to pro when status is active|trialing.
+          // Do NOT include tier in the update if status is past_due, incomplete,
+          // etc. — leaving the existing tier value unchanged in the DB.
+          ...(tierForActiveSubscription ? { tier: tierForActiveSubscription } : {}),
           current_period_end: this.toDate(sub.current_period_end),
           trial_end: this.toDate(sub.trial_end ?? null),
           cancel_at_period_end: !!sub.cancel_at_period_end,
@@ -263,9 +284,18 @@ export class BillingService {
     const sub = event.data.object as { id?: string; customer?: string };
     const coachId = await this.resolveCoachByCustomer(sub?.customer);
     if (!coachId) return;
-    await this.prisma.coachSubscription.update({
+    // Hybrid pricing (spec §9): on subscription deleted, set tier='free'.
+    // Do NOT delete the row — preserves audit trail and stripe_customer_id
+    // for reactivation (spec §9: "never delete the row").
+    //
+    // Why tier='free' here but NOT on past_due:
+    //   Deleted = coach explicitly canceled or Stripe gave up after retries.
+    //   past_due = transient payment failure. The 7-day grace window in
+    //   SubscriptionGuard (§6) handles past_due. The tier in DB stays 'pro'
+    //   during past_due so a card update can restore access without re-checkout.
+    await (this.prisma.coachSubscription.update as any)({
       where: { coach_id: coachId },
-      data: { status: 'canceled', cancel_at_period_end: false },
+      data: { status: 'canceled', cancel_at_period_end: false, tier: 'free' },
     });
     this.analytics.capture(coachId, Events.SUBSCRIPTION_CANCELED, {});
     await this.audit.write({
