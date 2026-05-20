@@ -119,10 +119,12 @@ npx prisma migrate status 2>&1 | tee "${STATUS_LOG}" || true
 
 # Prisma 5 lists pending migrations with an ASCII dash (-), NOT the Unicode
 # bullet (•, U+2022) that was used in Prisma 4 and earlier. Using the bullet
-# here always matched 0 lines, causing pending_before to log 0 regardless of
-# how many migrations were actually pending. (Finding 4 — HIGH, audit 2026-05-19)
+# always matched 0 lines. (Finding 4 — HIGH, audit 2026-05-19)
+# Any non-whitespace token follows the dash — migration names may contain
+# underscores, digits, letters, or hyphens. [^[:space:]]+ matches all of them.
+# (re-audit followup A)
 PENDING_COUNT=$(
-  grep -cE '^[[:space:]]+-[[:space:]]+[0-9_a-zA-Z]+$' "${STATUS_LOG}" \
+  grep -cE '^[[:space:]]+-[[:space:]]+[^[:space:]]+$' "${STATUS_LOG}" \
     || echo 0
 )
 echo "[release]   pending_migrations_detected = ${PENDING_COUNT}"
