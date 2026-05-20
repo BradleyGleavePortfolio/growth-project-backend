@@ -249,7 +249,9 @@ describe('SchedulingService — request + state machine + audit', () => {
     const approved = await svc.approveSession(COACH_ACTOR, requested.id);
     expect(approved.status).toBe('scheduled');
     expect(approved.calendar_event_id).toMatch(/^stub-cal-sess-sess-1-/);
-    expect(approved.video_url).toMatch(/^tgp-stub:\/\/session\/sess-sess-1-/);
+    // StubVideoAdapter intentionally returns joinUrl: null to prevent
+    // fake tgp-stub:// URLs from leaking into production rows.
+    expect(approved.video_url).toBeNull();
     // Idempotency key is set once and reused — second provisioning
     // call would not pick a different key.
     expect(approved.provider_idempotency_key).toMatch(/^sess-sess-1-/);
