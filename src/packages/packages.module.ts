@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/auth.guard';
 import { JwksVerifierService } from '../auth/jwks.service';
 import { SubscriptionGuard } from '../billing/subscription.guard';
+import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
 import {
   ClientPackagesController,
   CoachPackagesController,
@@ -23,7 +25,18 @@ import { PackagesService } from './packages.service';
 @Module({
   imports: [],
   controllers: [CoachPackagesController, ClientPackagesController],
-  providers: [PackagesService, JwksVerifierService, SubscriptionGuard],
+  providers: [
+    PackagesService,
+    // Both controllers reference @UseGuards(JwtAuthGuard, ...). Global APP_GUARD
+    // already covers JWT auth, but providing the guards locally matches the
+    // controllers' decorators exactly so future scope changes don't silently
+    // bypass auth. JwtAuthGuard needs JwksVerifierService (local), PtmService
+    // (global), PrismaService (global). Reflector is core.
+    JwtAuthGuard,
+    JwksVerifierService,
+    SubscriptionGuard,
+    CoachOrOwnerGuard,
+  ],
   exports: [PackagesService],
 })
 export class PackagesModule {}

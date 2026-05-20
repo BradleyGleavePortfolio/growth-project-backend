@@ -3,6 +3,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { JwksVerifierService } from '../auth/jwks.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { ServiceTokenGuard } from '../auth/service-token.guard';
+import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
 import { ConnectModule } from '../connect/connect.module';
 import { PackagesModule } from '../packages/packages.module';
 import { AdminAnalyticsService } from './admin-analytics.service';
@@ -63,6 +64,9 @@ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
     JwksVerifierService,
     RolesGuard,
     ServiceTokenGuard,
+    // CoachPurchasesController + CoachPaymentOpsController use this guard.
+    // Zero dependencies — safe to provide locally.
+    CoachOrOwnerGuard,
   ],
   exports: [
     CheckoutService,
