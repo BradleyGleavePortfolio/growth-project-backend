@@ -171,17 +171,30 @@ fi
 
 # Count successfully applied (rolled_back_at IS NULL) rows in _prisma_migrations
 # so the log emits a single grep-able line for monitoring/observability.
-# 2>&1 (not 2>/dev/null) ensures any DB connection error or prisma stderr is
-# captured in this log rather than silently discarded. If the query fails, the
-# fallback warns explicitly instead of logging a misleading bare "unknown".
-# (Finding 7 — MEDIUM, audit 2026-05-19)
-APPLIED_COUNT=$(
-  npx prisma db execute --stdin <<'SQL' 2>&1 \
-    | awk '/^[[:space:]]*[0-9]+/ { print $1; exit }' \
-    || { echo "[release] WARNING: could not query _prisma_migrations count"; echo "unknown"; }
+#
+# Write raw output to a temp file so stderr is captured in the release log
+# without polluting the metric value. Using a command substitution with 2>&1
+# feeds stderr into awk/the variable; warnings appear inside APPLIED_COUNT,
+# corrupting ALL_APPLIED= into a multi-line string. The temp-file approach
+# keeps the metric clean and lets us emit warnings to stdout separately.
+# (Finding 7 — MEDIUM, audit 2026-05-19; re-audit blocker 3)
+APPLIED_TMP=$(mktemp)
+if npx prisma db execute --stdin <<'SQL' >"${APPLIED_TMP}" 2>&1
 SELECT COUNT(*) FROM _prisma_migrations WHERE rolled_back_at IS NULL;
 SQL
-)
+then
+  APPLIED_COUNT=$(awk '/^[[:space:]]*[0-9]+/ { print $1; exit }' "${APPLIED_TMP}")
+  if [[ -z "${APPLIED_COUNT}" ]]; then
+    echo "[release] WARNING: could not parse applied count from prisma output:"
+    sed 's/^/[release]   /' "${APPLIED_TMP}"
+    APPLIED_COUNT="unknown"
+  fi
+else
+  echo "[release] WARNING: prisma db execute failed querying _prisma_migrations:"
+  sed 's/^/[release]   /' "${APPLIED_TMP}"
+  APPLIED_COUNT="unknown"
+fi
+rm -f "${APPLIED_TMP}"
 
 echo "[release] ────────────────────────────────────────────────────────────"
 echo "[release] ✔ release_command completed successfully"
