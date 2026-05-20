@@ -13,7 +13,7 @@
  *     Reflector.getAllAndOverride resolves correctly.
  */
 
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { ExecutionContext, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { SubscriptionGuard } from '../../src/billing/subscription.guard';
 
@@ -224,6 +224,31 @@ describe('SubscriptionGuard — tier logic (spec §10)', () => {
     const body = caught?.getResponse() as Record<string, unknown>;
     expect(body.code).toBe('TIER_UPGRADE_REQUIRED');
     expect(body.required_tier).toBe('pro');
+  });
+
+  // Missing-user 401 path (spec §6 / pass-2 should-fix #1)
+  it('throws UnauthorizedException when req.user is missing on Pro route', async () => {
+    process.env.BILLING_ENFORCEMENT = 'enforce';
+    const guard = new SubscriptionGuard(makePrisma(null) as any, proReflector());
+    const req = { user: undefined };
+    const ctx: ExecutionContext = {
+      switchToHttp: () => ({ getRequest: () => req }),
+      getHandler: () => ({}),
+      getClass: () => ({}),
+    } as any;
+    await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('throws UnauthorizedException when req.user is missing on free route', async () => {
+    process.env.BILLING_ENFORCEMENT = 'enforce';
+    const guard = new SubscriptionGuard(makePrisma(null) as any, freeReflector());
+    const req = { user: undefined };
+    const ctx: ExecutionContext = {
+      switchToHttp: () => ({ getRequest: () => req }),
+      getHandler: () => ({}),
+      getClass: () => ({}),
+    } as any;
+    await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
   });
 
   // Case 10: handler-level @RequiresTier overrides class-level @RequiresTier
