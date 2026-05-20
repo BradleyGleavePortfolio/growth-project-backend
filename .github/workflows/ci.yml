@@ -49,6 +49,10 @@ jobs:
         env:
           NODE_ENV: production
           DATABASE_URL: postgres://ci/ci
+          # DIRECT_URL was promoted to hard tier (PR #238) — required by
+          # `prisma migrate deploy` in the Fly release_command. The simulated
+          # prod env must supply it so this gate doesn't break boot validation.
+          DIRECT_URL: postgres://ci-direct/ci
           SUPABASE_URL: https://ci.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ci-srk
           PUBLIC_INVITE_BASE_URL: https://app.example.com/join
