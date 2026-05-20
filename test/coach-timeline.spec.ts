@@ -6,7 +6,7 @@ import { CoachService } from '../src/coach/coach.service';
 // (meals/workouts/weights/checkIns) remain on the response shape so existing
 // consumers aren't broken.
 function makePrisma(fixtures: {
-  meals?: Array<{ id: string; logged_at: Date }>;
+  meals?: Array<{ id: string; date: Date }>;
   workouts?: Array<{ id: string; created_at: Date }>;
   weights?: Array<{ id: string; date: Date }>;
   checkIns?: Array<{ id: string; date: Date }>;
@@ -41,7 +41,7 @@ describe('CoachService.getClientTimeline (Tier-2 check-in integration)', () => {
   it('returns per-type arrays AND a merged `events` stream', async () => {
     const svc = new CoachService(
       makePrisma({
-        meals: [{ id: 'm1', logged_at: new Date('2026-04-22T10:00:00Z') }],
+        meals: [{ id: 'm1', date: new Date('2026-04-22T10:00:00Z') }],
         workouts: [{ id: 'w1', created_at: new Date('2026-04-23T10:00:00Z') }],
         weights: [{ id: 'wt1', date: new Date('2026-04-21T00:00:00Z') }],
         checkIns: [{ id: 'c1', date: new Date('2026-04-24T00:00:00Z') }],
