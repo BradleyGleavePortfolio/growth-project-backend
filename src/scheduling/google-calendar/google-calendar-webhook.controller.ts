@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
+  NotFoundException,
   Post,
   Req,
 } from '@nestjs/common';
@@ -57,7 +58,10 @@ export class GoogleCalendarWebhookController {
   @HttpCode(HttpStatus.OK)
   async receive(@Req() req: Request): Promise<{ ok: true }> {
     if (!GoogleOAuthService.isFeatureFlagOn()) {
-      return { ok: true };
+      throw new NotFoundException({
+        code: 'FEATURE_DISABLED',
+        message: 'Google Calendar integration is not enabled on this environment.',
+      });
     }
     const channelId = headerOf(req, 'x-goog-channel-id');
     const resourceId = headerOf(req, 'x-goog-resource-id');
@@ -68,9 +72,9 @@ export class GoogleCalendarWebhookController {
 
     if (!channelId || !resourceId || !resourceState) {
       throw new BadRequestException({
-        error:
-          'X-Goog-Channel-Id, X-Goog-Resource-Id, and X-Goog-Resource-State are required',
         code: 'GOOGLE_CALENDAR_WEBHOOK_MALFORMED',
+        message:
+          'Required Google Calendar webhook headers are missing (X-Goog-Channel-Id, X-Goog-Resource-Id, X-Goog-Resource-State).',
       });
     }
 
@@ -83,11 +87,17 @@ export class GoogleCalendarWebhookController {
 
     if (featureEnabled && !expectedToken) {
       this.logger.error('GOOGLE_CALENDAR_WEBHOOK_TOKEN not set — rejecting webhook');
-      throw new ForbiddenException('Webhook token not configured');
+      throw new ForbiddenException({
+        code: 'WEBHOOK_TOKEN_NOT_CONFIGURED',
+        message: 'Google Calendar webhook token is not configured on this environment.',
+      });
     }
 
     if (expectedToken && channelToken !== expectedToken) {
-      throw new ForbiddenException('Invalid webhook token');
+      throw new ForbiddenException({
+        code: 'GOOGLE_CALENDAR_WEBHOOK_TOKEN_MISMATCH',
+        message: 'The provided webhook token does not match the configured value.',
+      });
     }
 
     // The very first delivery after we register a watch is always a
