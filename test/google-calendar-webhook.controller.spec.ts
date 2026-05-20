@@ -103,13 +103,7 @@ describe('GoogleCalendarWebhookController.receive', () => {
       'x-goog-resource-state': 'exists',
       'x-goog-channel-token': 'wrong-token',
     });
-    let thrown: unknown = null;
-    try {
-      await ctrl.receive(req);
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).toBeInstanceOf(ForbiddenException);
+    await expect(ctrl.receive(req)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   // NOTE: The original test ("skips the channel-token check when
