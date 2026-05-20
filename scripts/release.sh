@@ -61,12 +61,20 @@ echo "[release] ─────────────────────�
 # a green light from a half-finished release. Echoes the failing line + the
 # captured command output, then re-exits with the original status.
 on_error() {
-  # Guard: do nothing on a clean exit (exit_code=0). The EXIT trap fires on
-  # ALL exits -- including successful ones -- so we must skip the banner when
-  # the script completed normally. Non-zero exit (error, SIGTERM, SIGINT, OOM
-  # kill) falls through to the banner. (Finding 9 -- MEDIUM, audit 2026-05-19)
   local exit_code=$?
+  # Guard 1 (clean exit): the EXIT trap fires on ALL exits, including successful
+  # ones. Skip the failure banner when the script completed normally.
+  # Non-zero exit (error, SIGTERM, SIGINT, OOM kill) falls through.
+  # (Finding 9 — MEDIUM, audit 2026-05-19)
   [[ ${exit_code} -eq 0 ]] && return 0
+  # Guard 2 (single-fire): on an ordinary command error, ERR fires first and
+  # calls on_error; that on_error then calls `exit ${exit_code}`, which triggers
+  # the EXIT trap, which calls on_error a second time with the same non-zero
+  # code. Without this guard we print duplicate failure banners and the second
+  # invocation's ${LINENO} is the EXIT trap context, not the original failing
+  # command — obscuring the real failure site.
+  [[ "${ERROR_REPORTED:-0}" == "1" ]] && return 0
+  ERROR_REPORTED=1
   local line=${1:-?}
   echo "[release] ❌ FAIL at line ${line} (exit=${exit_code})"
   if [[ -f /tmp/prisma_migrate.log ]]; then
