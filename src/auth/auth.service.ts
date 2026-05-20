@@ -685,6 +685,24 @@ export class AuthService {
 
     if (!user) throw new UnauthorizedException('User not found');
 
+    // Resolve subscription_tier for coaches (spec §4 / spec §5).
+    // - null for non-coaches (students, owners with no sub row, etc.)
+    // - CoachSubscription.tier for coaches; falls back to 'free' if no row
+    //   (new coach who hasn't gone through becomeCoach yet, or coach pre-dating
+    //    the billing system).
+    // Access is scoped to req.user.id only — we never expose another coach's tier.
+    let subscriptionTier: 'free' | 'pro' | 'enterprise' | null = null;
+    if (user.role === 'coach') {
+      const sub = await (this.prisma.coachSubscription.findUnique as any)({
+        where: { coach_id: userId },
+        select: { tier: true },
+      });
+      // Tier column added by migration 20260614000000_coach_subscription_tier.
+      // Falls back to 'free' if row exists but tier is null (pre-migration row
+      // not yet backfilled) or if no row exists at all.
+      subscriptionTier = (sub?.tier as 'free' | 'pro' | 'enterprise' | undefined) ?? 'free';
+    }
+
     return {
       id: user.id,
       email: user.email,
@@ -692,6 +710,7 @@ export class AuthService {
       role: user.role,
       coach_id: user.coach_id,
       profile: user.profile,
+      subscription_tier: subscriptionTier,
     };
   }
 
