@@ -640,6 +640,7 @@ export class CoachService {
       pendingCheckIns,    // check-ins submitted but not reviewed
       unreadMsgCount,     // messages not yet read by the coach
       recentWeightLogs,   // weight logs for trend detection (last 30 days)
+      unreviewedCheckins, // per-client unreviewed check-in groupBy (for no_checkin flag)
     ] = await Promise.all([
       // Active today: clients with at least one food log entry today.
       this.prisma.loggedFoodEntry.groupBy({
@@ -677,11 +678,27 @@ export class CoachService {
         orderBy: [{ user_id: 'asc' }, { date: 'desc' }],
         select: { user_id: true, weight_lbs: true, date: true },
       }),
+
+      // Unreviewed check-ins: per-client groupBy so we can flag individuals in
+      // the attention list. The aggregate count (pendingCheckIns above) is
+      // already used for the stats summary; this gives us the per-client Set.
+      // (Finding 6 — MEDIUM, audit 2026-05-19: no_checkin reason was declared
+      // in the type union but never emitted.)
+      this.prisma.checkIn.groupBy({
+        by: ['user_id'],
+        where: { user_id: { in: clientIds }, reviewed_by_coach: false },
+        _count: { _all: true },
+      }),
     ]);
 
     // ── Step 3: Derive attention_needed list from aggregated data ───────────
     const workedOutRecently = new Set(workoutGroups.map((g: { user_id: string }) => g.user_id));
     const loggedToday = new Set(foodLogGroups.map((g: { user_id: string }) => g.user_id));
+    // Clients with at least one unreviewed check-in submitted (no_checkin flag).
+    // (Finding 6 — MEDIUM, audit 2026-05-19)
+    const hasUnreviewedCheckin = new Set(
+      unreviewedCheckins.map((r: { user_id: string }) => r.user_id),
+    );
 
     // Group weight logs by client (already sorted desc by date per client).
     const weightLogsByUser = new Map<string, number[]>();
@@ -727,6 +744,15 @@ export class CoachService {
       // No food log today (off macros signal).
       if (!loggedToday.has(id)) {
         attention.push({ client_id: id, client_name: name, reason: 'off_macros' });
+        continue;
+      }
+
+      // Unreviewed check-in: client submitted a check-in the coach hasn't seen yet.
+      // Priority order: weight_flag > missed_workout > off_macros > no_checkin.
+      // We use `continue` above so a client flagged for a higher-priority reason
+      // is never double-counted here. (Finding 6 — MEDIUM, audit 2026-05-19)
+      if (hasUnreviewedCheckin.has(id)) {
+        attention.push({ client_id: id, client_name: name, reason: 'no_checkin' });
       }
     }
 
