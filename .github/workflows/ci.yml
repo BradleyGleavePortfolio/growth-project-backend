@@ -49,6 +49,10 @@ jobs:
         env:
           NODE_ENV: production
           DATABASE_URL: postgres://ci/ci
+          # DIRECT_URL was promoted to hard tier (PR #238) — required by
+          # `prisma migrate deploy` in the Fly release_command. The simulated
+          # prod env must supply it so this gate doesn't break boot validation.
+          DIRECT_URL: postgres://ci-direct/ci
           SUPABASE_URL: https://ci.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ci-srk
           PUBLIC_INVITE_BASE_URL: https://app.example.com/join
@@ -78,4 +82,9 @@ jobs:
           # supply them too.
           STRIPE_CHECKOUT_SUCCESS_URL: https://app.example.com/checkout/success?session_id={CHECKOUT_SESSION_ID}
           STRIPE_CHECKOUT_CANCEL_URL: https://app.example.com/checkout/cancel
+          # ANTHROPIC_API_KEY is prod-hardened: without it client AI guide
+          # responses silently fall back to deterministic local content
+          # indistinguishable from real AI. assertEnv refuses prod boot
+          # without it, so the simulated-prod gate must supply a value.
+          ANTHROPIC_API_KEY: sk-ant-ci-test
         run: node -e "require('./dist/common/env-validation').assertEnv()"
