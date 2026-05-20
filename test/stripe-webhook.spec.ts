@@ -237,6 +237,7 @@ describe('BillingService', () => {
         }),
       },
     };
+    prisma.$transaction = jest.fn(async (cb) => cb(prisma));
     const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
     svc = new BillingService(prisma, analyticsStub, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any);
   });

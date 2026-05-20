@@ -32,7 +32,7 @@ function makePrismaStub() {
     { user_id: 'coach-A', stripe_customer_id: 'cus_test_A' },
   ];
 
-  return {
+  const stub: any = {
     _subscriptions: subscriptions,
     _invoices: invoices,
     _failures: failures,
@@ -126,7 +126,9 @@ function makePrismaStub() {
         return data;
       }),
     },
+    $transaction: jest.fn(async (cb) => cb(stub)),
   };
+  return stub;
 }
 
 describe('Stripe webhook fixtures', () => {

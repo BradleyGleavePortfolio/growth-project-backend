@@ -7,7 +7,7 @@ import { BillingService } from '../src/billing/billing.service';
 
 function makePrisma() {
   const processed: any[] = [];
-  return {
+  const stub: any = {
     _processed: processed,
     stripeProcessedEvent: {
       create: jest.fn(async ({ data }: any) => {
@@ -28,7 +28,9 @@ function makePrisma() {
     },
     invoice: { upsert: jest.fn(), findMany: jest.fn(async () => []) },
     paymentFailure: { create: jest.fn() },
+    $transaction: jest.fn(async (cb) => cb(stub)),
   };
+  return stub;
 }
 
 describe('BillingService — checkout webhook routing', () => {
