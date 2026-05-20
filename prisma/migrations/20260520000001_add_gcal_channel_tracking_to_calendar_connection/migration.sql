@@ -22,30 +22,95 @@
 -- tenant-scoped table; catching up in this migration is the correct pattern
 -- (see rls_fitness_backend.sql, 20260606000003_rls_financial_tables for precedent).
 --
--- SAFE TO RE-RUN: DROP POLICY IF EXISTS precedes every CREATE POLICY;
--- ALTER TABLE ... ADD COLUMN IF NOT EXISTS is idempotent.
+-- FRESH-DATABASE SAFETY:
+-- The RLS policies below reference two helpers — app.current_user_id() and
+-- app.is_owner() — which are normally created by rls_fitness_backend.sql
+-- (manual file) and reinforced by 20260607000000_rls_remaining_gaps.
+-- Neither precedes us on a fresh `prisma migrate deploy`:
+--   • rls_fitness_backend.sql is a loose .sql file in prisma/migrations and
+--     is NOT executed by `prisma migrate deploy` (Prisma only runs
+--     migration.sql inside numbered directories).
+--   • 20260607000000_rls_remaining_gaps is dated AFTER this migration and
+--     therefore runs LATER in deploy order.
+-- To guarantee this migration applies cleanly on a fresh database AND a
+-- partially migrated one, we self-bootstrap the schema + helpers below using
+-- CREATE SCHEMA IF NOT EXISTS / CREATE OR REPLACE FUNCTION. These are no-ops
+-- when the helpers already exist (idempotent on every re-run; the bodies match
+-- the canonical definitions in rls_fitness_backend.sql and
+-- 20260607000000_rls_remaining_gaps verbatim so a later CREATE OR REPLACE in
+-- those scripts re-applies the same body).
+--
+-- SAFE TO RE-RUN:
+--   • ADD COLUMN IF NOT EXISTS is idempotent.
+--   • CREATE UNIQUE INDEX IF NOT EXISTS is idempotent.
+--   • CREATE SCHEMA IF NOT EXISTS is idempotent.
+--   • CREATE OR REPLACE FUNCTION matches the canonical body so it's a no-op
+--     when the helper already exists, and a safe re-apply otherwise.
+--   • DROP POLICY IF EXISTS precedes every CREATE POLICY.
+--   • ENABLE/FORCE ROW LEVEL SECURITY are idempotent (no error when already on).
 
 BEGIN;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 1. Add the three new columns (nullable — populated post-watchCalendar only)
+-- 1. Self-bootstrap the `app` schema + RLS context helpers so this migration
+--    is independent of rls_fitness_backend.sql and 20260607000000_rls_remaining_gaps.
+--    Bodies are byte-for-byte the canonical definitions; later CREATE OR REPLACE
+--    statements in those scripts are no-ops (or a safe re-install).
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE SCHEMA IF NOT EXISTS app;
+
+CREATE OR REPLACE FUNCTION app.current_user_id()
+RETURNS text
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT NULLIF(current_setting('app.current_user_id', true), '')
+$$;
+
+CREATE OR REPLACE FUNCTION app.current_user_role()
+RETURNS text
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT NULLIF(current_setting('app.current_user_role', true), '')
+$$;
+
+CREATE OR REPLACE FUNCTION app.is_owner()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT app.current_user_id() IS NOT NULL AND app.current_user_role() = 'owner'
+$$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 2. Add the three new columns (nullable — populated post-watchCalendar only).
+--    The unique index on channel_id is created separately with IF NOT EXISTS so
+--    its name matches Prisma's expectation (CalendarConnection_channel_id_key)
+--    and re-runs remain safe even if a prior partial run created the column
+--    without the index.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 ALTER TABLE "CalendarConnection"
-    ADD COLUMN IF NOT EXISTS "channel_id"         TEXT        UNIQUE,
+    ADD COLUMN IF NOT EXISTS "channel_id"         TEXT,
     ADD COLUMN IF NOT EXISTS "resource_id"        TEXT,
     ADD COLUMN IF NOT EXISTS "channel_expires_at" TIMESTAMP(3);
 
+CREATE UNIQUE INDEX IF NOT EXISTS "CalendarConnection_channel_id_key"
+    ON "CalendarConnection" ("channel_id");
+
 -- ─────────────────────────────────────────────────────────────────────────────
--- 2. Enable + force RLS (CalendarConnection was created without RLS in
---    20260512000000_concierge_scheduling; catching up here per ENGINEERING_RULES §2)
+-- 3. Enable + force RLS (CalendarConnection was created without RLS in
+--    20260512000000_concierge_scheduling; catching up here per ENGINEERING_RULES §2).
+--    Both statements are idempotent — no error when already enabled.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 ALTER TABLE "CalendarConnection" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "CalendarConnection" FORCE ROW LEVEL SECURITY;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 3. RLS policies for CalendarConnection
+-- 4. RLS policies for CalendarConnection
 --
 -- Design:
 --   • A coach (or any user) owns every CalendarConnection via user_id.
