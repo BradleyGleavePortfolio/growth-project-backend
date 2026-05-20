@@ -82,4 +82,9 @@ jobs:
           # supply them too.
           STRIPE_CHECKOUT_SUCCESS_URL: https://app.example.com/checkout/success?session_id={CHECKOUT_SESSION_ID}
           STRIPE_CHECKOUT_CANCEL_URL: https://app.example.com/checkout/cancel
+          # ANTHROPIC_API_KEY is prod-hardened: without it client AI guide
+          # responses silently fall back to deterministic local content
+          # indistinguishable from real AI. assertEnv refuses prod boot
+          # without it, so the simulated-prod gate must supply a value.
+          ANTHROPIC_API_KEY: sk-ant-ci-test
         run: node -e "require('./dist/common/env-validation').assertEnv()"
