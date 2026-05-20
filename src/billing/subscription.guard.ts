@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   Optional,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -91,7 +92,7 @@ export class SubscriptionGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
     const user = req.user;
-    if (!user) throw new ForbiddenException('Authentication required');
+    if (!user) throw new UnauthorizedException('Authentication required');
 
     // OWNER bypass — preserved verbatim. Must stay first.
     if (user.role === 'owner') return true;
