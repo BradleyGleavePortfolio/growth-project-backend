@@ -59,14 +59,19 @@ CREATE POLICY "message_update_sender_only" ON "Message"
 -- executes. The function itself enforces the recipient check, so no escalation
 -- is possible — a user calling this function for a message they did NOT
 -- receive will get a no-op (0 rows affected).
-CREATE OR REPLACE FUNCTION app.mark_message_read(p_message_id uuid)
+-- NOTE (re-audit 2026-05-19 blocker 1): p_message_id and v_caller are TEXT, not
+-- UUID. The Message table stores id, sender_id, and recipient_id as TEXT columns
+-- (see 20260612000000_add_message_model_and_checkin_reviewed/migration.sql:16-20)
+-- and app.current_user_id() returns TEXT (rls_fitness_backend.sql:26-32).
+-- Using UUID here causes 'operator does not exist: text = uuid' at runtime.
+CREATE OR REPLACE FUNCTION app.mark_message_read(p_message_id text)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
 DECLARE
-  v_caller uuid;
+  v_caller text;
 BEGIN
   -- Resolve the authenticated caller from the session config var.
   -- app.current_user_id() returns NULL if the session is unauthenticated;
@@ -93,4 +98,5 @@ $$;
 
 -- Grant EXECUTE to all authenticated users (public role).
 -- The function's own recipient check is the authorization gate.
-GRANT EXECUTE ON FUNCTION app.mark_message_read(uuid) TO public;
+GRANT EXECUTE ON FUNCTION app.mark_message_read(text) TO public;
+
