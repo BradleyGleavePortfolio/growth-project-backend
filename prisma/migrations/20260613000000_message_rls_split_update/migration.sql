@@ -37,15 +37,22 @@
 -- ── 1. Drop the vulnerable combined UPDATE policy ───────────────────────────
 DROP POLICY IF EXISTS "message_update_party" ON "Message";
 
--- ── 2. Sender-only UPDATE policy ────────────────────────────────────────────
+-- ── 2. Sender-or-owner UPDATE policy ───────────────────────────────────────
 -- Senders may update their own rows (e.g. edit body while unsent, mark deleted).
 -- Both USING (visibility gate) and WITH CHECK (post-update guard) require that
 -- the row's sender_id matches the authenticated user. This means a sender can
 -- never change sender_id to another user — the WITH CHECK would fail.
-CREATE POLICY "message_update_sender_only" ON "Message"
+--
+-- Platform owners (app.is_owner()) also retain direct UPDATE access for
+-- moderation purposes. This preserves the owner-access contract established in
+-- the original message_update_party policy (20260612000001_message_rls) and
+-- documented in that migration's header (lines 7-8: "owners retain full access").
+-- Without this, platform owners would lose RLS-mediated update access and could
+-- only bypass via a BYPASSRLS/superuser role — an undesirable implicit dependency.
+CREATE POLICY "message_update_sender_or_owner" ON "Message"
   FOR UPDATE TO public
-  USING  (app.current_user_id() IS NOT NULL AND "sender_id" = app.current_user_id())
-  WITH CHECK (app.current_user_id() IS NOT NULL AND "sender_id" = app.current_user_id());
+  USING  (app.current_user_id() IS NOT NULL AND ("sender_id" = app.current_user_id() OR app.is_owner()))
+  WITH CHECK (app.current_user_id() IS NOT NULL AND ("sender_id" = app.current_user_id() OR app.is_owner()));
 
 -- ── 3. SECURITY DEFINER function for recipient read-receipts ─────────────────
 -- Recipients CANNOT issue a raw UPDATE — there is no recipient UPDATE policy.
@@ -100,3 +107,14 @@ $$;
 -- The function's own recipient check is the authorization gate.
 GRANT EXECUTE ON FUNCTION app.mark_message_read(text) TO public;
 
+-- Pin owner to a role with BYPASSRLS to ensure forced-RLS bypass works in every
+-- environment. The 'postgres' superuser role exists in Supabase and has BYPASSRLS
+-- by default. With FORCE ROW LEVEL SECURITY enabled on Message
+-- (20260612000001_message_rls/migration.sql:10-11), a SECURITY DEFINER function
+-- only bypasses RLS if its owner is a superuser or has BYPASSRLS — a plain table
+-- owner is still subject to forced RLS.
+--
+-- OPERATOR NOTE: any environment running this migration must execute it as a role
+-- that can reassign function ownership to 'postgres', OR adapt this line to the
+-- target environment's equivalent superuser/BYPASSRLS role.
+ALTER FUNCTION app.mark_message_read(text) OWNER TO postgres;
