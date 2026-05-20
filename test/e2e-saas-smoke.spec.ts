@@ -576,8 +576,17 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       else process.env.BILLING_ENFORCEMENT = ORIG;
     });
 
+    // Free-tier reflector: no @RequiresTier decorator → guard treats as 'free'.
+    function makeFreeReflector(): any {
+      return { getAllAndOverride: jest.fn().mockReturnValue(undefined) };
+    }
+
     function ctxFor(user: any): ExecutionContext {
-      return { switchToHttp: () => ({ getRequest: () => ({ user }) }) } as any;
+      return {
+        switchToHttp: () => ({ getRequest: () => ({ user }) }),
+        getHandler: () => ({}),
+        getClass: () => ({}),
+      } as any;
     }
 
     it('observe mode: even canceled coach is allowed (rollout posture)', async () => {
@@ -586,45 +595,66 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         coachSubscription: {
           findUnique: jest.fn(async () => ({
             status: 'canceled',
+            tier: 'free',
             last_payment_failed_at: null,
           })),
         },
       };
-      const guard = new SubscriptionGuard(prisma);
+      const guard = new SubscriptionGuard(prisma, makeFreeReflector());
       await expect(
         guard.canActivate(ctxFor({ id: 'c', role: 'coach' })),
       ).resolves.toBe(true);
     });
 
-    it('enforce mode: active and trialing pass, canceled and stale past_due fail', async () => {
+    it('enforce mode: active and trialing pass, canceled and stale past_due fail (on Pro endpoints)', async () => {
       process.env.BILLING_ENFORCEMENT = 'enforce';
 
-      const make = (sub: any) =>
-        new SubscriptionGuard({
-          coachSubscription: { findUnique: jest.fn(async () => sub) },
-        } as any);
+      // Pro-endpoint reflector: simulates @RequiresTier('pro') on the route.
+      function makeProReflector(): any {
+        return { getAllAndOverride: jest.fn().mockReturnValue('pro') };
+      }
 
+      const makeFree = (sub: any) =>
+        new SubscriptionGuard(
+          {
+            coachSubscription: { findUnique: jest.fn(async () => sub) },
+          } as any,
+          makeFreeReflector(),
+        );
+
+      const makePro = (sub: any) =>
+        new SubscriptionGuard(
+          {
+            coachSubscription: { findUnique: jest.fn(async () => sub) },
+          } as any,
+          makeProReflector(),
+        );
+
+      // Free endpoints: active + trialing pass.
       await expect(
-        make({ status: 'active', last_payment_failed_at: null }).canActivate(
+        makeFree({ status: 'active', tier: 'free', last_payment_failed_at: null }).canActivate(
           ctxFor({ id: 'c', role: 'coach' }),
         ),
       ).resolves.toBe(true);
 
       await expect(
-        make({ status: 'trialing', last_payment_failed_at: null }).canActivate(
+        makeFree({ status: 'trialing', tier: 'free', last_payment_failed_at: null }).canActivate(
           ctxFor({ id: 'c', role: 'coach' }),
         ),
       ).resolves.toBe(true);
 
+      // Pro endpoint: stale past_due is denied (grace expired).
       await expect(
-        make({
+        makePro({
           status: 'past_due',
+          tier: 'pro',
           last_payment_failed_at: new Date(Date.now() - 8 * 86400_000),
         }).canActivate(ctxFor({ id: 'c', role: 'coach' })),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
+      // Pro endpoint: canceled coach with tier='free' is denied (tier too low).
       await expect(
-        make({ status: 'canceled', last_payment_failed_at: null }).canActivate(
+        makePro({ status: 'canceled', tier: 'free', last_payment_failed_at: null }).canActivate(
           ctxFor({ id: 'c', role: 'coach' }),
         ),
       ).rejects.toBeInstanceOf(ForbiddenException);
@@ -635,7 +665,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       const prisma: any = {
         coachSubscription: { findUnique: jest.fn() },
       };
-      const guard = new SubscriptionGuard(prisma);
+      const guard = new SubscriptionGuard(prisma, makeFreeReflector());
       await expect(
         guard.canActivate(ctxFor({ id: 'o', role: 'owner' })),
       ).resolves.toBe(true);

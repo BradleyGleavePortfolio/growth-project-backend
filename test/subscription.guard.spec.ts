@@ -1,10 +1,15 @@
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { SubscriptionGuard } from '../src/billing/subscription.guard';
 
+// Helper: build a mock ExecutionContext for a given user.
+// Includes getHandler/getClass so Reflector.getAllAndOverride works.
 function ctxFor(user: any): ExecutionContext {
   const req = { user };
   return {
     switchToHttp: () => ({ getRequest: () => req }),
+    getHandler: () => ({}),
+    getClass: () => ({}),
   } as any;
 }
 
@@ -16,6 +21,16 @@ function makePrismaWithSub(sub: any | null) {
   };
 }
 
+// Free-tier reflector: no @RequiresTier decorator → guard treats as 'free'.
+function makeFreeReflector(): Reflector {
+  return { getAllAndOverride: jest.fn().mockReturnValue(undefined) } as any;
+}
+
+// Pro-tier reflector: simulates @RequiresTier('pro') on the route.
+function makeProReflector(): Reflector {
+  return { getAllAndOverride: jest.fn().mockReturnValue('pro') } as any;
+}
+
 describe('SubscriptionGuard', () => {
   const ORIGINAL_ENV = process.env.BILLING_ENFORCEMENT;
   afterEach(() => {
@@ -24,7 +39,10 @@ describe('SubscriptionGuard', () => {
   });
 
   it('owner bypasses every check', async () => {
-    const guard = new SubscriptionGuard(makePrismaWithSub(null) as any);
+    const guard = new SubscriptionGuard(
+      makePrismaWithSub(null) as any,
+      makeFreeReflector(),
+    );
     process.env.BILLING_ENFORCEMENT = 'enforce';
     await expect(
       guard.canActivate(ctxFor({ id: 'o', role: 'owner' })),
@@ -32,7 +50,10 @@ describe('SubscriptionGuard', () => {
   });
 
   it('rejects students even without enforcement (defense in depth)', async () => {
-    const guard = new SubscriptionGuard(makePrismaWithSub(null) as any);
+    const guard = new SubscriptionGuard(
+      makePrismaWithSub(null) as any,
+      makeFreeReflector(),
+    );
     delete process.env.BILLING_ENFORCEMENT;
     await expect(
       guard.canActivate(ctxFor({ id: 's', role: 'student' })),
@@ -40,7 +61,10 @@ describe('SubscriptionGuard', () => {
   });
 
   it('coach with no mirror row is allowed during rollout', async () => {
-    const guard = new SubscriptionGuard(makePrismaWithSub(null) as any);
+    const guard = new SubscriptionGuard(
+      makePrismaWithSub(null) as any,
+      makeFreeReflector(),
+    );
     delete process.env.BILLING_ENFORCEMENT;
     await expect(
       guard.canActivate(ctxFor({ id: 'c', role: 'coach' })),
@@ -49,7 +73,8 @@ describe('SubscriptionGuard', () => {
 
   it('coach with active subscription is allowed', async () => {
     const guard = new SubscriptionGuard(
-      makePrismaWithSub({ status: 'active', last_payment_failed_at: null }) as any,
+      makePrismaWithSub({ status: 'active', tier: 'free', last_payment_failed_at: null }) as any,
+      makeFreeReflector(),
     );
     process.env.BILLING_ENFORCEMENT = 'enforce';
     await expect(
@@ -59,7 +84,8 @@ describe('SubscriptionGuard', () => {
 
   it('coach with trialing subscription is allowed', async () => {
     const guard = new SubscriptionGuard(
-      makePrismaWithSub({ status: 'trialing', last_payment_failed_at: null }) as any,
+      makePrismaWithSub({ status: 'trialing', tier: 'free', last_payment_failed_at: null }) as any,
+      makeFreeReflector(),
     );
     process.env.BILLING_ENFORCEMENT = 'enforce';
     await expect(
@@ -69,7 +95,8 @@ describe('SubscriptionGuard', () => {
 
   it('coach with grandfathered subscription is allowed in enforce mode', async () => {
     const guard = new SubscriptionGuard(
-      makePrismaWithSub({ status: 'grandfathered', last_payment_failed_at: null }) as any,
+      makePrismaWithSub({ status: 'grandfathered', tier: 'free', last_payment_failed_at: null }) as any,
+      makeFreeReflector(),
     );
     process.env.BILLING_ENFORCEMENT = 'enforce';
     await expect(
@@ -81,8 +108,10 @@ describe('SubscriptionGuard', () => {
     const guard = new SubscriptionGuard(
       makePrismaWithSub({
         status: 'past_due',
+        tier: 'free',
         last_payment_failed_at: new Date(Date.now() - 24 * 60 * 60 * 1000),
       }) as any,
+      makeFreeReflector(),
     );
     process.env.BILLING_ENFORCEMENT = 'enforce';
     await expect(
@@ -90,12 +119,18 @@ describe('SubscriptionGuard', () => {
     ).resolves.toBe(true);
   });
 
-  it('past_due past 7-day grace is denied in enforce mode', async () => {
+  // NOTE (hybrid-pricing): free endpoints no longer deny based on subscription
+  // status — spec §6 says status checks only apply to Pro endpoints. The
+  // following tests use a Pro-endpoint reflector where denial is expected.
+
+  it('past_due past 7-day grace is denied on Pro endpoint in enforce mode', async () => {
     const guard = new SubscriptionGuard(
       makePrismaWithSub({
         status: 'past_due',
+        tier: 'pro',
         last_payment_failed_at: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
       }) as any,
+      makeProReflector(),
     );
     process.env.BILLING_ENFORCEMENT = 'enforce';
     await expect(
@@ -103,9 +138,22 @@ describe('SubscriptionGuard', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('canceled is denied in enforce mode', async () => {
+  it('canceled coach with tier=free on free endpoint is allowed in enforce mode (free status ignored)', async () => {
     const guard = new SubscriptionGuard(
-      makePrismaWithSub({ status: 'canceled', last_payment_failed_at: null }) as any,
+      makePrismaWithSub({ status: 'canceled', tier: 'free', last_payment_failed_at: null }) as any,
+      makeFreeReflector(),
+    );
+    process.env.BILLING_ENFORCEMENT = 'enforce';
+    // Free endpoints: status=canceled does NOT deny under hybrid model.
+    await expect(
+      guard.canActivate(ctxFor({ id: 'c', role: 'coach' })),
+    ).resolves.toBe(true);
+  });
+
+  it('canceled Pro coach on Pro endpoint is denied in enforce mode', async () => {
+    const guard = new SubscriptionGuard(
+      makePrismaWithSub({ status: 'canceled', tier: 'free', last_payment_failed_at: null }) as any,
+      makeProReflector(),
     );
     process.env.BILLING_ENFORCEMENT = 'enforce';
     await expect(
@@ -113,9 +161,10 @@ describe('SubscriptionGuard', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('canceled is allowed in observe (non-enforce) mode', async () => {
+  it('canceled is always allowed in observe mode (Pro endpoint, non-enforce)', async () => {
     const guard = new SubscriptionGuard(
-      makePrismaWithSub({ status: 'canceled', last_payment_failed_at: null }) as any,
+      makePrismaWithSub({ status: 'canceled', tier: 'free', last_payment_failed_at: null }) as any,
+      makeProReflector(),
     );
     delete process.env.BILLING_ENFORCEMENT;
     await expect(
@@ -123,9 +172,10 @@ describe('SubscriptionGuard', () => {
     ).resolves.toBe(true);
   });
 
-  it('paused mirrors canceled in enforce mode (denied)', async () => {
+  it('paused Pro coach on Pro endpoint is denied in enforce mode', async () => {
     const guard = new SubscriptionGuard(
-      makePrismaWithSub({ status: 'paused', last_payment_failed_at: null }) as any,
+      makePrismaWithSub({ status: 'paused', tier: 'pro', last_payment_failed_at: null }) as any,
+      makeProReflector(),
     );
     process.env.BILLING_ENFORCEMENT = 'enforce';
     await expect(
@@ -133,11 +183,15 @@ describe('SubscriptionGuard', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('observe-mode emits PostHog telemetry for would-be denies', async () => {
+  it('observe-mode emits PostHog telemetry for would-be denies (Pro endpoint)', async () => {
     const capture = jest.fn();
     const analytics: any = { capture };
+    // Use tier='pro' so the guard reaches the canceled-status path (tier check
+    // passes first per spec §6 invariant order). With tier='free' the guard
+    // would emit tier_too_low telemetry instead of 'canceled'.
     const guard = new SubscriptionGuard(
-      makePrismaWithSub({ status: 'canceled', last_payment_failed_at: null }) as any,
+      makePrismaWithSub({ status: 'canceled', tier: 'pro', last_payment_failed_at: null }) as any,
+      makeProReflector(),
       analytics,
     );
     delete process.env.BILLING_ENFORCEMENT;
@@ -148,6 +202,8 @@ describe('SubscriptionGuard', () => {
     };
     const ctx: any = {
       switchToHttp: () => ({ getRequest: () => req }),
+      getHandler: () => ({}),
+      getClass: () => ({}),
     };
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
     expect(capture).toHaveBeenCalledTimes(1);
@@ -155,7 +211,7 @@ describe('SubscriptionGuard', () => {
       'c',
       'server_billing_enforcement_observed',
       expect.objectContaining({
-        status: 'canceled',
+        currentState: 'canceled',
         reason: 'canceled',
         route: '/v1/coach/me/clients',
         method: 'POST',
@@ -167,7 +223,8 @@ describe('SubscriptionGuard', () => {
     const capture = jest.fn();
     const analytics: any = { capture };
     const guard = new SubscriptionGuard(
-      makePrismaWithSub({ status: 'active', last_payment_failed_at: null }) as any,
+      makePrismaWithSub({ status: 'active', tier: 'free', last_payment_failed_at: null }) as any,
+      makeFreeReflector(),
       analytics,
     );
     delete process.env.BILLING_ENFORCEMENT;

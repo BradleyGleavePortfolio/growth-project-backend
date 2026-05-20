@@ -685,6 +685,26 @@ export class AuthService {
 
     if (!user) throw new UnauthorizedException('User not found');
 
+    // Resolve subscription_tier for coaches (spec §4 / spec §5).
+    // - null for non-coaches (students, owners with no sub row, etc.)
+    // - CoachSubscription.tier for coaches; falls back to 'free' if no row
+    //   (new coach who hasn't gone through becomeCoach yet, or coach pre-dating
+    //    the billing system).
+    // Access is scoped to req.user.id only — we never expose another coach's tier.
+    let subscriptionTier: 'free' | 'pro' | 'enterprise' | null = null;
+    if (user.role === 'coach') {
+      // TODO(post-merge): Remove `as any` cast once `prisma generate` runs in CI
+      // against the migrated schema and coachSubscription is typed with tier/status fields.
+      const sub = await (this.prisma.coachSubscription.findUnique as any)({
+        where: { coach_id: userId },
+        select: { tier: true },
+      });
+      // Tier column added by migration 20260614000000_coach_subscription_tier.
+      // Falls back to 'free' if row exists but tier is null (pre-migration row
+      // not yet backfilled) or if no row exists at all.
+      subscriptionTier = (sub?.tier as 'free' | 'pro' | 'enterprise' | undefined) ?? 'free';
+    }
+
     return {
       id: user.id,
       email: user.email,
@@ -692,6 +712,7 @@ export class AuthService {
       role: user.role,
       coach_id: user.coach_id,
       profile: user.profile,
+      subscription_tier: subscriptionTier,
     };
   }
 
@@ -781,8 +802,17 @@ export class AuthService {
     if (!user) throw new UnauthorizedException('User not found');
 
     if (user.role === 'coach') {
-      // Idempotent — already a coach; return current role.
-      return { role: user.role };
+      // Idempotent — already a coach; return current role and tier per spec §4.
+      // Read the caller's own CoachSubscription row for the authoritative tier.
+      // If no row exists (edge case: coach pre-dating the billing migration),
+      // fall back to 'free' rather than throwing.
+      // TODO(post-merge): Remove `as any` cast once `prisma generate` runs in CI
+      // against the migrated schema and coachSubscription is typed with tier/status fields.
+      const existingSub = await (this.prisma.coachSubscription.findUnique as any)({
+        where: { coach_id: user.id },
+        select: { tier: true },
+      });
+      return { role: user.role, tier: (existingSub?.tier ?? 'free') as string };
     }
 
     if (user.role === 'owner') {
@@ -821,30 +851,40 @@ export class AuthService {
       throw new UnauthorizedException('Password is incorrect. Provide your current password to become a coach.');
     }
 
-    // PAYMENT GATE: require an active (or trialing) CoachSubscription before
-    // granting the coach role. Without this check, any client who knows their
-    // password can self-promote for free when ALLOW_SELF_SERVICE_BECOME_COACH=true.
-    // A CoachSubscription row is only created after Stripe checkout completes
-    // (via OWNER /v1/admin/coaches/:id/start-subscription or webhook mirror).
-    // Statuses 'active' and 'trialing' are the only two that confirm payment
-    // or a legitimate trial has started; all other statuses (incomplete, canceled,
-    // past_due, paused, or missing row) must block promotion.
-    // NOTE: current_status is safe to return here — the caller has already
-    // proven they own the account via password verification above.
-    const coachSub = await this.prisma.coachSubscription.findUnique({
+    // HYBRID PRICING: Replace old payment gate with a tier-aware upsert.
+    //
+    // OLD behaviour (removed): throw 403 coach_subscription_required unless
+    // an active/trialing CoachSubscription row already existed. This blocked
+    // all coaches who hadn't paid upfront.
+    //
+    // NEW behaviour (spec §7): upsert a CoachSubscription row with
+    // tier='free' + status='active'. If a row already exists (e.g. an existing
+    // Pro coach hitting this endpoint idempotently), update: {} leaves it
+    // untouched — we never overwrite a higher tier.
+    //
+    // Stripe fields (stripe_customer_id, stripe_subscription_id) are NOT set
+    // here. They are only ever set by the Stripe webhook handler (spec §9).
+    //
+    // TODO(pro-upgrade): when the Pro upgrade endpoint ships, implement:
+    //   POST /billing/create-payment-intent
+    //   Returns { clientSecret } for in-app Stripe Payment Sheet (mobile) /
+    //   Elements (web). DO NOT use Stripe Checkout hosted pages —
+    //   all checkout must stay in-app. See spec §14 (deferred to follow-up PR).
+    // TODO(post-merge): Remove `as any` cast once `prisma generate` runs in CI
+    // against the migrated schema and coachSubscription is typed with tier/status fields.
+    const coachSub = await (this.prisma.coachSubscription.upsert as any)({
       where: { coach_id: userId },
-      select: { status: true },
+      create: {
+        coach_id: userId,
+        tier: 'free',
+        status: 'active',
+        // All other fields use their schema defaults.
+        // Do NOT set Stripe fields here — only the webhook sets those.
+      },
+      update: {},
+      // update: {} is intentional. If a row already exists (e.g. an existing
+      // Pro coach), we touch nothing — preserving their higher tier.
     });
-    const PAID_STATUSES = new Set(['active', 'trialing']);
-    if (!coachSub || !PAID_STATUSES.has(coachSub.status)) {
-      throw new ForbiddenException({
-        error: 'coach_subscription_required',
-        message:
-          'A paid coach subscription is required before self-promotion. ' +
-          'Complete checkout first, then call this endpoint.',
-        current_status: coachSub?.status ?? 'none',
-      });
-    }
 
     const updated = await this.prisma.user.update({
       where: { id: userId },
@@ -870,9 +910,10 @@ export class AuthService {
 
     this.analytics.capture(updated.id, Events.COACH_PROMOTED, {
       via: 'become_coach',
+      tier: coachSub.tier ?? 'free',
     });
 
-    return { role: updated.role };
+    return { role: updated.role, tier: coachSub.tier ?? 'free' };
   }
 
   // First-gym bootstrap. Creates or promotes the very first owner-role user
