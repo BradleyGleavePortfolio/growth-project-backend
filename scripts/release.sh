@@ -61,7 +61,12 @@ echo "[release] ─────────────────────�
 # a green light from a half-finished release. Echoes the failing line + the
 # captured command output, then re-exits with the original status.
 on_error() {
+  # Guard: do nothing on a clean exit (exit_code=0). The EXIT trap fires on
+  # ALL exits -- including successful ones -- so we must skip the banner when
+  # the script completed normally. Non-zero exit (error, SIGTERM, SIGINT, OOM
+  # kill) falls through to the banner. (Finding 9 -- MEDIUM, audit 2026-05-19)
   local exit_code=$?
+  [[ ${exit_code} -eq 0 ]] && return 0
   local line=${1:-?}
   echo "[release] ❌ FAIL at line ${line} (exit=${exit_code})"
   if [[ -f /tmp/prisma_migrate.log ]]; then
@@ -74,6 +79,7 @@ on_error() {
   exit "${exit_code}"
 }
 trap 'on_error ${LINENO}' ERR
+trap 'on_error ${LINENO}' EXIT  # catches SIGTERM, SIGINT, OOM kills (Finding 9)
 
 # Sanity-check the env the migration tool needs. We fail fast and loudly
 # rather than letting Prisma emit a confusing P1001/P1012 error.
