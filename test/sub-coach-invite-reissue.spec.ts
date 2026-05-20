@@ -15,6 +15,14 @@ import {
 } from '@nestjs/common';
 import { SubCoachesService } from '../src/sub-coaches/sub-coaches.service';
 
+const ORIGINAL_ENV = { ...process.env };
+beforeAll(() => {
+  process.env.PUBLIC_INVITE_BASE_URL = 'https://test.example.com/join';
+});
+afterAll(() => {
+  process.env = { ...ORIGINAL_ENV };
+});
+
 interface PrismaShape {
   subCoachInvite: {
     findUnique: jest.Mock;
@@ -22,10 +30,11 @@ interface PrismaShape {
     update: jest.Mock;
   };
   teamAuditEvent: { create: jest.Mock };
+  $transaction: jest.Mock;
 }
 
 function buildPrisma(invite: Record<string, unknown> | null): PrismaShape {
-  return {
+  const prisma: PrismaShape = {
     subCoachInvite: {
       findUnique: jest.fn(async () => invite),
       findFirst: jest.fn(async () => null),
@@ -44,7 +53,11 @@ function buildPrisma(invite: Record<string, unknown> | null): PrismaShape {
       ),
     },
     teamAuditEvent: { create: jest.fn(async () => ({ id: 'evt-1' })) },
+    $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
+      cb(prisma as unknown),
+    ),
   };
+  return prisma;
 }
 
 function buildService(prisma: PrismaShape): SubCoachesService {

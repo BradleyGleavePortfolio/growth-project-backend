@@ -9,18 +9,23 @@
 // Cases:
 //   1. Sync handshake: state='sync' returns ok and writes a sync audit.
 //   2. Update event: state='exists' returns ok and writes one audit row.
-//   3. Malformed headers (missing channel-id) returns 400.
-//   4. Channel-token mismatch returns 403 when token is configured.
-//   5. Absent token with feature on rejects with ForbiddenException.
+//   3. Malformed headers (missing channel-id) → 400 with structured { code, message }.
+//   4. Channel-token mismatch → 403 with structured { code, message }.
+//   5. Absent token with feature on → 403 with structured { code, message }.
+//   6. Feature off → 404 with structured { code, message } (RFC-142 contract).
 
 import 'reflect-metadata';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { GoogleCalendarWebhookController } from '../src/scheduling/google-calendar/google-calendar-webhook.controller';
 
 const ORIGINAL_ENV = { ...process.env };
 
 // Phase 2 master switch — webhook handler 404s when flag is off.
-// Tests below assert the inner validation behavior, so flag is
+// Tests below assert the inner validation behaviour, so flag is
 // on for every test. Flag-off has its own dedicated test.
 beforeEach(() => {
   process.env.FEATURE_GOOGLE_CALENDAR_SYNC = 'true';
@@ -41,6 +46,15 @@ function makeReq(headers: Record<string, string>) {
   return { headers } as unknown as Parameters<
     GoogleCalendarWebhookController['receive']
   >[0];
+}
+
+async function captureThrown<T>(p: Promise<T>): Promise<unknown> {
+  try {
+    await p;
+  } catch (err) {
+    return err;
+  }
+  return null;
 }
 
 describe('GoogleCalendarWebhookController.receive', () => {
@@ -81,7 +95,7 @@ describe('GoogleCalendarWebhookController.receive', () => {
     );
   });
 
-  it('rejects malformed requests missing X-Goog-Channel-Id with 400', async () => {
+  it('rejects malformed requests missing X-Goog-Channel-Id with structured 400', async () => {
     const audit = buildAudit();
     const ctrl = new GoogleCalendarWebhookController(audit as never);
     const req = makeReq({
@@ -89,10 +103,15 @@ describe('GoogleCalendarWebhookController.receive', () => {
       'x-goog-resource-state': 'exists',
       'x-goog-channel-token': 'test-token',
     });
-    await expect(ctrl.receive(req)).rejects.toThrow(BadRequestException);
+    const thrown = await captureThrown(ctrl.receive(req));
+    expect(thrown).toBeInstanceOf(BadRequestException);
+    expect((thrown as BadRequestException).getResponse()).toMatchObject({
+      code: 'GOOGLE_CALENDAR_WEBHOOK_MALFORMED',
+      message: expect.stringContaining('X-Goog-Channel-Id'),
+    });
   });
 
-  it('rejects channel-token mismatch when GOOGLE_CALENDAR_WEBHOOK_TOKEN is configured', async () => {
+  it('rejects channel-token mismatch with structured 403', async () => {
     // beforeEach already set GOOGLE_CALENDAR_WEBHOOK_TOKEN='test-token'.
     // Send a different token so the mismatch guard fires.
     const audit = buildAudit();
@@ -103,21 +122,15 @@ describe('GoogleCalendarWebhookController.receive', () => {
       'x-goog-resource-state': 'exists',
       'x-goog-channel-token': 'wrong-token',
     });
-    await expect(ctrl.receive(req)).rejects.toBeInstanceOf(ForbiddenException);
+    const thrown = await captureThrown(ctrl.receive(req));
+    expect(thrown).toBeInstanceOf(ForbiddenException);
+    expect((thrown as ForbiddenException).getResponse()).toMatchObject({
+      code: 'GOOGLE_CALENDAR_WEBHOOK_TOKEN_MISMATCH',
+      message: expect.stringContaining('webhook token'),
+    });
   });
 
-  // NOTE: The original test ("skips the channel-token check when
-  // GOOGLE_CALENDAR_WEBHOOK_TOKEN is unset") described pre-hardening behaviour
-  // that no longer applies. After the security audit the controller now
-  // fails-closed: when FEATURE_GOOGLE_CALENDAR_SYNC=true and the token env
-  // var is absent it throws ForbiddenException rather than passing the request
-  // through. The assertion below reflects the hardened behaviour.
-  //
-  // ⚠️  CONTRACT FLAG: the old contract (no token → skip check → 200 ok) has
-  // been replaced by (no token + feature on → 403 Forbidden). If callers relied
-  // on the previous permissive behaviour they will need to be updated to
-  // supply the token.
-  it('rejects with ForbiddenException when GOOGLE_CALENDAR_WEBHOOK_TOKEN is unset and feature is on', async () => {
+  it('rejects with structured 403 when GOOGLE_CALENDAR_WEBHOOK_TOKEN is unset and feature is on', async () => {
     delete process.env.GOOGLE_CALENDAR_WEBHOOK_TOKEN;
     const audit = buildAudit();
     const ctrl = new GoogleCalendarWebhookController(audit as never);
@@ -125,18 +138,21 @@ describe('GoogleCalendarWebhookController.receive', () => {
       'x-goog-channel-id': 'ch-1',
       'x-goog-resource-id': 'res-1',
       'x-goog-resource-state': 'exists',
-      // no token in headers either
+      // no token in headers
     });
-    await expect(ctrl.receive(req)).rejects.toBeInstanceOf(ForbiddenException);
+    const thrown = await captureThrown(ctrl.receive(req));
+    expect(thrown).toBeInstanceOf(ForbiddenException);
+    expect((thrown as ForbiddenException).getResponse()).toMatchObject({
+      code: 'WEBHOOK_TOKEN_NOT_CONFIGURED',
+      message: expect.stringContaining('webhook token'),
+    });
   });
 
-  // ⚠️  CONTRACT FLAG: The original test expected NotFoundException (404) when
-  // FEATURE_GOOGLE_CALENDAR_SYNC is off. The controller actually returns
-  // { ok: true } early in that case — it does NOT throw. Assertion updated to
-  // match the real return value. If a 404 is the desired product behaviour
-  // when the feature flag is off, the controller needs to be updated (that
-  // is a product/security decision, not a test-only fix).
-  it('returns ok when FEATURE_GOOGLE_CALENDAR_SYNC is off', async () => {
+  // RFC-142 contract: when FEATURE_GOOGLE_CALENDAR_SYNC is off, the endpoint
+  // must respond 404 with a structured body — "feature truly not available,
+  // not 'configured but broken'". Returning {ok:true} silently hid
+  // misconfigurations; 404 forces operational visibility.
+  it('throws structured 404 when FEATURE_GOOGLE_CALENDAR_SYNC is off', async () => {
     delete process.env.FEATURE_GOOGLE_CALENDAR_SYNC;
     const audit = buildAudit();
     const ctrl = new GoogleCalendarWebhookController(audit as never);
@@ -145,7 +161,11 @@ describe('GoogleCalendarWebhookController.receive', () => {
       'x-goog-resource-id': 'res-1',
       'x-goog-resource-state': 'exists',
     });
-    const out = await ctrl.receive(req);
-    expect(out).toEqual({ ok: true });
+    const thrown = await captureThrown(ctrl.receive(req));
+    expect(thrown).toBeInstanceOf(NotFoundException);
+    expect((thrown as NotFoundException).getResponse()).toMatchObject({
+      code: 'FEATURE_DISABLED',
+      message: expect.stringContaining('Google Calendar integration'),
+    });
   });
 });
