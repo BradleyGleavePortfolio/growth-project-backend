@@ -520,6 +520,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
           { emit: jest.fn() } as any,
           { emit: jest.fn().mockResolvedValue(undefined) } as any,
           { write: jest.fn().mockResolvedValue(undefined) } as any,
+          { invalidateForUser: jest.fn() } as any,
         ),
         prisma,
         supabase,
@@ -559,6 +560,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         { emit: jest.fn() } as any,
         { emit: jest.fn().mockResolvedValue(undefined) } as any,
         { write: jest.fn().mockResolvedValue(undefined) } as any,
+        { invalidateForUser: jest.fn() } as any,
       );
       await expect(svc.sendAsClient('orphan-1', 'hi')).rejects.toMatchObject({
         response: expect.objectContaining({ error: 'NO_COACH_ASSIGNED' }),

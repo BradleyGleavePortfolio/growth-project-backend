@@ -87,6 +87,7 @@ function makeService(): {
     ptm as any,
     messageReceived,
     audit,
+    { invalidateForUser: jest.fn() } as any,
   );
   return { svc, ptm, prisma };
 }

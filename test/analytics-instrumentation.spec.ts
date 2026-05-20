@@ -173,6 +173,7 @@ describe('analytics instrumentation — messaging', () => {
         ptm,
         messageReceived,
         audit,
+        { invalidateForUser: jest.fn() } as any,
       ),
       analytics,
     };
@@ -213,7 +214,7 @@ describe('analytics instrumentation — log service', () => {
     };
     const food: any = { resolveOrImportId: jest.fn(async () => 'fi-1') };
     const ptm: any = { emit: jest.fn() };
-    const svc = new LogService(prisma, food, analytics as any, ptm);
+    const svc = new LogService(prisma, food, analytics as any, ptm, { invalidateForUser: jest.fn() } as any);
     await svc.logFood('user-1', {
       food_item_id: 'fi-1',
       date: '2026-04-27',

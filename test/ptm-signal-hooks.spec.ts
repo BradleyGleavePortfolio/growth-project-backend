@@ -113,7 +113,7 @@ describe('PTM signal hooks — weight', () => {
   it('emits weight_logged with delta=0 on first log and metadata.prior_weight_lbs=null', async () => {
     const prisma = makePrisma(null);
     const ptm = { emit: jest.fn() } as any;
-    const svc = new WeightService(prisma, ptm);
+    const svc = new WeightService(prisma, ptm, { invalidateForUser: jest.fn() } as any);
 
     await svc.logWeight('user-1', { weight_lbs: 200 } as any);
 
@@ -128,7 +128,7 @@ describe('PTM signal hooks — weight', () => {
   it('emits delta vs prior log on subsequent logs', async () => {
     const prisma = makePrisma(205);
     const ptm = { emit: jest.fn() } as any;
-    const svc = new WeightService(prisma, ptm);
+    const svc = new WeightService(prisma, ptm, { invalidateForUser: jest.fn() } as any);
 
     await svc.logWeight('user-1', { weight_lbs: 198 } as any);
 
@@ -172,7 +172,7 @@ describe('PTM signal hooks — messaging', () => {
     const ptm = { emit: jest.fn() } as any;
     const messageReceived = { emit: jest.fn().mockResolvedValue(undefined) } as any;
     const audit = { write: jest.fn().mockResolvedValue(undefined) } as any;
-    const svc = new MessagingService(prisma, supabase, analytics, ptm, messageReceived, audit);
+    const svc = new MessagingService(prisma, supabase, analytics, ptm, messageReceived, audit, { invalidateForUser: jest.fn() } as any);
 
     await svc.sendAsClient('client-1', 'hello coach');
 
@@ -190,7 +190,7 @@ describe('PTM signal hooks — messaging', () => {
     const ptm = { emit: jest.fn() } as any;
     const messageReceived = { emit: jest.fn().mockResolvedValue(undefined) } as any;
     const audit = { write: jest.fn().mockResolvedValue(undefined) } as any;
-    const svc = new MessagingService(prisma, supabase, analytics, ptm, messageReceived, audit);
+    const svc = new MessagingService(prisma, supabase, analytics, ptm, messageReceived, audit, { invalidateForUser: jest.fn() } as any);
 
     await svc.sendAsCoach('coach-A', 'client-1', 'great work!');
 
@@ -217,7 +217,7 @@ describe('PTM signal hooks — messaging', () => {
     const ptm = { emit: jest.fn() } as any;
     const messageReceived = { emit: jest.fn().mockResolvedValue(undefined) } as any;
     const audit = { write: jest.fn().mockResolvedValue(undefined) } as any;
-    const svc = new MessagingService(prisma, supabase, analytics, ptm, messageReceived, audit);
+    const svc = new MessagingService(prisma, supabase, analytics, ptm, messageReceived, audit, { invalidateForUser: jest.fn() } as any);
 
     await svc.sendAsClient('client-1', 'this is a sensitive thing the user said');
     for (const call of ptm.emit.mock.calls) {
