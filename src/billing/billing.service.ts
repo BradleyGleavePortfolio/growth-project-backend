@@ -225,6 +225,8 @@ export class BillingService {
         orderBy: { created_at: 'desc' },
       });
       if (!profile) return null;
+      // TODO(post-merge): Remove `as any` cast once `prisma generate` runs in CI
+      // against the migrated schema and coachSubscription is typed with tier/status fields.
       await (tx.coachSubscription.upsert as any)({
         where: { coach_id: profile.user_id },
         create: {
@@ -305,6 +307,8 @@ export class BillingService {
     // Use updateMany (not update) so that an out-of-order delete event for a
     // coach with no subscription row is a graceful no-op rather than a P2025
     // throw. updateMany with 0 matching rows silently does nothing.
+    // TODO(post-merge): Remove `as any` cast once `prisma generate` runs in CI
+    // against the migrated schema and coachSubscription is typed with tier/status fields.
     await (this.prisma.coachSubscription.updateMany as any)({
       where: { coach_id: coachId },
       data: { status: 'canceled', cancel_at_period_end: false, tier: 'free', updated_at: new Date() },

@@ -53,6 +53,9 @@ const PAST_DUE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 // CoachTier values as a string union — mirrors the Prisma enum.
 // Using a string union here rather than importing from @prisma/client
 // so the guard compiles before `prisma generate` is run in CI.
+// TODO(post-merge): Replace local CoachTierValue union with generated Prisma CoachTier
+// enum once `prisma generate` runs in CI against the migrated schema. Tracking issue: TBD.
+// Drift risk is low because the union exactly mirrors the enum, but this should not become permanent.
 type CoachTierValue = 'free' | 'pro' | 'enterprise';
 
 /** Numeric rank for tier comparison. free < pro < enterprise. */

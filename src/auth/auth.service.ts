@@ -693,6 +693,8 @@ export class AuthService {
     // Access is scoped to req.user.id only — we never expose another coach's tier.
     let subscriptionTier: 'free' | 'pro' | 'enterprise' | null = null;
     if (user.role === 'coach') {
+      // TODO(post-merge): Remove `as any` cast once `prisma generate` runs in CI
+      // against the migrated schema and coachSubscription is typed with tier/status fields.
       const sub = await (this.prisma.coachSubscription.findUnique as any)({
         where: { coach_id: userId },
         select: { tier: true },
@@ -804,6 +806,8 @@ export class AuthService {
       // Read the caller's own CoachSubscription row for the authoritative tier.
       // If no row exists (edge case: coach pre-dating the billing migration),
       // fall back to 'free' rather than throwing.
+      // TODO(post-merge): Remove `as any` cast once `prisma generate` runs in CI
+      // against the migrated schema and coachSubscription is typed with tier/status fields.
       const existingSub = await (this.prisma.coachSubscription.findUnique as any)({
         where: { coach_id: user.id },
         select: { tier: true },
@@ -866,6 +870,8 @@ export class AuthService {
     //   Returns { clientSecret } for in-app Stripe Payment Sheet (mobile) /
     //   Elements (web). DO NOT use Stripe Checkout hosted pages —
     //   all checkout must stay in-app. See spec §14 (deferred to follow-up PR).
+    // TODO(post-merge): Remove `as any` cast once `prisma generate` runs in CI
+    // against the migrated schema and coachSubscription is typed with tier/status fields.
     const coachSub = await (this.prisma.coachSubscription.upsert as any)({
       where: { coach_id: userId },
       create: {
