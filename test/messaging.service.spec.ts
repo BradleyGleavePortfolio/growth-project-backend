@@ -158,6 +158,7 @@ describe('MessagingService', () => {
       ptmStub,
       messageReceivedStub,
       auditStub,
+      { invalidateForUser: jest.fn() } as any,
     );
   });
 

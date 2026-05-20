@@ -1,0 +1,41 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Migration: 20260613000002_message_thread_reverse_index
+--
+-- WHAT:  Add a reverse-direction index on Message(recipient_id, sender_id,
+--        created_at) to complement the existing forward index
+--        (sender_id, recipient_id, created_at).
+--
+-- WHY (Finding 5 — HIGH, audit 2026-05-19):
+--   The canonical "load conversation thread" query is:
+--     WHERE (sender_id = $A AND recipient_id = $B)
+--        OR (sender_id = $B AND recipient_id = $A)
+--     ORDER BY created_at
+--   An OR query like this cannot use a single B-tree index for both branches.
+--   With only the forward index (sender_id, recipient_id, created_at), Postgres
+--   optimises the first branch with an index scan but is forced to do a
+--   sequential scan (or a full index scan + filter) for the second branch.
+--   On a large Message table this becomes an N×M performance cliff.
+--   The reverse index gives the query planner two efficient index scans that
+--   can be merged with a BitmapOr or a MergeAppend — both far cheaper.
+--
+-- WHY NON-CONCURRENT (not CREATE INDEX CONCURRENTLY):
+--   CREATE INDEX CONCURRENTLY cannot run inside a Postgres transaction.
+--   Prisma migrate deploy wraps each migration file in a transaction by
+--   default, so CONCURRENTLY would cause an immediate error:
+--     ERROR: CREATE INDEX CONCURRENTLY cannot run inside a transaction block
+--   The Message table was introduced in migration 20260612000000, which shipped
+--   TODAY (2026-06-12). The table has zero rows in production right now.
+--   A standard (non-concurrent) CREATE INDEX on an empty table takes
+--   microseconds and acquires no meaningful lock on existing rows. There is
+--   no operational risk.
+--
+--   IF this migration is ever applied retroactively to a populated table
+--   (e.g. disaster-recovery restore into a new environment), use:
+--     CREATE INDEX CONCURRENTLY "Message_recipient_id_sender_id_created_at_idx"
+--       ON "Message" ("recipient_id", "sender_id", "created_at");
+--   outside of any transaction (run it manually via psql or fly proxy, not via
+--   prisma migrate deploy). Update _prisma_migrations manually afterwards.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE INDEX "Message_recipient_id_sender_id_created_at_idx"
+  ON "Message" ("recipient_id", "sender_id", "created_at");

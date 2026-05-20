@@ -62,6 +62,19 @@ echo "[release] ─────────────────────�
 # captured command output, then re-exits with the original status.
 on_error() {
   local exit_code=$?
+  # Guard 1 (clean exit): the EXIT trap fires on ALL exits, including successful
+  # ones. Skip the failure banner when the script completed normally.
+  # Non-zero exit (error, SIGTERM, SIGINT, OOM kill) falls through.
+  # (Finding 9 — MEDIUM, audit 2026-05-19)
+  [[ ${exit_code} -eq 0 ]] && return 0
+  # Guard 2 (single-fire): on an ordinary command error, ERR fires first and
+  # calls on_error; that on_error then calls `exit ${exit_code}`, which triggers
+  # the EXIT trap, which calls on_error a second time with the same non-zero
+  # code. Without this guard we print duplicate failure banners and the second
+  # invocation's ${LINENO} is the EXIT trap context, not the original failing
+  # command — obscuring the real failure site.
+  [[ "${ERROR_REPORTED:-0}" == "1" ]] && return 0
+  ERROR_REPORTED=1
   local line=${1:-?}
   echo "[release] ❌ FAIL at line ${line} (exit=${exit_code})"
   if [[ -f /tmp/prisma_migrate.log ]]; then
@@ -74,6 +87,7 @@ on_error() {
   exit "${exit_code}"
 }
 trap 'on_error ${LINENO}' ERR
+trap 'on_error ${LINENO}' EXIT  # catches SIGTERM, SIGINT, OOM kills (Finding 9)
 
 # Sanity-check the env the migration tool needs. We fail fast and loudly
 # rather than letting Prisma emit a confusing P1001/P1012 error.
@@ -103,8 +117,14 @@ STATUS_LOG=/tmp/prisma_status.log
 # pipefail is fine here because tee always succeeds last.
 npx prisma migrate status 2>&1 | tee "${STATUS_LOG}" || true
 
+# Prisma 5 lists pending migrations with an ASCII dash (-), NOT the Unicode
+# bullet (•, U+2022) that was used in Prisma 4 and earlier. Using the bullet
+# always matched 0 lines. (Finding 4 — HIGH, audit 2026-05-19)
+# Any non-whitespace token follows the dash — migration names may contain
+# underscores, digits, letters, or hyphens. [^[:space:]]+ matches all of them.
+# (re-audit followup A)
 PENDING_COUNT=$(
-  grep -cE '^[[:space:]]*•[[:space:]]+[0-9_a-zA-Z]+$' "${STATUS_LOG}" \
+  grep -cE '^[[:space:]]+-[[:space:]]+[^[:space:]]+$' "${STATUS_LOG}" \
     || echo 0
 )
 echo "[release]   pending_migrations_detected = ${PENDING_COUNT}"
@@ -153,13 +173,30 @@ fi
 
 # Count successfully applied (rolled_back_at IS NULL) rows in _prisma_migrations
 # so the log emits a single grep-able line for monitoring/observability.
-APPLIED_COUNT=$(
-  npx prisma db execute --stdin <<'SQL' 2>/dev/null \
-    | awk '/^[[:space:]]*[0-9]+/ { print $1; exit }' \
-    || echo "unknown"
+#
+# Write raw output to a temp file so stderr is captured in the release log
+# without polluting the metric value. Using a command substitution with 2>&1
+# feeds stderr into awk/the variable; warnings appear inside APPLIED_COUNT,
+# corrupting ALL_APPLIED= into a multi-line string. The temp-file approach
+# keeps the metric clean and lets us emit warnings to stdout separately.
+# (Finding 7 — MEDIUM, audit 2026-05-19; re-audit blocker 3)
+APPLIED_TMP=$(mktemp)
+if npx prisma db execute --stdin <<'SQL' >"${APPLIED_TMP}" 2>&1
 SELECT COUNT(*) FROM _prisma_migrations WHERE rolled_back_at IS NULL;
 SQL
-)
+then
+  APPLIED_COUNT=$(awk '/^[[:space:]]*[0-9]+/ { print $1; exit }' "${APPLIED_TMP}")
+  if [[ -z "${APPLIED_COUNT}" ]]; then
+    echo "[release] WARNING: could not parse applied count from prisma output:"
+    sed 's/^/[release]   /' "${APPLIED_TMP}"
+    APPLIED_COUNT="unknown"
+  fi
+else
+  echo "[release] WARNING: prisma db execute failed querying _prisma_migrations:"
+  sed 's/^/[release]   /' "${APPLIED_TMP}"
+  APPLIED_COUNT="unknown"
+fi
+rm -f "${APPLIED_TMP}"
 
 echo "[release] ────────────────────────────────────────────────────────────"
 echo "[release] ✔ release_command completed successfully"

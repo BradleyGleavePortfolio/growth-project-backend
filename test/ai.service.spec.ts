@@ -65,6 +65,10 @@ function makeContext(): ClientAIContext {
       coach_thread_summary: null,
     },
     current_meal_plan: null,
+    fasting: { active_fast: null, last_fast: null },
+    next_session: null,
+    recent_wins: [],
+    leaderboard: { opted_in: false, rank: null },
     guardrails: {
       forbid_calorie_recommendations_below: 1500,
       forbid_contradicting_macros: true,

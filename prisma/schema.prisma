@@ -516,9 +516,9 @@ model MessageDraft {
 model Message {
   id           String    @id @default(uuid())
   sender_id    String
-  sender       User      @relation("MessageSender", fields: [sender_id], references: [id])
+  sender       User      @relation("MessageSender", fields: [sender_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
   recipient_id String
-  recipient    User      @relation("MessageRecipient", fields: [recipient_id], references: [id])
+  recipient    User      @relation("MessageRecipient", fields: [recipient_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
   body         String
   read         Boolean   @default(false)
   read_at      DateTime?
@@ -527,7 +527,11 @@ model Message {
   // Dashboard hot path: count unread messages addressed to a coach.
   @@index([recipient_id, read])
   // Conversation hot path: load thread between two users ordered by time.
+  // The OR query (sender=$A AND recipient=$B) OR (sender=$B AND recipient=$A)
+  // needs BOTH directions indexed so Postgres can use two index scans + merge
+  // instead of one index scan + one seq scan. (Finding 5 — HIGH, audit 2026-05-19)
   @@index([sender_id, recipient_id, created_at])
+  @@index([recipient_id, sender_id, created_at])
 }
 
 // Audit/activity event stream. Used by the coach console to render the recent

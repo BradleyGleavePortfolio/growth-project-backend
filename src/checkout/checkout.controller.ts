@@ -48,8 +48,7 @@ export class CreateCheckoutDto {
   @IsString()
   @MaxLength(512)
   // Only our deep-link scheme or https are valid redirect targets.
-  // String form avoids the //:// comment ambiguity in TS regex literals.
-  @Matches(new RegExp('^(growthproject:\/\/|com\.growthproject\.app:\/\/|https:\/\/)'), {
+  @Matches(/^(growthproject:\/\/|com\.growthproject\.app:\/\/|https:\/\/)/, {
     message: 'success_url must start with growthproject://, com.growthproject.app://, or https://',
   })
   success_url?: string;
@@ -57,7 +56,7 @@ export class CreateCheckoutDto {
   @IsOptional()
   @IsString()
   @MaxLength(512)
-  @Matches(new RegExp('^(growthproject:\/\/|com\.growthproject\.app:\/\/|https:\/\/)'), {
+  @Matches(/^(growthproject:\/\/|com\.growthproject\.app:\/\/|https:\/\/)/, {
     message: 'cancel_url must start with growthproject://, com.growthproject.app://, or https://',
   })
   cancel_url?: string;
