@@ -10,9 +10,12 @@ import {
   Post,
   Query,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
+import { JwtAuthGuard } from '../auth/auth.guard';
+import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import {
   AttachManualVideoLinkDto,
   CancelSessionDto,
@@ -48,8 +51,16 @@ import { SchedulingService } from './scheduling.service';
 //   POST   /scheduling/sessions/:id/complete           (coach)
 //   POST   /scheduling/sessions/:id/no-show            (coach)
 //   POST   /scheduling/sessions/:id/manual-video-link  (coach)
+// ClientEntitlementGuard is applied class-level. It is a no-op for coaches
+// and owners (the guard short-circuits on `user.role !== 'student'`), so
+// coach-facing endpoints (approve, decline, complete, no-show, manual-video-link,
+// session-types, availability, availability-overrides) are unaffected.
+// Students hit 402 on any scheduling endpoint unless they have an active
+// ClientPurchase — including booking, reschedule, and cancel (the core
+// paid surface the audit flagged at P0).
 @ApiTags('scheduling')
 @Controller('scheduling')
+@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
 export class SchedulingController {
   constructor(private readonly scheduling: SchedulingService) {}
 
