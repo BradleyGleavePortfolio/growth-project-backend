@@ -199,12 +199,6 @@ export class UpdateNotificationPreferencesDto {
   @IsOptional()
   @IsBoolean()
   booking_inapp?: boolean;
-
-  // ── coach_direct ─────────────────────────────────────────────────────────
-
-  @IsOptional()
-  @IsBoolean()
-  coach_direct_enabled?: boolean;
 }
 
 // ── Notification center query params ────────────────────────────────────────
