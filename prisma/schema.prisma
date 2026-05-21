@@ -836,7 +836,6 @@ model NotificationPreferences {
   booking_email           Boolean @default(false)
   booking_push            Boolean @default(true)
   booking_inapp           Boolean @default(true)
-  coach_direct_enabled    Boolean @default(true)
 }
 
 model Habit {

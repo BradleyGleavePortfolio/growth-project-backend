@@ -111,7 +111,6 @@ export class NotificationsService {
         booking_email: false,
         booking_push: true,
         booking_inapp: true,
-        coach_direct_enabled: true,
       };
     }
     return prefs;
@@ -165,7 +164,6 @@ export class NotificationsService {
       booking_email: data.booking_email,
       booking_push: data.booking_push,
       booking_inapp: data.booking_inapp,
-      coach_direct_enabled: data.coach_direct_enabled,
     };
 
     // Strip undefined entries so Prisma does not try to set them to NULL.
