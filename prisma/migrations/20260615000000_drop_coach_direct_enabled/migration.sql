@@ -1,0 +1,34 @@
+-- Drop dead coach_direct_enabled column from NotificationPreferences.
+--
+-- Rationale (B8 contract verdict, Option 2):
+--   The mobile client correctly uses message_push to gate coach DM
+--   push notifications. The coach_direct_enabled column on
+--   NotificationPreferences was provisioned for a separate "coach DM
+--   master switch" pref that was never wired through — no backend
+--   reader has ever consulted it, and the current mobile client does
+--   not send it. Carrying a dead boolean on a hot-path preferences
+--   table is technical debt: it confuses future authors, widens the
+--   row, and creates a phantom contract surface. Drop it.
+--
+-- Safety:
+--   - Additive write path was tolerant: backend defaulted it to true
+--     and accepted it via DTO. Removing it means existing client
+--     payloads that still send `coach_direct_enabled` will be stripped
+--     by Nest's `forbidNonWhitelisted: true` / `whitelist: true`
+--     ValidationPipe before reaching the service — no 500 risk.
+--   - No reader anywhere in the backend (verified via grep at
+--     migration authoring time). Dropping the column cannot break
+--     gating logic because there is no gating logic.
+--   - Idempotent: IF EXISTS guards a re-run.
+--
+-- Rollback (reverse migration — paste into a manual migration if needed):
+--
+--   ALTER TABLE "NotificationPreferences"
+--     ADD COLUMN IF NOT EXISTS "coach_direct_enabled" BOOLEAN NOT NULL DEFAULT true;
+--
+--   This restores the original column with the original NOT NULL +
+--   DEFAULT true contract from migration
+--   20260609000000_add_coach_direct_enabled.
+
+ALTER TABLE "NotificationPreferences"
+  DROP COLUMN IF EXISTS "coach_direct_enabled";
