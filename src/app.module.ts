@@ -89,7 +89,12 @@ import { SecretsModule } from './secrets/secrets.module';
 // ledger (EmailSendLog). Global, so any feature can inject EmailService.
 import { EmailModule } from './email/email.module';
 import { RlsContextInterceptor } from './common/interceptors/rls-context.interceptor';
-import { ClientEntitlementGuard } from './common/guards/client-entitlement.guard';
+// SecurityGuardsModule consolidates every cross-cutting NestJS guard into a
+// single @Global() module with zero feature-module imports. Loaded BEFORE
+// AuthModule so its guards are in DI scope for every downstream module —
+// see common/security/security-guards.module.ts for the prevention rationale
+// (hotfix #243, prod-down 2026-05-20).
+import { SecurityGuardsModule } from './common/security/security-guards.module';
 
 @Module({
   imports: [
@@ -128,6 +133,16 @@ import { ClientEntitlementGuard } from './common/guards/client-entitlement.guard
 
     // Supabase singleton client (global — available to all modules)
     SupabaseModule,
+
+    // Cross-cutting NestJS guards (auth, roles, owner, entitlement, billing
+    // tier, sub-coach gating, …). @Global with zero feature-module imports —
+    // every guard's deps resolve via global providers (Prisma, Ptm,
+    // Analytics) or local colocated services (JwksVerifierService).
+    // Must precede AuthModule and every feature module so the guards are in
+    // DI scope for `@UseGuards(...)` decorators everywhere. The accompanying
+    // module-cycle Jest spec (`test/module-graph.spec.ts`) fails CI if any
+    // directed cycle is reintroduced.
+    SecurityGuardsModule,
 
     AuthModule,
     ProfileModule,
@@ -288,11 +303,10 @@ import { ClientEntitlementGuard } from './common/guards/client-entitlement.guard
     // could never observe a valid req.user (Bug 1 fix).
     { provide: APP_INTERCEPTOR, useClass: RlsContextInterceptor },
 
-    // CLIENT ENTITLEMENT: registered here so DI can resolve PrismaService and
-    // Reflector into the guard when it is applied via @UseGuards() on individual
-    // controllers. Not registered as APP_GUARD — guard is applied selectively
-    // at controller class level only to paid client surfaces.
-    ClientEntitlementGuard,
+    // ClientEntitlementGuard, SubscriptionGuard, and every other cross-cutting
+    // guard are now provided by SecurityGuardsModule (@Global). Selective
+    // application via @UseGuards() on controllers continues to work — the DI
+    // scope is global.
   ],
 })
 export class AppModule {}
