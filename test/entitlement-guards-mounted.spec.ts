@@ -40,9 +40,12 @@ import { CommunityController } from '../src/community/community.controller';
 import { FastingController } from '../src/fasting/fasting.controller';
 import { HolisticInsightsController } from '../src/insights/holistic-insights.controller';
 import { LogController } from '../src/log/log.controller';
+import { ClientMacrosController } from '../src/macros/macros.controller';
 import { ClientMealPlansController } from '../src/meal-plans/client-meal-plans.controller';
 import { ClientMessagingController } from '../src/messaging/client-messaging.controller';
+import { ClientMealPlanController } from '../src/real-meal-plans/real-meal-plans.controller';
 import { SchedulingController } from '../src/scheduling/scheduling.controller';
+import { AssignmentController } from '../src/workout-builder/workout-builder.controller';
 import { WorkoutController } from '../src/workout/workout.controller';
 
 type AnyCtor = abstract new (...args: never[]) => unknown;
@@ -75,6 +78,14 @@ const PAID_ROUTES: ReadonlyArray<PaidRoute> = [
   { controller: LogController, label: '/log/*' },
   { controller: ClientCheckInsController, label: '/check-ins/*' },
   { controller: CommunityController, label: '/community/*' },
+
+  // Audit follow-up (post-#259): three additional paid client surfaces
+  // that were not pinned by the original allowlist. Adding them here
+  // ensures any future refactor that drops the guard from these
+  // controllers fails CI loudly, identical to the protections above.
+  { controller: AssignmentController, label: '/assignments/* (class-level)' },
+  { controller: ClientMealPlanController, label: 'GET /me/meal-plan/today' },
+  { controller: ClientMacrosController, label: 'GET /me/macros/current' },
 ];
 
 function hasGuard(
