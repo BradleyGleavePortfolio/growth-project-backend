@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { assertGcalWatchChannelStartup } from './google-calendar/gcal-watch-startup';
 import { JwksVerifierService } from '../auth/jwks.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { GoogleCalendarWebhookController } from './google-calendar/google-calendar-webhook.controller';
@@ -68,4 +69,15 @@ import { SchedulingWebhookController } from './scheduling-webhook.controller';
   ],
   exports: [SchedulingService, GoogleOAuthService, GoogleCalendarService],
 })
-export class SchedulingModule {}
+export class SchedulingModule implements OnModuleInit {
+  private readonly logger = new Logger(SchedulingModule.name);
+
+  // RFC-142 follow-up to #241: assert the watch-channel boot contract.
+  // See google-calendar/gcal-watch-startup.ts for the rules. Failures
+  // throw, which Nest propagates as a boot crash — that is the intended
+  // behaviour (Rule 9: clear structured error, no silent runtime
+  // surprise when push notifications eventually go live).
+  async onModuleInit(): Promise<void> {
+    await assertGcalWatchChannelStartup(undefined, { logger: this.logger });
+  }
+}

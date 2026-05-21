@@ -21,10 +21,27 @@ import { GoogleOAuthService } from '../google-oauth/google-oauth.service';
 // Receives Google Calendar Push Notifications:
 //   POST /webhooks/google-calendar
 //
+// RFC-142 (docs/rfcs/142-concierge-scheduling.md) governs this surface.
+// Two contracts from that RFC are enforced here:
+//
+//   1. When FEATURE_GOOGLE_CALENDAR_SYNC is off, this route must answer
+//      404 with a structured { code: 'FEATURE_DISABLED' } body — "feature
+//      truly not available, not 'configured but broken'". A silent
+//      {ok:true} would hide misconfiguration from operators and from
+//      Google's delivery dashboard.
+//   2. When the feature is on, the X-Goog-Channel-Id header is the
+//      *primary* identifier the caller-supplied channel-token check is
+//      bound to. We reject malformed deliveries (missing channel-id /
+//      resource-id / resource-state) with a structured 400 rather than
+//      writing a partial audit row, because Google posts no body —
+//      these headers ARE the request, and a missing one almost always
+//      indicates a forged request or a proxy that stripped them.
+//
 // Google posts a request with no body and the following headers
 // (https://developers.google.com/calendar/api/guides/push):
 //
 //   X-Goog-Channel-Id        — channel identifier we supplied at watch().
+//                              Bound to the per-channel token check.
 //   X-Goog-Channel-Token     — opaque verification token we set at watch().
 //   X-Goog-Resource-Id       — opaque ID of the watched resource.
 //   X-Goog-Resource-State    — sync | exists | not_exists.
