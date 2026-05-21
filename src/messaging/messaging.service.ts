@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
   NotImplementedException,
+  Optional,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma.service';
@@ -16,6 +17,10 @@ import { PtmService } from '../ptm/ptm.service';
 import { MessageReceivedEmitter } from '../notifications/emitters/message-received.emitter';
 import { AuditService } from '../audit/audit.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
+// Apple 1.2 — server-side defence-in-depth for the mobile blocklist. Used
+// to (a) skip new-message push fanout when either side has blocked the
+// other and (b) filter blocked senders out of list / unread responses.
+import { MessagesSafetyService } from '../messages-safety/messages-safety.service';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -88,6 +93,10 @@ export class MessagingService {
     private audit: AuditService,
     // M2 — bust the client's AI context cache when a coach message arrives.
     private aiContext: ClientAIContextService,
+    // Apple 1.2 — Optional so legacy unit tests that build the service via
+    // `new MessagingService(...)` without the safety arg still compile. In
+    // production DI it is always provided via MessagesSafetyModule.
+    @Optional() private safety: MessagesSafetyService | null = null,
   ) {}
 
   // Resolve a sender's display name for the push notification body. Falls
@@ -298,12 +307,41 @@ export class MessagingService {
 
   async listThreadForCoach(coachId: string, clientId: string, opts: ListOpts) {
     await this.assertClientOfCoach(coachId, clientId);
-    return this.listThread(coachId, clientId, opts);
+    const rows = await this.listThread(coachId, clientId, opts);
+    return this.filterBlockedAuthors(coachId, clientId, rows);
   }
 
   async listThreadForClient(clientId: string, opts: ListOpts) {
     const coachId = await this.requireClientCoachId(clientId);
-    return this.listThread(coachId, clientId, opts);
+    const rows = await this.listThread(coachId, clientId, opts);
+    return this.filterBlockedAuthors(clientId, coachId, rows);
+  }
+
+  /**
+   * Drop messages authored by the other party in the thread when the caller
+   * has blocked them. We only filter the *other* party's messages — the
+   * caller still wants to see what they themselves wrote. This is the
+   * server-side mirror of the mobile filterOutBlocked filter (defence in
+   * depth, Engineering Rule 1 — never rely solely on the client).
+   *
+   * One round-trip: we look up the caller's blocklist once and apply it
+   * in-memory. The mobile thread page is ≤ 100 messages so the filter cost
+   * is negligible.
+   */
+  private async filterBlockedAuthors<T extends { sender_id: string | null }>(
+    callerId: string,
+    otherPartyId: string,
+    rows: T[],
+  ): Promise<T[]> {
+    if (!otherPartyId || rows.length === 0) return rows;
+    if (!this.safety) return rows; // Optional dep absent in legacy unit-test DI.
+    const blocked = await this.safety.getBlockedIdsFor(callerId);
+    if (blocked.length === 0) return rows;
+    if (!blocked.includes(otherPartyId)) return rows;
+    // Caller has blocked the other party — strip every message they
+    // authored. The caller's own messages still render so they can see
+    // what they last said before blocking.
+    return rows.filter((m) => m.sender_id !== otherPartyId);
   }
 
   // ---- send ----
@@ -346,12 +384,36 @@ export class MessagingService {
     // client deep-links to /messages/<clientId>. Fire-and-forget — the
     // emitter swallows its own errors so a notification failure never
     // bubbles into the message-send response.
-    void this.resolveSenderName(coachId).then((senderName) =>
-      this.messageReceived.emit(clientId, {
-        senderName,
-        threadId: clientId,
-      }),
-    );
+    //
+    // Apple 1.2 — suppress the push when either side of the thread has
+    // blocked the other. We always run the check (small indexed read) so a
+    // newly blocked sender cannot page the recipient after the block lands.
+    // When `safety` is absent (legacy unit-test DI), fall back to the
+    // pre-existing emit path so no behaviour regresses.
+    if (this.safety) {
+      void this.safety
+        .isEitherSideBlocked(coachId, clientId)
+        .then((blocked) => {
+          if (blocked) return;
+          return this.resolveSenderName(coachId).then((senderName) =>
+            this.messageReceived.emit(clientId, {
+              senderName,
+              threadId: clientId,
+            }),
+          );
+        })
+        .catch(() => {
+          /* non-fatal — push suppression failed open is preferable to
+             the send failing; the message itself is already persisted. */
+        });
+    } else {
+      void this.resolveSenderName(coachId).then((senderName) =>
+        this.messageReceived.emit(clientId, {
+          senderName,
+          threadId: clientId,
+        }),
+      );
+    }
     void this.audit.write({
       action: 'messaging.sent',
       actorId: coachId,
@@ -421,12 +483,33 @@ export class MessagingService {
     });
     // Ping the coach.
     void this.supabase.broadcastNewMessage(coachId);
-    void this.resolveSenderName(clientId).then((senderName) =>
-      this.messageReceived.emit(coachId, {
-        senderName,
-        threadId: clientId,
-      }),
-    );
+    // Apple 1.2 — same push suppression policy as sendAsCoach; see comment
+    // there. We do not skip the in-app realtime ping above: the coach's own
+    // UI runs the same blocklist filter on render, so the ping is harmless
+    // and lets a "you have unread" badge update without leaking content.
+    if (this.safety) {
+      void this.safety
+        .isEitherSideBlocked(coachId, clientId)
+        .then((blocked) => {
+          if (blocked) return;
+          return this.resolveSenderName(clientId).then((senderName) =>
+            this.messageReceived.emit(coachId, {
+              senderName,
+              threadId: clientId,
+            }),
+          );
+        })
+        .catch(() => {
+          /* see sendAsCoach */
+        });
+    } else {
+      void this.resolveSenderName(clientId).then((senderName) =>
+        this.messageReceived.emit(coachId, {
+          senderName,
+          threadId: clientId,
+        }),
+      );
+    }
     void this.audit.write({
       action: 'messaging.sent',
       actorId: clientId,
@@ -621,9 +704,21 @@ export class MessagingService {
       },
       _count: { _all: true },
     });
+    // Apple 1.2 — drop blocked clients from the unread count so the coach's
+    // badge doesn't trail forever when they've blocked someone. Cheap lookup
+    // once per call; map to a Set for O(1) per-row testing. `safety` is
+    // optional in legacy unit-test DI; when absent we fall back to the
+    // pre-existing un-filtered count.
+    const blockedIds = this.safety
+      ? new Set(await this.safety.getBlockedIdsFor(coachId))
+      : new Set<string>();
     const by_client: Record<string, number> = {};
     let total = 0;
     for (const g of groups) {
+      if (g.client_id !== null && blockedIds.has(g.client_id)) {
+        // Suppress entirely — both from per-client breakdown and grand total.
+        continue;
+      }
       // client_id is nullable after the SET NULL FK relaxation; rows
       // whose recipient has been hard-deleted are still counted in the
       // grand total but excluded from per-client breakdown (there is no
@@ -643,6 +738,16 @@ export class MessagingService {
     // No coach → nothing to read. We *don't* 409 here because the mobile client
     // polls this endpoint on every screen focus and a 409 would spam logs.
     if (!coachId) return { total: 0 };
+    // Apple 1.2 — when the client has blocked their coach, suppress the
+    // unread count so the bell never reflects messages the user has chosen
+    // not to see. Cheap indexed lookup; runs once per call. Falls back to
+    // an empty blocklist when the optional dep is absent (legacy DI).
+    if (this.safety) {
+      const blockedIds = await this.safety.getBlockedIdsFor(clientId);
+      if (blockedIds.includes(coachId)) {
+        return { total: 0 };
+      }
+    }
     const total = await this.prisma.coachMessage.count({
       where: {
         coach_id: coachId,

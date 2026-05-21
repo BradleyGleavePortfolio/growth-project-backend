@@ -29,6 +29,7 @@ import { KmsModule } from './common/kms/kms.module';
 import { HealthModule } from './health/health.module';
 import { InviteCodesModule } from './invite-codes/invite-codes.module';
 import { MessagingModule } from './messaging/messaging.module';
+import { MessagesSafetyModule } from './messages-safety/messages-safety.module';
 import { NudgesModule } from './nudges/nudges.module';
 import { MealPlansModule } from './meal-plans/meal-plans.module';
 import { CheckInsModule } from './check-ins/check-ins.module';
@@ -172,6 +173,10 @@ import { SecurityGuardsModule } from './common/security/security-guards.module';
     HealthModule,
     InviteCodesModule,
     MessagingModule,
+    // Apple App Review 1.2 — abuse-report + per-user blocklist endpoints.
+    // Safety surface, NOT a paid feature. Reachable by every authenticated
+    // user; intentionally absent from PAID_ROUTES.
+    MessagesSafetyModule,
     NudgesModule,
     MealPlansModule,
     CheckInsModule,

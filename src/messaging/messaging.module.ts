@@ -5,6 +5,10 @@ import { JwksVerifierService } from '../auth/jwks.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuditModule } from '../audit/audit.module';
 import { AiModule } from '../ai/ai.module';
+// Apple 1.2 — MessagingService consults MessagesSafetyService to filter
+// blocked senders out of list/unread responses and to suppress push fanout
+// when either party has blocked the other.
+import { MessagesSafetyModule } from '../messages-safety/messages-safety.module';
 import { ClientMessagingController } from './client-messaging.controller';
 import { CoachMessagingController } from './coach-messaging.controller';
 import { MessagingService } from './messaging.service';
@@ -21,7 +25,7 @@ import { MessagingService } from './messaging.service';
 // ClientAIContextService.invalidateForUser when a coach message is sent
 // (M2 — bust the client's AI context cache).
 @Module({
-  imports: [NotificationsModule, AuditModule, AiModule],
+  imports: [NotificationsModule, AuditModule, AiModule, MessagesSafetyModule],
   controllers: [CoachMessagingController, ClientMessagingController],
   providers: [MessagingService, JwtAuthGuard, CoachGuard, JwksVerifierService],
   exports: [MessagingService],
