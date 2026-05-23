@@ -4,10 +4,15 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { ReportMessageDto, ReportReason } from './dto/report-message.dto';
+
+// Prisma unique-constraint violation. Surfaced when two concurrent
+// inserts race past the pre-check on the same unique tuple.
+const PRISMA_UNIQUE_VIOLATION = 'P2002';
 
 // Analytics event names. AnalyticsService.capture takes a free-form string,
 // so we keep these literals colocated with the service instead of widening
@@ -75,30 +80,47 @@ export class MessagesSafetyService {
     //    means a second report from the same user against the same message
     //    is a no-op — return the existing row with a distinct status flag so
     //    the mobile can show "already reported" if it wants.
-    const existing = await this.prisma.messageReport.findUnique({
-      where: {
-        MessageReport_reporter_message_key: {
+    //
+    //    Pattern: attempt the insert, catch the P2002 unique-violation that
+    //    surfaces when two concurrent requests race past a pre-check. On
+    //    P2002 we re-read the surviving row and return `already_reported`.
+    //    This closes the read-then-create TOCTOU window that a findUnique +
+    //    create pair leaves open.
+    let createdId: string;
+    try {
+      const created = await this.prisma.messageReport.create({
+        data: {
           reporter_id: reporterId,
           message_id: dto.messageId,
+          coach_id: msg.coach_id ?? undefined,
+          client_id: msg.client_id ?? undefined,
+          reason: dto.reason,
+          details: dto.details?.slice(0, 1000) ?? null,
+          // status defaults to 'pending'
         },
-      },
-    });
-    if (existing) {
-      return { reportId: existing.id, status: 'already_reported' };
+        select: { id: true },
+      });
+      createdId = created.id;
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === PRISMA_UNIQUE_VIOLATION
+      ) {
+        const existing = await this.prisma.messageReport.findUnique({
+          where: {
+            MessageReport_reporter_message_key: {
+              reporter_id: reporterId,
+              message_id: dto.messageId,
+            },
+          },
+          select: { id: true },
+        });
+        if (existing) {
+          return { reportId: existing.id, status: 'already_reported' };
+        }
+      }
+      throw err;
     }
-
-    const created = await this.prisma.messageReport.create({
-      data: {
-        reporter_id: reporterId,
-        message_id: dto.messageId,
-        coach_id: msg.coach_id ?? undefined,
-        client_id: msg.client_id ?? undefined,
-        reason: dto.reason,
-        details: dto.details?.slice(0, 1000) ?? null,
-        // status defaults to 'pending'
-      },
-      select: { id: true },
-    });
 
     // 4. Best-effort audit + analytics. Fire-and-forget so a write failure
     //    here never poisons the user-visible flow.
@@ -121,7 +143,7 @@ export class MessagesSafetyService {
       has_details: !!dto.details,
     });
 
-    return { reportId: created.id, status: 'received' };
+    return { reportId: createdId, status: 'received' };
   }
 
   // ─── Blocks ───────────────────────────────────────────────────────────────
@@ -143,23 +165,36 @@ export class MessagesSafetyService {
     });
     if (!target) throw new NotFoundException({ error: 'USER_NOT_FOUND' });
 
-    // Idempotent upsert via unique (blocker_id, blocked_id).
-    const existing = await this.prisma.userBlock.findUnique({
-      where: {
-        UserBlock_pair_key: {
-          blocker_id: blockerId,
-          blocked_id: blockedId,
-        },
-      },
-      select: { id: true },
-    });
-    if (existing) {
-      return { blockId: existing.id, blockedUserId: blockedId };
+    // Idempotent insert via unique (blocker_id, blocked_id). Use try-create
+    // / catch-P2002 / re-read so two concurrent double-tap blocks from the
+    // same user against the same target both resolve cleanly to the
+    // surviving row instead of one surfacing a 500.
+    let created: { id: string };
+    try {
+      created = await this.prisma.userBlock.create({
+        data: { blocker_id: blockerId, blocked_id: blockedId },
+        select: { id: true },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === PRISMA_UNIQUE_VIOLATION
+      ) {
+        const existing = await this.prisma.userBlock.findUnique({
+          where: {
+            UserBlock_pair_key: {
+              blocker_id: blockerId,
+              blocked_id: blockedId,
+            },
+          },
+          select: { id: true },
+        });
+        if (existing) {
+          return { blockId: existing.id, blockedUserId: blockedId };
+        }
+      }
+      throw err;
     }
-    const created = await this.prisma.userBlock.create({
-      data: { blocker_id: blockerId, blocked_id: blockedId },
-      select: { id: true },
-    });
 
     void this.audit.write({
       action: 'safety.user_blocked',

@@ -363,6 +363,20 @@ export class MessagingService {
     const body = trimmedBody.length > 0 ? trimmedBody : null;
     const voice = normalized.voice;
 
+    // Apple 1.2 — fail-closed block enforcement. The check runs BEFORE any
+    // persistence or realtime fanout so a blocked send produces nothing:
+    // no DB row, no realtime ping, no push. The mobile surfaces a clean
+    // "Messages cannot be sent to blocked users" string from the 403.
+    if (this.safety) {
+      const blocked = await this.safety.isEitherSideBlocked(coachId, clientId);
+      if (blocked) {
+        throw new ForbiddenException({
+          error: 'BLOCKED',
+          message: 'Messages cannot be sent to blocked users',
+        });
+      }
+    }
+
     const created = await this.prisma.coachMessage.create({
       data: {
         coach_id: coachId,
@@ -380,40 +394,14 @@ export class MessagingService {
     // authenticated REST endpoint when it receives the ping. Fire-and-
     // forget so a Realtime hiccup never delays the API response.
     void this.supabase.broadcastNewMessage(clientId);
-    // Push notification. The threadId is the coach<->client pair; the mobile
-    // client deep-links to /messages/<clientId>. Fire-and-forget — the
-    // emitter swallows its own errors so a notification failure never
-    // bubbles into the message-send response.
-    //
-    // Apple 1.2 — suppress the push when either side of the thread has
-    // blocked the other. We always run the check (small indexed read) so a
-    // newly blocked sender cannot page the recipient after the block lands.
-    // When `safety` is absent (legacy unit-test DI), fall back to the
-    // pre-existing emit path so no behaviour regresses.
-    if (this.safety) {
-      void this.safety
-        .isEitherSideBlocked(coachId, clientId)
-        .then((blocked) => {
-          if (blocked) return;
-          return this.resolveSenderName(coachId).then((senderName) =>
-            this.messageReceived.emit(clientId, {
-              senderName,
-              threadId: clientId,
-            }),
-          );
-        })
-        .catch(() => {
-          /* non-fatal — push suppression failed open is preferable to
-             the send failing; the message itself is already persisted. */
-        });
-    } else {
-      void this.resolveSenderName(coachId).then((senderName) =>
-        this.messageReceived.emit(clientId, {
-          senderName,
-          threadId: clientId,
-        }),
-      );
-    }
+    // Push notification — block check already ran above, so we can emit
+    // unconditionally here. Fire-and-forget.
+    void this.resolveSenderName(coachId).then((senderName) =>
+      this.messageReceived.emit(clientId, {
+        senderName,
+        threadId: clientId,
+      }),
+    );
     void this.audit.write({
       action: 'messaging.sent',
       actorId: coachId,
@@ -469,6 +457,17 @@ export class MessagingService {
     const body = trimmedBody.length > 0 ? trimmedBody : null;
     const voice = normalized.voice;
 
+    // Apple 1.2 — fail-closed block enforcement. See sendAsCoach for rationale.
+    if (this.safety) {
+      const blocked = await this.safety.isEitherSideBlocked(coachId, clientId);
+      if (blocked) {
+        throw new ForbiddenException({
+          error: 'BLOCKED',
+          message: 'Messages cannot be sent to blocked users',
+        });
+      }
+    }
+
     const created = await this.prisma.coachMessage.create({
       data: {
         coach_id: coachId,
@@ -483,33 +482,13 @@ export class MessagingService {
     });
     // Ping the coach.
     void this.supabase.broadcastNewMessage(coachId);
-    // Apple 1.2 — same push suppression policy as sendAsCoach; see comment
-    // there. We do not skip the in-app realtime ping above: the coach's own
-    // UI runs the same blocklist filter on render, so the ping is harmless
-    // and lets a "you have unread" badge update without leaking content.
-    if (this.safety) {
-      void this.safety
-        .isEitherSideBlocked(coachId, clientId)
-        .then((blocked) => {
-          if (blocked) return;
-          return this.resolveSenderName(clientId).then((senderName) =>
-            this.messageReceived.emit(coachId, {
-              senderName,
-              threadId: clientId,
-            }),
-          );
-        })
-        .catch(() => {
-          /* see sendAsCoach */
-        });
-    } else {
-      void this.resolveSenderName(clientId).then((senderName) =>
-        this.messageReceived.emit(coachId, {
-          senderName,
-          threadId: clientId,
-        }),
-      );
-    }
+    // Push notification — block check already ran above.
+    void this.resolveSenderName(clientId).then((senderName) =>
+      this.messageReceived.emit(coachId, {
+        senderName,
+        threadId: clientId,
+      }),
+    );
     void this.audit.write({
       action: 'messaging.sent',
       actorId: clientId,

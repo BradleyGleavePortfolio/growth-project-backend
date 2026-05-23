@@ -36,9 +36,10 @@ import { ReportMessageDto } from './dto/report-message.dto';
  * test/entitlement-guards-mounted.spec.ts.
  *
  * Rate-limit: the report endpoint is throttled at 20 reports per hour per
- * user via @nestjs/throttler's named "default" tracker. Block / unblock are
- * not throttled separately — they are cheap idempotent writes and the unique
- * constraint absorbs storms.
+ * user via @nestjs/throttler's named "default" tracker. Block / unblock
+ * endpoints are throttled at 60 per hour per user each to absorb abuse
+ * (mass-block / unblock-then-rebock loops) while leaving normal users
+ * unconstrained.
  */
 @ApiTags('safety')
 @ApiBearerAuth('bearer')
@@ -84,6 +85,8 @@ export class MessagesSafetyController {
   })
   @ApiResponse({ status: 400, description: 'CANNOT_BLOCK_SELF' })
   @ApiResponse({ status: 404, description: 'USER_NOT_FOUND' })
+  @ApiResponse({ status: 429, description: 'Too many block requests — try later.' })
+  @Throttle({ default: { ttl: 3_600_000, limit: 60 } })
   @Post('users/:id/block')
   blockUser(
     @Request() req: AuthedRequest,
@@ -101,6 +104,8 @@ export class MessagesSafetyController {
     status: 200,
     description: 'Unblock recorded. { blockedUserId, unblocked: true }.',
   })
+  @ApiResponse({ status: 429, description: 'Too many unblock requests — try later.' })
+  @Throttle({ default: { ttl: 3_600_000, limit: 60 } })
   @HttpCode(200)
   @Delete('users/:id/block')
   unblockUser(

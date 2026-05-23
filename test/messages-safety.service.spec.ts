@@ -8,10 +8,13 @@
 
 import {
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { MessagesSafetyService } from '../src/messages-safety/messages-safety.service';
 import { MessagingService } from '../src/messaging/messaging.service';
+import { MessagesSafetyController } from '../src/messages-safety/messages-safety.controller';
 import { ReportMessageDto } from '../src/messages-safety/dto/report-message.dto';
 
 // ─── In-memory Prisma double ───────────────────────────────────────────────
@@ -129,11 +132,30 @@ function makePrisma() {
       }),
     },
     messageReport: {
-      findUnique: jest.fn(async ({ where }: { where: { MessageReport_reporter_message_key: { reporter_id: string; message_id: string } } }) => {
+      findUnique: jest.fn(async ({ where, select }: { where: { MessageReport_reporter_message_key: { reporter_id: string; message_id: string } }; select?: Record<string, boolean> }) => {
         const k = where.MessageReport_reporter_message_key;
-        return reports.find((r) => r.reporter_id === k.reporter_id && r.message_id === k.message_id) ?? null;
+        const row = reports.find((r) => r.reporter_id === k.reporter_id && r.message_id === k.message_id);
+        if (!row) return null;
+        if (select) {
+          const out: Record<string, unknown> = {};
+          for (const kk of Object.keys(select)) if (select[kk]) out[kk] = (row as Record<string, unknown>)[kk];
+          return out;
+        }
+        return { ...row };
       }),
       create: jest.fn(async ({ data, select }: { data: Record<string, unknown>; select?: Record<string, boolean> }) => {
+        // Enforce the unique constraint on (reporter_id, message_id) — the
+        // real schema indexes this pair and surfaces P2002 on duplicate
+        // insert, which the service catches and re-reads.
+        const dupe = reports.find(
+          (r) => r.reporter_id === data.reporter_id && r.message_id === data.message_id,
+        );
+        if (dupe) {
+          throw new Prisma.PrismaClientKnownRequestError(
+            'Unique constraint failed on (reporter_id, message_id)',
+            { code: 'P2002', clientVersion: 'test' },
+          );
+        }
         const row = {
           id: newId(),
           reporter_id: data.reporter_id as string,
@@ -203,6 +225,17 @@ function makePrisma() {
         });
       }),
       create: jest.fn(async ({ data, select }: { data: { blocker_id: string; blocked_id: string }; select?: Record<string, boolean> }) => {
+        // Enforce the (blocker_id, blocked_id) unique constraint so the
+        // service's P2002 catch path is exercised end-to-end.
+        const dupe = blocks.find(
+          (b) => b.blocker_id === data.blocker_id && b.blocked_id === data.blocked_id,
+        );
+        if (dupe) {
+          throw new Prisma.PrismaClientKnownRequestError(
+            'Unique constraint failed on (blocker_id, blocked_id)',
+            { code: 'P2002', clientVersion: 'test' },
+          );
+        }
         const row = { id: newId(), blocker_id: data.blocker_id, blocked_id: data.blocked_id, created_at: new Date() };
         blocks.push(row);
         if (select) {
@@ -493,5 +526,278 @@ describe('MessagingService — block-aware list + unread filters', () => {
     n = await svc.unreadCountForCoach('coach-1');
     expect(n.total).toBe(0);
     expect(n.by_client['client-1']).toBeUndefined();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// P1-1 — fail-closed block enforcement on the send path. A blocked send must
+// produce NO database row, NO realtime broadcast, NO push notification, and
+// must throw ForbiddenException with a stable non-leaking error string.
+// ──────────────────────────────────────────────────────────────────────────
+describe('MessagingService — fail-closed block enforcement on send', () => {
+  let prisma: ReturnType<typeof makePrisma>;
+  let safety: MessagesSafetyService;
+  let svc: MessagingService;
+  let supabaseStub: { broadcastNewMessage: jest.Mock };
+  let messageReceived: { emit: jest.Mock };
+  let ptmStub: { emit: jest.Mock };
+  let aiContext: { invalidateForUser: jest.Mock };
+
+  beforeEach(() => {
+    prisma = makePrisma();
+    prisma._users.push(
+      { id: 'coach-1', role: 'coach', coach_id: null, name: 'Coach' },
+      { id: 'client-1', role: 'student', coach_id: 'coach-1', name: 'Client' },
+    );
+
+    supabaseStub = { broadcastNewMessage: jest.fn() };
+    messageReceived = { emit: jest.fn().mockResolvedValue(undefined) };
+    ptmStub = { emit: jest.fn() };
+    aiContext = { invalidateForUser: jest.fn() };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    safety = new MessagesSafetyService(prisma as any, auditStub() as any, analyticsStub() as any);
+    // Wrap coachMessage.create so we can assert it was never called when blocked.
+    (prisma.coachMessage as unknown as { create: jest.Mock }).create = jest.fn(
+      async ({ data }: { data: Record<string, unknown> }) => {
+        const row = {
+          id: `cm-${Math.random().toString(36).slice(2, 8)}`,
+          coach_id: data.coach_id as string,
+          client_id: data.client_id as string,
+          sender_id: data.sender_id as string,
+          body: (data.body as string | null) ?? null,
+          created_at: new Date(),
+          read_at: null,
+        };
+        prisma._messages.push(row as unknown as (typeof prisma._messages)[number]);
+        return row;
+      },
+    );
+
+    svc = new MessagingService(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      prisma as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabaseStub as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      analyticsStub() as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ptmStub as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      messageReceived as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      auditStub() as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      aiContext as any,
+      safety,
+    );
+  });
+
+  it('sendAsCoach throws ForbiddenException and creates no row when client has blocked the coach', async () => {
+    await safety.blockUser('client-1', 'coach-1');
+
+    const messagesBefore = prisma._messages.length;
+    await expect(
+      svc.sendAsCoach('coach-1', 'client-1', { body: 'hello' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(
+      (prisma.coachMessage as unknown as { create: jest.Mock }).create,
+    ).not.toHaveBeenCalled();
+    expect(prisma._messages.length).toBe(messagesBefore);
+    expect(supabaseStub.broadcastNewMessage).not.toHaveBeenCalled();
+    expect(messageReceived.emit).not.toHaveBeenCalled();
+  });
+
+  it('sendAsCoach throws ForbiddenException when coach has blocked the client (symmetric)', async () => {
+    await safety.blockUser('coach-1', 'client-1');
+
+    await expect(
+      svc.sendAsCoach('coach-1', 'client-1', { body: 'hello' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(
+      (prisma.coachMessage as unknown as { create: jest.Mock }).create,
+    ).not.toHaveBeenCalled();
+    expect(supabaseStub.broadcastNewMessage).not.toHaveBeenCalled();
+    expect(messageReceived.emit).not.toHaveBeenCalled();
+  });
+
+  it('sendAsClient throws ForbiddenException and creates no row when coach has blocked the client', async () => {
+    await safety.blockUser('coach-1', 'client-1');
+
+    const messagesBefore = prisma._messages.length;
+    await expect(
+      svc.sendAsClient('client-1', { body: 'hi back' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(
+      (prisma.coachMessage as unknown as { create: jest.Mock }).create,
+    ).not.toHaveBeenCalled();
+    expect(prisma._messages.length).toBe(messagesBefore);
+    expect(supabaseStub.broadcastNewMessage).not.toHaveBeenCalled();
+    expect(messageReceived.emit).not.toHaveBeenCalled();
+  });
+
+  it('sendAsClient throws ForbiddenException when client has blocked the coach (symmetric)', async () => {
+    await safety.blockUser('client-1', 'coach-1');
+
+    await expect(
+      svc.sendAsClient('client-1', { body: 'hi back' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(
+      (prisma.coachMessage as unknown as { create: jest.Mock }).create,
+    ).not.toHaveBeenCalled();
+    expect(supabaseStub.broadcastNewMessage).not.toHaveBeenCalled();
+    expect(messageReceived.emit).not.toHaveBeenCalled();
+  });
+
+  it('ForbiddenException carries a stable non-leaking error code + user-facing message', async () => {
+    await safety.blockUser('client-1', 'coach-1');
+
+    try {
+      await svc.sendAsCoach('coach-1', 'client-1', { body: 'hi' });
+      throw new Error('expected ForbiddenException');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ForbiddenException);
+      const resp = (err as ForbiddenException).getResponse() as {
+        error: string;
+        message: string;
+      };
+      expect(resp.error).toBe('BLOCKED');
+      expect(resp.message).toBe('Messages cannot be sent to blocked users');
+      // Make sure we are not leaking internal Prisma / stack info.
+      expect(JSON.stringify(resp)).not.toMatch(/Prisma|stack|env/i);
+    }
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// P1-3 — race-prone idempotency fix. A concurrent double-submit that both
+// miss the pre-check must resolve cleanly (P2002 caught + re-read), not
+// surface as a 500.
+// ──────────────────────────────────────────────────────────────────────────
+describe('MessagesSafetyService — concurrent double-submit idempotency', () => {
+  let prisma: ReturnType<typeof makePrisma>;
+  let svc: MessagesSafetyService;
+
+  beforeEach(() => {
+    prisma = makePrisma();
+    prisma._users.push(
+      { id: 'coach-1', role: 'coach', coach_id: null, name: 'Coach' },
+      { id: 'client-1', role: 'student', coach_id: 'coach-1', name: 'Client' },
+    );
+    prisma._messages.push({
+      id: 'msg-1',
+      coach_id: 'coach-1',
+      client_id: 'client-1',
+      sender_id: 'coach-1',
+      body: 'hi',
+      created_at: new Date('2026-05-21T00:00:00Z'),
+      read_at: null,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    svc = new MessagesSafetyService(prisma as any, auditStub() as any, analyticsStub() as any);
+  });
+
+  it('reportMessage: when create throws P2002, the second caller gets already_reported with the surviving id', async () => {
+    // Simulate the race: first create succeeds, second create throws P2002.
+    const realCreate = prisma.messageReport.create;
+    let calls = 0;
+    (prisma.messageReport as unknown as { create: jest.Mock }).create = jest.fn(
+      async (args: Parameters<typeof realCreate>[0]) => {
+        calls += 1;
+        if (calls === 1) {
+          return realCreate(args);
+        }
+        throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+        });
+      },
+    );
+
+    const first = await svc.reportMessage('client-1', {
+      messageId: 'msg-1',
+      reason: 'spam',
+    });
+    // Second call: pre-check still says "no existing" if we bypass it; we are
+    // testing the catch path explicitly.
+    const second = await svc.reportMessage('client-1', {
+      messageId: 'msg-1',
+      reason: 'harassment',
+    });
+    expect(first.status).toBe('received');
+    expect(second.status).toBe('already_reported');
+    expect(second.reportId).toBe(first.reportId);
+    expect(prisma._reports).toHaveLength(1);
+  });
+
+  it('blockUser: when create throws P2002, the second caller gets the existing blockId (no 500)', async () => {
+    const realCreate = prisma.userBlock.create;
+    let calls = 0;
+    (prisma.userBlock as unknown as { create: jest.Mock }).create = jest.fn(
+      async (args: Parameters<typeof realCreate>[0]) => {
+        calls += 1;
+        if (calls === 1) {
+          return realCreate(args);
+        }
+        throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+        });
+      },
+    );
+
+    const first = await svc.blockUser('client-1', 'coach-1');
+    const second = await svc.blockUser('client-1', 'coach-1');
+    expect(second.blockId).toBe(first.blockId);
+    expect(prisma._blocks).toHaveLength(1);
+  });
+
+  it('reportMessage: non-P2002 Prisma errors still surface (the catch is narrow)', async () => {
+    (prisma.messageReport as unknown as { create: jest.Mock }).create = jest.fn(
+      async () => {
+        throw new Prisma.PrismaClientKnownRequestError('connection lost', {
+          code: 'P1001',
+          clientVersion: 'test',
+        });
+      },
+    );
+
+    await expect(
+      svc.reportMessage('client-1', { messageId: 'msg-1', reason: 'spam' }),
+    ).rejects.toMatchObject({ code: 'P1001' });
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// P1-2 — throttle metadata mount check on block + unblock endpoints. The
+// runtime throttle behaviour is covered by the ThrottlerModule's own tests;
+// here we only assert that the decorator is wired up at the right limit so a
+// future refactor can't silently drop the abuse brake.
+// ──────────────────────────────────────────────────────────────────────────
+describe('MessagesSafetyController — throttle metadata on block/unblock', () => {
+  it('POST /users/:id/block carries @Throttle({ default: { ttl: 3_600_000, limit: 60 } })', () => {
+    const handler = MessagesSafetyController.prototype.blockUser;
+    const limit = Reflect.getMetadata('THROTTLER:LIMITdefault', handler) as number;
+    const ttl = Reflect.getMetadata('THROTTLER:TTLdefault', handler) as number;
+    expect(limit).toBe(60);
+    expect(ttl).toBe(3_600_000);
+  });
+
+  it('DELETE /users/:id/block carries @Throttle({ default: { ttl: 3_600_000, limit: 60 } })', () => {
+    const handler = MessagesSafetyController.prototype.unblockUser;
+    const limit = Reflect.getMetadata('THROTTLER:LIMITdefault', handler) as number;
+    const ttl = Reflect.getMetadata('THROTTLER:TTLdefault', handler) as number;
+    expect(limit).toBe(60);
+    expect(ttl).toBe(3_600_000);
+  });
+
+  it('POST /messages/report retains its 20 / hour throttle (no regression)', () => {
+    const handler = MessagesSafetyController.prototype.reportMessage;
+    const limit = Reflect.getMetadata('THROTTLER:LIMITdefault', handler) as number;
+    const ttl = Reflect.getMetadata('THROTTLER:TTLdefault', handler) as number;
+    expect(limit).toBe(20);
+    expect(ttl).toBe(3_600_000);
   });
 });
