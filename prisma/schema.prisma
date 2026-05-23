@@ -2837,6 +2837,11 @@ model ClientPurchase {
   // Idempotency key used when minting the Stripe Checkout session. Stored
   // so retries collapse to the same row.
   idempotency_key            String       @unique
+  // Cached Stripe PaymentIntent secrets for idempotent retries on the
+  // PaymentIntent path. Null on Checkout-session (web redirect) flows.
+  // Populated by createPaymentIntentForClient.
+  stripe_client_secret       String?
+  stripe_ephemeral_key       String?
   // Free-form error message from Stripe on the last failed transition
   // (e.g. last_payment_error.message). Surfaced in mobile billing UI.
   last_error                 String?
