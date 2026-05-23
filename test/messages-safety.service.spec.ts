@@ -754,6 +754,90 @@ describe('MessagesSafetyService — concurrent double-submit idempotency', () =>
     expect(prisma._blocks).toHaveLength(1);
   });
 
+  // True concurrent test: both calls are dispatched via Promise.all before
+  // either resolves. We model the real DB semantics — the first inserter
+  // wins, and the second only sees P2002 *after* the winner's row is
+  // visible. The second call is held on a barrier until the first inserts,
+  // then released to hit the unique constraint. This exercises the P2002
+  // catch / re-read path under genuine concurrent interleaving rather than
+  // sequential forced-mock behaviour.
+  it('reportMessage: handles concurrent Promise.all double-submit without 500', async () => {
+    const realCreate = prisma.messageReport.create;
+    let calls = 0;
+    let firstInserted!: () => void;
+    const firstInsertedBarrier = new Promise<void>((resolve) => {
+      firstInserted = resolve;
+    });
+    (prisma.messageReport as unknown as { create: jest.Mock }).create = jest.fn(
+      async (args: Parameters<typeof realCreate>[0]) => {
+        calls += 1;
+        if (calls === 1) {
+          const row = await realCreate(args);
+          // Signal the second concurrent caller that the row now exists.
+          firstInserted();
+          return row;
+        }
+        // Wait until the first insert is visible, then surface the unique
+        // constraint violation that a real DB would emit on a true race.
+        await firstInsertedBarrier;
+        throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+        });
+      },
+    );
+
+    const [first, second] = await Promise.all([
+      svc.reportMessage('client-1', { messageId: 'msg-1', reason: 'spam' }),
+      svc.reportMessage('client-1', { messageId: 'msg-1', reason: 'harassment' }),
+    ]);
+
+    // One call wins the insert, the other catches P2002 and re-reads.
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual(['already_reported', 'received']);
+    expect(first.reportId).toBeDefined();
+    expect(second.reportId).toBeDefined();
+    expect(first.reportId).toBe(second.reportId);
+    expect(prisma._reports).toHaveLength(1);
+  });
+
+  it('blockUser: handles concurrent Promise.all double-submit without 500', async () => {
+    const realCreate = prisma.userBlock.create;
+    let calls = 0;
+    let firstInserted!: () => void;
+    const firstInsertedBarrier = new Promise<void>((resolve) => {
+      firstInserted = resolve;
+    });
+    (prisma.userBlock as unknown as { create: jest.Mock }).create = jest.fn(
+      async (args: Parameters<typeof realCreate>[0]) => {
+        calls += 1;
+        if (calls === 1) {
+          const row = await realCreate(args);
+          firstInserted();
+          return row;
+        }
+        await firstInsertedBarrier;
+        throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+        });
+      },
+    );
+
+    const [first, second] = await Promise.all([
+      svc.blockUser('client-1', 'coach-1'),
+      svc.blockUser('client-1', 'coach-1'),
+    ]);
+
+    // Both calls return the same surviving blockId — neither surfaces a 500.
+    expect(first.blockId).toBeDefined();
+    expect(second.blockId).toBeDefined();
+    expect(first.blockId).toBe(second.blockId);
+    expect(first.blockedUserId).toBe('coach-1');
+    expect(second.blockedUserId).toBe('coach-1');
+    expect(prisma._blocks).toHaveLength(1);
+  });
+
   it('reportMessage: non-P2002 Prisma errors still surface (the catch is narrow)', async () => {
     (prisma.messageReport as unknown as { create: jest.Mock }).create = jest.fn(
       async () => {
