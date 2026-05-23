@@ -7,7 +7,6 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { ClientPurchase, CoachPackage, ConnectCustomer } from '@prisma/client';
-import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { ConnectModuleState } from '../connect/connect.module-state';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import {
@@ -79,6 +78,14 @@ export class CheckoutService {
       });
     }
 
+    const pkg = await this.packages.getById(input.package_id);
+    if (!pkg || !pkg.is_active || pkg.archived_at) {
+      throw new NotFoundException({
+        error: 'PACKAGE_NOT_FOUND',
+        message: 'Package not available',
+      });
+    }
+
     const client = await this.prisma.user.findUnique({
       where: { id: clientUserId },
       select: { id: true, email: true, name: true, coach_id: true },
@@ -90,20 +97,15 @@ export class CheckoutService {
       });
     }
 
-    if (!client.coach_id) {
-      throw new BadRequestException({ error: 'COACH_NOT_ASSIGNED', message: 'No coach assigned to this client.' });
+    // Hard-block IDOR (P0 — Audit #2): only a client already assigned to
+    // the package-selling coach may buy. Returns non-leaking 404 so we
+    // never confirm that the package exists on another coach.
+    if (!client.coach_id || client.coach_id !== pkg.coach_id) {
+      throw new NotFoundException({
+        error: 'PACKAGE_NOT_FOUND',
+        message: 'Package not available',
+      });
     }
-
-    const packageId = input.package_id;
-    const pkg = await this.prisma.coachPackage.findFirst({
-      where: {
-        id: packageId,
-        coach_id: client.coach_id,
-        is_active: true,
-        archived_at: null,
-      },
-    });
-    if (!pkg) throw new NotFoundException({ error: 'PACKAGE_NOT_FOUND', message: 'Package not found or not available.' });
 
     const coach = await this.prisma.user.findUnique({
       where: { id: pkg.coach_id },
@@ -140,11 +142,11 @@ export class CheckoutService {
     const successUrl =
       input.success_url ??
       process.env.STRIPE_CHECKOUT_SUCCESS_URL ??
-      'com.growthproject.app://checkout/success?session_id={CHECKOUT_SESSION_ID}';
+      'growthproject://checkout/success?session_id={CHECKOUT_SESSION_ID}';
     const cancelUrl =
       input.cancel_url ??
       process.env.STRIPE_CHECKOUT_CANCEL_URL ??
-      'com.growthproject.app://checkout/cancel';
+      'growthproject://checkout/cancel';
 
     const dayBucket = new Date().toISOString().slice(0, 10);
     const idempotencyKey = `purchase-${client.id}-${pkg.id}-${dayBucket}`;
@@ -271,7 +273,6 @@ export class CheckoutService {
         // Re-throw with a clean shape; the controller maps to HTTP.
         throw err;
       }
-      this.logger.error('createCheckoutForClient unexpected error', err);
       throw err;
     }
 
@@ -312,9 +313,25 @@ export class CheckoutService {
 
   // Phase 7 — Payment Sheet: mint a PaymentIntent + EphemeralKey so the
   // mobile client can complete a payment without a browser redirect.
+  //
+  // Authorization model (P0 — Audit #1):
+  //   * Caller MUST be a client with `coach_id` already set.
+  //   * Caller MUST be buying a package owned by THEIR assigned coach.
+  // Any mismatch or unassigned-client case resolves to a generic
+  // PACKAGE_NOT_FOUND (NotFoundException) — never leak that the package
+  // exists on another coach. Guest checkout / coach switching is Wave 4
+  // and is intentionally NOT supported here.
+  //
+  // Idempotency (R19):
+  //   * Caller MUST supply a UUID `idempotency_key` per logical user action.
+  //   * Server dedupes by (client_user_id, idempotency_key) in
+  //     ClientPurchase. On dedup the existing client_secret is returned and
+  //     Stripe is NOT called a second time.
+  //   * The Stripe `Idempotency-Key` header includes the client key so a
+  //     retry collapses on Stripe's side as well.
   async createPaymentIntentForClient(
     clientUserId: string,
-    input: { package_id: string },
+    input: { package_id: string; idempotency_key: string },
   ): Promise<{
     client_secret: string;
     ephemeral_key: string;
@@ -329,6 +346,12 @@ export class CheckoutService {
         message: 'package_id is required',
       });
     }
+    if (!input?.idempotency_key) {
+      throw new BadRequestException({
+        error: 'IDEMPOTENCY_KEY_REQUIRED',
+        message: 'idempotency_key is required',
+      });
+    }
 
     const client = await this.prisma.user.findUnique({
       where: { id: clientUserId },
@@ -341,20 +364,62 @@ export class CheckoutService {
       });
     }
 
+    // Hard-block unassigned clients. Guest / pre-assignment purchase is
+    // Wave 4 work and is not enabled on this endpoint.
     if (!client.coach_id) {
-      throw new BadRequestException({ error: 'COACH_NOT_ASSIGNED', message: 'No coach assigned to this client.' });
+      throw new NotFoundException({
+        error: 'PACKAGE_NOT_FOUND',
+        message: 'Package not available',
+      });
     }
 
-    const packageId = input.package_id;
-    const pkg = await this.prisma.coachPackage.findFirst({
-      where: {
-        id: packageId,
-        coach_id: client.coach_id,
-        is_active: true,
-        archived_at: null,
-      },
+    const pkg = await this.packages.getById(input.package_id);
+    if (!pkg || !pkg.is_active || pkg.archived_at) {
+      throw new NotFoundException({
+        error: 'PACKAGE_NOT_FOUND',
+        message: 'Package not available',
+      });
+    }
+
+    // Hard-block cross-coach purchase (P0 IDOR fix). Returns 404 — never
+    // confirm to the client that the package exists on another coach.
+    if (pkg.coach_id !== client.coach_id) {
+      throw new NotFoundException({
+        error: 'PACKAGE_NOT_FOUND',
+        message: 'Package not available',
+      });
+    }
+
+    // Idempotent replay: same (client, key) → return cached secret without
+    // re-hitting Stripe. The stored key is namespaced by client id so
+    // cross-client collisions on a leaked UUID still fail loudly via the
+    // unique constraint.
+    //
+    // Concurrency-safe pattern (P1-8 — Audit #2):
+    //   1. Pre-check for an already-completed row — fast path for retries.
+    //   2. Attempt to INSERT a pending reservation row with the namespaced
+    //      idempotency key BEFORE calling Stripe. The unique constraint
+    //      acts as a single-flight gate: only one concurrent request wins.
+    //   3. The winner proceeds to call Stripe and updates its own row.
+    //   4. Losers (P2002) re-read the existing row and poll briefly for
+    //      the winner's `stripe_client_secret`, then return the cached
+    //      values without making their own Stripe calls.
+    const purchaseIdempotencyKey = `pi-${client.id}-${input.idempotency_key}`;
+    const existing = await this.prisma.clientPurchase.findUnique({
+      where: { idempotency_key: purchaseIdempotencyKey },
     });
-    if (!pkg) throw new NotFoundException({ error: 'PACKAGE_NOT_FOUND', message: 'Package not found or not available.' });
+    if (
+      existing &&
+      existing.client_user_id === client.id &&
+      existing.stripe_client_secret
+    ) {
+      return {
+        client_secret: existing.stripe_client_secret,
+        ephemeral_key: existing.stripe_ephemeral_key ?? '',
+        customer_id: existing.stripe_customer_id ?? '',
+        publishable_key: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
+      };
+    }
 
     const coach = await this.prisma.user.findUnique({
       where: { id: pkg.coach_id },
@@ -385,103 +450,173 @@ export class CheckoutService {
       });
     }
 
-    const customer = await this.ensureCustomer(client.id, client.email, client.name);
-
-    const plan = await this.feePolicy.planFor(coach.id, pkg.amount_cents);
-    const applicationFeeForStripe =
-      plan.application_fee_cents + plan.head_coach_split_cents;
-
-    const dayBucket = new Date().toISOString().slice(0, 10);
-    const idempotencyKey = `pi-${client.id}-${pkg.id}-${dayBucket}`;
-
-    // Write the ClientPurchase row in status=pending BEFORE calling Stripe.
-    // This is the outbox pattern: if Stripe succeeds but our DB write fails,
-    // the purchase is still auditable via Stripe metadata + idempotency key.
-    // If the DB write fails here, no money is moved — safe to surface the error.
-    //
-    // stripe_payment_intent_id is left null until Stripe returns the PI id;
-    // the webhook (payment_intent.succeeded) also upserts it, so both paths
-    // converge correctly.
-    let purchase = await this.prisma.clientPurchase.findUnique({
-      where: { idempotency_key: idempotencyKey },
-    });
-    if (!purchase) {
-      try {
-        purchase = await this.prisma.clientPurchase.create({
-          data: {
-            client_user_id: client.id,
-            coach_user_id: coach.id,
-            package_id: pkg.id,
-            amount_cents: pkg.amount_cents,
-            currency: pkg.currency,
-            billing_type: pkg.billing_type,
-            stripe_checkout_session_id: idempotencyKey, // placeholder until PI id known
-            stripe_customer_id: customer.stripe_customer_id,
-            stripe_destination_account: connectAccount.stripe_account_id,
-            status: 'pending',
-            entitlement_active: false,
-            idempotency_key: idempotencyKey,
-          },
-        });
-      } catch (err) {
-        if (err instanceof PrismaClientKnownRequestError && err.code === 'P2002') {
-          purchase = await this.prisma.clientPurchase.findFirst({
-            where: { idempotency_key: idempotencyKey },
-          });
-          if (!purchase) throw err;
-        } else {
-          throw err;
-        }
+    // Reserve the idempotency key BEFORE any Stripe call. The unique
+    // constraint on `idempotency_key` is the single-flight gate. The
+    // `stripe_checkout_session_id` column is also unique and required —
+    // we seed it with a deterministic placeholder derived from the same
+    // key so two concurrent reservations collide on either constraint.
+    const placeholderSessionId = `pi-reserved-${purchaseIdempotencyKey}`;
+    let reservation: ClientPurchase | null = null;
+    try {
+      reservation = await this.prisma.clientPurchase.create({
+        data: {
+          client_user_id: client.id,
+          coach_user_id: coach.id,
+          package_id: pkg.id,
+          amount_cents: pkg.amount_cents,
+          currency: pkg.currency,
+          billing_type: pkg.billing_type,
+          stripe_checkout_session_id: placeholderSessionId,
+          stripe_destination_account: connectAccount.stripe_account_id,
+          status: 'pending',
+          entitlement_active: false,
+          idempotency_key: purchaseIdempotencyKey,
+        },
+      });
+    } catch (err) {
+      if (!this.isUniqueViolation(err)) throw err;
+      // Lost the race. Another concurrent request is creating the Stripe
+      // resources right now; poll briefly for it to publish its secret.
+      const winner = await this.waitForReservedSecret(purchaseIdempotencyKey);
+      if (winner && winner.stripe_client_secret) {
+        return {
+          client_secret: winner.stripe_client_secret,
+          ephemeral_key: winner.stripe_ephemeral_key ?? '',
+          customer_id: winner.stripe_customer_id ?? '',
+          publishable_key: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
+        };
       }
+      // P1-A: `null` means the winner failed and cleaned up its
+      // reservation, so the idempotency key is now free again. Surface
+      // a retryable error (not the generic "in progress") so the mobile
+      // client retries with the same key and becomes the new winner.
+      if (winner === null) {
+        throw new ServiceUnavailableException({
+          error: 'PAYMENT_RETRY',
+          message:
+            'The previous attempt for this payment failed. Please try again.',
+        });
+      }
+      throw new ServiceUnavailableException({
+        error: 'PAYMENT_IN_PROGRESS',
+        message:
+          'A previous request for this payment is still being processed. Please try again in a moment.',
+      });
     }
 
-    const [paymentIntent, ephemeralKey] = await Promise.all([
-      this.stripeConnect.createPaymentIntent({
-        amount: pkg.amount_cents,
-        currency: pkg.currency,
-        customer: customer.stripe_customer_id,
-        applicationFeeAmount: applicationFeeForStripe,
-        transferDestination: connectAccount.stripe_account_id,
-        metadata: {
-          tgp_client_user_id: client.id,
-          tgp_coach_user_id: coach.id,
-          tgp_package_id: pkg.id,
-          tgp_platform_fee_cents: String(plan.application_fee_cents),
-          tgp_head_coach_split_cents: String(plan.head_coach_split_cents),
-          tgp_head_coach_user_id: plan.head_coach_id ?? '',
+    // We won the race — proceed to create Stripe resources and update
+    // our reservation row with the real Stripe identifiers.
+    //
+    // Failure-recovery (P1-A — Audit #3): if anything between here and
+    // publishing `stripe_client_secret` throws, we MUST drop the
+    // reservation row. Otherwise a stale "reserved-but-no-secret" row
+    // permanently poisons the client's idempotency key: every subsequent
+    // retry loses the unique-constraint race and waits in
+    // `waitForReservedSecret` forever. Deleting the row lets the next
+    // same-key retry become the new winner.
+    //
+    // We chose the simpler delete-on-failure recovery over a full
+    // reserved/processing/failed state machine — same correctness
+    // guarantee with far less surface area on a money-moving path.
+    try {
+      const customer = await this.ensureCustomer(client.id, client.email, client.name);
+
+      const plan = await this.feePolicy.planFor(coach.id, pkg.amount_cents);
+      const applicationFeeForStripe =
+        plan.application_fee_cents + plan.head_coach_split_cents;
+
+      // Stripe idempotency key derived from the client-supplied UUID. Same
+      // client + same key → Stripe collapses to the same PaymentIntent.
+      const stripeIdempotencyKey = `stripe-idempotency-${client.id}-${input.idempotency_key}`;
+
+      const [paymentIntent, ephemeralKey] = await Promise.all([
+        this.stripeConnect.createPaymentIntent({
+          amount: pkg.amount_cents,
+          currency: pkg.currency,
+          customer: customer.stripe_customer_id,
+          applicationFeeAmount: applicationFeeForStripe,
+          transferDestination: connectAccount.stripe_account_id,
+          metadata: {
+            tgp_client_user_id: client.id,
+            tgp_coach_user_id: coach.id,
+            tgp_package_id: pkg.id,
+            tgp_platform_fee_cents: String(plan.application_fee_cents),
+            tgp_head_coach_split_cents: String(plan.head_coach_split_cents),
+            tgp_head_coach_user_id: plan.head_coach_id ?? '',
+          },
+          idempotencyKey: stripeIdempotencyKey,
+        }),
+        this.stripeConnect.createEphemeralKey(
+          customer.stripe_customer_id,
+          `${stripeIdempotencyKey}-ephkey`,
+        ),
+      ]);
+
+      await this.prisma.clientPurchase.update({
+        where: { id: reservation.id },
+        data: {
+          stripe_checkout_session_id: paymentIntent.id,
+          stripe_payment_intent_id: paymentIntent.id,
+          stripe_customer_id: customer.stripe_customer_id,
+          stripe_client_secret: paymentIntent.client_secret,
+          stripe_ephemeral_key: ephemeralKey.secret,
         },
-        idempotencyKey,
-      }),
-      this.stripeConnect.createEphemeralKey(customer.stripe_customer_id),
-    ]);
+      });
 
-    // Stripe returned successfully — patch the real PI id onto the row.
-    await this.prisma.clientPurchase.update({
-      where: { id: purchase.id },
-      data: {
-        stripe_checkout_session_id: paymentIntent.id,
-        stripe_payment_intent_id: paymentIntent.id,
-      },
+      return {
+        client_secret: paymentIntent.client_secret,
+        ephemeral_key: ephemeralKey.secret,
+        customer_id: customer.stripe_customer_id,
+        publishable_key: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
+      };
+    } catch (err) {
+      // Best-effort cleanup. Drop the poisoned reservation so a retry
+      // with the same client idempotency key can succeed. If the delete
+      // itself fails (rare — e.g. row already moved by a webhook), log
+      // and re-throw the original Stripe error so the caller can retry.
+      try {
+        await this.prisma.clientPurchase.delete({
+          where: { id: reservation.id },
+        });
+      } catch (cleanupErr) {
+        this.logger.error(
+          `Failed to clean up poisoned reservation ${reservation.id}: ${(cleanupErr as Error).message}`,
+        );
+      }
+      throw err;
+    }
+  }
+
+  // Poll for a concurrent winner's PaymentIntent client_secret to be
+  // published on the reservation row. Used by losers of the
+  // idempotency-key race to return the same client_secret without
+  // making their own Stripe calls.
+  //
+  // Returns the winner row when `stripe_client_secret` is published.
+  // Returns `null` if the reservation disappears (winner failed and
+  // cleaned up — P1-A) so the caller can surface a retryable error
+  // instead of waiting the full timeout.
+  private async waitForReservedSecret(
+    idempotencyKey: string,
+    timeoutMs = 5_000,
+    intervalMs = 100,
+  ): Promise<ClientPurchase | null> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const row = await this.prisma.clientPurchase.findUnique({
+        where: { idempotency_key: idempotencyKey },
+      });
+      if (row?.stripe_client_secret) return row;
+      // Winner cleaned up after a failure — bail out early.
+      if (!row) return null;
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    return await this.prisma.clientPurchase.findUnique({
+      where: { idempotency_key: idempotencyKey },
     });
-
-    return {
-      client_secret: paymentIntent.client_secret,
-      ephemeral_key: ephemeralKey.secret,
-      customer_id: customer.stripe_customer_id,
-      publishable_key: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
-    };
   }
 
   // List purchases for a client (their own bought packages).
-  // Hard cap at 100 rows; cursor-based pagination via `cursor` (purchase id).
-  // Clients rarely have more than a handful of purchases so this is mostly
-  // a safety guard against unbounded growth causing slow queries.
-  //
-  // M11 fix: fetch limit+1 rows to detect whether a next page exists.
-  // Previously the cursor was set to the last row id whenever any rows were
-  // returned, which implied a next page even when the result was the exact
-  // final page. Now `next_cursor` is only non-null when there are truly
-  // more rows beyond the returned page.
   async listForClient(
     clientUserId: string,
     opts: { cursor?: string; limit?: number } = {},
@@ -498,9 +633,6 @@ export class CheckoutService {
   }
 
   // List purchases on a coach's roster (for revenue / activity views).
-  // Cap at 100 rows per page. Revenue views page through this with a cursor.
-  //
-  // M11 fix: same limit+1 probe pattern as listForClient.
   async listForCoach(
     coachUserId: string,
     opts: { cursor?: string; limit?: number } = {},
@@ -516,36 +648,6 @@ export class CheckoutService {
     return { items: hasMore ? rows.slice(0, take) : rows, hasMore };
   }
 
-  // Entitlement check: does this client currently have an active purchase
-  // for this package (or any package from this coach)?
-  async hasActiveEntitlement(
-    clientUserId: string,
-    opts: { packageId?: string; coachUserId?: string },
-  ): Promise<boolean> {
-    const now = new Date();
-    const row = await this.prisma.clientPurchase.findFirst({
-      where: {
-        client_user_id: clientUserId,
-        entitlement_active: true,
-        ...(opts.packageId ? { package_id: opts.packageId } : {}),
-        ...(opts.coachUserId ? { coach_user_id: opts.coachUserId } : {}),
-        OR: [
-          { access_expires_at: null },
-          { access_expires_at: { gt: now } },
-        ],
-      },
-      select: { id: true },
-    });
-    return !!row;
-  }
-
-  // Create a Stripe Billing Portal session for a client so they can
-  // update their payment method during dunning. The portal URL is
-  // Stripe-hosted and short-lived (single use, expires after the session
-  // redirect). We store no URL in the DB — each request mints a fresh one.
-  //
-  // M10 fix: this allows past-due clients to self-serve card updates
-  // without contacting their coach.
   async createBillingPortalSession(
     clientUserId: string,
   ): Promise<{ url: string }> {
@@ -569,20 +671,12 @@ export class CheckoutService {
     return { url: session.url };
   }
 
-  // Confirm a specific Stripe Checkout session and return its payment status.
-  // This is called after the client returns from the Stripe-hosted page via
-  // the success deep-link so the app can confirm the session actually belongs
-  // to this user and what the payment status is.
   async confirmSession(
     sessionId: string,
     userId: string,
   ): Promise<{ paid: boolean; status: string; package_name: string | null }> {
-    // 1. Fetch the Stripe session
     const session = await this.stripeConnect.retrieveCheckoutSession(sessionId);
 
-    // 2. Verify it belongs to this user by checking our purchase row.
-    //    We do NOT trust Stripe metadata alone — the purchase row is our
-    //    authoritative ledger that the session was minted for this client.
     const purchase = await this.prisma.clientPurchase.findFirst({
       where: {
         stripe_checkout_session_id: sessionId,
@@ -591,12 +685,9 @@ export class CheckoutService {
       include: { package: { select: { name: true } } },
     });
 
-    // Coerce Stripe's typed enum to a plain string for the response shape.
     const stripeStatus: string = (session.payment_status as string | null | undefined) ?? 'unknown';
 
     if (!purchase) {
-      // Session doesn't exist in our DB for this user — could be a stale
-      // link from a different user or an unknown session id.
       return { paid: false, status: stripeStatus, package_name: null };
     }
 
@@ -612,6 +703,29 @@ export class CheckoutService {
       status: stripeStatus,
       package_name: pkgWithRelation.package?.name ?? null,
     };
+  }
+
+  // Entitlement check: does this client currently have an active purchase
+  // for this package (or any package from this coach)?
+  async hasActiveEntitlement(
+    clientUserId: string,
+    opts: { packageId?: string; coachUserId?: string },
+  ): Promise<boolean> {
+    const now = new Date();
+    const row = await this.prisma.clientPurchase.findFirst({
+      where: {
+        client_user_id: clientUserId,
+        entitlement_active: true,
+        ...(opts.packageId ? { package_id: opts.packageId } : {}),
+        ...(opts.coachUserId ? { coach_user_id: opts.coachUserId } : {}),
+        OR: [
+          { access_expires_at: null },
+          { access_expires_at: { gt: now } },
+        ],
+      },
+      select: { id: true },
+    });
+    return !!row;
   }
 
   // Saved-card listing for a client. Reads ConnectCustomer mirror only —

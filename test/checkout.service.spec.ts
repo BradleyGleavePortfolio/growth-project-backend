@@ -46,9 +46,11 @@ class StripeStub extends StripeConnectApiService {
     customer: args.customer,
     application_fee_amount: args.applicationFeeAmount,
   }));
-  createEphemeralKey = jest.fn(async (_customerId: string) => ({
-    secret: 'ek_test_secret',
-  }));
+  createEphemeralKey = jest.fn(
+    async (_customerId: string, _idempotencyKey: string) => ({
+      secret: 'ek_test_secret',
+    }),
+  );
 }
 
 function makePrismaStub() {
@@ -209,6 +211,20 @@ function makePrismaStub() {
           throw err;
         }
         Object.assign(row, data, { updated_at: new Date() });
+        return { ...row };
+      }),
+      delete: jest.fn(async ({ where }: any) => {
+        const idx = purchases.findIndex((p) =>
+          where.id ? p.id === where.id :
+          where.idempotency_key ? p.idempotency_key === where.idempotency_key :
+          false,
+        );
+        if (idx === -1) {
+          const err: any = new Error('Row not found');
+          err.code = 'P2025';
+          throw err;
+        }
+        const [row] = purchases.splice(idx, 1);
         return { ...row };
       }),
       findMany: jest.fn(async ({ where }: any) =>
@@ -954,6 +970,87 @@ describe('CheckoutService.createPaymentIntentForClient — sub-coach fee split',
     expect(call.metadata.tgp_platform_fee_cents).toBe('200');
     expect(call.metadata.tgp_head_coach_split_cents).toBe('500');
     expect(call.metadata.tgp_head_coach_user_id).toBe('head-coach-1');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Audit #3 P1-A — reservation failure recovery. If the winning request
+// fails between reserving the idempotency key and publishing the
+// client_secret, the reservation row must be cleaned up so subsequent
+// same-key retries can become the new winner instead of waiting forever
+// in PAYMENT_IN_PROGRESS.
+// ──────────────────────────────────────────────────────────────────────
+describe('CheckoutService.createPaymentIntentForClient — reservation failure recovery', () => {
+  it('Stripe failure on winner: reservation row is dropped and a retry with the same idempotency_key succeeds', async () => {
+    const { svc, prisma, stripe } = makeService();
+    seedSoloCoachFixture(prisma);
+    prisma._users.push({
+      id: 'client-fail',
+      email: 'f@x.com',
+      name: 'Fail',
+      coach_id: 'coach-x',
+    });
+
+    const key = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+    (stripe.createPaymentIntent as jest.Mock).mockRejectedValueOnce(
+      new Error('stripe network blip'),
+    );
+
+    await expect(
+      svc.createPaymentIntentForClient('client-fail', {
+        package_id: 'pkg-x',
+        idempotency_key: key,
+      }),
+    ).rejects.toThrow('stripe network blip');
+
+    // Reservation MUST have been cleaned up — otherwise the key is
+    // permanently poisoned and the next retry hangs.
+    expect(prisma._purchases).toHaveLength(0);
+
+    // Same-key retry now succeeds (becomes the new winner).
+    const out = await svc.createPaymentIntentForClient('client-fail', {
+      package_id: 'pkg-x',
+      idempotency_key: key,
+    });
+    expect(out.client_secret).toMatch(/^pi_test_secret_/);
+    expect(prisma._purchases).toHaveLength(1);
+    expect(prisma._purchases[0].stripe_client_secret).toBe(out.client_secret);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Audit #3 P1-B — R19: every Stripe mutation carries an Idempotency-Key.
+// The EphemeralKey POST is part of the same money-moving operation as
+// createPaymentIntent and must receive a deterministic key derived from
+// the parent PaymentIntent idempotency key.
+// ──────────────────────────────────────────────────────────────────────
+describe('CheckoutService.createPaymentIntentForClient — EphemeralKey idempotency (R19)', () => {
+  it('passes a non-empty idempotency key derived from the parent PaymentIntent key to createEphemeralKey', async () => {
+    const { svc, prisma, stripe } = makeService();
+    seedSoloCoachFixture(prisma);
+    prisma._users.push({
+      id: 'client-ek',
+      email: 'e@x.com',
+      name: 'EK',
+      coach_id: 'coach-x',
+    });
+
+    const clientKey = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    await svc.createPaymentIntentForClient('client-ek', {
+      package_id: 'pkg-x',
+      idempotency_key: clientKey,
+    });
+
+    expect(stripe.createEphemeralKey).toHaveBeenCalledTimes(1);
+    const call = (stripe.createEphemeralKey as jest.Mock).mock.calls[0];
+    expect(call[0]).toMatch(/^cus_new_/);
+    // R19: the idempotency key must exist, be non-empty, and derive from
+    // the client-supplied UUID so retries collapse on Stripe's side.
+    expect(typeof call[1]).toBe('string');
+    expect(call[1].length).toBeGreaterThan(0);
+    expect(call[1]).toContain(clientKey);
+    expect(call[1]).toMatch(/-ephkey$/);
   });
 });
 

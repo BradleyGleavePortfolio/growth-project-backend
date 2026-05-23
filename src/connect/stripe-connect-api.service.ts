@@ -473,12 +473,24 @@ export class StripeConnectApiService {
   // Phase 7 — create an EphemeralKey scoped to a customer so the mobile
   // Payment Sheet can read saved payment methods without a full server call.
   // The Stripe-Version header must match the SDK version used on the client.
-  async createEphemeralKey(customerId: string): Promise<{ secret: string }> {
+  //
+  // R19: every Stripe mutation carries an Idempotency-Key. The caller must
+  // pass a deterministic key derived from the parent PaymentIntent key so
+  // retries collapse on Stripe's side instead of minting a fresh key per
+  // attempt.
+  async createEphemeralKey(
+    customerId: string,
+    idempotencyKey: string,
+  ): Promise<{ secret: string }> {
+    if (!idempotencyKey) {
+      throw new Error('createEphemeralKey requires an idempotencyKey (R19)');
+    }
     const secret = this.requireSecret();
     const headers: Record<string, string> = {
       Authorization: `Bearer ${secret}`,
       'Stripe-Version': '2024-09-30.acacia',
       'Content-Type': 'application/x-www-form-urlencoded',
+      'Idempotency-Key': idempotencyKey,
     };
     const body = new URLSearchParams({ customer: customerId }).toString();
     const res = await this.fetchImpl(`${STRIPE_API_BASE}/ephemeral_keys`, {
