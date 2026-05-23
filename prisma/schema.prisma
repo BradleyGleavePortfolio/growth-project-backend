@@ -202,6 +202,12 @@ model User {
   coach_messages_as_coach  CoachMessage[]           @relation("CoachMessagesAsCoach")
   coach_messages_as_client CoachMessage[]           @relation("CoachMessagesAsClient")
   coach_messages_sent      CoachMessage[]           @relation("CoachMessagesSender")
+  // Apple 1.2 — safety: reports filed by this user, blocks they have set,
+  // and inbound blocks against them. The reviewer relation is owner-staff only.
+  reports_filed            MessageReport[]          @relation("MessageReportReporter")
+  reports_reviewed         MessageReport[]          @relation("MessageReportReviewer")
+  blocks_set               UserBlock[]              @relation("UserBlockBlocker")
+  blocks_received          UserBlock[]              @relation("UserBlockBlocked")
   coach_nudges_as_coach    CoachNudge[]             @relation("CoachNudgesAsCoach")
   coach_nudges_as_client   CoachNudge[]             @relation("CoachNudgesAsClient")
   meal_plans_as_coach      MealPlan[]               @relation("MealPlanCoach")
@@ -1008,11 +1014,69 @@ model CoachMessage {
   voice_content_type String?
   created_at         DateTime  @default(now())
   read_at            DateTime?
+  // Apple 1.2 safety — reverse relation for MessageReport.
+  reports            MessageReport[]  @relation("MessageReportTarget")
 
   @@index([coach_id])
   @@index([client_id])
   @@index([created_at])
   @@index([coach_id, client_id, created_at])
+}
+
+// Apple App Review 1.2 — abuse-reporting for direct messages.
+// A MessageReport row is created when a user files a report against a specific
+// CoachMessage they have access to (i.e. they are either the coach or the
+// client of the thread). Status drives a 'pending' → 'reviewed' workflow
+// owned by platform admins; the action column records the moderation outcome
+// (none / warning / suspended / removed) for the audit trail.
+//
+// The (reporter_id, message_id) composite unique enforces idempotency: a user
+// who taps Report twice on the same bubble gets the existing row back, not a
+// new one. messageId is indexed independently because admin tooling needs to
+// look up "all reports against this message".
+model MessageReport {
+  id                   String          @id @default(uuid())
+  reporter_id          String
+  reporter             User            @relation("MessageReportReporter", fields: [reporter_id], references: [id], onDelete: Cascade)
+  message_id           String
+  message              CoachMessage    @relation("MessageReportTarget", fields: [message_id], references: [id], onDelete: Cascade)
+  // Denormalized thread participants at the moment the report was filed so
+  // the admin console can scope reports to a coach without re-reading the
+  // message row. coach_id is also the natural tenant key for the report.
+  coach_id             String?
+  client_id            String?
+  reason               String          // 'spam' | 'harassment' | 'sexual' | 'self_harm' | 'other'
+  details              String?         // optional free-text, capped to 1000 chars by DTO
+  status               String          @default("pending") // 'pending' | 'reviewed' | 'dismissed'
+  action               String?         // 'none' | 'warning' | 'suspended' | 'removed'
+  reviewed_at          DateTime?
+  reviewed_by_admin_id String?
+  reviewed_by_admin    User?           @relation("MessageReportReviewer", fields: [reviewed_by_admin_id], references: [id], onDelete: SetNull)
+  created_at           DateTime        @default(now())
+
+  @@unique([reporter_id, message_id], name: "MessageReport_reporter_message_key")
+  @@index([reporter_id, created_at(sort: Desc)])
+  @@index([status, created_at(sort: Desc)])
+  @@index([message_id])
+}
+
+// Apple App Review 1.2 — user-initiated block list.
+// A UserBlock row means `blocker_id` has blocked `blocked_id` from contacting
+// them. Server-side enforcement: messaging list responses, unread-count, and
+// new-message push fanout all suppress entries where the *other* party is
+// blocked by the caller. The block is intentionally one-way and silent — the
+// blocked party is never informed (matches iMessage / WhatsApp convention).
+model UserBlock {
+  id         String   @id @default(uuid())
+  blocker_id String
+  blocker    User     @relation("UserBlockBlocker", fields: [blocker_id], references: [id], onDelete: Cascade)
+  blocked_id String
+  blocked    User     @relation("UserBlockBlocked", fields: [blocked_id], references: [id], onDelete: Cascade)
+  created_at DateTime @default(now())
+
+  @@unique([blocker_id, blocked_id], name: "UserBlock_pair_key")
+  @@index([blocked_id])
+  @@index([blocker_id, created_at(sort: Desc)])
 }
 
 // In-app "nudge" notifications a coach sends to one of their clients — the
