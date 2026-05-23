@@ -30,6 +30,8 @@ const exercise = (
   secondaryMuscles,
   instructions,
   gifUrl: '',
+  video_url: null,
+  video_provider: null,
 });
 
 export const SEED_EXERCISES: Exercise[] = [

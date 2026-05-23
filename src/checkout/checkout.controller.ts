@@ -65,6 +65,9 @@ export class CreateCheckoutDto {
 export class CreatePaymentIntentDto {
   @IsUUID()
   package_id!: string;
+
+  @IsUUID()
+  idempotency_key!: string;
 }
 
 // Client-facing: open a Stripe Checkout session for a package and read
