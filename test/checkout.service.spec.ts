@@ -38,6 +38,17 @@ class StripeStub extends StripeConnectApiService {
     subscription: args.mode === 'subscription' ? 'sub_test' : null,
   }));
   retrieveCheckoutSession = jest.fn();
+  createPaymentIntent = jest.fn(async (args: any) => ({
+    id: 'pi_test_' + args.idempotencyKey.slice(-6),
+    client_secret: 'pi_test_secret_' + args.idempotencyKey.slice(-6),
+    amount: args.amount,
+    currency: args.currency,
+    customer: args.customer,
+    application_fee_amount: args.applicationFeeAmount,
+  }));
+  createEphemeralKey = jest.fn(async (_customerId: string) => ({
+    secret: 'ek_test_secret',
+  }));
 }
 
 function makePrismaStub() {
@@ -521,5 +532,212 @@ describe('CheckoutService.hasActiveEntitlement', () => {
     expect(await svc.hasActiveEntitlement('c1', { packageId: 'pkg-1' })).toBe(
       false,
     );
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Audit #1 P0/P1 — createPaymentIntentForClient behavioral coverage.
+//
+// Covers the IDOR hard-block (P0-1), the client idempotency-key dedup
+// (P1-4), the fee math handed to Stripe, and the Stripe parameter
+// assertion (destination account + application fee). These cases assert
+// observable behavior on the prisma stub + Stripe stub — no grep theater.
+// ──────────────────────────────────────────────────────────────────────
+
+function seedSoloCoachFixture(prisma: any) {
+  prisma._packages.push({
+    id: 'pkg-x',
+    coach_id: 'coach-x',
+    name: 'Plan',
+    amount_cents: 10000, // $100
+    currency: 'usd',
+    billing_type: 'one_time',
+    interval: null,
+    interval_count: 1,
+    duration_periods: null,
+    is_active: true,
+    archived_at: null,
+    stripe_price_id: null,
+    stripe_product_id: null,
+  });
+  prisma._accounts.push({
+    coach_user_id: 'coach-x',
+    stripe_account_id: 'acct_coach_x',
+    charges_enabled: true,
+    deauthorized_at: null,
+  });
+  prisma._users.push({
+    id: 'coach-x',
+    email: 'coach-x@example.com',
+    name: 'Coach X',
+  });
+}
+
+describe('CheckoutService.createPaymentIntentForClient — IDOR + idempotency', () => {
+  it('assigned client buying their own coach\'s package: Stripe called with correct destination + 2% application fee', async () => {
+    const { svc, prisma, stripe } = makeService();
+    seedSoloCoachFixture(prisma);
+    prisma._users.push({
+      id: 'client-ok',
+      email: 'a@b.c',
+      name: 'A',
+      coach_id: 'coach-x',
+    });
+
+    const out = await svc.createPaymentIntentForClient('client-ok', {
+      package_id: 'pkg-x',
+      idempotency_key: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(out.client_secret).toMatch(/^pi_test_secret_/);
+    expect(stripe.createPaymentIntent).toHaveBeenCalledTimes(1);
+    const call = (stripe.createPaymentIntent as jest.Mock).mock.calls[0][0];
+    expect(call.amount).toBe(10000);
+    expect(call.currency).toBe('usd');
+    expect(call.transferDestination).toBe('acct_coach_x');
+    // Solo coach (no head-coach assignment): platform 2% of $100 = 200 cents.
+    expect(call.applicationFeeAmount).toBe(200);
+    // Stripe idempotency key includes the client-supplied UUID.
+    expect(call.idempotencyKey).toContain('11111111-1111-4111-8111-111111111111');
+    // Persisted purchase row + cached secret for replay.
+    expect(prisma._purchases).toHaveLength(1);
+    expect(prisma._purchases[0].stripe_client_secret).toBe(out.client_secret);
+  });
+
+  it('cross-coach IDOR: client assigned to Coach C trying to buy Coach B\'s package → NotFoundException, Stripe NOT called', async () => {
+    const { svc, prisma, stripe } = makeService();
+    seedSoloCoachFixture(prisma);
+    // A second coach the client is actually assigned to.
+    prisma._users.push({
+      id: 'coach-other',
+      email: 'other@example.com',
+      name: 'Other Coach',
+    });
+    prisma._users.push({
+      id: 'client-cross',
+      email: 'c@x.com',
+      name: 'Cross',
+      coach_id: 'coach-other',
+    });
+
+    await expect(
+      svc.createPaymentIntentForClient('client-cross', {
+        package_id: 'pkg-x',
+        idempotency_key: '22222222-2222-4222-8222-222222222222',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
+    expect(prisma._purchases).toHaveLength(0);
+  });
+
+  it('unassigned client (coach_id null): NotFoundException, Stripe NOT called', async () => {
+    const { svc, prisma, stripe } = makeService();
+    seedSoloCoachFixture(prisma);
+    prisma._users.push({
+      id: 'client-unassigned',
+      email: 'u@x.com',
+      name: 'Unassigned',
+      coach_id: null,
+    });
+
+    await expect(
+      svc.createPaymentIntentForClient('client-unassigned', {
+        package_id: 'pkg-x',
+        idempotency_key: '33333333-3333-4333-8333-333333333333',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
+    expect(prisma._purchases).toHaveLength(0);
+  });
+
+  it('duplicate idempotency key: Stripe called once, both calls return same client_secret', async () => {
+    const { svc, prisma, stripe } = makeService();
+    seedSoloCoachFixture(prisma);
+    prisma._users.push({
+      id: 'client-dup',
+      email: 'd@x.com',
+      name: 'Dup',
+      coach_id: 'coach-x',
+    });
+
+    const key = '44444444-4444-4444-8444-444444444444';
+    const first = await svc.createPaymentIntentForClient('client-dup', {
+      package_id: 'pkg-x',
+      idempotency_key: key,
+    });
+    const second = await svc.createPaymentIntentForClient('client-dup', {
+      package_id: 'pkg-x',
+      idempotency_key: key,
+    });
+
+    expect(stripe.createPaymentIntent).toHaveBeenCalledTimes(1);
+    expect(stripe.createEphemeralKey).toHaveBeenCalledTimes(1);
+    expect(second.client_secret).toBe(first.client_secret);
+    expect(prisma._purchases).toHaveLength(1);
+  });
+
+  it('rejects missing idempotency_key with 400', async () => {
+    const { svc, prisma } = makeService();
+    seedSoloCoachFixture(prisma);
+    prisma._users.push({
+      id: 'client-no-key',
+      email: 'n@x.com',
+      name: 'NK',
+      coach_id: 'coach-x',
+    });
+
+    await expect(
+      svc.createPaymentIntentForClient('client-no-key', {
+        package_id: 'pkg-x',
+        idempotency_key: '',
+      } as any),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('fee math: $100 package with default fee policy yields 200 cents application fee (2%)', async () => {
+    const { svc, prisma, stripe } = makeService();
+    seedSoloCoachFixture(prisma);
+    prisma._users.push({
+      id: 'client-fee',
+      email: 'f@x.com',
+      name: 'F',
+      coach_id: 'coach-x',
+    });
+
+    await svc.createPaymentIntentForClient('client-fee', {
+      package_id: 'pkg-x',
+      idempotency_key: '55555555-5555-4555-8555-555555555555',
+    });
+    const call = (stripe.createPaymentIntent as jest.Mock).mock.calls[0][0];
+    // Platform 2% = 200; no head coach assigned → split 0; total = 200.
+    expect(call.applicationFeeAmount).toBe(200);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Audit #1 P1-1 — confirm @Throttle metadata is mounted on the
+// payment-intent route. Verifies the decorator was applied (it cannot
+// run a real throttler from a unit test, but the metadata presence is
+// the contract the global ThrottlerGuard relies on).
+// ──────────────────────────────────────────────────────────────────────
+describe('CheckoutController — payment-intent throttle metadata', () => {
+  it('exposes a tight per-user throttle (≤ 10/min) on POST /v1/checkout/payment-intent', () => {
+
+    const { CheckoutController } = require('../src/checkout/checkout.controller');
+    // @nestjs/throttler stores limit/ttl under `THROTTLER:LIMIT<name>` /
+    // `THROTTLER:TTL<name>` keyed by the family name (`default` here).
+    const limit = Reflect.getMetadata(
+      'THROTTLER:LIMITdefault',
+      CheckoutController.prototype.createPaymentIntent,
+    );
+    const ttl = Reflect.getMetadata(
+      'THROTTLER:TTLdefault',
+      CheckoutController.prototype.createPaymentIntent,
+    );
+    expect(limit).toBeDefined();
+    expect(typeof limit === 'number' ? limit : (limit as any)?.()).toBeLessThanOrEqual(10);
+    expect(ttl).toBeDefined();
   });
 });

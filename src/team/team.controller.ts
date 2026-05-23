@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
 import { NoActiveSubCoachGuard } from '../common/guards/no-active-sub-coach.guard';
 import { UpsertTeamProfileDto } from './team.dto';
+import { UpdateRevenueSharingDto } from './dto/update-revenue-sharing.dto';
 import { TeamService } from './team.service';
 
 // Phase 8 — Coach team profile + member roster.
@@ -77,7 +78,7 @@ export class TeamController {
   async setRevenueSharing(
     @Req() req: AuthedRequest,
     @Param('sub_coach_id') subCoachId: string,
-    @Body() body: { enabled: boolean },
+    @Body() body: UpdateRevenueSharingDto,
   ) {
     return this.team.setRevenueSharing(req.user.id, subCoachId, body.enabled);
   }
