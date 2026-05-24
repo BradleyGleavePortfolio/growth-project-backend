@@ -368,6 +368,14 @@ model User {
   session_participations       SessionParticipant[]        @relation("SessionParticipantUser")
   calendar_connections         CalendarConnection[]        @relation("CalendarConnectionUser")
 
+  // Phase 11 — Sub-coach overlay relations. Sub-coach assignments live in
+  // SubCoachAssignment so User.coach_id stays pinned to the head coach.
+  sub_coach_assignments_as_head    SubCoachAssignment[] @relation("SubCoachAssignmentHead")
+  sub_coach_assignments_as_sub     SubCoachAssignment[] @relation("SubCoachAssignmentSub")
+  sub_coach_assignments_as_client  SubCoachAssignment[] @relation("SubCoachAssignmentClient")
+  sub_coach_assignments_as_actor   SubCoachAssignment[] @relation("SubCoachAssignmentActor")
+  sub_coach_idempotency_records    SubCoachMutationIdempotency[] @relation("SubCoachIdempotencyActor")
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -3491,11 +3499,15 @@ model EmailSendLog {
 model SubCoachAssignment {
   id              String    @id @default(uuid())
   head_coach_id   String
+  head_coach      User      @relation("SubCoachAssignmentHead", fields: [head_coach_id], references: [id], onUpdate: Cascade, onDelete: Restrict)
   sub_coach_id    String
+  sub_coach       User      @relation("SubCoachAssignmentSub", fields: [sub_coach_id], references: [id], onUpdate: Cascade, onDelete: Restrict)
   client_id       String
+  client          User      @relation("SubCoachAssignmentClient", fields: [client_id], references: [id], onUpdate: Cascade, onDelete: Restrict)
   assigned_at     DateTime  @default(now())
   unassigned_at   DateTime?
   assigned_by_id  String?
+  assigned_by     User?     @relation("SubCoachAssignmentActor", fields: [assigned_by_id], references: [id], onUpdate: Cascade, onDelete: SetNull)
   reason          String?
 
   @@index([head_coach_id])
@@ -3511,11 +3523,19 @@ model SubCoachAssignment {
 model SubCoachMutationIdempotency {
   id              String   @id @default(uuid())
   actor_id        String
+  actor           User     @relation("SubCoachIdempotencyActor", fields: [actor_id], references: [id], onUpdate: Cascade, onDelete: Restrict)
   idempotency_key String
   action          String
+  // Hash of the canonical request body. Allows replay-with-different-body
+  // to be rejected with 422 rather than silently returning the wrong result.
   request_hash    String?
+  // 'in_progress' while the mutation transaction is open; 'completed' once
+  // the response is stored. Concurrent retries that lose the unique-key
+  // race read the stored row and return its response.
+  status          String   @default("completed")
   response        Json
   created_at      DateTime @default(now())
+  updated_at      DateTime @default(now()) @updatedAt
 
   @@unique([actor_id, idempotency_key], name: "SubCoachMutationIdempotency_actor_key")
   @@index([created_at])
