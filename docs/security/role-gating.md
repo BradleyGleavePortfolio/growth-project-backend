@@ -15,14 +15,14 @@ This document records every controller route, its intended role(s), and the deco
 | `student` | Client/athlete | Access their own data (weight, food, habits, check-ins, etc.). Cannot access other users' data or coach admin surfaces. |
 | *(public)* | Unauthenticated | Health check, landing pages, auth sign-up/login, diagnostic submission, invite-code preview. |
 
-**Hierarchy:** `owner > coach > student`. Every route that permits `student` is also accessible to `coach` and `owner` (via RolesGuard OWNER bypass). Every route that permits `coach` is also accessible to `owner`.
+**Hierarchy:** `owner > coach > student`. Every route that permits `student` is also accessible to `coach` and `owner`. Every route that permits `coach` is also accessible to `owner`. The hierarchy is enforced inside `RolesGuard` via `roleSatisfies()` (owner is a total bypass; coach inherits student permissions). Listing `@Roles('student')` is therefore enough for "any authenticated user" — you do NOT need `@Roles('student', 'coach', 'owner')`.
 
 ## Guard inventory
 
 | Guard | Source | Behavior |
 |---|---|---|
 | `JwtAuthGuard` | `src/auth/auth.guard.ts` | Global `APP_GUARD`. Validates Supabase JWT via JWKS. Sets `req.user`. Skips routes marked `@Public()`. |
-| `RolesGuard` | `src/auth/roles.guard.ts` | Reads `@Roles(...)` metadata. Checks `req.user.role`. OWNER always passes. |
+| `RolesGuard` | `src/auth/roles.guard.ts` | Global `APP_GUARD` (since Phase 10). Reads `@Roles(...)` metadata; no-ops when none present. Implements owner > coach > student hierarchy via `roleSatisfies()`. |
 | `CoachGuard` | `src/auth/coach.guard.ts` | Legacy guard — enforces `coach \| owner`. Predates `@Roles`. |
 | `CoachOrOwnerGuard` | `src/billing/` | Like CoachGuard, billing-module specific. |
 | `OwnerGuard` | (billing) | Enforces `owner` only. |

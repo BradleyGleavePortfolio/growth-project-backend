@@ -167,6 +167,15 @@ describe('AuthController @Throttle metadata', () => {
     expect(meta[THROTTLER_NAMES.AUTH_SIGNUP]).toEqual({ ttl: 3_600_000, limit: 5 });
   });
 
+  it('POST /auth/recent-auth-token uses auth-recent-auth (5/min)', () => {
+    // Phase 10 audit P1-2: this endpoint must be throttled. UserThrottlerGuard
+    // keys by user-id when a JWT is present, so the 5/min budget is per-user
+    // (and falls back to IP for unauthenticated callers, which should be 401
+    // anyway since the handler is @UseGuards(JwtAuthGuard)).
+    const meta = readThrottleMetadata(AuthController.prototype.issueRecentAuthToken);
+    expect(meta[THROTTLER_NAMES.AUTH_RECENT_AUTH]).toEqual({ ttl: 60_000, limit: 5 });
+  });
+
   it('auth-login-per-min is tighter than the default bucket', () => {
     const loginMeta   = readThrottleMetadata(AuthController.prototype.login);
     const loginLimit  = loginMeta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN];
