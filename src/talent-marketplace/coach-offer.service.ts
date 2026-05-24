@@ -36,6 +36,7 @@
 
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -45,6 +46,7 @@ import { PrismaService } from '../prisma.service';
 import { ConnectAccountService } from './connect-account.service';
 import { CoachApplicationService } from './coach-application.service';
 import { TalentPoolService } from './talent-pool.service';
+import { MarketplaceIdempotencyService } from './marketplace-idempotency.service';
 import {
   CoachCompensationTypeDto,
   CreateOfferDto,
@@ -60,6 +62,7 @@ export class CoachOfferService {
     private readonly connectService: ConnectAccountService,
     private readonly applicationService: CoachApplicationService,
     private readonly poolService: TalentPoolService,
+    private readonly idempotency: MarketplaceIdempotencyService,
   ) {}
 
   /**
@@ -164,13 +167,25 @@ export class CoachOfferService {
    *     this path fails closed.
    *   - Otherwise the acceptor must equal application.applicant_user_id.
    *
-   * Atomicity (F44):
-   *   Offer.status → accepted, accepted_at stamped, and
-   *   Application.status → placed are flipped in one Prisma $transaction.
+   * Atomicity (F44) and race safety (Audit #2 P1-3 / P1-4):
+   *   The accept is performed inside one Prisma $transaction:
+   *     1. Verify the application is still in `approved` or `pool` (not
+   *        `placed`/`inactive`) — refuses double-placement.
+   *     2. Conditional updateMany on the offer with WHERE status='pending'
+   *        and require count === 1; otherwise the offer was already
+   *        accepted/rejected/withdrawn in a parallel request.
+   *     3. Mark the application `placed`.
+   *     4. Withdraw every other pending offer for the same application so
+   *        the candidate cannot accept a second one.
+   *   The DB-level partial unique index
+   *   `CoachOffer(application_id) WHERE status='accepted'` is the
+   *   fail-closed backstop if anything slips past the transaction.
    *
    * Idempotency:
-   *   The same idempotency_key replays the accepted offer instead of
-   *   triggering a second markPlaced + a second Connect link.
+   *   Accept/reject responses live in `MarketplaceMutationIdempotency`,
+   *   keyed by (acceptor_user_id, 'talent.offers.accept', idempotency_key).
+   *   The original `CoachOffer.idempotency_key` slot is reserved for the
+   *   create call and is never overwritten here.
    */
   async acceptOffer(
     offerId: string,
@@ -180,6 +195,14 @@ export class CoachOfferService {
     offer: { id: string; status: string; accepted_at: Date | null };
     onboarding_url?: string;
   }> {
+    if (idempotencyKey) {
+      const replay = await this.idempotency.findReplay<{
+        offer: { id: string; status: string; accepted_at: Date | null };
+        onboarding_url?: string;
+      }>(acceptorUserId, 'talent.offers.accept', idempotencyKey);
+      if (replay) return replay;
+    }
+
     const offer = await this.prisma.coachOffer.findUnique({
       where: { id: offerId },
       include: { application: true },
@@ -200,11 +223,9 @@ export class CoachOfferService {
       throw new ForbiddenException('Only the applicant may accept this offer.');
     }
 
-    // Idempotent replay: if the same key has already accepted this offer for
-    // this user, return the existing state. (The unique constraint on
-    // idempotency_key would otherwise throw on the second update — but the
-    // first update mutates the original row in place, so we recognise replay
-    // via offer.status === 'accepted'.)
+    // Replay for a same-user repeat where the offer is already accepted — the
+    // ledger lookup above covers the cached-response path; this branch covers
+    // a retry that arrives before the first `record()` lands.
     if (offer.status === 'accepted') {
       return {
         offer: {
@@ -220,26 +241,79 @@ export class CoachOfferService {
       );
     }
 
-    // Atomic flip: offer accepted + application placed must succeed together.
-    const updatedOffer = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.coachOffer.update({
-        where: { id: offerId },
-        data: {
-          status: 'accepted',
-          accepted_at: new Date(),
-          applicant_user_id: acceptorUserId,
-          // Stamp the idempotency_key on the first accept so a retry collides
-          // and short-circuits via the offer.status check above.
-          ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
-        },
-        select: { id: true, status: true, accepted_at: true },
+    // Atomic flip with conditional writes. A concurrent accept/reject loses
+    // the WHERE status='pending' clause and we surface a 409.
+    let updatedOffer: { id: string; status: string; accepted_at: Date | null };
+    try {
+      updatedOffer = await this.prisma.$transaction(async (tx) => {
+        // 1. Re-read the application inside the transaction so a parallel
+        //    placement is observed.
+        const freshApp = await tx.coachApplication.findUnique({
+          where: { id: offer.application_id },
+          select: { status: true },
+        });
+        if (!freshApp) {
+          throw new NotFoundException(
+            `Application ${offer.application_id} not found`,
+          );
+        }
+        if (!['approved', 'pool'].includes(freshApp.status)) {
+          throw new ConflictException(
+            `Application is no longer accepting offers (status: ${freshApp.status}).`,
+          );
+        }
+
+        // 2. Conditional update: only the still-pending offer is flipped.
+        const acceptedAt = new Date();
+        const updateResult = await tx.coachOffer.updateMany({
+          where: { id: offerId, status: 'pending' },
+          data: {
+            status: 'accepted',
+            accepted_at: acceptedAt,
+            applicant_user_id: acceptorUserId,
+          },
+        });
+        if (updateResult.count !== 1) {
+          throw new ConflictException(
+            'Offer has already been accepted or rejected.',
+          );
+        }
+
+        // 3. Mark the application placed.
+        await tx.coachApplication.update({
+          where: { id: offer.application_id },
+          data: { status: 'placed' },
+        });
+
+        // 4. Withdraw every *other* pending offer for the same application.
+        //    The candidate cannot accept a second head-coach's offer once one
+        //    is accepted.
+        await tx.coachOffer.updateMany({
+          where: {
+            application_id: offer.application_id,
+            status: 'pending',
+            id: { not: offerId },
+          },
+          data: { status: 'withdrawn' },
+        });
+
+        return {
+          id: offerId,
+          status: 'accepted' as const,
+          accepted_at: acceptedAt,
+        };
       });
-      await tx.coachApplication.update({
-        where: { id: offer.application_id },
-        data: { status: 'placed' },
-      });
-      return updated;
-    });
+    } catch (err) {
+      // Map the partial unique index `(application_id) WHERE status='accepted'`
+      // violation onto a 409 — happens only if two acceptances slip past the
+      // transactional guard. Keeps responses safe and stable.
+      if (this.isUniqueViolation(err)) {
+        throw new ConflictException(
+          'Another offer for this application has already been accepted.',
+        );
+      }
+      throw err;
+    }
 
     // Connect onboarding is best-effort and runs outside the transaction so
     // a transient Stripe outage does not block the placement state change.
@@ -247,7 +321,10 @@ export class CoachOfferService {
     try {
       const connectStatus = await this.connectService.getAccountStatus(acceptorUserId);
       if (!connectStatus || !connectStatus.onboarding_completed) {
-        const linkResult = await this.connectService.createOnboardingLink(acceptorUserId);
+        const linkResult = await this.connectService.createOnboardingLink(
+          acceptorUserId,
+          `accept-${offerId}-${idempotencyKey}`,
+        );
         onboarding_url = linkResult.url;
         this.logger.log(
           `Generated Connect onboarding link for user ${acceptorUserId} after offer ${offerId} acceptance`,
@@ -259,17 +336,41 @@ export class CoachOfferService {
       );
     }
 
-    return { offer: updatedOffer, onboarding_url };
+    const response = { offer: updatedOffer, onboarding_url };
+    if (idempotencyKey) {
+      await this.idempotency.record(
+        acceptorUserId,
+        'talent.offers.accept',
+        idempotencyKey,
+        response,
+      );
+    }
+    return response;
   }
 
   /**
    * Applicant rejects an offer. Same fail-closed posture as acceptOffer.
+   *
+   * Race safety (Audit #2 P1-4):
+   *   The conditional updateMany WHERE status='pending' ensures a concurrent
+   *   accept that committed first cannot be flipped to `rejected`. If the
+   *   offer is already rejected we return idempotently; if it was already
+   *   accepted we return 409.
    */
   async rejectOffer(
     offerId: string,
     rejectorUserId: string,
     idempotencyKey: string,
   ) {
+    if (idempotencyKey) {
+      const replay = await this.idempotency.findReplay<{
+        id: string;
+        status: string;
+        updated_at: Date;
+      }>(rejectorUserId, 'talent.offers.reject', idempotencyKey);
+      if (replay) return replay;
+    }
+
     const offer = await this.prisma.coachOffer.findUnique({
       where: { id: offerId },
       include: { application: true },
@@ -289,27 +390,71 @@ export class CoachOfferService {
       throw new ForbiddenException('Only the applicant may reject this offer.');
     }
 
+    // Idempotent: a same-user repeat after the row is already rejected just
+    // returns the existing row (200, no state change).
     if (offer.status === 'rejected') {
-      return {
+      const idempotent = {
         id: offer.id,
         status: offer.status,
         updated_at: offer.updated_at,
       };
+      if (idempotencyKey) {
+        await this.idempotency.record(
+          rejectorUserId,
+          'talent.offers.reject',
+          idempotencyKey,
+          idempotent,
+        );
+      }
+      return idempotent;
     }
+
+    // Already accepted (or withdrawn) — refuse loudly. A concurrent accept
+    // that committed first reaches this branch.
     if (offer.status !== 'pending') {
-      throw new BadRequestException(
-        `Offer is not in pending status (current: ${offer.status}).`,
+      throw new ConflictException(
+        `Offer is no longer pending (current: ${offer.status}).`,
       );
     }
 
-    return this.prisma.coachOffer.update({
-      where: { id: offerId },
-      data: {
-        status: 'rejected',
-        ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
-      },
-      select: { id: true, status: true, updated_at: true },
+    // Conditional write + read inside one transaction so a concurrent accept
+    // cannot flip an already-accepted offer to rejected.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.coachOffer.updateMany({
+        where: { id: offerId, status: 'pending' },
+        data: { status: 'rejected' },
+      });
+      if (result.count !== 1) {
+        // The offer left `pending` between our find and our update — re-read
+        // to decide whether the outcome is idempotent (already rejected) or a
+        // hard conflict (already accepted/withdrawn).
+        const current = await tx.coachOffer.findUnique({
+          where: { id: offerId },
+          select: { id: true, status: true, updated_at: true },
+        });
+        if (!current) {
+          throw new NotFoundException(`Offer ${offerId} not found`);
+        }
+        if (current.status === 'rejected') return current;
+        throw new ConflictException(
+          `Offer is no longer pending (current: ${current.status}).`,
+        );
+      }
+      return tx.coachOffer.findUniqueOrThrow({
+        where: { id: offerId },
+        select: { id: true, status: true, updated_at: true },
+      });
     });
+
+    if (idempotencyKey) {
+      await this.idempotency.record(
+        rejectorUserId,
+        'talent.offers.reject',
+        idempotencyKey,
+        updated,
+      );
+    }
+    return updated;
   }
 
   private isUniqueViolation(err: unknown): boolean {

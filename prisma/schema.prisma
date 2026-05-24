@@ -1538,3 +1538,27 @@ model CoachOffer {
   @@index([head_coach_id, status])
   @@index([application_id, status])
 }
+
+// ─── MarketplaceMutationIdempotency ───────────────────────────────────────────
+//
+// Per-route idempotency ledger for talent-marketplace mutations. Replaces the
+// pattern of reusing a single `idempotency_key` column on the mutated row for
+// every transition: the original create key stays attached to its row, and
+// subsequent accept/reject/admin-review/onboarding-link mutations record their
+// keys here, scoped by (user_id, route_key). A retry replays the cached
+// response without re-mutating any row.
+//
+// Composite uniqueness `(user_id, route_key, idempotency_key)` means the same
+// UUID may legitimately appear under two different routes or two different
+// users — only the *same* user retrying the *same* mutation hits the cache.
+model MarketplaceMutationIdempotency {
+  id              String   @id @default(uuid())
+  user_id         String
+  route_key       String
+  idempotency_key String
+  response        Json
+  created_at      DateTime @default(now())
+
+  @@unique([user_id, route_key, idempotency_key])
+  @@index([user_id, route_key])
+}

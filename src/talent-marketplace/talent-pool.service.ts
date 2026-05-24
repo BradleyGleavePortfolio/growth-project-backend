@@ -129,8 +129,27 @@ export class TalentPoolService {
   /**
    * Determines whether a user may view the talent pool.
    * Exposed for testability.
+   *
+   * Order of checks:
+   *   1. The User row must have role === 'coach'. Students, sub-coaches, and
+   *      owners are refused before any subscription lookup — fail-closed even
+   *      if a stray CoachSubscription row exists (defense-in-depth against
+   *      the bypass scenario flagged in Audit #2 P1-2).
+   *   2. The user must have an active CoachSubscription row.
+   *   3. TALENT_POOL_PRICE_ID must match. Under prod-like NODE_ENV a missing
+   *      value fails closed (returns false) — env-validation throws at boot,
+   *      but this is a defense-in-depth check in case env-validation is
+   *      ever bypassed. In local/test the legacy dev fallback still applies.
    */
   async canViewTalentPool(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (!user || user.role !== 'coach') {
+      return false;
+    }
+
     const subscription = await this.prisma.coachSubscription.findUnique({
       where: { coach_id: userId },
       select: { status: true, stripe_price_id: true },
@@ -145,9 +164,22 @@ export class TalentPoolService {
       return subscription.stripe_price_id === requiredPriceId;
     }
 
-    // No price ID configured: allow any active subscription (dev/staging).
+    // Fail closed under prod-like NODE_ENV. env-validation also throws at
+    // boot for this case (prod-tier rule), so reaching this branch in prod
+    // implies env-validation was bypassed — refuse access rather than
+    // silently granting it.
+    const nodeEnv = (process.env['NODE_ENV'] ?? '').toLowerCase();
+    if (nodeEnv === 'production' || nodeEnv === 'staging') {
+      this.logger.error(
+        'TALENT_POOL_PRICE_ID is not set in a prod-like environment — refusing pool access.',
+      );
+      return false;
+    }
+
+    // Dev/test only: allow any active subscription so contributors don't have
+    // to wire Stripe up just to exercise the pool browse path.
     this.logger.warn(
-      'TALENT_POOL_PRICE_ID is not set — talent pool is open to all active subscribers.',
+      'TALENT_POOL_PRICE_ID is not set — dev fallback: talent pool open to active subscribers.',
     );
     return true;
   }

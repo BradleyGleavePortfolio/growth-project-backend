@@ -27,6 +27,7 @@ import { TalentPoolService } from './talent-pool.service';
 import { ConnectAccountService } from './connect-account.service';
 import { CoachOfferService } from './coach-offer.service';
 import { RevenueRoutingService } from './revenue-routing.service';
+import { MarketplaceIdempotencyService } from './marketplace-idempotency.service';
 
 @Module({
   controllers: [CoachApplicationController],
@@ -36,6 +37,7 @@ import { RevenueRoutingService } from './revenue-routing.service';
     ConnectAccountService,
     CoachOfferService,
     RevenueRoutingService,
+    MarketplaceIdempotencyService,
     JwksVerifierService,
   ],
   exports: [
@@ -43,6 +45,7 @@ import { RevenueRoutingService } from './revenue-routing.service';
     TalentPoolService,
     ConnectAccountService,
     CoachOfferService,
+    MarketplaceIdempotencyService,
   ],
 })
 export class TalentMarketplaceModule {}

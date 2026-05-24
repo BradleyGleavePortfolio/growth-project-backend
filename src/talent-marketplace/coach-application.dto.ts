@@ -8,10 +8,12 @@
 import {
   IsArray,
   IsBoolean,
+  IsDefined,
   IsEmail,
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   IsUrl,
@@ -111,6 +113,8 @@ export class SubmitCoachApplicationDto {
     type: PreferencesDto,
     example: { commission: true, rev_share: false, w2: false, hybrid: true },
   })
+  @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => PreferencesDto)
   preferences!: PreferencesDto;

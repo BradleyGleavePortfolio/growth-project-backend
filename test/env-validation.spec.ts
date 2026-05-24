@@ -36,6 +36,7 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     SENTRY_DSN: 'https://abc@sentry.io/1',
     REDIS_URL: 'redis://localhost:6379',
     APPLE_AUDIENCES: 'com.thegrowthproject.app',
+    TALENT_POOL_PRICE_ID: 'price_talent_pool',
   };
 }
 
@@ -68,7 +69,6 @@ describe('evaluateEnv', () => {
     // and force operators to invent placeholder values.
     const r = evaluateEnv({ ...baseHardEnv(), NODE_ENV: 'production' });
     expect(r.missingHard).toEqual([]);
-    expect(r.missingProd).toEqual([]);
     for (const name of [
       'PUBLIC_INVITE_BASE_URL',
       'PUBLIC_WEB_SIGNUP_URL',
@@ -86,6 +86,16 @@ describe('evaluateEnv', () => {
       expect(r.missingProd).not.toContain(name);
       expect(r.missingHard).not.toContain(name);
     }
+  });
+
+  it('classifies TALENT_POOL_PRICE_ID as a prod-tier var (Audit #2 P1-2)', () => {
+    // The talent-marketplace Scale+ gate must fail boot under prod NODE_ENV
+    // when the price id is missing, so canViewTalentPool cannot fall back to
+    // "any active subscription" in production.
+    const r = evaluateEnv({ ...baseHardEnv(), NODE_ENV: 'production' });
+    expect(r.missingProd).toContain('TALENT_POOL_PRICE_ID');
+    expect(r.missingFeature).not.toContain('TALENT_POOL_PRICE_ID');
+    expect(r.missingHard).not.toContain('TALENT_POOL_PRICE_ID');
   });
 
   it('reports a clean run when fullProdEnv is supplied', () => {
@@ -155,9 +165,16 @@ describe('assertEnv', () => {
     // Stripe/Sentry/public-launch URLs are unset. The corresponding routes
     // return 4xx at request time (or fall back to documented defaults);
     // crashing the entire API on boot is the wrong default.
+    //
+    // TALENT_POOL_PRICE_ID is prod-tier (Audit #2 P1-2) and must be present
+    // for prod boot, so it is included alongside the hard tier here.
     expect(() =>
       assertEnv(
-        { ...baseHardEnv(), NODE_ENV: 'production' },
+        {
+          ...baseHardEnv(),
+          NODE_ENV: 'production',
+          TALENT_POOL_PRICE_ID: 'price_talent_pool',
+        },
         { logger: silentLogger as any },
       ),
     ).not.toThrow();
@@ -167,7 +184,11 @@ describe('assertEnv', () => {
     const warn = jest.fn();
     const logger = { ...silentLogger, warn };
     assertEnv(
-      { ...baseHardEnv(), NODE_ENV: 'production' },
+      {
+        ...baseHardEnv(),
+        NODE_ENV: 'production',
+        TALENT_POOL_PRICE_ID: 'price_talent_pool',
+      },
       { logger: logger as any },
     );
     const featureWarning = warn.mock.calls.find((args) =>

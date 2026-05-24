@@ -14,9 +14,11 @@
  */
 
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -34,12 +36,25 @@ import { CoachApplicationService } from './coach-application.service';
 import { TalentPoolService } from './talent-pool.service';
 import { ConnectAccountService } from './connect-account.service';
 import { CoachOfferService } from './coach-offer.service';
+import { MarketplaceIdempotencyService } from './marketplace-idempotency.service';
 import {
   SubmitCoachApplicationDto,
   ReviewCoachApplicationDto,
   ListApplicationsQueryDto,
 } from './coach-application.dto';
 import { CreateOfferDto, AcceptRejectOfferDto, SearchPoolQueryDto } from './coach-offer.dto';
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function requireUuidIdempotencyHeader(header: string | undefined): string {
+  if (!header || !UUID_RE.test(header.trim())) {
+    throw new BadRequestException(
+      'Idempotency-Key header is required and must be a UUID.',
+    );
+  }
+  return header.trim();
+}
 
 @ApiTags('talent-marketplace')
 @Controller()
@@ -49,6 +64,7 @@ export class CoachApplicationController {
     private readonly poolService: TalentPoolService,
     private readonly connectService: ConnectAccountService,
     private readonly offerService: CoachOfferService,
+    private readonly idempotency: MarketplaceIdempotencyService,
   ) {}
 
   // ─── Public: Submit Application ───────────────────────────────────────────
@@ -89,17 +105,37 @@ export class CoachApplicationController {
   @Roles('owner')
   @Patch('admin/applications/:id/review')
   @ApiOperation({ summary: 'Admin: review and advance an application' })
-  reviewApplication(
+  async reviewApplication(
     @Param('id') id: string,
     @Body() dto: ReviewCoachApplicationDto,
     @Request() req: AuthedRequest,
+    @Headers('idempotency-key') idempotencyHeader: string | undefined,
   ) {
-    return this.applicationService.reviewApplication(id, dto, req.user.id);
+    const idempotencyKey = requireUuidIdempotencyHeader(idempotencyHeader);
+    const replay = await this.idempotency.findReplay(
+      req.user.id,
+      'admin.application.review',
+      idempotencyKey,
+    );
+    if (replay) return replay;
+
+    const result = await this.applicationService.reviewApplication(
+      id,
+      dto,
+      req.user.id,
+    );
+    return this.idempotency.record(
+      req.user.id,
+      'admin.application.review',
+      idempotencyKey,
+      result,
+    );
   }
 
   // ─── Talent Pool: Scale+ Head-Coach Search ────────────────────────────────
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('coach')
   @Get('talent/pool')
   @ApiOperation({
     summary:
@@ -117,8 +153,28 @@ export class CoachApplicationController {
   @UseGuards(JwtAuthGuard)
   @Post('talent/connect/onboarding-link')
   @ApiOperation({ summary: 'Request a Stripe Connect Express onboarding URL' })
-  getOnboardingLink(@Request() req: AuthedRequest) {
-    return this.connectService.createOnboardingLink(req.user.id);
+  async getOnboardingLink(
+    @Request() req: AuthedRequest,
+    @Headers('idempotency-key') idempotencyHeader: string | undefined,
+  ) {
+    const idempotencyKey = requireUuidIdempotencyHeader(idempotencyHeader);
+    const replay = await this.idempotency.findReplay<{ url: string }>(
+      req.user.id,
+      'talent.connect.onboarding-link',
+      idempotencyKey,
+    );
+    if (replay) return replay;
+
+    const result = await this.connectService.createOnboardingLink(
+      req.user.id,
+      idempotencyKey,
+    );
+    return this.idempotency.record(
+      req.user.id,
+      'talent.connect.onboarding-link',
+      idempotencyKey,
+      result,
+    );
   }
 
   @UseGuards(JwtAuthGuard)

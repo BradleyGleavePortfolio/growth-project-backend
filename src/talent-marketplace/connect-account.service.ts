@@ -131,25 +131,59 @@ export class ConnectAccountService {
    * the return/refresh URLs so the user lands back in the app after completing
    * onboarding.
    *
+   * Idempotency:
+   *   - When a client-provided `idempotencyKey` is supplied (the controller
+   *     enforces a UUID Idempotency-Key header), we forward it verbatim to
+   *     Stripe so a retried POST never creates two account-link rows on the
+   *     Stripe side either. Audit #2 P1-1.
+   *   - Falls back to a deterministic key derived from (userId + return URL)
+   *     when called from internal code paths without an Idempotency-Key
+   *     header — e.g. the acceptOffer best-effort onboarding link.
+   *
    * @returns { url: string } — the Stripe-hosted onboarding URL.
    */
-  async createOnboardingLink(userId: string): Promise<{ url: string }> {
+  async createOnboardingLink(
+    userId: string,
+    idempotencyKey?: string,
+  ): Promise<{ url: string }> {
     const accountId = await this.createConnectAccount(userId);
 
     const baseUrl =
       process.env['FRONTEND_URL'] ?? 'https://app.thegrowthproject.app';
+
+    const refreshUrl = `${baseUrl}/coach/connect/refresh`;
+    const returnUrl = `${baseUrl}/coach/connect/complete`;
+
+    const stripeIdempotencyKey =
+      idempotencyKey && idempotencyKey.length > 0
+        ? `account-link-${userId}-${idempotencyKey}`
+        : `account-link-${userId}-${this.hashReturnUrl(returnUrl)}`;
 
     const link = await this.stripePost<{ url: string; expires_at: number }>(
       '/account_links',
       new URLSearchParams({
         account: accountId,
         type: 'account_onboarding',
-        refresh_url: `${baseUrl}/coach/connect/refresh`,
-        return_url: `${baseUrl}/coach/connect/complete`,
+        refresh_url: refreshUrl,
+        return_url: returnUrl,
       }),
+      stripeIdempotencyKey,
     );
 
     return { url: link.url };
+  }
+
+  /**
+   * Deterministic short hash of the return URL so internal callers without an
+   * Idempotency-Key header (acceptOffer best-effort link) still get a stable
+   * key for Stripe. Not cryptographic — only used to namespace the key.
+   */
+  private hashReturnUrl(returnUrl: string): string {
+    let h = 0;
+    for (let i = 0; i < returnUrl.length; i++) {
+      h = (h * 31 + returnUrl.charCodeAt(i)) | 0;
+    }
+    return (h >>> 0).toString(16);
   }
 
   /**

@@ -137,6 +137,12 @@ export const ENV_RULES: EnvRule[] = [
       'Stripe price id for the flat coach SaaS plan. Read at request time by start-subscription / portal-session controllers; safe to leave unset until Stripe is configured.',
   },
   {
+    name: 'TALENT_POOL_PRICE_ID',
+    tier: 'prod',
+    reason:
+      'Stripe price id that grants Scale+ entitlement to the talent marketplace pool. TalentPoolService.canViewTalentPool() refuses access whenever the requesting coach subscription does not match this price id. Must be set in staging/production so the Scale+ gate does not degrade to "any active subscription"; missing in dev/test is fine (the role check still applies).',
+  },
+  {
     name: 'SENTRY_DSN',
     tier: 'feature',
     reason:
