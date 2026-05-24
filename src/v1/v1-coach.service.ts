@@ -3,10 +3,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { User } from '@prisma/client';
+import type { Prisma, User } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuditService, AuditAction } from '../audit/audit.service';
+import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 
 // V1 BFF service for the coach console. Returns enriched payloads documented
 // in tgp-coach-console/INTEGRATION_NOTES.md. OWNER callers bypass the coach
@@ -41,7 +42,41 @@ export class V1CoachService {
     private prisma: PrismaService,
     private supabase: SupabaseService,
     private audit: AuditService,
+    // Phase 11: sub-coach overlay. Optional in the type signature so the
+    // many existing unit tests that build V1CoachService directly with
+    // (prisma, supabase) keep compiling. In production DI it's always
+    // populated because SubCoachModule is @Global.
+    private subCoachScope?: SubCoachScopeService,
   ) {}
+
+  /**
+   * Scope a User-table query for the given caller. Head coach → own
+   * roster. Sub-coach → only assigned clients. Owner → no scope.
+   */
+  private async clientScope(caller: Caller): Promise<Prisma.UserWhereInput> {
+    if (caller.role === 'owner') return {};
+    if (caller.role !== 'coach') {
+      throw new ForbiddenException();
+    }
+    if (!this.subCoachScope) return { coach_id: caller.id };
+    const isSub = await this.subCoachScope.isSubCoach(caller.id);
+    if (!isSub) return { coach_id: caller.id };
+    const ids = await this.subCoachScope.getAuthorizedClientIds(caller.id);
+    if (ids.length === 0) return { id: { in: [] } };
+    return { id: { in: ids } };
+  }
+
+  /**
+   * The coach_id under which messages/drafts for this caller live.
+   * Sub-coaches share the head coach's thread namespace; head coaches use
+   * their own id; owners use whatever explicit coachId path supplies.
+   */
+  private async messagingCoachIdFor(caller: Caller): Promise<string> {
+    if (caller.role === 'owner') return caller.id;
+    if (!this.subCoachScope) return caller.id;
+    const head = await this.subCoachScope.getHeadCoachIdForSubCoach(caller.id);
+    return head ?? caller.id;
+  }
 
   // GET /v1/coach/me — coach profile, brand accent, invite code, billing
   // status. Returns null-shaped fields when the coach has not been onboarded
@@ -87,8 +122,10 @@ export class V1CoachService {
   // for adherence percentages; we do not duplicate that aggregation here.
   async listClients(caller: Caller) {
     const coachId = resolveCoachId(caller);
+    const scope = await this.clientScope(caller);
+    const messagingCoachId = await this.messagingCoachIdFor(caller);
     const clients = await this.prisma.user.findMany({
-      where: { coach_id: coachId, role: 'student' },
+      where: { ...scope, role: 'student' },
       select: {
         id: true,
         name: true,
@@ -118,7 +155,7 @@ export class V1CoachService {
       this.prisma.coachMessage.groupBy({
         by: ['client_id'],
         where: {
-          coach_id: coachId,
+          coach_id: messagingCoachId,
           client_id: { in: clientIds },
           sender_id: coachId,
         },
@@ -165,12 +202,30 @@ export class V1CoachService {
   // GET /v1/coach/me/threads — enriched thread list per integration notes.
   async listThreads(caller: Caller) {
     const coachId = resolveCoachId(caller);
+    const messagingCoachId = await this.messagingCoachIdFor(caller);
+    // For sub-coaches we restrict the thread list to clients explicitly
+    // assigned via SubCoachAssignment so they don't see the whole head-
+    // coach team's inbox.
+    const authorizedClientIds = this.subCoachScope
+      ? await this.subCoachScope.getAuthorizedClientIds(coachId)
+      : null;
+    const isSubCoach = this.subCoachScope
+      ? await this.subCoachScope.isSubCoach(coachId)
+      : false;
+    if (isSubCoach && authorizedClientIds && authorizedClientIds.length === 0) {
+      return [];
+    }
 
     // Pull every coach-message row for this coach in a single query, then
     // fold per client. We over-fetch but the dataset is small (one coach has
     // tens of threads, hundreds of messages) and one round-trip beats N+1.
     const messages = await this.prisma.coachMessage.findMany({
-      where: { coach_id: coachId },
+      where: {
+        coach_id: messagingCoachId,
+        ...(isSubCoach && authorizedClientIds
+          ? { client_id: { in: authorizedClientIds } }
+          : {}),
+      },
       orderBy: { created_at: 'desc' },
       select: {
         client_id: true,
@@ -195,16 +250,18 @@ export class V1CoachService {
       // Skip rows whose client_id was nulled by the SET NULL FK on a
       // hard-deleted user — there's no thread row left to render.
       if (m.client_id === null) continue;
+      // Coach-side iff the sender is not the client. Covers head coach,
+      // sub-coach, and OWNER sends within the thread.
+      const fromCoachSide = m.sender_id !== m.client_id;
       const b = byClient.get(m.client_id);
       if (!b) {
         byClient.set(m.client_id, {
           lastMessage: m.body ?? '',
           lastAt: m.created_at,
-          lastFrom: m.sender_id === coachId ? 'coach' : 'client',
-          unread:
-            m.sender_id !== coachId && m.read_at === null ? 1 : 0,
+          lastFrom: fromCoachSide ? 'coach' : 'client',
+          unread: !fromCoachSide && m.read_at === null ? 1 : 0,
         });
-      } else if (m.sender_id !== coachId && m.read_at === null) {
+      } else if (!fromCoachSide && m.read_at === null) {
         b.unread += 1;
       }
     }
@@ -232,7 +289,11 @@ export class V1CoachService {
 
     const lastCoachReplies = await this.prisma.coachMessage.groupBy({
       by: ['client_id'],
-      where: { coach_id: coachId, sender_id: coachId },
+      where: {
+        coach_id: messagingCoachId,
+        client_id: { in: clientIds },
+        NOT: { sender_id: { in: clientIds } },
+      },
       _max: { created_at: true },
     });
     const lastCoachReplyByClient = new Map<string, Date | null>();
@@ -271,12 +332,16 @@ export class V1CoachService {
   async getThread(caller: Caller, clientId: string) {
     const coachId = resolveCoachId(caller);
     const ownerBypass = caller.role === 'owner';
-    // Resolve the thread's coach (for OWNERs, derive from the client's
-    // assigned coach; for coaches, it's themselves).
+    // Resolve the thread's coach. For OWNERs, derive from the client's
+    // assigned coach. For head coaches, it's themselves. For sub-coaches,
+    // it's their head coach (messages live under the head coach's
+    // namespace) — and the caller must have an open assignment to the
+    // client.
+    const scope = await this.clientScope(caller);
     const client = await this.prisma.user.findFirst({
       where: ownerBypass
         ? { id: clientId, role: 'student' }
-        : { id: clientId, coach_id: coachId, role: 'student' },
+        : { id: clientId, ...scope, role: 'student' },
       select: { id: true, coach_id: true, name: true },
     });
     if (!client) throw new NotFoundException('Client not found');
@@ -322,7 +387,9 @@ export class V1CoachService {
       messages: messages.map((m) => ({
         id: m.id,
         body: m.body,
-        from: m.sender_id === threadCoachId ? 'coach' : 'client',
+        // Coach-side iff the sender isn't the client. Covers head coach,
+        // sub-coach, and OWNER replies in the same thread.
+        from: m.sender_id === clientId ? 'client' : 'coach',
         createdAt: m.created_at,
         readAt: m.read_at,
       })),
@@ -347,10 +414,11 @@ export class V1CoachService {
   ) {
     const coachId = resolveCoachId(caller);
     const ownerBypass = caller.role === 'owner';
+    const scope = await this.clientScope(caller);
     const client = await this.prisma.user.findFirst({
       where: ownerBypass
         ? { id: clientId, role: 'student' }
-        : { id: clientId, coach_id: coachId, role: 'student' },
+        : { id: clientId, ...scope, role: 'student' },
       select: { id: true, coach_id: true },
     });
     if (!client) throw new NotFoundException('Client not found');
@@ -423,10 +491,11 @@ export class V1CoachService {
   ) {
     const coachId = resolveCoachId(caller);
     const ownerBypass = caller.role === 'owner';
+    const scope = await this.clientScope(caller);
     const client = await this.prisma.user.findFirst({
       where: ownerBypass
         ? { id: clientId, role: 'student' }
-        : { id: clientId, coach_id: coachId, role: 'student' },
+        : { id: clientId, ...scope, role: 'student' },
       select: { id: true, coach_id: true },
     });
     if (!client) throw new NotFoundException('Client not found');
@@ -478,10 +547,11 @@ export class V1CoachService {
   async getDraft(caller: Caller, clientId: string) {
     const coachId = resolveCoachId(caller);
     const ownerBypass = caller.role === 'owner';
+    const scope = await this.clientScope(caller);
     const client = await this.prisma.user.findFirst({
       where: ownerBypass
         ? { id: clientId, role: 'student' }
-        : { id: clientId, coach_id: coachId, role: 'student' },
+        : { id: clientId, ...scope, role: 'student' },
       select: { id: true, coach_id: true },
     });
     if (!client) throw new NotFoundException('Client not found');

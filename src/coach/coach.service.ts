@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { ConsentScope, ConsentService } from '../consent/consent.service';
+import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 
 // Concrete payload shapes for the timeline/summary slices below. These
 // derive their structure from the Prisma findMany calls so adding columns
@@ -61,6 +62,10 @@ export class CoachService {
     // compiling; in NestJS DI this is always populated because
     // ConsentModule is @Global.
     private consent?: ConsentService,
+    // Phase 11: sub-coach overlay scope helper. Optional for the same
+    // unit-test reason as `consent` above — SubCoachModule is @Global,
+    // so production DI always populates this.
+    private subCoachScope?: SubCoachScopeService,
   ) {}
 
   private async loadFitnessConsents(
@@ -98,6 +103,33 @@ export class CoachService {
     return { coach_id: callerId };
   }
 
+  // Phase 11: scope-aware Prisma `where` fragment for client-row lookups.
+  // Resolves to:
+  //   - OWNER: {}                                (platform-wide)
+  //   - head coach: { coach_id: callerId }       (their own roster)
+  //   - sub-coach:  { id: { in: [...assignedIds] } }
+  //     (intersect with the open SubCoachAssignment overlay; if a sub-
+  //     coach has no assigned clients we return an impossible filter so
+  //     queries return zero rows rather than the whole platform)
+  //
+  // If SubCoachScopeService isn't wired up (unit tests), we silently fall
+  // back to the head-coach behavior so existing fixtures keep passing.
+  private async scopeClientsBy(
+    callerId: string,
+    callerRole?: string,
+  ): Promise<Prisma.UserWhereInput> {
+    if (callerRole === 'owner') return {};
+    if (!this.subCoachScope) return { coach_id: callerId };
+    const isSub = await this.subCoachScope.isSubCoach(callerId);
+    if (!isSub) return { coach_id: callerId };
+    const ids = await this.subCoachScope.getAuthorizedClientIds(callerId);
+    if (ids.length === 0) {
+      // Impossible filter — sub-coach has no assigned clients.
+      return { id: { in: [] } };
+    }
+    return { id: { in: ids } };
+  }
+
   async getClients(
     coachId: string,
     status: 'active' | 'archived' | 'all' = 'active',
@@ -111,9 +143,10 @@ export class CoachService {
     } else if (status === 'archived') {
       archiveFilter = { archived_at: { not: null } };
     }
+    const scope = await this.scopeClientsBy(coachId, callerRole);
     return this.prisma.user.findMany({
       where: {
-        ...this.byCoach(coachId, callerRole),
+        ...scope,
         role: 'student',
         ...archiveFilter,
       },
@@ -130,8 +163,9 @@ export class CoachService {
     callerRole?: string,
     ctx: AuditContext = {},
   ) {
+    const scope = await this.scopeClientsBy(coachId, callerRole);
     const client = await this.prisma.user.findFirst({
-      where: { id: clientId, ...this.byCoach(coachId, callerRole) },
+      where: { id: clientId, ...scope },
     });
     if (!client) throw new Error('Client not found');
     if (client.archived_at) {
@@ -163,8 +197,9 @@ export class CoachService {
     callerRole?: string,
     ctx: AuditContext = {},
   ) {
+    const scope = await this.scopeClientsBy(coachId, callerRole);
     const client = await this.prisma.user.findFirst({
-      where: { id: clientId, ...this.byCoach(coachId, callerRole) },
+      where: { id: clientId, ...scope },
     });
     if (!client) throw new Error('Client not found');
     if (!client.archived_at) {
@@ -207,8 +242,9 @@ export class CoachService {
     opts: TimelineCursors = {},
     auditCtx: { ip?: string | null; userAgent?: string | null } = {},
   ) {
+    const scope = await this.scopeClientsBy(coachId, callerRole);
     const client = await this.prisma.user.findFirst({
-      where: { id: clientId, ...this.byCoach(coachId, callerRole) },
+      where: { id: clientId, ...scope },
     });
     if (!client) return { error: 'Client not found' };
 
@@ -356,8 +392,9 @@ export class CoachService {
     callerRole?: string,
     auditCtx: { ip?: string | null; userAgent?: string | null } = {},
   ) {
+    const scope = await this.scopeClientsBy(coachId, callerRole);
     const client = await this.prisma.user.findFirst({
-      where: { id: clientId, ...this.byCoach(coachId, callerRole) },
+      where: { id: clientId, ...scope },
       include: { profile: true },
     });
     if (!client) return { error: 'Client not found' };
@@ -460,8 +497,9 @@ export class CoachService {
     const startOfDay = new Date(today.toISOString().split('T')[0] + 'T00:00:00.000Z');
     const endOfDay = new Date(today.toISOString().split('T')[0] + 'T23:59:59.999Z');
 
+    const scope = await this.scopeClientsBy(coachId, callerRole);
     const clients = await this.prisma.user.findMany({
-      where: { ...this.byCoach(coachId, callerRole), role: 'student' },
+      where: { ...scope, role: 'student' },
       select: { id: true },
     });
 
@@ -505,8 +543,9 @@ export class CoachService {
   }
 
   async getAlerts(coachId: string, callerRole?: string) {
+    const scope = await this.scopeClientsBy(coachId, callerRole);
     const clients = await this.prisma.user.findMany({
-      where: { ...this.byCoach(coachId, callerRole), role: 'student' },
+      where: { ...scope, role: 'student' },
     });
 
     if (clients.length === 0) return [];
