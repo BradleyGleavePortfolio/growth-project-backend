@@ -195,14 +195,50 @@ export class CoachOfferService {
     offer: { id: string; status: string; accepted_at: Date | null };
     onboarding_url?: string;
   }> {
+    type AcceptResponse = {
+      offer: { id: string; status: string; accepted_at: Date | null };
+      onboarding_url?: string;
+    };
+
+    // Atomic claim-or-replay (Audit #4 P1-1). Two concurrent same-key calls
+    // race here: the loser polls the ledger and either replays the cached
+    // response or surfaces a stable 409 while the winner is still running.
     if (idempotencyKey) {
-      const replay = await this.idempotency.findReplay<{
-        offer: { id: string; status: string; accepted_at: Date | null };
-        onboarding_url?: string;
-      }>(acceptorUserId, 'talent.offers.accept', idempotencyKey);
-      if (replay) return replay;
+      const claim = await this.idempotency.claimOrReplay<AcceptResponse>(
+        acceptorUserId,
+        'talent.offers.accept',
+        idempotencyKey,
+      );
+      if (!claim.claimed) {
+        if (claim.status === 'completed' && claim.response) return claim.response;
+        throw new ConflictException(
+          'Request is already being processed. Retry in a moment.',
+        );
+      }
+      try {
+        return await this.runAcceptOffer(offerId, acceptorUserId, idempotencyKey);
+      } catch (err) {
+        await this.idempotency.releaseClaim(
+          acceptorUserId,
+          'talent.offers.accept',
+          idempotencyKey,
+        );
+        throw err;
+      }
     }
 
+    // No idempotency key supplied — fall through to direct execution.
+    return this.runAcceptOffer(offerId, acceptorUserId, idempotencyKey);
+  }
+
+  private async runAcceptOffer(
+    offerId: string,
+    acceptorUserId: string,
+    idempotencyKey: string,
+  ): Promise<{
+    offer: { id: string; status: string; accepted_at: Date | null };
+    onboarding_url?: string;
+  }> {
     const offer = await this.prisma.coachOffer.findUnique({
       where: { id: offerId },
       include: { application: true },
@@ -338,7 +374,7 @@ export class CoachOfferService {
 
     const response = { offer: updatedOffer, onboarding_url };
     if (idempotencyKey) {
-      await this.idempotency.record(
+      await this.idempotency.markCompleted(
         acceptorUserId,
         'talent.offers.accept',
         idempotencyKey,
@@ -362,15 +398,44 @@ export class CoachOfferService {
     rejectorUserId: string,
     idempotencyKey: string,
   ) {
+    type RejectResponse = { id: string; status: string; updated_at: Date };
+
+    // Atomic claim-or-replay (Audit #4 P1-1). See acceptOffer for the
+    // rationale — two concurrent same-key calls must not both run the
+    // mutation body, and the loser must replay rather than surface a 409
+    // for the original successful action.
     if (idempotencyKey) {
-      const replay = await this.idempotency.findReplay<{
-        id: string;
-        status: string;
-        updated_at: Date;
-      }>(rejectorUserId, 'talent.offers.reject', idempotencyKey);
-      if (replay) return replay;
+      const claim = await this.idempotency.claimOrReplay<RejectResponse>(
+        rejectorUserId,
+        'talent.offers.reject',
+        idempotencyKey,
+      );
+      if (!claim.claimed) {
+        if (claim.status === 'completed' && claim.response) return claim.response;
+        throw new ConflictException(
+          'Request is already being processed. Retry in a moment.',
+        );
+      }
+      try {
+        return await this.runRejectOffer(offerId, rejectorUserId, idempotencyKey);
+      } catch (err) {
+        await this.idempotency.releaseClaim(
+          rejectorUserId,
+          'talent.offers.reject',
+          idempotencyKey,
+        );
+        throw err;
+      }
     }
 
+    return this.runRejectOffer(offerId, rejectorUserId, idempotencyKey);
+  }
+
+  private async runRejectOffer(
+    offerId: string,
+    rejectorUserId: string,
+    idempotencyKey: string,
+  ): Promise<{ id: string; status: string; updated_at: Date }> {
     const offer = await this.prisma.coachOffer.findUnique({
       where: { id: offerId },
       include: { application: true },
@@ -399,7 +464,7 @@ export class CoachOfferService {
         updated_at: offer.updated_at,
       };
       if (idempotencyKey) {
-        await this.idempotency.record(
+        await this.idempotency.markCompleted(
           rejectorUserId,
           'talent.offers.reject',
           idempotencyKey,
@@ -447,7 +512,7 @@ export class CoachOfferService {
     });
 
     if (idempotencyKey) {
-      await this.idempotency.record(
+      await this.idempotency.markCompleted(
         rejectorUserId,
         'talent.offers.reject',
         idempotencyKey,

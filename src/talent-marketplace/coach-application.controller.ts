@@ -16,6 +16,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Get,
   Headers,
@@ -112,24 +113,42 @@ export class CoachApplicationController {
     @Headers('idempotency-key') idempotencyHeader: string | undefined,
   ) {
     const idempotencyKey = requireUuidIdempotencyHeader(idempotencyHeader);
-    const replay = await this.idempotency.findReplay(
-      req.user.id,
-      'admin.application.review',
-      idempotencyKey,
-    );
-    if (replay) return replay;
 
-    const result = await this.applicationService.reviewApplication(
-      id,
-      dto,
-      req.user.id,
-    );
-    return this.idempotency.record(
+    // Atomic claim-or-replay (Audit #4 P1-1). Two concurrent admin reviews
+    // with the same idempotency key must not both run the underlying update.
+    const claim = await this.idempotency.claimOrReplay(
       req.user.id,
       'admin.application.review',
       idempotencyKey,
-      result,
     );
+    if (!claim.claimed) {
+      if (claim.status === 'completed' && claim.response) return claim.response;
+      throw new ConflictException(
+        'Request is already being processed. Retry in a moment.',
+      );
+    }
+
+    try {
+      const result = await this.applicationService.reviewApplication(
+        id,
+        dto,
+        req.user.id,
+      );
+      await this.idempotency.markCompleted(
+        req.user.id,
+        'admin.application.review',
+        idempotencyKey,
+        result,
+      );
+      return result;
+    } catch (err) {
+      await this.idempotency.releaseClaim(
+        req.user.id,
+        'admin.application.review',
+        idempotencyKey,
+      );
+      throw err;
+    }
   }
 
   // ─── Talent Pool: Scale+ Head-Coach Search ────────────────────────────────
@@ -158,23 +177,39 @@ export class CoachApplicationController {
     @Headers('idempotency-key') idempotencyHeader: string | undefined,
   ) {
     const idempotencyKey = requireUuidIdempotencyHeader(idempotencyHeader);
-    const replay = await this.idempotency.findReplay<{ url: string }>(
-      req.user.id,
-      'talent.connect.onboarding-link',
-      idempotencyKey,
-    );
-    if (replay) return replay;
 
-    const result = await this.connectService.createOnboardingLink(
-      req.user.id,
-      idempotencyKey,
-    );
-    return this.idempotency.record(
+    const claim = await this.idempotency.claimOrReplay<{ url: string }>(
       req.user.id,
       'talent.connect.onboarding-link',
       idempotencyKey,
-      result,
     );
+    if (!claim.claimed) {
+      if (claim.status === 'completed' && claim.response) return claim.response;
+      throw new ConflictException(
+        'Request is already being processed. Retry in a moment.',
+      );
+    }
+
+    try {
+      const result = await this.connectService.createOnboardingLink(
+        req.user.id,
+        idempotencyKey,
+      );
+      await this.idempotency.markCompleted(
+        req.user.id,
+        'talent.connect.onboarding-link',
+        idempotencyKey,
+        result,
+      );
+      return result;
+    } catch (err) {
+      await this.idempotency.releaseClaim(
+        req.user.id,
+        'talent.connect.onboarding-link',
+        idempotencyKey,
+      );
+      throw err;
+    }
   }
 
   @UseGuards(JwtAuthGuard)

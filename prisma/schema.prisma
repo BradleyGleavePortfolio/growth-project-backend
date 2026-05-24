@@ -1552,12 +1552,14 @@ model CoachOffer {
 // UUID may legitimately appear under two different routes or two different
 // users — only the *same* user retrying the *same* mutation hits the cache.
 model MarketplaceMutationIdempotency {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   user_id         String
   route_key       String
   idempotency_key String
-  response        Json
-  created_at      DateTime @default(now())
+  response        Json?
+  status          String    @default("completed")
+  created_at      DateTime  @default(now())
+  completed_at    DateTime?
 
   @@unique([user_id, route_key, idempotency_key])
   @@index([user_id, route_key])

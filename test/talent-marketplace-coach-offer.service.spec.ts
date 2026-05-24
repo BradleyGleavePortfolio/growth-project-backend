@@ -99,6 +99,9 @@ describe('CoachOfferService', () => {
     idempotency = {
       findReplay: jest.fn().mockResolvedValue(null),
       record: jest.fn().mockImplementation(async (_u, _r, _k, v) => v),
+      claimOrReplay: jest.fn().mockResolvedValue({ claimed: true }),
+      markCompleted: jest.fn().mockResolvedValue(undefined),
+      releaseClaim: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<MarketplaceIdempotencyService>;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -378,7 +381,11 @@ describe('CoachOfferService', () => {
           accepted_at: new Date('2026-05-24T00:00:00Z'),
         },
       };
-      idempotency.findReplay.mockResolvedValueOnce(cached);
+      idempotency.claimOrReplay.mockResolvedValueOnce({
+        claimed: false,
+        status: 'completed',
+        response: cached,
+      });
 
       const result = await service.acceptOffer(
         'offer-1',
@@ -416,6 +423,79 @@ describe('CoachOfferService', () => {
       await expect(
         service.acceptOffer('missing', 'applicant-1', 'idem-1'),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    // ─── Audit #4 P1-1: atomic claim-or-replay under concurrent duplicates ─
+    it('concurrent duplicate same key returns in-progress conflict, not offer-already-accepted', async () => {
+      // claimOrReplay loses the insert race: another request with the same
+      // key is mid-mutation. We must surface a stable 409 with the
+      // "being processed" message — NOT execute the offer mutation body and
+      // NOT surface "Offer has already been accepted or rejected.".
+      idempotency.claimOrReplay.mockResolvedValue({
+        claimed: false,
+        status: 'in_progress',
+        response: null,
+      });
+
+      const err = await service
+        .acceptOffer('offer-1', 'applicant-1', 'idem-acc-1')
+        .catch((e: Error) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect((err as Error).message).toMatch(/being processed/);
+
+      // Critically, the mutation body must NOT have been executed.
+      expect(prisma.coachOffer.findUnique).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(idempotency.markCompleted).not.toHaveBeenCalled();
+    });
+
+    it('retry after completion replays original response without re-running mutation', async () => {
+      // The first request already won the claim and persisted its response.
+      // A retry with the same key must replay the cached response verbatim
+      // and skip all mutation work.
+      const cached = {
+        offer: {
+          id: 'offer-1',
+          status: 'accepted',
+          accepted_at: new Date('2026-05-24T00:00:00Z'),
+        },
+        onboarding_url: 'https://connect.stripe.com/abc',
+      };
+      idempotency.claimOrReplay.mockResolvedValueOnce({
+        claimed: false,
+        status: 'completed',
+        response: cached,
+      });
+
+      const result = await service.acceptOffer(
+        'offer-1',
+        'applicant-1',
+        'idem-acc-1',
+      );
+
+      expect(result).toBe(cached);
+      // No DB mutation, no second markCompleted.
+      expect(prisma.coachOffer.findUnique).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(idempotency.markCompleted).not.toHaveBeenCalled();
+    });
+
+    it('releases the claim when the mutation body throws so retries can re-attempt', async () => {
+      // claimOrReplay succeeds, but the underlying offer lookup throws. The
+      // service must call releaseClaim so the next retry is not permanently
+      // blocked by an orphaned in-progress row.
+      (prisma.coachOffer.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.acceptOffer('missing-offer', 'applicant-1', 'idem-acc-1'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(idempotency.releaseClaim).toHaveBeenCalledWith(
+        'applicant-1',
+        'talent.offers.accept',
+        'idem-acc-1',
+      );
+      expect(idempotency.markCompleted).not.toHaveBeenCalled();
     });
   });
 
