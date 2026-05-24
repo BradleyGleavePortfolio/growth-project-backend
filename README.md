@@ -1230,13 +1230,16 @@ Full documentation: [`src/talent-marketplace/README.md`](src/talent-marketplace/
 
 | Variable | Tier | Purpose |
 |----------|------|---------|
-| `STRIPE_CONNECT_CLIENT_ID` | prod | Stripe Connect platform client ID (`ca_xxx`) from the Stripe Dashboard under Connect settings. Required before any `/talent/connect/onboarding-link` call succeeds in production. |
 | `TALENT_POOL_PRICE_ID` | optional | Stripe price ID for the Scale+ plan that grants talent pool access. If unset, any active subscriber can browse the pool (dev/staging permissive mode). |
+
+Connect Express onboarding reuses the existing `STRIPE_SECRET_KEY` (server
+API key); the platform's Connect client id is only needed for the OAuth
+"Standard" / "Express OAuth" flow, which this module does not use, so no
+new Stripe secret is required.
 
 Provision in production:
 
 ```bash
-fly secrets set STRIPE_CONNECT_CLIENT_ID=ca_xxx
 fly secrets set TALENT_POOL_PRICE_ID=price_xxx
 ```
 

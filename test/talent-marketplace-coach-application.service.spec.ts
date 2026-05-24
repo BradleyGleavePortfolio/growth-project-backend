@@ -79,6 +79,7 @@ describe('CoachApplicationService', () => {
         created_at: new Date(),
       };
 
+      (prisma.coachApplication.findUnique as jest.Mock).mockResolvedValue(null);
       (prisma.coachApplication.create as jest.Mock).mockResolvedValue(mockResult);
 
       const result = await service.submitApplication(dto, undefined);
@@ -89,6 +90,7 @@ describe('CoachApplicationService', () => {
             email: 'coach@example.com',
             status: 'pending',
             applicant_user_id: null,
+            idempotency_key: dto.idempotency_key,
           }),
         }),
       );
@@ -97,6 +99,7 @@ describe('CoachApplicationService', () => {
 
     it('populates applicant_user_id when userId is provided', async () => {
       const dto = makeSubmitDto();
+      (prisma.coachApplication.findUnique as jest.Mock).mockResolvedValue(null);
       (prisma.coachApplication.create as jest.Mock).mockResolvedValue({
         id: 'app-uuid-2',
         email: dto.email,
@@ -111,6 +114,41 @@ describe('CoachApplicationService', () => {
           data: expect.objectContaining({ applicant_user_id: 'user-123' }),
         }),
       );
+    });
+
+    it('replays the original row on duplicate idempotency_key (double-submit)', async () => {
+      const dto = makeSubmitDto();
+      const original = {
+        id: 'app-original',
+        email: dto.email,
+        status: 'pending',
+        created_at: new Date(),
+      };
+      (prisma.coachApplication.findUnique as jest.Mock).mockResolvedValue(original);
+
+      const result = await service.submitApplication(dto, undefined);
+
+      expect(result).toBe(original);
+      expect(prisma.coachApplication.create).not.toHaveBeenCalled();
+    });
+
+    it('resolves a P2002 race on idempotency_key to the winning row', async () => {
+      const dto = makeSubmitDto();
+      const winner = {
+        id: 'app-winner',
+        email: dto.email,
+        status: 'pending',
+        created_at: new Date(),
+      };
+      const findUnique = prisma.coachApplication.findUnique as jest.Mock;
+      findUnique.mockResolvedValueOnce(null); // initial check
+      findUnique.mockResolvedValueOnce(winner); // post-race read
+      (prisma.coachApplication.create as jest.Mock).mockRejectedValue({
+        code: 'P2002',
+      });
+
+      const result = await service.submitApplication(dto, undefined);
+      expect(result).toBe(winner);
     });
   });
 

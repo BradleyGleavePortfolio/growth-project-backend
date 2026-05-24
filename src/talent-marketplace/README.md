@@ -39,14 +39,12 @@ Uses the existing `fetch`-based pattern from `billing/stripe-api.service.ts` —
 
 | Variable | Description |
 |----------|-------------|
-| `STRIPE_SECRET_KEY` | Already required by billing module |
-| `STRIPE_CONNECT_CLIENT_ID` | Connect platform client ID (from Stripe Dashboard > Connect settings). Must be provisioned in Fly.io secrets before the onboarding link endpoint is used. |
+| `STRIPE_SECRET_KEY` | Already required by billing module. The Express account + account-link endpoints use this server-side secret key directly; no additional Connect client_id is required for the Express flow. |
 | `TALENT_POOL_PRICE_ID` | Stripe price ID that grants talent pool access (Scale+ plan). If unset, any active subscription is granted access (dev/staging only). |
 
 **Provisioning:**
 
 ```bash
-fly secrets set STRIPE_CONNECT_CLIENT_ID=ca_xxx
 fly secrets set TALENT_POOL_PRICE_ID=price_xxx
 ```
 

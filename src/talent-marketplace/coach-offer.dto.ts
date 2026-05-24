@@ -18,9 +18,7 @@ import {
   IsUUID,
   Max,
   Min,
-  ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum CoachCompensationTypeDto {
@@ -196,9 +194,3 @@ export type CompensationTermsUnion =
   | RevShareTermsDto
   | FlatTermsDto
   | HybridTermsDto;
-
-// Silence eslint "unused" for the @Type bridge — class-transformer
-// references ValidateNested-decorated nested classes at runtime, but
-// class-validator's @IsObject() above is what fails fast for non-objects.
-void ValidateNested;
-void Type;
