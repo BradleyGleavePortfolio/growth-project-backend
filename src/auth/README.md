@@ -270,6 +270,10 @@ Verified by `test/cross-tenant-isolation.spec.ts`.
 |---|---|---|---|
 | `RECENT_AUTH_SECRET` | yes (for RecentAuthGuard routes) | — | HMAC signing secret. Generate: `openssl rand -hex 32`. |
 | `RECENT_AUTH_TTL_MS` | no | 300000 | Token validity window in ms (5 min). |
+| `GOOGLE_CLIENT_ID` | no | — | Google OAuth client ID(s) — required for Google recent-auth token verification. Omit to disable Google re-auth. |
+| `GOOGLE_CLIENT_IDS` | no | — | Google OAuth client ID(s) — required for Google recent-auth token verification. Omit to disable Google re-auth. Comma-separated; supersedes `GOOGLE_CLIENT_ID` when both are set. |
+
+When neither `GOOGLE_CLIENT_ID` nor `GOOGLE_CLIENT_IDS` is set, `/auth/signup-policy` omits `'google'` from `providers` and the `provider=google` branch of `POST /auth/recent-auth-token` rejects every token with a generic 401. Boot is not blocked; the env-validation summary logs a single named warning so operators can correlate the symptom with the missing config.
 
 ### New files (Phase 10)
 

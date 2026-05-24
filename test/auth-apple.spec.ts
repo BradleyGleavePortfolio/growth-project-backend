@@ -435,3 +435,56 @@ describe('AuthService.getSignupPolicy — apple provider', () => {
     expect(policy.providers).toContain('apple');
   });
 });
+
+// Audit #4 P1 regression: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_IDS must gate the
+// "google" entry in /auth/signup-policy. If a deployment boots without either
+// env var set, the local Google ID-token verifier (used by the recent-auth
+// re-auth flow for OAuth-only users) has no audience to pin against and
+// rejects every token with a generic 401. Advertising "google" in the policy
+// on an unconfigured server gives mobile no way to know the provider is
+// unavailable until the user hits the failure mid-flow.
+describe('AuthService.getSignupPolicy — google provider (Audit #4 P1)', () => {
+  const ORIG_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+  const ORIG_CLIENT_IDS = process.env.GOOGLE_CLIENT_IDS;
+  afterEach(() => {
+    if (ORIG_CLIENT_ID === undefined) delete process.env.GOOGLE_CLIENT_ID;
+    else process.env.GOOGLE_CLIENT_ID = ORIG_CLIENT_ID;
+    if (ORIG_CLIENT_IDS === undefined) delete process.env.GOOGLE_CLIENT_IDS;
+    else process.env.GOOGLE_CLIENT_IDS = ORIG_CLIENT_IDS;
+  });
+
+  function build(googleConfigured: boolean) {
+    const prismaMock: any = { user: { findUnique: jest.fn() } };
+    const googleVerifierMock = {
+      isConfigured: jest.fn(() => googleConfigured),
+      getAudiences: jest.fn(() =>
+        googleConfigured ? ['test.apps.googleusercontent.com'] : [],
+      ),
+      verify: jest.fn(),
+    } as any;
+    return new AuthService(
+      prismaMock,
+      makeInviteCodesMock() as any,
+      makeAnalyticsMock(),
+      makeAuditMock(),
+      makeAppleVerifierMock(false),
+      googleVerifierMock,
+    );
+  }
+
+  it('omits "google" from providers when GOOGLE_CLIENT_ID and GOOGLE_CLIENT_IDS are both unset', () => {
+    delete process.env.GOOGLE_CLIENT_ID;
+    delete process.env.GOOGLE_CLIENT_IDS;
+    const svc = build(false);
+    const policy = svc.getSignupPolicy();
+    expect(policy.providers).not.toContain('google');
+    expect(policy.providers).toContain('email');
+  });
+
+  it('advertises "google" when GoogleVerifier reports configured', () => {
+    process.env.GOOGLE_CLIENT_ID = 'test.apps.googleusercontent.com';
+    const svc = build(true);
+    const policy = svc.getSignupPolicy();
+    expect(policy.providers).toContain('google');
+  });
+});

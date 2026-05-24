@@ -58,6 +58,11 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     STRIPE_CHECKOUT_SUCCESS_URL:
       'https://app.trygrowthproject.com/checkout/success?session_id={CHECKOUT_SESSION_ID}',
     STRIPE_CHECKOUT_CANCEL_URL: 'https://app.trygrowthproject.com/checkout/cancel',
+    // Audit #4 P1 — Google OAuth audience(s) for the local Google ID-token
+    // verifier (recent-auth re-auth flow). Both are feature-tier; setting
+    // at least one is required to keep "google" advertised in /auth/signup-policy.
+    GOOGLE_CLIENT_ID: 'test.apps.googleusercontent.com',
+    GOOGLE_CLIENT_IDS: 'test.apps.googleusercontent.com',
   };
 }
 

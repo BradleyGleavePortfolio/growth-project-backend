@@ -175,6 +175,34 @@ export const ENV_RULES: EnvRule[] = [
       'Comma-separated allow-list of Apple audiences (iOS bundle ids and/or Apple Services IDs) accepted by POST /auth/apple. Without it, the endpoint returns 503 and /auth/signup-policy omits "apple" from providers. Set to your iOS bundle id (e.g. com.thegrowthproject.app) before enabling Sign in with Apple in Supabase.',
   },
   {
+    name: 'GOOGLE_CLIENT_ID',
+    tier: 'feature',
+    reason:
+      'Google OAuth client ID accepted as audience by the local Google ID-token verifier (POST /auth/recent-auth-token, provider=google). Without it (and without GOOGLE_CLIENT_IDS) the recent-auth Google branch rejects every token and /auth/signup-policy omits "google" from providers. Set to your *.apps.googleusercontent.com client id. Use GOOGLE_CLIENT_IDS instead for multi-client support.',
+    validate: (v) => {
+      if (v.trim().length === 0) {
+        return 'GOOGLE_CLIENT_ID must be a non-empty string when set.';
+      }
+      return null;
+    },
+  },
+  {
+    name: 'GOOGLE_CLIENT_IDS',
+    tier: 'feature',
+    reason:
+      'Comma-separated allow-list of Google OAuth client IDs accepted as audiences by the local Google ID-token verifier. Supersedes GOOGLE_CLIENT_ID when both are set; use this when the platform issues separate iOS / Android / Web client IDs.',
+    validate: (v) => {
+      const entries = v
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      if (entries.length === 0) {
+        return 'GOOGLE_CLIENT_IDS must contain at least one non-empty client ID when set.';
+      }
+      return null;
+    },
+  },
+  {
     // REDIS_URL is production-required: a single-machine in-memory throttler
     // cannot defend a multi-machine Fly deploy and credential-stuffing
     // attacks routinely fan out across machines. The boot-time check below
@@ -813,6 +841,26 @@ export function assertEnv(
     logger.warn(
       `Feature-tier env vars missing — related features are disabled or return 4xx at call time (NODE_ENV=${env.NODE_ENV}): ${result.missingFeature.join(', ')}`,
     );
+  }
+
+  // Audit #4 P1: surface a distinct, named warning when BOTH Google client-id
+  // env vars are absent in prod-like envs. The recent-auth flow's Google
+  // branch verifies tokens against these audiences; without either, every
+  // Google re-auth attempt is rejected with a generic 401, which can be
+  // misread as a mobile bug. Boot is NOT blocked — Google is an optional
+  // provider — but the warning gives operators a single, searchable line
+  // tying the symptom to the missing config. Apple has equivalent behaviour
+  // via APPLE_AUDIENCES (returns 503 from /auth/apple).
+  if (enforceProd) {
+    const googleIdSet =
+      typeof env.GOOGLE_CLIENT_ID === 'string' && env.GOOGLE_CLIENT_ID.trim().length > 0;
+    const googleIdsSet =
+      typeof env.GOOGLE_CLIENT_IDS === 'string' && env.GOOGLE_CLIENT_IDS.trim().length > 0;
+    if (!googleIdSet && !googleIdsSet) {
+      logger.warn(
+        `Google recent-auth disabled — neither GOOGLE_CLIENT_ID nor GOOGLE_CLIENT_IDS is set. /auth/signup-policy will omit "google" from providers and Google OAuth users cannot complete sensitive actions (e.g. account deletion). Set at least one to enable. (NODE_ENV=${env.NODE_ENV})`,
+      );
+    }
   }
 
   if (result.missingOptional.length) {

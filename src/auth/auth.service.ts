@@ -229,14 +229,25 @@ export class AuthService {
   getSignupPolicy() {
     const gateEnabled =
       (process.env.COACH_CODE_GATE_ENABLED || '').toLowerCase() === 'true';
-    const googleEnabled =
+    // Base Supabase wiring is required for ANY OAuth provider to function —
+    // the supabase admin client mints sessions from the verified provider
+    // identity token. Without it, both Google and Apple paths return 401.
+    const supabaseConfigured =
       !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+    // Audit #4 P1: Google is only advertised once a GOOGLE_CLIENT_ID(S) is
+    // set. Without it, the local Google ID-token verifier (used by the
+    // recent-auth re-auth flow) has no audience to pin against and every
+    // attempt is rejected with a generic 401. Advertising "google" in the
+    // policy on an unconfigured server gives mobile no way to know the
+    // provider is unavailable until the user hits the failure mid-flow.
+    const googleEnabled =
+      supabaseConfigured && this.googleVerifier.isConfigured();
     // Apple is only advertised once an APPLE_AUDIENCES allow-list is set.
     // Without it the local defense-in-depth verifier has no audience to pin
     // the identity token to (see AppleVerifierService) and the route returns
     // 503; advertising it would just produce client errors at signup time.
     const appleEnabled =
-      googleEnabled && this.appleVerifier.isConfigured();
+      supabaseConfigured && this.appleVerifier.isConfigured();
     const providers = ['email'];
     if (googleEnabled) providers.push('google');
     if (appleEnabled) providers.push('apple');

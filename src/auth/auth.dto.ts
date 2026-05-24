@@ -287,7 +287,10 @@ export class IssueRecentAuthTokenDto {
 
   @ApiPropertyOptional({
     description:
-      'A fresh Google or Apple identity / access token, used by OAuth-only users to prove recent auth. The token must have been issued within RECENT_AUTH_TTL_MS (default 5 minutes).',
+      'A fresh provider-issued identity token used by OAuth-only users to prove recent auth. The token must have been issued within RECENT_AUTH_TTL_MS (default 5 minutes). ' +
+      'For provider=google: requires a fresh Google ID token issued to the configured GOOGLE_CLIENT_ID(S) audience — NOT a Google OAuth access token, NOT a Supabase session JWT. ' +
+      'For provider=apple: requires a fresh Apple identity token issued by Sign in with Apple. ' +
+      'Supabase access tokens and Google OAuth access tokens are explicitly rejected: the verifier pins issuer + audience against the provider JWKS, so only a real provider-issued ID/identity token will pass.',
     minLength: 10,
   })
   @IsOptional()
