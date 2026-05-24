@@ -30,7 +30,8 @@ const CONTROLLER_SRC = fs.readFileSync(
 
 describe('FirstWinController — source guards', () => {
   it('is protected by JwtAuthGuard', () => {
-    expect(CONTROLLER_SRC).toMatch(/@UseGuards\(JwtAuthGuard\)/);
+    // Phase 10: updated to match @UseGuards(JwtAuthGuard, RolesGuard) class-level pattern
+    expect(CONTROLLER_SRC).toMatch(/@UseGuards\(JwtAuthGuard/);
   });
 
   it('exposes POST complete at /me/first-win/complete', () => {

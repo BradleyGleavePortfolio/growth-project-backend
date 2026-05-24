@@ -7,6 +7,7 @@ import { UserThrottlerGuard } from './throttler/user-throttler.guard';
 import { buildThrottlerOptions } from './throttler/throttler.config';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/auth.guard';
+import { RolesGuard } from './auth/roles.guard';
 import { ProfileModule } from './profile/profile.module';
 import { FoodModule } from './food/food.module';
 import { LogModule } from './log/log.module';
@@ -281,6 +282,24 @@ import { SecurityGuardsModule } from './common/security/security-guards.module';
     SecretsModule,
   ],
   providers: [
+    // SECURITY: global JWT auth guard — every route is private by default.
+    // Routes opt out via the @Public() decorator (see common/decorators/public.decorator.ts).
+    // Previously each controller had to remember @UseGuards(JwtAuthGuard); one
+    // missed decorator = public endpoint with no warning. Now the failure mode
+    // is reversed: forgetting @Public() on an intentionally-public route
+    // surfaces as a loud 401 in tests, not a silent data leak.
+    //
+    // ORDER MATTERS (Audit #2 P2-A): JwtAuthGuard is registered BEFORE
+    // UserThrottlerGuard so that `req.user` is populated by the time the
+    // throttler runs `getTracker()`. Otherwise the per-user buckets (e.g.
+    // auth-recent-auth's 5/min limit) silently fall back to IP-based
+    // tracking, which collapses two real users behind the same NAT into a
+    // single shared budget. On @Public() routes JwtAuthGuard short-circuits
+    // to `true` without throwing, so the throttler still runs on login /
+    // signup / password-reset and bucketizes them by IP (the desired
+    // behaviour for unauthenticated routes).
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)
     // decorators (e.g. on /auth/login, /auth/register, /ai/chat) are actually enforced.
     // Without this, ThrottlerModule is imported but never wired in and every @Throttle
@@ -312,6 +331,19 @@ import { SecurityGuardsModule } from './common/security/security-guards.module';
     // guard are now provided by SecurityGuardsModule (@Global). Selective
     // application via @UseGuards() on controllers continues to work — the DI
     // scope is global.
+
+
+    // SECURITY (Phase 10 — audit P2-2): RolesGuard is now a global APP_GUARD.
+    // It is intentionally a NO-OP when no @Roles(...) decorator is present
+    // (see roles.guard.ts), so existing controllers that gate by service-layer
+    // checks or bespoke guards (CoachGuard, OwnerGuard, CoachOrOwnerGuard) keep
+    // working unchanged. The reason for going global rather than per-controller
+    // is the meta-test failure mode: previously a future controller could add
+    // @Roles('owner') WITHOUT @UseGuards(RolesGuard) and the gate would
+    // silently never execute. With the guard global, every @Roles(...) is
+    // enforced unconditionally — and the meta-test (test/roles-enforced.spec.ts)
+    // can now ASSERT this registration rather than just check metadata.
+    { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })
 export class AppModule {}

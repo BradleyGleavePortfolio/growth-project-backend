@@ -9,7 +9,8 @@ import { CreateFoodDto } from './food.dto';
 
 @ApiTags('food')
 @Controller('foods')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('student')
 export class FoodController {
   constructor(private foodService: FoodService) {}
 

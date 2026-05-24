@@ -5,10 +5,13 @@ import { Throttle } from '@nestjs/throttler';
 import { AiService } from './ai.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @ApiTags('ai')
 @Controller('ai')
-@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, ClientEntitlementGuard)
+@Roles('student')
 export class AiController {
   constructor(private aiService: AiService) {}
 

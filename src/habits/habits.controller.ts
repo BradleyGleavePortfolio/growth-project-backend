@@ -3,11 +3,14 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { HabitsService } from './habits.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { CreateHabitDto, LogHabitDto } from './habits.dto';
 
 @ApiTags('habits')
 @Controller('habits')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('student')
 export class HabitsController {
   constructor(private habitsService: HabitsService) {}
 

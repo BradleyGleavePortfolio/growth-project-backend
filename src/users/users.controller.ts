@@ -18,7 +18,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RecentAuthGuard } from '../auth/recent-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
 import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
+import { Roles } from '../common/decorators/roles.decorator';
 import { UsersService } from './users.service';
 import { PreferencesService } from './preferences.service';
 import { AccountService } from './account.service';
@@ -31,7 +34,8 @@ import { UpdatePushTokenDto } from './dto/update-push-token.dto';
 @ApiBearerAuth('bearer')
 @ApiResponse({ status: 401, description: 'Missing or invalid bearer token.' })
 @Controller('users')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('student')
 export class UsersController {
   constructor(
     private usersService: UsersService,
@@ -133,6 +137,7 @@ export class UsersController {
   })
   @ApiResponse({ status: 200, description: 'Deletion scheduled (or already scheduled).' })
   @Delete('me/account')
+  @UseGuards(RecentAuthGuard)
   async deleteAccount(@Request() req: AuthedRequest) {
     // Delegate to the canonical deletion pipeline so all data is cleaned up
     // consistently. The legacy AccountService.scheduleDeletion() only tombstoned

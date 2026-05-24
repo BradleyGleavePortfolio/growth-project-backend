@@ -13,11 +13,14 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { RecipesService } from './recipes.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { CreateRecipeDto } from './recipes.dto';
 
 @ApiTags('recipes')
 @Controller('recipes')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('student')
 export class RecipesController {
   constructor(private recipesService: RecipesService) {}
 

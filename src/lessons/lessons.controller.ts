@@ -3,11 +3,14 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { LessonsService } from './lessons.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { CreateLessonDto, UpdateLessonDto } from './lessons.dto';
 
 @ApiTags('lessons')
 @Controller('lessons')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('student')
 export class LessonsController {
   constructor(private lessonsService: LessonsService) {}
 

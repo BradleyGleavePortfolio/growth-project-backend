@@ -6,8 +6,12 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { TimelineService } from './timeline.service';
+import { Roles } from '../common/decorators/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
+import { JwtAuthGuard } from '../auth/auth.guard';
 import { TimelineResponse, TimelineLane } from './timeline.types';
 import type { AuthedRequest } from '../auth/auth-request';
 
@@ -31,6 +35,8 @@ import type { AuthedRequest } from '../auth/auth-request';
  *   limit       — Events per page. Default 20. Max 50.
  */
 @Controller('me/timeline')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('student')
 export class TimelineController {
   private static readonly ALL_LANES: TimelineLane[] = ['body', 'win', 'coach', 'friction'];
   private static readonly VALID_LANES = new Set<TimelineLane>(['body', 'win', 'coach', 'friction']);

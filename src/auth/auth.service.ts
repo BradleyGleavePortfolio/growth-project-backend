@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import {
   Injectable,
+  InternalServerErrorException,
   Logger,
   UnauthorizedException,
   BadRequestException,
@@ -22,6 +23,13 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AuditAction, AuditService, AuditWriteInput } from '../audit/audit.service';
 import { AppleVerifierService } from './apple-verifier.service';
+import { GoogleVerifierService } from './google-verifier.service';
+import {
+  issueRecentAuthToken,
+  parseTtlMs,
+  RECENT_AUTH_SECRET_MIN_LENGTH,
+  RECENT_AUTH_TTL_MS as RECENT_AUTH_TTL_DEFAULT_MS,
+} from './recent-auth.guard';
 
 // Self-service promotion to coach is the legacy behavior of POST
 // /auth/become-coach. It is a privilege-escalation hole on a sale-ready
@@ -44,6 +52,7 @@ export class AuthService {
     private analytics: AnalyticsService,
     private audit: AuditService,
     private appleVerifier: AppleVerifierService,
+    private googleVerifier: GoogleVerifierService,
   ) {
     // Supabase Admin SDK for user management (service role key).
     // Node 20 lacks native WebSocket; supabase-js >=2.105 requires an explicit
@@ -53,6 +62,19 @@ export class AuthService {
       process.env.SUPABASE_SERVICE_ROLE_KEY || '',
       { realtime: { transport: WS as any } },
     );
+  }
+
+  private withAuthTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+    const MS = 10_000;
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`AUTH_TIMEOUT:${label}`));
+      }, MS);
+      promise.then(
+        (v) => { clearTimeout(timer); resolve(v); },
+        (e) => { clearTimeout(timer); reject(e); },
+      );
+    });
   }
 
   async register(data: { email: string; password: string; name: string; phone?: string }) {
@@ -220,14 +242,25 @@ export class AuthService {
   getSignupPolicy() {
     const gateEnabled =
       (process.env.COACH_CODE_GATE_ENABLED || '').toLowerCase() === 'true';
-    const googleEnabled =
+    // Base Supabase wiring is required for ANY OAuth provider to function —
+    // the supabase admin client mints sessions from the verified provider
+    // identity token. Without it, both Google and Apple paths return 401.
+    const supabaseConfigured =
       !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+    // Audit #4 P1: Google is only advertised once a GOOGLE_CLIENT_ID(S) is
+    // set. Without it, the local Google ID-token verifier (used by the
+    // recent-auth re-auth flow) has no audience to pin against and every
+    // attempt is rejected with a generic 401. Advertising "google" in the
+    // policy on an unconfigured server gives mobile no way to know the
+    // provider is unavailable until the user hits the failure mid-flow.
+    const googleEnabled =
+      supabaseConfigured && this.googleVerifier.isConfigured();
     // Apple is only advertised once an APPLE_AUDIENCES allow-list is set.
     // Without it the local defense-in-depth verifier has no audience to pin
     // the identity token to (see AppleVerifierService) and the route returns
     // 503; advertising it would just produce client errors at signup time.
     const appleEnabled =
-      googleEnabled && this.appleVerifier.isConfigured();
+      supabaseConfigured && this.appleVerifier.isConfigured();
     const providers = ['email'];
     if (googleEnabled) providers.push('google');
     if (appleEnabled) providers.push('apple');
@@ -1017,5 +1050,268 @@ export class AuthService {
       access_token: signInData.session.access_token,
       user: { id: user.id, email: user.email, role: user.role },
     };
+  }
+
+  /**
+   * Issue a recent-auth token for the authenticated user.
+   *
+   * The token is a short-lived HMAC proof that the user just re-entered their
+   * password (or passed biometric auth). It must be passed as the
+   * `X-Recent-Auth-Token` header on sensitive endpoints guarded by
+   * `RecentAuthGuard`.
+   *
+   * ## Why verify the password here?
+   *
+   * The mobile client calls this endpoint with the user's current password.
+   * We verify against Supabase before issuing the token — this ensures the
+   * "recent auth" proof is tied to actual credential knowledge, not just a
+   * valid session cookie.
+   *
+   * ## Token lifetime
+   *
+   * Configured by `RECENT_AUTH_TTL_MS` (default 5 min). The token is
+   * stateless — no server-side storage — so revocation requires waiting
+   * out the TTL. The short window limits blast radius.
+   */
+  async issueRecentAuthToken(
+    userId: string,
+    body: { password?: string; provider_token?: string; provider?: 'google' | 'apple' },
+  ): Promise<{ token: string; expires_in_ms: number }> {
+    const secret = process.env.RECENT_AUTH_SECRET;
+    if (!secret || secret.length < RECENT_AUTH_SECRET_MIN_LENGTH) {
+      // Misconfiguration is internal — never leak the env-var name to the client
+      // (R17). Log the real reason server-side and return a generic 500-class
+      // message so the mobile app can show "try again later" rather than
+      // surfacing a secret name.
+      this.logger.error(
+        `RECENT_AUTH_SECRET is not configured or shorter than ${RECENT_AUTH_SECRET_MIN_LENGTH} characters — recent-auth token issue blocked`,
+      );
+      throw new InternalServerErrorException('Sensitive action temporarily unavailable');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    // Re-auth proof: one of
+    //   (a) password  — for email/password users (Supabase signInWithPassword), OR
+    //   (b) provider_token + provider — for OAuth-only users (Google/Apple) who
+    //       have no password on file. We re-verify the fresh provider identity
+    //       token and require it to have been issued within RECENT_AUTH_TTL_MS.
+    // Without (b), OAuth-only users would be permanently locked out of
+    // account deletion (GDPR/compliance regression).
+    if (body.provider_token && body.provider) {
+      await this.verifyOAuthRecentAuthProof(user, body.provider, body.provider_token);
+    } else if (body.password) {
+      const supaClient = createClient(
+        process.env.SUPABASE_URL || '',
+        process.env.SUPABASE_ANON_KEY || '',
+        { realtime: { transport: WS as any } },
+      );
+      let result;
+      try {
+        result = await this.withAuthTimeout(
+          supaClient.auth.signInWithPassword({
+            email: user.email,
+            password: body.password,
+          }),
+          'signInWithPassword',
+        );
+      } catch (err) {
+        const m = (err as Error)?.message ?? '';
+        if (m.startsWith('AUTH_TIMEOUT:')) {
+          this.logger.warn(`recent-auth supabase timeout: ${m}`);
+          throw new ServiceUnavailableException(
+            'Authentication service temporarily unavailable',
+          );
+        }
+        throw err;
+      }
+      if (result.error) {
+        throw new UnauthorizedException('Password is incorrect');
+      }
+    } else {
+      throw new BadRequestException(
+        'Provide either password or provider_token + provider',
+      );
+    }
+
+    const token = issueRecentAuthToken(userId, secret);
+    const ttl = parseTtlMs(process.env.RECENT_AUTH_TTL_MS) ?? RECENT_AUTH_TTL_DEFAULT_MS;
+
+    return { token, expires_in_ms: ttl };
+  }
+
+  /**
+   * Re-verify a fresh Google/Apple identity token as a proof of recent auth.
+   *
+   * For OAuth-only users (no password on file) this is the only way to obtain
+   * a recent-auth token for sensitive actions. We require the provider token
+   * to have been issued within RECENT_AUTH_TTL_MS (default 5 minutes) — i.e.
+   * the mobile client must mint a fresh provider token immediately before
+   * calling this endpoint, exactly the same freshness guarantee a password
+   * re-prompt provides.
+   *
+   * Throws UnauthorizedException on any failure (invalid token, wrong issuer
+   * / audience, expired, stale, not bound to this user). Never leaks the
+   * underlying reason to the client beyond "expired" vs "invalid".
+   */
+  private async verifyOAuthRecentAuthProof(
+    user: { id: string; email: string; supabase_id: string | null },
+    provider: 'google' | 'apple',
+    providerToken: string,
+  ): Promise<void> {
+    const ttl = parseTtlMs(process.env.RECENT_AUTH_TTL_MS) ?? RECENT_AUTH_TTL_DEFAULT_MS;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const ttlSec = Math.ceil(ttl / 1000);
+
+    if (provider === 'apple') {
+      // Apple — defense-in-depth verify the JWT with our pinned audience list,
+      // then check iat freshness.
+      let payload;
+      try {
+        payload = await this.appleVerifier.verify(providerToken);
+      } catch (err) {
+        this.logger.warn(
+          `recent-auth apple token verify failed for user=${user.id}: ${(err as Error).message}`,
+        );
+        throw new UnauthorizedException('Provider token is invalid');
+      }
+      const iat = typeof payload.iat === 'number' ? payload.iat : null;
+      if (iat === null) {
+        throw new UnauthorizedException('Provider token missing iat');
+      }
+      if (nowSec - iat > ttlSec) {
+        throw new UnauthorizedException(
+          'Provider token is stale — request a fresh provider token and retry',
+        );
+      }
+      const email = typeof payload.email === 'string' ? payload.email : null;
+      // Bind the token to *this* user. Apple `sub` is the stable identifier;
+      // we fall back to email match if the Supabase user row stores the email
+      // path. This prevents an Apple token from a different account being
+      // used to issue a recent-auth token for the caller.
+      const supaClient = createClient(
+        process.env.SUPABASE_URL || '',
+        process.env.SUPABASE_ANON_KEY || '',
+        { realtime: { transport: WS as any } },
+      );
+      let signInData;
+      let signInError;
+      try {
+        const resp = await this.withAuthTimeout(
+          supaClient.auth.signInWithIdToken({ provider: 'apple', token: providerToken }),
+          'signInWithIdToken',
+        );
+        signInData = resp.data;
+        signInError = resp.error;
+      } catch (err) {
+        const m = (err as Error)?.message ?? '';
+        if (m.startsWith('AUTH_TIMEOUT:')) {
+          this.logger.warn(`recent-auth supabase timeout: ${m}`);
+          throw new ServiceUnavailableException(
+            'Authentication service temporarily unavailable',
+          );
+        }
+        throw err;
+      }
+      if (signInError || !signInData?.user) {
+        this.logger.warn(
+          `recent-auth apple supabase verify failed for user=${user.id}: ${signInError?.message ?? 'no session'}`,
+        );
+        throw new UnauthorizedException('Provider token is invalid');
+      }
+      const supaUserId = signInData.user.id;
+      const supaEmail = signInData.user.email ?? null;
+      const matchesByEmail =
+        !!email && !!supaEmail && supaEmail.toLowerCase() === user.email.toLowerCase();
+      const matchesBySupabaseId = !!user.supabase_id && user.supabase_id === supaUserId;
+      if (!matchesByEmail && !matchesBySupabaseId) {
+        throw new UnauthorizedException('Provider token does not belong to this user');
+      }
+      return;
+    }
+
+    // Google — `providerToken` MUST be a Google-issued ID token (NOT a
+    // Supabase access token). We verify it against Google's JWKS, pin the
+    // audience to our GOOGLE_CLIENT_ID(s), require a recent `iat`, and bind
+    // the verified Google identity (sub / email) to the authenticated user.
+    //
+    // History: an earlier version of this branch passed `providerToken` to
+    // `supabaseAdmin.auth.getUser()`, which transparently accepts a Supabase
+    // session JWT. Because the caller already authenticates the request with
+    // exactly such a token via the Authorization header, that allowed the
+    // current session token to double as "proof of fresh Google re-auth" —
+    // no real Google interaction required. This new path closes that gap.
+    if (!this.googleVerifier.isConfigured()) {
+      this.logger.error(
+        'GOOGLE_CLIENT_ID(S) not configured — recent-auth google branch unavailable',
+      );
+      throw new UnauthorizedException('Provider token is invalid');
+    }
+    let payload;
+    try {
+      payload = await this.googleVerifier.verify(providerToken);
+    } catch (err) {
+      this.logger.warn(
+        `recent-auth google token verify failed for user=${user.id}: ${(err as Error).message}`,
+      );
+      throw new UnauthorizedException('Provider token is invalid');
+    }
+    const iat = typeof payload.iat === 'number' ? payload.iat : null;
+    if (iat === null) {
+      throw new UnauthorizedException('Provider token missing iat');
+    }
+    if (nowSec - iat > ttlSec) {
+      throw new UnauthorizedException(
+        'Provider token is stale — request a fresh provider token and retry',
+      );
+    }
+    // Bind to this user. Google `sub` is the stable identifier we record on
+    // the Supabase identity row; email is checked as a fallback (and is the
+    // common path for legacy users who signed in before sub-binding shipped).
+    const googleSub = typeof payload.sub === 'string' ? payload.sub : null;
+    const googleEmail = typeof payload.email === 'string' ? payload.email : null;
+    const emailVerified = payload.email_verified === true;
+    const matchesByEmail =
+      emailVerified &&
+      !!googleEmail &&
+      googleEmail.toLowerCase() === user.email.toLowerCase();
+    // Look up the Supabase user's Google identity `sub` to support binding
+    // by stable id (preferred — survives the user changing their Google
+    // primary email).
+    let matchesBySub = false;
+    if (googleSub && user.supabase_id) {
+      try {
+        const { data: supaData } = await this.withAuthTimeout<any>(
+          this.supabaseAdmin.auth.admin.getUserById(user.supabase_id),
+          'getUserById',
+        );
+        const supaIdentities = supaData?.user?.identities || [];
+        for (const identity of supaIdentities) {
+          if (
+            identity.provider === 'google' &&
+            ((identity.identity_data as { sub?: string } | undefined)?.sub === googleSub ||
+              identity.id === googleSub)
+          ) {
+            matchesBySub = true;
+            break;
+          }
+        }
+      } catch (err) {
+        const m = (err as Error)?.message ?? '';
+        if (m.startsWith('AUTH_TIMEOUT:')) {
+          this.logger.warn(`recent-auth supabase timeout: ${m}`);
+          throw new ServiceUnavailableException(
+            'Authentication service temporarily unavailable',
+          );
+        }
+        this.logger.warn(
+          `recent-auth google sub lookup failed for user=${user.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    if (!matchesByEmail && !matchesBySub) {
+      throw new UnauthorizedException('Provider token does not belong to this user');
+    }
   }
 }

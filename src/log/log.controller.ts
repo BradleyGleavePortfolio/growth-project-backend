@@ -3,12 +3,15 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { LogService } from './log.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { LogFoodDto, UpdateLogEntryDto } from './log.dto';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 
 @ApiTags('log')
 @Controller('log')
-@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
+@UseGuards(JwtAuthGuard, ClientEntitlementGuard, RolesGuard)
+@Roles('student')
 export class LogController {
   constructor(private logService: LogService) {}
 

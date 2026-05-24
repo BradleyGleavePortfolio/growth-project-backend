@@ -49,6 +49,12 @@ const makeAppleVerifierMock = () =>
     getAudiences: jest.fn(() => []),
     verify: jest.fn(),
   }) as any;
+const makeGoogleVerifierMock = () =>
+  ({
+    isConfigured: jest.fn(() => false),
+    getAudiences: jest.fn(() => []),
+    verify: jest.fn(),
+  }) as any;
 
 function buildPrismaMock(initialUser: any, coachSubRow: any = null) {
   const state: { user: any } = { user: initialUser };
@@ -102,6 +108,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeAnalyticsMock(),
       audit,
       makeAppleVerifierMock(),
+      makeGoogleVerifierMock(),
     );
 
     let caught: ForbiddenException | null = null;
@@ -127,6 +134,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeAnalyticsMock(),
       makeAuditMock(),
       makeAppleVerifierMock(),
+      makeGoogleVerifierMock(),
     );
     await expect(svc.becomeCoach('u-1', 'pw')).rejects.toBeInstanceOf(
       ForbiddenException,
@@ -144,6 +152,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeAnalyticsMock(),
       makeAuditMock(),
       makeAppleVerifierMock(),
+      makeGoogleVerifierMock(),
     );
     const res = await svc.becomeCoach('u-1', 'irrelevant');
     expect(res).toEqual({ role: 'coach', tier: 'free' });
@@ -163,6 +172,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeAnalyticsMock(),
       makeAuditMock(),
       makeAppleVerifierMock(),
+      makeGoogleVerifierMock(),
     );
     const res = await svc.becomeCoach('u-1', 'irrelevant');
     expect(res).toEqual({ role: 'coach', tier: 'pro' });
@@ -178,6 +188,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeAnalyticsMock(),
       makeAuditMock(),
       makeAppleVerifierMock(),
+      makeGoogleVerifierMock(),
     );
     await expect(svc.becomeCoach('u-missing', 'pw')).rejects.toBeInstanceOf(
       UnauthorizedException,
@@ -218,6 +229,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeAnalyticsMock(),
       makeAuditMock(),
       makeAppleVerifierMock(),
+      makeGoogleVerifierMock(),
     );
     const result = await svc.becomeCoach('u-1', 'correct-password');
     expect(result).toEqual({ role: 'coach', tier: 'free' });
@@ -253,6 +265,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeAnalyticsMock(),
       makeAuditMock(),
       makeAppleVerifierMock(),
+      makeGoogleVerifierMock(),
     );
     // Old code would throw 403 coach_subscription_required here.
     // New code upserts and returns 200.
@@ -284,6 +297,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeAnalyticsMock(),
       makeAuditMock(),
       makeAppleVerifierMock(),
+      makeGoogleVerifierMock(),
     );
     // Old code would throw 403 here. New code succeeds.
     const result = await svc.becomeCoach('u-1', 'correct-password');
@@ -313,6 +327,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeAnalyticsMock(),
       makeAuditMock(),
       makeAppleVerifierMock(),
+      makeGoogleVerifierMock(),
     );
     // Old code would throw 403 here. New code succeeds.
     const result = await svc.becomeCoach('u-1', 'correct-password');
@@ -342,6 +357,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeAnalyticsMock(),
       makeAuditMock(),
       makeAppleVerifierMock(),
+      makeGoogleVerifierMock(),
     );
     const result = await svc.becomeCoach('u-1', 'correct-password');
     expect(result).toEqual({ role: 'coach', tier: 'free' });
@@ -371,6 +387,7 @@ describe('AuthService.becomeCoach (privilege-escalation hard gate)', () => {
       makeAnalyticsMock(),
       makeAuditMock(),
       makeAppleVerifierMock(),
+      makeGoogleVerifierMock(),
     );
     await expect(svc.becomeCoach('u-1', 'wrong-password')).rejects.toBeInstanceOf(
       UnauthorizedException,

@@ -3,10 +3,13 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { PrepGuideService, PrepGuideResult } from './prep-guide.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @ApiTags('prep-guide')
 @Controller('prep-guide')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('student')
 export class PrepGuideController {
   constructor(private prepGuideService: PrepGuideService) {}
 

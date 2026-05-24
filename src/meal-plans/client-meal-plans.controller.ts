@@ -8,6 +8,8 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { MealPlansService } from './meal-plans.service';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 
@@ -15,7 +17,8 @@ import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guar
 // plans (service scopes every query by req.user.id).
 @ApiTags('meal-plans')
 @Controller('meal-plans')
-@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
+@UseGuards(JwtAuthGuard, ClientEntitlementGuard, RolesGuard)
+@Roles('student')
 export class ClientMealPlansController {
   constructor(private plans: MealPlansService) {}
 

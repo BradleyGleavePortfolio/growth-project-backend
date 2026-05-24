@@ -491,3 +491,52 @@ This track is docs + minimal backend code only. Zero schema changes.
 ### No new env vars added to `.env.example`
 
 The evidence-snapshot endpoint reads existing env vars (`FLY_APP_NAME`, `FLY_PRIMARY_REGION`, feature flags). A new optional var `FLY_API_TOKEN` is read by `Soc2EvidenceService` for the Fly.io releases fetch — it defaults to empty and the endpoint gracefully returns an empty `deploymentHistory` array when absent.
+
+## Phase 10 — Role-Gating Hardening (2026-05-08)
+
+**Branch:** `feat/phase-10-role-gating-hardening`  
+**Track:** 5 of 10 (Phase 10)
+
+#### What shipped
+
+- **Comprehensive role audit.** Every one of the ~115 backend route handlers was audited for role decoration. Found 23 controllers (~65 routes) that relied solely on `JwtAuthGuard` without an explicit `@Roles(...)` decorator.
+
+- **@Roles('student') added to 23 student-facing controllers.** Routes that return user-owned data now declare `@Roles('student')` at the class level. This is documented intent — it means "any authenticated user (student, coach, or owner) can access their own copy of this data." Combined with service-layer `user_id` scoping, this is defense-in-depth.
+
+- **RecentAuthGuard.** New guard (`src/auth/recent-auth.guard.ts`) that validates a short-lived HMAC token on sensitive actions. The token is issued by `POST /auth/recent-auth-token` after the user re-enters their password. Default validity: 5 minutes. Token is bound to the authenticated user's id.
+
+- **RecentAuthGuard applied to `DELETE /users/me/account`.** Account deletion now requires re-authentication within 5 minutes. This is the highest-impact irreversible action available to a student.
+
+- **RolesEnforced meta-test.** `test/roles-enforced.spec.ts` walks every controller in `AppModule` via NestJS metadata reflection. If any new handler is added without `@Roles(...)` or `@Public()`, the test fails CI with the exact route name. Bradley sees "Route is ungated: MyController.myMethod" in the build log.
+
+- **Cross-tenant isolation test.** `test/cross-tenant-isolation.spec.ts` asserts service-layer `userId` scoping — user A's query never returns user B's data.
+
+- **`docs/security/role-gating.md`.** Full per-route table: route → roles → guard → notes, generated from the audit.
+
+- **`src/auth/README.md` extended.** Added role taxonomy, decoration rules, re-auth flow diagram, new env vars, new test coverage.
+
+- **`.env.example` updated.** Added `RECENT_AUTH_SECRET` and `RECENT_AUTH_TTL_MS`.
+
+#### Files changed
+
+- `src/auth/recent-auth.guard.ts` — New: RecentAuthGuard + issueRecentAuthToken helper
+- `src/auth/auth.service.ts` — Added issueRecentAuthToken method
+- `src/auth/auth.controller.ts` — Added POST /auth/recent-auth-token endpoint
+- `src/auth/auth.dto.ts` — Added IssueRecentAuthTokenDto
+- `src/auth/auth.module.ts` — Export RecentAuthGuard
+- `src/auth/README.md` — Extended with Phase 10 section
+- `src/users/users.controller.ts` — Added @Roles('student') + RecentAuthGuard on DELETE /users/me/account
+- `src/profile/profile.controller.ts` — Added @Roles('student')
+- `src/timeline/timeline.controller.ts` — Added @Roles('student')
+- 20 × student-facing controllers — Added @Roles('student') + RolesGuard
+- `docs/security/role-gating.md` — New: full per-route audit table
+- `.env.example` — Added RECENT_AUTH_SECRET, RECENT_AUTH_TTL_MS
+- `test/roles-enforced.spec.ts` — New: meta-test, fails CI on ungated routes
+- `test/recent-auth.guard.spec.ts` — New: 8 unit tests for RecentAuthGuard
+- `test/cross-tenant-isolation.spec.ts` — New: service-layer scoping tests
+
+#### Follow-ups
+
+- Apply `RecentAuthGuard` to `POST /admin/users/:id/promote` and the Phase 10 GDPR force-delete endpoint when those PRs land.
+- Migrate legacy bespoke guards (`CoachGuard`, `CoachOrOwnerGuard`, `OwnerGuard`) to `@Roles(...)` to eliminate the legacy-guard allowlist in `roles-enforced.spec.ts`.
+- Add biometric re-auth token path on mobile (currently password-only).

@@ -182,3 +182,120 @@ The DTO mass-assignment guard (`test/dto-mass-assignment.spec.ts`) covers
 - The PostHog `user_registered` event fires server-side from
   `register()` so it cannot be spoofed by a client. `AnalyticsService`
   is a no-op when `POSTHOG_KEY` is unset.
+
+---
+
+## Phase 10 — Role-Gating Hardening (additions)
+
+### Role taxonomy
+
+| Role | Who it represents | Hierarchy position |
+|---|---|---|
+| `owner` | Platform administrator (Bradley or ops team) | Highest — passes every role check automatically |
+| `coach` | Fitness coach on the platform | Middle — can access coach + student routes |
+| `student` | Client / athlete | Base — can only access their own data |
+
+**OWNER bypass:** `RolesGuard` grants pass-through for every `owner` user regardless of the required roles on a route. A coach-only route is reachable by an owner; a student-only route is reachable by all three.
+
+### Decoration rules (non-negotiable)
+
+Every route handler MUST have one of:
+
+| Decorator | When to use |
+|---|---|
+| `@Roles('student')` | Data is scoped to `req.user.id`. All three roles can access (student, coach, owner). |
+| `@Roles('coach')` | Action requires a coach or owner (roster management, dashboards, nudges to clients). |
+| `@Roles('owner')` | Admin-only action (promote users, view platform metrics, run GDPR scrub). |
+| `@Public()` | Endpoint must be reachable without a JWT (health checks, auth endpoints, landing pages, Stripe webhooks). |
+
+A missing decorator is caught at build time by `test/roles-enforced.spec.ts` — the test fails CI with the exact route name.
+
+### Re-auth flow
+
+Sensitive actions (account deletion, role changes) require proof that the human at the keyboard recently entered their password. This is enforced by `RecentAuthGuard` (`src/auth/recent-auth.guard.ts`).
+
+**Client flow:**
+
+1. User taps a sensitive action (e.g. "Delete account").
+2. App prompts for current password.
+3. App calls `POST /auth/recent-auth-token` with the password.
+4. Backend verifies password via Supabase `signInWithPassword`.
+5. Backend returns `{ token, expires_in_ms }`.
+6. App passes the token as `X-Recent-Auth-Token` header on the guarded request.
+7. `RecentAuthGuard` validates the HMAC + freshness + user binding.
+
+**Token format:**
+
+```
+X-Recent-Auth-Token: <user_id>.<issued_at_ms>.<hmac_sha256_hex>
+```
+
+HMAC key: `RECENT_AUTH_SECRET` (from environment).  
+HMAC input: `"<user_id>:<issued_at_ms>"`.  
+Default validity: 5 minutes (`RECENT_AUTH_TTL_MS`).  
+Bound to: the authenticated user's id — cross-user replay is rejected.
+
+**Endpoints requiring re-auth (Phase 10):**
+
+| Endpoint | Reason |
+|---|---|
+| `DELETE /users/me/account` | Irreversible; confirms the user means to delete their account |
+
+**Planned (see follow-ups):**
+
+| Endpoint | Reason |
+|---|---|
+| `POST /admin/users/:id/promote` | Role change — privilege escalation risk |
+| `POST /admin/gdpr/scrub` | Irreversible data destruction |
+
+### RolesEnforced meta-test
+
+`test/roles-enforced.spec.ts` walks every controller registered in `AppModule` using NestJS metadata reflection. If any handler is missing both `@Roles(...)` and `@Public()` (and is not in the documented legacy-guard allowlist), the test fails with:
+
+```
+Route is ungated: YourController.yourMethod — add @Roles() or @Public()
+```
+
+This runs in `npm test` (the `build-and-test` CI job) so a new route without decoration blocks the PR.
+
+### Cross-tenant scoping rule
+
+Every service method that returns user-scoped data MUST derive `userId` from `req.user.id` (set by `JwtAuthGuard`), not from a URL parameter or query string. The Prisma `where` clause MUST include `user_id: userId`.
+
+Verified by `test/cross-tenant-isolation.spec.ts`.
+
+### New env vars (Phase 10)
+
+| Var | Required | Default | Purpose |
+|---|---|---|---|
+| `RECENT_AUTH_SECRET` | yes (for RecentAuthGuard routes) | — | HMAC signing secret. Generate: `openssl rand -hex 32`. |
+| `RECENT_AUTH_TTL_MS` | no | 300000 | Token validity window in ms (5 min). |
+| `GOOGLE_CLIENT_ID` | no | — | Google OAuth client ID(s) — required for Google recent-auth token verification. Omit to disable Google re-auth. |
+| `GOOGLE_CLIENT_IDS` | no | — | Google OAuth client ID(s) — required for Google recent-auth token verification. Omit to disable Google re-auth. Comma-separated; supersedes `GOOGLE_CLIENT_ID` when both are set. |
+
+When neither `GOOGLE_CLIENT_ID` nor `GOOGLE_CLIENT_IDS` is set, `/auth/signup-policy` omits `'google'` from `providers` and the `provider=google` branch of `POST /auth/recent-auth-token` rejects every token with a generic 401. Boot is not blocked; the env-validation summary logs a single named warning so operators can correlate the symptom with the missing config.
+
+### New files (Phase 10)
+
+| File | Purpose |
+|---|---|
+| `src/auth/recent-auth.guard.ts` | `RecentAuthGuard` + `issueRecentAuthToken()` helper |
+| `test/recent-auth.guard.spec.ts` | Unit tests: positive + 5 negative paths |
+| `test/roles-enforced.spec.ts` | Meta-test: every route has @Roles or @Public |
+| `test/cross-tenant-isolation.spec.ts` | Service-layer scoping assertions |
+| `docs/security/role-gating.md` | Per-route role table (full audit) |
+
+### Tests (Phase 10 additions)
+
+| File | Covers |
+|---|---|
+| `test/recent-auth.guard.spec.ts` | Missing secret → 403; missing header → 401; malformed token → 401; expired → 401; wrong user → 403; tampered HMAC → 401; valid token → pass; `issueRecentAuthToken` helper round-trip |
+| `test/roles-enforced.spec.ts` | Every route has a decorator or is in the allowlist; ungated routes fail CI with exact route name |
+| `test/cross-tenant-isolation.spec.ts` | WeightService, WaterService, FastingService scope queries to the requesting user only |
+
+### Future work (Phase 10)
+
+- Migrate legacy `CoachGuard` / `CoachOrOwnerGuard` / `OwnerGuard` to `@Roles(...)` to eliminate the legacy-guard allowlist in `roles-enforced.spec.ts`.
+- Apply `RecentAuthGuard` to `POST /admin/users/:id/promote` (role changes) and the Phase 10 GDPR force-delete endpoint.
+- Add biometric-auth token path on mobile (currently password-only).
+- Consider a short-lived server-side nonce store to enable re-auth token revocation if 5-minute window is too wide.

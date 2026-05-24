@@ -25,6 +25,11 @@ function baseHardEnv(): NodeJS.ProcessEnv {
     // DIRECT_URL was promoted from feature to hard tier (security hardening).
     // Required by `prisma migrate deploy` in the Fly release_command.
     DIRECT_URL: 'postgres://x:5432/db',
+    // Phase 10 — these are prod-tier (must be set for staging/production
+    // boot), so include them in the minimum env that any prod-boot test
+    // expects to pass. Tests for missing/invalid values override locally.
+    RECENT_AUTH_SECRET: 'test-recent-auth-secret-at-least-32-chars-long',
+    RECENT_AUTH_TTL_MS: '300000',
   };
 }
 
@@ -53,6 +58,11 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     STRIPE_CHECKOUT_SUCCESS_URL:
       'https://app.trygrowthproject.com/checkout/success?session_id={CHECKOUT_SESSION_ID}',
     STRIPE_CHECKOUT_CANCEL_URL: 'https://app.trygrowthproject.com/checkout/cancel',
+    // Audit #4 P1 — Google OAuth audience(s) for the local Google ID-token
+    // verifier (recent-auth re-auth flow). Both are feature-tier; setting
+    // at least one is required to keep "google" advertised in /auth/signup-policy.
+    GOOGLE_CLIENT_ID: 'test.apps.googleusercontent.com',
+    GOOGLE_CLIENT_IDS: 'test.apps.googleusercontent.com',
   };
 }
 
@@ -398,5 +408,95 @@ describe('assertEnv — placeholder enforcement', () => {
     expect(() =>
       assertEnv(fullProdEnv(), { logger: silentLogger as any }),
     ).not.toThrow();
+  });
+});
+
+describe('assertEnv — prod-tier validator failures are fatal (Audit #2 P2-B)', () => {
+  it('throws when RECENT_AUTH_SECRET is too short under NODE_ENV=production', () => {
+    expect(() =>
+      assertEnv(
+        {
+          ...fullProdEnv(),
+          // Set but invalid — 31 chars (one below the 32-char minimum).
+          RECENT_AUTH_SECRET: 'a'.repeat(31),
+        },
+        { logger: silentLogger as any },
+      ),
+    ).toThrow(/RECENT_AUTH_SECRET/);
+  });
+
+  it('throws when RECENT_AUTH_SECRET is too short under NODE_ENV=staging', () => {
+    expect(() =>
+      assertEnv(
+        {
+          ...fullProdEnv(),
+          NODE_ENV: 'staging',
+          RECENT_AUTH_SECRET: 'short',
+        },
+        { logger: silentLogger as any },
+      ),
+    ).toThrow(/failed validation/);
+  });
+
+  it('throws when RECENT_AUTH_TTL_MS is out of range under production', () => {
+    expect(() =>
+      assertEnv(
+        {
+          ...fullProdEnv(),
+          RECENT_AUTH_TTL_MS: '30000', // below the 60000 minimum
+        },
+        { logger: silentLogger as any },
+      ),
+    ).toThrow(/RECENT_AUTH_TTL_MS/);
+  });
+
+  it('throws when RECENT_AUTH_TTL_MS is not a finite integer under production', () => {
+    expect(() =>
+      assertEnv(
+        {
+          ...fullProdEnv(),
+          RECENT_AUTH_TTL_MS: 'not-a-number',
+        },
+        { logger: silentLogger as any },
+      ),
+    ).toThrow(/RECENT_AUTH_TTL_MS/);
+  });
+
+  it('does NOT throw when prod-tier validator fails under NODE_ENV=development', () => {
+    // In dev, validator failures are still logged as warnings but must not
+    // crash the boot — keeps `npm run start:dev` usable with throwaway
+    // secrets.
+    expect(() =>
+      assertEnv(
+        {
+          ...baseHardEnv(),
+          NODE_ENV: 'development',
+          RECENT_AUTH_SECRET: 'short',
+        },
+        { logger: silentLogger as any },
+      ),
+    ).not.toThrow();
+  });
+
+  it('does NOT throw when enforceProd=false even with a bad RECENT_AUTH_SECRET', () => {
+    expect(() =>
+      assertEnv(
+        {
+          ...fullProdEnv(),
+          RECENT_AUTH_SECRET: 'short',
+        },
+        { enforceProd: false, logger: silentLogger as any },
+      ),
+    ).not.toThrow();
+  });
+
+  it('evaluateEnv exposes validationErrorsProd for prod-tier validator failures', () => {
+    const r = evaluateEnv({
+      ...fullProdEnv(),
+      RECENT_AUTH_SECRET: 'short',
+      RECENT_AUTH_TTL_MS: '30000',
+    });
+    expect(r.validationErrorsProd.some((e) => e.includes('RECENT_AUTH_SECRET'))).toBe(true);
+    expect(r.validationErrorsProd.some((e) => e.includes('RECENT_AUTH_TTL_MS'))).toBe(true);
   });
 });

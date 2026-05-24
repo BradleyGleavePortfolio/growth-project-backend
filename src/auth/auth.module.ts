@@ -5,6 +5,7 @@ import { ThrottlerModule } from '../throttler/throttler.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AppleVerifierService } from './apple-verifier.service';
+import { GoogleVerifierService } from './google-verifier.service';
 
 /**
  * Auth module — does not use PassportModule or JwtModule.
@@ -14,12 +15,13 @@ import { AppleVerifierService } from './apple-verifier.service';
  * Supabase's published JWK set once and verifies tokens locally — no
  * per-request round-trip to Supabase Auth.
  *
- * `JwtAuthGuard` and `JwksVerifierService` are provided by the @Global
- * `SecurityGuardsModule` (see `src/common/security/security-guards.module.ts`).
- * That module is loaded before AuthModule in AppModule, so the guards
- * are in DI scope for both `@UseGuards(JwtAuthGuard)` in this module's
- * controller and for every downstream feature module — without anyone
- * needing to import AuthModule itself.
+ * `JwtAuthGuard`, `JwksVerifierService`, `RolesGuard`, and `RecentAuthGuard`
+ * are provided by the @Global `SecurityGuardsModule`
+ * (see `src/common/security/security-guards.module.ts`). That module is
+ * loaded before AuthModule in AppModule, so the guards are in DI scope for
+ * both `@UseGuards(JwtAuthGuard)` in this module's controller and for every
+ * downstream feature module — without anyone needing to import AuthModule
+ * itself.
  *
  * Keeping guards out of AuthModule's provider list is load-bearing for
  * cycle prevention: hotfix #243 (prod-down 2026-05-20) traced a boot
@@ -43,7 +45,7 @@ import { AppleVerifierService } from './apple-verifier.service';
 @Module({
   imports: [ConfigModule, InviteCodesModule, ThrottlerModule],
   controllers: [AuthController],
-  providers: [AuthService, AppleVerifierService],
-  exports: [AuthService, AppleVerifierService],
+  providers: [AuthService, AppleVerifierService, GoogleVerifierService],
+  exports: [AuthService, AppleVerifierService, GoogleVerifierService],
 })
 export class AuthModule {}

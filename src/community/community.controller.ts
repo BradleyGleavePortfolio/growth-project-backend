@@ -13,12 +13,15 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { CommunityService } from './community.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { PostWinDto } from './community.dto';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 
 @ApiTags('community')
 @Controller('community')
-@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
+@UseGuards(JwtAuthGuard, ClientEntitlementGuard, RolesGuard)
+@Roles('student')
 export class CommunityController {
   constructor(private communityService: CommunityService) {}
 

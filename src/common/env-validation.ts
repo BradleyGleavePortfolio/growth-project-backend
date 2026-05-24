@@ -175,6 +175,34 @@ export const ENV_RULES: EnvRule[] = [
       'Comma-separated allow-list of Apple audiences (iOS bundle ids and/or Apple Services IDs) accepted by POST /auth/apple. Without it, the endpoint returns 503 and /auth/signup-policy omits "apple" from providers. Set to your iOS bundle id (e.g. com.thegrowthproject.app) before enabling Sign in with Apple in Supabase.',
   },
   {
+    name: 'GOOGLE_CLIENT_ID',
+    tier: 'feature',
+    reason:
+      'Google OAuth client ID accepted as audience by the local Google ID-token verifier (POST /auth/recent-auth-token, provider=google). Without it (and without GOOGLE_CLIENT_IDS) the recent-auth Google branch rejects every token and /auth/signup-policy omits "google" from providers. Set to your *.apps.googleusercontent.com client id. Use GOOGLE_CLIENT_IDS instead for multi-client support.',
+    validate: (v) => {
+      if (v.trim().length === 0) {
+        return 'GOOGLE_CLIENT_ID must be a non-empty string when set.';
+      }
+      return null;
+    },
+  },
+  {
+    name: 'GOOGLE_CLIENT_IDS',
+    tier: 'feature',
+    reason:
+      'Comma-separated allow-list of Google OAuth client IDs accepted as audiences by the local Google ID-token verifier. Supersedes GOOGLE_CLIENT_ID when both are set; use this when the platform issues separate iOS / Android / Web client IDs.',
+    validate: (v) => {
+      const entries = v
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      if (entries.length === 0) {
+        return 'GOOGLE_CLIENT_IDS must contain at least one non-empty client ID when set.';
+      }
+      return null;
+    },
+  },
+  {
     // REDIS_URL is production-required: a single-machine in-memory throttler
     // cannot defend a multi-machine Fly deploy and credential-stuffing
     // attacks routinely fan out across machines. The boot-time check below
@@ -412,6 +440,36 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     reason: 'Phase 6C — Supabase Storage bucket name for voice note objects. Defaults to "voice-notes". Bucket must exist in the Supabase project; signed-upload flow returns 501 VOICE_STORAGE_UNAVAILABLE if the bucket is unreachable or the JS SDK is too old to expose createSignedUploadUrl().',
   },
+  // Phase 10 — Recent-auth (re-auth for sensitive actions)
+  {
+    name: 'RECENT_AUTH_SECRET',
+    tier: 'prod',
+    reason:
+      'Phase 10 — HMAC signing secret for short-lived re-auth tokens (X-Recent-Auth-Token). Required for account deletion and other sensitive actions. Must be at least 32 characters of high-entropy data; shorter values are rejected at boot.',
+    validate: (v) => {
+      if (v.trim().length < 32) {
+        return 'RECENT_AUTH_SECRET must be at least 32 characters long.';
+      }
+      return null;
+    },
+  },
+  {
+    name: 'RECENT_AUTH_TTL_MS',
+    tier: 'prod',
+    reason:
+      'Phase 10 — validity window for re-auth tokens, in milliseconds. Must be a finite integer in [60000, 3600000] (1 min to 1 hour). Defaults to 300000 (5 min) when unset. Values outside this range fail the guard closed.',
+    validate: (v) => {
+      const trimmed = v.trim();
+      const n = Number(trimmed);
+      if (!Number.isFinite(n) || !Number.isInteger(n)) {
+        return 'RECENT_AUTH_TTL_MS must be a finite integer.';
+      }
+      if (n < 60_000 || n > 3_600_000) {
+        return 'RECENT_AUTH_TTL_MS must be in the range [60000, 3600000] (1 min to 1 hour).';
+      }
+      return null;
+    },
+  },
   // Phase 6D — Coach Onboarding Wizard
   {
     name: 'COACH_ONBOARDING_AUTO_START',
@@ -530,6 +588,12 @@ export interface EnvValidationResult {
   missingFeature: string[];
   missingOptional: string[];
   validationWarnings: string[];
+  // Validator-rule failures for prod-tier vars. Under prod-like NODE_ENV these
+  // are fatal (assertEnv throws), so a misconfigured RECENT_AUTH_SECRET or
+  // RECENT_AUTH_TTL_MS in staging/production fails boot instead of degrading
+  // at request time. In dev they are still logged as warnings via
+  // validationWarnings so the operator sees the issue.
+  validationErrorsProd: string[];
   // Names of hard/prod-tier vars whose value looks like an unfilled placeholder
   // (e.g. literal `<value>`, `XXXXXXXX`, `changeme`). Treated as missing —
   // a placeholder in prod is worse than absence because boot would otherwise
@@ -591,6 +655,7 @@ export function evaluateEnv(env: NodeJS.ProcessEnv = process.env): EnvValidation
   const placeholderHard: string[] = [];
   const placeholderProd: string[] = [];
   const validationWarnings: string[] = [];
+  const validationErrorsProd: string[] = [];
 
   for (const rule of ENV_RULES) {
     const value = env[rule.name];
@@ -614,7 +679,17 @@ export function evaluateEnv(env: NodeJS.ProcessEnv = process.env): EnvValidation
 
     if (rule.validate) {
       const err = rule.validate(value!);
-      if (err) validationWarnings.push(`${rule.name}: ${err}`);
+      if (err) {
+        validationWarnings.push(`${rule.name}: ${err}`);
+        // Audit #2 P2-B: prod-tier validator failures must be fatal under
+        // prod-like NODE_ENV. RECENT_AUTH_SECRET / RECENT_AUTH_TTL_MS being
+        // invalid in staging or production used to only log a warning and
+        // then accept requests with a misconfigured auth system; now boot
+        // fails when this happens.
+        if (rule.tier === 'hard' || rule.tier === 'prod') {
+          validationErrorsProd.push(`${rule.name}: ${err}`);
+        }
+      }
     }
   }
 
@@ -626,6 +701,7 @@ export function evaluateEnv(env: NodeJS.ProcessEnv = process.env): EnvValidation
     placeholderHard,
     placeholderProd,
     validationWarnings,
+    validationErrorsProd,
     isProd,
   };
 }
@@ -747,12 +823,44 @@ export function assertEnv(
     }
   }
 
+  // Audit #2 P2-B: validator failures on hard/prod-tier vars are fatal under
+  // prod-like NODE_ENV. Catches the case where RECENT_AUTH_SECRET is set but
+  // too short, or RECENT_AUTH_TTL_MS is set but out of range — boot used to
+  // continue and only fail at the first request that hit the recent-auth
+  // endpoint. Now we fail loudly at startup. In dev these are still surfaced
+  // via the validationWarnings logger.warn below.
+  if (result.validationErrorsProd.length && enforceProd) {
+    const msg = `Production-tier env vars failed validation (NODE_ENV=${env.NODE_ENV}): ${result.validationErrorsProd.join('; ')}`;
+    logger.error(msg);
+    throw new Error(msg);
+  }
+
   // Feature-tier vars never block boot. Warn loudly under prod-like
   // NODE_ENV so operators see what's degraded; stay quiet in dev.
   if (result.missingFeature.length && enforceProd) {
     logger.warn(
       `Feature-tier env vars missing — related features are disabled or return 4xx at call time (NODE_ENV=${env.NODE_ENV}): ${result.missingFeature.join(', ')}`,
     );
+  }
+
+  // Audit #4 P1: surface a distinct, named warning when BOTH Google client-id
+  // env vars are absent in prod-like envs. The recent-auth flow's Google
+  // branch verifies tokens against these audiences; without either, every
+  // Google re-auth attempt is rejected with a generic 401, which can be
+  // misread as a mobile bug. Boot is NOT blocked — Google is an optional
+  // provider — but the warning gives operators a single, searchable line
+  // tying the symptom to the missing config. Apple has equivalent behaviour
+  // via APPLE_AUDIENCES (returns 503 from /auth/apple).
+  if (enforceProd) {
+    const googleIdSet =
+      typeof env.GOOGLE_CLIENT_ID === 'string' && env.GOOGLE_CLIENT_ID.trim().length > 0;
+    const googleIdsSet =
+      typeof env.GOOGLE_CLIENT_IDS === 'string' && env.GOOGLE_CLIENT_IDS.trim().length > 0;
+    if (!googleIdSet && !googleIdsSet) {
+      logger.warn(
+        `Google recent-auth disabled — neither GOOGLE_CLIENT_ID nor GOOGLE_CLIENT_IDS is set. /auth/signup-policy will omit "google" from providers and Google OAuth users cannot complete sensitive actions (e.g. account deletion). Set at least one to enable. (NODE_ENV=${env.NODE_ENV})`,
+      );
+    }
   }
 
   if (result.missingOptional.length) {
