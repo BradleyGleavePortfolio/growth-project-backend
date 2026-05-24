@@ -128,6 +128,11 @@ export const AuditAction = {
   // paths so unusual-volume / spam patterns are visible without joining
   // analytics. No message body in metadata, just length + voice flag.
   MESSAGE_SENT: 'messaging.sent',
+
+  // --- Sub-coach assignment (Phase 11) ---
+  SUB_COACH_CLIENT_ASSIGNED: 'sub_coach.client_assigned',
+  SUB_COACH_CLIENT_REASSIGNED: 'sub_coach.client_reassigned',
+  SUB_COACH_CLIENT_UNASSIGNED: 'sub_coach.client_unassigned',
 } as const;
 
 export type AuditActionValue = (typeof AuditAction)[keyof typeof AuditAction];

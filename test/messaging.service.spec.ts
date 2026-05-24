@@ -40,12 +40,13 @@ function makePrisma() {
         if (val !== null && val !== undefined) return false;
         continue;
       }
-      if (typeof v === 'object' && v !== null && ('lt' in v || 'gt' in v || 'gte' in v || 'lte' in v || 'in' in v)) {
+      if (typeof v === 'object' && v !== null && ('lt' in v || 'gt' in v || 'gte' in v || 'lte' in v || 'in' in v || 'not' in v)) {
         if ('lt' in v && !(val < (v as any).lt)) return false;
         if ('gt' in v && !(val > (v as any).gt)) return false;
         if ('gte' in v && !(val >= (v as any).gte)) return false;
         if ('lte' in v && !(val <= (v as any).lte)) return false;
         if ('in' in v && !((v as any).in as any[]).includes(val)) return false;
+        if ('not' in v && val === (v as any).not) return false;
         continue;
       }
       if (val !== v) return false;
@@ -304,6 +305,61 @@ describe('MessagingService', () => {
     it('orphan client (no coach) returns {total:0} instead of 409 — mobile polls this', async () => {
       const out = await svc.unreadCountForClient('client-orphan');
       expect(out).toEqual({ total: 0 });
+    });
+
+    // P1-2 regression: sub-coach messages share the head-coach thread but have
+    // sender_id = subCoachId. The pre-fix filter (sender_id = coachId) missed
+    // them entirely — client-side unread badge stayed at 0 and mark-read left
+    // them permanently unread. The fix uses sender_id != clientId.
+    describe('sub-coach senders in the head-coach thread (P1-2)', () => {
+      const SUB_COACH = 'sub-coach-1';
+
+      const seedSubCoachMessage = (body: string) => {
+        prisma._messages.push({
+          id: `m-sub-${prisma._messages.length + 1}`,
+          coach_id: 'coach-A',
+          client_id: 'client-1',
+          sender_id: SUB_COACH,
+          body,
+          created_at: new Date(),
+          read_at: null,
+        });
+      };
+
+      it('sub-coach send increments the client unread count', async () => {
+        seedSubCoachMessage('from sub-coach');
+        const out = await svc.unreadCountForClient('client-1');
+        expect(out).toEqual({ total: 1 });
+      });
+
+      it('client mark-read clears sub-coach messages too', async () => {
+        seedSubCoachMessage('from sub-coach');
+        const result = await svc.markReadByClient('client-1');
+        expect(result).toEqual({ updated: 1 });
+        const after = await svc.unreadCountForClient('client-1');
+        expect(after).toEqual({ total: 0 });
+      });
+
+      it('head-coach message still counted + marked read (no regression)', async () => {
+        await svc.sendAsCoach('coach-A', 'client-1', 'from head coach');
+        seedSubCoachMessage('from sub-coach');
+        const before = await svc.unreadCountForClient('client-1');
+        expect(before).toEqual({ total: 2 });
+        const marked = await svc.markReadByClient('client-1');
+        expect(marked).toEqual({ updated: 2 });
+        const after = await svc.unreadCountForClient('client-1');
+        expect(after).toEqual({ total: 0 });
+      });
+
+      it('client own message is never counted or marked', async () => {
+        await svc.sendAsClient('client-1', 'me');
+        seedSubCoachMessage('from sub-coach');
+        const out = await svc.unreadCountForClient('client-1');
+        expect(out).toEqual({ total: 1 });
+        await svc.markReadByClient('client-1');
+        const own = prisma._messages.find((m) => m.sender_id === 'client-1')!;
+        expect(own.read_at).toBeNull();
+      });
     });
   });
 });

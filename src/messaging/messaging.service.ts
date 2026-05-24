@@ -21,6 +21,7 @@ import { ClientAIContextService } from '../ai/client-ai-context.service';
 // to (a) skip new-message push fanout when either side has blocked the
 // other and (b) filter blocked senders out of list / unread responses.
 import { MessagesSafetyService } from '../messages-safety/messages-safety.service';
+import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -97,6 +98,11 @@ export class MessagingService {
     // `new MessagingService(...)` without the safety arg still compile. In
     // production DI it is always provided via MessagesSafetyModule.
     @Optional() private safety: MessagesSafetyService | null = null,
+    // Phase 11: optional in the type signature so unit tests that
+    // construct MessagingService directly with the legacy 4-arg form
+    // keep compiling. In production DI it's always populated because
+    // SubCoachModule is @Global.
+    private subCoachScope?: SubCoachScopeService,
   ) {}
 
   // Resolve a sender's display name for the push notification body. Falls
@@ -249,8 +255,12 @@ export class MessagingService {
   // Look up a client and verify they belong to this coach. 404 on missing /
   // foreign — the existence of a foreign client must not leak. When the caller
   // is OWNER, the coach scoping check is bypassed (OWNER reads any thread).
-  // The returned coach_id is the thread's coach (the client's assigned coach
-  // for OWNERs; the caller for normal coaches).
+  //
+  // Phase 11: when the caller is a SUB-COACH (role='coach' AND coach_id !=
+  // null), authorization requires an open SubCoachAssignment row for this
+  // client. The returned `coach_id` is the head coach's id (the thread's
+  // coach), NOT the sub-coach's id — so all subsequent prisma queries
+  // continue to read/write under the head coach's namespace.
   private async assertClientOfCoach(
     coachId: string,
     clientId: string,
@@ -264,12 +274,46 @@ export class MessagingService {
       if (!client) throw new NotFoundException('Client not found');
       return client;
     }
-    const client = await this.prisma.user.findFirst({
+
+    // Fast path: caller is the head coach for this client.
+    const direct = await this.prisma.user.findFirst({
       where: { id: clientId, coach_id: coachId, role: 'student' },
       select: { id: true, coach_id: true },
     });
-    if (!client) throw new NotFoundException('Client not found');
-    return client;
+    if (direct) return direct;
+
+    // Phase 11 fallback: caller might be a sub-coach with an open
+    // assignment for this client. Authorize via SubCoachAssignment.
+    if (this.subCoachScope) {
+      const headCoachId =
+        await this.subCoachScope.getHeadCoachIdForSubCoach(coachId);
+      if (headCoachId) {
+        const open = await this.prisma.subCoachAssignment.findFirst({
+          where: {
+            sub_coach_id: coachId,
+            client_id: clientId,
+            head_coach_id: headCoachId,
+            unassigned_at: null,
+          },
+          select: { id: true },
+        });
+        if (open) {
+          // Confirm the client row exists / isn't soft-deleted and pin
+          // the thread coach_id to the head coach.
+          const client = await this.prisma.user.findFirst({
+            where: { id: clientId, role: 'student', deleted_at: null },
+            select: { id: true, coach_id: true },
+          });
+          if (client) {
+            // The returned coach_id MUST be the head coach for the thread
+            // namespace to resolve correctly.
+            return { id: client.id, coach_id: headCoachId };
+          }
+        }
+      }
+    }
+
+    throw new NotFoundException('Client not found');
   }
 
   // Load the current coach_id for a client. Throws 409 if no coach assigned —
@@ -306,8 +350,11 @@ export class MessagingService {
   }
 
   async listThreadForCoach(coachId: string, clientId: string, opts: ListOpts) {
-    await this.assertClientOfCoach(coachId, clientId);
-    const rows = await this.listThread(coachId, clientId, opts);
+    const client = await this.assertClientOfCoach(coachId, clientId);
+    // For sub-coaches, the thread's coach_id is the head coach's id —
+    // returned in client.coach_id by assertClientOfCoach.
+    const threadCoachId = client.coach_id ?? coachId;
+    const rows = await this.listThread(threadCoachId, clientId, opts);
     return this.filterBlockedAuthors(coachId, clientId, rows);
   }
 
@@ -356,7 +403,7 @@ export class MessagingService {
     // sees one form; the controllers always pass the structured form.
     const normalized: SendMessagePayload =
       typeof payload === 'string' ? { body: payload } : payload;
-    await this.assertClientOfCoach(coachId, clientId);
+    const client = await this.assertClientOfCoach(coachId, clientId);
     this.assertSendablePayload(normalized, coachId);
     const trimmedBody =
       typeof normalized.body === 'string' ? normalized.body.trim() : '';
@@ -377,9 +424,13 @@ export class MessagingService {
       }
     }
 
+    // Phase 11: messages live under the head coach's coach_id namespace
+    // so existing head-coach queries keep returning them. For sub-coaches
+    // the sender_id captures who actually sent.
+    const threadCoachId = client.coach_id ?? coachId;
     const created = await this.prisma.coachMessage.create({
       data: {
-        coach_id: coachId,
+        coach_id: threadCoachId,
         client_id: clientId,
         sender_id: coachId,
         body,
@@ -641,10 +692,11 @@ export class MessagingService {
   // touch rows where read_at IS NULL so repeated calls are idempotent and the
   // original read timestamp survives.
   async markReadByCoach(coachId: string, clientId: string) {
-    await this.assertClientOfCoach(coachId, clientId);
+    const client = await this.assertClientOfCoach(coachId, clientId);
+    const threadCoachId = client.coach_id ?? coachId;
     const result = await this.prisma.coachMessage.updateMany({
       where: {
-        coach_id: coachId,
+        coach_id: threadCoachId,
         client_id: clientId,
         sender_id: clientId,
         read_at: null,
@@ -656,11 +708,14 @@ export class MessagingService {
 
   async markReadByClient(clientId: string) {
     const coachId = await this.requireClientCoachId(clientId);
+    // Mark every non-client sender's message read in this thread. Filtering on
+    // sender_id = coachId would miss sub-coach messages, since sub-coaches
+    // send with sender_id = subCoachId (the head coach still owns the thread).
     const result = await this.prisma.coachMessage.updateMany({
       where: {
         coach_id: coachId,
         client_id: clientId,
-        sender_id: coachId,
+        sender_id: { not: clientId },
         read_at: null,
       },
       data: { read_at: new Date() },
@@ -673,12 +728,30 @@ export class MessagingService {
   // Coach's unread inbox: messages where the coach is the recipient
   // (sender = client). Returns total + per-client breakdown so the coach UI
   // can badge each thread row without N extra round-trips.
+  //
+  // Phase 11: sub-coaches see only the unread counts for clients they're
+  // currently assigned to, scoped through the SubCoachAssignment overlay.
   async unreadCountForCoach(coachId: string) {
+    let threadCoachId = coachId;
+    let clientFilter: { in: string[] } | undefined = undefined;
+    if (this.subCoachScope) {
+      const headCoachId =
+        await this.subCoachScope.getHeadCoachIdForSubCoach(coachId);
+      if (headCoachId) {
+        // Sub-coach: messages live under the head coach; restrict to
+        // assigned clients only.
+        threadCoachId = headCoachId;
+        const ids = await this.subCoachScope.getAuthorizedClientIds(coachId);
+        if (ids.length === 0) return { total: 0, by_client: {} };
+        clientFilter = { in: ids };
+      }
+    }
     const groups = await this.prisma.coachMessage.groupBy({
       by: ['client_id'],
       where: {
-        coach_id: coachId,
+        coach_id: threadCoachId,
         read_at: null,
+        ...(clientFilter ? { client_id: clientFilter } : {}),
         NOT: { sender_id: coachId },
       },
       _count: { _all: true },
@@ -727,11 +800,14 @@ export class MessagingService {
         return { total: 0 };
       }
     }
+    // Count any non-client sender — sub-coach messages live under the head
+    // coach's thread with sender_id = subCoachId, so a coach_id-only filter
+    // would miss them.
     const total = await this.prisma.coachMessage.count({
       where: {
         coach_id: coachId,
         client_id: clientId,
-        sender_id: coachId,
+        sender_id: { not: clientId },
         read_at: null,
       },
     });
