@@ -9,6 +9,7 @@
 // trusts a client-supplied coach_id.
 
 import {
+  Body,
   Controller,
   Get,
   HttpCode,
@@ -20,6 +21,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { CoachGuard } from '../../auth/coach.guard';
@@ -32,6 +34,16 @@ import {
   type InboxResponse,
   type WinStreaksResponse,
 } from './command-center.service';
+import {
+  ChurnInterventionService,
+  type ChurnAtRiskResponse,
+  type ChurnInterventionDto,
+  type SendInterventionResponse,
+} from './churn-intervention.service';
+import {
+  GenerateChurnDraftDto,
+  SendInterventionDto,
+} from './churn-intervention.dto';
 
 function parseInt0(s: string | undefined): number | undefined {
   if (!s) return undefined;
@@ -47,7 +59,10 @@ function parseBool(s: string | undefined): boolean {
 @Controller('coach/command-center')
 @UseGuards(JwtAuthGuard, CoachGuard)
 export class CommandCenterController {
-  constructor(private readonly commandCenter: CommandCenterService) {}
+  constructor(
+    private readonly commandCenter: CommandCenterService,
+    private readonly churn: ChurnInterventionService,
+  ) {}
 
   @Get('overview')
   @ApiOperation({
@@ -154,5 +169,90 @@ export class CommandCenterController {
     @Param('alertId', new ParseUUIDPipe()) alertId: string,
   ): Promise<{ ok: true }> {
     return this.commandCenter.dismissAlert(alertId, req.user.id);
+  }
+
+  // ── Churn intervention flow ─────────────────────────────────────────
+
+  @Get('churn-at-risk')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @ApiOperation({
+    summary: 'Enriched at-risk list with top factors + suggested action.',
+    description:
+      'Reads from pre-computed PtmPrediction rows (no live scoring). ' +
+      'Returns the top 3 risk signals per client and a suggested action ' +
+      'so the coach can decide between drafting a re-engagement message ' +
+      'and reviewing bloodwork. Raw risk_score is null (Phase 1E).',
+  })
+  async getChurnAtRisk(
+    @Request() req: AuthedRequest,
+    @Query('limit') limit?: string,
+    @Query('minBucket') minBucket?: 'amber' | 'red',
+  ): Promise<ChurnAtRiskResponse> {
+    const parsedLimit = limit ? parseInt(limit, 10) : undefined;
+    const safeBucket =
+      minBucket === 'red' || minBucket === 'amber' ? minBucket : undefined;
+    return this.churn.getChurnAtRisk(req.user.id, {
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+      minBucket: safeBucket,
+    });
+  }
+
+  @Post('churn-at-risk/:clientId/draft')
+  @Throttle({ default: { ttl: 3_600_000, limit: 20 } })
+  @ApiOperation({
+    summary: 'Generate an Anthropic-drafted re-engagement message.',
+    description:
+      'Idempotent — repeating the same idempotency_key returns the same ' +
+      'ChurnIntervention row without calling Anthropic again. The draft ' +
+      'is stored with status="draft" and may be edited before the coach ' +
+      'calls send.',
+  })
+  async generateChurnDraft(
+    @Request() req: AuthedRequest,
+    @Param('clientId', new ParseUUIDPipe()) clientId: string,
+    @Body() dto: GenerateChurnDraftDto,
+  ): Promise<ChurnInterventionDto> {
+    return this.churn.generateChurnDraft(req.user.id, clientId, {
+      idempotency_key: dto.idempotency_key,
+      alert_id: dto.alert_id,
+    });
+  }
+
+  @Post('churn-interventions/:interventionId/send')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 3_600_000, limit: 30 } })
+  @ApiOperation({
+    summary: 'Send the (optionally edited) re-engagement message.',
+    description:
+      'Atomic — a conditional updateMany ensures only one caller can ' +
+      'transition the intervention to "sent". Creates a CoachNudge row ' +
+      'and fires a fire-and-forget push notification. Idempotent: a ' +
+      'second call returns the existing sent_at and nudge_id.',
+  })
+  async sendIntervention(
+    @Request() req: AuthedRequest,
+    @Param('interventionId', new ParseUUIDPipe()) interventionId: string,
+    @Body() dto: SendInterventionDto,
+  ): Promise<SendInterventionResponse> {
+    return this.churn.sendIntervention(req.user.id, interventionId, {
+      message_text: dto.message_text,
+      idempotency_key: dto.idempotency_key,
+    });
+  }
+
+  @Post('churn-interventions/:interventionId/dismiss')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Dismiss a draft intervention without sending.',
+    description:
+      'Naturally idempotent — a second dismiss returns { ok: true } ' +
+      'without re-writing dismissed_at. Cannot dismiss an already-sent ' +
+      'intervention (returns 409).',
+  })
+  async dismissIntervention(
+    @Request() req: AuthedRequest,
+    @Param('interventionId', new ParseUUIDPipe()) interventionId: string,
+  ): Promise<{ ok: true; intervention_id: string }> {
+    return this.churn.dismissIntervention(req.user.id, interventionId);
   }
 }

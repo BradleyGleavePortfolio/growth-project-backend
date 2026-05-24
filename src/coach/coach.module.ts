@@ -23,6 +23,7 @@ import { LtvMetricsService } from './command-center/ltv-metrics.service';
 // Coach Command Center — 5 P0 endpoints + churn intervention flow
 import { CommandCenterController } from './command-center/command-center.controller';
 import { CommandCenterService } from './command-center/command-center.service';
+import { ChurnInterventionService } from './command-center/churn-intervention.service';
 
 // PrismaService provided globally via PrismaModule.
 //
@@ -83,6 +84,7 @@ import { CommandCenterService } from './command-center/command-center.service';
     LtvMetricsService,
     // Command Center
     CommandCenterService,
+    ChurnInterventionService,
   ],
   exports: [
     CoachEffectivenessService,

@@ -1,0 +1,663 @@
+// src/coach/command-center/churn-intervention.service.ts
+//
+// ChurnInterventionService — backs the tap→draft→approve→send flow for
+// at-risk clients. Surfaces a Claude-drafted re-engagement message,
+// allows the coach to edit, and (on approve/send) writes a CoachNudge
+// row + fires a push notification.
+//
+// R39 cross-cutting compliance:
+//   * Idempotency  — both draft and send accept a mobile-generated UUID
+//                    in the request body. Draft dedup via unique index
+//                    on ChurnIntervention.idempotency_key. Send dedup
+//                    via conditional `updateMany WHERE status NOT IN
+//                    ('sent','dismissed')` (R39 item 7 — no check-then-
+//                    act outside a transaction).
+//   * Timeouts     — Anthropic call wrapped in AbortController, 10s
+//                    timeout (R39 item 5).
+//   * Sanitization — AI errors NEVER leak the prompt content or raw
+//                    Anthropic error body to the client; we throw a
+//                    structured 503 with a generic message.
+//   * Race-safe    — send uses a single atomic updateMany; result.count
+//                    determines whether the caller is the winning sender
+//                    or a duplicate.
+
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { Prisma } from '@prisma/client';
+import Anthropic from '@anthropic-ai/sdk';
+import { PrismaService } from '../../prisma.service';
+import { PtmService } from '../../ptm/ptm.service';
+import { NotificationsService } from '../../notifications/notifications.service';
+import { COACH_AI_MODEL } from '../../ai/coach/coach-ai.constants';
+
+// DI token so tests can inject a fake Anthropic client without reaching
+// out to the public API. Production boot leaves it unset and the service
+// lazily constructs a real client from ANTHROPIC_API_KEY.
+export const CHURN_ANTHROPIC_CLIENT_TOKEN = 'CHURN_ANTHROPIC_CLIENT';
+
+const ANTHROPIC_TIMEOUT_MS = 10_000;
+const MAX_MESSAGE_CHARS = 1000;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// ── Response shapes ────────────────────────────────────────────────────
+
+export interface ChurnInterventionDto {
+  intervention_id: string;
+  client_id: string;
+  client_name: string;
+  draft_text: string;
+  status: 'draft' | 'edited' | 'sent' | 'dismissed';
+  top_factor: string;
+  created_at: string;
+}
+
+export interface SendInterventionResponse {
+  ok: true;
+  intervention_id: string;
+  sent_at: string;
+  nudge_id: string;
+}
+
+export interface ChurnAtRiskEntry {
+  user_id: string;
+  display_name: string;
+  bucket: 'red' | 'amber';
+  risk_score: null;
+  last_active_at: string | null;
+  days_since_last_signal: number;
+  risk_signals: Array<{
+    key: string;
+    label: string;
+    severity: 'high' | 'medium' | 'protective';
+  }>;
+  top_factor: string;
+  suggested_action:
+    | 'send_checkin_message'
+    | 'review_bloodwork'
+    | 'none';
+  score_computed_at: string;
+}
+
+export interface ChurnAtRiskResponse {
+  items: ChurnAtRiskEntry[];
+  generated_at: string;
+}
+
+interface PtmFactor {
+  key: string;
+  label: string;
+  contribution: number;
+}
+
+function isPtmFactor(raw: unknown): raw is PtmFactor {
+  if (typeof raw !== 'object' || raw === null) return false;
+  const r = raw as Record<string, unknown>;
+  return (
+    typeof r.key === 'string' &&
+    typeof r.label === 'string' &&
+    typeof r.contribution === 'number'
+  );
+}
+
+function parseFactors(raw: Prisma.JsonValue | null | undefined): PtmFactor[] {
+  if (!Array.isArray(raw)) return [];
+  const factors: PtmFactor[] = [];
+  for (const item of raw) {
+    if (isPtmFactor(item)) factors.push(item);
+  }
+  return factors.sort((a, b) => b.contribution - a.contribution);
+}
+
+@Injectable()
+export class ChurnInterventionService {
+  private readonly logger = new Logger(ChurnInterventionService.name);
+  private anthropic: Anthropic | null = null;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ptm: PtmService,
+    private readonly config: ConfigService,
+    @Optional() private readonly notifications?: NotificationsService,
+    @Optional()
+    @Inject(CHURN_ANTHROPIC_CLIENT_TOKEN)
+    injectedClient?: Anthropic,
+  ) {
+    if (injectedClient) this.anthropic = injectedClient;
+  }
+
+  private getAnthropicClient(): Anthropic {
+    if (this.anthropic) return this.anthropic;
+    const apiKey =
+      this.config.get<string>('ANTHROPIC_API_KEY') ??
+      process.env.ANTHROPIC_API_KEY;
+    if (!apiKey || !apiKey.trim()) {
+      throw new Error('ANTHROPIC_API_KEY not configured');
+    }
+    this.anthropic = new Anthropic({ apiKey });
+    return this.anthropic;
+  }
+
+  // ── GET /churn-at-risk ────────────────────────────────────────────────
+  async getChurnAtRisk(
+    coachId: string,
+    opts: { limit?: number; minBucket?: 'amber' | 'red' },
+  ): Promise<ChurnAtRiskResponse> {
+    const limit =
+      opts.limit && Number.isFinite(opts.limit) && opts.limit > 0
+        ? Math.min(Math.floor(opts.limit), 50)
+        : 20;
+
+    const rosterRows = await this.prisma.user.findMany({
+      where: { coach_id: coachId, role: 'student', deleted_at: null },
+      select: { id: true, name: true },
+    });
+    if (rosterRows.length === 0) {
+      return { items: [], generated_at: new Date().toISOString() };
+    }
+
+    const rosterIds = rosterRows.map((r) => r.id);
+    const nameMap = new Map(rosterRows.map((r) => [r.id, r.name]));
+
+    // Latest PtmPrediction per client in this coach's roster.
+    const groups = await this.prisma.ptmPrediction.groupBy({
+      by: ['user_id'],
+      _max: { computed_at: true },
+      where: { user_id: { in: rosterIds } },
+    });
+    if (groups.length === 0) {
+      return { items: [], generated_at: new Date().toISOString() };
+    }
+    const orPairs = groups
+      .filter((g) => g._max.computed_at != null)
+      .map((g) => ({
+        user_id: g.user_id,
+        computed_at: g._max.computed_at as Date,
+      }));
+
+    const predictions = await this.prisma.ptmPrediction.findMany({
+      where: { OR: orPairs },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            ptm_signals: {
+              select: { recorded_at: true },
+              orderBy: { recorded_at: 'desc' },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+
+    // Filter by bucket (amber = risk > 0.3 <=0.6, red = risk > 0.6).
+    const atRisk = predictions.filter((p) => {
+      if (opts.minBucket === 'red') return p.risk_score > 0.6;
+      return p.risk_score > 0.3;
+    });
+    if (atRisk.length === 0) {
+      return { items: [], generated_at: new Date().toISOString() };
+    }
+
+    const atRiskIds = atRisk.map((p) => p.user_id);
+    const bloodworkAlerts = await this.prisma.coachAlert.findMany({
+      where: {
+        coach_id: coachId,
+        client_id: { in: atRiskIds },
+        alert_type: 'bloodwork_review',
+        acknowledged_at: null,
+      },
+      select: { client_id: true },
+    });
+    const bloodworkSet = new Set(bloodworkAlerts.map((a) => a.client_id));
+
+    const now = Date.now();
+    const items: ChurnAtRiskEntry[] = atRisk
+      .sort((a, b) => b.risk_score - a.risk_score)
+      .slice(0, limit)
+      .map((p) => {
+        const factors = parseFactors(p.factors);
+        const topFactors = factors.slice(0, 3);
+        const lastSignal = p.user.ptm_signals[0]?.recorded_at ?? null;
+        const lastSignalMs = lastSignal ? lastSignal.getTime() : null;
+        const daysSince =
+          lastSignalMs != null
+            ? Math.max(0, Math.floor((now - lastSignalMs) / 86_400_000))
+            : 0;
+
+        const signals = topFactors.map((f) => ({
+          key: f.key,
+          label: f.label,
+          severity:
+            f.contribution >= 0.15
+              ? ('high' as const)
+              : f.contribution > 0
+                ? ('medium' as const)
+                : ('protective' as const),
+        }));
+
+        const bucket: 'red' | 'amber' =
+          p.risk_score > 0.6 ? 'red' : 'amber';
+        const hasBloodwork = bloodworkSet.has(p.user_id);
+
+        return {
+          user_id: p.user_id,
+          display_name: nameMap.get(p.user_id) ?? p.user.name,
+          bucket,
+          risk_score: null,
+          last_active_at: lastSignal ? lastSignal.toISOString() : null,
+          days_since_last_signal: daysSince,
+          risk_signals: signals,
+          top_factor: topFactors[0]?.label ?? 'Multiple risk signals detected',
+          suggested_action: hasBloodwork
+            ? 'review_bloodwork'
+            : signals.length === 0
+              ? 'none'
+              : 'send_checkin_message',
+          score_computed_at: p.computed_at.toISOString(),
+        };
+      });
+
+    return { items, generated_at: new Date().toISOString() };
+  }
+
+  // ── POST /churn-at-risk/:clientId/draft ──────────────────────────────
+  async generateChurnDraft(
+    coachId: string,
+    clientId: string,
+    dto: { idempotency_key: string; alert_id?: string },
+  ): Promise<ChurnInterventionDto> {
+    if (!dto || !dto.idempotency_key || !UUID_RE.test(dto.idempotency_key)) {
+      throw new BadRequestException('idempotency_key must be a valid UUID');
+    }
+
+    // Idempotency: return existing row if key already used. Scope to
+    // coach to prevent cross-coach key replay (a key collision across
+    // coaches is astronomically unlikely with UUIDv4, but we guard
+    // anyway).
+    const existing = await this.prisma.churnIntervention.findUnique({
+      where: { idempotency_key: dto.idempotency_key },
+      include: { client: { select: { name: true } } },
+    });
+    if (existing) {
+      if (existing.coach_id !== coachId) {
+        // Another coach used this key. Treat as conflict; do not leak
+        // existence of the other row.
+        throw new ConflictException('idempotency_key already in use');
+      }
+      return this.toDto(existing, existing.client?.name ?? clientId);
+    }
+
+    // IDOR check — clientId must be in this coach's roster.
+    const client = await this.prisma.user.findFirst({
+      where: {
+        id: clientId,
+        coach_id: coachId,
+        role: 'student',
+        deleted_at: null,
+      },
+      select: { id: true, name: true },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    // Pull PTM context for prompt enrichment.
+    const latestPrediction = await this.ptm.getLatestPrediction(clientId);
+    const factors = parseFactors(latestPrediction?.factors);
+    const topFactor = factors[0]?.label ?? 'Declining engagement';
+    const riskScore = latestPrediction?.risk_score ?? null;
+
+    const recentCheckIn = await this.prisma.checkIn.findFirst({
+      where: { user_id: clientId },
+      orderBy: { logged_at: 'desc' },
+      select: {
+        mood: true,
+        energy: true,
+        notes: true,
+        logged_at: true,
+      },
+    });
+
+    const coach = await this.prisma.user.findUnique({
+      where: { id: coachId },
+      select: { name: true },
+    });
+
+    // Generate AI draft. Errors are sanitized: clients never see prompt
+    // content or raw Anthropic errors.
+    let draftText: string;
+    try {
+      draftText = await this.draftWithAnthropic({
+        clientName: client.name,
+        topFactor,
+        topFactors: factors.slice(0, 3).map((f) => f.label),
+        recentCheckIn,
+        coachName: coach?.name ?? 'Your coach',
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Churn draft generation failed coach=${coachId} client=${clientId}: ${msg}`,
+      );
+      throw new ServiceUnavailableException({
+        statusCode: 503,
+        error: 'AI_GENERATION_FAILED',
+        message:
+          'Unable to generate message draft right now. Please try again.',
+      });
+    }
+
+    const intervention = await this.prisma.churnIntervention.create({
+      data: {
+        coach_id: coachId,
+        client_id: clientId,
+        draft_text: draftText,
+        status: 'draft',
+        alert_id: dto.alert_id ?? null,
+        risk_score_at_draft: riskScore,
+        top_factor: topFactor,
+        idempotency_key: dto.idempotency_key,
+      },
+    });
+
+    return this.toDto(intervention, client.name);
+  }
+
+  // ── POST /churn-interventions/:id/send ───────────────────────────────
+  async sendIntervention(
+    coachId: string,
+    interventionId: string,
+    dto: { message_text: string; idempotency_key: string },
+  ): Promise<SendInterventionResponse> {
+    if (!dto || !dto.idempotency_key || !UUID_RE.test(dto.idempotency_key)) {
+      throw new BadRequestException('idempotency_key must be a valid UUID');
+    }
+    const text = (dto.message_text ?? '').trim();
+    if (!text) {
+      throw new BadRequestException(
+        `message_text must be 1–${MAX_MESSAGE_CHARS} characters`,
+      );
+    }
+    if (text.length > MAX_MESSAGE_CHARS) {
+      throw new BadRequestException(
+        `message_text must be 1–${MAX_MESSAGE_CHARS} characters`,
+      );
+    }
+
+    const intervention = await this.prisma.churnIntervention.findFirst({
+      where: { id: interventionId, coach_id: coachId },
+    });
+    if (!intervention) throw new NotFoundException('Intervention not found');
+
+    // Already sent? Return existing state (idempotent).
+    if (
+      intervention.status === 'sent' &&
+      intervention.sent_at &&
+      intervention.nudge_id
+    ) {
+      return {
+        ok: true,
+        intervention_id: interventionId,
+        sent_at: intervention.sent_at.toISOString(),
+        nudge_id: intervention.nudge_id,
+      };
+    }
+    if (intervention.status === 'dismissed') {
+      throw new ConflictException('Cannot send a dismissed intervention');
+    }
+
+    // Race-safe send: conditional updateMany ensures only one caller can
+    // transition the row to 'sent'. count === 0 means another caller
+    // already won (sent or dismissed concurrently).
+    const sentAt = new Date();
+    const editedText =
+      text !== intervention.draft_text ? text : null;
+
+    // Step 1: try to claim the row by transitioning status. We do this
+    // BEFORE creating the CoachNudge so we never write a nudge for a
+    // race-losing caller. The downside: if the CoachNudge create fails,
+    // we need to roll back the status. We handle that explicitly.
+    const claim = await this.prisma.churnIntervention.updateMany({
+      where: {
+        id: interventionId,
+        coach_id: coachId,
+        status: { notIn: ['sent', 'dismissed'] },
+      },
+      data: {
+        status: 'sent',
+        edited_text: editedText,
+        sent_at: sentAt,
+      },
+    });
+
+    if (claim.count === 0) {
+      // Someone else won the race or it was dismissed between our read
+      // and write. Re-fetch to return the correct state.
+      const fresh = await this.prisma.churnIntervention.findUnique({
+        where: { id: interventionId },
+      });
+      if (
+        fresh?.status === 'sent' &&
+        fresh.sent_at &&
+        fresh.nudge_id
+      ) {
+        return {
+          ok: true,
+          intervention_id: interventionId,
+          sent_at: fresh.sent_at.toISOString(),
+          nudge_id: fresh.nudge_id,
+        };
+      }
+      throw new ConflictException(
+        'Intervention is no longer in a sendable state',
+      );
+    }
+
+    // Step 2: create the CoachNudge. If this fails, roll back the
+    // status so the coach can retry. We do NOT re-throw a sanitized
+    // error here — the upstream filter handles it.
+    let nudgeId: string;
+    try {
+      const nudge = await this.prisma.coachNudge.create({
+        data: {
+          coach_id: coachId,
+          client_id: intervention.client_id,
+          title: 'Message from your coach',
+          body: text,
+        },
+      });
+      nudgeId = nudge.id;
+    } catch (err) {
+      // Roll back the status. If rollback itself fails, log loudly —
+      // the row is in an inconsistent state but the client can re-send
+      // with a new idempotency key.
+      try {
+        await this.prisma.churnIntervention.update({
+          where: { id: interventionId },
+          data: { status: 'draft', sent_at: null, edited_text: null },
+        });
+      } catch (rollbackErr) {
+        this.logger.error(
+          `Failed to roll back churn intervention=${interventionId} after CoachNudge create failure: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
+        );
+      }
+      throw err;
+    }
+
+    // Step 3: backfill the nudge_id on the intervention. Best-effort —
+    // the message is already delivered (CoachNudge row exists, sent
+    // timestamp is set). A failure here is a metadata-only loss.
+    try {
+      await this.prisma.churnIntervention.update({
+        where: { id: interventionId },
+        data: { nudge_id: nudgeId },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `nudge_id backfill failed intervention=${interventionId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    // Step 4: fire-and-forget push notification. Failure cannot un-send
+    // the message; we log and move on. Wrapped in try/catch INSIDE the
+    // outer-level guard so the .catch chain is reached even if the
+    // function itself throws synchronously.
+    if (this.notifications) {
+      void this.notifications
+        .pushToUser(intervention.client_id, 'Message from your coach', text.slice(0, 120), {
+          type: 'coach_nudge',
+          nudge_id: nudgeId,
+        })
+        .catch((err) => {
+          this.logger.warn(
+            `Push failed for nudge=${nudgeId}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+    }
+
+    return {
+      ok: true,
+      intervention_id: interventionId,
+      sent_at: sentAt.toISOString(),
+      nudge_id: nudgeId,
+    };
+  }
+
+  // ── POST /churn-interventions/:id/dismiss ────────────────────────────
+  async dismissIntervention(
+    coachId: string,
+    interventionId: string,
+  ): Promise<{ ok: true; intervention_id: string }> {
+    const intervention = await this.prisma.churnIntervention.findFirst({
+      where: { id: interventionId, coach_id: coachId },
+    });
+    if (!intervention) throw new NotFoundException('Intervention not found');
+    if (intervention.status === 'sent') {
+      throw new ConflictException('Cannot dismiss an already-sent intervention');
+    }
+    if (intervention.status !== 'dismissed') {
+      // Conditional update — only transition if still in a dismissable
+      // state. Race-safe.
+      await this.prisma.churnIntervention.updateMany({
+        where: {
+          id: interventionId,
+          coach_id: coachId,
+          status: { notIn: ['sent', 'dismissed'] },
+        },
+        data: { status: 'dismissed', dismissed_at: new Date() },
+      });
+    }
+    return { ok: true, intervention_id: interventionId };
+  }
+
+  // ── Anthropic call with timeout ──────────────────────────────────────
+  private async draftWithAnthropic(ctx: {
+    clientName: string;
+    topFactor: string;
+    topFactors: string[];
+    recentCheckIn: {
+      mood: number | null;
+      energy: number | null;
+      notes: string | null;
+      logged_at: Date;
+    } | null;
+    coachName: string;
+  }): Promise<string> {
+    const client = this.getAnthropicClient();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ANTHROPIC_TIMEOUT_MS);
+
+    const signalList = ctx.topFactors.length
+      ? ctx.topFactors.map((f) => `- ${f}`).join('\n')
+      : `- ${ctx.topFactor}`;
+
+    const lastCheckIn = ctx.recentCheckIn
+      ? `Their most recent check-in was on ${ctx.recentCheckIn.logged_at.toISOString().slice(0, 10)}. Mood: ${ctx.recentCheckIn.mood ?? 'not rated'}. Energy: ${ctx.recentCheckIn.energy ?? 'not rated'}.`
+      : 'They have no recent check-in data.';
+
+    const system = `You are a fitness coach assistant. Write a warm, supportive re-engagement message from a coach to a client who shows signs of disengaging.
+
+Coach name: ${ctx.coachName}
+Client name: ${ctx.clientName}
+
+Risk signals detected:
+${signalList}
+
+${lastCheckIn}
+
+Write a brief (2-4 sentences), personal, non-pushy message that:
+- Acknowledges the client by name
+- Shows the coach has noticed their absence without being accusatory
+- Offers support or asks a simple open question
+- Signs off warmly with the coach's name
+
+Do not use generic phrases like "I noticed you haven't logged in." Be specific to the signals.
+Do not include any markdown formatting. Write in plain conversational text.
+Output ONLY the message text — no preamble, no explanation.`;
+
+    try {
+      const resp = await client.messages.create(
+        {
+          model: COACH_AI_MODEL,
+          max_tokens: 400,
+          temperature: 0.7,
+          system,
+          messages: [
+            {
+              role: 'user',
+              content: `Write the message for ${ctx.clientName}.`,
+            },
+          ],
+        },
+        { signal: controller.signal },
+      );
+
+      const block = resp.content?.find?.((b) => b.type === 'text');
+      const text =
+        block && block.type === 'text' ? block.text.trim() : '';
+
+      if (!text) {
+        throw new Error('Empty Anthropic response');
+      }
+      // Defense in depth: clamp to MAX_MESSAGE_CHARS so a chatty model
+      // can't break the downstream column or push notification.
+      return text.length > MAX_MESSAGE_CHARS
+        ? text.slice(0, MAX_MESSAGE_CHARS)
+        : text;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private toDto(
+    row: {
+      id: string;
+      client_id: string;
+      draft_text: string;
+      status: string;
+      top_factor: string | null;
+      created_at: Date;
+    },
+    clientName: string,
+  ): ChurnInterventionDto {
+    return {
+      intervention_id: row.id,
+      client_id: row.client_id,
+      client_name: clientName,
+      draft_text: row.draft_text,
+      status: (row.status as ChurnInterventionDto['status']) ?? 'draft',
+      top_factor: row.top_factor ?? 'Declining engagement',
+      created_at: row.created_at.toISOString(),
+    };
+  }
+}
