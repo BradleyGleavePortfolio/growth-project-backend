@@ -208,18 +208,18 @@ model User {
   // leaderboard_display_name is nullable; if null, the service derives
   // "{firstName} {lastInitial}." from the single `name` field at read time.
   // NEVER surfaces raw weight, body-fat, or finance data on the leaderboard.
-  show_on_leaderboard       Boolean   @default(false)
-  leaderboard_display_name  String?
+  show_on_leaderboard      Boolean @default(false)
+  leaderboard_display_name String?
+
+  // Phase 11 Track 8 — Talent Marketplace relations
+  coach_applications_submitted CoachApplication[]   @relation("CoachApplicationApplicant")
+  coach_applications_reviewed  CoachApplication[]   @relation("CoachApplicationReviewer")
+  coach_connect_account        CoachConnectAccount? @relation("CoachConnectAccountUser")
+  coach_offers_as_head_coach   CoachOffer[]         @relation("CoachOfferHeadCoach")
+  coach_offers_as_applicant    CoachOffer[]         @relation("CoachOfferApplicantUser")
 
   @@index([coach_id])
   @@index([deletion_scheduled_at])
-
-  // Phase 11 Track 8 — Talent Marketplace relations
-  coach_applications_submitted  CoachApplication[]   @relation("CoachApplicationApplicant")
-  coach_applications_reviewed   CoachApplication[]   @relation("CoachApplicationReviewer")
-  coach_connect_account         CoachConnectAccount? @relation("CoachConnectAccountUser")
-  coach_offers_as_head_coach    CoachOffer[]         @relation("CoachOfferHeadCoach")
-  coach_offers_as_applicant     CoachOffer[]         @relation("CoachOfferApplicantUser")
 }
 
 // Phase 1A: per-coach business + billing + branding metadata. The User
@@ -1445,31 +1445,32 @@ enum CoachOfferStatus {
 // keep validation in the DTO layer so the schema does not need migrations for
 // new cert names.
 model CoachApplication {
-  id                        String                @id @default(uuid())
-  applicant_user_id         String?
-  applicant_user            User?                 @relation("CoachApplicationApplicant", fields: [applicant_user_id], references: [id], onDelete: SetNull)
-  email                     String
-  first_name                String
-  last_name                 String
-  certifications            String[]
-  specializations           String[]
-  years_experience          Int
-  sample_program_url        String?
-  preferences               Json
+  id                          String                 @id @default(uuid())
+  applicant_user_id           String?
+  applicant_user              User?                  @relation("CoachApplicationApplicant", fields: [applicant_user_id], references: [id], onDelete: SetNull)
+  email                       String
+  first_name                  String
+  last_name                   String
+  certifications              String[]
+  specializations             String[]
+  years_experience            Int
+  sample_program_url          String?
+  preferences                 Json
   availability_hours_per_week Int
-  preferred_client_type     CoachClientType       @default(fitness)
-  background_verified       Boolean               @default(false)
-  status                    CoachApplicationStatus @default(pending)
-  reviewer_user_id          String?
-  reviewer_user             User?                 @relation("CoachApplicationReviewer", fields: [reviewer_user_id], references: [id], onDelete: SetNull)
-  reviewer_score            Int?
-  reviewer_notes            String?
-  created_at                DateTime              @default(now())
-  updated_at                DateTime              @updatedAt
+  preferred_client_type       CoachClientType        @default(fitness)
+  background_verified         Boolean                @default(false)
+  status                      CoachApplicationStatus @default(pending)
+  reviewer_user_id            String?
+  reviewer_user               User?                  @relation("CoachApplicationReviewer", fields: [reviewer_user_id], references: [id], onDelete: SetNull)
+  reviewer_score              Int?
+  reviewer_notes              String?
+  idempotency_key             String?                @unique
+  created_at                  DateTime               @default(now())
+  updated_at                  DateTime               @updatedAt
 
   offers CoachOffer[] @relation("CoachOfferApplicant")
 
-  @@index([status, created_at])
+  @@index([status, created_at, id])
   @@index([applicant_user_id])
   @@index([email])
 }
@@ -1517,21 +1518,22 @@ model CoachConnectAccount {
 //   flat:        { amount_usd: number, period: 'monthly' | 'weekly' }
 //   hybrid:      { base_usd: number, rate_pct: number }
 model CoachOffer {
-  id                  String               @id @default(uuid())
-  head_coach_id       String
-  head_coach          User                 @relation("CoachOfferHeadCoach", fields: [head_coach_id], references: [id], onDelete: Cascade)
-  applicant_user_id   String?
-  applicant_user      User?                @relation("CoachOfferApplicantUser", fields: [applicant_user_id], references: [id], onDelete: SetNull)
-  application_id      String
-  application         CoachApplication     @relation("CoachOfferApplicant", fields: [application_id], references: [id], onDelete: Cascade)
-  compensation_type   CoachCompensationType
-  compensation_terms  Json
-  client_capacity     Int
-  onboarding_message  String?
-  status              CoachOfferStatus     @default(pending)
-  accepted_at         DateTime?
-  created_at          DateTime             @default(now())
-  updated_at          DateTime             @updatedAt
+  id                 String                @id @default(uuid())
+  head_coach_id      String
+  head_coach         User                  @relation("CoachOfferHeadCoach", fields: [head_coach_id], references: [id], onDelete: Cascade)
+  applicant_user_id  String?
+  applicant_user     User?                 @relation("CoachOfferApplicantUser", fields: [applicant_user_id], references: [id], onDelete: SetNull)
+  application_id     String
+  application        CoachApplication      @relation("CoachOfferApplicant", fields: [application_id], references: [id], onDelete: Cascade)
+  compensation_type  CoachCompensationType
+  compensation_terms Json
+  client_capacity    Int
+  onboarding_message String?
+  status             CoachOfferStatus      @default(pending)
+  accepted_at        DateTime?
+  idempotency_key    String?               @unique
+  created_at         DateTime              @default(now())
+  updated_at         DateTime              @updatedAt
 
   @@index([head_coach_id, status])
   @@index([application_id, status])
