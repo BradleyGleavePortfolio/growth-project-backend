@@ -23,6 +23,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import type { SearchPoolQueryDto } from './coach-offer.dto';
+import { buildTupleCursor, parseTupleCursor } from './coach-application.service';
 
 @Injectable()
 export class TalentPoolService {
@@ -53,6 +54,7 @@ export class TalentPoolService {
     }
 
     const take = query.take ?? 20;
+    const cursor = parseTupleCursor(query.cursor);
 
     const rows = await this.prisma.coachApplication.findMany({
       where: {
@@ -70,15 +72,29 @@ export class TalentPoolService {
         ...(query.work_type
           ? {
               preferences: {
+                // work_type is validated against WorkTypeEnum at the DTO layer,
+                // so this JSON path is always one of the closed-set keys.
                 path: [query.work_type],
                 equals: true,
               },
             }
           : {}),
-        ...(query.cursor ? { id: { lt: query.cursor } } : {}),
+        ...(cursor
+          ? {
+              OR: [
+                { created_at: { lt: cursor.createdAt } },
+                {
+                  AND: [
+                    { created_at: cursor.createdAt },
+                    { id: { lt: cursor.id } },
+                  ],
+                },
+              ],
+            }
+          : {}),
       },
       take,
-      orderBy: { created_at: 'desc' },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
       select: {
         id: true,
         first_name: true,
@@ -91,6 +107,7 @@ export class TalentPoolService {
         preferences: true,
         background_verified: true,
         status: true,
+        created_at: true,
         // PII fields (email, sample_program_url) are omitted from pool browse.
         // Full details are shared only after an offer is accepted.
       },
@@ -100,9 +117,10 @@ export class TalentPoolService {
       `Pool search for user ${requestingUserId}: ${rows.length} results`,
     );
 
+    const last = rows.length === take ? rows[rows.length - 1] : undefined;
     return {
       data: rows,
-      next_cursor: rows.length === take ? rows[rows.length - 1]?.id : null,
+      next_cursor: last ? buildTupleCursor(last) : null,
     };
   }
 

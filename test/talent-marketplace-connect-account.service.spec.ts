@@ -6,10 +6,14 @@
  * hermetic and never touch the Stripe API.
  */
 
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  InternalServerErrorException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConnectAccountService } from '../connect-account.service';
-import { PrismaService } from '../../prisma.service';
+import { ConnectAccountService } from '../src/talent-marketplace/connect-account.service';
+import { PrismaService } from '../src/prisma.service';
 
 function makePrismaService(): PrismaService {
   return {
@@ -95,6 +99,7 @@ describe('ConnectAccountService', () => {
       expect(stripePostSpy).toHaveBeenCalledWith(
         '/accounts',
         expect.any(URLSearchParams),
+        'stripe-connect-user-1',
       );
       expect(prisma.coachConnectAccount.create).toHaveBeenCalled();
       expect(result).toBe('acct_new123');

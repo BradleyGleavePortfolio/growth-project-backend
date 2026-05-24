@@ -12,6 +12,12 @@
  * Mutation methods advance status forward only (you can't go from approved
  * back to pending via this service — use a direct DB operation with an audit
  * log for that edge case).
+ *
+ * Idempotency:
+ *   Every public submit must carry a client-generated UUID idempotency_key.
+ *   A second submit with the same key returns the original row instead of
+ *   creating a duplicate. The uniqueness is enforced by the DB index on
+ *   CoachApplication.idempotency_key.
  */
 
 import {
@@ -37,35 +43,65 @@ export class CoachApplicationService {
   /**
    * Submit a new coach application. Public — no authentication required.
    * If the applicant already has an account, pass their userId; otherwise null.
+   *
+   * Idempotent on dto.idempotency_key. If a row already exists with the same
+   * key, we return it (replay) rather than creating a duplicate.
    */
   async submitApplication(
     dto: SubmitCoachApplicationDto,
     applicantUserId?: string,
   ) {
+    if (dto.idempotency_key) {
+      const existing = await this.prisma.coachApplication.findUnique({
+        where: { idempotency_key: dto.idempotency_key },
+        select: { id: true, email: true, status: true, created_at: true },
+      });
+      if (existing) {
+        this.logger.log(
+          `Replay of CoachApplication.submit for idempotency_key=${dto.idempotency_key}`,
+        );
+        return existing;
+      }
+    }
+
     this.logger.log(`New coach application received from ${dto.email}`);
 
-    return this.prisma.coachApplication.create({
-      data: {
-        applicant_user_id: applicantUserId ?? null,
-        email: dto.email,
-        first_name: dto.first_name,
-        last_name: dto.last_name,
-        certifications: dto.certifications,
-        specializations: dto.specializations,
-        years_experience: dto.years_experience,
-        sample_program_url: dto.sample_program_url ?? null,
-        preferences: dto.preferences,
-        availability_hours_per_week: dto.availability_hours_per_week,
-        preferred_client_type: dto.preferred_client_type,
-        status: 'pending',
-      },
-      select: {
-        id: true,
-        email: true,
-        status: true,
-        created_at: true,
-      },
-    });
+    try {
+      return await this.prisma.coachApplication.create({
+        data: {
+          applicant_user_id: applicantUserId ?? null,
+          email: dto.email,
+          first_name: dto.first_name,
+          last_name: dto.last_name,
+          certifications: dto.certifications,
+          specializations: dto.specializations,
+          years_experience: dto.years_experience,
+          sample_program_url: dto.sample_program_url ?? null,
+          preferences: { ...dto.preferences },
+          availability_hours_per_week: dto.availability_hours_per_week,
+          preferred_client_type: dto.preferred_client_type,
+          status: 'pending',
+          idempotency_key: dto.idempotency_key,
+        },
+        select: {
+          id: true,
+          email: true,
+          status: true,
+          created_at: true,
+        },
+      });
+    } catch (err) {
+      // Race: a concurrent submit lost the unique-constraint race on
+      // idempotency_key. Re-read and return the winner.
+      if (this.isUniqueViolation(err) && dto.idempotency_key) {
+        const winner = await this.prisma.coachApplication.findUnique({
+          where: { idempotency_key: dto.idempotency_key },
+          select: { id: true, email: true, status: true, created_at: true },
+        });
+        if (winner) return winner;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -75,7 +111,7 @@ export class CoachApplicationService {
   async getMyApplications(userId: string) {
     return this.prisma.coachApplication.findMany({
       where: { applicant_user_id: userId },
-      orderBy: { created_at: 'desc' },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
       select: {
         id: true,
         status: true,
@@ -94,18 +130,36 @@ export class CoachApplicationService {
   }
 
   /**
-   * Admin: list applications with optional status filter and cursor pagination.
+   * Admin: list applications with optional status filter and tuple cursor
+   * pagination. Cursor format: `<ISO created_at>|<id>`. Using only `id` as a
+   * cursor while ordering by `created_at desc` is unstable: rows inserted at
+   * the same instant can skip or repeat across pages, so we compare the
+   * (created_at, id) tuple.
    */
   async listApplications(query: ListApplicationsQueryDto) {
     const take = query.take ?? 20;
 
+    const cursor = parseTupleCursor(query.cursor);
+
     return this.prisma.coachApplication.findMany({
       where: {
         ...(query.status ? { status: query.status } : {}),
-        ...(query.cursor ? { id: { lt: query.cursor } } : {}),
+        ...(cursor
+          ? {
+              OR: [
+                { created_at: { lt: cursor.createdAt } },
+                {
+                  AND: [
+                    { created_at: cursor.createdAt },
+                    { id: { lt: cursor.id } },
+                  ],
+                },
+              ],
+            }
+          : {}),
       },
       take,
-      orderBy: { created_at: 'desc' },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
       select: {
         id: true,
         email: true,
@@ -181,4 +235,40 @@ export class CoachApplicationService {
       data: { status: 'placed' },
     });
   }
+
+  /** Prisma unique-constraint check without coupling tests to error shape. */
+  private isUniqueViolation(err: unknown): boolean {
+    return (
+      typeof err === 'object' &&
+      err !== null &&
+      (err as { code?: string }).code === 'P2002'
+    );
+  }
+}
+
+/**
+ * Parse a `<ISO created_at>|<id>` cursor. Returns null when the value is
+ * absent or malformed (callers treat null as "first page"). Exported for
+ * reuse by sibling services that paginate over the same table shape.
+ */
+export function parseTupleCursor(
+  raw: string | undefined,
+): { createdAt: Date; id: string } | null {
+  if (!raw) return null;
+  const sep = raw.indexOf('|');
+  if (sep <= 0) return null;
+  const isoPart = raw.slice(0, sep);
+  const idPart = raw.slice(sep + 1);
+  if (!idPart) return null;
+  const createdAt = new Date(isoPart);
+  if (Number.isNaN(createdAt.getTime())) return null;
+  return { createdAt, id: idPart };
+}
+
+/** Build a `<ISO>|<id>` cursor from the last row in a page. */
+export function buildTupleCursor(row: {
+  created_at: Date;
+  id: string;
+}): string {
+  return `${row.created_at.toISOString()}|${row.id}`;
 }

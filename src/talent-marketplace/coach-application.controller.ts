@@ -130,7 +130,11 @@ export class CoachApplicationController {
 
   // ─── Offers ───────────────────────────────────────────────────────────────
 
-  @UseGuards(JwtAuthGuard)
+  // Only head-coaches (and OWNER via RolesGuard's hierarchy bypass) can extend
+  // offers. The service still re-checks subscription entitlement so a coach
+  // without an active Scale+ subscription is blocked at the data layer too.
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('coach')
   @Post('talent/offers')
   @ApiOperation({ summary: 'Head-coach extends an offer to a pool applicant' })
   createOffer(
@@ -145,10 +149,10 @@ export class CoachApplicationController {
   @ApiOperation({ summary: 'Accept an offer (applicant)' })
   acceptOffer(
     @Param('id') id: string,
-    @Body() _dto: AcceptRejectOfferDto,
+    @Body() dto: AcceptRejectOfferDto,
     @Request() req: AuthedRequest,
   ) {
-    return this.offerService.acceptOffer(id, req.user.id);
+    return this.offerService.acceptOffer(id, req.user.id, dto.idempotency_key);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -156,8 +160,9 @@ export class CoachApplicationController {
   @ApiOperation({ summary: 'Reject an offer (applicant)' })
   rejectOffer(
     @Param('id') id: string,
+    @Body() dto: AcceptRejectOfferDto,
     @Request() req: AuthedRequest,
   ) {
-    return this.offerService.rejectOffer(id, req.user.id);
+    return this.offerService.rejectOffer(id, req.user.id, dto.idempotency_key);
   }
 }

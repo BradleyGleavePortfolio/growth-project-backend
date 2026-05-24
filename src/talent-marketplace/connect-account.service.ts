@@ -7,9 +7,22 @@
  * tests hermetic. Outbound calls are isolated here; mocking fetch in tests
  * is the only hermetic pattern needed.
  *
- * API key: `STRIPE_SECRET_KEY` (same key already used by the billing module).
- * Connect Client ID: `STRIPE_CONNECT_CLIENT_ID` (new — must be provisioned in
- *   Fly.io secrets and documented in env_example_phase11.md).
+ * Race protection:
+ *   - CoachConnectAccount.user_id has a UNIQUE constraint in the database, so
+ *     two concurrent createConnectAccount(userId) calls cannot both insert a
+ *     row. The loser's INSERT raises P2002, which we catch and resolve to the
+ *     winning row.
+ *   - createConnectAccount forwards a deterministic `Idempotency-Key`
+ *     (`stripe-connect-<userId>`) to Stripe so a duplicate POST never charges
+ *     a second account through the upstream API either.
+ *
+ * Network safety:
+ *   - Every outbound fetch is wrapped in an AbortController with a 10s
+ *     timeout. A timeout surfaces as ServiceUnavailableException with the
+ *     safe code `PAYMENTS_PROVIDER_TIMEOUT`.
+ *   - Stripe error responses are logged server-side; the client only ever
+ *     sees a generic `PAYMENTS_PROVIDER_ERROR` / `CONNECT_ONBOARDING_UNAVAILABLE`
+ *     so env var names and upstream details never leak.
  *
  * Endpoints used:
  *   POST https://api.stripe.com/v1/accounts         — createConnectAccount
@@ -17,25 +30,20 @@
  *   GET  https://api.stripe.com/v1/accounts/:id     — getAccountStatus
  *
  * Pinned API version: 2024-09-30.acacia (matches billing module's pin).
- *
- * Webhook integration (FOLLOW-UP):
- *   When `account.updated` fires with details_submitted=true, set
- *   CoachConnectAccount.onboarding_completed = true and mirror capabilities.
- *   The webhook handler should live in billing/stripe-webhook.controller.ts or
- *   a new talent-marketplace webhook handler, depending on signature-verification
- *   strategy. Documented here for the Track 8.5 implementer.
  */
 
 import {
-  BadRequestException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 const STRIPE_API_VERSION = '2024-09-30.acacia';
+const STRIPE_TIMEOUT_MS = 10_000;
 
 @Injectable()
 export class ConnectAccountService {
@@ -47,10 +55,12 @@ export class ConnectAccountService {
 
   /**
    * Create a Stripe Connect Express account for the given user and persist
-   * the account ID. Idempotent: if the user already has a Connect account,
-   * returns the existing record without creating a new Stripe account.
+   * the account ID. Idempotent on multiple axes:
+   *   - DB unique constraint on user_id guarantees one row per user.
+   *   - Stripe `Idempotency-Key: stripe-connect-<userId>` guarantees Stripe
+   *     does not bill two accounts under retry.
    *
-   * @returns The CoachConnectAccount row (with stripe_account_id populated).
+   * @returns The Stripe account id.
    */
   async createConnectAccount(userId: string): Promise<string> {
     const existing = await this.prisma.coachConnectAccount.findUnique({
@@ -66,25 +76,48 @@ export class ConnectAccountService {
     });
     if (!user) throw new NotFoundException(`User ${userId} not found`);
 
-    const stripeAccount = await this.stripePost<{ id: string; country: string; default_currency: string }>(
+    const stripeAccount = await this.stripePost<{
+      id: string;
+      country: string;
+      default_currency: string;
+    }>(
       '/accounts',
       new URLSearchParams({
         type: 'express',
-        'email': user.email,
+        email: user.email,
         'capabilities[transfers][requested]': 'true',
         'capabilities[card_payments][requested]': 'true',
-        [`metadata[user_id]`]: userId,
+        'metadata[user_id]': userId,
       }),
+      `stripe-connect-${userId}`,
     );
 
-    await this.prisma.coachConnectAccount.create({
-      data: {
-        user_id: userId,
-        stripe_account_id: stripeAccount.id,
-        country: stripeAccount.country ?? 'US',
-        default_currency: stripeAccount.default_currency ?? 'usd',
-      },
-    });
+    try {
+      await this.prisma.coachConnectAccount.create({
+        data: {
+          user_id: userId,
+          stripe_account_id: stripeAccount.id,
+          country: stripeAccount.country ?? 'US',
+          default_currency: stripeAccount.default_currency ?? 'usd',
+        },
+      });
+    } catch (err) {
+      // Lost a concurrent insert race. Stripe is idempotent on the same key,
+      // so the parallel request received the same account id from Stripe and
+      // won the DB insert. Return the persisted account id.
+      if (this.isUniqueViolation(err)) {
+        const winner = await this.prisma.coachConnectAccount.findUnique({
+          where: { user_id: userId },
+        });
+        if (winner) {
+          this.logger.warn(
+            `Lost CoachConnectAccount insert race for user ${userId}; using existing row`,
+          );
+          return winner.stripe_account_id;
+        }
+      }
+      throw err;
+    }
 
     this.logger.log(`Created Connect account ${stripeAccount.id} for user ${userId}`);
     return stripeAccount.id;
@@ -166,48 +199,42 @@ export class ConnectAccountService {
   // ─── Internal: low-level Stripe helpers ───────────────────────────────────
 
   /**
-   * POST to the Stripe API with form-encoded body.
-   * Identical posture to StripeApiService in the billing module.
+   * POST to the Stripe API with form-encoded body and an optional idempotency
+   * key. Wraps fetch with a 10s AbortController timeout. Error envelopes are
+   * normalised: callers only ever see safe Nest exceptions with non-leaking
+   * messages; the actual Stripe response is logged on the server side.
    */
   protected async stripePost<T>(
     path: string,
     body: URLSearchParams,
+    idempotencyKey?: string,
   ): Promise<T> {
-    const key = process.env['STRIPE_SECRET_KEY'];
-    if (!key) {
-      throw new BadRequestException(
-        'STRIPE_SECRET_KEY is not configured — Connect onboarding is unavailable.',
-      );
-    }
+    const key = this.readStripeKey();
 
-    const response = await fetch(`${STRIPE_API_BASE}${path}`, {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Stripe-Version': STRIPE_API_VERSION,
+    };
+    if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+
+    const response = await this.fetchWithTimeout(`${STRIPE_API_BASE}${path}`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Stripe-Version': STRIPE_API_VERSION,
-      },
+      headers,
       body: body.toString(),
     });
 
     if (!response.ok) {
-      const errorBody = await response.json().catch(() => ({})) as Record<string, unknown>;
-      const err = (errorBody['error'] as Record<string, unknown>) ?? {};
-      throw new BadRequestException(
-        `Stripe error: ${String(err['message'] ?? response.statusText)}`,
-      );
+      await this.logAndThrowStripeError(response, path);
     }
 
     return response.json() as Promise<T>;
   }
 
   protected async stripeFetch<T>(path: string): Promise<T> {
-    const key = process.env['STRIPE_SECRET_KEY'];
-    if (!key) {
-      throw new BadRequestException('STRIPE_SECRET_KEY is not configured.');
-    }
+    const key = this.readStripeKey();
 
-    const response = await fetch(`${STRIPE_API_BASE}${path}`, {
+    const response = await this.fetchWithTimeout(`${STRIPE_API_BASE}${path}`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${key}`,
@@ -216,13 +243,91 @@ export class ConnectAccountService {
     });
 
     if (!response.ok) {
-      const errorBody = await response.json().catch(() => ({})) as Record<string, unknown>;
-      const err = (errorBody['error'] as Record<string, unknown>) ?? {};
-      throw new BadRequestException(
-        `Stripe error: ${String(err['message'] ?? response.statusText)}`,
-      );
+      await this.logAndThrowStripeError(response, path);
     }
 
     return response.json() as Promise<T>;
+  }
+
+  /**
+   * Read the Stripe secret key. Missing config is a server-side incident, not
+   * a user-facing error: we log the env var name internally but throw a
+   * generic 500 with a safe code so the client never sees `STRIPE_SECRET_KEY`.
+   */
+  private readStripeKey(): string {
+    const key = process.env['STRIPE_SECRET_KEY'];
+    if (!key) {
+      this.logger.error(
+        'STRIPE_SECRET_KEY is not configured — Connect onboarding cannot proceed',
+      );
+      throw new InternalServerErrorException('CONNECT_ONBOARDING_UNAVAILABLE');
+    }
+    return key;
+  }
+
+  /**
+   * fetch wrapper that aborts after STRIPE_TIMEOUT_MS. Translates AbortError
+   * into a typed ServiceUnavailableException with a safe client code; the
+   * real cause is logged on the server.
+   */
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), STRIPE_TIMEOUT_MS);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } catch (err) {
+      if (this.isAbortError(err)) {
+        this.logger.error(
+          `Stripe request timed out after ${STRIPE_TIMEOUT_MS}ms for ${url}`,
+        );
+        throw new ServiceUnavailableException('PAYMENTS_PROVIDER_TIMEOUT');
+      }
+      // Network / DNS / TLS failure. Log details and surface a safe code.
+      this.logger.error(
+        `Stripe request failed for ${url}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new ServiceUnavailableException('PAYMENTS_PROVIDER_UNAVAILABLE');
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Read the Stripe error body for server logs and throw a safe exception.
+   * Never includes the raw Stripe message in the thrown exception — that
+   * message can name the API key, the requested endpoint, or PII supplied to
+   * Stripe (email, etc.) and must not reach the client.
+   */
+  private async logAndThrowStripeError(
+    response: Response,
+    path: string,
+  ): Promise<never> {
+    const errorBody = (await response
+      .json()
+      .catch(() => ({}))) as Record<string, unknown>;
+    const err = (errorBody['error'] as Record<string, unknown>) ?? {};
+    this.logger.error(
+      `Stripe ${response.status} on ${path}: code=${String(err['code'] ?? 'unknown')} type=${String(err['type'] ?? 'unknown')} message=${String(err['message'] ?? response.statusText)}`,
+    );
+    throw new ServiceUnavailableException('PAYMENTS_PROVIDER_ERROR');
+  }
+
+  private isAbortError(err: unknown): boolean {
+    return (
+      typeof err === 'object' &&
+      err !== null &&
+      (err as { name?: string }).name === 'AbortError'
+    );
+  }
+
+  private isUniqueViolation(err: unknown): boolean {
+    return (
+      typeof err === 'object' &&
+      err !== null &&
+      (err as { code?: string }).code === 'P2002'
+    );
   }
 }

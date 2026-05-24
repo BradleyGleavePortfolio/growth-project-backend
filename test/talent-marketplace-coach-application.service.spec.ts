@@ -8,14 +8,14 @@
 
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { CoachApplicationService } from '../coach-application.service';
-import { PrismaService } from '../../prisma.service';
+import { CoachApplicationService } from '../src/talent-marketplace/coach-application.service';
+import { PrismaService } from '../src/prisma.service';
 import {
   SubmitCoachApplicationDto,
   ReviewCoachApplicationDto,
   CoachApplicationStatusDto,
   CoachClientTypeDto,
-} from '../coach-application.dto';
+} from '../src/talent-marketplace/coach-application.dto';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -32,6 +32,7 @@ function makeSubmitDto(
     availability_hours_per_week: 20,
     preferred_client_type: CoachClientTypeDto.FITNESS,
     preferences: { commission: true, rev_share: false, w2: false, hybrid: false },
+    idempotency_key: '00000000-0000-4000-8000-000000000001',
     ...overrides,
   };
 }
