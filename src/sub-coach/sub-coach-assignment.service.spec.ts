@@ -7,14 +7,16 @@ const HEAD_COACH_ID = 'head-coach-1';
 const SUB_COACH_ID = 'sub-coach-1';
 const CLIENT_ID = 'client-1';
 
-function makePrisma(overrides: Record<string, unknown> = {}): PrismaService {
+function makePrisma(): PrismaService {
   return {
     user: {
       findFirst: jest.fn(),
       findMany: jest.fn(),
-      update: jest.fn(),
     },
-    ...overrides,
+    subCoachAssignment: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+    },
   } as unknown as PrismaService;
 }
 
@@ -41,51 +43,64 @@ describe('SubCoachAssignmentService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('returns clients list when sub-coach is valid', async () => {
+    it('returns empty array when no open assignments', async () => {
       (prisma.user.findFirst as jest.Mock).mockResolvedValue({ id: SUB_COACH_ID });
+      (prisma.subCoachAssignment.findMany as jest.Mock).mockResolvedValue([]);
+      const result = await service.getAssignedClients(HEAD_COACH_ID, SUB_COACH_ID);
+      expect(result).toEqual([]);
+    });
+
+    it('returns clients via SubCoachAssignment join', async () => {
+      (prisma.user.findFirst as jest.Mock).mockResolvedValue({ id: SUB_COACH_ID });
+      (prisma.subCoachAssignment.findMany as jest.Mock).mockResolvedValue([
+        { client_id: CLIENT_ID },
+      ]);
       (prisma.user.findMany as jest.Mock).mockResolvedValue([
         { id: CLIENT_ID, name: 'Alice', email: 'alice@example.com' },
       ]);
       const result = await service.getAssignedClients(HEAD_COACH_ID, SUB_COACH_ID);
+      expect(prisma.subCoachAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            head_coach_id: HEAD_COACH_ID,
+            sub_coach_id: SUB_COACH_ID,
+            unassigned_at: null,
+          }),
+        }),
+      );
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe(CLIENT_ID);
     });
   });
 
-  describe('assignClient', () => {
-    it('throws when client not found', async () => {
-      // First call: sub-coach lookup — found. Second: client lookup — not found.
-      (prisma.user.findFirst as jest.Mock)
-        .mockResolvedValueOnce({ id: SUB_COACH_ID }) // assertSubCoachBelongsTo
-        .mockResolvedValueOnce(null);                 // client lookup
-
+  describe('assertClientOnTeamRoster', () => {
+    it('throws when client missing', async () => {
+      (prisma.user.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(
-        service.assignClient(HEAD_COACH_ID, { clientId: CLIENT_ID, subCoachId: SUB_COACH_ID }),
+        service.assertClientOnTeamRoster(HEAD_COACH_ID, CLIENT_ID),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('throws BadRequestException when target is not a student', async () => {
-      (prisma.user.findFirst as jest.Mock)
-        .mockResolvedValueOnce({ id: SUB_COACH_ID })
-        .mockResolvedValueOnce({ id: CLIENT_ID, coach_id: HEAD_COACH_ID, role: 'coach' });
-
+      (prisma.user.findFirst as jest.Mock).mockResolvedValue({
+        id: CLIENT_ID,
+        coach_id: HEAD_COACH_ID,
+        role: 'coach',
+      });
       await expect(
-        service.assignClient(HEAD_COACH_ID, { clientId: CLIENT_ID, subCoachId: SUB_COACH_ID }),
+        service.assertClientOnTeamRoster(HEAD_COACH_ID, CLIENT_ID),
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('updates coach_id when all validations pass', async () => {
-      (prisma.user.findFirst as jest.Mock)
-        .mockResolvedValueOnce({ id: SUB_COACH_ID })  // assertSubCoachBelongsTo
-        .mockResolvedValueOnce({ id: CLIENT_ID, coach_id: HEAD_COACH_ID, role: 'student' }); // client
-      // assertClientInTeam: coach_id === headCoachId so no extra findFirst call
-      (prisma.user.update as jest.Mock).mockResolvedValue({ id: CLIENT_ID, name: 'Alice', coach_id: SUB_COACH_ID });
-
-      const result = await service.assignClient(HEAD_COACH_ID, { clientId: CLIENT_ID, subCoachId: SUB_COACH_ID });
-      expect(prisma.user.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: CLIENT_ID }, data: { coach_id: SUB_COACH_ID } }),
-      );
-      expect(result.coach_id).toBe(SUB_COACH_ID);
+    it('throws BadRequestException when client belongs to a different team', async () => {
+      (prisma.user.findFirst as jest.Mock).mockResolvedValue({
+        id: CLIENT_ID,
+        coach_id: 'other-head',
+        role: 'student',
+      });
+      await expect(
+        service.assertClientOnTeamRoster(HEAD_COACH_ID, CLIENT_ID),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });

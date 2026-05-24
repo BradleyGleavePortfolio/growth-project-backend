@@ -3479,3 +3479,44 @@ model EmailSendLog {
   @@index([template_key, created_at])
   @@index([status, created_at])
 }
+
+// Phase 11 — Sub-coach assignment join table.
+//
+// User.coach_id always points at the HEAD COACH for a client. Sub-coach
+// assignment is an overlay: a row here means the client is currently
+// delegated to a sub-coach inside the head coach's team. unassigned_at
+// is set when the delegation ends (history preserved). At most one open
+// (unassigned_at IS NULL) row per client at a time — enforced by a
+// partial unique index in the migration.
+model SubCoachAssignment {
+  id              String    @id @default(uuid())
+  head_coach_id   String
+  sub_coach_id    String
+  client_id       String
+  assigned_at     DateTime  @default(now())
+  unassigned_at   DateTime?
+  assigned_by_id  String?
+  reason          String?
+
+  @@index([head_coach_id])
+  @@index([sub_coach_id, unassigned_at])
+  @@index([client_id, unassigned_at])
+}
+
+// Phase 11 — Idempotency table for sub-coach mutation endpoints.
+// Keyed by (actor_id, idempotency_key) so two retries from the same
+// actor return the original stored result instead of executing twice.
+// The unique index in the migration enforces the contract at the DB
+// level; first-writer-wins, all later retries read the row back.
+model SubCoachMutationIdempotency {
+  id              String   @id @default(uuid())
+  actor_id        String
+  idempotency_key String
+  action          String
+  request_hash    String?
+  response        Json
+  created_at      DateTime @default(now())
+
+  @@unique([actor_id, idempotency_key], name: "SubCoachMutationIdempotency_actor_key")
+  @@index([created_at])
+}

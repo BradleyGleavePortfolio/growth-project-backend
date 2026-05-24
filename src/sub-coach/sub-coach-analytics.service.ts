@@ -17,17 +17,15 @@ export interface EngagementScoreResult {
 /**
  * SubCoachAnalyticsService
  *
- * Computes an engagement score per sub-coach based on four weighted signals:
+ * Computes an engagement score per sub-coach based on four weighted signals.
+ * Phase 11: client membership comes from SubCoachAssignment (open rows),
+ * not from User.coach_id (which always points at the head coach).
+ *
+ * Signals:
  *   +20  logged in within 7 days (proxy: sent at least one message in the last 7 days)
  *   +30  sent a message to a client within 48 h of the client's last check-in
  *   +25  created or updated a workout routine this calendar week
- *   +25  clients had >= 70% workout-session days with at least one session this month
- * Cap: 100.
- *
- * Score formula is intentionally approximated from existing data:
- *   - There is no dedicated "last login" field, so recent message activity is the proxy.
- *   - WorkoutSession has no completion flag; instead we measure session density
- *     (days-with-sessions / total-days) as a proxy for adherence.
+ *   +25  >= 70% session-day adherence across the team this month
  */
 @Injectable()
 export class SubCoachAnalyticsService {
@@ -51,7 +49,6 @@ export class SubCoachAnalyticsService {
     const now = new Date();
 
     // ── Signal 1: active within 7 days (+20) ─────────────────────────────────
-    // Proxy: sub-coach sent at least one CoachMessage in the last 7 days.
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const recentMessage = await this.prisma.coachMessage.findFirst({
       where: {
@@ -62,33 +59,61 @@ export class SubCoachAnalyticsService {
     });
     const loggedInWithin7d = recentMessage != null ? 20 : 0;
 
-    // ── Signal 2: responded within 48 h of client check-in (+30) ─────────────
-    const clients = await this.prisma.user.findMany({
-      where: { coach_id: subCoachId, role: 'student', deleted_at: null },
-      select: { id: true },
+    // Load assigned clients via the join table.
+    const openAssignments = await this.prisma.subCoachAssignment.findMany({
+      where: {
+        head_coach_id: headCoachId,
+        sub_coach_id: subCoachId,
+        unassigned_at: null,
+      },
+      select: { client_id: true },
     });
+    const clientIds = openAssignments.map((a) => a.client_id);
 
+    // ── Signal 2: responded within 48 h of client check-in (+30) ─────────────
     let messagedWithin48h = 0;
-    const fortyEightH = 48 * 60 * 60 * 1000;
-    for (const client of clients) {
-      const lastCheckIn = await this.prisma.checkIn.findFirst({
-        where: { user_id: client.id },
+    if (clientIds.length > 0) {
+      const fortyEightH = 48 * 60 * 60 * 1000;
+      // Batched: pull each client's latest check-in, then a single
+      // grouped message query — no per-client findFirst loop.
+      const checkIns = await this.prisma.checkIn.findMany({
+        where: { user_id: { in: clientIds } },
         orderBy: { logged_at: 'desc' },
-        select: { logged_at: true },
+        select: { user_id: true, logged_at: true },
       });
-      if (!lastCheckIn) continue;
-      const deadline = new Date(lastCheckIn.logged_at.getTime() + fortyEightH);
-      const responded = await this.prisma.coachMessage.findFirst({
-        where: {
-          sender_id: subCoachId,
-          client_id: client.id,
-          created_at: { gte: lastCheckIn.logged_at, lte: deadline },
-        },
-        select: { id: true },
-      });
-      if (responded) {
-        messagedWithin48h = 30;
-        break; // one qualifying response is enough
+      const lastByClient = new Map<string, Date>();
+      for (const ci of checkIns) {
+        if (!lastByClient.has(ci.user_id)) {
+          lastByClient.set(ci.user_id, ci.logged_at);
+        }
+      }
+      if (lastByClient.size > 0) {
+        const earliestDeadline = new Date(
+          Math.min(...Array.from(lastByClient.values()).map((d) => d.getTime())),
+        );
+        const latestDeadline = new Date(
+          Math.max(...Array.from(lastByClient.values()).map((d) => d.getTime())) +
+            fortyEightH,
+        );
+        const responses = await this.prisma.coachMessage.findMany({
+          where: {
+            sender_id: subCoachId,
+            client_id: { in: Array.from(lastByClient.keys()) },
+            created_at: { gte: earliestDeadline, lte: latestDeadline },
+          },
+          select: { client_id: true, created_at: true },
+        });
+        for (const r of responses) {
+          const ts = lastByClient.get(r.client_id);
+          if (
+            ts &&
+            r.created_at >= ts &&
+            r.created_at <= new Date(ts.getTime() + fortyEightH)
+          ) {
+            messagedWithin48h = 30;
+            break;
+          }
+        }
       }
     }
 
@@ -106,10 +131,8 @@ export class SubCoachAnalyticsService {
     const updatedWorkoutPlanThisWeek = routineThisWeek != null ? 25 : 0;
 
     // ── Signal 4: avg client workout adherence >= 70 % this month (+25) ──────
-    // Proxy: (unique session-days / total calendar days elapsed this month) >= 0.7
     let avgCompletionGte70 = 0;
-    if (clients.length > 0) {
-      const clientIds = clients.map((c) => c.id);
+    if (clientIds.length > 0) {
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const sessions = await this.prisma.workoutSession.findMany({
         where: {
@@ -119,7 +142,6 @@ export class SubCoachAnalyticsService {
         select: { user_id: true, date: true },
       });
 
-      // Count distinct (user_id, date) pairs as "active days".
       const activeDayKeys = new Set(
         sessions.map((s) => `${s.user_id}:${s.date.toISOString().slice(0, 10)}`),
       );
@@ -127,7 +149,7 @@ export class SubCoachAnalyticsService {
         1,
         Math.ceil((now.getTime() - monthStart.getTime()) / (1000 * 60 * 60 * 24)),
       );
-      const expectedDays = clients.length * daysElapsed;
+      const expectedDays = clientIds.length * daysElapsed;
       if (activeDayKeys.size / expectedDays >= 0.7) {
         avgCompletionGte70 = 25;
       }

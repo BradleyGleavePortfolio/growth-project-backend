@@ -4,20 +4,28 @@ import {
   Post,
   Body,
   Param,
+  Query,
   UseGuards,
   Request,
   HttpCode,
   HttpStatus,
+  NotFoundException,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
-import { SubCoachAssignmentService, AssignClientDto } from './sub-coach-assignment.service';
+import { SubCoachAssignmentService } from './sub-coach-assignment.service';
 import { SubCoachAnalyticsService } from './sub-coach-analytics.service';
 import { SubCoachCapacityService } from './sub-coach-capacity.service';
-import { SubCoachReassignService, ReassignClientDto } from './sub-coach-reassign.service';
+import { SubCoachReassignService } from './sub-coach-reassign.service';
 import { PrismaService } from '../prisma.service';
+import {
+  AssignClientDto,
+  ListSubCoachesQueryDto,
+  ReassignClientDto,
+} from './dto/sub-coach.dto';
 
 /**
  * SubCoachController
@@ -25,10 +33,12 @@ import { PrismaService } from '../prisma.service';
  * Head-coach–facing endpoints for managing the sub-coach roster:
  *   GET  /sub-coaches                        — list sub-coaches with capacity + score
  *   GET  /sub-coaches/:id                    — single sub-coach detail
+ *   POST /sub-coaches/:id/assign-client      — assign client to sub-coach
  *   POST /sub-coaches/:id/reassign-client    — atomically move a client
  *   GET  /sub-coaches/:id/analytics          — engagement score + breakdown
  *
  * All routes require JwtAuthGuard + CoachGuard (coach or owner role).
+ * Mutations require a client-generated UUID `idempotency_key` (R19).
  */
 @ApiTags('sub-coaches')
 @Controller('sub-coaches')
@@ -44,10 +54,14 @@ export class SubCoachController {
 
   // ── GET /sub-coaches ────────────────────────────────────────────────────────
   @Get()
-  @ApiOperation({ summary: 'List all sub-coaches belonging to the calling head coach' })
+  @ApiOperation({ summary: 'List sub-coaches belonging to the calling head coach (paginated)' })
   @ApiResponse({ status: 200 })
-  async listSubCoaches(@Request() req: AuthedRequest) {
+  async listSubCoaches(
+    @Request() req: AuthedRequest,
+    @Query() query: ListSubCoachesQueryDto,
+  ) {
     const headCoachId = req.user.id;
+    const limit = Math.min(query.limit ?? 20, 50);
 
     const subCoaches = await this.prisma.user.findMany({
       where: { coach_id: headCoachId, role: 'coach', deleted_at: null },
@@ -60,11 +74,19 @@ export class SubCoachController {
           select: { plan_tier: true, business_name: true },
         },
       },
-      orderBy: { name: 'asc' },
+      orderBy: { id: 'asc' },
+      take: limit + 1,
+      ...(query.cursor
+        ? { cursor: { id: query.cursor }, skip: 1 }
+        : {}),
     });
 
+    const hasMore = subCoaches.length > limit;
+    const page = hasMore ? subCoaches.slice(0, limit) : subCoaches;
+    const nextCursor = hasMore ? page[page.length - 1].id : null;
+
     const results = await Promise.all(
-      subCoaches.map(async (sc) => {
+      page.map(async (sc) => {
         const [cap, score] = await Promise.all([
           this.capacity.getCapacity(headCoachId, sc.id),
           this.analytics.getEngagementScore(headCoachId, sc.id),
@@ -73,7 +95,11 @@ export class SubCoachController {
       }),
     );
 
-    return results;
+    return {
+      items: results,
+      nextCursor,
+      hasMore,
+    };
   }
 
   // ── GET /sub-coaches/:id ────────────────────────────────────────────────────
@@ -83,7 +109,7 @@ export class SubCoachController {
   @ApiResponse({ status: 404 })
   async getSubCoach(
     @Request() req: AuthedRequest,
-    @Param('id') subCoachId: string,
+    @Param('id', new ParseUUIDPipe()) subCoachId: string,
   ) {
     const headCoachId = req.user.id;
 
@@ -101,7 +127,7 @@ export class SubCoachController {
     });
 
     if (!subCoach) {
-      throw new Error('Sub-coach not found');
+      throw new NotFoundException('Sub-coach not found');
     }
 
     const [clients, cap, score] = await Promise.all([
@@ -116,25 +142,25 @@ export class SubCoachController {
   // ── POST /sub-coaches/:id/reassign-client ───────────────────────────────────
   @Post(':id/reassign-client')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Atomically reassign a client to this sub-coach (or back to head coach)' })
+  @ApiOperation({ summary: 'Atomically reassign a client to another sub-coach (or back to head coach)' })
   @ApiResponse({ status: 200 })
   @ApiResponse({ status: 409, description: 'Destination at capacity' })
   async reassignClient(
     @Request() req: AuthedRequest,
-    @Param('id') toSubCoachId: string,
-    @Body() body: { clientId: string; reason?: string },
+    @Param('id', new ParseUUIDPipe()) _subCoachIdInPath: string,
+    @Body() body: ReassignClientDto,
   ) {
     const headCoachId = req.user.id;
-    const dto: ReassignClientDto = {
-      clientId: body.clientId,
-      toSubCoachId,
-      reason: body.reason,
-    };
     return this.reassign.reassignClient(
       headCoachId,
       req.user.id,
       req.user.role,
-      dto,
+      {
+        clientId: body.clientId,
+        targetSubCoachId: body.targetSubCoachId,
+        idempotency_key: body.idempotency_key,
+        reason: body.reason,
+      },
     );
   }
 
@@ -144,21 +170,35 @@ export class SubCoachController {
   @ApiResponse({ status: 200 })
   async getAnalytics(
     @Request() req: AuthedRequest,
-    @Param('id') subCoachId: string,
+    @Param('id', new ParseUUIDPipe()) subCoachId: string,
   ) {
     return this.analytics.getEngagementScore(req.user.id, subCoachId);
   }
 
   // ── POST /sub-coaches/:id/assign-client ─────────────────────────────────────
+  // Routes through SubCoachReassignService so capacity + audit +
+  // idempotency are enforced identically to /reassign-client.
   @Post(':id/assign-client')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Assign a client to this sub-coach' })
+  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 409, description: 'Sub-coach at capacity' })
   async assignClient(
     @Request() req: AuthedRequest,
-    @Param('id') subCoachId: string,
-    @Body() body: { clientId: string },
+    @Param('id', new ParseUUIDPipe()) subCoachId: string,
+    @Body() body: AssignClientDto,
   ) {
-    const dto: AssignClientDto = { clientId: body.clientId, subCoachId };
-    return this.assignment.assignClient(req.user.id, dto);
+    const headCoachId = req.user.id;
+    return this.reassign.assignClient(
+      headCoachId,
+      req.user.id,
+      req.user.role,
+      {
+        clientId: body.clientId,
+        subCoachId,
+        idempotency_key: body.idempotency_key,
+        reason: body.reason,
+      },
+    );
   }
 }
