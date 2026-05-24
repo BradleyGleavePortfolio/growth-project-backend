@@ -266,6 +266,57 @@ describe('AuthService.issueRecentAuthToken — recent-auth (P1-1 / P1-3)', () =>
     );
   });
 
+  it('OAuth Apple path: rejects an Apple token bound to a different account (Audit #2 P1)', async () => {
+    // Attacker has:
+    //   - victim's session JWT (req.user resolves to the victim)
+    //   - their OWN fresh Apple identity token (verifies cleanly, fresh iat)
+    // The Supabase ID-token exchange returns the attacker's Supabase user
+    // (different `id`, different `email`), neither of which matches the
+    // victim's account. The previous bypass `!(sub && supaUserId)` accepted
+    // the call because both `sub` (from the JWT payload) and `supaUserId`
+    // (from Supabase) were non-empty. The fix removes the bypass entirely,
+    // so the call must be rejected with UnauthorizedException.
+    await withEnv(
+      { RECENT_AUTH_SECRET: VALID_SECRET, RECENT_AUTH_TTL_MS: '300000' },
+      async () => {
+        const freshIat = Math.floor(Date.now() / 1000) - 30;
+        const { service } = makeService({
+          // Victim row.
+          prismaUser: baseUser,
+          // Apple token verifies (attacker's real token), with attacker's
+          // email and sub. iat is fresh.
+          appleVerify: async () => ({
+            iat: freshIat,
+            sub: 'apple-sub-attacker',
+            email: 'attacker@example.test',
+          }),
+          // Supabase ID-token exchange returns the attacker's Supabase user.
+          // Neither id nor email matches the victim (baseUser.supabase_id =
+          // 'sup-1', baseUser.email = 'jane@example.test').
+          supaClientFactory: () => ({
+            auth: {
+              signInWithIdToken: jest.fn(async () => ({
+                data: {
+                  user: {
+                    id: 'sup-attacker',
+                    email: 'attacker@example.test',
+                  },
+                },
+                error: null,
+              })),
+            },
+          }),
+        });
+        await expect(
+          service.issueRecentAuthToken('u-1', {
+            provider_token: 'attacker-apple-token',
+            provider: 'apple',
+          }),
+        ).rejects.toBeInstanceOf(UnauthorizedException);
+      },
+    );
+  });
+
   it('OAuth path: rejects a provider token bound to a different user', async () => {
     await withEnv(
       { RECENT_AUTH_SECRET: VALID_SECRET, RECENT_AUTH_TTL_MS: '300000' },
@@ -380,6 +431,93 @@ describe('AuthService.issueRecentAuthToken — recent-auth (P1-1 / P1-3)', () =>
       headers: {},
     });
     expect(tracker).toBe('user:u-1');
+  });
+
+  it('two authenticated users behind the same IP get independent buckets (Audit #2 P2-A)', async () => {
+    // Proves the per-user 5/min cap on /auth/recent-auth-token does NOT
+    // collide across users sharing a NAT / CGNAT / corporate IP. User A
+    // exhausting their budget MUST NOT throttle user B.
+    //
+    // We drive the same ThrottlerStorageService that backs the in-memory
+    // throttler in tests, using the tracker keys UserThrottlerGuard would
+    // emit when JwtAuthGuard has populated `req.user` (which is the order
+    // app.module.ts now registers the guards in — JWT first, throttler
+    // second). The same shared `fly-client-ip` header is on every request,
+    // but is ignored by getTracker() because `req.user.id` is set.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { UserThrottlerGuard } = require('../src/throttler/user-throttler.guard');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { ThrottlerStorageService } = require('@nestjs/throttler');
+    const guard = Object.create(UserThrottlerGuard.prototype);
+
+    const sharedHeaders = { 'fly-client-ip': '203.0.113.7' };
+    const reqA = { user: { id: 'user-A' }, headers: sharedHeaders };
+    const reqB = { user: { id: 'user-B' }, headers: sharedHeaders };
+
+    const trackerA = await (guard as any).getTracker(reqA);
+    const trackerB = await (guard as any).getTracker(reqB);
+    expect(trackerA).toBe('user:user-A');
+    expect(trackerB).toBe('user:user-B');
+    expect(trackerA).not.toBe(trackerB);
+
+    const storage = new ThrottlerStorageService();
+    try {
+      const bucket = 'auth-recent-auth';
+      const ttl = 60_000;
+      const limit = 5;
+      const blockDuration = ttl;
+
+      // User A exhausts the 5/min budget and trips the limit on the 6th call.
+      const aKey = `${bucket}-${trackerA}`;
+      for (let i = 0; i < 5; i += 1) {
+        const r = await storage.increment(aKey, ttl, limit, blockDuration, bucket);
+        expect(r.isBlocked).toBe(false);
+      }
+      const aOverflow = await storage.increment(aKey, ttl, limit, blockDuration, bucket);
+      expect(aOverflow.isBlocked).toBe(true);
+
+      // User B (same IP) is still completely unaffected: first request is
+      // under their own 5/min cap, not at the per-user limit.
+      const bKey = `${bucket}-${trackerB}`;
+      const bFirst = await storage.increment(bKey, ttl, limit, blockDuration, bucket);
+      expect(bFirst.isBlocked).toBe(false);
+      // And user B can spend their full budget independently.
+      for (let i = 0; i < 4; i += 1) {
+        const r = await storage.increment(bKey, ttl, limit, blockDuration, bucket);
+        expect(r.isBlocked).toBe(false);
+      }
+      const bOverflow = await storage.increment(bKey, ttl, limit, blockDuration, bucket);
+      expect(bOverflow.isBlocked).toBe(true);
+    } finally {
+      if (typeof (storage as any).onApplicationShutdown === 'function') {
+        await (storage as any).onApplicationShutdown();
+      }
+    }
+  });
+
+  it('AppModule registers JwtAuthGuard before UserThrottlerGuard (Audit #2 P2-A)', () => {
+    // The ordering is load-bearing: with throttler registered first,
+    // `req.user` is undefined when getTracker() runs and per-user limits
+    // silently fall back to IP-based tracking. Pinning the order in a test
+    // prevents accidental re-shuffling of app.module.ts providers.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { AppModule } = require('../src/app.module');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { APP_GUARD } = require('@nestjs/core');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { JwtAuthGuard } = require('../src/auth/auth.guard');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { UserThrottlerGuard } = require('../src/throttler/user-throttler.guard');
+    const providers = Reflect.getMetadata('providers', AppModule) as Array<any>;
+    const jwtIdx = providers.findIndex(
+      (p) => p && p.provide === APP_GUARD && p.useClass === JwtAuthGuard,
+    );
+    const throttlerIdx = providers.findIndex(
+      (p) => p && p.provide === APP_GUARD && p.useClass === UserThrottlerGuard,
+    );
+    expect(jwtIdx).toBeGreaterThanOrEqual(0);
+    expect(throttlerIdx).toBeGreaterThanOrEqual(0);
+    expect(jwtIdx).toBeLessThan(throttlerIdx);
   });
 
   it('rejects with InternalServerError when RECENT_AUTH_SECRET is too short — env name NOT in client message', async () => {

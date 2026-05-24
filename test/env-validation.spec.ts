@@ -405,3 +405,93 @@ describe('assertEnv — placeholder enforcement', () => {
     ).not.toThrow();
   });
 });
+
+describe('assertEnv — prod-tier validator failures are fatal (Audit #2 P2-B)', () => {
+  it('throws when RECENT_AUTH_SECRET is too short under NODE_ENV=production', () => {
+    expect(() =>
+      assertEnv(
+        {
+          ...fullProdEnv(),
+          // Set but invalid — 31 chars (one below the 32-char minimum).
+          RECENT_AUTH_SECRET: 'a'.repeat(31),
+        },
+        { logger: silentLogger as any },
+      ),
+    ).toThrow(/RECENT_AUTH_SECRET/);
+  });
+
+  it('throws when RECENT_AUTH_SECRET is too short under NODE_ENV=staging', () => {
+    expect(() =>
+      assertEnv(
+        {
+          ...fullProdEnv(),
+          NODE_ENV: 'staging',
+          RECENT_AUTH_SECRET: 'short',
+        },
+        { logger: silentLogger as any },
+      ),
+    ).toThrow(/failed validation/);
+  });
+
+  it('throws when RECENT_AUTH_TTL_MS is out of range under production', () => {
+    expect(() =>
+      assertEnv(
+        {
+          ...fullProdEnv(),
+          RECENT_AUTH_TTL_MS: '30000', // below the 60000 minimum
+        },
+        { logger: silentLogger as any },
+      ),
+    ).toThrow(/RECENT_AUTH_TTL_MS/);
+  });
+
+  it('throws when RECENT_AUTH_TTL_MS is not a finite integer under production', () => {
+    expect(() =>
+      assertEnv(
+        {
+          ...fullProdEnv(),
+          RECENT_AUTH_TTL_MS: 'not-a-number',
+        },
+        { logger: silentLogger as any },
+      ),
+    ).toThrow(/RECENT_AUTH_TTL_MS/);
+  });
+
+  it('does NOT throw when prod-tier validator fails under NODE_ENV=development', () => {
+    // In dev, validator failures are still logged as warnings but must not
+    // crash the boot — keeps `npm run start:dev` usable with throwaway
+    // secrets.
+    expect(() =>
+      assertEnv(
+        {
+          ...baseHardEnv(),
+          NODE_ENV: 'development',
+          RECENT_AUTH_SECRET: 'short',
+        },
+        { logger: silentLogger as any },
+      ),
+    ).not.toThrow();
+  });
+
+  it('does NOT throw when enforceProd=false even with a bad RECENT_AUTH_SECRET', () => {
+    expect(() =>
+      assertEnv(
+        {
+          ...fullProdEnv(),
+          RECENT_AUTH_SECRET: 'short',
+        },
+        { enforceProd: false, logger: silentLogger as any },
+      ),
+    ).not.toThrow();
+  });
+
+  it('evaluateEnv exposes validationErrorsProd for prod-tier validator failures', () => {
+    const r = evaluateEnv({
+      ...fullProdEnv(),
+      RECENT_AUTH_SECRET: 'short',
+      RECENT_AUTH_TTL_MS: '30000',
+    });
+    expect(r.validationErrorsProd.some((e) => e.includes('RECENT_AUTH_SECRET'))).toBe(true);
+    expect(r.validationErrorsProd.some((e) => e.includes('RECENT_AUTH_TTL_MS'))).toBe(true);
+  });
+});

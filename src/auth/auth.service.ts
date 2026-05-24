@@ -1144,7 +1144,6 @@ export class AuthService {
           'Provider token is stale — request a fresh provider token and retry',
         );
       }
-      const sub = typeof payload.sub === 'string' ? payload.sub : null;
       const email = typeof payload.email === 'string' ? payload.email : null;
       // Bind the token to *this* user. Apple `sub` is the stable identifier;
       // we fall back to email match if the Supabase user row stores the email
@@ -1168,7 +1167,7 @@ export class AuthService {
       const matchesByEmail =
         !!email && !!supaEmail && supaEmail.toLowerCase() === user.email.toLowerCase();
       const matchesBySupabaseId = !!user.supabase_id && user.supabase_id === supaUserId;
-      if (!matchesByEmail && !matchesBySupabaseId && !(sub && supaUserId)) {
+      if (!matchesByEmail && !matchesBySupabaseId) {
         throw new UnauthorizedException('Provider token does not belong to this user');
       }
       return;

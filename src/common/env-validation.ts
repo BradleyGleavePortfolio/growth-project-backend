@@ -560,6 +560,12 @@ export interface EnvValidationResult {
   missingFeature: string[];
   missingOptional: string[];
   validationWarnings: string[];
+  // Validator-rule failures for prod-tier vars. Under prod-like NODE_ENV these
+  // are fatal (assertEnv throws), so a misconfigured RECENT_AUTH_SECRET or
+  // RECENT_AUTH_TTL_MS in staging/production fails boot instead of degrading
+  // at request time. In dev they are still logged as warnings via
+  // validationWarnings so the operator sees the issue.
+  validationErrorsProd: string[];
   // Names of hard/prod-tier vars whose value looks like an unfilled placeholder
   // (e.g. literal `<value>`, `XXXXXXXX`, `changeme`). Treated as missing —
   // a placeholder in prod is worse than absence because boot would otherwise
@@ -621,6 +627,7 @@ export function evaluateEnv(env: NodeJS.ProcessEnv = process.env): EnvValidation
   const placeholderHard: string[] = [];
   const placeholderProd: string[] = [];
   const validationWarnings: string[] = [];
+  const validationErrorsProd: string[] = [];
 
   for (const rule of ENV_RULES) {
     const value = env[rule.name];
@@ -644,7 +651,17 @@ export function evaluateEnv(env: NodeJS.ProcessEnv = process.env): EnvValidation
 
     if (rule.validate) {
       const err = rule.validate(value!);
-      if (err) validationWarnings.push(`${rule.name}: ${err}`);
+      if (err) {
+        validationWarnings.push(`${rule.name}: ${err}`);
+        // Audit #2 P2-B: prod-tier validator failures must be fatal under
+        // prod-like NODE_ENV. RECENT_AUTH_SECRET / RECENT_AUTH_TTL_MS being
+        // invalid in staging or production used to only log a warning and
+        // then accept requests with a misconfigured auth system; now boot
+        // fails when this happens.
+        if (rule.tier === 'hard' || rule.tier === 'prod') {
+          validationErrorsProd.push(`${rule.name}: ${err}`);
+        }
+      }
     }
   }
 
@@ -656,6 +673,7 @@ export function evaluateEnv(env: NodeJS.ProcessEnv = process.env): EnvValidation
     placeholderHard,
     placeholderProd,
     validationWarnings,
+    validationErrorsProd,
     isProd,
   };
 }
@@ -775,6 +793,18 @@ export function assertEnv(
         `Production-tier env vars contain placeholder values (ok in dev, required for staging/prod): ${result.placeholderProd.join(', ')}`,
       );
     }
+  }
+
+  // Audit #2 P2-B: validator failures on hard/prod-tier vars are fatal under
+  // prod-like NODE_ENV. Catches the case where RECENT_AUTH_SECRET is set but
+  // too short, or RECENT_AUTH_TTL_MS is set but out of range — boot used to
+  // continue and only fail at the first request that hit the recent-auth
+  // endpoint. Now we fail loudly at startup. In dev these are still surfaced
+  // via the validationWarnings logger.warn below.
+  if (result.validationErrorsProd.length && enforceProd) {
+    const msg = `Production-tier env vars failed validation (NODE_ENV=${env.NODE_ENV}): ${result.validationErrorsProd.join('; ')}`;
+    logger.error(msg);
+    throw new Error(msg);
   }
 
   // Feature-tier vars never block boot. Warn loudly under prod-like
