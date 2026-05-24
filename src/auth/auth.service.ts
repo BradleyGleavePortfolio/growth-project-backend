@@ -1105,7 +1105,7 @@ export class AuthService {
       const supaClient = createClient(
         process.env.SUPABASE_URL || '',
         process.env.SUPABASE_ANON_KEY || '',
-        { realtime: { transport: ws as any } },
+        { realtime: { transport: WS as any } },
       );
       let result;
       try {
@@ -1193,7 +1193,7 @@ export class AuthService {
       const supaClient = createClient(
         process.env.SUPABASE_URL || '',
         process.env.SUPABASE_ANON_KEY || '',
-        { realtime: { transport: ws as any } },
+        { realtime: { transport: WS as any } },
       );
       let signInData;
       let signInError;

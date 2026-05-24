@@ -4,10 +4,9 @@ import type { AuthedRequest } from '../auth/auth-request';
 import { WorkoutService } from './workout.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
-import {
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { CreateWorkoutDto, CreateRoutineDto, UpdateRoutineDto } from './workout.dto';
+import {
   CreateWorkoutDto,
   CreateRoutineDto,
   UpdateRoutineDto,

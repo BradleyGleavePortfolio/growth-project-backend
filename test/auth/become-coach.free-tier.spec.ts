@@ -52,6 +52,8 @@ const makeAppleVerifier = () =>
     getAudiences: jest.fn(() => []),
     verify: jest.fn(),
   }) as any;
+const makeGoogleVerifier = () =>
+  ({ isConfigured: () => false, getAudiences: () => [], verify: jest.fn(async () => null) } as any);
 
 const makeInviteCodes = () => ({
   validate: jest.fn(),
@@ -109,6 +111,7 @@ describe('becomeCoach — free tier path (spec §10)', () => {
       makeAnalytics(),
       makeAudit(),
       makeAppleVerifier(),
+      makeGoogleVerifier(),
     );
 
     const result = await svc.becomeCoach(baseStudent.id, 'correct-password');
@@ -150,6 +153,7 @@ describe('becomeCoach — free tier path (spec §10)', () => {
       makeAnalytics(),
       makeAudit(),
       makeAppleVerifier(),
+      makeGoogleVerifier(),
     );
 
     const result = await svc.becomeCoach(baseStudent.id, 'correct-password');
@@ -178,6 +182,7 @@ describe('becomeCoach — free tier path (spec §10)', () => {
       makeAnalytics(),
       makeAudit(),
       makeAppleVerifier(),
+      makeGoogleVerifier(),
     );
 
     await expect(
@@ -202,6 +207,7 @@ describe('becomeCoach — free tier path (spec §10)', () => {
       makeAnalytics(),
       audit,
       makeAppleVerifier(),
+      makeGoogleVerifier(),
     );
 
     await svc.becomeCoach(baseStudent.id, 'correct-password');

@@ -39,6 +39,8 @@ const makeAppleVerifier = () =>
     getAudiences: jest.fn(() => []),
     verify: jest.fn(),
   }) as any;
+const makeGoogleVerifier = () =>
+  ({ isConfigured: () => false, getAudiences: () => [], verify: jest.fn(async () => null) } as any);
 
 const makeInviteCodes = () => ({
   validate: jest.fn(),
@@ -90,6 +92,7 @@ describe('becomeCoach — already-coach idempotent path returns tier (spec §4)'
       makeAnalytics(),
       makeAudit(),
       makeAppleVerifier(),
+      makeGoogleVerifier(),
     );
 
     const result = await svc.becomeCoach('coach-1', 'any-password');
@@ -122,6 +125,7 @@ describe('becomeCoach — already-coach idempotent path returns tier (spec §4)'
       makeAnalytics(),
       makeAudit(),
       makeAppleVerifier(),
+      makeGoogleVerifier(),
     );
 
     const result = await svc.becomeCoach('coach-legacy', 'any-password');
