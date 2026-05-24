@@ -471,7 +471,11 @@ export class V1CoachService {
       id: created.id,
       coachId: threadCoachId,
       clientId,
-      from: senderId === threadCoachId ? 'coach' : 'owner',
+      // Label by the caller's role rather than ID equality with the thread
+      // coach. Sub-coaches send under the head coach's thread (senderId !==
+      // threadCoachId) but should appear to the client as 'coach', not
+      // 'owner'. Only the platform OWNER role gets the 'owner' label.
+      from: caller.role === 'owner' ? 'owner' : 'coach',
       body: created.body,
       createdAt: created.created_at,
       readAt: created.read_at,

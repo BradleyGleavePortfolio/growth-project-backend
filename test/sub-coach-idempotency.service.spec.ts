@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnprocessableEntityException } from '@nestjs/common';
+import { HttpException, UnprocessableEntityException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { SubCoachIdempotencyService } from '../src/sub-coach/sub-coach-idempotency.service';
 import { PrismaService } from '../src/prisma.service';
@@ -175,6 +175,91 @@ describe('SubCoachIdempotencyService', () => {
         runMutation: jest.fn(),
       }),
     ).rejects.toThrow(UnprocessableEntityException);
+  });
+
+  // P1-1 regression: a concurrent replay that lost the unique-index race
+  // must NOT return the winner's null/placeholder response while status is
+  // still 'in_progress'. It polls until the winner records the completed
+  // response, then returns it.
+  it('concurrent in_progress row: polls until winner completes, then returns real response', async () => {
+    prisma.subCoachMutationIdempotency.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('unique', {
+        code: 'P2002',
+        clientVersion: '0.0.0',
+      }),
+    );
+    const hash = SubCoachIdempotencyService.canonicalHash(
+      'sub_coach.assign',
+      { clientId: 'c1' },
+    );
+    // First read: winner is still mid-flight (response is null).
+    // Second read: winner has persisted the completed response.
+    prisma.subCoachMutationIdempotency.findUnique
+      .mockResolvedValueOnce({
+        action: 'sub_coach.assign',
+        request_hash: hash,
+        response: null,
+        status: 'in_progress',
+      })
+      .mockResolvedValueOnce({
+        action: 'sub_coach.assign',
+        request_hash: hash,
+        response: { ok: true, winner: 'A' },
+        status: 'completed',
+      });
+
+    const result = await service.runWithIdempotency({
+      actorId: ACTOR_ID,
+      idempotencyKey: KEY,
+      action: 'sub_coach.assign',
+      payload: { clientId: 'c1' },
+      runMutation: jest.fn(),
+    });
+
+    expect(prisma.subCoachMutationIdempotency.findUnique).toHaveBeenCalledTimes(2);
+    expect(result.replay).toBe(true);
+    expect(result.response).toEqual({ ok: true, winner: 'A' });
+  });
+
+  it('concurrent in_progress row that never completes: throws 425 Too Early', async () => {
+    jest.useFakeTimers();
+    try {
+      prisma.subCoachMutationIdempotency.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('unique', {
+          code: 'P2002',
+          clientVersion: '0.0.0',
+        }),
+      );
+      const hash = SubCoachIdempotencyService.canonicalHash(
+        'sub_coach.assign',
+        { clientId: 'c1' },
+      );
+      prisma.subCoachMutationIdempotency.findUnique.mockResolvedValue({
+        action: 'sub_coach.assign',
+        request_hash: hash,
+        response: null,
+        status: 'in_progress',
+      });
+
+      const pending = service.runWithIdempotency({
+        actorId: ACTOR_ID,
+        idempotencyKey: KEY,
+        action: 'sub_coach.assign',
+        payload: { clientId: 'c1' },
+        runMutation: jest.fn(),
+      });
+      // Advance past the 5s polling budget. Each iteration sleeps 100ms; we
+      // also need to flush microtasks between timer ticks for findUnique to
+      // resolve.
+      for (let i = 0; i < 60; i++) {
+        await Promise.resolve();
+        jest.advanceTimersByTime(100);
+      }
+      await expect(pending).rejects.toBeInstanceOf(HttpException);
+      await expect(pending).rejects.toMatchObject({ status: 425 });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('mutation error releases the claim so a corrected retry can proceed', async () => {

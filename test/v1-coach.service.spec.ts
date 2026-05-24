@@ -339,6 +339,46 @@ describe('V1CoachService', () => {
       const evt = prisma._events.find((e) => e.type === 'coach.message_sent');
       expect(evt.payload.snippetId).toBeNull();
     });
+
+    // P2-1 regression: sub-coaches send under the head coach's thread, so
+    // senderId !== threadCoachId. The pre-fix logic labeled the response
+    // `from: 'owner'` whenever the IDs differed. The fix keys off caller.role
+    // so the platform OWNER is the only role that gets the 'owner' label.
+    it('sub-coach send (role=coach, id != threadCoach) labels from=coach', async () => {
+      // Stand up a sub-coach overlay: caller is coach-Sub, but the
+      // sub-coach scope reports coach-A as the head coach and authorizes
+      // client-1. The thread row should end up under coach-A.
+      const subCoachScope = {
+        isSubCoach: jest.fn().mockResolvedValue(true),
+        getHeadCoachIdForSubCoach: jest.fn().mockResolvedValue('coach-A'),
+        getAuthorizedClientIds: jest.fn().mockResolvedValue(['client-1']),
+      } as any;
+      const supabaseStub = {
+        broadcastNewMessage: jest.fn().mockResolvedValue(undefined),
+      } as any;
+      const svcWithSub = new V1CoachService(prisma as any, supabaseStub, subCoachScope);
+
+      const out = await svcWithSub.sendMessage(
+        { id: 'coach-Sub', role: 'coach' as const },
+        'client-1',
+        'from sub-coach',
+      );
+
+      expect(out.from).toBe('coach');
+      expect(out.coachId).toBe('coach-A');
+      expect(prisma._messages[0].sender_id).toBe('coach-Sub');
+      expect(prisma._messages[0].coach_id).toBe('coach-A');
+    });
+
+    it('owner send still labels from=owner', async () => {
+      const out = await svc.sendMessage(owner(), 'client-other', 'admin nudge');
+      expect(out.from).toBe('owner');
+    });
+
+    it('head coach send labels from=coach', async () => {
+      const out = await svc.sendMessage(coach('coach-A'), 'client-1', 'hi');
+      expect(out.from).toBe('coach');
+    });
   });
 
   describe('saveDraft / getDraft', () => {

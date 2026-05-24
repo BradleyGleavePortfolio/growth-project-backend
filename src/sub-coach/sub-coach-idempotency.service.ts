@@ -1,4 +1,5 @@
 import {
+  HttpException,
   Injectable,
   Logger,
   UnprocessableEntityException,
@@ -6,6 +7,12 @@ import {
 import { createHash } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+
+// Concurrent-replay poll bounds. If a sibling request is still mid-flight when
+// a replay arrives, we wait up to MAX_WAIT_MS for it to complete rather than
+// returning the in_progress (null) response slot.
+const REPLAY_MAX_WAIT_MS = 5000;
+const REPLAY_POLL_INTERVAL_MS = 100;
 
 /**
  * SubCoachIdempotencyService — atomic-claim implementation.
@@ -108,8 +115,21 @@ export class SubCoachIdempotencyService {
     }
 
     if (!claimed) {
-      const existing = await this.prisma.subCoachMutationIdempotency.findUnique(
-        {
+      // Lost the unique-index race. Poll the existing row until it reaches
+      // status='completed' or we time out. Returning the in_progress row's
+      // null response slot would hand the caller a placeholder result.
+      const deadline = Date.now() + REPLAY_MAX_WAIT_MS;
+      let existing: {
+        action: string;
+        request_hash: string | null;
+        response: Prisma.JsonValue;
+        status: string;
+      } | null = null;
+      // First read is unconditional; loop continues while still in_progress.
+      // We re-fetch each iteration so we observe the winner's update.
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        existing = await this.prisma.subCoachMutationIdempotency.findUnique({
           where: {
             SubCoachMutationIdempotency_actor_key: {
               actor_id: actorId,
@@ -122,32 +142,52 @@ export class SubCoachIdempotencyService {
             response: true,
             status: true,
           },
-        },
-      );
-      // Existing must exist (we just lost the unique race), but guard
-      // anyway in case of a delete between insert + fetch.
-      if (!existing) {
-        // Recurse once — the row vanished. Safest is to throw a 500-like
-        // condition; the operator wrapper will surface it.
-        throw new Error(
-          'Idempotency row vanished between claim and replay read',
+        });
+        // Existing must exist (we just lost the unique race), but guard
+        // anyway in case of a delete between insert + fetch (mutation error
+        // on the winner releases the claim).
+        if (!existing) {
+          throw new Error(
+            'Idempotency row vanished between claim and replay read',
+          );
+        }
+        // Validate the action + hash on every iteration so a mismatched key
+        // is rejected immediately rather than after polling.
+        if (
+          existing.action !== action ||
+          (existing.request_hash !== null &&
+            existing.request_hash !== requestHash)
+        ) {
+          throw new UnprocessableEntityException({
+            error: 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST',
+            message:
+              'This idempotency key was previously used for a different action or payload',
+          });
+        }
+        if (existing.status === 'completed' && existing.response !== null) {
+          return {
+            response: existing.response as unknown as TResponse,
+            replay: true,
+          };
+        }
+        if (Date.now() >= deadline) {
+          // Winner still in_progress after the budget — surface 425 Too Early
+          // so the client retries instead of getting a null body.
+          // 425 Too Early is missing from @nestjs/common's HttpStatus enum,
+          // so the numeric literal is the source of truth here.
+          throw new HttpException(
+            {
+              error: 'IDEMPOTENT_REQUEST_STILL_PROCESSING',
+              message:
+                'Idempotent request still processing — retry in a moment',
+            },
+            425,
+          );
+        }
+        await new Promise((resolve) =>
+          setTimeout(resolve, REPLAY_POLL_INTERVAL_MS),
         );
       }
-      if (
-        existing.action !== action ||
-        (existing.request_hash !== null &&
-          existing.request_hash !== requestHash)
-      ) {
-        throw new UnprocessableEntityException({
-          error: 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST',
-          message:
-            'This idempotency key was previously used for a different action or payload',
-        });
-      }
-      return {
-        response: existing.response as unknown as TResponse,
-        replay: true,
-      };
     }
 
     // 2. We hold the claim. Run the mutation.

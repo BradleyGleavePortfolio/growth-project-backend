@@ -708,11 +708,14 @@ export class MessagingService {
 
   async markReadByClient(clientId: string) {
     const coachId = await this.requireClientCoachId(clientId);
+    // Mark every non-client sender's message read in this thread. Filtering on
+    // sender_id = coachId would miss sub-coach messages, since sub-coaches
+    // send with sender_id = subCoachId (the head coach still owns the thread).
     const result = await this.prisma.coachMessage.updateMany({
       where: {
         coach_id: coachId,
         client_id: clientId,
-        sender_id: coachId,
+        sender_id: { not: clientId },
         read_at: null,
       },
       data: { read_at: new Date() },
@@ -797,11 +800,14 @@ export class MessagingService {
         return { total: 0 };
       }
     }
+    // Count any non-client sender — sub-coach messages live under the head
+    // coach's thread with sender_id = subCoachId, so a coach_id-only filter
+    // would miss them.
     const total = await this.prisma.coachMessage.count({
       where: {
         coach_id: coachId,
         client_id: clientId,
-        sender_id: coachId,
+        sender_id: { not: clientId },
         read_at: null,
       },
     });
