@@ -328,20 +328,36 @@ export class AuthController {
   @ApiOperation({
     summary: 'Issue a short-lived re-auth token for sensitive actions',
     description:
-      "Verifies the user's current password against Supabase then returns a " +
-      'short-lived HMAC token to pass as X-Recent-Auth-Token on guarded endpoints. ' +
-      'Token is valid for RECENT_AUTH_TTL_MS (default 5 min) and bound to the caller.',
+      "Verifies the user's current credential and returns a short-lived HMAC " +
+      'token to pass as X-Recent-Auth-Token on guarded endpoints. ' +
+      'Accepts either `password` (email users) OR `provider_token` + `provider` ' +
+      '(Google/Apple OAuth users — required because OAuth-only users have no ' +
+      'password and would otherwise be permanently locked out of account ' +
+      'deletion). ' +
+      'Token is valid for RECENT_AUTH_TTL_MS (default 5 min) and bound to the caller. ' +
+      'Rate-limited 5 attempts per minute per authenticated user (and per IP).',
   })
   @ApiResponse({ status: 200, description: 'Recent-auth token issued.' })
-  @ApiResponse({ status: 401, description: 'Password incorrect.' })
+  @ApiResponse({ status: 400, description: 'Neither password nor provider_token provided.' })
+  @ApiResponse({ status: 401, description: 'Credential incorrect or token invalid.' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @UseGuards(JwtAuthGuard)
   @Post('recent-auth-token')
+  // SECURITY: 5/min per-user (authed) cap on this re-auth endpoint. Tighter than
+  // /auth/login because (a) only logged-in callers can hit it and (b) it gates
+  // sensitive actions (account deletion). UserThrottlerGuard keys this by
+  // authenticated user id when a JWT is present and by IP otherwise.
+  @Throttle({ [THROTTLER_NAMES.AUTH_RECENT_AUTH]: { ttl: 60_000, limit: 5 } })
   @HttpCode(HttpStatus.OK)
   async issueRecentAuthToken(
     @Request() req: AuthedRequest,
     @Body() body: IssueRecentAuthTokenDto,
   ) {
-    return this.authService.issueRecentAuthToken(req.user.id, body.password);
+    return this.authService.issueRecentAuthToken(req.user.id, {
+      password: body.password,
+      provider_token: body.provider_token,
+      provider: body.provider,
+    });
   }
 }
 

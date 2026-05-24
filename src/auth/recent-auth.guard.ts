@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -48,25 +49,42 @@ import { createHmac, timingSafeEqual } from 'crypto';
 /** Default validity window: 5 minutes. */
 export const RECENT_AUTH_TTL_MS = 5 * 60 * 1000;
 
+/** Minimum acceptable HMAC secret length, in characters. */
+export const RECENT_AUTH_SECRET_MIN_LENGTH = 32;
+
+/** Minimum acceptable token TTL: 1 minute. Anything shorter is unusable. */
+export const RECENT_AUTH_TTL_MIN_MS = 60_000;
+
+/** Maximum acceptable token TTL: 1 hour. Anything longer defeats the point. */
+export const RECENT_AUTH_TTL_MAX_MS = 60 * 60_000;
+
 /** Header name expected on requests to guarded endpoints. */
 export const RECENT_AUTH_HEADER = 'x-recent-auth-token';
+
+/** Client-facing message used for every guard-failure that originates in
+ *  server-side misconfiguration. Never expose env-var names or internal
+ *  reasons to clients (R17). The real reason is logged server-side. */
+const GENERIC_CONFIG_ERROR_MESSAGE = 'Sensitive action temporarily unavailable';
 
 /** Clock skew tolerance: allow tokens issued up to 30s in the future. */
 const CLOCK_SKEW_TOLERANCE_MS = 30_000;
 
 @Injectable()
 export class RecentAuthGuard implements CanActivate {
+  private readonly logger = new Logger(RecentAuthGuard.name);
+
   constructor(private config: ConfigService) {}
 
   canActivate(context: ExecutionContext): boolean {
     const secret = this.config.get<string>('RECENT_AUTH_SECRET');
-    if (!secret) {
-      // Fail closed: a missing secret means this guard cannot verify tokens.
-      // Block the request rather than silently passing it through.
-      throw new ForbiddenException(
-        'RECENT_AUTH_SECRET not configured; sensitive action blocked. ' +
-          'Set RECENT_AUTH_SECRET in the environment.',
+    if (!secret || secret.length < RECENT_AUTH_SECRET_MIN_LENGTH) {
+      // Fail closed: a missing or too-short secret means this guard cannot
+      // verify tokens. Block the request rather than silently passing it
+      // through. Never leak the env var name to the client.
+      this.logger.error(
+        `RECENT_AUTH_SECRET is not configured or is shorter than ${RECENT_AUTH_SECRET_MIN_LENGTH} characters — sensitive action blocked`,
       );
+      throw new ForbiddenException(GENERIC_CONFIG_ERROR_MESSAGE);
     }
 
     const req = context.switchToHttp().getRequest();
@@ -90,7 +108,19 @@ export class RecentAuthGuard implements CanActivate {
     }
 
     const now = Date.now();
-    const ttl = this.config.get<number>('RECENT_AUTH_TTL_MS') ?? RECENT_AUTH_TTL_MS;
+    const rawTtl = this.config.get<number | string>('RECENT_AUTH_TTL_MS');
+    const ttl = parseTtlMs(rawTtl);
+
+    if (ttl === null) {
+      // NaN/string/zero/negative TTL would either fail-open on expiry checks
+      // (NaN comparisons return false) or wedge the guard. Fail closed and
+      // log the misconfiguration server-side without naming the env var to
+      // the client.
+      this.logger.error(
+        `RECENT_AUTH_TTL_MS is not a finite positive integer in the safe range [${RECENT_AUTH_TTL_MIN_MS}, ${RECENT_AUTH_TTL_MAX_MS}] — sensitive action blocked. Got: ${typeof rawTtl}=${String(rawTtl)}`,
+      );
+      throw new ForbiddenException(GENERIC_CONFIG_ERROR_MESSAGE);
+    }
 
     // Reject expired tokens.
     if (now - issuedAt > ttl) {
@@ -146,14 +176,56 @@ export class RecentAuthGuard implements CanActivate {
  * Exported as a pure function so AuthService can call it without
  * injecting the guard (guards are request-scoped; services are not).
  *
+ * Throws an Error if the secret is missing or shorter than the documented
+ * minimum length. Callers must catch and convert to an internal-only error;
+ * do NOT propagate the message to clients (R17).
+ *
  * @param userId   The authenticated user's database id.
  * @param secret   RECENT_AUTH_SECRET from environment.
  * @returns        `<userId>.<issuedAtMs>.<hmacHex>`
  */
 export function issueRecentAuthToken(userId: string, secret: string): string {
+  if (!secret || secret.length < RECENT_AUTH_SECRET_MIN_LENGTH) {
+    throw new Error(
+      `RECENT_AUTH_SECRET must be at least ${RECENT_AUTH_SECRET_MIN_LENGTH} characters`,
+    );
+  }
   const issuedAt = Date.now().toString();
   const hmac = createHmac('sha256', secret)
     .update(`${userId}:${issuedAt}`)
     .digest('hex');
   return `${userId}.${issuedAt}.${hmac}`;
+}
+
+/**
+ * Parse RECENT_AUTH_TTL_MS as a finite integer in the safe range.
+ *
+ * Accepts a number or a numeric string (ConfigService can return either
+ * depending on how the value was provided). Returns null when the value is
+ * missing, non-numeric, non-finite, fractional, or outside the safe range.
+ *
+ * Callers MUST fail closed on null — using NaN/Infinity directly in TTL
+ * arithmetic would make `now - issuedAt > NaN` always false, so old tokens
+ * would never expire (silent fail-open).
+ */
+export function parseTtlMs(raw: unknown): number | null {
+  if (raw === undefined || raw === null) {
+    // Default is in the safe range — a missing value falls back to the
+    // documented default, not a failure.
+    return RECENT_AUTH_TTL_MS;
+  }
+  let n: number;
+  if (typeof raw === 'number') {
+    n = raw;
+  } else if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (trimmed === '') return null;
+    n = Number(trimmed);
+  } else {
+    return null;
+  }
+  if (!Number.isFinite(n)) return null;
+  if (!Number.isInteger(n)) return null;
+  if (n < RECENT_AUTH_TTL_MIN_MS || n > RECENT_AUTH_TTL_MAX_MS) return null;
+  return n;
 }

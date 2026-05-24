@@ -44,6 +44,8 @@ export const THROTTLER_NAMES = {
   AUTH_PASSWORD_RESET: 'auth-password-reset',
   /** Per-hour cap on signup attempts per IP. */
   AUTH_SIGNUP: 'auth-signup',
+  /** Per-minute cap on POST /auth/recent-auth-token (sensitive re-auth) per user/IP. */
+  AUTH_RECENT_AUTH: 'auth-recent-auth',
   /** Per-minute cap on coach->client messages per user. */
   COACH_MESSAGES: 'coach-messages',
   /** Per-minute cap on notification-preference writes per user. */
@@ -123,6 +125,10 @@ export const THROTTLER_LIMITS = [
   { name: THROTTLER_NAMES.AUTH_PASSWORD_RESET, ttl: 3_600_000,    limit: AUTH_PWD_RESET_PER_HOUR },
   // Signup: 5/hour/IP (unchanged from original)
   { name: THROTTLER_NAMES.AUTH_SIGNUP,         ttl: 3_600_000,    limit: 5 },
+  // Recent-auth token issuance: 5/min, per authenticated user (UserThrottlerGuard
+  // keys by user id when a JWT is present, falling back to IP). Tighter than
+  // /auth/login because it gates sensitive actions like account deletion.
+  { name: THROTTLER_NAMES.AUTH_RECENT_AUTH,    ttl: 60_000,       limit: 5 },
   // Coach messages: 30/min/user
   { name: THROTTLER_NAMES.COACH_MESSAGES,      ttl: 60_000,       limit: COACH_MESSAGES_PER_MIN },
   // Notification preferences: 30/min/user

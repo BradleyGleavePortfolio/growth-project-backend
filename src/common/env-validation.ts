@@ -412,6 +412,36 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     reason: 'Phase 6C — Supabase Storage bucket name for voice note objects. Defaults to "voice-notes". Bucket must exist in the Supabase project; signed-upload flow returns 501 VOICE_STORAGE_UNAVAILABLE if the bucket is unreachable or the JS SDK is too old to expose createSignedUploadUrl().',
   },
+  // Phase 10 — Recent-auth (re-auth for sensitive actions)
+  {
+    name: 'RECENT_AUTH_SECRET',
+    tier: 'prod',
+    reason:
+      'Phase 10 — HMAC signing secret for short-lived re-auth tokens (X-Recent-Auth-Token). Required for account deletion and other sensitive actions. Must be at least 32 characters of high-entropy data; shorter values are rejected at boot.',
+    validate: (v) => {
+      if (v.trim().length < 32) {
+        return 'RECENT_AUTH_SECRET must be at least 32 characters long.';
+      }
+      return null;
+    },
+  },
+  {
+    name: 'RECENT_AUTH_TTL_MS',
+    tier: 'prod',
+    reason:
+      'Phase 10 — validity window for re-auth tokens, in milliseconds. Must be a finite integer in [60000, 3600000] (1 min to 1 hour). Defaults to 300000 (5 min) when unset. Values outside this range fail the guard closed.',
+    validate: (v) => {
+      const trimmed = v.trim();
+      const n = Number(trimmed);
+      if (!Number.isFinite(n) || !Number.isInteger(n)) {
+        return 'RECENT_AUTH_TTL_MS must be a finite integer.';
+      }
+      if (n < 60_000 || n > 3_600_000) {
+        return 'RECENT_AUTH_TTL_MS must be in the range [60000, 3600000] (1 min to 1 hour).';
+      }
+      return null;
+    },
+  },
   // Phase 6D — Coach Onboarding Wizard
   {
     name: 'COACH_ONBOARDING_AUTO_START',

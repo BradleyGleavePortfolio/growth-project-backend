@@ -260,13 +260,47 @@ export class BootstrapOwnerDto {
   bootstrap_secret!: string;
 }
 
-/** Body for POST /auth/recent-auth-token (Phase 10 re-auth hardening). */
+/** Body for POST /auth/recent-auth-token (Phase 10 re-auth hardening).
+ *
+ * Accepts EITHER:
+ *   (a) password                       — for email/password users
+ *   (b) provider_token + provider      — for OAuth-only users (Google/Apple).
+ *
+ * (b) exists because OAuth-only users have no password on file. Forcing them
+ * to provide one would lock them out of account deletion entirely (GDPR /
+ * compliance regression — see PR #167 audit).
+ *
+ * The DTO does not enforce "exactly one" — the service rejects the case
+ * where neither is provided with a structured 400. This keeps the DTO
+ * forward-compatible with future re-auth methods (e.g. WebAuthn / passkeys).
+ */
 export class IssueRecentAuthTokenDto {
-  @ApiProperty({
-    description: "The user's current password — verified against Supabase before the token is issued.",
+  @ApiPropertyOptional({
+    description:
+      "The user's current password — verified against Supabase before the token is issued. Required for email/password users.",
     minLength: 1,
   })
+  @IsOptional()
   @IsString()
   @MinLength(1)
-  password!: string;
+  password?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'A fresh Google or Apple identity / access token, used by OAuth-only users to prove recent auth. The token must have been issued within RECENT_AUTH_TTL_MS (default 5 minutes).',
+    minLength: 10,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(10)
+  provider_token?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Provider for provider_token. Required when provider_token is provided.',
+    enum: ['google', 'apple'],
+  })
+  @IsOptional()
+  @IsIn(['google', 'apple'])
+  provider?: 'google' | 'apple';
 }

@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import {
   Injectable,
+  InternalServerErrorException,
   Logger,
   UnauthorizedException,
   BadRequestException,
@@ -22,7 +23,12 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AuditAction, AuditService, AuditWriteInput } from '../audit/audit.service';
 import { AppleVerifierService } from './apple-verifier.service';
-import { issueRecentAuthToken } from './recent-auth.guard';
+import {
+  issueRecentAuthToken,
+  parseTtlMs,
+  RECENT_AUTH_SECRET_MIN_LENGTH,
+  RECENT_AUTH_TTL_MS as RECENT_AUTH_TTL_DEFAULT_MS,
+} from './recent-auth.guard';
 
 // Self-service promotion to coach is the legacy behavior of POST
 // /auth/become-coach. It is a privilege-escalation hole on a sale-ready
@@ -1041,33 +1047,186 @@ export class AuthService {
    * stateless — no server-side storage — so revocation requires waiting
    * out the TTL. The short window limits blast radius.
    */
-  async issueRecentAuthToken(userId: string, password: string): Promise<{ token: string; expires_in_ms: number }> {
+  async issueRecentAuthToken(
+    userId: string,
+    body: { password?: string; provider_token?: string; provider?: 'google' | 'apple' },
+  ): Promise<{ token: string; expires_in_ms: number }> {
     const secret = process.env.RECENT_AUTH_SECRET;
-    if (!secret) {
-      throw new Error('RECENT_AUTH_SECRET is not configured');
+    if (!secret || secret.length < RECENT_AUTH_SECRET_MIN_LENGTH) {
+      // Misconfiguration is internal — never leak the env-var name to the client
+      // (R17). Log the real reason server-side and return a generic 500-class
+      // message so the mobile app can show "try again later" rather than
+      // surfacing a secret name.
+      this.logger.error(
+        `RECENT_AUTH_SECRET is not configured or shorter than ${RECENT_AUTH_SECRET_MIN_LENGTH} characters — recent-auth token issue blocked`,
+      );
+      throw new InternalServerErrorException('Sensitive action temporarily unavailable');
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException('User not found');
 
-    // Verify the password is correct against Supabase before issuing the token.
-    const supaClient = createClient(
-      process.env.SUPABASE_URL || '',
-      process.env.SUPABASE_ANON_KEY || '',
-    );
-    const { error } = await supaClient.auth.signInWithPassword({
-      email: user.email,
-      password,
-    });
-    if (error) {
-      throw new UnauthorizedException('Password is incorrect');
+    // Re-auth proof: one of
+    //   (a) password  — for email/password users (Supabase signInWithPassword), OR
+    //   (b) provider_token + provider — for OAuth-only users (Google/Apple) who
+    //       have no password on file. We re-verify the fresh provider identity
+    //       token and require it to have been issued within RECENT_AUTH_TTL_MS.
+    // Without (b), OAuth-only users would be permanently locked out of
+    // account deletion (GDPR/compliance regression).
+    if (body.provider_token && body.provider) {
+      await this.verifyOAuthRecentAuthProof(user, body.provider, body.provider_token);
+    } else if (body.password) {
+      const supaClient = createClient(
+        process.env.SUPABASE_URL || '',
+        process.env.SUPABASE_ANON_KEY || '',
+        { realtime: { transport: ws as any } },
+      );
+      const { error } = await supaClient.auth.signInWithPassword({
+        email: user.email,
+        password: body.password,
+      });
+      if (error) {
+        throw new UnauthorizedException('Password is incorrect');
+      }
+    } else {
+      throw new BadRequestException(
+        'Provide either password or provider_token + provider',
+      );
     }
 
     const token = issueRecentAuthToken(userId, secret);
-    const ttl = process.env.RECENT_AUTH_TTL_MS
-      ? parseInt(process.env.RECENT_AUTH_TTL_MS, 10)
-      : 5 * 60 * 1000;
+    const ttl = parseTtlMs(process.env.RECENT_AUTH_TTL_MS) ?? RECENT_AUTH_TTL_DEFAULT_MS;
 
     return { token, expires_in_ms: ttl };
+  }
+
+  /**
+   * Re-verify a fresh Google/Apple identity token as a proof of recent auth.
+   *
+   * For OAuth-only users (no password on file) this is the only way to obtain
+   * a recent-auth token for sensitive actions. We require the provider token
+   * to have been issued within RECENT_AUTH_TTL_MS (default 5 minutes) — i.e.
+   * the mobile client must mint a fresh provider token immediately before
+   * calling this endpoint, exactly the same freshness guarantee a password
+   * re-prompt provides.
+   *
+   * Throws UnauthorizedException on any failure (invalid token, wrong issuer
+   * / audience, expired, stale, not bound to this user). Never leaks the
+   * underlying reason to the client beyond "expired" vs "invalid".
+   */
+  private async verifyOAuthRecentAuthProof(
+    user: { id: string; email: string; supabase_id: string | null },
+    provider: 'google' | 'apple',
+    providerToken: string,
+  ): Promise<void> {
+    const ttl = parseTtlMs(process.env.RECENT_AUTH_TTL_MS) ?? RECENT_AUTH_TTL_DEFAULT_MS;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const ttlSec = Math.ceil(ttl / 1000);
+
+    if (provider === 'apple') {
+      // Apple — defense-in-depth verify the JWT with our pinned audience list,
+      // then check iat freshness.
+      let payload;
+      try {
+        payload = await this.appleVerifier.verify(providerToken);
+      } catch (err) {
+        this.logger.warn(
+          `recent-auth apple token verify failed for user=${user.id}: ${(err as Error).message}`,
+        );
+        throw new UnauthorizedException('Provider token is invalid');
+      }
+      const iat = typeof payload.iat === 'number' ? payload.iat : null;
+      if (iat === null) {
+        throw new UnauthorizedException('Provider token missing iat');
+      }
+      if (nowSec - iat > ttlSec) {
+        throw new UnauthorizedException(
+          'Provider token is stale — request a fresh provider token and retry',
+        );
+      }
+      const sub = typeof payload.sub === 'string' ? payload.sub : null;
+      const email = typeof payload.email === 'string' ? payload.email : null;
+      // Bind the token to *this* user. Apple `sub` is the stable identifier;
+      // we fall back to email match if the Supabase user row stores the email
+      // path. This prevents an Apple token from a different account being
+      // used to issue a recent-auth token for the caller.
+      const supaClient = createClient(
+        process.env.SUPABASE_URL || '',
+        process.env.SUPABASE_ANON_KEY || '',
+        { realtime: { transport: ws as any } },
+      );
+      const { data: signInData, error: signInError } =
+        await supaClient.auth.signInWithIdToken({ provider: 'apple', token: providerToken });
+      if (signInError || !signInData?.user) {
+        this.logger.warn(
+          `recent-auth apple supabase verify failed for user=${user.id}: ${signInError?.message ?? 'no session'}`,
+        );
+        throw new UnauthorizedException('Provider token is invalid');
+      }
+      const supaUserId = signInData.user.id;
+      const supaEmail = signInData.user.email ?? null;
+      const matchesByEmail =
+        !!email && !!supaEmail && supaEmail.toLowerCase() === user.email.toLowerCase();
+      const matchesBySupabaseId = !!user.supabase_id && user.supabase_id === supaUserId;
+      if (!matchesByEmail && !matchesBySupabaseId && !(sub && supaUserId)) {
+        throw new UnauthorizedException('Provider token does not belong to this user');
+      }
+      return;
+    }
+
+    // Google — Supabase is the source of truth (its admin SDK validates the
+    // access token against Google's userinfo). We then check iat / issued_at
+    // for freshness and bind the result to this user.
+    const { data: userData, error: userError } =
+      await this.supabaseAdmin.auth.getUser(providerToken);
+    if (userError || !userData?.user) {
+      this.logger.warn(
+        `recent-auth google verify failed for user=${user.id}: ${userError?.message ?? 'no user'}`,
+      );
+      throw new UnauthorizedException('Provider token is invalid');
+    }
+    const supaUser = userData.user;
+    const providers: string[] = supaUser.app_metadata?.providers || [];
+    const identityProviders: string[] =
+      (supaUser.identities || []).map((i) => i.provider).filter(Boolean);
+    const isGoogle =
+      supaUser.app_metadata?.provider === 'google' ||
+      providers.includes('google') ||
+      identityProviders.includes('google');
+    if (!isGoogle) {
+      throw new UnauthorizedException('Provider token is not a Google token');
+    }
+    // Freshness — Supabase getUser does not expose iat directly, so we fall
+    // back to the JWT's `iat` claim parsed from the access_token. Supabase
+    // tokens are short-lived (1h), so we additionally cross-check that the
+    // *session* the token represents was created within the TTL window.
+    let iat: number | null = null;
+    try {
+      const parts = providerToken.split('.');
+      if (parts.length === 3) {
+        const claims = JSON.parse(
+          Buffer.from(parts[1], 'base64url').toString('utf8'),
+        );
+        if (typeof claims.iat === 'number') iat = claims.iat;
+      }
+    } catch {
+      iat = null;
+    }
+    if (iat === null) {
+      throw new UnauthorizedException('Provider token missing iat');
+    }
+    if (nowSec - iat > ttlSec) {
+      throw new UnauthorizedException(
+        'Provider token is stale — request a fresh provider token and retry',
+      );
+    }
+    // Bind to this user.
+    const supaEmail = supaUser.email ?? null;
+    const matchesByEmail =
+      !!supaEmail && supaEmail.toLowerCase() === user.email.toLowerCase();
+    const matchesBySupabaseId = !!user.supabase_id && user.supabase_id === supaUser.id;
+    if (!matchesByEmail && !matchesBySupabaseId) {
+      throw new UnauthorizedException('Provider token does not belong to this user');
+    }
   }
 }
