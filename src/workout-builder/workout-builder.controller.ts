@@ -27,14 +27,17 @@
  */
 
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   Headers,
+  Injectable,
   Param,
   ParseUUIDPipe,
   Patch,
+  PipeTransform,
   Post,
   Put,
   Query,
@@ -62,6 +65,35 @@ import {
 import { WorkoutBuilderService } from './workout-builder.service';
 
 const IDEMPOTENCY_HEADER = 'idempotency-key';
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Validates an `Idempotency-Key` header is present and is a valid UUID.
+ *
+ * Used on every coach POST/PATCH/PUT/DELETE mutation. Missing or malformed
+ * headers fail closed with 400 — the audit explicitly flagged optional /
+ * unvalidated headers as a P1 because retries without a stable key cannot
+ * be deduped, and a malformed key turns into a unique row that pollutes
+ * the ledger.
+ */
+@Injectable()
+export class RequiredUuidIdempotencyKeyPipe implements PipeTransform {
+  transform(value: unknown): string {
+    if (typeof value !== 'string' || !value) {
+      throw new BadRequestException(
+        'Idempotency-Key header is required and must be a UUID',
+      );
+    }
+    if (!UUID_RE.test(value)) {
+      throw new BadRequestException(
+        'Idempotency-Key header is required and must be a UUID',
+      );
+    }
+    return value;
+  }
+}
 
 @ApiTags('workout-plans')
 @ApiBearerAuth()
@@ -91,14 +123,17 @@ export class WorkoutBuilderController {
   @ApiHeader({
     name: 'Idempotency-Key',
     description: 'UUID — server dedups retries with the same key per coach.',
-    required: false,
+    required: true,
   })
   @ApiResponse({ status: 201, description: 'Plan created.' })
+  @ApiResponse({ status: 400, description: 'Missing/invalid Idempotency-Key.' })
   @ApiResponse({ status: 403, description: 'Not a coach.' })
+  @ApiResponse({ status: 409, description: 'Concurrent retry — try again.' })
   createPlan(
     @Req() req: AuthedRequest,
     @Body() dto: CreateWorkoutPlanDto,
-    @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
+    @Headers(IDEMPOTENCY_HEADER, RequiredUuidIdempotencyKeyPipe)
+    idempotencyKey: string,
   ) {
     return this.workoutBuilder.createPlan(req.user.id, dto, idempotencyKey);
   }
@@ -114,23 +149,34 @@ export class WorkoutBuilderController {
 
   @Patch(':planId')
   @ApiOperation({ summary: "Update a plan's metadata." })
-  @ApiHeader({ name: 'Idempotency-Key', required: false })
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiResponse({ status: 400, description: 'Missing/invalid Idempotency-Key.' })
   updatePlan(
     @Req() req: AuthedRequest,
     @Param('planId', new ParseUUIDPipe()) planId: string,
     @Body() dto: UpdateWorkoutPlanDto,
-    @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
+    @Headers(IDEMPOTENCY_HEADER, RequiredUuidIdempotencyKeyPipe)
+    idempotencyKey: string,
   ) {
     return this.workoutBuilder.updatePlan(req.user.id, planId, dto, idempotencyKey);
   }
 
   @Delete(':planId')
-  @ApiOperation({ summary: 'Soft-archive a plan.' })
+  @ApiOperation({
+    summary:
+      'Soft-archive a plan. Idempotent: a second DELETE on an already-' +
+      'archived plan returns the existing archived row without re-stamping.',
+  })
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiResponse({ status: 200, description: 'Plan archived (or already archived).' })
+  @ApiResponse({ status: 400, description: 'Missing/invalid Idempotency-Key.' })
   archivePlan(
     @Req() req: AuthedRequest,
     @Param('planId', new ParseUUIDPipe()) planId: string,
+    @Headers(IDEMPOTENCY_HEADER, RequiredUuidIdempotencyKeyPipe)
+    idempotencyKey: string,
   ) {
-    return this.workoutBuilder.archivePlan(req.user.id, planId);
+    return this.workoutBuilder.archivePlan(req.user.id, planId, idempotencyKey);
   }
 
   @Put(':planId/exercises')
@@ -139,12 +185,14 @@ export class WorkoutBuilderController {
       "Replace the plan's exercise list. Prior rows are soft-archived so " +
       'assigned clients keep seeing the snapshot they were assigned.',
   })
-  @ApiHeader({ name: 'Idempotency-Key', required: false })
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiResponse({ status: 400, description: 'Missing/invalid Idempotency-Key.' })
   setExercises(
     @Req() req: AuthedRequest,
     @Param('planId', new ParseUUIDPipe()) planId: string,
     @Body() body: UpsertExerciseRowsDto,
-    @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
+    @Headers(IDEMPOTENCY_HEADER, RequiredUuidIdempotencyKeyPipe)
+    idempotencyKey: string,
   ) {
     return this.workoutBuilder.setExercises(
       req.user.id,
@@ -156,12 +204,14 @@ export class WorkoutBuilderController {
 
   @Post(':planId/assignments')
   @ApiOperation({ summary: 'Assign a plan to a client.' })
-  @ApiHeader({ name: 'Idempotency-Key', required: false })
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiResponse({ status: 400, description: 'Missing/invalid Idempotency-Key.' })
   assignPlan(
     @Req() req: AuthedRequest,
     @Param('planId', new ParseUUIDPipe()) planId: string,
     @Body() dto: CreateAssignmentDto,
-    @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
+    @Headers(IDEMPOTENCY_HEADER, RequiredUuidIdempotencyKeyPipe)
+    idempotencyKey: string,
   ) {
     return this.workoutBuilder.assignPlan(req.user.id, planId, dto, idempotencyKey);
   }
@@ -215,9 +265,12 @@ export class AssignmentController {
   @Get(':assignmentId')
   @ApiOperation({
     summary:
-      "Get a single assignment. 404 if the row does not exist OR does " +
-      'not belong to the calling user.',
+      'Get a single assignment. 404 if the assignment does not exist; ' +
+      '403 if it exists but belongs to another user.',
   })
+  @ApiResponse({ status: 200, description: 'Assignment.' })
+  @ApiResponse({ status: 403, description: 'Assignment belongs to another user.' })
+  @ApiResponse({ status: 404, description: 'Assignment not found.' })
   getOne(
     @Req() req: AuthedRequest,
     @Param('assignmentId', new ParseUUIDPipe()) assignmentId: string,

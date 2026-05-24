@@ -101,11 +101,21 @@ export class WorkoutBuilderService {
   // ─── Idempotency helper ──────────────────────────────────────────────────
 
   /**
-   * Generic per-user idempotency. Looks up
-   * (user_id, route_key, idempotency_key) and returns the cached
-   * response if present; otherwise runs the operation, stores the result,
-   * and returns it. The unique index on the ledger guarantees that two
-   * concurrent retries with the same key cannot both insert.
+   * Generic per-user idempotency. RACE-SAFE: the key is CLAIMED atomically
+   * BEFORE the mutation runs, not after.
+   *
+   * Flow:
+   *   1. Attempt to insert a ledger row with status='in_progress'.
+   *      - P2002 (duplicate key) → another request already holds the key.
+   *        - If existing.status === 'completed': return cached response.
+   *        - If existing.status === 'in_progress': 409 — concurrent retry.
+   *   2. If the insert succeeded, run op(). The lock is the in_progress row.
+   *   3. Update the same row to status='completed' with the response.
+   *   4. If op() throws, delete the in_progress row so the caller can retry.
+   *
+   * This ensures the protected mutation runs exactly once even under
+   * concurrent retries with the same key — not just that the same response
+   * is returned after duplicate side effects.
    */
   async withIdempotency<T>(
     userId: string,
@@ -115,42 +125,25 @@ export class WorkoutBuilderService {
   ): Promise<T> {
     if (!idempotencyKey) return op();
 
-    const existing = await this.prisma.workoutBuilderIdempotencyKey.findUnique({
-      where: {
-        WorkoutBuilderIdempotencyKey_user_route_key_key: {
-          user_id: userId,
-          route_key: routeKey,
-          idempotency_key: idempotencyKey,
-        },
-      },
-    });
-    if (existing) {
-      // Cached response replay. We typed response_json as `unknown` and
-      // cast at the call site — the cached shape is whatever the
-      // original operation returned.
-      return existing.response_json as unknown as T;
-    }
-
-    const result = await op();
-
+    // Step 1: atomically claim the key.
+    let claimId: string | null = null;
     try {
-      await this.prisma.workoutBuilderIdempotencyKey.create({
+      const claim = await this.prisma.workoutBuilderIdempotencyKey.create({
         data: {
           user_id: userId,
           route_key: routeKey,
           idempotency_key: idempotencyKey,
-          response_json: result as unknown as Prisma.InputJsonValue,
-          status_code: 200,
+          status: 'in_progress',
         },
       });
+      claimId = claim.id;
     } catch (err) {
-      // Unique-constraint race: another concurrent retry got there
-      // first. Read its cached response and return it.
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002'
       ) {
-        const winner = await this.prisma.workoutBuilderIdempotencyKey.findUnique({
+        // Another request already holds (or completed with) this key.
+        const existing = await this.prisma.workoutBuilderIdempotencyKey.findUnique({
           where: {
             WorkoutBuilderIdempotencyKey_user_route_key_key: {
               user_id: userId,
@@ -159,10 +152,50 @@ export class WorkoutBuilderService {
             },
           },
         });
-        if (winner) return winner.response_json as unknown as T;
+        if (!existing) {
+          // Race: row was just deleted (op() failed). Try once more.
+          throw new ConflictException(
+            'Request in progress — retry in a moment',
+          );
+        }
+        if (existing.status === 'completed') {
+          return existing.response_json as unknown as T;
+        }
+        // status === 'in_progress' → concurrent retry. Surface 409 so
+        // the client can back off; we do NOT run the mutation a second time.
+        throw new ConflictException(
+          'Request in progress — retry in a moment',
+        );
       }
       throw err;
     }
+
+    // Step 2: run the protected operation under the claim.
+    let result: T;
+    try {
+      result = await op();
+    } catch (err) {
+      // Release the claim so the client can retry with the same key.
+      // best-effort: ignore delete failures so the original error wins.
+      try {
+        await this.prisma.workoutBuilderIdempotencyKey.delete({
+          where: { id: claimId },
+        });
+      } catch {
+        /* swallow */
+      }
+      throw err;
+    }
+
+    // Step 3: persist the cached response and flip status to 'completed'.
+    await this.prisma.workoutBuilderIdempotencyKey.update({
+      where: { id: claimId },
+      data: {
+        status: 'completed',
+        response_json: result as unknown as Prisma.InputJsonValue,
+        status_code: 200,
+      },
+    });
 
     return result;
   }
@@ -267,13 +300,41 @@ export class WorkoutBuilderService {
     );
   }
 
-  async archivePlan(coachId: string, planId: string) {
+  /**
+   * Soft-archive a plan.
+   *
+   * Idempotent at the data layer: if the plan is already archived we
+   * return the existing row WITHOUT re-stamping archived_at, so a
+   * double-DELETE returns the same response (audit P1-6). The
+   * idempotency ledger is still consulted so concurrent retries
+   * collapse to one mutation just like the other coach writes.
+   */
+  async archivePlan(
+    coachId: string,
+    planId: string,
+    idempotencyKey?: string | null,
+  ) {
     await this.assertCoach(coachId);
     await this.assertPlanOwnership(coachId, planId);
-    return this.prisma.workoutPlan.update({
-      where: { id: planId },
-      data: { archived_at: new Date() },
-    });
+    return this.withIdempotency(
+      coachId,
+      `workout-builder:archivePlan:${planId}`,
+      idempotencyKey,
+      async () => {
+        const existing = await this.prisma.workoutPlan.findUnique({
+          where: { id: planId },
+        });
+        if (!existing) throw new NotFoundException('Workout plan not found');
+        if (existing.archived_at) {
+          // Already archived — return the row unchanged.
+          return existing;
+        }
+        return this.prisma.workoutPlan.update({
+          where: { id: planId },
+          data: { archived_at: new Date() },
+        });
+      },
+    );
   }
 
   // ─── WorkoutPlanExercise rows ─────────────────────────────────────────────
@@ -305,6 +366,24 @@ export class WorkoutBuilderService {
     if (new Set(orders).size !== orders.length) {
       throw new BadRequestException(
         'Exercise order values must be unique within a plan',
+      );
+    }
+
+    // P1-3: Block edits while clients are mid-workout. Soft-archive plus
+    // a per-assignment read filter is not enough — assignment reads join
+    // to live exercises only, so editing the plan would silently change
+    // what already-assigned clients see. Active assignment = the row is
+    // not yet completed.
+    const activeAssignmentCount =
+      await this.prisma.clientWorkoutAssignment.count({
+        where: { workout_plan_id: planId, completed_at: null },
+      });
+    if (activeAssignmentCount > 0) {
+      throw new ConflictException(
+        'This workout plan has active client assignments. Mark the ' +
+          'existing assignments complete or unassign them before editing ' +
+          'the exercise list, so assigned clients keep seeing the workout ' +
+          'they were given.',
       );
     }
 
@@ -432,9 +511,16 @@ export class WorkoutBuilderService {
   }
 
   /**
-   * Client-facing single-assignment read. 404 when the row does not exist
-   * or belongs to another user (we intentionally do NOT distinguish
-   * "missing" from "not yours" to avoid leaking existence).
+   * Client-facing single-assignment read.
+   *
+   * - 404 when the row does not exist.
+   * - 403 when the row exists but belongs to a different user.
+   * - returns the row when it exists and the caller is the owner.
+   *
+   * The 403 / 404 split is intentional: it surfaces the right semantic
+   * to the mobile app (an unknown id vs. a permission problem) without
+   * leaking sensitive cross-tenant detail beyond "this id is taken".
+   * The audit explicitly flagged collapsing both into 404 as a P1.
    */
   async getMyAssignment(userId: string, assignmentId: string) {
     const assignment = await this.prisma.clientWorkoutAssignment.findUnique({
@@ -450,41 +536,66 @@ export class WorkoutBuilderService {
         },
       },
     });
-    if (!assignment || assignment.client_id !== userId) {
+    if (!assignment) {
       throw new NotFoundException('Assignment not found');
+    }
+    if (assignment.client_id !== userId) {
+      throw new ForbiddenException('Access denied');
     }
     return assignment;
   }
 
+  /**
+   * Atomically mark an assignment complete.
+   *
+   * Race-safety: uses a single conditional updateMany() (WHERE
+   * completed_at IS NULL) so two concurrent completion requests can't
+   * both succeed. Whichever one matches first stamps completed_at; the
+   * other sees count=0 and falls through to the "already completed"
+   * branch — idempotent if the keys match, conflict if they differ.
+   *
+   * Authorisation: existence check is separate from ownership check so
+   * a foreign assignment gets a 403 (not a 404 that leaks existence).
+   */
   async completeAssignment(
     clientId: string,
     assignmentId: string,
     dto: CompleteAssignmentDto,
   ) {
-    const assignment = await this.prisma.clientWorkoutAssignment.findUnique({
+    // Existence + ownership disambiguation (R22 server-authoritative gate).
+    const existing = await this.prisma.clientWorkoutAssignment.findUnique({
       where: { id: assignmentId },
+      select: {
+        id: true,
+        client_id: true,
+        completed_at: true,
+        completion_idempotency_key: true,
+      },
     });
-    if (!assignment) throw new NotFoundException('Assignment not found');
-    if (assignment.client_id !== clientId) throw new ForbiddenException();
+    if (!existing) throw new NotFoundException('Assignment not found');
+    if (existing.client_id !== clientId) {
+      throw new ForbiddenException('Access denied');
+    }
 
-    // Idempotency: if the same key has already been recorded against this
-    // assignment, return the original completed row without re-processing.
+    // Fast-path replay: same idempotency key on an already-completed row
+    // returns the full record without a write.
     if (
-      assignment.completion_idempotency_key &&
-      assignment.completion_idempotency_key === dto.idempotency_key
+      existing.completed_at &&
+      existing.completion_idempotency_key === dto.idempotency_key
     ) {
-      return assignment;
+      return this.prisma.clientWorkoutAssignment.findUnique({
+        where: { id: assignmentId },
+      });
     }
 
-    if (assignment.completed_at) {
-      // Already completed with a *different* key. Surface as conflict
-      // rather than silently overwrite, so the mobile client can prompt
-      // the user rather than discard their new data.
-      throw new ConflictException('Assignment already completed');
-    }
-
-    return this.prisma.clientWorkoutAssignment.update({
-      where: { id: assignmentId },
+    // Conditional atomic update: only succeeds if the row is still not
+    // completed. Two concurrent requests can't both match.
+    const updated = await this.prisma.clientWorkoutAssignment.updateMany({
+      where: {
+        id: assignmentId,
+        client_id: clientId,
+        completed_at: null,
+      },
       data: {
         completed_at: new Date(),
         post_rpe: dto.post_rpe ?? null,
@@ -495,6 +606,30 @@ export class WorkoutBuilderService {
           (dto.completion_payload as Prisma.InputJsonValue) ?? Prisma.JsonNull,
       },
     });
+
+    if (updated.count === 1) {
+      return this.prisma.clientWorkoutAssignment.findUnique({
+        where: { id: assignmentId },
+      });
+    }
+
+    // Update didn't take effect: the row is already completed (by us
+    // or by a concurrent request). Re-read and decide.
+    const after = await this.prisma.clientWorkoutAssignment.findUnique({
+      where: { id: assignmentId },
+    });
+    if (!after) throw new NotFoundException('Assignment not found');
+    if (after.client_id !== clientId) {
+      throw new ForbiddenException('Access denied');
+    }
+    if (after.completion_idempotency_key === dto.idempotency_key) {
+      // Idempotent replay — same key, already completed.
+      return after;
+    }
+    // Different key against an already-completed row. Surface as
+    // conflict so the mobile client can prompt the user rather than
+    // silently overwrite earlier session data.
+    throw new ConflictException('Assignment already completed');
   }
 
   // ─── Guards ───────────────────────────────────────────────────────────────
