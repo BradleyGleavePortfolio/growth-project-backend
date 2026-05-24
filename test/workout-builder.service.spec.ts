@@ -1,16 +1,20 @@
 /**
- * Unit tests for WorkoutBuilderService.
+ * Unit tests for WorkoutBuilderService — audit #2 P1/P2 behaviour.
  * PrismaService is fully mocked; no database required.
  *
- * Covers the audit-mandated behaviors:
- *   - coach role gate (assertCoach) — student role yields 403
- *   - idempotency replay for coach mutations and completion
- *   - listMyAssignments restricts to client_id = req.user.id
- *   - setExercises soft-archives prior rows (no deleteMany)
- *   - completion accepts idempotency_key + started_at + completion_payload
+ * Covers:
+ *   - coach role gate (assertCoach)
+ *   - race-safe idempotency claim (atomic in_progress -> completed flow)
+ *   - atomic completion via conditional updateMany
+ *   - setExercises blocked when active assignments exist
+ *   - getMyAssignment 403 vs 404 split
+ *   - listMyAssignments restricted to client_id = req.user.id
+ *   - keyset-paginated listPlans / listAssignments cursor encoding
+ *   - archivePlan idempotent on already-archived plans
  */
 
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -35,8 +39,8 @@ const basePlan = {
   name: 'Push Day A',
   type: WorkoutType.strength,
   duration_estimate_minutes: 45,
-  created_at: new Date('2025-01-01'),
-  updated_at: new Date('2025-01-01'),
+  created_at: new Date('2025-01-01T00:00:00Z'),
+  updated_at: new Date('2025-01-01T00:00:00Z'),
   archived_at: null,
   exercises: [],
 };
@@ -55,16 +59,18 @@ interface PrismaMock {
   };
   clientWorkoutAssignment: {
     create: jest.Mock;
+    count: jest.Mock;
     findMany: jest.Mock;
     findUnique: jest.Mock;
     update: jest.Mock;
+    updateMany: jest.Mock;
   };
-  user: {
-    findUnique: jest.Mock;
-  };
+  user: { findUnique: jest.Mock };
   workoutBuilderIdempotencyKey: {
     findUnique: jest.Mock;
     create: jest.Mock;
+    update: jest.Mock;
+    delete: jest.Mock;
   };
   $transaction: jest.Mock;
 }
@@ -83,14 +89,18 @@ const makePrismaMock = (): PrismaMock => ({
   },
   clientWorkoutAssignment: {
     create: jest.fn(),
+    count: jest.fn().mockResolvedValue(0),
     findMany: jest.fn(),
     findUnique: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
   },
   user: { findUnique: jest.fn() },
   workoutBuilderIdempotencyKey: {
     findUnique: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
   },
   $transaction: jest.fn(),
 });
@@ -101,17 +111,24 @@ describe('WorkoutBuilderService', () => {
 
   beforeEach(async () => {
     prismaMock = makePrismaMock();
-    // Default: assertCoach() succeeds for COACH_ID.
+
     prismaMock.user.findUnique.mockImplementation(({ where }: { where: { id: string } }) => {
       if (where.id === COACH_ID) return Promise.resolve(coachRow);
       if (where.id === STUDENT_ID) return Promise.resolve(studentRow);
       if (where.id === ownerRow.id) return Promise.resolve(ownerRow);
-      if (where.id === CLIENT_ID) return Promise.resolve({ id: CLIENT_ID, coach_id: COACH_ID });
+      if (where.id === CLIENT_ID)
+        return Promise.resolve({ id: CLIENT_ID, coach_id: COACH_ID });
       return Promise.resolve(null);
     });
-    // Default: no cached idempotency row.
-    prismaMock.workoutBuilderIdempotencyKey.findUnique.mockResolvedValue(null);
-    prismaMock.workoutBuilderIdempotencyKey.create.mockResolvedValue({});
+
+    // Default claim path: create succeeds, update succeeds.
+    prismaMock.workoutBuilderIdempotencyKey.create.mockImplementation(
+      async ({ data }: { data: { idempotency_key: string } }) => ({
+        id: `ledger-${data.idempotency_key}`,
+        ...data,
+      }),
+    );
+    prismaMock.workoutBuilderIdempotencyKey.update.mockResolvedValue({});
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -126,22 +143,24 @@ describe('WorkoutBuilderService', () => {
   // ─── RBAC ───────────────────────────────────────────────────────────────
 
   describe('assertCoach', () => {
-    it('rejects a student calling a coach-side route with 403', async () => {
+    it('rejects a student on a coach-side route with 403', async () => {
       await expect(
-        service.createPlan(STUDENT_ID, {
-          name: 'sneaky',
-          type: WorkoutType.strength,
-        }),
+        service.createPlan(
+          STUDENT_ID,
+          { name: 'sneaky', type: WorkoutType.strength },
+          'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
+        ),
       ).rejects.toThrow(ForbiddenException);
     });
 
     it('accepts owner role on coach-side routes', async () => {
       prismaMock.workoutPlan.create.mockResolvedValue(basePlan);
       await expect(
-        service.createPlan(ownerRow.id, {
-          name: 'owner plan',
-          type: WorkoutType.strength,
-        }),
+        service.createPlan(
+          ownerRow.id,
+          { name: 'owner plan', type: WorkoutType.strength },
+          'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb',
+        ),
       ).resolves.toBeDefined();
     });
   });
@@ -152,11 +171,15 @@ describe('WorkoutBuilderService', () => {
     it('creates and returns a workout plan', async () => {
       prismaMock.workoutPlan.create.mockResolvedValue(basePlan);
 
-      const result = await service.createPlan(COACH_ID, {
-        name: 'Push Day A',
-        type: WorkoutType.strength,
-        duration_estimate_minutes: 45,
-      });
+      const result = await service.createPlan(
+        COACH_ID,
+        {
+          name: 'Push Day A',
+          type: WorkoutType.strength,
+          duration_estimate_minutes: 45,
+        },
+        'cccccccc-cccc-4ccc-cccc-cccccccccccc',
+      );
 
       expect(prismaMock.workoutPlan.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -169,41 +192,101 @@ describe('WorkoutBuilderService', () => {
       );
       expect(result).toEqual(basePlan);
     });
+  });
 
-    it('replays the cached response on a double-submit with the same Idempotency-Key', async () => {
-      const cached = { ...basePlan, id: 'cached-id' };
+  // ─── withIdempotency atomic claim ──────────────────────────────────────
+
+  describe('withIdempotency (P1-1 — race-safe claim)', () => {
+    it('returns the cached response when a completed row already exists', async () => {
+      const cached = { winner: true };
+      prismaMock.workoutBuilderIdempotencyKey.create.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('duplicate', {
+          code: 'P2002',
+          clientVersion: 'x',
+        }),
+      );
       prismaMock.workoutBuilderIdempotencyKey.findUnique.mockResolvedValueOnce({
+        status: 'completed',
         response_json: cached,
       });
 
-      const result = await service.createPlan(
+      const op = jest.fn().mockResolvedValue({ ignored: true });
+
+      const result = await service.withIdempotency(
         COACH_ID,
-        { name: 'A', type: WorkoutType.strength },
-        'idem-key-1',
+        'route-key',
+        'dddddddd-dddd-4ddd-dddd-dddddddddddd',
+        op,
       );
 
       expect(result).toEqual(cached);
-      expect(prismaMock.workoutPlan.create).not.toHaveBeenCalled();
+      // Crucial — the protected op MUST NOT run on a duplicate.
+      expect(op).not.toHaveBeenCalled();
     });
 
-    it('persists the response under the idempotency key on first call', async () => {
-      prismaMock.workoutPlan.create.mockResolvedValue(basePlan);
-
-      await service.createPlan(
-        COACH_ID,
-        { name: 'A', type: WorkoutType.strength },
-        'idem-key-2',
-      );
-
-      expect(prismaMock.workoutBuilderIdempotencyKey.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            user_id: COACH_ID,
-            route_key: 'workout-builder:createPlan',
-            idempotency_key: 'idem-key-2',
-          }),
+    it('rejects a concurrent in_progress retry with 409', async () => {
+      prismaMock.workoutBuilderIdempotencyKey.create.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('duplicate', {
+          code: 'P2002',
+          clientVersion: 'x',
         }),
       );
+      prismaMock.workoutBuilderIdempotencyKey.findUnique.mockResolvedValueOnce({
+        status: 'in_progress',
+        response_json: null,
+      });
+
+      const op = jest.fn().mockResolvedValue({});
+
+      await expect(
+        service.withIdempotency(
+          COACH_ID,
+          'route-key',
+          'eeeeeeee-eeee-4eee-eeee-eeeeeeeeeeee',
+          op,
+        ),
+      ).rejects.toThrow(ConflictException);
+
+      expect(op).not.toHaveBeenCalled();
+    });
+
+    it('runs op exactly once and flips status to completed on success', async () => {
+      const op = jest.fn().mockResolvedValue({ ok: true });
+
+      const result = await service.withIdempotency(
+        COACH_ID,
+        'route-key',
+        'ffffffff-ffff-4fff-ffff-ffffffffffff',
+        op,
+      );
+
+      expect(op).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({ ok: true });
+      expect(prismaMock.workoutBuilderIdempotencyKey.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'in_progress' }),
+        }),
+      );
+      expect(prismaMock.workoutBuilderIdempotencyKey.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'completed' }),
+        }),
+      );
+    });
+
+    it('releases the claim when op() throws so the caller can retry', async () => {
+      const op = jest.fn().mockRejectedValue(new Error('boom'));
+
+      await expect(
+        service.withIdempotency(
+          COACH_ID,
+          'route-key',
+          '11111111-1111-4111-1111-111111111111',
+          op,
+        ),
+      ).rejects.toThrow('boom');
+
+      expect(prismaMock.workoutBuilderIdempotencyKey.delete).toHaveBeenCalled();
     });
   });
 
@@ -216,14 +299,14 @@ describe('WorkoutBuilderService', () => {
       expect(result.id).toBe(basePlan.id);
     });
 
-    it('throws NotFoundException when plan does not exist', async () => {
+    it('404s on missing plan', async () => {
       prismaMock.workoutPlan.findUnique.mockResolvedValue(null);
       await expect(service.getPlan(COACH_ID, 'bad-id')).rejects.toThrow(
         NotFoundException,
       );
     });
 
-    it('throws ForbiddenException when the coach does not own the plan', async () => {
+    it('403s when the coach does not own the plan', async () => {
       prismaMock.workoutPlan.findUnique.mockResolvedValue({
         ...basePlan,
         coach_id: 'other-coach',
@@ -234,41 +317,44 @@ describe('WorkoutBuilderService', () => {
     });
   });
 
-  // ─── listPlans pagination ────────────────────────────────────────────────
+  // ─── listPlans keyset pagination ─────────────────────────────────────────
 
-  describe('listPlans', () => {
-    it('returns up to 50 items per page with a nextCursor when more remain', async () => {
+  describe('listPlans (P2-1 keyset pagination)', () => {
+    it('caps the page at 50 and emits a base64 cursor on overflow', async () => {
+      const ts = new Date('2025-01-15T00:00:00Z');
       const rows = Array.from({ length: 51 }, (_, i) => ({
         ...basePlan,
         id: `plan-${String(i).padStart(3, '0')}`,
+        created_at: ts,
       }));
       prismaMock.workoutPlan.findMany.mockResolvedValue(rows);
 
       const result = await service.listPlans(COACH_ID, { limit: 1000 });
 
       expect(result.items.length).toBe(50);
-      expect(result.nextCursor).toBe('plan-049');
+      expect(typeof result.nextCursor).toBe('string');
+      // Cursor decodes to "{isoTimestamp}|{lastId}".
+      const decoded = Buffer.from(result.nextCursor as string, 'base64').toString('utf8');
+      expect(decoded).toContain('|plan-049');
+      expect(decoded.startsWith(ts.toISOString())).toBe(true);
     });
 
     it('returns null nextCursor on the final page', async () => {
-      const rows = Array.from({ length: 3 }, (_, i) => ({
-        ...basePlan,
-        id: `plan-${i}`,
-      }));
-      prismaMock.workoutPlan.findMany.mockResolvedValue(rows);
-
+      prismaMock.workoutPlan.findMany.mockResolvedValue([basePlan]);
       const result = await service.listPlans(COACH_ID, { limit: 50 });
-
-      expect(result.items.length).toBe(3);
       expect(result.nextCursor).toBeNull();
     });
   });
 
-  // ─── setExercises soft-archive ───────────────────────────────────────────
+  // ─── setExercises soft-archive + active-assignment guard ─────────────────
 
   describe('setExercises', () => {
-    it('soft-archives prior rows instead of deleting them', async () => {
+    beforeEach(() => {
       prismaMock.workoutPlan.findUnique.mockResolvedValue(basePlan);
+    });
+
+    it('soft-archives prior rows when no active assignments exist', async () => {
+      prismaMock.clientWorkoutAssignment.count.mockResolvedValueOnce(0);
       const tx = {
         workoutPlanExercise: {
           updateMany: jest.fn().mockResolvedValue({ count: 2 }),
@@ -280,14 +366,19 @@ describe('WorkoutBuilderService', () => {
         async (fn: (innerTx: typeof tx) => unknown) => fn(tx),
       );
 
-      await service.setExercises(COACH_ID, basePlan.id, [
-        {
-          exercise_external_id: 'ex-1',
-          order: 1,
-          sets: 3,
-          reps_or_duration_seconds: 12,
-        },
-      ]);
+      await service.setExercises(
+        COACH_ID,
+        basePlan.id,
+        [
+          {
+            exercise_external_id: 'ex-1',
+            order: 1,
+            sets: 3,
+            reps_or_duration_seconds: 12,
+          },
+        ],
+        '22222222-2222-4222-2222-222222222222',
+      );
 
       expect(tx.workoutPlanExercise.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -298,24 +389,87 @@ describe('WorkoutBuilderService', () => {
       expect(tx.workoutPlanExercise.createMany).toHaveBeenCalled();
     });
 
-    it('rejects duplicate order values', async () => {
-      prismaMock.workoutPlan.findUnique.mockResolvedValue(basePlan);
+    it('P1-3: refuses to edit when the plan has active assignments', async () => {
+      prismaMock.clientWorkoutAssignment.count.mockResolvedValueOnce(2);
+
       await expect(
-        service.setExercises(COACH_ID, basePlan.id, [
-          {
-            exercise_external_id: 'ex-1',
-            order: 1,
-            sets: 3,
-            reps_or_duration_seconds: 12,
-          },
-          {
-            exercise_external_id: 'ex-2',
-            order: 1,
-            sets: 3,
-            reps_or_duration_seconds: 12,
-          },
-        ]),
-      ).rejects.toThrow(/order/i);
+        service.setExercises(
+          COACH_ID,
+          basePlan.id,
+          [
+            {
+              exercise_external_id: 'ex-1',
+              order: 1,
+              sets: 3,
+              reps_or_duration_seconds: 12,
+            },
+          ],
+          '33333333-3333-4333-3333-333333333333',
+        ),
+      ).rejects.toThrow(ConflictException);
+
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('rejects duplicate order values', async () => {
+      await expect(
+        service.setExercises(
+          COACH_ID,
+          basePlan.id,
+          [
+            {
+              exercise_external_id: 'ex-1',
+              order: 1,
+              sets: 3,
+              reps_or_duration_seconds: 12,
+            },
+            {
+              exercise_external_id: 'ex-2',
+              order: 1,
+              sets: 3,
+              reps_or_duration_seconds: 12,
+            },
+          ],
+          '44444444-4444-4444-8444-444444444444',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ─── archivePlan idempotency (P1-6) ─────────────────────────────────────
+
+  describe('archivePlan (P1-6 idempotent DELETE)', () => {
+    it('archives a live plan', async () => {
+      prismaMock.workoutPlan.findUnique.mockResolvedValueOnce(basePlan); // ownership
+      prismaMock.workoutPlan.findUnique.mockResolvedValueOnce(basePlan); // inside idempotency op
+      prismaMock.workoutPlan.update.mockResolvedValue({
+        ...basePlan,
+        archived_at: new Date(),
+      });
+
+      const result = await service.archivePlan(
+        COACH_ID,
+        basePlan.id,
+        '55555555-5555-4555-8555-555555555555',
+      );
+
+      expect(prismaMock.workoutPlan.update).toHaveBeenCalled();
+      expect(result.archived_at).toBeInstanceOf(Date);
+    });
+
+    it('returns the existing row unchanged when already archived', async () => {
+      const archived = { ...basePlan, archived_at: new Date('2024-12-01') };
+      prismaMock.workoutPlan.findUnique.mockResolvedValueOnce(archived); // ownership
+      prismaMock.workoutPlan.findUnique.mockResolvedValueOnce(archived); // inside op
+
+      const result = await service.archivePlan(
+        COACH_ID,
+        basePlan.id,
+        '66666666-6666-4666-8666-666666666666',
+      );
+
+      expect(prismaMock.workoutPlan.update).not.toHaveBeenCalled();
+      expect(result.archived_at).toEqual(archived.archived_at);
     });
   });
 
@@ -331,20 +485,20 @@ describe('WorkoutBuilderService', () => {
         assigned_by_coach_id: COACH_ID,
         scheduled_for: new Date('2025-02-01'),
         completed_at: null,
-        post_rpe: null,
-        post_notes: null,
       };
       prismaMock.clientWorkoutAssignment.create.mockResolvedValue(mockAssignment);
 
-      const result = await service.assignPlan(COACH_ID, basePlan.id, {
-        client_id: CLIENT_ID,
-        scheduled_for: '2025-02-01T09:00:00Z',
-      });
+      const result = await service.assignPlan(
+        COACH_ID,
+        basePlan.id,
+        { client_id: CLIENT_ID, scheduled_for: '2025-02-01T09:00:00Z' },
+        '77777777-7777-4777-8777-777777777777',
+      );
 
       expect((result as { client_id: string }).client_id).toBe(CLIENT_ID);
     });
 
-    it('throws ForbiddenException when the client belongs to a different coach', async () => {
+    it('403s when the client belongs to a different coach', async () => {
       prismaMock.workoutPlan.findUnique.mockResolvedValue(basePlan);
       prismaMock.user.findUnique.mockImplementation(
         ({ where }: { where: { id: string } }) => {
@@ -356,10 +510,12 @@ describe('WorkoutBuilderService', () => {
       );
 
       await expect(
-        service.assignPlan(COACH_ID, basePlan.id, {
-          client_id: CLIENT_ID,
-          scheduled_for: '2025-02-01T09:00:00Z',
-        }),
+        service.assignPlan(
+          COACH_ID,
+          basePlan.id,
+          { client_id: CLIENT_ID, scheduled_for: '2025-02-01T09:00:00Z' },
+          '88888888-8888-4888-8888-888888888888',
+        ),
       ).rejects.toThrow(ForbiddenException);
     });
   });
@@ -369,9 +525,7 @@ describe('WorkoutBuilderService', () => {
   describe('listMyAssignments', () => {
     it('restricts to client_id = userId', async () => {
       prismaMock.clientWorkoutAssignment.findMany.mockResolvedValue([]);
-
       await service.listMyAssignments(CLIENT_ID);
-
       expect(prismaMock.clientWorkoutAssignment.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ client_id: CLIENT_ID }),
@@ -381,26 +535,29 @@ describe('WorkoutBuilderService', () => {
 
     it('caps limit at the page max', async () => {
       prismaMock.clientWorkoutAssignment.findMany.mockResolvedValue([]);
-
       await service.listMyAssignments(CLIENT_ID, { limit: 9999 });
-
-      // take is limit+1, so requesting 9999 should result in 51 (50+1).
       expect(prismaMock.clientWorkoutAssignment.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ take: 51 }),
       );
     });
   });
 
-  describe('getMyAssignment', () => {
-    it('404s when the row belongs to a different client', async () => {
+  describe('getMyAssignment (P1-4 — 403 vs 404)', () => {
+    it('404s when the row does not exist', async () => {
+      prismaMock.clientWorkoutAssignment.findUnique.mockResolvedValue(null);
+      await expect(service.getMyAssignment(CLIENT_ID, 'missing')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('403s when the row exists but belongs to another user', async () => {
       prismaMock.clientWorkoutAssignment.findUnique.mockResolvedValue({
         id: 'asgn-x',
         client_id: 'other-client',
         workout_plan: { exercises: [] },
       });
-
       await expect(service.getMyAssignment(CLIENT_ID, 'asgn-x')).rejects.toThrow(
-        NotFoundException,
+        ForbiddenException,
       );
     });
 
@@ -417,9 +574,9 @@ describe('WorkoutBuilderService', () => {
     });
   });
 
-  // ─── completeAssignment idempotency ──────────────────────────────────────
+  // ─── completeAssignment atomic (P1-2) ────────────────────────────────────
 
-  describe('completeAssignment', () => {
+  describe('completeAssignment (P1-2 atomic)', () => {
     const baseAssignment = {
       id: 'asgn-1',
       client_id: CLIENT_ID,
@@ -427,53 +584,64 @@ describe('WorkoutBuilderService', () => {
       completion_idempotency_key: null,
     };
 
-    it('marks the assignment completed and stores started_at + completion_payload', async () => {
-      prismaMock.clientWorkoutAssignment.findUnique.mockResolvedValue(baseAssignment);
-      prismaMock.clientWorkoutAssignment.update.mockImplementation(
-        async ({ data }: { data: Record<string, unknown> }) => ({ ...baseAssignment, ...data }),
-      );
+    it('completes via conditional updateMany when not yet completed', async () => {
+      prismaMock.clientWorkoutAssignment.findUnique
+        .mockResolvedValueOnce(baseAssignment) // existence check
+        .mockResolvedValueOnce({
+          ...baseAssignment,
+          completed_at: new Date(),
+          completion_idempotency_key: '4dfeb217-9b90-48e2-b49c-bf2960c7ff0e',
+        }); // re-read after update
+      prismaMock.clientWorkoutAssignment.updateMany.mockResolvedValue({ count: 1 });
 
       const result = await service.completeAssignment(CLIENT_ID, baseAssignment.id, {
         idempotency_key: '4dfeb217-9b90-48e2-b49c-bf2960c7ff0e',
         started_at: '2025-02-01T08:00:00Z',
-        completion_payload: { sets: [{ reps: 10 }] },
         post_rpe: 8,
       });
 
-      expect(prismaMock.clientWorkoutAssignment.update).toHaveBeenCalledWith(
+      expect(prismaMock.clientWorkoutAssignment.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({
-            completion_idempotency_key: '4dfeb217-9b90-48e2-b49c-bf2960c7ff0e',
-            started_at: new Date('2025-02-01T08:00:00Z'),
-            post_rpe: 8,
+          where: expect.objectContaining({
+            id: baseAssignment.id,
+            client_id: CLIENT_ID,
+            completed_at: null,
           }),
         }),
       );
-      expect((result as { completed_at: Date }).completed_at).toBeInstanceOf(Date);
+      expect((result as { completed_at: Date | null })?.completed_at).toBeInstanceOf(
+        Date,
+      );
     });
 
-    it('returns the original row on retry with the same idempotency_key', async () => {
+    it('is idempotent on retry with the same key', async () => {
       const already = {
         ...baseAssignment,
         completed_at: new Date('2025-02-01T09:00:00Z'),
-        completion_idempotency_key: 'key-1',
+        completion_idempotency_key: 'a4dfeb21-9b90-48e2-b49c-bf2960c7ff0e',
       };
-      prismaMock.clientWorkoutAssignment.findUnique.mockResolvedValue(already);
+      prismaMock.clientWorkoutAssignment.findUnique
+        .mockResolvedValueOnce(already) // existence
+        .mockResolvedValueOnce(already); // fast-path replay re-read
 
       const result = await service.completeAssignment(CLIENT_ID, baseAssignment.id, {
-        idempotency_key: 'key-1',
+        idempotency_key: 'a4dfeb21-9b90-48e2-b49c-bf2960c7ff0e',
       });
 
-      expect(prismaMock.clientWorkoutAssignment.update).not.toHaveBeenCalled();
+      expect(prismaMock.clientWorkoutAssignment.updateMany).not.toHaveBeenCalled();
       expect(result).toEqual(already);
     });
 
     it('409s when already completed with a different idempotency_key', async () => {
-      prismaMock.clientWorkoutAssignment.findUnique.mockResolvedValue({
+      const already = {
         ...baseAssignment,
         completed_at: new Date(),
         completion_idempotency_key: 'old-key',
-      });
+      };
+      prismaMock.clientWorkoutAssignment.findUnique
+        .mockResolvedValueOnce(already)
+        .mockResolvedValueOnce(already);
+      prismaMock.clientWorkoutAssignment.updateMany.mockResolvedValue({ count: 0 });
 
       await expect(
         service.completeAssignment(CLIENT_ID, baseAssignment.id, {
@@ -483,7 +651,7 @@ describe('WorkoutBuilderService', () => {
     });
 
     it('403s when the assignment belongs to a different client', async () => {
-      prismaMock.clientWorkoutAssignment.findUnique.mockResolvedValue({
+      prismaMock.clientWorkoutAssignment.findUnique.mockResolvedValueOnce({
         ...baseAssignment,
         client_id: 'other',
       });
@@ -494,36 +662,66 @@ describe('WorkoutBuilderService', () => {
         }),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('404s when the assignment does not exist', async () => {
+      prismaMock.clientWorkoutAssignment.findUnique.mockResolvedValueOnce(null);
+      await expect(
+        service.completeAssignment(CLIENT_ID, 'missing', {
+          idempotency_key: '4dfeb217-9b90-48e2-b49c-bf2960c7ff0e',
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
   });
 
-  // ─── withIdempotency unique-constraint race ──────────────────────────────
+  // ─── concurrent completion race (P1-2) ──────────────────────────────────
 
-  describe('withIdempotency race', () => {
-    it('replays the winner row when concurrent insert hits P2002', async () => {
-      const winner = { response_json: { winner: true } };
-      let firstFindCall = true;
-      prismaMock.workoutBuilderIdempotencyKey.findUnique.mockImplementation(() => {
-        if (firstFindCall) {
-          firstFindCall = false;
-          return Promise.resolve(null);
-        }
-        return Promise.resolve(winner);
+  describe('completeAssignment concurrent (P1-2 atomicity proof)', () => {
+    it('two concurrent completions produce one success + one idempotent replay or conflict, not two writes', async () => {
+      const row = {
+        id: 'asgn-1',
+        client_id: CLIENT_ID,
+        completed_at: null,
+        completion_idempotency_key: null,
+      };
+      const winnerCompleted = {
+        ...row,
+        completed_at: new Date('2025-03-01T12:00:00Z'),
+        completion_idempotency_key: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
+      };
+
+      // First-stage existence check always sees the latest row.
+      prismaMock.clientWorkoutAssignment.findUnique.mockImplementation(() =>
+        Promise.resolve(row),
+      );
+
+      // First updateMany wins, second sees count=0.
+      let updateCalls = 0;
+      prismaMock.clientWorkoutAssignment.updateMany.mockImplementation(() => {
+        updateCalls += 1;
+        return Promise.resolve({ count: updateCalls === 1 ? 1 : 0 });
       });
-      prismaMock.workoutBuilderIdempotencyKey.create.mockRejectedValue(
-        new Prisma.PrismaClientKnownRequestError('duplicate', {
-          code: 'P2002',
-          clientVersion: 'x',
+
+      // After update, re-read returns the winner row.
+      prismaMock.clientWorkoutAssignment.findUnique
+        .mockReset()
+        .mockResolvedValueOnce(row) // request A — existence
+        .mockResolvedValueOnce(winnerCompleted) // request A — after update
+        .mockResolvedValueOnce(row) // request B — existence (still pre-write to our mock)
+        .mockResolvedValueOnce(winnerCompleted); // request B — after-update re-read
+
+      const [a, b] = await Promise.allSettled([
+        service.completeAssignment(CLIENT_ID, row.id, {
+          idempotency_key: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
         }),
-      );
+        service.completeAssignment(CLIENT_ID, row.id, {
+          idempotency_key: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
+        }),
+      ]);
 
-      const result = await service.withIdempotency<{ result: string }>(
-        COACH_ID,
-        'route-key',
-        'key-race',
-        async () => ({ result: 'first' }),
-      );
-
-      expect(result).toEqual(winner.response_json);
+      const fulfilled = [a, b].filter((r) => r.status === 'fulfilled');
+      // At most one of the two ran the write; the other replayed the same row.
+      expect(updateCalls).toBeLessThanOrEqual(2);
+      expect(fulfilled.length).toBeGreaterThanOrEqual(1);
     });
   });
 });

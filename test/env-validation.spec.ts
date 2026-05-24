@@ -52,6 +52,11 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     // not crashed; but tests that assert "missingFeature is empty" need
     // a stub value so the rule does not fire.
     ANTHROPIC_API_KEY: 'sk-ant-test',
+    // Phase 11 — Exercise Library / Workout Builder (feature-tier).
+    // Same situation as ANTHROPIC_API_KEY above: unset means the
+    // upstream-only routes return 503 at call time, not a boot crash.
+    // Set here so "missingFeature is empty" passes.
+    EXERCISEDB_API_KEY: 'rapidapi-test-key',
     // P0 audit fix — prod refuses to boot without explicit Stripe
     // Checkout redirect URLs (their defaults are mobile-only schemes
     // that break web checkouts).

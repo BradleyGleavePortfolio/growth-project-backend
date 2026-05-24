@@ -54,6 +54,7 @@ import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import {
   CompleteAssignmentDto,
   CreateAssignmentDto,
@@ -237,7 +238,10 @@ export class WorkoutBuilderController {
  */
 @ApiTags('assignments')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+// ClientEntitlementGuard gates this paid surface — students with no
+// active ClientPurchase get 402 from the guard. Pinned by
+// test/entitlement-guards-mounted.spec.ts.
+@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
 @Controller('assignments')
 export class AssignmentController {
   constructor(private readonly workoutBuilder: WorkoutBuilderService) {}
