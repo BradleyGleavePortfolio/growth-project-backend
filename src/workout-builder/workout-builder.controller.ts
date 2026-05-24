@@ -163,19 +163,16 @@ export class WorkoutBuilderController {
   @Delete(':planId')
   @ApiOperation({
     summary:
-      'Soft-archive a plan. Idempotent: a second DELETE on an already-' +
-      'archived plan returns the existing archived row without re-stamping.',
+      'Soft-archive a plan. Idempotent at the data layer: a second DELETE ' +
+      'on an already-archived plan returns the existing archived row without ' +
+      're-stamping archived_at, so no Idempotency-Key header is required.',
   })
-  @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiResponse({ status: 200, description: 'Plan archived (or already archived).' })
-  @ApiResponse({ status: 400, description: 'Missing/invalid Idempotency-Key.' })
   archivePlan(
     @Req() req: AuthedRequest,
     @Param('planId', new ParseUUIDPipe()) planId: string,
-    @RequiredIdempotencyKey()
-    idempotencyKey: string,
   ) {
-    return this.workoutBuilder.archivePlan(req.user.id, planId, idempotencyKey);
+    return this.workoutBuilder.archivePlan(req.user.id, planId);
   }
 
   @Put(':planId/exercises')

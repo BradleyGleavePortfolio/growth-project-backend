@@ -404,9 +404,8 @@ export class WorkoutBuilderService {
     rows: UpsertExerciseRowDto[],
     idempotencyKey?: string | null,
   ) {
-    await this.assertCoach(coachId);
-    await this.assertPlanOwnership(coachId, planId);
-
+    // Static (non-volatile) request-shape validation runs outside the
+    // ledger so a malformed retry never claims an idempotency key.
     const orders = rows.map((r) => r.order);
     if (new Set(orders).size !== orders.length) {
       throw new BadRequestException(
@@ -414,30 +413,37 @@ export class WorkoutBuilderService {
       );
     }
 
-    // P1-3: Block edits while clients are mid-workout. Soft-archive plus
-    // a per-assignment read filter is not enough — assignment reads join
-    // to live exercises only, so editing the plan would silently change
-    // what already-assigned clients see. Active assignment = the row is
-    // not yet completed.
-    const activeAssignmentCount =
-      await this.prisma.clientWorkoutAssignment.count({
-        where: { workout_plan_id: planId, completed_at: null },
-      });
-    if (activeAssignmentCount > 0) {
-      throw new ConflictException(
-        'This workout plan has active client assignments. Mark the ' +
-          'existing assignments complete or unassign them before editing ' +
-          'the exercise list, so assigned clients keep seeing the workout ' +
-          'they were given.',
-      );
-    }
-
     return this.withIdempotency(
       coachId,
       `workout-builder:setExercises:${planId}`,
       idempotencyKey,
-      () =>
-        this.prisma.$transaction(async (tx) => {
+      async () => {
+        // Auth/ownership and volatile state checks run only after the
+        // ledger confirms no completed response exists for this key.
+        // Otherwise a client that legitimately succeeded once would get
+        // a 409 on retry because an assignment was created in between.
+        await this.assertCoach(coachId);
+        await this.assertPlanOwnership(coachId, planId);
+
+        // P1-3: Block edits while clients are mid-workout. Soft-archive
+        // plus a per-assignment read filter is not enough — assignment
+        // reads join to live exercises only, so editing the plan would
+        // silently change what already-assigned clients see. Active
+        // assignment = the row is not yet completed.
+        const activeAssignmentCount =
+          await this.prisma.clientWorkoutAssignment.count({
+            where: { workout_plan_id: planId, completed_at: null },
+          });
+        if (activeAssignmentCount > 0) {
+          throw new ConflictException(
+            'This workout plan has active client assignments. Mark the ' +
+              'existing assignments complete or unassign them before editing ' +
+              'the exercise list, so assigned clients keep seeing the workout ' +
+              'they were given.',
+          );
+        }
+
+        return this.prisma.$transaction(async (tx) => {
           // Soft-archive all live rows. The partial unique index only
           // applies WHERE archived_at IS NULL, so once we stamp these
           // rows the new ones can re-use their order slots cleanly.
@@ -466,7 +472,8 @@ export class WorkoutBuilderService {
             where: { workout_plan_id: planId, archived_at: null },
             orderBy: { order: 'asc' },
           });
-        }),
+        });
+      },
     );
   }
 
@@ -478,23 +485,29 @@ export class WorkoutBuilderService {
     dto: CreateAssignmentDto,
     idempotencyKey?: string | null,
   ) {
-    await this.assertCoach(coachId);
-    await this.assertPlanOwnership(coachId, planId);
-    await this.assertClientBelongsToCoach(coachId, dto.client_id);
-
     return this.withIdempotency(
       coachId,
       `workout-builder:assignPlan:${planId}`,
       idempotencyKey,
-      () =>
-        this.prisma.clientWorkoutAssignment.create({
+      async () => {
+        // Auth/ownership and the client-belongs check run only after the
+        // ledger confirms no completed response exists for this key. If
+        // the original call succeeded and a sub-coach reassignment later
+        // changed who owns the client, the retry should still replay the
+        // cached success rather than 4xx on a now-stale precondition.
+        await this.assertCoach(coachId);
+        await this.assertPlanOwnership(coachId, planId);
+        await this.assertClientBelongsToCoach(coachId, dto.client_id);
+
+        return this.prisma.clientWorkoutAssignment.create({
           data: {
             workout_plan_id: planId,
             client_id: dto.client_id,
             assigned_by_coach_id: coachId,
             scheduled_for: new Date(dto.scheduled_for),
           },
-        }),
+        });
+      },
     );
   }
 

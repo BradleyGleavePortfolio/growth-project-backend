@@ -2200,4 +2200,4 @@ PATCH  /assignments/:assignmentId/complete    Client marks assignment complete (
 - **`WorkoutPlanExercise`** — workout_plan_id, exercise_external_id (ExerciseDB id), order, sets, reps_or_duration_seconds, weight_lbs, rest_seconds, superset_group_id, notes
 - **`ClientWorkoutAssignment`** — workout_plan_id, client_id, assigned_by_coach_id, scheduled_for, completed_at, post_rpe (1–10), post_notes
 
-Migration: `prisma/migrations/20260507000000_add_workout_builder/migration.sql`
+Migration: `prisma/migrations/20260508000000_add_workout_builder/migration.sql`
