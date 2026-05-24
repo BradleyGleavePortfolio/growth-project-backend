@@ -25,6 +25,11 @@ function baseHardEnv(): NodeJS.ProcessEnv {
     // DIRECT_URL was promoted from feature to hard tier (security hardening).
     // Required by `prisma migrate deploy` in the Fly release_command.
     DIRECT_URL: 'postgres://x:5432/db',
+    // Phase 10 — these are prod-tier (must be set for staging/production
+    // boot), so include them in the minimum env that any prod-boot test
+    // expects to pass. Tests for missing/invalid values override locally.
+    RECENT_AUTH_SECRET: 'test-recent-auth-secret-at-least-32-chars-long',
+    RECENT_AUTH_TTL_MS: '300000',
   };
 }
 
