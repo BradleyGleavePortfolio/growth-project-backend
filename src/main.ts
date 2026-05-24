@@ -70,7 +70,7 @@ async function bootstrap() {
   app.enableCors({
     origin: corsOrigins.length > 0 ? corsOrigins : false,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Recent-Auth-Token'],
     // Coach console BFF reads the Supabase access token from a cookie/header
     // depending on how the console is hosted; allow credentials so the
     // browser will actually send them when the origin is in the allow-list.
