@@ -3,11 +3,11 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { SubCoachReassignService } from '../src/sub-coach/sub-coach-reassign.service';
 import { PrismaService } from '../src/prisma.service';
-import { AuditService } from '../src/audit/audit.service';
 import { SubCoachCapacityService } from '../src/sub-coach/sub-coach-capacity.service';
 import { SubCoachIdempotencyService } from '../src/sub-coach/sub-coach-idempotency.service';
 
@@ -47,30 +47,51 @@ function makePrismaWithTx(tx: TxMock): PrismaService {
   } as unknown as PrismaService;
 }
 
+/**
+ * Default idempotency mock — passes the mutation through unchanged.
+ * Individual tests override .runWithIdempotency to simulate replay /
+ * mismatch behavior.
+ */
+function makeIdempotencyMock() {
+  return {
+    runWithIdempotency: jest.fn(async ({ runMutation }: { runMutation: () => Promise<unknown> }) => {
+      const response = await runMutation();
+      return { response, replay: false };
+    }),
+  };
+}
+
 describe('SubCoachReassignService', () => {
   let service: SubCoachReassignService;
   let prisma: PrismaService;
-  let idempotency: { findExisting: jest.Mock; store: jest.Mock };
-  let capacity: { assertHasCapacityTx: jest.Mock; assertHasCapacity: jest.Mock };
+  let idempotency: ReturnType<typeof makeIdempotencyMock>;
+  let capacity: {
+    assertHasCapacityTx: jest.Mock;
+    assertHasCapacity: jest.Mock;
+    getCapacity: jest.Mock;
+  };
   let tx: TxMock;
 
   beforeEach(async () => {
     tx = makeTxMock();
     prisma = makePrismaWithTx(tx);
-    idempotency = {
-      findExisting: jest.fn().mockResolvedValue(null),
-      store: jest.fn().mockImplementation((_a, _k, _act, response) => response),
-    };
+    idempotency = makeIdempotencyMock();
     capacity = {
       assertHasCapacityTx: jest.fn().mockResolvedValue(undefined),
       assertHasCapacity: jest.fn().mockResolvedValue(undefined),
+      getCapacity: jest.fn().mockResolvedValue({
+        subCoachId: SUB_COACH_ID,
+        assignedClients: 5,
+        maxClients: 50,
+        planTier: 'flat_300',
+        hasCapacity: true,
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SubCoachReassignService,
         { provide: PrismaService, useValue: prisma },
-        { provide: AuditService, useValue: { write: jest.fn() } },
         { provide: SubCoachCapacityService, useValue: capacity },
         { provide: SubCoachIdempotencyService, useValue: idempotency },
       ],
@@ -133,7 +154,7 @@ describe('SubCoachReassignService', () => {
     expect(result.clientId).toBe(CLIENT_ID);
     expect(result.newSubCoachId).toBe(SUB_COACH_ID);
     expect(result.previousSubCoachId).toBeNull();
-    expect(idempotency.store).toHaveBeenCalled();
+    expect(idempotency.runWithIdempotency).toHaveBeenCalled();
   });
 
   it('closes prior assignment + opens new on reassign to a different sub-coach', async () => {
@@ -207,7 +228,10 @@ describe('SubCoachReassignService', () => {
       newSubCoachId: SUB_COACH_ID,
       auditLogId: 'audit-prev',
     };
-    idempotency.findExisting.mockResolvedValueOnce(stored);
+    idempotency.runWithIdempotency.mockResolvedValueOnce({
+      response: stored,
+      replay: true,
+    });
 
     const result = await service.reassignClient(HEAD_COACH_ID, ACTOR_ID, 'coach', {
       clientId: CLIENT_ID,
@@ -240,6 +264,58 @@ describe('SubCoachReassignService', () => {
     ).rejects.toThrow(ConflictException);
   });
 
+  it('retries on P2034 serialization failure and succeeds', async () => {
+    (prisma.user.findFirst as jest.Mock)
+      .mockResolvedValueOnce({ id: SUB_COACH_ID })
+      .mockResolvedValueOnce({ id: CLIENT_ID, coach_id: HEAD_COACH_ID, role: 'student' });
+    let attempts = 0;
+    (prisma.$transaction as jest.Mock).mockImplementation(async (fn: (t: TxMock) => unknown) => {
+      attempts++;
+      if (attempts === 1) {
+        throw new Prisma.PrismaClientKnownRequestError('serialization failure', {
+          code: 'P2034',
+          clientVersion: '0.0.0',
+        });
+      }
+      return fn(tx);
+    });
+
+    const result = await service.reassignClient(HEAD_COACH_ID, ACTOR_ID, 'coach', {
+      clientId: CLIENT_ID,
+      targetSubCoachId: SUB_COACH_ID,
+      idempotency_key: IDEMPOTENCY_KEY,
+    });
+    expect(attempts).toBe(2);
+    expect(result.newSubCoachId).toBe(SUB_COACH_ID);
+  });
+
+  it('returns clean 409 when capacity exhausted after P2034 retries', async () => {
+    (prisma.user.findFirst as jest.Mock)
+      .mockResolvedValueOnce({ id: SUB_COACH_ID })
+      .mockResolvedValueOnce({ id: CLIENT_ID, coach_id: HEAD_COACH_ID, role: 'student' });
+    (prisma.$transaction as jest.Mock).mockImplementation(async () => {
+      throw new Prisma.PrismaClientKnownRequestError('serialization failure', {
+        code: 'P2034',
+        clientVersion: '0.0.0',
+      });
+    });
+    capacity.getCapacity.mockResolvedValueOnce({
+      subCoachId: SUB_COACH_ID,
+      assignedClients: 50,
+      maxClients: 50,
+      planTier: 'flat_300',
+      hasCapacity: false,
+    });
+
+    await expect(
+      service.reassignClient(HEAD_COACH_ID, ACTOR_ID, 'coach', {
+        clientId: CLIENT_ID,
+        targetSubCoachId: SUB_COACH_ID,
+        idempotency_key: IDEMPOTENCY_KEY,
+      }),
+    ).rejects.toThrow(ConflictException);
+  });
+
   it('assignClient routes through reassignClient and enforces capacity', async () => {
     (prisma.user.findFirst as jest.Mock)
       .mockResolvedValueOnce({ id: SUB_COACH_ID })
@@ -253,5 +329,23 @@ describe('SubCoachReassignService', () => {
 
     expect(capacity.assertHasCapacityTx).toHaveBeenCalled();
     expect(tx.auditLog.create).toHaveBeenCalled();
+  });
+
+  it('idempotency replay with mismatched payload bubbles 422 from the idempotency service', async () => {
+    idempotency.runWithIdempotency.mockRejectedValueOnce(
+      new UnprocessableEntityException({
+        error: 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST',
+        message:
+          'This idempotency key was previously used for a different action or payload',
+      }),
+    );
+
+    await expect(
+      service.reassignClient(HEAD_COACH_ID, ACTOR_ID, 'coach', {
+        clientId: CLIENT_ID,
+        targetSubCoachId: SUB_COACH_ID,
+        idempotency_key: IDEMPOTENCY_KEY,
+      }),
+    ).rejects.toThrow(UnprocessableEntityException);
   });
 });
