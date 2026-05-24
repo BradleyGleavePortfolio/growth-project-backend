@@ -19,6 +19,7 @@
 import {
   BadRequestException,
   InternalServerErrorException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { AuthService } from '../src/auth/auth.service';
@@ -727,6 +728,104 @@ describe('AuthService.issueRecentAuthToken — recent-auth (P1-1 / P1-3)', () =>
     expect(jwtIdx).toBeGreaterThanOrEqual(0);
     expect(throttlerIdx).toBeGreaterThanOrEqual(0);
     expect(jwtIdx).toBeLessThan(throttlerIdx);
+  });
+
+  it('signInWithPassword timeout → sanitized ServiceUnavailableException, no provider detail in message', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask'] });
+    try {
+      const original = { ...process.env };
+      Object.assign(process.env, {
+        RECENT_AUTH_SECRET: VALID_SECRET,
+        RECENT_AUTH_TTL_MS: '300000',
+      });
+      try {
+        const { service } = makeService({
+          prismaUser: baseUser,
+          supaClientFactory: () => ({
+            auth: {
+              // Returns a promise that never resolves — triggers the 10s timer.
+              signInWithPassword: jest.fn(() => new Promise(() => {})),
+            },
+          }),
+        });
+        const promise = service.issueRecentAuthToken('u-1', { password: 'pw' });
+        // Surface any rejection so unhandled-rejection warnings don't pollute output.
+        const settled = promise.catch((e) => e);
+        // Let the prisma findUnique microtask resolve so we reach the
+        // withAuthTimeout call and its setTimeout is armed.
+        await Promise.resolve();
+        await Promise.resolve();
+        jest.advanceTimersByTime(11_000);
+        const err = await settled;
+        expect(err).toBeInstanceOf(ServiceUnavailableException);
+        const msg = (err as Error).message ?? String(err);
+        expect(msg).toBe('Authentication service temporarily unavailable');
+        expect(msg).not.toContain('Supabase');
+        expect(msg).not.toContain('AUTH_TIMEOUT');
+        expect(msg).not.toContain('signInWithPassword');
+        expect(msg).not.toContain('SUPABASE_URL');
+        expect(msg).not.toContain('SUPABASE_ANON_KEY');
+        expect(msg).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
+        expect(msg).not.toContain('RECENT_AUTH_SECRET');
+      } finally {
+        process.env = original;
+      }
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('Apple signInWithIdToken timeout → sanitized ServiceUnavailableException', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask'] });
+    try {
+      const original = { ...process.env };
+      Object.assign(process.env, {
+        RECENT_AUTH_SECRET: VALID_SECRET,
+        RECENT_AUTH_TTL_MS: '300000',
+      });
+      try {
+        const freshIat = Math.floor(Date.now() / 1000) - 30;
+        const { service } = makeService({
+          prismaUser: baseUser,
+          appleVerify: async () => ({
+            iat: freshIat,
+            sub: 'apple-sub',
+            email: 'jane@example.test',
+          }),
+          supaClientFactory: () => ({
+            auth: {
+              // Hangs forever — the withAuthTimeout wrapper must fire.
+              signInWithIdToken: jest.fn(() => new Promise(() => {})),
+            },
+          }),
+        });
+        const promise = service.issueRecentAuthToken('u-1', {
+          provider_token: 'apple-id-token',
+          provider: 'apple',
+        });
+        const settled = promise.catch((e) => e);
+        // Let the prisma findUnique microtask resolve so we reach the
+        // withAuthTimeout call and its setTimeout is armed.
+        await Promise.resolve();
+        await Promise.resolve();
+        jest.advanceTimersByTime(11_000);
+        const err = await settled;
+        expect(err).toBeInstanceOf(ServiceUnavailableException);
+        const msg = (err as Error).message ?? String(err);
+        expect(msg).toBe('Authentication service temporarily unavailable');
+        expect(msg).not.toContain('Supabase');
+        expect(msg).not.toContain('AUTH_TIMEOUT');
+        expect(msg).not.toContain('signInWithIdToken');
+        expect(msg).not.toContain('signInWithPassword');
+        expect(msg).not.toContain('SUPABASE_URL');
+        expect(msg).not.toContain('SUPABASE_ANON_KEY');
+        expect(msg).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
+      } finally {
+        process.env = original;
+      }
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('rejects with InternalServerError when RECENT_AUTH_SECRET is too short — env name NOT in client message', async () => {

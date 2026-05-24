@@ -64,6 +64,19 @@ export class AuthService {
     );
   }
 
+  private withAuthTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+    const MS = 10_000;
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`AUTH_TIMEOUT:${label}`));
+      }, MS);
+      promise.then(
+        (v) => { clearTimeout(timer); resolve(v); },
+        (e) => { clearTimeout(timer); reject(e); },
+      );
+    });
+  }
+
   async register(data: { email: string; password: string; name: string; phone?: string }) {
     // Validate password strength before sending to Supabase
     const { password } = data;
@@ -1094,11 +1107,26 @@ export class AuthService {
         process.env.SUPABASE_ANON_KEY || '',
         { realtime: { transport: ws as any } },
       );
-      const { error } = await supaClient.auth.signInWithPassword({
-        email: user.email,
-        password: body.password,
-      });
-      if (error) {
+      let result;
+      try {
+        result = await this.withAuthTimeout(
+          supaClient.auth.signInWithPassword({
+            email: user.email,
+            password: body.password,
+          }),
+          'signInWithPassword',
+        );
+      } catch (err) {
+        const m = (err as Error)?.message ?? '';
+        if (m.startsWith('AUTH_TIMEOUT:')) {
+          this.logger.warn(`recent-auth supabase timeout: ${m}`);
+          throw new ServiceUnavailableException(
+            'Authentication service temporarily unavailable',
+          );
+        }
+        throw err;
+      }
+      if (result.error) {
         throw new UnauthorizedException('Password is incorrect');
       }
     } else {
@@ -1167,8 +1195,25 @@ export class AuthService {
         process.env.SUPABASE_ANON_KEY || '',
         { realtime: { transport: ws as any } },
       );
-      const { data: signInData, error: signInError } =
-        await supaClient.auth.signInWithIdToken({ provider: 'apple', token: providerToken });
+      let signInData;
+      let signInError;
+      try {
+        const resp = await this.withAuthTimeout(
+          supaClient.auth.signInWithIdToken({ provider: 'apple', token: providerToken }),
+          'signInWithIdToken',
+        );
+        signInData = resp.data;
+        signInError = resp.error;
+      } catch (err) {
+        const m = (err as Error)?.message ?? '';
+        if (m.startsWith('AUTH_TIMEOUT:')) {
+          this.logger.warn(`recent-auth supabase timeout: ${m}`);
+          throw new ServiceUnavailableException(
+            'Authentication service temporarily unavailable',
+          );
+        }
+        throw err;
+      }
       if (signInError || !signInData?.user) {
         this.logger.warn(
           `recent-auth apple supabase verify failed for user=${user.id}: ${signInError?.message ?? 'no session'}`,
@@ -1237,8 +1282,10 @@ export class AuthService {
     let matchesBySub = false;
     if (googleSub && user.supabase_id) {
       try {
-        const { data: supaData } =
-          await this.supabaseAdmin.auth.admin.getUserById(user.supabase_id);
+        const { data: supaData } = await this.withAuthTimeout<any>(
+          this.supabaseAdmin.auth.admin.getUserById(user.supabase_id),
+          'getUserById',
+        );
         const supaIdentities = supaData?.user?.identities || [];
         for (const identity of supaIdentities) {
           if (
@@ -1251,6 +1298,13 @@ export class AuthService {
           }
         }
       } catch (err) {
+        const m = (err as Error)?.message ?? '';
+        if (m.startsWith('AUTH_TIMEOUT:')) {
+          this.logger.warn(`recent-auth supabase timeout: ${m}`);
+          throw new ServiceUnavailableException(
+            'Authentication service temporarily unavailable',
+          );
+        }
         this.logger.warn(
           `recent-auth google sub lookup failed for user=${user.id}: ${(err as Error).message}`,
         );
