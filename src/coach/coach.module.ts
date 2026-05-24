@@ -20,6 +20,9 @@ import { AdminModule } from '../admin/admin.module';
 // LTV metrics suite — Coach Command Center revenue dashboard
 import { LtvMetricsController } from './command-center/ltv-metrics.controller';
 import { LtvMetricsService } from './command-center/ltv-metrics.service';
+// Coach Command Center — 5 P0 endpoints + churn intervention flow
+import { CommandCenterController } from './command-center/command-center.controller';
+import { CommandCenterService } from './command-center/command-center.service';
 
 // PrismaService provided globally via PrismaModule.
 //
@@ -63,6 +66,8 @@ import { LtvMetricsService } from './command-center/ltv-metrics.service';
     PracticeTypeController,
     // LTV metrics
     LtvMetricsController,
+    // Command Center P0 endpoints
+    CommandCenterController,
   ],
   providers: [
     CoachService,
@@ -76,6 +81,8 @@ import { LtvMetricsService } from './command-center/ltv-metrics.service';
     PracticeTypeService,
     // LTV metrics
     LtvMetricsService,
+    // Command Center
+    CommandCenterService,
   ],
   exports: [
     CoachEffectivenessService,
