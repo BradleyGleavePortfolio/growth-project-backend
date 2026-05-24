@@ -299,7 +299,7 @@ export class SubCoachReassignService {
             auditLogId: log.id,
           };
         },
-        { isolation: Prisma.TransactionIsolationLevel.Serializable },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
     } catch (err) {
       // The partial unique index on SubCoachAssignment(client_id)

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException } from '@nestjs/common';
-import { SubCoachCapacityService } from './sub-coach-capacity.service';
-import { PrismaService } from '../prisma.service';
+import { SubCoachCapacityService } from '../src/sub-coach/sub-coach-capacity.service';
+import { PrismaService } from '../src/prisma.service';
 
 const HEAD_COACH_ID = 'head-1';
 const SUB_COACH_ID = 'sub-1';

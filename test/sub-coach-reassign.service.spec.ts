@@ -5,11 +5,11 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { SubCoachReassignService } from './sub-coach-reassign.service';
-import { PrismaService } from '../prisma.service';
-import { AuditService } from '../audit/audit.service';
-import { SubCoachCapacityService } from './sub-coach-capacity.service';
-import { SubCoachIdempotencyService } from './sub-coach-idempotency.service';
+import { SubCoachReassignService } from '../src/sub-coach/sub-coach-reassign.service';
+import { PrismaService } from '../src/prisma.service';
+import { AuditService } from '../src/audit/audit.service';
+import { SubCoachCapacityService } from '../src/sub-coach/sub-coach-capacity.service';
+import { SubCoachIdempotencyService } from '../src/sub-coach/sub-coach-idempotency.service';
 
 const HEAD_COACH_ID = 'head-1';
 const SUB_COACH_ID = 'sub-1';

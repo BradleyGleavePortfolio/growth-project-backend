@@ -1,13 +1,15 @@
+import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import {
   AssignClientDto,
   ReassignClientDto,
   ListSubCoachesQueryDto,
-} from './sub-coach.dto';
+} from '../src/sub-coach/dto/sub-coach.dto';
 
-const VALID_UUID = '11111111-1111-1111-1111-111111111111';
-const OTHER_UUID = '22222222-2222-2222-2222-222222222222';
+// Valid UUID v4 examples (the variant @IsUUID() defaults to).
+const VALID_UUID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+const OTHER_UUID = 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22';
 
 function errs(obj: object, cls: { new (): object }) {
   const instance = plainToInstance(cls, obj);
@@ -55,7 +57,7 @@ describe('ReassignClientDto', () => {
         {
           clientId: VALID_UUID,
           targetSubCoachId: OTHER_UUID,
-          idempotency_key: '33333333-3333-3333-3333-333333333333',
+          idempotency_key: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33',
           reason: 'manual transfer',
         },
         ReassignClientDto,

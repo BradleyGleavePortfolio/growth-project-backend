@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
-import { SubCoachAssignmentService } from './sub-coach-assignment.service';
-import { PrismaService } from '../prisma.service';
+import { SubCoachAssignmentService } from '../src/sub-coach/sub-coach-assignment.service';
+import { PrismaService } from '../src/prisma.service';
 
 const HEAD_COACH_ID = 'head-coach-1';
 const SUB_COACH_ID = 'sub-coach-1';
