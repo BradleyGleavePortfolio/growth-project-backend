@@ -2139,3 +2139,65 @@ The Claude Sonnet pricing constants live in `src/ai/coach/coach-ai.constants.ts`
 ### Disable / fallback semantics
 - `ANTHROPIC_API_KEY` is the only secret that gates the engine. If unset, every `/coach/ai/*` route returns 503 `{ error: "ai_disabled" }` and the boot log emits `[coach-ai] disabled — set ANTHROPIC_API_KEY`.
 - `ai.service.ts` (the client-facing `/ai/chat` surface) prefers Perplexity when `PERPLEXITY_API_KEY` is set; otherwise it tries the Anthropic adapter when the engine is ready; otherwise it falls back to the deterministic responder. This rewires the food-logger audit §7 path so the deterministic template is the third option, not the second.
+
+---
+
+## Exercise Library + Workout Builder (Phase 11)
+
+### Overview
+
+Two new modules shipped in `feat/phase-11-workout-builder`:
+
+| Module | Path | Purpose |
+|---|---|---|
+| `ExerciseLibraryModule` | `src/exercise-library/` | Proxy + cached gateway to the ExerciseDB RapidAPI catalog |
+| `WorkoutBuilderModule` | `src/workout-builder/` | CRUD for coach-authored plans, exercise rows, and client assignments |
+
+### Environment variables
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `EXERCISEDB_API_KEY` | No (feature) | — | RapidAPI subscription key for `exercisedb.p.rapidapi.com`. When unset, the workout builder falls back to the in-process seed catalog (`src/exercise-library/seed-catalog.ts`); routes that require live upstream data return a sanitised 503 (`EXERCISEDB_NOT_CONFIGURED`). |
+| `EXERCISEDB_API_HOST` | No | `exercisedb.p.rapidapi.com` | Override RapidAPI host if using a mirror |
+
+**Cache:** When `REDIS_URL` is set the service caches ExerciseDB responses in Redis with a 5-minute TTL. When Redis is absent it falls back to an in-process LRU (max 500 entries, 5-minute TTL). Cache key includes all query parameters.
+
+### Exercise Library endpoints
+
+All routes require a valid JWT (`Authorization: Bearer <token>`).
+
+```
+GET /exercises/search
+  ?q=<free-text name>
+  &muscleGroup=<bodyPart>   e.g. chest, back, legs
+  &equipment=<equipment>    e.g. barbell, dumbbell, body+weight
+  &limit=<1-100>            default 20
+  &cursor=<opaque>          pagination cursor from prior response
+
+Response: { items: Exercise[], nextCursor: string | null, total: number }
+
+GET /exercises/:id
+  Returns a single Exercise by ExerciseDB catalog id.
+```
+
+### Workout Builder endpoints
+
+```
+GET    /workout-plans                         List coach's non-archived plans
+POST   /workout-plans                         Create a plan
+GET    /workout-plans/:planId                 Get plan with exercise rows
+PATCH  /workout-plans/:planId                 Update plan metadata
+DELETE /workout-plans/:planId                 Soft-archive plan
+PUT    /workout-plans/:planId/exercises       Replace all exercise rows (full list)
+POST   /workout-plans/:planId/assignments     Assign plan to a client
+GET    /workout-plans/:planId/assignments     List all assignments for a plan
+PATCH  /assignments/:assignmentId/complete    Client marks assignment complete (+ RPE/notes)
+```
+
+### Data models
+
+- **`WorkoutPlan`** — coach_id (FK User), name, type (strength | cardio | mobility), duration_estimate_minutes, archived_at
+- **`WorkoutPlanExercise`** — workout_plan_id, exercise_external_id (ExerciseDB id), order, sets, reps_or_duration_seconds, weight_lbs, rest_seconds, superset_group_id, notes
+- **`ClientWorkoutAssignment`** — workout_plan_id, client_id, assigned_by_coach_id, scheduled_for, completed_at, post_rpe (1–10), post_notes
+
+Migration: `prisma/migrations/20260508000000_add_workout_builder/migration.sql`

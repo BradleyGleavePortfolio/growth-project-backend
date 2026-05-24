@@ -580,6 +580,18 @@ export const ENV_RULES: EnvRule[] = [
     reason:
       'MuscleWiki exercise video API key (RapidAPI key). When set, the MuscleWiki provider returns stable MP4 video URLs for 1,800+ exercises. When unset, the system falls back to ExerciseDB GIF. MuscleWiki URLs are stable CDN paths cached for 24 hours and safe to persist in ExerciseCatalogItem.video_url.',
   },
+  {
+    name: 'EXERCISEDB_API_KEY',
+    tier: 'feature',
+    reason:
+      'Phase 11 — RapidAPI key for the ExerciseDB catalog used by the workout builder. When unset, ExerciseLibraryService falls back to the bundled seed catalog (~50 exercises) so dev/preview environments stay functional; upstream-only routes (proxy/details endpoints) return 503 EXERCISEDB_NOT_CONFIGURED at request time rather than crashing on boot. Set this before public launch so coaches see the full catalog.',
+  },
+  {
+    name: 'EXERCISEDB_API_HOST',
+    tier: 'optional',
+    reason:
+      'Phase 11 — override for the RapidAPI host the exercise library calls. Defaults to "exercisedb.p.rapidapi.com". Only set this for staging/test environments pointing at a mocked host.',
+  },
 ];
 
 export interface EnvValidationResult {

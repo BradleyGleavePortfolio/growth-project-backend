@@ -1,20 +1,27 @@
 /**
  * DTOs for the Workout Builder module.
- * Covers WorkoutPlan CRUD, WorkoutPlanExercise rows, and ClientWorkoutAssignment.
+ * Covers WorkoutPlan CRUD, WorkoutPlanExercise rows, and
+ * ClientWorkoutAssignment (assign + complete).
  */
 
+import { Type } from 'class-transformer';
 import {
-  IsString,
+  ArrayMaxSize,
+  IsArray,
+  IsDateString,
   IsEnum,
   IsInt,
-  IsOptional,
-  IsNumber,
-  Min,
-  Max,
-  IsDateString,
+  IsISO8601,
   IsNotEmpty,
-  MaxLength,
+  IsNumber,
   IsObject,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+  ValidateNested,
 } from 'class-validator';
 
 // ─── Enums (mirror Prisma) ────────────────────────────────────────────────────
@@ -111,6 +118,17 @@ export class UpsertExerciseRowDto {
   notes?: string;
 }
 
+// Wrapper so class-validator actually validates each row in the array.
+// Without ValidateNested + Type, the @Body() parameter binds an untyped
+// array and per-element decorators are skipped.
+export class UpsertExerciseRowsDto {
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => UpsertExerciseRowDto)
+  rows!: UpsertExerciseRowDto[];
+}
+
 // ─── ClientWorkoutAssignment ──────────────────────────────────────────────────
 
 export class CreateAssignmentDto {
@@ -122,7 +140,36 @@ export class CreateAssignmentDto {
   scheduled_for!: string;
 }
 
+// Mobile sends idempotency_key, started_at, and completion_payload on
+// PATCH /assignments/:id/complete. Server stores all three and uses
+// idempotency_key for per-assignment dedup (unique partial index in
+// migration 20260508000003 makes a duplicate complete a no-op at the DB
+// layer; the service short-circuits earlier to return the original row).
 export class CompleteAssignmentDto {
+  /**
+   * Client-generated UUID. Required for retry-safety on flaky
+   * connections. Accepted in any standard version (v1–v5); the mobile
+   * client uses v4, but we don't force a specific version so older app
+   * builds keep working.
+   */
+  @IsUUID('all')
+  @IsNotEmpty()
+  idempotency_key!: string;
+
+  /** ISO 8601 timestamp when the client started the workout. */
+  @IsOptional()
+  @IsISO8601()
+  started_at?: string;
+
+  /**
+   * Free-form completion payload (per-set logs, RPE per exercise, etc).
+   * Schema kept open at this layer so the mobile app can evolve the
+   * shape without coordinated backend deploys. Stored as Jsonb.
+   */
+  @IsOptional()
+  @IsObject()
+  completion_payload?: Record<string, unknown>;
+
   /** RPE (Rating of Perceived Exertion) 1–10. */
   @IsOptional()
   @IsInt()
@@ -134,16 +181,4 @@ export class CompleteAssignmentDto {
   @IsString()
   @MaxLength(1000)
   post_notes?: string;
-
-  @IsOptional()
-  @IsString()
-  idempotency_key?: string;
-
-  @IsOptional()
-  @IsObject()
-  completion_payload?: Record<string, any>;
-
-  @IsOptional()
-  @IsDateString()
-  started_at?: string;
 }

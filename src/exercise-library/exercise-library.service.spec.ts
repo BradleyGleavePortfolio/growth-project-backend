@@ -20,8 +20,6 @@ const MOCK_EXERCISE: Exercise = {
   secondaryMuscles: ['triceps', 'deltoids'],
   instructions: ['Lie on bench', 'Lower bar to chest', 'Press up'],
   gifUrl: 'https://cdn.exercisedb.io/0001.gif',
-  video_url: null,
-  video_provider: null,
 };
 
 function mockFetch(data: unknown, status = 200) {
