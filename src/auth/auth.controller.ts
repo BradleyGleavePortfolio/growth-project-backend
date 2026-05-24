@@ -343,6 +343,10 @@ export class AuthController {
   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @UseGuards(JwtAuthGuard)
   @Post('recent-auth-token')
+  // R19 idempotency exception: this endpoint is stateless — it reads credentials
+  // and computes an HMAC token but does not mutate any shared state. Retries
+  // naturally re-issue a fresh token. No dedup ledger is required.
+  // The 5/min throttle (AUTH_RECENT_AUTH) acts as the rate-control mechanism.
   // SECURITY: 5/min per-user (authed) cap on this re-auth endpoint. Tighter than
   // /auth/login because (a) only logged-in callers can hit it and (b) it gates
   // sensitive actions (account deletion). UserThrottlerGuard keys this by
