@@ -14,14 +14,19 @@
  * client never holds an ExerciseDB API key.
  */
 
-import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   Exercise,
   ExerciseSearchParams,
   ExerciseSearchResult,
 } from './exercise.entity';
-import { findSeedById, searchSeed } from './seed-catalog';
 import * as crypto from 'crypto';
 
 /** In-memory LRU cache entry. */
@@ -91,27 +96,6 @@ export class ExerciseLibraryService implements OnModuleInit {
     const limit = Math.min(params.limit ?? 20, 100);
     const offset = params.cursor ? this.decodeCursor(params.cursor) : 0;
 
-    // Seed-catalog fallback. Used when no EXERCISEDB_API_KEY is set so
-    // the workout builder is functional on day one without an external
-    // dependency. Once a key is configured the proxy below takes over.
-    if (!this.apiKey) {
-      const seedKey = this.buildCacheKey('seed-search', { ...params, limit, offset });
-      const seedCached = await this.getCache<ExerciseSearchResult>(seedKey);
-      if (seedCached) return seedCached;
-      const { items, total } = searchSeed({
-        q: params.q,
-        muscleGroup: params.muscleGroup,
-        equipment: params.equipment,
-        limit,
-        offset,
-      });
-      const nextCursor =
-        offset + items.length < total ? this.encodeCursor(offset + limit) : null;
-      const result: ExerciseSearchResult = { items, nextCursor, total };
-      await this.setCache(seedKey, result);
-      return result;
-    }
-
     const cacheKey = this.buildCacheKey('search', { ...params, limit, offset });
     const cached = await this.getCache<ExerciseSearchResult>(cacheKey);
     if (cached) return cached;
@@ -178,18 +162,8 @@ export class ExerciseLibraryService implements OnModuleInit {
     return result;
   }
 
-  /** Fetch a single exercise by id. seed: ids are resolved locally;
-   * everything else proxies to ExerciseDB. When no API key is set,
-   * non-seed ids return 404 rather than the env-var error. */
+  /** Fetch a single exercise by ExerciseDB id. */
   async getExerciseById(id: string): Promise<Exercise> {
-    if (id.startsWith('seed:')) {
-      const seed = findSeedById(id);
-      if (!seed) throw new NotFoundException(`Exercise with id "${id}" not found`);
-      return seed;
-    }
-    if (!this.apiKey) {
-      throw new NotFoundException(`Exercise with id "${id}" not found`);
-    }
     const cacheKey = this.buildCacheKey('byId', { id });
     const cached = await this.getCache<Exercise>(cacheKey);
     if (cached) return cached;
@@ -208,9 +182,16 @@ export class ExerciseLibraryService implements OnModuleInit {
 
   private async fetchApi<T>(path: string, query: Record<string, string> = {}): Promise<T> {
     if (!this.apiKey) {
-      throw new Error(
-        'EXERCISEDB_API_KEY is not configured. Set the env var to enable exercise catalog features.',
-      );
+      // Controlled 503 — the seed-catalog fallback handles most public
+      // read paths; this is reached only on routes that genuinely require
+      // upstream data (single-exercise detail by id when not in the seed,
+      // gif/animation lookups). Per R17 we never echo env-var names back
+      // to the client — use a stable error code instead.
+      throw new ServiceUnavailableException({
+        code: 'EXERCISEDB_NOT_CONFIGURED',
+        message:
+          'Exercise catalog is temporarily unavailable. Please try again later.',
+      });
     }
     const url = new URL(`${this.baseUrl}${path}`);
     for (const [k, v] of Object.entries(query)) {

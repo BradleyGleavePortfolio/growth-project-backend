@@ -1,18 +1,29 @@
 /**
- * WorkoutBuilderController — REST surface for WorkoutPlan management.
+ * WorkoutBuilderController + AssignmentController — REST surface for the
+ * Phase 11 workout builder.
  *
- * All routes require a valid JWT (global JwtAuthGuard).
+ * Auth: every route is JWT-authenticated by the global JwtAuthGuard.
+ * RBAC: coach-side routes additionally require @Roles('coach', 'owner')
+ *       via RolesGuard. Owner is included in the RolesGuard hierarchy.
+ *       Service-layer assertCoach() re-checks before any write.
+ * Idempotency: coach mutations accept Idempotency-Key (UUID) header for
+ *       safe client retries. Completion uses an in-body idempotency_key.
+ * Pagination: list endpoints accept ?limit (≤50) and ?cursor (opaque).
  *
- * Route overview:
- *   GET    /workout-plans                         list coach's plans
+ * Route overview (workout-plans / coach-facing):
+ *   GET    /workout-plans                         list coach's plans (paginated)
  *   POST   /workout-plans                         create plan
  *   GET    /workout-plans/:planId                 get single plan
  *   PATCH  /workout-plans/:planId                 update plan metadata
  *   DELETE /workout-plans/:planId                 archive plan
- *   PUT    /workout-plans/:planId/exercises       replace all exercise rows
- *   POST   /workout-plans/:planId/assignments     assign to a client
- *   GET    /workout-plans/:planId/assignments     list assignments
- *   PATCH  /assignments/:assignmentId/complete    client marks complete
+ *   PUT    /workout-plans/:planId/exercises       replace exercise rows
+ *   POST   /workout-plans/:planId/assignments     assign plan to a client
+ *   GET    /workout-plans/:planId/assignments     list assignments (paginated)
+ *
+ * Route overview (assignments / client-facing):
+ *   GET    /assignments/me                        my upcoming + past assignments
+ *   GET    /assignments/:assignmentId             single assignment (must be mine)
+ *   PATCH  /assignments/:assignmentId/complete    mark complete
  */
 
 import {
@@ -22,129 +33,212 @@ import {
   Get,
   Headers,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/auth.guard';
-import { CoachGuard } from '../auth/coach.guard';
-import { SubscriptionGuard } from '../billing/subscription.guard';
-import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
-import { WorkoutBuilderService } from './workout-builder.service';
 import {
+  ApiBearerAuth,
+  ApiHeader,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import type { AuthedRequest } from '../auth/auth-request';
+import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
+import {
+  CompleteAssignmentDto,
+  CreateAssignmentDto,
   CreateWorkoutPlanDto,
   UpdateWorkoutPlanDto,
-  UpsertExerciseRowDto,
-  CreateAssignmentDto,
-  CompleteAssignmentDto,
+  UpsertExerciseRowsDto,
 } from './workout-builder.dto';
-import type { Request } from 'express';
+import { WorkoutBuilderService } from './workout-builder.service';
 
-interface AuthRequest extends Request {
-  user: { id: string };
-}
+const IDEMPOTENCY_HEADER = 'idempotency-key';
 
+@ApiTags('workout-plans')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('coach', 'owner')
 @Controller('workout-plans')
 export class WorkoutBuilderController {
   constructor(private readonly workoutBuilder: WorkoutBuilderService) {}
 
   @Get()
-  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
-  listPlans(@Req() req: AuthRequest) {
-    return this.workoutBuilder.listPlans(req.user.id);
+  @ApiOperation({ summary: "List the calling coach's active workout plans (paginated)." })
+  @ApiResponse({ status: 200, description: 'Paginated plan list.' })
+  @ApiResponse({ status: 403, description: 'Not a coach.' })
+  listPlans(
+    @Req() req: AuthedRequest,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.workoutBuilder.listPlans(req.user.id, {
+      limit: limit ? Number(limit) : undefined,
+      cursor: cursor ?? null,
+    });
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
-  createPlan(@Req() req: AuthRequest, @Body() dto: CreateWorkoutPlanDto) {
-    return this.workoutBuilder.createPlan(req.user.id, dto);
+  @ApiOperation({ summary: 'Create a new workout plan.' })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    description: 'UUID — server dedups retries with the same key per coach.',
+    required: false,
+  })
+  @ApiResponse({ status: 201, description: 'Plan created.' })
+  @ApiResponse({ status: 403, description: 'Not a coach.' })
+  createPlan(
+    @Req() req: AuthedRequest,
+    @Body() dto: CreateWorkoutPlanDto,
+    @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
+  ) {
+    return this.workoutBuilder.createPlan(req.user.id, dto, idempotencyKey);
   }
 
   @Get(':planId')
-  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
-  getPlan(@Req() req: AuthRequest, @Param('planId') planId: string) {
+  @ApiOperation({ summary: 'Get a single plan (with live exercises).' })
+  getPlan(
+    @Req() req: AuthedRequest,
+    @Param('planId', new ParseUUIDPipe()) planId: string,
+  ) {
     return this.workoutBuilder.getPlan(req.user.id, planId);
   }
 
   @Patch(':planId')
-  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
+  @ApiOperation({ summary: "Update a plan's metadata." })
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
   updatePlan(
-    @Req() req: AuthRequest,
-    @Param('planId') planId: string,
+    @Req() req: AuthedRequest,
+    @Param('planId', new ParseUUIDPipe()) planId: string,
     @Body() dto: UpdateWorkoutPlanDto,
+    @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
   ) {
-    return this.workoutBuilder.updatePlan(req.user.id, planId, dto);
+    return this.workoutBuilder.updatePlan(req.user.id, planId, dto, idempotencyKey);
   }
 
   @Delete(':planId')
-  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
-  archivePlan(@Req() req: AuthRequest, @Param('planId') planId: string) {
+  @ApiOperation({ summary: 'Soft-archive a plan.' })
+  archivePlan(
+    @Req() req: AuthedRequest,
+    @Param('planId', new ParseUUIDPipe()) planId: string,
+  ) {
     return this.workoutBuilder.archivePlan(req.user.id, planId);
   }
 
   @Put(':planId/exercises')
-  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
+  @ApiOperation({
+    summary:
+      "Replace the plan's exercise list. Prior rows are soft-archived so " +
+      'assigned clients keep seeing the snapshot they were assigned.',
+  })
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
   setExercises(
-    @Req() req: AuthRequest,
-    @Param('planId') planId: string,
-    @Body() rows: UpsertExerciseRowDto[],
-    // Optimistic-concurrency token. When the client has previously read the
-    // plan it should echo back `If-Unmodified-Since: <plan.updated_at>` so
-    // a parallel edit from another tab/device throws 409 instead of being
-    // silently overwritten. Absent header → legacy "last write wins" path
-    // (logged at the service layer). See QA P0-W2.
-    @Headers('if-unmodified-since') ifUnmodifiedSince?: string,
+    @Req() req: AuthedRequest,
+    @Param('planId', new ParseUUIDPipe()) planId: string,
+    @Body() body: UpsertExerciseRowsDto,
+    @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
   ) {
-    return this.workoutBuilder.setExercises(req.user.id, planId, rows, {
-      ifUnmodifiedSince,
-    });
+    return this.workoutBuilder.setExercises(
+      req.user.id,
+      planId,
+      body.rows,
+      idempotencyKey,
+    );
   }
 
   @Post(':planId/assignments')
-  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
+  @ApiOperation({ summary: 'Assign a plan to a client.' })
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
   assignPlan(
-    @Req() req: AuthRequest,
-    @Param('planId') planId: string,
+    @Req() req: AuthedRequest,
+    @Param('planId', new ParseUUIDPipe()) planId: string,
     @Body() dto: CreateAssignmentDto,
+    @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
   ) {
-    return this.workoutBuilder.assignPlan(req.user.id, planId, dto);
+    return this.workoutBuilder.assignPlan(req.user.id, planId, dto, idempotencyKey);
   }
 
   @Get(':planId/assignments')
-  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
-  listAssignments(@Req() req: AuthRequest, @Param('planId') planId: string) {
-    return this.workoutBuilder.listAssignments(req.user.id, planId);
+  @ApiOperation({ summary: 'List assignments for a plan (paginated).' })
+  listAssignments(
+    @Req() req: AuthedRequest,
+    @Param('planId', new ParseUUIDPipe()) planId: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.workoutBuilder.listAssignments(req.user.id, planId, {
+      limit: limit ? Number(limit) : undefined,
+      cursor: cursor ?? null,
+    });
   }
 }
 
-/** Separate controller for assignment listing/completion (client-facing). */
+/**
+ * Client-facing /assignments controller. Reachable by ANY authenticated
+ * user (no role gate) because clients hold the `student` role, not
+ * `coach`. Access is restricted at the service layer by client_id =
+ * req.user.id checks (defense-in-depth atop RLS).
+ */
+@ApiTags('assignments')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('assignments')
-@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
 export class AssignmentController {
   constructor(private readonly workoutBuilder: WorkoutBuilderService) {}
 
-  // Sprint B — client list of their own workout assignments. Returns
-  // each assignment with its plan and exercise rows so the mobile app
-  // can render "today's workout" without a second round-trip.
   @Get('me')
-  @UseGuards(JwtAuthGuard)
-  listMine(@Req() req: AuthRequest) {
-    return this.workoutBuilder.listAssignmentsForClient(req.user.id);
+  @ApiOperation({
+    summary:
+      "List the calling user's own workout assignments, including the " +
+      'owning plan and its current exercises (paginated).',
+  })
+  @ApiResponse({ status: 200, description: 'Paginated assignment list.' })
+  listMine(
+    @Req() req: AuthedRequest,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.workoutBuilder.listMyAssignments(req.user.id, {
+      limit: limit ? Number(limit) : undefined,
+      cursor: cursor ?? null,
+    });
   }
 
   @Get(':assignmentId')
-  @UseGuards(JwtAuthGuard)
-  getMine(@Req() req: AuthRequest, @Param('assignmentId') assignmentId: string) {
-    return this.workoutBuilder.getAssignmentForClient(req.user.id, assignmentId);
+  @ApiOperation({
+    summary:
+      "Get a single assignment. 404 if the row does not exist OR does " +
+      'not belong to the calling user.',
+  })
+  getOne(
+    @Req() req: AuthedRequest,
+    @Param('assignmentId', new ParseUUIDPipe()) assignmentId: string,
+  ) {
+    return this.workoutBuilder.getMyAssignment(req.user.id, assignmentId);
   }
 
   @Patch(':assignmentId/complete')
-  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary:
+      'Mark an assignment complete. Requires idempotency_key in the body ' +
+      'for retry safety; replays return the original record.',
+  })
+  @ApiResponse({ status: 200, description: 'Assignment completed.' })
+  @ApiResponse({
+    status: 409,
+    description: 'Assignment already completed with a different idempotency key.',
+  })
   complete(
-    @Req() req: AuthRequest,
-    @Param('assignmentId') assignmentId: string,
+    @Req() req: AuthedRequest,
+    @Param('assignmentId', new ParseUUIDPipe()) assignmentId: string,
     @Body() dto: CompleteAssignmentDto,
   ) {
     return this.workoutBuilder.completeAssignment(req.user.id, assignmentId, dto);

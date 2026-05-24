@@ -110,6 +110,7 @@ describe('evaluateEnv', () => {
       'SENTRY_DSN',
       'REDIS_URL',
       'APPLE_AUDIENCES',
+      'EXERCISEDB_API_KEY',
     ]) {
       expect(r.missingFeature).toContain(name);
       expect(r.missingProd).not.toContain(name);

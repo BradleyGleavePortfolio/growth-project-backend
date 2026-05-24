@@ -1,26 +1,33 @@
 /**
  * WorkoutBuilderModule — CRUD for WorkoutPlan + WorkoutPlanExercise +
- * ClientWorkoutAssignment.  Imports ExerciseLibraryModule so WorkoutBuilderService
- * can optionally enrich plan responses with live exercise metadata.
+ * ClientWorkoutAssignment.
+ *
+ * AuthModule import wires JwtAuthGuard + JwksVerifierService into this
+ * module's DI scope so @UseGuards(JwtAuthGuard, RolesGuard) resolves
+ * locally (mirrors AdminModule). RolesGuard is provided locally because
+ * it is not @Global; the global RolesGuard pattern would only matter if
+ * we wanted @Roles to gate every route. Coach-side routes set
+ * @Roles('coach', 'owner'); client-facing /assignments routes intentionally
+ * have no role gate (they're reachable by students too).
+ *
+ * ExerciseLibraryModule import is retained for future enrichment of plan
+ * responses with live exercise metadata.
  */
 
 import { Module } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/auth.guard';
-import { CoachGuard } from '../auth/coach.guard';
-import { JwksVerifierService } from '../auth/jwks.service';
-import { WorkoutBuilderController, AssignmentController } from './workout-builder.controller';
-import { WorkoutBuilderService } from './workout-builder.service';
-import { BillingModule } from '../billing/billing.module';
+import { AuthModule } from '../auth/auth.module';
+import { RolesGuard } from '../auth/roles.guard';
 import { ExerciseLibraryModule } from '../exercise-library/exercise-library.module';
-import { ExerciseCatalogModule } from '../exercise-catalog/exercise-catalog.module';
+import {
+  AssignmentController,
+  WorkoutBuilderController,
+} from './workout-builder.controller';
+import { WorkoutBuilderService } from './workout-builder.service';
 
-// PrismaService is global. Providing JwtAuthGuard / CoachGuard /
-// JwksVerifierService locally mirrors MacrosModule / MealPlansModule
-// and avoids the circular-import risk of pulling AuthModule.
 @Module({
-  imports: [BillingModule, ExerciseLibraryModule, ExerciseCatalogModule],
+  imports: [AuthModule, ExerciseLibraryModule],
   controllers: [WorkoutBuilderController, AssignmentController],
-  providers: [WorkoutBuilderService, JwtAuthGuard, CoachGuard, JwksVerifierService],
+  providers: [WorkoutBuilderService, RolesGuard],
   exports: [WorkoutBuilderService],
 })
 export class WorkoutBuilderModule {}

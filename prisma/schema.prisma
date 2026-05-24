@@ -312,9 +312,10 @@ model User {
   notification_delivery_logs NotificationDeliveryLog[]
 
   // Sprint B — Workout Builder relations.
-  workout_plans_as_coach        WorkoutPlan[]             @relation("CoachWorkoutPlans")
-  workout_assignments_as_client ClientWorkoutAssignment[] @relation("ClientWorkoutAssignments")
-  workout_assignments_as_coach  ClientWorkoutAssignment[] @relation("CoachWorkoutAssignments")
+  workout_plans_as_coach           WorkoutPlan[]                  @relation("CoachWorkoutPlans")
+  workout_assignments_as_client    ClientWorkoutAssignment[]      @relation("ClientWorkoutAssignments")
+  workout_assignments_as_coach     ClientWorkoutAssignment[]      @relation("CoachWorkoutAssignments")
+  workout_builder_idempotency_keys WorkoutBuilderIdempotencyKey[] @relation("WorkoutBuilderIdempotencyUser")
 
   // Team Mode — head-coach <-> sub-coach assignments and audit events.
   // A coach may appear on either side (head coach in one team, sub-coach
@@ -1848,8 +1849,7 @@ model WorkoutPlan {
   exercises   WorkoutPlanExercise[]
   assignments ClientWorkoutAssignment[]
 
-  @@index([coach_id, archived_at])
-  @@index([created_at])
+  @@index([coach_id, archived_at, created_at(sort: Desc)], name: "WorkoutPlan_coach_id_archived_at_created_at_idx")
 }
 
 model WorkoutPlanExercise {
@@ -1867,9 +1867,13 @@ model WorkoutPlanExercise {
   // Exercises sharing a superset_group_id are performed back-to-back.
   superset_group_id        String?
   notes                    String?
+  archived_at              DateTime?
 
-  @@unique([workout_plan_id, order], name: "WorkoutPlanExercise_plan_order_key")
+  // (workout_plan_id, order) uniqueness is a *partial* unique index
+  // declared in raw SQL (WHERE archived_at IS NULL) — Prisma cannot
+  // express partial unique indexes.
   @@index([workout_plan_id])
+  @@index([workout_plan_id, archived_at])
   @@index([exercise_external_id])
 }
 
@@ -1889,10 +1893,34 @@ model ClientWorkoutAssignment {
   idempotency_key      String?     @unique
   completion_payload   Json?
   started_at           DateTime?
+  completion_idempotency_key String?
 
   @@index([client_id, scheduled_for])
-  @@index([workout_plan_id])
+  @@index([workout_plan_id, scheduled_for])
   @@index([assigned_by_coach_id])
+}
+
+// Generic idempotency ledger for workout-builder coach-side mutations.
+// Stores the cached response and claim status keyed by
+// (user_id, route_key, idempotency_key). Atomic insert is the dedup
+// mechanism — see WorkoutBuilderService.withIdempotency().
+model WorkoutBuilderIdempotencyKey {
+  id              String   @id @default(uuid())
+  user_id         String
+  user            User     @relation("WorkoutBuilderIdempotencyUser", fields: [user_id], references: [id], onDelete: Cascade)
+  route_key       String
+  idempotency_key String
+  // 'in_progress' while the protected operation runs, 'completed'
+  // once the response is captured. Concurrent same-key callers see
+  // 'in_progress' and return 409.
+  status          String   @default("completed")
+  response_json   Json?
+  status_code     Int?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  @@unique([user_id, route_key, idempotency_key], name: "WorkoutBuilderIdempotencyKey_user_route_key_key")
+  @@index([created_at])
 }
 
 // ─── Sprint B: Macro targets ──────────────────────────────────────────────
