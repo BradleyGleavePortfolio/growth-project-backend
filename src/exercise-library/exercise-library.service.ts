@@ -37,6 +37,7 @@ interface CacheEntry {
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const LRU_MAX_SIZE = 500;
+const EXERCISEDB_TIMEOUT_MS = 10_000;
 
 @Injectable()
 export class ExerciseLibraryService implements OnModuleInit {
@@ -198,22 +199,44 @@ export class ExerciseLibraryService implements OnModuleInit {
       url.searchParams.set(k, v);
     }
 
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'x-rapidapi-key': this.apiKey,
-        'x-rapidapi-host': this.apiHost,
-      },
-    });
+    // AbortController with a 10s deadline so a slow/hung upstream cannot
+    // hold a request socket open indefinitely (F35: missing API timeout
+    // on external calls). The AbortError is mapped to a sanitised 503
+    // per R17 — never echo internal details to the client.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      EXERCISEDB_TIMEOUT_MS,
+    );
+    try {
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'x-rapidapi-key': this.apiKey,
+          'x-rapidapi-host': this.apiHost,
+        },
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new Error(
-        `ExerciseDB API error ${response.status}: ${body.slice(0, 200)}`,
-      );
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        throw new Error(
+          `ExerciseDB API error ${response.status}: ${body.slice(0, 200)}`,
+        );
+      }
+
+      return (await response.json()) as T;
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') {
+        throw new ServiceUnavailableException({
+          code: 'EXERCISEDB_TIMEOUT',
+          message: 'Exercise library request timed out. Please try again.',
+        });
+      }
+      throw e;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    return response.json() as Promise<T>;
   }
 
   private buildCacheKey(prefix: string, params: Record<string, unknown>): string {

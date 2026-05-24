@@ -2157,7 +2157,7 @@ Two new modules shipped in `feat/phase-11-workout-builder`:
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `EXERCISEDB_API_KEY` | **Yes** | — | RapidAPI subscription key for `exercisedb.p.rapidapi.com` |
+| `EXERCISEDB_API_KEY` | No (feature) | — | RapidAPI subscription key for `exercisedb.p.rapidapi.com`. When unset, the workout builder falls back to the in-process seed catalog (`src/exercise-library/seed-catalog.ts`); routes that require live upstream data return a sanitised 503 (`EXERCISEDB_NOT_CONFIGURED`). |
 | `EXERCISEDB_API_HOST` | No | `exercisedb.p.rapidapi.com` | Override RapidAPI host if using a mirror |
 
 **Cache:** When `REDIS_URL` is set the service caches ExerciseDB responses in Redis with a 5-minute TTL. When Redis is absent it falls back to an in-process LRU (max 500 entries, 5-minute TTL). Cache key includes all query parameters.

@@ -51,6 +51,7 @@ interface PrismaMock {
     findMany: jest.Mock;
     findUnique: jest.Mock;
     update: jest.Mock;
+    updateMany: jest.Mock;
   };
   workoutPlanExercise: {
     updateMany: jest.Mock;
@@ -81,6 +82,7 @@ const makePrismaMock = (): PrismaMock => ({
     findMany: jest.fn(),
     findUnique: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn().mockResolvedValue({ count: 1 }),
   },
   workoutPlanExercise: {
     updateMany: jest.fn(),
@@ -354,8 +356,11 @@ describe('WorkoutBuilderService', () => {
     });
 
     it('soft-archives prior rows when no active assignments exist', async () => {
-      prismaMock.clientWorkoutAssignment.count.mockResolvedValueOnce(0);
       const tx = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: basePlan.id }]),
+        clientWorkoutAssignment: {
+          count: jest.fn().mockResolvedValue(0),
+        },
         workoutPlanExercise: {
           updateMany: jest.fn().mockResolvedValue({ count: 2 }),
           createMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -380,6 +385,14 @@ describe('WorkoutBuilderService', () => {
         '22222222-2222-4222-2222-222222222222',
       );
 
+      // P1-3 (audit #5): plan row must be locked FOR UPDATE inside the tx.
+      expect(tx.$queryRaw).toHaveBeenCalled();
+      // Active-assignment count runs against the tx client, not the outer.
+      expect(tx.clientWorkoutAssignment.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { workout_plan_id: basePlan.id, completed_at: null },
+        }),
+      );
       expect(tx.workoutPlanExercise.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { workout_plan_id: basePlan.id, archived_at: null },
@@ -389,8 +402,21 @@ describe('WorkoutBuilderService', () => {
       expect(tx.workoutPlanExercise.createMany).toHaveBeenCalled();
     });
 
-    it('P1-3: refuses to edit when the plan has active assignments', async () => {
-      prismaMock.clientWorkoutAssignment.count.mockResolvedValueOnce(2);
+    it('P1-3: refuses to edit when the plan has active assignments (count inside tx)', async () => {
+      const tx = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: basePlan.id }]),
+        clientWorkoutAssignment: {
+          count: jest.fn().mockResolvedValue(2),
+        },
+        workoutPlanExercise: {
+          updateMany: jest.fn(),
+          createMany: jest.fn(),
+          findMany: jest.fn(),
+        },
+      };
+      prismaMock.$transaction.mockImplementation(
+        async (fn: (innerTx: typeof tx) => unknown) => fn(tx),
+      );
 
       await expect(
         service.setExercises(
@@ -408,7 +434,12 @@ describe('WorkoutBuilderService', () => {
         ),
       ).rejects.toThrow(ConflictException);
 
-      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      // The transaction is entered (so the row lock is taken), and the
+      // count runs against the tx client — but the writes never fire.
+      expect(prismaMock.$transaction).toHaveBeenCalled();
+      expect(tx.clientWorkoutAssignment.count).toHaveBeenCalled();
+      expect(tx.workoutPlanExercise.updateMany).not.toHaveBeenCalled();
+      expect(tx.workoutPlanExercise.createMany).not.toHaveBeenCalled();
     });
 
     it('rejects duplicate order values', async () => {
@@ -438,14 +469,13 @@ describe('WorkoutBuilderService', () => {
 
   // ─── archivePlan idempotency (P1-6) ─────────────────────────────────────
 
-  describe('archivePlan (P1-6 idempotent DELETE)', () => {
-    it('archives a live plan', async () => {
-      prismaMock.workoutPlan.findUnique.mockResolvedValueOnce(basePlan); // ownership
-      prismaMock.workoutPlan.findUnique.mockResolvedValueOnce(basePlan); // inside idempotency op
-      prismaMock.workoutPlan.update.mockResolvedValue({
-        ...basePlan,
-        archived_at: new Date(),
-      });
+  describe('archivePlan (P1-4 atomic updateMany)', () => {
+    it('archives a live plan via conditional updateMany', async () => {
+      const archivedRow = { ...basePlan, archived_at: new Date() };
+      prismaMock.workoutPlan.findUnique
+        .mockResolvedValueOnce(basePlan) // ownership pre-check
+        .mockResolvedValueOnce(archivedRow); // post-update re-read
+      prismaMock.workoutPlan.updateMany.mockResolvedValueOnce({ count: 1 });
 
       const result = await service.archivePlan(
         COACH_ID,
@@ -453,14 +483,21 @@ describe('WorkoutBuilderService', () => {
         '55555555-5555-4555-8555-555555555555',
       );
 
-      expect(prismaMock.workoutPlan.update).toHaveBeenCalled();
+      expect(prismaMock.workoutPlan.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: basePlan.id, coach_id: COACH_ID, archived_at: null },
+          data: expect.objectContaining({ archived_at: expect.any(Date) }),
+        }),
+      );
       expect(result.archived_at).toBeInstanceOf(Date);
     });
 
-    it('returns the existing row unchanged when already archived', async () => {
+    it('replays cleanly when already archived (updateMany matches zero rows)', async () => {
       const archived = { ...basePlan, archived_at: new Date('2024-12-01') };
-      prismaMock.workoutPlan.findUnique.mockResolvedValueOnce(archived); // ownership
-      prismaMock.workoutPlan.findUnique.mockResolvedValueOnce(archived); // inside op
+      prismaMock.workoutPlan.findUnique
+        .mockResolvedValueOnce(archived) // ownership pre-check
+        .mockResolvedValueOnce(archived); // post-update re-read
+      prismaMock.workoutPlan.updateMany.mockResolvedValueOnce({ count: 0 });
 
       const result = await service.archivePlan(
         COACH_ID,
@@ -468,7 +505,8 @@ describe('WorkoutBuilderService', () => {
         '66666666-6666-4666-8666-666666666666',
       );
 
-      expect(prismaMock.workoutPlan.update).not.toHaveBeenCalled();
+      // updateMany is called regardless — but matches no rows on replay.
+      expect(prismaMock.workoutPlan.updateMany).toHaveBeenCalled();
       expect(result.archived_at).toEqual(archived.archived_at);
     });
   });

@@ -348,11 +348,14 @@ export class WorkoutBuilderService {
   /**
    * Soft-archive a plan.
    *
-   * Idempotent at the data layer: if the plan is already archived we
-   * return the existing row WITHOUT re-stamping archived_at, so a
-   * double-DELETE returns the same response (audit P1-6). The
-   * idempotency ledger is still consulted so concurrent retries
-   * collapse to one mutation just like the other coach writes.
+   * P1-4 (audit #5): uses a single conditional `updateMany WHERE
+   * archived_at IS NULL` so two concurrent archive requests can't both
+   * stamp the timestamp. The first matches and stamps; the second sees
+   * count=0 and falls through to re-read the row. Both return the same
+   * (archived) record without a transaction.
+   *
+   * Idempotency ledger is still consulted so concurrent retries collapse
+   * to one cached response just like the other coach writes.
    */
   async archivePlan(
     coachId: string,
@@ -366,18 +369,22 @@ export class WorkoutBuilderService {
       `workout-builder:archivePlan:${planId}`,
       idempotencyKey,
       async () => {
-        const existing = await this.prisma.workoutPlan.findUnique({
-          where: { id: planId },
-        });
-        if (!existing) throw new NotFoundException('Workout plan not found');
-        if (existing.archived_at) {
-          // Already archived — return the row unchanged.
-          return existing;
-        }
-        return this.prisma.workoutPlan.update({
-          where: { id: planId },
+        // Atomic conditional update — safe under concurrent DELETEs.
+        // Whichever request matches first stamps archived_at; replays
+        // (and concurrent losers) match zero rows and no-op.
+        await this.prisma.workoutPlan.updateMany({
+          where: { id: planId, coach_id: coachId, archived_at: null },
           data: { archived_at: new Date() },
         });
+
+        // Re-read the row regardless. Handles both first-archive and
+        // replay: in both cases we return the now-archived plan.
+        const plan = await this.prisma.workoutPlan.findUnique({
+          where: { id: planId },
+        });
+        if (!plan) throw new NotFoundException('Workout plan not found');
+        if (plan.coach_id !== coachId) throw new ForbiddenException();
+        return plan;
       },
     );
   }
@@ -418,61 +425,83 @@ export class WorkoutBuilderService {
       `workout-builder:setExercises:${planId}`,
       idempotencyKey,
       async () => {
-        // Auth/ownership and volatile state checks run only after the
-        // ledger confirms no completed response exists for this key.
-        // Otherwise a client that legitimately succeeded once would get
-        // a 409 on retry because an assignment was created in between.
+        // Auth/ownership checks run only after the ledger confirms no
+        // completed response exists for this key. Otherwise a client
+        // that legitimately succeeded once would get a 409 on retry
+        // because an assignment was created in between.
         await this.assertCoach(coachId);
         await this.assertPlanOwnership(coachId, planId);
 
-        // P1-3: Block edits while clients are mid-workout. Soft-archive
-        // plus a per-assignment read filter is not enough — assignment
-        // reads join to live exercises only, so editing the plan would
-        // silently change what already-assigned clients see. Active
-        // assignment = the row is not yet completed.
-        const activeAssignmentCount =
-          await this.prisma.clientWorkoutAssignment.count({
-            where: { workout_plan_id: planId, completed_at: null },
-          });
-        if (activeAssignmentCount > 0) {
-          throw new ConflictException(
-            'This workout plan has active client assignments. Mark the ' +
-              'existing assignments complete or unassign them before editing ' +
-              'the exercise list, so assigned clients keep seeing the workout ' +
-              'they were given.',
-          );
-        }
+        // P1-3 (audit #5): the active-assignment check + exercise
+        // mutation must be serialised against concurrent assignPlan
+        // calls. Pre-transaction counting is a check-then-act race —
+        // another request can sneak in an INSERT between the count and
+        // the update. We take a `FOR UPDATE` lock on the WorkoutPlan
+        // row inside a serializable transaction so any concurrent
+        // assignment insert that targets the same plan must wait.
+        return this.prisma.$transaction(
+          async (tx) => {
+            // Lock the plan row to serialise against concurrent
+            // assignPlan() writers. The ownership check above already
+            // confirmed the plan exists, but we still re-check inside
+            // the lock because a concurrent archive could have run.
+            const planRows = await tx.$queryRaw<{ id: string }[]>`
+              SELECT "id" FROM "WorkoutPlan"
+              WHERE "id" = ${planId}
+              FOR UPDATE
+            `;
+            if (planRows.length === 0) {
+              throw new NotFoundException('Workout plan not found');
+            }
 
-        return this.prisma.$transaction(async (tx) => {
-          // Soft-archive all live rows. The partial unique index only
-          // applies WHERE archived_at IS NULL, so once we stamp these
-          // rows the new ones can re-use their order slots cleanly.
-          await tx.workoutPlanExercise.updateMany({
-            where: { workout_plan_id: planId, archived_at: null },
-            data: { archived_at: new Date() },
-          });
+            // Count active assignments INSIDE the transaction, after
+            // the row lock — under SERIALIZABLE isolation a concurrent
+            // assignPlan() that reaches this point will either block on
+            // the lock or be retried by Postgres on commit conflict.
+            const activeAssignmentCount =
+              await tx.clientWorkoutAssignment.count({
+                where: { workout_plan_id: planId, completed_at: null },
+              });
+            if (activeAssignmentCount > 0) {
+              throw new ConflictException(
+                'This workout plan has active client assignments. Mark the ' +
+                  'existing assignments complete or unassign them before editing ' +
+                  'the exercise list, so assigned clients keep seeing the workout ' +
+                  'they were given.',
+              );
+            }
 
-          if (rows.length > 0) {
-            await tx.workoutPlanExercise.createMany({
-              data: rows.map((r) => ({
-                workout_plan_id: planId,
-                exercise_external_id: r.exercise_external_id,
-                order: r.order,
-                sets: r.sets,
-                reps_or_duration_seconds: r.reps_or_duration_seconds,
-                weight_lbs: r.weight_lbs ?? null,
-                rest_seconds: r.rest_seconds ?? null,
-                superset_group_id: r.superset_group_id ?? null,
-                notes: r.notes ?? null,
-              })),
+            // Soft-archive all live rows. The partial unique index only
+            // applies WHERE archived_at IS NULL, so once we stamp these
+            // rows the new ones can re-use their order slots cleanly.
+            await tx.workoutPlanExercise.updateMany({
+              where: { workout_plan_id: planId, archived_at: null },
+              data: { archived_at: new Date() },
             });
-          }
 
-          return tx.workoutPlanExercise.findMany({
-            where: { workout_plan_id: planId, archived_at: null },
-            orderBy: { order: 'asc' },
-          });
-        });
+            if (rows.length > 0) {
+              await tx.workoutPlanExercise.createMany({
+                data: rows.map((r) => ({
+                  workout_plan_id: planId,
+                  exercise_external_id: r.exercise_external_id,
+                  order: r.order,
+                  sets: r.sets,
+                  reps_or_duration_seconds: r.reps_or_duration_seconds,
+                  weight_lbs: r.weight_lbs ?? null,
+                  rest_seconds: r.rest_seconds ?? null,
+                  superset_group_id: r.superset_group_id ?? null,
+                  notes: r.notes ?? null,
+                })),
+              });
+            }
+
+            return tx.workoutPlanExercise.findMany({
+              where: { workout_plan_id: planId, archived_at: null },
+              orderBy: { order: 'asc' },
+            });
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        );
       },
     );
   }
