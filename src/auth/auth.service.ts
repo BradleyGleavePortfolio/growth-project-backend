@@ -23,6 +23,7 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AuditAction, AuditService, AuditWriteInput } from '../audit/audit.service';
 import { AppleVerifierService } from './apple-verifier.service';
+import { GoogleVerifierService } from './google-verifier.service';
 import {
   issueRecentAuthToken,
   parseTtlMs,
@@ -51,6 +52,7 @@ export class AuthService {
     private analytics: AnalyticsService,
     private audit: AuditService,
     private appleVerifier: AppleVerifierService,
+    private googleVerifier: GoogleVerifierService,
   ) {
     // Supabase Admin SDK for user management (service role key).
     // Node 20 lacks native WebSocket; supabase-js >=2.105 requires an explicit
@@ -1173,44 +1175,33 @@ export class AuthService {
       return;
     }
 
-    // Google — Supabase is the source of truth (its admin SDK validates the
-    // access token against Google's userinfo). We then check iat / issued_at
-    // for freshness and bind the result to this user.
-    const { data: userData, error: userError } =
-      await this.supabaseAdmin.auth.getUser(providerToken);
-    if (userError || !userData?.user) {
-      this.logger.warn(
-        `recent-auth google verify failed for user=${user.id}: ${userError?.message ?? 'no user'}`,
+    // Google — `providerToken` MUST be a Google-issued ID token (NOT a
+    // Supabase access token). We verify it against Google's JWKS, pin the
+    // audience to our GOOGLE_CLIENT_ID(s), require a recent `iat`, and bind
+    // the verified Google identity (sub / email) to the authenticated user.
+    //
+    // History: an earlier version of this branch passed `providerToken` to
+    // `supabaseAdmin.auth.getUser()`, which transparently accepts a Supabase
+    // session JWT. Because the caller already authenticates the request with
+    // exactly such a token via the Authorization header, that allowed the
+    // current session token to double as "proof of fresh Google re-auth" —
+    // no real Google interaction required. This new path closes that gap.
+    if (!this.googleVerifier.isConfigured()) {
+      this.logger.error(
+        'GOOGLE_CLIENT_ID(S) not configured — recent-auth google branch unavailable',
       );
       throw new UnauthorizedException('Provider token is invalid');
     }
-    const supaUser = userData.user;
-    const providers: string[] = supaUser.app_metadata?.providers || [];
-    const identityProviders: string[] =
-      (supaUser.identities || []).map((i) => i.provider).filter(Boolean);
-    const isGoogle =
-      supaUser.app_metadata?.provider === 'google' ||
-      providers.includes('google') ||
-      identityProviders.includes('google');
-    if (!isGoogle) {
-      throw new UnauthorizedException('Provider token is not a Google token');
-    }
-    // Freshness — Supabase getUser does not expose iat directly, so we fall
-    // back to the JWT's `iat` claim parsed from the access_token. Supabase
-    // tokens are short-lived (1h), so we additionally cross-check that the
-    // *session* the token represents was created within the TTL window.
-    let iat: number | null = null;
+    let payload;
     try {
-      const parts = providerToken.split('.');
-      if (parts.length === 3) {
-        const claims = JSON.parse(
-          Buffer.from(parts[1], 'base64url').toString('utf8'),
-        );
-        if (typeof claims.iat === 'number') iat = claims.iat;
-      }
-    } catch {
-      iat = null;
+      payload = await this.googleVerifier.verify(providerToken);
+    } catch (err) {
+      this.logger.warn(
+        `recent-auth google token verify failed for user=${user.id}: ${(err as Error).message}`,
+      );
+      throw new UnauthorizedException('Provider token is invalid');
     }
+    const iat = typeof payload.iat === 'number' ? payload.iat : null;
     if (iat === null) {
       throw new UnauthorizedException('Provider token missing iat');
     }
@@ -1219,12 +1210,42 @@ export class AuthService {
         'Provider token is stale — request a fresh provider token and retry',
       );
     }
-    // Bind to this user.
-    const supaEmail = supaUser.email ?? null;
+    // Bind to this user. Google `sub` is the stable identifier we record on
+    // the Supabase identity row; email is checked as a fallback (and is the
+    // common path for legacy users who signed in before sub-binding shipped).
+    const googleSub = typeof payload.sub === 'string' ? payload.sub : null;
+    const googleEmail = typeof payload.email === 'string' ? payload.email : null;
+    const emailVerified = payload.email_verified === true;
     const matchesByEmail =
-      !!supaEmail && supaEmail.toLowerCase() === user.email.toLowerCase();
-    const matchesBySupabaseId = !!user.supabase_id && user.supabase_id === supaUser.id;
-    if (!matchesByEmail && !matchesBySupabaseId) {
+      emailVerified &&
+      !!googleEmail &&
+      googleEmail.toLowerCase() === user.email.toLowerCase();
+    // Look up the Supabase user's Google identity `sub` to support binding
+    // by stable id (preferred — survives the user changing their Google
+    // primary email).
+    let matchesBySub = false;
+    if (googleSub && user.supabase_id) {
+      try {
+        const { data: supaData } =
+          await this.supabaseAdmin.auth.admin.getUserById(user.supabase_id);
+        const supaIdentities = supaData?.user?.identities || [];
+        for (const identity of supaIdentities) {
+          if (
+            identity.provider === 'google' &&
+            ((identity.identity_data as { sub?: string } | undefined)?.sub === googleSub ||
+              identity.id === googleSub)
+          ) {
+            matchesBySub = true;
+            break;
+          }
+        }
+      } catch (err) {
+        this.logger.warn(
+          `recent-auth google sub lookup failed for user=${user.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    if (!matchesByEmail && !matchesBySub) {
       throw new UnauthorizedException('Provider token does not belong to this user');
     }
   }

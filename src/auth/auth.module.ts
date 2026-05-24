@@ -5,6 +5,7 @@ import { ThrottlerModule } from '../throttler/throttler.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AppleVerifierService } from './apple-verifier.service';
+import { GoogleVerifierService } from './google-verifier.service';
 
 /**
  * Auth module — does not use PassportModule or JwtModule.
@@ -44,7 +45,7 @@ import { AppleVerifierService } from './apple-verifier.service';
 @Module({
   imports: [ConfigModule, InviteCodesModule, ThrottlerModule],
   controllers: [AuthController],
-  providers: [AuthService, AppleVerifierService],
-  exports: [AuthService, AppleVerifierService],
+  providers: [AuthService, AppleVerifierService, GoogleVerifierService],
+  exports: [AuthService, AppleVerifierService, GoogleVerifierService],
 })
 export class AuthModule {}

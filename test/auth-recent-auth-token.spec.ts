@@ -41,7 +41,9 @@ const supabaseModule = require('@supabase/supabase-js');
 function makeService(overrides: Partial<{
   prismaUser: any;
   appleVerify: any;
-  supabaseAdminGetUser: any;
+  googleVerify: any;
+  googleConfigured: boolean;
+  supabaseAdminGetUserById: any;
   supaClientFactory: any;
 }> = {}) {
   const prisma: any = {
@@ -55,6 +57,10 @@ function makeService(overrides: Partial<{
   const appleVerifier: any = {
     verify: jest.fn(overrides.appleVerify ?? (async () => ({}))),
     isConfigured: () => true,
+  };
+  const googleVerifier: any = {
+    verify: jest.fn(overrides.googleVerify ?? (async () => ({}))),
+    isConfigured: () => overrides.googleConfigured ?? true,
   };
 
   // Stub the global createClient factory so AuthService's per-call clients
@@ -73,29 +79,45 @@ function makeService(overrides: Partial<{
       })),
   );
 
-  const service = new AuthService(prisma, inviteCodes, analytics, audit, appleVerifier);
+  const service = new AuthService(
+    prisma,
+    inviteCodes,
+    analytics,
+    audit,
+    appleVerifier,
+    googleVerifier,
+  );
   // Replace the supabaseAdmin client constructed by the AuthService
-  // constructor with our test stub so Google path tests can drive getUser.
+  // constructor with our test stub. The Google branch uses
+  // `auth.admin.getUserById` to look up the user's Google identity sub for
+  // binding (when matchesByEmail is false).
   (service as any).supabaseAdmin = {
     auth: {
-      getUser: jest.fn(
-        overrides.supabaseAdminGetUser ??
-          (async () => ({
-            data: {
-              user: {
-                id: 'sup-google-1',
-                email: 'oauth@example.test',
-                app_metadata: { provider: 'google', providers: ['google'] },
-                identities: [{ provider: 'google' }],
+      admin: {
+        getUserById: jest.fn(
+          overrides.supabaseAdminGetUserById ??
+            (async () => ({
+              data: {
+                user: {
+                  id: 'sup-1',
+                  email: 'jane@example.test',
+                  identities: [
+                    {
+                      provider: 'google',
+                      id: 'google-sub-jane',
+                      identity_data: { sub: 'google-sub-jane' },
+                    },
+                  ],
+                },
               },
-            },
-            error: null,
-          })),
-      ),
+              error: null,
+            })),
+        ),
+      },
     },
   };
 
-  return { service, prisma, appleVerifier };
+  return { service, prisma, appleVerifier, googleVerifier };
 }
 
 function withEnv(env: Record<string, string | undefined>, fn: () => Promise<void>) {
@@ -220,28 +242,49 @@ describe('AuthService.issueRecentAuthToken — recent-auth (P1-1 / P1-3)', () =>
     );
   });
 
-  it('OAuth Google path: returns a token when access token is fresh and bound to caller', async () => {
+  it('OAuth Google path: returns a token when ID token is fresh and bound by email', async () => {
+    await withEnv(
+      { RECENT_AUTH_SECRET: VALID_SECRET, RECENT_AUTH_TTL_MS: '300000' },
+      async () => {
+        const freshIat = Math.floor(Date.now() / 1000) - 30;
+        const { service, googleVerifier } = makeService({
+          prismaUser: baseUser,
+          googleVerify: async () => ({
+            iat: freshIat,
+            sub: 'google-sub-jane',
+            email: 'jane@example.test',
+            email_verified: true,
+          }),
+        });
+        const result = await service.issueRecentAuthToken('u-1', {
+          provider_token: 'google-id-token',
+          provider: 'google',
+        });
+        expect(result.token.split('.')).toHaveLength(3);
+        expect(googleVerifier.verify).toHaveBeenCalledWith('google-id-token');
+      },
+    );
+  });
+
+  it('OAuth Google path: returns a token when ID token is bound by Google sub even if email differs', async () => {
+    // Users who change their Google primary email keep the same `sub`. We
+    // must accept the token as long as the sub matches a Google identity
+    // recorded on the Supabase user row, regardless of email.
     await withEnv(
       { RECENT_AUTH_SECRET: VALID_SECRET, RECENT_AUTH_TTL_MS: '300000' },
       async () => {
         const freshIat = Math.floor(Date.now() / 1000) - 30;
         const { service } = makeService({
           prismaUser: baseUser,
-          supabaseAdminGetUser: async () => ({
-            data: {
-              user: {
-                id: 'sup-1',
-                email: 'jane@example.test',
-                app_metadata: { provider: 'google', providers: ['google'] },
-                identities: [{ provider: 'google' }],
-              },
-            },
-            error: null,
+          googleVerify: async () => ({
+            iat: freshIat,
+            sub: 'google-sub-jane',
+            email: 'jane-new@example.test',
+            email_verified: true,
           }),
         });
-        const token = makeFakeJwtWithIat(freshIat);
         const result = await service.issueRecentAuthToken('u-1', {
-          provider_token: token,
+          provider_token: 'google-id-token',
           provider: 'google',
         });
         expect(result.token.split('.')).toHaveLength(3);
@@ -249,19 +292,175 @@ describe('AuthService.issueRecentAuthToken — recent-auth (P1-1 / P1-3)', () =>
     );
   });
 
-  it('OAuth Google path: rejects a stale access token', async () => {
+  it('OAuth Google path: rejects a stale ID token', async () => {
     await withEnv(
       { RECENT_AUTH_SECRET: VALID_SECRET, RECENT_AUTH_TTL_MS: '300000' },
       async () => {
         const staleIat = Math.floor(Date.now() / 1000) - 60 * 60;
-        const { service } = makeService({ prismaUser: baseUser });
-        const token = makeFakeJwtWithIat(staleIat);
+        const { service } = makeService({
+          prismaUser: baseUser,
+          googleVerify: async () => ({
+            iat: staleIat,
+            sub: 'google-sub-jane',
+            email: 'jane@example.test',
+            email_verified: true,
+          }),
+        });
         await expect(
           service.issueRecentAuthToken('u-1', {
-            provider_token: token,
+            provider_token: 'stale-google-id-token',
             provider: 'google',
           }),
         ).rejects.toBeInstanceOf(UnauthorizedException);
+      },
+    );
+  });
+
+  it('OAuth Google path: rejects when GoogleVerifierService throws (bad signature, wrong audience, etc.)', async () => {
+    await withEnv(
+      { RECENT_AUTH_SECRET: VALID_SECRET, RECENT_AUTH_TTL_MS: '300000' },
+      async () => {
+        const { service } = makeService({
+          prismaUser: baseUser,
+          googleVerify: async () => {
+            throw new Error('signature verification failed');
+          },
+        });
+        await expect(
+          service.issueRecentAuthToken('u-1', {
+            provider_token: 'forged-or-supabase-token',
+            provider: 'google',
+          }),
+        ).rejects.toBeInstanceOf(UnauthorizedException);
+      },
+    );
+  });
+
+  it('OAuth Google path: rejects the current Supabase session token used as provider_token (Audit #3 P1)', async () => {
+    // This is the headline regression: under the old implementation,
+    // `verifyOAuthRecentAuthProof` called `supabaseAdmin.auth.getUser()`
+    // which accepts a Supabase access JWT. Because the caller's
+    // Authorization header IS a Supabase access JWT, the same value passed
+    // as `provider_token` passed the "fresh re-auth" gate without any
+    // real Google interaction.
+    //
+    // The fix routes the token through GoogleVerifierService, which
+    // verifies it against Google's JWKS with audience pinned to
+    // GOOGLE_CLIENT_ID(S). A Supabase access JWT is signed by Supabase
+    // (ES256, kid=...), with `iss` like
+    // "https://<project>.supabase.co/auth/v1", `aud` "authenticated", so
+    // jwtVerify rejects it on issuer/audience/signature grounds — we
+    // simulate that here by having the verifier throw.
+    await withEnv(
+      {
+        RECENT_AUTH_SECRET: VALID_SECRET,
+        RECENT_AUTH_TTL_MS: '300000',
+        GOOGLE_CLIENT_ID: 'real-google-client-id.apps.googleusercontent.com',
+      },
+      async () => {
+        const supabaseSessionJwtHeader = Buffer.from(
+          JSON.stringify({ alg: 'ES256', typ: 'JWT', kid: 'supabase-key-id' }),
+        ).toString('base64url');
+        const supabaseSessionJwtPayload = Buffer.from(
+          JSON.stringify({
+            iss: 'https://abc.supabase.co/auth/v1',
+            aud: 'authenticated',
+            sub: 'sup-1',
+            iat: Math.floor(Date.now() / 1000) - 10,
+            exp: Math.floor(Date.now() / 1000) + 3600,
+            email: 'jane@example.test',
+            app_metadata: { provider: 'google' },
+          }),
+        ).toString('base64url');
+        const supabaseSessionToken = `${supabaseSessionJwtHeader}.${supabaseSessionJwtPayload}.supabase-signature`;
+
+        const { service, googleVerifier } = makeService({
+          prismaUser: baseUser,
+          // The real GoogleVerifierService (jose.jwtVerify) would reject
+          // this token: wrong issuer, wrong audience, and the signature
+          // doesn't validate against Google's JWKS. Simulate that.
+          googleVerify: async () => {
+            throw new Error(
+              'unexpected "iss" claim value (expected accounts.google.com)',
+            );
+          },
+        });
+        await expect(
+          service.issueRecentAuthToken('u-1', {
+            provider_token: supabaseSessionToken,
+            provider: 'google',
+          }),
+        ).rejects.toBeInstanceOf(UnauthorizedException);
+        expect(googleVerifier.verify).toHaveBeenCalledWith(supabaseSessionToken);
+      },
+    );
+  });
+
+  it('OAuth Google path: rejects a fresh, valid Google ID token issued for a different email (Audit #3 P1)', async () => {
+    // Attacker has their own freshly minted Google ID token (verifies
+    // cleanly against Google's JWKS, audience matches our client id, iat
+    // is fresh). They send it as `provider_token` on a recent-auth call
+    // for the victim's account. Even though the token is "real", the
+    // verified Google identity (email/sub) does not belong to the victim
+    // — the call MUST be rejected.
+    await withEnv(
+      { RECENT_AUTH_SECRET: VALID_SECRET, RECENT_AUTH_TTL_MS: '300000' },
+      async () => {
+        const freshIat = Math.floor(Date.now() / 1000) - 30;
+        const { service } = makeService({
+          prismaUser: baseUser,
+          googleVerify: async () => ({
+            iat: freshIat,
+            sub: 'google-sub-attacker',
+            email: 'attacker@example.test',
+            email_verified: true,
+          }),
+          // Victim's Supabase row stores its own Google identity sub —
+          // not the attacker's. So sub-binding fails too.
+          supabaseAdminGetUserById: async () => ({
+            data: {
+              user: {
+                id: 'sup-1',
+                email: 'jane@example.test',
+                identities: [
+                  {
+                    provider: 'google',
+                    id: 'google-sub-jane',
+                    identity_data: { sub: 'google-sub-jane' },
+                  },
+                ],
+              },
+            },
+            error: null,
+          }),
+        });
+        await expect(
+          service.issueRecentAuthToken('u-1', {
+            provider_token: 'attacker-google-id-token',
+            provider: 'google',
+          }),
+        ).rejects.toBeInstanceOf(UnauthorizedException);
+      },
+    );
+  });
+
+  it('OAuth Google path: rejects when GOOGLE_CLIENT_ID(S) is not configured', async () => {
+    await withEnv(
+      { RECENT_AUTH_SECRET: VALID_SECRET, RECENT_AUTH_TTL_MS: '300000' },
+      async () => {
+        const { service, googleVerifier } = makeService({
+          prismaUser: baseUser,
+          googleConfigured: false,
+        });
+        await expect(
+          service.issueRecentAuthToken('u-1', {
+            provider_token: 'whatever',
+            provider: 'google',
+          }),
+        ).rejects.toBeInstanceOf(UnauthorizedException);
+        // Must not have leaked to the verifier — we short-circuit when
+        // unconfigured to avoid silently passing tokens with no audience pin.
+        expect(googleVerifier.verify).not.toHaveBeenCalled();
       },
     );
   });
@@ -324,22 +523,32 @@ describe('AuthService.issueRecentAuthToken — recent-auth (P1-1 / P1-3)', () =>
         const freshIat = Math.floor(Date.now() / 1000) - 30;
         const { service } = makeService({
           prismaUser: baseUser,
-          supabaseAdminGetUser: async () => ({
+          googleVerify: async () => ({
+            iat: freshIat,
+            sub: 'google-sub-other',
+            email: 'someone-else@example.test',
+            email_verified: true,
+          }),
+          supabaseAdminGetUserById: async () => ({
             data: {
               user: {
-                id: 'sup-OTHER',
-                email: 'someone-else@example.test',
-                app_metadata: { provider: 'google', providers: ['google'] },
-                identities: [{ provider: 'google' }],
+                id: 'sup-1',
+                email: 'jane@example.test',
+                identities: [
+                  {
+                    provider: 'google',
+                    id: 'google-sub-jane',
+                    identity_data: { sub: 'google-sub-jane' },
+                  },
+                ],
               },
             },
             error: null,
           }),
         });
-        const token = makeFakeJwtWithIat(freshIat);
         await expect(
           service.issueRecentAuthToken('u-1', {
-            provider_token: token,
+            provider_token: 'other-user-google-id-token',
             provider: 'google',
           }),
         ).rejects.toBeInstanceOf(UnauthorizedException);

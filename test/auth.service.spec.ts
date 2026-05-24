@@ -23,6 +23,12 @@ const makeAppleVerifierMock = () =>
     getAudiences: jest.fn(() => []),
     verify: jest.fn(),
   }) as any;
+const makeGoogleVerifierMock = () =>
+  ({
+    isConfigured: jest.fn(() => false),
+    getAudiences: jest.fn(() => []),
+    verify: jest.fn(),
+  }) as any;
 
 describe('AuthService.googleAuth', () => {
   let prismaMock: any;
@@ -48,6 +54,7 @@ describe('AuthService.googleAuth', () => {
       makeAnalyticsMock(),
       makeAuditMock(),
       makeAppleVerifierMock(),
+      makeGoogleVerifierMock(),
     );
     (service as any).supabaseAdmin = supabaseAdminMock;
   });
@@ -111,6 +118,7 @@ describe('AuthService.selectRole', () => {
       makeAnalyticsMock(),
       makeAuditMock(),
       makeAppleVerifierMock(),
+      makeGoogleVerifierMock(),
     );
   });
 

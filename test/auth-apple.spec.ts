@@ -48,6 +48,13 @@ const makeAppleVerifierMock = (configured: boolean) =>
     verify: jest.fn(),
   }) as any;
 
+const makeGoogleVerifierMock = () =>
+  ({
+    isConfigured: jest.fn(() => false),
+    getAudiences: jest.fn(() => []),
+    verify: jest.fn(),
+  }) as any;
+
 function buildService(opts: { configured: boolean }) {
   const prismaMock: any = {
     user: {
@@ -65,6 +72,7 @@ function buildService(opts: { configured: boolean }) {
     analyticsMock,
     makeAuditMock(),
     appleVerifierMock,
+    makeGoogleVerifierMock(),
   );
   // The Supabase client created inside appleAuth() routes
   // signInWithIdToken to the global stub registered per test (see jest.mock
@@ -410,6 +418,7 @@ describe('AuthService.getSignupPolicy — apple provider', () => {
       makeAnalyticsMock(),
       makeAuditMock(),
       makeAppleVerifierMock(configured),
+      makeGoogleVerifierMock(),
     );
   }
 
