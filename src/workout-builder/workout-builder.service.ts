@@ -91,11 +91,35 @@ export class WorkoutBuilderService {
   }
 
   /**
-   * Cursor is the last row's `id`. Forward-only; consumers paginate by
-   * passing the previous `nextCursor` back as `cursor`.
+   * Keyset pagination cursor. We encode the sort-leading field plus the
+   * row id so two rows sharing the same timestamp can still be ordered
+   * deterministically. The encoded payload is base64'd so it stays
+   * opaque to clients.
+   *
+   * Format (after base64 decode): `${isoTimestamp}|${id}`
    */
-  private cursorToWhere(cursor: string | null | undefined): { id: { gt: string } } | undefined {
-    return cursor ? { id: { gt: cursor } } : undefined;
+  private encodeCursor(timestamp: Date | string, id: string): string {
+    const iso =
+      typeof timestamp === 'string' ? timestamp : timestamp.toISOString();
+    return Buffer.from(`${iso}|${id}`, 'utf8').toString('base64');
+  }
+
+  private decodeCursor(
+    cursor: string | null | undefined,
+  ): { timestamp: Date; id: string } | null {
+    if (!cursor) return null;
+    try {
+      const raw = Buffer.from(cursor, 'base64').toString('utf8');
+      const sep = raw.indexOf('|');
+      if (sep <= 0) return null;
+      const iso = raw.slice(0, sep);
+      const id = raw.slice(sep + 1);
+      const timestamp = new Date(iso);
+      if (Number.isNaN(timestamp.getTime()) || !id) return null;
+      return { timestamp, id };
+    } catch {
+      return null;
+    }
   }
 
   // ─── Idempotency helper ──────────────────────────────────────────────────
@@ -202,19 +226,38 @@ export class WorkoutBuilderService {
 
   // ─── WorkoutPlan ──────────────────────────────────────────────────────────
 
+  /**
+   * Coach plan list. Keyset paginated by (created_at DESC, id DESC) so
+   * newest plans come first and the ordering matches the composite
+   * index (coach_id, archived_at, created_at DESC) without a sort step.
+   */
   async listPlans(
     coachId: string,
     query: PaginatedQuery = {},
   ): Promise<Paginated<unknown>> {
     await this.assertCoach(coachId);
     const limit = this.resolveLimit(query.limit);
+    const decoded = this.decodeCursor(query.cursor);
+    // (created_at, id) DESC tiebreak: next page starts strictly after
+    // the cursor row. Use OR to express the lexicographic "<".
+    const cursorWhere: Prisma.WorkoutPlanWhereInput | undefined = decoded
+      ? {
+          OR: [
+            { created_at: { lt: decoded.timestamp } },
+            {
+              created_at: decoded.timestamp,
+              id: { lt: decoded.id },
+            },
+          ],
+        }
+      : undefined;
     const items = await this.prisma.workoutPlan.findMany({
       where: {
         coach_id: coachId,
         archived_at: null,
-        ...this.cursorToWhere(query.cursor),
+        ...(cursorWhere ?? {}),
       },
-      orderBy: { id: 'asc' },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       include: {
         exercises: {
@@ -225,7 +268,9 @@ export class WorkoutBuilderService {
     });
     const hasMore = items.length > limit;
     const page = hasMore ? items.slice(0, limit) : items;
-    const nextCursor = hasMore ? page[page.length - 1].id : null;
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last ? this.encodeCursor(last.created_at, last.id) : null;
     return { items: page, nextCursor };
   }
 
@@ -453,6 +498,11 @@ export class WorkoutBuilderService {
     );
   }
 
+  /**
+   * Per-plan assignment list. Keyset paginated by (scheduled_for ASC,
+   * id ASC) so upcoming sessions come first and ordering matches the
+   * (workout_plan_id, scheduled_for) composite index.
+   */
   async listAssignments(
     coachId: string,
     planId: string,
@@ -461,17 +511,34 @@ export class WorkoutBuilderService {
     await this.assertCoach(coachId);
     await this.assertPlanOwnership(coachId, planId);
     const limit = this.resolveLimit(query.limit);
+    const decoded = this.decodeCursor(query.cursor);
+    const cursorWhere: Prisma.ClientWorkoutAssignmentWhereInput | undefined =
+      decoded
+        ? {
+            OR: [
+              { scheduled_for: { gt: decoded.timestamp } },
+              {
+                scheduled_for: decoded.timestamp,
+                id: { gt: decoded.id },
+              },
+            ],
+          }
+        : undefined;
     const items = await this.prisma.clientWorkoutAssignment.findMany({
       where: {
         workout_plan_id: planId,
-        ...this.cursorToWhere(query.cursor),
+        ...(cursorWhere ?? {}),
       },
-      orderBy: { id: 'asc' },
+      orderBy: [{ scheduled_for: 'asc' }, { id: 'asc' }],
       take: limit + 1,
     });
     const hasMore = items.length > limit;
     const page = hasMore ? items.slice(0, limit) : items;
-    const nextCursor = hasMore ? page[page.length - 1].id : null;
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? this.encodeCursor(last.scheduled_for, last.id)
+        : null;
     return { items: page, nextCursor };
   }
 
@@ -486,12 +553,25 @@ export class WorkoutBuilderService {
     query: PaginatedQuery = {},
   ): Promise<Paginated<unknown>> {
     const limit = this.resolveLimit(query.limit);
+    const decoded = this.decodeCursor(query.cursor);
+    const cursorWhere: Prisma.ClientWorkoutAssignmentWhereInput | undefined =
+      decoded
+        ? {
+            OR: [
+              { scheduled_for: { gt: decoded.timestamp } },
+              {
+                scheduled_for: decoded.timestamp,
+                id: { gt: decoded.id },
+              },
+            ],
+          }
+        : undefined;
     const items = await this.prisma.clientWorkoutAssignment.findMany({
       where: {
         client_id: userId,
-        ...this.cursorToWhere(query.cursor),
+        ...(cursorWhere ?? {}),
       },
-      orderBy: { id: 'asc' },
+      orderBy: [{ scheduled_for: 'asc' }, { id: 'asc' }],
       take: limit + 1,
       include: {
         workout_plan: {
@@ -506,7 +586,11 @@ export class WorkoutBuilderService {
     });
     const hasMore = items.length > limit;
     const page = hasMore ? items.slice(0, limit) : items;
-    const nextCursor = hasMore ? page[page.length - 1].id : null;
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? this.encodeCursor(last.scheduled_for, last.id)
+        : null;
     return { items: page, nextCursor };
   }
 

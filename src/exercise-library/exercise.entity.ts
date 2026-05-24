@@ -22,6 +22,10 @@ export interface Exercise {
   instructions: string[];
   /** Animated GIF URL served by ExerciseDB CDN. */
   gifUrl: string;
+  /** Optional MP4/HLS video URL (YMove / MuscleWiki providers). */
+  video_url?: string | null;
+  /** Which provider served `video_url` (e.g. 'ymove', 'musclewiki'). */
+  video_provider?: string | null;
 }
 
 /** Paginated search result returned to callers. */

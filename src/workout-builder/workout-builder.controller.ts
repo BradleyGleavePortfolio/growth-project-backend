@@ -30,14 +30,13 @@ import {
   BadRequestException,
   Body,
   Controller,
+  createParamDecorator,
   Delete,
+  ExecutionContext,
   Get,
-  Headers,
-  Injectable,
   Param,
   ParseUUIDPipe,
   Patch,
-  PipeTransform,
   Post,
   Put,
   Query,
@@ -70,30 +69,29 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
- * Validates an `Idempotency-Key` header is present and is a valid UUID.
+ * Reads + validates the `Idempotency-Key` request header.
  *
- * Used on every coach POST/PATCH/PUT/DELETE mutation. Missing or malformed
- * headers fail closed with 400 — the audit explicitly flagged optional /
- * unvalidated headers as a P1 because retries without a stable key cannot
- * be deduped, and a malformed key turns into a unique row that pollutes
- * the ledger.
+ * Used on every coach POST/PATCH/PUT/DELETE mutation. Missing or
+ * malformed headers fail closed with 400 — the audit explicitly flagged
+ * optional / unvalidated headers as a P1 because retries without a
+ * stable key cannot be deduped, and a malformed key turns into a unique
+ * row that pollutes the ledger.
  */
-@Injectable()
-export class RequiredUuidIdempotencyKeyPipe implements PipeTransform {
-  transform(value: unknown): string {
-    if (typeof value !== 'string' || !value) {
-      throw new BadRequestException(
-        'Idempotency-Key header is required and must be a UUID',
-      );
-    }
-    if (!UUID_RE.test(value)) {
+export const RequiredIdempotencyKey = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): string => {
+    const req = ctx.switchToHttp().getRequest<{
+      headers: Record<string, string | string[] | undefined>;
+    }>();
+    const raw = req.headers[IDEMPOTENCY_HEADER];
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    if (typeof value !== 'string' || !value || !UUID_RE.test(value)) {
       throw new BadRequestException(
         'Idempotency-Key header is required and must be a UUID',
       );
     }
     return value;
-  }
-}
+  },
+);
 
 @ApiTags('workout-plans')
 @ApiBearerAuth()
@@ -132,7 +130,7 @@ export class WorkoutBuilderController {
   createPlan(
     @Req() req: AuthedRequest,
     @Body() dto: CreateWorkoutPlanDto,
-    @Headers(IDEMPOTENCY_HEADER, RequiredUuidIdempotencyKeyPipe)
+    @RequiredIdempotencyKey()
     idempotencyKey: string,
   ) {
     return this.workoutBuilder.createPlan(req.user.id, dto, idempotencyKey);
@@ -155,7 +153,7 @@ export class WorkoutBuilderController {
     @Req() req: AuthedRequest,
     @Param('planId', new ParseUUIDPipe()) planId: string,
     @Body() dto: UpdateWorkoutPlanDto,
-    @Headers(IDEMPOTENCY_HEADER, RequiredUuidIdempotencyKeyPipe)
+    @RequiredIdempotencyKey()
     idempotencyKey: string,
   ) {
     return this.workoutBuilder.updatePlan(req.user.id, planId, dto, idempotencyKey);
@@ -173,7 +171,7 @@ export class WorkoutBuilderController {
   archivePlan(
     @Req() req: AuthedRequest,
     @Param('planId', new ParseUUIDPipe()) planId: string,
-    @Headers(IDEMPOTENCY_HEADER, RequiredUuidIdempotencyKeyPipe)
+    @RequiredIdempotencyKey()
     idempotencyKey: string,
   ) {
     return this.workoutBuilder.archivePlan(req.user.id, planId, idempotencyKey);
@@ -191,7 +189,7 @@ export class WorkoutBuilderController {
     @Req() req: AuthedRequest,
     @Param('planId', new ParseUUIDPipe()) planId: string,
     @Body() body: UpsertExerciseRowsDto,
-    @Headers(IDEMPOTENCY_HEADER, RequiredUuidIdempotencyKeyPipe)
+    @RequiredIdempotencyKey()
     idempotencyKey: string,
   ) {
     return this.workoutBuilder.setExercises(
@@ -210,7 +208,7 @@ export class WorkoutBuilderController {
     @Req() req: AuthedRequest,
     @Param('planId', new ParseUUIDPipe()) planId: string,
     @Body() dto: CreateAssignmentDto,
-    @Headers(IDEMPOTENCY_HEADER, RequiredUuidIdempotencyKeyPipe)
+    @RequiredIdempotencyKey()
     idempotencyKey: string,
   ) {
     return this.workoutBuilder.assignPlan(req.user.id, planId, dto, idempotencyKey);
