@@ -57,15 +57,22 @@ export class BillingService {
   // delivery, { processed: false, alreadyProcessed: true } on duplicates so
   // the caller can return 200 either way (Stripe stops retrying after a 2xx).
   //
-  // Insert-first idempotency: we claim the event id by inserting into
-  // StripeProcessedEvent before running the handler. Two concurrent
-  // deliveries of the same event id race on the @id unique constraint; the
-  // loser hits P2002 and short-circuits as already-processed. This closes
-  // the read-then-write race the previous implementation had.
+  // Audit #3 P1-7 — split event-receipt from handler-completion:
   //
-  // Handler errors *after* the claim are logged but the event stays
-  // recorded — same poison-pill protection as the prior `finally` pattern,
-  // but no longer racy.
+  //   * `StripeProcessedEvent.processed_at` is set when we claim the event
+  //     id (insert-first). This is the idempotency anchor — two
+  //     concurrent deliveries race on the @id unique constraint and the
+  //     loser short-circuits.
+  //   * `StripeProcessedEvent.handler_completed_at` is set ONLY when the
+  //     handler finishes without throwing. If the process crashes between
+  //     receipt and completion, the row exists with handler_completed_at
+  //     NULL, and the reconciliation worker
+  //     (GuestCheckoutReconciliationService) picks up any associated
+  //     GuestCheckout still stuck in `paid` and re-runs conversion.
+  //
+  // Stripe replays after a partial completion will still short-circuit
+  // (alreadyProcessed=true), but the reconciliation worker covers the
+  // re-fulfilment path so no paid guest is left without an account.
   async handleEvent(event: StripeEvent) {
     if (!event?.id || !event?.type) {
       return { processed: false, reason: 'malformed' };
@@ -82,6 +89,7 @@ export class BillingService {
       throw err;
     }
 
+    let handlerOk = false;
     try {
       // Phase 2-3 Connect — give the checkout handler first refusal on
       // events that may belong to a coach-package purchase. If it claims
@@ -170,16 +178,43 @@ export class BillingService {
         default:
           this.logger.log(`Ignoring unhandled Stripe event type: ${event.type}`);
       }
+      handlerOk = true;
     } catch (err) {
       // The event id is already recorded, so a poison-pill payload won't
       // loop through Stripe's retry queue. Surface the error in logs and
       // return — the caller still treats this as a successful delivery
       // because retrying would just hit the idempotency short-circuit.
+      // handler_completed_at stays NULL so the reconciliation worker can
+      // notice this row is fulfilled-incompletely.
       this.logger.error(
         `Stripe event handler failed event=${event.id} type=${event.type}: ${
           (err as Error)?.message ?? String(err)
         }`,
       );
+    }
+    if (handlerOk) {
+      // Mark the event handler-complete only after the switch above ran
+      // without throwing. updateMany (not update) is intentional so a
+      // concurrent delete (extremely rare; only the housekeeping job
+      // does it) is not a crash.
+      try {
+        await this.prisma.stripeProcessedEvent.updateMany({
+          where: {
+            stripe_event_id: event.id,
+            handler_completed_at: null,
+          },
+          data: { handler_completed_at: new Date() },
+        });
+      } catch (err) {
+        // Idempotency anchor is still in place, so the worst case is
+        // the reconciliation worker doing an extra scan pass. Log and
+        // continue — never throw from the webhook response path.
+        this.logger.error(
+          `Failed to mark StripeProcessedEvent handler_completed_at for ${event.id}: ${
+            (err as Error)?.message ?? String(err)
+          }`,
+        );
+      }
     }
     return { processed: true };
   }

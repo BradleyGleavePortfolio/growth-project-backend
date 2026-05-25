@@ -497,12 +497,24 @@ model PaymentFailure {
 
 // Idempotency table for Stripe webhook delivery. Stripe retries deliveries on
 // timeouts, so we record every event id and short-circuit duplicates.
+//
+// Audit #3 P1-7 — event-receipt is recorded immediately (processed_at is
+// always present), but handler-completion is recorded separately via
+// handler_completed_at. The webhook treats an event as durably processed
+// only when both columns are set. If the handler crashes after insert
+// but before completion, the reconciliation worker picks the row up by
+// scanning for handler_completed_at IS NULL plus an age threshold, and
+// Stripe may also redeliver (we still 200 on the redelivery, because the
+// reconciliation worker covers the re-fulfilment path — see
+// GuestCheckoutReconciliationService).
 model StripeProcessedEvent {
-  stripe_event_id String   @id
-  type            String
-  processed_at    DateTime @default(now())
+  stripe_event_id      String    @id
+  type                 String
+  processed_at         DateTime  @default(now())
+  handler_completed_at DateTime?
 
   @@index([processed_at])
+  @@index([handler_completed_at])
 }
 
 // Phase 1 Connect — Stripe Express account per coach. The coach goes through
@@ -2849,7 +2861,17 @@ model GuestCheckout {
   guest_email String
   guest_name  String
 
-  /// pending | paid | failed | converted (enforced by CHECK constraint).
+  /// State machine — enforced by a CHECK constraint at the DB layer:
+  ///   pending                    → paid                          (Stripe webhook)
+  ///   paid                       → converted                     (Supabase + DB OK)
+  ///   paid                       → conversion_failed_retryable   (transient failure)
+  ///   conversion_failed_retryable → converted                    (reconciliation OK)
+  ///   conversion_failed_retryable → conversion_failed_terminal   (>= 5 retries)
+  ///   pending                    → failed                        (Stripe PI failed)
+  /// `failed` is the legacy terminal state for the pre-checkout
+  /// failure path (Stripe rejected the PI). It is NOT reachable from
+  /// `paid` — once we have money, the row only moves through retryable
+  /// reconciliation. Audit #3 P1-6 added that durability.
   status String @default("pending")
 
   /// FK to User row created after payment succeeds. Null until converted.
@@ -2860,6 +2882,17 @@ model GuestCheckout {
   /// Server dedups via the unique constraint + P2002 catch so retries
   /// collapse to the same row.
   idempotency_key String @unique
+
+  /// Audit #3 P1-6 — reconciliation bookkeeping. retry_count counts
+  /// Supabase-create / DB-transaction reconciliation attempts on
+  /// `conversion_failed_retryable` rows; last_error stores the
+  /// short tag (e.g. `supabase_timeout`, `db_unique_violation`) for
+  /// operator dashboards; last_retry_at lets the worker back off and
+  /// prevents tight-loop reprocessing. Hard cap is 5 — past that the
+  /// row moves to `conversion_failed_terminal` and pages on-call.
+  retry_count   Int       @default(0)
+  last_error    String?
+  last_retry_at DateTime?
 
   created_at DateTime @default(now())
 
@@ -2872,6 +2905,10 @@ model GuestCheckout {
   @@index([status])
   @@index([guest_email])
   @@index([stripe_payment_intent_id])
+  // Reconciliation worker scans status='conversion_failed_retryable'
+  // rows ordered by last_retry_at NULLS FIRST. The composite index
+  // serves both the scan filter and the ordering.
+  @@index([status, last_retry_at])
 }
 
 // Phase 3 Connect — Per-client Stripe Customer on the platform account.

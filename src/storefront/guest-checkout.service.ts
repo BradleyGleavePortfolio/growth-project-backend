@@ -17,6 +17,11 @@ import {
   StripeConnectApiService,
 } from '../connect/stripe-connect-api.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import {
+  SupabaseCreateUserError,
+  SupabaseExistingUserNotFoundError,
+  SupabaseTimeoutError,
+} from './errors/guest-conversion.error';
 import type { GuestCheckoutDto } from './storefront.dto';
 import type { GuestCheckoutResult } from './storefront.types';
 
@@ -44,11 +49,20 @@ const SUPABASE_LIST_USERS_PAGE_SIZE = 200;
 const SUPABASE_LIST_USERS_MAX_PAGES = 50;
 const SUPABASE_LIST_USERS_TIMEOUT_MS = 8_000;
 
-// P1-3 — Phase 1 cannot honour recurring billing. Stripe subscription
-// lifecycle (renewal webhooks, dunning, cancellation) is not implemented
-// for the guest path; selling a recurring package as a one-off PI would
-// silently misbill. Reject at the checkout endpoint with 422.
-const RECURRING_BILLING_TYPES = new Set(['monthly', 'quarterly', 'annual']);
+// Audit #3 P1-5 — Phase 1 cannot honour recurring billing. Stripe
+// subscription lifecycle (renewal webhooks, dunning, cancellation) is not
+// implemented for the guest path; selling a recurring package as a
+// one-off PI would silently misbill. The check uses the canonical schema
+// value `recurring` (CoachPackage.billing_type ∈ { 'one_time', 'recurring'
+// }) — display labels like `monthly`/`quarterly`/`annual` live in the
+// interval columns and must NEVER be load-bearing for this guard.
+const CANONICAL_RECURRING_BILLING_TYPE = 'recurring';
+
+// Audit #3 P1-6 — reconciliation retry cap. After 5 consecutive failures
+// the row moves to `conversion_failed_terminal` and the operator
+// dashboard pages on-call. The cap exists to bound how long a stuck row
+// can churn through Supabase / DB before a human looks at it.
+export const RECONCILIATION_MAX_ATTEMPTS = 5;
 
 // Used by BillingService to detect a guest-checkout PaymentIntent without
 // pulling GuestCheckoutService into its constructor. The same key is
@@ -77,9 +91,7 @@ function withTimeout<T>(
   let timer: NodeJS.Timeout;
   const timeout = new Promise<T>((_, reject) => {
     timer = setTimeout(() => {
-      const err = new Error(`${tag}_timeout`);
-      (err as Error & { code?: string }).code = `${tag}_timeout`;
-      reject(err);
+      reject(new SupabaseTimeoutError(tag));
     }, ms);
   });
   return Promise.race([
@@ -150,12 +162,14 @@ export class GuestCheckoutService {
       });
     }
 
-    // P1-3 — recurring packages cannot be sold through Phase 1 guest
-    // checkout. We render them on the public storefront so coaches can
-    // share the link, but checkout is gated until subscription lifecycle
-    // ships. Return 422 with a human-readable message rather than 503
-    // so the storefront can surface the explanation directly.
-    if (RECURRING_BILLING_TYPES.has(pkg.billing_type)) {
+    // Audit #3 P1-5 — recurring packages cannot be sold through Phase 1
+    // guest checkout. The previous guard checked the display labels
+    // (`monthly`/`quarterly`/`annual`) which live in the interval
+    // columns, not the canonical schema value, and let any package whose
+    // billing_type was the canonical 'recurring' slip through and get
+    // charged as a one-off PI with no subscription lifecycle. The check
+    // now uses the canonical schema value directly.
+    if (pkg.billing_type === CANONICAL_RECURRING_BILLING_TYPE) {
       throw new UnprocessableEntityException({
         error: 'RECURRING_NOT_SUPPORTED',
         message:
@@ -348,8 +362,15 @@ export class GuestCheckoutService {
         message: 'This link is not available.',
       });
     }
-    if (existing.status === 'failed' || existing.status === 'converted') {
-      // Spent key — storefront must roll a new UUID.
+    if (
+      existing.status === 'failed' ||
+      existing.status === 'converted' ||
+      existing.status === 'conversion_failed_terminal'
+    ) {
+      // Spent key — storefront must roll a new UUID. `paid` and
+      // `conversion_failed_retryable` are intentionally NOT spent: the
+      // reconciliation worker still owns those rows. Returning a fresh
+      // client secret for a paid row would create a second charge.
       throw new NotFoundException({
         error: 'TOKEN_NOT_FOUND',
         message: 'This checkout link has expired. Please request a new one.',
@@ -507,10 +528,15 @@ export class GuestCheckoutService {
       supabaseUserId = result.supabaseUserId;
       tempPassword = result.tempPassword;
     } catch (err) {
+      // Audit #3 P1-6 — Supabase failures are transient by default
+      // (network blip, rate limit, capacity issue). Flip to
+      // conversion_failed_retryable so the reconciliation worker picks
+      // it up; never go to terminal `failed` from a paid state. The
+      // safeErrorTag is short and PII-free.
       this.logger.error(
         `convertGuestToUser: Supabase user creation failed for ${checkout.id} (tag=${safeErrorTag(err)})`,
       );
-      await this.markFailed(checkout.id);
+      await this.markRetryable(checkout.id, `supabase:${safeErrorTag(err)}`);
       return;
     }
 
@@ -600,10 +626,14 @@ export class GuestCheckoutService {
         });
       });
     } catch (err) {
+      // Audit #3 P1-6 — DB transaction failures (deadlocks, unique
+      // races, connection drops) are transient. Flip to
+      // conversion_failed_retryable; the reconciliation worker will
+      // pick this row up and retry the whole convert path.
       this.logger.error(
         `convertGuestToUser: transaction failed for ${checkout.id} (tag=${safeErrorTag(err)})`,
       );
-      await this.markFailed(checkout.id);
+      await this.markRetryable(checkout.id, `db:${safeErrorTag(err)}`);
       return;
     }
 
@@ -676,7 +706,7 @@ export class GuestCheckoutService {
       errorMsg.includes('registered') ||
       errorMsg.includes('exists');
     if (!alreadyExists) {
-      throw error ?? new Error('supabase_createUser_failed');
+      throw error ?? new SupabaseCreateUserError(errorMsg);
     }
 
     // P1-5 — page through every Supabase user (up to the configured
@@ -688,7 +718,7 @@ export class GuestCheckoutService {
     for (let page = 1; page <= SUPABASE_LIST_USERS_MAX_PAGES; page += 1) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
-        throw new Error('supabase_listUsers_timeout');
+        throw new SupabaseTimeoutError('supabase_listUsers');
       }
       const list = await withTimeout(
         client.auth.admin.listUsers({
@@ -714,20 +744,99 @@ export class GuestCheckoutService {
         break;
       }
     }
-    throw new Error('supabase_existing_user_not_found');
+    throw new SupabaseExistingUserNotFoundError();
   }
 
-  private async markFailed(checkoutId: string): Promise<void> {
+  // Audit #3 P1-6 — flip a paid (or retryable) row to
+  // conversion_failed_retryable, increment retry_count, and stamp the
+  // attempt. Past RECONCILIATION_MAX_ATTEMPTS the row moves to
+  // conversion_failed_terminal and the operator dashboard pages on-call.
+  // last_error is a short tag (no PII).
+  private async markRetryable(
+    checkoutId: string,
+    lastError: string,
+  ): Promise<void> {
     try {
-      await this.prisma.guestCheckout.updateMany({
-        where: { id: checkoutId, status: 'paid' },
-        data: { status: 'failed' },
+      // Read current retry_count so we can decide between retryable
+      // and terminal. The branch is small enough that a single read +
+      // updateMany is simpler than coercing it into a single CASE
+      // statement; the row is identified by primary key so contention
+      // is minimal.
+      const row = await this.prisma.guestCheckout.findUnique({
+        where: { id: checkoutId },
+        select: { retry_count: true, status: true },
       });
+      if (!row) return;
+      const nextCount = row.retry_count + 1;
+      const terminal = nextCount >= RECONCILIATION_MAX_ATTEMPTS;
+      await this.prisma.guestCheckout.updateMany({
+        where: {
+          id: checkoutId,
+          status: { in: ['paid', 'conversion_failed_retryable'] },
+        },
+        data: {
+          status: terminal
+            ? 'conversion_failed_terminal'
+            : 'conversion_failed_retryable',
+          retry_count: nextCount,
+          last_error: lastError.slice(0, 200),
+          last_retry_at: new Date(),
+        },
+      });
+      if (terminal) {
+        this.logger.error(
+          `GuestCheckout ${checkoutId} reached conversion_failed_terminal after ${nextCount} retries (last_error=${lastError.slice(0, 64)})`,
+        );
+      }
     } catch (err) {
       this.logger.error(
-        `markFailed crashed for ${checkoutId} (tag=${safeErrorTag(err)})`,
+        `markRetryable crashed for ${checkoutId} (tag=${safeErrorTag(err)})`,
       );
     }
+  }
+
+  // Audit #3 P1-6 + P1-7 — entry point for the reconciliation worker.
+  // Two callers feed in here:
+  //   1. Rows stuck in `conversion_failed_retryable` with retry_count <
+  //      RECONCILIATION_MAX_ATTEMPTS — re-run conversion.
+  //   2. Rows stuck in `paid` past a grace window with no
+  //      created_user_id — covers the P1-7 case where the handler
+  //      crashed between `paid` and `markRetryable`.
+  //
+  // The actual conversion path is exactly the same as the webhook one,
+  // so we re-fetch the row with relations and call convertGuestToUser.
+  // convertGuestToUser already re-reads status inside the path and
+  // exits cleanly if the row is no longer paid.
+  async reconcilePaidCheckout(checkoutId: string): Promise<void> {
+    const checkout = await this.prisma.guestCheckout.findUnique({
+      where: { id: checkoutId },
+      include: { package: { include: { coach: true } } },
+    });
+    if (!checkout) return;
+    if (
+      checkout.status !== 'paid' &&
+      checkout.status !== 'conversion_failed_retryable'
+    ) {
+      // Already converted or terminal — nothing to do.
+      return;
+    }
+    if (checkout.status === 'conversion_failed_retryable') {
+      // Re-arm the row as paid for the convert path. The state
+      // transition is internal to the reconciliation worker; the
+      // public state machine still presents the row as retryable
+      // until conversion either succeeds (→ converted) or exhausts
+      // (→ terminal).
+      await this.prisma.guestCheckout.updateMany({
+        where: { id: checkoutId, status: 'conversion_failed_retryable' },
+        data: { status: 'paid' },
+      });
+    }
+    const reread = await this.prisma.guestCheckout.findUnique({
+      where: { id: checkoutId },
+      include: { package: { include: { coach: true } } },
+    });
+    if (!reread || reread.status !== 'paid') return;
+    await this.convertGuestToUser(reread as CheckoutWithRelations);
   }
 
   // 24-char password drawn from a curated alphabet (no look-alike

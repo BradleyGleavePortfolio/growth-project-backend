@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConnectModule } from '../connect/connect.module';
+import { GuestCheckoutReconciliationService } from './guest-checkout-reconciliation.service';
 import { GuestCheckoutService } from './guest-checkout.service';
 import { StorefrontPublicController } from './storefront-public.controller';
 import { StorefrontService } from './storefront.service';
@@ -7,6 +8,11 @@ import { StorefrontService } from './storefront.service';
 // R43 Storefront Phase 1 — public package + guest checkout surface.
 // Exports GuestCheckoutService so the Stripe webhook dispatcher in
 // BillingService can route payment_intent.* events to it.
+//
+// GuestCheckoutReconciliationService is registered as a provider but is
+// not exported — its only entry point is the @Cron-driven `run()` method,
+// which the @nestjs/schedule discovery layer wires up automatically when
+// ScheduleModule is loaded from AppModule.
 @Module({
   imports: [
     // ConnectModule re-exports StripeConnectApiService. We need it for
@@ -14,7 +20,11 @@ import { StorefrontService } from './storefront.service';
     ConnectModule,
   ],
   controllers: [StorefrontPublicController],
-  providers: [StorefrontService, GuestCheckoutService],
+  providers: [
+    StorefrontService,
+    GuestCheckoutService,
+    GuestCheckoutReconciliationService,
+  ],
   exports: [GuestCheckoutService],
 })
 export class StorefrontModule {}

@@ -144,23 +144,50 @@ describe('GuestCheckoutService', () => {
       );
     });
 
-    // P1-3 — recurring packages are displayed on the public storefront
-    // but Phase 1 cannot honour subscription billing. Reject at checkout
-    // with 422 so the storefront can surface a clear explanation.
-    it.each(['monthly', 'quarterly', 'annual'])(
-      'rejects %s recurring packages with 422 RECURRING_NOT_SUPPORTED',
-      async (billingType) => {
-        prisma.coachPackage.findUnique.mockResolvedValueOnce(
-          makePkg({ billing_type: billingType }),
-        );
-        prisma.guestCheckout.findUnique.mockResolvedValue(null);
-        await expect(service.createIntent('tok123', baseDto)).rejects.toThrow(
-          UnprocessableEntityException,
-        );
-        // Never burns a Stripe API call for a recurring package.
-        expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
-      },
-    );
+    // Audit #3 P1-5 — recurring packages are displayed on the public
+    // storefront but Phase 1 cannot honour subscription billing. The
+    // guard MUST use the canonical schema value `recurring` (which is
+    // what coach console writes), not display labels like
+    // `monthly`/`quarterly`/`annual` (which live in the interval
+    // columns). A previous build used the display labels and silently
+    // let canonical-recurring packages through as one-off PIs.
+    it('rejects recurring packages with 422 RECURRING_NOT_SUPPORTED using the canonical billing_type', async () => {
+      prisma.coachPackage.findUnique.mockResolvedValueOnce(
+        makePkg({ billing_type: 'recurring', interval: 'month', interval_count: 1 }),
+      );
+      prisma.guestCheckout.findUnique.mockResolvedValue(null);
+      await expect(service.createIntent('tok123', baseDto)).rejects.toThrow(
+        UnprocessableEntityException,
+      );
+      // Never burns a Stripe API call for a recurring package.
+      expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
+    });
+
+    // Display labels in the interval column must never gate the
+    // recurring guard. A `one_time` package with interval='month' is
+    // still a one-off charge.
+    it('allows one_time packages even when interval columns look monthly', async () => {
+      prisma.coachPackage.findUnique.mockResolvedValueOnce(
+        makePkg({ billing_type: 'one_time', interval: 'month', interval_count: 1 }),
+      );
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
+      prisma.guestCheckout.create.mockResolvedValueOnce({
+        id: 'gc-1',
+        idempotency_key: baseDto.idempotency_key,
+        package_id: 'pkg-1',
+        stripe_payment_intent_id: `pending_${baseDto.idempotency_key}`,
+        status: 'pending',
+        guest_email: baseDto.guest_email.toLowerCase(),
+      });
+      stripe.createPaymentIntent.mockResolvedValueOnce({
+        id: 'pi_xyz',
+        client_secret: 'pi_xyz_secret',
+      });
+      prisma.guestCheckout.update.mockResolvedValueOnce({});
+      await expect(service.createIntent('tok123', baseDto)).resolves.toMatchObject({
+        payment_intent_id: 'pi_xyz',
+      });
+    });
 
     it('mints a Stripe PaymentIntent and persists the sentinel row', async () => {
       prisma.coachPackage.findUnique.mockResolvedValueOnce(makePkg());
@@ -347,9 +374,11 @@ describe('GuestCheckoutService', () => {
       expect(purchaseArgs.data.stripe_destination_account).toBe('acct_dest');
     });
 
-    // P1-4 — when conversion exhausts retries and throws, the row must
-    // flip to 'failed' rather than stay in 'paid' silently.
-    it('flips checkout to failed when Supabase user creation fails', async () => {
+    // Audit #3 P1-6 — when Supabase fails after Stripe took the money,
+    // the row must flip to conversion_failed_retryable so the
+    // reconciliation worker can pick it up. The previous terminal `failed`
+    // semantics stranded paid customers without a retry path.
+    it('flips checkout to conversion_failed_retryable when Supabase user creation fails', async () => {
       prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
       const checkoutRow = {
         id: 'gc-fail',
@@ -368,10 +397,12 @@ describe('GuestCheckoutService', () => {
         stripe_payment_intent_id: 'pi_fail',
         stripe_customer_id: null,
         status: 'paid',
+        retry_count: 0,
       };
       prisma.guestCheckout.findUnique
-        .mockResolvedValueOnce(checkoutRow)
-        .mockResolvedValueOnce(checkoutRow);
+        .mockResolvedValueOnce(checkoutRow) // claim-and-read inside handlePaymentSucceeded
+        .mockResolvedValueOnce(checkoutRow) // inside convertGuestToUser pre-check
+        .mockResolvedValueOnce(checkoutRow); // inside markRetryable retry_count read
       // Supabase admin throws an unrecoverable error.
       supabaseAdminMock.createUser.mockRejectedValueOnce(
         new Error('supabase down'),
@@ -380,12 +411,56 @@ describe('GuestCheckoutService', () => {
 
       await service.handlePaymentSucceeded('pi_fail');
 
-      // Second updateMany call is markFailed: paid → failed.
-      const markFailedCall = prisma.guestCheckout.updateMany.mock.calls[1];
-      expect(markFailedCall[0]).toEqual({
-        where: { id: 'gc-fail', status: 'paid' },
-        data: { status: 'failed' },
+      // Second updateMany call is markRetryable: paid → conversion_failed_retryable
+      const markRetryableCall = prisma.guestCheckout.updateMany.mock.calls[1];
+      expect(markRetryableCall[0].where).toEqual({
+        id: 'gc-fail',
+        status: { in: ['paid', 'conversion_failed_retryable'] },
       });
+      expect(markRetryableCall[0].data.status).toBe('conversion_failed_retryable');
+      expect(markRetryableCall[0].data.retry_count).toBe(1);
+      expect(typeof markRetryableCall[0].data.last_error).toBe('string');
+      expect(markRetryableCall[0].data.last_error).toMatch(/^supabase:/);
+    });
+
+    // Audit #3 P1-6 — after RECONCILIATION_MAX_ATTEMPTS (5) attempts the
+    // row moves to conversion_failed_terminal and pages on-call. Tests
+    // that the fifth attempt flips to terminal, not retryable.
+    it('flips to conversion_failed_terminal after the retry cap', async () => {
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+      const checkoutRow = {
+        id: 'gc-term',
+        package_id: 'pkg-1',
+        package: {
+          coach: { id: 'coach-1' },
+          coach_id: 'coach-1',
+          amount_cents: 29700,
+          currency: 'usd',
+          billing_type: 'one_time',
+          name: 'Pack',
+        },
+        idempotency_key: IDEMP_KEY,
+        guest_email: 'jane@example.com',
+        guest_name: 'Jane',
+        stripe_payment_intent_id: 'pi_term',
+        stripe_customer_id: null,
+        status: 'paid',
+        retry_count: 4, // one more failure pushes past the cap
+      };
+      prisma.guestCheckout.findUnique
+        .mockResolvedValueOnce(checkoutRow)
+        .mockResolvedValueOnce(checkoutRow)
+        .mockResolvedValueOnce(checkoutRow); // markRetryable retry_count read
+      supabaseAdminMock.createUser.mockRejectedValueOnce(
+        new Error('supabase down'),
+      );
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+
+      await service.handlePaymentSucceeded('pi_term');
+
+      const markTerminalCall = prisma.guestCheckout.updateMany.mock.calls[1];
+      expect(markTerminalCall[0].data.status).toBe('conversion_failed_terminal');
+      expect(markTerminalCall[0].data.retry_count).toBe(5);
     });
 
     // P1-5 — listUsers must page beyond the first 200 users to find an
