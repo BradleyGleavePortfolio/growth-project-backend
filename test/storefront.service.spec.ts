@@ -53,7 +53,7 @@ describe('StorefrontService', () => {
     retrieveAccount = jest.fn();
     configGet = jest.fn((key: string) => {
       if (key === 'STRIPE_PUBLISHABLE_KEY') return 'pk_live_platform';
-      if (key === 'STOREFRONT_BASE_URL') return 'https://tgp.app';
+      if (key === 'STOREFRONT_BASE_URL') return 'https://joingrowthproject.com';
       return undefined;
     });
     const module: TestingModule = await Test.createTestingModule({
@@ -102,7 +102,7 @@ describe('StorefrontService', () => {
 
   it('returns 503 when STRIPE_PUBLISHABLE_KEY is unset', async () => {
     configGet.mockImplementation((key: string) =>
-      key === 'STRIPE_PUBLISHABLE_KEY' ? undefined : 'https://tgp.app',
+      key === 'STRIPE_PUBLISHABLE_KEY' ? undefined : 'https://joingrowthproject.com',
     );
     findUnique.mockResolvedValueOnce(makePkg());
     await expect(

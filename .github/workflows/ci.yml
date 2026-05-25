@@ -88,3 +88,19 @@ jobs:
           # without it, so the simulated-prod gate must supply a value.
           ANTHROPIC_API_KEY: sk-ant-ci-test
         run: node -e "require('./dist/common/env-validation').assertEnv()"
+
+      # R45 banned-domain grep gate.
+      # The legacy hostname (literal: t-g-p dot a-p-p) is forbidden everywhere
+      # under source, tests, docs, and env examples. We assemble the search
+      # term from parts so this gate definition itself does not trip the
+      # grep. Any recurrence fails CI before merge.
+      - name: R45 banned-domain grep gate
+        run: |
+          set -eu
+          banned="tgp"
+          banned="${banned}.app"
+          if grep -rn --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=dist "$banned" . ; then
+            echo "ERROR: R45 violation — banned hostname found above." >&2
+            exit 1
+          fi
+          echo "R45 banned-domain grep gate: clean."

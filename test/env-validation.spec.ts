@@ -68,9 +68,9 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     // at least one is required to keep "google" advertised in /auth/signup-policy.
     GOOGLE_CLIENT_ID: 'test.apps.googleusercontent.com',
     GOOGLE_CLIENT_IDS: 'test.apps.googleusercontent.com',
-    // R43 storefront — prod-hardened so links don't fall back to the
-    // default https://tgp.app and the storefront origin is registered
-    // in CORS automatically.
+    // R43 storefront — prod-hardened so links require an explicit
+    // storefront origin (no banned-domain fallback) and the value
+    // is registered in CORS automatically.
     STOREFRONT_BASE_URL: 'https://storefront.example.com',
     // R43 — Universal Links / App Links + welcome email feature vars
     // were added alongside the storefront. Set here so missingFeature
