@@ -18,6 +18,7 @@ import {
 } from '../connect/stripe-connect-api.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
+  DestinationAccountMissingError,
   SupabaseCreateUserError,
   SupabaseExistingUserNotFoundError,
   SupabaseTimeoutError,
@@ -653,7 +654,12 @@ export class GuestCheckoutService {
     // to conversion_failed_retryable so the reconciliation worker
     // retries the whole convert path; the next attempt will find the
     // Connect account row and write the correct destination.
-    let destinationAccount: string | null;
+    // Audit #5 P1-6 — resolveDestinationAccount now ALWAYS throws when
+    // the destination is missing (both on a Prisma error AND on a
+    // legitimately-absent ConnectAccount row). The catch routes either
+    // failure mode into conversion_failed_retryable; the resolved value
+    // is a non-empty stripe_account_id string when it succeeds.
+    let destinationAccount: string;
     try {
       destinationAccount = await this.resolveDestinationAccount(
         checkout.package.coach_id,
@@ -775,19 +781,32 @@ export class GuestCheckoutService {
   // charges_enabled), matching the column's nullable shape on the
   // existing in-app flow.
   //
-  // Audit #4 P2-8 — on a DB error this MUST throw rather than return
-  // null. Swallowing the error and writing null would silently corrupt
-  // revenue reconciliation; the caller catches and routes the checkout
-  // into conversion_failed_retryable so a later attempt can write the
-  // correct destination account.
-  private async resolveDestinationAccount(
-    coachUserId: string,
-  ): Promise<string | null> {
+  // Audit #4 P2-8 — on a Prisma DB error this MUST throw rather than
+  // return null. Swallowing the error and writing null would silently
+  // corrupt revenue reconciliation; the caller catches and routes the
+  // checkout into conversion_failed_retryable so a later attempt can
+  // write the correct destination account.
+  //
+  // Audit #5 P1-6 — Prisma errors are not the only null path. The
+  // findUnique succeeds and returns null when the ConnectAccount row
+  // is missing (or when stripe_account_id is null on an unfinished
+  // onboarding). The pre-fix-round-5 version still returned null in
+  // that case and convertGuestToUser persisted ClientPurchase with
+  // stripe_destination_account = null. Now throw a typed
+  // DestinationAccountMissingError so the caller routes through
+  // markRetryable. Upstream isConnectAccountReadyForCheckout already
+  // gates createIntent, but a coach can disconnect Stripe between
+  // paying and conversion (TOCTOU); this guard closes the window.
+  private async resolveDestinationAccount(coachUserId: string): Promise<string> {
     const connect = await this.prisma.connectAccount.findUnique({
       where: { coach_user_id: coachUserId },
       select: { stripe_account_id: true },
     });
-    return connect?.stripe_account_id ?? null;
+    const id = connect?.stripe_account_id;
+    if (!id || id.trim().length === 0) {
+      throw new DestinationAccountMissingError(coachUserId);
+    }
+    return id;
   }
 
   private async ensureSupabaseUser(
@@ -1039,9 +1058,15 @@ export class GuestCheckoutService {
     }
     // Dev-only fallback. Production refuses to boot without
     // RESEND_FROM_EMAIL via env-validation.
+    //
+    // Audit #5 P2-3 — customer-facing copy uses the brand name
+    // "Growth Project", never the internal abbreviation "TGP". This
+    // affects three places in the welcome-email path: the from-header
+    // fallback, the body line "added X to your existing ... account",
+    // and the subject line.
     const fromAddress =
       this.config.get<string>('RESEND_FROM_EMAIL') ??
-      'TGP Fitness <welcome@trygrowthproject.com>';
+      'Growth Project <welcome@trygrowthproject.com>';
 
     const coachName = checkout.package.coach.name?.trim() || 'Your coach';
     const packageName = checkout.package.name;
@@ -1061,12 +1086,12 @@ export class GuestCheckoutService {
           )}</strong>.</p>`
         : `<p>We've added <strong>${escapeHtml(
             packageName,
-          )}</strong> to your existing TGP account — sign in with your usual credentials.</p>`;
+          )}</strong> to your existing Growth Project account — sign in with your usual credentials.</p>`;
 
     const body = {
       from: fromAddress,
       to: checkout.guest_email,
-      subject: `${coachName} is ready for you on TGP`,
+      subject: `${coachName} is ready for you on Growth Project`,
       html: `<!doctype html><html><body style="font-family:Inter,Arial,sans-serif;background:#F5F0E8;margin:0;padding:24px;">
 <h1 style="font-family:Georgia,serif;color:#1A1A1A;">Welcome, ${escapeHtml(checkout.guest_name)}.</h1>
 <p>You're enrolled in <strong>${escapeHtml(packageName)}</strong> with ${escapeHtml(coachName)}.</p>
@@ -1123,6 +1148,38 @@ function escapeHtml(input: string): string {
     .replace(/'/g, '&#39;');
 }
 
+// Audit #5 P1-8 — escapeAttr was a literal alias of escapeHtml, which
+// catches angle brackets / quotes but does NOT block dangerous URL
+// schemes. The function is used to render `<a href="${escapeAttr(...)}">`
+// for the Supabase invite link in the welcome email; if Supabase (or
+// any future caller) ever returns or is compromised to return a
+// `javascript:` or `data:` scheme, the rendered email becomes a stored
+// XSS vector against a brand-new paying customer's mailbox.
+//
+// Hardening:
+//   1) Try the WHATWG URL parser. Anything that fails to parse, or
+//      whose protocol is not http(s), is replaced with '#' — a
+//      neutral href that is functional (the email still renders) but
+//      cannot execute anything.
+//   2) The resulting (allowlisted) URL is then run through escapeHtml
+//      so quote/bracket characters in legitimate query strings still
+//      can't escape the attribute context.
+//
+// '#' is intentional rather than dropping the entire <a> tag — the
+// caller's template assumes a string output. If a malicious scheme
+// ever lands here, the email still arrives and the operator sees
+// the broken link in support before a phishing payload reaches the
+// customer.
+const SAFE_HREF_PROTOCOLS = new Set(['http:', 'https:']);
 function escapeAttr(input: string): string {
-  return escapeHtml(input);
+  let safe = '#';
+  try {
+    const parsed = new URL(input);
+    if (SAFE_HREF_PROTOCOLS.has(parsed.protocol)) {
+      safe = parsed.toString();
+    }
+  } catch {
+    // Not parseable → fall through to '#'.
+  }
+  return escapeHtml(safe);
 }

@@ -48,3 +48,27 @@ export class SupabaseCreateUserError extends GuestConversionError {
     Object.setPrototypeOf(this, SupabaseCreateUserError.prototype);
   }
 }
+
+// Audit #5 P1-6 — when ConnectAccount row is missing (or stripe_account_id
+// is null), resolveDestinationAccount used to silently return null,
+// which let convertGuestToUser persist a ClientPurchase with
+// stripe_destination_account = null and corrupt revenue reconciliation.
+// Throw a typed error instead so the caller routes the checkout into
+// conversion_failed_retryable. The reconciliation worker retries
+// after the operator wires the coach's Connect onboarding.
+//
+// Existing upstream gate (storefront.service.ts: isConnectAccountReadyForCheckout)
+// prevents createIntent from happening at all when the coach has no
+// account, but a TOCTOU window exists between createIntent and
+// convertGuestToUser — a coach can disconnect Stripe between paying
+// and conversion. This typed error catches that window.
+export class DestinationAccountMissingError extends GuestConversionError {
+  constructor(coachUserId: string) {
+    super(
+      `destination_account_missing:coach=${coachUserId}`,
+      'destination_account_missing',
+    );
+    this.name = 'DestinationAccountMissingError';
+    Object.setPrototypeOf(this, DestinationAccountMissingError.prototype);
+  }
+}

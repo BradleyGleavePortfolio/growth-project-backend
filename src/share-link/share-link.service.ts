@@ -31,6 +31,27 @@ const MAX_COLLISION_ATTEMPTS = 5;
 // joingrowthproject.com domain; no other domain is permitted.
 const STOREFRONT_BASE_URL_DEV_FALLBACK = 'https://joingrowthproject.com';
 
+// Audit #5 P2-6 — defense-in-depth: a future Node bug (or a misbehaving
+// container with /dev/urandom misconfigured) could return all-zero or
+// otherwise-degraded RNG output. randomBytes itself would not error; we
+// would silently mint a guessable token like 'AAAAAAAAAAAAAAAAAAAAA'.
+// Sanity-check: reject buffers with fewer than MINTOKEN_MIN_DISTINCT_BYTES
+// distinct byte values and try again, bounded by MINTOKEN_RETRY_BUDGET so
+// a genuinely-broken RNG returns a hard error instead of looping
+// forever.
+const MINTOKEN_MIN_DISTINCT_BYTES = 5;
+const MINTOKEN_RETRY_BUDGET = 8;
+
+class ShareTokenRngError extends Error {
+  readonly code = 'SHARE_TOKEN_RNG_DEGRADED' as const;
+  constructor() {
+    super(
+      'mintToken: randomBytes returned degenerate output across retries — refusing to issue a guessable token.',
+    );
+    this.name = 'ShareTokenRngError';
+  }
+}
+
 function mintToken(): string {
   // randomBytes draws from /dev/urandom (libuv) — a CSPRNG. We then
   // map each byte into the nanoid alphabet by masking to 6 bits and
@@ -38,12 +59,25 @@ function mintToken(): string {
   // here has length 64 exactly, so no rejection is needed — but we keep
   // the masking pattern so a future alphabet change does not silently
   // bias the output).
-  const buf = randomBytes(SHARE_TOKEN_LENGTH);
-  let out = '';
-  for (let i = 0; i < SHARE_TOKEN_LENGTH; i += 1) {
-    out += TOKEN_ALPHABET[buf[i] & 63];
+  for (let attempt = 0; attempt < MINTOKEN_RETRY_BUDGET; attempt += 1) {
+    const buf = randomBytes(SHARE_TOKEN_LENGTH);
+    const distinct = new Set<number>();
+    for (let i = 0; i < buf.length; i += 1) distinct.add(buf[i]);
+    if (distinct.size < MINTOKEN_MIN_DISTINCT_BYTES) {
+      // Degenerate RNG output — try again.
+      continue;
+    }
+    let out = '';
+    for (let i = 0; i < SHARE_TOKEN_LENGTH; i += 1) {
+      out += TOKEN_ALPHABET[buf[i] & 63];
+    }
+    return out;
   }
-  return out;
+  // Genuinely broken RNG. Surface a typed error so the caller (mintOrGet)
+  // can 500 the request instead of issuing a guessable token. The error
+  // bubbles up to the global exception filter which scrubs it; no
+  // sensitive value reaches the client.
+  throw new ShareTokenRngError();
 }
 
 export interface ShareLinkResult {

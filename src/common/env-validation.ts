@@ -630,7 +630,7 @@ export const ENV_RULES: EnvRule[] = [
     name: 'RESEND_FROM_EMAIL',
     tier: 'feature',
     reason:
-      'R43 — From-address Resend uses for the guest-checkout welcome email (e.g. "TGP <welcome@trygrowthproject.com>"). Falls back to a brand-aligned default in dev/test; production must set explicitly (enforced in prodHardenedFeatureVars) so welcome mail is sent from a verified domain. Never hard-code the address — Resend rejects sends from unverified domains and dropping welcome mail silently in production is a launch-blocker.',
+      'R43 — From-address Resend uses for the guest-checkout welcome email (e.g. "Growth Project <welcome@trygrowthproject.com>"). Falls back to a brand-aligned default in dev/test; production must set explicitly (enforced in prodHardenedFeatureVars) so welcome mail is sent from a verified domain. Audit #5 P2-3 — customer-facing copy uses the brand name "Growth Project", never the internal abbreviation "TGP". Never hard-code the address — Resend rejects sends from unverified domains and dropping welcome mail silently in production is a launch-blocker.',
     validate: (v) => {
       if (v.trim().length === 0) return 'RESEND_FROM_EMAIL must not be empty.';
       // Accept either a bare address or RFC 5322 "Display <addr>" — both

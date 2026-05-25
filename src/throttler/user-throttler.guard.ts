@@ -97,19 +97,50 @@ export class UserThrottlerGuard extends ThrottlerGuard {
     }
 
     // Priority 3: IP-based for unauthenticated requests (no Bearer token present).
+    // Audit #5 P1-5 — for the public storefront routes mounted at
+    // /v1/packages/public/join/:token/* the IP-only bucket is leaky under
+    // CGNAT / carrier-grade NAT: hundreds of mobile customers behind one
+    // IPv4 share a single 20/min bucket and legitimate users get
+    // collateral-throttled when one user retries. Compose the IP bucket
+    // with the share token from the URL so the cap is enforced per-link
+    // rather than per-IP. The share token is unguessable (21 random
+    // base64 chars = ~126 bits of entropy) so this does NOT make abuse
+    // easier — an attacker still has to know the token to consume any
+    // bucket at all, and once they do, IP-keying caught only one of N
+    // legitimate users behind the same NAT anyway.
+    //
+    // We restrict the token-composite path to a known prefix so unrelated
+    // routes that happen to carry a `:token` param (e.g. webhooks) are
+    // not affected.
+    const path: string = (req?.route?.path as string) || (req?.url as string) || '';
+    const tokenParam = (req?.params?.token as string | undefined)?.trim();
+    const isStorefrontJoinPath =
+      tokenParam &&
+      tokenParam.length > 0 &&
+      (path.startsWith('/v1/packages/public/join/') ||
+        path.includes('/packages/public/join/'));
+
     const flyClientIp = (req?.headers?.['fly-client-ip'] || '') as string;
     if (flyClientIp.trim().length > 0) {
-      return `ip:${flyClientIp.trim()}`;
+      const ipBucket = flyClientIp.trim();
+      return isStorefrontJoinPath
+        ? `storefront-join:${tokenParam}:${ipBucket}`
+        : `ip:${ipBucket}`;
     }
 
     const xff = (req?.headers?.['x-forwarded-for'] || '') as string;
     const fwdIp = xff.split(',')[0]?.trim();
     if (fwdIp && fwdIp.length > 0) {
-      return `ip:${fwdIp}`;
+      return isStorefrontJoinPath
+        ? `storefront-join:${tokenParam}:${fwdIp}`
+        : `ip:${fwdIp}`;
     }
 
     const ip =
       req?.ip || req?.socket?.remoteAddress || req?.connection?.remoteAddress;
-    return `ip:${ip || 'unknown'}`;
+    const ipBucket = ip || 'unknown';
+    return isStorefrontJoinPath
+      ? `storefront-join:${tokenParam}:${ipBucket}`
+      : `ip:${ipBucket}`;
   }
 }
