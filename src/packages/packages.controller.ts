@@ -18,6 +18,7 @@ import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
 import { SubscriptionGuard } from '../billing/subscription.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { SkipClientEntitlement } from '../common/decorators/skip-client-entitlement.decorator';
 import { PrismaService } from '../prisma.service';
 import {
@@ -42,6 +43,10 @@ import { CreatePackageDto, UpdatePackageDto } from './packages.dto';
 export class CoachPackagesController {
   constructor(private packages: PackagesService) {}
 
+  // Coach lists their own offer catalog; scoped by req.user.id. Students must
+  // never see this (it's the management view, not the browse view). Owner is
+  // included for platform support and to mirror the class-level CoachOrOwnerGuard.
+  @Roles('coach', 'owner')
   @Get()
   async list(
     @Request() req: AuthedRequest,
@@ -53,6 +58,9 @@ export class CoachPackagesController {
     return { packages: rows };
   }
 
+  // Coach mints a new offer on their own catalog; mutation scoped to req.user.id.
+  // Students cannot create packages — this is a seller-side write.
+  @Roles('coach', 'owner')
   @Post()
   async create(@Request() req: AuthedRequest, @Body() body: CreatePackageDto) {
     return this.packages.create(req.user.id, {
@@ -66,6 +74,9 @@ export class CoachPackagesController {
     });
   }
 
+  // Coach edits an offer on their own catalog; service re-checks ownership by
+  // req.user.id. Students must never mutate seller-side rows.
+  @Roles('coach', 'owner')
   @Patch(':id')
   async update(
     @Request() req: AuthedRequest,
@@ -81,6 +92,9 @@ export class CoachPackagesController {
     });
   }
 
+  // Coach archives an offer on their own catalog; service re-checks ownership by
+  // req.user.id. Students must never archive a coach's offers.
+  @Roles('coach', 'owner')
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   async archive(@Request() req: AuthedRequest, @Param('id') id: string) {
