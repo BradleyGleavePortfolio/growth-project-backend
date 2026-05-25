@@ -108,6 +108,9 @@ export class AdminExerciseCatalogController {
 
   // Bulk creation is handled by the seed script — single-row create is here
   // for ad-hoc additions from the admin console.
+  // Owner-only write on the canonical catalog. v1 explicitly does not let
+  // coaches mint catalog rows (see file header); v2 may revisit.
+  @Roles('owner')
   @Post()
   create(@Body() dto: CreateCatalogItemDto) {
     return this.catalog.createItem(dto);
@@ -116,6 +119,9 @@ export class AdminExerciseCatalogController {
   // Mux upload flow: owner POSTs `/video/upload`, gets a direct-upload URL,
   // uploads the file from the admin console, then waits for the webhook to
   // flip status from `uploading` -> `processing` -> `ready`.
+  // Owner-only — Mux direct-upload URLs are an ingest credential; coaches
+  // do not get this surface in v1.
+  @Roles('owner')
   @Post(':idOrSlug/video/upload')
   createUpload(
     @Param('idOrSlug') idOrSlug: string,
@@ -128,6 +134,9 @@ export class AdminExerciseCatalogController {
 
   // Alternate flow: an asset already exists on Mux (uploaded out-of-band)
   // and the owner just wants to bind it to a catalog row.
+  // Owner-only — binding a Mux asset id to a catalog row is a privileged
+  // write that determines what every learner sees.
+  @Roles('owner')
   @Put(':idOrSlug/video')
   attach(
     @Param('idOrSlug') idOrSlug: string,
@@ -136,6 +145,9 @@ export class AdminExerciseCatalogController {
     return translateMuxDisabled(this.catalog.attachAsset(idOrSlug, dto.muxAssetId));
   }
 
+  // Owner-only — removing a Mux binding takes the video offline for every
+  // assignment that references it; only the platform admin should do this.
+  @Roles('owner')
   @Delete(':idOrSlug/video')
   detach(@Param('idOrSlug') idOrSlug: string) {
     return this.catalog.detachAsset(idOrSlug);
