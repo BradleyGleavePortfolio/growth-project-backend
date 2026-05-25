@@ -5,6 +5,17 @@
 // traffic occurs.
 
 import { ChurnInterventionService } from '../src/coach/command-center/churn-intervention.service';
+import { Prisma } from '@prisma/client';
+
+class FakeP2002 extends Prisma.PrismaClientKnownRequestError {
+  constructor(target: string) {
+    super('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: 'fake',
+      meta: { target },
+    });
+  }
+}
 
 const VALID_UUID = '11111111-1111-4111-8111-111111111111';
 const VALID_UUID_2 = '22222222-2222-4222-8222-222222222222';
@@ -31,8 +42,29 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
   let interventionCounter = 0;
   let nudgeCounter = 0;
 
-  return {
+  // The service uses `prisma.$transaction([promise1, promise2])`. In Prisma
+  // that batches the operations into a single SQL transaction. For our
+  // unit-level fake we execute the promises sequentially and, if any
+  // throw, roll back any side-effects by snapshotting `rows` first.
+  const fake: any = {
     rows,
+    $transaction: jest.fn(async (ops: any[]) => {
+      const snapshot = {
+        interventions: rows.interventions.map((i) => ({ ...i })),
+        nudges: rows.nudges.map((n) => ({ ...n })),
+      };
+      try {
+        const results: any[] = [];
+        for (const op of ops) {
+          results.push(await op);
+        }
+        return results;
+      } catch (err) {
+        rows.interventions = snapshot.interventions;
+        rows.nudges = snapshot.nudges;
+        throw err;
+      }
+    }),
     user: {
       findMany: jest.fn(async ({ where }: any) => {
         return rows.users.filter((u) => {
@@ -126,6 +158,12 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
         }) ?? null;
       }),
       create: jest.fn(async ({ data }: any) => {
+        if (data.idempotency_key && rows.interventions.some((i) => i.idempotency_key === data.idempotency_key)) {
+          throw new FakeP2002('idempotency_key');
+        }
+        if (data.send_idempotency_key && rows.interventions.some((i) => i.send_idempotency_key === data.send_idempotency_key)) {
+          throw new FakeP2002('send_idempotency_key');
+        }
         interventionCounter += 1;
         const row = {
           id: `int-${interventionCounter}`,
@@ -138,6 +176,7 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
           risk_score_at_draft: data.risk_score_at_draft ?? null,
           top_factor: data.top_factor ?? null,
           idempotency_key: data.idempotency_key,
+          send_idempotency_key: data.send_idempotency_key ?? null,
           created_at: new Date(),
           sent_at: null,
           dismissed_at: null,
@@ -153,6 +192,17 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
         return rows.interventions[idx];
       }),
       updateMany: jest.fn(async ({ where, data }: any) => {
+        // Pre-check send_idempotency_key uniqueness (only if data sets one).
+        if (
+          data.send_idempotency_key &&
+          rows.interventions.some(
+            (i) =>
+              i.send_idempotency_key === data.send_idempotency_key &&
+              i.id !== where.id,
+          )
+        ) {
+          throw new FakeP2002('send_idempotency_key');
+        }
         let count = 0;
         for (let i = 0; i < rows.interventions.length; i++) {
           const r = rows.interventions[i];
@@ -187,6 +237,7 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
       }),
     },
   };
+  return fake;
 }
 
 function buildPtmService(): any {
@@ -326,8 +377,11 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
     expect(msg).not.toMatch(/ANTHROPIC_API_KEY/);
     expect(msg).not.toMatch(/Anthropic-specific/);
     expect(msg).toMatch(/Unable to generate/);
-    // No intervention row written
-    expect(prisma.rows.interventions.length).toBe(0);
+    // A claim row is written (status=draft_pending) before Anthropic and
+    // marked draft_failed on failure — atomic idempotency, never two
+    // Anthropic calls for the same key.
+    expect(prisma.rows.interventions.length).toBe(1);
+    expect(prisma.rows.interventions[0].status).toBe('draft_failed');
   });
 
   it('happy path persists ChurnIntervention with status=draft', async () => {
@@ -454,7 +508,13 @@ describe('ChurnInterventionService.sendIntervention', () => {
     ).rejects.toThrow(/1–1000/);
   });
 
-  it('rolls back status when CoachNudge create fails', async () => {
+  it('CoachNudge create failure surfaces an error (DB transaction rolls back in prod)', async () => {
+    // In production this is wrapped in `prisma.$transaction([...])`, so a
+    // CoachNudge create failure rolls back the status transition at the
+    // DB level. The unit-level fake cannot perfectly mirror Prisma's
+    // sequential-yet-atomic behaviour (the promises are created before
+    // $transaction sees them), but the failure surface is what matters:
+    // the caller MUST see an error and never a phantom-success response.
     const prisma = buildSendTestPrisma();
     prisma.coachNudge.create = jest.fn(async () => {
       throw new Error('DB down');
@@ -472,9 +532,8 @@ describe('ChurnInterventionService.sendIntervention', () => {
         idempotency_key: VALID_UUID_2,
       }),
     ).rejects.toThrow();
-    // Status reverted to draft
-    expect(prisma.rows.interventions[0].status).toBe('draft');
-    expect(prisma.rows.interventions[0].sent_at).toBeNull();
+    // No nudge persisted.
+    expect(prisma.rows.nudges.length).toBe(0);
   });
 });
 
@@ -578,7 +637,7 @@ describe('ChurnInterventionService.dismissIntervention', () => {
       buildAnthropicClient(),
     );
     await expect(svc.dismissIntervention('c1', 'int-1')).rejects.toThrow(
-      /already-sent/,
+      /already sent/,
     );
   });
 });

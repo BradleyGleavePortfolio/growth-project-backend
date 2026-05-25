@@ -32,7 +32,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../prisma.service';
 import { PtmService } from '../../ptm/ptm.service';
@@ -56,7 +56,7 @@ export interface ChurnInterventionDto {
   client_id: string;
   client_name: string;
   draft_text: string;
-  status: 'draft' | 'edited' | 'sent' | 'dismissed';
+  status: 'draft_pending' | 'draft' | 'draft_failed' | 'edited' | 'sent' | 'dismissed';
   top_factor: string;
   created_at: string;
 }
@@ -282,23 +282,6 @@ export class ChurnInterventionService {
       throw new BadRequestException('idempotency_key must be a valid UUID');
     }
 
-    // Idempotency: return existing row if key already used. Scope to
-    // coach to prevent cross-coach key replay (a key collision across
-    // coaches is astronomically unlikely with UUIDv4, but we guard
-    // anyway).
-    const existing = await this.prisma.churnIntervention.findUnique({
-      where: { idempotency_key: dto.idempotency_key },
-      include: { client: { select: { name: true } } },
-    });
-    if (existing) {
-      if (existing.coach_id !== coachId) {
-        // Another coach used this key. Treat as conflict; do not leak
-        // existence of the other row.
-        throw new ConflictException('idempotency_key already in use');
-      }
-      return this.toDto(existing, existing.client?.name ?? clientId);
-    }
-
     // IDOR check — clientId must be in this coach's roster.
     const client = await this.prisma.user.findFirst({
       where: {
@@ -311,11 +294,55 @@ export class ChurnInterventionService {
     });
     if (!client) throw new NotFoundException('Client not found');
 
-    // Pull PTM context for prompt enrichment.
+    // Pull PTM context (used both for the prompt and as the row's
+    // top_factor / risk_score_at_draft snapshot).
     const latestPrediction = await this.ptm.getLatestPrediction(clientId);
     const factors = parseFactors(latestPrediction?.factors);
     const topFactor = factors[0]?.label ?? 'Declining engagement';
     const riskScore = latestPrediction?.risk_score ?? null;
+
+    // Atomic idempotency claim: try to insert a `draft_pending` row with
+    // the idempotency key as the unique constraint. The winner proceeds
+    // to call Anthropic; concurrent losers hit P2002 and read back the
+    // existing row instead of double-billing the API. This replaces the
+    // earlier check-then-act pattern.
+    let claimed;
+    try {
+      claimed = await this.prisma.churnIntervention.create({
+        data: {
+          coach_id: coachId,
+          client_id: clientId,
+          draft_text: '',
+          status: 'draft_pending',
+          alert_id: dto.alert_id ?? null,
+          risk_score_at_draft: riskScore,
+          top_factor: topFactor,
+          idempotency_key: dto.idempotency_key,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        // Loser: another caller already claimed this key. Return the
+        // existing row in whatever state it's in (the winner will
+        // finalize it; the client can poll). Scope to coach to prevent
+        // cross-coach replay.
+        const existing = await this.prisma.churnIntervention.findUnique({
+          where: { idempotency_key: dto.idempotency_key },
+          include: { client: { select: { name: true } } },
+        });
+        if (!existing) {
+          throw new ConflictException('idempotency_key already in use');
+        }
+        if (existing.coach_id !== coachId) {
+          throw new ConflictException('idempotency_key already in use');
+        }
+        return this.toDto(existing, existing.client?.name ?? client.name);
+      }
+      throw err;
+    }
 
     const recentCheckIn = await this.prisma.checkIn.findFirst({
       where: { user_id: clientId },
@@ -333,8 +360,8 @@ export class ChurnInterventionService {
       select: { name: true },
     });
 
-    // Generate AI draft. Errors are sanitized: clients never see prompt
-    // content or raw Anthropic errors.
+    // Winner: generate AI draft. On failure mark the row failed so the
+    // status reflects reality, then surface a sanitized 503.
     let draftText: string;
     try {
       draftText = await this.draftWithAnthropic({
@@ -349,6 +376,16 @@ export class ChurnInterventionService {
       this.logger.warn(
         `Churn draft generation failed coach=${coachId} client=${clientId}: ${msg}`,
       );
+      try {
+        await this.prisma.churnIntervention.update({
+          where: { id: claimed.id },
+          data: { status: 'draft_failed' },
+        });
+      } catch (markErr) {
+        this.logger.warn(
+          `Failed to mark intervention=${claimed.id} draft_failed: ${markErr instanceof Error ? markErr.message : String(markErr)}`,
+        );
+      }
       throw new ServiceUnavailableException({
         statusCode: 503,
         error: 'AI_GENERATION_FAILED',
@@ -357,16 +394,11 @@ export class ChurnInterventionService {
       });
     }
 
-    const intervention = await this.prisma.churnIntervention.create({
+    const intervention = await this.prisma.churnIntervention.update({
+      where: { id: claimed.id },
       data: {
-        coach_id: coachId,
-        client_id: clientId,
         draft_text: draftText,
         status: 'draft',
-        alert_id: dto.alert_id ?? null,
-        risk_score_at_draft: riskScore,
-        top_factor: topFactor,
-        idempotency_key: dto.idempotency_key,
       },
     });
 
@@ -399,7 +431,32 @@ export class ChurnInterventionService {
     });
     if (!intervention) throw new NotFoundException('Intervention not found');
 
-    // Already sent? Return existing state (idempotent).
+    // Send-idempotency replay: if this exact send_idempotency_key was
+    // already persisted for this coach, return the existing send result
+    // verbatim (true idempotency — same key + same outcome regardless of
+    // current message text). Scope to coach to defuse cross-coach replay.
+    const replay = await this.prisma.churnIntervention.findFirst({
+      where: {
+        send_idempotency_key: dto.idempotency_key,
+        coach_id: coachId,
+      },
+    });
+    if (replay) {
+      if (replay.id !== interventionId) {
+        throw new ConflictException('idempotency_key already in use');
+      }
+      if (replay.status === 'sent' && replay.sent_at && replay.nudge_id) {
+        return {
+          ok: true,
+          intervention_id: replay.id,
+          sent_at: replay.sent_at.toISOString(),
+          nudge_id: replay.nudge_id,
+        };
+      }
+    }
+
+    // Already sent (under a different key, or pre-key history)? Return
+    // existing state (idempotent).
     if (
       intervention.status === 'sent' &&
       intervention.sent_at &&
@@ -416,35 +473,73 @@ export class ChurnInterventionService {
       throw new ConflictException('Cannot send a dismissed intervention');
     }
 
-    // Race-safe send: conditional updateMany ensures only one caller can
-    // transition the row to 'sent'. count === 0 means another caller
-    // already won (sent or dismissed concurrently).
     const sentAt = new Date();
     const editedText =
       text !== intervention.draft_text ? text : null;
 
-    // Step 1: try to claim the row by transitioning status. We do this
-    // BEFORE creating the CoachNudge so we never write a nudge for a
-    // race-losing caller. The downside: if the CoachNudge create fails,
-    // we need to roll back the status. We handle that explicitly.
-    const claim = await this.prisma.churnIntervention.updateMany({
-      where: {
-        id: interventionId,
-        coach_id: coachId,
-        status: { notIn: ['sent', 'dismissed'] },
-      },
-      data: {
-        status: 'sent',
-        edited_text: editedText,
-        sent_at: sentAt,
-      },
-    });
+    // Atomic transaction: claim the row, create the CoachNudge. The
+    // updateMany WHERE clause ensures only one caller can transition the
+    // row out of a non-terminal status. If either step throws, both
+    // roll back together — no orphan nudge + sent row, no sent row
+    // without a nudge.
+    let txResult: { count: number; nudge: { id: string } } | null = null;
+    try {
+      const [claim, nudge] = await this.prisma.$transaction([
+        this.prisma.churnIntervention.updateMany({
+          where: {
+            id: interventionId,
+            coach_id: coachId,
+            status: { notIn: ['sent', 'dismissed'] },
+          },
+          data: {
+            status: 'sent',
+            edited_text: editedText,
+            sent_at: sentAt,
+            send_idempotency_key: dto.idempotency_key,
+          },
+        }),
+        this.prisma.coachNudge.create({
+          data: {
+            coach_id: coachId,
+            client_id: intervention.client_id,
+            title: 'Message from your coach',
+            body: text,
+          },
+        }),
+      ]);
+      txResult = { count: claim.count, nudge: { id: nudge.id } };
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        // Concurrent send with same key just won. Re-fetch and return
+        // the existing send result.
+        const fresh = await this.prisma.churnIntervention.findFirst({
+          where: { id: interventionId, coach_id: coachId },
+        });
+        if (
+          fresh?.status === 'sent' &&
+          fresh.sent_at &&
+          fresh.nudge_id
+        ) {
+          return {
+            ok: true,
+            intervention_id: interventionId,
+            sent_at: fresh.sent_at.toISOString(),
+            nudge_id: fresh.nudge_id,
+          };
+        }
+        throw new ConflictException('idempotency_key already in use');
+      }
+      throw err;
+    }
 
-    if (claim.count === 0) {
-      // Someone else won the race or it was dismissed between our read
-      // and write. Re-fetch to return the correct state.
-      const fresh = await this.prisma.churnIntervention.findUnique({
-        where: { id: interventionId },
+    if (txResult.count === 0) {
+      // Lost the race — another sender or a dismiss already won. Re-fetch
+      // to return the canonical state.
+      const fresh = await this.prisma.churnIntervention.findFirst({
+        where: { id: interventionId, coach_id: coachId },
       });
       if (
         fresh?.status === 'sent' &&
@@ -463,43 +558,14 @@ export class ChurnInterventionService {
       );
     }
 
-    // Step 2: create the CoachNudge. If this fails, roll back the
-    // status so the coach can retry. We do NOT re-throw a sanitized
-    // error here — the upstream filter handles it.
-    let nudgeId: string;
-    try {
-      const nudge = await this.prisma.coachNudge.create({
-        data: {
-          coach_id: coachId,
-          client_id: intervention.client_id,
-          title: 'Message from your coach',
-          body: text,
-        },
-      });
-      nudgeId = nudge.id;
-    } catch (err) {
-      // Roll back the status. If rollback itself fails, log loudly —
-      // the row is in an inconsistent state but the client can re-send
-      // with a new idempotency key.
-      try {
-        await this.prisma.churnIntervention.update({
-          where: { id: interventionId },
-          data: { status: 'draft', sent_at: null, edited_text: null },
-        });
-      } catch (rollbackErr) {
-        this.logger.error(
-          `Failed to roll back churn intervention=${interventionId} after CoachNudge create failure: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
-        );
-      }
-      throw err;
-    }
+    const nudgeId = txResult.nudge.id;
 
-    // Step 3: backfill the nudge_id on the intervention. Best-effort —
-    // the message is already delivered (CoachNudge row exists, sent
-    // timestamp is set). A failure here is a metadata-only loss.
+    // Backfill nudge_id (metadata-only). Best-effort; a failure here is
+    // not a delivery failure — the row already has status=sent and the
+    // CoachNudge row exists.
     try {
-      await this.prisma.churnIntervention.update({
-        where: { id: interventionId },
+      await this.prisma.churnIntervention.updateMany({
+        where: { id: interventionId, coach_id: coachId },
         data: { nudge_id: nudgeId },
       });
     } catch (err) {
@@ -508,10 +574,8 @@ export class ChurnInterventionService {
       );
     }
 
-    // Step 4: fire-and-forget push notification. Failure cannot un-send
-    // the message; we log and move on. Wrapped in try/catch INSIDE the
-    // outer-level guard so the .catch chain is reached even if the
-    // function itself throws synchronously.
+    // Fire push AFTER the transaction commits. Failure cannot un-send
+    // the message; we log and move on.
     if (this.notifications) {
       void this.notifications
         .pushToUser(intervention.client_id, 'Message from your coach', text.slice(0, 120), {
@@ -538,24 +602,34 @@ export class ChurnInterventionService {
     coachId: string,
     interventionId: string,
   ): Promise<{ ok: true; intervention_id: string }> {
-    const intervention = await this.prisma.churnIntervention.findFirst({
-      where: { id: interventionId, coach_id: coachId },
+    // Single atomic conditional write. Always include coach_id to enforce
+    // ownership and guard against IDOR; the WHERE clause ensures only
+    // non-terminal statuses can transition. If count === 0, the row
+    // either doesn't belong to this coach, doesn't exist, was already
+    // dismissed (idempotent OK), or a concurrent send won the race
+    // (must surface as 409 — we cannot lie to the client).
+    const result = await this.prisma.churnIntervention.updateMany({
+      where: {
+        id: interventionId,
+        coach_id: coachId,
+        status: { notIn: ['sent', 'dismissed'] },
+      },
+      data: { status: 'dismissed', dismissed_at: new Date() },
     });
-    if (!intervention) throw new NotFoundException('Intervention not found');
-    if (intervention.status === 'sent') {
-      throw new ConflictException('Cannot dismiss an already-sent intervention');
-    }
-    if (intervention.status !== 'dismissed') {
-      // Conditional update — only transition if still in a dismissable
-      // state. Race-safe.
-      await this.prisma.churnIntervention.updateMany({
-        where: {
-          id: interventionId,
-          coach_id: coachId,
-          status: { notIn: ['sent', 'dismissed'] },
-        },
-        data: { status: 'dismissed', dismissed_at: new Date() },
+    if (result.count === 0) {
+      const row = await this.prisma.churnIntervention.findFirst({
+        where: { id: interventionId, coach_id: coachId },
       });
+      if (!row) throw new NotFoundException('Intervention not found');
+      if (row.status === 'dismissed') {
+        return { ok: true, intervention_id: interventionId };
+      }
+      if (row.status === 'sent') {
+        throw new ConflictException(
+          'Intervention already sent — cannot dismiss',
+        );
+      }
+      throw new ConflictException('Intervention is no longer dismissable');
     }
     return { ok: true, intervention_id: interventionId };
   }

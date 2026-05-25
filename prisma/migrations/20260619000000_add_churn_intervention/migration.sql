@@ -31,6 +31,7 @@ CREATE TABLE "ChurnIntervention" (
     "risk_score_at_draft" DOUBLE PRECISION,
     "top_factor" TEXT,
     "idempotency_key" TEXT NOT NULL,
+    "send_idempotency_key" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "sent_at" TIMESTAMP(3),
     "dismissed_at" TIMESTAMP(3),
@@ -41,6 +42,7 @@ CREATE TABLE "ChurnIntervention" (
 
 -- Indexes
 CREATE UNIQUE INDEX "ChurnIntervention_idempotency_key_key" ON "ChurnIntervention"("idempotency_key");
+CREATE UNIQUE INDEX "ChurnIntervention_send_idempotency_key_key" ON "ChurnIntervention"("send_idempotency_key");
 CREATE INDEX "ChurnIntervention_coach_id_status_created_at_idx" ON "ChurnIntervention"("coach_id", "status", "created_at" DESC);
 CREATE INDEX "ChurnIntervention_client_id_created_at_idx" ON "ChurnIntervention"("client_id", "created_at" DESC);
 CREATE INDEX "ChurnIntervention_coach_id_client_id_idx" ON "ChurnIntervention"("coach_id", "client_id");
@@ -61,11 +63,17 @@ ALTER TABLE "ChurnIntervention"
 ALTER TABLE "ChurnIntervention" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "ChurnIntervention" FORCE ROW LEVEL SECURITY;
 
--- Coach-scoped policy. Even though Prisma (service_role) bypasses RLS,
--- this is the policy that becomes active the moment a non-service-role
--- key is used (e.g. a future direct-from-mobile Supabase read).
-CREATE POLICY "churn_intervention_coach_own"
+-- Server-only deny-all policy. This table is written exclusively via
+-- the NestJS service-role connection which bypasses RLS. Any direct
+-- Supabase anon/auth client INSERT/UPDATE/DELETE/SELECT is denied so
+-- that server-side validation, idempotency, status transitions,
+-- Anthropic generation, and nudge consistency cannot be bypassed.
+-- If a future feature needs direct coach reads, add a narrow
+-- `FOR SELECT` policy here and keep writes denied.
+DROP POLICY IF EXISTS "ChurnIntervention_coach_rls" ON "ChurnIntervention";
+DROP POLICY IF EXISTS "churn_intervention_coach_own" ON "ChurnIntervention";
+CREATE POLICY "ChurnIntervention_server_only"
     ON "ChurnIntervention"
     FOR ALL
-    USING ((auth.uid())::text = coach_id)
-    WITH CHECK ((auth.uid())::text = coach_id);
+    USING (false)
+    WITH CHECK (false);

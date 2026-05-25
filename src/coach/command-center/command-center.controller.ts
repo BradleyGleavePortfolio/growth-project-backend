@@ -25,6 +25,7 @@ import { Throttle } from '@nestjs/throttler';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { CoachGuard } from '../../auth/coach.guard';
+import { NoActiveSubCoachGuard } from '../../common/guards/no-active-sub-coach.guard';
 import type { AuthedRequest } from '../../auth/auth-request';
 import {
   CommandCenterService,
@@ -57,7 +58,7 @@ function parseBool(s: string | undefined): boolean {
 
 @ApiTags('coach')
 @Controller('coach/command-center')
-@UseGuards(JwtAuthGuard, CoachGuard)
+@UseGuards(JwtAuthGuard, CoachGuard, NoActiveSubCoachGuard)
 export class CommandCenterController {
   constructor(
     private readonly commandCenter: CommandCenterService,

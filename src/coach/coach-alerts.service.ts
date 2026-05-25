@@ -137,17 +137,30 @@ export class CoachAlertsService {
    * Idempotent ack. A repeated call against an already-acked alert
    * returns the same row without writing again. Foreign coach calls
    * resolve into NotFoundException so we never leak alert existence.
+   *
+   * Race-safe: the transition is a single conditional updateMany with
+   * `acknowledged_at: null` in the WHERE clause, so two concurrent
+   * dismisses cannot both write distinct timestamps. If `count === 0`,
+   * either the row doesn't belong to this coach or it was already
+   * acknowledged; we re-read to disambiguate.
    */
   async acknowledge(alertId: string, coachId: string): Promise<CoachAlert> {
-    const row = await this.prisma.coachAlert.findFirst({
-      where: { id: alertId, coach_id: coachId },
-    });
-    if (!row) throw new NotFoundException('Alert not found');
-    if (row.acknowledged_at) return row;
-    return this.prisma.coachAlert.update({
-      where: { id: alertId },
+    const result = await this.prisma.coachAlert.updateMany({
+      where: { id: alertId, coach_id: coachId, acknowledged_at: null },
       data: { acknowledged_at: new Date() },
     });
+    if (result.count === 0) {
+      const existing = await this.prisma.coachAlert.findFirst({
+        where: { id: alertId, coach_id: coachId },
+      });
+      if (!existing) throw new NotFoundException('Alert not found');
+      return existing;
+    }
+    const updated = await this.prisma.coachAlert.findFirst({
+      where: { id: alertId, coach_id: coachId },
+    });
+    if (!updated) throw new NotFoundException('Alert not found');
+    return updated;
   }
 
   /**

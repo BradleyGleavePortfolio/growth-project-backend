@@ -207,8 +207,12 @@ export class CommandCenterService {
         },
         _max: { value: true },
       }),
-      this.prisma.message.count({
-        where: { recipient_id: coachId, read: false },
+      this.prisma.coachMessage.count({
+        where: {
+          coach_id: coachId,
+          read_at: null,
+          NOT: { sender_id: coachId },
+        },
       }),
     ]);
 
@@ -411,56 +415,54 @@ export class CommandCenterService {
 
     // Bound the lookback to a reasonable window and per-side cap so that
     // even on a very large coach we don't pull a million rows.
-    const latestMessages = await this.prisma.message.findMany({
+    const latestMessages = await this.prisma.coachMessage.findMany({
       where: {
-        OR: [
-          { sender_id: coachId, recipient_id: { in: clientIds } },
-          { recipient_id: coachId, sender_id: { in: clientIds } },
-        ],
+        coach_id: coachId,
+        client_id: { in: clientIds },
       },
       orderBy: { created_at: 'desc' },
       take: 1000,
       select: {
         id: true,
         sender_id: true,
-        recipient_id: true,
+        client_id: true,
         body: true,
-        read: true,
+        read_at: true,
         created_at: true,
       },
     });
 
     const threadMap = new Map<string, (typeof latestMessages)[number]>();
     for (const msg of latestMessages) {
-      const clientId =
-        msg.sender_id === coachId ? msg.recipient_id : msg.sender_id;
-      if (!threadMap.has(clientId)) {
-        threadMap.set(clientId, msg);
+      if (!msg.client_id) continue;
+      if (!threadMap.has(msg.client_id)) {
+        threadMap.set(msg.client_id, msg);
       }
     }
 
-    const unreadCounts = await this.prisma.message.groupBy({
-      by: ['sender_id'],
+    const unreadCounts = await this.prisma.coachMessage.groupBy({
+      by: ['client_id'],
       where: {
-        recipient_id: coachId,
-        sender_id: { in: clientIds },
-        read: false,
+        coach_id: coachId,
+        client_id: { in: clientIds },
+        read_at: null,
+        NOT: { sender_id: coachId },
       },
       _count: { _all: true },
     });
-    const unreadMap = new Map(
-      unreadCounts.map((u) => [u.sender_id, u._count._all]),
-    );
-    const totalUnread = unreadCounts.reduce(
-      (sum, u) => sum + u._count._all,
-      0,
-    );
+    const unreadMap = new Map<string, number>();
+    let totalUnread = 0;
+    for (const u of unreadCounts) {
+      if (u.client_id == null) continue;
+      unreadMap.set(u.client_id, u._count._all);
+      totalUnread += u._count._all;
+    }
 
     const threads: InboxThread[] = [];
     for (const [clientId, latestMsg] of threadMap) {
       const unreadCount = unreadMap.get(clientId) ?? 0;
       if (opts.unreadOnly && unreadCount === 0) continue;
-      const preview = latestMsg.body.slice(0, 120);
+      const preview = (latestMsg.body ?? '').slice(0, 120);
       const isCoachTurn = latestMsg.sender_id !== coachId;
       threads.push({
         thread_id: buildThreadId(coachId, clientId),

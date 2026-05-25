@@ -156,41 +156,39 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
         );
       }),
     },
-    message: {
+    coachMessage: {
       count: jest.fn(async ({ where }: any) => {
         return rows.messages.filter((m) => {
-          if (where.recipient_id && m.recipient_id !== where.recipient_id) return false;
-          if (where.read === false && m.read !== false) return false;
+          if (where.coach_id && m.coach_id !== where.coach_id) return false;
+          if (where.client_id?.in && !where.client_id.in.includes(m.client_id)) return false;
+          if (where.read_at === null && m.read_at != null) return false;
+          if (where.NOT?.sender_id && m.sender_id === where.NOT.sender_id) return false;
           return true;
         }).length;
       }),
-      findMany: jest.fn(async ({ where }: any) => {
+      findMany: jest.fn(async ({ where, take }: any) => {
         const filtered = rows.messages.filter((m) => {
-          if (!where.OR) return true;
-          return where.OR.some((o: any) => {
-            if (o.sender_id && o.sender_id !== m.sender_id) return false;
-            if (o.recipient_id?.in && !o.recipient_id.in.includes(m.recipient_id)) return false;
-            if (o.recipient_id && typeof o.recipient_id === 'string' && o.recipient_id !== m.recipient_id) return false;
-            if (o.sender_id?.in && !o.sender_id.in.includes(m.sender_id)) return false;
-            return true;
-          });
+          if (where.coach_id && m.coach_id !== where.coach_id) return false;
+          if (where.client_id?.in && !where.client_id.in.includes(m.client_id)) return false;
+          return true;
         });
         filtered.sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
-        return filtered;
+        return take ? filtered.slice(0, take) : filtered;
       }),
       groupBy: jest.fn(async ({ where }: any) => {
         const filtered = rows.messages.filter((m) => {
-          if (where.recipient_id && m.recipient_id !== where.recipient_id) return false;
-          if (where.sender_id?.in && !where.sender_id.in.includes(m.sender_id)) return false;
-          if (where.read === false && m.read !== false) return false;
+          if (where.coach_id && m.coach_id !== where.coach_id) return false;
+          if (where.client_id?.in && !where.client_id.in.includes(m.client_id)) return false;
+          if (where.read_at === null && m.read_at != null) return false;
+          if (where.NOT?.sender_id && m.sender_id === where.NOT.sender_id) return false;
           return true;
         });
-        const bySender = new Map<string, number>();
+        const byClient = new Map<string, number>();
         for (const m of filtered) {
-          bySender.set(m.sender_id, (bySender.get(m.sender_id) ?? 0) + 1);
+          byClient.set(m.client_id, (byClient.get(m.client_id) ?? 0) + 1);
         }
-        return Array.from(bySender.entries()).map(([sid, n]) => ({
-          sender_id: sid,
+        return Array.from(byClient.entries()).map(([cid, n]) => ({
+          client_id: cid,
           _count: { _all: n },
         }));
       }),
@@ -255,8 +253,8 @@ describe('CommandCenterService.getOverview', () => {
         { user_id: 'u3', risk_score: 0.4, computed_at: now },
       ],
       messages: [
-        { recipient_id: 'c1', sender_id: 'u1', body: 'hi', read: false, created_at: now },
-        { recipient_id: 'c1', sender_id: 'u2', body: 'yo', read: false, created_at: now },
+        { coach_id: 'c1', client_id: 'u1', sender_id: 'u1', body: 'hi', read_at: null, created_at: now },
+        { coach_id: 'c1', client_id: 'u2', sender_id: 'u2', body: 'yo', read_at: null, created_at: now },
       ],
     });
     const svc = new CommandCenterService(prisma, buildAdminPtm(), buildAlertsService());
@@ -373,8 +371,8 @@ describe('CommandCenterService.getInbox', () => {
     const prisma = buildPrisma({
       users,
       messages: [
-        { id: 'm1', sender_id: 'u1', recipient_id: 'c1', body: 'hello coach', read: false, created_at: t0 },
-        { id: 'm2', sender_id: 'c1', recipient_id: 'u1', body: 'hi there client', read: true, created_at: t1 },
+        { id: 'm1', coach_id: 'c1', client_id: 'u1', sender_id: 'u1', body: 'hello coach', read_at: null, created_at: t0 },
+        { id: 'm2', coach_id: 'c1', client_id: 'u1', sender_id: 'c1', body: 'hi there client', read_at: t1, created_at: t1 },
       ],
     });
     const svc = new CommandCenterService(prisma, buildAdminPtm(), buildAlertsService());
@@ -395,10 +393,11 @@ describe('CommandCenterService.getInbox', () => {
       messages: [
         {
           id: 'm1',
+          coach_id: 'c1',
+          client_id: 'u1',
           sender_id: 'u1',
-          recipient_id: 'c1',
           body: longBody,
-          read: false,
+          read_at: null,
           created_at: new Date(PINNED_NOW),
         },
       ],

@@ -3610,6 +3610,11 @@ model ChurnIntervention {
   risk_score_at_draft Float?
   top_factor          String?
   idempotency_key     String    @unique
+  // Separate idempotency key for the send transition. Distinct from
+  // the draft `idempotency_key` so a coach can retry a send (a network
+  // failure on POST /send) without colliding with the draft key. Unique
+  // to dedup concurrent or replayed send requests.
+  send_idempotency_key String?  @unique
   created_at          DateTime  @default(now())
   sent_at             DateTime?
   dismissed_at        DateTime?
