@@ -599,6 +599,12 @@ export const ENV_RULES: EnvRule[] = [
       'R43 — Resend API key used to dispatch the guest-checkout welcome email. When unset, the guest checkout flow still completes (account + entitlement created) but the welcome email is skipped and logged. Set this before launch.',
   },
   {
+    name: 'GUEST_CHECKOUT_PII_SALT',
+    tier: 'optional',
+    reason:
+      'R43 — stable per-deploy salt fed into sha256(lower(email) || salt) for GuestCheckoutPiiScrubService. The scrub job hashes guest_email when data_retention_at has elapsed. Falls back to a build-time constant in dev/test so contributor scrub runs are deterministic; staging/production should set this to a high-entropy value rotated only when the historical hashes need to be invalidated.',
+  },
+  {
     name: 'RESEND_FROM_EMAIL',
     tier: 'feature',
     reason:

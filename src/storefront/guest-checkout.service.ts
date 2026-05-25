@@ -38,6 +38,15 @@ const PLATFORM_FEE_MIN_CENTS = 50;
 // replaced rather than reused.
 const CHECKOUT_TTL_MS = 24 * 60 * 60 * 1000;
 
+// Audit #3 P2-3 — PII retention deadline applied to every new
+// GuestCheckout row. 13 months follows the default GDPR-style retention
+// window for transactional purchase records — long enough to handle
+// disputes and reconciliation, short enough to limit identity data
+// exposure on a public-checkout table. The daily scrub job
+// (GuestCheckoutPiiScrubService) hashes guest_email and redacts
+// guest_name on rows past this deadline that never converted.
+const PII_RETENTION_MS = 13 * 30 * 24 * 60 * 60 * 1000;
+
 // P1-4 — Supabase admin calls have no built-in timeout. Race them against a
 // 10s deadline so a hung Supabase request cannot leave a paid checkout
 // stuck in conversion forever.
@@ -249,6 +258,10 @@ export class GuestCheckoutService {
           status: 'pending',
           idempotency_key: dto.idempotency_key,
           expires_at: new Date(Date.now() + CHECKOUT_TTL_MS),
+          // Audit #3 P2-3 — PII retention deadline. Daily scrub job
+          // hashes guest_email and redacts guest_name past this
+          // deadline if the row never converted to a User.
+          data_retention_at: new Date(Date.now() + PII_RETENTION_MS),
         },
       });
     } catch (err) {

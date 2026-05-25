@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConnectModule } from '../connect/connect.module';
+import { GuestCheckoutPiiScrubService } from './guest-checkout-pii-scrub.service';
 import { GuestCheckoutReconciliationService } from './guest-checkout-reconciliation.service';
 import { GuestCheckoutService } from './guest-checkout.service';
 import { StorefrontPublicController } from './storefront-public.controller';
@@ -24,6 +25,7 @@ import { StorefrontService } from './storefront.service';
     StorefrontService,
     GuestCheckoutService,
     GuestCheckoutReconciliationService,
+    GuestCheckoutPiiScrubService,
   ],
   exports: [GuestCheckoutService],
 })

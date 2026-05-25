@@ -2901,6 +2901,19 @@ model GuestCheckout {
   /// rows past this point.
   expires_at DateTime
 
+  /// Audit #3 P2-3 — PII retention deadline. Set to created_at + 13
+  /// months at row creation. A daily scrub job hashes guest_email and
+  /// redacts guest_name on rows past this deadline that never
+  /// converted to a real User (created_user_id IS NULL) — converted
+  /// rows have a User record that holds the same identity data with
+  /// its own retention rules. 13 months is the default GDPR-style
+  /// retention window for transactional purchase records.
+  data_retention_at DateTime?
+
+  /// Audit #3 P2-3 — set once the scrub job has anonymised this row
+  /// so a future run skips it without paying the hash compute.
+  scrubbed_at DateTime?
+
   @@index([package_id])
   @@index([status])
   @@index([guest_email])
@@ -2909,6 +2922,9 @@ model GuestCheckout {
   // rows ordered by last_retry_at NULLS FIRST. The composite index
   // serves both the scan filter and the ordering.
   @@index([status, last_retry_at])
+  // Audit #3 P2-3 — scrub worker scans rows whose data_retention_at
+  // has elapsed and that have not been scrubbed yet.
+  @@index([data_retention_at, scrubbed_at])
 }
 
 // Phase 3 Connect — Per-client Stripe Customer on the platform account.
