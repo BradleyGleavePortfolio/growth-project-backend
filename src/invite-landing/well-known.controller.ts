@@ -49,7 +49,7 @@ import { isProdLike } from '../common/env-validation';
 //     the deploy than to silently teach iOS/Android that no association
 //     exists.
 //
-// Required env vars (documented in README "Placeholders / TODO env vars"):
+// Required env vars (see the README env-var reference section):
 //   APPLE_TEAM_ID                 — e.g. "ABCDE12345" (Apple Developer Team)
 //   IOS_BUNDLE_ID                 — defaults to com.growthproject.app
 //   ANDROID_PACKAGE_NAME          — defaults to com.growthproject.app
