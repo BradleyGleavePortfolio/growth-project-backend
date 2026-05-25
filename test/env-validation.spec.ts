@@ -68,6 +68,9 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     // at least one is required to keep "google" advertised in /auth/signup-policy.
     GOOGLE_CLIENT_ID: 'test.apps.googleusercontent.com',
     GOOGLE_CLIENT_IDS: 'test.apps.googleusercontent.com',
+    // R43 — Coach Brief daily push dispatch. Feature-tier; explicit value
+    // keeps the missingFeature list empty for the clean-prod-env test.
+    COACH_BRIEF_NOTIFICATIONS_ENABLED: 'on',
   };
 }
 

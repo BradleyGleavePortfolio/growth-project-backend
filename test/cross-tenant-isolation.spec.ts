@@ -16,6 +16,7 @@ import { WeightService } from '../src/weight/weight.service';
 import { WaterService } from '../src/water/water.service';
 import { FastingService } from '../src/fasting/fasting.service';
 import { PtmService } from '../src/ptm/ptm.service';
+import { ClientAIContextService } from '../src/ai/client-ai-context.service';
 
 const USER_A = 'user-a-id-1111';
 const USER_B = 'user-b-id-2222';
@@ -50,6 +51,13 @@ const ptmStub = {
   emit: jest.fn(),
 };
 
+// ClientAIContextService stub — Weight/Fasting services inject it to bust the
+// per-user AI context cache after writes. The test doesn't exercise that path
+// so an invalidateForUser no-op is sufficient.
+const aiContextStub = {
+  invalidateForUser: jest.fn(),
+};
+
 describe('Cross-tenant isolation — service layer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -66,6 +74,7 @@ describe('Cross-tenant isolation — service layer', () => {
           WeightService,
           { provide: PrismaService, useValue: prismaMock },
           { provide: PtmService, useValue: ptmStub },
+          { provide: ClientAIContextService, useValue: aiContextStub },
         ],
       })
         .overrideProvider(PrismaService)
@@ -139,6 +148,7 @@ describe('Cross-tenant isolation — service layer', () => {
         providers: [
           FastingService,
           { provide: PrismaService, useValue: prismaMock },
+          { provide: ClientAIContextService, useValue: aiContextStub },
         ],
       })
         .overrideProvider(PrismaService)

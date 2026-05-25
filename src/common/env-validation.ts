@@ -124,7 +124,7 @@ export const ENV_RULES: EnvRule[] = [
     name: 'PLAY_STORE_URL',
     tier: 'feature',
     reason:
-      'Google Play Store URL surfaced on the public invite landing page. Falls back to com.tgp.app placeholder when unset; set once the Play Store listing exists.',
+      'Google Play Store URL surfaced on the public invite landing page. Falls back to com.growthproject.app placeholder when unset; set once the Play Store listing exists.',
   },
   {
     name: 'CORS_ORIGINS',

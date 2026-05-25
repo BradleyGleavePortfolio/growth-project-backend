@@ -34,7 +34,7 @@ import { Public } from '../common/decorators/public.decorator';
 // Required env vars (documented in README "Placeholders / TODO env vars"):
 //   APPLE_TEAM_ID                 — e.g. "ABCDE12345" (Apple Developer Team)
 //   IOS_BUNDLE_ID                 — defaults to com.growthproject.app
-//   ANDROID_PACKAGE_NAME          — defaults to com.tgp.app
+//   ANDROID_PACKAGE_NAME          — defaults to com.growthproject.app
 //   ANDROID_CERT_SHA256_FINGERPRINTS — comma-separated SHA256 cert
 //     fingerprints, e.g. "AA:BB:CC:...:00,DD:EE:..." (release + upload)
 @ApiTags('well-known')
@@ -106,7 +106,7 @@ export class WellKnownController {
   @Throttle({ default: { ttl: 60_000, limit: 240 } })
   assetLinks(@Res() res: Response) {
     const packageName =
-      (process.env.ANDROID_PACKAGE_NAME ?? '').trim() || 'com.tgp.app';
+      (process.env.ANDROID_PACKAGE_NAME ?? '').trim() || 'com.growthproject.app';
     const fingerprints = parseFingerprints(
       process.env.ANDROID_CERT_SHA256_FINGERPRINTS,
     );
