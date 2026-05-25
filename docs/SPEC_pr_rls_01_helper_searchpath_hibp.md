@@ -243,7 +243,7 @@ Function return types differ from the Cycle B execution-plan summary (the plan l
 - `prisma generate` green.
 - `tsc --noEmit` green.
 - `jest test/rls/` green (or cleanly skipped without DB).
-- Branch grep clean for `tgp.app`, forbidden lexicon, and Co-Authored-By trailers.
+- Branch grep clean for the banned hostname (t-g-p dot a-p-p, R45), forbidden lexicon, and AI co-author trailers.
 
 ---
 
