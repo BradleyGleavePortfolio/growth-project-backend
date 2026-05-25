@@ -22,13 +22,26 @@
 
 set -euo pipefail
 
+ENFORCE="${RLS_ENFORCEMENT_FULL:-off}"
+
 if [ -z "${DATABASE_URL:-}" ]; then
-  echo "[check-relrowsecurity] DATABASE_URL is not set; skipping (set DATABASE_URL to run)." >&2
+  if [ "$ENFORCE" = "on" ]; then
+    echo "[check-relrowsecurity] RLS_ENFORCEMENT_FULL=on and DATABASE_URL is not set -> failing build." >&2
+    exit 1
+  fi
+  echo "[check-relrowsecurity] DATABASE_URL is not set; soft-skipping (set DATABASE_URL to run)." >&2
   exit 0
 fi
 
 if ! command -v psql >/dev/null 2>&1; then
-  echo "[check-relrowsecurity] psql client not found in PATH; skipping." >&2
+  if [ "$ENFORCE" = "on" ]; then
+    # P2-007: under enforcement we must never silently skip just because the
+    # runner image lacks psql. A hard fail forces the workflow to install
+    # postgresql-client before invoking the floor guard.
+    echo "[check-relrowsecurity] RLS_ENFORCEMENT_FULL=on and psql client not found in PATH -> failing build." >&2
+    exit 1
+  fi
+  echo "[check-relrowsecurity] psql client not found in PATH; soft-skipping." >&2
   exit 0
 fi
 
@@ -55,7 +68,7 @@ if [ "${COUNT}" -gt 0 ]; then
   echo "----- end table list -----"
 fi
 
-if [ "${RLS_ENFORCEMENT_FULL:-off}" = "on" ]; then
+if [ "$ENFORCE" = "on" ]; then
   if [ "${COUNT}" -gt 0 ]; then
     echo "[check-relrowsecurity] RLS_ENFORCEMENT_FULL=on and ${COUNT} table(s) lack RLS -> failing build." >&2
     exit 1

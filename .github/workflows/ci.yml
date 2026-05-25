@@ -153,3 +153,30 @@ jobs:
           COACH_AI_MAX_ACTUAL_CENTS: '4000'
           COACH_AI_VALUE_MULTIPLIER: '3.125'
         run: node -e "require('./dist/common/env-validation').assertEnv()"
+
+  rls-floor-guard:
+    # PR-RLS-01 (audit P1-002): the relrowsecurity floor guard must be
+    # called by an actual workflow step or it protects nothing. The script
+    # itself is soft until RLS_ENFORCEMENT_FULL is flipped to 'on' after
+    # PR-RLS-08 lands, but it MUST be invoked unconditionally so the gate
+    # exists and the table-count trends are surfaced in CI logs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install postgresql-client
+        # Required by scripts/ci/check-relrowsecurity.sh. Once
+        # RLS_ENFORCEMENT_FULL=on, the script hard-fails if psql is missing
+        # (audit P2-007); installing it here keeps the guard meaningful.
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: RLS floor guard (soft until PR-RLS-08)
+        env:
+          # DATABASE_URL_AUDIT is a read-only Postgres URL to the project
+          # whose floor we want to measure. The script soft-skips when this
+          # secret is unset, so CI stays green for forks without secrets.
+          DATABASE_URL: ${{ secrets.DATABASE_URL_AUDIT }}
+          # Flip to 'on' in the workflow after PR-RLS-08 merges and the
+          # advisor returns zero rls_disabled_in_public lints.
+          RLS_ENFORCEMENT_FULL: 'off'
+        run: bash scripts/ci/check-relrowsecurity.sh
