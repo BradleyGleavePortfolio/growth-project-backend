@@ -34,6 +34,7 @@ import {
   BriefContext,
   BriefContextHeadCoach,
   BriefMode,
+  BriefStatus,
   BriefSummary,
   CoachBriefResponse,
   HeadCoachActionItem,
@@ -1106,6 +1107,34 @@ export class CoachBriefService {
       },
       select: { id: true, created_at: true },
     });
+
+    // A5-P2-3 — filter delegatedClientIds against the User table so
+    // archived / GDPR-scrubbed clients do NOT inflate team_clients_total,
+    // new_clients_last_24h, or the revenue/dunning aggregates. The
+    // open SubCoachAssignment row can outlive the backing User row
+    // (the assignment doesn't auto-close on archive), so we MUST
+    // re-validate before letting these ids flow into payment scopes.
+    const delegatedClientCreatedAtById = new Map<string, Date>();
+    if (delegatedClientIds.size > 0) {
+      const delegatedRows = await this.prisma.user.findMany({
+        where: {
+          id: { in: Array.from(delegatedClientIds) },
+          archived_at: null,
+          role: 'student',
+        },
+        select: { id: true, created_at: true },
+      });
+      // Replace delegatedClientIds with the active subset. The original
+      // raw set (built from openAssignments) is intentionally discarded
+      // here so no downstream code paths can accidentally re-introduce
+      // archived ids into payment scopes.
+      delegatedClientIds.clear();
+      for (const r of delegatedRows) {
+        delegatedClientCreatedAtById.set(r.id, r.created_at);
+        delegatedClientIds.add(r.id);
+      }
+    }
+
     const personallyManagedClients = headOwnedClients.filter(
       (c) => !delegatedClientIds.has(c.id),
     );
@@ -1118,7 +1147,8 @@ export class CoachBriefService {
     // delegated client IDs is the set of people whose purchases
     // belong to H's business. We materialize it as a deduped array so
     // the same value flows into both the Prisma `in:` filter and the
-    // raw SQL ANY() parameter for the dunning query.
+    // raw SQL ANY() parameter for the dunning query. delegatedClientIds
+    // is now the post-filter set (A5-P2-3).
     const tenantClientIds = Array.from(
       new Set<string>([
         ...personallyManagedClients.map((c) => c.id),
@@ -1128,24 +1158,11 @@ export class CoachBriefService {
 
     // P1-4: new clients in last 24h derived from the same union — head's
     // own non-delegated NEW clients + delegated assignments whose
-    // backing client row is < 24h old.
+    // backing client row is < 24h old. The delegated branch now reads
+    // from the already-filtered map (A5-P2-3).
     const personallyManagedNew24h = personallyManagedClients.filter(
       (c) => c.created_at >= twentyFourHoursAgo,
     ).length;
-    const delegatedClientCreatedAtById = new Map<string, Date>();
-    if (delegatedClientIds.size > 0) {
-      const delegatedRows = await this.prisma.user.findMany({
-        where: {
-          id: { in: Array.from(delegatedClientIds) },
-          archived_at: null,
-          role: 'student',
-        },
-        select: { id: true, created_at: true },
-      });
-      for (const r of delegatedRows) {
-        delegatedClientCreatedAtById.set(r.id, r.created_at);
-      }
-    }
     let delegatedNew24h = 0;
     for (const a of openAssignments) {
       const createdAt = delegatedClientCreatedAtById.get(a.client_id);
@@ -1172,17 +1189,21 @@ export class CoachBriefService {
     let revenueTodayCents = 0;
     let revenueTodayCount = 0;
     let revenue30dCents = 0;
-    let mrrPurchases: Array<{
-      amount_cents: number;
-      package: {
-        interval: string | null;
-        interval_count: number | null;
-      } | null;
-    }> = [];
+    // A5-P1-5 — MRR is now computed as a SQL-side aggregate so a
+    // tenant with thousands of active recurring subscriptions does
+    // not allocate one Prisma object per row in Node. The pre-fix
+    // findMany path loaded the full row set and reduced in JS; the
+    // new path projects directly to the sum-of-cents that the brief
+    // needs. Pricing semantics match the JS reducer exactly:
+    //   - interval='year'  : amount_cents / (12 * COALESCE(count,1))
+    //   - interval='month' : amount_cents / COALESCE(count,1)
+    //   - other intervals (week / day / null) contribute 0.
+    // ROUND() floors the partial cent the same way Math.round() did.
+    let mrrProjectedCents = 0;
     let dunningStateRaw: Array<{ count: bigint; total: bigint | null }> = [];
 
     if (tenantClientIds.length > 0) {
-      const [revenueTodayAgg, revenue30dAgg, mrrRows, dunningRows] =
+      const [revenueTodayAgg, revenue30dAgg, mrrAgg, dunningRows] =
         await Promise.all([
           this.prisma.clientPurchase.aggregate({
             _sum: { amount_cents: true },
@@ -1201,23 +1222,30 @@ export class CoachBriefService {
               updated_at: { gte: thirtyDaysAgo },
             },
           }),
-          // MRR — fetch recurring purchases with their package interval
-          // so we can normalize annual / multi-month plans to a monthly
-          // equivalent.
-          this.prisma.clientPurchase.findMany({
-            where: {
-              client_user_id: { in: tenantClientIds },
-              status: 'active',
-              billing_type: 'recurring',
-              entitlement_active: true,
-            },
-            select: {
-              amount_cents: true,
-              package: {
-                select: { interval: true, interval_count: true },
-              },
-            },
-          }),
+          // A5-P1-5: SQL aggregate. SUM(ROUND(per-row monthly equivalent))
+          // mirrors the previous reducer's behavior so MRR numbers stay
+          // stable across the migration.
+          this.prisma.$queryRaw<Array<{ mrr_cents: bigint | null }>>(
+            Prisma.sql`
+              SELECT COALESCE(SUM(
+                CASE
+                  WHEN p."interval" = 'year'
+                    THEN ROUND(cp."amount_cents"::numeric
+                               / (12 * GREATEST(COALESCE(p."interval_count", 1), 1)))
+                  WHEN p."interval" = 'month'
+                    THEN ROUND(cp."amount_cents"::numeric
+                               / GREATEST(COALESCE(p."interval_count", 1), 1))
+                  ELSE 0
+                END
+              ), 0)::bigint AS mrr_cents
+              FROM "ClientPurchase" cp
+              LEFT JOIN "CoachPackage" p ON p."id" = cp."package_id"
+              WHERE cp."client_user_id" = ANY(${tenantClientIds}::text[])
+                AND cp."status" = 'active'
+                AND cp."billing_type" = 'recurring'
+                AND cp."entitlement_active" = true
+            `,
+          ),
           this.prisma.$queryRaw<
             Array<{ count: bigint; total: bigint | null }>
           >(
@@ -1235,24 +1263,9 @@ export class CoachBriefService {
       revenueTodayCents = revenueTodayAgg._sum.amount_cents ?? 0;
       revenueTodayCount = revenueTodayAgg._count._all ?? 0;
       revenue30dCents = revenue30dAgg._sum.amount_cents ?? 0;
-      mrrPurchases = mrrRows;
+      mrrProjectedCents = Number(mrrAgg[0]?.mrr_cents ?? 0);
       dunningStateRaw = dunningRows;
     }
-
-    const mrrProjectedCents = mrrPurchases.reduce((sum, p) => {
-      const interval = p.package?.interval;
-      const count =
-        p.package?.interval_count && p.package.interval_count > 0
-          ? p.package.interval_count
-          : 1;
-      if (interval === 'year') {
-        return sum + Math.round(p.amount_cents / (12 * count));
-      }
-      if (interval === 'month') {
-        return sum + Math.round(p.amount_cents / count);
-      }
-      return sum;
-    }, 0);
 
     const dunningInProgress = Number(dunningStateRaw[0]?.count ?? 0);
     const dunningAmountCents = Number(dunningStateRaw[0]?.total ?? 0);
@@ -1288,7 +1301,6 @@ export class CoachBriefService {
       coach_first_name: coachFirstName,
       team_size: subCoaches.length,
       team_clients_total: teamClientsTotal,
-      active_clients: teamClientsTotal,
       new_clients_last_24h: newClientsLast24h,
       total_revenue_today_cents: revenueTodayCents,
       team_revenue_30d_cents: revenue30dCents,
@@ -1766,13 +1778,22 @@ export class CoachBriefService {
     limit: number;
   }> {
     const timezone = await this.resolveCoachTimezone(coachId);
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const cutoff = bucketDateLocal(thirtyDaysAgo, timezone);
+    const today = bucketDateLocal(now, timezone);
 
+    // A5-P2-2 — include 'failed' rows so a Claude-outage day stays
+    // visible to the coach (mobile renders the deterministic-fallback
+    // narrative for failed rows). 'generating' and 'pending' rows are
+    // excluded because they have no displayable summary yet — they
+    // belong on the today/regenerate surface, not the history list.
+    // The upper bound `lte: today` blocks accidentally-staged future
+    // briefs from leaking into the coach-visible feed.
     const where: Prisma.CoachBriefWhereInput = {
       coach_id: coachId,
-      status: 'generated',
-      brief_date: { gte: cutoff },
+      status: { in: ['generated', 'failed'] },
+      brief_date: { gte: cutoff, lte: today },
     };
 
     const [total, rows] = await Promise.all([
@@ -1814,8 +1835,16 @@ export class CoachBriefService {
     brief_mode: string | null;
     created_at: Date;
   }): CoachBriefResponse {
-    const status =
-      row.status === 'generated' || row.status === 'failed' ? row.status : 'pending';
+    // A5-P1-6 — surface 'generating' explicitly so mobile can
+    // distinguish "claimed and in-flight" from "not started yet"
+    // and choose the poll interval accordingly. Only the unknown
+    // / legacy values fall back to 'pending'.
+    const status: BriefStatus =
+      row.status === 'generated' ||
+      row.status === 'generating' ||
+      row.status === 'failed'
+        ? (row.status as BriefStatus)
+        : 'pending';
     const briefMode =
       row.brief_mode === 'solo_coach' ||
       row.brief_mode === 'head_coach' ||

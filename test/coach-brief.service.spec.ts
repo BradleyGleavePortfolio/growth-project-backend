@@ -602,10 +602,15 @@ describe('CoachBriefService head-coach mode — business-only response (P1-3) + 
     prisma.clientPurchase.aggregate
       .mockResolvedValueOnce({ _sum: { amount_cents: 420000 }, _count: { _all: 3 } }) // revenue today
       .mockResolvedValueOnce({ _sum: { amount_cents: 2840000 } }); // revenue 30d
-    prisma.clientPurchase.findMany.mockResolvedValue([
-      { amount_cents: 50000, package: { interval: 'month', interval_count: 1 } },
-    ]);
-    prisma.$queryRaw.mockResolvedValue([{ count: 1n, total: 8900n }]);
+    // A5-P1-5 — MRR was migrated from prisma.clientPurchase.findMany
+    // (one row + JS reducer) to a single $queryRaw aggregate. The
+    // first $queryRaw call is now the MRR sum (mrr_cents bigint),
+    // the second is the dunning count/total pair. Mock both shapes
+    // in order so the per-call assertions below still hit the
+    // dunning query as calls[1].
+    prisma.$queryRaw
+      .mockResolvedValueOnce([{ mrr_cents: 50000n }])
+      .mockResolvedValueOnce([{ count: 1n, total: 8900n }]);
 
     // Brief atomic claim path: no row exists yet, create returns a generating row.
     prisma.coachBrief.findUnique.mockResolvedValue(null);
@@ -694,13 +699,20 @@ describe('CoachBriefService head-coach mode — business-only response (P1-3) + 
     expect(firstAggCall.where.coach_user_id).toBeUndefined();
     // The dunning raw SQL query also runs through $queryRaw — capture
     // the call to assert it interpolates client_user_id, not
-    // coach_user_id.
-    const queryRawCall = (prisma.$queryRaw as jest.Mock).mock.calls[0]?.[0];
-    const queryRawText = Array.isArray(queryRawCall?.strings)
-      ? (queryRawCall.strings as string[]).join('')
-      : '';
-    expect(queryRawText).toMatch(/client_user_id/);
-    expect(queryRawText).not.toMatch(/coach_user_id/);
+    // coach_user_id. A5-P1-5: MRR is now the first $queryRaw call
+    // and dunning is the second. Assert both filter by client_user_id
+    // and neither leaks coach_user_id (the head-coach revenue-leak
+    // invariant from P1-7 must hold for both raw queries).
+    const queryRawCalls = (prisma.$queryRaw as jest.Mock).mock.calls;
+    expect(queryRawCalls.length).toBe(2);
+    for (const call of queryRawCalls) {
+      const callArg = call?.[0];
+      const queryRawText = Array.isArray(callArg?.strings)
+        ? (callArg.strings as string[]).join('')
+        : '';
+      expect(queryRawText).toMatch(/client_user_id/);
+      expect(queryRawText).not.toMatch(/coach_user_id/);
+    }
   });
 
   it('P1-7: head coach with no tenant clients returns zero revenue and never queries clientPurchase', async () => {
@@ -1578,9 +1590,11 @@ describe('CoachBriefPreferencesService', () => {
 
     const svc = new CoachBriefPreferencesService(asPrismaService(prisma));
     const result = await svc.getOrDefault('coach1');
+    // A5-P1-1 — operator-locked default is '05:00'. Triple-check is
+    // enforced by test/invariants/locked_defaults.spec.ts.
     expect(result).toMatchObject({
       coach_id: 'coach1',
-      notification_time: '07:00',
+      notification_time: '05:00',
       timezone: 'America/Los_Angeles',
       enabled: true,
     });

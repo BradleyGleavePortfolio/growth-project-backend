@@ -1,7 +1,8 @@
 // src/coach/brief/coach-brief.controller.ts
 //
 // Routes for the R43 Coach Brief surface, all under /coach/brief/*.
-// Guard stack on every route: [JwtAuthGuard, CoachGuard]. Scope is always
+// Guard stack on every route: [CoachBriefEnabledGuard, CoachGuard].
+// JwtAuthGuard + RolesGuard are global APP_GUARDs. Scope is always
 // req.user.id — never trust a client-supplied coach_id.
 
 import {
@@ -18,7 +19,6 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../auth/auth.guard';
 import { CoachGuard } from '../../auth/coach.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthedRequest } from '../../auth/auth-request';
@@ -45,9 +45,16 @@ import {
 // when COACH_BRIEF_ENABLED=off every route returns 404 BEFORE JWT or role
 // checks run. This prevents the disabled feature from advertising its
 // existence and lets operators kill the surface without a client deploy.
+// A5-P2-1 — JwtAuthGuard is already registered globally as APP_GUARD in
+// AppModule. Listing it again in the controller-level @UseGuards stack
+// runs JWT verification twice per request (once globally, once per the
+// decorator). We keep CoachBriefEnabledGuard first so a disabled-feature
+// 404 short-circuits BEFORE the global auth chain runs, and CoachGuard
+// is the bespoke role-narrowing guard. The RolesGuard that interprets
+// @Roles('coach') is also globally registered.
 @ApiTags('coach-brief')
 @Controller('coach/brief')
-@UseGuards(CoachBriefEnabledGuard, JwtAuthGuard, CoachGuard)
+@UseGuards(CoachBriefEnabledGuard, CoachGuard)
 @Roles('coach')
 export class CoachBriefController {
   constructor(

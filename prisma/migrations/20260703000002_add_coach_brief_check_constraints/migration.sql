@@ -92,12 +92,21 @@ ALTER TABLE "CoachBriefPreferences"
 -- that still blocks runaway writes.
 --
 -- Audit #4 P2-3: in addition to the length cap, enforce that the string
--- looks like an IANA tz identifier. We cannot call pg_timezone_names()
--- inside a CHECK (not IMMUTABLE), so the regex captures the well-formed
--- subset: one of UTC | GMT | Etc/<word> | <Region>/<City>[/<SubCity>].
--- Allowed chars: letters, digits, _, +, -. This blocks shell injection
--- payloads, SQL fragments, and stray whitespace at the DB layer while
--- bucketDateLocal() does the full Intl.DateTimeFormat validation in app.
+-- looks like a sane tz identifier. We cannot call pg_timezone_names()
+-- inside a CHECK (not IMMUTABLE), so the constraint just enforces
+-- length + a permissive alphabet so shell injection / SQL fragments /
+-- stray whitespace are blocked at the DB layer. The application-side
+-- IsValidTimezone validator (via Intl.DateTimeFormat) is the
+-- authoritative gate for "this is a real IANA tz".
+--
+-- A5-P2-5 — the previous regex
+--   ^(UTC|GMT|Etc/<word>|<Region>/<City>[/<SubCity>])$
+-- rejected legitimate single-token IANA aliases that Intl.DateTimeFormat
+-- accepts: EST, EDT, PST, MST, HST, CET, EET, MET, WET, PST8PDT,
+-- EST5EDT, MST7MDT, CST6CDT, Factory. Mobile clients on older OSes
+-- still send these, and the DTO validator was happy with them — only
+-- the DB CHECK threw, producing a 500 on save. Drop to a length-and-
+-- alphabet check; Intl.DateTimeFormat remains the authoritative gate.
 ALTER TABLE "CoachBriefPreferences"
   DROP CONSTRAINT IF EXISTS "CoachBriefPreferences_timezone_length_check",
   ADD  CONSTRAINT "CoachBriefPreferences_timezone_length_check"
@@ -107,7 +116,13 @@ ALTER TABLE "CoachBriefPreferences"
   DROP CONSTRAINT IF EXISTS "CoachBriefPreferences_timezone_format_check",
   ADD  CONSTRAINT "CoachBriefPreferences_timezone_format_check"
   CHECK (
-    "timezone" ~ '^(UTC|GMT|Etc/[A-Za-z0-9_+\-]+|[A-Za-z_]+/[A-Za-z0-9_+\-]+(/[A-Za-z0-9_+\-]+)?)$'
+    -- Allowed alphabet: letters, digits, underscore, plus, minus, slash.
+    -- Anything outside this set is shell-injection / SQL-fragment shape
+    -- and gets rejected at the DB layer regardless of what the DTO
+    -- thinks. Cross-references its rationale to the application validator
+    -- (src/common/validators/is-valid-timezone.validator.ts) which is the
+    -- authoritative gate for IANA tz validity.
+    "timezone" ~ '^[A-Za-z0-9_+\-/]+$'
   );
 
 -- ROLLBACK:

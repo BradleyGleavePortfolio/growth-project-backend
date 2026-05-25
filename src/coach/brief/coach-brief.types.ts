@@ -7,7 +7,18 @@
 
 export type BriefMode = 'solo_coach' | 'head_coach' | 'sub_coach';
 
-export type BriefStatus = 'pending' | 'generated' | 'failed';
+// A5-P1-6 — `generating` is a real DB status (the in-flight claim
+// between status='pending' and status='generated'/'failed'). The DB
+// CHECK constraint allows it; the response mapper used to collapse it
+// to 'pending' which made mobile unable to distinguish "not started"
+// from "claimed and in-flight" — that ambiguity led to double-tap
+// regenerate races. The status enum now includes 'generating' and
+// toResponse stops collapsing the value so mobile can poll explicitly.
+export type BriefStatus =
+  | 'pending'
+  | 'generating'
+  | 'generated'
+  | 'failed';
 
 export type BriefGeneratedBy = 'ai' | 'fallback';
 
@@ -59,7 +70,9 @@ export interface BriefContextHeadCoach {
 
   team_size: number;
   team_clients_total: number;
-  active_clients: number;
+  // A5-P3-1 — active_clients was a redundant alias for team_clients_total
+  // (always set to the same value). Removed; consumers should read
+  // team_clients_total.
   new_clients_last_24h: number;
 
   total_revenue_today_cents: number;

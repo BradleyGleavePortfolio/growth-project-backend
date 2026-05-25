@@ -248,7 +248,6 @@ export function makeHeadCoachContext(
     coach_first_name: 'Sarah',
     team_size: 2,
     team_clients_total: 24,
-    active_clients: 24,
     new_clients_last_24h: 1,
     total_revenue_today_cents: 12000,
     team_revenue_30d_cents: 540000,

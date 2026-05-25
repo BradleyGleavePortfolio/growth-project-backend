@@ -16,7 +16,6 @@ import {
 } from '@nestjs/common/constants';
 import { RequestMethod } from '@nestjs/common';
 import { CoachBriefController } from '../src/coach/brief/coach-brief.controller';
-import { JwtAuthGuard } from '../src/auth/auth.guard';
 import { CoachGuard } from '../src/auth/coach.guard';
 import { CoachBriefEnabledGuard } from '../src/coach/brief/coach-brief-enabled.guard';
 import { ROLES_KEY } from '../src/common/decorators/roles.decorator';
@@ -167,23 +166,24 @@ describe('CoachBriefController — class metadata', () => {
     expect(path).toBe('coach/brief');
   });
 
-  it('declares CoachBriefEnabledGuard + JwtAuthGuard + CoachGuard at the class level', () => {
+  it('declares CoachBriefEnabledGuard + CoachGuard at the class level (JwtAuthGuard global, A5-P2-1)', () => {
     const guards = Reflect.getMetadata(
       GUARDS_METADATA,
       CoachBriefController,
     ) as unknown as Array<new (...args: unknown[]) => unknown>;
     expect(Array.isArray(guards)).toBe(true);
     const names = guards.map((g) => g.name);
+    // A5-P2-1: JwtAuthGuard is intentionally absent here — it is
+    // registered globally as APP_GUARD in AppModule. Duplicating it
+    // at the controller level ran JWT verification twice per request.
     expect(names).toEqual(
       expect.arrayContaining([
         'CoachBriefEnabledGuard',
-        'JwtAuthGuard',
         'CoachGuard',
       ]),
     );
-    // Reference the imported guard classes so the symbol use is real.
+    expect(names).not.toContain('JwtAuthGuard');
     expect(guards).toContain(CoachBriefEnabledGuard);
-    expect(guards).toContain(JwtAuthGuard);
     expect(guards).toContain(CoachGuard);
   });
 
