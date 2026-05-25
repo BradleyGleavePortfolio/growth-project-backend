@@ -4,6 +4,7 @@ import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { CoachService } from './coach.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AdminPtmService } from '../admin/ptm/admin-ptm.service';
@@ -35,6 +36,18 @@ export class CoachController {
    *
    * All data is computed via parallel Prisma aggregations (no N+1 queries).
    */
+  //
+  // Coach reads their own pre-aggregated dashboard summary (stats + the
+  // first 20 attention-needed clients). The service scopes every Prisma
+  // aggregation by `req.user.id`; nothing accepts a coach_id query arg, so
+  // a coach cannot peek at another coach's roster stats. CoachGuard at
+  // class level already restricts to coach|owner; the explicit @Roles
+  // closes a Phase-10 contract-test gap (sibling handlers are on the
+  // legacy allowlist with "CoachGuard at class level", but this handler
+  // post-dates that allowlist and must declare its role directly).
+  // OWNER is listed explicitly per C1 pattern for on-call/audit clarity
+  // even though RolesGuard's owner-bypass would admit it implicitly.
+  @Roles('coach', 'owner')
   @Get('dashboard/summary')
   @ApiOperation({
     summary: 'Pre-aggregated coach dashboard summary',
