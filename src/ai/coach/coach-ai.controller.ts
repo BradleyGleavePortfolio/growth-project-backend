@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../../auth/auth.guard';
 import { CoachGuard } from '../../auth/coach.guard';
 import { RequiresTier } from '../../billing/requires-tier.decorator';
 import { SubscriptionGuard } from '../../billing/subscription.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CoachAIService } from './coach-ai.service';
 import { CoachAIStateService } from './coach-ai-state.service';
 import {
@@ -49,11 +50,20 @@ export class CoachAIController {
   // this on app open so it can hide the "Generate" buttons when the
   // engine is off, rather than letting a coach tap a button and see a
   // 503 modal.
+  // Audit: coach-only surface — `/coach/ai/status` is meaningless to
+  // students (they never see a "Generate" button). Owners listed for
+  // self-documenting parity with the rest of /coach/ai/*; RolesGuard
+  // auto-bypasses for OWNER anyway.
+  @Roles('coach', 'owner')
   @Get('status')
   status() {
     return this.state.getStatus();
   }
 
+  // Audit: only coaches generate AI workout programs for their own
+  // clients. The service-layer assertCoachOwnsClient(coachId, clientId)
+  // prevents cross-tenant generation; students never invoke generation.
+  @Roles('coach', 'owner')
   @Post('workout-program')
   @Throttle({ default: { ttl: 3600000, limit: 5 } })
   async generateWorkoutProgram(
@@ -63,6 +73,10 @@ export class CoachAIController {
     return this.svc.generateWorkoutProgram(req.user.id, body);
   }
 
+  // Audit: coach-only generation surface; assertCoachOwnsClient guards
+  // the clientId against IDOR. Students cannot generate meal plans for
+  // themselves or anyone else through this path.
+  @Roles('coach', 'owner')
   @Post('meal-plan')
   @Throttle({ default: { ttl: 3600000, limit: 5 } })
   async generateMealPlan(
@@ -72,6 +86,10 @@ export class CoachAIController {
     return this.svc.generateMealPlan(req.user.id, body);
   }
 
+  // Audit: coach-only — insight is the coach's interpretation of a
+  // client's data, never the client's self-service. Same coach-owns-
+  // client check applies before any Anthropic spend.
+  @Roles('coach', 'owner')
   @Post('client-insight')
   @Throttle({ default: { ttl: 3600000, limit: 10 } })
   async generateClientInsight(
@@ -84,6 +102,9 @@ export class CoachAIController {
   // List pending drafts (status=DRAFT) for the coach with optional client filter.
   // Mobile uses this to surface the "pending AI drafts" inbox and to poll for
   // drafts that completed after the mobile 120-second axios timeout fired.
+  // Audit: service WHERE-clause scopes by `coachId = req.user.id` so the
+  // inbox can only ever show the requesting coach's own drafts.
+  @Roles('coach', 'owner')
   @Get('drafts')
   async listDrafts(
     @Request() req: AuthedRequest,
@@ -94,16 +115,27 @@ export class CoachAIController {
     return this.svc.listDrafts(req.user.id, { clientId, limit: limitNum });
   }
 
+  // Audit: service re-checks `draft.coachId !== req.user.id` and collapses
+  // missing/foreign-owned into a single 404 (QA P0-A2) so a coach cannot
+  // probe other coaches' draft IDs. Coach-only by intent.
+  @Roles('coach', 'owner')
   @Get('drafts/:draftId')
   async getDraft(@Request() req: AuthedRequest, @Param('draftId') draftId: string) {
     return this.svc.getDraft(req.user.id, draftId);
   }
 
+  // Audit: write op on a draft; service calls getDraft(coachId, draftId)
+  // first, so foreign-owned drafts 404 before any approval-side materialize
+  // (WorkoutPlan / MealPlan create under req.user.id) runs.
+  @Roles('coach', 'owner')
   @Post('drafts/:draftId/approve')
   async approve(@Request() req: AuthedRequest, @Param('draftId') draftId: string) {
     return this.svc.approveDraft(req.user.id, draftId);
   }
 
+  // Audit: write op on a draft; service calls getDraft(coachId, draftId)
+  // first so only the owning coach can edit a draft's generated payload.
+  @Roles('coach', 'owner')
   @Post('drafts/:draftId/edit')
   async edit(
     @Request() req: AuthedRequest,
@@ -113,6 +145,10 @@ export class CoachAIController {
     return this.svc.editDraft(req.user.id, draftId, body.patch || {});
   }
 
+  // Audit: write op on a draft; service calls getDraft(coachId, draftId)
+  // first so only the owning coach can reject (set status=REJECTED on)
+  // a draft.
+  @Roles('coach', 'owner')
   @Post('drafts/:draftId/reject')
   async reject(
     @Request() req: AuthedRequest,
