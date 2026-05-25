@@ -79,6 +79,7 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     ANDROID_SHA256_FINGERPRINT:
       'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99',
     RESEND_API_KEY: 're_test_key',
+    RESEND_FROM_EMAIL: 'TGP <welcome@trygrowthproject.com>',
   };
 }
 
@@ -216,6 +217,13 @@ describe('assertEnv', () => {
           STRIPE_WEBHOOK_SECRET: 'whsec_test',
           ANTHROPIC_API_KEY: 'sk-ant-test',
           STOREFRONT_BASE_URL: 'https://storefront.example.com',
+          // R43 round-3 additions: production refuses to serve a stub
+          // AASA/assetlinks document or send welcome mail from an
+          // unverified domain, so these are now prod-hardened.
+          RESEND_FROM_EMAIL: 'TGP <welcome@trygrowthproject.com>',
+          APPLE_TEAM_ID: 'TEAMID1234',
+          ANDROID_SHA256_FINGERPRINT:
+            'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99',
         },
         { logger: silentLogger as any },
       ),
@@ -239,6 +247,12 @@ describe('assertEnv', () => {
         STRIPE_WEBHOOK_SECRET: 'whsec_test',
         ANTHROPIC_API_KEY: 'sk-ant-test',
         STOREFRONT_BASE_URL: 'https://storefront.example.com',
+        // R43 round-3 additions: prod refuses to ship without an
+        // explicit welcome-mail sender or AASA/assetlinks credentials.
+        RESEND_FROM_EMAIL: 'TGP <welcome@trygrowthproject.com>',
+        APPLE_TEAM_ID: 'TEAMID1234',
+        ANDROID_SHA256_FINGERPRINT:
+          'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99',
       },
       { logger: logger as any },
     );
@@ -314,6 +328,13 @@ describe('assertEnv', () => {
           STRIPE_WEBHOOK_SECRET: 'whsec_test',
           ANTHROPIC_API_KEY: 'sk-ant-test',
           STOREFRONT_BASE_URL: 'https://storefront.example.com',
+          // R43 round-3 additions: production refuses to serve a stub
+          // AASA/assetlinks document or send welcome mail from an
+          // unverified domain, so these are now prod-hardened.
+          RESEND_FROM_EMAIL: 'TGP <welcome@trygrowthproject.com>',
+          APPLE_TEAM_ID: 'TEAMID1234',
+          ANDROID_SHA256_FINGERPRINT:
+            'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99',
         },
         { enforceProd: false, logger: silentLogger as any },
       ),

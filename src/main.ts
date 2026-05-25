@@ -10,7 +10,8 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ThrottlerExceptionFilter } from './filters/throttler-exception.filter';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
-import { assertEnv } from './common/env-validation';
+import { assertEnv, isProdLike, parseStorefrontBaseUrl } from './common/env-validation';
+import { BootstrapValidationError } from './common/errors/bootstrap-validation.error';
 import { setupSwagger } from './common/openapi';
 import { CacheControlInterceptor } from './common/cache-control.interceptor';
 import { MetricsService } from './observability/metrics.service';
@@ -65,29 +66,39 @@ async function bootstrap() {
   // `credentials: true` it produces a response browsers refuse. In
   // production we want a hard failure rather than silent breakage.
   if (corsOrigins.includes('*')) {
-    throw new Error(
+    throw new BootstrapValidationError(
       'CORS_ORIGINS=* is not permitted — list explicit origins (e.g. https://console.example.com).',
+      'BOOTSTRAP_CORS_WILDCARD',
     );
   }
   // R43 / P2-1 — the public storefront is hosted at STOREFRONT_BASE_URL and
   // calls /api/v1/packages/public/* from the browser. Auto-include its
   // origin in the CORS allow-list so operators don't have to duplicate the
-  // hostname across CORS_ORIGINS and STOREFRONT_BASE_URL. Validate the
-  // shape and strip the trailing slash before adding so we always register
-  // a canonical origin string.
-  const storefrontBaseRaw = (process.env.STOREFRONT_BASE_URL || '').trim();
-  if (storefrontBaseRaw.length > 0) {
-    try {
-      const parsed = new URL(storefrontBaseRaw);
-      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-        const origin = `${parsed.protocol}//${parsed.host}`;
-        if (!corsOrigins.includes(origin)) {
-          corsOrigins.push(origin);
-        }
+  // hostname across CORS_ORIGINS and STOREFRONT_BASE_URL. The single
+  // source of truth for the URL shape is parseStorefrontBaseUrl in
+  // src/common/env-validation.ts.
+  //
+  // Under prod-like NODE_ENV a malformed STOREFRONT_BASE_URL is fatal —
+  // assertEnv already enforces presence, and parsing failures here would
+  // mean a deploy that ships a public URL the storefront can't actually
+  // round-trip. In dev a malformed value is logged and skipped so
+  // contributors are not blocked by a stale value in their .env.
+  const storefrontBaseRaw = process.env.STOREFRONT_BASE_URL;
+  if (typeof storefrontBaseRaw === 'string' && storefrontBaseRaw.trim().length > 0) {
+    const parsed = parseStorefrontBaseUrl(storefrontBaseRaw);
+    if (parsed.ok) {
+      if (!corsOrigins.includes(parsed.origin)) {
+        corsOrigins.push(parsed.origin);
       }
-    } catch {
-      // Malformed STOREFRONT_BASE_URL is also flagged by env-validation;
-      // skip CORS auto-inclusion silently rather than crashing bootstrap.
+    } else if (isProdLike(process.env.NODE_ENV)) {
+      throw new BootstrapValidationError(
+        `STOREFRONT_BASE_URL is invalid: ${parsed.message}`,
+        'BOOTSTRAP_STOREFRONT_BASE_URL_INVALID',
+      );
+    } else {
+      new Logger('bootstrap').warn(
+        `STOREFRONT_BASE_URL is invalid (skipping CORS auto-include in dev): ${parsed.message}`,
+      );
     }
   }
   app.enableCors({

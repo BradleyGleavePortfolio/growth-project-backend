@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { EnvValidationError } from './errors/env-validation.error';
 
 // Centralized boot-time environment validation. Replaces the small
 // `assertRequiredEnv()` helper that lived inline in src/main.ts. The goals
@@ -124,7 +125,7 @@ export const ENV_RULES: EnvRule[] = [
     name: 'PLAY_STORE_URL',
     tier: 'feature',
     reason:
-      'Google Play Store URL surfaced on the public invite landing page. Falls back to com.tgp.app placeholder when unset; set once the Play Store listing exists.',
+      'Google Play Store URL surfaced on the public invite landing page. Falls back to a com.growthproject.app placeholder when unset; set once the Play Store listing exists.',
   },
   {
     name: 'CORS_ORIGINS',
@@ -572,11 +573,10 @@ export const ENV_RULES: EnvRule[] = [
     name: 'STOREFRONT_BASE_URL',
     tier: 'feature',
     reason:
-      'R43 — base URL of the Next.js storefront (e.g. https://tgp.app). Used to build share_url responses for POST /v1/coach/packages/:id/share-link and the success/cancel redirects on guest checkout. Defaults to https://tgp.app when unset; production must set explicitly so prod links resolve correctly.',
+      'R43 — base URL of the Next.js storefront (e.g. https://joingrowthproject.com). Used to build share_url responses for POST /v1/coach/packages/:id/share-link and the success/cancel redirects on guest checkout. Defaults to https://joingrowthproject.com in dev only; production must set explicitly (enforced in prodHardenedFeatureVars below).',
     validate: (v) => {
-      if (!/^https?:\/\//i.test(v.trim())) {
-        return 'STOREFRONT_BASE_URL must be an absolute http(s) URL.';
-      }
+      const parsed = parseStorefrontBaseUrl(v);
+      if (!parsed.ok) return parsed.message;
       return null;
     },
   },
@@ -597,6 +597,24 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'feature',
     reason:
       'R43 — Resend API key used to dispatch the guest-checkout welcome email. When unset, the guest checkout flow still completes (account + entitlement created) but the welcome email is skipped and logged. Set this before launch.',
+  },
+  {
+    name: 'RESEND_FROM_EMAIL',
+    tier: 'feature',
+    reason:
+      'R43 — From-address Resend uses for the guest-checkout welcome email (e.g. "TGP <welcome@trygrowthproject.com>"). Falls back to a brand-aligned default in dev/test; production must set explicitly (enforced in prodHardenedFeatureVars) so welcome mail is sent from a verified domain. Never hard-code the address — Resend rejects sends from unverified domains and dropping welcome mail silently in production is a launch-blocker.',
+    validate: (v) => {
+      if (v.trim().length === 0) return 'RESEND_FROM_EMAIL must not be empty.';
+      // Accept either a bare address or RFC 5322 "Display <addr>" — both
+      // are valid Resend `from` inputs. We just require an @ in the
+      // angle-bracket portion when one is present, or in the bare value.
+      const angle = v.match(/<([^>]+)>/);
+      const addr = (angle ? angle[1] : v).trim();
+      if (!addr.includes('@')) {
+        return 'RESEND_FROM_EMAIL must contain a valid email address.';
+      }
+      return null;
+    },
   },
 
   // ============================================================
@@ -652,6 +670,47 @@ export interface EnvValidationResult {
 export function isProdLike(nodeEnv: string | undefined): boolean {
   const v = (nodeEnv || '').toLowerCase();
   return v === 'production' || v === 'staging';
+}
+
+// Centralised parser for STOREFRONT_BASE_URL. Single source of truth shared
+// by env-validation (boot-time warn/throw), src/main.ts (CORS auto-include),
+// share-link service (share_url construction), and storefront service
+// (success/cancel redirects). Returns the canonical form (no trailing
+// slash) and the bare origin string browsers send in the `Origin` header.
+//
+// Requires an absolute http(s) URL with a non-empty host. Anything else is
+// rejected with a structured message — callers decide whether to throw or
+// warn based on NODE_ENV.
+export type StorefrontBaseUrlParse =
+  | { ok: true; canonical: string; origin: string }
+  | { ok: false; message: string };
+
+export function parseStorefrontBaseUrl(raw: string | undefined): StorefrontBaseUrlParse {
+  const trimmed = (raw ?? '').trim();
+  if (trimmed.length === 0) {
+    return { ok: false, message: 'STOREFRONT_BASE_URL must not be empty.' };
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return {
+      ok: false,
+      message: 'STOREFRONT_BASE_URL must be an absolute http(s) URL.',
+    };
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return {
+      ok: false,
+      message: 'STOREFRONT_BASE_URL must use the http or https protocol.',
+    };
+  }
+  if (!parsed.host) {
+    return { ok: false, message: 'STOREFRONT_BASE_URL must include a host.' };
+  }
+  const canonical = `${parsed.protocol}//${parsed.host}${parsed.pathname.replace(/\/$/, '')}`;
+  const origin = `${parsed.protocol}//${parsed.host}`;
+  return { ok: true, canonical, origin };
 }
 
 // Detects values that look like unfilled placeholders the operator forgot to
@@ -770,7 +829,10 @@ export function assertEnv(
   if (result.missingHard.length) {
     const msg = `Missing required env vars: ${result.missingHard.join(', ')}`;
     logger.error(msg);
-    throw new Error(msg);
+    throw new EnvValidationError(msg, {
+      code: 'ENV_MISSING_HARD',
+      variables: result.missingHard,
+    });
   }
 
   // REDIS_URL is feature-tier (dev/test fall back to in-memory) but is
@@ -785,7 +847,10 @@ export function assertEnv(
         'REDIS_URL is required in production. Set REDIS_URL=redis(s)://host:port[/db] before deploy. ' +
         'See README.md "Placeholders / TODO env vars" section.';
       logger.error(msg);
-      throw new Error(msg);
+      throw new EnvValidationError(msg, {
+        code: 'ENV_REDIS_URL_REQUIRED',
+        variables: ['REDIS_URL'],
+      });
     }
 
     // Production-only hardening for feature-tier URL config: the
@@ -826,19 +891,52 @@ export function assertEnv(
       {
         name: 'STOREFRONT_BASE_URL',
         reason:
-          'R43 storefront — without it the share-link service mints links pointing at the https://tgp.app fallback and the storefront origin is missing from CORS, breaking the public package endpoint from any browser.',
+          'R43 storefront — without it the share-link service falls back to the dev-only canonical origin and the storefront origin is missing from CORS, breaking the public package endpoint from any browser.',
+      },
+      {
+        name: 'RESEND_FROM_EMAIL',
+        reason:
+          'R43 storefront — Resend rejects sends from unverified domains. Without an explicit from-address tied to a verified domain, welcome mail drops silently and guests never receive credentials/invite links.',
+      },
+      {
+        name: 'APPLE_TEAM_ID',
+        reason:
+          'R43 / Universal Links — without APPLE_TEAM_ID the .well-known/apple-app-site-association document is structurally empty, so iOS refuses to associate /join/* and /invite/* links with the installed app. Production must NEVER serve a stub AASA.',
+      },
+      {
+        name: 'ANDROID_CERT_SHA256_FINGERPRINTS',
+        reason:
+          'R43 / Android App Links — without an Android signing-cert SHA256 fingerprint, the .well-known/assetlinks.json document is empty and Android refuses to associate /join/* and /invite/* links with the installed app. Production must NEVER serve a stub assetlinks.json. ANDROID_SHA256_FINGERPRINT is accepted as an alias.',
       },
     ];
     const missing = prodHardenedFeatureVars.filter(
-      (v) =>
-        typeof env[v.name] !== 'string' || env[v.name]!.trim().length === 0,
+      (v) => {
+        // ANDROID_CERT_SHA256_FINGERPRINTS accepts a comma/whitespace
+        // separated list; ANDROID_SHA256_FINGERPRINT is an accepted
+        // single-value alias. Either env var being set counts.
+        if (v.name === 'ANDROID_CERT_SHA256_FINGERPRINTS') {
+          const a = env.ANDROID_CERT_SHA256_FINGERPRINTS;
+          const b = env.ANDROID_SHA256_FINGERPRINT;
+          const ok =
+            (typeof a === 'string' && a.trim().length > 0) ||
+            (typeof b === 'string' && b.trim().length > 0);
+          return !ok;
+        }
+        return (
+          typeof env[v.name] !== 'string' ||
+          env[v.name]!.trim().length === 0
+        );
+      },
     );
     if (missing.length) {
       const msg =
         `Production-required URL config is missing: ` +
         missing.map((v) => `${v.name} (${v.reason})`).join('; ');
       logger.error(msg);
-      throw new Error(msg);
+      throw new EnvValidationError(msg, {
+        code: 'ENV_PROD_HARDENED_MISSING',
+        variables: missing.map((v) => v.name),
+      });
     }
   }
 
@@ -847,14 +945,20 @@ export function assertEnv(
   if (result.placeholderHard.length) {
     const msg = `Required env vars contain placeholder values (replace with real values): ${result.placeholderHard.join(', ')}`;
     logger.error(msg);
-    throw new Error(msg);
+    throw new EnvValidationError(msg, {
+      code: 'ENV_PLACEHOLDER_HARD',
+      variables: result.placeholderHard,
+    });
   }
 
   if (result.missingProd.length) {
     if (enforceProd) {
       const msg = `Missing production-required env vars (NODE_ENV=${env.NODE_ENV}): ${result.missingProd.join(', ')}`;
       logger.error(msg);
-      throw new Error(msg);
+      throw new EnvValidationError(msg, {
+        code: 'ENV_MISSING_PROD',
+        variables: result.missingProd,
+      });
     } else {
       logger.warn(
         `Production-tier env vars missing (ok in dev, required for staging/prod): ${result.missingProd.join(', ')}`,
@@ -866,7 +970,10 @@ export function assertEnv(
     if (enforceProd) {
       const msg = `Production-tier env vars contain placeholder values (NODE_ENV=${env.NODE_ENV}): ${result.placeholderProd.join(', ')}`;
       logger.error(msg);
-      throw new Error(msg);
+      throw new EnvValidationError(msg, {
+        code: 'ENV_PLACEHOLDER_PROD',
+        variables: result.placeholderProd,
+      });
     } else {
       logger.warn(
         `Production-tier env vars contain placeholder values (ok in dev, required for staging/prod): ${result.placeholderProd.join(', ')}`,
@@ -883,7 +990,10 @@ export function assertEnv(
   if (result.validationErrorsProd.length && enforceProd) {
     const msg = `Production-tier env vars failed validation (NODE_ENV=${env.NODE_ENV}): ${result.validationErrorsProd.join('; ')}`;
     logger.error(msg);
-    throw new Error(msg);
+    throw new EnvValidationError(msg, {
+      code: 'ENV_VALIDATION_ERROR_PROD',
+      variables: result.validationErrorsProd.map((s) => s.split(':')[0]),
+    });
   }
 
   // Feature-tier vars never block boot. Warn loudly under prod-like
