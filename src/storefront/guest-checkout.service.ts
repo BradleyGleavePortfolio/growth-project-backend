@@ -562,7 +562,9 @@ export class GuestCheckoutService {
     // client-side rather than rely on a server-side email filter that
     // some Supabase versions do not expose.
     const list = await client.auth.admin.listUsers({ page: 1, perPage: 200 });
-    const match = list.data?.users?.find(
+    const users = (list as { data?: { users?: Array<{ id: string; email?: string }> } })
+      .data?.users ?? [];
+    const match = users.find(
       (u) => (u.email ?? '').toLowerCase() === email.toLowerCase(),
     );
     if (!match) {
