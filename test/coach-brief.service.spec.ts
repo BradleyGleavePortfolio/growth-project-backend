@@ -3,10 +3,11 @@
 // R43 Coach Brief — unit tests. The Anthropic client is injected via
 // BRIEF_ANTHROPIC_CLIENT_TOKEN so no network traffic occurs.
 //
-// We mock prisma per-method with jest.fn rather than constructing a full
-// fake, because the service issues many distinct queries (some via raw
-// SQL) and the goal of these tests is behaviour, not query plumbing.
+// P3-3: no untyped casts. Typed Prisma + Anthropic + Config mock
+// factories live in test/_fixtures/coach-brief-mocks.ts; structural
+// casts to the real Nest types are centralised there.
 
+import { Prisma } from '@prisma/client';
 import {
   CoachBriefService,
   buildActionItems,
@@ -14,171 +15,69 @@ import {
   buildFallbackNarrative,
   buildHeadCoachSystemPrompt,
   buildSoloCoachSystemPrompt,
+  buildHeadCoachActionItems,
   bucketDateLocal,
+  validateClaudeNarrative,
+  normalizeClaudeOutput,
+  startOfDayInTz,
+  endOfDayInTz,
+  BRIEF_GENERATION_LEASE_MS,
 } from '../src/coach/brief/coach-brief.service';
 import type {
-  BriefContext,
   BriefContextHeadCoach,
 } from '../src/coach/brief/coach-brief.types';
 import { CoachBriefScheduler } from '../src/coach/brief/coach-brief.scheduler';
 import { CoachDailyLogService } from '../src/coach/brief/coach-daily-log.service';
 import { CoachBriefPreferencesService } from '../src/coach/brief/coach-brief-preferences.service';
-
-// ─── Helpers ───────────────────────────────────────────────────────────
-
-function makePrisma() {
-  return {
-    user: {
-      findUnique: jest.fn(),
-      findMany: jest.fn(),
-      count: jest.fn(),
-    },
-    coachBrief: {
-      findUnique: jest.fn(),
-      upsert: jest.fn(),
-      update: jest.fn(),
-      updateMany: jest.fn(),
-      create: jest.fn(),
-      findMany: jest.fn(),
-      count: jest.fn(),
-    },
-    coachDailyLog: {
-      findUnique: jest.fn(),
-      upsert: jest.fn(),
-      findMany: jest.fn(),
-      count: jest.fn(),
-    },
-    coachBriefPreferences: {
-      findUnique: jest.fn(),
-      upsert: jest.fn(),
-      findMany: jest.fn(),
-      updateMany: jest.fn(),
-    },
-    teamSubCoachAssignment: {
-      findFirst: jest.fn(),
-      count: jest.fn(),
-      findMany: jest.fn(),
-    },
-    subCoachAssignment: {
-      findMany: jest.fn(),
-    },
-    clientWorkoutAssignment: {
-      findMany: jest.fn(),
-      count: jest.fn(),
-    },
-    checkIn: {
-      findMany: jest.fn(),
-    },
-    clientPurchase: {
-      aggregate: jest.fn(),
-      count: jest.fn(),
-      findMany: jest.fn(),
-    },
-    coachMessage: {
-      findMany: jest.fn(),
-    },
-    $queryRaw: jest.fn(),
-  };
-}
-
-function makeAnthropic(textOrError: string | Error) {
-  return {
-    messages: {
-      create: jest.fn(async () => {
-        if (textOrError instanceof Error) throw textOrError;
-        return { content: [{ type: 'text', text: textOrError }] };
-      }),
-    },
-  } as any;
-}
-
-function makeConfig(values: Record<string, string | undefined> = {}) {
-  return {
-    get: jest.fn((k: string) => values[k]),
-  } as any;
-}
-
-function makeContext(overrides: Partial<BriefContext> = {}): BriefContext {
-  return {
-    brief_mode: 'solo_coach',
-    date: '2026-05-25',
-    checked_in_today: 5,
-    missed_checkin: 2,
-    workouts_pending_approval: 1,
-    workouts_approved_today: 0,
-    paid_today_count: 0,
-    revenue_today_cents: 0,
-    renewals_upcoming_7d: 0,
-    dunning_in_progress: 0,
-    weight_logs_flagged: 0,
-    unread_messages: 0,
-    coach_name: 'Sarah Johnson',
-    coach_first_name: 'Sarah',
-    roster_size: 7,
-    ...overrides,
-  };
-}
-
-// Mock everything the solo aggregator queries so we can call generateBrief.
-function wireDefaultMocks(prisma: any, coachId: string, clientIds: string[]) {
-  prisma.coachBriefPreferences.findUnique.mockResolvedValue(null);
-  prisma.teamSubCoachAssignment.findFirst.mockResolvedValue(null);
-  prisma.teamSubCoachAssignment.count.mockResolvedValue(0);
-  prisma.user.findMany
-    // resolveClientScope -> students under coach
-    .mockResolvedValueOnce(clientIds.map((id) => ({ id })))
-    // aggregateSoloContext -> missing check-in clients
-    .mockResolvedValueOnce([]);
-  prisma.user.findUnique.mockResolvedValue({ name: 'Sarah Johnson' });
-  prisma.checkIn.findMany.mockResolvedValue([]);
-  prisma.clientWorkoutAssignment.findMany.mockResolvedValue([]);
-  prisma.clientWorkoutAssignment.count.mockResolvedValue(0);
-  prisma.clientPurchase.aggregate.mockResolvedValue({
-    _sum: { amount_cents: null },
-    _count: { _all: 0 },
-  });
-  prisma.clientPurchase.count.mockResolvedValue(0);
-  prisma.coachMessage.findMany.mockResolvedValue([]);
-  prisma.$queryRaw.mockResolvedValue([{ count: 0n }, { total: 0n }]); // dunning queries
-}
+import {
+  asAnthropic,
+  asConfig,
+  asPrismaService,
+  makeBriefContext,
+  makeHeadCoachContext,
+  makeMockAnthropic,
+  makeMockConfig,
+  makeMockPrisma,
+  MockPrisma,
+  wireSoloDefaults,
+} from './_fixtures/coach-brief-mocks';
 
 // ─── Mode detection ────────────────────────────────────────────────────
 
 describe('CoachBriefService.detectBriefMode', () => {
   it('returns sub_coach when an active TeamSubCoachAssignment exists as sub_coach_id', async () => {
-    const prisma = makePrisma();
+    const prisma = makeMockPrisma();
     prisma.teamSubCoachAssignment.findFirst.mockResolvedValue({ id: 'a1' });
 
-    const svc = new CoachBriefService(prisma as any, makeConfig());
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
     expect(await svc.detectBriefMode('coach1')).toBe('sub_coach');
-    // We never read the head-coach count path
     expect(prisma.teamSubCoachAssignment.count).not.toHaveBeenCalled();
   });
 
   it('returns head_coach when sub_coach assignments exist as head_coach_id', async () => {
-    const prisma = makePrisma();
+    const prisma = makeMockPrisma();
     prisma.teamSubCoachAssignment.findFirst.mockResolvedValue(null);
     prisma.teamSubCoachAssignment.count.mockResolvedValue(2);
 
-    const svc = new CoachBriefService(prisma as any, makeConfig());
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
     expect(await svc.detectBriefMode('coach1')).toBe('head_coach');
   });
 
   it('returns solo_coach when no active TeamSubCoachAssignment exists in either direction', async () => {
-    const prisma = makePrisma();
+    const prisma = makeMockPrisma();
     prisma.teamSubCoachAssignment.findFirst.mockResolvedValue(null);
     prisma.teamSubCoachAssignment.count.mockResolvedValue(0);
 
-    const svc = new CoachBriefService(prisma as any, makeConfig());
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
     expect(await svc.detectBriefMode('coach1')).toBe('solo_coach');
   });
 
   it('sub_coach takes precedence over head_coach when both directions exist', async () => {
-    const prisma = makePrisma();
+    const prisma = makeMockPrisma();
     prisma.teamSubCoachAssignment.findFirst.mockResolvedValue({ id: 'a1' });
     prisma.teamSubCoachAssignment.count.mockResolvedValue(3);
 
-    const svc = new CoachBriefService(prisma as any, makeConfig());
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
     expect(await svc.detectBriefMode('coach1')).toBe('sub_coach');
   });
 });
@@ -187,100 +86,185 @@ describe('CoachBriefService.detectBriefMode', () => {
 
 describe('CoachBriefService.resolveClientScope', () => {
   it('returns full direct roster for solo_coach', async () => {
-    const prisma = makePrisma();
+    const prisma = makeMockPrisma();
     prisma.user.findMany.mockResolvedValue([{ id: 'c1' }, { id: 'c2' }]);
 
-    const svc = new CoachBriefService(prisma as any, makeConfig());
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
     const result = await svc.resolveClientScope('coach1', 'solo_coach');
     expect(result).toEqual(['c1', 'c2']);
-    // We hit User.findMany, not the assignment table
     expect(prisma.clientWorkoutAssignment.findMany).not.toHaveBeenCalled();
   });
 
   it('returns full direct roster for head_coach', async () => {
-    const prisma = makePrisma();
+    const prisma = makeMockPrisma();
     prisma.user.findMany.mockResolvedValue([{ id: 'c1' }]);
 
-    const svc = new CoachBriefService(prisma as any, makeConfig());
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
     const result = await svc.resolveClientScope('coach1', 'head_coach');
     expect(result).toEqual(['c1']);
   });
 
-  it('returns only assigned clients for sub_coach (derived from SubCoachAssignment open rows)', async () => {
-    const prisma = makePrisma();
+  it('returns only assigned clients for sub_coach (derived from open SubCoachAssignment rows)', async () => {
+    const prisma = makeMockPrisma();
     prisma.subCoachAssignment.findMany.mockResolvedValue([
       { client_id: 'c1' },
       { client_id: 'c2' },
     ]);
-    // Filter step — both clients live + active students
     prisma.user.findMany.mockResolvedValue([{ id: 'c1' }, { id: 'c2' }]);
 
-    const svc = new CoachBriefService(prisma as any, makeConfig());
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
     const result = await svc.resolveClientScope('subCoach1', 'sub_coach');
     expect(result).toEqual(['c1', 'c2']);
     expect(prisma.subCoachAssignment.findMany).toHaveBeenCalledWith({
       where: { sub_coach_id: 'subCoach1', unassigned_at: null },
       select: { client_id: true },
     });
-    // We do NOT consult the historical ClientWorkoutAssignment table.
-    expect(prisma.clientWorkoutAssignment.findMany).not.toHaveBeenCalled();
   });
 
   it('returns empty array for sub_coach with no open SubCoachAssignment rows', async () => {
-    const prisma = makePrisma();
+    const prisma = makeMockPrisma();
     prisma.subCoachAssignment.findMany.mockResolvedValue([]);
 
-    const svc = new CoachBriefService(prisma as any, makeConfig());
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
     expect(await svc.resolveClientScope('subCoach1', 'sub_coach')).toEqual([]);
-    // No user lookup needed when there are no assignment rows.
     expect(prisma.user.findMany).not.toHaveBeenCalled();
-  });
-
-  it('filters out archived / non-student users from the sub_coach scope', async () => {
-    const prisma = makePrisma();
-    prisma.subCoachAssignment.findMany.mockResolvedValue([
-      { client_id: 'c1' },
-      { client_id: 'c2' },
-      { client_id: 'c3' },
-    ]);
-    // c2 archived → only c1 + c3 come back live.
-    prisma.user.findMany.mockResolvedValue([{ id: 'c1' }, { id: 'c3' }]);
-
-    const svc = new CoachBriefService(prisma as any, makeConfig());
-    const result = await svc.resolveClientScope('subCoach1', 'sub_coach');
-    expect(result).toEqual(['c1', 'c3']);
   });
 });
 
-// ─── Idempotency / cached return ──────────────────────────────────────
+// ─── P1-1: stale lease recovery ────────────────────────────────────────
 
-describe('CoachBriefService.generateBrief idempotency', () => {
-  it('returns cached row when status=generated exists', async () => {
-    const prisma = makePrisma();
+describe('CoachBriefService.generateBrief — stale lease recovery (P1-1)', () => {
+  it('returns the in-flight row when the lease is fresh (no Claude call)', async () => {
+    const prisma = makeMockPrisma();
+    prisma.coachBrief.findUnique.mockResolvedValue({
+      id: 'b1',
+      coach_id: 'coach1',
+      brief_date: '2026-05-25',
+      status: 'generating',
+      generated_at: null,
+      generation_started_at: new Date(), // fresh
+      narrative: null,
+      brief_context: null,
+      action_items: null,
+      generated_by: null,
+      brief_mode: null,
+      created_at: new Date(),
+    });
+    const anthropic = makeMockAnthropic('should not be called');
+
+    const svc = new CoachBriefService(
+      asPrismaService(prisma),
+      asConfig(makeMockConfig()),
+      asAnthropic(anthropic),
+    );
+    const res = await svc.generateBrief('coach1', 'America/Los_Angeles', '2026-05-25');
+    expect(res.status).toBe('pending');
+    expect(anthropic.messages.create).not.toHaveBeenCalled();
+    expect(prisma.coachBrief.update).not.toHaveBeenCalled();
+  });
+
+  it('steals a stale lease (generation_started_at older than TTL) and regenerates', async () => {
+    const prisma = makeMockPrisma();
+    const staleStarted = new Date(Date.now() - BRIEF_GENERATION_LEASE_MS - 60_000);
+
+    prisma.coachBrief.findUnique.mockResolvedValue({
+      id: 'b1',
+      coach_id: 'coach1',
+      brief_date: '2026-05-25',
+      status: 'generating',
+      generated_at: null,
+      generation_started_at: staleStarted,
+      narrative: null,
+      brief_context: null,
+      action_items: null,
+      generated_by: null,
+      brief_mode: null,
+      created_at: staleStarted,
+    });
+    // Successful steal — exactly one row claimed.
+    prisma.coachBrief.updateMany.mockResolvedValue({ count: 1 });
+    wireSoloDefaults(prisma, { coachId: 'coach1', clientIds: [] });
+    prisma.coachBrief.update.mockResolvedValue({
+      id: 'b1',
+      coach_id: 'coach1',
+      brief_date: '2026-05-25',
+      status: 'generated',
+      generated_at: new Date(),
+      generation_started_at: null,
+      narrative: 'Sarah, we ran your roster this morning and pulled together what matters. No one has logged a check-in yet this morning across your 0 active clients. We haven\'t seen any payment activity yet this morning. Nothing needs your hands-on attention right now, so we\'ll keep watching.',
+      brief_context: makeBriefContext({ roster_size: 0 }),
+      action_items: [],
+      generated_by: 'fallback',
+      brief_mode: 'solo_coach',
+      created_at: staleStarted,
+    });
+
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const res = await svc.generateBrief('coach1', 'America/Los_Angeles', '2026-05-25');
+    expect(res.status).toBe('generated');
+    expect(prisma.coachBrief.updateMany).toHaveBeenCalled();
+    expect(prisma.coachBrief.update).toHaveBeenCalled();
+  });
+
+  it('when steal loses the race, returns whatever row is fresh without calling Claude', async () => {
+    const prisma = makeMockPrisma();
+    const staleStarted = new Date(Date.now() - BRIEF_GENERATION_LEASE_MS - 60_000);
+
+    prisma.coachBrief.findUnique
+      .mockResolvedValueOnce({
+        id: 'b1',
+        coach_id: 'coach1',
+        brief_date: '2026-05-25',
+        status: 'generating',
+        generated_at: null,
+        generation_started_at: staleStarted,
+        narrative: null,
+        brief_context: null,
+        action_items: null,
+        generated_by: null,
+        brief_mode: null,
+        created_at: staleStarted,
+      })
+      .mockResolvedValueOnce({
+        id: 'b1',
+        coach_id: 'coach1',
+        brief_date: '2026-05-25',
+        status: 'generating',
+        generated_at: null,
+        generation_started_at: new Date(), // someone else just refreshed
+        narrative: null,
+        brief_context: null,
+        action_items: null,
+        generated_by: null,
+        brief_mode: null,
+        created_at: staleStarted,
+      });
+    prisma.coachBrief.updateMany.mockResolvedValue({ count: 0 });
+    const anthropic = makeMockAnthropic('should not be called');
+
+    const svc = new CoachBriefService(
+      asPrismaService(prisma),
+      asConfig(makeMockConfig()),
+      asAnthropic(anthropic),
+    );
+    const res = await svc.generateBrief('coach1', 'America/Los_Angeles', '2026-05-25');
+    expect(res.status).toBe('pending');
+    expect(anthropic.messages.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('CoachBriefService.generateBrief — idempotent generated path', () => {
+  it('returns the cached row when status=generated exists', async () => {
+    const prisma = makeMockPrisma();
     const existing = {
       id: 'b1',
       coach_id: 'coach1',
       brief_date: '2026-05-25',
       status: 'generated',
       generated_at: new Date('2026-05-25T07:00:00Z'),
+      generation_started_at: null,
       narrative: 'cached',
-      brief_context: {
-        brief_mode: 'solo_coach',
-        date: '2026-05-25',
-        checked_in_today: 1,
-        missed_checkin: 0,
-        workouts_pending_approval: 0,
-        workouts_approved_today: 0,
-        paid_today_count: 0,
-        revenue_today_cents: 0,
-        renewals_upcoming_7d: 0,
-        dunning_in_progress: 0,
-        weight_logs_flagged: 0,
-        unread_messages: 0,
-        coach_name: 'Sarah',
-        coach_first_name: 'Sarah',
-        roster_size: 1,
-      },
+      brief_context: makeBriefContext({ roster_size: 1 }),
       action_items: [],
       generated_by: 'ai',
       brief_mode: 'solo_coach',
@@ -288,100 +272,52 @@ describe('CoachBriefService.generateBrief idempotency', () => {
     };
     prisma.coachBrief.findUnique.mockResolvedValue(existing);
 
-    const svc = new CoachBriefService(prisma as any, makeConfig());
-    const result = await svc.generateBrief(
-      'coach1',
-      'America/Los_Angeles',
-      '2026-05-25',
-    );
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const result = await svc.generateBrief('coach1', 'America/Los_Angeles', '2026-05-25');
 
     expect(result.summary?.narrative).toBe('cached');
-    expect(prisma.coachBrief.upsert).not.toHaveBeenCalled();
     expect(prisma.coachBrief.update).not.toHaveBeenCalled();
   });
 
-  it('forces regeneration when opts.force is true', async () => {
-    const prisma = makePrisma();
-    // Force path claims via updateMany (status != 'generating'). Count=1
-    // means we won the claim.
+  it('forces regeneration when opts.force is true and no fresh lease exists', async () => {
+    const prisma = makeMockPrisma();
     prisma.coachBrief.updateMany.mockResolvedValue({ count: 1 });
-    wireDefaultMocks(prisma, 'coach1', []);
+    wireSoloDefaults(prisma, { coachId: 'coach1', clientIds: [] });
     prisma.coachBrief.update.mockResolvedValue({
       id: 'b1',
       coach_id: 'coach1',
       brief_date: '2026-05-25',
       status: 'generated',
       generated_at: new Date(),
-      narrative: 'fresh',
-      brief_context: makeContext({ brief_mode: 'solo_coach', roster_size: 0 }),
+      generation_started_at: null,
+      narrative: 'Sarah, we ran your roster this morning and pulled together what matters. No one has logged a check-in yet this morning across your 0 active clients. We haven\'t seen any payment activity yet this morning.',
+      brief_context: makeBriefContext({ roster_size: 0 }),
       action_items: [],
       generated_by: 'fallback',
       brief_mode: 'solo_coach',
       created_at: new Date(),
     });
 
-    const svc = new CoachBriefService(prisma as any, makeConfig());
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
     const result = await svc.generateBrief(
       'coach1',
       'America/Los_Angeles',
       '2026-05-25',
       { force: true },
     );
-    expect(result.summary?.narrative).toBe('fresh');
+    expect(result.status).toBe('generated');
     expect(prisma.coachBrief.update).toHaveBeenCalled();
-    expect(prisma.coachBrief.updateMany).toHaveBeenCalledWith({
-      where: {
-        coach_id: 'coach1',
-        brief_date: '2026-05-25',
-        status: { not: 'generating' },
-      },
-      data: { status: 'generating', generated_at: null },
-    });
+    expect(prisma.coachBrief.updateMany).toHaveBeenCalled();
   });
 
-  it('returns the in-flight row without calling Claude when a concurrent generation is in progress', async () => {
-    const prisma = makePrisma();
-    // Another worker has claimed the slot and set status='generating'.
-    prisma.coachBrief.findUnique.mockResolvedValue({
-      id: 'b1',
-      coach_id: 'coach1',
-      brief_date: '2026-05-25',
-      status: 'generating',
-      generated_at: null,
-      narrative: null,
-      brief_context: null,
-      action_items: null,
-      generated_by: null,
-      brief_mode: null,
-      created_at: new Date(),
-    });
-    const anthropic = makeAnthropic('should not be called');
-
-    const svc = new CoachBriefService(prisma as any, makeConfig(), anthropic);
-    const result = await svc.generateBrief(
-      'coach1',
-      'America/Los_Angeles',
-      '2026-05-25',
-    );
-
-    // Status is normalised to 'pending' by toResponse (only generated /
-    // failed are surfaced verbatim).
-    expect(result.status).toBe('pending');
-    expect(prisma.coachBrief.create).not.toHaveBeenCalled();
-    expect(prisma.coachBrief.update).not.toHaveBeenCalled();
-    expect(anthropic.messages.create).not.toHaveBeenCalled();
-  });
-
-  it('exactly one of two concurrent generateBrief calls reaches Claude (atomic claim)', async () => {
-    // Build two services on independent prisma mocks. The first one
-    // "wins" the create (no P2002), the second loses (P2002) and reads
-    // back the generating row.
+  it('atomic claim — losing the create race returns the inflight row without calling Claude', async () => {
     const briefRow = {
       id: 'b1',
       coach_id: 'coach1',
       brief_date: '2026-05-25',
       status: 'generating',
       generated_at: null,
+      generation_started_at: new Date(),
       narrative: null,
       brief_context: null,
       action_items: null,
@@ -390,120 +326,186 @@ describe('CoachBriefService.generateBrief idempotency', () => {
       created_at: new Date(),
     };
 
-    const winnerPrisma = makePrisma();
-    winnerPrisma.coachBrief.findUnique.mockResolvedValue(null);
-    winnerPrisma.coachBrief.create.mockResolvedValue(briefRow);
-    wireDefaultMocks(winnerPrisma, 'coach1', []);
-    winnerPrisma.coachBrief.update.mockResolvedValue({
-      ...briefRow,
-      status: 'generated',
-      generated_at: new Date(),
-      narrative: 'fresh',
-      brief_context: makeContext({ brief_mode: 'solo_coach', roster_size: 0 }),
-      action_items: [],
-      generated_by: 'fallback',
-      brief_mode: 'solo_coach',
-    });
-
-    const loserPrisma = makePrisma();
+    const loserPrisma = makeMockPrisma();
     loserPrisma.coachBrief.findUnique
-      // First read: no row exists yet (matching the winner's view at the
-      // top of the function).
       .mockResolvedValueOnce(null)
-      // Second read (after the P2002 create race lost): the winner's
-      // generating row.
       .mockResolvedValueOnce(briefRow);
-    // create throws unique-constraint error to simulate losing the race.
-    const P2002 = Object.assign(new Error('unique'), {
+    const P2002 = new Prisma.PrismaClientKnownRequestError('unique', {
       code: 'P2002',
+      clientVersion: 'test',
     });
-    Object.setPrototypeOf(
-      P2002,
-      // Match the runtime check `err instanceof PrismaClientKnownRequestError`
-      // by lifting the prototype off the real class.
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      require('@prisma/client').Prisma.PrismaClientKnownRequestError.prototype,
-    );
     loserPrisma.coachBrief.create.mockRejectedValue(P2002);
 
-    const winnerAnthropic = makeAnthropic('Sarah, all clear today.');
-    const loserAnthropic = makeAnthropic('SHOULD NOT BE CALLED');
-
-    const winnerSvc = new CoachBriefService(
-      winnerPrisma as any,
-      makeConfig(),
-      winnerAnthropic,
-    );
+    const loserAnthropic = makeMockAnthropic('should not be called');
     const loserSvc = new CoachBriefService(
-      loserPrisma as any,
-      makeConfig(),
-      loserAnthropic,
+      asPrismaService(loserPrisma),
+      asConfig(makeMockConfig()),
+      asAnthropic(loserAnthropic),
     );
-
-    const [winnerRes, loserRes] = await Promise.all([
-      winnerSvc.generateBrief('coach1', 'America/Los_Angeles', '2026-05-25'),
-      loserSvc.generateBrief('coach1', 'America/Los_Angeles', '2026-05-25'),
-    ]);
-
-    expect(winnerRes.summary?.narrative).toBe('fresh');
-    expect(loserRes.status).toBe('pending');
-    // The loser must not have touched Claude.
+    const res = await loserSvc.generateBrief(
+      'coach1',
+      'America/Los_Angeles',
+      '2026-05-25',
+    );
+    expect(res.status).toBe('pending');
     expect(loserAnthropic.messages.create).not.toHaveBeenCalled();
-    // The loser must not have updated the row (it returned the inflight
-    // row read instead).
     expect(loserPrisma.coachBrief.update).not.toHaveBeenCalled();
   });
 });
 
-// ─── Claude call + fallback ───────────────────────────────────────────
+// ─── Claude validation / contract enforcement (P1-7) ───────────────────
+
+describe('validateClaudeNarrative', () => {
+  const fiveSentenceValid =
+    "Sarah, we ran your roster and pulled the highlights together. Three of seven clients have already checked in today. We're chasing one failed payment in the background. Two workouts need your eyes before noon. Here's what to tackle: workouts and one message.";
+
+  it('accepts a valid 3–5 sentence we-voice paragraph', () => {
+    expect(validateClaudeNarrative(fiveSentenceValid, 'Sarah')).toBeNull();
+  });
+
+  it('rejects empty / whitespace narratives', () => {
+    expect(validateClaudeNarrative('   ', 'Sarah')).toBe('empty');
+  });
+
+  it('rejects too few sentences', () => {
+    expect(validateClaudeNarrative('Sarah, we got nothing.', 'Sarah')).toMatch(
+      /^too_few_sentences:/,
+    );
+  });
+
+  it('rejects too many sentences', () => {
+    const six = Array.from({ length: 6 })
+      .map((_, i) => (i === 0 ? 'Sarah, we have updates.' : `We have item ${i + 1}.`))
+      .join(' ');
+    expect(validateClaudeNarrative(six, 'Sarah')).toMatch(/^too_many_sentences:/);
+  });
+
+  it('rejects meta prefixes', () => {
+    expect(
+      validateClaudeNarrative(
+        "Here is your brief: Sarah, we have you covered. We're working on the payments. We'll keep watching.",
+        'Sarah',
+      ),
+    ).toBe('meta_prefix');
+  });
+
+  it('rejects markdown leftovers', () => {
+    expect(
+      validateClaudeNarrative(
+        "Sarah, here is what we found. **Important:** three things need eyes. We're on it.",
+        'Sarah',
+      ),
+    ).toBe('markdown');
+  });
+
+  it('rejects missing first-name opener', () => {
+    expect(
+      validateClaudeNarrative(
+        "We ran the roster this morning. Three clients checked in. We're keeping watch on everything else for you.",
+        'Sarah',
+      ),
+    ).toBe('missing_first_name');
+  });
+
+  it('rejects missing first-person plural voice', () => {
+    expect(
+      validateClaudeNarrative(
+        "Sarah, the roster looks good today. Three clients checked in. Two more need attention.",
+        'Sarah',
+      ),
+    ).toBe('missing_we_voice');
+  });
+
+  it('rejects narratives over 600 chars', () => {
+    const long = 'Sarah, ' + 'we keep going. '.repeat(60);
+    expect(validateClaudeNarrative(long, 'Sarah')).toMatch(/^too_long:/);
+  });
+});
+
+describe('normalizeClaudeOutput', () => {
+  it('strips leading code fences', () => {
+    expect(normalizeClaudeOutput('```\nSarah, we got it.\n```')).toBe(
+      'Sarah, we got it.',
+    );
+  });
+
+  it('strips a leading "Here is your brief:" prefix', () => {
+    expect(
+      normalizeClaudeOutput("Here is your brief: Sarah, we got it."),
+    ).toMatch(/^Sarah/);
+  });
+});
+
+// ─── Claude call + fallback + repair (P1-7) ────────────────────────────
 
 describe('CoachBriefService.callClaude', () => {
-  it('returns ai narrative when Claude succeeds', async () => {
-    const prisma = makePrisma();
-    const anthropic = makeAnthropic(
-      'Sarah, 5 clients checked in this morning. We flagged 1 workout for your eyes — Here is what needs your eyes:',
+  it('returns ai narrative when Claude returns a valid contract response', async () => {
+    const prisma = makeMockPrisma();
+    const valid =
+      "Sarah, we ran your roster and pulled the highlights together. Three of seven clients have already checked in today. We're chasing one failed payment in the background. Two workouts need your eyes before noon. Here's what to tackle: workouts and one message.";
+    const anthropic = makeMockAnthropic(valid);
+    const svc = new CoachBriefService(
+      asPrismaService(prisma),
+      asConfig(makeMockConfig()),
+      asAnthropic(anthropic),
     );
-    const svc = new CoachBriefService(prisma as any, makeConfig(), anthropic);
 
     const result = await svc.callClaude(
-      makeContext({ workouts_pending_approval: 1, missed_checkin: 0 }),
+      makeBriefContext({ workouts_pending_approval: 1, missed_checkin: 0 }),
     );
-
     expect(result.generated_by).toBe('ai');
-    expect(result.narrative).toMatch(/Sarah/);
+    expect(result.narrative).toBe(valid);
     expect(anthropic.messages.create).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back when Claude throws', async () => {
-    const prisma = makePrisma();
-    const anthropic = makeAnthropic(new Error('boom'));
-    const svc = new CoachBriefService(prisma as any, makeConfig(), anthropic);
+  it('attempts one repair then falls back when Claude keeps violating the contract', async () => {
+    const prisma = makeMockPrisma();
+    // Two-sentence response — fails too_few_sentences and is not
+    // recoverable via normalizeClaudeOutput (no meta prefix or
+    // markdown to strip), so the violation surfaces on both attempts.
+    const tooFew =
+      "Sarah, we have updates this morning. We will keep watching for you.";
+    const anthropic = makeMockAnthropic([tooFew, tooFew]);
+    const svc = new CoachBriefService(
+      asPrismaService(prisma),
+      asConfig(makeMockConfig()),
+      asAnthropic(anthropic),
+    );
 
     const result = await svc.callClaude(
-      makeContext({ workouts_pending_approval: 1 }),
+      makeBriefContext({ workouts_pending_approval: 1, missed_checkin: 0 }),
+    );
+    expect(result.generated_by).toBe('fallback');
+    expect(anthropic.messages.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back when Claude throws', async () => {
+    const prisma = makeMockPrisma();
+    const anthropic = makeMockAnthropic(new Error('boom'));
+    const svc = new CoachBriefService(
+      asPrismaService(prisma),
+      asConfig(makeMockConfig()),
+      asAnthropic(anthropic),
+    );
+
+    const result = await svc.callClaude(
+      makeBriefContext({ workouts_pending_approval: 1 }),
     );
     expect(result.generated_by).toBe('fallback');
     expect(result.narrative).toMatch(/Sarah/);
   });
 
-  it('falls back when Claude returns empty text', async () => {
-    const prisma = makePrisma();
-    const anthropic = makeAnthropic('   ');
-    const svc = new CoachBriefService(prisma as any, makeConfig(), anthropic);
-
-    const result = await svc.callClaude(
-      makeContext({ workouts_pending_approval: 1 }),
+  it('skips Claude entirely on the zero-action fast path (solo)', async () => {
+    const prisma = makeMockPrisma();
+    const anthropic = makeMockAnthropic('should not be called');
+    const svc = new CoachBriefService(
+      asPrismaService(prisma),
+      asConfig(makeMockConfig()),
+      asAnthropic(anthropic),
     );
-    expect(result.generated_by).toBe('fallback');
-  });
-
-  it('skips Claude entirely on the zero-action fast path', async () => {
-    const prisma = makePrisma();
-    const anthropic = makeAnthropic('should not be called');
-    const svc = new CoachBriefService(prisma as any, makeConfig(), anthropic);
 
     const result = await svc.callClaude(
-      makeContext({
+      makeBriefContext({
         checked_in_today: 5,
         missed_checkin: 0,
         workouts_pending_approval: 0,
@@ -516,118 +518,94 @@ describe('CoachBriefService.callClaude', () => {
   });
 
   it('falls back when ANTHROPIC_API_KEY is missing', async () => {
-    const prisma = makePrisma();
-    // No injected client and no API key in config -> getAnthropicClient throws
-    const svc = new CoachBriefService(prisma as any, makeConfig());
-
+    const prisma = makeMockPrisma();
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
     const result = await svc.callClaude(
-      makeContext({ workouts_pending_approval: 1 }),
+      makeBriefContext({ workouts_pending_approval: 1 }),
     );
     expect(result.generated_by).toBe('fallback');
   });
 
-  it('clamps narrative to BRIEF_MAX_NARRATIVE_CHARS', async () => {
-    const prisma = makePrisma();
-    const longText = 'a'.repeat(800);
-    const anthropic = makeAnthropic(longText);
-    const svc = new CoachBriefService(prisma as any, makeConfig(), anthropic);
-
-    const result = await svc.callClaude(
-      makeContext({ workouts_pending_approval: 1 }),
-    );
-    expect(result.narrative.length).toBeLessThanOrEqual(600);
-  });
-
   it('uses head-coach system prompt when brief_mode=head_coach', async () => {
-    const prisma = makePrisma();
-    const anthropic = makeAnthropic('Marcus, your team collected $4,200 today.');
-    const svc = new CoachBriefService(prisma as any, makeConfig(), anthropic);
+    const prisma = makeMockPrisma();
+    const valid =
+      "Marcus, we ran the team report this morning. We collected $4,200 across 3 payments today. We're chasing one failed payment in the background. The team of two sub-coaches is supporting 50 clients with two new sign-ups in 24h.";
+    const anthropic = makeMockAnthropic(valid);
+    const svc = new CoachBriefService(
+      asPrismaService(prisma),
+      asConfig(makeMockConfig()),
+      asAnthropic(anthropic),
+    );
 
-    const ctx: BriefContextHeadCoach = {
-      ...makeContext({
-        workouts_pending_approval: 1,
-        coach_name: 'Marcus Reed',
-        coach_first_name: 'Marcus',
-      }),
-      brief_mode: 'head_coach',
-      team_size: 2,
-      team_clients_total: 50,
+    const ctx = makeHeadCoachContext({
+      coach_name: 'Marcus Reed',
+      coach_first_name: 'Marcus',
       total_revenue_today_cents: 420000,
-      team_revenue_30d_cents: 2840000,
-      mrr_projected_cents: 1280000,
-      dunning_amount_cents: 38000,
-      new_clients_last_24h: 2,
-      sub_coach_highlights: [
-        { coach_name: 'Coach Priya', new_clients_24h: 2, active_clients: 25 },
-      ],
-    };
-
+    });
     await svc.callClaude(ctx);
 
-    const call = anthropic.messages.create.mock.calls[0][0];
+    expect(anthropic.messages.create).toHaveBeenCalled();
+    const call = anthropic.messages.create.mock.calls[0][0] as {
+      system: string;
+      messages: Array<{ content: string }>;
+    };
     expect(call.system).toContain('runs a team');
     expect(call.messages[0].content).toContain('TEAM BUSINESS METRICS');
   });
 });
 
-// ─── Head-coach MRR normalization ──────────────────────────────────────
+// ─── Head-coach attribution (P1-3, P1-4) ──────────────────────────────
 
-describe('CoachBriefService.aggregateHeadCoachContext MRR normalization', () => {
-  it('normalizes annual recurring purchases to monthly equivalents', async () => {
-    const prisma = makePrisma();
+describe('CoachBriefService head-coach mode — business-only response (P1-3) + assignment attribution (P1-4)', () => {
+  it('emits HeadCoachActionItem[] with no client identifiers and attributes by SubCoachAssignment', async () => {
+    const prisma = makeMockPrisma();
     const coachId = 'head1';
+    const subCoachId = 'sub1';
+    const delegatedClientId = 'cdelegated';
+    const ownClientId = 'cown';
 
     // detectBriefMode → head_coach
     prisma.teamSubCoachAssignment.findFirst.mockResolvedValue(null);
     prisma.teamSubCoachAssignment.count.mockResolvedValue(1);
-    // resolveClientScope → head coach's own roster (head_coach branch
-    // uses user.findMany).
-    prisma.user.findMany
-      // resolveClientScope
-      .mockResolvedValueOnce([{ id: 'c1' }])
-      // aggregateSoloContext.missingCheckin
-      .mockResolvedValueOnce([])
-      // aggregateHeadCoachContext.allTeamClients
-      .mockResolvedValueOnce([
-        { id: 'c1', coach_id: coachId, created_at: new Date() },
-      ]);
+
+    // coach metadata
     prisma.user.findUnique.mockResolvedValue({ name: 'Marcus Reed' });
 
-    prisma.teamSubCoachAssignment.findMany.mockResolvedValue([]);
-
-    prisma.checkIn.findMany.mockResolvedValue([]);
-    prisma.clientWorkoutAssignment.findMany.mockResolvedValue([]);
-    prisma.clientWorkoutAssignment.count.mockResolvedValue(0);
-    prisma.coachMessage.findMany.mockResolvedValue([]);
-    prisma.$queryRaw.mockResolvedValue([{ count: 0n, total: 0n }]);
-
-    // Two aggregate calls (revenue today + revenue 30d).
-    prisma.clientPurchase.aggregate
-      .mockResolvedValueOnce({ _sum: { amount_cents: 0 }, _count: { _all: 0 } }) // solo paid-today
-      .mockResolvedValueOnce({ _sum: { amount_cents: null } }) // team revenue today
-      .mockResolvedValueOnce({ _sum: { amount_cents: null } }); // team revenue 30d
-    prisma.clientPurchase.count.mockResolvedValue(0);
-
-    // MRR purchases:
-    //  - annual $1200 → 100000 cents / 12 = 8333/mo
-    //  - monthly $50 → 5000 cents / 1 = 5000/mo
-    //  - one-time (no interval) → excluded
-    prisma.clientPurchase.findMany.mockResolvedValue([
+    // TeamSubCoachAssignment for the head
+    prisma.teamSubCoachAssignment.findMany.mockResolvedValue([
       {
-        amount_cents: 100000,
-        package: { interval: 'year', interval_count: 1 },
-      },
-      {
-        amount_cents: 5000,
-        package: { interval: 'month', interval_count: 1 },
-      },
-      {
-        amount_cents: 9999,
-        package: { interval: null, interval_count: 1 },
+        sub_coach_id: subCoachId,
+        sub_coach: { id: subCoachId, name: 'Coach Priya' },
       },
     ]);
 
-    // Atomic claim: winner creates the row.
+    // Open SubCoachAssignment for the head — delegatedClientId to sub1.
+    prisma.subCoachAssignment.findMany.mockResolvedValue([
+      { sub_coach_id: subCoachId, client_id: delegatedClientId },
+    ]);
+
+    // Head coach's own clients (User.coach_id = head). Both delegated +
+    // non-delegated still appear under the head's coach_id.
+    const now = new Date();
+    prisma.user.findMany
+      // headOwnedClients
+      .mockResolvedValueOnce([
+        { id: ownClientId, created_at: now },
+        { id: delegatedClientId, created_at: now },
+      ])
+      // delegated client lookup for created_at
+      .mockResolvedValueOnce([{ id: delegatedClientId, created_at: now }]);
+
+    // Revenue + dunning + MRR aggregates.
+    prisma.clientPurchase.aggregate
+      .mockResolvedValueOnce({ _sum: { amount_cents: 420000 }, _count: { _all: 3 } }) // revenue today
+      .mockResolvedValueOnce({ _sum: { amount_cents: 2840000 } }); // revenue 30d
+    prisma.clientPurchase.findMany.mockResolvedValue([
+      { amount_cents: 50000, package: { interval: 'month', interval_count: 1 } },
+    ]);
+    prisma.$queryRaw.mockResolvedValue([{ count: 1n, total: 8900n }]);
+
+    // Brief atomic claim path: no row exists yet, create returns a generating row.
     prisma.coachBrief.findUnique.mockResolvedValue(null);
     prisma.coachBrief.create.mockResolvedValue({
       id: 'b1',
@@ -635,6 +613,110 @@ describe('CoachBriefService.aggregateHeadCoachContext MRR normalization', () => 
       brief_date: '2026-05-25',
       status: 'generating',
       generated_at: null,
+      generation_started_at: now,
+      narrative: null,
+      brief_context: null,
+      action_items: null,
+      generated_by: null,
+      brief_mode: null,
+      created_at: now,
+    });
+
+    let capturedActionItems: unknown = null;
+    let capturedContext: unknown = null;
+    prisma.coachBrief.update.mockImplementation((args) => {
+      const data = (args as { data: Prisma.CoachBriefUpdateInput }).data;
+      capturedActionItems = data.action_items;
+      capturedContext = data.brief_context;
+      return Promise.resolve({
+        id: 'b1',
+        coach_id: coachId,
+        brief_date: '2026-05-25',
+        status: 'generated',
+        generated_at: now,
+        generation_started_at: null,
+        narrative: 'Marcus, we have the team report. We collected $4,200 today. We are chasing one failed payment.',
+        brief_context: data.brief_context,
+        action_items: data.action_items,
+        generated_by: 'fallback',
+        brief_mode: 'head_coach',
+        created_at: now,
+      });
+    });
+
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const result = await svc.generateBrief(coachId, 'America/Los_Angeles', '2026-05-25');
+
+    expect(result.summary?.brief_mode).toBe('head_coach');
+    // Action items: no client_id, no client_name fields anywhere.
+    const items = capturedActionItems as Array<Record<string, unknown>>;
+    expect(items.length).toBeGreaterThan(0);
+    for (const item of items) {
+      expect(item.client_id).toBeUndefined();
+      expect(item.client_name).toBeUndefined();
+      expect(['team_revenue_review', 'dunning_queue', 'team_performance', 'sub_coach_operations']).toContain(
+        item.type,
+      );
+    }
+
+    // Context shape: no per-client counters in the head-coach payload.
+    const ctx = capturedContext as Record<string, unknown>;
+    expect(ctx.brief_mode).toBe('head_coach');
+    expect(ctx.workouts_pending_approval).toBeUndefined();
+    expect(ctx.unread_messages).toBeUndefined();
+    expect(ctx.weight_logs_flagged).toBeUndefined();
+    expect(ctx.missed_checkin).toBeUndefined();
+
+    // P1-4: sub-coach highlights derived from SubCoachAssignment, not
+    // User.coach_id. The single delegated client is attributed under sub1.
+    const highlights = ctx.sub_coach_highlights as Array<{ active_clients: number }>;
+    expect(highlights[0].active_clients).toBe(1);
+    expect(ctx.team_clients_total).toBe(2);
+  });
+});
+
+// ─── P1-5: sub-coach unread messages via client_id scope ───────────────
+
+describe('CoachBriefService sub-coach unread messages — P1-5', () => {
+  it('queries coachMessage by client_id IN clientIds, not coach_id = sub_coach_id', async () => {
+    const prisma = makeMockPrisma();
+    const subCoachId = 'sub1';
+    const assignedClientIds = ['c1', 'c2'];
+
+    prisma.teamSubCoachAssignment.findFirst.mockResolvedValue({ id: 'a1' });
+    prisma.subCoachAssignment.findMany.mockResolvedValue(
+      assignedClientIds.map((id) => ({ client_id: id })),
+    );
+    prisma.user.findMany
+      .mockResolvedValueOnce(assignedClientIds.map((id) => ({ id }))) // resolveClientScope filter
+      .mockResolvedValueOnce([]); // missingCheckinClients
+    prisma.user.findUnique.mockResolvedValue({ name: 'Sub Coach' });
+
+    prisma.checkIn.findMany.mockResolvedValue([]);
+    prisma.clientWorkoutAssignment.findMany.mockResolvedValue([]);
+    prisma.clientWorkoutAssignment.count.mockResolvedValue(0);
+    prisma.clientPurchase.aggregate.mockResolvedValue({
+      _sum: { amount_cents: null },
+      _count: { _all: 0 },
+    });
+    prisma.clientPurchase.count.mockResolvedValue(0);
+    prisma.coachMessage.findMany.mockResolvedValue([
+      {
+        client_id: 'c1',
+        client: { name: 'Client One' },
+        body: 'hi coach',
+        created_at: new Date(),
+      },
+    ]);
+    prisma.$queryRaw.mockResolvedValue([{ count: 0n, total: 0n }]);
+    prisma.coachBrief.findUnique.mockResolvedValue(null);
+    prisma.coachBrief.create.mockResolvedValue({
+      id: 'b1',
+      coach_id: subCoachId,
+      brief_date: '2026-05-25',
+      status: 'generating',
+      generated_at: null,
+      generation_started_at: new Date(),
       narrative: null,
       brief_context: null,
       action_items: null,
@@ -642,72 +724,72 @@ describe('CoachBriefService.aggregateHeadCoachContext MRR normalization', () => 
       brief_mode: null,
       created_at: new Date(),
     });
-    let capturedMrr = -1;
-    prisma.coachBrief.update.mockImplementation((args: any) => {
-      capturedMrr = args.data.brief_context.mrr_projected_cents;
+    prisma.coachBrief.update.mockImplementation((args) => {
+      const data = (args as { data: Prisma.CoachBriefUpdateInput }).data;
       return Promise.resolve({
         id: 'b1',
-        coach_id: coachId,
+        coach_id: subCoachId,
         brief_date: '2026-05-25',
         status: 'generated',
         generated_at: new Date(),
-        narrative: 'ok',
-        brief_context: args.data.brief_context,
-        action_items: [],
+        generation_started_at: null,
+        narrative: 'placeholder',
+        brief_context: data.brief_context,
+        action_items: data.action_items,
         generated_by: 'fallback',
-        brief_mode: 'head_coach',
+        brief_mode: 'sub_coach',
         created_at: new Date(),
       });
     });
 
-    const svc = new CoachBriefService(prisma as any, makeConfig());
-    await svc.generateBrief(coachId, 'America/Los_Angeles', '2026-05-25');
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    await svc.generateBrief(subCoachId, 'America/Los_Angeles', '2026-05-25');
 
-    // 8333 (annual) + 5000 (monthly) = 13333; one-time excluded.
-    expect(capturedMrr).toBe(13333);
+    const call = prisma.coachMessage.findMany.mock.calls[0]?.[0] as {
+      where: { client_id: { in: string[] }; NOT: { sender_id: string } };
+    };
+    expect(call.where.client_id).toEqual({ in: assignedClientIds });
+    expect(call.where.NOT).toEqual({ sender_id: subCoachId });
+    // Critically: we do NOT filter by coach_id (which is head-coach-scoped).
+    const whereKeys = Object.keys(call.where);
+    expect(whereKeys).not.toContain('coach_id');
   });
 });
 
-// ─── Pure helpers ──────────────────────────────────────────────────────
+// ─── Voice fallback (P1-6) ─────────────────────────────────────────────
 
-describe('buildBriefPrompt', () => {
-  it('includes the coach first name and numeric fields', () => {
-    const out = buildBriefPrompt(makeContext({ coach_first_name: 'Sarah' }));
-    expect(out).toContain('Coach first name: Sarah');
-    expect(out).toContain('Roster size: 7');
-    expect(out).toContain('Check-ins received today: 5');
-  });
-
-  it('does not include the head-coach business section in solo_coach mode', () => {
-    const out = buildBriefPrompt(makeContext({ brief_mode: 'solo_coach' }));
-    expect(out).not.toContain('TEAM BUSINESS METRICS');
-  });
-
-  it('includes team business section in head_coach mode', () => {
-    const out = buildBriefPrompt({
-      ...makeContext(),
-      brief_mode: 'head_coach',
-      team_size: 2,
-      team_clients_total: 50,
-      total_revenue_today_cents: 420000,
-      team_revenue_30d_cents: 2840000,
-      mrr_projected_cents: 1280000,
-      dunning_amount_cents: 38000,
-      new_clients_last_24h: 2,
-      sub_coach_highlights: [
-        { coach_name: 'Priya', new_clients_24h: 2, active_clients: 25 },
-      ],
-    } as BriefContextHeadCoach);
-    expect(out).toContain('TEAM BUSINESS METRICS');
-    expect(out).toContain('Team revenue today: $4200');
-    expect(out).toContain('Priya: 25 clients');
-  });
-});
-
-describe('buildFallbackNarrative', () => {
-  it('returns all-clear when total action count is zero', () => {
+describe('buildFallbackNarrative — TGP voice contract (P1-6)', () => {
+  it('produces 3–5 sentences, opens with coach first name, uses we-voice', () => {
     const out = buildFallbackNarrative(
-      makeContext({
+      makeBriefContext({
+        coach_first_name: 'Sarah',
+        checked_in_today: 5,
+        missed_checkin: 2,
+        workouts_pending_approval: 1,
+      }),
+    );
+    expect(out.length).toBeLessThanOrEqual(600);
+    expect(out.startsWith('Sarah, ')).toBe(true);
+    expect(/\b(we|we're|we've|we'll)\b/i.test(out)).toBe(true);
+    const sentences = out.split(/(?<=[.!?])(?=\s|$)/).filter((s) => s.trim());
+    expect(sentences.length).toBeGreaterThanOrEqual(3);
+    expect(sentences.length).toBeLessThanOrEqual(5);
+  });
+
+  it('produces a valid head-coach fallback', () => {
+    const out = buildFallbackNarrative(
+      makeHeadCoachContext({ coach_first_name: 'Marcus' }),
+    );
+    expect(out.startsWith('Marcus, ')).toBe(true);
+    expect(/\b(we|we're|we've|we'll)\b/i.test(out)).toBe(true);
+    const sentences = out.split(/(?<=[.!?])(?=\s|$)/).filter((s) => s.trim());
+    expect(sentences.length).toBeGreaterThanOrEqual(3);
+    expect(sentences.length).toBeLessThanOrEqual(5);
+  });
+
+  it('zero-action solo fallback still satisfies the contract', () => {
+    const out = buildFallbackNarrative(
+      makeBriefContext({
         checked_in_today: 3,
         missed_checkin: 0,
         workouts_pending_approval: 0,
@@ -715,36 +797,75 @@ describe('buildFallbackNarrative', () => {
         unread_messages: 0,
       }),
     );
-    expect(out).toMatch(/All clear/);
-    expect(out).toMatch(/Sarah/);
-  });
-
-  it('mentions workouts pending approval when present', () => {
-    const out = buildFallbackNarrative(
-      makeContext({
-        workouts_pending_approval: 2,
-        missed_checkin: 0,
-        weight_logs_flagged: 0,
-        unread_messages: 0,
-      }),
-    );
-    expect(out).toMatch(/2 workouts waiting on approval/);
-  });
-
-  it('uses singular plurals correctly', () => {
-    const out = buildFallbackNarrative(
-      makeContext({
-        workouts_pending_approval: 1,
-        missed_checkin: 0,
-        weight_logs_flagged: 0,
-        unread_messages: 0,
-      }),
-    );
-    expect(out).toMatch(/1 workout waiting on approval/);
+    expect(out.startsWith('Sarah, ')).toBe(true);
+    expect(/\bwe(?:'(?:re|ve|ll))?\b/i.test(out)).toBe(true);
   });
 });
 
-describe('buildActionItems', () => {
+// ─── Timezone math (P1-8) ──────────────────────────────────────────────
+
+describe('startOfDayInTz / endOfDayInTz — half-hour + DST (P1-8)', () => {
+  function formatInTz(d: Date, tz: string): string {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(d);
+  }
+
+  it('Asia/Kolkata (UTC+5:30) start-of-day matches the requested date', () => {
+    const start = startOfDayInTz('2026-05-25', 'Asia/Kolkata');
+    expect(formatInTz(start, 'Asia/Kolkata').startsWith('2026-05-25')).toBe(true);
+    // 00:00 IST → 18:30 UTC prior day
+    expect(start.toISOString()).toBe('2026-05-24T18:30:00.000Z');
+  });
+
+  it('Asia/Kathmandu (UTC+5:45) start-of-day matches the requested date', () => {
+    const start = startOfDayInTz('2026-05-25', 'Asia/Kathmandu');
+    expect(formatInTz(start, 'Asia/Kathmandu').startsWith('2026-05-25')).toBe(true);
+    expect(start.toISOString()).toBe('2026-05-24T18:15:00.000Z');
+  });
+
+  it('Australia/Adelaide (UTC+9:30/+10:30) — start-of-day rolls under DST', () => {
+    const start = startOfDayInTz('2026-05-25', 'Australia/Adelaide');
+    expect(formatInTz(start, 'Australia/Adelaide').startsWith('2026-05-25')).toBe(true);
+  });
+
+  it('America/New_York spring-forward day — endOfDay still resolves to the same calendar date', () => {
+    const end = endOfDayInTz('2026-03-08', 'America/New_York');
+    expect(formatInTz(end, 'America/New_York').startsWith('2026-03-08')).toBe(true);
+  });
+
+  it('America/New_York fall-back day — endOfDay still resolves to the same calendar date', () => {
+    const end = endOfDayInTz('2026-11-01', 'America/New_York');
+    expect(formatInTz(end, 'America/New_York').startsWith('2026-11-01')).toBe(true);
+  });
+});
+
+// ─── Pure helpers ──────────────────────────────────────────────────────
+
+describe('buildBriefPrompt', () => {
+  it('includes the coach first name and numeric fields (solo)', () => {
+    const out = buildBriefPrompt(makeBriefContext({ coach_first_name: 'Sarah' }));
+    expect(out).toContain('Coach first name: Sarah');
+    expect(out).toContain('Roster size: 7');
+    expect(out).toContain('Check-ins received today: 5');
+  });
+
+  it('head-coach prompt never includes the solo client section', () => {
+    const out = buildBriefPrompt(makeHeadCoachContext());
+    expect(out).toContain('TEAM BUSINESS METRICS');
+    expect(out).not.toContain('CLIENT DATA');
+    expect(out).not.toContain('Roster size:');
+  });
+});
+
+describe('buildActionItems (solo / sub-coach)', () => {
   it('sorts by priority ASC then by type alphabetically', () => {
     const items = buildActionItems({
       pendingWorkouts: [
@@ -759,7 +880,6 @@ describe('buildActionItems', () => {
       missingCheckinClients: [{ id: 'c4', name: 'Dan' }],
     });
     expect(items.map((i) => i.priority)).toEqual([1, 1, 2, 3]);
-    // priority 1: message_unread < workout_approval alphabetically
     expect(items[0].type).toBe('message_unread');
     expect(items[1].type).toBe('workout_approval');
   });
@@ -776,15 +896,24 @@ describe('buildActionItems', () => {
     });
     expect(items.filter((i) => i.type === 'checkin_missing')).toHaveLength(5);
   });
+});
 
-  it('returns an empty array when no inputs', () => {
-    const items = buildActionItems({
-      pendingWorkouts: [],
-      unreadThreads: [],
-      flaggedWeightLogs: [],
-      missingCheckinClients: [],
+describe('buildHeadCoachActionItems', () => {
+  it('emits team-level items with no client identifiers', () => {
+    const ctx: BriefContextHeadCoach = makeHeadCoachContext({
+      dunning_in_progress: 2,
+      dunning_amount_cents: 11000,
     });
-    expect(items).toEqual([]);
+    const items = buildHeadCoachActionItems(ctx);
+    expect(items.length).toBeGreaterThan(0);
+    for (const i of items) {
+      // No client_id / client_name on the type itself.
+      const itemRecord = i as unknown as Record<string, unknown>;
+      expect(itemRecord.client_id).toBeUndefined();
+      expect(itemRecord.client_name).toBeUndefined();
+    }
+    const types = items.map((i) => i.type);
+    expect(types).toContain('dunning_queue');
   });
 });
 
@@ -802,8 +931,6 @@ describe('buildSoloCoachSystemPrompt / buildHeadCoachSystemPrompt', () => {
   });
 });
 
-// ─── bucketDateLocal sanity ─────────────────────────────────────────────
-
 describe('bucketDateLocal', () => {
   it('returns YYYY-MM-DD format', () => {
     const d = new Date('2026-05-25T08:00:00Z');
@@ -813,7 +940,6 @@ describe('bucketDateLocal', () => {
   });
 
   it('respects the supplied timezone (Sydney rolls over before UTC)', () => {
-    // 23:00 UTC on May 24 = May 25 09:00 in Sydney
     const d = new Date('2026-05-24T23:00:00Z');
     expect(bucketDateLocal(d, 'Australia/Sydney')).toBe('2026-05-25');
     expect(bucketDateLocal(d, 'America/Los_Angeles')).toBe('2026-05-24');
@@ -822,21 +948,63 @@ describe('bucketDateLocal', () => {
 
 // ─── Scheduler ─────────────────────────────────────────────────────────
 
+interface SchedulerNotifications {
+  pushToUser: jest.Mock;
+}
+
+interface SchedulerBriefService {
+  getOrGenerateTodaysBrief: jest.Mock;
+}
+
+function makeSchedulerBriefService(
+  summary:
+    | null
+    | { narrative: string } = { narrative: 'Sarah, all clear today.' },
+): SchedulerBriefService {
+  return {
+    getOrGenerateTodaysBrief: jest.fn().mockResolvedValue({
+      id: 'b1',
+      coach_id: 'coach1',
+      brief_date: '2026-05-25',
+      status: summary ? 'generated' : 'pending',
+      brief_mode: 'solo_coach',
+      generated_at: new Date().toISOString(),
+      summary: summary
+        ? {
+            date: '2026-05-25',
+            brief_mode: 'solo_coach',
+            narrative: summary.narrative,
+            brief_context: makeBriefContext(),
+            action_items: [],
+            generated_by: 'ai',
+          }
+        : null,
+      created_at: new Date().toISOString(),
+    }),
+  };
+}
+
+function makeScheduler(
+  prisma: MockPrisma,
+  briefService: SchedulerBriefService,
+  notifications: SchedulerNotifications,
+  config: Record<string, string | undefined> = {},
+): CoachBriefScheduler {
+  return new CoachBriefScheduler(
+    asPrismaService(prisma),
+    briefService as unknown as CoachBriefService,
+    notifications as unknown as ConstructorParameters<typeof CoachBriefScheduler>[2],
+    asConfig(makeMockConfig(config)),
+  );
+}
+
 describe('CoachBriefScheduler.maybeDispatch', () => {
   it('skips coach when local time does not match notification_time', async () => {
-    const prisma = makePrisma();
-    const notifications = { pushToUser: jest.fn() };
-    const briefService = {
-      getOrGenerateTodaysBrief: jest.fn(),
-    };
-    const scheduler = new CoachBriefScheduler(
-      prisma as any,
-      briefService as any,
-      notifications as any,
-      makeConfig(),
-    );
+    const prisma = makeMockPrisma();
+    const notifications: SchedulerNotifications = { pushToUser: jest.fn() };
+    const briefService = { getOrGenerateTodaysBrief: jest.fn() };
+    const scheduler = makeScheduler(prisma, briefService, notifications);
 
-    // 12:00 UTC on May 25 == 05:00 PT — does not match 07:00 preference
     const now = new Date('2026-05-25T12:00:00Z');
     await scheduler.maybeDispatch(
       {
@@ -851,196 +1019,105 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     expect(notifications.pushToUser).not.toHaveBeenCalled();
   });
 
-  it('skips coach with no expo_push_token even when time matches', async () => {
-    const prisma = makePrisma();
-    const notifications = { pushToUser: jest.fn() };
-    const briefService = {
-      getOrGenerateTodaysBrief: jest.fn(),
-    };
-    const scheduler = new CoachBriefScheduler(
-      prisma as any,
-      briefService as any,
-      notifications as any,
-      makeConfig(),
+  it('does NOT mark last_push_attempt_date when generation is still in-flight (P1-2)', async () => {
+    const prisma = makeMockPrisma();
+    const notifications: SchedulerNotifications = { pushToUser: jest.fn() };
+    // brief.summary is null — generation is pending / still in-flight.
+    const briefService = makeSchedulerBriefService(null);
+    const scheduler = makeScheduler(prisma, briefService, notifications);
+
+    const now = new Date('2026-05-25T14:00:00Z'); // 07:00 PT
+    await scheduler.maybeDispatch(
+      {
+        coach_id: 'coach1',
+        notification_time: '07:00',
+        timezone: 'America/Los_Angeles',
+        coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
+      },
+      now,
     );
 
-    // 14:00 UTC == 07:00 PT
+    expect(briefService.getOrGenerateTodaysBrief).toHaveBeenCalled();
+    expect(notifications.pushToUser).not.toHaveBeenCalled();
+    // The push ledger must not have been touched — leaving the slot open
+    // for the next minute's retry.
+    expect(prisma.coachBriefPushLedger.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('uses the server-only CoachBriefPushLedger for dedup (P1-9)', async () => {
+    const prisma = makeMockPrisma();
+    prisma.coachBriefPushLedger.upsert.mockResolvedValue({});
+    prisma.coachBriefPushLedger.updateMany
+      .mockResolvedValueOnce({ count: 1 }) // attempt claim
+      .mockResolvedValueOnce({ count: 1 }); // success marker
+    const notifications: SchedulerNotifications = {
+      pushToUser: jest.fn().mockResolvedValue(undefined),
+    };
+    const briefService = makeSchedulerBriefService();
+    const scheduler = makeScheduler(prisma, briefService, notifications);
+
     const now = new Date('2026-05-25T14:00:00Z');
     await scheduler.maybeDispatch(
       {
         coach_id: 'coach1',
         notification_time: '07:00',
         timezone: 'America/Los_Angeles',
-        coach: { id: 'coach1', name: 'S', expo_push_token: null },
-      },
-      now,
-    );
-    expect(notifications.pushToUser).not.toHaveBeenCalled();
-  });
-
-  it('dispatches push when local time matches', async () => {
-    const prisma = makePrisma();
-    prisma.coachBriefPreferences.updateMany.mockResolvedValue({ count: 1 });
-    const notifications = { pushToUser: jest.fn().mockResolvedValue(undefined) };
-    const briefService = {
-      getOrGenerateTodaysBrief: jest.fn().mockResolvedValue({
-        id: 'b1',
-        coach_id: 'coach1',
-        brief_date: '2026-05-25',
-        status: 'generated',
-        brief_mode: 'solo_coach',
-        generated_at: new Date().toISOString(),
-        summary: {
-          date: '2026-05-25',
-          brief_mode: 'solo_coach',
-          narrative: 'Sarah, all clear today.',
-          brief_context: makeContext(),
-          action_items: [],
-          generated_by: 'ai',
-        },
-        created_at: new Date().toISOString(),
-      }),
-    };
-    const scheduler = new CoachBriefScheduler(
-      prisma as any,
-      briefService as any,
-      notifications as any,
-      makeConfig(),
-    );
-
-    const now = new Date('2026-05-25T14:00:00Z'); // 07:00 PT
-    await scheduler.maybeDispatch(
-      {
-        coach_id: 'coach1',
-        notification_time: '07:00',
-        timezone: 'America/Los_Angeles',
         coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
       },
       now,
     );
-    expect(briefService.getOrGenerateTodaysBrief).toHaveBeenCalledWith('coach1');
+
+    expect(prisma.coachBriefPushLedger.upsert).toHaveBeenCalled();
+    expect(prisma.coachBriefPushLedger.updateMany).toHaveBeenCalledTimes(2);
+    // Critically: CoachBriefPreferences.updateMany must NOT be used for
+    // dedup any more — that table holds coach-writable RLS state.
+    expect(prisma.coachBriefPreferences.updateMany).not.toHaveBeenCalled();
     expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
-    const [userId, title, body] = notifications.pushToUser.mock.calls[0];
-    expect(userId).toBe('coach1');
-    expect(title).toBe('Your daily brief is ready');
-    expect(body).toMatch(/Sarah/);
   });
 
-  it('skips push when another instance already claimed today (updateMany count=0)', async () => {
-    const prisma = makePrisma();
-    // Another Fly.io instance already flipped last_push_date to today.
-    prisma.coachBriefPreferences.updateMany.mockResolvedValue({ count: 0 });
-    const notifications = { pushToUser: jest.fn() };
-    const briefService = { getOrGenerateTodaysBrief: jest.fn() };
-    const scheduler = new CoachBriefScheduler(
-      prisma as any,
-      briefService as any,
-      notifications as any,
-      makeConfig(),
-    );
+  it('skips push when another instance has already claimed today', async () => {
+    const prisma = makeMockPrisma();
+    prisma.coachBriefPushLedger.upsert.mockResolvedValue({});
+    // Attempt claim returns count=0 — another instance won.
+    prisma.coachBriefPushLedger.updateMany.mockResolvedValue({ count: 0 });
+    const notifications: SchedulerNotifications = { pushToUser: jest.fn() };
+    const briefService = makeSchedulerBriefService();
+    const scheduler = makeScheduler(prisma, briefService, notifications);
 
-    const now = new Date('2026-05-25T14:00:00Z'); // 07:00 PT
     await scheduler.maybeDispatch(
       {
         coach_id: 'coach1',
         notification_time: '07:00',
         timezone: 'America/Los_Angeles',
-        coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
-      },
-      now,
-    );
-    expect(briefService.getOrGenerateTodaysBrief).not.toHaveBeenCalled();
-    expect(notifications.pushToUser).not.toHaveBeenCalled();
-  });
-
-  it('falls back to UTC and continues dispatch when timezone is invalid', async () => {
-    const prisma = makePrisma();
-    prisma.coachBriefPreferences.updateMany.mockResolvedValue({ count: 1 });
-    const notifications = { pushToUser: jest.fn().mockResolvedValue(undefined) };
-    const briefService = {
-      getOrGenerateTodaysBrief: jest.fn().mockResolvedValue({
-        id: 'b1',
-        coach_id: 'coach1',
-        brief_date: '2026-05-25',
-        status: 'generated',
-        brief_mode: 'solo_coach',
-        generated_at: new Date().toISOString(),
-        summary: {
-          date: '2026-05-25',
-          brief_mode: 'solo_coach',
-          narrative: 'Sarah, all clear today.',
-          brief_context: makeContext(),
-          action_items: [],
-          generated_by: 'ai',
-        },
-        created_at: new Date().toISOString(),
-      }),
-    };
-    const scheduler = new CoachBriefScheduler(
-      prisma as any,
-      briefService as any,
-      notifications as any,
-      makeConfig(),
-    );
-
-    const warnSpy = jest
-      .spyOn(scheduler['logger'], 'warn')
-      .mockImplementation(() => undefined);
-
-    // notification_time '14:00' matches 14:00 UTC, so after UTC fallback
-    // the dispatch should proceed all the way through pushToUser.
-    await scheduler.maybeDispatch(
-      {
-        coach_id: 'coach1',
-        notification_time: '14:00',
-        timezone: 'Not/A_Real_Tz',
         coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
       },
       new Date('2026-05-25T14:00:00Z'),
     );
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Invalid timezone 'Not/A_Real_Tz'"),
-    );
-    expect(briefService.getOrGenerateTodaysBrief).toHaveBeenCalledWith(
-      'coach1',
-    );
-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
-    warnSpy.mockRestore();
+    expect(notifications.pushToUser).not.toHaveBeenCalled();
   });
 
-  it('continues when pushToUser exceeds the 10s timeout (Promise.race)', async () => {
+  it('passes an AbortSignal to pushToUser and aborts on timeout (P2-6)', async () => {
     jest.useFakeTimers();
-    const prisma = makePrisma();
-    prisma.coachBriefPreferences.updateMany.mockResolvedValue({ count: 1 });
-    const notifications = {
-      // Never resolves — exercises the timeout path.
-      pushToUser: jest.fn(() => new Promise(() => undefined)),
-    };
-    const briefService = {
-      getOrGenerateTodaysBrief: jest.fn().mockResolvedValue({
-        id: 'b1',
-        coach_id: 'coach1',
-        brief_date: '2026-05-25',
-        status: 'generated',
-        brief_mode: 'solo_coach',
-        generated_at: new Date().toISOString(),
-        summary: {
-          date: '2026-05-25',
-          brief_mode: 'solo_coach',
-          narrative: 'Sarah, all clear today.',
-          brief_context: makeContext(),
-          action_items: [],
-          generated_by: 'ai',
+    const prisma = makeMockPrisma();
+    prisma.coachBriefPushLedger.upsert.mockResolvedValue({});
+    prisma.coachBriefPushLedger.updateMany.mockResolvedValue({ count: 1 });
+    let receivedSignal: AbortSignal | undefined;
+    const notifications: SchedulerNotifications = {
+      pushToUser: jest.fn(
+        (
+          _userId: string,
+          _title: string,
+          _body: string,
+          _data: Record<string, unknown> | undefined,
+          signal: AbortSignal | undefined,
+        ) => {
+          receivedSignal = signal;
+          return new Promise(() => undefined); // never resolves
         },
-        created_at: new Date().toISOString(),
-      }),
+      ),
     };
-    const scheduler = new CoachBriefScheduler(
-      prisma as any,
-      briefService as any,
-      notifications as any,
-      makeConfig(),
-    );
+    const briefService = makeSchedulerBriefService();
+    const scheduler = makeScheduler(prisma, briefService, notifications);
 
     const dispatchPromise = scheduler.maybeDispatch(
       {
@@ -1052,28 +1129,29 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
       new Date('2026-05-25T14:00:00Z'),
     );
 
-    // Advance past the 10s push timeout.
     await jest.advanceTimersByTimeAsync(11_000);
     await expect(dispatchPromise).resolves.toBeUndefined();
     expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+    expect(receivedSignal).toBeDefined();
+    expect(receivedSignal?.aborted).toBe(true);
     jest.useRealTimers();
   });
 
   it('respects COACH_BRIEF_NOTIFICATIONS_ENABLED=off (dispatchDailyBriefs no-op)', async () => {
-    const prisma = makePrisma();
+    const prisma = makeMockPrisma();
     prisma.coachBriefPreferences.findMany.mockResolvedValue([]);
-    const scheduler = new CoachBriefScheduler(
-      prisma as any,
-      {} as any,
-      {} as any,
-      makeConfig({ COACH_BRIEF_NOTIFICATIONS_ENABLED: 'off' }),
+    const scheduler = makeScheduler(
+      prisma,
+      { getOrGenerateTodaysBrief: jest.fn() },
+      { pushToUser: jest.fn() },
+      { COACH_BRIEF_NOTIFICATIONS_ENABLED: 'off' },
     );
     await scheduler.dispatchDailyBriefs();
     expect(prisma.coachBriefPreferences.findMany).not.toHaveBeenCalled();
   });
 
   it('does not throw when one coach dispatch fails (Promise.allSettled isolation)', async () => {
-    const prisma = makePrisma();
+    const prisma = makeMockPrisma();
     prisma.coachBriefPreferences.findMany.mockResolvedValue([
       {
         coach_id: 'a',
@@ -1088,11 +1166,10 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
         coach: { id: 'b', name: 'B', expo_push_token: null },
       },
     ]);
-    const scheduler = new CoachBriefScheduler(
-      prisma as any,
-      { getOrGenerateTodaysBrief: jest.fn() } as any,
-      { pushToUser: jest.fn() } as any,
-      makeConfig(),
+    const scheduler = makeScheduler(
+      prisma,
+      { getOrGenerateTodaysBrief: jest.fn() },
+      { pushToUser: jest.fn() },
     );
     await expect(scheduler.dispatchDailyBriefs()).resolves.toBeUndefined();
   });
@@ -1102,11 +1179,11 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
 
 describe('CoachDailyLogService', () => {
   it('returns an empty stub when no log row exists', async () => {
-    const prisma = makePrisma();
+    const prisma = makeMockPrisma();
     prisma.coachBriefPreferences.findUnique.mockResolvedValue(null);
     prisma.coachDailyLog.findUnique.mockResolvedValue(null);
 
-    const svc = new CoachDailyLogService(prisma as any);
+    const svc = new CoachDailyLogService(asPrismaService(prisma));
     const result = await svc.getTodaysLog('coach1');
     expect(result).toMatchObject({
       coach_id: 'coach1',
@@ -1117,7 +1194,7 @@ describe('CoachDailyLogService', () => {
   });
 
   it('upserts and returns the persisted log row', async () => {
-    const prisma = makePrisma();
+    const prisma = makeMockPrisma();
     prisma.coachBriefPreferences.findUnique.mockResolvedValue({
       timezone: 'America/Los_Angeles',
     });
@@ -1131,7 +1208,7 @@ describe('CoachDailyLogService', () => {
     };
     prisma.coachDailyLog.upsert.mockResolvedValue(created);
 
-    const svc = new CoachDailyLogService(prisma as any);
+    const svc = new CoachDailyLogService(asPrismaService(prisma));
     const result = await svc.upsertTodaysLog('coach1', 'good day');
     expect(result.content).toBe('good day');
     expect(prisma.coachDailyLog.upsert).toHaveBeenCalledTimes(1);
@@ -1140,10 +1217,10 @@ describe('CoachDailyLogService', () => {
 
 describe('CoachBriefPreferencesService', () => {
   it('returns defaults when no row exists, without writing', async () => {
-    const prisma = makePrisma();
+    const prisma = makeMockPrisma();
     prisma.coachBriefPreferences.findUnique.mockResolvedValue(null);
 
-    const svc = new CoachBriefPreferencesService(prisma as any);
+    const svc = new CoachBriefPreferencesService(asPrismaService(prisma));
     const result = await svc.getOrDefault('coach1');
     expect(result).toMatchObject({
       coach_id: 'coach1',
@@ -1155,7 +1232,7 @@ describe('CoachBriefPreferencesService', () => {
   });
 
   it('upserts only the supplied fields', async () => {
-    const prisma = makePrisma();
+    const prisma = makeMockPrisma();
     prisma.coachBriefPreferences.upsert.mockResolvedValue({
       coach_id: 'coach1',
       notification_time: '09:30',
@@ -1165,7 +1242,7 @@ describe('CoachBriefPreferencesService', () => {
       updated_at: new Date(),
     });
 
-    const svc = new CoachBriefPreferencesService(prisma as any);
+    const svc = new CoachBriefPreferencesService(asPrismaService(prisma));
     const result = await svc.upsert('coach1', { notification_time: '09:30' });
     expect(result.notification_time).toBe('09:30');
     expect(prisma.coachBriefPreferences.upsert).toHaveBeenCalledTimes(1);

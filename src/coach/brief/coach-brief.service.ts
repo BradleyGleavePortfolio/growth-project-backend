@@ -97,10 +97,10 @@ function errorMessageOf(err: unknown): string {
   }
 }
 
-// R44: typed internal errors for Coach Brief — replaces raw `new Error()`
-// in the service. These never propagate to coaches (callClaude catches
-// and falls back to the deterministic narrative), but a `code` field
-// keeps internal logs greppable.
+// R44: typed internal errors for Coach Brief — replaces raw Error
+// construction in the service. These never propagate to coaches
+// (callClaude catches and falls back to the deterministic narrative),
+// but a `code` field keeps internal logs greppable.
 class CoachBriefClaudeError extends Error {
   readonly code:
     | 'COACH_BRIEF_CLAUDE_EMPTY'
@@ -452,11 +452,10 @@ export function normalizeClaudeOutput(raw: string): string {
   let text = raw.trim();
   // Remove leading code fences.
   text = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '');
-  // Strip a single leading meta prefix line.
-  text = text.replace(
-    /^(here(?:'s|\s+is|\s+are)\s+[^.\n]*[.:]\s*)/i,
-    '',
-  );
+  // Strip a single leading meta prefix that ends with a colon — e.g.
+  // "Here is your brief:" — keeping the actual brief that follows.
+  // Stops at the first colon so we don't eat past the real opening.
+  text = text.replace(/^(here(?:'s|\s+is|\s+are)\s+[^:\n]{0,80}:\s*)/i, '');
   return text.trim();
 }
 

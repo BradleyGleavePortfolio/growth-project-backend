@@ -1168,6 +1168,15 @@ The unprefixed public trust pages (`/privacy`, `/terms`, `/security`,
 `/status`) read from this same source so the date the page renders
 matches the JSON.
 
+## Coach Brief (R43)
+
+A once-per-day narrative the TGP platform writes to a coach. Mode-aware
+(solo / sub-coach / head-coach), with deterministic fallback when the
+Anthropic call is unavailable or fails the voice contract. The full
+spec — endpoint contracts, response shape, cron behaviour, AI fallback,
+mobile consumption notes, and the 3–5 sentence "we"-voice contract —
+lives at [`docs/SPEC_coach_brief.md`](docs/SPEC_coach_brief.md).
+
 ## Deployment
 
 The deploy contract lives in
