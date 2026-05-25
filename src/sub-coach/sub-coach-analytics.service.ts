@@ -104,6 +104,7 @@ export class SubCoachAnalyticsService {
           select: { client_id: true, created_at: true },
         });
         for (const r of responses) {
+          if (!r.client_id) continue;
           const ts = lastByClient.get(r.client_id);
           if (
             ts &&
