@@ -2923,7 +2923,13 @@ model GuestCheckout {
 
   @@index([package_id])
   @@index([status])
-  @@index([guest_email])
+  // Audit #4 P2-6 — raw email index removed. Indexing guest_email
+  // gave an attacker with read access to the index pages a
+  // material privacy surface (it inverts the salted scrub) without
+  // any equivalent query benefit; we never look guests up by raw
+  // email at runtime. The scrub job streams rows by
+  // (data_retention_at, scrubbed_at), so removing the email index
+  // does not regress the scrub plan.
   @@index([stripe_payment_intent_id])
   // Reconciliation worker scans status='conversion_failed_retryable'
   // rows ordered by last_retry_at NULLS FIRST. The composite index

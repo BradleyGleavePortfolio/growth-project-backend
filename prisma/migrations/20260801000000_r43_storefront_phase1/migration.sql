@@ -23,6 +23,25 @@ ALTER TABLE "CoachPackage"
 -- partial index for the public lookup (`WHERE share_token = $1`). NULL
 -- tokens are allowed in unlimited supply; only minted tokens are policed
 -- for collision.
+--
+-- Audit #4 P2-7 — the CoachPackage table is pre-existing and may be
+-- large by the time this lands. A plain CREATE UNIQUE INDEX takes an
+-- ACCESS EXCLUSIVE lock that blocks every write to the table for the
+-- duration of the build, which on a hot OLTP table is a stall the
+-- billing surface cannot absorb. The correct production play is:
+--
+--   1. Run the migration with CONCURRENTLY OFF only on dev/test, where
+--      the table is small. The IF NOT EXISTS guard makes this idempotent.
+--   2. On staging/production, run the index build manually via psql
+--      BEFORE applying the migration:
+--        CREATE UNIQUE INDEX CONCURRENTLY "CoachPackage_share_token_key"
+--          ON "CoachPackage" ("share_token")
+--          WHERE "share_token" IS NOT NULL;
+--      Then `prisma migrate deploy` short-circuits the IF NOT EXISTS.
+--
+-- CREATE INDEX CONCURRENTLY cannot run inside a transaction, and Prisma
+-- migrate deploy wraps every file in a transaction — hence the manual
+-- ops step. See R44 in AGENT_RULES.md for the runbook.
 CREATE UNIQUE INDEX IF NOT EXISTS "CoachPackage_share_token_key"
     ON "CoachPackage" ("share_token")
     WHERE "share_token" IS NOT NULL;
@@ -61,8 +80,12 @@ CREATE INDEX IF NOT EXISTS "GuestCheckout_package_id_idx"
 CREATE INDEX IF NOT EXISTS "GuestCheckout_status_idx"
     ON "GuestCheckout" ("status");
 
-CREATE INDEX IF NOT EXISTS "GuestCheckout_guest_email_idx"
-    ON "GuestCheckout" ("guest_email");
+-- Audit #4 P2-6 — raw email index intentionally NOT created.
+-- Indexing guest_email reveals a per-row PII surface in index
+-- pages (and via the index leaf in pg_stat_user_indexes ops)
+-- without any matching query benefit — we never lookup by
+-- guest_email at runtime. The scrub job uses
+-- (data_retention_at, scrubbed_at) and is unaffected.
 
 CREATE INDEX IF NOT EXISTS "GuestCheckout_stripe_payment_intent_id_idx"
     ON "GuestCheckout" ("stripe_payment_intent_id");
@@ -139,7 +162,6 @@ CREATE POLICY "guest_checkout_deny_all_delete" ON "GuestCheckout"
 -- ALTER TABLE "GuestCheckout" DISABLE ROW LEVEL SECURITY;
 -- ALTER TABLE "GuestCheckout" DROP CONSTRAINT IF EXISTS "GuestCheckout_status_check";
 -- DROP INDEX IF EXISTS "GuestCheckout_stripe_payment_intent_id_idx";
--- DROP INDEX IF EXISTS "GuestCheckout_guest_email_idx";
 -- DROP INDEX IF EXISTS "GuestCheckout_status_idx";
 -- DROP INDEX IF EXISTS "GuestCheckout_package_id_idx";
 -- DROP INDEX IF EXISTS "GuestCheckout_idempotency_key_key";
