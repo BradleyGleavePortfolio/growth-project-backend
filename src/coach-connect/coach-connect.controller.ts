@@ -15,6 +15,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { NoActiveSubCoachGuard } from '../common/guards/no-active-sub-coach.guard';
 import { StripeConnectApiError } from '../connect/stripe-connect-api.service';
 import { CoachConnectService } from './coach-connect.service';
@@ -32,16 +33,31 @@ import { CoachConnectService } from './coach-connect.service';
 export class CoachConnectController {
   constructor(private readonly svc: CoachConnectService) {}
 
+  // GET /coach/connect/status — the requesting coach's Stripe Connect
+  // status (charges_enabled, payouts_enabled, requirements). Scoped by
+  // req.user.id; no coach_id query. NoActiveSubCoachGuard blocks active
+  // sub-coaches from inspecting any coach's Connect status (financial
+  // surface). Students have no Connect account.
+  @Roles('coach', 'owner')
   @Get('status')
   async status(@Req() req: AuthedRequest) {
     return this.svc.getStatus(req.user.id);
   }
 
+  // GET /coach/connect/metrics — the requesting coach's MRR / payout
+  // metrics. Scoped by req.user.id. Sub-coaches blocked by class-level
+  // NoActiveSubCoachGuard (financial surface).
+  @Roles('coach', 'owner')
   @Get('metrics')
   async metrics(@Req() req: AuthedRequest) {
     return this.svc.getMetrics(req.user.id);
   }
 
+  // GET /coach/connect/payouts — the requesting coach's recent Stripe
+  // payouts list. Scoped by req.user.id; never accepts a coach_id query.
+  // NoActiveSubCoachGuard blocks active sub-coaches (payouts are a
+  // strictly head-coach surface).
+  @Roles('coach', 'owner')
   @Get('payouts')
   async payouts(
     @Req() req: AuthedRequest,
@@ -55,11 +71,20 @@ export class CoachConnectController {
     }
   }
 
+  // GET /coach/connect/packages — the requesting coach's published
+  // packages (used by the mobile dashboard's storefront tile). Scoped
+  // by req.user.id.
+  @Roles('coach', 'owner')
   @Get('packages')
   async packages(@Req() req: AuthedRequest) {
     return this.svc.listPackages(req.user.id);
   }
 
+  // POST /coach/connect/onboarding-link — mints a Stripe-hosted Connect
+  // onboarding URL for the requesting coach. Scoped by req.user.id; the
+  // service refuses to mint a link for a non-coach. NoActiveSubCoachGuard
+  // blocks sub-coaches; students cannot own a Connect account.
+  @Roles('coach', 'owner')
   @Post('onboarding-link')
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
