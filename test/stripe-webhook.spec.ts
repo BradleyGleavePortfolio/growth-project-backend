@@ -181,6 +181,12 @@ describe('BillingService', () => {
           processed.push({ ...data, processed_at: new Date() });
           return data;
         }),
+        updateMany: jest.fn(async ({ where, data }: any) => {
+          const row = processed.find((e) => e.stripe_event_id === where.stripe_event_id);
+          if (!row) return { count: 0 };
+          Object.assign(row, data);
+          return { count: 1 };
+        }),
       },
       coachSubscription: {
         upsert: jest.fn(async ({ where, create, update }: any) => {

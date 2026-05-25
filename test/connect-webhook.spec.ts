@@ -8,9 +8,13 @@ import { BillingService } from '../src/billing/billing.service';
 function makePrisma() {
   const processed: any[] = [];
   const profiles: any[] = [];
-  return {
+  const stub: any = {
     _processed: processed,
     stripeProcessedEvent: {
+      findUnique: jest.fn(async ({ where }: any) =>
+        processed.find((e) => e.stripe_event_id === where.stripe_event_id) ?? null,
+      ),
+      updateMany: jest.fn(async () => ({ count: 1 })),
       create: jest.fn(async ({ data }: any) => {
         if (processed.find((e) => e.stripe_event_id === data.stripe_event_id)) {
           const err: any = new Error('dup');
@@ -33,6 +37,8 @@ function makePrisma() {
     invoice: { upsert: jest.fn(), findMany: jest.fn(async () => []) },
     paymentFailure: { create: jest.fn() },
   };
+  stub.$transaction = jest.fn(async (cb: (tx: any) => Promise<any>) => cb(stub));
+  return stub;
 }
 
 describe('BillingService — Connect webhook events', () => {

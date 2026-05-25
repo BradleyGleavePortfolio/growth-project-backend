@@ -52,6 +52,7 @@ describe('analytics instrumentation — billing webhook lifecycle', () => {
       stripeProcessedEvent: {
         findUnique: jest.fn(async () => null),
         create: jest.fn(async () => ({})),
+        updateMany: jest.fn(async () => ({ count: 1 })),
       },
       $transaction: jest.fn(async (cb: (tx: any) => Promise<any>) => cb(prisma)),
     };

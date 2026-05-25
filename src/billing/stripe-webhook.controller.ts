@@ -26,12 +26,14 @@ import {
 // `stripe-signature` header for the configured STRIPE_WEBHOOK_SECRET is
 // rejected with 400.
 //
-// We require the raw request body for signature verification. Express
-// `body-parser` (which Nest registers by default) parses JSON before this
-// handler runs, so we re-serialize the parsed body at the top of the
-// handler. JSON.stringify is deterministic for valid Stripe payloads (no
-// non-string Map/Set/etc.) so the byte sequence we hash matches what Stripe
-// signed.
+// We require the raw request body for signature verification. Stripe signs
+// the exact byte sequence of the HTTP body, so any re-serialization path is
+// unsafe — a different key order or whitespace would silently fail
+// verification and, worse, could let a request with an unverifiable body
+// reach the handler if a fallback existed. There is no fallback: if
+// `req.rawBody` is missing we reject with 400 and the operator must wire
+// `app.use(express.raw(...))` (or NestJS `RawBodyMiddleware`) on the
+// webhook route in `main.ts`.
 //
 // If `STRIPE_WEBHOOK_SECRET` is unset we reject every request — better to
 // fail loudly than to silently accept unsigned events. To allow local
@@ -63,16 +65,19 @@ export class StripeWebhookController {
       // server should not loop the dead-letter queue.
       throw new BadRequestException('Stripe webhook secret not configured');
     }
-    // The raw body — preferred when available (we wire body-parser with
-    // `verify` in main.ts so `req.rawBody` is set) — falls back to a
-    // deterministic re-serialization of the parsed JSON. Stripe signs the
-    // exact byte sequence of the request, so the raw body path is
-    // production-correct and the JSON.stringify path is a development
-    // fallback.
-    const raw =
-      typeof (req as Request & { rawBody?: Buffer }).rawBody !== 'undefined'
-        ? (req as Request & { rawBody?: Buffer }).rawBody!.toString('utf8')
-        : JSON.stringify(req.body ?? {});
+    // The raw body is the only signature source we trust. main.ts wires
+    // body-parser with `verify` so `req.rawBody` is set as a Buffer; if it
+    // is missing the route is misconfigured (raw-body middleware not wired)
+    // and we refuse the event with 400 rather than try to reconstruct the
+    // signed bytes from parsed JSON.
+    const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+    if (!Buffer.isBuffer(rawBody)) {
+      this.logger.error(
+        'Stripe webhook received without rawBody. Verify express.raw() middleware is wired for /v1/webhooks/stripe in main.ts.',
+      );
+      throw new BadRequestException('Stripe webhook raw body unavailable');
+    }
+    const raw = rawBody.toString('utf8');
 
     try {
       verifyStripeSignature({
