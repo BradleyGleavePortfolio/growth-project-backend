@@ -12,6 +12,7 @@ import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { DataExportService } from './data-export.service';
 import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 
 /**
  * DataExportController — GDPR Article 20 right to data portability.
@@ -34,6 +35,14 @@ export class DataExportController {
    * the window. Returns 202 Accepted immediately; the export runs async and
    * the client should poll /status for completion.
    */
+  // C5 PR-A audit: GDPR Article 20 (right to data portability). Every logged-in
+  // user must be able to request an export of their own data. The userId is
+  // taken from req.user.id — it is NEVER read from body / query / param. A user
+  // can therefore never trigger another user's export. The 1-req-per-24h limit
+  // is enforced inside DataExportService.requestExport (DB-state check, 409 on
+  // duplicate within window); rate-limit at the HTTP layer is intentionally
+  // omitted in favour of that durable check.
+  @Roles('student', 'coach', 'owner')
   @Post('request')
   @HttpCode(HttpStatus.ACCEPTED)
   async requestExport(@Req() req: Request) {
@@ -54,6 +63,9 @@ export class DataExportController {
    * Returns the most recent export request for the authenticated user.
    * Returns 404 when no export has ever been requested.
    */
+  // C5 PR-A audit: read-only status of the caller's own most recent export.
+  // Scoped by req.user.id; never accepts a userId parameter. Any logged-in role.
+  @Roles('student', 'coach', 'owner')
   @Get('status')
   async getStatus(@Req() req: Request) {
     const userId = (req.user as { id: string }).id;
