@@ -377,6 +377,13 @@ model User {
   sub_coach_assignments_as_actor   SubCoachAssignment[] @relation("SubCoachAssignmentActor")
   sub_coach_idempotency_records    SubCoachMutationIdempotency[] @relation("SubCoachIdempotencyActor")
 
+  // Coach Command Center — churn intervention drafts the coach has
+  // generated for at-risk clients, and the inverse for clients who have
+  // received them. Both relations are optional; only coaches author
+  // ChurnIntervention rows and only students receive them.
+  churn_interventions_as_coach  ChurnIntervention[] @relation("ChurnInterventionCoach")
+  churn_interventions_as_client ChurnIntervention[] @relation("ChurnInterventionClient")
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -3567,4 +3574,56 @@ model SubCoachMutationIdempotency {
 
   @@unique([actor_id, idempotency_key], name: "SubCoachMutationIdempotency_actor_key")
   @@index([created_at])
+}
+
+// ChurnIntervention — Coach Command Center re-engagement message lifecycle.
+//
+// Stores a single AI-drafted re-engagement message for a specific at-risk
+// client, its approval state (status), and its send outcome.
+//
+// Lifecycle:
+//   DRAFT     → coach views Claude-drafted message
+//   EDITED    → coach modified the draft text (edited_text != null)
+//   SENT      → message was dispatched via CoachNudge + push
+//   DISMISSED → coach skipped without sending
+//
+// Idempotency: idempotency_key is the mobile-generated UUID, unique per row.
+// Duplicate draft creations for the same key return the existing row.
+//
+// Delivery: the actual message is persisted as a CoachNudge row (in-app);
+// the row's nudge_id back-references the CoachNudge. Push notification is
+// fire-and-forget (best-effort). Email is NOT used.
+//
+// RLS: ENABLE + FORCE ROW LEVEL SECURITY. Coaches can only read/write
+// their own rows (coach_id = auth.uid()); clients have no access at all.
+model ChurnIntervention {
+  id                  String    @id @default(uuid())
+  coach_id            String
+  coach               User      @relation("ChurnInterventionCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  client_id           String
+  client              User      @relation("ChurnInterventionClient", fields: [client_id], references: [id], onDelete: Cascade)
+  draft_text          String
+  edited_text         String?
+  // 'draft' | 'edited' | 'sent' | 'dismissed'
+  status              String    @default("draft")
+  alert_id            String?
+  risk_score_at_draft Float?
+  top_factor          String?
+  idempotency_key     String    @unique
+  // Separate idempotency key for the send transition. Distinct from
+  // the draft `idempotency_key` so a coach can retry a send (a network
+  // failure on POST /send) without colliding with the draft key. Unique
+  // to dedup concurrent or replayed send requests.
+  send_idempotency_key String?  @unique
+  created_at          DateTime  @default(now())
+  sent_at             DateTime?
+  dismissed_at        DateTime?
+  // FK to the CoachNudge row created when sent (null until sent). Not a
+  // hard relation — CoachNudge may be SetNull on user delete, and we
+  // tolerate the dangle.
+  nudge_id            String?
+
+  @@index([coach_id, status, created_at])
+  @@index([client_id, created_at])
+  @@index([coach_id, client_id])
 }

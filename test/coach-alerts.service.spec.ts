@@ -70,6 +70,18 @@ function buildPrisma(initial: any[] = []) {
         rows[idx] = { ...rows[idx], ...data };
         return rows[idx];
       }),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        let count = 0;
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i];
+          if (where.id && r.id !== where.id) continue;
+          if (where.coach_id && r.coach_id !== where.coach_id) continue;
+          if (where.acknowledged_at === null && r.acknowledged_at !== null) continue;
+          rows[i] = { ...r, ...data };
+          count++;
+        }
+        return { count };
+      }),
     },
   };
 }
