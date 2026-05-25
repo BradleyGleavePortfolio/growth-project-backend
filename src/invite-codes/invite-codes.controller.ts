@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
 import { SubscriptionGuard } from '../billing/subscription.guard';
 import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import { CreateInviteCodeDto } from './invite-codes.dto';
 import { BulkInviteDto } from './bulk-invite.dto';
 import { InviteCodesService } from './invite-codes.service';
@@ -54,6 +55,13 @@ export class InviteCodesController {
   // signed up under the calling coach (or one of their sub-coaches)
   // within the invite code's effective window. The mobile contract
   // shape is `{ redeemers: [{user_id, name, email, redeemed_at, last_active_at}] }`.
+  //
+  // C5 PR-A audit: this route was an orphan vs roles-enforced.spec.ts — the
+  // sibling InviteCodes handlers are on the legacy allowlist (per-handler
+  // JwtAuthGuard+CoachGuard), but the static analyser requires an explicit
+  // @Roles() declaration on every non-Public route. Coach inspects the
+  // redeemer list of an invite they own — scoped by `req.user.id` below.
+  @Roles('coach', 'owner')
   @Get('coach/invite-codes/:id/redeemers')
   @UseGuards(JwtAuthGuard, CoachGuard)
   async redeemers(@Request() req: AuthedRequest, @Param('id') id: string) {
@@ -83,6 +91,11 @@ export class InviteCodesController {
   //   * the mobile UI surfaces a "resend" button next to a row whose
   //     bulk-send email_status came back as 'failed'.
   // Idempotency is keyed on the invite_code_id, so retries are safe.
+  //
+  // C5 PR-A audit: orphan vs roles-enforced.spec.ts. Coach re-sends an
+  // invite they own; `req.user.id` is the authorising key inside
+  // sendInviteEmailForCode — a coach cannot resend another coach's invite.
+  @Roles('coach', 'owner')
   @Post('coach/invite-codes/:id/send')
   @UseGuards(JwtAuthGuard, CoachGuard)
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
