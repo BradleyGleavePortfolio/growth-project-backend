@@ -823,6 +823,11 @@ export function assertEnv(
         name: 'ANTHROPIC_API_KEY',
         reason: 'Primary AI provider; app boots without it but all client AI guide responses fall back to deterministic local content indistinguishable from real AI.',
       },
+      {
+        name: 'STOREFRONT_BASE_URL',
+        reason:
+          'R43 storefront — without it the share-link service mints links pointing at the https://tgp.app fallback and the storefront origin is missing from CORS, breaking the public package endpoint from any browser.',
+      },
     ];
     const missing = prodHardenedFeatureVars.filter(
       (v) =>

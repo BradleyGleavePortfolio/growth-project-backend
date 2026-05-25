@@ -80,82 +80,98 @@ export class ShareLinkService {
       );
     }
 
-    // Collision retry — we tolerate the @unique race that would otherwise
-    // crash the request on a P2002. randomInt + 57-char alphabet over 10
-    // positions means the loop almost always exits on the first attempt;
-    // 5 is generous belt-and-braces.
-    let token: string | null = null;
+    // P1-2 — mint atomically. The previous implementation did
+    //   read → check share_token is null → mint → update by id
+    // which let two concurrent callers both observe share_token = null,
+    // mint two different tokens, and have the later UPDATE overwrite the
+    // earlier — handing the first caller a dead token.
+    //
+    // The fix is a conditional updateMany whose WHERE includes
+    // share_token: null. Only one writer can win that race; everyone else
+    // sees count = 0 and re-reads the winning token.
     for (let attempt = 0; attempt < MAX_COLLISION_ATTEMPTS; attempt += 1) {
       const candidate = mintToken();
-      const collision = await this.prisma.coachPackage.findUnique({
-        where: { share_token: candidate },
-        select: { id: true },
-      });
-      if (!collision) {
-        token = candidate;
-        break;
+      const now = new Date();
+      let updateCount: number;
+      try {
+        const result = await this.prisma.coachPackage.updateMany({
+          where: {
+            id: packageId,
+            coach_id: coachUserId,
+            archived_at: null,
+            share_token: null,
+          },
+          data: {
+            share_token: candidate,
+            share_link_enabled: true,
+            share_link_generated_at: now,
+          },
+        });
+        updateCount = result.count;
+      } catch (err) {
+        // P2002 on share_token@unique — another package took this
+        // candidate. Retry with a fresh candidate.
+        if (this.isUniqueViolation(err)) {
+          this.logger.warn(
+            `share_token collision on attempt ${attempt + 1} for package ${packageId}`,
+          );
+          continue;
+        }
+        throw err;
       }
-      this.logger.warn(
-        `share_token collision on attempt ${attempt + 1} for package ${packageId}`,
-      );
-    }
 
-    if (!token) {
-      // 57^10 ≈ 4.8e17 — five consecutive collisions implies either a
-      // catastrophic RNG failure or a poisoned alphabet. 503 rather than
-      // 500 so the caller can present a retriable error.
-      this.logger.error(
-        `Failed to mint unique share_token after ${MAX_COLLISION_ATTEMPTS} attempts for package ${packageId}`,
-      );
-      throw new ServiceUnavailableException({
-        error: 'SHARE_LINK_UNAVAILABLE',
-        message: 'Could not generate a share link. Please try again.',
-      });
-    }
+      if (updateCount === 1) {
+        // We won the race — our candidate is now persisted.
+        return this.buildResult(candidate, true, now);
+      }
 
-    const now = new Date();
-    try {
-      const updated = await this.prisma.coachPackage.update({
+      // count = 0 means either (a) a concurrent caller already minted a
+      // token (share_token is no longer null), or (b) the package was
+      // archived between our find and our update. Re-read to find out
+      // which.
+      const reread = await this.prisma.coachPackage.findUnique({
         where: { id: packageId },
-        data: {
-          share_token: token,
-          share_link_generated_at: now,
-        },
         select: {
+          coach_id: true,
+          archived_at: true,
           share_token: true,
           share_link_enabled: true,
           share_link_generated_at: true,
         },
       });
-      return this.buildResult(
-        updated.share_token!,
-        updated.share_link_enabled,
-        updated.share_link_generated_at!,
-      );
-    } catch (err) {
-      // P2002 race: another concurrent call for the same package id beat
-      // us to it. Re-read and return what's there — the token is opaque
-      // to the coach so "you got the other call's token" is the same UX
-      // as "you got your own". Re-throw anything else.
-      if (this.isUniqueViolation(err)) {
-        const reread = await this.prisma.coachPackage.findUnique({
-          where: { id: packageId },
-          select: {
-            share_token: true,
-            share_link_enabled: true,
-            share_link_generated_at: true,
-          },
+      if (
+        !reread ||
+        reread.coach_id !== coachUserId ||
+        reread.archived_at !== null
+      ) {
+        throw new NotFoundException({
+          error: 'PACKAGE_NOT_FOUND',
+          message: 'Package not found.',
         });
-        if (reread?.share_token && reread.share_link_generated_at) {
-          return this.buildResult(
-            reread.share_token,
-            reread.share_link_enabled,
-            reread.share_link_generated_at,
-          );
-        }
       }
-      throw err;
+      if (reread.share_token && reread.share_link_generated_at) {
+        // Another concurrent request won — return its token. Never
+        // overwrite an existing share_token.
+        return this.buildResult(
+          reread.share_token,
+          reread.share_link_enabled,
+          reread.share_link_generated_at,
+        );
+      }
+      // share_token is still null somehow (very rare — likely the row
+      // was just unarchived). Loop and try again.
     }
+
+    // 57^10 ≈ 4.8e17 — five consecutive collisions implies either a
+    // catastrophic RNG failure or a poisoned alphabet. 503 rather than
+    // 500 so the caller can present a retriable error.
+    this.logger.error(
+      `Failed to mint unique share_token after ${MAX_COLLISION_ATTEMPTS} attempts for package ${packageId}`,
+    );
+    throw new ServiceUnavailableException({
+      error: 'SHARE_LINK_UNAVAILABLE',
+      message: 'Could not generate a share link. Please try again.',
+    });
   }
 
   private buildResult(

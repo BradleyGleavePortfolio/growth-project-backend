@@ -4,12 +4,11 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma.service';
-import { ShareLinkService } from './share-link.service';
+import { PrismaService } from '../src/prisma.service';
+import { ShareLinkService } from '../src/share-link/share-link.service';
 
 // R43 — ShareLinkService unit tests. Prisma is mocked so no DB connection
-// is touched. Tests cover: ownership 404, idempotent return when the token
-// already exists, fresh mint, collision retry, and the 5-attempt cap.
+// is touched.
 
 type Pkg = {
   id: string;
@@ -38,11 +37,11 @@ function makePkg(overrides: Partial<Pkg> = {}): Pkg {
 describe('ShareLinkService', () => {
   let service: ShareLinkService;
   let prismaFindUnique: jest.Mock;
-  let prismaUpdate: jest.Mock;
+  let prismaUpdateMany: jest.Mock;
 
   beforeEach(async () => {
     prismaFindUnique = jest.fn();
-    prismaUpdate = jest.fn();
+    prismaUpdateMany = jest.fn();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ShareLinkService,
@@ -51,7 +50,7 @@ describe('ShareLinkService', () => {
           useValue: {
             coachPackage: {
               findUnique: prismaFindUnique,
-              update: prismaUpdate,
+              updateMany: prismaUpdateMany,
             },
           },
         },
@@ -106,70 +105,79 @@ describe('ShareLinkService', () => {
     expect(result.share_url).toBe('https://tgp.app/join/AbCdEf12gH');
     expect(result.share_link_enabled).toBe(true);
     expect(result.share_link_generated_at).toEqual(generatedAt);
-    expect(prismaUpdate).not.toHaveBeenCalled();
+    expect(prismaUpdateMany).not.toHaveBeenCalled();
   });
 
-  it('mints a new token on first call', async () => {
-    // findUnique calls: (1) package lookup → no token; (2) collision check → null
-    prismaFindUnique
-      .mockResolvedValueOnce(makePkg())
-      .mockResolvedValueOnce(null);
-    prismaUpdate.mockImplementationOnce(async ({ data }) => ({
-      share_token: data.share_token,
-      share_link_enabled: true,
-      share_link_generated_at: data.share_link_generated_at,
-    }));
+  it('mints a new token on first call (atomic updateMany count=1)', async () => {
+    prismaFindUnique.mockResolvedValueOnce(makePkg());
+    prismaUpdateMany.mockResolvedValueOnce({ count: 1 });
     const result = await service.mintOrGet(COACH_ID, PKG_ID);
     expect(result.share_token).toMatch(/^[A-Za-z0-9]{10}$/);
     expect(result.share_url).toBe(`https://tgp.app/join/${result.share_token}`);
-    expect(prismaUpdate).toHaveBeenCalledTimes(1);
+    expect(prismaUpdateMany).toHaveBeenCalledTimes(1);
+    // Critical: updateMany WHERE must include share_token: null so two
+    // concurrent first-time callers cannot both overwrite each other.
+    const call = prismaUpdateMany.mock.calls[0][0];
+    expect(call.where).toMatchObject({
+      id: PKG_ID,
+      coach_id: COACH_ID,
+      archived_at: null,
+      share_token: null,
+    });
   });
 
-  it('retries on token collision and succeeds on second attempt', async () => {
-    prismaFindUnique
-      .mockResolvedValueOnce(makePkg()) // package
-      .mockResolvedValueOnce({ id: 'someone-else' }) // first candidate collides
-      .mockResolvedValueOnce(null); // second candidate is free
-    prismaUpdate.mockImplementationOnce(async ({ data }) => ({
-      share_token: data.share_token,
-      share_link_enabled: true,
-      share_link_generated_at: data.share_link_generated_at,
-    }));
+  it('retries on token collision (P2002) and succeeds on second attempt', async () => {
+    prismaFindUnique.mockResolvedValueOnce(makePkg());
+    const p2002: Error & { code?: string } = new Error('unique constraint');
+    p2002.code = 'P2002';
+    prismaUpdateMany
+      .mockRejectedValueOnce(p2002)
+      .mockResolvedValueOnce({ count: 1 });
     const result = await service.mintOrGet(COACH_ID, PKG_ID);
     expect(result.share_token).toMatch(/^[A-Za-z0-9]{10}$/);
-    expect(prismaUpdate).toHaveBeenCalledTimes(1);
+    expect(prismaUpdateMany).toHaveBeenCalledTimes(2);
   });
 
   it('throws 503 after 5 consecutive collisions', async () => {
-    prismaFindUnique
-      .mockResolvedValueOnce(makePkg()) // package lookup
-      .mockResolvedValueOnce({ id: 'x' })
-      .mockResolvedValueOnce({ id: 'x' })
-      .mockResolvedValueOnce({ id: 'x' })
-      .mockResolvedValueOnce({ id: 'x' })
-      .mockResolvedValueOnce({ id: 'x' });
+    prismaFindUnique.mockResolvedValueOnce(makePkg());
+    const p2002: Error & { code?: string } = new Error('unique constraint');
+    p2002.code = 'P2002';
+    prismaUpdateMany
+      .mockRejectedValueOnce(p2002)
+      .mockRejectedValueOnce(p2002)
+      .mockRejectedValueOnce(p2002)
+      .mockRejectedValueOnce(p2002)
+      .mockRejectedValueOnce(p2002);
     await expect(service.mintOrGet(COACH_ID, PKG_ID)).rejects.toThrow(
       ServiceUnavailableException,
     );
-    expect(prismaUpdate).not.toHaveBeenCalled();
   });
 
-  it('recovers from a concurrent P2002 by re-reading the persisted token', async () => {
-    const generatedAt = new Date('2026-02-01T00:00:00Z');
+  // P1-2 — Concurrent mint race. Two simultaneous first-time requests
+  // both observe share_token = null. The conditional updateMany ensures
+  // only one wins (count = 1); the loser sees count = 0 and re-reads
+  // the persisted token rather than overwriting it.
+  it('returns the winning token when a concurrent caller wins the race', async () => {
+    const winnerToken = 'WiNnerTok1';
+    const generatedAt = new Date('2026-03-01T00:00:00Z');
     prismaFindUnique
-      .mockResolvedValueOnce(makePkg()) // package
-      .mockResolvedValueOnce(null) // candidate not found
+      .mockResolvedValueOnce(makePkg()) // initial read — no token
       .mockResolvedValueOnce({
-        // re-read after P2002
-        share_token: 'XyZaBcDeF0',
+        // re-read after losing the race
+        coach_id: COACH_ID,
+        archived_at: null,
+        share_token: winnerToken,
         share_link_enabled: true,
         share_link_generated_at: generatedAt,
       });
-    const p2002: Error & { code?: string } = new Error('unique constraint');
-    p2002.code = 'P2002';
-    prismaUpdate.mockRejectedValueOnce(p2002);
+    // Our updateMany hits count = 0 because the concurrent caller's
+    // updateMany already moved share_token away from null.
+    prismaUpdateMany.mockResolvedValueOnce({ count: 0 });
     const result = await service.mintOrGet(COACH_ID, PKG_ID);
-    expect(result.share_token).toBe('XyZaBcDeF0');
+    expect(result.share_token).toBe(winnerToken);
     expect(result.share_link_generated_at).toEqual(generatedAt);
+    // Critical: we did not call updateMany a second time — never
+    // overwrite an existing share_token.
+    expect(prismaUpdateMany).toHaveBeenCalledTimes(1);
   });
 });

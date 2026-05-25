@@ -4,12 +4,9 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma.service';
-import {
-  StripeConnectApiError,
-  StripeConnectApiService,
-} from '../connect/stripe-connect-api.service';
-import { StorefrontService } from './storefront.service';
+import { PrismaService } from '../src/prisma.service';
+import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
+import { StorefrontService } from '../src/storefront/storefront.service';
 
 // R43 — StorefrontService unit tests. Prisma + Stripe Connect API are
 // stubbed so the suite is hermetic.
@@ -47,10 +44,16 @@ describe('StorefrontService', () => {
   let service: StorefrontService;
   let findUnique: jest.Mock;
   let retrieveAccount: jest.Mock;
+  let configGet: jest.Mock;
 
   beforeEach(async () => {
     findUnique = jest.fn();
     retrieveAccount = jest.fn();
+    configGet = jest.fn((key: string) => {
+      if (key === 'STRIPE_PUBLISHABLE_KEY') return 'pk_live_platform';
+      if (key === 'STOREFRONT_BASE_URL') return 'https://tgp.app';
+      return undefined;
+    });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StorefrontService,
@@ -64,7 +67,7 @@ describe('StorefrontService', () => {
         },
         {
           provide: ConfigService,
-          useValue: { get: () => 'https://tgp.app' },
+          useValue: { get: configGet },
         },
       ],
     }).compile();
@@ -73,7 +76,6 @@ describe('StorefrontService', () => {
 
   it('returns the public package payload for a valid token', async () => {
     findUnique.mockResolvedValueOnce(makePkg());
-    retrieveAccount.mockResolvedValueOnce({ publishable_key: 'pk_live_x' });
     const data = await service.getPublicPackageByToken('tok123');
     expect(data.package_id).toBe('pkg-1');
     expect(data.package_name).toBe('12-Week Transformation');
@@ -81,16 +83,29 @@ describe('StorefrontService', () => {
     expect(data.billing_cycle).toBe('monthly');
     expect(data.coach.display_name).toBe('Bradley Gleave');
     expect(data.coach.verified).toBe(true);
-    expect(data.stripe_publishable_key).toBe('pk_live_x');
     expect(data.features).toEqual([]);
   });
 
-  it('serves the publishable key from cache on the second call', async () => {
-    findUnique.mockResolvedValue(makePkg());
-    retrieveAccount.mockResolvedValueOnce({ publishable_key: 'pk_live_x' });
-    await service.getPublicPackageByToken('tok123');
-    await service.getPublicPackageByToken('tok123');
-    expect(retrieveAccount).toHaveBeenCalledTimes(1);
+  // P1-1 — destination-charge PaymentIntents live on the PLATFORM account, so
+  // the storefront must confirm with the platform publishable key. The
+  // connected-account publishable key from /accounts/{acct} is the wrong
+  // context and Stripe.js refuses to confirm with it.
+  it('returns the PLATFORM publishable key (not the connected account key)', async () => {
+    findUnique.mockResolvedValueOnce(makePkg());
+    const data = await service.getPublicPackageByToken('tok123');
+    expect(data.stripe_publishable_key).toBe('pk_live_platform');
+    // Must not have called Stripe to fetch a connected-account key.
+    expect(retrieveAccount).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 when STRIPE_PUBLISHABLE_KEY is unset', async () => {
+    configGet.mockImplementation((key: string) =>
+      key === 'STRIPE_PUBLISHABLE_KEY' ? undefined : 'https://tgp.app',
+    );
+    findUnique.mockResolvedValueOnce(makePkg());
+    await expect(
+      service.getPublicPackageByToken('tok123'),
+    ).rejects.toThrow(ServiceUnavailableException);
   });
 
   it('404s when the token does not resolve to a package', async () => {
@@ -134,21 +149,10 @@ describe('StorefrontService', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
-  it('returns 503 when Stripe fails to provide a publishable key', async () => {
-    findUnique.mockResolvedValueOnce(makePkg());
-    retrieveAccount.mockRejectedValueOnce(
-      new StripeConnectApiError('stripe down', 503, 'api_error', 'api_error'),
-    );
-    await expect(
-      service.getPublicPackageByToken('tok123'),
-    ).rejects.toThrow(ServiceUnavailableException);
-  });
-
   it('maps billing cycles correctly', async () => {
     findUnique.mockResolvedValueOnce(
       makePkg({ billing_type: 'recurring', interval: 'year', interval_count: 1 }),
     );
-    retrieveAccount.mockResolvedValueOnce({ publishable_key: 'pk_test' });
     const annual = await service.getPublicPackageByToken('tok123');
     expect(annual.billing_cycle).toBe('annual');
 

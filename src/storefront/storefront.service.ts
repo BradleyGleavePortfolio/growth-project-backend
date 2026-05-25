@@ -6,29 +6,15 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma.service';
-import {
-  StripeConnectApiError,
-  StripeConnectApiService,
-} from '../connect/stripe-connect-api.service';
+import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import type {
   BillingCycle,
   PublicPackageData,
 } from './storefront.types';
 
-// Stripe Express accounts return their own publishable key on the /accounts
-// payload. Refreshing per-request would cost a Stripe round-trip on every
-// storefront page load; cache for 5 minutes so the storefront stays snappy
-// without holding stale keys across a Connect re-onboard.
-interface CachedPublishableKey {
-  key: string;
-  expiresAt: number;
-}
-const PUBLISHABLE_KEY_TTL_MS = 5 * 60 * 1000;
-
 @Injectable()
 export class StorefrontService {
   private readonly logger = new Logger(StorefrontService.name);
-  private readonly publishableKeyCache = new Map<string, CachedPublishableKey>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -86,9 +72,21 @@ export class StorefrontService {
       });
     }
 
-    const publishableKey = await this.getPublishableKey(
-      connectAccount.stripe_account_id,
-    );
+    // Phase 1 uses destination charges on the PLATFORM account
+    // (transfer_data[destination] with no Stripe-Account header). The
+    // browser must confirm with the platform publishable key, not the
+    // connected account's publishable key — those are two different
+    // Stripe contexts and mixing them is rejected by Stripe.js.
+    const publishableKey = this.config.get<string>('STRIPE_PUBLISHABLE_KEY');
+    if (!publishableKey || publishableKey.trim().length === 0) {
+      this.logger.error(
+        'STRIPE_PUBLISHABLE_KEY unset — public storefront cannot confirm payments.',
+      );
+      throw new ServiceUnavailableException({
+        error: 'STRIPE_UNAVAILABLE',
+        message: 'Payment processing temporarily unavailable.',
+      });
+    }
 
     const billingCycle = this.mapBillingCycle(
       pkg.billing_type,
@@ -124,66 +122,6 @@ export class StorefrontService {
       stripe_publishable_key: publishableKey,
       share_link_enabled: pkg.share_link_enabled,
     };
-  }
-
-  // Resolve the publishable key for a Stripe Express account. Cached on a
-  // 5-min sliding TTL so the storefront's first paint hits memory, not
-  // Stripe's network. The underlying Stripe call uses StripeConnectApiService
-  // which already wraps every request in an AbortController(10s timeout).
-  private async getPublishableKey(stripeAccountId: string): Promise<string> {
-    const now = Date.now();
-    const cached = this.publishableKeyCache.get(stripeAccountId);
-    if (cached && cached.expiresAt > now) {
-      return cached.key;
-    }
-
-    try {
-      const account = await this.stripeConnect.retrieveAccount(stripeAccountId);
-      // Express accounts expose `keys.publishable` or top-level
-      // `publishable_key` depending on API version. Probe both shapes so
-      // the resolver doesn't break on an SDK version bump.
-      const acct = account as Record<string, unknown> & {
-        keys?: { publishable?: unknown };
-      };
-      const direct =
-        typeof acct.publishable_key === 'string'
-          ? (acct.publishable_key as string)
-          : null;
-      const nested =
-        acct.keys && typeof acct.keys.publishable === 'string'
-          ? (acct.keys.publishable as string)
-          : null;
-      const pk = direct ?? nested;
-      if (!pk) {
-        // Stripe omits the publishable key on accounts that have not
-        // finished onboarding. Surface as 503 so the storefront can render
-        // a "Coach is finalising payments" message rather than a 500.
-        throw new ServiceUnavailableException({
-          error: 'STRIPE_UNAVAILABLE',
-          message: 'Payment processing is being set up. Please try again soon.',
-        });
-      }
-      this.publishableKeyCache.set(stripeAccountId, {
-        key: pk,
-        expiresAt: now + PUBLISHABLE_KEY_TTL_MS,
-      });
-      return pk;
-    } catch (err) {
-      if (err instanceof ServiceUnavailableException) throw err;
-      // Sanitise: never leak Stripe error messages to the public storefront.
-      // Log structured details internally; return a generic 503.
-      const reason =
-        err instanceof StripeConnectApiError
-          ? `stripe_${err.stripeCode ?? 'unknown'}`
-          : 'unknown';
-      this.logger.error(
-        `Failed to retrieve publishable key (acct=${stripeAccountId}) reason=${reason}`,
-      );
-      throw new ServiceUnavailableException({
-        error: 'STRIPE_UNAVAILABLE',
-        message: 'Payment processing temporarily unavailable.',
-      });
-    }
   }
 
   private mapBillingCycle(

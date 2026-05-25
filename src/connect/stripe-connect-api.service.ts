@@ -447,7 +447,10 @@ export class StripeConnectApiService {
   async createPaymentIntent(params: {
     amount: number;
     currency: string;
-    customer: string;
+    // P2-3 — `customer` is optional on Stripe's PaymentIntent endpoint.
+    // Guest checkout has no Customer yet; sending `customer=""` is not the
+    // same as omitting the field and can be rejected by Stripe.
+    customer?: string;
     applicationFeeAmount: number;
     transferDestination: string;
     metadata: Record<string, string>;
@@ -456,10 +459,12 @@ export class StripeConnectApiService {
     const form: Record<string, string> = {
       amount: String(params.amount),
       currency: params.currency,
-      customer: params.customer,
       application_fee_amount: String(params.applicationFeeAmount),
       'transfer_data[destination]': params.transferDestination,
     };
+    if (typeof params.customer === 'string' && params.customer.length > 0) {
+      form.customer = params.customer;
+    }
     for (const [k, v] of Object.entries(params.metadata)) {
       form[`metadata[${k}]`] = v;
     }

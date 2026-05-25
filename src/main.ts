@@ -69,6 +69,27 @@ async function bootstrap() {
       'CORS_ORIGINS=* is not permitted — list explicit origins (e.g. https://console.example.com).',
     );
   }
+  // R43 / P2-1 — the public storefront is hosted at STOREFRONT_BASE_URL and
+  // calls /api/v1/packages/public/* from the browser. Auto-include its
+  // origin in the CORS allow-list so operators don't have to duplicate the
+  // hostname across CORS_ORIGINS and STOREFRONT_BASE_URL. Validate the
+  // shape and strip the trailing slash before adding so we always register
+  // a canonical origin string.
+  const storefrontBaseRaw = (process.env.STOREFRONT_BASE_URL || '').trim();
+  if (storefrontBaseRaw.length > 0) {
+    try {
+      const parsed = new URL(storefrontBaseRaw);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        const origin = `${parsed.protocol}//${parsed.host}`;
+        if (!corsOrigins.includes(origin)) {
+          corsOrigins.push(origin);
+        }
+      }
+    } catch {
+      // Malformed STOREFRONT_BASE_URL is also flagged by env-validation;
+      // skip CORS auto-inclusion silently rather than crashing bootstrap.
+    }
+  }
   app.enableCors({
     origin: corsOrigins.length > 0 ? corsOrigins : false,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],

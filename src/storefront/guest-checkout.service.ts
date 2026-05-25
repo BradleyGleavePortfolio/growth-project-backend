@@ -1,9 +1,9 @@
 import {
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
   ServiceUnavailableException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
@@ -32,6 +32,24 @@ const PLATFORM_FEE_MIN_CENTS = 50;
 // replaced rather than reused.
 const CHECKOUT_TTL_MS = 24 * 60 * 60 * 1000;
 
+// P1-4 — Supabase admin calls have no built-in timeout. Race them against a
+// 10s deadline so a hung Supabase request cannot leave a paid checkout
+// stuck in conversion forever.
+const SUPABASE_ADMIN_TIMEOUT_MS = 10_000;
+
+// P1-5 — Cap pagination of Supabase listUsers when recovering an existing
+// account. 50 pages × 200 users = 10k users, well above any plausible TGP
+// tenant; the total scan is also wrapped in an 8s deadline.
+const SUPABASE_LIST_USERS_PAGE_SIZE = 200;
+const SUPABASE_LIST_USERS_MAX_PAGES = 50;
+const SUPABASE_LIST_USERS_TIMEOUT_MS = 8_000;
+
+// P1-3 — Phase 1 cannot honour recurring billing. Stripe subscription
+// lifecycle (renewal webhooks, dunning, cancellation) is not implemented
+// for the guest path; selling a recurring package as a one-off PI would
+// silently misbill. Reject at the checkout endpoint with 422.
+const RECURRING_BILLING_TYPES = new Set(['monthly', 'quarterly', 'annual']);
+
 // Used by BillingService to detect a guest-checkout PaymentIntent without
 // pulling GuestCheckoutService into its constructor. The same key is
 // attached to every Stripe PaymentIntent we create in createIntent().
@@ -46,6 +64,28 @@ function safeErrorTag(err: unknown): string {
     if (typeof e.name === 'string' && e.name.length > 0) return e.name;
   }
   return 'unknown';
+}
+
+// P1-4 — bounded promise race so a hung Supabase admin call cannot stall
+// the conversion path. Throws a tagged Error on timeout so the catch site
+// flips the checkout to 'failed' instead of leaving it 'paid'.
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  tag: string,
+): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`${tag}_timeout`);
+      (err as Error & { code?: string }).code = `${tag}_timeout`;
+      reject(err);
+    }, ms);
+  });
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    timeout,
+  ]);
 }
 
 type CheckoutWithRelations = GuestCheckout & {
@@ -110,6 +150,19 @@ export class GuestCheckoutService {
       });
     }
 
+    // P1-3 — recurring packages cannot be sold through Phase 1 guest
+    // checkout. We render them on the public storefront so coaches can
+    // share the link, but checkout is gated until subscription lifecycle
+    // ships. Return 422 with a human-readable message rather than 503
+    // so the storefront can surface the explanation directly.
+    if (RECURRING_BILLING_TYPES.has(pkg.billing_type)) {
+      throw new UnprocessableEntityException({
+        error: 'RECURRING_NOT_SUPPORTED',
+        message:
+          'Recurring packages are not yet supported via share links. Please contact your coach to join.',
+      });
+    }
+
     const normalisedEmail = dto.guest_email.toLowerCase().trim();
     const normalisedName = dto.guest_name.trim();
 
@@ -120,7 +173,29 @@ export class GuestCheckoutService {
       where: { idempotency_key: dto.idempotency_key },
     });
     if (existing) {
-      return this.replayExistingIntent(existing, pkg.id, normalisedEmail);
+      const replayed = await this.replayExistingIntent(
+        existing,
+        pkg.id,
+        normalisedEmail,
+      );
+      if (replayed) return replayed;
+      // P2-2 — the prior attempt left a `pending_<key>` sentinel and no
+      // real PaymentIntent. Treat the sentinel as stale: delete it so
+      // this retry can mint a fresh PaymentIntent against the same
+      // idempotency_key.
+      await this.prisma.guestCheckout
+        .deleteMany({
+          where: {
+            id: existing.id,
+            status: 'pending',
+            stripe_payment_intent_id: { startsWith: 'pending_' },
+          },
+        })
+        .catch((err) => {
+          this.logger.error(
+            `Failed to clear stale pending sentinel ${existing.id} (tag=${safeErrorTag(err)})`,
+          );
+        });
     }
 
     // Platform fee. Math.floor guards a fractional cent from rounding up
@@ -161,8 +236,20 @@ export class GuestCheckoutService {
           where: { idempotency_key: dto.idempotency_key },
         });
         if (winner) {
-          return this.replayExistingIntent(winner, pkg.id, normalisedEmail);
+          const replayed = await this.replayExistingIntent(
+            winner,
+            pkg.id,
+            normalisedEmail,
+          );
+          if (replayed) return replayed;
         }
+        // Lost the race but the winner is itself a stale pending_ stub.
+        // Surface 503 so the storefront retries — the next attempt will
+        // either delete the stub or find a real PI on the winner row.
+        throw new ServiceUnavailableException({
+          error: 'STRIPE_UNAVAILABLE',
+          message: 'Payment processing temporarily unavailable. Please try again.',
+        });
       }
       throw err;
     }
@@ -175,11 +262,8 @@ export class GuestCheckoutService {
       const created = await this.stripe.createPaymentIntent({
         amount: pkg.amount_cents,
         currency: pkg.currency,
-        // PaymentIntent requires a `customer` argument when paired with
-        // saved payment methods; guest checkout never reuses cards, so
-        // we pass an empty string which the Stripe REST API tolerates
-        // by treating the field as omitted.
-        customer: '',
+        // Guest checkout never reuses cards — omit `customer` entirely
+        // rather than passing an empty string (P2-3).
         applicationFeeAmount: platformFeeCents,
         transferDestination: connectAccount.stripe_account_id,
         metadata: {
@@ -243,11 +327,14 @@ export class GuestCheckoutService {
   // Replay path: a GuestCheckout row already exists for this key. We
   // re-fetch the live client secret from Stripe rather than caching it
   // (PaymentIntent secrets can be invalidated by Stripe-side state).
+  //
+  // Returns null when the row is a stale `pending_<key>` sentinel that
+  // the caller should reset (P2-2). Throws for terminal failures.
   private async replayExistingIntent(
     existing: GuestCheckout,
     expectedPackageId: string,
     normalisedEmail: string,
-  ): Promise<GuestCheckoutResult> {
+  ): Promise<GuestCheckoutResult | null> {
     if (existing.package_id !== expectedPackageId) {
       // Same key, different package — caller programming error.
       throw new NotFoundException({
@@ -274,19 +361,12 @@ export class GuestCheckoutService {
         message: 'This checkout link has expired. Please request a new one.',
       });
     }
-    // Still pending or paid — return the live client secret. A pending
-    // PaymentIntent can still be confirmed; a paid one just resolves
-    // immediately on the storefront side.
+    // P2-2 — a `pending_<key>` placeholder means the prior request
+    // crashed between sentinel insert and the Stripe call. Return null
+    // so the caller can delete the stale row and mint a fresh PI rather
+    // than 503-looping the key forever.
     if (existing.stripe_payment_intent_id.startsWith('pending_')) {
-      // The sentinel was created but the Stripe call did not finish —
-      // either the previous attempt crashed mid-flight, or a concurrent
-      // caller is still in the middle of minting the PI. Surface a 503
-      // so the client retries; the next attempt will go through the
-      // normal mint path.
-      throw new ServiceUnavailableException({
-        error: 'STRIPE_UNAVAILABLE',
-        message: 'Payment processing temporarily unavailable. Please try again.',
-      });
+      return null;
     }
     try {
       const pi = await this.stripe.retrievePaymentIntent(
@@ -331,16 +411,21 @@ export class GuestCheckoutService {
       // 'pending' is the canonical "claim once" pattern: if count = 0,
       // either we never owned this PI or another handler already moved
       // it forward, and we return silently.
+      //
+      // P2-4 — refuse to fulfill rows whose checkout link has already
+      // expired. A buyer who retained a stale client secret cannot push
+      // a paid status past expires_at.
       const claim = await this.prisma.guestCheckout.updateMany({
         where: {
           stripe_payment_intent_id: paymentIntentId,
           status: 'pending',
+          expires_at: { gt: new Date() },
         },
         data: { status: 'paid' },
       });
       if (claim.count === 0) {
         this.logger.log(
-          `handlePaymentSucceeded: no pending row for ${paymentIntentId} — duplicate or unrelated`,
+          `handlePaymentSucceeded: no pending row for ${paymentIntentId} — duplicate, expired, or unrelated`,
         );
         return;
       }
@@ -356,17 +441,17 @@ export class GuestCheckoutService {
         return;
       }
 
-      // Run account creation asynchronously so the webhook returns 200
-      // before we hit Supabase / Resend. setImmediate keeps us on the
-      // same Node loop; the inner try/catch flips the row to 'failed'
-      // on any unrecoverable error.
-      setImmediate(() => {
-        this.convertGuestToUser(checkout).catch((err) => {
-          this.logger.error(
-            `convertGuestToUser failed for ${checkout.id} (tag=${safeErrorTag(err)})`,
-          );
-        });
-      });
+      // P1-4 — Guest conversion runs INLINE, before the webhook returns.
+      // The previous setImmediate path acknowledged Stripe before account
+      // creation finished; if the process exited (Fly redeploy, OOM, hard
+      // crash) the entitlement was lost and Stripe wouldn't retry because
+      // BillingService had already inserted the event into
+      // StripeProcessedEvent. Running inline means a failure leaves the
+      // event un-acknowledged and Stripe will retry the delivery.
+      //
+      // Any unrecoverable error inside convertGuestToUser flips the row
+      // to 'failed' so the reconciliation job has a clear signal.
+      await this.convertGuestToUser(checkout);
     } catch (err) {
       // Webhook MUST return 200 — log + swallow.
       this.logger.error(
@@ -392,9 +477,9 @@ export class GuestCheckoutService {
   }
 
   // ── Account creation flow ──────────────────────────────────────────────
-  // Runs out-of-band from the webhook response. Idempotent: a re-entry
-  // for a row already in 'converted' state is a no-op. Errors mark the
-  // row 'failed' so the reconciliation job (Phase 2) can re-attempt.
+  // Runs INLINE in the webhook (P1-4) so the conversion is durable. A
+  // re-entry for a row already in 'converted' state is a no-op; any
+  // unrecoverable error flips the row to 'failed' and surfaces in logs.
 
   private async convertGuestToUser(
     checkout: CheckoutWithRelations,
@@ -428,6 +513,13 @@ export class GuestCheckoutService {
       await this.markFailed(checkout.id);
       return;
     }
+
+    // P2-5 — preserve the destination Connect account on ClientPurchase
+    // so revenue reconciliation can join guest rows against the same
+    // stripe_destination_account field the in-app flow already writes.
+    const destinationAccount = await this.resolveDestinationAccount(
+      checkout.package.coach_id,
+    );
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -484,6 +576,10 @@ export class GuestCheckoutService {
                 stripe_checkout_session_id: `guest_pi_${checkout.stripe_payment_intent_id}`,
                 stripe_payment_intent_id: checkout.stripe_payment_intent_id,
                 stripe_customer_id: checkout.stripe_customer_id,
+                // P2-5 — write the destination Connect account so guest
+                // rows reconcile alongside in-app purchases in Stripe
+                // balance-transactions exports.
+                stripe_destination_account: destinationAccount,
                 status: 'paid',
                 entitlement_active: true,
                 idempotency_key: purchaseIdemKey,
@@ -520,6 +616,28 @@ export class GuestCheckoutService {
     });
   }
 
+  // P2-5 — resolve the coach's Connect account id at conversion time so
+  // we can persist `stripe_destination_account` on the ClientPurchase
+  // row. Returns null if the coach has no Connect account (extremely
+  // rare here because createIntent already gates on charges_enabled),
+  // matching the column's nullable shape on the existing in-app flow.
+  private async resolveDestinationAccount(
+    coachUserId: string,
+  ): Promise<string | null> {
+    try {
+      const connect = await this.prisma.connectAccount.findUnique({
+        where: { coach_user_id: coachUserId },
+        select: { stripe_account_id: true },
+      });
+      return connect?.stripe_account_id ?? null;
+    } catch (err) {
+      this.logger.error(
+        `resolveDestinationAccount failed for coach ${coachUserId} (tag=${safeErrorTag(err)})`,
+      );
+      return null;
+    }
+  }
+
   private async ensureSupabaseUser(
     email: string,
     name: string,
@@ -528,20 +646,24 @@ export class GuestCheckoutService {
     const client = this.supabase.getClient();
 
     // Try to create unconditionally — Supabase returns a typed error code
-    // when the email already exists, which we handle below. listUsers()
-    // does not scale (it pages all users) and is rate-limited at high
-    // volume, so we prefer the create-and-recover path.
+    // when the email already exists, which we handle below. P1-4 wraps
+    // each admin call in a 10s timeout so a hung Supabase request cannot
+    // block the webhook indefinitely.
     const tempPassword = this.generateTempPassword();
-    const { data, error } = await client.auth.admin.createUser({
-      email,
-      password: tempPassword,
-      email_confirm: true,
-      user_metadata: {
-        name,
-        source: 'guest_checkout',
-        guest_checkout_id: checkoutId,
-      },
-    });
+    const { data, error } = await withTimeout(
+      client.auth.admin.createUser({
+        email,
+        password: tempPassword,
+        email_confirm: true,
+        user_metadata: {
+          name,
+          source: 'guest_checkout',
+          guest_checkout_id: checkoutId,
+        },
+      }),
+      SUPABASE_ADMIN_TIMEOUT_MS,
+      'supabase_createUser',
+    );
 
     if (data?.user?.id) {
       return { supabaseUserId: data.user.id, tempPassword };
@@ -557,20 +679,42 @@ export class GuestCheckoutService {
       throw error ?? new Error('supabase_createUser_failed');
     }
 
-    // Resolve the existing user via the admin filter API. listUsers
-    // accepts a 1-based page size; we fetch a small page and filter
-    // client-side rather than rely on a server-side email filter that
-    // some Supabase versions do not expose.
-    const list = await client.auth.admin.listUsers({ page: 1, perPage: 200 });
-    const users = (list as { data?: { users?: Array<{ id: string; email?: string }> } })
-      .data?.users ?? [];
-    const match = users.find(
-      (u) => (u.email ?? '').toLowerCase() === email.toLowerCase(),
-    );
-    if (!match) {
-      throw new Error('supabase_existing_user_not_found');
+    // P1-5 — page through every Supabase user (up to the configured
+    // cap) instead of looking at the first page only. The whole loop
+    // is also bounded by an 8s deadline so a slow Supabase tenant
+    // cannot stall the webhook for a full minute on a large project.
+    const deadline = Date.now() + SUPABASE_LIST_USERS_TIMEOUT_MS;
+    const lowered = email.toLowerCase();
+    for (let page = 1; page <= SUPABASE_LIST_USERS_MAX_PAGES; page += 1) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        throw new Error('supabase_listUsers_timeout');
+      }
+      const list = await withTimeout(
+        client.auth.admin.listUsers({
+          page,
+          perPage: SUPABASE_LIST_USERS_PAGE_SIZE,
+        }),
+        Math.min(remaining, SUPABASE_ADMIN_TIMEOUT_MS),
+        'supabase_listUsers',
+      );
+      const users =
+        (list as {
+          data?: { users?: Array<{ id: string; email?: string }> };
+        }).data?.users ?? [];
+      const match = users.find(
+        (u) => (u.email ?? '').toLowerCase() === lowered,
+      );
+      if (match) {
+        return { supabaseUserId: match.id, tempPassword: null };
+      }
+      // Stop early when the page is short — Supabase returns up to
+      // perPage users and a short page means there are no more.
+      if (users.length < SUPABASE_LIST_USERS_PAGE_SIZE) {
+        break;
+      }
     }
-    return { supabaseUserId: match.id, tempPassword: null };
+    throw new Error('supabase_existing_user_not_found');
   }
 
   private async markFailed(checkoutId: string): Promise<void> {
