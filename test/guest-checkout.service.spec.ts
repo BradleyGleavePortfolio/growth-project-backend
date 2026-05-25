@@ -260,6 +260,49 @@ describe('GuestCheckoutService', () => {
       ).toBe(50);
     });
 
+    // Audit #3 P2-5 — sub-floor amount must not produce a fee greater
+    // than the charge.
+    it.each([
+      [40, 40],
+      [100, 50],
+      [10000, 200],
+    ])(
+      'P2-5 fee clamp: amount=%i cents → fee=%i cents',
+      async (amount, expectedFee) => {
+        prisma.coachPackage.findUnique.mockResolvedValueOnce(
+          makePkg({ amount_cents: amount }),
+        );
+        prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
+        prisma.guestCheckout.create.mockResolvedValueOnce({
+          id: `gc-${amount}`,
+        });
+        stripe.createPaymentIntent.mockResolvedValueOnce({
+          id: 'pi_x',
+          client_secret: 's',
+        });
+        prisma.guestCheckout.update.mockResolvedValueOnce({});
+        await service.createIntent('tok123', baseDto);
+        const fee =
+          stripe.createPaymentIntent.mock.calls[0][0].applicationFeeAmount;
+        expect(fee).toBe(expectedFee);
+      },
+    );
+
+    // Audit #3 P2-6 — Phase 1 storefront accepts USD only.
+    it.each(['eur', 'gbp', 'jpy'])(
+      'rejects non-USD packages (%s) with CURRENCY_NOT_SUPPORTED',
+      async (currency) => {
+        prisma.coachPackage.findUnique.mockResolvedValueOnce(
+          makePkg({ currency }),
+        );
+        prisma.guestCheckout.findUnique.mockResolvedValue(null);
+        await expect(service.createIntent('tok123', baseDto)).rejects.toThrow(
+          UnprocessableEntityException,
+        );
+        expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
+      },
+    );
+
     it('replays an existing pending intent without minting a new PaymentIntent', async () => {
       prisma.coachPackage.findUnique.mockResolvedValueOnce(makePkg());
       prisma.guestCheckout.findUnique.mockResolvedValueOnce({

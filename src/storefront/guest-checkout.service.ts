@@ -29,8 +29,18 @@ import type { GuestCheckoutResult } from './storefront.types';
 // Platform cut on every guest checkout. Stripe's minimum application_fee
 // is 50 cents — packages priced low enough that 2% falls below the floor
 // get bumped up so Stripe accepts the charge.
+//
+// Audit #3 P2-5 — application_fee is also clamped to the charge amount
+// so a sub-floor price can never produce a fee greater than the charge.
 const PLATFORM_FEE_PERCENT = 0.02;
 const PLATFORM_FEE_MIN_CENTS = 50;
+
+// Audit #3 P2-6 — Phase 1 storefront accepts USD only. The platform-fee
+// floor is denominated in US cents and zero-decimal currencies (JPY,
+// KRW, …) would treat 50 as 50 yen, not 50¢. Per-currency floors are a
+// Phase 2 follow-up; until then we reject non-USD checkouts up front
+// with a deterministic error code the storefront can surface.
+const SUPPORTED_CURRENCY = 'usd';
 
 // PaymentIntents live indefinitely on Stripe's side, but the storefront's
 // branded checkout session has a tighter contract: the link expires 24h
@@ -195,6 +205,18 @@ export class GuestCheckoutService {
       });
     }
 
+    // Audit #3 P2-6 — Phase 1 storefront accepts USD only. CoachPackage
+    // can persist any Stripe-supported currency, but the platform-fee
+    // floor and the storefront UX are tuned for US cents. Reject early
+    // with a deterministic code; per-currency floors are Phase 2.
+    if ((pkg.currency ?? '').toLowerCase() !== SUPPORTED_CURRENCY) {
+      throw new UnprocessableEntityException({
+        error: 'CURRENCY_NOT_SUPPORTED',
+        message:
+          'This package is priced in a currency we cannot yet accept on the storefront. Please contact your coach to join.',
+      });
+    }
+
     const normalisedEmail = dto.guest_email.toLowerCase().trim();
     const normalisedName = dto.guest_name.trim();
 
@@ -232,9 +254,17 @@ export class GuestCheckoutService {
 
     // Platform fee. Math.floor guards a fractional cent from rounding up
     // and exceeding the package amount; clamp to Stripe's 50¢ minimum.
-    const platformFeeCents = Math.max(
-      Math.floor(pkg.amount_cents * PLATFORM_FEE_PERCENT),
-      PLATFORM_FEE_MIN_CENTS,
+    //
+    // Audit #3 P2-5 — also clamp at amount_cents so a sub-floor price
+    // (e.g. a $0.40 trial) never produces a fee greater than the
+    // charge. Without the cap a 40¢ charge would carry a 50¢ fee,
+    // which Stripe rejects with a typed error at PI creation time.
+    const platformFeeCents = Math.min(
+      pkg.amount_cents,
+      Math.max(
+        Math.floor(pkg.amount_cents * PLATFORM_FEE_PERCENT),
+        PLATFORM_FEE_MIN_CENTS,
+      ),
     );
 
     // Create the GuestCheckout sentinel row FIRST so we own the
