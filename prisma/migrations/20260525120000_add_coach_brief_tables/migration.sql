@@ -155,7 +155,12 @@ CREATE POLICY "coach_update_own_daily_log"
 CREATE TABLE IF NOT EXISTS "CoachBriefPreferences" (
   "id"                TEXT NOT NULL,
   "coach_id"          TEXT NOT NULL,
-  "notification_time" TEXT NOT NULL DEFAULT '07:00',
+  -- A5-P1-1 — operator-locked default is "05:00" (decacorn-grade
+  -- fitness coaches start before clients hit the gym; a 07:00 brief
+  -- lands after the first session is already underway). The Prisma
+  -- model @default and the service DEFAULT_NOTIFICATION_TIME constant
+  -- must agree — enforced by test/invariants/locked_defaults.spec.ts.
+  "notification_time" TEXT NOT NULL DEFAULT '05:00',
   "timezone"          TEXT NOT NULL DEFAULT 'America/Los_Angeles',
   "enabled"           BOOLEAN NOT NULL DEFAULT true,
   "created_at"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

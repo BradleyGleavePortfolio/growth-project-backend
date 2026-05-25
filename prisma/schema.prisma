@@ -3693,7 +3693,7 @@ model CoachBriefPreferences {
   id                String   @id @default(uuid())
   coach_id          String   @unique
   coach             User     @relation("CoachBriefPrefsCoach", fields: [coach_id], references: [id], onDelete: Cascade)
-  notification_time String   @default("07:00")
+  notification_time String   @default("05:00")
   timezone          String   @default("America/Los_Angeles")
   enabled           Boolean  @default(true)
   created_at        DateTime @default(now())

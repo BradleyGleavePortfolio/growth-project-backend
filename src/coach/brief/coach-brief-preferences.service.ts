@@ -12,7 +12,13 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { CoachBriefPreferencesResponse } from './coach-brief.types';
 
-const DEFAULT_NOTIFICATION_TIME = '07:00';
+// R43 / A5-P1-1 — the operator-locked default is "05:00". Decacorn-grade
+// fitness coaches start their day before clients hit the gym; a 07:00
+// brief lands after the first session is already underway. The constant,
+// the Prisma schema (@default), and the SQL migration MUST agree on this
+// literal — see test/invariants/locked_defaults.spec.ts which enforces
+// the three-way agreement at every CI run (R51).
+const DEFAULT_NOTIFICATION_TIME = '05:00';
 const DEFAULT_TIMEZONE = 'America/Los_Angeles';
 
 @Injectable()

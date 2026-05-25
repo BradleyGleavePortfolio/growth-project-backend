@@ -110,7 +110,7 @@ CHECK constraints (P2-4) enforce:
 - `CoachBrief.brief_mode ∈ {solo_coach, head_coach, sub_coach}`
 - `CoachBrief.narrative` length ≤ 600
 - `CoachDailyLog.content` length ≤ 4000
-- `CoachBriefPreferences.notification_time ~ 'HH:MM' 24h`
+- `CoachBriefPreferences.notification_time ~ 'HH:MM' 24h` (LOCKED default: `'05:00'` — see A5-P1-1; the operator directive is that the daily brief lands before the first client session of the day. Schema `@default`, SQL migration `DEFAULT`, and service constant `DEFAULT_NOTIFICATION_TIME` must agree; `test/invariants/locked_defaults.spec.ts` enforces this at CI time.)
 - `CoachBriefPreferences.timezone` length 1–80
 
 ## 6. Mobile consumption notes
