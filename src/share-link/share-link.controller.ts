@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
@@ -40,6 +41,13 @@ export class ShareLinkController {
   // Share-link mint is naturally idempotent: if a token already exists for
   // this package, the same token is returned. No header ledger needed.
   // See mintOrGet() in src/share-link/share-link.service.ts.
+  // Audit #4 P2-3 — even though the operation is naturally idempotent
+  // (same coach + same package → same token), an authenticated coach
+  // hammering this endpoint can pin a worker on the underlying
+  // CoachPackage row lookup and exhaust DB CPU. Cap at 30 requests per
+  // minute per coach; the legitimate UI mints once per package and
+  // then caches.
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @Post(':id/share-link')
   @HttpCode(HttpStatus.OK)
   async mintShareLink(
@@ -47,5 +55,19 @@ export class ShareLinkController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) packageId: string,
   ) {
     return this.shareLink.mintOrGet(req.user.id, packageId);
+  }
+
+  // Audit #4 P2-4 — one-way revocation. POST /v1/coach/packages/:id/share-link/revoke
+  // kills the current token forever. Subsequent mints produce a NEW token rather
+  // than reviving the dead one. Throttle matches mint — the legitimate UI calls
+  // revoke at most a handful of times per coach.
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  @Post(':id/share-link/revoke')
+  @HttpCode(HttpStatus.OK)
+  async revokeShareLink(
+    @Request() req: AuthedRequest,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) packageId: string,
+  ) {
+    return this.shareLink.revoke(req.user.id, packageId);
   }
 }

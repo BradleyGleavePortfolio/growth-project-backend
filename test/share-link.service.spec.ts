@@ -186,6 +186,36 @@ describe('ShareLinkService', () => {
   // P1-3 — token shape regression. The 10-char tokens minted before
   // Round 3 are not produced by mintToken any more; the regex rejects
   // them and the legacy-invalidation migration clears them.
+  // Audit #4 P2-4 — one-way revocation. The current token is nulled
+  // and share_link_revoked_at is stamped; a follow-up mint produces
+  // a fresh token instead of reviving the dead one.
+  describe('revoke', () => {
+    it('flips share_link_revoked_at and nulls share_token in one write', async () => {
+      prismaUpdateMany.mockResolvedValueOnce({ count: 1 });
+      await expect(service.revoke(COACH_ID, PKG_ID)).resolves.toEqual({
+        revoked: true,
+      });
+      const call = prismaUpdateMany.mock.calls[0][0];
+      expect(call.where).toMatchObject({
+        id: PKG_ID,
+        coach_id: COACH_ID,
+        archived_at: null,
+        share_token: { not: null },
+        share_link_revoked_at: null,
+      });
+      expect(call.data.share_link_revoked_at).toBeInstanceOf(Date);
+      expect(call.data.share_token).toBeNull();
+      expect(call.data.share_link_enabled).toBe(false);
+    });
+
+    it('404s when the package is not owned, archived, or already revoked', async () => {
+      prismaUpdateMany.mockResolvedValueOnce({ count: 0 });
+      await expect(service.revoke(COACH_ID, PKG_ID)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
   it('mints tokens that match the canonical nanoid 21-char regex', () => {
     for (let i = 0; i < 50; i += 1) {
       // Cycle the mock so each call is fresh.

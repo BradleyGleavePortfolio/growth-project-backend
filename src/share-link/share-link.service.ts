@@ -217,6 +217,42 @@ export class ShareLinkService {
     };
   }
 
+  // Audit #4 P2-4 — one-way revocation of the current share token.
+  // After revoke the existing token is permanently dead (storefront
+  // 404s it via share_link_revoked_at IS NOT NULL). A subsequent
+  // mintOrGet must produce a NEW token rather than reviving the old
+  // one, so we also null out share_token in the same write — that
+  // returns the row to the "unminted" branch in mintOrGet.
+  async revoke(
+    coachUserId: string,
+    packageId: string,
+  ): Promise<{ revoked: boolean }> {
+    const now = new Date();
+    const result = await this.prisma.coachPackage.updateMany({
+      where: {
+        id: packageId,
+        coach_id: coachUserId,
+        archived_at: null,
+        share_token: { not: null },
+        share_link_revoked_at: null,
+      },
+      data: {
+        share_link_revoked_at: now,
+        share_link_enabled: false,
+        share_token: null,
+      },
+    });
+    if (result.count === 0) {
+      // Either no such package, not owned by this coach, archived, or
+      // already revoked / never minted. 404 to avoid leaking which.
+      throw new NotFoundException({
+        error: 'PACKAGE_NOT_FOUND',
+        message: 'Package not found.',
+      });
+    }
+    return { revoked: true };
+  }
+
   private isUniqueViolation(err: unknown): boolean {
     if (!err || typeof err !== 'object') return false;
     const e = err as { code?: string; message?: string };

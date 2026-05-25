@@ -94,11 +94,18 @@ export class StorefrontService {
       },
     });
 
+    // Audit #4 P2-4 — revocation and wall-clock expiry are authoritative
+    // 404 reasons. revoked_at is one-way (a re-mint produces a new token);
+    // expires_at lets a coach pre-schedule a sunset on a campaign link.
+    const nowMs = Date.now();
     if (
       !pkg ||
       !pkg.is_active ||
       pkg.archived_at !== null ||
       !pkg.share_link_enabled ||
+      pkg.share_link_revoked_at !== null ||
+      (pkg.share_link_expires_at !== null &&
+        pkg.share_link_expires_at.getTime() <= nowMs) ||
       // Audit #4 P2-5 — Phase 1 only supports one-time USD packages on
       // the public storefront. A recurring or non-USD package would not
       // pass the createIntent gate anyway, but exposing it on GET would

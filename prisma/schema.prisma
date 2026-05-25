@@ -2821,9 +2821,16 @@ model CoachPackage {
   // without throwing the token away (so existing pasted links 404 cleanly
   // and can be re-enabled later). share_link_generated_at records the
   // first mint timestamp — never updated on subsequent reads (idempotent).
+  // Audit #4 P2-4 — share_link_expires_at is an optional hard wall-clock
+  // expiry the coach can set (e.g. a 30-day campaign). share_link_revoked_at
+  // marks a permanently dead token; revocation is a one-way operation and
+  // a fresh mint after revoke produces a new token rather than reviving
+  // the old one.
   share_token             String?   @unique
   share_link_enabled      Boolean   @default(true)
   share_link_generated_at DateTime?
+  share_link_expires_at   DateTime?
+  share_link_revoked_at   DateTime?
 
   // R43 — each package may have many guest checkout attempts (one row per
   // distinct idempotency_key).

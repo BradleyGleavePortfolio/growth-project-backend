@@ -28,6 +28,9 @@ function makePkg(overrides: Record<string, unknown> = {}) {
     archived_at: null,
     share_token: 'tok1234567890abcDEFGH',
     share_link_enabled: true,
+    // Audit #4 P2-4 — fixture defaults to non-expired and non-revoked.
+    share_link_expires_at: null,
+    share_link_revoked_at: null,
     coach: {
       id: 'coach-1',
       name: 'Bradley Gleave',
@@ -251,6 +254,38 @@ describe('StorefrontService', () => {
     await expect(
       service.getPublicPackageByToken('tok1234567890abcDEFGH'),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  // Audit #4 P2-4 — a revoked or expired share token MUST 404 even
+  // when share_link_enabled is true.
+  it('P2-4: 404s when share_link_revoked_at is set', async () => {
+    findUnique.mockResolvedValueOnce(
+      makePkg({ share_link_revoked_at: new Date() }),
+    );
+    await expect(
+      service.getPublicPackageByToken('tok1234567890abcDEFGH'),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('P2-4: 404s when share_link_expires_at is in the past', async () => {
+    findUnique.mockResolvedValueOnce(
+      makePkg({ share_link_expires_at: new Date(Date.now() - 1000) }),
+    );
+    await expect(
+      service.getPublicPackageByToken('tok1234567890abcDEFGH'),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('P2-4: still serves when share_link_expires_at is in the future', async () => {
+    findUnique.mockResolvedValueOnce(
+      makePkg({
+        share_link_expires_at: new Date(Date.now() + 24 * 3600 * 1000),
+      }),
+    );
+    const data = await service.getPublicPackageByToken(
+      'tok1234567890abcDEFGH',
+    );
+    expect(data.package_id).toBe('pkg-1');
   });
 
   it('P1-7: 404s when coach has deleted_at set', async () => {
