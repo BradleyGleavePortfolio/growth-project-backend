@@ -115,13 +115,6 @@ const LEGACY_GUARD_ALLOWLIST: Array<{
   { controller: 'V1CoachController', method: 'sendMessage', reason: 'CoachOrOwnerGuard + SubscriptionGuard at handler' },
   { controller: 'V1CoachController', method: 'getDraft', reason: 'CoachOrOwnerGuard at class level' },
   { controller: 'V1CoachController', method: 'saveDraft', reason: 'CoachOrOwnerGuard + SubscriptionGuard at handler' },
-  // ── CoachController.getDashboardSummary — pre-Phase-10 handler; CoachGuard at class level ──
-  { controller: 'CoachController', method: 'getDashboardSummary', reason: 'CoachGuard at class level' },
-  // ── InviteCodesController — per-handler JwtAuthGuard+CoachGuard pre-Phase-10 handlers ──
-  { controller: 'InviteCodesController', method: 'redeemers', reason: 'Per-handler JwtAuthGuard+CoachGuard' },
-  { controller: 'InviteCodesController', method: 'sendOne', reason: 'Per-handler JwtAuthGuard+CoachGuard' },
-  // ── OwnerBillingController — OwnerGuard at class level ──
-  { controller: 'OwnerBillingController', method: 'cancelSubscription', reason: 'OwnerGuard at class level' },
 ];
 
 const allowlistSet = new Set(
@@ -166,32 +159,6 @@ const CLASS_LEVEL_LEGACY_ALLOWLIST: Array<{
   { controller: 'SchedulingController', reason: 'Service-layer authz; pre-Phase-10' },
   { controller: 'TeamModeController', reason: 'Sub-coach feature; service-layer authz; pre-Phase-10' },
   { controller: 'WorkoutBuilderController', reason: 'Workout builder feature; service-layer authz; pre-Phase-10' },
-  // Phase 10/11 controllers gated by bespoke role guards (CoachGuard,
-  // CoachOrOwnerGuard, OwnerGuard, ServiceTokenGuard, NoActiveSubCoachGuard)
-  // at the class level. Service-layer ownership checks scope reads/writes
-  // to the caller's tenant. Migration to @Roles tracked as follow-up.
-  { controller: 'AccountDeletionController', reason: 'JwtAuthGuard + service-layer ownership; pre-Phase-10' },
-  { controller: 'AdminExerciseCatalogController', reason: 'OwnerGuard at class level' },
-  { controller: 'CheckoutController', reason: 'JwtAuthGuard + service-layer ownership; pre-Phase-10' },
-  { controller: 'ClientPackagesController', reason: 'JwtAuthGuard + service-layer ownership; pre-Phase-10' },
-  { controller: 'CoachAIController', reason: 'CoachGuard + SubscriptionGuard at class level' },
-  // P2-5: CoachBriefController now declares @Roles('coach') at the class
-  // level, so it is covered by the @Roles or @Public assertion and no
-  // longer needs the whole-controller allowlist exception.
-  { controller: 'CoachConnectController', reason: 'CoachGuard + NoActiveSubCoachGuard at class level' },
-  { controller: 'CoachPackagesController', reason: 'CoachOrOwnerGuard + SubscriptionGuard at class level' },
-  { controller: 'CoachPaymentOpsController', reason: 'CoachOrOwnerGuard at class level' },
-  { controller: 'CoachPurchasesController', reason: 'CoachOrOwnerGuard at class level' },
-  { controller: 'CommandCenterController', reason: 'CoachGuard + NoActiveSubCoachGuard at class level' },
-  { controller: 'ConnectController', reason: 'CoachOrOwnerGuard at class level' },
-  { controller: 'DataExportController', reason: 'Service-layer ownership; pre-Phase-10' },
-  { controller: 'ExerciseCatalogController', reason: 'JwtAuthGuard read-only catalog; pre-Phase-10' },
-  { controller: 'LtvMetricsController', reason: 'CoachGuard at class level' },
-  { controller: 'MessagesSafetyController', reason: 'JwtAuthGuard + service-layer ownership; pre-Phase-10' },
-  { controller: 'OwnerConsoleController', reason: 'ServiceTokenGuard at class level' },
-  { controller: 'SubCoachController', reason: 'CoachGuard at class level' },
-  { controller: 'SubCoachesController', reason: 'CoachGuard at class level' },
-  { controller: 'TeamController', reason: 'CoachGuard + NoActiveSubCoachGuard at class level' },
 ];
 
 const classLevelAllowlistSet = new Set(
