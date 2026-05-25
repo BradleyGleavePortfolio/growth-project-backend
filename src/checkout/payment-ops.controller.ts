@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Body,
   Controller,
-  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -475,28 +474,26 @@ export class CoachPaymentOpsController {
     return { purchases: rows };
   }
 
-  // Drill-down on one purchase. Handler re-checks coach_user_id ===
-  // req.user.id (OWNER bypass) so a coach cannot read another coach's
-  // purchase by guessing the id. Students must never reach this surface.
+  // Coach drill-down on one purchase. Lookup is scoped by
+  // `coach_user_id` for non-owner callers and unscoped for OWNER, so
+  // missing rows and foreign-owned rows both collapse into a 404
+  // PURCHASE_NOT_FOUND (no 403-vs-404 enumeration of other coaches'
+  // purchase IDs). Students must never reach this surface.
   @Roles('coach', 'owner')
   @Get('purchases/:id')
   async getOwn(
     @Request() req: AuthedRequest,
     @Param('id') purchaseId: string,
   ) {
-    const purchase = await this.prisma.clientPurchase.findUnique({
-      where: { id: purchaseId },
-    });
+    const where =
+      req.user.role === 'owner'
+        ? { id: purchaseId }
+        : { id: purchaseId, coach_user_id: req.user.id };
+    const purchase = await this.prisma.clientPurchase.findFirst({ where });
     if (!purchase) {
       throw new NotFoundException({
         error: 'PURCHASE_NOT_FOUND',
         message: `No purchase with id ${purchaseId}`,
-      });
-    }
-    if (purchase.coach_user_id !== req.user.id && req.user.role !== 'owner') {
-      throw new ForbiddenException({
-        error: 'NOT_YOUR_PURCHASE',
-        message: 'Coaches can only inspect their own purchases',
       });
     }
     const [splitEntries, transfers, dunningState] = await Promise.all([
