@@ -225,14 +225,22 @@ export class StripeConnectApiService {
     account: string;
     refreshUrl: string;
     returnUrl: string;
+    idempotencyKey: string;
   }): Promise<StripeAccountLink> {
+    if (!args.idempotencyKey) {
+      throw new Error('createAccountLink requires an idempotencyKey (R19)');
+    }
     const form: Record<string, string> = {
       account: args.account,
       refresh_url: args.refreshUrl,
       return_url: args.returnUrl,
       type: 'account_onboarding',
     };
-    return this.post<StripeAccountLink>('/account_links', form);
+    return this.post<StripeAccountLink>(
+      '/account_links',
+      form,
+      args.idempotencyKey,
+    );
   }
 
   async createLoginLink(accountId: string): Promise<StripeLoginLink> {
