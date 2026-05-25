@@ -23,7 +23,7 @@ The Supabase security advisor (pulled 2026-05-25) reports five `function_search_
 
 Item 5 lives in `public`, not `app`, because the trigger was attached to a `public` table and Postgres co-located it. The Cycle B brief listed it under `app.*`; the actual schema is `public.*`. This spec corrects that detail and the migration targets the real object.
 
-A sixth helper, `app.is_user_coached_by(text, text)`, already has `SECURITY DEFINER` and `SET search_path = public, pg_temp` pinned (verified via `pg_get_functiondef`). It is not flagged by the advisor and is therefore out of scope for code changes — but we re-state its grants in the migration for completeness and to keep the helper family on a single audited surface.
+A sixth helper, `app.is_user_coached_by(text, text)`, already has `SECURITY DEFINER` and `SET search_path = public, pg_temp` pinned (verified via `pg_get_functiondef`). It is not flagged by the advisor and is out of scope for this PR. Per Fix Round 1 (audit P2-008), the migration no longer touches its ACLs — leaving them under whatever the prior migration set so the change set for PR-RLS-01 stays within the five-helper target.
 
 Separately, the Supabase Auth `auth_leaked_password_protection` setting is OFF. This means a user can register or rotate to a password that is known to be in a public breach corpus (HaveIBeenPwned). The fix is a single dashboard toggle, not SQL.
 
@@ -53,18 +53,34 @@ For each of the four `app.*` helpers and the one `public.*` trigger function, ap
 CREATE OR REPLACE FUNCTION <schema>.<name>(<args>)
 RETURNS <type>
 LANGUAGE <plpgsql|sql>
+<volatility>
 SECURITY DEFINER
 SET search_path = pg_catalog, public, app
-<volatility>
 AS $function$
   <body unchanged, verified byte-identical against pg_get_functiondef from live DB>
 $function$;
 
 REVOKE ALL ON FUNCTION <schema>.<name>(<args>) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION <schema>.<name>(<args>) TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION <schema>.<name>(<args>) FROM anon;
+GRANT EXECUTE ON FUNCTION <schema>.<name>(<args>) TO authenticated, service_role;
 
 COMMENT ON FUNCTION <schema>.<name>(<args>) IS '<existing comment + PR-RLS-01 note>';
 ```
+
+### 3.1.1 Role grant pattern (canonical for RLS-01..08)
+
+The ACL block above is the **canonical pattern for every hardened RBAC helper** introduced in Cycle B. Downstream PRs (RLS-02..08) MUST match it exactly:
+
+| Role | EXECUTE | Rationale |
+|---|:-:|---|
+| `PUBLIC` | revoked | strip implicit broad grant |
+| `anon` | **revoked** | RBAC helpers must not be callable by the unauthenticated role; the session GUCs they read are only set by the NestJS interceptor for authenticated requests |
+| `authenticated` | granted | RLS policies on user-facing tables evaluate helpers under this role |
+| `service_role` | granted | server-side workflows and Supabase admin tooling bypass RLS but still call helpers for parity |
+
+PostgREST policies that previously listed `TO public` still admit `authenticated` and `service_role`; they no longer admit `anon` to these helpers, by design.
+
+Idempotency: `REVOKE EXECUTE ... FROM anon` is safe to re-run even if no prior grant existed.
 
 Notes:
 
@@ -72,9 +88,9 @@ Notes:
   - `pg_catalog` first so built-ins like `current_setting`, `EXISTS`, `NULLIF`, etc. always resolve to canonical Postgres.
   - `public` is needed because `is_user_coached_by` and the trigger function reference `public."User"` and `public."TeamSubCoachAssignment"` (the trigger function references its own table via unqualified identifier).
   - `app` is needed because `is_owner` and `is_current_coach_of` chain into other `app.*` helpers.
-- `REVOKE ... FROM PUBLIC` clears the implicit broad grant; `GRANT EXECUTE` re-grants explicitly to the three roles that actually evaluate RLS policies (`anon`, `authenticated`, `service_role`). Existing RLS policies attach to role `public`, so PostgREST role-mapping must continue to admit `anon` and `authenticated` callers — confirmed by inspecting `pg_policies` (e.g. `User.user_self_access` is `TO public`).
+- `REVOKE ... FROM PUBLIC` clears the implicit broad grant; `REVOKE EXECUTE ... FROM anon` removes the unauthenticated-role access surface; `GRANT EXECUTE` re-grants to the two roles that actually need to evaluate helpers (`authenticated`, `service_role`). RLS policies that previously read like `TO public` still admit authenticated callers because PostgREST routes authenticated requests under role `authenticated`, which holds the explicit grant.
 - Function bodies are preserved byte-identical relative to the live database, fetched via `pg_get_functiondef`. The fetched bodies are documented in a SQL comment block above each `CREATE OR REPLACE` so a future reader can verify the round-trip.
-- `is_user_coached_by(text, text)` is re-stated for grant idempotency but its body and flags are already correct.
+- `is_user_coached_by(text, text)` is intentionally untouched in this migration (audit P2-008): its body and flags are already correct and re-asserting its grants would expand the audit surface beyond the five-helper target.
 
 ### 3.2 HIBP enable
 
@@ -92,7 +108,9 @@ Record date, operator, and project in `agent-context/SUPABASE_CONFIG.md`. The Su
 
 Forward-only, idempotent. One file:
 
-`prisma/migrations/20260525000000_rls01_helper_searchpath_hibp/migration.sql`
+`prisma/migrations/20260704000000_rls01_helper_searchpath_hibp/migration.sql`
+
+The timestamp prefix `20260704000000` lands after PR #266 (which adds Coach Brief migrations through `20260703000002`) and before subsequent RLS migrations (RLS-02..08, which will use later timestamps). This avoids the prefix collision with the existing `20260525000000_sub_coach_rls_and_fks` migration (audit P2-005).
 
 Migration structure:
 
@@ -158,8 +176,8 @@ The soft-report mode still surfaces the table count and list so reviewers can wa
 
 If the migration is applied and a regression appears:
 
-1. Revert by re-issuing `CREATE OR REPLACE FUNCTION ...` with the original (pre-PR-RLS-01) body, dropping `SECURITY DEFINER` and the `SET search_path` clause. The original bodies are committed in this spec section 8 and as SQL comments in the migration file itself.
-2. `REVOKE EXECUTE ... FROM anon, authenticated, service_role; GRANT EXECUTE ... TO PUBLIC;` to restore the prior ACL.
+1. Revert by re-issuing `CREATE OR REPLACE FUNCTION ...` with the original (pre-PR-RLS-01) body, dropping `SECURITY DEFINER` and the `SET search_path` clause. The original bodies are committed in this spec section 8 and as an executable rollback block at the bottom of the migration file itself (audit P2-006).
+2. `REVOKE EXECUTE ... FROM authenticated, service_role; GRANT EXECUTE ... TO PUBLIC;` to restore the prior ACL.
 3. HIBP rollback: toggle off in the dashboard. No data effect.
 
 No table-level rollback is required because this PR does not enable RLS on any new table.
