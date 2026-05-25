@@ -597,10 +597,23 @@ export const ENV_RULES: EnvRule[] = [
   // R43 — Coach Brief (daily AI dispatch)
   // ============================================================
   {
+    name: 'COACH_BRIEF_ENABLED',
+    tier: 'feature',
+    reason:
+      'R43 — global server-side kill switch for the entire Coach Brief surface. When set to "off", every /coach/brief/* route returns 404 NOT_FOUND and the scheduler is a no-op. Any other value (or absent) leaves the feature on. Default is on. Validator only accepts "on" or "off" so a typo like "false" cannot silently leave the feature live.',
+    validate: (v) => {
+      const trimmed = v.trim().toLowerCase();
+      if (trimmed !== 'on' && trimmed !== 'off') {
+        return 'COACH_BRIEF_ENABLED must be exactly "on" or "off" (case-insensitive). To leave the feature on, omit the variable.';
+      }
+      return null;
+    },
+  },
+  {
     name: 'COACH_BRIEF_NOTIFICATIONS_ENABLED',
     tier: 'feature',
     reason:
-      'R43 — set to "off" to globally disable the daily Coach Brief push dispatch. When absent or any value other than "off", the scheduler runs every minute and fires per-coach pushes when each coach\'s notification_time matches their local timezone. Brief generation itself is unaffected; only the cron-driven push is gated.',
+      'R43 — set to "off" to globally disable the daily Coach Brief push dispatch. When absent or any value other than "off", the scheduler runs every minute and fires per-coach pushes when each coach\'s notification_time matches their local timezone. Brief generation itself is unaffected; only the cron-driven push is gated. Note: COACH_BRIEF_ENABLED=off takes precedence and disables BOTH generation and push.',
   },
   {
     name: 'COACH_BRIEF_CRON',

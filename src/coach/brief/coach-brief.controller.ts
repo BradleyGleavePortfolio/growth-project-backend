@@ -22,6 +22,7 @@ import { JwtAuthGuard } from '../../auth/auth.guard';
 import { CoachGuard } from '../../auth/coach.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthedRequest } from '../../auth/auth-request';
+import { CoachBriefEnabledGuard } from './coach-brief-enabled.guard';
 import { CoachBriefService } from './coach-brief.service';
 import { CoachDailyLogService } from './coach-daily-log.service';
 import { CoachBriefPreferencesService } from './coach-brief-preferences.service';
@@ -40,9 +41,13 @@ import {
   LogHistoryResponse,
 } from './coach-brief.types';
 
+// P1-2 — CoachBriefEnabledGuard sits at the front of the guard stack so
+// when COACH_BRIEF_ENABLED=off every route returns 404 BEFORE JWT or role
+// checks run. This prevents the disabled feature from advertising its
+// existence and lets operators kill the surface without a client deploy.
 @ApiTags('coach-brief')
 @Controller('coach/brief')
-@UseGuards(JwtAuthGuard, CoachGuard)
+@UseGuards(CoachBriefEnabledGuard, JwtAuthGuard, CoachGuard)
 @Roles('coach')
 export class CoachBriefController {
   constructor(

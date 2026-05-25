@@ -18,6 +18,7 @@ import { RequestMethod } from '@nestjs/common';
 import { CoachBriefController } from '../src/coach/brief/coach-brief.controller';
 import { JwtAuthGuard } from '../src/auth/auth.guard';
 import { CoachGuard } from '../src/auth/coach.guard';
+import { CoachBriefEnabledGuard } from '../src/coach/brief/coach-brief-enabled.guard';
 import { ROLES_KEY } from '../src/common/decorators/roles.decorator';
 import {
   BriefHistoryQueryDto,
@@ -166,17 +167,32 @@ describe('CoachBriefController — class metadata', () => {
     expect(path).toBe('coach/brief');
   });
 
-  it('declares JwtAuthGuard + CoachGuard at the class level', () => {
+  it('declares CoachBriefEnabledGuard + JwtAuthGuard + CoachGuard at the class level', () => {
     const guards = Reflect.getMetadata(
       GUARDS_METADATA,
       CoachBriefController,
     ) as unknown as Array<new (...args: unknown[]) => unknown>;
     expect(Array.isArray(guards)).toBe(true);
     const names = guards.map((g) => g.name);
-    expect(names).toEqual(expect.arrayContaining(['JwtAuthGuard', 'CoachGuard']));
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'CoachBriefEnabledGuard',
+        'JwtAuthGuard',
+        'CoachGuard',
+      ]),
+    );
     // Reference the imported guard classes so the symbol use is real.
+    expect(guards).toContain(CoachBriefEnabledGuard);
     expect(guards).toContain(JwtAuthGuard);
     expect(guards).toContain(CoachGuard);
+  });
+
+  it('P1-2: CoachBriefEnabledGuard is registered FIRST so the kill switch runs before JWT/role checks', () => {
+    const guards = Reflect.getMetadata(
+      GUARDS_METADATA,
+      CoachBriefController,
+    ) as unknown as Array<new (...args: unknown[]) => unknown>;
+    expect(guards[0]).toBe(CoachBriefEnabledGuard);
   });
 
   it("declares @Roles('coach') at the class level (P2-5)", () => {

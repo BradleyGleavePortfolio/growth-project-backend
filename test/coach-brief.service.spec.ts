@@ -1150,6 +1150,25 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     expect(prisma.coachBriefPreferences.findMany).not.toHaveBeenCalled();
   });
 
+  it('P1-2: COACH_BRIEF_ENABLED=off short-circuits BEFORE the prefs lookup', async () => {
+    const prisma = makeMockPrisma();
+    prisma.coachBriefPreferences.findMany.mockResolvedValue([]);
+    const brief = { getOrGenerateTodaysBrief: jest.fn() };
+    const push = { pushToUser: jest.fn() };
+    const scheduler = makeScheduler(
+      prisma,
+      brief,
+      push,
+      // Master kill switch off; notifications switch left on so we prove
+      // COACH_BRIEF_ENABLED takes precedence over the narrower flag.
+      { COACH_BRIEF_ENABLED: 'off', COACH_BRIEF_NOTIFICATIONS_ENABLED: 'on' },
+    );
+    await scheduler.dispatchDailyBriefs();
+    expect(prisma.coachBriefPreferences.findMany).not.toHaveBeenCalled();
+    expect(brief.getOrGenerateTodaysBrief).not.toHaveBeenCalled();
+    expect(push.pushToUser).not.toHaveBeenCalled();
+  });
+
   it('does not throw when one coach dispatch fails (Promise.allSettled isolation)', async () => {
     const prisma = makeMockPrisma();
     prisma.coachBriefPreferences.findMany.mockResolvedValue([

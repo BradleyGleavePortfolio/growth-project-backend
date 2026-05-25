@@ -24,6 +24,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { CoachBriefService, bucketDateLocal } from './coach-brief.service';
+import { coachBriefEnabled } from './coach-brief-enabled.guard';
 
 const CRON_JOB_NAME = 'coach-brief-dispatch';
 const DEFAULT_CRON = '* * * * *';
@@ -106,6 +107,16 @@ export class CoachBriefScheduler implements OnModuleInit {
   }
 
   async dispatchDailyBriefs(): Promise<void> {
+    // P1-2 — master kill switch. When COACH_BRIEF_ENABLED=off the cron is
+    // a no-op; this short-circuits BEFORE we read the prefs table so an
+    // operator who disables the feature does not generate scheduler load.
+    if (!coachBriefEnabled(this.config)) {
+      this.logger.debug(
+        'coach brief scheduler skipped — COACH_BRIEF_ENABLED=off',
+      );
+      return;
+    }
+
     const enabled =
       this.config.get<string>('COACH_BRIEF_NOTIFICATIONS_ENABLED') !== 'off';
     if (!enabled) {
