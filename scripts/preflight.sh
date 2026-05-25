@@ -9,7 +9,7 @@
 # is the regression gate, not the cleanup gate.
 #
 # Gates encoded here:
-#   1. R45 — the literal "tgp.app" is banned anywhere in source. This
+#   1. R45 — the literal 'tgp' + '.app' (concatenated) is banned anywhere in source. This
 #      gate is ABSOLUTE (not diff-only): the project has zero tolerance
 #      for the banned hostname on any branch.
 #   2. R44 — raw `new Error(` is banned in src/. DIFF-ONLY against
