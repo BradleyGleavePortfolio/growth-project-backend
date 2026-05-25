@@ -4,6 +4,26 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma.service';
 
+// Audit #5 P1-1 — typed domain error replaces the raw `new Error(...)`
+// that previously fired from resolveSalt() when GUEST_CHECKOUT_PII_SALT
+// was missing in prod-like envs. A typed error with a stable `code`
+// lets observability (and a future ops auto-recovery path) branch on
+// the missing-salt outcome without parsing the message string. House
+// rule R44 bans raw `new Error(` in src/storefront/ specifically
+// because every throw out of this surface lands in operator-facing
+// logs.
+export class PiiSaltMissingError extends Error {
+  readonly code = 'PII_SALT_MISSING' as const;
+  constructor(detail?: string) {
+    super(
+      detail
+        ? `GUEST_CHECKOUT_PII_SALT missing: ${detail}`
+        : 'GUEST_CHECKOUT_PII_SALT is required in production/staging. Refusing to run the scrub with a dev fallback.',
+    );
+    this.name = 'PiiSaltMissingError';
+  }
+}
+
 // Audit #3 P2-3 — daily PII retention scrub job.
 //
 // GuestCheckout stores guest_email and guest_name raw on a public-
@@ -118,9 +138,7 @@ export class GuestCheckoutPiiScrubService {
     if (fromEnv && fromEnv.trim().length > 0) return fromEnv.trim();
     const nodeEnv = (process.env.NODE_ENV ?? '').toLowerCase();
     if (nodeEnv === 'production' || nodeEnv === 'staging') {
-      throw new Error(
-        'GUEST_CHECKOUT_PII_SALT is required in production. Refusing to run the scrub with a dev fallback.',
-      );
+      throw new PiiSaltMissingError();
     }
     return 'tgp-storefront-dev-salt-v1';
   }
