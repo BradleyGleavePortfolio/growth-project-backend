@@ -645,9 +645,29 @@ export class GuestCheckoutService {
     // P2-5 — preserve the destination Connect account on ClientPurchase
     // so revenue reconciliation can join guest rows against the same
     // stripe_destination_account field the in-app flow already writes.
-    const destinationAccount = await this.resolveDestinationAccount(
-      checkout.package.coach_id,
-    );
+    //
+    // Audit #4 P2-8 — a DB lookup failure here is transient (network
+    // blip, connection pool exhaustion). Do NOT silently persist the
+    // ClientPurchase with stripe_destination_account = null, which
+    // would corrupt revenue reconciliation. Instead, flip the checkout
+    // to conversion_failed_retryable so the reconciliation worker
+    // retries the whole convert path; the next attempt will find the
+    // Connect account row and write the correct destination.
+    let destinationAccount: string | null;
+    try {
+      destinationAccount = await this.resolveDestinationAccount(
+        checkout.package.coach_id,
+      );
+    } catch (err) {
+      this.logger.error(
+        `convertGuestToUser: destination account lookup failed for ${checkout.id} (tag=${safeErrorTag(err)})`,
+      );
+      await this.markRetryable(
+        checkout.id,
+        `dest_account:${safeErrorTag(err)}`,
+      );
+      return;
+    }
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -750,24 +770,24 @@ export class GuestCheckoutService {
 
   // P2-5 — resolve the coach's Connect account id at conversion time so
   // we can persist `stripe_destination_account` on the ClientPurchase
-  // row. Returns null if the coach has no Connect account (extremely
-  // rare here because createIntent already gates on charges_enabled),
-  // matching the column's nullable shape on the existing in-app flow.
+  // row. Returns null only when the coach genuinely has no Connect
+  // account row (extremely rare because createIntent already gates on
+  // charges_enabled), matching the column's nullable shape on the
+  // existing in-app flow.
+  //
+  // Audit #4 P2-8 — on a DB error this MUST throw rather than return
+  // null. Swallowing the error and writing null would silently corrupt
+  // revenue reconciliation; the caller catches and routes the checkout
+  // into conversion_failed_retryable so a later attempt can write the
+  // correct destination account.
   private async resolveDestinationAccount(
     coachUserId: string,
   ): Promise<string | null> {
-    try {
-      const connect = await this.prisma.connectAccount.findUnique({
-        where: { coach_user_id: coachUserId },
-        select: { stripe_account_id: true },
-      });
-      return connect?.stripe_account_id ?? null;
-    } catch (err) {
-      this.logger.error(
-        `resolveDestinationAccount failed for coach ${coachUserId} (tag=${safeErrorTag(err)})`,
-      );
-      return null;
-    }
+    const connect = await this.prisma.connectAccount.findUnique({
+      where: { coach_user_id: coachUserId },
+      select: { stripe_account_id: true },
+    });
+    return connect?.stripe_account_id ?? null;
   }
 
   private async ensureSupabaseUser(
@@ -1046,7 +1066,7 @@ export class GuestCheckoutService {
     const body = {
       from: fromAddress,
       to: checkout.guest_email,
-      subject: `You're in! ${coachName} is ready for you on TGP`,
+      subject: `${coachName} is ready for you on TGP`,
       html: `<!doctype html><html><body style="font-family:Inter,Arial,sans-serif;background:#F5F0E8;margin:0;padding:24px;">
 <h1 style="font-family:Georgia,serif;color:#1A1A1A;">Welcome, ${escapeHtml(checkout.guest_name)}.</h1>
 <p>You're enrolled in <strong>${escapeHtml(packageName)}</strong> with ${escapeHtml(coachName)}.</p>
