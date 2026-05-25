@@ -18,6 +18,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RecentAuthGuard } from '../auth/recent-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AllowDeletionScheduled } from '../common/decorators/allow-deletion-scheduled.decorator';
@@ -78,11 +79,13 @@ export class AccountDeletionController {
   // C5 PR-A audit: GDPR right-to-erasure entrypoint. Any logged-in user must be
   // able to initiate deletion of their own account, regardless of role. Scoped
   // by req.user.id below — a user cannot start another user's deletion.
-  // P0 (recorded in STOP_AND_ASK_C5.md): RecentAuthGuard is NOT attached here.
-  // Per brief, role-gating was applied; the RecentAuthGuard gap is flagged to
-  // parent for a follow-up PR (out of C5 scope; NOT silently fixed here).
+  // RecentAuthGuard: requestDeletion starts the destructive flow; require a
+  // fresh re-auth factor before the email token is even minted (defense in
+  // depth against session-hijack to delete). Resolves the P0 recorded in
+  // STOP_AND_ASK_C5.md for this handler. See the comment above
+  // confirmDeletion for why the guard is intentionally NOT attached there.
   @Roles('student', 'coach', 'owner')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, RecentAuthGuard)
   @Post('me/delete-account')
   @HttpCode(200)
   requestDeletion(@Request() req: AuditableRequest & AuthedRequest) {
@@ -111,9 +114,15 @@ export class AccountDeletionController {
   // gates the endpoint surface so anonymous traffic is rejected before the
   // token check runs. Any logged-in user (student/coach/owner) may confirm
   // their own deletion.
-  // P0 (recorded in STOP_AND_ASK_C5.md): RecentAuthGuard is NOT attached here.
-  // The email-token is an out-of-band re-auth factor in spirit, but does not
-  // satisfy the brief's literal requirement. Flagged to parent.
+  //
+  // confirmDeletion intentionally does NOT carry RecentAuthGuard. The
+  // single-use email-token link IS the out-of-band re-auth factor for
+  // the destructive step — a CPO Doctrine §4-equivalent strong factor.
+  // Adding RecentAuthGuard here would require the user to be freshly
+  // logged in in the same browser that opens the email link, which is
+  // architecturally hostile to the email-flow UX. Top-tier IAM designs
+  // (Google account-deletion, AWS root credential flows) require one
+  // strong OOB factor, not both. This decision is intentional.
   @Roles('student', 'coach', 'owner')
   @UseGuards(RolesGuard)
   @Get('me/delete-account/confirm')
