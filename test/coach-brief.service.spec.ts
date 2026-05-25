@@ -1047,11 +1047,25 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
   it('uses the server-only CoachBriefPushLedger for dedup (P1-9)', async () => {
     const prisma = makeMockPrisma();
     prisma.coachBriefPushLedger.upsert.mockResolvedValue({});
+    // P1-4 fix round 5: scheduler now reads a ledger snapshot BEFORE
+    // claiming the lease so it can short-circuit on prior success and
+    // enforce the retry budget. With no prior delivery, the lease claim
+    // must succeed and the success-marker updateMany must run.
+    prisma.coachBriefPushLedger.findUnique.mockResolvedValue({
+      last_push_date: null,
+      last_push_attempt_date: null,
+      push_attempts_today: 0,
+      push_attempt_lease_until: null,
+    });
     prisma.coachBriefPushLedger.updateMany
-      .mockResolvedValueOnce({ count: 1 }) // attempt claim
+      .mockResolvedValueOnce({ count: 1 }) // lease claim
       .mockResolvedValueOnce({ count: 1 }); // success marker
     const notifications: SchedulerNotifications = {
-      pushToUser: jest.fn().mockResolvedValue(undefined),
+      // P1-5 fix round 5: pushToUser returns a typed PushDeliveryResult.
+      // Scheduler only marks success when delivered=true.
+      pushToUser: jest
+        .fn()
+        .mockResolvedValue({ delivered: true, code: 'delivered' }),
     };
     const briefService = makeSchedulerBriefService();
     const scheduler = makeScheduler(prisma, briefService, notifications);
@@ -1068,6 +1082,7 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     );
 
     expect(prisma.coachBriefPushLedger.upsert).toHaveBeenCalled();
+    expect(prisma.coachBriefPushLedger.findUnique).toHaveBeenCalled();
     expect(prisma.coachBriefPushLedger.updateMany).toHaveBeenCalledTimes(2);
     // Critically: CoachBriefPreferences.updateMany must NOT be used for
     // dedup any more — that table holds coach-writable RLS state.
@@ -1075,9 +1090,116 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
   });
 
+  it('does NOT mark success when pushToUser reports delivered=false (P1-5)', async () => {
+    const prisma = makeMockPrisma();
+    prisma.coachBriefPushLedger.upsert.mockResolvedValue({});
+    prisma.coachBriefPushLedger.findUnique.mockResolvedValue({
+      last_push_date: null,
+      last_push_attempt_date: null,
+      push_attempts_today: 0,
+      push_attempt_lease_until: null,
+    });
+    prisma.coachBriefPushLedger.updateMany
+      .mockResolvedValueOnce({ count: 1 }) // lease claim
+      .mockResolvedValueOnce({ count: 1 }); // lease release (no success)
+    const notifications: SchedulerNotifications = {
+      // Transport-level error — Expo refused the message. Pre-fix-round-5
+      // pushToUser swallowed this and returned void, causing the scheduler
+      // to fabricate a delivery record. The new contract returns a typed
+      // result whose `delivered` flag is false.
+      pushToUser: jest
+        .fn()
+        .mockResolvedValue({ delivered: false, code: 'transport-error' }),
+    };
+    const briefService = makeSchedulerBriefService();
+    const scheduler = makeScheduler(prisma, briefService, notifications);
+
+    await scheduler.maybeDispatch(
+      {
+        coach_id: 'coach1',
+        notification_time: '07:00',
+        timezone: 'America/Los_Angeles',
+        coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
+      },
+      new Date('2026-05-25T14:00:00Z'),
+    );
+
+    // Two updateMany calls: the lease claim and the lease release.
+    // Critically: the second call must NOT set last_push_date.
+    expect(prisma.coachBriefPushLedger.updateMany).toHaveBeenCalledTimes(2);
+    const secondCallArgs = (
+      prisma.coachBriefPushLedger.updateMany as jest.Mock
+    ).mock.calls[1][0];
+    expect(secondCallArgs.data).not.toHaveProperty('last_push_date');
+    expect(secondCallArgs.data.push_attempt_lease_until).toBeNull();
+  });
+
+  it('short-circuits when last_push_date already equals briefDate (P1-4)', async () => {
+    const prisma = makeMockPrisma();
+    prisma.coachBriefPushLedger.upsert.mockResolvedValue({});
+    // Ledger snapshot shows today's brief already delivered. Scheduler
+    // must skip the lease claim AND the pushToUser call entirely.
+    prisma.coachBriefPushLedger.findUnique.mockResolvedValue({
+      last_push_date: '2026-05-25',
+      last_push_attempt_date: '2026-05-25',
+      push_attempts_today: 1,
+      push_attempt_lease_until: null,
+    });
+    const notifications: SchedulerNotifications = { pushToUser: jest.fn() };
+    const briefService = makeSchedulerBriefService();
+    const scheduler = makeScheduler(prisma, briefService, notifications);
+
+    await scheduler.maybeDispatch(
+      {
+        coach_id: 'coach1',
+        notification_time: '07:00',
+        timezone: 'America/Los_Angeles',
+        coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
+      },
+      new Date('2026-05-25T14:00:00Z'),
+    );
+
+    expect(notifications.pushToUser).not.toHaveBeenCalled();
+    expect(prisma.coachBriefPushLedger.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('stops retrying when daily push budget is exhausted (P1-4)', async () => {
+    const prisma = makeMockPrisma();
+    prisma.coachBriefPushLedger.upsert.mockResolvedValue({});
+    // 5 attempts already burned today — scheduler must back off.
+    prisma.coachBriefPushLedger.findUnique.mockResolvedValue({
+      last_push_date: null,
+      last_push_attempt_date: '2026-05-25',
+      push_attempts_today: 5,
+      push_attempt_lease_until: null,
+    });
+    const notifications: SchedulerNotifications = { pushToUser: jest.fn() };
+    const briefService = makeSchedulerBriefService();
+    const scheduler = makeScheduler(prisma, briefService, notifications);
+
+    await scheduler.maybeDispatch(
+      {
+        coach_id: 'coach1',
+        notification_time: '07:00',
+        timezone: 'America/Los_Angeles',
+        coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
+      },
+      new Date('2026-05-25T14:00:00Z'),
+    );
+
+    expect(notifications.pushToUser).not.toHaveBeenCalled();
+    expect(prisma.coachBriefPushLedger.updateMany).not.toHaveBeenCalled();
+  });
+
   it('skips push when another instance has already claimed today', async () => {
     const prisma = makeMockPrisma();
     prisma.coachBriefPushLedger.upsert.mockResolvedValue({});
+    prisma.coachBriefPushLedger.findUnique.mockResolvedValue({
+      last_push_date: null,
+      last_push_attempt_date: null,
+      push_attempts_today: 0,
+      push_attempt_lease_until: null,
+    });
     // Attempt claim returns count=0 — another instance won.
     prisma.coachBriefPushLedger.updateMany.mockResolvedValue({ count: 0 });
     const notifications: SchedulerNotifications = { pushToUser: jest.fn() };
@@ -1100,6 +1222,12 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     jest.useFakeTimers();
     const prisma = makeMockPrisma();
     prisma.coachBriefPushLedger.upsert.mockResolvedValue({});
+    prisma.coachBriefPushLedger.findUnique.mockResolvedValue({
+      last_push_date: null,
+      last_push_attempt_date: null,
+      push_attempts_today: 0,
+      push_attempt_lease_until: null,
+    });
     prisma.coachBriefPushLedger.updateMany.mockResolvedValue({ count: 1 });
     let receivedSignal: AbortSignal | undefined;
     const notifications: SchedulerNotifications = {

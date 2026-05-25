@@ -78,15 +78,46 @@ export class CoachBriefController {
   }
 
   // @ApproveIdempotencyException(R39)
-  // Natural idempotency key: (coach_id, brief_date) — the CoachBrief
-  // row is unique on that pair and CoachBriefService.generateBrief
-  // performs an atomic claim (status='generating') so concurrent
-  // regenerate requests collapse to a single Claude call. The first
-  // caller that flips the row owns the work; later callers receive the
-  // same regenerated row by reading the same unique key. No
-  // Idempotency-Key header ledger is necessary because the natural key
-  // and atomic status transition guarantee at-most-once execution per
-  // coach per day. R39 exception approved.
+  //
+  // R39 exception scope (read this before changing the comment):
+  //
+  //   regenerate's PURPOSE is to produce fresh output — the coach is
+  //   explicitly asking for the brief to be re-derived. That is the
+  //   opposite of strict idempotency ("same input → same row"), so we
+  //   document an explicit exception under R39 rather than pretending
+  //   the route is naturally idempotent on (coach_id, brief_date).
+  //
+  // Concurrency guarantees we DO provide:
+  //
+  //   1) Concurrent in-flight collapse — CoachBriefService.generateBrief
+  //      runs an atomic claim (status='generating' with a fresh
+  //      generation_started_at lease). Only the caller that flips the
+  //      row owns the Claude call; other concurrent callers see the
+  //      in-progress row and read it back. So two simultaneous taps do
+  //      NOT trigger two Claude calls.
+  //
+  //   2) Abuse bounded — @Throttle({ limit: 3, ttl: 3_600_000 }) caps
+  //      each coach to 3 regenerations per hour. A network retry storm
+  //      cannot drive unbounded Claude spend.
+  //
+  //   3) Stale-lease recovery — if a previous regenerate crashed mid-
+  //      flight, the next caller reclaims the row after
+  //      BRIEF_GENERATION_LEASE_MS, so a coach is never permanently
+  //      stuck on a half-written brief.
+  //
+  // Guarantees we do NOT provide (and why that is OK):
+  //
+  //   * Sequential retry idempotency. If the client's response is lost
+  //     after the brief was successfully regenerated, a subsequent
+  //     regenerate call WILL produce a second Claude call and overwrite
+  //     the row. That is the documented R39 exception: a fresh-output
+  //     route is permitted to do work on retry. Mobile mitigates the
+  //     surprise by surfacing the throttle response on the 4th call in
+  //     an hour. Adding an Idempotency-Key ledger here would defeat the
+  //     route's purpose ("give me a different brief than the one I just
+  //     read").
+  //
+  // R39 exception approved on these terms.
   @Post('regenerate')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 3, ttl: 3600_000 } })

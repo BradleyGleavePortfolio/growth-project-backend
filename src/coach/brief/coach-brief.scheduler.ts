@@ -8,14 +8,24 @@
 //
 // Race-safety on multi-instance deploys:
 //   * Brief generation is gated by an atomic status='generating' claim in
-//     CoachBriefService.generateBrief.
-//   * Push dispatch is gated by an atomic updateMany on
-//     CoachBriefPreferences.last_push_date — only the first instance
-//     that flips last_push_date to today's brief_date wins and sends.
+//     CoachBriefService.generateBrief with a stale-lease reclaim path.
+//   * Push dispatch is gated by the server-only CoachBriefPushLedger
+//     table (no coach RLS write policy). Each per-coach attempt takes a
+//     short-lived lease (push_attempt_lease_until=now+90s) BEFORE
+//     calling pushToUser; concurrent cron instances see the lease and
+//     back off. Only the instance whose pushToUser returns
+//     delivered=true writes last_push_date=briefDate. The day's retry
+//     budget is capped at MAX_PUSH_ATTEMPTS so an Expo outage cannot
+//     drive unbounded retries; the budget resets when
+//     last_push_attempt_date rolls over.
 //
 // External call safety:
 //   * notifications.pushToUser is wrapped in Promise.race against a
-//     10s timeout so a stalled Expo client cannot wedge the scheduler.
+//     10s timeout AND an AbortController is fed into the SDK so a
+//     stalled Expo client is cancelled rather than wedging the
+//     scheduler. pushToUser returns a typed PushDeliveryResult; the
+//     scheduler ONLY writes last_push_date when delivered=true so a
+//     swallowed transport error cannot fabricate a delivery record.
 
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
@@ -29,6 +39,20 @@ import { coachBriefEnabled } from './coach-brief-enabled.guard';
 const CRON_JOB_NAME = 'coach-brief-dispatch';
 const DEFAULT_CRON = '* * * * *';
 const PUSH_TIMEOUT_MS = 10_000;
+
+// P1-4 fix round 5: bounded retry budget. A coach receives at most
+// MAX_PUSH_ATTEMPTS push attempts per brief_date; after that the
+// scheduler stops retrying so a long Expo outage cannot drive
+// unbounded calls. The budget resets when last_push_attempt_date
+// rolls to a new day.
+const MAX_PUSH_ATTEMPTS = 5;
+
+// P1-4 fix round 5: the lease that prevents two cron instances from
+// calling pushToUser at the same minute. Slightly longer than
+// PUSH_TIMEOUT_MS so we always observe the abort outcome before the
+// next minute's cron can claim. Stale leases (now > lease_until) are
+// reclaimable so a crashed worker cannot wedge the day's push.
+const PUSH_ATTEMPT_LEASE_MS = 90_000;
 
 // R44: typed internal error for the push-timeout reject path. Carrying a
 // `code` lets observability distinguish "Expo round-trip slow" from a
@@ -216,34 +240,85 @@ export class CoachBriefScheduler implements OnModuleInit {
         return;
       }
 
-      // Idempotent pre-send claim against the server-only push ledger
-      // (P1-9). On a multi-instance deploy every Fly.io machine runs
-      // this cron; without a claim each would call pushToUser and the
-      // coach would receive duplicate notifications. upsert + then
-      // updateMany WHERE last_push_attempt_date != today flips exactly
-      // one row and returns count=1 to the winner; losers get count=0
-      // and exit. last_push_date is set separately AFTER push success
-      // so observability can tell "attempted today" from "delivered
-      // today". The ledger is server-only — coaches have no RLS write
-      // policy on it, so they can't poison the dedup state.
+      // P1-4 fix round 5: bounded retry against the server-only push
+      // ledger. The previous design wrote last_push_attempt_date BEFORE
+      // calling pushToUser, so any transient Expo failure exhausted the
+      // day's slot and the coach never received the brief. The new
+      // design:
+      //
+      //   1) Ensure the ledger row exists (upsert).
+      //   2) Short-circuit if last_push_date already equals briefDate
+      //      (success already recorded — don't re-send).
+      //   3) Claim a short-lived lease (push_attempt_lease_until =
+      //      now+90s) using updateMany WHERE no fresh lease is held
+      //      AND we haven't exhausted the daily retry budget. If a
+      //      newer day rolls over the attempt counter resets to 0.
+      //   4) Race pushToUser vs PUSH_TIMEOUT_MS.
+      //   5) On delivered=true — write last_push_date=briefDate AND
+      //      clear the lease so retries stop.
+      //   6) On any non-delivery outcome — clear the lease (but leave
+      //      push_attempts_today incremented). The next minute's cron
+      //      sees the slot is free and either retries (budget left) or
+      //      stops permanently (budget exhausted).
+      //
+      // The retry budget caps unbounded calls during an Expo outage
+      // while still letting a healthy operator hit "resend" via the
+      // ledger reset path.
       await this.prisma.coachBriefPushLedger.upsert({
         where: { coach_id: prefs.coach_id },
         create: { coach_id: prefs.coach_id },
         update: {},
       });
-      const attemptClaim = await this.prisma.coachBriefPushLedger.updateMany({
+
+      // Step 2: success already recorded today — don't re-send.
+      const ledgerSnapshot =
+        await this.prisma.coachBriefPushLedger.findUnique({
+          where: { coach_id: prefs.coach_id },
+        });
+      if (ledgerSnapshot?.last_push_date === briefDate) {
+        this.logger.debug(
+          `coach brief push already delivered for coach=${prefs.coach_id} date=${briefDate}`,
+        );
+        return;
+      }
+
+      // Step 2b: retry budget exhausted for this briefDate? Stop.
+      const isSameDay =
+        ledgerSnapshot?.last_push_attempt_date === briefDate;
+      const attemptsSoFar = isSameDay
+        ? ledgerSnapshot?.push_attempts_today ?? 0
+        : 0;
+      if (attemptsSoFar >= MAX_PUSH_ATTEMPTS) {
+        this.logger.warn(
+          `coach brief push retry budget exhausted for coach=${prefs.coach_id} date=${briefDate} attempts=${attemptsSoFar}`,
+        );
+        return;
+      }
+
+      // Step 3: lease the slot. updateMany WHERE no fresh lease is
+      // held lets exactly one cron instance proceed at a time.
+      const leaseUntil = new Date(Date.now() + PUSH_ATTEMPT_LEASE_MS);
+      const nowTs = new Date();
+      // The new attempt counter: if last_push_attempt_date is rolling
+      // forward, reset to 1; otherwise increment.
+      const nextAttemptCount = isSameDay ? attemptsSoFar + 1 : 1;
+      const leaseClaim = await this.prisma.coachBriefPushLedger.updateMany({
         where: {
           coach_id: prefs.coach_id,
           OR: [
-            { last_push_attempt_date: null },
-            { last_push_attempt_date: { not: briefDate } },
+            { push_attempt_lease_until: null },
+            { push_attempt_lease_until: { lt: nowTs } },
           ],
         },
-        data: { last_push_attempt_date: briefDate },
+        data: {
+          last_push_attempt_date: briefDate,
+          push_attempts_today: nextAttemptCount,
+          push_attempt_lease_until: leaseUntil,
+        },
       });
-      if (attemptClaim.count === 0) {
+      if (leaseClaim.count === 0) {
         this.logger.debug(
-          `coach brief push already attempted for coach=${prefs.coach_id} date=${briefDate}`,
+          `coach brief push lease held by another instance for coach=${prefs.coach_id}`,
         );
         return;
       }
@@ -264,9 +339,14 @@ export class CoachBriefScheduler implements OnModuleInit {
         }, PUSH_TIMEOUT_MS);
       });
 
-      let pushSucceeded = false;
+      // P1-5 fix round 5: pushToUser now returns a typed delivery
+      // result. We must consult `delivered`, NOT the absence of a
+      // thrown error — a pre-fix-round-5 transport error was swallowed
+      // inside pushToUser and we wrote last_push_date anyway.
+      let pushDelivered = false;
+      let pushOutcome = 'unknown';
       try {
-        await Promise.race([
+        const raceResult = await Promise.race([
           this.notifications.pushToUser(
             prefs.coach_id,
             'Your daily brief is ready',
@@ -276,8 +356,16 @@ export class CoachBriefScheduler implements OnModuleInit {
           ),
           timeoutPromise,
         ]);
-        pushSucceeded = true;
+        // raceResult is the PushDeliveryResult when pushToUser wins
+        // the race; if the timeout wins, timeoutPromise rejected and
+        // we are in the catch block instead.
+        pushDelivered = raceResult.delivered;
+        pushOutcome = raceResult.code;
       } catch (err) {
+        pushOutcome =
+          err instanceof CoachBriefPushTimeoutError
+            ? 'timeout'
+            : 'thrown';
         this.logger.warn(
           `coach brief push failed or timed out for coach ${prefs.coach_id} on ${briefDate}: ${errorMessageOf(err)}`,
         );
@@ -285,14 +373,29 @@ export class CoachBriefScheduler implements OnModuleInit {
         if (timer) clearTimeout(timer);
       }
 
-      if (!pushSucceeded) return;
+      if (!pushDelivered) {
+        // P1-4: clear the lease so the next minute's cron can retry
+        // (subject to MAX_PUSH_ATTEMPTS). Leave push_attempts_today
+        // incremented so the budget tracks accurately.
+        await this.prisma.coachBriefPushLedger.updateMany({
+          where: { coach_id: prefs.coach_id },
+          data: { push_attempt_lease_until: null },
+        });
+        this.logger.debug(
+          `coach brief push not delivered for coach=${prefs.coach_id} outcome=${pushOutcome} attempt=${nextAttemptCount}/${MAX_PUSH_ATTEMPTS}`,
+        );
+        return;
+      }
 
-      // Confirmed-success marker. last_push_date is the observability
-      // sentinel for "this coach received their brief today"; the
-      // attempt claim above already guarantees we don't double-send.
+      // P1-4 + P1-5: only when pushToUser reported delivered=true do
+      // we mark this briefDate as delivered. Clearing the lease in the
+      // same update prevents another instance from re-attempting.
       await this.prisma.coachBriefPushLedger.updateMany({
         where: { coach_id: prefs.coach_id },
-        data: { last_push_date: briefDate },
+        data: {
+          last_push_date: briefDate,
+          push_attempt_lease_until: null,
+        },
       });
 
       this.logger.log(

@@ -3712,8 +3712,26 @@ model CoachBriefPushLedger {
   id                     String   @id @default(uuid())
   coach_id               String   @unique
   coach                  User     @relation("CoachBriefPushLedgerCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  // last_push_attempt_date — the day for which the most recent push
+  // ATTEMPT was scoped. Used together with push_attempts_today to track
+  // a bounded retry budget per day (P1-4 fix round 5).
   last_push_attempt_date String?
+  // last_push_date — the day for which delivery was actually confirmed
+  // (Expo ticket status='ok'). Only this column is the "this coach got
+  // their brief today" sentinel; last_push_attempt_date is observability
+  // only.
   last_push_date         String?
+  // P1-4 fix round 5: short-lived lease so two cron instances cannot
+  // call pushToUser at the same minute. Set to now+90s right before
+  // the Expo call; cleared on terminal outcome (delivered OR retry
+  // budget exhausted). A stale lease (older than 90s) is reclaimable
+  // so a crashed worker cannot wedge the day's push.
+  push_attempt_lease_until DateTime?
+  // P1-4 fix round 5: how many push attempts the scheduler has fired
+  // for last_push_attempt_date so far. Capped at MAX_PUSH_ATTEMPTS
+  // (5) so a long Expo outage cannot drive unbounded retries; resets
+  // when last_push_attempt_date rolls over to a new day.
+  push_attempts_today      Int      @default(0)
   created_at             DateTime @default(now())
   updated_at             DateTime @updatedAt
 }

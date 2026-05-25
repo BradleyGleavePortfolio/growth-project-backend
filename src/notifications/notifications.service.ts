@@ -10,6 +10,10 @@ import {
   NotificationCategory,
   DEFAULT_NOTIFICATION_CATEGORY,
 } from './notification-category.enum';
+import {
+  PushAbortedError,
+  PushDeliveryResult,
+} from './push-delivery.types';
 
 // Phase 6B: PushPayload is the minimal envelope CoachAlertsService.tryPush
 // passes through. It intentionally contains no PII — only the alert
@@ -407,6 +411,17 @@ export class NotificationsService {
    * downstream Expo round-trip when an external deadline elapses. We
    * check the signal at every await boundary so an abort during the
    * findUnique, chunk send, or receipt poll short-circuits cleanly.
+   *
+   * P1-5 (fix round 5): returns a typed PushDeliveryResult so callers
+   * that need delivery semantics can distinguish "the SDK accepted the
+   * message" from "the transport threw / the signal aborted / there was
+   * no token". Pre-fix-round-5 this method resolved void on every path,
+   * which let CoachBriefScheduler write last_push_date even when Expo
+   * had thrown. The scheduler now consults `result.delivered`.
+   *
+   * P1-6 (fix round 5): the abort path throws a typed PushAbortedError
+   * (stable code 'PUSH_ABORTED') instead of `new Error('...aborted')`.
+   * No raw new Error in the Coach Brief push path.
    */
   async pushToUser(
     userId: string,
@@ -414,12 +429,17 @@ export class NotificationsService {
     body: string,
     data?: Record<string, unknown>,
     signal?: AbortSignal,
-  ): Promise<void> {
+  ): Promise<PushDeliveryResult> {
     const checkAborted = () => {
       if (signal?.aborted) {
         const reason = signal.reason;
         if (reason instanceof Error) throw reason;
-        throw new Error('pushToUser aborted');
+        // R17 / Hard Rule — no raw new Error. Throw a typed domain error
+        // carrying a stable code so observability can branch on the
+        // abort path without string-matching.
+        throw new PushAbortedError(
+          typeof reason === 'string' ? reason : undefined,
+        );
       }
     };
     try {
@@ -429,8 +449,12 @@ export class NotificationsService {
         select: { expo_push_token: true },
       });
       checkAborted();
-      if (!user?.expo_push_token) return;
-      if (!Expo.isExpoPushToken(user.expo_push_token)) return;
+      if (!user?.expo_push_token) {
+        return { delivered: false, code: 'no-token' };
+      }
+      if (!Expo.isExpoPushToken(user.expo_push_token)) {
+        return { delivered: false, code: 'invalid-token' };
+      }
       const message: ExpoPushMessage = {
         to: user.expo_push_token,
         title,
@@ -446,11 +470,43 @@ export class NotificationsService {
         tickets.push(...ticketChunk);
       }
       checkAborted();
+
+      // Inspect tickets synchronously. Expo returns one ticket per
+      // message; a ticket with status='error' means the SDK refused
+      // the message and we must NOT report delivered=true.
+      for (const ticket of tickets) {
+        if (ticket.status === 'error') {
+          this.logger.error(
+            `pushToUser ticket error for user ${userId}: ${ticket.message}`,
+          );
+          // Poll receipts on a best-effort basis so stale tokens get
+          // cleared even though we report failure to the caller.
+          await this.pollReceipts(tickets, userId);
+          return {
+            delivered: false,
+            code: 'ticket-error',
+            detail: ticket.message,
+          };
+        }
+      }
+
       // Poll receipts so DeviceNotRegistered tokens are cleared for this
       // user — mirrors the same pattern used in pushToCoach().
       await this.pollReceipts(tickets, userId);
+      return { delivered: true, code: 'delivered' };
     } catch (err) {
+      // R17: log the raw err for ops, return a scrubbed typed result to
+      // the caller. The `detail` field carries only the Error.name so we
+      // never leak stack traces or query text.
       this.logger.error(`Push notification failed for user ${userId}`, err);
+      if (err instanceof PushAbortedError) {
+        return { delivered: false, code: 'aborted', detail: err.name };
+      }
+      return {
+        delivered: false,
+        code: 'transport-error',
+        detail: err instanceof Error ? err.name : 'unknown',
+      };
     }
   }
 
