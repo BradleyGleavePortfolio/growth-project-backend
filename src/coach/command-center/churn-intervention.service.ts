@@ -126,7 +126,7 @@ function parseFactors(raw: Prisma.JsonValue | null | undefined): PtmFactor[] {
 // local timezone. Never use toISOString().slice(0,10) — that returns
 // the UTC date — and never use Date#getFullYear/getMonth/getDate, which
 // silently fall back to the process timezone.
-function bucketDateLocal(d: Date, timeZone = 'America/Los_Angeles'): string {
+export function bucketDateLocal(d: Date, timeZone = 'America/Los_Angeles'): string {
   // en-CA produces ISO-style YYYY-MM-DD natively.
   return new Intl.DateTimeFormat('en-CA', {
     timeZone,
@@ -352,8 +352,17 @@ export class ChurnInterventionService {
         if (!existing) {
           throw new ConflictException('idempotency_key already in use');
         }
-        if (existing.coach_id !== coachId) {
-          throw new ConflictException('idempotency_key already in use');
+        // Require BOTH coach and client to match for a true idempotent
+        // replay. Same coach reusing the same key against a different
+        // client must NOT return client A's intervention while the URL
+        // targeted client B.
+        if (
+          existing.coach_id !== coachId ||
+          existing.client_id !== clientId
+        ) {
+          throw new ConflictException(
+            'idempotency_key already in use for a different client',
+          );
         }
         return this.toDto(existing, existing.client?.name ?? client.name);
       }

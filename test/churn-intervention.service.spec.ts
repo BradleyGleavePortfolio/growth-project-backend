@@ -4,7 +4,10 @@
 // injected via the CHURN_ANTHROPIC_CLIENT_TOKEN so no real network
 // traffic occurs.
 
-import { ChurnInterventionService } from '../src/coach/command-center/churn-intervention.service';
+import {
+  ChurnInterventionService,
+  bucketDateLocal,
+} from '../src/coach/command-center/churn-intervention.service';
 import { Prisma } from '@prisma/client';
 
 class FakeP2002 extends Prisma.PrismaClientKnownRequestError {
@@ -335,6 +338,86 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
     expect(anthropic.messages.create).not.toHaveBeenCalled();
   });
 
+  it('idempotent replay: same coach + same client + same key returns existing intervention', async () => {
+    const prisma = buildPrisma({
+      users: [{ id: 'u1', name: 'Alice', coach_id: 'c1', role: 'student', deleted_at: null }],
+      interventions: [
+        {
+          id: 'existing',
+          coach_id: 'c1',
+          client_id: 'u1',
+          draft_text: 'prior draft',
+          status: 'draft',
+          top_factor: 'Declining engagement',
+          idempotency_key: VALID_UUID,
+          created_at: new Date(),
+          alert_id: null,
+          risk_score_at_draft: null,
+          edited_text: null,
+          sent_at: null,
+          dismissed_at: null,
+          nudge_id: null,
+        },
+      ],
+    });
+    const anthropic = buildAnthropicClient();
+    const svc = new ChurnInterventionService(
+      prisma as any,
+      buildPtmService(),
+      buildConfig(),
+      buildNotifications(),
+      anthropic,
+    );
+    const out = await svc.generateChurnDraft('c1', 'u1', {
+      idempotency_key: VALID_UUID,
+    });
+    expect(out.intervention_id).toBe('existing');
+    expect(out.client_id).toBe('u1');
+    expect(anthropic.messages.create).not.toHaveBeenCalled();
+  });
+
+  it('idempotency replay: same coach + DIFFERENT client + same key throws ConflictException', async () => {
+    // Coach c1 first used VALID_UUID for client u1. A second draft call
+    // from c1 for client u2 with the same idempotency_key must NOT return
+    // u1's intervention — it must throw 409.
+    const prisma = buildPrisma({
+      users: [
+        { id: 'u1', name: 'Alice', coach_id: 'c1', role: 'student', deleted_at: null },
+        { id: 'u2', name: 'Bob', coach_id: 'c1', role: 'student', deleted_at: null },
+      ],
+      interventions: [
+        {
+          id: 'existing',
+          coach_id: 'c1',
+          client_id: 'u1',
+          draft_text: 'prior draft for u1',
+          status: 'draft',
+          top_factor: 'Declining engagement',
+          idempotency_key: VALID_UUID,
+          created_at: new Date(),
+          alert_id: null,
+          risk_score_at_draft: null,
+          edited_text: null,
+          sent_at: null,
+          dismissed_at: null,
+          nudge_id: null,
+        },
+      ],
+    });
+    const anthropic = buildAnthropicClient();
+    const svc = new ChurnInterventionService(
+      prisma as any,
+      buildPtmService(),
+      buildConfig(),
+      buildNotifications(),
+      anthropic,
+    );
+    await expect(
+      svc.generateChurnDraft('c1', 'u2', { idempotency_key: VALID_UUID }),
+    ).rejects.toThrow(/different client/);
+    expect(anthropic.messages.create).not.toHaveBeenCalled();
+  });
+
   it('throws NotFoundException when client is not in coach roster', async () => {
     const prisma = buildPrisma({
       users: [{ id: 'u1', name: 'Alice', coach_id: 'OTHER_COACH', role: 'student', deleted_at: null }],
@@ -644,5 +727,21 @@ describe('ChurnInterventionService.dismissIntervention', () => {
     await expect(svc.dismissIntervention('c1', 'int-1')).rejects.toThrow(
       /already sent/,
     );
+  });
+});
+
+describe('bucketDateLocal', () => {
+  it('returns coach local date, not UTC, for timestamps near UTC midnight', () => {
+    // 06:30 UTC on June 20 = 23:30 PDT on June 19 (UTC-7).
+    // Without timezone-aware bucketing this would wrongly return 2026-06-20.
+    const utcMidnightish = new Date('2026-06-20T06:30:00.000Z');
+    expect(bucketDateLocal(utcMidnightish, 'America/Los_Angeles')).toBe(
+      '2026-06-19',
+    );
+  });
+
+  it('returns UTC-aligned date when timezone matches UTC', () => {
+    const d = new Date('2026-06-20T06:30:00.000Z');
+    expect(bucketDateLocal(d, 'UTC')).toBe('2026-06-20');
   });
 });
