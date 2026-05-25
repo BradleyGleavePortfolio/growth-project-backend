@@ -87,6 +87,31 @@ jobs:
           # indistinguishable from real AI. assertEnv refuses prod boot
           # without it, so the simulated-prod gate must supply a value.
           ANTHROPIC_API_KEY: sk-ant-ci-test
+          # Phase 10 — recent-auth re-authentication secrets. RECENT_AUTH_SECRET
+          # is the HMAC signing secret for the short-lived re-auth token cookie
+          # (must be ≥32 chars). RECENT_AUTH_TTL_MS gates how long the cookie is
+          # accepted (60_000..3_600_000 inclusive). Both are prod-tier so the
+          # simulated-prod gate must supply real-shaped values; absent CI
+          # values broke main + every open PR until they were added here.
+          RECENT_AUTH_SECRET: ci-recent-auth-secret-32-characters-long-padding
+          RECENT_AUTH_TTL_MS: '900000'
+          # R43 storefront — STOREFRONT_BASE_URL, RESEND_FROM_EMAIL,
+          # APPLE_TEAM_ID, ANDROID_CERT_SHA256_FINGERPRINTS, and
+          # GUEST_CHECKOUT_PII_SALT are all prod-hardened by this PR.
+          # The storefront refuses to boot prod without each one (CORS
+          # registration, Resend domain verification, Universal Links
+          # AASA, Android App Links, GDPR scrub salt). Supply CI stubs
+          # so the env-validation gate stays green.
+          STOREFRONT_BASE_URL: https://storefront.example.com
+          RESEND_FROM_EMAIL: 'Growth Project <welcome@trygrowthproject.com>'
+          APPLE_TEAM_ID: TEAMID1234
+          ANDROID_CERT_SHA256_FINGERPRINTS: 'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99'
+          GUEST_CHECKOUT_PII_SALT: ci-pii-salt-32chars-minimum-padding
+          # Audit #5 P0-2 — STRIPE_PUBLISHABLE_KEY is prod-hardened so
+          # the storefront cannot 503 silently after a clean boot. Must
+          # be the publishable form (pk_test_*/pk_live_*); the env-rule
+          # validator rejects sk_* prefixes.
+          STRIPE_PUBLISHABLE_KEY: pk_test_ci_publishable_key
         run: node -e "require('./dist/common/env-validation').assertEnv()"
 
       # R45 banned-domain grep gate.

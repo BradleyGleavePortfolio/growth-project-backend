@@ -146,10 +146,32 @@ export const ENV_RULES: EnvRule[] = [
       'Stripe API key used by BillingService for portal/subscription calls. Coach/owner billing routes return 400 STRIPE_NOT_CONFIGURED when unset, so leaving it unset is the right state until Stripe is provisioned.',
   },
   {
+    name: 'STRIPE_PUBLISHABLE_KEY',
+    tier: 'feature',
+    reason:
+      'R43 storefront — publishable key embedded in the guest-checkout payment response so the browser Stripe.js SDK can confirm the PaymentIntent. REQUIRED in staging/production (enforced via prodHardenedFeatureVars): the storefront service throws ServiceUnavailable on every public package request when missing, silently 503-ing the storefront on day one. MUST begin with "pk_test_" or "pk_live_"; secret keys (sk_*) are rejected at boot to catch copy-paste swaps.',
+    validate: (v) => {
+      const trimmed = v.trim();
+      if (trimmed.length === 0) return 'STRIPE_PUBLISHABLE_KEY must not be empty.';
+      if (!/^pk_(test|live)_/.test(trimmed)) {
+        return 'STRIPE_PUBLISHABLE_KEY must start with "pk_test_" or "pk_live_". Secret keys (sk_*) are not accepted.';
+      }
+      return null;
+    },
+  },
+  {
     name: 'STRIPE_WEBHOOK_SECRET',
     tier: 'feature',
     reason:
-      'HMAC signing secret for /v1/webhooks/stripe. Without it the webhook controller rejects every request with 400 — no boot dependency. Set this *before* pointing Stripe at the webhook URL.',
+      'HMAC signing secret for /v1/webhooks/stripe. Without it the webhook controller rejects every request with 400 — no boot dependency. Set this *before* pointing Stripe at the webhook URL. Audit #5 P2-2 — validator catches the most common operator typo: a value that does not start with the canonical Stripe "whsec_" prefix. Length is not enforced here so dev/test fixtures using short stub values still pass; the webhook controller will reject any malformed signature at request time.',
+    validate: (v) => {
+      const trimmed = v.trim();
+      if (trimmed.length === 0) return null;
+      if (!trimmed.startsWith('whsec_')) {
+        return 'STRIPE_WEBHOOK_SECRET must start with "whsec_" (Stripe webhook-secret format).';
+      }
+      return null;
+    },
   },
   {
     name: 'STRIPE_WEBHOOK_SECRET_NEXT',
@@ -600,9 +622,9 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'GUEST_CHECKOUT_PII_SALT',
-    tier: 'optional',
+    tier: 'feature',
     reason:
-      'R43 — stable per-deploy salt fed into sha256(lower(email) || salt) for GuestCheckoutPiiScrubService. The scrub job hashes guest_email when data_retention_at has elapsed. Falls back to a build-time constant in dev/test so contributor scrub runs are deterministic; staging/production should set this to a high-entropy value rotated only when the historical hashes need to be invalidated.',
+      'R43 — stable per-deploy salt fed into sha256(lower(email) || salt) for GuestCheckoutPiiScrubService. REQUIRED in staging/production: prodHardenedFeatureVars refuses to boot without it (see below) because a missing salt would fall back to the dev constant baked into the repo, producing reversible hashes against any known email list and defeating the GDPR retention scrub. Dev/test use a deterministic build-time constant. Rotate only when the historical hashes need to be invalidated.',
   },
   {
     name: 'RESEND_FROM_EMAIL',
@@ -919,6 +941,11 @@ export function assertEnv(
         reason:
           'Audit #4 P2-2 — GuestCheckoutPiiScrubService refuses to run on prod without an explicit salt. A missing salt would fall back to the dev constant baked into the repo, producing reversible hashes against any known email list and defeating the GDPR retention scrub.',
       },
+      {
+        name: 'STRIPE_PUBLISHABLE_KEY',
+        reason:
+          'Audit #5 P0-2 — StorefrontService.getPublicPackageByToken returns 503 SERVICE_UNAVAILABLE on every public package request when STRIPE_PUBLISHABLE_KEY is unset. A clean prod deploy without it passes boot then silently 503s the entire storefront. Must be the publishable counterpart (pk_test_*/pk_live_*) of STRIPE_SECRET_KEY.',
+      },
     ];
     const missing = prodHardenedFeatureVars.filter(
       (v) => {
@@ -939,14 +966,81 @@ export function assertEnv(
         );
       },
     );
+    // Audit #5 P1-7 — aggregate every prod-side blocker discovered so far
+    // (prod-hardened missing + missingProd + placeholderProd +
+    // validationErrorsProd) into a SINGLE thrown error rather than throwing
+    // on the first one and forcing the operator into a deploy-fix-deploy
+    // cycle. The hard-tier missing/placeholder checks above already ran
+    // and exited before we reached this block, so we know the operator
+    // has at least cleared those.
+    //
+    // Each contributing class still has its own stable code surfaced via
+    // the EnvValidationError.variables[] / message so observability can
+    // distinguish them; the combined error uses ENV_PROD_BLOCKERS.
+    //
+    // The aggregation respects enforceProd: when an operator/test
+    // explicitly opts into enforceProd=false (e.g. a soak test with
+    // deliberately broken secrets) we DO NOT throw on the prod-tier
+    // missing / placeholder / validator failures here — they fall
+    // through to the warn-only branches below. The prod-hardened
+    // "missing" class still throws regardless because those vars cover
+    // routing/CORS defaults that would silently misroute traffic.
+    const prodBlockerSegments: string[] = [];
+    const prodBlockerVars: string[] = [];
     if (missing.length) {
-      const msg =
+      prodBlockerSegments.push(
         `Production-required URL config is missing: ` +
-        missing.map((v) => `${v.name} (${v.reason})`).join('; ');
-      logger.error(msg);
-      throw new EnvValidationError(msg, {
-        code: 'ENV_PROD_HARDENED_MISSING',
-        variables: missing.map((v) => v.name),
+          missing.map((v) => `${v.name} (${v.reason})`).join('; '),
+      );
+      prodBlockerVars.push(...missing.map((v) => v.name));
+    }
+    if (enforceProd && result.missingProd.length) {
+      prodBlockerSegments.push(
+        `Missing production-required env vars (NODE_ENV=${env.NODE_ENV}): ${result.missingProd.join(', ')}`,
+      );
+      prodBlockerVars.push(...result.missingProd);
+    }
+    if (enforceProd && result.placeholderProd.length) {
+      prodBlockerSegments.push(
+        `Production-tier env vars contain placeholder values (NODE_ENV=${env.NODE_ENV}): ${result.placeholderProd.join(', ')}`,
+      );
+      prodBlockerVars.push(...result.placeholderProd);
+    }
+    if (enforceProd && result.validationErrorsProd.length) {
+      prodBlockerSegments.push(
+        `Production-tier env vars failed validation (NODE_ENV=${env.NODE_ENV}): ${result.validationErrorsProd.join('; ')}`,
+      );
+    }
+    if (prodBlockerSegments.length > 0) {
+      // Preserve the single-cause error code (and message-prefix the
+      // existing test patterns match against) when there is exactly one
+      // class of blocker — old assertions like `.toThrow(/Production-required URL config is missing/)`
+      // keep passing. The combined-throw is only used when multiple
+      // classes of blocker would otherwise force a redeploy cycle.
+      if (prodBlockerSegments.length === 1) {
+        const seg = prodBlockerSegments[0];
+        logger.error(seg);
+        // Map the segment back to its original code for back-compat.
+        const code: 'ENV_PROD_HARDENED_MISSING' | 'ENV_MISSING_PROD' | 'ENV_PLACEHOLDER_PROD' | 'ENV_VALIDATION_PROD' =
+          missing.length ? 'ENV_PROD_HARDENED_MISSING'
+          : result.missingProd.length ? 'ENV_MISSING_PROD'
+          : result.placeholderProd.length ? 'ENV_PLACEHOLDER_PROD'
+          : 'ENV_VALIDATION_PROD';
+        throw new EnvValidationError(seg, {
+          code,
+          variables: prodBlockerVars,
+        });
+      }
+      // Multiple classes — combine into one report so the operator fixes
+      // them all in a single redeploy. The code switches to ENV_PROD_BLOCKERS
+      // so observability dashboards can branch.
+      const combined =
+        `Production env validation found multiple blockers (NODE_ENV=${env.NODE_ENV}) — fix all before redeploy:\n  • ` +
+        prodBlockerSegments.join('\n  • ');
+      logger.error(combined);
+      throw new EnvValidationError(combined, {
+        code: 'ENV_PROD_BLOCKERS',
+        variables: prodBlockerVars,
       });
     }
   }
@@ -964,6 +1058,9 @@ export function assertEnv(
 
   if (result.missingProd.length) {
     if (enforceProd) {
+      // Already handled by the aggregated block above. This branch only
+      // fires when enforceProd is explicitly true while NODE_ENV is not
+      // production (an edge case used by some test paths).
       const msg = `Missing production-required env vars (NODE_ENV=${env.NODE_ENV}): ${result.missingProd.join(', ')}`;
       logger.error(msg);
       throw new EnvValidationError(msg, {

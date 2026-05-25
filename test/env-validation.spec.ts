@@ -79,7 +79,16 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     ANDROID_SHA256_FINGERPRINT:
       'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99',
     RESEND_API_KEY: 're_test_key',
-    RESEND_FROM_EMAIL: 'TGP <welcome@trygrowthproject.com>',
+    RESEND_FROM_EMAIL: 'Growth Project <welcome@trygrowthproject.com>',
+    // Audit #4 P2-2 / Audit #5 P0-1 — GUEST_CHECKOUT_PII_SALT is
+    // prod-hardened. fullProdEnv must include it so the "clean prod
+    // env" assertion stays green and so any test that adds a known
+    // bad value to test a specific failure path doesn't accidentally
+    // also trip the prod-hardened gate.
+    GUEST_CHECKOUT_PII_SALT: 'a'.repeat(32),
+    // Audit #5 P0-2 — STRIPE_PUBLISHABLE_KEY is prod-hardened.
+    // StorefrontService 503s every public package request when missing.
+    STRIPE_PUBLISHABLE_KEY: 'pk_test_clean_fullprodenv_publishable_key',
   };
 }
 
@@ -220,10 +229,13 @@ describe('assertEnv', () => {
           // R43 round-3 additions: production refuses to serve a stub
           // AASA/assetlinks document or send welcome mail from an
           // unverified domain, so these are now prod-hardened.
-          RESEND_FROM_EMAIL: 'TGP <welcome@trygrowthproject.com>',
+          RESEND_FROM_EMAIL: 'Growth Project <welcome@trygrowthproject.com>',
           APPLE_TEAM_ID: 'TEAMID1234',
           ANDROID_SHA256_FINGERPRINT:
             'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99',
+          // Audit #5 P0-1 / P0-2 — prod-hardened additions.
+          GUEST_CHECKOUT_PII_SALT: 'a'.repeat(32),
+          STRIPE_PUBLISHABLE_KEY: 'pk_test_inline_publishable_key',
         },
         { logger: silentLogger as any },
       ),
@@ -249,10 +261,13 @@ describe('assertEnv', () => {
         STOREFRONT_BASE_URL: 'https://storefront.example.com',
         // R43 round-3 additions: prod refuses to ship without an
         // explicit welcome-mail sender or AASA/assetlinks credentials.
-        RESEND_FROM_EMAIL: 'TGP <welcome@trygrowthproject.com>',
+        RESEND_FROM_EMAIL: 'Growth Project <welcome@trygrowthproject.com>',
         APPLE_TEAM_ID: 'TEAMID1234',
         ANDROID_SHA256_FINGERPRINT:
           'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99',
+        // Audit #5 P0-1 / P0-2 — prod-hardened additions.
+        GUEST_CHECKOUT_PII_SALT: 'a'.repeat(32),
+        STRIPE_PUBLISHABLE_KEY: 'pk_test_inline_publishable_key',
       },
       { logger: logger as any },
     );
@@ -331,10 +346,13 @@ describe('assertEnv', () => {
           // R43 round-3 additions: production refuses to serve a stub
           // AASA/assetlinks document or send welcome mail from an
           // unverified domain, so these are now prod-hardened.
-          RESEND_FROM_EMAIL: 'TGP <welcome@trygrowthproject.com>',
+          RESEND_FROM_EMAIL: 'Growth Project <welcome@trygrowthproject.com>',
           APPLE_TEAM_ID: 'TEAMID1234',
           ANDROID_SHA256_FINGERPRINT:
             'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99',
+          // Audit #5 P0-1 / P0-2 — prod-hardened additions.
+          GUEST_CHECKOUT_PII_SALT: 'a'.repeat(32),
+          STRIPE_PUBLISHABLE_KEY: 'pk_test_inline_publishable_key',
         },
         { enforceProd: false, logger: silentLogger as any },
       ),
