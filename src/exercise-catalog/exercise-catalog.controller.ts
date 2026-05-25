@@ -37,6 +37,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { OwnerGuard } from '../common/guards/owner.guard';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { AuthedRequest } from '../auth/auth-request';
 import { MuxDisabledError } from '../video/mux.errors';
 import {
@@ -67,6 +68,12 @@ function translateMuxDisabled<T>(promise: Promise<T>): Promise<T> {
 export class ExerciseCatalogController {
   constructor(private readonly catalog: ExerciseCatalogService) {}
 
+  // Read-only browse of the canonical exercise catalog. Per the file header,
+  // any authenticated user may list — coaches assembling workout plans,
+  // students viewing their assigned exercises, and owners auditing the
+  // ingest pipeline. Role-based signed-URL gating happens at the service
+  // layer on the detail path, not here.
+  @Roles('student', 'coach', 'owner')
   @Get()
   list(
     @Query() query: ExerciseCatalogListQueryDto,
@@ -78,6 +85,9 @@ export class ExerciseCatalogController {
   // minting per product policy — owners/coaches always get the URL,
   // students only when the exercise is in one of their assignments.
   // Public-policy items return the URL unconditionally (HLS is public).
+  // All three roles may call this; the service uses req.user.role to decide
+  // whether to mint the signed URL.
+  @Roles('student', 'coach', 'owner')
   @Get(':idOrSlug')
   detail(
     @Param('idOrSlug') idOrSlug: string,
