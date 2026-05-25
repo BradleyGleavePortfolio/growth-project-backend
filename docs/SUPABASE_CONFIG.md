@@ -50,6 +50,38 @@ Manual smoke test: from a clean browser, attempt to register `test+hibp@trygrowt
 |---|---|---|---|
 | _pending_ | Dynasia G | Toggle ON | _fill after operator flip_ |
 
+The log is intentionally left `_pending_` in the PR; the operator updates it in the same commit as the dashboard flip so reviewers can correlate the toggle event to a real datetime + advisor pull. This row is the only piece of PR-RLS-01 that lands in main with placeholder text.
+
+### Incident / detection runbook (audit P2-004)
+
+Leaked-password protection is a dashboard-only control. It can be re-disabled silently (intentionally or accidentally) without any code change, so the operator runbook below treats it as a recurring detection problem, not a one-shot setting.
+
+**Owner of record:** Dynasia G (founder).
+**Backup owner:** none until first engineering hire; until then a weekly calendar reminder substitutes for an on-call rotation.
+
+**Detection cadence:**
+
+1. **Weekly through launch + 90 days.** Founder runs `mcp:supabase:get_advisors project_id=rpyfdsgxxltzutgqeouk type=security` every Monday and confirms `auth_leaked_password_protection` is absent from the returned lints. Reminder lives in the founder's recurring calendar block titled "Supabase advisor check".
+2. **Every PR that touches `docs/SUPABASE_CONFIG.md` or `supabase/`.** CI does not currently re-pull the advisor (no service-role secret in PR runners), so reviewers manually re-pull during review of any auth-adjacent PR.
+3. **Release-blocking smoke test.** Each release of the iOS/web app, the founder attempts to register `test+hibp@trygrowthproject.com` with a known-leaked password from the HIBP corpus (e.g. `Password123!`). A successful registration is a P0 incident: HIBP toggled OFF.
+
+**Alert path:**
+
+- The advisor and smoke test are manual. There is no automated alert until a Supabase-advisor-to-Slack/email integration ships in a later cycle.
+- If the founder is unavailable for >7 days, the Monday check is the founder's responsibility on return and the missed slot is logged in the launch ops journal.
+
+**Incident response — leaked-password protection is OFF after the toggle was ON:**
+
+1. Immediately re-toggle ON via the dashboard. No SQL change required.
+2. Within 1 hour, scan `auth.users.created_at` for the gap between toggle-off detection and re-enable; capture the count. These accounts may have been created with leaked passwords.
+3. Within 24 hours, send a forced-password-reset email to the at-risk cohort (template lives in the auth runbook outside this repo). Communicate the reason in plain language.
+4. Within 7 days, document the timeline, root cause, and corrective action in the Cycle B retrospective and link it from this file.
+5. If the toggle was flipped maliciously (audit log shows a non-founder operator), follow the standard SaaS account-compromise drill: rotate all Supabase service-role keys, invalidate the offending Supabase dashboard session, and notify the Supabase support channel.
+
+**Rollback:**
+
+Intentional rollback (e.g. a third-party password manager fails under HIBP and we need to investigate) is performed by toggling OFF in the dashboard, updating the confirmation log row above with action "Toggle OFF", and opening a tracking issue with a deadline to re-enable.
+
 ---
 
 ## Helper function search_path lockdown
