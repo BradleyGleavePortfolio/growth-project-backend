@@ -87,4 +87,20 @@ jobs:
           # indistinguishable from real AI. assertEnv refuses prod boot
           # without it, so the simulated-prod gate must supply a value.
           ANTHROPIC_API_KEY: sk-ant-ci-test
+          # RECENT_AUTH_SECRET / RECENT_AUTH_TTL_MS were promoted to prod
+          # tier by the Phase 10 RecentAuthGuard work (pre-PR commit
+          # f2581a8d) but the simulated-prod CI env block was never
+          # extended, leaving build-and-test red across every open PR.
+          # 32-char minimum on the secret; 60000-3600000ms range on the TTL.
+          RECENT_AUTH_SECRET: ci-recent-auth-secret-32chars-padding
+          RECENT_AUTH_TTL_MS: 900000
+          # GUEST_CHECKOUT_PII_SALT was promoted to prod tier by PR #267
+          # (storefront guest-checkout PII scrub). Pre-stage the variable
+          # in the env-validation gate so #267's merge does not re-break
+          # build-and-test the moment it lands.
+          GUEST_CHECKOUT_PII_SALT: ci-pii-salt-32chars-minimum-padding
+          # STRIPE_PUBLISHABLE_KEY was promoted to prod tier by PR #267
+          # (storefront payment confirmation). Pre-staged for the same
+          # reason as GUEST_CHECKOUT_PII_SALT.
+          STRIPE_PUBLISHABLE_KEY: pk_test_ci
         run: node -e "require('./dist/common/env-validation').assertEnv()"
