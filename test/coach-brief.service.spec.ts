@@ -160,7 +160,9 @@ describe('CoachBriefService.generateBrief — stale lease recovery (P1-1)', () =
       asAnthropic(anthropic),
     );
     const res = await svc.generateBrief('coach1', 'America/Los_Angeles', '2026-05-25');
-    expect(res.status).toBe('pending');
+    // A5-P1-6: response surfaces the in-flight 'generating' status so
+    // mobile can distinguish "claimed and in-flight" from "not started".
+    expect(res.status).toBe('generating');
     expect(anthropic.messages.create).not.toHaveBeenCalled();
     expect(prisma.coachBrief.update).not.toHaveBeenCalled();
   });
@@ -250,7 +252,8 @@ describe('CoachBriefService.generateBrief — stale lease recovery (P1-1)', () =
       asAnthropic(anthropic),
     );
     const res = await svc.generateBrief('coach1', 'America/Los_Angeles', '2026-05-25');
-    expect(res.status).toBe('pending');
+    // A5-P1-6: in-flight rows surface as 'generating' so mobile can poll.
+    expect(res.status).toBe('generating');
     expect(anthropic.messages.create).not.toHaveBeenCalled();
   });
 });
@@ -349,7 +352,9 @@ describe('CoachBriefService.generateBrief — idempotent generated path', () => 
       'America/Los_Angeles',
       '2026-05-25',
     );
-    expect(res.status).toBe('pending');
+    // A5-P1-6: in-flight 'generating' rows surface as-is so mobile
+    // can distinguish them from never-started 'pending' rows.
+    expect(res.status).toBe('generating');
     expect(loserAnthropic.messages.create).not.toHaveBeenCalled();
     expect(loserPrisma.coachBrief.update).not.toHaveBeenCalled();
   });
