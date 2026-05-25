@@ -119,6 +119,10 @@ export class ClientPackagesController {
   // the coach's name and avatar on day one.
   // 404 when the client has no coach assigned (expected — banner shows
   // the "waiting for coach" state instead).
+  // Student-scoped: reads req.user.coach_id, which is the student→coach FK.
+  // Coaches do not have coach_id set in the canonical hierarchy, so they have
+  // no meaningful response here. Owner included for platform support.
+  @Roles('student', 'owner')
   @Get()
   async coachProfile(@Request() req: AuthedRequest) {
     const coachId = req.user.coach_id;
@@ -149,6 +153,11 @@ export class ClientPackagesController {
     };
   }
 
+  // Student browses their assigned coach's active offer catalog (the buy-side
+  // view). Scoped by req.user.coach_id. Returns empty list (not 404) when the
+  // student has no coach yet — mobile renders a "no offers" state. Owner kept
+  // for support; coaches do not consume this surface.
+  @Roles('student', 'owner')
   @Get('packages')
   @SkipClientEntitlement()
   async list(@Request() req: AuthedRequest) {
@@ -162,6 +171,10 @@ export class ClientPackagesController {
     return { packages: rows };
   }
 
+  // Student fetches one of their assigned coach's offers for the purchase
+  // sheet. The handler re-validates coach_id match + is_active + !archived
+  // before returning. Owner kept for support; coaches do not consume this.
+  @Roles('student', 'owner')
   @Get('packages/:id')
   @SkipClientEntitlement()
   async detail(@Request() req: AuthedRequest, @Param('id') id: string) {
