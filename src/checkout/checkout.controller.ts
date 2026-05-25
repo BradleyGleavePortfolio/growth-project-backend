@@ -16,6 +16,7 @@ import { Throttle } from '@nestjs/throttler';
 import { IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
 import { SkipClientEntitlement } from '../common/decorators/skip-client-entitlement.decorator';
 import { StripeConnectApiError } from '../connect/stripe-connect-api.service';
@@ -84,6 +85,12 @@ export class CreatePaymentIntentDto {
 export class CheckoutController {
   constructor(private checkout: CheckoutService) {}
 
+  // Any authenticated user can mint a Stripe Checkout session for a coach
+  // package. Students are the primary buyer; a coach can also buy another
+  // coach's package, and OWNER for QA/support. NOT a guest route — the
+  // service uses req.user.id to scope the purchase. Rate-limited by
+  // CHECKOUT_MINT throttler to prevent session-mint abuse.
+  @Roles('student', 'coach', 'owner')
   @Post('sessions')
   @Throttle({
     [THROTTLER_NAMES.CHECKOUT_MINT]: {
@@ -110,6 +117,11 @@ export class CheckoutController {
     }
   }
 
+  // Any authenticated user mints a PaymentIntent for the native (mobile)
+  // checkout flow. Same role surface and rate limit as the Checkout
+  // sessions endpoint above — not a guest route; idempotency key is
+  // required at the DTO layer to make retries safe.
+  @Roles('student', 'coach', 'owner')
   @Post('payment-intent')
   @Throttle({
     [THROTTLER_NAMES.CHECKOUT_MINT]: {
@@ -128,6 +140,10 @@ export class CheckoutController {
     }
   }
 
+  // Lists the requesting user's own past/current purchases. Scoped by
+  // req.user.id; never accepts a user_id query. Any authenticated user
+  // may inspect their own purchase history.
+  @Roles('student', 'coach', 'owner')
   @Get('purchases')
   @SkipClientEntitlement()
   async listPurchases(
@@ -145,6 +161,10 @@ export class CheckoutController {
     return { purchases: items, next_cursor };
   }
 
+  // Returns whether the requesting user has an active entitlement for a
+  // given package/coach. Scoped by req.user.id; the mobile client polls
+  // this after returning from Stripe-hosted checkout.
+  @Roles('student', 'coach', 'owner')
   @Get('entitlement')
   @SkipClientEntitlement()
   async checkEntitlement(
@@ -162,6 +182,9 @@ export class CheckoutController {
     return { active, entitlement_active: active };
   }
 
+  // Returns the requesting user's saved payment method summary (last4 +
+  // brand). Scoped by req.user.id; surfaces nothing about other users.
+  @Roles('student', 'coach', 'owner')
   @Get('payment-method')
   @SkipClientEntitlement()
   async paymentMethod(@Request() req: AuthedRequest) {
@@ -177,6 +200,10 @@ export class CheckoutController {
    * M10 fix: surfaces the update-card URL to past-due clients instead
    * of leaving `dunning.update_card_url` null.
    */
+  // Creates a Stripe Billing Portal session for the requesting user to
+  // update their payment method during a dunning window. Scoped by
+  // req.user.id; portal URLs are single-tenant and time-limited.
+  @Roles('student', 'coach', 'owner')
   @Post('billing-portal')
   @SkipClientEntitlement()
   async createBillingPortal(@Request() req: AuthedRequest) {
@@ -199,6 +226,11 @@ export class CheckoutController {
    * uses the specific session id to confirm payment so webhook lag
    * doesn't cause a false "pending" state.
    */
+  // Confirms a Stripe Checkout session belongs to the requesting user and
+  // returns its true payment status. The service verifies the session's
+  // client_reference_id matches req.user.id so a user cannot read another
+  // user's session by guessing the id.
+  @Roles('student', 'coach', 'owner')
   @Get('sessions/:sessionId/confirm')
   @SkipClientEntitlement()
   async confirmSession(
