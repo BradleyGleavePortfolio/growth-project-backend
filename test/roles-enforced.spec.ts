@@ -175,7 +175,9 @@ const CLASS_LEVEL_LEGACY_ALLOWLIST: Array<{
   { controller: 'CheckoutController', reason: 'JwtAuthGuard + service-layer ownership; pre-Phase-10' },
   { controller: 'ClientPackagesController', reason: 'JwtAuthGuard + service-layer ownership; pre-Phase-10' },
   { controller: 'CoachAIController', reason: 'CoachGuard + SubscriptionGuard at class level' },
-  { controller: 'CoachBriefController', reason: 'CoachGuard at class level' },
+  // P2-5: CoachBriefController now declares @Roles('coach') at the class
+  // level, so it is covered by the @Roles or @Public assertion and no
+  // longer needs the whole-controller allowlist exception.
   { controller: 'CoachConnectController', reason: 'CoachGuard + NoActiveSubCoachGuard at class level' },
   { controller: 'CoachPackagesController', reason: 'CoachOrOwnerGuard + SubscriptionGuard at class level' },
   { controller: 'CoachPaymentOpsController', reason: 'CoachOrOwnerGuard at class level' },
