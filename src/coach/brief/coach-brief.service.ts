@@ -986,6 +986,9 @@ export class CoachBriefService {
         // Another worker is generating this row right now. Return it as
         // pending so the client polls instead of triggering a second
         // Claude call.
+        // TODO(coach-brief): add stale generating lease recovery — a
+        // crashed worker can otherwise leave a row stuck in 'generating'
+        // forever, since force-regenerate also refuses status='generating'.
         return this.toResponse(existing);
       }
 

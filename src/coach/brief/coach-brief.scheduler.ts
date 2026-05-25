@@ -136,23 +136,30 @@ export class CoachBriefScheduler implements OnModuleInit {
         .map((s) => parseInt(s, 10));
       if (Number.isNaN(prefHour) || Number.isNaN(prefMinute)) return;
 
+      // Invalid IANA tz on this row — new writes are blocked by
+      // IsValidTimezone, but legacy/manual rows could still trip this.
+      // Fall back to UTC and continue dispatch rather than skipping
+      // the coach entirely.
+      let effectiveTimezone = prefs.timezone;
       let localParts: Intl.DateTimeFormatPart[];
       try {
         localParts = new Intl.DateTimeFormat('en-US', {
-          timeZone: prefs.timezone,
+          timeZone: effectiveTimezone,
           hour: 'numeric',
           minute: 'numeric',
           hour12: false,
         }).formatToParts(now);
       } catch {
-        // Invalid IANA tz persisted on this row. New writes are blocked
-        // by IsValidTimezone, but legacy/manual rows could still trip
-        // this. Skip dispatch and warn — never let a single bad row
-        // wedge the cron loop.
         this.logger.warn(
-          `coach=${prefs.coach_id} has invalid timezone="${prefs.timezone}" — skipping brief dispatch`,
+          `Invalid timezone '${prefs.timezone}' for coach ${prefs.coach_id} — falling back to UTC`,
         );
-        return;
+        effectiveTimezone = 'UTC';
+        localParts = new Intl.DateTimeFormat('en-US', {
+          timeZone: effectiveTimezone,
+          hour: 'numeric',
+          minute: 'numeric',
+          hour12: false,
+        }).formatToParts(now);
       }
 
       const hourStr = localParts.find((p) => p.type === 'hour')?.value ?? '0';
@@ -169,25 +176,30 @@ export class CoachBriefScheduler implements OnModuleInit {
       // when the coach opens the app, so skip the push silently.
       if (!prefs.coach.expo_push_token) return;
 
-      const briefDate = bucketDateLocal(now, prefs.timezone);
+      const briefDate = bucketDateLocal(now, effectiveTimezone);
 
-      // Atomic dedup claim. On a multi-instance deploy every Fly.io
-      // machine runs this cron; without a claim each would send a push.
-      // updateMany WHERE last_push_date != today flips exactly one row
-      // and returns count=1 to the winner; losers get count=0 and exit.
-      const claim = await this.prisma.coachBriefPreferences.updateMany({
-        where: {
-          coach_id: prefs.coach_id,
-          OR: [
-            { last_push_date: null },
-            { last_push_date: { not: briefDate } },
-          ],
-        },
-        data: { last_push_date: briefDate },
-      });
-      if (claim.count === 0) {
+      // Atomic pre-send attempt claim. On a multi-instance deploy every
+      // Fly.io machine runs this cron; without a claim each would call
+      // pushToUser and the coach would receive duplicate notifications.
+      // updateMany WHERE last_push_attempt_date != today flips exactly
+      // one row and returns count=1 to the winner; losers get count=0
+      // and exit. last_push_date is set separately AFTER push success
+      // so that we can distinguish "attempted today" from "successfully
+      // sent today" for observability.
+      const attemptClaim =
+        await this.prisma.coachBriefPreferences.updateMany({
+          where: {
+            coach_id: prefs.coach_id,
+            OR: [
+              { last_push_attempt_date: null },
+              { last_push_attempt_date: { not: briefDate } },
+            ],
+          },
+          data: { last_push_attempt_date: briefDate },
+        });
+      if (attemptClaim.count === 0) {
         this.logger.debug(
-          `coach brief push already claimed for coach=${prefs.coach_id} date=${briefDate}`,
+          `coach brief push already attempted for coach=${prefs.coach_id} date=${briefDate}`,
         );
         return;
       }
@@ -200,26 +212,44 @@ export class CoachBriefScheduler implements OnModuleInit {
       const notifBody = brief.summary.narrative.slice(0, 160);
 
       // External call timeout — a stalled Expo round-trip must not
-      // hold the scheduler indefinitely. We swallow the error here so
-      // the cron tick keeps running for other coaches; the dedup
-      // claim guarantees we don't retry-spam on the next tick.
-      await Promise.race([
-        this.notifications.pushToUser(
-          prefs.coach_id,
-          'Your daily brief is ready',
-          notifBody,
-          { deep_link: 'tgp://coach/brief/today', brief_date: briefDate },
-        ),
-        new Promise<void>((_, reject) =>
-          setTimeout(
-            () => reject(new Error('Push timeout')),
-            PUSH_TIMEOUT_MS,
-          ),
-        ),
-      ]).catch((err) => {
-        this.logger.warn(
-          `coach brief push timed out or failed: coach=${prefs.coach_id} ${errorMessageOf(err)}`,
+      // hold the scheduler indefinitely. clearTimeout in finally so
+      // Jest doesn't report an open handle when push resolves first.
+      let timer: NodeJS.Timeout | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('push timeout')),
+          PUSH_TIMEOUT_MS,
         );
+      });
+
+      let pushSucceeded = false;
+      try {
+        await Promise.race([
+          this.notifications.pushToUser(
+            prefs.coach_id,
+            'Your daily brief is ready',
+            notifBody,
+            { deep_link: 'tgp://coach/brief/today', brief_date: briefDate },
+          ),
+          timeoutPromise,
+        ]);
+        pushSucceeded = true;
+      } catch (err) {
+        this.logger.warn(
+          `coach brief push failed or timed out for coach ${prefs.coach_id} on ${briefDate}: ${errorMessageOf(err)}`,
+        );
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+
+      if (!pushSucceeded) return;
+
+      // Confirmed-success marker. last_push_date is the observability
+      // sentinel for "this coach received their brief today"; the
+      // attempt claim above already guarantees we don't double-send.
+      await this.prisma.coachBriefPreferences.updateMany({
+        where: { coach_id: prefs.coach_id },
+        data: { last_push_date: briefDate },
       });
 
       this.logger.log(

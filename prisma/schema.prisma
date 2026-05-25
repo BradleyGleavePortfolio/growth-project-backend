@@ -3690,9 +3690,14 @@ model CoachBriefPreferences {
   notification_time String   @default("07:00")
   timezone          String   @default("America/Los_Angeles")
   enabled           Boolean  @default(true)
-  // Atomic dedup marker for the daily push cron. The scheduler uses an
-  // updateMany WHERE last_push_date != today to claim the push slot —
-  // on a multi-instance deploy only the first instance wins.
+  // Pre-send attempt claim for the daily push cron. The scheduler uses
+  // an updateMany WHERE last_push_attempt_date != today to atomically
+  // claim the push slot — on a multi-instance deploy only the first
+  // instance wins and actually calls pushToUser, preventing duplicates.
+  last_push_attempt_date String?
+  // Confirmed-success marker, written only after pushToUser resolves
+  // successfully. Distinct from last_push_attempt_date so observability
+  // can tell "attempted but failed" from "delivered".
   last_push_date    String?
   created_at        DateTime @default(now())
   updated_at        DateTime @updatedAt

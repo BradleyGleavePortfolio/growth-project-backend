@@ -953,10 +953,29 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     expect(notifications.pushToUser).not.toHaveBeenCalled();
   });
 
-  it('skips push and warns on invalid IANA timezone', async () => {
+  it('falls back to UTC and continues dispatch when timezone is invalid', async () => {
     const prisma = makePrisma();
-    const notifications = { pushToUser: jest.fn() };
-    const briefService = { getOrGenerateTodaysBrief: jest.fn() };
+    prisma.coachBriefPreferences.updateMany.mockResolvedValue({ count: 1 });
+    const notifications = { pushToUser: jest.fn().mockResolvedValue(undefined) };
+    const briefService = {
+      getOrGenerateTodaysBrief: jest.fn().mockResolvedValue({
+        id: 'b1',
+        coach_id: 'coach1',
+        brief_date: '2026-05-25',
+        status: 'generated',
+        brief_mode: 'solo_coach',
+        generated_at: new Date().toISOString(),
+        summary: {
+          date: '2026-05-25',
+          brief_mode: 'solo_coach',
+          narrative: 'Sarah, all clear today.',
+          brief_context: makeContext(),
+          action_items: [],
+          generated_by: 'ai',
+        },
+        created_at: new Date().toISOString(),
+      }),
+    };
     const scheduler = new CoachBriefScheduler(
       prisma as any,
       briefService as any,
@@ -964,17 +983,29 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
       makeConfig(),
     );
 
+    const warnSpy = jest
+      .spyOn(scheduler['logger'], 'warn')
+      .mockImplementation(() => undefined);
+
+    // notification_time '14:00' matches 14:00 UTC, so after UTC fallback
+    // the dispatch should proceed all the way through pushToUser.
     await scheduler.maybeDispatch(
       {
         coach_id: 'coach1',
-        notification_time: '07:00',
+        notification_time: '14:00',
         timezone: 'Not/A_Real_Tz',
         coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
       },
       new Date('2026-05-25T14:00:00Z'),
     );
-    expect(briefService.getOrGenerateTodaysBrief).not.toHaveBeenCalled();
-    expect(notifications.pushToUser).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid timezone 'Not/A_Real_Tz'"),
+    );
+    expect(briefService.getOrGenerateTodaysBrief).toHaveBeenCalledWith(
+      'coach1',
+    );
+    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
   });
 
   it('continues when pushToUser exceeds the 10s timeout (Promise.race)', async () => {
