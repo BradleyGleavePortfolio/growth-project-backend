@@ -226,6 +226,17 @@ describe('GuestCheckoutService', () => {
       // 2% of 29700 = 594; floor and apply Stripe min(50).
       expect(call.applicationFeeAmount).toBe(594);
       expect(call.metadata.guest_checkout_idempotency_key).toBe(IDEMP_KEY);
+      expect(call.metadata.guest_checkout_id).toBe('gc-1');
+      expect(call.metadata.package_id).toBe('pkg-1');
+      // Audit #3 P2-4 — guest_email and guest_name MUST NOT appear in
+      // Stripe metadata. Server-side join via guest_checkout_id when we
+      // need them.
+      expect(call.metadata.guest_email).toBeUndefined();
+      expect(call.metadata.guest_name).toBeUndefined();
+      // Audit #3 P1-10 — destination-charge PaymentIntents carry
+      // on_behalf_of so the connected coach is the merchant of record.
+      expect(call.onBehalfOf).toBe('acct_x');
+      expect(call.transferDestination).toBe('acct_x');
       // P2-3 — `customer` must not be sent as an empty string for guest
       // PaymentIntents; omit it entirely.
       expect(call.customer).toBeUndefined();

@@ -289,13 +289,18 @@ export class GuestCheckoutService {
         // rather than passing an empty string (P2-3).
         applicationFeeAmount: platformFeeCents,
         transferDestination: connectAccount.stripe_account_id,
+        // Audit #3 P1-10 — connected coach is the merchant of record
+        // for the destination charge.
+        onBehalfOf: connectAccount.stripe_account_id,
+        // Audit #3 P2-4 — only non-PII correlation identifiers go in
+        // Stripe metadata. guest_email / guest_name used to be sent
+        // here so Stripe Dashboard could match charges to buyers, but
+        // Stripe metadata is visible in dashboards, exports, and
+        // downstream integrations. We keep the join in our own
+        // database via guest_checkout_id instead.
         metadata: {
           [GUEST_CHECKOUT_METADATA_KEY]: dto.idempotency_key,
           package_id: pkg.id,
-          share_token: token,
-          guest_email: normalisedEmail,
-          guest_name: normalisedName,
-          coach_user_id: pkg.coach_id,
           guest_checkout_id: sentinel.id,
         },
         idempotencyKey: `guest-checkout-pi-${dto.idempotency_key}`,

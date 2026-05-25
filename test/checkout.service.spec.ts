@@ -648,6 +648,9 @@ describe('CheckoutService.createPaymentIntentForClient — IDOR + idempotency', 
     expect(call.amount).toBe(10000);
     expect(call.currency).toBe('usd');
     expect(call.transferDestination).toBe('acct_coach_x');
+    // Audit #3 P1-10 — connected coach is the merchant of record so
+    // on_behalf_of matches transferDestination.
+    expect(call.onBehalfOf).toBe('acct_coach_x');
     // Solo coach (no head-coach assignment): platform 2% of $100 = 200 cents.
     expect(call.applicationFeeAmount).toBe(200);
     // Stripe idempotency key includes the client-supplied UUID.

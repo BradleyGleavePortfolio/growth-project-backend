@@ -444,6 +444,16 @@ export class StripeConnectApiService {
   // Phase 7 — Payment Sheet (in-app checkout). Creates a PaymentIntent
   // directly on the platform account with destination charges so the
   // mobile Payment Sheet can complete without a browser redirect.
+  //
+  // Audit #3 P1-10 — destination-charge PaymentIntents now also carry
+  // `on_behalf_of` set to the same connected-account id used for
+  // transfer_data[destination]. Without on_behalf_of, Stripe treats
+  // the platform account as the merchant of record for risk and
+  // statement-descriptor purposes, which is wrong for connected-account
+  // commerce (the connected coach is the seller). Setting both fields
+  // makes the connected account the merchant of record AND the
+  // destination of the funds, matching Stripe's documented destination-
+  // charge pattern for marketplaces.
   async createPaymentIntent(params: {
     amount: number;
     currency: string;
@@ -453,6 +463,11 @@ export class StripeConnectApiService {
     customer?: string;
     applicationFeeAmount: number;
     transferDestination: string;
+    // Audit #3 P1-10 — connected-account id Stripe should treat as the
+    // merchant of record. Required for destination charges; defaults to
+    // transferDestination on the caller side so guest-checkout and the
+    // in-app Payment Sheet are forced to provide it explicitly.
+    onBehalfOf: string;
     metadata: Record<string, string>;
     idempotencyKey: string;
   }): Promise<StripePaymentIntentObject> {
@@ -461,6 +476,7 @@ export class StripeConnectApiService {
       currency: params.currency,
       application_fee_amount: String(params.applicationFeeAmount),
       'transfer_data[destination]': params.transferDestination,
+      on_behalf_of: params.onBehalfOf,
     };
     if (typeof params.customer === 'string' && params.customer.length > 0) {
       form.customer = params.customer;

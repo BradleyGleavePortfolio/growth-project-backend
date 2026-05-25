@@ -536,6 +536,9 @@ export class CheckoutService {
           customer: customer.stripe_customer_id,
           applicationFeeAmount: applicationFeeForStripe,
           transferDestination: connectAccount.stripe_account_id,
+          // Audit #3 P1-10 — connected coach is the merchant of record
+          // for risk and statement-descriptor purposes.
+          onBehalfOf: connectAccount.stripe_account_id,
           metadata: {
             tgp_client_user_id: client.id,
             tgp_coach_user_id: coach.id,
