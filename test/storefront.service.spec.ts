@@ -23,7 +23,7 @@ function makePkg(overrides: Record<string, unknown> = {}) {
     interval_count: 1,
     is_active: true,
     archived_at: null,
-    share_token: 'tok123',
+    share_token: 'tok1234567890abcDEFGH',
     share_link_enabled: true,
     coach: {
       id: 'coach-1',
@@ -76,7 +76,7 @@ describe('StorefrontService', () => {
 
   it('returns the public package payload for a valid token', async () => {
     findUnique.mockResolvedValueOnce(makePkg());
-    const data = await service.getPublicPackageByToken('tok123');
+    const data = await service.getPublicPackageByToken('tok1234567890abcDEFGH');
     expect(data.package_id).toBe('pkg-1');
     expect(data.package_name).toBe('12-Week Transformation');
     expect(data.price_cents).toBe(29700);
@@ -92,7 +92,7 @@ describe('StorefrontService', () => {
   // context and Stripe.js refuses to confirm with it.
   it('returns the PLATFORM publishable key (not the connected account key)', async () => {
     findUnique.mockResolvedValueOnce(makePkg());
-    const data = await service.getPublicPackageByToken('tok123');
+    const data = await service.getPublicPackageByToken('tok1234567890abcDEFGH');
     expect(data.stripe_publishable_key).toBe('pk_live_platform');
     // Must not have called Stripe to fetch a connected-account key.
     expect(retrieveAccount).not.toHaveBeenCalled();
@@ -104,15 +104,33 @@ describe('StorefrontService', () => {
     );
     findUnique.mockResolvedValueOnce(makePkg());
     await expect(
-      service.getPublicPackageByToken('tok123'),
+      service.getPublicPackageByToken('tok1234567890abcDEFGH'),
     ).rejects.toThrow(ServiceUnavailableException);
   });
 
   it('404s when the token does not resolve to a package', async () => {
     findUnique.mockResolvedValueOnce(null);
     await expect(
-      service.getPublicPackageByToken('missing'),
+      // 21-char nanoid-shape token that no row matches
+      service.getPublicPackageByToken('NONEXISTENT_TOKEN_AAAA'.slice(0, 21)),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  // P1-3 / P2-1 — malformed token shapes must 404 before Prisma is even
+  // queried. This blocks path-traversal probes, length sweeps, and
+  // alphabet bruteforce attempts from hitting the database.
+  it.each([
+    ['empty', ''],
+    ['too short', 'short'],
+    ['too long', 'A'.repeat(22)],
+    ['path-traversal characters', '../../../etc/passwd'],
+    ['spaces', 'aaaaaaaaa aaaaaaaaaaaa'],
+    ['unicode', 'éééééééééééééééééééée'],
+  ])('rejects malformed tokens (%s) without touching the DB', async (_label, token) => {
+    await expect(
+      service.getPublicPackageByToken(token as string),
+    ).rejects.toThrow(NotFoundException);
+    expect(findUnique).not.toHaveBeenCalled();
   });
 
   it('404s when share_link_enabled is false', async () => {
@@ -120,14 +138,14 @@ describe('StorefrontService', () => {
       makePkg({ share_link_enabled: false }),
     );
     await expect(
-      service.getPublicPackageByToken('tok123'),
+      service.getPublicPackageByToken('tok1234567890abcDEFGH'),
     ).rejects.toThrow(NotFoundException);
   });
 
   it('404s when the package is inactive or archived', async () => {
     findUnique.mockResolvedValueOnce(makePkg({ is_active: false }));
     await expect(
-      service.getPublicPackageByToken('tok123'),
+      service.getPublicPackageByToken('tok1234567890abcDEFGH'),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -145,7 +163,7 @@ describe('StorefrontService', () => {
       }),
     );
     await expect(
-      service.getPublicPackageByToken('tok123'),
+      service.getPublicPackageByToken('tok1234567890abcDEFGH'),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -153,7 +171,7 @@ describe('StorefrontService', () => {
     findUnique.mockResolvedValueOnce(
       makePkg({ billing_type: 'recurring', interval: 'year', interval_count: 1 }),
     );
-    const annual = await service.getPublicPackageByToken('tok123');
+    const annual = await service.getPublicPackageByToken('tok1234567890abcDEFGH');
     expect(annual.billing_cycle).toBe('annual');
 
     findUnique.mockResolvedValueOnce(
@@ -163,13 +181,13 @@ describe('StorefrontService', () => {
         interval_count: 3,
       }),
     );
-    const quarterly = await service.getPublicPackageByToken('tok123');
+    const quarterly = await service.getPublicPackageByToken('tok1234567890abcDEFGH');
     expect(quarterly.billing_cycle).toBe('quarterly');
 
     findUnique.mockResolvedValueOnce(
       makePkg({ billing_type: 'one_time', interval: null, interval_count: 1 }),
     );
-    const oneTime = await service.getPublicPackageByToken('tok123');
+    const oneTime = await service.getPublicPackageByToken('tok1234567890abcDEFGH');
     expect(oneTime.billing_cycle).toBe('one_time');
   });
 });

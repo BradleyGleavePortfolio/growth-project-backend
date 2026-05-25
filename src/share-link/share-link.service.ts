@@ -5,23 +5,43 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomInt } from 'crypto';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma.service';
+import { parseStorefrontBaseUrl } from '../common/env-validation';
 
-// nanoid-style URL-safe alphabet — 57 unambiguous characters. Drops the
-// look-alike pairs (0/O, 1/I/l) so a coach can read a share link aloud
-// without misreads. 10 chars × 57 = ~57^10 ≈ 4.8e17 — collision is a
-// non-event but the service still retries up to 5 times on the @unique
-// constraint for full defence-in-depth.
-const ALPHABET =
-  '23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ';
-const TOKEN_LENGTH = 10;
+// P1-3 — share-link tokens are now 21 characters drawn from the standard
+// nanoid alphabet (A-Z, a-z, 0-9, '_', '-'). 21 × log2(64) ≈ 126 bits of
+// entropy; the previous 10-char alphabet (~58 bits) was far below the
+// minimum the audit brief calls out for an anonymous public lookup
+// endpoint. A targeted migration re-mints any legacy 10-char token to a
+// 21-char one before this code path goes live, so legacy links keep
+// resolving — see prisma/migrations/.../guest_checkout_retryable_*.
+const TOKEN_ALPHABET =
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
+export const SHARE_TOKEN_LENGTH = 21;
+// Exported so the controller param parser and the storefront service can
+// share one source of truth — defence-in-depth: a malformed token never
+// reaches Prisma.
+export const SHARE_TOKEN_REGEX = /^[A-Za-z0-9_-]{21}$/;
 const MAX_COLLISION_ATTEMPTS = 5;
 
+// Dev/test fallback used when STOREFRONT_BASE_URL is unset. Production
+// must set the env var explicitly (enforced in prodHardenedFeatureVars
+// inside env-validation.ts). The fallback is the canonical
+// joingrowthproject.com domain; no other domain is permitted.
+const STOREFRONT_BASE_URL_DEV_FALLBACK = 'https://joingrowthproject.com';
+
 function mintToken(): string {
+  // randomBytes draws from /dev/urandom (libuv) — a CSPRNG. We then
+  // map each byte into the nanoid alphabet by masking to 6 bits and
+  // rejecting bytes whose 6-bit value lands outside the alphabet (which
+  // here has length 64 exactly, so no rejection is needed — but we keep
+  // the masking pattern so a future alphabet change does not silently
+  // bias the output).
+  const buf = randomBytes(SHARE_TOKEN_LENGTH);
   let out = '';
-  for (let i = 0; i < TOKEN_LENGTH; i += 1) {
-    out += ALPHABET[randomInt(0, ALPHABET.length)];
+  for (let i = 0; i < SHARE_TOKEN_LENGTH; i += 1) {
+    out += TOKEN_ALPHABET[buf[i] & 63];
   }
   return out;
 }
@@ -46,23 +66,29 @@ export class ShareLinkService {
   // coachUserId. Returns 404 (not 403) when the package is missing, has a
   // different owner, or is archived — refusing to differentiate prevents
   // ID enumeration via guessable UUIDs.
+  //
+  // P2-2 — the initial read is tenant-scoped: another coach's package
+  // UUID never returns a row to application code, so we cannot leak that
+  // the row exists by timing or by a downstream join.
   async mintOrGet(
     coachUserId: string,
     packageId: string,
   ): Promise<ShareLinkResult> {
-    const pkg = await this.prisma.coachPackage.findUnique({
-      where: { id: packageId },
+    const pkg = await this.prisma.coachPackage.findFirst({
+      where: {
+        id: packageId,
+        coach_id: coachUserId,
+        archived_at: null,
+      },
       select: {
         id: true,
-        coach_id: true,
-        archived_at: true,
         share_token: true,
         share_link_enabled: true,
         share_link_generated_at: true,
       },
     });
 
-    if (!pkg || pkg.coach_id !== coachUserId || pkg.archived_at !== null) {
+    if (!pkg) {
       throw new NotFoundException({
         error: 'PACKAGE_NOT_FOUND',
         message: 'Package not found.',
@@ -128,22 +154,21 @@ export class ShareLinkService {
       // count = 0 means either (a) a concurrent caller already minted a
       // token (share_token is no longer null), or (b) the package was
       // archived between our find and our update. Re-read to find out
-      // which.
-      const reread = await this.prisma.coachPackage.findUnique({
-        where: { id: packageId },
+      // which — tenant-scoped again so we never leak another coach's
+      // row even if the package id was guessed.
+      const reread = await this.prisma.coachPackage.findFirst({
+        where: {
+          id: packageId,
+          coach_id: coachUserId,
+          archived_at: null,
+        },
         select: {
-          coach_id: true,
-          archived_at: true,
           share_token: true,
           share_link_enabled: true,
           share_link_generated_at: true,
         },
       });
-      if (
-        !reread ||
-        reread.coach_id !== coachUserId ||
-        reread.archived_at !== null
-      ) {
+      if (!reread) {
         throw new NotFoundException({
           error: 'PACKAGE_NOT_FOUND',
           message: 'Package not found.',
@@ -162,7 +187,7 @@ export class ShareLinkService {
       // was just unarchived). Loop and try again.
     }
 
-    // 57^10 ≈ 4.8e17 — five consecutive collisions implies either a
+    // 64^21 ≈ 8.5e37 — five consecutive collisions implies either a
     // catastrophic RNG failure or a poisoned alphabet. 503 rather than
     // 500 so the caller can present a retriable error.
     this.logger.error(
@@ -179,11 +204,14 @@ export class ShareLinkService {
     enabled: boolean,
     generatedAt: Date,
   ): ShareLinkResult {
-    const base =
-      this.config.get<string>('STOREFRONT_BASE_URL') ?? 'https://tgp.app';
+    const raw = this.config.get<string>('STOREFRONT_BASE_URL');
+    const parsed = parseStorefrontBaseUrl(
+      raw && raw.trim().length > 0 ? raw : STOREFRONT_BASE_URL_DEV_FALLBACK,
+    );
+    const base = parsed.ok ? parsed.canonical : STOREFRONT_BASE_URL_DEV_FALLBACK;
     return {
       share_token: token,
-      share_url: `${base.replace(/\/$/, '')}/join/${token}`,
+      share_url: `${base}/join/${token}`,
       share_link_enabled: enabled,
       share_link_generated_at: generatedAt,
     };

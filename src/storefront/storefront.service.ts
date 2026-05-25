@@ -7,10 +7,20 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma.service';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
+import { parseStorefrontBaseUrl } from '../common/env-validation';
+import { SHARE_TOKEN_REGEX } from '../share-link/share-link.service';
 import type {
   BillingCycle,
   PublicPackageData,
 } from './storefront.types';
+
+// Dev/test fallback used when STOREFRONT_BASE_URL is unset. Production
+// must set the env var explicitly (enforced in prodHardenedFeatureVars).
+const STOREFRONT_BASE_URL_DEV_FALLBACK = 'https://joingrowthproject.com';
+
+// Re-export so other modules in the storefront surface (e.g. checkout
+// service, public controller) can refer to a single canonical regex.
+export { SHARE_TOKEN_REGEX };
 
 @Injectable()
 export class StorefrontService {
@@ -28,8 +38,11 @@ export class StorefrontService {
   // deliberately collapse those cases into a single 404 so the storefront
   // can't be probed for valid-but-paused tokens.
   async getPublicPackageByToken(token: string): Promise<PublicPackageData> {
-    if (!token || typeof token !== 'string' || token.length < 4) {
-      // Defence-in-depth: a malformed token never reaches the DB.
+    // P1-3 / P2-1 — enforce the exact 21-char nanoid alphabet at the
+    // service boundary. A malformed token never reaches the DB, which
+    // prevents path-traversal-shaped tokens (`../../x`), all-zero
+    // probing tokens, and brute-force scans from exercising Prisma.
+    if (!token || typeof token !== 'string' || !SHARE_TOKEN_REGEX.test(token)) {
       throw new NotFoundException({
         error: 'TOKEN_NOT_FOUND',
         message: 'This link is not available.',
@@ -137,10 +150,13 @@ export class StorefrontService {
 
   // Test seam: ConfigService access for the storefront base URL is exposed
   // here so other services in the module (welcome email) read a single
-  // canonical value rather than re-querying process.env.
+  // canonical value rather than re-querying process.env. Returns the
+  // canonical (no trailing slash) form so callers can concat paths safely.
   getStorefrontBaseUrl(): string {
-    return (
-      this.config.get<string>('STOREFRONT_BASE_URL') ?? 'https://tgp.app'
-    ).replace(/\/$/, '');
+    const raw = this.config.get<string>('STOREFRONT_BASE_URL');
+    const parsed = parseStorefrontBaseUrl(
+      raw && raw.trim().length > 0 ? raw : STOREFRONT_BASE_URL_DEV_FALLBACK,
+    );
+    return parsed.ok ? parsed.canonical : STOREFRONT_BASE_URL_DEV_FALLBACK;
   }
 }

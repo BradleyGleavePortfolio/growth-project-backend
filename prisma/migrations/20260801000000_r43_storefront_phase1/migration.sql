@@ -122,3 +122,31 @@ CREATE POLICY "guest_checkout_deny_all_delete" ON "GuestCheckout"
     AS RESTRICTIVE
     FOR DELETE
     USING (false);
+
+-- ─── Reversibility (P3-2) ───────────────────────────────────────────────
+-- This migration is forward-only in production; the block below documents
+-- the exact reverse order so an operator can roll back in dev/staging if
+-- the storefront launch is aborted. Statements are commented out to keep
+-- `prisma migrate deploy` happy.
+--
+-- ROLLBACK (reverse order — RLS → CHECK → table → CoachPackage columns):
+--
+-- DROP POLICY IF EXISTS "guest_checkout_deny_all_delete" ON "GuestCheckout";
+-- DROP POLICY IF EXISTS "guest_checkout_deny_all_update" ON "GuestCheckout";
+-- DROP POLICY IF EXISTS "guest_checkout_deny_all_insert" ON "GuestCheckout";
+-- DROP POLICY IF EXISTS "guest_checkout_deny_all_select" ON "GuestCheckout";
+-- ALTER TABLE "GuestCheckout" NO FORCE ROW LEVEL SECURITY;
+-- ALTER TABLE "GuestCheckout" DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE "GuestCheckout" DROP CONSTRAINT IF EXISTS "GuestCheckout_status_check";
+-- DROP INDEX IF EXISTS "GuestCheckout_stripe_payment_intent_id_idx";
+-- DROP INDEX IF EXISTS "GuestCheckout_guest_email_idx";
+-- DROP INDEX IF EXISTS "GuestCheckout_status_idx";
+-- DROP INDEX IF EXISTS "GuestCheckout_package_id_idx";
+-- DROP INDEX IF EXISTS "GuestCheckout_idempotency_key_key";
+-- DROP INDEX IF EXISTS "GuestCheckout_stripe_payment_intent_id_key";
+-- DROP TABLE IF EXISTS "GuestCheckout";
+-- DROP INDEX IF EXISTS "CoachPackage_share_token_key";
+-- ALTER TABLE "CoachPackage"
+--     DROP COLUMN IF EXISTS "share_link_generated_at",
+--     DROP COLUMN IF EXISTS "share_link_enabled",
+--     DROP COLUMN IF EXISTS "share_token";

@@ -4,15 +4,35 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Param,
+  PipeTransform,
   Post,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
+import { SHARE_TOKEN_REGEX } from '../share-link/share-link.service';
 import { GuestCheckoutDto } from './storefront.dto';
 import { GuestCheckoutService } from './guest-checkout.service';
 import { StorefrontService } from './storefront.service';
+
+// P1-3 / P2-1 — controller-level token shape check. A malformed token is
+// rejected as 404 before the service or Prisma sees it, so brute-force
+// scans against /v1/packages/public/join/:token cannot exercise the
+// database. Returning the same TOKEN_NOT_FOUND shape the service uses
+// keeps the public surface enumeration-resistant.
+class ShareTokenPipe implements PipeTransform<unknown, string> {
+  transform(value: unknown): string {
+    if (typeof value !== 'string' || !SHARE_TOKEN_REGEX.test(value)) {
+      throw new NotFoundException({
+        error: 'TOKEN_NOT_FOUND',
+        message: 'This link is not available.',
+      });
+    }
+    return value;
+  }
+}
 
 // All routes are @Public() — the storefront serves anonymous traffic.
 // Security comes from:
@@ -34,7 +54,7 @@ export class StorefrontPublicController {
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 60 } })
   @Get('join/:token')
-  async getPublicPackage(@Param('token') token: string) {
+  async getPublicPackage(@Param('token', new ShareTokenPipe()) token: string) {
     return this.storefront.getPublicPackageByToken(token);
   }
 
@@ -47,7 +67,7 @@ export class StorefrontPublicController {
   @Post('join/:token/checkout')
   @HttpCode(HttpStatus.OK)
   async createGuestCheckout(
-    @Param('token') token: string,
+    @Param('token', new ShareTokenPipe()) token: string,
     @Body() body: GuestCheckoutDto,
   ) {
     return this.guestCheckout.createIntent(token, body);
