@@ -48,14 +48,18 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
   // throw, roll back any side-effects by snapshotting `rows` first.
   const fake: any = {
     rows,
-    $transaction: jest.fn(async (ops: any[]) => {
+    $transaction: jest.fn(async (opsOrFn: any) => {
       const snapshot = {
         interventions: rows.interventions.map((i) => ({ ...i })),
         nudges: rows.nudges.map((n) => ({ ...n })),
       };
       try {
+        if (typeof opsOrFn === 'function') {
+          // Interactive transaction form: pass the same fake as `tx`.
+          return await opsOrFn(fake);
+        }
         const results: any[] = [];
-        for (const op of ops) {
+        for (const op of opsOrFn as any[]) {
           results.push(await op);
         }
         return results;
@@ -219,7 +223,7 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
       create: jest.fn(async ({ data }: any) => {
         nudgeCounter += 1;
         const row = {
-          id: `nudge-${nudgeCounter}`,
+          id: data.id ?? `nudge-${nudgeCounter}`,
           coach_id: data.coach_id,
           client_id: data.client_id,
           title: data.title,
@@ -444,8 +448,9 @@ describe('ChurnInterventionService.sendIntervention', () => {
       idempotency_key: VALID_UUID_2,
     });
     expect(out.ok).toBe(true);
-    expect(out.nudge_id).toMatch(/^nudge-/);
+    expect(out.nudge_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(prisma.rows.nudges.length).toBe(1);
+    expect(prisma.rows.nudges[0].id).toBe(out.nudge_id);
     expect(prisma.rows.interventions[0].status).toBe('sent');
     expect(prisma.rows.interventions[0].nudge_id).toBe(out.nudge_id);
     expect(notif.pushToUser).toHaveBeenCalled();

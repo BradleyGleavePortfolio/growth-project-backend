@@ -26,6 +26,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
   Optional,
@@ -33,6 +34,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../prisma.service';
 import { PtmService } from '../../ptm/ptm.service';
@@ -118,6 +120,16 @@ function parseFactors(raw: Prisma.JsonValue | null | undefined): PtmFactor[] {
   return factors.sort((a, b) => b.contribution - a.contribution);
 }
 
+// Format a Date as YYYY-MM-DD in the local timezone. Never use
+// toISOString().slice(0,10) — that returns the UTC date, which is wrong
+// for any timezone east of UTC after late-evening events.
+function bucketDateLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 @Injectable()
 export class ChurnInterventionService {
   private readonly logger = new Logger(ChurnInterventionService.name);
@@ -137,11 +149,9 @@ export class ChurnInterventionService {
 
   private getAnthropicClient(): Anthropic {
     if (this.anthropic) return this.anthropic;
-    const apiKey =
-      this.config.get<string>('ANTHROPIC_API_KEY') ??
-      process.env.ANTHROPIC_API_KEY;
+    const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
     if (!apiKey || !apiKey.trim()) {
-      throw new Error('ANTHROPIC_API_KEY not configured');
+      throw new InternalServerErrorException('ANTHROPIC_API_KEY not configured');
     }
     this.anthropic = new Anthropic({ apiKey });
     return this.anthropic;
@@ -476,16 +486,16 @@ export class ChurnInterventionService {
     const sentAt = new Date();
     const editedText =
       text !== intervention.draft_text ? text : null;
+    const nudgeId = randomUUID();
 
-    // Atomic transaction: claim the row, create the CoachNudge. The
-    // updateMany WHERE clause ensures only one caller can transition the
-    // row out of a non-terminal status. If either step throws, both
-    // roll back together — no orphan nudge + sent row, no sent row
-    // without a nudge.
-    let txResult: { count: number; nudge: { id: string } } | null = null;
+    // Interactive transaction: claim the row atomically, then create the
+    // CoachNudge and write its id back in the same transaction. If
+    // updateMany returns count: 0 (race loser), abort early — no nudge
+    // is ever created. If anything inside the callback throws, Prisma
+    // rolls the whole transaction back.
     try {
-      const [claim, nudge] = await this.prisma.$transaction([
-        this.prisma.churnIntervention.updateMany({
+      await this.prisma.$transaction(async (tx) => {
+        const claim = await tx.churnIntervention.updateMany({
           where: {
             id: interventionId,
             coach_id: coachId,
@@ -496,18 +506,38 @@ export class ChurnInterventionService {
             edited_text: editedText,
             sent_at: sentAt,
             send_idempotency_key: dto.idempotency_key,
+            nudge_id: nudgeId,
           },
-        }),
-        this.prisma.coachNudge.create({
+        });
+
+        if (claim.count === 0) {
+          // Lost the race — another sender or a dismiss already won. Read
+          // back to distinguish so the caller gets a precise error.
+          const fresh = await tx.churnIntervention.findFirst({
+            where: { id: interventionId, coach_id: coachId },
+          });
+          if (!fresh) throw new NotFoundException('Intervention not found');
+          if (fresh.status === 'sent') {
+            throw new ConflictException('Intervention already sent');
+          }
+          if (fresh.status === 'dismissed') {
+            throw new ConflictException('Cannot send a dismissed intervention');
+          }
+          throw new ConflictException(
+            'Intervention is no longer in a sendable state',
+          );
+        }
+
+        await tx.coachNudge.create({
           data: {
+            id: nudgeId,
             coach_id: coachId,
             client_id: intervention.client_id,
             title: 'Message from your coach',
             body: text,
           },
-        }),
-      ]);
-      txResult = { count: claim.count, nudge: { id: nudge.id } };
+        });
+      });
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -533,45 +563,6 @@ export class ChurnInterventionService {
         throw new ConflictException('idempotency_key already in use');
       }
       throw err;
-    }
-
-    if (txResult.count === 0) {
-      // Lost the race — another sender or a dismiss already won. Re-fetch
-      // to return the canonical state.
-      const fresh = await this.prisma.churnIntervention.findFirst({
-        where: { id: interventionId, coach_id: coachId },
-      });
-      if (
-        fresh?.status === 'sent' &&
-        fresh.sent_at &&
-        fresh.nudge_id
-      ) {
-        return {
-          ok: true,
-          intervention_id: interventionId,
-          sent_at: fresh.sent_at.toISOString(),
-          nudge_id: fresh.nudge_id,
-        };
-      }
-      throw new ConflictException(
-        'Intervention is no longer in a sendable state',
-      );
-    }
-
-    const nudgeId = txResult.nudge.id;
-
-    // Backfill nudge_id (metadata-only). Best-effort; a failure here is
-    // not a delivery failure — the row already has status=sent and the
-    // CoachNudge row exists.
-    try {
-      await this.prisma.churnIntervention.updateMany({
-        where: { id: interventionId, coach_id: coachId },
-        data: { nudge_id: nudgeId },
-      });
-    } catch (err) {
-      this.logger.warn(
-        `nudge_id backfill failed intervention=${interventionId}: ${err instanceof Error ? err.message : String(err)}`,
-      );
     }
 
     // Fire push AFTER the transaction commits. Failure cannot un-send
@@ -656,7 +647,7 @@ export class ChurnInterventionService {
       : `- ${ctx.topFactor}`;
 
     const lastCheckIn = ctx.recentCheckIn
-      ? `Their most recent check-in was on ${ctx.recentCheckIn.logged_at.toISOString().slice(0, 10)}. Mood: ${ctx.recentCheckIn.mood ?? 'not rated'}. Energy: ${ctx.recentCheckIn.energy ?? 'not rated'}.`
+      ? `Their most recent check-in was on ${bucketDateLocal(ctx.recentCheckIn.logged_at)}. Mood: ${ctx.recentCheckIn.mood ?? 'not rated'}. Energy: ${ctx.recentCheckIn.energy ?? 'not rated'}.`
       : 'They have no recent check-in data.';
 
     const system = `You are a fitness coach assistant. Write a warm, supportive re-engagement message from a coach to a client who shows signs of disengaging.
