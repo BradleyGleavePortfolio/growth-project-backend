@@ -371,11 +371,14 @@ model User {
 
   // Phase 11 — Sub-coach overlay relations. Sub-coach assignments live in
   // SubCoachAssignment so User.coach_id stays pinned to the head coach.
-  sub_coach_assignments_as_head    SubCoachAssignment[] @relation("SubCoachAssignmentHead")
-  sub_coach_assignments_as_sub     SubCoachAssignment[] @relation("SubCoachAssignmentSub")
-  sub_coach_assignments_as_client  SubCoachAssignment[] @relation("SubCoachAssignmentClient")
-  sub_coach_assignments_as_actor   SubCoachAssignment[] @relation("SubCoachAssignmentActor")
-  sub_coach_idempotency_records    SubCoachMutationIdempotency[] @relation("SubCoachIdempotencyActor")
+  // Field names are prefixed `sub_coach_overlay_*` to avoid collision with
+  // the Team Mode `sub_coach_assignments_as_*` fields above, which point at
+  // the older TeamSubCoachAssignment model.
+  sub_coach_overlay_as_head     SubCoachAssignment[]         @relation("SubCoachAssignmentHead")
+  sub_coach_overlay_as_sub      SubCoachAssignment[]         @relation("SubCoachAssignmentSub")
+  sub_coach_overlay_as_client   SubCoachAssignment[]         @relation("SubCoachAssignmentClient")
+  sub_coach_overlay_as_actor    SubCoachAssignment[]         @relation("SubCoachAssignmentActor")
+  sub_coach_idempotency_records SubCoachMutationIdempotency[] @relation("SubCoachIdempotencyActor")
 
   // Coach Command Center — churn intervention drafts the coach has
   // generated for at-risk clients, and the inverse for clients who have
