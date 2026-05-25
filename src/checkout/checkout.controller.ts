@@ -226,10 +226,12 @@ export class CheckoutController {
    * uses the specific session id to confirm payment so webhook lag
    * doesn't cause a false "pending" state.
    */
-  // Confirms a Stripe Checkout session belongs to the requesting user and
-  // returns its true payment status. The service verifies the session's
-  // client_reference_id matches req.user.id so a user cannot read another
-  // user's session by guessing the id.
+  // Confirms a Stripe Checkout session belongs to the requesting user.
+  // Service does the ownership check FIRST against `clientPurchase`
+  // (`stripe_checkout_session_id` + `client_user_id = req.user.id`) and
+  // throws 404 on miss, so neither a foreign session nor a nonexistent
+  // session can be probed via `payment_status`. After local match, Stripe
+  // is consulted for live payment_status.
   @Roles('student', 'coach', 'owner')
   @Get('sessions/:sessionId/confirm')
   @SkipClientEntitlement()
