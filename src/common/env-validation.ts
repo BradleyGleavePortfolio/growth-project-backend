@@ -592,6 +592,22 @@ export const ENV_RULES: EnvRule[] = [
     reason:
       'Phase 11 — override for the RapidAPI host the exercise library calls. Defaults to "exercisedb.p.rapidapi.com". Only set this for staging/test environments pointing at a mocked host.',
   },
+
+  // ============================================================
+  // R43 — Coach Brief (daily AI dispatch)
+  // ============================================================
+  {
+    name: 'COACH_BRIEF_NOTIFICATIONS_ENABLED',
+    tier: 'feature',
+    reason:
+      'R43 — set to "off" to globally disable the daily Coach Brief push dispatch. When absent or any value other than "off", the scheduler runs every minute and fires per-coach pushes when each coach\'s notification_time matches their local timezone. Brief generation itself is unaffected; only the cron-driven push is gated.',
+  },
+  {
+    name: 'COACH_BRIEF_CRON',
+    tier: 'optional',
+    reason:
+      'R43 — override for the @Cron schedule on CoachBriefScheduler.dispatchDailyBriefs. Defaults to "* * * * *" (every UTC minute) so per-coach notification times have ~1 minute resolution. Set this only for staging/test environments where you want a deterministic firing window.',
+  },
 ];
 
 export interface EnvValidationResult {

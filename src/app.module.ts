@@ -19,6 +19,7 @@ import { AiModule } from './ai/ai.module';
 import { AiGatewayModule } from './ai/gateway/ai-gateway.module';
 import { CoachAIModule } from './ai/coach/coach-ai.module';
 import { CoachModule } from './coach/coach.module';
+import { CoachBriefModule } from './coach/brief/coach-brief.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { CommunityModule } from './community/community.module';
@@ -166,6 +167,11 @@ import { SubCoachModule } from './sub-coach/sub-coach.module';
     // returns 503 ai_disabled when ANTHROPIC_API_KEY is unset.
     CoachAIModule,
     CoachModule,
+    // R43 — daily Coach Brief (AI-generated dispatch + daily log + prefs +
+    // per-coach push cron). Mounts /coach/brief/*. Brief generation falls
+    // back to a deterministic narrative when ANTHROPIC_API_KEY is missing
+    // or the Anthropic call fails — never 503 to the coach.
+    CoachBriefModule,
     // Phase 7C — Peer Leaderboard (opt-in, coach-roster scoped).
     // Score: combined 30-day habit completion rate, never raw health data.
     LeaderboardModule,
