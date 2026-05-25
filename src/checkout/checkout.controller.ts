@@ -272,6 +272,11 @@ export class CheckoutController {
 export class CoachPurchasesController {
   constructor(private checkout: CheckoutService) {}
 
+  // Coach reads the list of purchases on THEIR OWN roster (revenue feed).
+  // Scoped by req.user.id in the service — never accepts a coach_id
+  // query, so no cross-coach data leakage. Students must never see this:
+  // it exposes other students' purchase identifiers, amounts, and dates.
+  @Roles('coach', 'owner')
   @Get()
   async list(
     @Request() req: AuthedRequest,
