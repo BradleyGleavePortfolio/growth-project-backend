@@ -108,6 +108,7 @@ describe('GuestCheckoutService', () => {
   let supabaseAdminMock: {
     createUser: jest.Mock;
     listUsers: jest.Mock;
+    generateLink: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -119,6 +120,18 @@ describe('GuestCheckoutService', () => {
     supabaseAdminMock = {
       createUser: jest.fn(),
       listUsers: jest.fn(),
+      // Audit #3 P1-9 — invite-link flow. Default to returning a
+      // canonical Supabase action_link so the happy-path tests don't
+      // have to wire it up individually.
+      generateLink: jest.fn().mockResolvedValue({
+        data: {
+          properties: {
+            action_link:
+              'https://supabase.example.com/auth/v1/verify?token=abc&type=invite',
+          },
+        },
+        error: null,
+      }),
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -375,6 +388,18 @@ describe('GuestCheckoutService', () => {
       const purchaseArgs = prisma.clientPurchase.create.mock.calls[0][0];
       // P2-5 — destination account persisted for reconciliation.
       expect(purchaseArgs.data.stripe_destination_account).toBe('acct_dest');
+      // Audit #3 P1-9 — Supabase createUser MUST NOT include a password
+      // and MUST NOT confirm the email up-front. The buyer verifies by
+      // clicking the invite link.
+      const createUserArgs = supabaseAdminMock.createUser.mock.calls[0][0];
+      expect(createUserArgs.password).toBeUndefined();
+      expect(createUserArgs.email_confirm).toBe(false);
+      // generateLink('invite') is the only credential we ever surface
+      // to the buyer.
+      expect(supabaseAdminMock.generateLink).toHaveBeenCalledWith({
+        type: 'invite',
+        email: 'jane@example.com',
+      });
     });
 
     // Audit #3 P1-6 — when Supabase fails after Stripe took the money,

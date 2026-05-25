@@ -527,7 +527,7 @@ export class GuestCheckoutService {
     }
 
     let supabaseUserId: string;
-    let tempPassword: string | null = null;
+    let inviteLink: string | null = null;
     try {
       const result = await this.ensureSupabaseUser(
         checkout.guest_email,
@@ -535,7 +535,7 @@ export class GuestCheckoutService {
         checkout.id,
       );
       supabaseUserId = result.supabaseUserId;
-      tempPassword = result.tempPassword;
+      inviteLink = result.inviteLink;
     } catch (err) {
       // Audit #3 P1-6 — Supabase failures are transient by default
       // (network blip, rate limit, capacity issue). Flip to
@@ -648,7 +648,7 @@ export class GuestCheckoutService {
 
     // Fire-and-forget welcome email. Resend failures must never roll
     // back the conversion.
-    this.sendWelcomeEmail(checkout, tempPassword).catch((err) => {
+    this.sendWelcomeEmail(checkout, inviteLink).catch((err) => {
       this.logger.error(
         `Welcome email failed for ${checkout.id} (tag=${safeErrorTag(err)})`,
       );
@@ -681,19 +681,31 @@ export class GuestCheckoutService {
     email: string,
     name: string,
     checkoutId: string,
-  ): Promise<{ supabaseUserId: string; tempPassword: string | null }> {
+  ): Promise<{ supabaseUserId: string; inviteLink: string | null }> {
     const client = this.supabase.getClient();
 
-    // Try to create unconditionally — Supabase returns a typed error code
-    // when the email already exists, which we handle below. P1-4 wraps
-    // each admin call in a 10s timeout so a hung Supabase request cannot
-    // block the webhook indefinitely.
-    const tempPassword = this.generateTempPassword();
+    // Audit #3 P1-9 — invite-link flow replaces temp-password email.
+    //
+    // The previous flow generated a temporary password, set
+    // email_confirm: true, and emailed the password to the buyer. That
+    // turned mailbox access into account access, bypassed normal email
+    // verification, and put plaintext credentials in transit and at
+    // rest in inboxes — a hostile-lawyer privacy problem for a fitness
+    // product handling client data.
+    //
+    // The new flow:
+    //   1. createUser with NO password and email_confirm: FALSE.
+    //   2. generateLink({ type: 'invite' }) for a fresh invite URL.
+    //   3. Email the invite URL (NEVER a password). The buyer clicks,
+    //      Supabase auto-confirms the email, and the buyer sets their
+    //      own password.
+    //
+    // Each Supabase admin call is wrapped in SUPABASE_ADMIN_TIMEOUT_MS
+    // so a hung request cannot block the webhook indefinitely.
     const { data, error } = await withTimeout(
       client.auth.admin.createUser({
         email,
-        password: tempPassword,
-        email_confirm: true,
+        email_confirm: false,
         user_metadata: {
           name,
           source: 'guest_checkout',
@@ -705,7 +717,8 @@ export class GuestCheckoutService {
     );
 
     if (data?.user?.id) {
-      return { supabaseUserId: data.user.id, tempPassword };
+      const inviteLink = await this.generateInviteLink(email);
+      return { supabaseUserId: data.user.id, inviteLink };
     }
 
     // Email already registered. Look the existing user up by email.
@@ -745,7 +758,10 @@ export class GuestCheckoutService {
         (u) => (u.email ?? '').toLowerCase() === lowered,
       );
       if (match) {
-        return { supabaseUserId: match.id, tempPassword: null };
+        // Existing customer paying for a new package — they already
+        // have an account, so the welcome mail uses the
+        // "no-invite-link" branch and tells them to sign in normally.
+        return { supabaseUserId: match.id, inviteLink: null };
       }
       // Stop early when the page is short — Supabase returns up to
       // perPage users and a short page means there are no more.
@@ -848,26 +864,58 @@ export class GuestCheckoutService {
     await this.convertGuestToUser(reread as CheckoutWithRelations);
   }
 
-  // 24-char password drawn from a curated alphabet (no look-alike
-  // characters). The temp password is mailed to the guest exactly once;
-  // they're prompted to rotate on first login. crypto.randomInt gives a
-  // CSPRNG-grade selection — Math.random would be biased.
-  private generateTempPassword(): string {
-    const alphabet =
-      'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
-    const { randomInt } = require('crypto') as typeof import('crypto');
-    let out = '';
-    for (let i = 0; i < 24; i += 1) {
-      out += alphabet[randomInt(0, alphabet.length)];
+  // Audit #3 P1-9 — generate a Supabase invite link for a brand-new
+  // guest account. The Supabase admin API returns a one-time URL the
+  // user clicks to verify their email and set their own password. We
+  // never see or transmit the password.
+  //
+  // Returns null when Supabase rejects the link request (logged). The
+  // welcome email then falls back to a generic "sign-in" message rather
+  // than leaving the user with no path into the app. Conversion is
+  // already complete by this point (ClientPurchase exists), so the user
+  // can recover via the standard password-reset / magic-link flow.
+  private async generateInviteLink(email: string): Promise<string | null> {
+    try {
+      const client = this.supabase.getClient();
+      const { data, error } = await withTimeout(
+        client.auth.admin.generateLink({
+          type: 'invite',
+          email,
+        }),
+        SUPABASE_ADMIN_TIMEOUT_MS,
+        'supabase_generateLink',
+      );
+      if (error) {
+        this.logger.error(
+          `supabase generateLink failed for guest checkout (tag=${safeErrorTag(error)})`,
+        );
+        return null;
+      }
+      // Supabase returns the URL in data.properties.action_link.
+      const link =
+        (data as {
+          properties?: { action_link?: string };
+        }).properties?.action_link ?? null;
+      return typeof link === 'string' && link.length > 0 ? link : null;
+    } catch (err) {
+      this.logger.error(
+        `supabase generateLink crashed (tag=${safeErrorTag(err)})`,
+      );
+      return null;
     }
-    return out;
   }
 
   // Resend transactional email. Times out at 8s via AbortController so a
   // Resend outage cannot hang the conversion path indefinitely.
+  //
+  // Audit #3 P1-9 — body never includes a password. Brand-new accounts
+  // receive a Supabase invite link; existing-account purchases receive
+  // a sign-in nudge. From-address comes from RESEND_FROM_EMAIL which is
+  // production-required so welcome mail can never default to an
+  // unverified domain (env-validation prodHardenedFeatureVars).
   private async sendWelcomeEmail(
     checkout: CheckoutWithRelations,
-    tempPassword: string | null,
+    inviteLink: string | null,
   ): Promise<void> {
     const apiKey = this.config.get<string>('RESEND_API_KEY');
     if (!apiKey) {
@@ -876,6 +924,11 @@ export class GuestCheckoutService {
       );
       return;
     }
+    // Dev-only fallback. Production refuses to boot without
+    // RESEND_FROM_EMAIL via env-validation.
+    const fromAddress =
+      this.config.get<string>('RESEND_FROM_EMAIL') ??
+      'TGP Fitness <welcome@trygrowthproject.com>';
 
     const coachName = checkout.package.coach.name?.trim() || 'Your coach';
     const packageName = checkout.package.name;
@@ -887,18 +940,18 @@ export class GuestCheckoutService {
       'https://play.google.com/store/apps/details?id=com.growthproject.app';
 
     const credentials =
-      tempPassword !== null
-        ? `<p>Your login details:</p><p><strong>Email:</strong> ${escapeHtml(
+      inviteLink !== null
+        ? `<p>To access your account, set a password and verify your email:</p><p><a href="${escapeAttr(
+            inviteLink,
+          )}" style="background:#C9A84C;color:#1A1A1A;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Activate your account</a></p><p style="color:#666;font-size:14px;">This link expires in 24 hours. If it does, you can use "Forgot password" on the sign-in screen with <strong>${escapeHtml(
             checkout.guest_email,
-          )}<br/><strong>Temporary Password:</strong> ${escapeHtml(
-            tempPassword,
-          )}</p><p style="color:#666;font-size:14px;">You'll be prompted to set a new password the first time you log in.</p>`
+          )}</strong>.</p>`
         : `<p>We've added <strong>${escapeHtml(
             packageName,
           )}</strong> to your existing TGP account — sign in with your usual credentials.</p>`;
 
     const body = {
-      from: 'TGP Fitness <welcome@tgp.app>',
+      from: fromAddress,
       to: checkout.guest_email,
       subject: `You're in! ${coachName} is ready for you on TGP`,
       html: `<!doctype html><html><body style="font-family:Inter,Arial,sans-serif;background:#F5F0E8;margin:0;padding:24px;">
