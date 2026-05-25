@@ -223,8 +223,10 @@ describe('GuestCheckoutService', () => {
       expect(result.guest_checkout_id).toBe('gc-1');
       expect(stripe.createPaymentIntent).toHaveBeenCalledTimes(1);
       const call = stripe.createPaymentIntent.mock.calls[0][0];
-      // 2% of 29700 = 594; floor and apply Stripe min(50).
-      expect(call.applicationFeeAmount).toBe(594);
+      // Audit #4 P1-4 — platform 2% + Stripe pass-through (2.9% + 30¢).
+      // 29700 × 0.02 = 594, 29700 × 0.029 = 861.3 → floor 861, plus 30¢
+      // gives 1485.
+      expect(call.applicationFeeAmount).toBe(1485);
       expect(call.metadata.guest_checkout_idempotency_key).toBe(IDEMP_KEY);
       expect(call.metadata.guest_checkout_id).toBe('gc-1');
       expect(call.metadata.package_id).toBe('pkg-1');
@@ -242,8 +244,10 @@ describe('GuestCheckoutService', () => {
       expect(call.customer).toBeUndefined();
     });
 
-    it('clamps platform fee to Stripe minimum of 50¢', async () => {
-      // 2% of $5 (500¢) = 10¢ — below Stripe min, so we charge 50¢.
+    it('clamps platform fee to Stripe minimum of 50¢ plus pass-through', async () => {
+      // Audit #4 P1-4 — 2% of $5 (500¢) = 10¢ (below 50¢ floor → 50¢),
+      // plus Stripe pass-through 500 × 0.029 = 14.5 → floor 14, plus 30¢.
+      // 50 + 14 + 30 = 94¢.
       prisma.coachPackage.findUnique.mockResolvedValueOnce(
         makePkg({ amount_cents: 500 }),
       );
@@ -257,17 +261,21 @@ describe('GuestCheckoutService', () => {
       await service.createIntent('tok123', baseDto);
       expect(
         stripe.createPaymentIntent.mock.calls[0][0].applicationFeeAmount,
-      ).toBe(50);
+      ).toBe(94);
     });
 
-    // Audit #3 P2-5 — sub-floor amount must not produce a fee greater
-    // than the charge.
+    // Audit #4 P1-4/P1-5 — fee table for 2% + (2.9% + 30¢) pass-through,
+    // clamped at the gross. Below the $0.50 minimum charge the request
+    // is rejected up front; see the AMOUNT_BELOW_MIN test below.
+    //   $1.00 (100¢): max(2,50)=50 + floor(2.9)+30=32 → 82¢
+    //   $100  (10000): 200 + 290 + 30 = 520¢
+    //   $50   (5000):  100 + 145 + 30 = 275¢
     it.each([
-      [40, 40],
-      [100, 50],
-      [10000, 200],
+      [100, 82],
+      [5000, 275],
+      [10000, 520],
     ])(
-      'P2-5 fee clamp: amount=%i cents → fee=%i cents',
+      'P1-4 fee table: amount=%i cents → fee=%i cents',
       async (amount, expectedFee) => {
         prisma.coachPackage.findUnique.mockResolvedValueOnce(
           makePkg({ amount_cents: amount }),
@@ -302,6 +310,33 @@ describe('GuestCheckoutService', () => {
         expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
       },
     );
+
+    // Audit #4 P1-5 — Stripe rejects PaymentIntent.amount < 50¢ for USD.
+    it.each([0, 1, 49])(
+      'rejects amount %i¢ with AMOUNT_BELOW_MIN before Stripe',
+      async (amount) => {
+        prisma.coachPackage.findUnique.mockResolvedValueOnce(
+          makePkg({ amount_cents: amount }),
+        );
+        prisma.guestCheckout.findUnique.mockResolvedValue(null);
+        await expect(service.createIntent('tok123', baseDto)).rejects.toThrow(
+          UnprocessableEntityException,
+        );
+        expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
+      },
+    );
+
+    // Audit #4 P1-5 — defence-in-depth ceiling.
+    it('rejects amount > $50,000 with AMOUNT_ABOVE_MAX before Stripe', async () => {
+      prisma.coachPackage.findUnique.mockResolvedValueOnce(
+        makePkg({ amount_cents: 5_000_001 }),
+      );
+      prisma.guestCheckout.findUnique.mockResolvedValue(null);
+      await expect(service.createIntent('tok123', baseDto)).rejects.toThrow(
+        UnprocessableEntityException,
+      );
+      expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
+    });
 
     it('replays an existing pending intent without minting a new PaymentIntent', async () => {
       prisma.coachPackage.findUnique.mockResolvedValueOnce(makePkg());

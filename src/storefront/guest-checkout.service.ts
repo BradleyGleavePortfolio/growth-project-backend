@@ -32,8 +32,28 @@ import type { GuestCheckoutResult } from './storefront.types';
 //
 // Audit #3 P2-5 — application_fee is also clamped to the charge amount
 // so a sub-floor price can never produce a fee greater than the charge.
+//
+// Audit #4 P1-4 — the application_fee_amount we set on Stripe is what
+// stays on the platform AFTER Stripe deducts its processing fee from
+// the gross. To keep a true 2% margin we add a pass-through estimate
+// of Stripe's own fee (2.9% + 30¢ for US card, the same numbers Stripe
+// publishes in https://stripe.com/pricing) on top of the 2% slice.
+// The destination connected account therefore receives:
+//   gross  - (platform 2% + Stripe 2.9% + 30¢)
+// which matches what the coach's UI quotes.
 const PLATFORM_FEE_PERCENT = 0.02;
 const PLATFORM_FEE_MIN_CENTS = 50;
+const STRIPE_PASS_THROUGH_PERCENT = 0.029;
+const STRIPE_PASS_THROUGH_FIXED_CENTS = 30;
+
+// Audit #4 P1-5 — Stripe rejects PaymentIntent.amount < 50 cents in USD
+// before we ever set foot in the API. Validate up front for a clean 400.
+// The upper bound is a defence-in-depth cap to prevent a typo or a
+// runaway script from minting a million-dollar checkout against a coach
+// account that never asked for one. $50,000 covers every legitimate
+// one-time package we have seen; exceptions can be raised on request.
+const MIN_CHARGE_CENTS = 50;
+const MAX_CHARGE_CENTS = 5_000_000;
 
 // Audit #3 P2-6 — Phase 1 storefront accepts USD only. The platform-fee
 // floor is denominated in US cents and zero-decimal currencies (JPY,
@@ -217,6 +237,23 @@ export class GuestCheckoutService {
       });
     }
 
+    // Audit #4 P1-5 — Stripe's hard floor for a USD PaymentIntent is 50¢;
+    // anything below produces an opaque 400 from the Stripe SDK. Reject
+    // up front with a typed error. Defence-in-depth ceiling rejects
+    // runaway prices before we ever hit the network.
+    if (pkg.amount_cents < MIN_CHARGE_CENTS) {
+      throw new UnprocessableEntityException({
+        error: 'AMOUNT_BELOW_MIN',
+        message: `This package is priced below the storefront's $0.50 minimum charge.`,
+      });
+    }
+    if (pkg.amount_cents > MAX_CHARGE_CENTS) {
+      throw new UnprocessableEntityException({
+        error: 'AMOUNT_ABOVE_MAX',
+        message: `This package is priced above the storefront's maximum charge of $${MAX_CHARGE_CENTS / 100}.`,
+      });
+    }
+
     const normalisedEmail = dto.guest_email.toLowerCase().trim();
     const normalisedName = dto.guest_name.trim();
 
@@ -252,19 +289,27 @@ export class GuestCheckoutService {
         });
     }
 
-    // Platform fee. Math.floor guards a fractional cent from rounding up
-    // and exceeding the package amount; clamp to Stripe's 50¢ minimum.
-    //
-    // Audit #3 P2-5 — also clamp at amount_cents so a sub-floor price
-    // (e.g. a $0.40 trial) never produces a fee greater than the
-    // charge. Without the cap a 40¢ charge would carry a 50¢ fee,
-    // which Stripe rejects with a typed error at PI creation time.
+    // Audit #4 P1-4 — application_fee_amount = our 2% slice + a
+    // pass-through estimate of Stripe's own processing fee (2.9% + 30¢
+    // for US cards). The pass-through is an estimate because Stripe's
+    // actual fee depends on the card brand and may differ slightly for
+    // international cards, AmEx, etc.; reconciliation against
+    // BalanceTransaction.fee in the connect-webhook handler is where
+    // the books are finally squared. Math.floor on the slice avoids a
+    // fractional cent that could push application_fee_amount above the
+    // gross. The full sum is clamped at the gross so a degenerate price
+    // (e.g. $0.50, where 30¢ + 2.9% + 2% > 50¢) still satisfies
+    // Stripe's invariant application_fee_amount <= amount.
+    const platformSliceCents = Math.max(
+      Math.floor(pkg.amount_cents * PLATFORM_FEE_PERCENT),
+      PLATFORM_FEE_MIN_CENTS,
+    );
+    const stripePassThroughCents =
+      Math.floor(pkg.amount_cents * STRIPE_PASS_THROUGH_PERCENT) +
+      STRIPE_PASS_THROUGH_FIXED_CENTS;
     const platformFeeCents = Math.min(
       pkg.amount_cents,
-      Math.max(
-        Math.floor(pkg.amount_cents * PLATFORM_FEE_PERCENT),
-        PLATFORM_FEE_MIN_CENTS,
-      ),
+      platformSliceCents + stripePassThroughCents,
     );
 
     // Create the GuestCheckout sentinel row FIRST so we own the
