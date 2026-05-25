@@ -914,6 +914,11 @@ export function assertEnv(
         reason:
           'R43 / Android App Links — without an Android signing-cert SHA256 fingerprint, the .well-known/assetlinks.json document is empty and Android refuses to associate /join/* and /invite/* links with the installed app. Production must NEVER serve a stub assetlinks.json. ANDROID_SHA256_FINGERPRINT is accepted as an alias.',
       },
+      {
+        name: 'GUEST_CHECKOUT_PII_SALT',
+        reason:
+          'Audit #4 P2-2 — GuestCheckoutPiiScrubService refuses to run on prod without an explicit salt. A missing salt would fall back to the dev constant baked into the repo, producing reversible hashes against any known email list and defeating the GDPR retention scrub.',
+      },
     ];
     const missing = prodHardenedFeatureVars.filter(
       (v) => {

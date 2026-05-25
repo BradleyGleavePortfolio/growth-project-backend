@@ -73,6 +73,19 @@ export class WellKnownController {
     const bundleId =
       (process.env.IOS_BUNDLE_ID ?? '').trim() || 'com.growthproject.app';
 
+    // Audit #4 P2-1 — AASA is a production-only artifact. Apple's
+    // CDN polls the prod host; serving the doc anywhere else risks
+    // (a) leaking the production Team ID + bundle ID through a dev
+    // or staging environment that happens to ship with the same env
+    // vars set, and (b) accidentally activating Universal Links on
+    // a non-prod host. Refuse to emit on non-prod even when the env
+    // vars are set; ops who need to test the surface can flip
+    // NODE_ENV=production locally.
+    if (!isProdLike(process.env.NODE_ENV)) {
+      res.status(HttpStatus.NOT_FOUND).send();
+      return;
+    }
+
     if (!teamId) {
       if (isProdLike(process.env.NODE_ENV)) {
         // Belt-and-suspenders for P1-11 — env-validation should have

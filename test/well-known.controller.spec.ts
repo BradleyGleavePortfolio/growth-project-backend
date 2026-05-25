@@ -51,15 +51,32 @@ describe('WellKnownController', () => {
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
-    it('serves a stub AASA in development when APPLE_TEAM_ID is unset', () => {
+    it('P2-1: 404s on non-prod regardless of APPLE_TEAM_ID', () => {
+      // AASA is a production-only artifact — no Team ID, bundle ID,
+      // or stub doc may be emitted on dev/test.
       process.env.NODE_ENV = 'development';
       delete process.env.APPLE_TEAM_ID;
       const res = makeRes();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       controller.appleAppSiteAssociation(res as any);
-      const body = JSON.parse(res.send.mock.calls[0][0] as string);
-      expect(body.applinks.details).toEqual([]);
-      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.send).toHaveBeenCalled();
+    });
+
+    it('P2-1: still 404s on non-prod even when APPLE_TEAM_ID is set', () => {
+      // The whole point of P2-1: a prod Team ID accidentally exposed
+      // in the dev or test env vars must NOT leak through the AASA
+      // endpoint.
+      process.env.NODE_ENV = 'development';
+      process.env.APPLE_TEAM_ID = 'ABCDE12345';
+      process.env.IOS_BUNDLE_ID = 'com.growthproject.app';
+      const res = makeRes();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      controller.appleAppSiteAssociation(res as any);
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.send).toHaveBeenCalled();
+      // send() was called with no body — nothing leaks
+      expect(res.send.mock.calls[0][0]).toBeUndefined();
     });
 
     it('throws 500 in production when APPLE_TEAM_ID is unset (P1-11 belt-and-suspenders)', () => {

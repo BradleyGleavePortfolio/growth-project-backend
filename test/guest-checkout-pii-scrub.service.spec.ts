@@ -35,7 +35,7 @@ describe('GuestCheckoutPiiScrubService', () => {
     service = module.get(GuestCheckoutPiiScrubService);
   });
 
-  it('scopes the scan to rows past retention with no created_user and unscrubbed', async () => {
+  it('scopes the scan to rows past retention and unscrubbed (incl. converted rows per P2-2)', async () => {
     prisma.guestCheckout.findMany.mockResolvedValueOnce([]);
     await service.run();
     const where = prisma.guestCheckout.findMany.mock.calls[0][0].where;
@@ -44,7 +44,10 @@ describe('GuestCheckoutPiiScrubService', () => {
       lte: expect.any(Date),
     });
     expect(where.scrubbed_at).toBeNull();
-    expect(where.created_user_id).toBeNull();
+    // Audit #4 P2-2 — converted rows (created_user_id IS NOT NULL)
+    // MUST also be scrubbed once they pass retention; the predicate
+    // no longer filters them out.
+    expect(where.created_user_id).toBeUndefined();
   });
 
   it('hashes guest_email with sha256 + salt and redacts guest_name', async () => {
@@ -86,5 +89,32 @@ describe('GuestCheckoutPiiScrubService', () => {
       .mockResolvedValueOnce([]);
     prisma.guestCheckout.updateMany.mockRejectedValueOnce(new Error('boom'));
     await expect(service.run()).resolves.toBeUndefined();
+  });
+
+  // Audit #4 P2-2 — GUEST_CHECKOUT_PII_SALT must be required in prod.
+  // The dev fallback constant would produce a deterministic hash that
+  // is trivially reversible against a known email list, defeating the
+  // point of the scrub. Refuse to run on prod with no salt set; the
+  // service tick logs and exits cleanly without scrubbing.
+  it('P2-2: refuses to scrub on prod when GUEST_CHECKOUT_PII_SALT is unset', async () => {
+    const prevEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    // Override config to return no salt.
+    const noSaltModule: TestingModule = await Test.createTestingModule({
+      providers: [
+        GuestCheckoutPiiScrubService,
+        { provide: PrismaService, useValue: prisma },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockReturnValue(undefined) },
+        },
+      ],
+    }).compile();
+    const noSaltService = noSaltModule.get(GuestCheckoutPiiScrubService);
+    // run() catches the error internally, logs it, and resolves.
+    await expect(noSaltService.run()).resolves.toBeUndefined();
+    // No findMany call was made because resolveSalt() threw first.
+    expect(prisma.guestCheckout.findMany).not.toHaveBeenCalled();
+    process.env.NODE_ENV = prevEnv;
   });
 });

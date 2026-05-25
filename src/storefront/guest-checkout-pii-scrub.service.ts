@@ -65,11 +65,17 @@ export class GuestCheckoutPiiScrubService {
   // Exposed for tests + ad-hoc operator invocation.
   async scrubBatch(salt: string): Promise<number> {
     const now = new Date();
+    // Audit #4 P2-2 — converted rows (created_user_id IS NOT NULL)
+    // must also be scrubbed once their retention window expires. The
+    // converted User keeps the real email; the GuestCheckout audit
+    // trail only needs the salted hash for reconciliation. Previously
+    // the predicate excluded converted rows, leaving raw guest_email
+    // on the table indefinitely once a guest signed up — the exact
+    // case GDPR retention rules target.
     const rows = await this.prisma.guestCheckout.findMany({
       where: {
         data_retention_at: { not: null, lte: now },
         scrubbed_at: null,
-        created_user_id: null,
       },
       orderBy: [{ data_retention_at: 'asc' }],
       take: SCRUB_BATCH_SIZE,
@@ -99,12 +105,23 @@ export class GuestCheckoutPiiScrubService {
     return rows.length;
   }
 
-  // Salt source: GUEST_CHECKOUT_PII_SALT env var. Falls back to a
-  // build-time constant in dev/test so scrubs are stable across boots.
+  // Salt source: GUEST_CHECKOUT_PII_SALT env var. In production the
+  // env var is REQUIRED — a missing salt would degrade the scrub to
+  // a deterministic, attacker-rainbow-tableable hash of the email,
+  // defeating the point of the salt. Audit #4 P2-2: refuse to run on
+  // prod with a missing salt; fall back to a build-time constant in
+  // dev/test so the scrub remains exercisable in CI without leaking
+  // a real salt into the repo.
   // Never log the salt value.
   private resolveSalt(): string {
     const fromEnv = this.config.get<string>('GUEST_CHECKOUT_PII_SALT');
     if (fromEnv && fromEnv.trim().length > 0) return fromEnv.trim();
+    const nodeEnv = (process.env.NODE_ENV ?? '').toLowerCase();
+    if (nodeEnv === 'production' || nodeEnv === 'staging') {
+      throw new Error(
+        'GUEST_CHECKOUT_PII_SALT is required in production. Refusing to run the scrub with a dev fallback.',
+      );
+    }
     return 'tgp-storefront-dev-salt-v1';
   }
 
