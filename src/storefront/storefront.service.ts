@@ -22,6 +22,38 @@ const STOREFRONT_BASE_URL_DEV_FALLBACK = 'https://joingrowthproject.com';
 // service, public controller) can refer to a single canonical regex.
 export { SHARE_TOKEN_REGEX };
 
+// Audit #3 P1-8 — connected-account readiness gate. The previous build
+// only checked `charges_enabled`, but a Stripe Connect account can be
+// charges-enabled with `disabled_reason` set or `payouts_enabled` /
+// `details_submitted` false, meaning Stripe is collecting fees we
+// cannot pay out and may already be deferring the coach's payouts.
+// Phase 1 storefront purchases must only be accepted when the coach can
+// actually be paid: every readiness axis must be true.
+//
+// We expose the helper as a free function so the public package GET and
+// the checkout POST both gate on the exact same predicate. The public
+// surface intentionally returns a generic ACCOUNT_NOT_READY / 404 — no
+// enumeration of which axis failed leaks through to the buyer.
+export interface ReadinessAccount {
+  charges_enabled: boolean;
+  payouts_enabled: boolean;
+  details_submitted: boolean;
+  disabled_reason: string | null;
+}
+
+export function isConnectAccountReadyForCheckout(
+  account: ReadinessAccount | null | undefined,
+): boolean {
+  if (!account) return false;
+  if (!account.charges_enabled) return false;
+  if (!account.payouts_enabled) return false;
+  if (!account.details_submitted) return false;
+  if (account.disabled_reason !== null && account.disabled_reason !== undefined) {
+    return false;
+  }
+  return true;
+}
+
 @Injectable()
 export class StorefrontService {
   private readonly logger = new Logger(StorefrontService.name);
@@ -76,9 +108,15 @@ export class StorefrontService {
 
     const coach = pkg.coach;
     const connectAccount = coach.connect_account;
-    if (!connectAccount || !connectAccount.charges_enabled) {
-      // The coach has a package but cannot accept charges yet. 404 again —
-      // same surface as a missing token, no enumeration signal.
+    // Audit #3 P1-8 — gate on full readiness, not just charges_enabled.
+    // 404 is the public surface; the exact failing axis is logged
+    // server-side so ops can debug without an enumeration leak.
+    if (!isConnectAccountReadyForCheckout(connectAccount)) {
+      if (connectAccount) {
+        this.logger.warn(
+          `Public package gate: connect account not ready (charges=${connectAccount.charges_enabled} payouts=${connectAccount.payouts_enabled} details=${connectAccount.details_submitted} disabled_reason=${connectAccount.disabled_reason ?? 'null'})`,
+        );
+      }
       throw new NotFoundException({
         error: 'PACKAGE_UNAVAILABLE',
         message: 'This coach is not currently accepting new clients.',
@@ -128,9 +166,10 @@ export class StorefrontService {
         avatar_url: coach.profile?.avatar_url ?? null,
         // "verified" surfaces only when the coach is fully Connect-onboarded
         // — that's the strongest "real coach" signal we have at the public
-        // storefront layer (KYC + payouts proven).
-        verified:
-          connectAccount.charges_enabled && connectAccount.details_submitted,
+        // storefront layer (KYC + payouts proven). Mirrors the
+        // isConnectAccountReadyForCheckout gate so the badge can't lie
+        // about a coach who passed the gate.
+        verified: isConnectAccountReadyForCheckout(connectAccount),
       },
       stripe_publishable_key: publishableKey,
       share_link_enabled: pkg.share_link_enabled,

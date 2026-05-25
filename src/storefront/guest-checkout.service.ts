@@ -22,6 +22,7 @@ import {
   SupabaseExistingUserNotFoundError,
   SupabaseTimeoutError,
 } from './errors/guest-conversion.error';
+import { isConnectAccountReadyForCheckout } from './storefront.service';
 import type { GuestCheckoutDto } from './storefront.dto';
 import type { GuestCheckoutResult } from './storefront.types';
 
@@ -155,7 +156,15 @@ export class GuestCheckoutService {
       });
     }
     const connectAccount = pkg.coach.connect_account;
-    if (!connectAccount || !connectAccount.charges_enabled) {
+    // Audit #3 P1-8 — gate on full readiness, not just charges_enabled.
+    // Reuse the storefront predicate so the GET and POST surfaces can't
+    // disagree about who can be sold.
+    if (!connectAccount || !isConnectAccountReadyForCheckout(connectAccount)) {
+      if (connectAccount) {
+        this.logger.warn(
+          `Checkout gate: connect account not ready (charges=${connectAccount.charges_enabled} payouts=${connectAccount.payouts_enabled} details=${connectAccount.details_submitted} disabled_reason=${connectAccount.disabled_reason ?? 'null'})`,
+        );
+      }
       throw new NotFoundException({
         error: 'PACKAGE_UNAVAILABLE',
         message: 'This coach is not currently accepting new clients.',

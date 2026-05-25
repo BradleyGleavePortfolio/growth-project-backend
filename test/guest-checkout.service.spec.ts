@@ -39,6 +39,9 @@ function makePkg(overrides: Record<string, unknown> = {}) {
       connect_account: {
         stripe_account_id: 'acct_x',
         charges_enabled: true,
+        payouts_enabled: true,
+        details_submitted: true,
+        disabled_reason: null,
       },
     },
     ...overrides,

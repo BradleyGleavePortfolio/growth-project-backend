@@ -33,7 +33,9 @@ function makePkg(overrides: Record<string, unknown> = {}) {
       connect_account: {
         stripe_account_id: 'acct_test',
         charges_enabled: true,
+        payouts_enabled: true,
         details_submitted: true,
+        disabled_reason: null,
       },
     },
     ...overrides,
@@ -157,7 +159,33 @@ describe('StorefrontService', () => {
           connect_account: {
             stripe_account_id: 'acct_x',
             charges_enabled: false,
+            payouts_enabled: false,
             details_submitted: false,
+            disabled_reason: null,
+          },
+        },
+      }),
+    );
+    await expect(
+      service.getPublicPackageByToken('tok1234567890abcDEFGH'),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  // Audit #3 P1-8 — readiness gate must fail on each axis individually,
+  // not just on charges_enabled. Each branch surfaces the same generic
+  // 404 so the public can't enumerate which axis blocked the coach.
+  it.each([
+    ['payouts_enabled false', { payouts_enabled: false }],
+    ['details_submitted false', { details_submitted: false }],
+    ['disabled_reason set', { disabled_reason: 'rejected.terms_of_service' }],
+  ])('404s when %s', async (_label, partial) => {
+    findUnique.mockResolvedValueOnce(
+      makePkg({
+        coach: {
+          ...makePkg().coach,
+          connect_account: {
+            ...makePkg().coach.connect_account,
+            ...partial,
           },
         },
       }),
