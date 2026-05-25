@@ -387,6 +387,12 @@ model User {
   churn_interventions_as_coach  ChurnIntervention[] @relation("ChurnInterventionCoach")
   churn_interventions_as_client ChurnIntervention[] @relation("ChurnInterventionClient")
 
+  // R43 — Coach Brief. One brief row per (coach, brief_date); one log row
+  // per (coach, log_date); at most one preferences row per coach.
+  coach_briefs            CoachBrief[]           @relation("CoachBriefCoach")
+  coach_daily_logs        CoachDailyLog[]        @relation("CoachDailyLogCoach")
+  coach_brief_preferences CoachBriefPreferences? @relation("CoachBriefPrefsCoach")
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -1912,10 +1918,14 @@ model ClientWorkoutAssignment {
   completion_payload   Json?
   started_at           DateTime?
   completion_idempotency_key String?
+  // R43 Coach Brief — coach has reviewed/approved a completed submission.
+  // null while waiting on coach approval; set when coach taps approve.
+  approved_by_coach_at DateTime?
 
   @@index([client_id, scheduled_for])
   @@index([workout_plan_id, scheduled_for])
   @@index([assigned_by_coach_id])
+  @@index([assigned_by_coach_id, approved_by_coach_at])
 }
 
 // Generic idempotency ledger for workout-builder coach-side mutations.
@@ -3629,4 +3639,59 @@ model ChurnIntervention {
   @@index([coach_id, status, created_at])
   @@index([client_id, created_at])
   @@index([coach_id, client_id])
+}
+
+// R43 — CoachBrief. One row per (coach_id, brief_date). Generation is
+// idempotent via the unique constraint. brief_date is a YYYY-MM-DD string
+// in the coach's local timezone (bucketDateLocal). brief_mode drives both
+// which Claude prompt was used and which UI sections the mobile renders.
+model CoachBrief {
+  id            String    @id @default(uuid())
+  coach_id      String
+  coach         User      @relation("CoachBriefCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  brief_date    String
+  status        String    @default("pending")
+  generated_at  DateTime?
+  narrative     String?
+  brief_context Json?
+  action_items  Json?
+  generated_by  String?
+  brief_mode    String?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@unique([coach_id, brief_date], name: "CoachBrief_coach_date_key")
+  @@index([coach_id, brief_date])
+  @@index([coach_id, status])
+}
+
+// R43 — CoachDailyLog. One free-text log per (coach_id, log_date). The
+// coach writes this themselves; content max 4000 chars enforced at DTO.
+model CoachDailyLog {
+  id         String   @id @default(uuid())
+  coach_id   String
+  coach      User     @relation("CoachDailyLogCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  log_date   String
+  content    String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([coach_id, log_date], name: "CoachDailyLog_coach_log_date_key")
+  @@index([coach_id, log_date])
+}
+
+// R43 — CoachBriefPreferences. One row per coach. notification_time is
+// HH:MM in 24h format, timezone is an IANA tz string. enabled=false
+// removes the coach from the daily cron dispatch.
+model CoachBriefPreferences {
+  id                String   @id @default(uuid())
+  coach_id          String   @unique
+  coach             User     @relation("CoachBriefPrefsCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  notification_time String   @default("07:00")
+  timezone          String   @default("America/Los_Angeles")
+  enabled           Boolean  @default(true)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  @@index([enabled, notification_time])
 }
