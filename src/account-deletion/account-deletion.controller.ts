@@ -75,6 +75,14 @@ export class AccountDeletionController {
       },
     },
   })
+  // C5 PR-A audit: GDPR right-to-erasure entrypoint. Any logged-in user must be
+  // able to initiate deletion of their own account, regardless of role. Scoped
+  // by req.user.id below — a user cannot start another user's deletion.
+  // P0 (recorded in STOP_AND_ASK_C5.md): RecentAuthGuard is NOT attached here.
+  // Per brief, role-gating was applied; the RecentAuthGuard gap is flagged to
+  // parent for a follow-up PR (out of C5 scope; NOT silently fixed here).
+  @Roles('student', 'coach', 'owner')
+  @UseGuards(RolesGuard)
   @Post('me/delete-account')
   @HttpCode(200)
   requestDeletion(@Request() req: AuditableRequest & AuthedRequest) {
@@ -98,6 +106,16 @@ export class AccountDeletionController {
     },
   })
   @ApiResponse({ status: 401, description: 'Invalid or expired token.' })
+  // C5 PR-A audit: token-bound confirmation of the deletion request. The
+  // one-time email token is the authorising secret; the JWT identity merely
+  // gates the endpoint surface so anonymous traffic is rejected before the
+  // token check runs. Any logged-in user (student/coach/owner) may confirm
+  // their own deletion.
+  // P0 (recorded in STOP_AND_ASK_C5.md): RecentAuthGuard is NOT attached here.
+  // The email-token is an out-of-band re-auth factor in spirit, but does not
+  // satisfy the brief's literal requirement. Flagged to parent.
+  @Roles('student', 'coach', 'owner')
+  @UseGuards(RolesGuard)
   @Get('me/delete-account/confirm')
   @AllowDeletionScheduled()
   confirmDeletion(@Query('token') token: string) {
@@ -111,6 +129,10 @@ export class AccountDeletionController {
   })
   @ApiResponse({ status: 200, description: 'Deletion cancelled.' })
   @ApiResponse({ status: 400, description: 'No pending deletion or grace period expired.' })
+  // C5 PR-A audit: reversal of a pending deletion. Scoped by req.user.id —
+  // a user can only cancel their own pending deletion. Any logged-in role.
+  @Roles('student', 'coach', 'owner')
+  @UseGuards(RolesGuard)
   @Post('me/delete-account/cancel')
   @HttpCode(200)
   @AllowDeletionScheduled()
@@ -134,6 +156,10 @@ export class AccountDeletionController {
       },
     },
   })
+  // C5 PR-A audit: read-only status of the caller's own deletion lifecycle.
+  // Scoped by req.user.id. Any logged-in role.
+  @Roles('student', 'coach', 'owner')
+  @UseGuards(RolesGuard)
   @Get('me/delete-account/status')
   @AllowDeletionScheduled()
   getStatus(@Request() req: AuthedRequest) {
