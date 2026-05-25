@@ -19,6 +19,17 @@ jobs:
             exit 1
           fi
 
+      # R45 — the banned hostname t-g-p dot a-p-p must never appear in source.
+      # Approved storefront domain is joingrowthproject.com; mobile deep-link
+      # is app.trygrowthproject.com. Historical audit artifacts live outside
+      # the repo so the grep below scans only tracked sources.
+      - name: R45 grep gate (no banned hostname in source)
+        run: |
+          if git grep -nI 'tgp\.app' -- ':(exclude)package-lock.json' ':(exclude)node_modules'; then
+            echo "ERROR: R45 violation — the banned hostname appears in source."
+            exit 1
+          fi
+
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
