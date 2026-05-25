@@ -209,3 +209,37 @@ CREATE POLICY "coach_update_own_brief_prefs"
     app.current_user_id() IS NOT NULL
     AND "coach_id" = app.current_user_id()
   );
+
+-- ROLLBACK:
+-- Reverse dependency order — policies, then RLS, then FKs, then indexes,
+-- then tables, finishing with the ClientWorkoutAssignment column.
+-- DROP POLICY IF EXISTS "coach_update_own_brief_prefs"          ON "CoachBriefPreferences";
+-- DROP POLICY IF EXISTS "coach_insert_own_brief_prefs"          ON "CoachBriefPreferences";
+-- DROP POLICY IF EXISTS "coach_select_own_brief_prefs"          ON "CoachBriefPreferences";
+-- DROP POLICY IF EXISTS "coach_brief_prefs_service_role_bypass" ON "CoachBriefPreferences";
+-- ALTER TABLE "CoachBriefPreferences" DISABLE ROW LEVEL SECURITY;
+--
+-- DROP POLICY IF EXISTS "coach_update_own_daily_log"            ON "CoachDailyLog";
+-- DROP POLICY IF EXISTS "coach_insert_own_daily_log"            ON "CoachDailyLog";
+-- DROP POLICY IF EXISTS "coach_select_own_daily_log"            ON "CoachDailyLog";
+-- DROP POLICY IF EXISTS "coach_daily_log_service_role_bypass"   ON "CoachDailyLog";
+-- ALTER TABLE "CoachDailyLog" DISABLE ROW LEVEL SECURITY;
+--
+-- DROP POLICY IF EXISTS "coach_select_own_brief"                ON "CoachBrief";
+-- DROP POLICY IF EXISTS "coach_brief_service_role_bypass"       ON "CoachBrief";
+-- ALTER TABLE "CoachBrief" DISABLE ROW LEVEL SECURITY;
+--
+-- DROP INDEX IF EXISTS "CoachBriefPreferences_enabled_notification_time_idx";
+-- DROP INDEX IF EXISTS "CoachBriefPreferences_coach_id_key";
+-- DROP INDEX IF EXISTS "CoachDailyLog_coach_id_log_date_idx";
+-- DROP INDEX IF EXISTS "CoachDailyLog_coach_log_date_key";
+-- DROP INDEX IF EXISTS "CoachBrief_coach_id_status_idx";
+-- DROP INDEX IF EXISTS "CoachBrief_coach_id_brief_date_idx";
+-- DROP INDEX IF EXISTS "CoachBrief_coach_date_key";
+--
+-- DROP TABLE IF EXISTS "CoachBriefPreferences" CASCADE;
+-- DROP TABLE IF EXISTS "CoachDailyLog"         CASCADE;
+-- DROP TABLE IF EXISTS "CoachBrief"            CASCADE;
+--
+-- DROP INDEX IF EXISTS "ClientWorkoutAssignment_assigned_by_coach_id_approved_by_coa_idx";
+-- ALTER TABLE "ClientWorkoutAssignment" DROP COLUMN IF EXISTS "approved_by_coach_at";

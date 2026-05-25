@@ -7,3 +7,7 @@ ALTER TABLE "CoachBriefPreferences"
 
 ALTER TABLE "CoachBriefPreferences"
   ADD COLUMN IF NOT EXISTS "last_push_date" TEXT;
+
+-- ROLLBACK:
+-- ALTER TABLE "CoachBriefPreferences" DROP COLUMN IF EXISTS "last_push_date";
+-- ALTER TABLE "CoachBriefPreferences" DROP COLUMN IF EXISTS "last_push_attempt_date";

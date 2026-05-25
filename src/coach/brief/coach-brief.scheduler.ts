@@ -29,6 +29,17 @@ const CRON_JOB_NAME = 'coach-brief-dispatch';
 const DEFAULT_CRON = '* * * * *';
 const PUSH_TIMEOUT_MS = 10_000;
 
+// R44: typed internal error for the push-timeout reject path. Carrying a
+// `code` lets observability distinguish "Expo round-trip slow" from a
+// real downstream Expo failure without parsing message text.
+class CoachBriefPushTimeoutError extends Error {
+  readonly code = 'COACH_BRIEF_PUSH_TIMEOUT' as const;
+  constructor(message = 'push timeout') {
+    super(message);
+    this.name = 'CoachBriefPushTimeoutError';
+  }
+}
+
 function errorMessageOf(err: unknown): string {
   if (err instanceof Error) return err.message;
   if (typeof err === 'string') return err;
@@ -178,25 +189,47 @@ export class CoachBriefScheduler implements OnModuleInit {
 
       const briefDate = bucketDateLocal(now, effectiveTimezone);
 
-      // Atomic pre-send attempt claim. On a multi-instance deploy every
-      // Fly.io machine runs this cron; without a claim each would call
-      // pushToUser and the coach would receive duplicate notifications.
+      // P1-2: don't claim the attempt slot until we know there's
+      // actually something to push. Generation can be in-flight (status
+      // 'generating', summary null) on this minute — claiming the
+      // attempt here would exhaust the slot for the whole day even
+      // though we never call pushToUser. Generate (or read the cached
+      // row) first; only proceed when a non-null summary exists.
+      const brief = await this.briefService.getOrGenerateTodaysBrief(
+        prefs.coach_id,
+      );
+      if (!brief.summary) {
+        this.logger.debug(
+          `coach brief push deferred for coach=${prefs.coach_id} — summary not ready yet`,
+        );
+        return;
+      }
+
+      // Idempotent pre-send claim against the server-only push ledger
+      // (P1-9). On a multi-instance deploy every Fly.io machine runs
+      // this cron; without a claim each would call pushToUser and the
+      // coach would receive duplicate notifications. upsert + then
       // updateMany WHERE last_push_attempt_date != today flips exactly
       // one row and returns count=1 to the winner; losers get count=0
       // and exit. last_push_date is set separately AFTER push success
-      // so that we can distinguish "attempted today" from "successfully
-      // sent today" for observability.
-      const attemptClaim =
-        await this.prisma.coachBriefPreferences.updateMany({
-          where: {
-            coach_id: prefs.coach_id,
-            OR: [
-              { last_push_attempt_date: null },
-              { last_push_attempt_date: { not: briefDate } },
-            ],
-          },
-          data: { last_push_attempt_date: briefDate },
-        });
+      // so observability can tell "attempted today" from "delivered
+      // today". The ledger is server-only — coaches have no RLS write
+      // policy on it, so they can't poison the dedup state.
+      await this.prisma.coachBriefPushLedger.upsert({
+        where: { coach_id: prefs.coach_id },
+        create: { coach_id: prefs.coach_id },
+        update: {},
+      });
+      const attemptClaim = await this.prisma.coachBriefPushLedger.updateMany({
+        where: {
+          coach_id: prefs.coach_id,
+          OR: [
+            { last_push_attempt_date: null },
+            { last_push_attempt_date: { not: briefDate } },
+          ],
+        },
+        data: { last_push_attempt_date: briefDate },
+      });
       if (attemptClaim.count === 0) {
         this.logger.debug(
           `coach brief push already attempted for coach=${prefs.coach_id} date=${briefDate}`,
@@ -204,22 +237,20 @@ export class CoachBriefScheduler implements OnModuleInit {
         return;
       }
 
-      const brief = await this.briefService.getOrGenerateTodaysBrief(
-        prefs.coach_id,
-      );
-      if (!brief.summary) return;
-
       const notifBody = brief.summary.narrative.slice(0, 160);
 
-      // External call timeout — a stalled Expo round-trip must not
-      // hold the scheduler indefinitely. clearTimeout in finally so
-      // Jest doesn't report an open handle when push resolves first.
+      // P2-6: AbortController feeds the same signal into pushToUser AND
+      // the timeout, so when the 10s deadline trips we actually cancel
+      // the in-flight Expo round-trip rather than letting it complete
+      // silently after the scheduler has moved on.
+      const abortController = new AbortController();
       let timer: NodeJS.Timeout | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error('push timeout')),
-          PUSH_TIMEOUT_MS,
-        );
+        timer = setTimeout(() => {
+          const err = new CoachBriefPushTimeoutError();
+          abortController.abort(err);
+          reject(err);
+        }, PUSH_TIMEOUT_MS);
       });
 
       let pushSucceeded = false;
@@ -230,6 +261,7 @@ export class CoachBriefScheduler implements OnModuleInit {
             'Your daily brief is ready',
             notifBody,
             { deep_link: 'tgp://coach/brief/today', brief_date: briefDate },
+            abortController.signal,
           ),
           timeoutPromise,
         ]);
@@ -247,7 +279,7 @@ export class CoachBriefScheduler implements OnModuleInit {
       // Confirmed-success marker. last_push_date is the observability
       // sentinel for "this coach received their brief today"; the
       // attempt claim above already guarantees we don't double-send.
-      await this.prisma.coachBriefPreferences.updateMany({
+      await this.prisma.coachBriefPushLedger.updateMany({
         where: { coach_id: prefs.coach_id },
         data: { last_push_date: briefDate },
       });

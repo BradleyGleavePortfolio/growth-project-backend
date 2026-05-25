@@ -12,9 +12,10 @@ export type BriefStatus = 'pending' | 'generated' | 'failed';
 export type BriefGeneratedBy = 'ai' | 'fallback';
 
 // Base aggregated context for solo + sub-coach briefs. Numbers only; no
-// client PII. Monetary values are in cents (integer).
+// client PII. Monetary values are in cents (integer). Head-coach mode
+// uses BriefContextHeadCoach instead (business-only — see P1-3).
 export interface BriefContext {
-  brief_mode: BriefMode;
+  brief_mode: 'solo_coach' | 'sub_coach';
   date: string;
 
   checked_in_today: number;
@@ -43,20 +44,32 @@ export interface SubCoachHighlight {
   active_clients: number;
 }
 
-// Head-coach extension. Base BriefContext fields stay scoped to the head
-// coach's OWN direct clients; the extra fields aggregate across the team.
-export interface BriefContextHeadCoach extends BriefContext {
+// Head-coach context. P1-3 / CPO ruling: head-coach mode is BUSINESS
+// METRICS ONLY — never client-level data. Sub-coaches handle the
+// individual client work; the head coach gets a COO view of the team.
+// We intentionally do NOT extend BriefContext because that interface
+// carries solo client-level counts (workouts_pending_approval,
+// unread_messages, etc.). A head coach should never see a client name
+// or client_id in their brief; that's what the sub-coach brief is for.
+export interface BriefContextHeadCoach {
   brief_mode: 'head_coach';
+  date: string;
+  coach_name: string;
+  coach_first_name: string;
 
   team_size: number;
   team_clients_total: number;
+  active_clients: number;
+  new_clients_last_24h: number;
 
   total_revenue_today_cents: number;
   team_revenue_30d_cents: number;
   mrr_projected_cents: number;
+  paid_today_count: number;
+
+  dunning_in_progress: number;
   dunning_amount_cents: number;
 
-  new_clients_last_24h: number;
   sub_coach_highlights: SubCoachHighlight[];
 }
 
@@ -65,14 +78,36 @@ export type ActionItemType =
   | 'checkin_missing'
   | 'payment_due'
   | 'weight_flag'
-  | 'message_unread';
+  | 'message_unread'
+  // P1-3 head-coach-only business action types. They never carry a
+  // client_id — see HeadCoachActionItem.
+  | 'team_revenue_review'
+  | 'dunning_queue'
+  | 'team_performance'
+  | 'sub_coach_operations';
 
 // Deterministic — NOT AI-generated. Built from aggregated rows then
-// sorted ascending by priority.
+// sorted ascending by priority. client_id / client_name are required
+// for solo + sub-coach modes; head-coach business actions use
+// HeadCoachActionItem instead and never carry client identifiers.
 export interface ActionItem {
   type: ActionItemType;
   client_id: string;
   client_name: string;
+  detail: string;
+  priority: 1 | 2 | 3;
+  deep_link: string;
+}
+
+// P1-3: head-coach mode emits business-only action items. No client_id,
+// no client_name. The mobile renders these as KPI tiles rather than
+// individual client rows.
+export interface HeadCoachActionItem {
+  type:
+    | 'team_revenue_review'
+    | 'dunning_queue'
+    | 'team_performance'
+    | 'sub_coach_operations';
   detail: string;
   priority: 1 | 2 | 3;
   deep_link: string;
@@ -83,7 +118,10 @@ export interface BriefSummary {
   brief_mode: BriefMode;
   narrative: string;
   brief_context: BriefContext | BriefContextHeadCoach;
-  action_items: ActionItem[];
+  // Solo + sub-coach briefs use ActionItem[]; head-coach briefs use
+  // HeadCoachActionItem[] (no client identifiers — see P1-3 / CPO
+  // ruling). Mobile branches on brief_mode to render the correct shape.
+  action_items: ActionItem[] | HeadCoachActionItem[];
   generated_by: BriefGeneratedBy;
 }
 

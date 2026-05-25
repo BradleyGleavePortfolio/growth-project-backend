@@ -36,6 +36,7 @@ import {
   BriefMode,
   BriefSummary,
   CoachBriefResponse,
+  HeadCoachActionItem,
   SubCoachHighlight,
 } from './coach-brief.types';
 
@@ -48,6 +49,11 @@ export const BRIEF_MAX_TOKENS = 300;
 export const BRIEF_TEMPERATURE = 0.6;
 export const BRIEF_ANTHROPIC_TIMEOUT_MS = 15_000;
 export const BRIEF_MAX_NARRATIVE_CHARS = 600;
+// P1-1: how long a status='generating' row may sit before another caller
+// is allowed to steal the lease. Tuned to comfortably exceed the
+// Anthropic timeout above so a healthy generation finishes before the
+// next caller would attempt a takeover.
+export const BRIEF_GENERATION_LEASE_MS = 5 * 60 * 1000;
 
 // WeightLog stores `weight_lbs`; 2.0 kg ≈ 4.4 lbs is the flag threshold.
 const WEIGHT_FLAG_THRESHOLD_LBS = 4.4;
@@ -91,6 +97,26 @@ function errorMessageOf(err: unknown): string {
   }
 }
 
+// R44: typed internal errors for Coach Brief — replaces raw `new Error()`
+// in the service. These never propagate to coaches (callClaude catches
+// and falls back to the deterministic narrative), but a `code` field
+// keeps internal logs greppable.
+class CoachBriefClaudeError extends Error {
+  readonly code:
+    | 'COACH_BRIEF_CLAUDE_EMPTY'
+    | 'COACH_BRIEF_CLAUDE_CONTRACT_FAILED';
+  constructor(
+    code:
+      | 'COACH_BRIEF_CLAUDE_EMPTY'
+      | 'COACH_BRIEF_CLAUDE_CONTRACT_FAILED',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'CoachBriefClaudeError';
+    this.code = code;
+  }
+}
+
 // ─── Pure prompt builders (exported for tests) ──────────────────────────
 
 export function buildSoloCoachSystemPrompt(): string {
@@ -129,6 +155,13 @@ Voice and tone rules — these are mandatory:
 export function buildBriefPrompt(
   ctx: BriefContext | BriefContextHeadCoach,
 ): string {
+  if (ctx.brief_mode === 'head_coach') {
+    return buildHeadCoachPrompt(ctx);
+  }
+  return buildSoloOrSubCoachPrompt(ctx);
+}
+
+function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
   const actionCount =
     ctx.workouts_pending_approval +
     ctx.weight_logs_flagged +
@@ -163,71 +196,268 @@ export function buildBriefPrompt(
     ctx.dunning_in_progress > 0
       ? `→ Say: "We're working on getting the ${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress > 1 ? 's' : ''} sorted — you don't need to do anything."`
       : `→ No dunning in progress.`,
+    ``,
+    handoffHint,
   ];
 
-  if (ctx.brief_mode === 'head_coach') {
-    const hc = ctx as BriefContextHeadCoach;
-    parts.push(
-      ``,
-      `--- TEAM BUSINESS METRICS (entire team, all sub-coaches + own clients) ---`,
-      `Team size: ${hc.team_size} active sub-coaches`,
-      `Total active clients across team: ${hc.team_clients_total}`,
-      `Team revenue today: $${(hc.total_revenue_today_cents / 100).toFixed(0)}`,
-      `Team revenue last 30 days: $${(hc.team_revenue_30d_cents / 100).toFixed(0)}`,
-      `Projected MRR (active subscriptions): $${(hc.mrr_projected_cents / 100).toFixed(0)}`,
-      `Failed payments TGP is retrying (team-wide dollar value): $${(hc.dunning_amount_cents / 100).toFixed(0)}`,
-      `New clients in last 24h (team-wide): ${hc.new_clients_last_24h}`,
-      ``,
-      `Sub-coach highlights (top 3 by active clients):`,
-      ...hc.sub_coach_highlights.map(
-        (sc) =>
-          `  - ${sc.coach_name}: ${sc.active_clients} clients, +${sc.new_clients_24h} new in 24h`,
-      ),
-      ``,
-      `→ Lead with team revenue and TGP dunning handling. Mention sub-coach highlights if notable. This coach wants a COO-level view.`,
-    );
-  }
-
-  parts.push(``, handoffHint);
   return parts.join('\n');
 }
 
+// P1-3: head-coach prompt is BUSINESS-ONLY. No client names, no client_id,
+// no per-client workout / message / weight counts. Only revenue, MRR,
+// dunning value, team headcount, and sub-coach highlights.
+function buildHeadCoachPrompt(ctx: BriefContextHeadCoach): string {
+  const businessActionCount =
+    (ctx.dunning_in_progress > 0 ? 1 : 0) +
+    (ctx.total_revenue_today_cents > 0 ? 1 : 0) +
+    (ctx.sub_coach_highlights.length > 0 ? 1 : 0);
+  const handoffHint =
+    businessActionCount === 0
+      ? 'No team-level action items today.'
+      : businessActionCount === 1
+        ? 'End with a handoff to 1 team action item.'
+        : `End with a handoff to ${businessActionCount} team action items.`;
+
+  const parts: string[] = [
+    `Coach first name: ${ctx.coach_first_name}`,
+    `Coach full name: ${ctx.coach_name}`,
+    `Date: ${ctx.date}`,
+    ``,
+    `--- TEAM BUSINESS METRICS (entire team) ---`,
+    `Sub-coaches on team: ${ctx.team_size}`,
+    `Total active clients across team: ${ctx.team_clients_total}`,
+    `New clients added in last 24h (team-wide): ${ctx.new_clients_last_24h}`,
+    `Team revenue today: $${(ctx.total_revenue_today_cents / 100).toFixed(0)} from ${ctx.paid_today_count} payment(s)`,
+    `Team revenue last 30 days: $${(ctx.team_revenue_30d_cents / 100).toFixed(0)}`,
+    `Projected MRR (active recurring subscriptions): $${(ctx.mrr_projected_cents / 100).toFixed(0)}`,
+    `Failed payments TGP is retrying — ${ctx.dunning_in_progress} client(s), $${(ctx.dunning_amount_cents / 100).toFixed(0)}`,
+    ctx.dunning_in_progress > 0
+      ? `→ Say: "We're chasing down ${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress > 1 ? 's' : ''} — you don't need to do anything on that."`
+      : `→ No dunning in progress this morning.`,
+    ``,
+    `Sub-coach highlights (top 3 by active clients):`,
+    ...(ctx.sub_coach_highlights.length === 0
+      ? ['  (none)']
+      : ctx.sub_coach_highlights.map(
+          (sc) =>
+            `  - ${sc.coach_name}: ${sc.active_clients} active client(s), +${sc.new_clients_24h} new in 24h`,
+        )),
+    ``,
+    `→ This coach runs a team. Lead with team revenue and TGP dunning handling. Mention sub-coach highlights if notable. NEVER mention individual clients by name; that's the sub-coach brief, not the head coach's.`,
+    handoffHint,
+  ];
+
+  return parts.join('\n');
+}
+
+// P1-6: deterministic fallback narrative. CPO ruling — TGP voice (first
+// person plural, "we / we're / we've"), coach first name, 3–5 sentences,
+// max 600 chars. Used when Claude is unavailable OR when Claude output
+// fails the contract validation in callClaude (P1-7).
 export function buildFallbackNarrative(
   ctx: BriefContext | BriefContextHeadCoach,
 ): string {
+  const sentences: string[] =
+    ctx.brief_mode === 'head_coach'
+      ? buildHeadCoachFallbackSentences(ctx)
+      : buildSoloOrSubCoachFallbackSentences(ctx);
+
+  // Trim to 5 and pad to 3 just in case — the contract requires 3–5.
+  while (sentences.length > 5) sentences.pop();
+  while (sentences.length < 3) {
+    sentences.push(`We're keeping an eye on everything else for you.`);
+  }
+
+  let narrative = sentences.join(' ');
+  if (narrative.length > BRIEF_MAX_NARRATIVE_CHARS) {
+    narrative = narrative.slice(0, BRIEF_MAX_NARRATIVE_CHARS).trimEnd();
+    // Ensure final sentence has terminal punctuation after the slice.
+    if (!/[.!?]$/.test(narrative)) narrative += '.';
+  }
+  return narrative;
+}
+
+function buildSoloOrSubCoachFallbackSentences(ctx: BriefContext): string[] {
   const total =
     ctx.workouts_pending_approval +
     ctx.missed_checkin +
     ctx.weight_logs_flagged +
     ctx.unread_messages;
 
+  const sentences: string[] = [];
+  // Sentence 1 — opening with coach first name, TGP "we" voice.
+  sentences.push(
+    `${ctx.coach_first_name}, we ran your roster this morning and pulled together what matters.`,
+  );
+
+  // Sentence 2 — check-in / activity snapshot.
+  if (ctx.checked_in_today > 0) {
+    sentences.push(
+      `${ctx.checked_in_today} of ${ctx.roster_size} client${ctx.roster_size === 1 ? '' : 's'} ${ctx.checked_in_today === 1 ? 'has' : 'have'} already checked in today.`,
+    );
+  } else {
+    sentences.push(
+      `No one has logged a check-in yet this morning across your ${ctx.roster_size} active client${ctx.roster_size === 1 ? '' : 's'}.`,
+    );
+  }
+
+  // Sentence 3 — payments / TGP handling.
+  if (ctx.dunning_in_progress > 0) {
+    sentences.push(
+      `We're chasing down ${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress === 1 ? '' : 's'} in the background — you don't need to do anything on those.`,
+    );
+  } else if (ctx.paid_today_count > 0) {
+    sentences.push(
+      `We've collected $${(ctx.revenue_today_cents / 100).toFixed(0)} across ${ctx.paid_today_count} payment${ctx.paid_today_count === 1 ? '' : 's'} so far today.`,
+    );
+  } else {
+    sentences.push(`We haven't seen any payment activity yet this morning.`);
+  }
+
+  // Sentence 4 — action items handoff.
   if (total === 0) {
-    return `All clear today, ${ctx.coach_first_name} — ${ctx.checked_in_today} client${ctx.checked_in_today === 1 ? '' : 's'} ${ctx.checked_in_today === 1 ? 'has' : 'have'} checked in and nothing needs your immediate attention.`;
+    sentences.push(
+      `Nothing needs your hands-on attention right now, so we'll keep watching and ping you if that changes.`,
+    );
+  } else {
+    const fragments: string[] = [];
+    if (ctx.workouts_pending_approval > 0)
+      fragments.push(
+        `${ctx.workouts_pending_approval} workout${ctx.workouts_pending_approval === 1 ? '' : 's'} waiting on approval`,
+      );
+    if (ctx.unread_messages > 0)
+      fragments.push(
+        `${ctx.unread_messages} unread message${ctx.unread_messages === 1 ? '' : 's'}`,
+      );
+    if (ctx.missed_checkin > 0)
+      fragments.push(
+        `${ctx.missed_checkin} missed check-in${ctx.missed_checkin === 1 ? '' : 's'}`,
+      );
+    if (ctx.weight_logs_flagged > 0)
+      fragments.push(
+        `${ctx.weight_logs_flagged} weight log${ctx.weight_logs_flagged === 1 ? '' : 's'} flagged`,
+      );
+    sentences.push(
+      `Here's what needs your eyes: ${fragments.join(', ')}.`,
+    );
   }
 
-  const parts: string[] = [];
-  if (ctx.workouts_pending_approval > 0) {
-    parts.push(
-      `${ctx.workouts_pending_approval} workout${ctx.workouts_pending_approval > 1 ? 's' : ''} waiting on approval`,
+  return sentences;
+}
+
+function buildHeadCoachFallbackSentences(ctx: BriefContextHeadCoach): string[] {
+  const sentences: string[] = [];
+  sentences.push(
+    `${ctx.coach_first_name}, we pulled together this morning's team report for you.`,
+  );
+
+  // Revenue + headcount snapshot.
+  if (ctx.total_revenue_today_cents > 0) {
+    sentences.push(
+      `We've collected $${(ctx.total_revenue_today_cents / 100).toFixed(0)} across ${ctx.paid_today_count} payment${ctx.paid_today_count === 1 ? '' : 's'} today, with $${(ctx.mrr_projected_cents / 100).toFixed(0)} in projected monthly recurring revenue.`,
     );
-  }
-  if (ctx.missed_checkin > 0) {
-    parts.push(
-      `${ctx.missed_checkin} client${ctx.missed_checkin > 1 ? 's' : ''} ${ctx.missed_checkin > 1 ? "haven't" : "hasn't"} checked in yet`,
-    );
-  }
-  if (ctx.unread_messages > 0) {
-    parts.push(
-      `${ctx.unread_messages} unread message${ctx.unread_messages > 1 ? 's' : ''}`,
-    );
-  }
-  if (ctx.weight_logs_flagged > 0) {
-    parts.push(
-      `${ctx.weight_logs_flagged} weight log${ctx.weight_logs_flagged > 1 ? 's' : ''} need${ctx.weight_logs_flagged > 1 ? '' : 's'} a look`,
+  } else {
+    sentences.push(
+      `No team payments have landed yet today; we're tracking $${(ctx.mrr_projected_cents / 100).toFixed(0)} in projected monthly recurring revenue across active subscriptions.`,
     );
   }
 
-  return `${ctx.coach_first_name}, you have ${total} thing${total > 1 ? 's' : ''} to review today — ${parts.join(', ')}.`;
+  // Dunning handling — TGP working in background.
+  if (ctx.dunning_in_progress > 0) {
+    sentences.push(
+      `We're working on ${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress === 1 ? '' : 's'} worth $${(ctx.dunning_amount_cents / 100).toFixed(0)} in the background — you don't need to do anything on that.`,
+    );
+  } else {
+    sentences.push(`We're not seeing any failed payments to chase this morning.`);
+  }
+
+  // Team health.
+  if (ctx.team_size > 0) {
+    sentences.push(
+      `Your team of ${ctx.team_size} sub-coach${ctx.team_size === 1 ? '' : 'es'} is supporting ${ctx.team_clients_total} active client${ctx.team_clients_total === 1 ? '' : 's'}, with ${ctx.new_clients_last_24h} new sign-up${ctx.new_clients_last_24h === 1 ? '' : 's'} in the last 24 hours.`,
+    );
+  } else {
+    sentences.push(
+      `You don't have sub-coaches active right now, so we're keeping the team metrics simple.`,
+    );
+  }
+
+  return sentences;
+}
+
+// P1-7: Coach Brief voice contract validation. Reject Claude output that
+// drifts from the CPO voice ruling so a misbehaving model can't poison
+// the mobile brief surface. Returns null when the output is clean, or a
+// short violation reason otherwise. Run AFTER trimming markdown/meta
+// prefixes via normalizeClaudeOutput. Test contract:
+//   - 3 ≤ sentences ≤ 5
+//   - Coach first name appears in sentence 1 or 2 (case-insensitive)
+//   - At least one of "we", "we're", "we've", "we'll" in the text
+//   - No markdown bullet/heading/code-fence characters left after normalize
+//   - No meta prefix ("Here is", "Sure,", "Of course")
+//   - Length ≤ BRIEF_MAX_NARRATIVE_CHARS
+export function validateClaudeNarrative(
+  narrative: string,
+  coachFirstName: string,
+): string | null {
+  if (!narrative.trim()) return 'empty';
+
+  if (narrative.length > BRIEF_MAX_NARRATIVE_CHARS) {
+    return `too_long:${narrative.length}`;
+  }
+
+  // Meta prefixes — model preambles that leak into the brief.
+  const metaPattern =
+    /^\s*(here(?:'s|\s+is|\s+are)\b|sure\b|of course\b|certainly\b|absolutely\b|okay,?\b|got it\b|i'?ll\b|let me\b)/i;
+  if (metaPattern.test(narrative)) return 'meta_prefix';
+
+  // Markdown leftovers: bullets, headings, code fences, bold/italic markers.
+  const markdownPattern = /(^|\n)\s*([*\-#>+]|\d+\.)\s|\*\*|`{1,3}|__/;
+  if (markdownPattern.test(narrative)) return 'markdown';
+
+  // Sentence count — split on terminal punctuation followed by whitespace
+  // or end of string. Decimal numerals (12.5) don't terminate sentences
+  // because they are not followed by whitespace.
+  const sentences = narrative
+    .split(/(?<=[.!?])(?=\s|$)/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (sentences.length < 3) return `too_few_sentences:${sentences.length}`;
+  if (sentences.length > 5) return `too_many_sentences:${sentences.length}`;
+
+  // Coach first name must appear in sentence 1 or 2.
+  const namePattern = new RegExp(
+    `\\b${escapeRegex(coachFirstName)}\\b`,
+    'i',
+  );
+  const opener = sentences.slice(0, 2).join(' ');
+  if (!namePattern.test(opener)) return 'missing_first_name';
+
+  // First-person plural — TGP voice.
+  if (!/\b(we|we're|we've|we'll|we are|we have)\b/i.test(narrative)) {
+    return 'missing_we_voice';
+  }
+
+  return null;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Strip markdown / meta-prefix wrappers from Claude output before
+// validating. Keeps us from rejecting an otherwise valid brief that
+// only fails because the model wrapped it in "Here is your brief: ...".
+export function normalizeClaudeOutput(raw: string): string {
+  let text = raw.trim();
+  // Remove leading code fences.
+  text = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '');
+  // Strip a single leading meta prefix line.
+  text = text.replace(
+    /^(here(?:'s|\s+is|\s+are)\s+[^.\n]*[.:]\s*)/i,
+    '',
+  );
+  return text.trim();
 }
 
 // Deterministic — NOT AI-generated. Sorted ascending by priority.
@@ -293,6 +523,59 @@ export function buildActionItems(args: {
       detail: 'Has not checked in today',
       priority: 3,
       deep_link: `tgp://client/${c.id}`,
+    });
+  }
+
+  return items.sort(
+    (a, b) => a.priority - b.priority || a.type.localeCompare(b.type),
+  );
+}
+
+// P1-3: head-coach business actions. NEVER carries client_id or
+// client_name — only KPI-shaped detail strings the mobile renders as
+// summary tiles instead of per-client rows.
+export function buildHeadCoachActionItems(
+  ctx: BriefContextHeadCoach,
+): HeadCoachActionItem[] {
+  const items: HeadCoachActionItem[] = [];
+
+  if (ctx.dunning_in_progress > 0) {
+    items.push({
+      type: 'dunning_queue',
+      detail: `${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress === 1 ? '' : 's'} ($${(ctx.dunning_amount_cents / 100).toFixed(0)}) being retried by TGP`,
+      priority: 1,
+      deep_link: 'tgp://billing/dunning',
+    });
+  }
+
+  if (
+    ctx.total_revenue_today_cents > 0 ||
+    ctx.mrr_projected_cents > 0 ||
+    ctx.team_revenue_30d_cents > 0
+  ) {
+    items.push({
+      type: 'team_revenue_review',
+      detail: `Team revenue today $${(ctx.total_revenue_today_cents / 100).toFixed(0)} • MRR $${(ctx.mrr_projected_cents / 100).toFixed(0)} • 30d $${(ctx.team_revenue_30d_cents / 100).toFixed(0)}`,
+      priority: 2,
+      deep_link: 'tgp://command-center/revenue',
+    });
+  }
+
+  if (ctx.sub_coach_highlights.length > 0) {
+    items.push({
+      type: 'sub_coach_operations',
+      detail: `${ctx.team_size} sub-coach${ctx.team_size === 1 ? '' : 'es'} managing ${ctx.team_clients_total} client${ctx.team_clients_total === 1 ? '' : 's'} • +${ctx.new_clients_last_24h} new in 24h`,
+      priority: 2,
+      deep_link: 'tgp://team/sub-coaches',
+    });
+  }
+
+  if (ctx.team_clients_total > 0) {
+    items.push({
+      type: 'team_performance',
+      detail: `Team-wide ${ctx.team_clients_total} active client${ctx.team_clients_total === 1 ? '' : 's'}`,
+      priority: 3,
+      deep_link: 'tgp://command-center/team',
     });
   }
 
@@ -554,14 +837,25 @@ export class CoachBriefService {
             AND ABS(r1."weight_lbs" - r2."weight_lbs") >= ${WEIGHT_FLAG_THRESHOLD_LBS}
         `,
       ),
+      // P1-5: messaging threads are stored under the HEAD coach's
+      // namespace (coach_id = head_coach_id). In sub-coach mode, the
+      // sub-coach's id is not the thread's coach_id, so filtering by
+      // coach_id = sub-coach-id returns zero rows for every assigned
+      // client. Scope by client_id IN clientIds AND sender_id != coachId
+      // instead so the sub-coach actually sees their assigned-client
+      // inbound messages. For solo + head-coach modes this is
+      // equivalent to the coach_id scope because clientIds are exactly
+      // the coach's direct roster.
       this.prisma.coachMessage.findMany({
         where: {
-          coach_id: coachId,
+          client_id: { in: clientIds },
           read_at: null,
-          // The coach has not read the message and the sender is NOT the
-          // coach — i.e. the message came from the client. NOT(sender=coach)
-          // tolerates the SetNull on sender_id by treating null senders as
-          // not-coach (rare edge after GDPR scrub).
+          // The message is unread by anyone with coach-side access AND
+          // the sender is NOT the coach reading this brief — i.e. the
+          // message came from the client (or another sub-coach acting
+          // on the thread). NOT(sender=coach) tolerates the SetNull on
+          // sender_id by treating null senders as not-coach (rare edge
+          // after GDPR scrub).
           NOT: { sender_id: coachId },
         },
         select: {
@@ -644,44 +938,39 @@ export class CoachBriefService {
     };
   }
 
-  // ── Head-coach aggregation: solo context for the head coach's OWN direct
-  // clients, plus team-wide business metrics across all sub-coaches + own.
+  // ── Head-coach aggregation: BUSINESS-ONLY team metrics. P1-3 + CPO
+  // ruling — never include client_id, client_name, workout IDs, weight
+  // logs, or unread message previews. The head coach is operating at
+  // COO level; individual client work happens through the sub-coach
+  // brief. P1-4 — derive team headcount + new clients from open
+  // SubCoachAssignment rows (the canonical sub-coach delegation source)
+  // PLUS the head coach's own non-delegated direct clients. User.coach_id
+  // always points at the head coach, so attribution-by-coach_id would
+  // over-count under the head and zero out under each sub.
   private async aggregateHeadCoachContext(
     coachId: string,
-    ownClientIds: string[],
     timezone: string,
     briefDate: string,
   ): Promise<{
     context: BriefContextHeadCoach;
-    pendingWorkouts: Array<{
-      id: string;
-      client_id: string;
-      client_name: string;
-      plan_name: string;
-    }>;
-    unreadThreads: Array<{
-      client_id: string;
-      client_name: string;
-      message_preview: string;
-    }>;
-    flaggedWeightLogs: Array<{
-      client_id: string;
-      client_name: string;
-      delta_lbs: number;
-    }>;
-    missingCheckinClients: Array<{ id: string; name: string }>;
+    actionItems: HeadCoachActionItem[];
   }> {
-    // Phase 1 — own client base context (sequential because the team aggregation
-    // depends on knowing the head coach's identity, but the solo aggregator already
-    // runs its own queries in parallel).
-    const soloResult = await this.aggregateSoloContext(
-      coachId,
-      ownClientIds,
-      timezone,
-      briefDate,
-    );
+    // Coach metadata
+    const coachRow = await this.prisma.user.findUnique({
+      where: { id: coachId },
+      select: { name: true },
+    });
+    const coachName = coachRow?.name ?? 'Coach';
+    const coachFirstName = coachName.split(' ')[0] || coachName;
 
-    // Phase 2 — resolve sub-coaches + their clients
+    const briefDateStart = startOfDayInTz(briefDate, timezone);
+    const briefDateEnd = endOfDayInTz(briefDate, timezone);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    // Resolve sub-coaches under this head coach (TeamSubCoachAssignment
+    // tracks the head ↔ sub relationship; SubCoachAssignment is the
+    // client-level delegation that we'll group through next).
     const subCoaches = await this.prisma.teamSubCoachAssignment.findMany({
       where: { head_coach_id: coachId, archived_at: null },
       select: {
@@ -689,32 +978,91 @@ export class CoachBriefService {
         sub_coach: { select: { id: true, name: true } },
       },
     });
-    const allCoachIds = [coachId, ...subCoaches.map((a) => a.sub_coach_id)];
+    const subCoachIds = subCoaches.map((a) => a.sub_coach_id);
+    const allCoachIds = [coachId, ...subCoachIds];
 
-    const allTeamClients = await this.prisma.user.findMany({
+    // Open client-level delegations under this head coach. Used for the
+    // P1-4 attribution and to know which clients the head coach holds
+    // personally vs. delegates.
+    const openAssignments = await this.prisma.subCoachAssignment.findMany({
       where: {
-        coach_id: { in: allCoachIds },
+        head_coach_id: coachId,
+        unassigned_at: null,
+      },
+      select: {
+        sub_coach_id: true,
+        client_id: true,
+      },
+    });
+    const delegatedClientIds = new Set(
+      openAssignments.map((a) => a.client_id),
+    );
+    const clientsBySubCoach = new Map<string, Set<string>>();
+    for (const a of openAssignments) {
+      const set =
+        clientsBySubCoach.get(a.sub_coach_id) ??
+        new Set<string>();
+      set.add(a.client_id);
+      clientsBySubCoach.set(a.sub_coach_id, set);
+    }
+
+    // Head coach's own clients (User.coach_id = head coach) — both
+    // delegated and non-delegated. We need the full set for revenue /
+    // dunning aggregation (purchases live on the head coach's
+    // coach_user_id), and the non-delegated subset for "personally
+    // managed" client counts.
+    const headOwnedClients = await this.prisma.user.findMany({
+      where: {
+        coach_id: coachId,
         archived_at: null,
         role: 'student',
       },
-      select: { id: true, coach_id: true, created_at: true },
+      select: { id: true, created_at: true },
     });
+    const personallyManagedClients = headOwnedClients.filter(
+      (c) => !delegatedClientIds.has(c.id),
+    );
 
-    const briefDateStart = startOfDayInTz(briefDate, timezone);
-    const briefDateEnd = endOfDayInTz(briefDate, timezone);
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const teamClientsTotal =
+      personallyManagedClients.length + delegatedClientIds.size;
 
-    // Phase 3 — team aggregates in parallel
+    // P1-4: new clients in last 24h derived from the same union — head's
+    // own non-delegated NEW clients + delegated assignments whose
+    // backing client row is < 24h old.
+    const personallyManagedNew24h = personallyManagedClients.filter(
+      (c) => c.created_at >= twentyFourHoursAgo,
+    ).length;
+    const delegatedClientCreatedAtById = new Map<string, Date>();
+    if (delegatedClientIds.size > 0) {
+      const delegatedRows = await this.prisma.user.findMany({
+        where: {
+          id: { in: Array.from(delegatedClientIds) },
+          archived_at: null,
+          role: 'student',
+        },
+        select: { id: true, created_at: true },
+      });
+      for (const r of delegatedRows) {
+        delegatedClientCreatedAtById.set(r.id, r.created_at);
+      }
+    }
+    let delegatedNew24h = 0;
+    for (const a of openAssignments) {
+      const createdAt = delegatedClientCreatedAtById.get(a.client_id);
+      if (createdAt && createdAt >= twentyFourHoursAgo) delegatedNew24h++;
+    }
+    const newClientsLast24h = personallyManagedNew24h + delegatedNew24h;
+
+    // Team aggregates in parallel.
     const [
       revenueTodayAgg,
       revenue30dAgg,
       mrrPurchases,
-      dunningAmountRaw,
-      newClients24h,
+      dunningStateRaw,
     ] = await Promise.all([
       this.prisma.clientPurchase.aggregate({
         _sum: { amount_cents: true },
+        _count: { _all: true },
         where: {
           coach_user_id: { in: allCoachIds },
           status: 'paid',
@@ -731,7 +1079,6 @@ export class CoachBriefService {
       }),
       // MRR — fetch recurring purchases with their package interval so we
       // can normalize annual / multi-month plans to a monthly equivalent.
-      // Summing amount_cents alone would count annual plans as monthly MRR.
       this.prisma.clientPurchase.findMany({
         where: {
           coach_user_id: { in: allCoachIds },
@@ -744,34 +1091,25 @@ export class CoachBriefService {
           package: { select: { interval: true, interval_count: true } },
         },
       }),
-      this.prisma.$queryRaw<Array<{ total: bigint | null }>>(
+      this.prisma.$queryRaw<Array<{ count: bigint; total: bigint | null }>>(
         Prisma.sql`
-          SELECT COALESCE(SUM(ds."last_failed_amount_cents"), 0)::bigint AS total
+          SELECT
+            COUNT(*)::bigint AS count,
+            COALESCE(SUM(ds."last_failed_amount_cents"), 0)::bigint AS total
           FROM "DunningState" ds
           JOIN "ClientPurchase" cp ON cp."id" = ds."purchase_id"
           WHERE ds."status" = 'active'
             AND cp."coach_user_id" = ANY(${allCoachIds}::text[])
         `,
       ),
-      this.prisma.user.count({
-        where: {
-          coach_id: { in: allCoachIds },
-          archived_at: null,
-          role: 'student',
-          created_at: { gte: twentyFourHoursAgo },
-        },
-      }),
     ]);
 
-    // Normalize each recurring purchase to its monthly-equivalent cents.
-    // year     -> amount / (12 * interval_count)
-    // month    -> amount / interval_count
-    // null / other -> exclude (treated as non-recurring for MRR purposes)
     const mrrProjectedCents = mrrPurchases.reduce((sum, p) => {
       const interval = p.package?.interval;
-      const count = p.package?.interval_count && p.package.interval_count > 0
-        ? p.package.interval_count
-        : 1;
+      const count =
+        p.package?.interval_count && p.package.interval_count > 0
+          ? p.package.interval_count
+          : 1;
       if (interval === 'year') {
         return sum + Math.round(p.amount_cents / (12 * count));
       }
@@ -781,19 +1119,27 @@ export class CoachBriefService {
       return sum;
     }, 0);
 
+    const dunningInProgress = Number(dunningStateRaw[0]?.count ?? 0);
+    const dunningAmountCents = Number(dunningStateRaw[0]?.total ?? 0);
+
+    // P1-4: sub-coach highlights derived from SubCoachAssignment, NOT
+    // User.coach_id. Each sub-coach's active_clients = open assignments
+    // pointing at them; new_clients_24h = those whose backing User row
+    // was created in the last 24h.
     const subCoachHighlights: SubCoachHighlight[] = subCoaches
       .map((sc) => {
         const sub = sc.sub_coach;
         if (!sub) return null;
-        const clientsForSub = allTeamClients.filter(
-          (c) => c.coach_id === sub.id,
-        );
+        const clientSet = clientsBySubCoach.get(sub.id) ?? new Set<string>();
+        let new24h = 0;
+        for (const cid of clientSet) {
+          const createdAt = delegatedClientCreatedAtById.get(cid);
+          if (createdAt && createdAt >= twentyFourHoursAgo) new24h++;
+        }
         return {
           coach_name: sub.name,
-          active_clients: clientsForSub.length,
-          new_clients_24h: clientsForSub.filter(
-            (c) => c.created_at >= twentyFourHoursAgo,
-          ).length,
+          active_clients: clientSet.size,
+          new_clients_24h: new24h,
         };
       })
       .filter((s): s is SubCoachHighlight => s !== null)
@@ -801,25 +1147,27 @@ export class CoachBriefService {
       .slice(0, 3);
 
     const context: BriefContextHeadCoach = {
-      ...soloResult.context,
       brief_mode: 'head_coach',
+      date: briefDate,
+      coach_name: coachName,
+      coach_first_name: coachFirstName,
       team_size: subCoaches.length,
-      team_clients_total: allTeamClients.length,
+      team_clients_total: teamClientsTotal,
+      active_clients: teamClientsTotal,
+      new_clients_last_24h: newClientsLast24h,
       total_revenue_today_cents: revenueTodayAgg._sum.amount_cents ?? 0,
       team_revenue_30d_cents: revenue30dAgg._sum.amount_cents ?? 0,
       mrr_projected_cents: mrrProjectedCents,
-      dunning_amount_cents: Number(dunningAmountRaw[0]?.total ?? 0),
-      new_clients_last_24h: newClients24h,
+      paid_today_count: revenueTodayAgg._count._all ?? 0,
+      dunning_in_progress: dunningInProgress,
+      dunning_amount_cents: dunningAmountCents,
       sub_coach_highlights: subCoachHighlights,
     };
 
-    return {
-      context,
-      pendingWorkouts: soloResult.pendingWorkouts,
-      unreadThreads: soloResult.unreadThreads,
-      flaggedWeightLogs: soloResult.flaggedWeightLogs,
-      missingCheckinClients: soloResult.missingCheckinClients,
-    };
+    // Business-only action items — never client identifiers.
+    const actionItems = buildHeadCoachActionItems(context);
+
+    return { context, actionItems };
   }
 
   // ── Anthropic call with AbortController + 15s timeout + mode-aware
@@ -828,18 +1176,34 @@ export class CoachBriefService {
   async callClaude(
     ctx: BriefContext | BriefContextHeadCoach,
   ): Promise<{ narrative: string; generated_by: 'ai' | 'fallback' }> {
-    const actionCount =
-      ctx.workouts_pending_approval +
-      (ctx.missed_checkin > 0 ? 1 : 0) +
-      ctx.weight_logs_flagged +
-      ctx.unread_messages;
-
     // Fast-path fallback for zero-action briefs — no Claude call needed.
-    if (actionCount === 0 && ctx.checked_in_today > 0) {
-      return {
-        narrative: buildFallbackNarrative(ctx),
-        generated_by: 'fallback',
-      };
+    // Solo/sub-coach mode keys off client-level action counters; head-
+    // coach mode keys off team-level business signals (revenue,
+    // dunning, headcount changes).
+    if (ctx.brief_mode === 'head_coach') {
+      const headlineActivity =
+        ctx.total_revenue_today_cents +
+        ctx.dunning_in_progress +
+        ctx.new_clients_last_24h;
+      if (headlineActivity === 0) {
+        return {
+          narrative: buildFallbackNarrative(ctx),
+          generated_by: 'fallback',
+        };
+      }
+    } else {
+      const actionCount =
+        ctx.workouts_pending_approval +
+        (ctx.missed_checkin > 0 ? 1 : 0) +
+        ctx.weight_logs_flagged +
+        ctx.unread_messages;
+
+      if (actionCount === 0 && ctx.checked_in_today > 0) {
+        return {
+          narrative: buildFallbackNarrative(ctx),
+          generated_by: 'fallback',
+        };
+      }
     }
 
     let client: Anthropic;
@@ -856,18 +1220,84 @@ export class CoachBriefService {
       };
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(
-      () => controller.abort(),
-      BRIEF_ANTHROPIC_TIMEOUT_MS,
-    );
-
     const systemPrompt =
       ctx.brief_mode === 'head_coach'
         ? buildHeadCoachSystemPrompt()
         : buildSoloCoachSystemPrompt();
     const userPrompt = buildBriefPrompt(ctx);
 
+    // P1-7: validate Claude output against the voice contract. On
+    // violation, try one repair round-trip with the violation reason
+    // appended, then fall back to the deterministic narrative.
+    const firstAttempt = await this.invokeClaudeOnce(
+      client,
+      systemPrompt,
+      userPrompt,
+    );
+    if (firstAttempt.kind === 'success') {
+      const violation = validateClaudeNarrative(
+        firstAttempt.narrative,
+        ctx.coach_first_name,
+      );
+      if (!violation) {
+        return { narrative: firstAttempt.narrative, generated_by: 'ai' };
+      }
+      this.logger.warn(
+        `CoachBrief Claude output failed contract (${violation}) for coach=${ctx.coach_name}; attempting one repair`,
+      );
+
+      const repairPrompt = `${userPrompt}\n\nYour previous response violated the contract (${violation}). Output a fresh brief that:\n- Is exactly 3 to 5 complete sentences (no more, no fewer).\n- Begins with ${ctx.coach_first_name} in the very first sentence.\n- Uses first-person plural TGP voice ("we", "we're", "we've") at least once.\n- Contains no markdown, no bullet points, no meta prefix like "Here is".\n- Stays under ${BRIEF_MAX_NARRATIVE_CHARS} characters.`;
+
+      const secondAttempt = await this.invokeClaudeOnce(
+        client,
+        systemPrompt,
+        repairPrompt,
+      );
+      if (secondAttempt.kind === 'success') {
+        const violation2 = validateClaudeNarrative(
+          secondAttempt.narrative,
+          ctx.coach_first_name,
+        );
+        if (!violation2) {
+          return { narrative: secondAttempt.narrative, generated_by: 'ai' };
+        }
+        this.logger.warn(
+          `CoachBrief Claude repair attempt also failed contract (${violation2}) for coach=${ctx.coach_name}; using fallback`,
+        );
+      } else {
+        this.logger.warn(
+          `CoachBrief Claude repair attempt errored for coach=${ctx.coach_name}: ${secondAttempt.error}`,
+        );
+      }
+    } else {
+      this.logger.error(
+        `CoachBrief Claude call failed for coach=${ctx.coach_name}: ${firstAttempt.error}`,
+      );
+    }
+
+    return {
+      narrative: buildFallbackNarrative(ctx),
+      generated_by: 'fallback',
+    };
+  }
+
+  // Single Claude round-trip with AbortController + 15 s timeout. Never
+  // throws — returns a discriminated result so callers can branch on
+  // success vs. error without `try/catch` plumbing.
+  private async invokeClaudeOnce(
+    client: Anthropic,
+    systemPrompt: string,
+    userPrompt: string,
+  ):
+    Promise<
+      | { kind: 'success'; narrative: string }
+      | { kind: 'error'; error: string }
+    > {
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      BRIEF_ANTHROPIC_TIMEOUT_MS,
+    );
     try {
       const resp = await client.messages.create(
         {
@@ -879,25 +1309,23 @@ export class CoachBriefService {
         },
         { signal: controller.signal },
       );
-
       const block = resp.content?.find((b) => b.type === 'text');
-      const text = block && block.type === 'text' ? block.text.trim() : '';
-
-      if (!text) throw new Error('Empty Claude response');
-
+      const rawText =
+        block && block.type === 'text' ? block.text.trim() : '';
+      if (!rawText) {
+        throw new CoachBriefClaudeError(
+          'COACH_BRIEF_CLAUDE_EMPTY',
+          'Empty Claude response',
+        );
+      }
+      const normalized = normalizeClaudeOutput(rawText);
       const clamped =
-        text.length > BRIEF_MAX_NARRATIVE_CHARS
-          ? text.slice(0, BRIEF_MAX_NARRATIVE_CHARS)
-          : text;
-      return { narrative: clamped, generated_by: 'ai' };
+        normalized.length > BRIEF_MAX_NARRATIVE_CHARS
+          ? normalized.slice(0, BRIEF_MAX_NARRATIVE_CHARS)
+          : normalized;
+      return { kind: 'success', narrative: clamped };
     } catch (err) {
-      this.logger.error(
-        `CoachBrief Claude call failed for coach=${ctx.coach_name}: ${errorMessageOf(err)}`,
-      );
-      return {
-        narrative: buildFallbackNarrative(ctx),
-        generated_by: 'fallback',
-      };
+      return { kind: 'error', error: errorMessageOf(err) };
     } finally {
       clearTimeout(timer);
     }
@@ -926,28 +1354,48 @@ export class CoachBriefService {
     briefDate: string,
     opts: { force?: boolean } = {},
   ): Promise<CoachBriefResponse> {
+    // P1-1: a row may be stuck in status='generating' if the previous
+    // worker crashed or timed out. Anything older than
+    // BRIEF_GENERATION_LEASE_MS is considered stale and can be reclaimed
+    // by the next caller. We use the timestamp at the start of this
+    // request so two callers within the same lease window agree on what
+    // counts as "stale".
+    const leaseCutoff = new Date(Date.now() - BRIEF_GENERATION_LEASE_MS);
+    const nowTs = new Date();
+
     if (opts.force) {
       // Atomic claim for forced regeneration: flip the row to
-      // 'generating' only if no other caller has it locked.
+      // 'generating' UNLESS another caller already holds a fresh lease.
+      // A stale 'generating' lease (older than leaseCutoff) IS reclaimed
+      // here so a crashed worker cannot block force-regenerate forever.
       const claim = await this.prisma.coachBrief.updateMany({
         where: {
           coach_id: coachId,
           brief_date: briefDate,
-          status: { not: 'generating' },
+          OR: [
+            { status: { not: 'generating' } },
+            { generation_started_at: null },
+            { generation_started_at: { lt: leaseCutoff } },
+          ],
         },
-        data: { status: 'generating', generated_at: null },
+        data: {
+          status: 'generating',
+          generated_at: null,
+          generation_started_at: nowTs,
+        },
       });
 
       if (claim.count === 0) {
-        // Either no row yet, or another regenerate is in flight. Try to
-        // create the row (status='generating') — if that loses the race
-        // it means a concurrent regenerate already claimed; return that.
+        // Either no row yet, or a fresh 'generating' lease is in flight.
+        // Try to create the row — if that loses the race a concurrent
+        // regenerate already claimed; return that.
         try {
           await this.prisma.coachBrief.create({
             data: {
               coach_id: coachId,
               brief_date: briefDate,
               status: 'generating',
+              generation_started_at: nowTs,
             },
           });
         } catch (err) {
@@ -983,35 +1431,36 @@ export class CoachBriefService {
         return this.toResponse(existing);
       }
       if (existing && existing.status === 'generating') {
-        // Another worker is generating this row right now. Return it as
-        // pending so the client polls instead of triggering a second
+        // Fresh lease — another worker is actively generating. Return as
+        // pending so the client polls instead of triggering a duplicate
         // Claude call.
-        // TODO(coach-brief): add stale generating lease recovery — a
-        // crashed worker can otherwise leave a row stuck in 'generating'
-        // forever, since force-regenerate also refuses status='generating'.
-        return this.toResponse(existing);
-      }
-
-      try {
-        const created = await this.prisma.coachBrief.create({
-          data: {
+        const startedAt = existing.generation_started_at;
+        if (startedAt && startedAt >= leaseCutoff) {
+          return this.toResponse(existing);
+        }
+        // Stale lease — the previous worker crashed or timed out. Steal
+        // the lease atomically (only the caller whose updateMany returns
+        // count=1 proceeds; the loser sees a fresh lease and returns).
+        const stolen = await this.prisma.coachBrief.updateMany({
+          where: {
             coach_id: coachId,
             brief_date: briefDate,
             status: 'generating',
+            OR: [
+              { generation_started_at: null },
+              { generation_started_at: { lt: leaseCutoff } },
+            ],
+          },
+          data: {
+            status: 'generating',
+            generated_at: null,
+            generation_started_at: nowTs,
           },
         });
-        // Sanity — we own the claim only because create succeeded.
-        void created;
-      } catch (err) {
-        if (
-          err instanceof Prisma.PrismaClientKnownRequestError &&
-          err.code === 'P2002'
-        ) {
-          // Lost the create race: another caller is generating (or just
-          // finished). Return whatever's there — generated rows return
-          // the cached narrative, generating rows tell the client to
-          // poll.
-          const winner = await this.prisma.coachBrief.findUnique({
+        if (stolen.count === 0) {
+          // Another caller stole the lease first; surface whatever is
+          // current so the client polls again.
+          const fresh = await this.prisma.coachBrief.findUnique({
             where: {
               CoachBrief_coach_date_key: {
                 coach_id: coachId,
@@ -1019,47 +1468,84 @@ export class CoachBriefService {
               },
             },
           });
-          if (winner) return this.toResponse(winner);
+          if (fresh) return this.toResponse(fresh);
         }
-        throw err;
+        // We now own the claim — fall through to the generation block.
+      } else {
+        try {
+          const created = await this.prisma.coachBrief.create({
+            data: {
+              coach_id: coachId,
+              brief_date: briefDate,
+              status: 'generating',
+              generation_started_at: nowTs,
+            },
+          });
+          // Sanity — we own the claim only because create succeeded.
+          void created;
+        } catch (err) {
+          if (
+            err instanceof Prisma.PrismaClientKnownRequestError &&
+            err.code === 'P2002'
+          ) {
+            // Lost the create race: another caller is generating (or just
+            // finished). Return whatever's there — generated rows return
+            // the cached narrative, generating rows tell the client to
+            // poll.
+            const winner = await this.prisma.coachBrief.findUnique({
+              where: {
+                CoachBrief_coach_date_key: {
+                  coach_id: coachId,
+                  brief_date: briefDate,
+                },
+              },
+            });
+            if (winner) return this.toResponse(winner);
+          }
+          throw err;
+        }
       }
     }
 
     // From here on we OWN the generating-row. Do the work and finalize.
     try {
       const briefMode = await this.detectBriefMode(coachId);
-      const clientIds = await this.resolveClientScope(coachId, briefMode);
 
-      const agg =
-        briefMode === 'head_coach'
-          ? await this.aggregateHeadCoachContext(
-              coachId,
-              clientIds,
-              timezone,
-              briefDate,
-            )
-          : await this.aggregateSoloContext(
-              coachId,
-              clientIds,
-              timezone,
-              briefDate,
-              briefMode,
-            );
+      let context: BriefContext | BriefContextHeadCoach;
+      let actionItems: ActionItem[] | HeadCoachActionItem[];
 
-      // Solo aggregator always returns brief_mode='solo_coach' — adjust
-      // for sub_coach.
-      if (briefMode === 'sub_coach') {
-        agg.context.brief_mode = 'sub_coach';
+      if (briefMode === 'head_coach') {
+        // P1-3: head-coach is business-only. No client scope queries,
+        // no per-client action items, no client_id in the response.
+        const headRes = await this.aggregateHeadCoachContext(
+          coachId,
+          timezone,
+          briefDate,
+        );
+        context = headRes.context;
+        actionItems = headRes.actionItems;
+      } else {
+        const clientIds = await this.resolveClientScope(coachId, briefMode);
+        const agg = await this.aggregateSoloContext(
+          coachId,
+          clientIds,
+          timezone,
+          briefDate,
+          briefMode,
+        );
+        if (briefMode === 'sub_coach') {
+          agg.context.brief_mode = 'sub_coach';
+        }
+        context = agg.context;
+        actionItems = buildActionItems({
+          pendingWorkouts: agg.pendingWorkouts,
+          unreadThreads: agg.unreadThreads,
+          flaggedWeightLogs: agg.flaggedWeightLogs,
+          missingCheckinClients: agg.missingCheckinClients,
+        });
       }
 
-      const actionItems = buildActionItems({
-        pendingWorkouts: agg.pendingWorkouts,
-        unreadThreads: agg.unreadThreads,
-        flaggedWeightLogs: agg.flaggedWeightLogs,
-        missingCheckinClients: agg.missingCheckinClients,
-      });
-
-      const { narrative, generated_by } = await this.callClaude(agg.context);
+      const { narrative, generated_by } = await this.callClaude(context);
 
       const updated = await this.prisma.coachBrief.update({
         where: {
@@ -1071,8 +1557,11 @@ export class CoachBriefService {
         data: {
           status: 'generated',
           generated_at: new Date(),
+          // Clear the lease so a future stale-lease scan does not
+          // accidentally flag this freshly-generated row.
+          generation_started_at: null,
           narrative,
-          brief_context: agg.context as unknown as Prisma.JsonObject,
+          brief_context: context as unknown as Prisma.JsonObject,
           action_items: actionItems as unknown as Prisma.JsonArray,
           generated_by,
           brief_mode: briefMode,
@@ -1093,7 +1582,7 @@ export class CoachBriefService {
             brief_date: briefDate,
             status: 'generating',
           },
-          data: { status: 'failed' },
+          data: { status: 'failed', generation_started_at: null },
         })
         .catch(() => undefined);
       throw err;
@@ -1194,7 +1683,13 @@ export class CoachBriefService {
         brief_context: row.brief_context as unknown as
           | BriefContext
           | BriefContextHeadCoach,
-        action_items: row.action_items as unknown as ActionItem[],
+        // Head-coach action items are HeadCoachActionItem[] (no
+        // client_id / client_name); solo + sub-coach use ActionItem[].
+        // The union in BriefSummary covers both shapes.
+        action_items:
+          briefMode === 'head_coach'
+            ? (row.action_items as unknown as HeadCoachActionItem[])
+            : (row.action_items as unknown as ActionItem[]),
         generated_by: generatedBy,
       };
     }
@@ -1214,45 +1709,135 @@ export class CoachBriefService {
 
 // ─── Small helpers ──────────────────────────────────────────────────────
 
-// Return the UTC instant at midnight on a YYYY-MM-DD date in a given IANA
-// timezone. Used to scope updated_at filters to "the coach's brief_date in
-// their local tz", which is what mobile + the prompt mean by "today".
-function startOfDayInTz(briefDate: string, timeZone: string): Date {
+// P1-8: timezone-aware day boundaries. The previous implementation only
+// pulled the hour from Intl.DateTimeFormat, which silently truncated
+// half-hour and quarter-hour offsets (Asia/Kolkata UTC+5:30,
+// Asia/Kathmandu UTC+5:45, Australia/Adelaide UTC+9:30, etc.) AND
+// assumed every local day is exactly 24 hours, which is false on DST
+// transitions (US spring-forward is 23h, fall-back is 25h).
+//
+// We now solve the boundary problem analytically: given a target
+// (briefDate, timeZone) and a candidate UTC instant, compute the actual
+// UTC↔local offset at that instant by reading FULL Intl parts
+// (year/month/day/hour/minute/second), then snap the candidate so its
+// local rendering equals briefDate 00:00:00 (or 23:59:59.999).
+//
+// This is exported so timezone behaviour can be unit-tested without
+// touching the service.
+export function startOfDayInTz(briefDate: string, timeZone: string): Date {
   const [y, m, d] = briefDate.split('-').map(Number);
-  // We do not have access to a tz library here; the cheapest approximation
-  // that works correctly under DST is to construct the date in UTC and let
-  // Postgres handle the comparison. For Postgres timestamp comparison this
-  // is conservative — slightly wider window in one direction does NOT
-  // overcount paid_today because ClientPurchase rows only update once.
-  const utc = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
-  return shiftDateToTzMidnight(utc, timeZone);
+  return zonedWallClockToUtc(
+    { year: y, month: m, day: d, hour: 0, minute: 0, second: 0, ms: 0 },
+    timeZone,
+  );
 }
 
-function endOfDayInTz(briefDate: string, timeZone: string): Date {
-  const start = startOfDayInTz(briefDate, timeZone);
-  return new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+export function endOfDayInTz(briefDate: string, timeZone: string): Date {
+  const [y, m, d] = briefDate.split('-').map(Number);
+  return zonedWallClockToUtc(
+    {
+      year: y,
+      month: m,
+      day: d,
+      hour: 23,
+      minute: 59,
+      second: 59,
+      ms: 999,
+    },
+    timeZone,
+  );
 }
 
-// Given a Date that represents "midnight UTC on YYYY-MM-DD", return the
-// Date that represents midnight on YYYY-MM-DD in the given IANA tz.
-// We compute the tz offset via Intl.DateTimeFormat with a known UTC anchor,
-// then subtract that offset.
-function shiftDateToTzMidnight(utcMidnight: Date, timeZone: string): Date {
-  // Format the UTC midnight in the target tz; the result tells us what
-  // wall-clock that instant represents. Working backward, the tz midnight
-  // corresponds to UTC midnight + offset.
+interface WallClock {
+  year: number;
+  month: number; // 1–12
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  ms: number;
+}
+
+// Convert a (year, month, day, hh:mm:ss.ms) wall-clock value in the
+// given IANA timezone into the corresponding UTC instant.
+//
+// Algorithm: estimate the offset by treating the wall-clock as UTC,
+// then iterate up to 3 times — each iteration reads the offset at the
+// candidate UTC instant and shifts by the difference between observed
+// wall-clock and target wall-clock. Three iterations is the upper
+// bound under standard DST rules (offset shifts are at most 2 hours
+// from a single move), and we tolerate up to ±1 ms of residual error.
+function zonedWallClockToUtc(wc: WallClock, timeZone: string): Date {
+  // Initial guess — treat the wall-clock as UTC. This is wrong by the
+  // tz offset, but the iteration converges in 1–2 steps.
+  let guess = Date.UTC(
+    wc.year,
+    wc.month - 1,
+    wc.day,
+    wc.hour,
+    wc.minute,
+    wc.second,
+    wc.ms,
+  );
+  const targetMillisInDay =
+    ((wc.hour * 60 + wc.minute) * 60 + wc.second) * 1000 + wc.ms;
+  const targetDateNum = wc.year * 10000 + wc.month * 100 + wc.day;
+
+  for (let i = 0; i < 4; i++) {
+    const observed = readWallClockInTz(new Date(guess), timeZone);
+    const observedDateNum =
+      observed.year * 10000 + observed.month * 100 + observed.day;
+    const observedMillisInDay =
+      ((observed.hour * 60 + observed.minute) * 60 + observed.second) *
+        1000 +
+      observed.ms;
+
+    // Diff in calendar days × 86_400_000 ms + diff in time-of-day ms.
+    // We approximate the day diff using Date.UTC of midnight in each
+    // calendar position, which is exact (no DST inside UTC).
+    const targetMidnightUtc = Date.UTC(wc.year, wc.month - 1, wc.day);
+    const observedMidnightUtc = Date.UTC(
+      observed.year,
+      observed.month - 1,
+      observed.day,
+    );
+    const dayDeltaMs = targetMidnightUtc - observedMidnightUtc;
+    const tofDeltaMs = targetMillisInDay - observedMillisInDay;
+    const totalDelta = dayDeltaMs + tofDeltaMs;
+
+    if (totalDelta === 0 && observedDateNum === targetDateNum) {
+      return new Date(guess);
+    }
+    guess += totalDelta;
+  }
+  return new Date(guess);
+}
+
+// Read the formatted local wall-clock of a UTC instant in the given
+// IANA timezone, with full minute/second precision.
+function readWallClockInTz(d: Date, timeZone: string): WallClock {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
-    hour: 'numeric',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
     hour12: false,
-  }).formatToParts(utcMidnight);
-  const hourStr = parts.find((p) => p.type === 'hour')?.value ?? '0';
-  let hourInTz = parseInt(hourStr, 10);
-  if (hourInTz === 24) hourInTz = 0;
-  // If the tz wall-clock hour at this UTC instant is H, the offset (UTC -
-  // tz) is H hours (mod 24, treating values > 12 as negative for western
-  // hemisphere). We treat 0..12 as a positive UTC-tz offset (eastern), and
-  // 13..23 as -(24-H) (western).
-  const offsetHours = hourInTz <= 12 ? hourInTz : hourInTz - 24;
-  return new Date(utcMidnight.getTime() - offsetHours * 60 * 60 * 1000);
+  }).formatToParts(d);
+  const pick = (t: string) =>
+    parseInt(parts.find((p) => p.type === t)?.value ?? '0', 10);
+  let hour = pick('hour');
+  // Intl emits '24' for midnight on some engines; normalise.
+  if (hour === 24) hour = 0;
+  return {
+    year: pick('year'),
+    month: pick('month'),
+    day: pick('day'),
+    hour,
+    minute: pick('minute'),
+    second: pick('second'),
+    ms: d.getUTCMilliseconds(),
+  };
 }

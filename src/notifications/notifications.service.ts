@@ -402,18 +402,33 @@ export class NotificationsService {
    * Send a push notification to any user (coach or client) by userId.
    * Identical delivery logic to pushToCoach but accepts a plain title/body
    * envelope instead of the PushPayload coach-alert envelope.
+   *
+   * P2-6: `signal` lets the caller (e.g. CoachBriefScheduler) cancel the
+   * downstream Expo round-trip when an external deadline elapses. We
+   * check the signal at every await boundary so an abort during the
+   * findUnique, chunk send, or receipt poll short-circuits cleanly.
    */
   async pushToUser(
     userId: string,
     title: string,
     body: string,
     data?: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<void> {
+    const checkAborted = () => {
+      if (signal?.aborted) {
+        const reason = signal.reason;
+        if (reason instanceof Error) throw reason;
+        throw new Error('pushToUser aborted');
+      }
+    };
     try {
+      checkAborted();
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
         select: { expo_push_token: true },
       });
+      checkAborted();
       if (!user?.expo_push_token) return;
       if (!Expo.isExpoPushToken(user.expo_push_token)) return;
       const message: ExpoPushMessage = {
@@ -426,9 +441,11 @@ export class NotificationsService {
       const chunks = this.expo.chunkPushNotifications([message]);
       const tickets: ExpoPushTicket[] = [];
       for (const chunk of chunks) {
+        checkAborted();
         const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
         tickets.push(...ticketChunk);
       }
+      checkAborted();
       // Poll receipts so DeviceNotRegistered tokens are cleared for this
       // user — mirrors the same pattern used in pushToCoach().
       await this.pollReceipts(tickets, userId);

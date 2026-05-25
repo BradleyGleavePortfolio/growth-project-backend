@@ -389,9 +389,10 @@ model User {
 
   // R43 — Coach Brief. One brief row per (coach, brief_date); one log row
   // per (coach, log_date); at most one preferences row per coach.
-  coach_briefs            CoachBrief[]           @relation("CoachBriefCoach")
-  coach_daily_logs        CoachDailyLog[]        @relation("CoachDailyLogCoach")
-  coach_brief_preferences CoachBriefPreferences? @relation("CoachBriefPrefsCoach")
+  coach_briefs              CoachBrief[]             @relation("CoachBriefCoach")
+  coach_daily_logs          CoachDailyLog[]          @relation("CoachDailyLogCoach")
+  coach_brief_preferences   CoachBriefPreferences?   @relation("CoachBriefPrefsCoach")
+  coach_brief_push_ledger   CoachBriefPushLedger?    @relation("CoachBriefPushLedgerCoach")
 
   @@index([coach_id])
   @@index([deletion_scheduled_at])
@@ -3652,6 +3653,11 @@ model CoachBrief {
   brief_date    String
   status        String    @default("pending")
   generated_at  DateTime?
+  // Lease timestamp written when status flips to 'generating'. A
+  // CoachBriefService caller may atomically reclaim rows where the lease
+  // is older than the TTL (BRIEF_GENERATION_LEASE_MS) — this prevents a
+  // crashed worker from leaving the row stuck in 'generating' forever.
+  generation_started_at DateTime?
   narrative     String?
   brief_context Json?
   action_items  Json?
@@ -3690,17 +3696,24 @@ model CoachBriefPreferences {
   notification_time String   @default("07:00")
   timezone          String   @default("America/Los_Angeles")
   enabled           Boolean  @default(true)
-  // Pre-send attempt claim for the daily push cron. The scheduler uses
-  // an updateMany WHERE last_push_attempt_date != today to atomically
-  // claim the push slot — on a multi-instance deploy only the first
-  // instance wins and actually calls pushToUser, preventing duplicates.
-  last_push_attempt_date String?
-  // Confirmed-success marker, written only after pushToUser resolves
-  // successfully. Distinct from last_push_attempt_date so observability
-  // can tell "attempted but failed" from "delivered".
-  last_push_date    String?
   created_at        DateTime @default(now())
   updated_at        DateTime @updatedAt
 
   @@index([enabled, notification_time])
+}
+
+// R43 — Server-only push-dedup ledger. last_push_attempt_date and
+// last_push_date were originally on CoachBriefPreferences, but coaches
+// hold a direct UPDATE RLS policy on that table, which let them poison
+// the dedup state and silently suppress their own push. The ledger has
+// no coach RLS policies at all (service_role bypass only), so writes
+// only happen through CoachBriefScheduler.
+model CoachBriefPushLedger {
+  id                     String   @id @default(uuid())
+  coach_id               String   @unique
+  coach                  User     @relation("CoachBriefPushLedgerCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  last_push_attempt_date String?
+  last_push_date         String?
+  created_at             DateTime @default(now())
+  updated_at             DateTime @updatedAt
 }
