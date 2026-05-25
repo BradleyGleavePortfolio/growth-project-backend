@@ -31,17 +31,28 @@ export class DataExportController {
    * POST /v1/me/data-export/request
    *
    * Enqueue a new export. Rate-limited to one request per user per 24 h.
-   * Returns 409 when the user already has a PENDING or READY request within
-   * the window. Returns 202 Accepted immediately; the export runs async and
-   * the client should poll /status for completion.
+   * Returns 409 when the user already has a non-terminal request (PENDING,
+   * RUNNING, or READY) within the window. Returns 202 Accepted immediately;
+   * the export runs async and the client should poll /status for completion.
    */
-  // C5 PR-A audit: GDPR Article 20 (right to data portability). Every logged-in
-  // user must be able to request an export of their own data. The userId is
-  // taken from req.user.id — it is NEVER read from body / query / param. A user
-  // can therefore never trigger another user's export. The 1-req-per-24h limit
-  // is enforced inside DataExportService.requestExport (DB-state check, 409 on
-  // duplicate within window); rate-limit at the HTTP layer is intentionally
-  // omitted in favour of that durable check.
+  // C5 PR-A audit (corrected R2 — audit A1-C5-P2-1):
+  // GDPR Article 20 (right to data portability). Every logged-in user must be
+  // able to request an export of their own data. The userId is taken from
+  // req.user.id — it is NEVER read from body / query / param. A user can
+  // therefore never trigger another user's export.
+  //
+  // Service-layer rate limit (DataExportService.requestExport): any
+  // non-terminal export — PENDING, RUNNING, or READY — created within the
+  // current RATE_LIMIT_HRS window (default 24h) for the same user causes a
+  // 409 Conflict. RUNNING is intentionally included so concurrent GDPR jobs
+  // cannot be triggered during a long-running export (audit A1-C5-INF-2;
+  // regression test in test/data-export.service.spec.ts).
+  //
+  // This durable DB-state check is preferred over an HTTP-layer @Throttle
+  // because it survives process restarts and horizontal scale-out, and it
+  // matches the semantics of the legal/GDPR commitment we make to users.
+  // GDPR Art. 12(3) ("without undue delay and in any event within one month")
+  // does not require us to permit multiple parallel exports per user.
   @Roles('student', 'coach', 'owner')
   @Post('request')
   @HttpCode(HttpStatus.ACCEPTED)
