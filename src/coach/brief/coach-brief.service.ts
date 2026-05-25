@@ -61,12 +61,24 @@ export function bucketDateLocal(
   d: Date,
   timeZone = 'America/Los_Angeles',
 ): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(d);
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d);
+  } catch {
+    // Invalid IANA tz (should be blocked at DTO write time but a stale
+    // row could still trip this). Fall back to UTC bucketing rather than
+    // crash the caller.
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'UTC',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d);
+  }
 }
 
 function errorMessageOf(err: unknown): string {
@@ -317,13 +329,25 @@ export class CoachBriefService {
   }
 
   // ── Resolves the coach's timezone for date bucketing. Defaults to
-  // 'America/Los_Angeles' when no preferences row exists yet.
+  // 'America/Los_Angeles' when no preferences row exists yet. If a
+  // historically-persisted preferences row holds an invalid IANA tz
+  // (pre-validator), fall back to UTC with a warning instead of letting
+  // it crash Intl.DateTimeFormat downstream.
   async resolveCoachTimezone(coachId: string): Promise<string> {
     const prefs = await this.prisma.coachBriefPreferences.findUnique({
       where: { coach_id: coachId },
       select: { timezone: true },
     });
-    return prefs?.timezone ?? 'America/Los_Angeles';
+    const tz = prefs?.timezone ?? 'America/Los_Angeles';
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: tz });
+      return tz;
+    } catch {
+      this.logger.warn(
+        `coach=${coachId} has invalid timezone="${tz}" — falling back to UTC`,
+      );
+      return 'UTC';
+    }
   }
 
   // ── Detect brief mode (solo_coach | head_coach | sub_coach).
@@ -344,19 +368,22 @@ export class CoachBriefService {
   }
 
   // ── Resolve which client ids are in this coach's scope. Sub-coaches see
-  // only clients they have active workout assignments for; head coaches +
-  // solo coaches see their full direct roster.
+  // only clients with an OPEN SubCoachAssignment (the canonical
+  // authorization source); head coaches + solo coaches see their full
+  // direct roster.
   async resolveClientScope(coachId: string, briefMode: BriefMode): Promise<string[]> {
     if (briefMode === 'sub_coach') {
-      const assigned = await this.prisma.clientWorkoutAssignment.findMany({
-        where: {
-          assigned_by_coach_id: coachId,
-          client: { archived_at: null },
-        },
+      const assignments = await this.prisma.subCoachAssignment.findMany({
+        where: { sub_coach_id: coachId, unassigned_at: null },
         select: { client_id: true },
-        distinct: ['client_id'],
       });
-      return assigned.map((a) => a.client_id);
+      if (assignments.length === 0) return [];
+      const ids = Array.from(new Set(assignments.map((a) => a.client_id)));
+      const live = await this.prisma.user.findMany({
+        where: { id: { in: ids }, role: 'student', archived_at: null },
+        select: { id: true },
+      });
+      return live.map((u) => u.id);
     }
 
     const clients = await this.prisma.user.findMany({
@@ -377,6 +404,7 @@ export class CoachBriefService {
     clientIds: string[],
     timezone: string,
     briefDate: string,
+    briefMode: BriefMode = 'solo_coach',
   ): Promise<{
     context: BriefContext;
     pendingWorkouts: Array<{
@@ -457,6 +485,10 @@ export class CoachBriefService {
           client_id: { in: clientIds },
           completed_at: { not: null },
           approved_by_coach_at: null,
+          // In sub-coach mode, restrict action items to workouts the
+          // sub-coach actually assigned. Without this, a sub-coach could
+          // see head-coach pending approvals for their scoped clients.
+          ...(briefMode === 'sub_coach' ? { assigned_by_coach_id: coachId } : {}),
         },
         select: {
           id: true,
@@ -677,7 +709,7 @@ export class CoachBriefService {
     const [
       revenueTodayAgg,
       revenue30dAgg,
-      mrrAgg,
+      mrrPurchases,
       dunningAmountRaw,
       newClients24h,
     ] = await Promise.all([
@@ -697,13 +729,19 @@ export class CoachBriefService {
           updated_at: { gte: thirtyDaysAgo },
         },
       }),
-      this.prisma.clientPurchase.aggregate({
-        _sum: { amount_cents: true },
+      // MRR — fetch recurring purchases with their package interval so we
+      // can normalize annual / multi-month plans to a monthly equivalent.
+      // Summing amount_cents alone would count annual plans as monthly MRR.
+      this.prisma.clientPurchase.findMany({
         where: {
           coach_user_id: { in: allCoachIds },
           status: 'active',
           billing_type: 'recurring',
           entitlement_active: true,
+        },
+        select: {
+          amount_cents: true,
+          package: { select: { interval: true, interval_count: true } },
         },
       }),
       this.prisma.$queryRaw<Array<{ total: bigint | null }>>(
@@ -724,6 +762,24 @@ export class CoachBriefService {
         },
       }),
     ]);
+
+    // Normalize each recurring purchase to its monthly-equivalent cents.
+    // year     -> amount / (12 * interval_count)
+    // month    -> amount / interval_count
+    // null / other -> exclude (treated as non-recurring for MRR purposes)
+    const mrrProjectedCents = mrrPurchases.reduce((sum, p) => {
+      const interval = p.package?.interval;
+      const count = p.package?.interval_count && p.package.interval_count > 0
+        ? p.package.interval_count
+        : 1;
+      if (interval === 'year') {
+        return sum + Math.round(p.amount_cents / (12 * count));
+      }
+      if (interval === 'month') {
+        return sum + Math.round(p.amount_cents / count);
+      }
+      return sum;
+    }, 0);
 
     const subCoachHighlights: SubCoachHighlight[] = subCoaches
       .map((sc) => {
@@ -751,7 +807,7 @@ export class CoachBriefService {
       team_clients_total: allTeamClients.length,
       total_revenue_today_cents: revenueTodayAgg._sum.amount_cents ?? 0,
       team_revenue_30d_cents: revenue30dAgg._sum.amount_cents ?? 0,
-      mrr_projected_cents: mrrAgg._sum.amount_cents ?? 0,
+      mrr_projected_cents: mrrProjectedCents,
       dunning_amount_cents: Number(dunningAmountRaw[0]?.total ?? 0),
       new_clients_last_24h: newClients24h,
       sub_coach_highlights: subCoachHighlights,
@@ -847,84 +903,198 @@ export class CoachBriefService {
     }
   }
 
-  // ── Orchestrator. Idempotent: if a generated row already exists for
-  // (coach_id, brief_date), returns it. Otherwise upserts a pending row,
-  // aggregates, calls Claude, and updates the row to generated.
+  // ── Orchestrator. Idempotent AND race-safe.
+  //
+  // Two callers hitting GET /brief/today for the same coach + date must
+  // NOT both call Claude. The previous version did a read, then an
+  // unconditional upsert resetting status to 'pending' — that races on
+  // concurrent calls and produces two outbound AI calls + two updates
+  // overwriting each other.
+  //
+  // The fix is a single atomic claim:
+  //   * Normal path  — upsert with create={status:'generating'}, update={}
+  //     (no-op). The caller that CREATED the row sees status='generating'
+  //     and is the unique winner; any other caller sees an existing row
+  //     and returns it (cached if generated, or the in-progress claim row
+  //     so the client can poll).
+  //   * Force path   — updateMany WHERE status != 'generating' SET status
+  //     = 'generating'. Exactly one regenerate can claim; others see the
+  //     row and return.
   async generateBrief(
     coachId: string,
     timezone: string,
     briefDate: string,
     opts: { force?: boolean } = {},
   ): Promise<CoachBriefResponse> {
-    const existing = await this.prisma.coachBrief.findUnique({
-      where: {
-        CoachBrief_coach_date_key: { coach_id: coachId, brief_date: briefDate },
-      },
-    });
-    if (existing && existing.status === 'generated' && !opts.force) {
-      return this.toResponse(existing);
+    if (opts.force) {
+      // Atomic claim for forced regeneration: flip the row to
+      // 'generating' only if no other caller has it locked.
+      const claim = await this.prisma.coachBrief.updateMany({
+        where: {
+          coach_id: coachId,
+          brief_date: briefDate,
+          status: { not: 'generating' },
+        },
+        data: { status: 'generating', generated_at: null },
+      });
+
+      if (claim.count === 0) {
+        // Either no row yet, or another regenerate is in flight. Try to
+        // create the row (status='generating') — if that loses the race
+        // it means a concurrent regenerate already claimed; return that.
+        try {
+          await this.prisma.coachBrief.create({
+            data: {
+              coach_id: coachId,
+              brief_date: briefDate,
+              status: 'generating',
+            },
+          });
+        } catch (err) {
+          if (
+            err instanceof Prisma.PrismaClientKnownRequestError &&
+            err.code === 'P2002'
+          ) {
+            const inflight = await this.prisma.coachBrief.findUnique({
+              where: {
+                CoachBrief_coach_date_key: {
+                  coach_id: coachId,
+                  brief_date: briefDate,
+                },
+              },
+            });
+            if (inflight) return this.toResponse(inflight);
+          }
+          throw err;
+        }
+      }
+    } else {
+      // Normal idempotent path. Cache hit short-circuits before any
+      // Claude work; the claim upsert lets exactly one caller proceed.
+      const existing = await this.prisma.coachBrief.findUnique({
+        where: {
+          CoachBrief_coach_date_key: {
+            coach_id: coachId,
+            brief_date: briefDate,
+          },
+        },
+      });
+      if (existing && existing.status === 'generated') {
+        return this.toResponse(existing);
+      }
+      if (existing && existing.status === 'generating') {
+        // Another worker is generating this row right now. Return it as
+        // pending so the client polls instead of triggering a second
+        // Claude call.
+        return this.toResponse(existing);
+      }
+
+      try {
+        const created = await this.prisma.coachBrief.create({
+          data: {
+            coach_id: coachId,
+            brief_date: briefDate,
+            status: 'generating',
+          },
+        });
+        // Sanity — we own the claim only because create succeeded.
+        void created;
+      } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          // Lost the create race: another caller is generating (or just
+          // finished). Return whatever's there — generated rows return
+          // the cached narrative, generating rows tell the client to
+          // poll.
+          const winner = await this.prisma.coachBrief.findUnique({
+            where: {
+              CoachBrief_coach_date_key: {
+                coach_id: coachId,
+                brief_date: briefDate,
+              },
+            },
+          });
+          if (winner) return this.toResponse(winner);
+        }
+        throw err;
+      }
     }
 
-    await this.prisma.coachBrief.upsert({
-      where: {
-        CoachBrief_coach_date_key: { coach_id: coachId, brief_date: briefDate },
-      },
-      create: {
-        coach_id: coachId,
-        brief_date: briefDate,
-        status: 'pending',
-      },
-      update: { status: 'pending' },
-    });
+    // From here on we OWN the generating-row. Do the work and finalize.
+    try {
+      const briefMode = await this.detectBriefMode(coachId);
+      const clientIds = await this.resolveClientScope(coachId, briefMode);
 
-    const briefMode = await this.detectBriefMode(coachId);
-    const clientIds = await this.resolveClientScope(coachId, briefMode);
+      const agg =
+        briefMode === 'head_coach'
+          ? await this.aggregateHeadCoachContext(
+              coachId,
+              clientIds,
+              timezone,
+              briefDate,
+            )
+          : await this.aggregateSoloContext(
+              coachId,
+              clientIds,
+              timezone,
+              briefDate,
+              briefMode,
+            );
 
-    const agg =
-      briefMode === 'head_coach'
-        ? await this.aggregateHeadCoachContext(
-            coachId,
-            clientIds,
-            timezone,
-            briefDate,
-          )
-        : await this.aggregateSoloContext(
-            coachId,
-            clientIds,
-            timezone,
-            briefDate,
-          );
+      // Solo aggregator always returns brief_mode='solo_coach' — adjust
+      // for sub_coach.
+      if (briefMode === 'sub_coach') {
+        agg.context.brief_mode = 'sub_coach';
+      }
 
-    // Solo aggregator always returns brief_mode='solo_coach' — adjust for sub_coach.
-    if (briefMode === 'sub_coach') {
-      agg.context.brief_mode = 'sub_coach';
+      const actionItems = buildActionItems({
+        pendingWorkouts: agg.pendingWorkouts,
+        unreadThreads: agg.unreadThreads,
+        flaggedWeightLogs: agg.flaggedWeightLogs,
+        missingCheckinClients: agg.missingCheckinClients,
+      });
+
+      const { narrative, generated_by } = await this.callClaude(agg.context);
+
+      const updated = await this.prisma.coachBrief.update({
+        where: {
+          CoachBrief_coach_date_key: {
+            coach_id: coachId,
+            brief_date: briefDate,
+          },
+        },
+        data: {
+          status: 'generated',
+          generated_at: new Date(),
+          narrative,
+          brief_context: agg.context as unknown as Prisma.JsonObject,
+          action_items: actionItems as unknown as Prisma.JsonArray,
+          generated_by,
+          brief_mode: briefMode,
+        },
+      });
+
+      return this.toResponse(updated);
+    } catch (err) {
+      // Release the claim so the next request can retry. We do not
+      // distinguish failures here — the next caller will re-claim.
+      this.logger.error(
+        `CoachBrief generation failed for coach=${coachId}: ${errorMessageOf(err)}`,
+      );
+      await this.prisma.coachBrief
+        .updateMany({
+          where: {
+            coach_id: coachId,
+            brief_date: briefDate,
+            status: 'generating',
+          },
+          data: { status: 'failed' },
+        })
+        .catch(() => undefined);
+      throw err;
     }
-
-    const actionItems = buildActionItems({
-      pendingWorkouts: agg.pendingWorkouts,
-      unreadThreads: agg.unreadThreads,
-      flaggedWeightLogs: agg.flaggedWeightLogs,
-      missingCheckinClients: agg.missingCheckinClients,
-    });
-
-    const { narrative, generated_by } = await this.callClaude(agg.context);
-
-    const updated = await this.prisma.coachBrief.update({
-      where: {
-        CoachBrief_coach_date_key: { coach_id: coachId, brief_date: briefDate },
-      },
-      data: {
-        status: 'generated',
-        generated_at: new Date(),
-        narrative,
-        brief_context: agg.context as unknown as Prisma.JsonObject,
-        action_items: actionItems as unknown as Prisma.JsonArray,
-        generated_by,
-        brief_mode: briefMode,
-      },
-    });
-
-    return this.toResponse(updated);
   }
 
   // ── HTTP handler entry point. Defaults to today's brief in the coach's

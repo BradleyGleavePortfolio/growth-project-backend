@@ -13,8 +13,10 @@ import {
   Max,
   MaxLength,
   Min,
+  Validate,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IsValidTimezone } from '../../common/validators/is-valid-timezone.validator';
 
 export class BriefHistoryQueryDto {
   @IsOptional()
@@ -52,8 +54,7 @@ export class UpsertDailyLogDto {
   content!: string;
 }
 
-// HH:MM 24-hour format pattern; timezone validated loosely as a non-empty
-// string (≤64 chars) — stricter IANA validation can land in a follow-up.
+// HH:MM 24-hour format pattern.
 const HH_MM_24H_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export class UpdateBriefPreferencesDto {
@@ -64,9 +65,12 @@ export class UpdateBriefPreferencesDto {
   })
   notification_time?: string;
 
+  // IANA tz string. Validated via Intl.DateTimeFormat to block values that
+  // would later crash brief generation / scheduler dispatch.
   @IsOptional()
   @IsString()
   @MaxLength(64)
+  @Validate(IsValidTimezone)
   timezone?: string;
 
   @IsOptional()

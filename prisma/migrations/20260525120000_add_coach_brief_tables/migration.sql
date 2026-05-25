@@ -152,10 +152,17 @@ CREATE TABLE IF NOT EXISTS "CoachBriefPreferences" (
   "notification_time" TEXT NOT NULL DEFAULT '07:00',
   "timezone"          TEXT NOT NULL DEFAULT 'America/Los_Angeles',
   "enabled"           BOOLEAN NOT NULL DEFAULT true,
+  -- Atomic dedup marker for the daily push cron. Scheduler issues an
+  -- updateMany WHERE last_push_date != today to claim the push slot, so
+  -- only one Fly.io instance wins on a multi-instance deploy.
+  "last_push_date"    TEXT,
   "created_at"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updated_at"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "CoachBriefPreferences_pkey" PRIMARY KEY ("id")
 );
+
+ALTER TABLE "CoachBriefPreferences"
+  ADD COLUMN IF NOT EXISTS "last_push_date" TEXT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS "CoachBriefPreferences_coach_id_key"
   ON "CoachBriefPreferences" ("coach_id");

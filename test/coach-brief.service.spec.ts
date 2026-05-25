@@ -37,6 +37,8 @@ function makePrisma() {
       findUnique: jest.fn(),
       upsert: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
+      create: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
     },
@@ -50,10 +52,14 @@ function makePrisma() {
       findUnique: jest.fn(),
       upsert: jest.fn(),
       findMany: jest.fn(),
+      updateMany: jest.fn(),
     },
     teamSubCoachAssignment: {
       findFirst: jest.fn(),
       count: jest.fn(),
+      findMany: jest.fn(),
+    },
+    subCoachAssignment: {
       findMany: jest.fn(),
     },
     clientWorkoutAssignment: {
@@ -66,6 +72,7 @@ function makePrisma() {
     clientPurchase: {
       aggregate: jest.fn(),
       count: jest.fn(),
+      findMany: jest.fn(),
     },
     coachMessage: {
       findMany: jest.fn(),
@@ -199,25 +206,49 @@ describe('CoachBriefService.resolveClientScope', () => {
     expect(result).toEqual(['c1']);
   });
 
-  it('returns only assigned clients for sub_coach (derived from ClientWorkoutAssignment)', async () => {
+  it('returns only assigned clients for sub_coach (derived from SubCoachAssignment open rows)', async () => {
     const prisma = makePrisma();
-    prisma.clientWorkoutAssignment.findMany.mockResolvedValue([
+    prisma.subCoachAssignment.findMany.mockResolvedValue([
       { client_id: 'c1' },
       { client_id: 'c2' },
     ]);
+    // Filter step — both clients live + active students
+    prisma.user.findMany.mockResolvedValue([{ id: 'c1' }, { id: 'c2' }]);
 
     const svc = new CoachBriefService(prisma as any, makeConfig());
     const result = await svc.resolveClientScope('subCoach1', 'sub_coach');
     expect(result).toEqual(['c1', 'c2']);
-    expect(prisma.user.findMany).not.toHaveBeenCalled();
+    expect(prisma.subCoachAssignment.findMany).toHaveBeenCalledWith({
+      where: { sub_coach_id: 'subCoach1', unassigned_at: null },
+      select: { client_id: true },
+    });
+    // We do NOT consult the historical ClientWorkoutAssignment table.
+    expect(prisma.clientWorkoutAssignment.findMany).not.toHaveBeenCalled();
   });
 
-  it('returns empty array for sub_coach with no assignments', async () => {
+  it('returns empty array for sub_coach with no open SubCoachAssignment rows', async () => {
     const prisma = makePrisma();
-    prisma.clientWorkoutAssignment.findMany.mockResolvedValue([]);
+    prisma.subCoachAssignment.findMany.mockResolvedValue([]);
 
     const svc = new CoachBriefService(prisma as any, makeConfig());
     expect(await svc.resolveClientScope('subCoach1', 'sub_coach')).toEqual([]);
+    // No user lookup needed when there are no assignment rows.
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
+  });
+
+  it('filters out archived / non-student users from the sub_coach scope', async () => {
+    const prisma = makePrisma();
+    prisma.subCoachAssignment.findMany.mockResolvedValue([
+      { client_id: 'c1' },
+      { client_id: 'c2' },
+      { client_id: 'c3' },
+    ]);
+    // c2 archived → only c1 + c3 come back live.
+    prisma.user.findMany.mockResolvedValue([{ id: 'c1' }, { id: 'c3' }]);
+
+    const svc = new CoachBriefService(prisma as any, makeConfig());
+    const result = await svc.resolveClientScope('subCoach1', 'sub_coach');
+    expect(result).toEqual(['c1', 'c3']);
   });
 });
 
@@ -271,11 +302,9 @@ describe('CoachBriefService.generateBrief idempotency', () => {
 
   it('forces regeneration when opts.force is true', async () => {
     const prisma = makePrisma();
-    prisma.coachBrief.findUnique.mockResolvedValue({
-      id: 'b1',
-      status: 'generated',
-    });
-    prisma.coachBrief.upsert.mockResolvedValue({});
+    // Force path claims via updateMany (status != 'generating'). Count=1
+    // means we won the claim.
+    prisma.coachBrief.updateMany.mockResolvedValue({ count: 1 });
     wireDefaultMocks(prisma, 'coach1', []);
     prisma.coachBrief.update.mockResolvedValue({
       id: 'b1',
@@ -300,6 +329,129 @@ describe('CoachBriefService.generateBrief idempotency', () => {
     );
     expect(result.summary?.narrative).toBe('fresh');
     expect(prisma.coachBrief.update).toHaveBeenCalled();
+    expect(prisma.coachBrief.updateMany).toHaveBeenCalledWith({
+      where: {
+        coach_id: 'coach1',
+        brief_date: '2026-05-25',
+        status: { not: 'generating' },
+      },
+      data: { status: 'generating', generated_at: null },
+    });
+  });
+
+  it('returns the in-flight row without calling Claude when a concurrent generation is in progress', async () => {
+    const prisma = makePrisma();
+    // Another worker has claimed the slot and set status='generating'.
+    prisma.coachBrief.findUnique.mockResolvedValue({
+      id: 'b1',
+      coach_id: 'coach1',
+      brief_date: '2026-05-25',
+      status: 'generating',
+      generated_at: null,
+      narrative: null,
+      brief_context: null,
+      action_items: null,
+      generated_by: null,
+      brief_mode: null,
+      created_at: new Date(),
+    });
+    const anthropic = makeAnthropic('should not be called');
+
+    const svc = new CoachBriefService(prisma as any, makeConfig(), anthropic);
+    const result = await svc.generateBrief(
+      'coach1',
+      'America/Los_Angeles',
+      '2026-05-25',
+    );
+
+    // Status is normalised to 'pending' by toResponse (only generated /
+    // failed are surfaced verbatim).
+    expect(result.status).toBe('pending');
+    expect(prisma.coachBrief.create).not.toHaveBeenCalled();
+    expect(prisma.coachBrief.update).not.toHaveBeenCalled();
+    expect(anthropic.messages.create).not.toHaveBeenCalled();
+  });
+
+  it('exactly one of two concurrent generateBrief calls reaches Claude (atomic claim)', async () => {
+    // Build two services on independent prisma mocks. The first one
+    // "wins" the create (no P2002), the second loses (P2002) and reads
+    // back the generating row.
+    const briefRow = {
+      id: 'b1',
+      coach_id: 'coach1',
+      brief_date: '2026-05-25',
+      status: 'generating',
+      generated_at: null,
+      narrative: null,
+      brief_context: null,
+      action_items: null,
+      generated_by: null,
+      brief_mode: null,
+      created_at: new Date(),
+    };
+
+    const winnerPrisma = makePrisma();
+    winnerPrisma.coachBrief.findUnique.mockResolvedValue(null);
+    winnerPrisma.coachBrief.create.mockResolvedValue(briefRow);
+    wireDefaultMocks(winnerPrisma, 'coach1', []);
+    winnerPrisma.coachBrief.update.mockResolvedValue({
+      ...briefRow,
+      status: 'generated',
+      generated_at: new Date(),
+      narrative: 'fresh',
+      brief_context: makeContext({ brief_mode: 'solo_coach', roster_size: 0 }),
+      action_items: [],
+      generated_by: 'fallback',
+      brief_mode: 'solo_coach',
+    });
+
+    const loserPrisma = makePrisma();
+    loserPrisma.coachBrief.findUnique
+      // First read: no row exists yet (matching the winner's view at the
+      // top of the function).
+      .mockResolvedValueOnce(null)
+      // Second read (after the P2002 create race lost): the winner's
+      // generating row.
+      .mockResolvedValueOnce(briefRow);
+    // create throws unique-constraint error to simulate losing the race.
+    const P2002 = Object.assign(new Error('unique'), {
+      code: 'P2002',
+    });
+    Object.setPrototypeOf(
+      P2002,
+      // Match the runtime check `err instanceof PrismaClientKnownRequestError`
+      // by lifting the prototype off the real class.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@prisma/client').Prisma.PrismaClientKnownRequestError.prototype,
+    );
+    loserPrisma.coachBrief.create.mockRejectedValue(P2002);
+
+    const winnerAnthropic = makeAnthropic('Sarah, all clear today.');
+    const loserAnthropic = makeAnthropic('SHOULD NOT BE CALLED');
+
+    const winnerSvc = new CoachBriefService(
+      winnerPrisma as any,
+      makeConfig(),
+      winnerAnthropic,
+    );
+    const loserSvc = new CoachBriefService(
+      loserPrisma as any,
+      makeConfig(),
+      loserAnthropic,
+    );
+
+    const [winnerRes, loserRes] = await Promise.all([
+      winnerSvc.generateBrief('coach1', 'America/Los_Angeles', '2026-05-25'),
+      loserSvc.generateBrief('coach1', 'America/Los_Angeles', '2026-05-25'),
+    ]);
+
+    expect(winnerRes.summary?.narrative).toBe('fresh');
+    expect(loserRes.status).toBe('pending');
+    // The loser must not have touched Claude.
+    expect(loserAnthropic.messages.create).not.toHaveBeenCalled();
+    // The loser must not have updated the row (it returned the inflight
+    // row read instead).
+    expect(loserPrisma.coachBrief.update).not.toHaveBeenCalled();
   });
 });
 
@@ -415,6 +567,104 @@ describe('CoachBriefService.callClaude', () => {
     const call = anthropic.messages.create.mock.calls[0][0];
     expect(call.system).toContain('runs a team');
     expect(call.messages[0].content).toContain('TEAM BUSINESS METRICS');
+  });
+});
+
+// ─── Head-coach MRR normalization ──────────────────────────────────────
+
+describe('CoachBriefService.aggregateHeadCoachContext MRR normalization', () => {
+  it('normalizes annual recurring purchases to monthly equivalents', async () => {
+    const prisma = makePrisma();
+    const coachId = 'head1';
+
+    // detectBriefMode → head_coach
+    prisma.teamSubCoachAssignment.findFirst.mockResolvedValue(null);
+    prisma.teamSubCoachAssignment.count.mockResolvedValue(1);
+    // resolveClientScope → head coach's own roster (head_coach branch
+    // uses user.findMany).
+    prisma.user.findMany
+      // resolveClientScope
+      .mockResolvedValueOnce([{ id: 'c1' }])
+      // aggregateSoloContext.missingCheckin
+      .mockResolvedValueOnce([])
+      // aggregateHeadCoachContext.allTeamClients
+      .mockResolvedValueOnce([
+        { id: 'c1', coach_id: coachId, created_at: new Date() },
+      ]);
+    prisma.user.findUnique.mockResolvedValue({ name: 'Marcus Reed' });
+
+    prisma.teamSubCoachAssignment.findMany.mockResolvedValue([]);
+
+    prisma.checkIn.findMany.mockResolvedValue([]);
+    prisma.clientWorkoutAssignment.findMany.mockResolvedValue([]);
+    prisma.clientWorkoutAssignment.count.mockResolvedValue(0);
+    prisma.coachMessage.findMany.mockResolvedValue([]);
+    prisma.$queryRaw.mockResolvedValue([{ count: 0n, total: 0n }]);
+
+    // Two aggregate calls (revenue today + revenue 30d).
+    prisma.clientPurchase.aggregate
+      .mockResolvedValueOnce({ _sum: { amount_cents: 0 }, _count: { _all: 0 } }) // solo paid-today
+      .mockResolvedValueOnce({ _sum: { amount_cents: null } }) // team revenue today
+      .mockResolvedValueOnce({ _sum: { amount_cents: null } }); // team revenue 30d
+    prisma.clientPurchase.count.mockResolvedValue(0);
+
+    // MRR purchases:
+    //  - annual $1200 → 100000 cents / 12 = 8333/mo
+    //  - monthly $50 → 5000 cents / 1 = 5000/mo
+    //  - one-time (no interval) → excluded
+    prisma.clientPurchase.findMany.mockResolvedValue([
+      {
+        amount_cents: 100000,
+        package: { interval: 'year', interval_count: 1 },
+      },
+      {
+        amount_cents: 5000,
+        package: { interval: 'month', interval_count: 1 },
+      },
+      {
+        amount_cents: 9999,
+        package: { interval: null, interval_count: 1 },
+      },
+    ]);
+
+    // Atomic claim: winner creates the row.
+    prisma.coachBrief.findUnique.mockResolvedValue(null);
+    prisma.coachBrief.create.mockResolvedValue({
+      id: 'b1',
+      coach_id: coachId,
+      brief_date: '2026-05-25',
+      status: 'generating',
+      generated_at: null,
+      narrative: null,
+      brief_context: null,
+      action_items: null,
+      generated_by: null,
+      brief_mode: null,
+      created_at: new Date(),
+    });
+    let capturedMrr = -1;
+    prisma.coachBrief.update.mockImplementation((args: any) => {
+      capturedMrr = args.data.brief_context.mrr_projected_cents;
+      return Promise.resolve({
+        id: 'b1',
+        coach_id: coachId,
+        brief_date: '2026-05-25',
+        status: 'generated',
+        generated_at: new Date(),
+        narrative: 'ok',
+        brief_context: args.data.brief_context,
+        action_items: [],
+        generated_by: 'fallback',
+        brief_mode: 'head_coach',
+        created_at: new Date(),
+      });
+    });
+
+    const svc = new CoachBriefService(prisma as any, makeConfig());
+    await svc.generateBrief(coachId, 'America/Los_Angeles', '2026-05-25');
+
+    // 8333 (annual) + 5000 (monthly) = 13333; one-time excluded.
+    expect(capturedMrr).toBe(13333);
   });
 });
 
@@ -630,6 +880,7 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
 
   it('dispatches push when local time matches', async () => {
     const prisma = makePrisma();
+    prisma.coachBriefPreferences.updateMany.mockResolvedValue({ count: 1 });
     const notifications = { pushToUser: jest.fn().mockResolvedValue(undefined) };
     const briefService = {
       getOrGenerateTodaysBrief: jest.fn().mockResolvedValue({
@@ -673,6 +924,108 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     expect(userId).toBe('coach1');
     expect(title).toBe('Your daily brief is ready');
     expect(body).toMatch(/Sarah/);
+  });
+
+  it('skips push when another instance already claimed today (updateMany count=0)', async () => {
+    const prisma = makePrisma();
+    // Another Fly.io instance already flipped last_push_date to today.
+    prisma.coachBriefPreferences.updateMany.mockResolvedValue({ count: 0 });
+    const notifications = { pushToUser: jest.fn() };
+    const briefService = { getOrGenerateTodaysBrief: jest.fn() };
+    const scheduler = new CoachBriefScheduler(
+      prisma as any,
+      briefService as any,
+      notifications as any,
+      makeConfig(),
+    );
+
+    const now = new Date('2026-05-25T14:00:00Z'); // 07:00 PT
+    await scheduler.maybeDispatch(
+      {
+        coach_id: 'coach1',
+        notification_time: '07:00',
+        timezone: 'America/Los_Angeles',
+        coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
+      },
+      now,
+    );
+    expect(briefService.getOrGenerateTodaysBrief).not.toHaveBeenCalled();
+    expect(notifications.pushToUser).not.toHaveBeenCalled();
+  });
+
+  it('skips push and warns on invalid IANA timezone', async () => {
+    const prisma = makePrisma();
+    const notifications = { pushToUser: jest.fn() };
+    const briefService = { getOrGenerateTodaysBrief: jest.fn() };
+    const scheduler = new CoachBriefScheduler(
+      prisma as any,
+      briefService as any,
+      notifications as any,
+      makeConfig(),
+    );
+
+    await scheduler.maybeDispatch(
+      {
+        coach_id: 'coach1',
+        notification_time: '07:00',
+        timezone: 'Not/A_Real_Tz',
+        coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
+      },
+      new Date('2026-05-25T14:00:00Z'),
+    );
+    expect(briefService.getOrGenerateTodaysBrief).not.toHaveBeenCalled();
+    expect(notifications.pushToUser).not.toHaveBeenCalled();
+  });
+
+  it('continues when pushToUser exceeds the 10s timeout (Promise.race)', async () => {
+    jest.useFakeTimers();
+    const prisma = makePrisma();
+    prisma.coachBriefPreferences.updateMany.mockResolvedValue({ count: 1 });
+    const notifications = {
+      // Never resolves — exercises the timeout path.
+      pushToUser: jest.fn(() => new Promise(() => undefined)),
+    };
+    const briefService = {
+      getOrGenerateTodaysBrief: jest.fn().mockResolvedValue({
+        id: 'b1',
+        coach_id: 'coach1',
+        brief_date: '2026-05-25',
+        status: 'generated',
+        brief_mode: 'solo_coach',
+        generated_at: new Date().toISOString(),
+        summary: {
+          date: '2026-05-25',
+          brief_mode: 'solo_coach',
+          narrative: 'Sarah, all clear today.',
+          brief_context: makeContext(),
+          action_items: [],
+          generated_by: 'ai',
+        },
+        created_at: new Date().toISOString(),
+      }),
+    };
+    const scheduler = new CoachBriefScheduler(
+      prisma as any,
+      briefService as any,
+      notifications as any,
+      makeConfig(),
+    );
+
+    const dispatchPromise = scheduler.maybeDispatch(
+      {
+        coach_id: 'coach1',
+        notification_time: '07:00',
+        timezone: 'America/Los_Angeles',
+        coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
+      },
+      new Date('2026-05-25T14:00:00Z'),
+    );
+
+    // Advance past the 10s push timeout.
+    await jest.advanceTimersByTimeAsync(11_000);
+    await expect(dispatchPromise).resolves.toBeUndefined();
+    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+    jest.useRealTimers();
   });
 
   it('respects COACH_BRIEF_NOTIFICATIONS_ENABLED=off (dispatchDailyBriefs no-op)', async () => {
