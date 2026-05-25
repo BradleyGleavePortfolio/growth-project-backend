@@ -98,7 +98,14 @@ export class StorefrontService {
       !pkg ||
       !pkg.is_active ||
       pkg.archived_at !== null ||
-      !pkg.share_link_enabled
+      !pkg.share_link_enabled ||
+      // Audit #4 P2-5 — Phase 1 only supports one-time USD packages on
+      // the public storefront. A recurring or non-USD package would not
+      // pass the createIntent gate anyway, but exposing it on GET would
+      // leak its existence and let an attacker correlate share-token
+      // → product internals. 404 the same way an unknown token does.
+      pkg.billing_type !== 'one_time' ||
+      (pkg.currency ?? '').toLowerCase() !== 'usd'
     ) {
       throw new NotFoundException({
         error: 'TOKEN_NOT_FOUND',
@@ -107,6 +114,18 @@ export class StorefrontService {
     }
 
     const coach = pkg.coach;
+    // Audit #4 P1-7 — a coach in the GDPR deletion flow (either grace-
+    // period locked or PII-scrubbed) MUST NOT receive new clients via the
+    // public storefront. The link must 404 the same way a token-not-found
+    // does so we do not leak the existence of a deleted account. The
+    // share-link itself is also revoked on deletion (see the coach-
+    // deletion handler), but the gate here is the authoritative check.
+    if (coach.deletion_scheduled_at !== null || coach.deleted_at !== null) {
+      throw new NotFoundException({
+        error: 'TOKEN_NOT_FOUND',
+        message: 'This link is not available.',
+      });
+    }
     const connectAccount = coach.connect_account;
     // Audit #3 P1-8 — gate on full readiness, not just charges_enabled.
     // 404 is the public surface; the exact failing axis is logged

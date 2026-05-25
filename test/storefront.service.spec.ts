@@ -18,8 +18,11 @@ function makePkg(overrides: Record<string, unknown> = {}) {
     description: 'Complete body recomp.',
     amount_cents: 29700,
     currency: 'usd',
-    billing_type: 'recurring',
-    interval: 'month',
+    // Audit #4 P2-5 — Phase 1 storefront only exposes one-time USD
+    // packages. Test fixture matches the only billing_type the public
+    // GET will ever serve.
+    billing_type: 'one_time',
+    interval: null,
     interval_count: 1,
     is_active: true,
     archived_at: null,
@@ -28,6 +31,10 @@ function makePkg(overrides: Record<string, unknown> = {}) {
     coach: {
       id: 'coach-1',
       name: 'Bradley Gleave',
+      // Audit #4 P1-7 — fixture must include the GDPR deletion fields
+      // so the public-GET gate is exercised; the default coach is alive.
+      deletion_scheduled_at: null,
+      deleted_at: null,
       profile: { avatar_url: 'https://cdn.example/avatar.jpg' },
       coach_profile: { bio: 'Ex-athlete. 500+ clients.' },
       connect_account: {
@@ -82,7 +89,7 @@ describe('StorefrontService', () => {
     expect(data.package_id).toBe('pkg-1');
     expect(data.package_name).toBe('12-Week Transformation');
     expect(data.price_cents).toBe(29700);
-    expect(data.billing_cycle).toBe('monthly');
+    expect(data.billing_cycle).toBe('one_time');
     expect(data.coach.display_name).toBe('Bradley Gleave');
     expect(data.coach.verified).toBe(true);
     expect(data.features).toEqual([]);
@@ -195,27 +202,69 @@ describe('StorefrontService', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
-  it('maps billing cycles correctly', async () => {
-    findUnique.mockResolvedValueOnce(
-      makePkg({ billing_type: 'recurring', interval: 'year', interval_count: 1 }),
-    );
-    const annual = await service.getPublicPackageByToken('tok1234567890abcDEFGH');
-    expect(annual.billing_cycle).toBe('annual');
-
-    findUnique.mockResolvedValueOnce(
-      makePkg({
-        billing_type: 'recurring',
-        interval: 'month',
-        interval_count: 3,
-      }),
-    );
-    const quarterly = await service.getPublicPackageByToken('tok1234567890abcDEFGH');
-    expect(quarterly.billing_cycle).toBe('quarterly');
-
+  it('maps billing cycle to one_time (Phase 1 one-time only)', async () => {
     findUnique.mockResolvedValueOnce(
       makePkg({ billing_type: 'one_time', interval: null, interval_count: 1 }),
     );
     const oneTime = await service.getPublicPackageByToken('tok1234567890abcDEFGH');
     expect(oneTime.billing_cycle).toBe('one_time');
+  });
+
+  // Audit #4 P2-5 — public GET MUST 404 recurring packages so we do
+  // not leak their existence on a share-token enumeration scan.
+  it.each(['recurring'])(
+    'P2-5: 404s on billing_type=%s',
+    async (billing_type) => {
+      findUnique.mockResolvedValueOnce(
+        makePkg({ billing_type, interval: 'month' }),
+      );
+      await expect(
+        service.getPublicPackageByToken('tok1234567890abcDEFGH'),
+      ).rejects.toThrow(NotFoundException);
+    },
+  );
+
+  // Audit #4 P2-5 — public GET MUST 404 non-USD packages.
+  it.each(['eur', 'gbp', 'jpy'])(
+    'P2-5: 404s on currency=%s',
+    async (currency) => {
+      findUnique.mockResolvedValueOnce(makePkg({ currency }));
+      await expect(
+        service.getPublicPackageByToken('tok1234567890abcDEFGH'),
+      ).rejects.toThrow(NotFoundException);
+    },
+  );
+
+  // Audit #4 P1-7 — a deleted or grace-period-locked coach MUST NOT
+  // be exposed on the storefront. 404 mirrors token-not-found so
+  // existence is not leaked.
+  it('P1-7: 404s when coach has deletion_scheduled_at set', async () => {
+    findUnique.mockResolvedValueOnce(
+      makePkg({
+        coach: {
+          ...makePkg().coach,
+          deletion_scheduled_at: new Date(),
+          deleted_at: null,
+        },
+      }),
+    );
+    await expect(
+      service.getPublicPackageByToken('tok1234567890abcDEFGH'),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('P1-7: 404s when coach has deleted_at set', async () => {
+    findUnique.mockResolvedValueOnce(
+      makePkg({
+        coach: {
+          ...makePkg().coach,
+          deletion_scheduled_at: null,
+          deleted_at: new Date(),
+        },
+      }),
+    );
+    await expect(
+      service.getPublicPackageByToken('tok1234567890abcDEFGH'),
+    ).rejects.toThrow(NotFoundException);
   });
 });
