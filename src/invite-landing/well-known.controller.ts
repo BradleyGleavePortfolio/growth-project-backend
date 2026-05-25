@@ -107,8 +107,17 @@ export class WellKnownController {
   assetLinks(@Res() res: Response) {
     const packageName =
       (process.env.ANDROID_PACKAGE_NAME ?? '').trim() || 'com.tgp.app';
+    // R43 — accept ANDROID_SHA256_FINGERPRINT as a single-value alias
+    // for ANDROID_CERT_SHA256_FINGERPRINTS so the storefront deploy
+    // doesn't have to duplicate the value. Either env var (or both)
+    // produces the same merged fingerprint list.
     const fingerprints = parseFingerprints(
-      process.env.ANDROID_CERT_SHA256_FINGERPRINTS,
+      [
+        process.env.ANDROID_CERT_SHA256_FINGERPRINTS,
+        process.env.ANDROID_SHA256_FINGERPRINT,
+      ]
+        .filter((s): s is string => typeof s === 'string' && s.length > 0)
+        .join(','),
     );
 
     if (fingerprints.length === 0) {

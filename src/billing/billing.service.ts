@@ -7,6 +7,10 @@ import { CheckoutWebhookHandlerService } from '../checkout/checkout-webhook-hand
 import { ConnectService } from '../connect/connect.service';
 import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
+// R43 Storefront Phase 1 — guest checkout webhook routing. Optional so
+// the billing module still boots in environments that have not imported
+// StorefrontModule (legacy tests, half-built deploys).
+import { GUEST_CHECKOUT_METADATA_KEY, GuestCheckoutService } from '../storefront/guest-checkout.service';
 
 // BillingService is the system of record for the Stripe-mirror tables. The
 // webhook controller hands it parsed Stripe event objects; this service
@@ -44,6 +48,9 @@ export class BillingService {
     // BillingService without the email module still work. When present
     // it dispatches dunning email on invoice.payment_failed.
     @Optional() private email?: EmailService,
+    // R43 — Optional so the billing module still boots when
+    // StorefrontModule is not imported (e.g. minimal test wiring).
+    @Optional() private guestCheckout?: GuestCheckoutService,
   ) {}
 
   // Idempotently process an event. Returns { processed: true } on first
@@ -113,10 +120,43 @@ export class BillingService {
         // CheckoutWebhookHandlerService (no SaaS-coach-subscription path).
         case 'checkout.session.completed':
         case 'checkout.session.expired':
-        case 'payment_intent.succeeded':
-        case 'payment_intent.payment_failed':
           // Already dispatched above; nothing more to do.
           break;
+        // R43 — Stripe payment_intent events may belong to either a
+        // logged-in coach purchase (handled above via checkoutWebhooks)
+        // or a guest checkout. Guest PIs carry our metadata sentinel.
+        // We forward to GuestCheckoutService when the sentinel is
+        // present, regardless of whether checkoutWebhooks claimed the
+        // event — guest PIs have no ClientPurchase row, so the
+        // checkout handler reports claimed=false and skips them.
+        case 'payment_intent.succeeded': {
+          const pi = event.data.object as {
+            id?: string;
+            metadata?: Record<string, string>;
+          };
+          if (
+            this.guestCheckout &&
+            pi?.id &&
+            pi.metadata?.[GUEST_CHECKOUT_METADATA_KEY]
+          ) {
+            await this.guestCheckout.handlePaymentSucceeded(pi.id);
+          }
+          break;
+        }
+        case 'payment_intent.payment_failed': {
+          const pi = event.data.object as {
+            id?: string;
+            metadata?: Record<string, string>;
+          };
+          if (
+            this.guestCheckout &&
+            pi?.id &&
+            pi.metadata?.[GUEST_CHECKOUT_METADATA_KEY]
+          ) {
+            await this.guestCheckout.handlePaymentFailed(pi.id);
+          }
+          break;
+        }
         // Phase 1 Connect — Express account state mirror. Same endpoint
         // receives both test-mode and live-mode events (livemode flag is
         // ignored here intentionally — both modes process identically).

@@ -566,6 +566,40 @@ export const ENV_RULES: EnvRule[] = [
   },
 
   // ============================================================
+  // R43 — TGP Storefront Phase 1 (guest checkout + share links)
+  // ============================================================
+  {
+    name: 'STOREFRONT_BASE_URL',
+    tier: 'feature',
+    reason:
+      'R43 — base URL of the Next.js storefront (e.g. https://tgp.app). Used to build share_url responses for POST /v1/coach/packages/:id/share-link and the success/cancel redirects on guest checkout. Defaults to https://tgp.app when unset; production must set explicitly so prod links resolve correctly.',
+    validate: (v) => {
+      if (!/^https?:\/\//i.test(v.trim())) {
+        return 'STOREFRONT_BASE_URL must be an absolute http(s) URL.';
+      }
+      return null;
+    },
+  },
+  {
+    name: 'APPLE_TEAM_ID',
+    tier: 'feature',
+    reason:
+      'R43 / Universal Links — Apple Developer Team ID (10-char alphanumeric). When set, /.well-known/apple-app-site-association serves a valid AASA mapping /join/* + /invite/* to the iOS app; when unset, the route returns a syntactically-valid stub and Universal Links do not activate (warning logged).',
+  },
+  {
+    name: 'ANDROID_SHA256_FINGERPRINT',
+    tier: 'feature',
+    reason:
+      'R43 / Android App Links — SHA-256 of the Android signing certificate (AA:BB:CC:... colon-separated uppercase hex). Alias for ANDROID_CERT_SHA256_FINGERPRINTS used by the storefront deploy. Either env var (or both) feeds /.well-known/assetlinks.json; when neither is set, App Links do not activate (warning logged).',
+  },
+  {
+    name: 'RESEND_API_KEY',
+    tier: 'feature',
+    reason:
+      'R43 — Resend API key used to dispatch the guest-checkout welcome email. When unset, the guest checkout flow still completes (account + entitlement created) but the welcome email is skipped and logged. Set this before launch.',
+  },
+
+  // ============================================================
   // Exercise Video Providers
   // ============================================================
   {

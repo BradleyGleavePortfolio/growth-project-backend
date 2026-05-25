@@ -3,6 +3,7 @@ import { CheckoutModule } from '../checkout/checkout.module';
 import { ConnectModule } from '../connect/connect.module';
 import { EmailModule } from '../email/email.module';
 import { PrismaService } from '../prisma.service';
+import { StorefrontModule } from '../storefront/storefront.module';
 import { BillingService } from './billing.service';
 import { CoachBillingController } from './coach-billing.controller';
 import { MobileCoachBillingController } from './mobile-coach-billing.controller';
@@ -27,6 +28,10 @@ import { StripeWebhookController } from './stripe-webhook.controller';
     // EmailModule re-exports EmailService so BillingService can dispatch
     // the dunning email on invoice.payment_failed. See QA P1-B1.
     EmailModule,
+    // R43 — StorefrontModule re-exports GuestCheckoutService so the
+    // Stripe webhook dispatcher can route payment_intent.* events for
+    // guest checkouts to it.
+    StorefrontModule,
   ],
   controllers: [
     StripeWebhookController,
