@@ -9,6 +9,8 @@ import 'reflect-metadata';
 import { ForbiddenException, ExecutionContext } from '@nestjs/common';
 import { NoActiveSubCoachGuard } from '../src/common/guards/no-active-sub-coach.guard';
 import { CommandCenterController } from '../src/coach/command-center/command-center.controller';
+import { JwtAuthGuard } from '../src/auth/auth.guard';
+import { CoachGuard } from '../src/auth/coach.guard';
 
 function makeContext(user: { id: string; role: string } | null): ExecutionContext {
   const req: any = { user };
@@ -88,11 +90,16 @@ describe('CommandCenterController — NoActiveSubCoachGuard wiring', () => {
 });
 
 describe('CommandCenterController — guard stack metadata', () => {
-  it('CommandCenterController has NoActiveSubCoachGuard wired in @UseGuards', () => {
+  it('CommandCenterController has the full guard stack in the required order', () => {
+    // The full stack must be [JwtAuthGuard, CoachGuard, NoActiveSubCoachGuard]
+    // in that order — auth before role check before sub-coach gating. Order
+    // matters: NoActiveSubCoachGuard reads req.user, which is only populated
+    // after JwtAuthGuard runs, and role checking before sub-coach gating
+    // means non-coaches get a clean 403 from CoachGuard rather than tripping
+    // an unrelated check.
     const guards: Function[] =
       Reflect.getMetadata('__guards__', CommandCenterController) ?? [];
-    const names = guards.map((g) => g.name);
-    expect(names).toContain('NoActiveSubCoachGuard');
+    expect(guards).toEqual([JwtAuthGuard, CoachGuard, NoActiveSubCoachGuard]);
   });
 
   it('routing the guard against the controller blocks an active sub-coach calling getOverview', async () => {

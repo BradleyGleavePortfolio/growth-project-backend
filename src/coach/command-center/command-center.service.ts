@@ -113,6 +113,8 @@ function clamp(n: number | undefined, fallback: number, max: number): number {
   return Math.min(Math.floor(n), max);
 }
 
+const MAP_ALERT_TYPE_LOGGER = new Logger('mapAlertType');
+
 function mapAlertType(backendType: string): ActionQueueAlertType {
   switch (backendType) {
     case 'risk_red_transition':
@@ -123,7 +125,14 @@ function mapAlertType(backendType: string): ActionQueueAlertType {
       return 'missed_checkins';
     case 'finance_eod_gap':
       return 'weight_not_logged';
+    case 'bloodwork_review':
+      return 'bloodwork_review';
     default:
+      // Unknown backend alert types are bucketed as high_churn_risk so
+      // the mobile client still renders a row, but log a warning so we
+      // notice and add an explicit mapping rather than silently
+      // mis-categorising new alert types.
+      MAP_ALERT_TYPE_LOGGER.warn(`Unknown alert type: ${backendType}`);
       return 'high_churn_risk';
   }
 }
@@ -134,8 +143,6 @@ function buildThreadId(id1: string, id2: string): string {
 
 @Injectable()
 export class CommandCenterService {
-  private readonly logger = new Logger(CommandCenterService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly adminPtm: AdminPtmService,

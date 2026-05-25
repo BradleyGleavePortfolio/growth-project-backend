@@ -120,14 +120,20 @@ function parseFactors(raw: Prisma.JsonValue | null | undefined): PtmFactor[] {
   return factors.sort((a, b) => b.contribution - a.contribution);
 }
 
-// Format a Date as YYYY-MM-DD in the local timezone. Never use
-// toISOString().slice(0,10) — that returns the UTC date, which is wrong
-// for any timezone east of UTC after late-evening events.
-function bucketDateLocal(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+// Format a Date as YYYY-MM-DD in the given IANA timezone. Uses
+// Intl.DateTimeFormat with an explicit `timeZone` so production hosts
+// running with TZ=UTC (e.g. Fly.io) still bucket dates in the coach's
+// local timezone. Never use toISOString().slice(0,10) — that returns
+// the UTC date — and never use Date#getFullYear/getMonth/getDate, which
+// silently fall back to the process timezone.
+function bucketDateLocal(d: Date, timeZone = 'America/Los_Angeles'): string {
+  // en-CA produces ISO-style YYYY-MM-DD natively.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
 }
 
 @Injectable()
@@ -367,8 +373,13 @@ export class ChurnInterventionService {
 
     const coach = await this.prisma.user.findUnique({
       where: { id: coachId },
-      select: { name: true },
+      select: {
+        name: true,
+        coach_profile: { select: { timezone: true } },
+      },
     });
+    const coachTimeZone =
+      coach?.coach_profile?.timezone ?? 'America/Los_Angeles';
 
     // Winner: generate AI draft. On failure mark the row failed so the
     // status reflects reality, then surface a sanitized 503.
@@ -380,6 +391,7 @@ export class ChurnInterventionService {
         topFactors: factors.slice(0, 3).map((f) => f.label),
         recentCheckIn,
         coachName: coach?.name ?? 'Your coach',
+        timeZone: coachTimeZone,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -493,6 +505,21 @@ export class ChurnInterventionService {
     // updateMany returns count: 0 (race loser), abort early — no nudge
     // is ever created. If anything inside the callback throws, Prisma
     // rolls the whole transaction back.
+    // Sentinel used to surface an idempotent-replay result from inside
+    // the transaction callback without committing a no-op write. Thrown
+    // when claim.count === 0 and the fresh row is the same caller's
+    // already-committed send (same send_idempotency_key + non-null
+    // nudge_id), then caught right outside the transaction.
+    type ReplayHit = {
+      __replay: true;
+      sent_at: Date;
+      nudge_id: string;
+    };
+    const isReplayHit = (e: unknown): e is ReplayHit =>
+      typeof e === 'object' &&
+      e !== null &&
+      (e as { __replay?: unknown }).__replay === true;
+
     try {
       await this.prisma.$transaction(async (tx) => {
         const claim = await tx.churnIntervention.updateMany({
@@ -518,6 +545,21 @@ export class ChurnInterventionService {
           });
           if (!fresh) throw new NotFoundException('Intervention not found');
           if (fresh.status === 'sent') {
+            // Same idempotency key + committed nudge = this is a replay
+            // of *our own* in-flight send that won the race. Surface the
+            // committed result as success rather than 409.
+            if (
+              fresh.send_idempotency_key === dto.idempotency_key &&
+              fresh.nudge_id &&
+              fresh.sent_at
+            ) {
+              const replay: ReplayHit = {
+                __replay: true,
+                sent_at: fresh.sent_at,
+                nudge_id: fresh.nudge_id,
+              };
+              throw replay;
+            }
             throw new ConflictException('Intervention already sent');
           }
           if (fresh.status === 'dismissed') {
@@ -539,6 +581,14 @@ export class ChurnInterventionService {
         });
       });
     } catch (err) {
+      if (isReplayHit(err)) {
+        return {
+          ok: true,
+          intervention_id: interventionId,
+          sent_at: err.sent_at.toISOString(),
+          nudge_id: err.nudge_id,
+        };
+      }
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002'
@@ -637,6 +687,7 @@ export class ChurnInterventionService {
       logged_at: Date;
     } | null;
     coachName: string;
+    timeZone: string;
   }): Promise<string> {
     const client = this.getAnthropicClient();
     const controller = new AbortController();
@@ -647,7 +698,7 @@ export class ChurnInterventionService {
       : `- ${ctx.topFactor}`;
 
     const lastCheckIn = ctx.recentCheckIn
-      ? `Their most recent check-in was on ${bucketDateLocal(ctx.recentCheckIn.logged_at)}. Mood: ${ctx.recentCheckIn.mood ?? 'not rated'}. Energy: ${ctx.recentCheckIn.energy ?? 'not rated'}.`
+      ? `Their most recent check-in was on ${bucketDateLocal(ctx.recentCheckIn.logged_at, ctx.timeZone)}. Mood: ${ctx.recentCheckIn.mood ?? 'not rated'}. Energy: ${ctx.recentCheckIn.energy ?? 'not rated'}.`
       : 'They have no recent check-in data.';
 
     const system = `You are a fitness coach assistant. Write a warm, supportive re-engagement message from a coach to a client who shows signs of disengaging.

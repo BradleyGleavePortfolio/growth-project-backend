@@ -20,7 +20,7 @@
 --   * client_id, created_at DESC       — per-client history drawer
 --   * coach_id, client_id              — coach's drafts for a given client
 
-CREATE TABLE "ChurnIntervention" (
+CREATE TABLE IF NOT EXISTS "ChurnIntervention" (
     "id" TEXT NOT NULL,
     "coach_id" TEXT NOT NULL,
     "client_id" TEXT NOT NULL,
@@ -41,11 +41,11 @@ CREATE TABLE "ChurnIntervention" (
 );
 
 -- Indexes
-CREATE UNIQUE INDEX "ChurnIntervention_idempotency_key_key" ON "ChurnIntervention"("idempotency_key");
-CREATE UNIQUE INDEX "ChurnIntervention_send_idempotency_key_key" ON "ChurnIntervention"("send_idempotency_key");
-CREATE INDEX "ChurnIntervention_coach_id_status_created_at_idx" ON "ChurnIntervention"("coach_id", "status", "created_at" DESC);
-CREATE INDEX "ChurnIntervention_client_id_created_at_idx" ON "ChurnIntervention"("client_id", "created_at" DESC);
-CREATE INDEX "ChurnIntervention_coach_id_client_id_idx" ON "ChurnIntervention"("coach_id", "client_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "ChurnIntervention_idempotency_key_key" ON "ChurnIntervention"("idempotency_key");
+CREATE UNIQUE INDEX IF NOT EXISTS "ChurnIntervention_send_idempotency_key_key" ON "ChurnIntervention"("send_idempotency_key");
+CREATE INDEX IF NOT EXISTS "ChurnIntervention_coach_id_status_created_at_idx" ON "ChurnIntervention"("coach_id", "status", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "ChurnIntervention_client_id_created_at_idx" ON "ChurnIntervention"("client_id", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "ChurnIntervention_coach_id_client_id_idx" ON "ChurnIntervention"("coach_id", "client_id");
 
 -- Foreign keys
 ALTER TABLE "ChurnIntervention"

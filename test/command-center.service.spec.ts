@@ -346,6 +346,33 @@ describe('CommandCenterService.getActionQueue', () => {
     expect(types).toEqual(['high_churn_risk', 'missed_checkins']);
     expect(out.total_pending).toBe(2);
   });
+
+  it('maps bloodwork_review backend alerts to bloodwork_review (not high_churn_risk)', async () => {
+    const now = new Date(PINNED_NOW);
+    const users = [
+      { id: 'u1', name: 'Alice', coach_id: 'c1', role: 'student', deleted_at: null },
+    ];
+    const prisma = buildPrisma({
+      users,
+      alerts: [
+        {
+          id: 'a1',
+          coach_id: 'c1',
+          client_id: 'u1',
+          alert_type: 'bloodwork_review',
+          severity: 'info',
+          message: 'new labs uploaded',
+          payload: null,
+          created_at: now,
+          acknowledged_at: null,
+        },
+      ],
+    });
+    const svc = new CommandCenterService(prisma, buildAdminPtm(), buildAlertsService());
+    const out = await svc.getActionQueue('c1', {});
+    expect(out.items.length).toBe(1);
+    expect(out.items[0].alert_type).toBe('bloodwork_review');
+  });
 });
 
 describe('CommandCenterService.dismissAlert', () => {

@@ -41,7 +41,8 @@ export type CoachAlertType =
   | 'risk_red_transition'
   | 'consecutive_misses'
   | 'streak_dropped'
-  | 'finance_eod_gap';
+  | 'finance_eod_gap'
+  | 'bloodwork_review';
 
 export type CoachAlertSeverity = 'info' | 'warning' | 'critical';
 
