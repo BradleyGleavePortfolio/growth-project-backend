@@ -17,9 +17,15 @@
 ALTER TABLE "ClientWorkoutAssignment"
   ADD COLUMN IF NOT EXISTS "approved_by_coach_at" TIMESTAMP(3);
 
-CREATE INDEX IF NOT EXISTS
-  "ClientWorkoutAssignment_assigned_by_coach_id_approved_by_coa_idx"
-  ON "ClientWorkoutAssignment" ("assigned_by_coach_id", "approved_by_coach_at");
+-- NOTE: The supporting index on
+--   ("assigned_by_coach_id", "approved_by_coach_at")
+-- is created in a follow-up migration
+--   20260704000001_coach_brief_cwa_index_concurrent
+-- that runs OUTSIDE the default Prisma transaction so it can use
+-- CREATE INDEX CONCURRENTLY. ClientWorkoutAssignment is a hot,
+-- populated table; a non-concurrent CREATE INDEX would take an
+-- ACCESS EXCLUSIVE lock and block writes for the duration of the
+-- index build. See that migration's header for details.
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- CoachBrief
@@ -241,5 +247,6 @@ CREATE POLICY "coach_update_own_brief_prefs"
 -- DROP TABLE IF EXISTS "CoachDailyLog"         CASCADE;
 -- DROP TABLE IF EXISTS "CoachBrief"            CASCADE;
 --
--- DROP INDEX IF EXISTS "ClientWorkoutAssignment_assigned_by_coach_id_approved_by_coa_idx";
+-- (Index drop is handled in the follow-up migration
+--  20260704000001_coach_brief_cwa_index_concurrent rollback notes.)
 -- ALTER TABLE "ClientWorkoutAssignment" DROP COLUMN IF EXISTS "approved_by_coach_at";

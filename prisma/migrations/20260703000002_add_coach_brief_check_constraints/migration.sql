@@ -14,10 +14,33 @@ ALTER TABLE "CoachBrief"
   ADD  CONSTRAINT "CoachBrief_status_check"
   CHECK ("status" IN ('pending', 'generating', 'generated', 'failed'));
 
+-- brief_date must be both YYYY-MM-DD shaped AND a real calendar date.
+-- A bare regex would happily accept '2026-02-30' or '2026-13-01'; the
+-- to_date() round-trip rejects those by failing IMMUTABLE coercion.
+-- We mark the function IMMUTABLE-safe with a CASE wrapper so the planner
+-- can keep the constraint inline.
 ALTER TABLE "CoachBrief"
   DROP CONSTRAINT IF EXISTS "CoachBrief_brief_date_format_check",
   ADD  CONSTRAINT "CoachBrief_brief_date_format_check"
-  CHECK ("brief_date" ~ '^\d{4}-\d{2}-\d{2}$');
+  CHECK (
+    "brief_date" ~ '^\d{4}-\d{2}-\d{2}$'
+    AND to_char(to_date("brief_date", 'YYYY-MM-DD'), 'YYYY-MM-DD') = "brief_date"
+  );
+
+-- Audit #4 P2-3: generation_started_at is the lease/claim timestamp
+-- written when status flips to 'generating'. generated_at is the
+-- completion timestamp written when narrative + action_items are
+-- persisted. By definition completion cannot precede claim. Anything
+-- else indicates a clock-skew bug or out-of-band write that bypassed
+-- the service layer.
+ALTER TABLE "CoachBrief"
+  DROP CONSTRAINT IF EXISTS "CoachBrief_claim_before_generated_check",
+  ADD  CONSTRAINT "CoachBrief_claim_before_generated_check"
+  CHECK (
+    "generated_at" IS NULL
+    OR "generation_started_at" IS NULL
+    OR "generated_at" >= "generation_started_at"
+  );
 
 ALTER TABLE "CoachBrief"
   DROP CONSTRAINT IF EXISTS "CoachBrief_generated_by_check",
@@ -40,10 +63,14 @@ ALTER TABLE "CoachBrief"
 -- CoachDailyLog
 -- ────────────────────────────────────────────────────────────────────────────
 
+-- Real-calendar check, same rationale as CoachBrief above.
 ALTER TABLE "CoachDailyLog"
   DROP CONSTRAINT IF EXISTS "CoachDailyLog_log_date_format_check",
   ADD  CONSTRAINT "CoachDailyLog_log_date_format_check"
-  CHECK ("log_date" ~ '^\d{4}-\d{2}-\d{2}$');
+  CHECK (
+    "log_date" ~ '^\d{4}-\d{2}-\d{2}$'
+    AND to_char(to_date("log_date", 'YYYY-MM-DD'), 'YYYY-MM-DD') = "log_date"
+  );
 
 -- DTO caps content at 4000 chars; mirror at the DB layer.
 ALTER TABLE "CoachDailyLog"
@@ -63,16 +90,33 @@ ALTER TABLE "CoachBriefPreferences"
 -- IANA timezone strings are ~64 chars at most ("America/Argentina/Buenos_Aires"
 -- is the longest in production use at 30); 80 is a comfortable ceiling
 -- that still blocks runaway writes.
+--
+-- Audit #4 P2-3: in addition to the length cap, enforce that the string
+-- looks like an IANA tz identifier. We cannot call pg_timezone_names()
+-- inside a CHECK (not IMMUTABLE), so the regex captures the well-formed
+-- subset: one of UTC | GMT | Etc/<word> | <Region>/<City>[/<SubCity>].
+-- Allowed chars: letters, digits, _, +, -. This blocks shell injection
+-- payloads, SQL fragments, and stray whitespace at the DB layer while
+-- bucketDateLocal() does the full Intl.DateTimeFormat validation in app.
 ALTER TABLE "CoachBriefPreferences"
   DROP CONSTRAINT IF EXISTS "CoachBriefPreferences_timezone_length_check",
   ADD  CONSTRAINT "CoachBriefPreferences_timezone_length_check"
   CHECK (char_length("timezone") BETWEEN 1 AND 80);
 
+ALTER TABLE "CoachBriefPreferences"
+  DROP CONSTRAINT IF EXISTS "CoachBriefPreferences_timezone_format_check",
+  ADD  CONSTRAINT "CoachBriefPreferences_timezone_format_check"
+  CHECK (
+    "timezone" ~ '^(UTC|GMT|Etc/[A-Za-z0-9_+\-]+|[A-Za-z_]+/[A-Za-z0-9_+\-]+(/[A-Za-z0-9_+\-]+)?)$'
+  );
+
 -- ROLLBACK:
+-- ALTER TABLE "CoachBriefPreferences" DROP CONSTRAINT IF EXISTS "CoachBriefPreferences_timezone_format_check";
 -- ALTER TABLE "CoachBriefPreferences" DROP CONSTRAINT IF EXISTS "CoachBriefPreferences_timezone_length_check";
 -- ALTER TABLE "CoachBriefPreferences" DROP CONSTRAINT IF EXISTS "CoachBriefPreferences_notification_time_check";
 -- ALTER TABLE "CoachDailyLog"         DROP CONSTRAINT IF EXISTS "CoachDailyLog_content_length_check";
 -- ALTER TABLE "CoachDailyLog"         DROP CONSTRAINT IF EXISTS "CoachDailyLog_log_date_format_check";
+-- ALTER TABLE "CoachBrief"            DROP CONSTRAINT IF EXISTS "CoachBrief_claim_before_generated_check";
 -- ALTER TABLE "CoachBrief"            DROP CONSTRAINT IF EXISTS "CoachBrief_narrative_length_check";
 -- ALTER TABLE "CoachBrief"            DROP CONSTRAINT IF EXISTS "CoachBrief_brief_mode_check";
 -- ALTER TABLE "CoachBrief"            DROP CONSTRAINT IF EXISTS "CoachBrief_generated_by_check";
