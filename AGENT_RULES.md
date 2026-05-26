@@ -15,6 +15,55 @@
 13. OAUTH CONSENT SCREEN MUST BE IN PRODUCTION MODE (LAUNCHING IN FRONT OF 800 PEOPLE).
 14. ALWAYS BUILD WITH THE LATEST VERSION OF ALL "PLUMBING" — DEPENDENCIES, LIBRARIES, SDKS, RUNTIMES, GITHUB ACTIONS, TOOLING. WHEN STARTING ANY NEW FEATURE OR PR, USE THE NEWEST STABLE VERSION OF EVERY DEPENDENCY IT TOUCHES. WHEN DEPENDABOT OPENS AN UPGRADE PR, "MERGE IT" IS THE DEFAULT OUTCOME. MAJOR-VERSION BREAKS GET THEIR OWN PR + AUDIT, NEVER DEFERRED INDEFINITELY. STALE PLUMBING IS TECH DEBT.
 
+## Worktree Discipline (R56–R60) — added 2026-05-26
+
+Codified after the CHECKOUT-HARDENING trampling incident: multiple
+parallel subagents in the same `git worktree` (`tgp/backend-main`)
+ran independent `git checkout` operations and destroyed each other's
+uncommitted work. Plus a full Claude Code runtime exit dropped 8
+concurrent subagents at once, exposing the fact that uncommitted work
+on the sandbox is unrecoverable.
+
+**R56 — One subagent per worktree, always.** Before spawning any
+code-writing subagent (codebase / general-purpose with file edits in
+a repo), the parent MUST create a dedicated `git worktree add` path.
+Subagent objective MUST contain the exact absolute path and the
+instruction "work ONLY in this directory; do not cd elsewhere."
+
+**R57 — `backend-main` and `mobile` are READ-ONLY for subagents.**
+They exist for inspecting current main and as a stable source of
+symlinkable `node_modules` / `prisma.config.ts`. No subagent ever
+writes there. If a subagent's objective directs work into backend-main
+or mobile, the objective is malformed and must be rejected before spawn.
+
+**R58 — Worktree naming convention.** Format:
+`/home/user/workspace/tgp/{repo}-{short-task-slug}`. Examples:
+`backend-272-fix`, `backend-checkout-hardening`, `backend-dunning`,
+`mobile-wb-fix`. Slug is short, lowercase, hyphenated, unique per
+concurrent task. Parent maintains a slug→subagent_id ledger.
+
+**R59 — Pre-flight worktree check.** Before spawning a code-writing
+subagent, run `ls /home/user/workspace/tgp/` and confirm target
+path doesn't already exist. If orphaned: reuse only if same branch
+and clean; otherwise `git worktree remove --force` then add fresh,
+or pick a new slug. Never silently overwrite.
+
+**R60 — Audits get worktrees too.** R31 audit subagents that
+checkout PR branches need isolated worktrees per R56. Use slug
+pattern `{repo}-{task}-audit` (e.g. `backend-wb-audit`).
+
+## Sandbox Preservation (R61) — added 2026-05-26
+
+**R61 — Push to GitHub every 2 minutes, always.** Every active
+worktree with uncommitted or unpushed work must be force-pushed to
+GitHub at minimum every 2 minutes. If the sandbox dies right now,
+all ongoing work must be preserved on the remote. The parent agent
+runs `git add -A && git -c user.email=... commit -m "wip-autopush:
+$(date -Iseconds)" && git push -u origin $BRANCH` for every active
+branch on every natural breakpoint (after spawning subagents,
+before waiting, after each completion). Uncommitted work on a
+sandbox is unrecoverable. Push first, push often.
+
 ## Retired rules
 
 - **R10 — RETIRED 2026-05-26.** Original intent: grandfathered failing
