@@ -376,7 +376,19 @@ a:hover { color: var(--accent); }
   cursor: pointer; transition: background 200ms ease-out;
 }
 .lead-form__submit:hover { background: #2a2018; }
+.lead-form__submit:disabled { background: #6b5a4a; cursor: progress; }
 .lead-form__reassurance { color: #5c4d3f; font-size: var(--t-14); margin-top: 8px; }
+.lead-form__error {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: rgba(217, 119, 87, 0.12);
+  border-left: 3px solid #d97757;
+  color: #c25533;
+  font-size: var(--t-14);
+  line-height: 1.4;
+}
+.lead-form__error[hidden] { display: none; }
 
 /* Celebration card (replaces form on submit success) */
 .celebrate {
@@ -711,8 +723,9 @@ function renderLeadForm(
     </div>
     <form class="lead-form reveal" id="lead-form-el" style="--d:80ms" action="${escAttr(formAction)}" method="POST" data-coach-name="${esc(coachName)}">
       ${fieldHtml}
-      <button class="lead-form__submit" type="submit">${esc(ctaLabel)}</button>
+      <button class="lead-form__submit" type="submit" id="lead-form-submit">${esc(ctaLabel)}</button>
       <p class="lead-form__reassurance">No spam. ${esc(coachName)} responds within 24 hours.</p>
+      <div class="lead-form__error" id="lead-form-error" role="alert" aria-live="assertive" hidden>Something went wrong. Please try again.</div>
     </form>
     <div class="celebrate" id="lead-celebration" style="display: none" role="status" aria-live="polite">
       <span class="mote"></span>
@@ -727,14 +740,27 @@ function renderLeadForm(
   var celebrate = document.getElementById('lead-celebration');
   var line = document.getElementById('celebrate-line');
   var sub = document.getElementById('celebrate-sub');
-  if (!form || !celebrate || !line || !sub) return;
+  var submitBtn = document.getElementById('lead-form-submit');
+  var errorBox = document.getElementById('lead-form-error');
+  if (!form || !celebrate || !line || !sub || !submitBtn || !errorBox) return;
   var coachName = form.getAttribute('data-coach-name') || 'your coach';
   form.addEventListener('submit', function (e) {
     e.preventDefault();
+    /* Hide any prior error + lock the submit so a double-tap can't fire a
+       second request while the first is in flight.  Re-enabled below on
+       both the failure path (so the user can retry) and the network-drop
+       path. */
+    errorBox.hidden = true;
+    submitBtn.disabled = true;
     var data = new FormData(form);
     var body = {};
     data.forEach(function (v, k) { body[k] = v; });
     var firstName = (body.name || '').split(' ')[0] || 'friend';
+    var showError = function (msg) {
+      errorBox.textContent = msg || 'Something went wrong. Please try again.';
+      errorBox.hidden = false;
+      submitBtn.disabled = false;
+    };
     fetch(form.action, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -746,9 +772,17 @@ function renderLeadForm(
           line.textContent = 'Thanks, ' + firstName + '.';
           sub.textContent = coachName + ' will be in touch within 24 hours.';
           celebrate.style.display = 'block';
+        } else if (r.status === 429) {
+          showError("We've received too many submissions in a short window. Please try again in a few minutes.");
+        } else {
+          showError('Something went wrong. Please try again.');
         }
       })
-      .catch(function () { /* network drop — let the user retry */ });
+      .catch(function () {
+        /* Network drop — re-enable submit + surface a retry-friendly
+           message instead of leaving the form silent. */
+        showError("Couldn't reach the server. Check your connection and try again.");
+      });
   });
 })();
 </script>`;
