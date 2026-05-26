@@ -618,6 +618,91 @@ describe('CheckoutRecoveryService.onModuleInit — boot fail-closed (A276-F5-P1-
     expect((svc as any).redis).toBeNull();
   });
 
+  // A276-F5-P2-1 — default-secure NODE_ENV. An operator who forgets to set
+  // NODE_ENV in prod (Fly machine re-imaged, fly.toml env block deleted,
+  // ConfigService not loading .env) used to silently fall through to the
+  // 'development' default and boot into in-memory mode — re-opening the
+  // cross-machine-replay window P1-1 was designed to close. Default-secure
+  // pattern: treat unset/undefined NODE_ENV as production (fail-closed).
+  it('NODE_ENV unset + REDIS_URL unset → onModuleInit THROWS (default-secure: treat unknown env as prod)', async () => {
+    // jest runs with NODE_ENV=test by default; scrub both the config value
+    // and the process env fallback so the service sees a truly unset env.
+    delete process.env.NODE_ENV;
+    const svc = makeServiceForBoot({ nodeEnv: undefined, redisUrl: undefined });
+    await expect(svc.onModuleInit()).rejects.toThrow(/REDIS_URL is required/);
+    expect((svc as any).redis).toBeNull();
+  });
+
+  it('NODE_ENV unset + REDIS_URL set but unreachable → onModuleInit THROWS (default-secure)', async () => {
+    let CRS!: typeof CheckoutRecoveryService;
+    jest.isolateModules(() => {
+      jest.doMock('ioredis', () => {
+        class FakeRedis {
+          async connect() {
+            throw new Error('ECONNREFUSED unset-env');
+          }
+          disconnect() {}
+        }
+        return { __esModule: true, default: FakeRedis };
+      });
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      ({ CheckoutRecoveryService: CRS } = require('../src/storefront/checkout-recovery.service'));
+    });
+    const config = {
+      get: jest.fn((k: string) => {
+        if (k === 'CHECKOUT_RECOVERY_SECRET') return VALID_SECRET;
+        if (k === 'REDIS_URL') return 'redis://unreachable:6379';
+        if (k === 'NODE_ENV') return undefined;
+        return undefined;
+      }),
+    } as unknown as ConfigService;
+    // Also scrub process.env so the fallback path can't pick a value up.
+    delete process.env.NODE_ENV;
+    const prisma = { guestCheckout: { findUnique: jest.fn() } } as any;
+    const svc = new CRS(prisma, config);
+    await expect(svc.onModuleInit()).rejects.toThrow(/ECONNREFUSED/);
+    expect((svc as any).redis).toBeNull();
+  });
+
+  // A276-F5-P2-2 — staging mirrors prod topology (multi-machine behind
+  // a load balancer). The original strict `=== 'production'` check
+  // dropped staging to in-memory and left the same cross-machine-replay
+  // window exposed. Staging is now in the fail-closed set.
+  it('NODE_ENV=staging + REDIS_URL unset → onModuleInit THROWS (staging is multi-machine → fail-closed)', async () => {
+    const svc = makeServiceForBoot({ nodeEnv: 'staging', redisUrl: undefined });
+    await expect(svc.onModuleInit()).rejects.toThrow(/REDIS_URL is required in staging/);
+    expect((svc as any).redis).toBeNull();
+  });
+
+  it('NODE_ENV=staging + REDIS_URL set but unreachable → onModuleInit THROWS (staging fail-closed)', async () => {
+    let CRS!: typeof CheckoutRecoveryService;
+    jest.isolateModules(() => {
+      jest.doMock('ioredis', () => {
+        class FakeRedis {
+          async connect() {
+            throw new Error('ECONNREFUSED staging');
+          }
+          disconnect() {}
+        }
+        return { __esModule: true, default: FakeRedis };
+      });
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      ({ CheckoutRecoveryService: CRS } = require('../src/storefront/checkout-recovery.service'));
+    });
+    const config = {
+      get: jest.fn((k: string) => {
+        if (k === 'CHECKOUT_RECOVERY_SECRET') return VALID_SECRET;
+        if (k === 'REDIS_URL') return 'redis://unreachable:6379';
+        if (k === 'NODE_ENV') return 'staging';
+        return undefined;
+      }),
+    } as unknown as ConfigService;
+    const prisma = { guestCheckout: { findUnique: jest.fn() } } as any;
+    const svc = new CRS(prisma, config);
+    await expect(svc.onModuleInit()).rejects.toThrow(/ECONNREFUSED/);
+    expect((svc as any).redis).toBeNull();
+  });
+
   it('non-production + REDIS_URL set but unreachable → onModuleInit RESOLVES with warn (in-memory fallback)', async () => {
     let CRS!: typeof CheckoutRecoveryService;
     jest.isolateModules(() => {

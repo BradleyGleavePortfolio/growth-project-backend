@@ -97,17 +97,35 @@ export class CheckoutRecoveryService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     const redisUrl = this.config.get<string>('REDIS_URL');
-    const nodeEnv =
-      this.config.get<string>('NODE_ENV') ?? process.env.NODE_ENV ?? 'development';
-    const isProd = nodeEnv === 'production';
+    // A276-F5-P2-1+2 — default-secure NODE_ENV handling. Two operational
+    // failure modes the prior code missed:
+    //   1. NODE_ENV unset (Fly machine re-imaged, fly.toml env block deleted,
+    //      ConfigService failed to load .env): the old `?? 'development'`
+    //      default silently demoted a misdeployed prod to the in-memory
+    //      fallback — exactly the cross-machine-replay window the P1-1 fix
+    //      was designed to close. Decacorn pattern is "default secure":
+    //      treat unset/undefined as production.
+    //   2. NODE_ENV='staging': staging mirrors prod topology (multiple
+    //      machines behind a load balancer, real Redis). The strict
+    //      `=== 'production'` check dropped staging to in-memory, leaving
+    //      the same cross-machine replay bug exposed in any non-literal-prod
+    //      multi-machine env. Treat staging as fail-closed alongside prod.
+    // Only an EXPLICIT 'development' or 'test' value enables the fallback.
+    const nodeEnvRaw =
+      this.config.get<string>('NODE_ENV') ?? process.env.NODE_ENV ?? undefined;
+    const nodeEnv = nodeEnvRaw === undefined ? undefined : nodeEnvRaw;
+    const isProd = !nodeEnv || nodeEnv === 'production' || nodeEnv === 'staging';
     if (!redisUrl) {
-      // A276-F5-P1-1 — REDIS_URL is REQUIRED in production. The in-memory
-      // fallback is single-process only; with ≥2 Fly machines behind a
-      // load balancer it cannot enforce single-use across the cluster,
-      // which defeats the whole point of the single-use guard.
+      // A276-F5-P1-1 / F5-P2-1+2 — REDIS_URL is REQUIRED in any
+      // multi-machine env (production, staging, or env-unset "unknown =
+      // assume prod"). The in-memory fallback is single-process only;
+      // with ≥2 Fly machines behind a load balancer it cannot enforce
+      // single-use across the cluster, which defeats the whole point of
+      // the single-use guard.
       if (isProd) {
+        const envLabel = nodeEnv ?? '<unset>';
         const msg =
-          'CheckoutRecoveryService: REDIS_URL is required in production — refusing to boot. ' +
+          `CheckoutRecoveryService: REDIS_URL is required in ${envLabel} — refusing to boot. ` +
           'The in-memory single-use guard is single-process and unsafe across the Fly cluster.';
         this.logger.error(msg);
         throw new Error(msg);
@@ -125,11 +143,12 @@ export class CheckoutRecoveryService implements OnModuleInit {
       await this.redis.connect();
       this.logger.log('CheckoutRecoveryService: Redis single-use guard connected');
     } catch (err) {
-      // A276-F5-P1-1 — fail CLOSED in production. A boot-time Redis
-      // outage previously silently demoted us to the in-memory guard,
-      // re-opening the cross-machine replay window the JWT-jti work was
-      // designed to close. Refuse to start instead — the process
-      // supervisor (Fly) will retry until Redis is reachable.
+      // A276-F5-P1-1 / F5-P2-1+2 — fail CLOSED in any multi-machine env
+      // (production, staging, or env-unset "unknown = assume prod"). A
+      // boot-time Redis outage previously silently demoted us to the
+      // in-memory guard, re-opening the cross-machine replay window the
+      // JWT-jti work was designed to close. Refuse to start instead — the
+      // process supervisor (Fly) will retry until Redis is reachable.
       const detail = err instanceof Error ? err.message : 'unknown';
       if (isProd) {
         this.logger.error(
@@ -147,7 +166,7 @@ export class CheckoutRecoveryService implements OnModuleInit {
           : new Error(`CheckoutRecoveryService Redis connect failed: ${detail}`);
       }
       this.logger.warn(
-        `CheckoutRecoveryService: Redis unavailable in ${nodeEnv}, falling back to in-memory (dev/test only): ${detail}`,
+        `CheckoutRecoveryService: Redis unavailable in ${nodeEnv ?? '<unset>'}, falling back to in-memory (dev/test only): ${detail}`,
       );
       this.redis = null;
     }
