@@ -63,3 +63,15 @@ $(date -Iseconds)" && git push -u origin $BRANCH` for every active
 branch on every natural breakpoint (after spawning subagents,
 before waiting, after each completion). Uncommitted work on a
 sandbox is unrecoverable. Push first, push often.
+
+## Retired rules
+
+- **R10 — RETIRED 2026-05-26.** Original intent: grandfathered failing
+  tests on `main` could remain red while a domain ticket existed. The
+  3 remaining grandfathered failures turned out to be stale test-helper
+  bugs (A1-C5-P1-1, A1-C5-P1-3, A1-C5-P1-4), all fixed in
+  `chore/r10-cleanup-fix-stale-tests`. New CLEAN bar replaces R10:
+  **CI green + 0 P0 + 0 P1 + 0 P2** on `main` at all times. Rule
+  reference preserved here so old PRs/audits citing R10 remain
+  traceable. See `docs/PRE_EXISTING_TEST_FAILURES.md` for the full
+  retirement note.
