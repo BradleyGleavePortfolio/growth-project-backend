@@ -163,6 +163,27 @@ export class RefundDisputeHandlerService {
         where: { id: purchase.id },
         data: { status: 'refunded', entitlement_active: false },
       });
+
+      // A276 P1-2 (refix) — keep the originating GuestCheckout row in
+      // lockstep. After conversion the row's status is 'converted'; a
+      // refund of the underlying charge must flip it to 'refunded' so
+      // admin reports that filter `GuestCheckout WHERE status='refunded'`
+      // surface the transaction. updateMany with a status guard makes
+      // this idempotent under Stripe redelivery and a no-op when no
+      // GuestCheckout exists (direct ClientPurchase paths). We never
+      // re-stamp refunded_at here — the GuestCheckout-path handler
+      // (handleChargeRefunded) owns that field's audit trail; in the
+      // post-conversion case it stays null, which correctly reflects
+      // "never refunded through the guest path".
+      if (purchase.stripe_payment_intent_id) {
+        await this.prisma.guestCheckout.updateMany({
+          where: {
+            stripe_payment_intent_id: purchase.stripe_payment_intent_id,
+            status: { not: 'refunded' },
+          },
+          data: { status: 'refunded' },
+        });
+      }
     }
 
     // A276 P0-2 (refix) — emit COACH_ALERT once per refund id whose

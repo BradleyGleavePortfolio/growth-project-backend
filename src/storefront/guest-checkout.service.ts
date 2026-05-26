@@ -858,10 +858,21 @@ export class GuestCheckoutService {
       // ClientPurchase may exist (post-converted guest, or future direct-
       // checkout flows that route through this handler).  Both writes
       // share a single $transaction so a partial failure rolls back.
+      //
+      // A276-P1-2 — Stripe's charge.refunded delivers CUMULATIVE
+      // amount_refunded. A partial-then-full sequence is two distinct
+      // events; the first stamps refunded_at, the second sees fully
+      // refunded but the original WHERE refunded_at:null guard would skip
+      // the GuestCheckout row, leaving status='paid' even though
+      // ClientPurchase has flipped to 'refunded' (P1-2 desync). To keep
+      // the two tables in lockstep we emit a second updateMany for the
+      // partial→full upgrade path: WHERE refunded_at IS NOT NULL AND
+      // status != 'refunded'. Both updateMany calls are guarded so a pure
+      // re-delivery (no state change) claims nothing in either branch.
       const result = await this.prisma.$transaction(async (tx) => {
         let guestClaimed = 0;
         if (row) {
-          const claim = await tx.guestCheckout.updateMany({
+          const firstClaim = await tx.guestCheckout.updateMany({
             where: {
               stripe_payment_intent_id: paymentIntentId,
               refunded_at: null,
@@ -871,7 +882,27 @@ export class GuestCheckoutService {
               refunded_at: new Date(),
             },
           });
-          guestClaimed = claim.count;
+          guestClaimed = firstClaim.count;
+
+          // Partial→full upgrade. Only runs on the delivery that closes
+          // out a charge that was previously partially refunded: status
+          // is still 'paid'/'converted' but refunded_at is already set.
+          // The status != 'refunded' guard keeps the write idempotent —
+          // a third re-delivery on an already-fully-refunded row claims
+          // zero. We deliberately do NOT re-stamp refunded_at (the audit
+          // trail keeps the original first-refund timestamp).
+          if (fullyRefunded && firstClaim.count === 0) {
+            const upgrade = await tx.guestCheckout.updateMany({
+              where: {
+                stripe_payment_intent_id: paymentIntentId,
+                status: { not: 'refunded' },
+              },
+              data: {
+                status: 'refunded',
+              },
+            });
+            guestClaimed = upgrade.count;
+          }
         }
 
         // Revoke entitlement on the matching ClientPurchase row(s) when

@@ -6,12 +6,36 @@ function makePrismaStub() {
   const transfers: any[] = [];
   const refunds: any[] = [];
   const disputes: any[] = [];
+  // A276-P1-2 (refix) — RefundDisputeHandlerService now mirrors the
+  // GuestCheckout row's status when ClientPurchase flips to 'refunded',
+  // keeping admin reports that filter by GuestCheckout.status in lockstep.
+  const guestCheckouts: any[] = [];
   return {
     _purchases: purchases,
     _splits: splits,
     _transfers: transfers,
     _refunds: refunds,
     _disputes: disputes,
+    _guestCheckouts: guestCheckouts,
+    guestCheckout: {
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const matchesStatus = (row: any) => {
+          if (where.status === undefined) return true;
+          if (typeof where.status === 'object' && where.status !== null) {
+            if ('not' in where.status) return row.status !== where.status.not;
+          }
+          return row.status === where.status;
+        };
+        const matched = guestCheckouts.filter(
+          (r) =>
+            (where.stripe_payment_intent_id === undefined ||
+              r.stripe_payment_intent_id === where.stripe_payment_intent_id) &&
+            matchesStatus(r),
+        );
+        for (const r of matched) Object.assign(r, data);
+        return { count: matched.length };
+      }),
+    },
     clientPurchase: {
       findUnique: jest.fn(async ({ where }: any) =>
         purchases.find((p) => p.id === where.id) ?? null,
@@ -252,6 +276,167 @@ describe('RefundDisputeHandlerService', () => {
     const dest = prisma._splits.find((s: any) => s.kind === 'destination');
     expect(dest.reversed_cents).toBe(9_800);
     expect(dest.status).toBe('reversed');
+  });
+
+  // A276-P1-2 (refix) — a refund routed through the converted-purchase
+  // path must also flip the originating GuestCheckout row's status from
+  // 'converted' to 'refunded' so admin reports filtering by
+  // GuestCheckout.status surface the transaction. Without the lockstep,
+  // ClientPurchase.status='refunded' diverges from GuestCheckout.status=
+  // 'converted' for the lifetime of the row (P1-2 audit finding).
+  it('A276-P1-2: full refund on converted purchase flips the originating GuestCheckout to refunded', async () => {
+    const { svc, prisma } = makeServices();
+    prisma._purchases.push({
+      id: 'p_conv',
+      amount_cents: 10_000,
+      stripe_payment_intent_id: 'pi_conv',
+    });
+    prisma._splits.push({
+      id: 'l1',
+      purchase_id: 'p_conv',
+      kind: 'destination',
+      amount_cents: 9_800,
+      reversed_cents: 0,
+      status: 'posted',
+      stripe_charge_id: 'ch_conv',
+    });
+    prisma._guestCheckouts.push({
+      id: 'gc_conv',
+      stripe_payment_intent_id: 'pi_conv',
+      status: 'converted',
+      refunded_at: null,
+    });
+
+    const result = await svc.handle({
+      id: 'evt_lockstep',
+      type: 'charge.refunded',
+      data: {
+        object: {
+          id: 'ch_conv',
+          amount: 10_000,
+          amount_refunded: 10_000,
+          refunds: { data: [{ id: 'rf_lockstep', amount: 10_000, status: 'succeeded' }] },
+        },
+      },
+    });
+
+    expect(result.claimed).toBe(true);
+    // ClientPurchase flipped.
+    expect(
+      prisma._purchases.find((x: any) => x.id === 'p_conv').status,
+    ).toBe('refunded');
+    // GuestCheckout flipped in lockstep.
+    const gc = prisma._guestCheckouts.find((g: any) => g.id === 'gc_conv');
+    expect(gc.status).toBe('refunded');
+    // refunded_at is NOT re-stamped on this path (the GuestCheckout
+    // handler owns that field; in the post-conversion case it stays
+    // null — "never refunded through the guest path").
+    expect(gc.refunded_at).toBeNull();
+  });
+
+  // A276-P1-2 (refix) — partial refund on the converted-purchase path
+  // does NOT touch GuestCheckout.status. Status flip is reserved for
+  // the closing delivery that completes the full refund.
+  it('A276-P1-2: partial refund on converted purchase does NOT flip the GuestCheckout status', async () => {
+    const { svc, prisma } = makeServices();
+    prisma._purchases.push({
+      id: 'p_partial',
+      amount_cents: 10_000,
+      stripe_payment_intent_id: 'pi_partial',
+    });
+    prisma._splits.push({
+      id: 'l1',
+      purchase_id: 'p_partial',
+      kind: 'destination',
+      amount_cents: 9_800,
+      reversed_cents: 0,
+      status: 'posted',
+      stripe_charge_id: 'ch_partial',
+    });
+    prisma._guestCheckouts.push({
+      id: 'gc_partial',
+      stripe_payment_intent_id: 'pi_partial',
+      status: 'converted',
+      refunded_at: null,
+    });
+
+    await svc.handle({
+      id: 'evt_partial',
+      type: 'charge.refunded',
+      data: {
+        object: {
+          id: 'ch_partial',
+          amount: 10_000,
+          amount_refunded: 4_000,
+          refunds: { data: [{ id: 'rf_partial', amount: 4_000, status: 'succeeded' }] },
+        },
+      },
+    });
+
+    const gc = prisma._guestCheckouts.find((g: any) => g.id === 'gc_partial');
+    expect(gc.status).toBe('converted');
+  });
+
+  // A276-P1-2 (refix) — lockstep update is idempotent. A Stripe
+  // re-delivery of the same closing event re-runs the updateMany but
+  // the WHERE status:{not:'refunded'} guard matches zero rows.
+  it('A276-P1-2: lockstep update is idempotent on Stripe re-delivery', async () => {
+    const { svc, prisma } = makeServices();
+    prisma._purchases.push({
+      id: 'p_redeliv',
+      amount_cents: 10_000,
+      stripe_payment_intent_id: 'pi_redeliv',
+      status: 'refunded',
+      entitlement_active: false,
+    });
+    prisma._splits.push({
+      id: 'l1',
+      purchase_id: 'p_redeliv',
+      kind: 'destination',
+      amount_cents: 9_800,
+      reversed_cents: 9_800,
+      status: 'reversed',
+      stripe_charge_id: 'ch_redeliv',
+    });
+    prisma._guestCheckouts.push({
+      id: 'gc_redeliv',
+      stripe_payment_intent_id: 'pi_redeliv',
+      status: 'refunded', // already mirrored from prior delivery
+      refunded_at: null,
+    });
+    // Pre-stamp the refund so the ledger-reversal path treats this as
+    // a re-delivery.
+    prisma._refunds.push({
+      id: 'rf-1',
+      stripe_refund_id: 'rf_redeliv',
+      purchase_id: 'p_redeliv',
+      stripe_charge_id: 'ch_redeliv',
+      amount_cents: 10_000,
+      status: 'succeeded',
+      ledger_reversed: true,
+      transfer_reversed: true,
+    });
+
+    await svc.handle({
+      id: 'evt_redeliv',
+      type: 'charge.refunded',
+      data: {
+        object: {
+          id: 'ch_redeliv',
+          amount: 10_000,
+          amount_refunded: 10_000,
+          refunds: { data: [{ id: 'rf_redeliv', amount: 10_000, status: 'succeeded' }] },
+        },
+      },
+    });
+
+    // GuestCheckout row still 'refunded' — but the updateMany call's
+    // count was 0 (status:{not:'refunded'} matched nothing). We assert
+    // by checking the mock call shape.
+    const gcCalls = (prisma.guestCheckout.updateMany as jest.Mock).mock.calls;
+    expect(gcCalls.length).toBeGreaterThanOrEqual(1);
+    const lastCall = gcCalls[gcCalls.length - 1][0];
+    expect(lastCall.where.status).toEqual({ not: 'refunded' });
   });
 
   it('partial refund reverses only the proportional ledger amount', async () => {

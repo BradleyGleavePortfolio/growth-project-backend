@@ -88,7 +88,11 @@ function buildPrismaMocks(): PrismaMocks {
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
-      updateMany: jest.fn(),
+      // A276-P1-2 — default to no-op so unrelated tests keep passing.
+      // handleChargeRefunded may emit two updateMany calls (the initial
+      // refunded_at stamp and the partial→full status upgrade); tests
+      // that don't override the default see a benign count:0 for both.
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     user: {
@@ -1004,6 +1008,104 @@ describe('GuestCheckoutService', () => {
       // The refund + entitlement-revoke writes still ran.
       expect(prisma.guestCheckout.updateMany).toHaveBeenCalledTimes(1);
       expect(prisma.clientPurchase.updateMany).toHaveBeenCalledTimes(1);
+    });
+
+    // A276-P1-2 (refix) — Stripe delivers charge.refunded once per
+    // refund. A partial-then-full sequence is two distinct events; the
+    // first stamps refunded_at on GuestCheckout but leaves status='paid'
+    // (or 'converted'), and on the second delivery the original
+    // updateMany WHERE refunded_at:null guard would skip GuestCheckout
+    // entirely, leaving its status desynced from ClientPurchase.status=
+    // 'refunded'. The fix issues a second updateMany when the first
+    // claims zero and the cumulative amount is fully refunded.
+    it('partial-then-full: second delivery upgrades GuestCheckout.status to refunded even though refunded_at was set on the first', async () => {
+      // Second delivery: refunded_at already stamped from a prior
+      // partial refund, so the row.status is still 'paid' and
+      // refunded_at is non-null.
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(
+        refundedGuestRow({ status: 'paid', refunded_at: new Date() }),
+      );
+      // First updateMany (WHERE refunded_at:null) claims zero.
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 0 });
+      // Second updateMany (the partial→full upgrade) claims one.
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+      // ClientPurchase entitlement-revoke claims one (this is the
+      // delivery that completes the full refund).
+      prisma.clientPurchase.updateMany.mockResolvedValueOnce({ count: 1 });
+
+      const result = await service.handleChargeRefunded('pi_ref', 29700, 29700);
+
+      expect(result).toEqual({ claimed: true });
+      // Both updateMany calls fired.
+      expect(prisma.guestCheckout.updateMany).toHaveBeenCalledTimes(2);
+      // First call: original stamp guard.
+      expect(prisma.guestCheckout.updateMany.mock.calls[0][0]).toMatchObject({
+        where: { stripe_payment_intent_id: 'pi_ref', refunded_at: null },
+        data: { status: 'refunded' },
+      });
+      // Second call: the partial→full status upgrade. MUST guard on
+      // status != 'refunded' so a third re-delivery is a no-op, and
+      // MUST NOT re-stamp refunded_at (preserves original timestamp).
+      const upgradeCall = prisma.guestCheckout.updateMany.mock.calls[1][0];
+      expect(upgradeCall).toMatchObject({
+        where: {
+          stripe_payment_intent_id: 'pi_ref',
+          status: { not: 'refunded' },
+        },
+        data: { status: 'refunded' },
+      });
+      expect(upgradeCall.data.refunded_at).toBeUndefined();
+      // ClientPurchase entitlement was revoked.
+      expect(prisma.clientPurchase.updateMany).toHaveBeenCalledTimes(1);
+      // Coach was notified — the partial→full transition is exactly
+      // the moment a coach needs to know entitlement just flipped.
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+      const notif = notifications.createNotification.mock.calls[0][0];
+      expect(notif.payload).toMatchObject({
+        fully_refunded: true,
+        entitlement_revoked: true,
+      });
+    });
+
+    // A276-P1-2 (refix) — third re-delivery after a partial→full
+    // completion must be a no-op in both branches.
+    it('partial-then-full: third re-delivery (status already refunded) is a no-op and does not re-notify', async () => {
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(
+        refundedGuestRow({ status: 'refunded', refunded_at: new Date() }),
+      );
+      // WHERE refunded_at:null guard catches nothing.
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 0 });
+      // WHERE status:{not:'refunded'} also catches nothing.
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 0 });
+      prisma.clientPurchase.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      const result = await service.handleChargeRefunded('pi_ref', 29700, 29700);
+
+      expect(result).toEqual({ claimed: true });
+      expect(notifications.createNotification).not.toHaveBeenCalled();
+    });
+
+    // A276-P1-2 (refix) — also covers the converted-guest case where
+    // the row's status is 'converted' (post-conversion partial refund
+    // through the guest-checkout webhook fallback path).
+    it('partial-then-full on converted row: upgrades converted→refunded on the closing delivery', async () => {
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(
+        refundedGuestRow({ status: 'converted', refunded_at: new Date() }),
+      );
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 0 });
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+      prisma.clientPurchase.updateMany.mockResolvedValueOnce({ count: 1 });
+
+      const result = await service.handleChargeRefunded('pi_ref', 29700, 29700);
+
+      expect(result).toEqual({ claimed: true });
+      expect(prisma.guestCheckout.updateMany.mock.calls[1][0]).toMatchObject({
+        where: {
+          stripe_payment_intent_id: 'pi_ref',
+          status: { not: 'refunded' },
+        },
+        data: { status: 'refunded' },
+      });
     });
   });
 
