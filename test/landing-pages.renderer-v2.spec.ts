@@ -101,6 +101,40 @@ describe('R52 SaaS-brand tokens', () => {
     }
   });
 
+  it('audit P0 backstop — extended banned-token list (teal/hydra/forest/GT Sectra)', () => {
+    // Renders every section kind we know about (so any kind-specific
+    // stylesheet leak surfaces here, not just hero) plus an explicit
+    // accent value (proves accent resolution can't sneak a banned hex in).
+    const html = renderPublicPage(
+      buildPage({
+        accent_color: '#d4a574',
+        sections: [
+          sec('hero', { headline: 'h', subheadline: 's' }),
+          sec('problem_solution', { problem_title: 'p', problem_body: 'pb', solution_title: 's', solution_body: 'sb' }),
+          sec('mechanism', { steps: [{ title: 'a', body: 'b' }, { title: 'c', body: 'd' }, { title: 'e', body: 'f' }] }),
+          sec('trust', { credentials: ['x'], numbers: [{ value: '1', label: 'l' }] }),
+          sec('testimonials', { items: [{ name: 'A', quote: 'q', result_metric: '-1 lb' }] }),
+          sec('lead_form', { fields: ['name', 'email'] }),
+          sec('faq', { items: [{ question: 'q', answer: 'a' }] }),
+        ],
+      }),
+      [], 'jsmith', BASE_URL,
+    );
+    const banned = [
+      '#0d4f3c',   // founder forest green
+      'oxblood',   // founder accent
+      'teal',      // never canonical for SaaS palette
+      'hydra',     // legacy product code
+      'forest',    // banned per task spec
+      'GT Sectra', // founder display font
+      '#a8873a',   // legacy gold variant
+    ];
+    const lower = html.toLowerCase();
+    for (const token of banned) {
+      expect(lower).not.toContain(token.toLowerCase());
+    }
+  });
+
   it('sets dark color-scheme + theme-color meta so mobile chrome matches', () => {
     const html = renderPublicPage(buildPage(), [], 'jsmith', BASE_URL);
     expect(html).toContain('<meta name="color-scheme" content="dark"');
@@ -481,5 +515,114 @@ describe('R52 renderNotFound', () => {
     expect(html).toContain('noindex,nofollow');
     expect(html).toContain('color-scheme');
     expect(html).toContain('content="dark"');
+  });
+});
+
+// ─── audit P1-2: proofLine wiring ────────────────────────────────────────────
+
+describe('R52 audit P1-2 — proofLine under hero CTA', () => {
+  function pageWithBio(bio: string | null): PageWithContext {
+    const base = buildPage({
+      // Hero only renders via the dispatch when a `hero` section is on the
+      // page — without it the proof line has nowhere to land.  The
+      // payload is empty so the renderer falls back to page.headline.
+      sections: [sec('hero', {})],
+    });
+    return {
+      ...base,
+      coach: {
+        ...(base as any).coach,
+        coach_profile: {
+          ...((base as any).coach.coach_profile),
+          bio,
+        },
+      },
+    } as PageWithContext;
+  }
+
+  it('renders the proof line when coach.coach_profile.bio is set', () => {
+    const html = renderPublicPage(
+      pageWithBio('Five years of one-to-one coaching for busy professionals.'),
+      [], 'jsmith', BASE_URL,
+    );
+    expect(html).toMatch(/<p class="hero__proof">[^<]*Five years of one-to-one coaching[^<]*<\/p>/);
+  });
+
+  it('caps the proof line at 140 chars', () => {
+    const longBio = 'a'.repeat(500);
+    const html = renderPublicPage(pageWithBio(longBio), [], 'jsmith', BASE_URL);
+    const match = html.match(/<p class="hero__proof">([^<]*)<\/p>/);
+    expect(match).not.toBeNull();
+    expect(match![1].length).toBeLessThanOrEqual(140);
+  });
+
+  it('collapses internal whitespace so multi-line bios fit on one line', () => {
+    const html = renderPublicPage(
+      pageWithBio('Line one.\nLine two.\n\nLine three.'),
+      [], 'jsmith', BASE_URL,
+    );
+    // After collapse-and-cap, the proof line contains single spaces and
+    // no embedded \n.  Match is anchored to the rendered <p>.
+    expect(html).toContain('<p class="hero__proof">Line one. Line two. Line three.</p>');
+  });
+
+  it('omits the proof line entirely when bio is null', () => {
+    const html = renderPublicPage(pageWithBio(null), [], 'jsmith', BASE_URL);
+    expect(html).not.toContain('hero__proof');
+  });
+
+  it('omits the proof line when bio is the empty string', () => {
+    const html = renderPublicPage(pageWithBio(''), [], 'jsmith', BASE_URL);
+    expect(html).not.toContain('hero__proof');
+  });
+});
+
+// ─── audit P1-3: lead-form failure UX ────────────────────────────────────────
+
+describe('R52 audit P1-3 — lead-form failure UX', () => {
+  it('emits the hidden error container with the alert role', () => {
+    const html = renderPublicPage(
+      buildPage({ sections: [sec('lead_form', { fields: ['name', 'email'] })] }),
+      [], 'jsmith', BASE_URL,
+    );
+    expect(html).toContain('id="lead-form-error"');
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('aria-live="assertive"');
+    // Hidden by default — only flipped on by the submit handler.
+    expect(html).toMatch(/id="lead-form-error"[^>]*hidden/);
+  });
+
+  it('gives the submit button an id + a disabled-state stylesheet rule', () => {
+    const html = renderPublicPage(
+      buildPage({ sections: [sec('lead_form', { fields: ['name', 'email'] })] }),
+      [], 'jsmith', BASE_URL,
+    );
+    // Button id is used by the failure handler to re-enable the submit.
+    expect(html).toContain('id="lead-form-submit"');
+    // Disabled-state styling so a long-running fetch shows "in progress".
+    expect(html).toContain('.lead-form__submit:disabled');
+  });
+
+  it('uses the SaaS error token color (#d97757) for the failure box', () => {
+    const html = renderPublicPage(
+      buildPage({ sections: [sec('lead_form', { fields: ['name', 'email'] })] }),
+      [], 'jsmith', BASE_URL,
+    );
+    expect(html).toContain('#d97757');
+  });
+
+  it('wires the submit handler to surface non-2xx + network errors', () => {
+    const html = renderPublicPage(
+      buildPage({ sections: [sec('lead_form', { fields: ['name', 'email'] })] }),
+      [], 'jsmith', BASE_URL,
+    );
+    // 429 path gets dedicated copy.
+    expect(html).toContain("too many submissions");
+    // Generic non-2xx fallback.
+    expect(html).toContain('Something went wrong. Please try again.');
+    // Network drop branch (offline / connection refused).
+    expect(html).toContain("Couldn't reach the server");
+    // Re-enables submit on failure (audit P1-3 requirement).
+    expect(html).toContain('submitBtn.disabled = false');
   });
 });
