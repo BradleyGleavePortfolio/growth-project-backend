@@ -93,10 +93,18 @@ export class StorefrontPublicController {
   // single coach link should not see >20 checkout attempts per minute
   // from one IP unless something is wrong.
   //
-  // r48 #10 + #11: long-window IP limiter (5/hour) backs up the
-  // per-minute Nest throttler; on success we attach the signed
-  // 7-day guest-session cookie so a returning buyer can surface
-  // recent purchases without a re-confirm.
+  // r48 #10 + #11: long-window IP limiter backs up the per-minute
+  // Nest throttler; on success we attach the signed 7-day guest-
+  // session cookie so a returning buyer can surface recent purchases
+  // without a re-confirm.
+  //
+  // A276-F4-P1-B — per-route bucket scope `create-intent` at 10/hr.
+  // See `resumeGuestCheckout` below for the design rationale; the
+  // ceiling on this route is set above the 5/hr default because the
+  // bucket is no longer shared with three sibling routes — a real
+  // buyer who reloads the page, hits a flaky 3DS, and retries can
+  // safely consume up to 10 mint attempts before getting locked out
+  // of *only this route*.
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @Post('join/:token/checkout')
@@ -108,7 +116,10 @@ export class StorefrontPublicController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const ip = this.extractIp(req);
-    const rate = await this.ipLimiter.checkAndIncrement(ip);
+    const rate = await this.ipLimiter.checkAndIncrement(ip, {
+      scope: 'create-intent',
+      maxAttempts: 10,
+    });
     if (!rate.allowed) {
       // 429 with Retry-After header (seconds until next bucket).
       res.setHeader('Retry-After', String(rate.retryAfterSeconds));
@@ -139,16 +150,28 @@ export class StorefrontPublicController {
   // existing GuestCheckout row's resumable details, or 404 when nothing
   // recoverable exists (or when the resume window has expired).
   //
-  // A276-P1-2 — apply the long-window IP rate limiter (5/hour, Redis-
-  // backed) so the three recovery routes share the same hour-scale
-  // budget the create-intent path uses. The limiter exposes a single
-  // per-IP bucket (no per-route key); we therefore apply it uniformly
-  // to all three new routes (resume, send-recovery-link, resume/:jwt)
-  // — option (2) from the audit. A separate per-bucket key would have
-  // been preferable for the email path but is out-of-scope for this
-  // controller-level fix; an attacker who burns the 5/hr bucket on
-  // resume calls also loses access to the email-send path, which is a
-  // net win for abuse resistance.
+  // A276-P1-2 / A276-F4-P1-B — long-window IP rate limiter with a
+  // PER-ROUTE bucket scope.
+  //
+  // The previous revision shared a single 5/hr bucket across four
+  // recovery routes. A real buyer behind CGNAT (university/corporate
+  // WiFi, mobile carrier) doing normal retries could exhaust the
+  // shared bucket in one checkout session and earn a 60-minute 429
+  // on every endpoint, including the redirect they were about to
+  // click — a conversion-killing failure mode on a money path.
+  //
+  // Per-route buckets restore the abuse-resistance property (each
+  // bucket is still per-IP, hour-windowed, Redis-backed) while
+  // ensuring a buyer who burns one route's budget can still complete
+  // checkout via the others. The cost asymmetry between routes
+  // justifies different ceilings:
+  //   • /create-intent   — 10/hr (Stripe API call, but no email)
+  //   • /resume          —  5/hr (redirect-only; matches prior bound)
+  //   • /send-recovery-link — 3/hr (only cost-amplifying route;
+  //     bounded ≤ the EmailSendLog per-recipient 3/hr cap so the
+  //     IP-level limit cannot exceed the per-recipient one)
+  //   • /resume/:jwt     — 10/hr (verify-only, no cost, looser to
+  //     accommodate users clicking the same email link twice)
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @Post('join/:token/checkout/resume')
@@ -159,9 +182,12 @@ export class StorefrontPublicController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    // A276-P1-2 — long-window IP bucket (5/hr) before doing work.
+    // A276-F4-P1-B — per-route bucket: scope=resume, 5/hr.
     const ip = this.extractIp(req);
-    const rate = await this.ipLimiter.checkAndIncrement(ip);
+    const rate = await this.ipLimiter.checkAndIncrement(ip, {
+      scope: 'resume',
+      maxAttempts: 5,
+    });
     if (!rate.allowed) {
       res.setHeader('Retry-After', String(rate.retryAfterSeconds));
       throw new HttpException(
@@ -195,12 +221,16 @@ export class StorefrontPublicController {
   // (enumeration resistance). Tighter throttle than the create path
   // because this triggers an outbound email.
   //
-  // A276-P1-2 — also gated by the long-window IP rate limiter (5/hr).
-  // The bucket is shared with the create-intent and resume routes
-  // (see resumeGuestCheckout note). EmailSendLog provides a separate
-  // per-recipient 3/hr cap downstream; together they bound an
-  // attacker to 5 send attempts per IP per hour regardless of how
-  // many recipient addresses they try.
+  // A276-P1-2 / A276-F4-P1-B — dedicated per-route IP bucket at 3/hr.
+  // This is the only cost-amplifying route in the recovery flow, so
+  // its ceiling is the tightest of the four. The IP-level limit is
+  // deliberately bounded at 3/hr to match (not exceed) the
+  // EmailSendLog per-recipient 3/hr cap downstream, so an attacker
+  // cycling recipient addresses still cannot pump more than 3 emails
+  // per source IP per hour regardless of how many addresses they
+  // try. The bucket is no longer shared with /resume or
+  // /resume/:jwt, so a real buyer who burns this budget can still
+  // complete checkout via the other routes.
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 6 } })
   @Post('join/:token/checkout/send-recovery-link')
@@ -211,9 +241,12 @@ export class StorefrontPublicController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    // A276-P1-2 — long-window IP bucket (5/hr) before triggering email.
+    // A276-F4-P1-B — per-route bucket: scope=send-recovery-link, 3/hr.
     const ip = this.extractIp(req);
-    const rate = await this.ipLimiter.checkAndIncrement(ip);
+    const rate = await this.ipLimiter.checkAndIncrement(ip, {
+      scope: 'send-recovery-link',
+      maxAttempts: 3,
+    });
     if (!rate.allowed) {
       res.setHeader('Retry-After', String(rate.retryAfterSeconds));
       throw new HttpException(
@@ -235,8 +268,14 @@ export class StorefrontPublicController {
   // verification + cross-check in the service so the route stays a
   // thin redirect.
   //
-  // A276-P1-2 — IP rate limiter (5/hr) applied before verifyToken so
-  // an attacker cannot brute-force the 15-min JWT space at 30/min.
+  // A276-P1-2 / A276-F4-P1-B — IP rate limiter on its own per-route
+  // bucket (scope=resume-jwt) at 10/hr. The route is verify-only
+  // (no Stripe call, no email, no DB write beyond the single-use
+  // claim), so the ceiling is set looser than the cost-amplifying
+  // /send-recovery-link route. A real user who clicks the recovery
+  // email twice (mobile preview + actual tap) must not be locked
+  // out; 10/hr accommodates that while still bounding brute-force
+  // attempts against the 15-min JWT space well below 30/min.
   // A276-P1-3 (controller half) — `Referrer-Policy: no-referrer` is
   // set on the redirect response so the destination origin never
   // sees the prior `…/resume/<jwt>` URL via the Referer header.
@@ -255,9 +294,12 @@ export class StorefrontPublicController {
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
-    // A276-P1-2 — long-window IP bucket (5/hr) before verifying token.
+    // A276-F4-P1-B — per-route bucket: scope=resume-jwt, 10/hr.
     const ip = this.extractIp(req);
-    const rate = await this.ipLimiter.checkAndIncrement(ip);
+    const rate = await this.ipLimiter.checkAndIncrement(ip, {
+      scope: 'resume-jwt',
+      maxAttempts: 10,
+    });
     if (!rate.allowed) {
       res.setHeader('Retry-After', String(rate.retryAfterSeconds));
       throw new HttpException(

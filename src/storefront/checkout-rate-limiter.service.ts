@@ -19,7 +19,13 @@ import { isIPv4, isIPv6 } from 'net';
 // per-IP throttling, but its window is 60s/20 which is too generous
 // for hour-scale abuse.  This service is the long-window backstop.
 
-const MAX_ATTEMPTS_PER_HOUR = 5;
+// A276-F4-P1-B — the *default* per-IP ceiling. Each call site may
+// override this via the `maxAttempts` option to express cost
+// asymmetry between routes (e.g. /send-recovery-link sends email and
+// is tighter; /resume/:jwt is verify-only and can be looser). The
+// default is preserved so any future call site that omits the
+// option keeps the historical behavior.
+const DEFAULT_MAX_ATTEMPTS_PER_HOUR = 5;
 const TTL_SECONDS = 3700; // bucket length 3600 + small slack
 const REDIS_KEY_PREFIX = 'co:rl:ip:';
 
@@ -27,6 +33,30 @@ export interface RateLimitResult {
   allowed: boolean;
   count: number;
   retryAfterSeconds: number;
+  /**
+   * Maximum attempts allowed in the current bucket window. Surfaced
+   * so the caller can populate the `RateLimit-Limit` response
+   * header (RFC 9239 draft) or log the effective ceiling alongside
+   * the count.
+   */
+  limit: number;
+}
+
+export interface CheckAndIncrementOptions {
+  /**
+   * Bucket scope — typically a route identifier. Buckets with
+   * different scopes are independent, so exhausting one route's
+   * budget does NOT lock the caller out of the others.
+   *
+   * Default: `'default'` (preserves the historical single-bucket
+   * behavior for any caller that omits the option).
+   */
+  scope?: string;
+  /**
+   * Maximum attempts allowed in the (per-IP, per-scope, per-hour)
+   * bucket. Default: 5.
+   */
+  maxAttempts?: number;
 }
 
 @Injectable()
@@ -65,9 +95,14 @@ export class CheckoutIpRateLimiterService implements OnModuleInit {
     }
   }
 
-  async checkAndIncrement(ip: string): Promise<RateLimitResult> {
+  async checkAndIncrement(
+    ip: string,
+    options: CheckAndIncrementOptions = {},
+  ): Promise<RateLimitResult> {
+    const scope = options.scope ?? 'default';
+    const limit = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS_PER_HOUR;
     const hourBucket = Math.floor(Date.now() / 3_600_000);
-    const key = `${REDIS_KEY_PREFIX}${this.normalizeIp(ip)}:${hourBucket}`;
+    const key = `${REDIS_KEY_PREFIX}${scope}:${this.normalizeIp(ip)}:${hourBucket}`;
     const retryAfterSeconds = this.secondsUntilNextHour();
     if (this.redis) {
       try {
@@ -77,9 +112,10 @@ export class CheckoutIpRateLimiterService implements OnModuleInit {
         const result = (await pipe.exec()) as Array<[Error | null, number]> | null;
         const count = result?.[0]?.[1] ?? 0;
         return {
-          allowed: count <= MAX_ATTEMPTS_PER_HOUR,
+          allowed: count <= limit,
           count,
           retryAfterSeconds,
+          limit,
         };
       } catch (err) {
         this.logger.warn(
@@ -87,7 +123,7 @@ export class CheckoutIpRateLimiterService implements OnModuleInit {
         );
       }
     }
-    return this.memoryIncrement(key, retryAfterSeconds);
+    return this.memoryIncrement(key, retryAfterSeconds, limit);
   }
 
   /** Test seam: clear state between cases. */
@@ -223,15 +259,17 @@ export class CheckoutIpRateLimiterService implements OnModuleInit {
   private memoryIncrement(
     key: string,
     retryAfterSeconds: number,
+    limit: number,
   ): RateLimitResult {
     const now = Date.now();
     const existing = this.memory.get(key);
     if (existing && existing.expiresAt > now) {
       existing.count += 1;
       return {
-        allowed: existing.count <= MAX_ATTEMPTS_PER_HOUR,
+        allowed: existing.count <= limit,
         count: existing.count,
         retryAfterSeconds,
+        limit,
       };
     }
     const fresh = { count: 1, expiresAt: now + TTL_SECONDS * 1000 };
@@ -242,6 +280,6 @@ export class CheckoutIpRateLimiterService implements OnModuleInit {
         if (v.expiresAt <= now) this.memory.delete(k);
       }
     }
-    return { allowed: true, count: 1, retryAfterSeconds };
+    return { allowed: true, count: 1, retryAfterSeconds, limit };
   }
 }
