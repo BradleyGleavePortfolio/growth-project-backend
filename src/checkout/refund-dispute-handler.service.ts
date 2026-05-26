@@ -511,32 +511,63 @@ export class RefundDisputeHandlerService {
         : null;
     // A276 P0-2 / P1-1 (refix) — detect the first observation of this
     // dispute id so we emit the coach alert EXACTLY ONCE under Stripe
-    // redelivery. The upsert's `existing==null` signal is the only
-    // moment when this dispute id transitions from unknown to known;
-    // every subsequent webhook (initial=true redelivery or initial=false
-    // update) goes through the update branch and skips the alert.
-    const existingDispute = await this.prisma.chargeDispute.findUnique({
-      where: { stripe_dispute_id: dispute.id },
-    });
-    const row = await this.prisma.chargeDispute.upsert({
-      where: { stripe_dispute_id: dispute.id },
-      create: {
-        purchase_id: purchase.id,
-        stripe_dispute_id: dispute.id,
-        stripe_charge_id: dispute.charge,
-        amount_cents: typeof dispute.amount === 'number' ? dispute.amount : 0,
-        currency: dispute.currency ?? 'usd',
-        status: dispute.status ?? 'needs_response',
-        reason: dispute.reason ?? null,
-        evidence_due_by: dueBy,
-      },
-      update: {
-        status: dispute.status ?? 'needs_response',
-        reason: dispute.reason ?? null,
-        evidence_due_by: dueBy ?? undefined,
-        amount_cents: typeof dispute.amount === 'number' ? dispute.amount : undefined,
-      },
-    });
+    // redelivery.
+    //
+    // A276-F2-P2-2 (refix) — the previous implementation read
+    // `findUnique` and then called `upsert`. Two concurrent webhook
+    // deliveries (e.g. `charge.dispute.created` and `charge.dispute.
+    // updated` for the same dispute_id, or two replicas processing the
+    // same Stripe redelivery in parallel) could BOTH observe
+    // `existingDispute=null` between the read and the create, then both
+    // emit COACH_ALERT — the coach gets two pings for one dispute.
+    //
+    // Fix: rely on the DB-level unique index on `stripe_dispute_id`
+    // (see prisma/schema.prisma `ChargeDispute.stripe_dispute_id @unique`).
+    // Attempt `create` first; on P2002 (unique-violation) we KNOW a
+    // concurrent or prior delivery has already inserted the row, so
+    // this delivery is NOT the first observation and we fall through
+    // to the update branch without firing the alert. The `create`
+    // success path is the one-and-only first-observation signal.
+    let isFirstObservation: boolean;
+    let row: ChargeDispute;
+    try {
+      row = await this.prisma.chargeDispute.create({
+        data: {
+          purchase_id: purchase.id,
+          stripe_dispute_id: dispute.id,
+          stripe_charge_id: dispute.charge,
+          amount_cents: typeof dispute.amount === 'number' ? dispute.amount : 0,
+          currency: dispute.currency ?? 'usd',
+          status: dispute.status ?? 'needs_response',
+          reason: dispute.reason ?? null,
+          evidence_due_by: dueBy,
+        },
+      });
+      isFirstObservation = true;
+    } catch (err) {
+      // Prisma raises P2002 on a unique-constraint violation. Anything
+      // else (e.g. connection error) we propagate so Stripe retries.
+      if (
+        !err ||
+        typeof err !== 'object' ||
+        (err as { code?: string }).code !== 'P2002'
+      ) {
+        throw err;
+      }
+      // Race lost — another delivery wrote first. Update in-place and
+      // skip the alert.
+      row = await this.prisma.chargeDispute.update({
+        where: { stripe_dispute_id: dispute.id },
+        data: {
+          status: dispute.status ?? 'needs_response',
+          reason: dispute.reason ?? null,
+          evidence_due_by: dueBy ?? undefined,
+          amount_cents:
+            typeof dispute.amount === 'number' ? dispute.amount : undefined,
+        },
+      });
+      isFirstObservation = false;
+    }
     if (initial) {
       await this.prisma.clientPurchase.update({
         where: { id: purchase.id },
@@ -550,9 +581,16 @@ export class RefundDisputeHandlerService {
     // we've ever seen `charge.dispute.created` (because the created
     // event was dropped or arrived out of order) still needs to alert
     // the coach so they don't miss the 7-day evidence window.
+    //
+    // A276-F2-P2-2 — `isFirstObservation` is the row-count signal from
+    // the create-or-conflict pattern above: true iff THIS process won
+    // the DB-level race to insert this stripe_dispute_id. Parallel
+    // deliveries see the conflict and skip the alert. The DB unique
+    // index is the serialisation point.
+    //
     // Notifier failures are caught; the dispute row has already
     // committed and we never roll it back on a downstream-signal failure.
-    if (!existingDispute) {
+    if (isFirstObservation) {
       try {
         const evidenceDueByISO = dueBy ? dueBy.toISOString() : null;
         // Trim the dispute reason the same way the guest-checkout

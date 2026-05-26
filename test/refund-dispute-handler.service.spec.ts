@@ -143,6 +143,28 @@ function makePrismaStub() {
           )
           .slice(0, take),
       ),
+      // A276-F2-P2-2 — emulate the DB-level unique constraint on
+      // stripe_dispute_id by raising Prisma's P2002 on duplicate create.
+      // This is the serialisation point the new code relies on.
+      create: jest.fn(async ({ data }: any) => {
+        if (
+          disputes.find((d) => d.stripe_dispute_id === data.stripe_dispute_id)
+        ) {
+          const err: any = new Error(
+            'Unique constraint failed on the fields: (`stripe_dispute_id`)',
+          );
+          err.code = 'P2002';
+          err.meta = { target: ['stripe_dispute_id'] };
+          throw err;
+        }
+        const row = {
+          id: 'dp-' + (disputes.length + 1),
+          ledger_reversed: false,
+          ...data,
+        };
+        disputes.push(row);
+        return { ...row };
+      }),
       upsert: jest.fn(async ({ where, create, update }: any) => {
         const existing = disputes.find(
           (d) => d.stripe_dispute_id === where.stripe_dispute_id,
@@ -837,6 +859,109 @@ describe('RefundDisputeHandlerService', () => {
       await svc.handle(event);
       await svc.handle(event);
       expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+    });
+
+    // A276-F2-P2-2 — parallel webhook deliveries (two replicas, or
+    // create+updated arriving within milliseconds) used to BOTH see
+    // existingDispute=null between the findUnique read and the upsert
+    // create. Both would fire COACH_ALERT. The new code relies on the
+    // DB-level unique index on stripe_dispute_id: whichever call's
+    // create() commits first wins; the loser sees P2002 and falls
+    // through to the update branch without alerting.
+    it('A276-F2-P2-2: parallel charge.dispute.created deliveries fire exactly ONE COACH_ALERT', async () => {
+      const { svc, prisma, notifications } = makeServices();
+      seedPurchase(prisma);
+      const event = {
+        id: 'evt_disp_parallel',
+        type: 'charge.dispute.created',
+        data: {
+          object: {
+            id: 'dp_parallel',
+            charge: 'ch_alert',
+            status: 'needs_response',
+            amount: 29_700,
+            reason: 'fraudulent',
+          },
+        },
+      };
+      // Two concurrent deliveries — await them together so the second
+      // observes (or races with) the first's create. The Prisma stub's
+      // create raises P2002 on the second call; the new code converts
+      // that into the "not first observation" branch and skips the
+      // alert.
+      await Promise.all([svc.handle(event), svc.handle(event)]);
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+      // Exactly one dispute row exists.
+      expect(
+        prisma._disputes.filter((d: any) => d.stripe_dispute_id === 'dp_parallel'),
+      ).toHaveLength(1);
+    });
+
+    // A276-F2-P2-2 — the race-loser branch (P2002 caught) must still
+    // converge the dispute row to the latest payload via the update
+    // path, so a `charge.dispute.updated` racing against a winning
+    // `charge.dispute.created` doesn't drop the under_review status.
+    it('A276-F2-P2-2: race loser converges row state via update branch', async () => {
+      const { svc, prisma, notifications } = makeServices();
+      seedPurchase(prisma);
+      // Pre-seed the row so create() throws P2002 immediately — this
+      // is the exact code path the race loser takes.
+      prisma._disputes.push({
+        id: 'dp-existing',
+        stripe_dispute_id: 'dp_race_loser',
+        stripe_charge_id: 'ch_alert',
+        purchase_id: 'p_alert',
+        status: 'needs_response',
+        amount_cents: 29_700,
+        ledger_reversed: false,
+      });
+      await svc.handle({
+        id: 'evt_disp_race_loser',
+        type: 'charge.dispute.created',
+        data: {
+          object: {
+            id: 'dp_race_loser',
+            charge: 'ch_alert',
+            status: 'under_review',
+            amount: 29_700,
+            reason: 'fraudulent',
+          },
+        },
+      });
+      // No double-alert.
+      expect(notifications.createNotification).not.toHaveBeenCalled();
+      // Row converged to the latest payload.
+      const row = prisma._disputes.find(
+        (d: any) => d.stripe_dispute_id === 'dp_race_loser',
+      );
+      expect(row.status).toBe('under_review');
+      expect(row.reason).toBe('fraudulent');
+    });
+
+    // A276-F2-P2-2 — unique-index conflict is the ONLY swallowed error.
+    // Any other failure (DB connection, etc.) must propagate so Stripe
+    // retries the webhook.
+    it('A276-F2-P2-2: non-P2002 errors from chargeDispute.create propagate', async () => {
+      const { svc, prisma } = makeServices();
+      seedPurchase(prisma);
+      const boom = new Error('connection reset');
+      prisma.chargeDispute.create.mockImplementationOnce(async () => {
+        throw boom;
+      });
+      await expect(
+        svc.handle({
+          id: 'evt_disp_db_boom',
+          type: 'charge.dispute.created',
+          data: {
+            object: {
+              id: 'dp_boom',
+              charge: 'ch_alert',
+              status: 'needs_response',
+              amount: 29_700,
+            },
+          },
+        }),
+      ).rejects.toThrow(/connection reset/);
     });
 
     it('charge.dispute.updated DOES alert when no prior created was seen (out-of-order delivery)', async () => {
