@@ -566,14 +566,16 @@ describe('R52 audit P1-2 — proofLine under hero CTA', () => {
     expect(html).toContain('<p class="hero__proof">Line one. Line two. Line three.</p>');
   });
 
-  it('omits the proof line entirely when bio is null', () => {
+  it('omits the proof line element entirely when bio is null', () => {
+    // The .hero__proof CSS rule is always emitted in the critical CSS
+    // block; what we're asserting is that no <p> instance gets rendered.
     const html = renderPublicPage(pageWithBio(null), [], 'jsmith', BASE_URL);
-    expect(html).not.toContain('hero__proof');
+    expect(html).not.toMatch(/<p class="hero__proof">/);
   });
 
-  it('omits the proof line when bio is the empty string', () => {
+  it('omits the proof line element when bio is the empty string', () => {
     const html = renderPublicPage(pageWithBio(''), [], 'jsmith', BASE_URL);
-    expect(html).not.toContain('hero__proof');
+    expect(html).not.toMatch(/<p class="hero__proof">/);
   });
 });
 
