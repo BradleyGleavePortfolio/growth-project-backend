@@ -3,9 +3,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
   Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 import { PrismaService } from '../prisma.service';
 import { EmailService } from '../email/email.service';
@@ -46,22 +49,137 @@ const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1h
 const RATE_LIMIT_MAX = 3;
 const RECOVERY_TYPE = 'checkout_recovery';
 
+// A276-P1-3 — single-use guard.
+//
+// Every recovery JWT now carries a random `jti` claim (uuidv4).
+// On verifyToken, after all signature/expiry/row checks pass, we
+// SET co:rec:jti:<jti> 1 EX 900 NX (atomic) — if the key already
+// exists (previously consumed within the 15-minute exp window) we
+// throw the SAME enumeration-resistant `RECOVERY_TOKEN_INVALID` 404
+// as every other failure leg (A276-F5-P1-2). SET NX is the LAST
+// step of verification so a failing earlier check (bad signature,
+// expired, GuestCheckout missing) does not consume the token.
+//
+// Backwards compatibility: tokens minted before this commit have no
+// `jti` claim. Those tokens are now rejected with the generic
+// `RECOVERY_TOKEN_INVALID` error — acceptable because they expire in
+// at most 15 minutes and the security improvement (no replay) is
+// worth the brief disruption to in-flight magic links.
+const RECOVERY_JTI_REDIS_PREFIX = 'co:rec:jti:';
+const RECOVERY_MEMORY_CAP = 1024;
+
 interface RecoveryClaims extends JWTPayload {
   st: string; // share_token
   em: string; // email
   gid: string; // guest_checkout_id
   type: typeof RECOVERY_TYPE;
+  jti: string; // random uuid — single-use guard key
 }
 
 @Injectable()
-export class CheckoutRecoveryService {
+export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CheckoutRecoveryService.name);
+
+  // Redis is used to atomically mark a `jti` as consumed (SETNX). Mirrors
+  // CheckoutIdempotencyService's pattern (dynamic ioredis import, lazy
+  // connect, in-memory fallback for dev/test boots without REDIS_URL).
+  // A different key prefix keeps the namespace clean.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private redis: any | null = null;
+  /** In-memory fallback for dev/test boots without REDIS_URL. Single
+   * process only — production MUST set REDIS_URL or replays across
+   * Fly machines remain possible. */
+  private readonly memory = new Map<string, number>(); // key -> expiresAtMs
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     @Optional() private readonly email?: EmailService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    const redisUrl = this.config.get<string>('REDIS_URL');
+    // A276-F5-P2-1+2 — default-secure NODE_ENV handling. Two operational
+    // failure modes the prior code missed:
+    //   1. NODE_ENV unset (Fly machine re-imaged, fly.toml env block deleted,
+    //      ConfigService failed to load .env): the old `?? 'development'`
+    //      default silently demoted a misdeployed prod to the in-memory
+    //      fallback — exactly the cross-machine-replay window the P1-1 fix
+    //      was designed to close. Decacorn pattern is "default secure":
+    //      treat unset/undefined as production.
+    //   2. NODE_ENV='staging': staging mirrors prod topology (multiple
+    //      machines behind a load balancer, real Redis). The strict
+    //      `=== 'production'` check dropped staging to in-memory, leaving
+    //      the same cross-machine replay bug exposed in any non-literal-prod
+    //      multi-machine env. Treat staging as fail-closed alongside prod.
+    // Only an EXPLICIT 'development' or 'test' value enables the fallback.
+    // A276-F5-P3-3 — normalize NODE_ENV for trim/case fragility. A value
+    // like ' production' (whitespace from a docker-compose interpolation
+    // gotcha) or 'Production' (case) would have failed the strict ===
+    // check and silently demoted prod. .trim().toLowerCase() hardens both.
+    const nodeEnvRaw =
+      this.config.get<string>('NODE_ENV') ?? process.env.NODE_ENV ?? undefined;
+    const nodeEnv =
+      typeof nodeEnvRaw === 'string'
+        ? nodeEnvRaw.trim().toLowerCase() || undefined
+        : undefined;
+    const isProd = !nodeEnv || nodeEnv === 'production' || nodeEnv === 'staging';
+    if (!redisUrl) {
+      // A276-F5-P1-1 / F5-P2-1+2 — REDIS_URL is REQUIRED in any
+      // multi-machine env (production, staging, or env-unset "unknown =
+      // assume prod"). The in-memory fallback is single-process only;
+      // with ≥2 Fly machines behind a load balancer it cannot enforce
+      // single-use across the cluster, which defeats the whole point of
+      // the single-use guard.
+      if (isProd) {
+        const envLabel = nodeEnv ?? '<unset>';
+        const msg =
+          `CheckoutRecoveryService: REDIS_URL is required in ${envLabel} — refusing to boot. ` +
+          'The in-memory single-use guard is single-process and unsafe across the Fly cluster.';
+        this.logger.error(msg);
+        throw new Error(msg);
+      }
+      this.logger.log(
+        'CheckoutRecoveryService: REDIS_URL unset — using in-memory single-use guard (single-process, dev/test only)',
+      );
+      return;
+    }
+    try {
+      // Dynamic import so unit tests + dev boots without ioredis still work.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { default: Redis } = await import('ioredis');
+      this.redis = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1 });
+      await this.redis.connect();
+      this.logger.log('CheckoutRecoveryService: Redis single-use guard connected');
+    } catch (err) {
+      // A276-F5-P1-1 / F5-P2-1+2 — fail CLOSED in any multi-machine env
+      // (production, staging, or env-unset "unknown = assume prod"). A
+      // boot-time Redis outage previously silently demoted us to the
+      // in-memory guard, re-opening the cross-machine replay window the
+      // JWT-jti work was designed to close. Refuse to start instead — the
+      // process supervisor (Fly) will retry until Redis is reachable.
+      const detail = err instanceof Error ? err.message : 'unknown';
+      if (isProd) {
+        this.logger.error(
+          `CheckoutRecoveryService: Redis connect failed in production — refusing to boot: ${detail}`,
+        );
+        // Best-effort cleanup of any half-open client before bubbling.
+        try {
+          this.redis?.disconnect?.();
+        } catch {
+          /* ignore — we're already aborting boot */
+        }
+        this.redis = null;
+        throw err instanceof Error
+          ? err
+          : new Error(`CheckoutRecoveryService Redis connect failed: ${detail}`);
+      }
+      this.logger.warn(
+        `CheckoutRecoveryService: Redis unavailable in ${nodeEnv ?? '<unset>'}, falling back to in-memory (dev/test only): ${detail}`,
+      );
+      this.redis = null;
+    }
+  }
 
   /**
    * Send a recovery link to the guest's email.  Returns { sent: true }
@@ -203,6 +321,15 @@ export class CheckoutRecoveryService {
         message: 'This recovery link is no longer valid.',
       });
     }
+    // A276-P1-3 — require `jti`. Legacy tokens (pre-this-commit) without
+    // a jti claim cannot be marked single-use and so are no longer
+    // accepted. The 15-min exp bounds the disruption.
+    if (typeof claims.jti !== 'string' || claims.jti.length === 0) {
+      throw new NotFoundException({
+        error: 'RECOVERY_TOKEN_INVALID',
+        message: 'This recovery link is no longer valid.',
+      });
+    }
     // Cross-check the GuestCheckout row still exists + matches.
     const row = await this.prisma.guestCheckout.findUnique({
       where: { id: claims.gid },
@@ -217,11 +344,195 @@ export class CheckoutRecoveryService {
         message: 'This recovery link is no longer valid.',
       });
     }
+    // A276-P1-3 — single-use guard. Done LAST in verification so a token
+    // is only consumed once every other check has passed. If Redis is
+    // configured but errors out, we FAIL CLOSED — better to deny a
+    // legitimate retry than to allow a replay.
+    //
+    // A276-F5-P3-2 — residual timing-oracle decision (DOCUMENTED, NOT FIXED).
+    // Failure legs that reach this point (Redis SETNX or in-memory check,
+    // legs 7-9 in the enumeration-resistance test) take a network round-trip
+    // (~0.5-5ms for Redis, ~0µs for in-memory) longer than legs 1-6 (which
+    // return before any Redis call). An attacker with millisecond-resolution
+    // timing across many requests could in theory distinguish "this JWT
+    // was structurally valid + matched a real GuestCheckout row" from
+    // "this JWT failed an earlier check (signature/typ/share-token/expiry)".
+    //
+    // ACCEPTED as a residual P3 for this service for two reasons:
+    //   1. Threat model: a payment-recovery link is much less sensitive
+    //      than a password-reset link — the worst case is an attacker
+    //      who already has a stolen JWT learns the structural validity
+    //      bit, which they could also learn by just trying the link.
+    //      The timing oracle does NOT leak the token or any other user's
+    //      data, and the 15-min exp + single-use bound the damage.
+    //   2. Constant-time mitigation would require either (a) inserting a
+    //      Redis call into every early-fail leg (invasive, increases
+    //      cluster load on adversarial input) or (b) a sleep-floor on
+    //      every response (~50ms latency hit on the happy path for every
+    //      legitimate retry). Both trade real user pain for a marginal
+    //      hardening against an attacker who already has the JWT.
+    // If we ever reuse this surface for a higher-sensitivity flow
+    // (password reset, account takeover recovery) revisit and add a
+    // sleep-floor + a normalized checkRedis call on every leg.
+    await this.markJtiConsumedOrThrow(claims.jti);
     return {
       share_token: claims.st,
       email: claims.em,
       guest_checkout_id: claims.gid,
     };
+  }
+
+  /**
+   * Atomically claim the JWT's `jti` as "consumed" via Redis SET NX EX with
+   * a TTL matching the JWT's exp (900s). FAILS CLOSED if the backing store
+   * is unreachable. On collision OR fail-closed, throws the SAME
+   * enumeration-resistant NotFoundException(RECOVERY_TOKEN_INVALID) shape
+   * as every other verifyToken failure leg — see the contract documented
+   * on verifyToken (A276-F5-P1-2).
+   */
+  private async markJtiConsumedOrThrow(jti: string): Promise<void> {
+    const key = `${RECOVERY_JTI_REDIS_PREFIX}${jti}`;
+    if (this.redis) {
+      let setResult: unknown;
+      try {
+        // SET NX EX — atomic. Returns 'OK' if we won (first use), null otherwise.
+        setResult = await this.redis.set(
+          key,
+          '1',
+          'EX',
+          RECOVERY_JWT_TTL_SECONDS,
+          'NX',
+        );
+      } catch (err) {
+        // Fail closed: Redis is the source of truth for single-use; if
+        // we cannot reach it we must not allow the token through.
+        //
+        // A276-F5-P1-2 — the wire response is the *same* generic
+        // RECOVERY_TOKEN_INVALID 404 as every other failure leg so an
+        // attacker who captured a recovery link cannot distinguish
+        // "link was real and is now consumed" / "backing store is down" /
+        // "link never existed". Ops keep the distinction via the log.
+        this.logger.error(
+          `recovery single-use guard: Redis SET NX failed, denying (reason=fail-closed-store-unreachable): ${
+            err instanceof Error ? err.message : 'unknown'
+          }`,
+        );
+        throw this.invalidTokenError();
+      }
+      if (setResult !== 'OK') {
+        // A276-F5-P1-2 — replay attempt. Log the distinction, return
+        // the generic 404 on the wire so the response is indistinguishable
+        // from a tampered/expired/unknown-checkout link.
+        this.logger.warn(
+          'recovery single-use guard: replay attempt rejected (reason=jti-already-consumed)',
+        );
+        throw this.invalidTokenError();
+      }
+      return;
+    }
+    // No Redis — in-memory fallback (dev/test only).
+    this.memoryClaimOrThrow(key);
+  }
+
+  private memoryClaimOrThrow(key: string): void {
+    const now = Date.now();
+    const existing = this.memory.get(key);
+    if (existing !== undefined && existing > now) {
+      // A276-F5-P1-2 — same uniform response as the Redis branch.
+      this.logger.warn(
+        'recovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)',
+      );
+      throw this.invalidTokenError();
+    }
+    // Lazy GC + cap to keep the map bounded across long-running test runs.
+    if (this.memory.size >= RECOVERY_MEMORY_CAP) {
+      for (const [k, exp] of this.memory) {
+        if (exp <= now) this.memory.delete(k);
+      }
+      if (this.memory.size >= RECOVERY_MEMORY_CAP) {
+        const firstKey = this.memory.keys().next().value;
+        if (firstKey !== undefined) this.memory.delete(firstKey);
+      }
+    }
+    this.memory.set(key, now + RECOVERY_JWT_TTL_SECONDS * 1000);
+  }
+
+  /**
+   * Test seam — clears the in-memory single-use set between cases.
+   *
+   * A276-F5-P3-4 — runtime-guarded. Carried over from the prior audit
+   * (F5-P2-1) and a foot-gun: a misuse in production code could wipe
+   * state. The simpler decacorn fix (vs. moving the seam to a test-only
+   * file) is a hard runtime guard — throw immediately if invoked outside
+   * the test environment. Symmetric with the default-secure NODE_ENV
+   * handling in onModuleInit: only an EXPLICIT 'test' env unlocks it.
+   */
+  resetForTests(): void {
+    const envRaw = process.env.NODE_ENV;
+    const env = typeof envRaw === 'string' ? envRaw.trim().toLowerCase() : undefined;
+    if (env !== 'test') {
+      throw new Error(
+        'CheckoutRecoveryService.resetForTests() called outside the test environment. ' +
+          'This method is a test-only seam; calling it in dev/staging/prod would wipe ' +
+          'the in-memory single-use set and is unsafe.',
+      );
+    }
+    this.memory.clear();
+  }
+
+  /**
+   * A276-F5-P3-1 — disconnect cleanup belt. Without this, a Redis client
+   * created in onModuleInit lives until process exit, leaking the
+   * connection across hot reloads (nest start --watch) and graceful
+   * restarts. Graceful path: client.quit() with a 2s timeout so a hung
+   * server can't block module destruction; force path: disconnect().
+   * Errors are swallowed — we're already on the teardown path and the
+   * supervisor will reap the process.
+   */
+  async onModuleDestroy(): Promise<void> {
+    const client = this.redis;
+    if (!client) return;
+    this.redis = null;
+    try {
+      // Race quit() against a 2s timeout. If the broker is hung, the
+      // graceful quit can stall indefinitely; the force-disconnect floor
+      // ensures teardown completes.
+      await Promise.race([
+        (async () => {
+          if (typeof client.quit === 'function') {
+            await client.quit();
+          }
+        })(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error('quit-timeout')), 2_000).unref?.(),
+        ),
+      ]);
+      this.logger.log('CheckoutRecoveryService: Redis client quit() OK');
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : 'unknown';
+      this.logger.warn(
+        `CheckoutRecoveryService: Redis quit() failed or timed out, forcing disconnect: ${detail}`,
+      );
+      try {
+        client.disconnect?.();
+      } catch {
+        /* ignore — we're tearing down */
+      }
+    }
+  }
+
+  /**
+   * A276-F5-P1-2 — single source of the enumeration-resistant error
+   * shape. Every verifyToken failure leg (including replay collision
+   * and Redis fail-closed) must throw exactly this so an attacker
+   * cannot distinguish them via the wire response. The class doc on
+   * verifyToken promises this contract; this helper enforces it.
+   */
+  private invalidTokenError(): NotFoundException {
+    return new NotFoundException({
+      error: 'RECOVERY_TOKEN_INVALID',
+      message: 'This recovery link is no longer valid.',
+    });
   }
 
   /**
@@ -263,6 +574,10 @@ export class CheckoutRecoveryService {
     email: string,
     guestCheckoutId: string,
   ): Promise<string> {
+    // A276-P1-3 — every recovery JWT gets a random jti so the verifier
+    // can mark it consumed (Redis SETNX) and reject replays within the
+    // 15-minute exp window.
+    const jti = randomUUID();
     return new SignJWT({
       st: shareToken,
       em: email.toLowerCase(),
@@ -270,6 +585,7 @@ export class CheckoutRecoveryService {
       type: RECOVERY_TYPE,
     })
       .setProtectedHeader({ alg: 'HS256' })
+      .setJti(jti)
       .setIssuedAt()
       .setExpirationTime(`${RECOVERY_JWT_TTL_SECONDS}s`)
       .sign(this.getTokenKey());
