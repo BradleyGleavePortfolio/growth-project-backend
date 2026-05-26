@@ -4,6 +4,8 @@ import { EmailModule } from '../email/email.module';
 import { CheckoutCookieService } from './checkout-cookie.service';
 import { CheckoutIdempotencyService } from './checkout-idempotency.service';
 import { CheckoutIpRateLimiterService } from './checkout-rate-limiter.service';
+import { CheckoutReceiptScheduler } from './checkout-receipt.scheduler';
+import { CheckoutReceiptService } from './checkout-receipt.service';
 import { CheckoutRecoveryService } from './checkout-recovery.service';
 import { ConnectPreflightService } from './connect-preflight.service';
 import { WebviewDetectMiddleware } from './webview-detect.middleware';
@@ -56,6 +58,9 @@ import { StorefrontService } from './storefront.service';
     // r48 #9 — webview UA interstitial middleware.  Registered as
     // a provider so Nest DI can construct it for forRoutes().
     WebviewDetectMiddleware,
+    // r48 #14 — branded PDF receipt service + scheduler.
+    CheckoutReceiptService,
+    CheckoutReceiptScheduler,
   ],
   exports: [GuestCheckoutService],
 })
