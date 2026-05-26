@@ -485,6 +485,14 @@ export class StripeConnectApiService {
       application_fee_amount: String(params.applicationFeeAmount),
       'transfer_data[destination]': params.transferDestination,
       on_behalf_of: params.onBehalfOf,
+      // r48 #1 — 3DS challenge handling.  automatic_payment_methods lets
+      // Stripe pick the right method + handle 3DS via the client-side
+      // Stripe Elements flow.  allow_redirects=never keeps the SDK from
+      // routing the customer to off-host bank redirects we cannot
+      // currently complete from the storefront.  The frontend treats
+      // `requires_action` as a normal confirm step.
+      'automatic_payment_methods[enabled]': 'true',
+      'automatic_payment_methods[allow_redirects]': 'never',
     };
     if (typeof params.customer === 'string' && params.customer.length > 0) {
       form.customer = params.customer;

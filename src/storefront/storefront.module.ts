@@ -3,6 +3,7 @@ import { ConnectModule } from '../connect/connect.module';
 import { GuestCheckoutPiiScrubService } from './guest-checkout-pii-scrub.service';
 import { GuestCheckoutReconciliationService } from './guest-checkout-reconciliation.service';
 import { GuestCheckoutService } from './guest-checkout.service';
+import { LostWebhookReconcileService } from './lost-webhook-reconcile.service';
 import { StorefrontPublicController } from './storefront-public.controller';
 import { StorefrontService } from './storefront.service';
 
@@ -26,6 +27,8 @@ import { StorefrontService } from './storefront.service';
     GuestCheckoutService,
     GuestCheckoutReconciliationService,
     GuestCheckoutPiiScrubService,
+    // r48 #2 — lost-webhook reconciler. Cron-driven; no need to export.
+    LostWebhookReconcileService,
   ],
   exports: [GuestCheckoutService],
 })

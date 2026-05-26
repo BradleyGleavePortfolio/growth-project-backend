@@ -11,6 +11,7 @@ import type {
   GuestCheckout,
   User,
 } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import {
   StripeConnectApiError,
@@ -338,6 +339,20 @@ export class GuestCheckoutService {
           // hashes guest_email and redacts guest_name past this
           // deadline if the row never converted to a User.
           data_retention_at: new Date(Date.now() + PII_RETENTION_MS),
+          // r48 #6 — package snapshot at PI create time so a coach
+          // editing the package mid-checkout does not change what the
+          // guest is billed.  The amount, currency, and platform fee
+          // already capture in the Stripe PaymentIntent itself; the
+          // snapshot is what the receipt + admin tools render against.
+          package_snapshot: {
+            name: pkg.name,
+            price_cents: pkg.amount_cents,
+            currency: pkg.currency,
+            description: pkg.description ?? null,
+            billing_type: pkg.billing_type,
+            interval: pkg.interval ?? null,
+            interval_count: pkg.interval_count ?? null,
+          } as Prisma.InputJsonValue,
         },
       });
     } catch (err) {
