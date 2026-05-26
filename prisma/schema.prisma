@@ -410,6 +410,12 @@ model User {
   landing_pages    CoachLandingPage[]    @relation("CoachLandingPagesCoach")
   crm_integrations CoachCrmIntegration[] @relation("CoachCrmCoach")
 
+  // R51 — First-Client Nudge. One row per coach driving the 7-day
+  // onboarding-to-first-paid-client sequence. Null until the coach signs
+  // up; created lazily by the scheduler on the first eligible tick OR
+  // explicitly by a future signup hook.
+  onboarding_state CoachOnboardingState? @relation("CoachOnboardingStateCoach")
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -4180,4 +4186,82 @@ model CoachCrmIntegration {
 
   // Fast "get all integrations for coach" query from the CRM settings screen.
   @@index([coach_id])
+}
+
+// ============================================================
+// R51 — FIRST-CLIENT NUDGE (PR feat/first-client-nudge-v1)
+// ============================================================
+//
+// Drives the 7-day automated onboarding sequence whose north-star metric
+// is "% of new coaches with >=1 paid client within 14 days". A daily
+// scheduler reads each row, decides which (if any) day-N nudge to send
+// based on the row's last_milestone and the day_N_sent boolean grid,
+// then writes back the timestamp. Service-role only (no coach direct
+// reads/writes); coaches reach this state via the read-only
+// GET /v1/coaches/me/onboarding/state endpoint.
+
+// OnboardingMilestone — coarse-grained progress markers the scheduler
+// uses to pick the right nudge per day. Linear forward-only: once a
+// coach hits FIRST_CLIENT the sequence stops.
+enum OnboardingMilestone {
+  signed_up         // initial state on row creation
+  created_package   // coach has at least one CoachPackage (active or not)
+  shared_link       // coach has minted at least one share_token
+  first_lead        // first CoachLandingLead row observed for any of their pages
+  first_client      // first ClientPurchase / GuestCheckout converted to a User
+}
+
+// CoachOnboardingState — one row per coach. Lazily created by the
+// scheduler on first eligible tick (signup window <= 7 days) so the
+// existing-coach backfill does not require a schema migration. The
+// scheduler is idempotent: re-running a tick that already sent a day's
+// nudge is a no-op via the day_N_sent guard.
+//
+// All day_N_sent_at fields are nullable; the matching boolean is the
+// authoritative "did we send" flag. Storing the timestamp separately
+// lets ops grep for "when did Day 3 get delivered" without joining the
+// EmailSendLog idempotency table.
+model CoachOnboardingState {
+  id               String  @id @default(uuid())
+  coach_id         String  @unique
+  coach            User    @relation("CoachOnboardingStateCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+
+  // signup_at is the canonical "day 0" anchor. We copy it from
+  // User.created_at on row insert so the scheduler's day arithmetic is
+  // independent of any later mutations to User.created_at.
+  signup_at        DateTime
+  first_client_at  DateTime?
+  churned_at       DateTime?
+
+  // Day-N delivery grid. Boolean is the authoritative flag; the *_at
+  // timestamp is for ops visibility.
+  day_1_sent       Boolean  @default(false)
+  day_1_sent_at    DateTime?
+  day_2_sent       Boolean  @default(false)
+  day_2_sent_at    DateTime?
+  day_3_sent       Boolean  @default(false)
+  day_3_sent_at    DateTime?
+  day_5_sent       Boolean  @default(false)
+  day_5_sent_at    DateTime?
+  day_7_sent       Boolean  @default(false)
+  day_7_sent_at    DateTime?
+
+  last_milestone   OnboardingMilestone @default(signed_up)
+
+  // Coach opt-out: when set, the scheduler skips this row entirely.
+  // Not deleted — keeping the row lets the "first paid client" milestone
+  // still be recorded for cohort analysis after opt-out.
+  opted_out_at     DateTime?
+
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  // Scheduler scan key: filter on (last_milestone) to identify coaches
+  // still in the funnel (first_client → row is skipped). Composite with
+  // signup_at would be denser but the row count is small (one per coach,
+  // window 7 days) so a single-column index is plenty.
+  @@index([last_milestone])
+  // Cohort + retention queries: list all coaches who signed up in a
+  // window. Used by the analytics view that drives the north-star metric.
+  @@index([signup_at])
 }
