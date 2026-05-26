@@ -145,6 +145,68 @@ export const GuaranteePayloadSchema = z.object({
   days: z.number().int().positive().max(365).optional(),
 });
 
+// ─── R52 renderer-v2 — three persuasion-arc kinds ────────────────────────────
+
+/**
+ * problem_solution — split layout showing "what's broken" beside "what
+ * changes" after working with the coach. The doctrine doc's arc step 2
+ * (problem acknowledgment) collapses with step 3 (mechanism reveal) into
+ * a single 2-column block on the page so a visitor can compare states
+ * side-by-side without scrolling between sections.
+ */
+export const ProblemSolutionPayloadSchema = z.object({
+  problem_title: z.string().min(1).max(120),
+  problem_body: z.string().min(1).max(500),
+  solution_title: z.string().min(1).max(120),
+  solution_body: z.string().min(1).max(500),
+});
+
+/**
+ * mechanism — 3-step "how it works" block.  Each step has a small icon
+ * key (mapped to a Lucide-style inline SVG in the renderer; free-text
+ * icon names are accepted but unknown values fall back to a neutral dot),
+ * a title, and a one-line body. Three steps total — Miller's three rule.
+ */
+export const MechanismPayloadSchema = z.object({
+  steps: z
+    .array(
+      z.object({
+        icon: z.string().min(1).max(40).optional(),
+        title: z.string().min(1).max(60),
+        body: z.string().min(1).max(200),
+      }),
+    )
+    .min(3)
+    .max(3),
+});
+
+/**
+ * trust — credentials + numeric proof grid.
+ * `numbers` is a small set of headline metrics (years coaching, clients,
+ * etc.); `credentials` is a free-form list of accreditations / press
+ * mentions. Either list may be empty as long as one of them has content.
+ */
+export const TrustPayloadSchema = z
+  .object({
+    numbers: z
+      .array(
+        z.object({
+          value: z.string().min(1).max(20),
+          label: z.string().min(1).max(40),
+        }),
+      )
+      .max(4)
+      .default([]),
+    credentials: z
+      .array(z.string().min(1).max(120))
+      .max(8)
+      .default([]),
+  })
+  .refine(
+    (d) => d.numbers.length + d.credentials.length > 0,
+    { message: 'trust section needs at least one number or credential' },
+  );
+
 // ─── Dispatch map ────────────────────────────────────────────────────────────
 
 export type SectionKind =
@@ -155,7 +217,10 @@ export type SectionKind =
   | 'faq'
   | 'lead_form'
   | 'offer_stack'
-  | 'guarantee';
+  | 'guarantee'
+  | 'problem_solution'
+  | 'mechanism'
+  | 'trust';
 
 export const SECTION_SCHEMAS: Record<SectionKind, z.ZodTypeAny> = {
   hero: HeroPayloadSchema,
@@ -166,6 +231,9 @@ export const SECTION_SCHEMAS: Record<SectionKind, z.ZodTypeAny> = {
   lead_form: LeadFormPayloadSchema,
   offer_stack: OfferStackPayloadSchema,
   guarantee: GuaranteePayloadSchema,
+  problem_solution: ProblemSolutionPayloadSchema,
+  mechanism: MechanismPayloadSchema,
+  trust: TrustPayloadSchema,
 };
 
 /**
