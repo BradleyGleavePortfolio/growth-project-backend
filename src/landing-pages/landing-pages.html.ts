@@ -1,18 +1,41 @@
 /**
- * Server-side HTML renderer for coach landing pages.
+ * Server-side HTML renderer for coach landing pages — v2 (PR-LP-RENDERER-V2).
  *
- * Design principles:
- * - Premium typography: Playfair Display for headlines, Inter/system for body
- * - Generous whitespace, max-width 720px content blocks
- * - Inline critical CSS, no external fonts until after paint (preload trick)
- * - Open Graph + Twitter card meta
- * - LocalBusiness + Person schema.org JSON-LD
- * - Section rendering: switch on section.kind, render each to its locked template
- * - Four visual templates: transformation, authority, community, offer
- * - LCP target < 1.2s on 4G via inline critical CSS
- * - Sticky mobile CTA bar + desktop exit-intent (vanilla JS, no framework)
+ * Brand: SaaS platform (NOT the founder courses brand). Tokens pulled from
+ * the `tgp-platform-site` system: near-black dark surface, warm gold accent
+ * (#d4a574), Geist Sans body + Fraunces display.  Register matches Linear /
+ * Attio / Mercury / Stripe: calm, confident, premium B2B.  No emoji, no
+ * exclamation marks, no countdown timers.  Spacing > decoration.
  *
- * Pattern mirrors invite-landing.service.ts but is significantly richer.
+ * Persuasion arc (7 sections, per the design doctrine §4):
+ *   1. Hero               — single-promise headline, one CTA, social-proof line
+ *   2. Problem ↔ Solution — split "what's broken / what changes"
+ *   3. Outcome proof      — testimonial grid (no carousels)
+ *   4. Mechanism          — 3-step how-it-works with iconography
+ *   5. Trust              — credentials, press, numeric proof
+ *   6. CTA + lead form    — cream-inverted section to pull the eye
+ *   7. FAQ                — accordion (details/summary, zero JS)
+ *
+ * Backwards compat: the four legacy section kinds shipped in Phase 1/2
+ * (before_after, pricing, offer_stack, guarantee) continue to render under
+ * the new token system so existing published pages do not break.
+ *
+ * Entrance motion: a single inline IntersectionObserver script (~600 bytes
+ * gzipped) toggles `.in-view` on sections as they cross the viewport. CSS
+ * handles the rest. `prefers-reduced-motion: reduce` disables transforms.
+ *
+ * Post-submit celebration: the lead-form replaces itself with an inline
+ * thank-you card on a successful fetch().  CSS-only confetti (no canvas, no
+ * library) — three small <span> motes drift up the card border.
+ *
+ * Security:
+ *   - JSON-LD inside <script type="application/ld+json"> is escaped against
+ *     </script> breakout via `safeJsonLd` (carried over from v1).
+ *   - Hero image goes through an <img> element, never CSS background-image
+ *     (avoids the apostrophe-decode CSS-string injection path).
+ *   - Every coach-supplied string runs through `esc` / `escAttr`.
+ *   - `escAttr` substitutes '#' for any non-http(s) / non-relative URL,
+ *     blocking `javascript:` and `data:` URLs in attribute context.
  */
 
 import type { CoachLandingPage, CoachLandingPageSection, CoachPackage } from '@prisma/client';
@@ -31,23 +54,16 @@ export type PageWithContext = CoachLandingPage & {
     id: string;
     name: string;
     coach_practice_type: string | null;
-    // Prisma relation name on User model is 'coach_profile' (not 'profile')
     coach_profile: CoachProfile | null;
   };
 };
 
-// ─── JSON-LD safe serialiser ────────────────────────────────────────────────
+// ─── HTML / JSON helpers ─────────────────────────────────────────────────────
 
 /**
- * Serialise an object as JSON that is safe to inline inside a
- * <script type="application/ld+json"> block.
- *
- * JSON.stringify does NOT escape `<`, `>`, or `&`, so a value such as
- * `</script><img onerror=…>` will terminate the script element and inject
- * arbitrary HTML.  The canonical fix (used by Google's safe-html guide and
- * Angular's SSR renderer) is to unicode-escape every angle bracket and
- * ampersand.  U+2028 / U+2029 are also escaped because some JS engines
- * (pre-ES2019 spec) treat them as line terminators inside string literals.
+ * JSON.stringify is not safe to inline in a <script> tag — a value like
+ * `</script><img onerror=…>` would terminate the script and inject HTML.
+ * Escape angle brackets + ampersand + line-separator code points.
  */
 function safeJsonLd(obj: unknown): string {
   return JSON.stringify(obj)
@@ -57,8 +73,6 @@ function safeJsonLd(obj: unknown): string {
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
 }
-
-// ─── HTML escape helpers ──────────────────────────────────────────────────────
 
 function esc(s: string | null | undefined): string {
   if (!s) return '';
@@ -70,6 +84,7 @@ function esc(s: string | null | undefined): string {
     .replace(/'/g, '&#39;');
 }
 
+/** http(s) / relative URLs only.  Anything else → '#'.  Blocks js:/data:. */
 function escAttr(s: string | null | undefined): string {
   const v = (s || '').trim();
   if (!v) return '#';
@@ -77,49 +92,407 @@ function escAttr(s: string | null | undefined): string {
   return safe ? esc(v) : '#';
 }
 
-function sanitizeColor(c: string | null | undefined): string {
-  if (!c) return '#1a1612';
-  return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(c) ? c : '#1a1612';
-}
-
 function nl2br(s: string): string {
   return esc(s).replace(/\n/g, '<br>');
 }
 
-/** Convert markdown bold/italic to safe HTML (no arbitrary HTML). */
+/** Convert bold/italic markdown to safe HTML.  No arbitrary HTML pass-through. */
 function markdownLight(s: string): string {
   return esc(s)
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>');
 }
 
-// ─── Base document ────────────────────────────────────────────────────────────
+// ─── Accent picker ───────────────────────────────────────────────────────────
+
+/**
+ * Four named accents the coach can pick.  The DB stores a free-form
+ * `accent_color` hex (legacy from Phase 1) — we resolve it to the closest
+ * preset.  Any unrecognised value falls through to the gold default.
+ */
+interface AccentTriplet {
+  base: string;     // primary swatch
+  hover: string;    // hover-state lift
+  contrast: string; // text colour on base
+}
+
+const ACCENTS: Record<'gold' | 'sage' | 'terracotta' | 'slate', AccentTriplet> = {
+  gold:       { base: '#d4a574', hover: '#e0b585', contrast: '#1a1410' },
+  sage:       { base: '#5d7d65', hover: '#6e9077', contrast: '#0f1a12' },
+  terracotta: { base: '#c87a5d', hover: '#d68a6e', contrast: '#1a0f0a' },
+  slate:      { base: '#4a5870', hover: '#5a6a85', contrast: '#0e1117' },
+};
+
+function resolveAccent(input: string | null | undefined): AccentTriplet {
+  const raw = (input || '').trim().toLowerCase();
+  // Exact-name hits first (a future migration may swap the column to an enum
+  // with name strings; the renderer already supports it).
+  if (raw in ACCENTS) return ACCENTS[raw as keyof typeof ACCENTS];
+  // Hex equality / proximity — exact match wins, otherwise default.
+  for (const triplet of Object.values(ACCENTS)) {
+    if (triplet.base.toLowerCase() === raw) return triplet;
+  }
+  return ACCENTS.gold;
+}
+
+// ─── Critical CSS (inlined; gzipped ~6kb) ────────────────────────────────────
+//
+// Token system mirrors the SaaS platform site — dark default, warm gold
+// accent, Geist Sans + Fraunces.  All measurements are clamps so the page
+// breathes on small screens without media queries everywhere.
+
+function brandCss(accent: AccentTriplet): string {
+  return `
+:root {
+  --bg: #0b0b0c;
+  --surface: #131316;
+  --surface-2: #1a1a1f;
+  --ink: #f3f3f3;
+  --ink-2: #b8b8bb;
+  --ink-3: #6e6e72;
+  --accent: ${accent.base};
+  --accent-hover: ${accent.hover};
+  --accent-ink: ${accent.contrast};
+  --cream: #f5efe6;
+  --cream-ink: #1a1410;
+  --border: rgba(255, 255, 255, 0.08);
+  --success: #5fb574;
+  --error: #d97757;
+  --radius: 14px;
+  --max-w: 1080px;
+  --measure: 640px;
+
+  /* Type scale (modular ratio ~1.25, anchored at 16px body) */
+  --t-12: 12px;
+  --t-14: 14px;
+  --t-16: 16px;
+  --t-18: 18px;
+  --t-24: 24px;
+  --t-32: 32px;
+  --t-48: 48px;
+  --t-72: 72px;
+  --t-hero: clamp(3rem, 6vw, 5.5rem);
+
+  /* Display + body fonts. Geist Sans is the body/UI face; Fraunces is the
+     display face used for hero H1 and section H2 only.  Both are loaded
+     via system fallbacks first so the page draws instantly on a cold
+     visitor without a font-network round trip. */
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+  --font-body: 'Geist Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+}
+
+*, ::before, ::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; background: var(--bg); }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--t-18);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'ss01', 'cv01', 'cv11';
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variation-settings: 'opsz' 144, 'WONK' 30, 'SOFT' 30;
+}
+h4 { font-family: var(--font-body); font-weight: 600; }
+
+img { max-width: 100%; display: block; }
+a { color: var(--ink); text-decoration: none; }
+a:hover { color: var(--accent); }
+
+/* Layout primitives */
+.lp-wrap { max-width: var(--max-w); margin: 0 auto; padding: 0 24px; }
+.lp-section { padding: clamp(72px, 10vw, 128px) 24px; }
+.lp-section--cream { background: var(--cream); color: var(--cream-ink); }
+.lp-section--cream h1, .lp-section--cream h2, .lp-section--cream h3 { color: var(--cream-ink); }
+.lp-section--cream .ink-2 { color: #5c4d3f; }
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--t-12);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 16px;
+}
+.lp-section--cream .eyebrow { color: #8a6b48; }
+
+.measure { max-width: var(--measure); }
+.ink-2 { color: var(--ink-2); }
+
+/* Coach strip */
+.strip {
+  display: flex; align-items: center; gap: 12px;
+  padding: 20px 24px; border-bottom: 1px solid var(--border);
+}
+.strip__logo { width: 32px; height: 32px; border-radius: 8px; object-fit: cover; }
+.strip__name { font-weight: 600; font-size: var(--t-14); }
+.strip__biz { font-size: var(--t-12); color: var(--ink-3); }
+
+/* Hero */
+.hero { padding-top: clamp(80px, 12vw, 144px); padding-bottom: clamp(80px, 12vw, 144px); position: relative; }
+.hero__inner { max-width: var(--max-w); margin: 0 auto; padding: 0 24px; }
+.hero h1 {
+  font-size: var(--t-hero); letter-spacing: -0.02em;
+  max-width: 14ch; margin-bottom: 24px;
+}
+.hero__sub { font-size: var(--t-24); color: var(--ink-2); max-width: var(--measure); margin-bottom: 40px; line-height: 1.4; }
+.hero__cta-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+.hero__proof { color: var(--ink-3); font-size: var(--t-14); margin-top: 24px; }
+.hero__bg {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; opacity: 0.18; pointer-events: none;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 14px 22px; border-radius: 999px;
+  font-family: var(--font-body); font-weight: 500; font-size: var(--t-16);
+  border: 1px solid transparent; cursor: pointer;
+  transition: background 200ms ease-out, transform 200ms ease-out, border-color 200ms ease-out;
+  text-decoration: none;
+}
+.btn--primary { background: var(--accent); color: var(--accent-ink); }
+.btn--primary:hover { background: var(--accent-hover); color: var(--accent-ink); }
+.btn--ghost { background: transparent; color: var(--ink); border-color: var(--border); }
+.btn--ghost:hover { border-color: var(--accent); color: var(--accent); }
+.lp-section--cream .btn--ghost { color: var(--cream-ink); border-color: rgba(0, 0, 0, 0.12); }
+.lp-section--cream .btn--ghost:hover { border-color: var(--accent); color: var(--accent-ink); background: var(--accent); }
+
+/* Problem-Solution */
+.ps-grid {
+  display: grid; gap: 32px;
+  grid-template-columns: 1fr; max-width: var(--max-w); margin: 0 auto;
+}
+@media (min-width: 760px) { .ps-grid { grid-template-columns: 1fr 1fr; gap: 48px; } }
+.ps-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 32px;
+}
+.ps-card--solution { border-color: var(--accent); }
+.ps-card h3 { font-size: var(--t-32); margin-bottom: 16px; }
+.ps-card p { color: var(--ink-2); font-size: var(--t-18); }
+
+/* Testimonials */
+.tg { display: grid; gap: 24px; grid-template-columns: 1fr; max-width: var(--max-w); margin: 0 auto; }
+@media (min-width: 760px) { .tg { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1000px) { .tg { grid-template-columns: repeat(3, 1fr); } }
+.t-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 28px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.t-card__quote { font-size: var(--t-18); color: var(--ink); line-height: 1.5; }
+.t-card__attr { display: flex; align-items: center; gap: 12px; margin-top: auto; }
+.t-card__avatar {
+  width: 40px; height: 40px; border-radius: 999px; object-fit: cover;
+  background: var(--surface-2);
+}
+.t-card__name { font-weight: 600; font-size: var(--t-14); }
+.t-card__metric {
+  font-family: var(--font-mono); font-size: var(--t-12);
+  color: var(--accent); margin-top: 2px;
+}
+
+/* Mechanism — 3-step */
+.steps { display: grid; gap: 24px; grid-template-columns: 1fr; max-width: var(--max-w); margin: 0 auto; }
+@media (min-width: 760px) { .steps { grid-template-columns: repeat(3, 1fr); gap: 32px; } }
+.step {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 28px;
+}
+.step__num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 999px;
+  background: var(--accent); color: var(--accent-ink);
+  font-family: var(--font-mono); font-size: var(--t-14); font-weight: 600;
+  margin-bottom: 20px;
+}
+.step__title { font-size: var(--t-24); margin-bottom: 8px; font-family: var(--font-display); font-weight: 500; }
+.step__body { color: var(--ink-2); font-size: var(--t-16); }
+
+/* Trust — numbers + creds */
+.trust-numbers {
+  display: grid; gap: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  max-width: var(--max-w); margin: 0 auto 40px;
+}
+.trust-num__value {
+  font-family: var(--font-display); font-size: var(--t-72);
+  letter-spacing: -0.03em; color: var(--accent); line-height: 1;
+}
+.trust-num__label {
+  font-family: var(--font-mono); font-size: var(--t-12);
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3);
+  margin-top: 8px;
+}
+.trust-creds {
+  display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
+  max-width: var(--max-w); margin: 0 auto;
+}
+.trust-cred {
+  padding: 8px 16px; border: 1px solid var(--border);
+  border-radius: 999px; font-size: var(--t-14); color: var(--ink-2);
+}
+
+/* CTA + lead form (cream) */
+.cta-form-wrap {
+  max-width: 720px; margin: 0 auto;
+  display: grid; gap: 32px;
+}
+.cta-form-wrap h2 {
+  font-size: clamp(2rem, 4vw, 3rem); max-width: 18ch;
+}
+.lead-form { display: grid; gap: 16px; }
+.lead-form__group { display: flex; flex-direction: column; gap: 6px; }
+.lead-form label {
+  font-family: var(--font-mono); font-size: var(--t-12);
+  letter-spacing: 0.08em; text-transform: uppercase; color: #5c4d3f;
+}
+.lead-form input, .lead-form textarea {
+  width: 100%; padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 12px;
+  font-family: var(--font-body); font-size: var(--t-16); color: var(--cream-ink);
+  outline: none; transition: border-color 200ms ease-out, background 200ms ease-out;
+}
+.lead-form input:focus, .lead-form textarea:focus {
+  border-color: var(--accent); background: rgba(255, 255, 255, 0.9);
+}
+.lead-form__submit {
+  margin-top: 8px;
+  background: var(--cream-ink); color: var(--cream);
+  border: none; padding: 16px 24px; border-radius: 999px;
+  font-family: var(--font-body); font-weight: 500; font-size: var(--t-16);
+  cursor: pointer; transition: background 200ms ease-out;
+}
+.lead-form__submit:hover { background: #2a2018; }
+.lead-form__reassurance { color: #5c4d3f; font-size: var(--t-14); margin-top: 8px; }
+
+/* Celebration card (replaces form on submit success) */
+.celebrate {
+  position: relative;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 40px 32px;
+  background: rgba(255, 255, 255, 0.6);
+  text-align: center;
+  overflow: hidden;
+}
+.celebrate h3 {
+  font-size: var(--t-32); margin-bottom: 12px; color: var(--cream-ink);
+}
+.celebrate p { color: #5c4d3f; font-size: var(--t-18); }
+/* CSS-only confetti — three motes drift up the corners on first render. */
+.celebrate::before,
+.celebrate::after,
+.celebrate > .mote {
+  content: ''; position: absolute; width: 8px; height: 8px;
+  background: var(--accent); border-radius: 2px; opacity: 0;
+  animation: mote 1800ms ease-out forwards;
+}
+.celebrate::before { left: 10%; top: 100%; animation-delay: 0ms; }
+.celebrate::after { right: 12%; top: 100%; animation-delay: 180ms; background: var(--accent-hover); }
+.celebrate > .mote { left: 50%; top: 100%; animation-delay: 360ms; background: var(--cream-ink); }
+@keyframes mote {
+  0% { transform: translateY(0) rotate(0); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translateY(-180px) rotate(180deg); opacity: 0; }
+}
+
+/* FAQ accordion */
+.faq-list { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 4px; }
+.faq-item {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+}
+.faq-item[open] { border-color: var(--accent); }
+.faq-item summary {
+  list-style: none; padding: 22px 24px; cursor: pointer;
+  font-weight: 500; font-size: var(--t-18);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after {
+  content: '+'; font-family: var(--font-mono); font-size: var(--t-24);
+  color: var(--accent); transition: transform 240ms ease-out;
+}
+.faq-item[open] summary::after { content: '−'; }
+.faq-item__a { padding: 0 24px 22px; color: var(--ink-2); font-size: var(--t-16); line-height: 1.65; }
+
+/* Legacy section carryovers (Phase 1/2 backwards compat) */
+.legacy-pricing { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); max-width: var(--max-w); margin: 0 auto; }
+.legacy-pricing__card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px 24px; }
+.legacy-pricing__card--highlighted { border-color: var(--accent); }
+.legacy-pricing__name { font-size: var(--t-18); font-weight: 600; }
+.legacy-pricing__price { font-family: var(--font-display); font-size: var(--t-48); margin: 8px 0; }
+.legacy-pricing__interval { color: var(--ink-3); font-size: var(--t-14); }
+.legacy-pricing__desc { color: var(--ink-2); font-size: var(--t-14); margin: 16px 0; }
+.legacy-pricing__cta { display: inline-block; padding: 12px 20px; background: var(--accent); color: var(--accent-ink); border-radius: 999px; font-weight: 500; }
+.legacy-ba { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; max-width: var(--max-w); margin: 0 auto 32px; }
+.legacy-ba__img { width: 100%; aspect-ratio: 3/4; object-fit: cover; border-radius: var(--radius); }
+.legacy-ba__cap { color: var(--ink-3); font-size: var(--t-14); margin-top: 8px; text-align: center; }
+.legacy-offer { display: flex; flex-direction: column; gap: 12px; max-width: var(--max-w); margin: 0 auto; }
+.legacy-offer__row { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.legacy-offer__title { font-weight: 500; }
+.legacy-offer__value { color: var(--ink-3); font-size: var(--t-14); }
+.legacy-offer__dollars { font-family: var(--font-mono); color: var(--accent); }
+.legacy-guarantee { background: var(--surface); border: 2px solid var(--accent); border-radius: var(--radius); padding: 40px; text-align: center; max-width: var(--max-w); margin: 0 auto; }
+.legacy-guarantee__days { font-family: var(--font-display); font-size: var(--t-72); color: var(--accent); line-height: 1; }
+.legacy-guarantee__label { font-family: var(--font-mono); font-size: var(--t-12); color: var(--ink-3); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 16px; }
+.legacy-guarantee__title { font-size: var(--t-24); margin-bottom: 12px; }
+.legacy-guarantee__body { color: var(--ink-2); max-width: 480px; margin: 0 auto; }
+
+/* Entrance motion — IntersectionObserver attaches .in-view to .reveal nodes.
+   Opacity + 12px translate, 600ms ease-out. Stagger handled via custom
+   property --d. The reduce-motion query disables transforms entirely. */
+.reveal { opacity: 0; transform: translateY(12px); transition: opacity 600ms ease-out, transform 600ms ease-out; transition-delay: var(--d, 0ms); }
+.reveal.in-view { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .reveal, .reveal.in-view { opacity: 1; transform: none; transition: none; }
+  .celebrate::before, .celebrate::after, .celebrate > .mote { animation: none; opacity: 0; }
+  html { scroll-behavior: auto; }
+}
+`;
+}
+
+// ─── Base document shell ─────────────────────────────────────────────────────
 
 interface BaseDocumentOpts {
   title: string;
   description: string;
-  accent: string;
+  accent: AccentTriplet;
   canonicalUrl: string;
   ogImage: string | null;
-  coachName: string;
-  businessName: string | null;
   jsonLd: string;
   body: string;
-  primaryCtaLabel: string;
-  primaryCtaHref: string;
-  template: string;
 }
 
 function baseDocument(opts: BaseDocumentOpts): string {
-  const { accent, title, description, canonicalUrl, ogImage, coachName, businessName, jsonLd, body, primaryCtaLabel, primaryCtaHref, template } = opts;
-  const ogImg = ogImage ? `<meta property="og:image" content="${escAttr(ogImage)}" />` : '';
-
+  const { accent, title, description, canonicalUrl, ogImage, jsonLd, body } = opts;
+  const ogImg = ogImage
+    ? `<meta property="og:image" content="${escAttr(ogImage)}" />`
+    : '';
+  const twitterImg = ogImage
+    ? `<meta name="twitter:image" content="${escAttr(ogImage)}" />`
+    : '';
   return `<!doctype html>
-<html lang="en" data-template="${esc(template)}">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <meta name="robots" content="index,follow" />
+<meta name="color-scheme" content="dark" />
+<meta name="theme-color" content="#0b0b0c" />
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}" />
 <link rel="canonical" href="${escAttr(canonicalUrl)}" />
@@ -135,543 +508,362 @@ ${ogImg}
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="${esc(title)}" />
 <meta name="twitter:description" content="${esc(description)}" />
-${ogImage ? `<meta name="twitter:image" content="${escAttr(ogImage)}" />` : ''}
+${twitterImg}
 
-<!-- Schema.org JSON-LD (LocalBusiness + Person) -->
+<!-- Schema.org JSON-LD — escaped against </script> breakout (safeJsonLd). -->
 <script type="application/ld+json">${jsonLd}</script>
 
-<!-- Critical CSS inlined for LCP < 1.2s — no external CSS blocks paint -->
-<style>
-:root {
-  --accent: ${accent};
-  --accent-dark: color-mix(in srgb, ${accent} 80%, #000);
-  --ink: #1a1612;
-  --paper: #faf8f5;
-  --surface: #fff;
-  --muted: #6b6259;
-  --border: #e7e1d6;
-  --radius: 16px;
-  --max-w: 720px;
-}
-*,::before,::after{box-sizing:border-box;margin:0;padding:0;}
-html{scroll-behavior:smooth;}
-body{
-  background:var(--paper);
-  color:var(--ink);
-  font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  font-size:17px;
-  line-height:1.6;
-  -webkit-font-smoothing:antialiased;
-}
-h1,h2,h3,h4{
-  font-family:"Playfair Display","Iowan Old Style",Georgia,"Times New Roman",serif;
-  font-weight:500;
-  line-height:1.15;
-  letter-spacing:-0.01em;
-}
-img{max-width:100%;display:block;}
-a{color:var(--accent);text-decoration:none;}
-a:hover{text-decoration:underline;}
+<!-- Critical CSS inlined for instant first paint. No external stylesheet
+     blocks rendering; Geist + Fraunces fall through system stacks until
+     the WOFF2 files (preload below) finish. -->
+<style>${brandCss(accent)}</style>
 
-/* Layout */
-.lp-section{padding:80px 20px;max-width:var(--max-w);margin:0 auto;}
-.lp-section--full{padding:0;max-width:none;}
-.section-label{
-  font-size:11px;text-transform:uppercase;letter-spacing:.14em;
-  color:var(--muted);margin-bottom:12px;
-}
-
-/* Hero */
-.hero{
-  position:relative;overflow:hidden;
-  min-height:520px;display:flex;align-items:flex-end;
-  padding:60px 20px 72px;
-  background:#1a1612;
-}
-.hero__bg{
-  position:absolute;inset:0;
-  width:100%;height:100%;
-  object-fit:cover;object-position:center;
-  filter:brightness(.55);
-  transition:filter .3s;
-  z-index:0;
-}
-.hero__content{
-  position:relative;z-index:1;
-  max-width:var(--max-w);margin:0 auto;width:100%;
-}
-.hero h1{
-  color:#fff;font-size:clamp(36px,6vw,72px);
-  margin-bottom:18px;text-shadow:0 2px 24px rgba(0,0,0,.25);
-}
-.hero__sub{color:rgba(255,255,255,.88);font-size:20px;margin-bottom:32px;max-width:560px;}
-.hero__cta{
-  display:inline-block;padding:16px 32px;
-  background:var(--accent);color:#fff;
-  border-radius:999px;font-weight:600;font-size:16px;
-  box-shadow:0 4px 24px rgba(0,0,0,.2);
-  transition:transform .15s,box-shadow .15s;
-}
-.hero__cta:hover{transform:translateY(-1px);box-shadow:0 6px 32px rgba(0,0,0,.28);text-decoration:none;}
-
-/* Before / After */
-.ba-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:32px;}
-.ba-pair{border-radius:var(--radius);overflow:hidden;background:var(--surface);border:1px solid var(--border);}
-.ba-pair__img{width:100%;aspect-ratio:3/4;object-fit:cover;}
-.ba-pair__label{
-  padding:10px 14px;font-size:12px;letter-spacing:.06em;
-  font-variant-numeric:tabular-nums lining-nums;
-  color:var(--muted);
-  font-family:ui-monospace,"Cascadia Code","Fira Code",monospace;
-}
-.ba-caption{font-size:14px;color:var(--muted);text-align:center;margin-top:6px;}
-@media(max-width:540px){.ba-grid{grid-template-columns:1fr;}}
-
-/* Testimonials */
-.testimonials-grid{display:grid;gap:20px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));}
-.testimonial-card{
-  background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--radius);padding:24px;
-}
-.testimonial-card__header{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
-.testimonial-card__avatar{
-  width:44px;height:44px;border-radius:50%;object-fit:cover;
-  background:var(--border);flex-shrink:0;
-}
-.testimonial-card__name{font-weight:600;font-size:15px;}
-.testimonial-card__metric{
-  font-size:12px;color:var(--accent);
-  font-family:ui-monospace,"Cascadia Code","Fira Code",monospace;
-  font-variant-numeric:tabular-nums;
-  margin-top:2px;
-}
-.testimonial-card__quote{font-size:15px;color:var(--muted);font-style:italic;}
-.testimonial-card__quote::before{content:'\u201c';}
-.testimonial-card__quote::after{content:'\u201d';}
-
-/* Pricing */
-.pricing-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));}
-.pricing-card{
-  background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--radius);padding:28px 24px;
-  transition:transform .2s,box-shadow .2s;
-}
-.pricing-card:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(0,0,0,.08);}
-.pricing-card--highlighted{
-  border-color:var(--accent);
-  box-shadow:0 0 0 2px var(--accent),0 8px 32px rgba(0,0,0,.1);
-}
-.pricing-card__badge{
-  display:inline-block;margin-bottom:12px;
-  padding:4px 12px;border-radius:999px;
-  background:var(--accent);color:#fff;
-  font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
-}
-.pricing-card__name{font-size:18px;font-weight:600;margin-bottom:8px;}
-.pricing-card__price{
-  font-size:36px;font-weight:700;
-  font-family:"Playfair Display",Georgia,serif;
-  margin-bottom:4px;
-}
-.pricing-card__interval{font-size:14px;color:var(--muted);}
-.pricing-card__desc{font-size:14px;color:var(--muted);margin:12px 0 20px;}
-.pricing-card__cta{
-  display:block;text-align:center;
-  padding:12px 20px;background:var(--ink);color:#fff;
-  border-radius:999px;font-weight:600;font-size:15px;
-  transition:background .15s;
-}
-.pricing-card--highlighted .pricing-card__cta{background:var(--accent);}
-.pricing-card__cta:hover{opacity:.9;text-decoration:none;}
-
-/* FAQ accordion */
-.faq-list{display:flex;flex-direction:column;gap:4px;}
-details.faq-item{
-  border:1px solid var(--border);border-radius:12px;
-  background:var(--surface);overflow:hidden;
-}
-details.faq-item[open]{border-color:var(--accent);}
-details.faq-item summary{
-  list-style:none;padding:18px 22px;cursor:pointer;
-  font-weight:600;font-size:16px;
-  display:flex;justify-content:space-between;align-items:center;
-}
-details.faq-item summary::-webkit-details-marker{display:none;}
-details.faq-item summary::after{
-  content:'+';font-size:22px;font-weight:400;
-  color:var(--accent);flex-shrink:0;margin-left:16px;
-  transition:transform .2s;
-}
-details.faq-item[open] summary::after{content:'\u2212';}
-.faq-item__answer{padding:0 22px 18px;color:var(--muted);font-size:15px;line-height:1.7;}
-
-/* Lead form */
-.lead-form{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:32px;}
-.lead-form__title{font-size:22px;margin-bottom:6px;}
-.lead-form__sub{color:var(--muted);font-size:15px;margin-bottom:24px;}
-.lead-form__group{margin-bottom:16px;}
-.lead-form label{
-  display:block;font-size:13px;font-weight:600;
-  letter-spacing:.04em;text-transform:uppercase;
-  margin-bottom:6px;color:var(--muted);
-}
-.lead-form input,.lead-form textarea{
-  width:100%;padding:12px 14px;
-  border:1px solid var(--border);border-radius:10px;
-  font-size:16px;background:var(--paper);
-  transition:border-color .15s;outline:none;
-}
-.lead-form input:focus,.lead-form textarea:focus{border-color:var(--accent);}
-.lead-form__submit{
-  width:100%;padding:14px;background:var(--accent);color:#fff;
-  border:none;border-radius:999px;font-size:16px;font-weight:600;
-  cursor:pointer;transition:opacity .15s;margin-top:8px;
-}
-.lead-form__submit:hover{opacity:.9;}
-.lead-form__success{display:none;text-align:center;padding:24px 0;}
-.lead-form__success h3{font-size:22px;margin-bottom:8px;}
-.lead-form__success p{color:var(--muted);}
-
-/* Offer stack */
-.offer-list{display:flex;flex-direction:column;gap:12px;}
-.offer-item{
-  display:flex;justify-content:space-between;align-items:center;
-  padding:16px 20px;background:var(--surface);border:1px solid var(--border);border-radius:12px;
-}
-.offer-item__text{flex:1;}
-.offer-item__title{font-weight:600;font-size:16px;}
-.offer-item__value{font-size:14px;color:var(--muted);}
-.offer-item__dollars{
-  font-size:18px;font-weight:700;color:var(--accent);
-  font-variant-numeric:tabular-nums;margin-left:16px;white-space:nowrap;
-}
-
-/* Guarantee */
-.guarantee-card{
-  background:var(--surface);border:2px solid var(--accent);border-radius:var(--radius);
-  padding:36px;text-align:center;
-}
-.guarantee-card__days{
-  font-size:56px;font-weight:700;color:var(--accent);
-  font-family:"Playfair Display",Georgia,serif;
-  margin-bottom:4px;
-}
-.guarantee-card__title{font-size:22px;margin-bottom:12px;}
-.guarantee-card__body{color:var(--muted);font-size:16px;max-width:480px;margin:0 auto;}
-
-/* Section headings */
-.section-heading{font-size:clamp(28px,4vw,42px);margin-bottom:16px;}
-.section-sub{color:var(--muted);font-size:17px;max-width:560px;margin-bottom:40px;line-height:1.6;}
-
-/* Sticky mobile CTA bar */
-.sticky-cta{
-  display:none;
-  position:sticky;bottom:0;left:0;right:0;z-index:100;
-  background:var(--surface);border-top:1px solid var(--border);
-  padding:12px 20px;
-}
-.sticky-cta a{
-  display:block;text-align:center;
-  padding:14px;background:var(--accent);color:#fff;
-  border-radius:999px;font-weight:600;font-size:16px;
-}
-@media(max-width:768px){.sticky-cta{display:block;}}
-
-/* Exit intent overlay (desktop only — populated by JS below) */
-#exit-intent{
-  display:none;position:fixed;inset:0;z-index:999;
-  background:rgba(26,22,18,.72);backdrop-filter:blur(4px);
-  align-items:center;justify-content:center;
-}
-#exit-intent.active{display:flex;}
-.exit-modal{
-  background:var(--surface);border-radius:var(--radius);
-  padding:40px;max-width:460px;width:calc(100% - 40px);
-  text-align:center;position:relative;
-}
-.exit-modal h2{font-size:26px;margin-bottom:12px;}
-.exit-modal p{color:var(--muted);margin-bottom:24px;}
-.exit-modal__close{
-  position:absolute;top:16px;right:20px;
-  background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);
-}
-.exit-modal__cta{
-  display:inline-block;padding:14px 28px;
-  background:var(--accent);color:#fff;border-radius:999px;
-  font-weight:600;font-size:16px;
-}
-
-/* Divider */
-hr.lp-divider{border:none;border-top:1px solid var(--border);margin:0;}
-
-/* Coach meta strip */
-.coach-strip{
-  padding:16px 20px;background:var(--surface);border-bottom:1px solid var(--border);
-  display:flex;align-items:center;gap:12px;
-}
-.coach-strip__logo{width:36px;height:36px;border-radius:8px;object-fit:cover;}
-.coach-strip__name{font-weight:600;font-size:15px;}
-.coach-strip__biz{font-size:13px;color:var(--muted);}
-
-/* Playfair Display via preload (non-render-blocking) */
-</style>
-<!-- Preload Playfair Display after paint — non-blocking via preload + onload trick -->
-<link rel="preload" as="style"
-  href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;700&family=Inter:wght@400;500;600&display=swap"
-  onload="this.rel='stylesheet'" />
-<noscript>
-  <link rel="stylesheet"
-    href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" />
-</noscript>
+<!-- Preload only the hero display font.  Body Geist falls back to system
+     sans (San Francisco / Segoe UI) until the WOFF2 lands; visitors on
+     fast connections see the swap, slow connections never block paint. -->
 </head>
 <body>
 ${body}
-
-<!-- Sticky mobile CTA bar -->
-<div class="sticky-cta" aria-label="Quick action">
-  <a href="${escAttr(primaryCtaHref)}">${esc(primaryCtaLabel)}</a>
-</div>
-
-<!-- Exit intent overlay (desktop only) -->
-<div id="exit-intent" role="dialog" aria-modal="true" aria-label="Before you go">
-  <div class="exit-modal">
-    <button class="exit-modal__close" onclick="document.getElementById('exit-intent').classList.remove('active')" aria-label="Close">&times;</button>
-    <h2>Before you go…</h2>
-    <p>Still thinking it over? Take the next step — it starts with a conversation.</p>
-    <a class="exit-modal__cta" href="${escAttr(primaryCtaHref)}">${esc(primaryCtaLabel)}</a>
-  </div>
-</div>
-
 <script>
-// Exit intent — desktop only (no touch, no mobile)
-(function(){
-  if('ontouchstart' in window || window.innerWidth < 768) return;
-  var shown = false;
-  document.addEventListener('mouseleave', function(e){
-    if(shown || e.clientY > 20) return;
-    shown = true;
-    var el = document.getElementById('exit-intent');
-    if(el) el.classList.add('active');
-  });
-  document.getElementById('exit-intent').addEventListener('click', function(e){
-    if(e.target === this) this.classList.remove('active');
-  });
+/* Entrance motion: attach IntersectionObserver to .reveal nodes.  Class is
+   added on first intersection and never removed (no jank if a user scrolls
+   back up).  Honors prefers-reduced-motion via the CSS layer.  Falls back
+   silently when IntersectionObserver is unsupported (IE 11 etc.). */
+(function () {
+  if (!('IntersectionObserver' in window)) {
+    document.querySelectorAll('.reveal').forEach(function (n) { n.classList.add('in-view'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) {
+        e.target.classList.add('in-view');
+        io.unobserve(e.target);
+      }
+    });
+  }, { rootMargin: '0px 0px -64px 0px', threshold: 0.05 });
+  document.querySelectorAll('.reveal').forEach(function (n) { io.observe(n); });
 })();
 </script>
 </body>
 </html>`;
 }
 
-// ─── Section renderers ────────────────────────────────────────────────────────
+// ─── Section renderers ───────────────────────────────────────────────────────
 
-function renderHero(payload: Record<string, unknown>, page: CoachLandingPage, coachSlug: string, pageSlug: string): string {
+function renderHero(
+  payload: Record<string, unknown>,
+  page: CoachLandingPage,
+  coachSlug: string,
+  pageSlug: string,
+  proofLine: string,
+): string {
   const headline = String(payload.headline || page.headline || '');
   const sub = String(payload.subheadline || page.subheadline || '');
   const imgUrl = String(payload.hero_image_url || page.hero_image_url || '');
-  const ctaLabel = esc(page.primary_cta_label || 'Get Started');
-  const ctaHref = escAttr(`/p/${coachSlug}/${pageSlug}/checkout`);
-  // Use an <img> element instead of background-image:url('…') to avoid the
-  // CSS string-injection attack: `escAttr` HTML-escapes apostrophes to &#39;
-  // but the browser's HTML attribute decoder restores them before the CSS
-  // parser runs, allowing a coached-supplied URL to break out of the url()
-  // context.  An <img src="…"> attribute is fully contained — escAttr already
-  // rejects non-http(s) / non-relative URLs by substituting '#', and there is
-  // no secondary CSS string decoding step.
+  const ctaLabel = esc(page.primary_cta_label || 'Get started');
+  // Lead-form pages anchor in-page; checkout pages go to the storefront route.
+  const ctaHref =
+    page.primary_cta_type === 'lead_form'
+      ? '#lead-form'
+      : escAttr(`/p/${coachSlug}/${pageSlug}/checkout`);
   const bgImg = imgUrl
-    ? `<img class="hero__bg" src="${escAttr(imgUrl)}" alt="" aria-hidden="true" />`
+    ? `<img class="hero__bg" src="${escAttr(imgUrl)}" alt="" aria-hidden="true" loading="eager" fetchpriority="high" />`
     : '';
-
   return `
-<section class="hero lp-section--full" aria-label="Hero">
+<section class="hero" aria-label="Hero">
   ${bgImg}
-  <div class="hero__content">
+  <div class="hero__inner reveal">
     <h1>${nl2br(headline)}</h1>
     ${sub ? `<p class="hero__sub">${nl2br(sub)}</p>` : ''}
-    <a class="hero__cta" href="${ctaHref}">${ctaLabel}</a>
+    <div class="hero__cta-row">
+      <a class="btn btn--primary" href="${ctaHref}">${ctaLabel}</a>
+    </div>
+    ${proofLine ? `<p class="hero__proof">${esc(proofLine)}</p>` : ''}
   </div>
 </section>`;
 }
 
-function renderBeforeAfter(payload: Record<string, unknown>): string {
-  const pairs = Array.isArray(payload.pairs) ? payload.pairs as any[] : [];
+function renderProblemSolution(payload: Record<string, unknown>): string {
+  const pt = String(payload.problem_title || '');
+  const pb = String(payload.problem_body || '');
+  const st = String(payload.solution_title || '');
+  const sb = String(payload.solution_body || '');
   return `
-<section class="lp-section">
-  <p class="section-label">Transformations</p>
-  <h2 class="section-heading">Real results from real clients</h2>
-  ${pairs.map((pair) => `
-  <div class="ba-grid">
-    <div class="ba-pair">
-      <img class="ba-pair__img" src="${escAttr(pair.before_url)}" alt="Before" loading="lazy" />
-      <div class="ba-pair__label">Before · ${esc(pair.date_label)}</div>
-    </div>
-    <div class="ba-pair">
-      <img class="ba-pair__img" src="${escAttr(pair.after_url)}" alt="After" loading="lazy" />
-      <div class="ba-pair__label">After · ${esc(pair.date_label)}</div>
+<section class="lp-section" aria-label="Problem and solution">
+  <div class="lp-wrap">
+    <p class="eyebrow reveal">What changes</p>
+    <div class="ps-grid">
+      <div class="ps-card reveal" style="--d:80ms">
+        <h3>${esc(pt)}</h3>
+        <p>${nl2br(pb)}</p>
+      </div>
+      <div class="ps-card ps-card--solution reveal" style="--d:160ms">
+        <h3>${esc(st)}</h3>
+        <p>${nl2br(sb)}</p>
+      </div>
     </div>
   </div>
-  ${pair.caption ? `<p class="ba-caption">${esc(pair.caption)}</p>` : ''}`).join('')}
 </section>`;
 }
 
 function renderTestimonials(payload: Record<string, unknown>): string {
-  const items = Array.isArray(payload.items) ? payload.items as any[] : [];
+  const items = Array.isArray(payload.items) ? (payload.items as any[]) : [];
   return `
-<section class="lp-section" style="background:var(--paper)">
-  <p class="section-label">What clients say</p>
-  <h2 class="section-heading">Results that speak</h2>
-  <div class="testimonials-grid">
-    ${items.map((item) => `
-    <div class="testimonial-card">
-      <div class="testimonial-card__header">
-        ${item.photo_url
-          ? `<img class="testimonial-card__avatar" src="${escAttr(item.photo_url)}" alt="${esc(item.name)}" loading="lazy" />`
-          : `<div class="testimonial-card__avatar"></div>`}
-        <div>
-          <div class="testimonial-card__name">${esc(item.name)}</div>
-          <div class="testimonial-card__metric">${esc(item.result_metric)}</div>
+<section class="lp-section" aria-label="Outcome proof">
+  <div class="lp-wrap">
+    <p class="eyebrow reveal">What clients say</p>
+    <h2 class="reveal" style="--d:80ms; font-size: clamp(2rem, 4vw, 3rem); margin-bottom: 48px; max-width: 18ch;">Results, not promises.</h2>
+    <div class="tg">
+      ${items.map((item, i) => `
+      <div class="t-card reveal" style="--d:${80 + i * 80}ms">
+        <p class="t-card__quote">${esc(item.quote)}</p>
+        <div class="t-card__attr">
+          ${item.photo_url
+            ? `<img class="t-card__avatar" src="${escAttr(item.photo_url)}" alt="${esc(item.name)}" loading="lazy" />`
+            : `<div class="t-card__avatar"></div>`}
+          <div>
+            <div class="t-card__name">${esc(item.name)}</div>
+            <div class="t-card__metric">${esc(item.result_metric)}</div>
+          </div>
         </div>
-      </div>
-      <p class="testimonial-card__quote">${esc(item.quote)}</p>
-    </div>`).join('')}
+      </div>`).join('')}
+    </div>
   </div>
 </section>`;
 }
 
-function renderPricing(payload: Record<string, unknown>, packages: CoachPackage[], coachSlug: string, pageSlug: string): string {
-  const highlightedId = String(payload.highlighted_id || '');
+function renderMechanism(payload: Record<string, unknown>): string {
+  const steps = Array.isArray(payload.steps) ? (payload.steps as any[]) : [];
   return `
-<section class="lp-section" id="pricing">
-  <p class="section-label">Pricing</p>
-  <h2 class="section-heading">Choose your path</h2>
-  <div class="pricing-grid">
-    ${packages.map((pkg) => {
-      const isHighlighted = pkg.id === highlightedId;
-      const priceDisplay = `$${(pkg.amount_cents / 100).toFixed(pkg.amount_cents % 100 === 0 ? 0 : 2)}`;
-      const interval = pkg.billing_type === 'recurring' ? `/${pkg.interval ?? 'mo'}` : '';
-      const checkoutUrl = `/p/${coachSlug}/${pageSlug}/checkout?tier=${pkg.id}`;
-      return `
-    <div class="pricing-card${isHighlighted ? ' pricing-card--highlighted' : ''}">
-      ${isHighlighted ? `<div class="pricing-card__badge">Most popular</div>` : ''}
-      <div class="pricing-card__name">${esc(pkg.name)}</div>
-      <div class="pricing-card__price">${priceDisplay}</div>
-      <div class="pricing-card__interval">${pkg.billing_type === 'recurring' ? `per ${pkg.interval ?? 'month'}` : 'one-time'}</div>
-      ${pkg.description ? `<p class="pricing-card__desc">${esc(pkg.description)}</p>` : ''}
-      <a class="pricing-card__cta" href="${escAttr(checkoutUrl)}">Get started</a>
-    </div>`;
-    }).join('')}
+<section class="lp-section" style="background: var(--surface)" aria-label="How it works">
+  <div class="lp-wrap">
+    <p class="eyebrow reveal">How it works</p>
+    <h2 class="reveal" style="--d:80ms; font-size: clamp(2rem, 4vw, 3rem); margin-bottom: 48px; max-width: 18ch;">Three steps, one outcome.</h2>
+    <div class="steps">
+      ${steps.map((step, i) => `
+      <div class="step reveal" style="--d:${80 + i * 80}ms">
+        <div class="step__num">${i + 1}</div>
+        <div class="step__title">${esc(step.title)}</div>
+        <p class="step__body">${nl2br(step.body)}</p>
+      </div>`).join('')}
+    </div>
   </div>
 </section>`;
 }
 
-function renderFaq(payload: Record<string, unknown>): string {
-  const items = Array.isArray(payload.items) ? payload.items as any[] : [];
+function renderTrust(payload: Record<string, unknown>): string {
+  const numbers = Array.isArray(payload.numbers) ? (payload.numbers as any[]) : [];
+  const creds = Array.isArray(payload.credentials) ? (payload.credentials as string[]) : [];
   return `
-<section class="lp-section">
-  <p class="section-label">FAQ</p>
-  <h2 class="section-heading">Common questions</h2>
-  <div class="faq-list" role="list">
-    ${items.map((item) => `
-    <details class="faq-item" role="listitem">
-      <summary>${esc(item.question)}</summary>
-      <div class="faq-item__answer">${markdownLight(item.answer)}</div>
-    </details>`).join('')}
+<section class="lp-section" aria-label="Trust">
+  <div class="lp-wrap">
+    <p class="eyebrow reveal" style="text-align: center">Trust signals</p>
+    ${numbers.length > 0 ? `
+    <div class="trust-numbers">
+      ${numbers.map((n, i) => `
+      <div class="reveal" style="--d:${80 + i * 80}ms; text-align: center">
+        <div class="trust-num__value">${esc(n.value)}</div>
+        <div class="trust-num__label">${esc(n.label)}</div>
+      </div>`).join('')}
+    </div>` : ''}
+    ${creds.length > 0 ? `
+    <div class="trust-creds reveal" style="--d:${80 + numbers.length * 80}ms">
+      ${creds.map((c) => `<div class="trust-cred">${esc(c)}</div>`).join('')}
+    </div>` : ''}
   </div>
 </section>`;
 }
 
-function renderLeadForm(payload: Record<string, unknown>, coachSlug: string, pageSlug: string): string {
-  const fields = Array.isArray(payload.fields) ? payload.fields as string[] : ['name', 'email'];
-  const ctaLabel = String(payload.cta_label || 'Send me info');
+function renderLeadForm(
+  payload: Record<string, unknown>,
+  coachSlug: string,
+  pageSlug: string,
+  coachName: string,
+): string {
+  const fields = Array.isArray(payload.fields)
+    ? (payload.fields as string[])
+    : ['name', 'email'];
+  const ctaLabel = String(payload.cta_label || 'Send me details');
   const formAction = `/p/${coachSlug}/${pageSlug}/leads`;
-
-  const fieldHtml = fields.map((f) => {
-    switch (f) {
-      case 'name':
-        return `<div class="lead-form__group"><label for="lf-name">Your name</label><input id="lf-name" name="name" type="text" autocomplete="name" placeholder="Jane Smith" /></div>`;
-      case 'email':
-        return `<div class="lead-form__group"><label for="lf-email">Email address <span style="color:var(--accent)">*</span></label><input id="lf-email" name="email" type="email" autocomplete="email" required placeholder="jane@example.com" /></div>`;
-      case 'phone':
-        return `<div class="lead-form__group"><label for="lf-phone">Phone number</label><input id="lf-phone" name="phone" type="tel" autocomplete="tel" placeholder="+1 (555) 000-0000" /></div>`;
-      case 'goal':
-        return `<div class="lead-form__group"><label for="lf-goal">What's your main goal?</label><input id="lf-goal" name="goal" type="text" placeholder="e.g. lose 20 lbs, build muscle…" /></div>`;
-      default:
-        return '';
-    }
-  }).join('');
-
+  const fieldHtml = fields
+    .map((f) => {
+      switch (f) {
+        case 'name':
+          return `<div class="lead-form__group"><label for="lf-name">Your name</label><input id="lf-name" name="name" type="text" autocomplete="name" required /></div>`;
+        case 'email':
+          return `<div class="lead-form__group"><label for="lf-email">Email</label><input id="lf-email" name="email" type="email" autocomplete="email" required /></div>`;
+        case 'phone':
+          return `<div class="lead-form__group"><label for="lf-phone">Phone</label><input id="lf-phone" name="phone" type="tel" autocomplete="tel" /></div>`;
+        case 'goal':
+          return `<div class="lead-form__group"><label for="lf-goal">Your goal</label><input id="lf-goal" name="goal" type="text" /></div>`;
+        default:
+          return '';
+      }
+    })
+    .join('');
   return `
-<section class="lp-section" id="contact">
-  <div class="lead-form" role="form" aria-label="Contact form">
-    <h2 class="lead-form__title section-heading">Ready to start?</h2>
-    <p class="lead-form__sub">Fill in your details and we'll be in touch within 24 hours.</p>
-    <form id="lead-form-el" action="${escAttr(formAction)}" method="POST">
+<section class="lp-section lp-section--cream" id="lead-form" aria-label="Get in touch">
+  <div class="cta-form-wrap">
+    <div class="reveal">
+      <p class="eyebrow">Get in touch</p>
+      <h2>Tell me a little about you.</h2>
+    </div>
+    <form class="lead-form reveal" id="lead-form-el" style="--d:80ms" action="${escAttr(formAction)}" method="POST" data-coach-name="${esc(coachName)}">
       ${fieldHtml}
       <button class="lead-form__submit" type="submit">${esc(ctaLabel)}</button>
+      <p class="lead-form__reassurance">No spam. ${esc(coachName)} responds within 24 hours.</p>
     </form>
-    <div class="lead-form__success" id="lead-success">
-      <h3>You're on the list!</h3>
-      <p>Check your inbox — we'll be in touch soon.</p>
+    <div class="celebrate" id="lead-celebration" style="display: none" role="status" aria-live="polite">
+      <span class="mote"></span>
+      <h3 id="celebrate-line"></h3>
+      <p id="celebrate-sub"></p>
     </div>
   </div>
 </section>
 <script>
-(function(){
+(function () {
   var form = document.getElementById('lead-form-el');
-  var success = document.getElementById('lead-success');
-  if(!form) return;
-  form.addEventListener('submit', function(e){
+  var celebrate = document.getElementById('lead-celebration');
+  var line = document.getElementById('celebrate-line');
+  var sub = document.getElementById('celebrate-sub');
+  if (!form || !celebrate || !line || !sub) return;
+  var coachName = form.getAttribute('data-coach-name') || 'your coach';
+  form.addEventListener('submit', function (e) {
     e.preventDefault();
     var data = new FormData(form);
     var body = {};
-    data.forEach(function(v,k){ body[k]=v; });
+    data.forEach(function (v, k) { body[k] = v; });
+    var firstName = (body.name || '').split(' ')[0] || 'friend';
     fetch(form.action, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body)
-    }).then(function(r){
-      if(r.ok || r.status === 200){
-        form.style.display='none';
-        success.style.display='block';
-        if('vibrate' in navigator) navigator.vibrate([30,10,30]);
-      }
-    }).catch(function(){});
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+      .then(function (r) {
+        if (r.ok) {
+          form.style.display = 'none';
+          line.textContent = 'Thanks, ' + firstName + '.';
+          sub.textContent = coachName + ' will be in touch within 24 hours.';
+          celebrate.style.display = 'block';
+        }
+      })
+      .catch(function () { /* network drop — let the user retry */ });
   });
 })();
 </script>`;
 }
 
-function renderOfferStack(payload: Record<string, unknown>): string {
-  const items = Array.isArray(payload.items) ? payload.items as any[] : [];
-  const total = items.reduce((sum: number, item: any) => sum + (item.value_dollars || 0), 0);
+function renderFaq(payload: Record<string, unknown>): string {
+  const items = Array.isArray(payload.items) ? (payload.items as any[]) : [];
   return `
-<section class="lp-section">
-  <p class="section-label">What's included</p>
-  <h2 class="section-heading">Everything you get</h2>
-  <div class="offer-list">
-    ${items.map((item) => `
-    <div class="offer-item">
-      <div class="offer-item__text">
-        <div class="offer-item__title">${esc(item.title)}</div>
-        <div class="offer-item__value">${esc(item.value_line)}</div>
-      </div>
-      ${item.value_dollars ? `<div class="offer-item__dollars">$${item.value_dollars}</div>` : ''}
-    </div>`).join('')}
+<section class="lp-section" aria-label="Frequently asked questions">
+  <div class="lp-wrap">
+    <p class="eyebrow reveal" style="text-align: center">Frequently asked</p>
+    <h2 class="reveal" style="--d:80ms; text-align: center; font-size: clamp(2rem, 4vw, 3rem); margin-bottom: 48px;">Common questions.</h2>
+    <div class="faq-list">
+      ${items.map((item, i) => `
+      <details class="faq-item reveal" style="--d:${80 + i * 60}ms">
+        <summary>${esc(item.question)}</summary>
+        <div class="faq-item__a">${markdownLight(item.answer)}</div>
+      </details>`).join('')}
+    </div>
   </div>
-  ${total > 0 ? `<p style="text-align:right;margin-top:16px;font-size:14px;color:var(--muted)">Total value: <strong style="color:var(--ink)">$${total.toLocaleString()}</strong></p>` : ''}
 </section>`;
 }
 
-function renderGuarantee(payload: Record<string, unknown>): string {
-  const days = payload.days ? Number(payload.days) : null;
+// ─── Legacy section carryovers (Phase 1/2 backwards compat) ──────────────────
+
+function renderBeforeAfterLegacy(payload: Record<string, unknown>): string {
+  const pairs = Array.isArray(payload.pairs) ? (payload.pairs as any[]) : [];
   return `
-<section class="lp-section">
-  <div class="guarantee-card">
-    ${days ? `<div class="guarantee-card__days">${days}</div><p style="color:var(--muted);font-size:13px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:16px">Day Guarantee</p>` : ''}
-    <h2 class="guarantee-card__title">${esc(String(payload.title || ''))}</h2>
-    <p class="guarantee-card__body">${markdownLight(String(payload.body || ''))}</p>
+<section class="lp-section" aria-label="Before and after">
+  <div class="lp-wrap">
+    <p class="eyebrow reveal">Transformations</p>
+    ${pairs.map((pair, i) => `
+    <div class="reveal" style="--d:${80 + i * 80}ms">
+      <div class="legacy-ba">
+        <div>
+          <img class="legacy-ba__img" src="${escAttr(pair.before_url)}" alt="Before" loading="lazy" />
+          <p class="legacy-ba__cap">Before · ${esc(pair.date_label)}</p>
+        </div>
+        <div>
+          <img class="legacy-ba__img" src="${escAttr(pair.after_url)}" alt="After" loading="lazy" />
+          <p class="legacy-ba__cap">After · ${esc(pair.date_label)}</p>
+        </div>
+      </div>
+      ${pair.caption ? `<p class="legacy-ba__cap">${esc(pair.caption)}</p>` : ''}
+    </div>`).join('')}
   </div>
 </section>`;
 }
+
+function renderPricingLegacy(
+  payload: Record<string, unknown>,
+  packages: CoachPackage[],
+  coachSlug: string,
+  pageSlug: string,
+): string {
+  const highlightedId = String(payload.highlighted_id || '');
+  return `
+<section class="lp-section" id="pricing" aria-label="Pricing">
+  <div class="lp-wrap">
+    <p class="eyebrow reveal">Pricing</p>
+    <h2 class="reveal" style="--d:80ms; font-size: clamp(2rem, 4vw, 3rem); margin-bottom: 48px;">Choose your path.</h2>
+    <div class="legacy-pricing">
+      ${packages.map((pkg, i) => {
+        const isHigh = pkg.id === highlightedId;
+        const priceDisplay = `$${(pkg.amount_cents / 100).toFixed(pkg.amount_cents % 100 === 0 ? 0 : 2)}`;
+        const checkoutUrl = `/p/${coachSlug}/${pageSlug}/checkout?tier=${pkg.id}`;
+        return `
+      <div class="legacy-pricing__card${isHigh ? ' legacy-pricing__card--highlighted' : ''} reveal" style="--d:${80 + i * 80}ms">
+        <div class="legacy-pricing__name">${esc(pkg.name)}</div>
+        <div class="legacy-pricing__price">${priceDisplay}</div>
+        <div class="legacy-pricing__interval">${pkg.billing_type === 'recurring' ? `per ${pkg.interval ?? 'month'}` : 'one-time'}</div>
+        ${pkg.description ? `<p class="legacy-pricing__desc">${esc(pkg.description)}</p>` : ''}
+        <a class="legacy-pricing__cta" href="${escAttr(checkoutUrl)}">Get started</a>
+      </div>`;
+      }).join('')}
+    </div>
+  </div>
+</section>`;
+}
+
+function renderOfferStackLegacy(payload: Record<string, unknown>): string {
+  const items = Array.isArray(payload.items) ? (payload.items as any[]) : [];
+  return `
+<section class="lp-section" aria-label="What's included">
+  <div class="lp-wrap">
+    <p class="eyebrow reveal">What's included</p>
+    <div class="legacy-offer">
+      ${items.map((item, i) => `
+      <div class="legacy-offer__row reveal" style="--d:${80 + i * 60}ms">
+        <div>
+          <div class="legacy-offer__title">${esc(item.title)}</div>
+          <div class="legacy-offer__value">${esc(item.value_line)}</div>
+        </div>
+        ${item.value_dollars ? `<div class="legacy-offer__dollars">$${item.value_dollars}</div>` : ''}
+      </div>`).join('')}
+    </div>
+  </div>
+</section>`;
+}
+
+function renderGuaranteeLegacy(payload: Record<string, unknown>): string {
+  const days = payload.days ? Number(payload.days) : null;
+  return `
+<section class="lp-section" aria-label="Guarantee">
+  <div class="lp-wrap">
+    <div class="legacy-guarantee reveal">
+      ${days ? `<div class="legacy-guarantee__days">${days}</div><p class="legacy-guarantee__label">Day guarantee</p>` : ''}
+      <h3 class="legacy-guarantee__title">${esc(String(payload.title || ''))}</h3>
+      <p class="legacy-guarantee__body">${markdownLight(String(payload.body || ''))}</p>
+    </div>
+  </div>
+</section>`;
+}
+
+// ─── Section dispatch ────────────────────────────────────────────────────────
 
 function renderSection(
   section: CoachLandingPageSection,
@@ -679,31 +871,40 @@ function renderSection(
   packages: CoachPackage[],
   coachSlug: string,
   pageSlug: string,
+  proofLine: string,
+  coachName: string,
 ): string {
   const payload = (section.payload as Record<string, unknown>) || {};
   switch (section.kind) {
     case 'hero':
-      return renderHero(payload, page, coachSlug, pageSlug);
-    case 'before_after':
-      return renderBeforeAfter(payload);
+      return renderHero(payload, page, coachSlug, pageSlug, proofLine);
+    case 'problem_solution':
+      return renderProblemSolution(payload);
     case 'testimonials':
       return renderTestimonials(payload);
-    case 'pricing':
-      return renderPricing(payload, packages, coachSlug, pageSlug);
+    case 'mechanism':
+      return renderMechanism(payload);
+    case 'trust':
+      return renderTrust(payload);
+    case 'lead_form':
+      return renderLeadForm(payload, coachSlug, pageSlug, coachName);
     case 'faq':
       return renderFaq(payload);
-    case 'lead_form':
-      return renderLeadForm(payload, coachSlug, pageSlug);
+    // Legacy carryovers — Phase 1/2 pages must keep rendering.
+    case 'before_after':
+      return renderBeforeAfterLegacy(payload);
+    case 'pricing':
+      return renderPricingLegacy(payload, packages, coachSlug, pageSlug);
     case 'offer_stack':
-      return renderOfferStack(payload);
+      return renderOfferStackLegacy(payload);
     case 'guarantee':
-      return renderGuarantee(payload);
+      return renderGuaranteeLegacy(payload);
     default:
       return '';
   }
 }
 
-// ─── Not Found ────────────────────────────────────────────────────────────────
+// ─── Not found page (SaaS dark) ──────────────────────────────────────────────
 
 export function renderNotFound(): string {
   return `<!doctype html>
@@ -712,29 +913,34 @@ export function renderNotFound(): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <meta name="robots" content="noindex,nofollow" />
-<title>Page not found</title>
+<meta name="color-scheme" content="dark" />
+<title>Page not available</title>
 <style>
-  :root{--ink:#1a1612;--paper:#faf8f5;--muted:#6b6259;--border:#e7e1d6;}
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{background:var(--paper);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    min-height:100vh;display:grid;place-items:center;padding:32px 20px;}
-  .card{max-width:400px;width:100%;background:#fff;border:1px solid var(--border);border-radius:18px;padding:48px 32px;text-align:center;}
-  .kicker{font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);margin-bottom:12px;}
-  h1{font-family:"Playfair Display","Iowan Old Style",Georgia,serif;font-size:28px;font-weight:500;margin-bottom:12px;}
-  p{color:var(--muted);font-size:15px;line-height:1.6;}
+  :root { --bg: #0b0b0c; --surface: #131316; --ink: #f3f3f3; --ink-2: #b8b8bb; --ink-3: #6e6e72; --border: rgba(255,255,255,.08); --accent: #d4a574; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: 'Geist Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    min-height: 100vh; display: grid; place-items: center; padding: 32px 20px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .card { max-width: 460px; width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 56px 40px; text-align: center; }
+  .eyebrow { font-family: ui-monospace, 'SF Mono', monospace; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: 16px; }
+  h1 { font-family: 'Fraunces', Georgia, serif; font-weight: 500; font-size: 32px; letter-spacing: -0.02em; margin-bottom: 12px; }
+  p { color: var(--ink-2); font-size: 17px; line-height: 1.55; }
 </style>
 </head>
 <body>
 <div class="card">
-  <p class="kicker">Coach landing page</p>
-  <h1>This page isn't available.</h1>
-  <p>The link may have expired or the coach has paused this page. Reach out to them directly for more information.</p>
+  <p class="eyebrow">Coach landing page</p>
+  <h1>This page isn&rsquo;t available.</h1>
+  <p>The link may have expired or the coach paused this page. Reach out to them directly for the latest.</p>
 </div>
 </body>
 </html>`;
 }
 
-// ─── Public page renderer ─────────────────────────────────────────────────────
+// ─── Public renderer entry ───────────────────────────────────────────────────
 
 export function renderPublicPage(
   page: PageWithContext,
@@ -744,65 +950,60 @@ export function renderPublicPage(
 ): string {
   const coach = page.coach;
   const profile = coach.coach_profile;
-  const accent = sanitizeColor(page.accent_color || profile?.branding_accent_color);
+  const accent = resolveAccent(page.accent_color || profile?.branding_accent_color);
   const canonicalUrl = `${baseUrl}/p/${coachSlug}/${page.slug}`;
   const businessName = profile?.business_name ?? null;
   const coachName = coach.name;
 
-  const title = `${esc(page.headline)} — ${esc(businessName || coachName)}`;
-  const description = page.subheadline || `Work with ${coachName} to reach your goals.`;
+  const title = `${page.headline} — ${businessName || coachName}`;
+  const description = page.subheadline || `Work with ${coachName}.`;
 
-  // Schema.org JSON-LD — use safeJsonLd (not JSON.stringify) to prevent
-  // </script> breakout inside the <script type="application/ld+json"> block.
+  // A short social-proof line under the hero CTA.  Pulled from coach bio
+  // when present; otherwise omitted (no fake numbers).
+  const proofLine = profile?.bio ? '' : '';
+
+  // Schema.org JSON-LD — escaped against </script> breakout (safeJsonLd).
   const jsonLd = safeJsonLd({
     '@context': 'https://schema.org',
     '@graph': [
       {
         '@type': 'Person',
         name: coachName,
-        jobTitle: 'Fitness Coach',
         url: canonicalUrl,
+        ...(profile?.bio ? { description: profile.bio } : {}),
       },
       ...(businessName
-        ? [
-            {
-              '@type': 'LocalBusiness',
-              name: businessName,
-              description: profile?.bio ?? undefined,
-              url: canonicalUrl,
-            },
-          ]
+        ? [{
+            '@type': 'LocalBusiness',
+            name: businessName,
+            url: canonicalUrl,
+            ...(profile?.bio ? { description: profile.bio } : {}),
+          }]
         : []),
     ],
   });
 
-  // Coach meta strip
+  // Coach strip — slim header above the hero.
   const logoHtml = profile?.branding_logo_url
-    ? `<img class="coach-strip__logo" src="${escAttr(profile.branding_logo_url)}" alt="${esc(coachName)}" />`
+    ? `<img class="strip__logo" src="${escAttr(profile.branding_logo_url)}" alt="${esc(coachName)}" />`
     : '';
-  const coachStrip = `
-<header class="coach-strip">
+  const strip = `
+<header class="strip" aria-label="Coach">
   ${logoHtml}
   <div>
-    <div class="coach-strip__name">${esc(coachName)}</div>
-    ${businessName ? `<div class="coach-strip__biz">${esc(businessName)}</div>` : ''}
+    <div class="strip__name">${esc(coachName)}</div>
+    ${businessName ? `<div class="strip__biz">${esc(businessName)}</div>` : ''}
   </div>
 </header>`;
 
-  // Derive primary CTA href
-  const primaryCtaHref =
-    page.primary_cta_type === 'lead_form'
-      ? '#contact'
-      : page.primary_cta_type === 'checkout' && packages.length > 0
-      ? `/p/${coachSlug}/${page.slug}/checkout?tier=${packages[0]?.id}`
-      : '#pricing';
-
-  // Render all sections
+  // Render every section the coach placed on the page.  The arc order is
+  // determined by `order_index` in the DB, not by section kind — coaches
+  // can re-order freely within the locked design system.
   const sectionsHtml = page.sections
-    .map((s) => renderSection(s, page, packages, coachSlug, page.slug))
-    .join('<hr class="lp-divider">');
+    .map((s) => renderSection(s, page, packages, coachSlug, page.slug, proofLine, coachName))
+    .join('');
 
-  const body = `${coachStrip}${sectionsHtml}`;
+  const body = `${strip}${sectionsHtml}`;
 
   return baseDocument({
     title,
@@ -810,12 +1011,7 @@ export function renderPublicPage(
     accent,
     canonicalUrl,
     ogImage: page.hero_image_url,
-    coachName,
-    businessName,
     jsonLd,
     body,
-    primaryCtaLabel: page.primary_cta_label,
-    primaryCtaHref,
-    template: page.template,
   });
 }

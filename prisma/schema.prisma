@@ -3964,9 +3964,17 @@ enum LandingCtaType {
   book_call
 }
 
-// LandingSectionKind — the eight locked section archetypes a coach can
-// place on a page (≤ 6 active; Miller's Law hard cap per spec §2 #3).
-// Payload JSON shape is enforced per-kind in the service layer (PR #2).
+// LandingSectionKind — landing-page section archetypes a coach can place on
+// a page (≤ 6 active; Miller's Law hard cap per spec §2 #3).  Payload JSON
+// shape is enforced per-kind in the service layer (PR #2).
+//
+// R52 renderer-v2 (PR-LP-RENDERER-V2) adds three persuasion-arc kinds:
+//   - problem_solution : 2-column "what's broken / what changes"
+//   - mechanism        : 3-step how-it-works with iconography
+//   - trust            : credentials, press, numeric proof
+// The pre-existing kinds (before_after, pricing, offer_stack, guarantee)
+// stay for backwards compatibility with pages built in Phase 1/2; the
+// v2 renderer still draws them with the SaaS-brand token system.
 enum LandingSectionKind {
   hero
   before_after
@@ -3976,6 +3984,9 @@ enum LandingSectionKind {
   lead_form
   offer_stack
   guarantee
+  problem_solution
+  mechanism
+  trust
 }
 
 // CrmSyncStatus — state of a CoachLandingLead's outbound CRM push.
