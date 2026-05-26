@@ -8,7 +8,7 @@
  * it for CJS tests).
  */
 import { ConfigService } from '@nestjs/config';
-import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 
 // Programmable jose mock — each test sets the next jwtVerify result.
 // We have to do this BEFORE importing the service.
@@ -95,7 +95,11 @@ describe('CheckoutRecoveryService — single-use guard (A276-P1-3)', () => {
     mockJwtVerify.mockReset();
   });
 
-  it('first verifyToken call succeeds, second call with the same jti throws RECOVERY_TOKEN_USED', async () => {
+  // A276-F5-P1-2 — replay attempts MUST return the same enumeration-resistant
+  // response (404 + RECOVERY_TOKEN_INVALID) as any other invalid-token leg.
+  // Returning 401 + RECOVERY_TOKEN_USED would give an attacker who captured
+  // a recovery link a 1-bit oracle confirming the link was real.
+  it('first verifyToken call succeeds, second call with the same jti throws RECOVERY_TOKEN_INVALID (no enumeration oracle)', async () => {
     const { svc } = makeService();
     const claims = baseClaims();
 
@@ -112,16 +116,18 @@ describe('CheckoutRecoveryService — single-use guard (A276-P1-3)', () => {
       svc.verifyToken(SHARE_TOKEN, 'opaque-token-1-replay'),
     ).rejects.toMatchObject({
       response: {
-        error: 'RECOVERY_TOKEN_USED',
-        message: expect.stringContaining('already been used'),
+        error: 'RECOVERY_TOKEN_INVALID',
+        message: expect.stringContaining('no longer valid'),
       },
     });
+    // Replay attempt is a NotFoundException (HTTP 404), matching every
+    // other invalid-token failure mode. Specifically NOT UnauthorizedException.
     await expect(
       (async () => {
         setVerifyReturn(claims);
         await svc.verifyToken(SHARE_TOKEN, 'opaque-token-1-replay-2');
       })(),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('two distinct jtis are independent — each is single-use on its own', async () => {
@@ -135,14 +141,14 @@ describe('CheckoutRecoveryService — single-use guard (A276-P1-3)', () => {
     setVerifyReturn(claimsB);
     await expect(svc.verifyToken(SHARE_TOKEN, 'tB')).resolves.toBeDefined();
 
-    // Each replays independently.
+    // Each replays independently. A276-F5-P1-2: uniform 404 + INVALID shape.
     setVerifyReturn(claimsA);
     await expect(svc.verifyToken(SHARE_TOKEN, 'tA2')).rejects.toMatchObject({
-      response: { error: 'RECOVERY_TOKEN_USED' },
+      response: { error: 'RECOVERY_TOKEN_INVALID' },
     });
     setVerifyReturn(claimsB);
     await expect(svc.verifyToken(SHARE_TOKEN, 'tB2')).rejects.toMatchObject({
-      response: { error: 'RECOVERY_TOKEN_USED' },
+      response: { error: 'RECOVERY_TOKEN_INVALID' },
     });
   });
 
@@ -173,7 +179,7 @@ describe('CheckoutRecoveryService — single-use guard (A276-P1-3)', () => {
     });
   });
 
-  it('Redis SETNX throw → verifyToken FAILS CLOSED (rejects, does not bypass)', async () => {
+  it('Redis SET NX throw → verifyToken FAILS CLOSED with uniform RECOVERY_TOKEN_INVALID (no enumeration oracle)', async () => {
     const { svc } = makeService();
     // Force the Redis branch by injecting a stub client whose .set throws.
     const brokenRedis = {
@@ -184,21 +190,24 @@ describe('CheckoutRecoveryService — single-use guard (A276-P1-3)', () => {
     (svc as any).redis = brokenRedis;
 
     setVerifyReturn(baseClaims({ jti: 'jti-fail-closed' }));
+    // A276-F5-P1-2: fail-closed must return the SAME 404 + INVALID shape as
+    // every other failure leg so a Redis outage doesn't leak which link the
+    // attacker is probing.
     await expect(
       svc.verifyToken(SHARE_TOKEN, 'fail-closed-token'),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
+    ).rejects.toBeInstanceOf(NotFoundException);
     await expect(
       (async () => {
         setVerifyReturn(baseClaims({ jti: 'jti-fail-closed' }));
         await svc.verifyToken(SHARE_TOKEN, 'fail-closed-token-2');
       })(),
     ).rejects.toMatchObject({
-      response: { error: 'RECOVERY_TOKEN_USED' },
+      response: { error: 'RECOVERY_TOKEN_INVALID' },
     });
     expect(brokenRedis.set).toHaveBeenCalled();
   });
 
-  it('Redis SETNX returns null (key existed) → throws RECOVERY_TOKEN_USED', async () => {
+  it('Redis SET NX returns null (key existed) → throws uniform RECOVERY_TOKEN_INVALID 404 (no enumeration oracle)', async () => {
     const { svc } = makeService();
     const redisStub = {
       set: jest.fn(async () => null),
@@ -206,9 +215,22 @@ describe('CheckoutRecoveryService — single-use guard (A276-P1-3)', () => {
     (svc as any).redis = redisStub;
 
     setVerifyReturn(baseClaims({ jti: 'jti-already-claimed' }));
+    // A276-F5-P1-2: replay collision returns the SAME shape as a tampered
+    // signature or an unknown checkout. The 401/USED leak is gone.
     await expect(svc.verifyToken(SHARE_TOKEN, 'tok')).rejects.toMatchObject({
-      response: { error: 'RECOVERY_TOKEN_USED' },
+      response: {
+        error: 'RECOVERY_TOKEN_INVALID',
+        message: expect.stringContaining('no longer valid'),
+      },
     });
+    await expect(
+      (async () => {
+        setVerifyReturn(baseClaims({ jti: 'jti-already-claimed-2' }));
+        const redisStub2 = { set: jest.fn(async () => null) };
+        (svc as any).redis = redisStub2;
+        await svc.verifyToken(SHARE_TOKEN, 'tok2');
+      })(),
+    ).rejects.toBeInstanceOf(NotFoundException);
     expect(redisStub.set).toHaveBeenCalledWith(
       'co:rec:jti:jti-already-claimed',
       '1',
@@ -295,7 +317,7 @@ describe('CheckoutRecoveryService — single-use guard (A276-P1-3)', () => {
     expect(redisStub.set).not.toHaveBeenCalled();
   });
 
-  it('in-memory fallback (no REDIS_URL) still enforces single-use within the process', async () => {
+  it('in-memory fallback (no REDIS_URL) still enforces single-use within the process with uniform RECOVERY_TOKEN_INVALID', async () => {
     const { svc } = makeService();
     // redis is null by construction (onModuleInit not called)
     expect((svc as any).redis).toBeNull();
@@ -303,10 +325,15 @@ describe('CheckoutRecoveryService — single-use guard (A276-P1-3)', () => {
     const claims = baseClaims({ jti: 'jti-mem' });
     setVerifyReturn(claims);
     await expect(svc.verifyToken(SHARE_TOKEN, 't1')).resolves.toBeDefined();
+    // A276-F5-P1-2: in-memory replay must also return the uniform shape.
     setVerifyReturn(claims);
     await expect(svc.verifyToken(SHARE_TOKEN, 't1-replay')).rejects.toMatchObject({
-      response: { error: 'RECOVERY_TOKEN_USED' },
+      response: { error: 'RECOVERY_TOKEN_INVALID' },
     });
+    setVerifyReturn(claims);
+    await expect(svc.verifyToken(SHARE_TOKEN, 't1-replay-2')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('mintJwt includes a `jti` claim via SignJWT.setJti', async () => {
@@ -331,6 +358,181 @@ describe('CheckoutRecoveryService — single-use guard (A276-P1-3)', () => {
     const j1 = JSON.parse(t1.slice('signed:'.length)).jti;
     const j2 = JSON.parse(t2.slice('signed:'.length)).jti;
     expect(j1).not.toEqual(j2);
+  });
+});
+
+// A276-F5-P1-2 — explicit enumeration-resistance contract test.
+// The class doc on verifyToken promises: "never leaks which leg failed."
+// This describe block pins every distinct failure leg to the SAME wire
+// response (HTTP 404, error=RECOVERY_TOKEN_INVALID, message=...) so a
+// future change that re-introduces a 401 oracle (or a per-reason error
+// code) fails this test.
+describe('CheckoutRecoveryService.verifyToken — enumeration resistance (A276-F5-P1-2)', () => {
+  const EXPECTED_SHAPE = {
+    error: 'RECOVERY_TOKEN_INVALID',
+    message: 'This recovery link is no longer valid.',
+  };
+
+  async function captureResponse(p: Promise<unknown>): Promise<{
+    name: string;
+    status: number | undefined;
+    response: unknown;
+  }> {
+    try {
+      await p;
+      throw new Error('expected verifyToken to throw, it resolved');
+    } catch (e) {
+      const err = e as { name?: string; getStatus?: () => number; response?: unknown };
+      return {
+        name: err.name ?? 'unknown',
+        status: typeof err.getStatus === 'function' ? err.getStatus() : undefined,
+        response: err.response,
+      };
+    }
+  }
+
+  beforeEach(() => mockJwtVerify.mockReset());
+
+  it('every failure leg returns the same HTTP 404 + RECOVERY_TOKEN_INVALID wire shape', async () => {
+    // Leg 1: jwtVerify throws (bad signature / malformed / expired).
+    {
+      const { svc } = makeService();
+      mockJwtVerify.mockRejectedValueOnce(new Error('bad signature'));
+      const r = await captureResponse(svc.verifyToken(SHARE_TOKEN, 'tampered'));
+      expect(r.name).toBe('NotFoundException');
+      expect(r.status).toBe(404);
+      expect(r.response).toMatchObject(EXPECTED_SHAPE);
+    }
+    // Leg 2: wrong type claim.
+    {
+      const { svc } = makeService();
+      setVerifyReturn(baseClaims({ type: 'something_else' }));
+      const r = await captureResponse(svc.verifyToken(SHARE_TOKEN, 'tok'));
+      expect(r.status).toBe(404);
+      expect(r.response).toMatchObject(EXPECTED_SHAPE);
+    }
+    // Leg 3: share_token mismatch.
+    {
+      const { svc } = makeService();
+      setVerifyReturn(baseClaims({ st: 'wrong-share' }));
+      const r = await captureResponse(svc.verifyToken(SHARE_TOKEN, 'tok'));
+      expect(r.status).toBe(404);
+      expect(r.response).toMatchObject(EXPECTED_SHAPE);
+    }
+    // Leg 4: missing jti.
+    {
+      const { svc } = makeService();
+      const c = baseClaims();
+      delete (c as Record<string, unknown>).jti;
+      setVerifyReturn(c);
+      const r = await captureResponse(svc.verifyToken(SHARE_TOKEN, 'tok'));
+      expect(r.status).toBe(404);
+      expect(r.response).toMatchObject(EXPECTED_SHAPE);
+    }
+    // Leg 5: GuestCheckout row missing.
+    {
+      const { svc } = makeService({ prismaRow: null });
+      setVerifyReturn(baseClaims({ jti: 'leg5' }));
+      const r = await captureResponse(svc.verifyToken(SHARE_TOKEN, 'tok'));
+      expect(r.status).toBe(404);
+      expect(r.response).toMatchObject(EXPECTED_SHAPE);
+    }
+    // Leg 6: GuestCheckout row expired.
+    {
+      const { svc } = makeService({
+        prismaRow: {
+          id: GID,
+          guest_email: EMAIL,
+          expires_at: new Date(Date.now() - 60_000),
+        },
+      });
+      setVerifyReturn(baseClaims({ jti: 'leg6' }));
+      const r = await captureResponse(svc.verifyToken(SHARE_TOKEN, 'tok'));
+      expect(r.status).toBe(404);
+      expect(r.response).toMatchObject(EXPECTED_SHAPE);
+    }
+    // Leg 7: replay collision (Redis SET NX returns null) — previously
+    // leaked as 401 + RECOVERY_TOKEN_USED. Now uniform.
+    {
+      const { svc } = makeService();
+      (svc as any).redis = { set: jest.fn(async () => null) };
+      setVerifyReturn(baseClaims({ jti: 'leg7' }));
+      const r = await captureResponse(svc.verifyToken(SHARE_TOKEN, 'tok'));
+      expect(r.name).toBe('NotFoundException');
+      expect(r.status).toBe(404);
+      expect(r.response).toMatchObject(EXPECTED_SHAPE);
+    }
+    // Leg 8: Redis fail-closed (SET NX throws) — previously leaked
+    // as 401 + RECOVERY_TOKEN_USED. Now uniform.
+    {
+      const { svc } = makeService();
+      (svc as any).redis = {
+        set: jest.fn(async () => {
+          throw new Error('ECONNREFUSED');
+        }),
+      };
+      setVerifyReturn(baseClaims({ jti: 'leg8' }));
+      const r = await captureResponse(svc.verifyToken(SHARE_TOKEN, 'tok'));
+      expect(r.name).toBe('NotFoundException');
+      expect(r.status).toBe(404);
+      expect(r.response).toMatchObject(EXPECTED_SHAPE);
+    }
+    // Leg 9: in-memory replay collision (no REDIS_URL path) — previously
+    // leaked as 401 + RECOVERY_TOKEN_USED. Now uniform.
+    {
+      const { svc } = makeService();
+      const c = baseClaims({ jti: 'leg9' });
+      setVerifyReturn(c);
+      await svc.verifyToken(SHARE_TOKEN, 'first'); // consumes
+      setVerifyReturn(c);
+      const r = await captureResponse(svc.verifyToken(SHARE_TOKEN, 'replay'));
+      expect(r.name).toBe('NotFoundException');
+      expect(r.status).toBe(404);
+      expect(r.response).toMatchObject(EXPECTED_SHAPE);
+    }
+  });
+
+  it('no failure leg throws UnauthorizedException or returns RECOVERY_TOKEN_USED', async () => {
+    // Belt-and-suspenders: explicitly assert the *old* leaky shapes never
+    // come back. If a future refactor re-introduces 401/USED on either
+    // the replay or fail-closed branch, this test fails loudly.
+    const legs: Array<() => Promise<unknown>> = [
+      // Replay collision via Redis null return.
+      async () => {
+        const { svc } = makeService();
+        (svc as any).redis = { set: jest.fn(async () => null) };
+        setVerifyReturn(baseClaims({ jti: 'nl1' }));
+        return svc.verifyToken(SHARE_TOKEN, 'tok');
+      },
+      // Fail-closed via Redis throw.
+      async () => {
+        const { svc } = makeService();
+        (svc as any).redis = {
+          set: jest.fn(async () => {
+            throw new Error('boom');
+          }),
+        };
+        setVerifyReturn(baseClaims({ jti: 'nl2' }));
+        return svc.verifyToken(SHARE_TOKEN, 'tok');
+      },
+      // In-memory replay.
+      async () => {
+        const { svc } = makeService();
+        const c = baseClaims({ jti: 'nl3' });
+        setVerifyReturn(c);
+        await svc.verifyToken(SHARE_TOKEN, 'first');
+        setVerifyReturn(c);
+        return svc.verifyToken(SHARE_TOKEN, 'replay');
+      },
+    ];
+
+    for (const leg of legs) {
+      const r = await captureResponse(leg());
+      expect(r.name).not.toBe('UnauthorizedException');
+      expect(r.status).not.toBe(401);
+      expect(r.response).not.toMatchObject({ error: 'RECOVERY_TOKEN_USED' });
+      expect(r.response).toMatchObject({ error: 'RECOVERY_TOKEN_INVALID' });
+    }
   });
 });
 

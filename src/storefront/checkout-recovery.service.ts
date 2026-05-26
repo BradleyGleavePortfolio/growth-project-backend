@@ -5,7 +5,6 @@ import {
   NotFoundException,
   OnModuleInit,
   Optional,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
@@ -52,11 +51,12 @@ const RECOVERY_TYPE = 'checkout_recovery';
 //
 // Every recovery JWT now carries a random `jti` claim (uuidv4).
 // On verifyToken, after all signature/expiry/row checks pass, we
-// SETNX co:rec:jti:<jti> 1 EX 900 — if the key already exists
-// (previously consumed within the 15-minute exp window) we throw
-// `RECOVERY_TOKEN_USED`. SETNX is the LAST step of verification so
-// a failing earlier check (bad signature, expired, GuestCheckout
-// missing) does not consume the token.
+// SET co:rec:jti:<jti> 1 EX 900 NX (atomic) — if the key already
+// exists (previously consumed within the 15-minute exp window) we
+// throw the SAME enumeration-resistant `RECOVERY_TOKEN_INVALID` 404
+// as every other failure leg (A276-F5-P1-2). SET NX is the LAST
+// step of verification so a failing earlier check (bad signature,
+// expired, GuestCheckout missing) does not consume the token.
 //
 // Backwards compatibility: tokens minted before this commit have no
 // `jti` claim. Those tokens are now rejected with the generic
@@ -329,9 +329,12 @@ export class CheckoutRecoveryService implements OnModuleInit {
   }
 
   /**
-   * Atomically claim the JWT's `jti` as "consumed" via Redis SETNX with
-   * a TTL matching the JWT's exp (900s). Throws RECOVERY_TOKEN_USED on
-   * collision, and FAILS CLOSED if the backing store is unreachable.
+   * Atomically claim the JWT's `jti` as "consumed" via Redis SET NX EX with
+   * a TTL matching the JWT's exp (900s). FAILS CLOSED if the backing store
+   * is unreachable. On collision OR fail-closed, throws the SAME
+   * enumeration-resistant NotFoundException(RECOVERY_TOKEN_INVALID) shape
+   * as every other verifyToken failure leg — see the contract documented
+   * on verifyToken (A276-F5-P1-2).
    */
   private async markJtiConsumedOrThrow(jti: string): Promise<void> {
     const key = `${RECOVERY_JTI_REDIS_PREFIX}${jti}`;
@@ -349,21 +352,27 @@ export class CheckoutRecoveryService implements OnModuleInit {
       } catch (err) {
         // Fail closed: Redis is the source of truth for single-use; if
         // we cannot reach it we must not allow the token through.
+        //
+        // A276-F5-P1-2 — the wire response is the *same* generic
+        // RECOVERY_TOKEN_INVALID 404 as every other failure leg so an
+        // attacker who captured a recovery link cannot distinguish
+        // "link was real and is now consumed" / "backing store is down" /
+        // "link never existed". Ops keep the distinction via the log.
         this.logger.error(
-          `recovery single-use guard: Redis SETNX failed, denying: ${
+          `recovery single-use guard: Redis SET NX failed, denying (reason=fail-closed-store-unreachable): ${
             err instanceof Error ? err.message : 'unknown'
           }`,
         );
-        throw new UnauthorizedException({
-          error: 'RECOVERY_TOKEN_USED',
-          message: 'This recovery link has already been used. Request a new one.',
-        });
+        throw this.invalidTokenError();
       }
       if (setResult !== 'OK') {
-        throw new UnauthorizedException({
-          error: 'RECOVERY_TOKEN_USED',
-          message: 'This recovery link has already been used. Request a new one.',
-        });
+        // A276-F5-P1-2 — replay attempt. Log the distinction, return
+        // the generic 404 on the wire so the response is indistinguishable
+        // from a tampered/expired/unknown-checkout link.
+        this.logger.warn(
+          'recovery single-use guard: replay attempt rejected (reason=jti-already-consumed)',
+        );
+        throw this.invalidTokenError();
       }
       return;
     }
@@ -375,10 +384,11 @@ export class CheckoutRecoveryService implements OnModuleInit {
     const now = Date.now();
     const existing = this.memory.get(key);
     if (existing !== undefined && existing > now) {
-      throw new UnauthorizedException({
-        error: 'RECOVERY_TOKEN_USED',
-        message: 'This recovery link has already been used. Request a new one.',
-      });
+      // A276-F5-P1-2 — same uniform response as the Redis branch.
+      this.logger.warn(
+        'recovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)',
+      );
+      throw this.invalidTokenError();
     }
     // Lazy GC + cap to keep the map bounded across long-running test runs.
     if (this.memory.size >= RECOVERY_MEMORY_CAP) {
@@ -396,6 +406,20 @@ export class CheckoutRecoveryService implements OnModuleInit {
   /** Test seam — clears the in-memory single-use set between cases. */
   resetForTests(): void {
     this.memory.clear();
+  }
+
+  /**
+   * A276-F5-P1-2 — single source of the enumeration-resistant error
+   * shape. Every verifyToken failure leg (including replay collision
+   * and Redis fail-closed) must throw exactly this so an attacker
+   * cannot distinguish them via the wire response. The class doc on
+   * verifyToken promises this contract; this helper enforces it.
+   */
+  private invalidTokenError(): NotFoundException {
+    return new NotFoundException({
+      error: 'RECOVERY_TOKEN_INVALID',
+      message: 'This recovery link is no longer valid.',
+    });
   }
 
   /**
