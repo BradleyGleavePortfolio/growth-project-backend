@@ -351,8 +351,12 @@ model User {
   ai_drafts_authored               AiActionDraft[]           @relation("AiDraftRequester")
   ai_drafts_decided                AiActionDraft[]           @relation("AiDraftDecidedBy")
   // Coach AI v1 — generation drafts (workout / meal plan / insight) and
-  // per-call cost log. Both relations are SetNull-on-delete so the cost
-  // history and approved drafts outlive a deleted user account.
+  // per-call cost log. AIDraft uses onDelete: Cascade on both coachId and
+  // clientId FKs (the cascade rarely fires in practice because the GDPR
+  // scrubber soft-deletes User rows — see GdprScrubService.scrubOne which
+  // issues an explicit deleteMany for AIDraft before tombstoning the User).
+  // AICallLog uses onDelete: SetNull so cost history outlives a deleted
+  // user account.
   coach_ai_drafts_as_coach         AIDraft[]                 @relation("AIDraftCoach")
   coach_ai_drafts_as_client        AIDraft[]                 @relation("AIDraftClient")
   ai_call_logs_as_coach            AICallLog[]               @relation("AICallLogCoach")
