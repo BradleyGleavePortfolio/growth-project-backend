@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { DataExportStatus } from '@prisma/client';
+import { DataExportStatus, Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import { SignJWT, jwtVerify, JWTPayload } from 'jose';
 
@@ -121,12 +121,33 @@ export class DataExportService {
       );
     }
 
-    const record = await this.prisma.dataExportRequest.create({
-      data: {
-        user_id: userId,
-        status: DataExportStatus.PENDING,
-      },
-    });
+    // Authoritative DB-level duplicate guard (A1-C5-P1-2): even if two
+    // parallel requests both pass the findFirst check above (TOCTOU window),
+    // the partial unique index `data_export_request_one_active_per_user`
+    // (migration 20260525170000_data_export_one_active_per_user) ensures at
+    // most one non-terminal row per user. The second concurrent create will
+    // receive a Prisma P2002 (unique constraint violation) and is converted to
+    // a ConflictException here.
+    let record: Awaited<ReturnType<typeof this.prisma.dataExportRequest.create>>;
+    try {
+      record = await this.prisma.dataExportRequest.create({
+        data: {
+          user_id: userId,
+          status: DataExportStatus.PENDING,
+        },
+      });
+    } catch (e: unknown) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        throw new ConflictException({
+          error: 'EXPORT_ALREADY_IN_PROGRESS',
+          message: 'An export request is already in progress.',
+        });
+      }
+      throw e;
+    }
 
     // Fire-and-forget — do not await so the HTTP response returns immediately.
     this._runExport(record.id, userId).catch((err: Error) => {

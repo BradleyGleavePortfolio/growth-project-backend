@@ -1,10 +1,12 @@
 // Regression suite for DataExportService.requestExport rate-limit predicate.
 //
 // Context: A1-C5-P2-1 / A1-C5-INF-2 (PR-A C5 audit R1).
-//   The original predicate only blocked PENDING and READY rows. Because
-//   _runExport() flips a fresh row to RUNNING immediately, a user could
-//   spam POST /v1/me/data-export/request during a long-running export and
-//   create concurrent GDPR jobs.
+//          A1-C5-P1-2 — DB-level uniqueness via create+catch(P2002).
+//
+// The original predicate only blocked PENDING and READY rows. Because
+// _runExport() flips a fresh row to RUNNING immediately, a user could
+// spam POST /v1/me/data-export/request during a long-running export and
+// create concurrent GDPR jobs.
 //
 // This file is intentionally located under `test/` (not `src/data-export/`)
 // because jest is rooted at `<rootDir>/test` only — specs under `src/` are
@@ -12,7 +14,7 @@
 // (`src/data-export/data-export.spec.ts`) was dormant.
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException } from '@nestjs/common';
-import { DataExportStatus } from '@prisma/client';
+import { DataExportStatus, Prisma } from '@prisma/client';
 import { DataExportService } from '../src/data-export/data-export.service';
 import { PrismaService } from '../src/prisma.service';
 
@@ -195,6 +197,57 @@ describe('DataExportService.requestExport — rate-limit predicate', () => {
           status: DataExportStatus.PENDING,
         }),
       }),
+    );
+  });
+
+  // ── A1-C5-P1-2: DB-level uniqueness — create+catch(P2002) path ────────────
+
+  it('converts a Prisma P2002 on create to ConflictException (TOCTOU race guard)', async () => {
+    // Simulates the race: both concurrent requests passed findFirst (both saw
+    // null), but the second one lost the DB unique-index race.
+    prismaMock.dataExportRequest.findFirst.mockResolvedValue(null);
+
+    const p2002 = new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed on the fields: (`user_id`)',
+      { code: 'P2002', clientVersion: '5.0.0', meta: {} },
+    );
+    prismaMock.dataExportRequest.create.mockRejectedValue(p2002);
+
+    await expect(service.requestExport('user-1')).rejects.toThrow(
+      ConflictException,
+    );
+    // The create was attempted (fast-path findFirst passed)
+    expect(prismaMock.dataExportRequest.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('P2002 ConflictException carries the structured EXPORT_ALREADY_IN_PROGRESS body', async () => {
+    prismaMock.dataExportRequest.findFirst.mockResolvedValue(null);
+
+    const p2002 = new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed on the fields: (`user_id`)',
+      { code: 'P2002', clientVersion: '5.0.0', meta: {} },
+    );
+    prismaMock.dataExportRequest.create.mockRejectedValue(p2002);
+
+    await expect(service.requestExport('user-1')).rejects.toMatchObject({
+      response: expect.objectContaining({
+        error: 'EXPORT_ALREADY_IN_PROGRESS',
+      }),
+    });
+  });
+
+  it('re-throws non-P2002 Prisma errors from create (unknown error path)', async () => {
+    prismaMock.dataExportRequest.findFirst.mockResolvedValue(null);
+
+    const p2025 = new Prisma.PrismaClientKnownRequestError(
+      'Record to update not found.',
+      { code: 'P2025', clientVersion: '5.0.0', meta: {} },
+    );
+    prismaMock.dataExportRequest.create.mockRejectedValue(p2025);
+
+    // Must propagate — not silently converted to ConflictException
+    await expect(service.requestExport('user-1')).rejects.toBeInstanceOf(
+      Prisma.PrismaClientKnownRequestError,
     );
   });
 });

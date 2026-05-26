@@ -20,6 +20,7 @@ import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CreateInviteCodeDto } from './invite-codes.dto';
 import { BulkInviteDto } from './bulk-invite.dto';
+import { SendOneInviteDto } from './dto/send-one-invite.dto';
 import { InviteCodesService } from './invite-codes.service';
 
 // Coach-authenticated endpoints for managing invite codes. Mounted under
@@ -103,7 +104,7 @@ export class InviteCodesController {
   async sendOne(
     @Request() req: AuthedRequest,
     @Param('id') id: string,
-    @Body() body: { email: string; name?: string; note?: string },
+    @Body() body: SendOneInviteDto,
   ) {
     return this.inviteCodes.sendInviteEmailForCode(req.user.id, id, body.email, {
       recipientName: body.name,
