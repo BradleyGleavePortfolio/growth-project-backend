@@ -25,6 +25,7 @@ import { Throttle } from '@nestjs/throttler';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { CoachGuard } from '../../auth/coach.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { NoActiveSubCoachGuard } from '../../common/guards/no-active-sub-coach.guard';
 import type { AuthedRequest } from '../../auth/auth-request';
 import {
@@ -65,6 +66,14 @@ export class CommandCenterController {
     private readonly churn: ChurnInterventionService,
   ) {}
 
+  // Coach reads their own Command Center KPI tiles (roster size, active
+  // today, 7d check-in rate, open alerts, at-risk, win-streaks, unread
+  // messages). CommandCenterService.getOverview scopes every count by
+  // `coach_id = req.user.id` (verified at command-center.service.ts:159 —
+  // `where: { coach_id: coachId, role: 'student', deleted_at: null }`).
+  // Students must never reach this — cross-roster aggregates would leak
+  // headcount and churn signals.
+  @Roles('coach', 'owner')
   @Get('overview')
   @ApiOperation({
     summary: 'KPI tiles for the Command Center home screen.',
@@ -79,6 +88,12 @@ export class CommandCenterController {
     return this.commandCenter.getOverview(req.user.id);
   }
 
+  // Coach reads the amber/red slice of their own roster. Service
+  // `getAtRisk` filters by `coach_id = req.user.id`; raw risk_score is
+  // nulled before leaving the server per Phase-1E doctrine (coaches see
+  // bucket only). No coach_id is accepted as input; a coach cannot peek
+  // at another coach's at-risk list.
+  @Roles('coach', 'owner')
   @Get('at-risk')
   @ApiOperation({
     summary: 'List of at-risk clients (amber + red).',
@@ -100,6 +115,11 @@ export class CommandCenterController {
     });
   }
 
+  // Coach reads their own roster's positive-signal list. Service
+  // `getWinStreaks` filters by `coach_id = req.user.id` (verified at
+  // command-center.service.ts:324). Students must never reach — exposes
+  // other students' streak data.
+  @Roles('coach', 'owner')
   @Get('win-streaks')
   @ApiOperation({
     summary: 'List of clients with active check-in / workout streaks.',
@@ -118,6 +138,13 @@ export class CommandCenterController {
     });
   }
 
+  // Coach reads their own inbox — thread summaries between this coach
+  // and each of their clients. Service `getInbox` scopes by
+  // `coach_id = req.user.id` on both the roster lookup and the message
+  // thread query (verified at command-center.service.ts:414/427/453).
+  // Cross-coach data leak would be P0; the absence of any coach_id
+  // query parameter forces the user.id path.
+  @Roles('coach', 'owner')
   @Get('inbox')
   @ApiOperation({
     summary: 'Coach inbox — message thread summaries.',
@@ -136,6 +163,11 @@ export class CommandCenterController {
     });
   }
 
+  // Coach reads their own pending CoachAlert rows. Service
+  // `getActionQueue` scopes by `coach_id = req.user.id` (verified at
+  // command-center.service.ts:504/517) and supports cursor pagination on
+  // (acknowledged_at IS NULL, created_at < before). No coach_id input.
+  @Roles('coach', 'owner')
   @Get('action-queue')
   @ApiOperation({
     summary: 'Pending coach alerts requiring action.',
@@ -155,6 +187,12 @@ export class CommandCenterController {
     });
   }
 
+  // Coach mutates one of their own alerts (acknowledge / dismiss).
+  // CoachAlertsService.acknowledge (called via
+  // CommandCenterService.dismissAlert) runs a `findFirst({ where: { id,
+  // coach_id } })` ownership check that raises NotFoundException for
+  // foreign alerts — no existence leak, no IDOR. Idempotent on repeat.
+  @Roles('coach', 'owner')
   @Post('action-queue/:alertId/dismiss')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -174,6 +212,13 @@ export class CommandCenterController {
 
   // ── Churn intervention flow ─────────────────────────────────────────
 
+  // Coach reads enriched at-risk rows for their own roster (top factors
+  // + suggested action, derived from PtmPrediction snapshots). Service
+  // `getChurnAtRisk` filters roster by `coach_id = req.user.id` and only
+  // looks up predictions whose `user_id IN rosterIds`, so a coach cannot
+  // pull predictions for users outside their roster. Raw risk_score is
+  // nulled (Phase-1E).
+  @Roles('coach', 'owner')
   @Get('churn-at-risk')
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @ApiOperation({
@@ -198,6 +243,14 @@ export class CommandCenterController {
     });
   }
 
+  // Coach creates a draft intervention for one of their own clients.
+  // Service `generateChurnDraft` runs a pre-write IDOR check
+  // (`findFirst({ where: { id: clientId, coach_id: coachId, role:
+  // 'student' } })`) and raises NotFoundException for clients outside
+  // the coach's roster (verified at churn-intervention.service.ts:302).
+  // Idempotency key is unique-scoped to coach to defuse cross-coach
+  // replay. Anthropic call is rate-limited (20/hour).
+  @Roles('coach', 'owner')
   @Post('churn-at-risk/:clientId/draft')
   @Throttle({ default: { ttl: 3_600_000, limit: 20 } })
   @ApiOperation({
@@ -219,6 +272,14 @@ export class CommandCenterController {
     });
   }
 
+  // Coach sends a draft intervention they own. Service `sendIntervention`
+  // first looks up the row with `findFirst({ where: { id: interventionId,
+  // coach_id: coachId } })` and raises NotFoundException for foreign
+  // rows (verified at churn-intervention.service.ts:460). The conditional
+  // updateMany transition to 'sent' also includes coach_id in WHERE, so
+  // a concurrent foreign-coach race cannot succeed. send_idempotency_key
+  // replay is coach-scoped.
+  @Roles('coach', 'owner')
   @Post('churn-interventions/:interventionId/send')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 3_600_000, limit: 30 } })
@@ -241,6 +302,13 @@ export class CommandCenterController {
     });
   }
 
+  // Coach dismisses one of their own draft interventions. Service
+  // `dismissIntervention` runs a single atomic conditional
+  // updateMany({ where: { id, coach_id, status NOT IN ('sent',
+  // 'dismissed') } }) (verified at churn-intervention.service.ts:661);
+  // foreign rows fall through to NotFoundException, already-sent rows
+  // return 409. Naturally idempotent.
+  @Roles('coach', 'owner')
   @Post('churn-interventions/:interventionId/dismiss')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

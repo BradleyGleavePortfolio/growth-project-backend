@@ -10,6 +10,7 @@ import { Controller, Get, Request, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { CoachGuard } from '../../auth/coach.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { LtvMetricsService } from './ltv-metrics.service';
 import { LtvMetricsResponseDto } from './ltv-metrics.dto';
@@ -20,6 +21,17 @@ import { LtvMetricsResponseDto } from './ltv-metrics.dto';
 export class LtvMetricsController {
   constructor(private readonly ltvMetrics: LtvMetricsService) {}
 
+  // Coach reads their own LTV metrics suite (MRR / RPCM / churn / NRR /
+  // projected ARR). LtvMetricsService.getMetrics scopes every Prisma
+  // query by `coach_user_id = req.user.id` (verified at
+  // ltv-metrics.service.ts:81 — `where: { coach_user_id: coachUserId }`),
+  // so a coach cannot read another coach's revenue. Students must never
+  // reach this surface (revenue PII). CoachGuard already restricts to
+  // coach|owner at class level; the explicit @Roles closes the Phase-10
+  // contract-test gap. OWNER is listed explicitly per C1 pattern for
+  // on-call/audit clarity even though RolesGuard's owner-bypass would
+  // admit it implicitly.
+  @Roles('coach', 'owner')
   @Get('ltv-metrics')
   @ApiOperation({
     summary: 'LTV metrics suite for the Coach Command Center.',
