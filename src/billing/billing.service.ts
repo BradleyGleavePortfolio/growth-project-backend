@@ -162,6 +162,55 @@ export class BillingService {
             }
             break;
           }
+          // r48 #1 — log requires_action but don't treat as failure.
+          // Stripe Elements drives the 3DS challenge on the client; the
+          // payment ultimately resolves to succeeded or payment_failed.
+          case 'payment_intent.requires_action': {
+            const pi = event.data.object as { id?: string };
+            this.logger.log(
+              `payment_intent.requires_action received for ${pi?.id ?? 'unknown'} — 3DS in progress on client`,
+            );
+            break;
+          }
+          // r48 #13 — refund webhook.  CheckoutWebhookHandlerService
+          // (above) claims this event when it maps to a ClientPurchase;
+          // if it didn't claim, fall back to the GuestCheckout path so
+          // a guest refund flips status='refunded' + refunded_at and
+          // surfaces to the coach via the existing notifications path.
+          case 'charge.refunded': {
+            if (claimedByCheckout) break;
+            if (!this.guestCheckout) break;
+            const charge = event.data.object as {
+              payment_intent?: string;
+              amount?: number;
+              amount_refunded?: number;
+            };
+            if (!charge.payment_intent) break;
+            await this.guestCheckout.handleChargeRefunded(
+              charge.payment_intent,
+              typeof charge.amount === 'number' ? charge.amount : 0,
+              typeof charge.amount_refunded === 'number'
+                ? charge.amount_refunded
+                : 0,
+            );
+            break;
+          }
+          // r48 #13 — dispute opened.  Same fall-through semantics as
+          // charge.refunded above.
+          case 'charge.dispute.created': {
+            if (claimedByCheckout) break;
+            if (!this.guestCheckout) break;
+            const dispute = event.data.object as {
+              payment_intent?: string;
+              reason?: string;
+            };
+            if (!dispute.payment_intent) break;
+            await this.guestCheckout.handleDisputeOpened(
+              dispute.payment_intent,
+              dispute.reason ?? null,
+            );
+            break;
+          }
           case 'account.updated':
           case 'capability.updated':
             await this.applyConnectAccountUpdated(event, tx);

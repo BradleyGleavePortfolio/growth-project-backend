@@ -707,6 +707,90 @@ export class GuestCheckoutService {
     }
   }
 
+  // r48 #13 — refund handler.  Called by BillingService on
+  // charge.refunded webhooks AFTER the existing
+  // RefundDisputeHandlerService has refused the event (no matching
+  // ClientPurchase).  We claim the event only when the charge maps
+  // to a GuestCheckout via payment_intent; otherwise no-op.
+  //
+  // Returns { claimed: true } when we matched + updated.  Idempotent:
+  // updateMany with WHERE refunded_at IS NULL collapses re-deliveries.
+  async handleChargeRefunded(
+    paymentIntentId: string,
+    chargeAmount: number,
+    amountRefunded: number,
+  ): Promise<{ claimed: boolean }> {
+    try {
+      const row = await this.prisma.guestCheckout.findUnique({
+        where: { stripe_payment_intent_id: paymentIntentId },
+      });
+      if (!row) return { claimed: false };
+      const fullyRefunded = amountRefunded >= chargeAmount;
+      const newStatus = fullyRefunded ? 'refunded' : row.status;
+      const claim = await this.prisma.guestCheckout.updateMany({
+        where: {
+          stripe_payment_intent_id: paymentIntentId,
+          refunded_at: null,
+        },
+        data: {
+          status: newStatus,
+          refunded_at: new Date(),
+        },
+      });
+      if (claim.count === 0) {
+        // Already processed by a prior delivery.
+        return { claimed: true };
+      }
+      this.logger.log(
+        `guest checkout refunded: pi=${paymentIntentId} amount_refunded=${amountRefunded}/${chargeAmount} (full=${fullyRefunded})`,
+      );
+      return { claimed: true };
+    } catch (err) {
+      this.logger.error(
+        `handleChargeRefunded crashed (tag=${safeErrorTag(err)})`,
+      );
+      return { claimed: false };
+    }
+  }
+
+  // r48 #13 — dispute opened handler.
+  async handleDisputeOpened(
+    paymentIntentId: string,
+    reason: string | null,
+  ): Promise<{ claimed: boolean }> {
+    try {
+      const claim = await this.prisma.guestCheckout.updateMany({
+        where: {
+          stripe_payment_intent_id: paymentIntentId,
+          disputed_at: null,
+        },
+        data: {
+          status: 'disputed',
+          disputed_at: new Date(),
+          dispute_reason: (reason ?? '').slice(0, 500) || null,
+        },
+      });
+      if (claim.count === 0) {
+        // No row matched OR already disputed.  Look up the row to
+        // disambiguate before declaring no-claim.
+        const row = await this.prisma.guestCheckout.findUnique({
+          where: { stripe_payment_intent_id: paymentIntentId },
+        });
+        if (!row) return { claimed: false };
+        return { claimed: true };
+      }
+      this.logger.warn(
+        `guest checkout disputed: pi=${paymentIntentId} reason=${reason ?? 'none'}`,
+      );
+      return { claimed: true };
+    } catch (err) {
+      this.logger.error(
+        `handleDisputeOpened crashed (tag=${safeErrorTag(err)})`,
+      );
+      return { claimed: false };
+    }
+  }
+
   // ── Account creation flow ──────────────────────────────────────────────
   // Runs INLINE in the webhook (P1-4) so the conversion is durable. A
   // re-entry for a row already in 'converted' state is a no-op; any
@@ -784,27 +868,34 @@ export class GuestCheckoutService {
 
     try {
       await this.prisma.$transaction(async (tx) => {
-        // Upsert the Prisma User row mirrored from Supabase. If a User
-        // already exists (existing customer paying with the same email),
-        // we keep their coach_id intact rather than re-routing them
-        // to a new coach.
-        let dbUser = await tx.user.findUnique({
+        // r48 #12 — atomic user upsert.  Two parallel webhook deliveries
+        // (Stripe retries the same event id, our outer dedup is bypassed
+        // by a clock-skew or replica-lag race) used to both pass the
+        // findUnique → create path and one would P2002 on supabase_id.
+        // Now we always go through Prisma's upsert which collapses the
+        // race to a single CREATE INSERT ... ON CONFLICT under the hood.
+        //
+        // The 'create' side initialises coach_id; the 'update' side
+        // ONLY attaches coach_id when the existing row has none (the
+        // orphan-account heal path), so an existing client paying for
+        // a second coach's package doesn't get silently re-routed.
+        let dbUser = await tx.user.upsert({
           where: { supabase_id: supabaseUserId },
+          create: {
+            supabase_id: supabaseUserId,
+            email: checkout.guest_email,
+            name: checkout.guest_name,
+            role: 'student',
+            coach_id: checkout.package.coach_id,
+          },
+          update: {},
         });
-        if (!dbUser) {
-          dbUser = await tx.user.create({
-            data: {
-              supabase_id: supabaseUserId,
-              email: checkout.guest_email,
-              name: checkout.guest_name,
-              role: 'student',
-              coach_id: checkout.package.coach_id,
-            },
-          });
-        } else if (dbUser.coach_id == null) {
+        if (dbUser.coach_id == null) {
           // User existed but had no coach (rare — orphaned account).
-          // Attach them to the package's coach.
-          await tx.user.update({
+          // Attach them to the package's coach.  Done as a separate
+          // update so the upsert's 'update' branch stays a strict no-op
+          // when the row already has a coach (no accidental re-routing).
+          dbUser = await tx.user.update({
             where: { id: dbUser.id },
             data: { coach_id: checkout.package.coach_id },
           });
