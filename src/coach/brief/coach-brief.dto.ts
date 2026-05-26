@@ -67,9 +67,11 @@ export class UpdateBriefPreferencesDto {
 
   // IANA tz string. Validated via Intl.DateTimeFormat to block values that
   // would later crash brief generation / scheduler dispatch.
+  // @MaxLength matches the DB CHECK constraint (BETWEEN 1 AND 80) in
+  // migration 20260703000002_add_coach_brief_check_constraints.
   @IsOptional()
   @IsString()
-  @MaxLength(64)
+  @MaxLength(80)
   @Validate(IsValidTimezone)
   timezone?: string;
 
