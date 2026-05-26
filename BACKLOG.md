@@ -7,8 +7,8 @@ but must not be lost.
 
 ## BL-GDPR-BRIEF-2 — Client PII embedded in `CoachBrief.brief_context` JSON has no FK scrub path
 
-**Status:** RESOLVED — TTL prune implemented (branch `chore/post-PR266-cleanup`; commit SHA to be filled after merge)
-**Resolved by:** `feat(gdpr): TTL prune stale CoachBrief rows (BL-GDPR-BRIEF-2)`
+**Status:** RESOLVED — TTL prune implemented (branch `chore/post-PR266-cleanup`; commit `8008563`)
+**Resolved by:** `feat(gdpr): TTL prune stale CoachBrief rows (BL-GDPR-BRIEF-2)` — commit `8008563`
 **Opened by:** A1-PR266-P1-1 fix (PR #266, commit `fix(gdpr): scrub Coach Brief tables on soft-delete`)
 **Priority:** P2 (no new violation introduced; gap pre-dates this PR and is acknowledged)
 **Regulation:** GDPR Art. 17 (erasure) / Art. 5(1)(e) (storage limitation)
