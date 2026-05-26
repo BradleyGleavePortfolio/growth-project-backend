@@ -12,6 +12,10 @@ import { EmailTemplateKey } from '../email/email.types';
 // the billing module still boots in environments that have not imported
 // StorefrontModule (legacy tests, half-built deploys).
 import { GUEST_CHECKOUT_METADATA_KEY, GuestCheckoutService } from '../storefront/guest-checkout.service';
+// r50 Dunning v1 — failed-payment recovery state machine. Optional so the
+// billing module still boots without DunningModule imported (legacy tests).
+import { DunningService } from '../dunning/dunning.service';
+import { DunningNotifier } from '../dunning/dunning.notifier';
 
 // BillingService is the system of record for the Stripe-mirror tables. The
 // webhook controller hands it parsed Stripe event objects; this service
@@ -52,6 +56,10 @@ export class BillingService {
     // R43 — Optional so the billing module still boots when
     // StorefrontModule is not imported (e.g. minimal test wiring).
     @Optional() private guestCheckout?: GuestCheckoutService,
+    // r50 Dunning v1 — open / recover / churn DunningCases off the
+    // existing invoice + subscription webhook handlers.
+    @Optional() private dunning?: DunningService,
+    @Optional() private dunningNotifier?: DunningNotifier,
   ) {}
 
   // Idempotently process an event. Returns { processed: true } on first
@@ -403,6 +411,21 @@ export class BillingService {
         stripe_customer_id: sub?.customer ?? null,
       },
     });
+
+    // r50 Dunning v1 — subscription.deleted is a hard churn. Close any
+    // open recovery case with state='churned' so the coach inbox banner
+    // reflects reality and pending retry timestamps never fire.
+    if (this.dunning && sub?.id) {
+      try {
+        await this.dunning.recordChurn(sub.id, tx);
+      } catch (err) {
+        this.logger.error(
+          `dunning churn failed for coach ${coachId} sub ${sub.id}: ${
+            err instanceof Error ? err.message : 'unknown'
+          }`,
+        );
+      }
+    }
   }
 
   private async applyInvoicePaid(
@@ -412,6 +435,7 @@ export class BillingService {
     const inv = event.data.object as {
       id?: string;
       customer?: string;
+      subscription?: string;
       amount_paid?: number;
       amount_due?: number;
       currency?: string;
@@ -483,6 +507,23 @@ export class BillingService {
         currency: inv.currency ?? 'usd',
       },
     });
+
+    // r50 Dunning v1 — close any open recovery case for this subscription.
+    // recordRecovery is a no-op when no open case exists, so it's safe to
+    // call on every paid invoice (not just past_due recoveries).
+    if (this.dunning && inv.subscription) {
+      try {
+        await this.dunning.recordRecovery(inv.subscription, tx);
+        // Notification fan-out is inside DunningService when it transitions
+        // to 'recovered'. Nothing more to do here.
+      } catch (err) {
+        this.logger.error(
+          `dunning recovery failed for coach ${coachId} event ${event.id}: ${
+            err instanceof Error ? err.message : 'unknown'
+          }`,
+        );
+      }
+    }
   }
 
   private async applyInvoicePaymentFailed(
@@ -492,8 +533,10 @@ export class BillingService {
     const inv = event.data.object as {
       id?: string;
       customer?: string;
+      subscription?: string;
+      currency?: string;
       amount_due?: number;
-      last_payment_error?: { message?: string };
+      last_payment_error?: { message?: string; code?: string };
     };
     const coachId = await this.resolveCoachByCustomer(inv?.customer, tx);
     if (!coachId) return;
@@ -547,6 +590,41 @@ export class BillingService {
       amountDueCents: inv?.amount_due ?? 0,
       reason: inv?.last_payment_error?.message ?? null,
     });
+
+    // r50 Dunning v1 — open / reopen the recovery case if we know which
+    // subscription failed. Stripe sometimes fires invoice.payment_failed
+    // for one-off invoices with no parent subscription; those skip
+    // dunning because the cadence + retries here are subscription-scoped.
+    if (this.dunning && inv?.subscription) {
+      try {
+        const dCase = await this.dunning.openOrReopenCase({
+          coachId,
+          stripeSubscriptionId: inv.subscription,
+          stripeCustomerId: inv.customer ?? null,
+          stripeInvoiceId: inv.id ?? null,
+          amountCents: inv.amount_due ?? 0,
+          currency: inv.currency ?? 'usd',
+          failureReason: inv.last_payment_error?.message ?? null,
+          failureCode: inv.last_payment_error?.code ?? null,
+          openedByEventId: event.id,
+        });
+        if (this.dunningNotifier && dCase.state === 'retry_1_scheduled') {
+          // Initial schedule notification — coach finds out their card
+          // failed AND we'll retry in 24h. Subsequent retry advances are
+          // notified by the worker tick.
+          await this.dunningNotifier.retryScheduled(dCase, 1);
+        }
+      } catch (err) {
+        // Dunning is best-effort relative to the rest of this handler.
+        // The mirror row + audit + email already ran above; a dunning
+        // failure must not roll back the whole transaction.
+        this.logger.error(
+          `dunning open failed for coach ${coachId} event ${event.id}: ${
+            err instanceof Error ? err.message : 'unknown'
+          }`,
+        );
+      }
+    }
   }
 
   private async dispatchPaymentFailedEmail(args: {
