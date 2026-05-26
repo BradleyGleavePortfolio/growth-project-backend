@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
+import { PrismaService } from '../prisma.service';
+import { Prisma } from '@prisma/client';
 
 /**
  * RecentAuthGuard — Phase 10 Role-Gating Hardening.
@@ -36,7 +38,10 @@ import { createHmac, timingSafeEqual } from 'crypto';
  *
  * - Valid for 5 minutes (configurable via RECENT_AUTH_TTL_MS).
  * - Bound to the authenticated user's id — cannot be used cross-user.
- * - Stateless: not server-stored. The short window limits blast radius.
+ * - Single-use: nonce stored for TTL window; second presentation rejected.
+ *   The nonce is persisted in the `recent_auth_nonce` table (see migration
+ *   20260525180000_recent_auth_nonce). A second presentation of the same
+ *   token within TTL returns 403 RECENT_AUTH_TOKEN_ALREADY_USED.
  *
  * ## Env vars
  *
@@ -73,9 +78,12 @@ const CLOCK_SKEW_TOLERANCE_MS = 30_000;
 export class RecentAuthGuard implements CanActivate {
   private readonly logger = new Logger(RecentAuthGuard.name);
 
-  constructor(private config: ConfigService) {}
+  constructor(
+    private config: ConfigService,
+    private prisma: PrismaService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const secret = this.config.get<string>('RECENT_AUTH_SECRET');
     if (!secret || secret.length < RECENT_AUTH_SECRET_MIN_LENGTH) {
       // Fail closed: a missing or too-short secret means this guard cannot
@@ -164,6 +172,40 @@ export class RecentAuthGuard implements CanActivate {
 
     if (!match) {
       throw new UnauthorizedException('Recent-auth token HMAC invalid');
+    }
+
+    // Single-use enforcement (A1-C5-P1-3): persist a nonce keyed by the first
+    // 16 hex chars of the HMAC. A second presentation within TTL produces a
+    // P2002 unique-constraint violation → 403 RECENT_AUTH_TOKEN_ALREADY_USED.
+    const hmacSuffix = tokenHmac.slice(0, 16);
+    const expiresAt = new Date(issuedAt + ttl);
+    try {
+      await this.prisma.recentAuthNonce.create({
+        data: {
+          id: `${authedUserId}-${issuedAtStr}`,
+          hmac_suffix: hmacSuffix,
+          user_id: authedUserId,
+          expires_at: expiresAt,
+        },
+      });
+    } catch (e: unknown) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        this.logger.warn(
+          `RecentAuthGuard: replay detected for user=${authedUserId} hmac_suffix=${hmacSuffix}`,
+        );
+        throw new ForbiddenException({
+          error: 'RECENT_AUTH_TOKEN_ALREADY_USED',
+          message: 'This authentication token has already been used. Request a new one.',
+        });
+      }
+      // Unexpected DB error — fail closed
+      this.logger.error(
+        `RecentAuthGuard: nonce write failed for user=${authedUserId}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+      throw new ForbiddenException(GENERIC_CONFIG_ERROR_MESSAGE);
     }
 
     return true;

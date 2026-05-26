@@ -351,8 +351,12 @@ model User {
   ai_drafts_authored               AiActionDraft[]           @relation("AiDraftRequester")
   ai_drafts_decided                AiActionDraft[]           @relation("AiDraftDecidedBy")
   // Coach AI v1 — generation drafts (workout / meal plan / insight) and
-  // per-call cost log. Both relations are SetNull-on-delete so the cost
-  // history and approved drafts outlive a deleted user account.
+  // per-call cost log. AIDraft uses onDelete: Cascade on both coachId and
+  // clientId FKs (the cascade rarely fires in practice because the GDPR
+  // scrubber soft-deletes User rows — see GdprScrubService.scrubOne which
+  // issues an explicit deleteMany for AIDraft before tombstoning the User).
+  // AICallLog uses onDelete: SetNull so cost history outlives a deleted
+  // user account.
   coach_ai_drafts_as_coach         AIDraft[]                 @relation("AIDraftCoach")
   coach_ai_drafts_as_client        AIDraft[]                 @relation("AIDraftClient")
   ai_call_logs_as_coach            AICallLog[]               @relation("AICallLogCoach")
@@ -1342,6 +1346,12 @@ enum DataExportStatus {
 // flow. Users should download their data BEFORE requesting account
 // deletion. The delete-account module (src/gdpr/) checks for a READY
 // export and surfaces a warning if none exists in the last 7 days.
+// NOTE (A1-C5-P1-2): A partial unique index enforcing at most one non-terminal
+// (PENDING | RUNNING | READY) DataExportRequest per user exists in the raw
+// migration `20260525170000_data_export_one_active_per_user`. Prisma DSL does
+// NOT support partial indexes (WHERE-clause predicates), so the index is NOT
+// representable here. Any @@unique declaration would be incorrect — refer to
+// the migration SQL file for the authoritative constraint definition.
 model DataExportRequest {
   id              String           @id @default(uuid())
   user_id         String
@@ -2263,6 +2273,7 @@ enum TeamAuditEventKind {
   tier_changed
   staff_seat_added
   staff_seat_removed
+  revenue_sharing_changed
 }
 
 // Head coach <-> sub-coach assignment. The (sub_coach_id, head_coach_id)
@@ -3507,10 +3518,18 @@ model TeamProfile {
 
 // Phase 8 — Email-based sub-coach invite.
 //
-// One row per outbound invite. `token` is a URL-safe random string the
-// invitee receives in the invite link; `accepted_at` flips when they
-// sign up + the matching TeamSubCoachAssignment row gets created. We do
-// NOT auto-create the User row here — acceptance is a separate flow.
+// One row per outbound invite. `token_hash` is the SHA-256 hex digest of
+// the raw URL-safe token returned to the caller; the plaintext token is
+// never persisted. On accept/preview the presented token is hashed before
+// the DB lookup so a DB-dump does not yield consumable tokens.
+//
+// Transition window: the legacy `token` column (plaintext) is kept nullable
+// for the backwards-compatibility window while pre-rollout unredeemed
+// invites expire (INVITE_TTL_DAYS = 14 days). New writes populate
+// `token_hash` only and leave `token` null. Accept/preview first tries
+// the hash lookup; if not found it falls back to a plaintext `token`
+// lookup for legacy rows. A follow-up migration drops `token` once all
+// pre-rollout invites have expired or been revoked.
 //
 // Revocation: `revoked_at` + `revoked_by_user_id` makes the audit trail
 // queryable; the same column also short-circuits the accept endpoint.
@@ -3525,7 +3544,13 @@ model SubCoachInvite {
   email               String
   name                String?
   max_clients         Int?
-  token               String    @unique
+  // DEPRECATED: plaintext token kept for legacy unredeemed invites issued
+  // before the token_hash rollout. New writes set this to null. Drop in the
+  // follow-up migration once all pre-rollout invites have expired (14 days).
+  token               String?   @unique
+  // SHA-256 hex digest of the raw invite token. This is what gets stored
+  // for all new invites. Unique enforced by DB index (see migration).
+  token_hash          String?   @unique
   expires_at          DateTime
   accepted_at         DateTime?
   accepted_by_user_id String?
@@ -3766,4 +3791,28 @@ model ChurnIntervention {
   @@index([coach_id, status, created_at])
   @@index([client_id, created_at])
   @@index([coach_id, client_id])
+}
+
+// ── RecentAuthNonce (A1-C5-P1-3) ─────────────────────────────────────────────
+// Single-use store for RecentAuthGuard HMAC tokens. Each token may be
+// presented exactly once within its TTL window. A second presentation of
+// the same token is rejected with 403 RECENT_AUTH_TOKEN_ALREADY_USED.
+//
+// The `hmac_suffix` column stores the first 16 hex characters of the full
+// HMAC — sufficient to uniquely identify a token within the 5-minute TTL
+// window without storing the full 64-char HMAC. The unique constraint on
+// hmac_suffix is the enforcement mechanism; Prisma P2002 on insert = replay.
+//
+// A background cron (or the guard itself) SHOULD clean up expired nonces.
+// The @@index([expires_at]) supports efficient sweeps. Until a cleanup job
+// is wired, rows are bounded by the 5-minute TTL and low traffic volume.
+model RecentAuthNonce {
+  id          String   @id @default(cuid())
+  hmac_suffix String   @unique
+  user_id     String
+  expires_at  DateTime
+  created_at  DateTime @default(now())
+
+  @@index([expires_at])
+  @@map("recent_auth_nonce")
 }

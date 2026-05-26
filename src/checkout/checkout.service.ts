@@ -678,8 +678,12 @@ export class CheckoutService {
     sessionId: string,
     userId: string,
   ): Promise<{ paid: boolean; status: string; package_name: string | null }> {
-    const session = await this.stripeConnect.retrieveCheckoutSession(sessionId);
-
+    // IDOR defense: prove the session belongs to the caller against our own
+    // ClientPurchase row BEFORE consulting Stripe. If no scoped purchase
+    // exists, throw 404 without leaking whether the session ID exists at
+    // Stripe — this collapses "foreign session" and "nonexistent session"
+    // into a single response so a logged-in user cannot enumerate other
+    // users' Stripe Checkout Sessions or probe their payment_status.
     const purchase = await this.prisma.clientPurchase.findFirst({
       where: {
         stripe_checkout_session_id: sessionId,
@@ -688,11 +692,33 @@ export class CheckoutService {
       include: { package: { select: { name: true } } },
     });
 
-    const stripeStatus: string = (session.payment_status as string | null | undefined) ?? 'unknown';
-
     if (!purchase) {
-      return { paid: false, status: stripeStatus, package_name: null };
+      throw new NotFoundException({
+        error: 'CHECKOUT_SESSION_NOT_FOUND',
+        message: 'No checkout session with that id for this account.',
+      });
     }
+
+    // Local ownership is proven; safe to ask Stripe for live status.
+    const session = await this.stripeConnect.retrieveCheckoutSession(sessionId);
+
+    // Defense-in-depth: if Stripe set client_reference_id and it disagrees
+    // with the caller, treat as a missing session — never leak the
+    // mismatch in the response. (Legacy sessions may have a null
+    // client_reference_id; the local-purchase scope above is the
+    // authoritative check in that case.)
+    const clientRef = (session.client_reference_id as string | null | undefined) ?? null;
+    if (clientRef !== null && clientRef !== userId) {
+      this.logger.warn(
+        `confirmSession client_reference_id mismatch sessionId=${sessionId} caller=${userId} sessionRef=${clientRef}`,
+      );
+      throw new NotFoundException({
+        error: 'CHECKOUT_SESSION_NOT_FOUND',
+        message: 'No checkout session with that id for this account.',
+      });
+    }
+
+    const stripeStatus: string = (session.payment_status as string | null | undefined) ?? 'unknown';
 
     const paid =
       stripeStatus === 'paid' ||

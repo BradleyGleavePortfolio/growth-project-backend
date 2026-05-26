@@ -7,7 +7,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { TeamService } from '../team/team.service';
@@ -103,7 +103,8 @@ export class SubCoachInviteService {
       });
     }
 
-    const token = this.randomToken();
+    const rawToken = this.randomToken();
+    const tokenHash = this.hashToken(rawToken);
     const expiresAt = new Date(now.getTime() + INVITE_TTL_DAYS * 86_400_000);
 
     const { invite } = await this.prisma.$transaction(async (tx) => {
@@ -113,7 +114,10 @@ export class SubCoachInviteService {
           email,
           name: input.name ?? null,
           max_clients: input.max_clients ?? null,
-          token,
+          // P1-2 fix: store the SHA-256 hash only; plaintext token is never
+          // persisted. Raw token is returned in inviteUrl (one-shot).
+          token: null,
+          token_hash: tokenHash,
           expires_at: expiresAt,
         },
       });
@@ -143,7 +147,7 @@ export class SubCoachInviteService {
     return {
       inviteId: invite.id,
       email,
-      inviteUrl: this.buildInviteUrl(token),
+      inviteUrl: this.buildInviteUrl(rawToken),
       expires_at: expiresAt.toISOString(),
     };
   }
@@ -164,18 +168,29 @@ export class SubCoachInviteService {
         message: 'token is required',
       });
     }
-    const invite = await this.prisma.subCoachInvite.findUnique({
-      where: { token: trimmed },
-      include: {
-        head_coach: {
-          select: {
-            id: true,
-            name: true,
-            coach_profile: { select: { business_name: true } },
-          },
+    // P1-2 fix: hash-first lookup. New invites are stored by token_hash only;
+    // legacy unredeemed invites (issued before rollout) have a plaintext token.
+    const tokenHash = this.hashToken(trimmed);
+    const include = {
+      head_coach: {
+        select: {
+          id: true,
+          name: true,
+          coach_profile: { select: { business_name: true } },
         },
       },
+    } as const;
+    let invite = await this.prisma.subCoachInvite.findUnique({
+      where: { token_hash: tokenHash },
+      include,
     });
+    if (!invite) {
+      // Fallback: legacy invite with plaintext token (pre-rollout row).
+      invite = await this.prisma.subCoachInvite.findUnique({
+        where: { token: trimmed },
+        include,
+      });
+    }
     if (!invite) {
       throw new NotFoundException({
         kind: 'invite_not_found',
@@ -229,9 +244,17 @@ export class SubCoachInviteService {
       });
     }
 
-    const invite = await this.prisma.subCoachInvite.findUnique({
-      where: { token: trimmedToken },
+    // P1-2 fix: hash-first lookup with legacy plaintext fallback.
+    const trimmedTokenHash = this.hashToken(trimmedToken);
+    let invite = await this.prisma.subCoachInvite.findUnique({
+      where: { token_hash: trimmedTokenHash },
     });
+    if (!invite) {
+      // Fallback: legacy invite stored with plaintext token (pre-rollout row).
+      invite = await this.prisma.subCoachInvite.findUnique({
+        where: { token: trimmedToken },
+      });
+    }
     if (!invite) {
       throw new NotFoundException({
         kind: 'invite_not_found',
@@ -516,14 +539,17 @@ export class SubCoachInviteService {
       }
     }
 
-    const token = this.randomToken();
+    const rawToken = this.randomToken();
+    const tokenHash = this.hashToken(rawToken);
     const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 86_400_000);
 
     const { updated } = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.subCoachInvite.update({
         where: { id: invite.id },
         data: {
-          token,
+          // P1-2 fix: rotate to token_hash only; clear any legacy plaintext token.
+          token: null,
+          token_hash: tokenHash,
           email: nextEmail,
           name: input.name ?? invite.name,
           expires_at: expiresAt,
@@ -555,7 +581,9 @@ export class SubCoachInviteService {
     return {
       inviteId: updated.id,
       email: updated.email,
-      inviteUrl: this.buildInviteUrl(updated.token),
+      // Return the raw token so the caller can build the invite URL;
+      // the hash is what's stored, never the raw value.
+      inviteUrl: this.buildInviteUrl(rawToken),
       expires_at: updated.expires_at.toISOString(),
     };
   }
@@ -709,5 +737,13 @@ export class SubCoachInviteService {
 
   private randomToken(): string {
     return randomBytes(24).toString('base64url');
+  }
+
+  // SHA-256 hex digest of the raw invite token.
+  // Used for at-rest storage and for lookup: presenter sends the raw token,
+  // we hash it and look up by token_hash — DB dump never yields exploitable tokens.
+  // SHA-256 is sufficient (192-bit token entropy eliminates rainbow-table risk).
+  private hashToken(rawToken: string): string {
+    return createHash('sha256').update(rawToken).digest('hex');
   }
 }

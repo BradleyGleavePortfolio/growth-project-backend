@@ -159,6 +159,10 @@ const CLASS_LEVEL_LEGACY_ALLOWLIST: Array<{
   { controller: 'SchedulingController', reason: 'Service-layer authz; pre-Phase-10' },
   { controller: 'TeamModeController', reason: 'Sub-coach feature; service-layer authz; pre-Phase-10' },
   { controller: 'WorkoutBuilderController', reason: 'Workout builder feature; service-layer authz; pre-Phase-10' },
+  {
+    controller: 'OwnerConsoleController',
+    reason: 'ServiceTokenGuard at class level (src/auth/service-token.guard.ts). All routes are S2S-only with pre-shared ADMIN_SERVICE_TOKEN bearer header; req.user is never populated. The global RolesGuard would throw "Authenticated user required" on every owner-console request if @Roles is added. Runtime gate is strictly stronger than @Roles (platform secret cannot be obtained via owner JWT theft). Companion PR-A2 may introduce a ServiceTokenAdmin req.user shim to align decorator + runtime; until then this allowlist entry documents the architectural decision.',
+  },
 ];
 
 const classLevelAllowlistSet = new Set(

@@ -231,6 +231,15 @@ describe('SubCoachesService.invite', () => {
     expect(out.expires_at).toMatch(/T/);
     expect(prisma.subCoachInvite.create).toHaveBeenCalledTimes(1);
     expect(prisma.teamAuditEvent.create).toHaveBeenCalledTimes(1);
+    // P1-2 regression: new invites must store a token_hash, not a plaintext token.
+    const createCall = prisma.subCoachInvite.create.mock.calls[0][0];
+    expect(createCall.data.token_hash).toBeDefined();
+    expect(typeof createCall.data.token_hash).toBe('string');
+    expect(createCall.data.token_hash.length).toBe(64); // SHA-256 hex = 64 chars
+    expect(createCall.data.token).toBeNull(); // plaintext token must not be persisted
+    // The raw token (returned in inviteUrl) must NOT match the stored hash.
+    const rawToken = out.inviteUrl.split('/').pop()!;
+    expect(rawToken).not.toBe(createCall.data.token_hash);
   });
 });
 
