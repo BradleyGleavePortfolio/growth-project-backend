@@ -331,14 +331,6 @@ import { StorefrontModule } from './storefront/storefront.module';
     // each other out, and so per-user fairness holds for authed routes.
     { provide: APP_GUARD, useClass: UserThrottlerGuard },
 
-    // SECURITY: global JWT auth guard — every route is private by default.
-    // Routes opt out via the @Public() decorator (see common/decorators/public.decorator.ts).
-    // Previously each controller had to remember @UseGuards(JwtAuthGuard); one
-    // missed decorator = public endpoint with no warning. Now the failure mode
-    // is reversed: forgetting @Public() on an intentionally-public route
-    // surfaces as a loud 401 in tests, not a silent data leak.
-    { provide: APP_GUARD, useClass: JwtAuthGuard },
-
     // RLS context interceptor — runs AFTER JwtAuthGuard so req.user is populated.
     // Sets app.current_user_id + app.current_user_role as transaction-scoped
     // PostgreSQL session variables consumed by RLS policies.

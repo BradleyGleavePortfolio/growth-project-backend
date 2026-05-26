@@ -45,11 +45,8 @@ import {
 // when COACH_BRIEF_ENABLED=off every route returns 404 BEFORE JWT or role
 // checks run. This prevents the disabled feature from advertising its
 // existence and lets operators kill the surface without a client deploy.
-// A5-P2-1 — JwtAuthGuard is already registered globally as APP_GUARD in
-// AppModule. Listing it again in the controller-level @UseGuards stack
-// runs JWT verification twice per request (once globally, once per the
-// decorator). We keep CoachBriefEnabledGuard first so a disabled-feature
-// 404 short-circuits BEFORE the global auth chain runs, and CoachGuard
+// JwtAuthGuard is registered globally as a single APP_GUARD in AppModule
+// (A5-P2-1 resolved: the duplicate registration was removed). CoachGuard
 // is the bespoke role-narrowing guard. The RolesGuard that interprets
 // @Roles('coach') is also globally registered.
 @ApiTags('coach-brief')

@@ -32,6 +32,7 @@ export interface MockCoachBriefDelegate {
   create: jest.Mock;
   update: jest.Mock;
   updateMany: jest.Mock;
+  deleteMany: jest.Mock;
   findMany: jest.Mock;
   count: jest.Mock;
 }
@@ -113,6 +114,7 @@ export function makeMockPrisma(): MockPrisma {
       create: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
+      deleteMany: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
     },
