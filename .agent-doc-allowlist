@@ -1,0 +1,133 @@
+# .agent-doc-allowlist — R15 temporary exception list.
+#
+# Each line is a doc filename (or repo-relative path) that the
+# verify-doc-refs CI check will tolerate as "not yet in this repo."
+#
+# These are KNOWN-STRANDED legacy canonical docs that lived in a prior
+# operator's sandbox and were never pushed to GitHub. They are being
+# rescued into the dedicated `tgp-agent-context` repo. As each one is
+# restored, DELETE its line from this file.
+#
+# Goal state: this file is empty (or contains only the header).
+#
+# Format: one filename or path per line. Blank lines and `#`-comments are
+# ignored. Bare filenames match any reference to a file with that name.
+
+# --- Canonical R-rule docs (lives in tgp-agent-context, referenced widely) ---
+RULES.md
+CANONICAL_RULES.md
+RULES_R1_R55.md
+RULES_R1_R61.md
+R36_TO_R45_OPERATOR_RULES.md
+HOUSE_RULES.md
+AUDIT_MANDATE.md
+50_FAILURES.md
+SECURITY_SKILL.md
+CURRENT_TEST_FAILURES.md
+
+# --- CPO / operator handoffs (tgp-agent-context) ---
+CPO_MASTER_HANDOFF.md
+CPO_MASTER_HANDOFF_PART_2.md
+CPO_BRIEFING.md
+BRADLEY_BRIEFING.md
+NEXT_OPERATOR_MEGA_PROMPT.md
+OPERATOR_HANDOFF_2026-05-26.md
+BACKLOG_DEDUP_2026-05-26.md
+SECURITY_SPRINT_A_2.md
+REFERENCE_DOCS.md
+
+# --- Strategy / roadmap (tgp-agent-context) ---
+FEATURE_ROADMAP_CANONICAL.md
+SUPABASE_RLS_CRISIS.md
+CYCLE_B_RLS_PLAN.md
+COMPETITIVE_INTEL.md
+TGP_PRODUCT_VISION.md
+product-dominance-playbook.md
+
+# --- Design bibles (tgp-agent-context) ---
+simplicity-ideology.md
+simplicity-ideology-2.md
+LANDING_PAGE_DESIGN_DOCTRINE.md
+Mobile-App-Design-Intelligence-Exhaustive-Agent-Training-2.md
+Website-Landing-Page-Design-Intelligence.md
+The-50-Failures-of-AI-Generated-Code-at-Enterprise-Scale.md
+
+# --- Audits (tgp-agent-context) ---
+PR_272_AUDIT.md
+WORKOUT_BUILDER_AUDIT.md
+LP_V2_AUDIT.md
+CNAME_AUDIT.md
+NUDGE_AUDIT.md
+DUNNING_AUDIT.md
+UI_QUALITY_AUDIT_2026_05_26.md
+UI_FIX_PRIORITY_2026_05_26.md
+
+# --- Local-only operator scripts (need decision: commit to tgp-agent-context or delete refs) ---
+autopush.sh
+
+# --- Pre-existing dangling references found at R15 introduction (2026-05-26).
+# --- These are real references in main that don't currently resolve. Each is
+# --- a cleanup task: fix the reference, commit the file, or remove the
+# --- reference. Goal: empty this section.
+-snapshot.json
+AIChatScreen.tsx
+AUDIT.md
+CONNECT_MASTER_PLAN.md
+DEPLOY.md
+FINDINGS_audit3_pr267.md
+FINDINGS_audit4_pr267.md
+FIX_BRIEF_round4_pr267.md
+Mobile-App-Design-Intelligence.md
+PLAY_STORE_READINESS.md
+QA_ISSUES.md
+SETUP.md
+SHARED_FINISHING_BRIEF.md
+STATE.md
+access_review_20250930.md
+adr-NNNN-kebab-case-title.md
+app.json
+assetlinks.json
+audits/00_MASTER_REPORT.md
+audits/coach_ai_capability_audit.md
+backup_test_20250930.md
+dist/main.js
+dist/scripts/bootstrap-owners.js
+docs/admin-web-dashboard.md
+docs/admin/capability-matrix.md
+docs/admin/coaches-surface.md
+docs/admin/future-endpoints.md
+docs/admin/overview.md
+docs/admin/rbac-matrix.md
+docs/brand.md
+docs/incidents/YYYY-MM-DD-secret-name-exposed.md
+docs/runbooks/migrations-concurrently.md
+docs/secrets-rotation-runbook.md
+hybrid_coach_pricing_spec.md
+lib/ai/keywordMatcher.ts
+migrations/001_create_water_logs.sql
+prisma/seed.ts
+res.json
+screens/AIDisclosureScreen.tsx
+screens/AIScreen.tsx
+scripts/backfill-team-mode.ts
+scripts/mark-stale-bloodwork.ts
+services/aiApi.ts
+snapshot_20250930.json
+spec.ts
+src/api/exerciseCatalog.ts
+src/audit/audit.actions.ts
+src/auth/__tests__/RolesEnforced.meta.spec.ts
+src/components/FactorRow.tsx
+src/components/RiskDot.tsx
+src/screens/coach/ClientRiskDetailScreen.tsx
+src/screens/coach/RiskBoardScreen.tsx
+src/screens/settings/DataExportScreen.tsx
+src/services/ptmApi.ts
+src/types/exerciseCatalog.ts
+start.sh
+test/check-ins.spec.ts
+test/messages-safety.spec.ts
+test/secrets/check-staleness.spec.ts
+test/v1-coach.spec.ts
+tgp-coach-console/INTEGRATION_NOTES.md
+well-known/assetlinks.json

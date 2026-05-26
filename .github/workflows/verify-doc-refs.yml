@@ -1,0 +1,33 @@
+name: verify-doc-refs
+
+# Enforces R15: GitHub is the only source of truth.
+# Fails any PR that references a documentation file path that doesn't exist
+# in the repo. Catches sandbox-only doc references the moment they're
+# introduced.
+#
+# Allowlist (`.agent-doc-allowlist`) holds the known-stranded legacy docs
+# that are being rescued into the tgp-agent-context repo. Each line on the
+# allowlist is a doc that CI will tolerate for now. As docs get restored,
+# remove their lines from the allowlist. Goal: empty allowlist.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify-doc-refs:
+    name: Verify all referenced docs exist in repo
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run doc-reference verifier
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/verify_doc_refs.py

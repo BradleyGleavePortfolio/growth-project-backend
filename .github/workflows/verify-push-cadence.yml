@@ -1,0 +1,35 @@
+name: verify-push-cadence
+
+# Enforces R15: agents push at least every 2 minutes of active work.
+# At PR-level granularity we can't see 2-min intervals (GitHub doesn't
+# expose that), but we CAN catch the worst failure mode: branches that
+# accumulate commits locally for >24h without ever pushing — the exact
+# pattern that strands work in dead sandboxes.
+#
+# Fails any PR whose newest commit is more than 24 hours older than the
+# moment that commit was pushed to GitHub. In practice: if you committed
+# yesterday but didn't push until today, this fails.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify-push-cadence:
+    name: Verify branch was pushed within 24h of latest commit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commit-vs-push age
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/verify_push_cadence.py

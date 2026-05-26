@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+#
+# pre-commit-stale-warn — R15 enforcement (local).
+#
+# Warns (does NOT block) if there are uncommitted changes in the working
+# tree that are older than 2 minutes. The 2-minute cadence is the hard
+# rule (R15); this hook is the friendly reminder.
+#
+# Install with:
+#     git config core.hooksPath .githooks
+#
+# To skip a single commit (rare, e.g. while pairing with no net):
+#     SKIP_STALE_WARN=1 git commit ...
+
+set -euo pipefail
+
+if [[ "${SKIP_STALE_WARN:-0}" == "1" ]]; then
+  exit 0
+fi
+
+THRESHOLD_SECONDS=120  # 2 minutes
+NOW=$(date +%s)
+
+# Find tracked + untracked files with uncommitted changes, get their
+# newest mtime.
+stale_files=()
+while IFS= read -r line; do
+  # Porcelain v1 output is "XY path".
+  path="${line:3}"
+  # Handle renames: "R  old -> new" — take the new.
+  if [[ "$path" == *" -> "* ]]; then
+    path="${path##* -> }"
+  fi
+  # Strip surrounding quotes if present.
+  path="${path%\"}"
+  path="${path#\"}"
+  if [[ ! -e "$path" ]]; then
+    continue
+  fi
+  mtime=$(stat -c %Y "$path" 2>/dev/null || stat -f %m "$path" 2>/dev/null || echo "$NOW")
+  age=$(( NOW - mtime ))
+  if (( age > THRESHOLD_SECONDS )); then
+    mins=$(( age / 60 ))
+    stale_files+=("  $path  (${mins}m old)")
+  fi
+done < <(git status --porcelain=v1)
+
+if (( ${#stale_files[@]} > 0 )); then
+  echo ""
+  echo "⚠️  pre-commit-stale-warn (R15):"
+  echo "    The following files have been uncommitted for >2 minutes:"
+  echo ""
+  for line in "${stale_files[@]}"; do
+    echo "$line"
+  done
+  echo ""
+  echo "    R15 says push every 2 minutes of active work. Consider"
+  echo "    committing wip changes more frequently so they survive a"
+  echo "    sandbox loss. (This is a warning, not a block.)"
+  echo ""
+fi
+
+exit 0
