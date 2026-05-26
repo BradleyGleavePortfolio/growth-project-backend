@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -157,19 +156,13 @@ export class PackagesService {
     coachUserId: string,
     packageId: string,
   ): Promise<CoachPackage> {
-    const row = await this.prisma.coachPackage.findUnique({
-      where: { id: packageId },
+    const row = await this.prisma.coachPackage.findFirst({
+      where: { id: packageId, coach_id: coachUserId },
     });
     if (!row) {
       throw new NotFoundException({
         error: 'PACKAGE_NOT_FOUND',
-        message: `No package ${packageId}`,
-      });
-    }
-    if (row.coach_id !== coachUserId) {
-      throw new ForbiddenException({
-        error: 'PACKAGE_NOT_OWNED',
-        message: 'Coaches can only modify their own packages',
+        message: `No package with id ${packageId}`,
       });
     }
     return row;
