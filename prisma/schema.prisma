@@ -147,6 +147,20 @@ enum CoachTier {
   enterprise
 }
 
+// r50 — Dunning state machine. One case per Stripe subscription transition
+// from active -> past_due. Drives the 1-day / 3-day / 7-day retry cadence
+// and the in-app + email notification fanout. Terminal states (recovered /
+// churned) close the case; the BillingService webhook handlers create new
+// cases when a subsequent past_due happens.
+enum DunningCaseState {
+  active // case is open and the retry schedule is in motion
+  retry_1_scheduled // first retry slot is pending (~1 day after past_due)
+  retry_2_scheduled // second retry slot is pending (~3 days after retry_1)
+  retry_3_scheduled // third (final) retry slot is pending (~7 days after retry_2)
+  recovered // invoice.payment_succeeded landed before retries exhausted
+  churned // retry_3 failed (or subscription.deleted) — terminal
+}
+
 // ============================================================
 // MODELS
 // ============================================================
@@ -230,6 +244,8 @@ model User {
   coach_subscription         CoachSubscription?
   invoices                   Invoice[]
   payment_failures           PaymentFailure[]
+  // r50 — dunning cases (open + historical) for this coach's subscription.
+  dunning_cases              DunningCase[]
   // Phase 1 Connect — 1:1 Stripe Express account per coach. Null until the
   // coach kicks off Connect onboarding via POST /v1/connect/accounts/create.
   connect_account            ConnectAccount?
@@ -511,6 +527,62 @@ model PaymentFailure {
   occurred_at       DateTime @default(now())
 
   @@index([coach_id, occurred_at])
+}
+
+// r50 — DunningCase. Created on first invoice.payment_failed for a coach
+// whose subscription has moved to past_due. The case is the single source
+// of truth for "where in the retry cadence are we" — Stripe owns the
+// actual retry execution (smart retries via /invoices/:id/pay), and our
+// worker just polls due retry_N_at timestamps and triggers Stripe.
+//
+// Recovery (invoice.payment_succeeded after past_due) closes the case
+// with state='recovered'; any pending retries are skipped because the
+// worker re-reads state on each tick.
+//
+// Final retry fail OR subscription.deleted closes the case with
+// state='churned'.
+//
+// stripe_subscription_id is @unique — there is at most one OPEN case per
+// subscription at a time. When recovery closes a case and a later
+// past_due happens, the open one is reopened (state -> active, retries
+// re-scheduled, recovered_at cleared). The @unique therefore covers the
+// "live" relationship; historical churned/recovered cases for the same
+// subscription would need re-creation if Stripe ever delivers an event
+// for a finalised case (defensive but currently unused).
+model DunningCase {
+  id                     String           @id @default(uuid())
+  coach_id               String
+  coach                  User             @relation(fields: [coach_id], references: [id])
+  stripe_subscription_id String           @unique
+  stripe_customer_id     String?
+  stripe_invoice_id      String? // the failing invoice that opened the case
+  state                  DunningCaseState @default(active)
+  amount_cents           Int              @default(0)
+  currency               String           @default("usd")
+  failure_reason         String? // e.g. "Your card was declined."
+  failure_code           String? // Stripe decline code, e.g. "card_declined"
+  // Scheduled retry timestamps. The worker scans WHERE retry_N_at <= now()
+  // AND state = 'retry_N_scheduled'. NULL means that retry slot has not
+  // been scheduled yet (the case opened, retry_1_at gets set; on retry_1
+  // failure retry_2_at gets set; etc).
+  retry_1_at             DateTime?
+  retry_2_at             DateTime?
+  retry_3_at             DateTime?
+  // Terminal-state stamps.
+  recovered_at           DateTime?
+  churned_at             DateTime?
+  // Stripe's own event id that opened the case — used so a duplicate
+  // delivery does not re-open a closed case. Webhook upserts on this.
+  opened_by_event_id     String?
+  created_at             DateTime         @default(now())
+  updated_at             DateTime         @updatedAt
+
+  // Worker tick scans by (state, retry_N_at) — both branches share the
+  // same composite key shape so a single (state, updated_at) index covers
+  // them with the order-by tiebreaker.
+  @@index([state, updated_at])
+  // Coach-facing "do I have an open dunning case?" lookup.
+  @@index([coach_id, state])
 }
 
 // Idempotency table for Stripe webhook delivery. Stripe retries deliveries on
