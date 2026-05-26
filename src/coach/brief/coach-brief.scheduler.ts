@@ -37,7 +37,10 @@ import { CoachBriefService, bucketDateLocal } from './coach-brief.service';
 import { coachBriefEnabled } from './coach-brief-enabled.guard';
 
 const CRON_JOB_NAME = 'coach-brief-dispatch';
+const TTL_CRON_JOB_NAME = 'coach-brief-ttl-prune';
 const DEFAULT_CRON = '* * * * *';
+// 03:15 UTC — off-peak, well after the 05:00 push generation window.
+const TTL_PRUNE_CRON = '15 3 * * *';
 const PUSH_TIMEOUT_MS = 10_000;
 
 // P1-4 fix round 5: bounded retry budget. A coach receives at most
@@ -128,6 +131,55 @@ export class CoachBriefScheduler implements OnModuleInit {
     }
     this.schedulerRegistry.addCronJob(CRON_JOB_NAME, job as never);
     job.start();
+
+    // BL-GDPR-BRIEF-2 — daily TTL prune at 03:15 UTC. Deletes CoachBrief
+    // rows older than COACH_BRIEF_RETENTION_DAYS (default 7) so embedded
+    // client PII in brief_context JSON ages out within the retention window.
+    // Honors COACH_BRIEF_ENABLED kill switch identical to dispatchDailyBriefs.
+    let ttlJob: CronJob;
+    try {
+      ttlJob = new CronJob(
+        TTL_PRUNE_CRON,
+        () => {
+          this.runTtlPrune().catch((err) => {
+            this.logger.error(
+              `coach brief TTL prune tick failed: ${errorMessageOf(err)}`,
+            );
+          });
+        },
+        null,
+        false,
+        'UTC',
+      );
+    } catch (err) {
+      this.logger.error(
+        `failed to register coach-brief TTL prune cron: ${errorMessageOf(err)}`,
+      );
+      return;
+    }
+
+    try {
+      this.schedulerRegistry.deleteCronJob(TTL_CRON_JOB_NAME);
+    } catch {
+      /* no prior job registered — fine */
+    }
+    this.schedulerRegistry.addCronJob(TTL_CRON_JOB_NAME, ttlJob as never);
+    ttlJob.start();
+  }
+
+  async runTtlPrune(): Promise<void> {
+    if (!coachBriefEnabled(this.config)) {
+      this.logger.debug(
+        'coach brief TTL prune skipped — COACH_BRIEF_ENABLED=off',
+      );
+      return;
+    }
+    const retentionDays =
+      parseInt(
+        this.config.get<string>('COACH_BRIEF_RETENTION_DAYS') ?? '7',
+        10,
+      ) || 7;
+    await this.briefService.pruneStaleBriefs(retentionDays);
   }
 
   async dispatchDailyBriefs(): Promise<void> {

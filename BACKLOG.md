@@ -7,6 +7,8 @@ but must not be lost.
 
 ## BL-GDPR-BRIEF-2 — Client PII embedded in `CoachBrief.brief_context` JSON has no FK scrub path
 
+**Status:** RESOLVED — TTL prune implemented (branch `chore/post-PR266-cleanup`; commit SHA to be filled after merge)
+**Resolved by:** `feat(gdpr): TTL prune stale CoachBrief rows (BL-GDPR-BRIEF-2)`
 **Opened by:** A1-PR266-P1-1 fix (PR #266, commit `fix(gdpr): scrub Coach Brief tables on soft-delete`)
 **Priority:** P2 (no new violation introduced; gap pre-dates this PR and is acknowledged)
 **Regulation:** GDPR Art. 17 (erasure) / Art. 5(1)(e) (storage limitation)
@@ -60,3 +62,40 @@ a migration + service change + client-app cache invalidation review.
   the fact that logs are keyed to the coach, and coach scrub already deletes
   them; client names typed by a coach into a log are a separate editorial concern
   tracked under general free-text PII hygiene).
+
+---
+
+## BL-GDPR-BRIEF-3 — Re-architect `brief_context` to store `client_id` references only
+
+**Opened by:** BL-GDPR-BRIEF-2 resolution (TTL approach chosen as near-term fix)
+**Priority:** P3 (lower priority; only pursue if telemetry shows `brief_context` blob size
+  becoming a performance or storage concern)
+**Regulation:** GDPR Art. 17 (erasure) / Art. 5(1)(e) (storage limitation)
+
+### Background
+
+BL-GDPR-BRIEF-2 was resolved via a 7-day TTL prune (path a). Path (b) — the
+architectural approach — remains as a follow-up if the TTL approach proves
+insufficient or if `brief_context` blob size grows.
+
+### Proposed approach
+
+`brief_context` should store `client_id` (UUID) alongside the plain-text fields
+instead of resolved client names. At brief-render time the service resolves names
+from the live `User` table. After a client is scrubbed, their `User.name` is
+already tombstoned to `'Deleted user'`, so render-time resolution automatically
+redacts the name without needing to touch the brief row.
+
+### Scope
+
+- Migration: add nullable `client_id` array or JSONB restructure to `CoachBrief`.
+- Service change: `aggregateSoloContext` stores `client_id` instead of plain name.
+- Render path: `toResponse` resolves names at serialization time.
+- Client-app cache invalidation review: cached briefs may hold stale names.
+- Migration of historical rows (or accept that old rows retain embedded names
+  until TTL prune ages them out).
+
+### Trigger
+
+Do only if telemetry shows `brief_context` average blob size exceeding ~10 KB
+or if a GDPR DPA requires a shorter erasure window than the 7-day TTL provides.

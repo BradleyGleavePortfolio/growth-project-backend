@@ -701,6 +701,12 @@ export const ENV_RULES: EnvRule[] = [
     reason:
       'R43 — override for the @Cron schedule on CoachBriefScheduler.dispatchDailyBriefs. Defaults to "* * * * *" (every UTC minute) so per-coach notification times have ~1 minute resolution. Set this only for staging/test environments where you want a deterministic firing window.',
   },
+  {
+    name: 'COACH_BRIEF_RETENTION_DAYS',
+    tier: 'feature',
+    reason:
+      'Days of CoachBrief history retained before TTL prune. GDPR Art.17 hygiene — embedded client_name in brief_context JSON ages out within this window. Defaults to 7 when absent or unparseable. (BL-GDPR-BRIEF-2)',
+  },
 ];
 
 export interface EnvValidationResult {

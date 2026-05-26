@@ -1821,6 +1821,33 @@ export class CoachBriefService {
     return this.generateBrief(coachId, timezone, briefDate, { force: true });
   }
 
+  // ── GDPR Art.17 TTL prune — deletes CoachBrief rows older than
+  // retentionDays. Client PII (first names, metrics) embedded in
+  // brief_context JSON ages out within this window without needing a
+  // client_id FK on the table. Called daily by CoachBriefScheduler at
+  // 03:15 UTC (off-peak, well after the 05:00 push generation window).
+  // Wrapped in $transaction for safety; counts are logged at LOG level
+  // so operators can confirm rows are being pruned.
+  async pruneStaleBriefs(retentionDays = 7): Promise<number> {
+    const cutoffDate = new Date();
+    cutoffDate.setUTCDate(cutoffDate.getUTCDate() - retentionDays);
+    // brief_date is stored as a 'YYYY-MM-DD' string (Prisma String, Postgres
+    // DATE).  Comparing as ISO date string works because lexicographic order
+    // equals chronological order for that format.
+    const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+
+    const [result] = await this.prisma.$transaction([
+      this.prisma.coachBrief.deleteMany({
+        where: { brief_date: { lt: cutoffStr } },
+      }),
+    ]);
+
+    this.logger.log(
+      `CoachBrief TTL prune: deleted ${result.count} rows older than ${cutoffStr} (retentionDays=${retentionDays})`,
+    );
+    return result.count;
+  }
+
   // ── Map Prisma row → HTTP response shape.
   private toResponse(row: {
     id: string;

@@ -96,6 +96,10 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     // surface (HTTP routes + cron). Feature-tier; explicit value keeps
     // the missingFeature list empty for the clean-prod-env test.
     COACH_BRIEF_ENABLED: 'on',
+    // BL-GDPR-BRIEF-2 — CoachBrief TTL retention window. Feature-tier;
+    // explicit value keeps the missingFeature list empty for the
+    // clean-prod-env test. Default is 7 when absent.
+    COACH_BRIEF_RETENTION_DAYS: '7',
   };
 }
 
