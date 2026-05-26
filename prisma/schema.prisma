@@ -398,10 +398,17 @@ model User {
 
   // R43 — Coach Brief. One brief row per (coach, brief_date); one log row
   // per (coach, log_date); at most one preferences row per coach.
-  coach_briefs              CoachBrief[]             @relation("CoachBriefCoach")
-  coach_daily_logs          CoachDailyLog[]          @relation("CoachDailyLogCoach")
-  coach_brief_preferences   CoachBriefPreferences?   @relation("CoachBriefPrefsCoach")
-  coach_brief_push_ledger   CoachBriefPushLedger?    @relation("CoachBriefPushLedgerCoach")
+  coach_briefs            CoachBrief[]           @relation("CoachBriefCoach")
+  coach_daily_logs        CoachDailyLog[]        @relation("CoachDailyLogCoach")
+  coach_brief_preferences CoachBriefPreferences? @relation("CoachBriefPrefsCoach")
+  coach_brief_push_ledger CoachBriefPushLedger?  @relation("CoachBriefPushLedgerCoach")
+
+  // R46 — Coach Landing Page Builder. A coach owns many landing pages and
+  // many CRM integrations. Both relations are optional; only users with
+  // role='coach' will have rows here. onDelete Cascade is set on the
+  // FK side so all a coach's pages + integrations vanish on account hard-delete.
+  landing_pages    CoachLandingPage[]    @relation("CoachLandingPagesCoach")
+  crm_integrations CoachCrmIntegration[] @relation("CoachCrmCoach")
 
   @@index([coach_id])
   @@index([deletion_scheduled_at])
@@ -1948,7 +1955,7 @@ model ClientWorkoutAssignment {
   completion_idempotency_key String?
   // R43 Coach Brief — coach has reviewed/approved a completed submission.
   // null while waiting on coach approval; set when coach taps approve.
-  approved_by_coach_at DateTime?
+  approved_by_coach_at       DateTime?
 
   @@index([client_id, scheduled_for])
   @@index([workout_plan_id, scheduled_for])
@@ -3833,24 +3840,24 @@ model RecentAuthNonce {
 // in the coach's local timezone (bucketDateLocal). brief_mode drives both
 // which Claude prompt was used and which UI sections the mobile renders.
 model CoachBrief {
-  id            String    @id @default(uuid())
-  coach_id      String
-  coach         User      @relation("CoachBriefCoach", fields: [coach_id], references: [id], onDelete: Cascade)
-  brief_date    String
-  status        String    @default("pending")
-  generated_at  DateTime?
+  id                    String    @id @default(uuid())
+  coach_id              String
+  coach                 User      @relation("CoachBriefCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  brief_date            String
+  status                String    @default("pending")
+  generated_at          DateTime?
   // Lease timestamp written when status flips to 'generating'. A
   // CoachBriefService caller may atomically reclaim rows where the lease
   // is older than the TTL (BRIEF_GENERATION_LEASE_MS) — this prevents a
   // crashed worker from leaving the row stuck in 'generating' forever.
   generation_started_at DateTime?
-  narrative     String?
-  brief_context Json?
-  action_items  Json?
-  generated_by  String?
-  brief_mode    String?
-  created_at    DateTime  @default(now())
-  updated_at    DateTime  @updatedAt
+  narrative             String?
+  brief_context         Json?
+  action_items          Json?
+  generated_by          String?
+  brief_mode            String?
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
 
   @@unique([coach_id, brief_date], name: "CoachBrief_coach_date_key")
   @@index([coach_id, brief_date])
@@ -3895,18 +3902,18 @@ model CoachBriefPreferences {
 // no coach RLS policies at all (service_role bypass only), so writes
 // only happen through CoachBriefScheduler.
 model CoachBriefPushLedger {
-  id                     String   @id @default(uuid())
-  coach_id               String   @unique
-  coach                  User     @relation("CoachBriefPushLedgerCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  id                       String    @id @default(uuid())
+  coach_id                 String    @unique
+  coach                    User      @relation("CoachBriefPushLedgerCoach", fields: [coach_id], references: [id], onDelete: Cascade)
   // last_push_attempt_date — the day for which the most recent push
   // ATTEMPT was scoped. Used together with push_attempts_today to track
   // a bounded retry budget per day (P1-4 fix round 5).
-  last_push_attempt_date String?
+  last_push_attempt_date   String?
   // last_push_date — the day for which delivery was actually confirmed
   // (Expo ticket status='ok'). Only this column is the "this coach got
   // their brief today" sentinel; last_push_attempt_date is observability
   // only.
-  last_push_date         String?
+  last_push_date           String?
   // P1-4 fix round 5: short-lived lease so two cron instances cannot
   // call pushToUser at the same minute. Set to now+90s right before
   // the Expo call; cleared on terminal outcome (delivered OR retry
@@ -3917,7 +3924,260 @@ model CoachBriefPushLedger {
   // for last_push_attempt_date so far. Capped at MAX_PUSH_ATTEMPTS
   // (5) so a long Expo outage cannot drive unbounded retries; resets
   // when last_push_attempt_date rolls over to a new day.
-  push_attempts_today      Int      @default(0)
-  created_at             DateTime @default(now())
-  updated_at             DateTime @updatedAt
+  push_attempts_today      Int       @default(0)
+  created_at               DateTime  @default(now())
+  updated_at               DateTime  @updatedAt
+}
+
+// ============================================================
+// R46 — COACH LANDING PAGE BUILDER (Phase 1: schema + RLS)
+// Routes, services, and CRM adapters come in PR #2–#3.
+// ============================================================
+
+// LandingPageTemplate — four opinionated, locked-design templates.
+// Coach chooses once at creation; the design system is frozen per
+// template (spec §2 principle 8). Rename requires a new page.
+enum LandingPageTemplate {
+  transformation
+  authority
+  community
+  offer
+}
+
+// LandingPageStatus — simple lifecycle state machine:
+//   draft → published → archived
+// `archived` is the post-unpublish state; public renderer returns 404.
+// Spec §3.1: one-tap pause/unpublish is immediate.
+enum LandingPageStatus {
+  draft
+  published
+  archived
+}
+
+// LandingCtaType — what happens when a visitor hits the primary CTA.
+//   checkout   → routes through TGP GuestCheckout (ZERO EXCEPTIONS, spec §3.2)
+//   lead_form  → captures lead into CoachLandingLead, optional CRM push
+//   book_call  → creates CoachBooking row (internal calendar, no Calendly)
+enum LandingCtaType {
+  checkout
+  lead_form
+  book_call
+}
+
+// LandingSectionKind — the eight locked section archetypes a coach can
+// place on a page (≤ 6 active; Miller's Law hard cap per spec §2 #3).
+// Payload JSON shape is enforced per-kind in the service layer (PR #2).
+enum LandingSectionKind {
+  hero
+  before_after
+  testimonials
+  pricing
+  faq
+  lead_form
+  offer_stack
+  guarantee
+}
+
+// CrmSyncStatus — state of a CoachLandingLead's outbound CRM push.
+// Lead is written with `pending` first; background worker transitions
+// to `synced`, `failed` (after 3 retries), or `skipped` (no integration).
+enum CrmSyncStatus {
+  pending
+  synced
+  failed
+  skipped
+}
+
+// CrmProvider — the five CRM/automation targets we support in v1.
+// `webhook` covers generic HTTP destinations (Zapier, Make, n8n, custom).
+enum CrmProvider {
+  hubspot
+  gohighlevel
+  mailchimp
+  activecampaign
+  webhook
+}
+
+// CoachLandingPage — a single coach-owned public sales page.
+// A coach may hold at most 6 pages (enforced in service, not DB).
+// URL pattern: app.trygrowthproject.com/p/<coach-slug>/<slug>
+// Custom domain (Pro+): CNAME → custom_domain when verified.
+model CoachLandingPage {
+  id       String              @id @default(cuid())
+  coach_id String
+  coach    User                @relation("CoachLandingPagesCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  // slug is unique per coach — forms the last path segment of the URL.
+  // Validated as URL-safe lowercase in the service layer (PR #2).
+  slug     String
+  template LandingPageTemplate
+  status   LandingPageStatus   @default(draft)
+
+  // ─── Content ────────────────────────────────────────────────────────────
+  headline       String  @db.VarChar(120)
+  subheadline    String? @db.VarChar(280)
+  // hero_image_url is an S3 object key written by MediaService (existing).
+  // EXIF-stripped, content-type allow-listed, max 5 MB per spec §4.3.
+  hero_image_url String?
+  // accent_color is validated as #RRGGBB, matching InviteLandingService.
+  // Coach may pick from 8 curated swatches or a custom hex (spec §8.2).
+  accent_color   String?
+
+  // ─── Conversion ─────────────────────────────────────────────────────────
+  primary_cta_type  LandingCtaType
+  primary_cta_label String         @db.VarChar(40)
+
+  // ─── Pricing ────────────────────────────────────────────────────────────
+  // Denormalized refs to CoachPackage rows; coach picks which packages
+  // appear on this page (max 3, enforced in service). We do NOT FK into
+  // CoachPackage here to avoid cascade complexity and because the service
+  // layer already validates package ownership at write time.
+  package_ids String[]
+
+  // ─── Lead capture ───────────────────────────────────────────────────────
+  // lead_capture_fields values: ["name", "email", "phone", "goal"].
+  // name + email are always included when CTA type is lead_form.
+  lead_capture_fields String[]
+  crm_integration_id  String?
+  crm_integration     CoachCrmIntegration? @relation(fields: [crm_integration_id], references: [id])
+
+  // ─── Custom domain (Pro+ only) ──────────────────────────────────────────
+  // Null on free-tier coaches; gated at POST /:id/custom-domain in PR #4.
+  // custom_domain_verified_at is set by the cert-issuance cron on success.
+  custom_domain             String?
+  custom_domain_verified_at DateTime?
+
+  // ─── Audit ──────────────────────────────────────────────────────────────
+  published_at   DateTime?
+  unpublished_at DateTime?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  // ─── Relations ──────────────────────────────────────────────────────────
+  sections CoachLandingPageSection[]
+  leads    CoachLandingLead[]
+  views    CoachLandingPageView[]
+
+  // @@unique enforces per-coach slug uniqueness — two coaches can share a
+  // slug word but not the same (coach_id, slug) pair.
+  @@unique([coach_id, slug])
+  // Custom-domain lookup for the SNI router (Fly cert + public renderer).
+  // @@unique so two coaches cannot claim the same domain; Postgres unique
+  // indexes treat multiple NULLs as distinct, so free-tier rows (null) do
+  // not collide. Build CONCURRENTLY on staging/prod before deploying if
+  // table is large — see R43 CoachPackage_share_token_key note.
+  @@unique([custom_domain])
+  // Primary coach-dashboard list query: filter by coach + status.
+  @@index([coach_id, status])
+  // Analytics feed: list published pages ordered by publish date.
+  @@index([status, published_at])
+}
+
+// CoachLandingPageSection — an ordered content block within a page.
+// Payload JSON shape is per-kind; the service layer validates it against
+// a per-kind Zod schema (PR #2). We do not fan out to 8 separate tables
+// for v1 — one JSONB column keeps the migration surface small.
+model CoachLandingPageSection {
+  id          String             @id @default(cuid())
+  page_id     String
+  page        CoachLandingPage   @relation(fields: [page_id], references: [id], onDelete: Cascade)
+  kind        LandingSectionKind
+  // order_index is 0-based; @@unique enforces no two sections share a
+  // slot within the same page (reorder = UPDATE the index in a single tx).
+  order_index Int
+  // JSONB payload is validated per-kind by Zod in the service layer.
+  // Examples: hero → {heroImageUrl, headline}; faq → [{q, a}, ...].
+  payload     Json
+
+  @@unique([page_id, order_index])
+  // Page render: load all sections for a page ordered by index.
+  @@index([page_id])
+}
+
+// CoachLandingLead — every form submission on any landing page.
+// Written BEFORE the CRM push (pending) so a CRM outage can never
+// lose a lead. background processor transitions crm_sync_status.
+// See spec §7 for the retry / failure-surface strategy.
+model CoachLandingLead {
+  id                String           @id @default(cuid())
+  page_id           String
+  page              CoachLandingPage @relation(fields: [page_id], references: [id], onDelete: Cascade)
+  // coach_id is denormalized from page.coach_id so the coach inbox query
+  // (GET /coach/landing-pages/:id/leads) can hit a single index without
+  // a join to CoachLandingPage.
+  coach_id          String
+  email             String
+  name              String?
+  phone             String?
+  // Raw form values — stored in full for CRM field-mapping flexibility.
+  payload           Json
+  crm_sync_status   CrmSyncStatus    @default(pending)
+  crm_synced_at     DateTime?
+  crm_error         String?
+  // Set when this lead subsequently signs up and becomes a TGP User.
+  // No FK — cross-table reference kept soft to survive user deletion.
+  converted_user_id String?
+  created_at        DateTime         @default(now())
+
+  // Coach lead inbox: list leads for a page, newest first.
+  @@index([page_id, created_at])
+  // Coach dashboard: all leads across pages for one coach, newest first.
+  @@index([coach_id, created_at])
+  // CRM sync worker: claim all pending leads in one index scan.
+  @@index([crm_sync_status])
+}
+
+// CoachLandingPageView — anonymized analytics event per page visit.
+// IP and UA are SHA-256 hashed with a daily-rotating salt to satisfy
+// GDPR (no PII stored; salt rotation means hashes are non-linkable
+// across days). Inserted by sendBeacon at page unload (spec §5.3).
+model CoachLandingPageView {
+  id             String           @id @default(cuid())
+  page_id        String
+  page           CoachLandingPage @relation(fields: [page_id], references: [id], onDelete: Cascade)
+  // ip_hash / ua_hash: SHA-256(rawValue + dailySalt). The salt rotates
+  // every midnight UTC so hashes cannot be correlated across days.
+  ip_hash        String
+  ua_hash        String
+  referrer_host  String?
+  utm_source     String?
+  utm_medium     String?
+  utm_campaign   String?
+  // scroll_depth: 0-100 integer, set by sendBeacon at unload. Null if
+  // the visitor left before the JS payload fired.
+  scroll_depth   Int?
+  cta_clicked    Boolean          @default(false)
+  form_submitted Boolean          @default(false)
+  created_at     DateTime         @default(now())
+
+  // Analytics time-series query: views for a page over a date range.
+  @@index([page_id, created_at])
+}
+
+// CoachCrmIntegration — per-coach CRM connection config.
+// A coach may have one integration per provider; multiple pages can
+// share the same integration. Credentials are AES-256-GCM encrypted
+// at rest with env key LANDING_CRM_AES_KEY (decrypted only inside
+// CoachCrmService, never returned to the client — spec §7).
+model CoachCrmIntegration {
+  id                    String      @id @default(cuid())
+  coach_id              String
+  coach                 User        @relation("CoachCrmCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  provider              CrmProvider
+  // AES-256-GCM ciphertext of the API key / OAuth token / webhook URL.
+  // Format is the same as existing KmsService output (PLAINTEXT: prefix
+  // when unconfigured in dev, encrypted blob in staging/prod).
+  credentials_encrypted String
+  // JSON map of TGP lead fields → CRM field IDs / list IDs.
+  // Example HubSpot: {"email":"email","name":"firstname","phone":"phone"}
+  field_mapping         Json
+  enabled               Boolean     @default(true)
+  last_synced_at        DateTime?
+  last_error            String?
+  created_at            DateTime    @default(now())
+
+  // Back-relation: pages that use this integration.
+  pages CoachLandingPage[]
+
+  // Fast "get all integrations for coach" query from the CRM settings screen.
+  @@index([coach_id])
 }
