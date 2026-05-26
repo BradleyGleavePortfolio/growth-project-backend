@@ -136,8 +136,11 @@ export const AuditAction = {
 
   // --- Team / revenue-sharing (SOC2-material financial mutations) ---
   // Fired when a head coach enables or disables a sub-coach's revenue split.
-  // previous_split_percent and new_split_percent are integer percentages
-  // (0 or 5 under current policy). Record is append-only; no PII in metadata.
+  // previous_split_bps and new_split_bps are integer basis-points
+  // (0 or 500 under current policy — i.e., 0% or 5%). Emitter is
+  // team.service.ts setRevenueSharing; metadata also carries team_id,
+  // actor_user_id, actor_role, and the subject sub-coach user_id.
+  // Record is append-only; no PII in metadata.
   TEAM_REVENUE_SHARING_UPDATED: 'team.revenue_sharing.updated',
 } as const;
 
