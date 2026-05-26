@@ -103,6 +103,10 @@ import { SubCoachModule } from './sub-coach/sub-coach.module';
 // R43 — TGP Storefront Phase 1: package share links + guest checkout.
 import { ShareLinkModule } from './share-link/share-link.module';
 import { StorefrontModule } from './storefront/storefront.module';
+// R46 — Coach Landing Page Builder Phase 2: coach CRUD + public SSR renderer
+// + storefront routing. Public routes at /p/:coachSlug/:pageSlug mounted
+// outside the /api prefix (see main.ts exclude list).
+import { LandingPagesModule } from './landing-pages/landing-pages.module';
 
 @Module({
   imports: [
@@ -299,6 +303,9 @@ import { StorefrontModule } from './storefront/storefront.module';
     // /v1/coach/packages/:id/share-link.
     ShareLinkModule,
     StorefrontModule,
+    // R46 — Landing Pages Phase 2. Coach CRUD at /api/v1/coach/landing-pages/*;
+    // public SSR at /p/:coachSlug/:pageSlug (excluded from /api prefix, see main.ts).
+    LandingPagesModule,
   ],
   providers: [
     // SECURITY: global JWT auth guard — every route is private by default.
