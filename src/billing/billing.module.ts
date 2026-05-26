@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { CheckoutModule } from '../checkout/checkout.module';
 import { ConnectModule } from '../connect/connect.module';
+import { DunningModule } from '../dunning/dunning.module';
 import { EmailModule } from '../email/email.module';
 import { PrismaService } from '../prisma.service';
 import { StorefrontModule } from '../storefront/storefront.module';
@@ -32,6 +33,10 @@ import { StripeWebhookController } from './stripe-webhook.controller';
     // Stripe webhook dispatcher can route payment_intent.* events for
     // guest checkouts to it.
     StorefrontModule,
+    // r50 — DunningModule re-exports DunningService + DunningNotifier
+    // so the Stripe webhook handlers in BillingService can open / close
+    // recovery cases off invoice + subscription events.
+    DunningModule,
   ],
   controllers: [
     StripeWebhookController,

@@ -133,6 +133,28 @@ export class StripeApiService {
     return this.post<StripePortalSession>('/billing_portal/sessions', form);
   }
 
+  // r50 Dunning v1 — POST /v1/invoices/:id/pay
+  //
+  // Triggers Stripe to attempt collection on an open invoice using the
+  // customer's default payment method. We pass an Idempotency-Key so
+  // a duplicate worker tick (e.g. Fly redeploy mid-tick) collapses to
+  // the same Stripe attempt rather than producing a second charge.
+  //
+  // The returned shape carries the post-attempt invoice status:
+  //   'paid' / 'uncollectible' / 'open' / 'void'
+  // The worker treats 'paid' as success and anything else as failure for
+  // the purposes of advancing the DunningCase state.
+  async payInvoice(args: {
+    invoiceId: string;
+    idempotencyKey: string;
+  }): Promise<{ id: string; status?: string; paid?: boolean; [k: string]: unknown }> {
+    return this.post(
+      `/invoices/${encodeURIComponent(args.invoiceId)}/pay`,
+      {},
+      args.idempotencyKey,
+    );
+  }
+
   // Team-mode staff seats — Pro tier only (Q1).
   //
   // Stripe metered staff seats are modelled as a separate subscription

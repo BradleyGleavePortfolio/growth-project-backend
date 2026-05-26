@@ -46,6 +46,7 @@ import { AuditModule } from './audit/audit.module';
 import { ConsentModule } from './consent/consent.module';
 import { BloodworkModule } from './bloodwork/bloodwork.module';
 import { BillingModule } from './billing/billing.module';
+import { DunningModule } from './dunning/dunning.module';
 import { ConnectModule } from './connect/connect.module';
 import { PackagesModule } from './packages/packages.module';
 import { CheckoutModule } from './checkout/checkout.module';
@@ -222,6 +223,12 @@ import { LandingPagesModule } from './landing-pages/landing-pages.module';
     AdminModule,
     // Stripe billing mirror + SubscriptionGuard (Phase 2A foundation).
     BillingModule,
+    // r50 — Dunning v1 (failed-payment recovery state machine, retry
+    // worker, coach inbox endpoint). Imported before BillingModule
+    // would cause a circular dep (Billing imports Dunning), so it's
+    // safe to declare it adjacent — Nest resolves provider graphs
+    // lazily and DunningModule has no dependency on BillingModule.
+    DunningModule,
     // Stripe Connect Express — Phase 1 of the Connect master plan. Coach
     // onboards to Stripe Express, we mirror the account state from webhooks.
     // See /CONNECT_MASTER_PLAN.md §Phase 1 — Foundation.
