@@ -207,19 +207,50 @@ export class GdprScrubService {
     const tombstoneSupabaseId = `deleted-${candidate.user_id}`;
 
     await this.prisma.$transaction(async (tx) => {
-      // 0) Hard-delete AIDraft rows for the scrubbed client. The
-      //    AIDraft.clientId FK declares onDelete: Cascade but it never
-      //    fires because this scrubber deliberately soft-deletes the User
-      //    row rather than issuing a physical DELETE. AIDraft.inputContext
-      //    is a JSON snapshot of the client's health PII (name, age, sex,
-      //    biometrics, dietary restrictions, injuries, check-in notes) and
-      //    would otherwise survive the erasure indefinitely — a direct
-      //    GDPR Art. 17 violation for special-category data.
-      //    Hard-delete is appropriate: drafts for a scrubbed client have
-      //    no remaining business value (the subject is gone). Cost history
-      //    is tracked independently in AICallLog (which uses SetNull, so
-      //    those rows are preserved). Resolves A1-C3-P1-1.
+      // 0) Hard-delete rows that embed PII in tables whose FK cascades
+      //    never fire because this scrubber deliberately soft-deletes the
+      //    User row rather than issuing a physical DELETE.
+      //
+      //    Tables handled here (all declare onDelete: Cascade but cascade
+      //    is never triggered under soft-delete — same design gap addressed
+      //    by A1-C3-P1-1 for AIDraft):
+      //
+      //      AIDraft            – clientId → User.id.  inputContext is a
+      //                           JSON snapshot of health PII (name, age,
+      //                           sex, biometrics, dietary restrictions,
+      //                           injuries, check-in notes). Resolves
+      //                           A1-C3-P1-1.
+      //
+      //      CoachBriefPushLedger – coach_id → User.id.  Push-dedup state;
+      //                           no PII narrative but binds push token.
+      //                           Deleted first so later brief FK is gone.
+      //
+      //      CoachBriefPreferences – coach_id → User.id.  Notification
+      //                           time + timezone per coach.
+      //
+      //      CoachDailyLog      – coach_id → User.id.  content is free
+      //                           text the coach writes about clients
+      //                           (capped at 4 000 chars); may embed
+      //                           client names, metrics, check-in notes.
+      //
+      //      CoachBrief         – coach_id → User.id.  narrative + action_
+      //                           items (LLM free text, may include coach
+      //                           first name + per-client first names);
+      //                           brief_context (Json blob aggregating
+      //                           client names, weight deltas, message
+      //                           previews). Resolves A1-PR266-P1-1.
+      //
+      //    Hard-delete is appropriate for all five: once the coach/client
+      //    subject is gone these rows have no remaining business value.
+      //    Cost history is tracked independently in AICallLog (SetNull, so
+      //    those rows are preserved for billing). Deletion order: ledger →
+      //    preferences → daily log → brief (mirrors FK fan-in; ledger has
+      //    no child FKs; brief is the leaf table here).
       await tx.aIDraft.deleteMany({ where: { clientId: candidate.user_id } });
+      await tx.coachBriefPushLedger.deleteMany({ where: { coach_id: candidate.user_id } });
+      await tx.coachBriefPreferences.deleteMany({ where: { coach_id: candidate.user_id } });
+      await tx.coachDailyLog.deleteMany({ where: { coach_id: candidate.user_id } });
+      await tx.coachBrief.deleteMany({ where: { coach_id: candidate.user_id } });
 
       // 1) Zero out PII on UserProfile (1:1, may not exist).
       await tx.userProfile
