@@ -32,6 +32,7 @@ import { CheckoutIdempotencyService } from './checkout-idempotency.service';
 import { ConnectPreflightService } from './connect-preflight.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
+import { type GuestCheckoutStatus } from './guest-checkout-status';
 
 // Platform cut on every guest checkout. Stripe's minimum application_fee
 // is 50 cents — packages priced low enough that 2% falls below the floor
@@ -836,8 +837,22 @@ export class GuestCheckoutService {
         where: { stripe_payment_intent_id: paymentIntentId },
         include: { package: { select: { coach_id: true } } },
       });
+      // chargeAmount > 0 guards the $0-auth-capture edge case (the
+      // storefront does not use $0 auths today; the guard is
+      // defence-in-depth so a degenerate event payload can't claim
+      // a full refund of nothing).
       const fullyRefunded = chargeAmount > 0 && amountRefunded >= chargeAmount;
-      const newStatus = fullyRefunded ? 'refunded' : row?.status ?? 'refunded';
+      // A276 P0-1: 'refunded' is admitted by GuestCheckout_status_check
+      // as of migration 20260921000000_add_refunded_disputed_to_guest_checkout_status.
+      // Partial refunds keep the existing row.status (typically 'paid' or
+      // 'converted'); only a fully-refunded charge transitions to 'refunded'.
+      // P2-4 cleanup: when row is null we never read newStatus (the
+      // updateMany is gated by `if (row)` below), so the previous
+      // `?? 'refunded'` tail was unreachable; we coerce undefined to a
+      // safe placeholder and rely on the gate.
+      const newStatus: GuestCheckoutStatus = fullyRefunded
+        ? 'refunded'
+        : ((row?.status ?? 'paid') as GuestCheckoutStatus);
 
       // A276-P1-4 — even when there's no GuestCheckout row, an authed
       // ClientPurchase may exist (post-converted guest, or future direct-
