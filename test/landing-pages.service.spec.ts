@@ -204,6 +204,12 @@ function makePrisma() {
       ),
     },
 
+    // R47: analytics endpoint joins GuestCheckout for revenue rollup.
+    // The default mock returns [] so existing analytics tests still pass.
+    guestCheckout: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+
     $transaction: jest.fn(async (fn: any) => {
       // Simple synchronous execution of the transaction callback
       // with a proxy that delegates to the same methods above

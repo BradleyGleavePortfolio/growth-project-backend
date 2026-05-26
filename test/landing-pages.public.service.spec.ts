@@ -125,8 +125,22 @@ function makeStubPrisma(shareToken: string | null = 'tok_abc123def456ghi78') {
 function makePublicSvc(page: any | null, shareToken: string | null = 'tok_abc123def456ghi78') {
   const landingService = makeStubLandingService(page);
   const prisma = makeStubPrisma(shareToken);
-  const svc = new LandingPagePublicService(prisma as any, landingService as any);
-  return { svc, landingService, prisma };
+  // R47: public service depends on LeadSyncQueue + LeadRateLimiterService.
+  const leadSyncQueue = { enqueue: jest.fn().mockResolvedValue(undefined) };
+  const rateLimiter = {
+    checkAndIncrement: jest.fn().mockResolvedValue({
+      allowed: true,
+      count: 1,
+      retryAfterSeconds: 86400,
+    }),
+  };
+  const svc = new LandingPagePublicService(
+    prisma as any,
+    landingService as any,
+    leadSyncQueue as any,
+    rateLimiter as any,
+  );
+  return { svc, landingService, prisma, leadSyncQueue, rateLimiter };
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -296,6 +310,38 @@ describe('LandingPagePublicService', () => {
       const result = await svc.submitLead('ghost', 'nope', { email: 'x@x.com' });
       expect(result.ok).toBe(false);
       expect(prisma._leads).toHaveLength(0);
+    });
+
+    it('R47: hands off the new lead id to the sync queue', async () => {
+      const page = makePublishedPage();
+      const { svc, prisma, leadSyncQueue } = makePublicSvc(page);
+      await svc.submitLead('GP-JANE1', 'my-page', { email: 'a@b.com' });
+      expect(leadSyncQueue.enqueue).toHaveBeenCalledWith(prisma._leads[0].id);
+    });
+
+    it('R47: returns 429 when rate-limit denies the request', async () => {
+      const page = makePublishedPage();
+      const { svc, prisma, rateLimiter } = makePublicSvc(page);
+      rateLimiter.checkAndIncrement.mockResolvedValueOnce({
+        allowed: false,
+        count: 101,
+        retryAfterSeconds: 1234,
+      });
+      await expect(
+        svc.submitLead('GP-JANE1', 'my-page', { email: 'a@b.com' }),
+      ).rejects.toMatchObject({ status: 429 });
+      expect(prisma._leads).toHaveLength(0);
+    });
+
+    it('R47: queue enqueue failure does NOT fail the visitor POST', async () => {
+      const page = makePublishedPage();
+      const { svc, prisma, leadSyncQueue } = makePublicSvc(page);
+      leadSyncQueue.enqueue.mockRejectedValueOnce(new Error('redis down'));
+      const result = await svc.submitLead('GP-JANE1', 'my-page', {
+        email: 'a@b.com',
+      });
+      expect(result.ok).toBe(true);
+      expect(prisma._leads).toHaveLength(1);
     });
   });
 

@@ -263,7 +263,21 @@ describe('Landing Pages — full lifecycle', () => {
     prisma = makePrisma();
     const analytics = { capture: jest.fn().mockResolvedValue(undefined) };
     coachSvc = new LandingPageService(prisma as any, analytics as any);
-    publicSvc = new LandingPagePublicService(prisma as any, coachSvc);
+    // R47 additions to constructor signature.
+    const leadSyncQueue = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const rateLimiter = {
+      checkAndIncrement: jest.fn().mockResolvedValue({
+        allowed: true,
+        count: 1,
+        retryAfterSeconds: 86400,
+      }),
+    };
+    publicSvc = new LandingPagePublicService(
+      prisma as any,
+      coachSvc,
+      leadSyncQueue as any,
+      rateLimiter as any,
+    );
     jest.clearAllMocks();
   });
 
