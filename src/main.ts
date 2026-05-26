@@ -200,6 +200,14 @@ async function bootstrap() {
       'help/faq',
       'help/support',
       'help/contact',
+      // R46 — Public coach landing pages. Mounted outside /api so the URL is
+      // app.trygrowthproject.com/p/<coachSlug>/<pageSlug> — no /api prefix.
+      // The :coachSlug/:pageSlug and sub-paths (checkout, leads, view) are all
+      // served by LandingPagePublicController with @Public() + throttle guards.
+      'p/:coachSlug/:pageSlug',
+      'p/:coachSlug/:pageSlug/checkout',
+      'p/:coachSlug/:pageSlug/leads',
+      'p/:coachSlug/:pageSlug/view',
     ],
   });
 
