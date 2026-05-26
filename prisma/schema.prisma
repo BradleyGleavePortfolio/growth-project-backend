@@ -2250,6 +2250,7 @@ enum TeamAuditEventKind {
   tier_changed
   staff_seat_added
   staff_seat_removed
+  revenue_sharing_changed
 }
 
 // Head coach <-> sub-coach assignment. The (sub_coach_id, head_coach_id)
@@ -3374,10 +3375,18 @@ model TeamProfile {
 
 // Phase 8 — Email-based sub-coach invite.
 //
-// One row per outbound invite. `token` is a URL-safe random string the
-// invitee receives in the invite link; `accepted_at` flips when they
-// sign up + the matching TeamSubCoachAssignment row gets created. We do
-// NOT auto-create the User row here — acceptance is a separate flow.
+// One row per outbound invite. `token_hash` is the SHA-256 hex digest of
+// the raw URL-safe token returned to the caller; the plaintext token is
+// never persisted. On accept/preview the presented token is hashed before
+// the DB lookup so a DB-dump does not yield consumable tokens.
+//
+// Transition window: the legacy `token` column (plaintext) is kept nullable
+// for the backwards-compatibility window while pre-rollout unredeemed
+// invites expire (INVITE_TTL_DAYS = 14 days). New writes populate
+// `token_hash` only and leave `token` null. Accept/preview first tries
+// the hash lookup; if not found it falls back to a plaintext `token`
+// lookup for legacy rows. A follow-up migration drops `token` once all
+// pre-rollout invites have expired or been revoked.
 //
 // Revocation: `revoked_at` + `revoked_by_user_id` makes the audit trail
 // queryable; the same column also short-circuits the accept endpoint.
@@ -3392,7 +3401,13 @@ model SubCoachInvite {
   email               String
   name                String?
   max_clients         Int?
-  token               String    @unique
+  // DEPRECATED: plaintext token kept for legacy unredeemed invites issued
+  // before the token_hash rollout. New writes set this to null. Drop in the
+  // follow-up migration once all pre-rollout invites have expired (14 days).
+  token               String?   @unique
+  // SHA-256 hex digest of the raw invite token. This is what gets stored
+  // for all new invites. Unique enforced by DB index (see migration).
+  token_hash          String?   @unique
   expires_at          DateTime
   accepted_at         DateTime?
   accepted_by_user_id String?

@@ -9,6 +9,7 @@ import { randomBytes } from 'node:crypto';
 import type { TeamProfile, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
+import { AuditService, AuditAction } from '../audit/audit.service';
 
 // Phase 8 Team Profile service.
 //
@@ -56,6 +57,7 @@ export class TeamService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly feePolicy: FeePolicyService,
+    private readonly audit: AuditService,
   ) {}
 
   // GET /coach/team — return the calling head coach's profile or 404.
@@ -236,18 +238,88 @@ export class TeamService {
   }
 
   // PATCH /coach/team/members/:sub_coach_id/revenue-sharing
+  //
+  // SOC2-material: every call is audited. We read the previous split BEFORE
+  // the update so the audit row captures both values. The read + update +
+  // teamAuditEvent write are wrapped in a $transaction for atomicity; the
+  // AuditService (SOC2 log) write fires after and is fire-and-forget — a
+  // failure logs a warning but does not roll back the user-facing result.
   async setRevenueSharing(
     headCoachId: string,
     subCoachId: string,
     enabled: boolean,
+    actorUserId?: string,
+    actorRole?: string,
   ): Promise<{ revenue_sharing_enabled: boolean }> {
     await this.assertSubCoachRelationship(headCoachId, subCoachId);
 
-    // enabled=true  → clear override (null falls back to default 5%)
-    // enabled=false → hard-zero the split
-    await this.feePolicy.upsertOverride(subCoachId, {
-      head_coach_split_bps: enabled ? null : 0,
+    // Read the previous split before mutating so the audit metadata is accurate.
+    const previousOverride = await this.prisma.feePolicy.findUnique({
+      where: { coach_id: subCoachId },
+      select: { head_coach_split_bps: true },
     });
+    // Null or missing → default 5% (500 bps) is active.
+    const previousBps: number | null = previousOverride?.head_coach_split_bps ?? null;
+    // enabled=true  → null (falls back to default 5% = 500 bps)
+    // enabled=false → 0 (no split)
+    const newBps: number | null = enabled ? null : 0;
+
+    // Atomic: update the FeePolicy override and write an in-app teamAuditEvent
+    // in the same transaction so both land or neither does.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.feePolicy.upsert({
+        where: { coach_id: subCoachId },
+        create: {
+          coach_id: subCoachId,
+          head_coach_split_bps: newBps,
+        },
+        update: {
+          head_coach_split_bps: newBps,
+        },
+      });
+
+      // In-app team feed event — matches the pattern used by other mutations
+      // in sub-coach-invite.service.ts (e.g. sub_coach_assigned, sub_coach_removed).
+      await tx.teamAuditEvent.create({
+        data: {
+          head_coach_id: headCoachId,
+          actor_user_id: actorUserId ?? headCoachId,
+          target_client_id: null,
+          event_kind: 'revenue_sharing_changed',
+          summary: `Revenue sharing for sub-coach ${subCoachId} set to ${enabled ? 'enabled (5%)' : 'disabled (0%)'}`,
+          metadata: {
+            sub_coach_id: subCoachId,
+            previous_split_bps: previousBps,
+            new_split_bps: newBps,
+            enabled,
+            actor_role: actorRole ?? null,
+            source: 'team_controller',
+          } as Prisma.InputJsonValue,
+        },
+      });
+    });
+
+    // SOC2 compliance log — fire-and-forget. AuditService already swallows
+    // write failures and logs them; we match that contract here.
+    void this.audit
+      .write({
+        action: AuditAction.TEAM_REVENUE_SHARING_UPDATED,
+        actorId: actorUserId ?? headCoachId,
+        actorRole: actorRole ?? null,
+        targetUserId: subCoachId,
+        targetType: 'sub_coach',
+        tenantCoachId: headCoachId,
+        metadata: {
+          previous_split_bps: previousBps,
+          new_split_bps: newBps,
+          team_id: headCoachId,
+          enabled,
+        },
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`SOC2 audit write failed for revenue_sharing_changed: ${msg}`);
+      });
 
     return { revenue_sharing_enabled: enabled };
   }
