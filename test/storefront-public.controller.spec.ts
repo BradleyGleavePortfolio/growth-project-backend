@@ -346,6 +346,180 @@ describe('StorefrontPublicController — A276-P1-3 (controller half) Referrer-Po
   });
 });
 
+// ---------------------------------------------------------------------------
+// A276-F4-P2-G — extractIp must survive array-valued proxy headers.
+//
+// Node's `IncomingHttpHeaders` types `fly-client-ip` and
+// `x-forwarded-for` as `string | string[] | undefined`. Express
+// usually coalesces multi-set headers to a comma-joined string, but
+// raw Node http2 / a hostile upstream / a misconfigured edge can
+// deliver an actual array. Pre-fix, `.trim()` on the array would
+// have thrown a TypeError, the limiter would never have incremented,
+// and every request from that source would have silently bypassed
+// the rate limit. These tests pin the new behavior end-to-end
+// through the controller: each route must still drive the limiter
+// with a non-empty IP string regardless of the header shape.
+// ---------------------------------------------------------------------------
+
+describe('StorefrontPublicController — A276-F4-P2-G XFF array-header handling', () => {
+  function makeReqWithHeaders(headers: Record<string, unknown>): Request {
+    return {
+      headers,
+      ip: '10.0.0.99',
+      socket: { remoteAddress: '10.0.0.99' },
+    } as unknown as Request;
+  }
+
+  it('array `fly-client-ip` takes the LAST element (hop closest to our edge)', async () => {
+    const calls: string[] = [];
+    const ipLimiter = {
+      checkAndIncrement: jest.fn().mockImplementation(async (ip: string) => {
+        calls.push(ip);
+        return ALLOWED;
+      }),
+    };
+    const guestCheckout = {
+      createIntent: jest.fn().mockResolvedValue({ guest_checkout_id: 'gc_1' }),
+    };
+    const cookies = { setSessionCookie: jest.fn() };
+    const { controller } = build({ ipLimiter, guestCheckout, cookies });
+
+    await controller.createGuestCheckout(
+      SHARE_TOKEN,
+      { guest_email: 'j@example.com' } as never,
+      makeReqWithHeaders({ 'fly-client-ip': ['1.1.1.1', '2.2.2.2'] }),
+      makeRes() as never,
+    );
+    expect(calls).toEqual(['2.2.2.2']);
+  });
+
+  it('array `x-forwarded-for` falls through to last element, then first CSV value', async () => {
+    const calls: string[] = [];
+    const ipLimiter = {
+      checkAndIncrement: jest.fn().mockImplementation(async (ip: string) => {
+        calls.push(ip);
+        return ALLOWED;
+      }),
+    };
+    const recovery = {
+      resumeFromCredentials: jest
+        .fn()
+        .mockResolvedValue({ guest_checkout_id: 'gc_1', resumable: true }),
+      sendRecoveryLink: jest.fn(),
+      verifyToken: jest.fn(),
+    };
+    const { controller } = build({ ipLimiter, recovery });
+
+    // No fly-client-ip; multi-line XFF (array) where the last entry is
+    // itself a comma-separated chain. The originating client is the
+    // leftmost token of the closest-hop array element.
+    await controller.resumeGuestCheckout(
+      SHARE_TOKEN,
+      { guest_email: 'j@example.com' } as never,
+      makeReqWithHeaders({
+        'x-forwarded-for': ['9.9.9.9', '203.0.113.7, 198.51.100.1'],
+      }),
+      makeRes() as never,
+    );
+    expect(calls).toEqual(['203.0.113.7']);
+  });
+
+  it('string `x-forwarded-for` still takes the FIRST CSV value (unchanged)', async () => {
+    const calls: string[] = [];
+    const ipLimiter = {
+      checkAndIncrement: jest.fn().mockImplementation(async (ip: string) => {
+        calls.push(ip);
+        return ALLOWED;
+      }),
+    };
+    const recovery = {
+      resumeFromCredentials: jest
+        .fn()
+        .mockResolvedValue({ guest_checkout_id: 'gc_1', resumable: true }),
+      sendRecoveryLink: jest.fn(),
+      verifyToken: jest.fn(),
+    };
+    const { controller } = build({ ipLimiter, recovery });
+
+    await controller.resumeGuestCheckout(
+      SHARE_TOKEN,
+      { guest_email: 'j@example.com' } as never,
+      makeReqWithHeaders({
+        'x-forwarded-for': '203.0.113.7, 198.51.100.1, 10.0.0.1',
+      }),
+      makeRes() as never,
+    );
+    expect(calls).toEqual(['203.0.113.7']);
+  });
+
+  it('empty array headers fall back to req.ip (no TypeError, no silent bypass)', async () => {
+    const calls: string[] = [];
+    const ipLimiter = {
+      checkAndIncrement: jest.fn().mockImplementation(async (ip: string) => {
+        calls.push(ip);
+        return ALLOWED;
+      }),
+    };
+    const recovery = {
+      resumeFromCredentials: jest
+        .fn()
+        .mockResolvedValue({ guest_checkout_id: 'gc_1', resumable: true }),
+      sendRecoveryLink: jest.fn(),
+      verifyToken: jest.fn(),
+    };
+    const { controller } = build({ ipLimiter, recovery });
+
+    await controller.resumeGuestCheckout(
+      SHARE_TOKEN,
+      { guest_email: 'j@example.com' } as never,
+      makeReqWithHeaders({
+        'fly-client-ip': [],
+        'x-forwarded-for': [],
+      }),
+      makeRes() as never,
+    );
+    expect(calls).toEqual(['10.0.0.99']);
+  });
+
+  it('whitespace inside CSV values is trimmed (string and array cases)', async () => {
+    const calls: string[] = [];
+    const ipLimiter = {
+      checkAndIncrement: jest.fn().mockImplementation(async (ip: string) => {
+        calls.push(ip);
+        return ALLOWED;
+      }),
+    };
+    const recovery = {
+      resumeFromCredentials: jest
+        .fn()
+        .mockResolvedValue({ guest_checkout_id: 'gc_1', resumable: true }),
+      sendRecoveryLink: jest.fn(),
+      verifyToken: jest.fn(),
+    };
+    const { controller } = build({ ipLimiter, recovery });
+
+    // String form with leading/trailing whitespace inside CSV.
+    await controller.resumeGuestCheckout(
+      SHARE_TOKEN,
+      { guest_email: 'j@example.com' } as never,
+      makeReqWithHeaders({
+        'x-forwarded-for': '   203.0.113.7   ,  198.51.100.1',
+      }),
+      makeRes() as never,
+    );
+    // Array form with whitespace in the last element.
+    await controller.resumeGuestCheckout(
+      SHARE_TOKEN,
+      { guest_email: 'j@example.com' } as never,
+      makeReqWithHeaders({
+        'x-forwarded-for': ['9.9.9.9', '  198.51.100.42  '],
+      }),
+      makeRes() as never,
+    );
+    expect(calls).toEqual(['203.0.113.7', '198.51.100.42']);
+  });
+});
+
 describe('StorefrontPublicController — resume credential flow surfaces NotFound', () => {
   it('returns 404 when recovery service finds nothing', async () => {
     const recovery = {

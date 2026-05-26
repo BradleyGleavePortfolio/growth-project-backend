@@ -67,15 +67,45 @@ export class StorefrontPublicController {
   // Extract a client IP from the request, honoring Fly's
   // `fly-client-ip` then x-forwarded-for chains.  Defensive against
   // malformed/missing headers — never returns empty.
+  //
+  // A276-F4-P2-G — Node's `IncomingHttpHeaders` types proxy headers
+  // as `string | string[] | undefined`. Express normally coalesces
+  // multi-set headers into a comma-joined string, but raw Node http2
+  // and a hostile (or simply over-eager) upstream can deliver an
+  // ACTUAL array — at which point calling `.trim()` / `.split()` on
+  // the array would throw, the limiter would never increment, and
+  // every request from that source would silently bypass the bucket.
+  // We normalize array → last element first (the array tail is the
+  // hop closest to our edge, mirroring how the comma-joined string
+  // would be ordered) and only then split on `,` to pick the
+  // originating client per RFC 7239. Matches the pattern already in
+  // `auth.controller.ts` and `admin.controller.ts`.
   private extractIp(req: Request): string {
-    const flyIp = (req.headers['fly-client-ip'] as string | undefined)?.trim();
+    const flyIp = this.firstHeaderValue(req.headers['fly-client-ip'])?.trim();
     if (flyIp) return flyIp;
-    const xff = (req.headers['x-forwarded-for'] as string | undefined) ?? '';
-    if (xff) {
-      const first = xff.split(',')[0]?.trim();
+    const xffJoined = this.firstHeaderValue(req.headers['x-forwarded-for']);
+    if (xffJoined) {
+      const first = xffJoined.split(',')[0]?.trim();
       if (first) return first;
     }
     return (req.ip ?? req.socket?.remoteAddress ?? 'unknown').toString();
+  }
+
+  // A276-F4-P2-G — collapse a proxy header value into a single string.
+  //   • array → last element (closest hop to our edge per RFC 7239,
+  //     matching how Express would have joined comma-separated)
+  //   • string → as-is
+  //   • undefined / empty array → undefined
+  // Never throws; the caller can rely on `?.trim()` on the result.
+  private firstHeaderValue(
+    header: string | string[] | undefined,
+  ): string | undefined {
+    if (Array.isArray(header)) {
+      if (header.length === 0) return undefined;
+      const last = header[header.length - 1];
+      return typeof last === 'string' ? last : undefined;
+    }
+    return typeof header === 'string' ? header : undefined;
   }
 
   // GET /api/v1/packages/public/join/:token
