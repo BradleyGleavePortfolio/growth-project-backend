@@ -207,6 +207,20 @@ export class GdprScrubService {
     const tombstoneSupabaseId = `deleted-${candidate.user_id}`;
 
     await this.prisma.$transaction(async (tx) => {
+      // 0) Hard-delete AIDraft rows for the scrubbed client. The
+      //    AIDraft.clientId FK declares onDelete: Cascade but it never
+      //    fires because this scrubber deliberately soft-deletes the User
+      //    row rather than issuing a physical DELETE. AIDraft.inputContext
+      //    is a JSON snapshot of the client's health PII (name, age, sex,
+      //    biometrics, dietary restrictions, injuries, check-in notes) and
+      //    would otherwise survive the erasure indefinitely — a direct
+      //    GDPR Art. 17 violation for special-category data.
+      //    Hard-delete is appropriate: drafts for a scrubbed client have
+      //    no remaining business value (the subject is gone). Cost history
+      //    is tracked independently in AICallLog (which uses SetNull, so
+      //    those rows are preserved). Resolves A1-C3-P1-1.
+      await tx.aIDraft.deleteMany({ where: { clientId: candidate.user_id } });
+
       // 1) Zero out PII on UserProfile (1:1, may not exist).
       await tx.userProfile
         .updateMany({
