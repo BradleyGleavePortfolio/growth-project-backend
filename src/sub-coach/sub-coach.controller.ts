@@ -16,6 +16,7 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { SubCoachAssignmentService } from './sub-coach-assignment.service';
 import { SubCoachAnalyticsService } from './sub-coach-analytics.service';
 import { SubCoachCapacityService } from './sub-coach-capacity.service';
@@ -53,6 +54,11 @@ export class SubCoachController {
   ) {}
 
   // ── GET /sub-coaches ────────────────────────────────────────────────────────
+  // Lists the requesting head coach's roster. Prisma filter (coach_id =
+  // headCoachId) scopes to the caller; a sub-coach calling this returns
+  // an empty page. Students have no roster and must not enumerate.
+  // OWNER included for platform admin reads.
+  @Roles('coach', 'owner')
   @Get()
   @ApiOperation({ summary: 'List sub-coaches belonging to the calling head coach (paginated)' })
   @ApiResponse({ status: 200 })
@@ -103,6 +109,10 @@ export class SubCoachController {
   }
 
   // ── GET /sub-coaches/:id ────────────────────────────────────────────────────
+  // Detail view. Prisma `findFirst` is scoped to (id = subCoachId,
+  // coach_id = headCoachId) so a peer sub-coach (or any non-owning
+  // coach) gets 404. Students must not resolve sub-coach UUIDs.
+  @Roles('coach', 'owner')
   @Get(':id')
   @ApiOperation({ summary: 'Get a single sub-coach including client list and capacity' })
   @ApiResponse({ status: 200 })
@@ -140,6 +150,13 @@ export class SubCoachController {
   }
 
   // ── POST /sub-coaches/:id/reassign-client ───────────────────────────────────
+  // Atomic client reassignment. SubCoachReassignService.reassignClient
+  // takes (headCoachId, callerId, callerRole) and asserts the caller
+  // owns both the client and the source/target sub-coach. A peer sub-
+  // coach calling this would fail the (head_coach_id = req.user.id)
+  // ownership check inside the service. Sub-coaches CANNOT reassign
+  // their peers' clients. Students have no clients to reassign.
+  @Roles('coach', 'owner')
   @Post(':id/reassign-client')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Atomically reassign a client to another sub-coach (or back to head coach)' })
@@ -165,6 +182,10 @@ export class SubCoachController {
   }
 
   // ── GET /sub-coaches/:id/analytics ─────────────────────────────────────────
+  // Engagement-score breakdown. Service-side analytics resolves the score
+  // for (headCoachId = req.user.id, subCoachId); a non-owning coach gets
+  // a zero/empty result. Students have no semantic interpretation.
+  @Roles('coach', 'owner')
   @Get(':id/analytics')
   @ApiOperation({ summary: 'Get engagement score and breakdown for a sub-coach' })
   @ApiResponse({ status: 200 })
@@ -178,6 +199,12 @@ export class SubCoachController {
   // ── POST /sub-coaches/:id/assign-client ─────────────────────────────────────
   // Routes through SubCoachReassignService so capacity + audit +
   // idempotency are enforced identically to /reassign-client.
+  //
+  // Service asserts the caller owns the destination sub-coach by
+  // (head_coach_id = req.user.id, sub_coach_id = :id). A peer sub-coach
+  // calling this 404s on the ownership check. Sub-coaches CANNOT assign
+  // clients to their peers.
+  @Roles('coach', 'owner')
   @Post(':id/assign-client')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Assign a client to this sub-coach' })

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -95,13 +96,17 @@ export class EmailService {
   // second call with the same key (regardless of recipient/template) is
   // a no-op that returns status:'skipped'.
   async send(input: SendEmailInput): Promise<SendEmailResult> {
-    if (!input.to || !input.to.includes('@')) {
-      return {
-        status: 'failed',
-        providerMessageId: null,
-        idempotencyKey: input.idempotencyKey,
-        error: 'invalid recipient email',
-      };
+    // Hardened recipient check (A1-C5-P1-1):
+    //   - Must be a non-empty string containing exactly one '@' (no multiple-address trick)
+    //   - Must not contain CR or LF characters (CRLF-injection guard)
+    //   - Must not contain commas (single-address enforcement)
+    if (
+      !input.to ||
+      !input.to.includes('@') ||
+      /[\r\n]/.test(input.to) ||
+      input.to.split(',').length > 1
+    ) {
+      throw new BadRequestException('Invalid recipient email address');
     }
     if (!input.idempotencyKey) {
       throw new InternalServerErrorException(

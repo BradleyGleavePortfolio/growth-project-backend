@@ -14,6 +14,7 @@ import { SubscriptionStatus } from '@prisma/client';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { OwnerGuard } from '../common/guards/owner.guard';
 import { PrismaService } from '../prisma.service';
 import { StripeApiError, StripeApiService } from './stripe-api.service';
@@ -260,6 +261,13 @@ export class OwnerBillingController {
   // docs/stripe-setup.md §2.3 — cancellation is disabled in portal config
   // so it routes through OWNER tooling for CoachProfile reconciliation).
   // This endpoint is the canonical cancel surface.
+  //
+  // Owner-only: mutates a coach's billing relationship and is the only
+  // cancel path (Customer Portal cancellation is disabled). A coach
+  // canceling their own subscription must go through the OWNER, who
+  // reconciles CoachProfile mirror state. Never expose to coaches or
+  // students.
+  @Roles('owner')
   @Post('coaches/:id/cancel-subscription')
   async cancelSubscription(
     @Request() req: AuthedRequest,

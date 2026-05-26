@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { DataExportStatus } from '@prisma/client';
+import { DataExportStatus, Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import { SignJWT, jwtVerify, JWTPayload } from 'jose';
 
@@ -76,22 +76,39 @@ export class DataExportService {
 
   /**
    * Enqueue a new export for the user. Enforces the per-user rate limit
-   * (one PENDING or READY request within RATE_LIMIT_HRS). If a previous
-   * FAILED request exists it is superseded — the user can always retry after
-   * a failure.
+   * (one non-terminal request — PENDING, RUNNING, or READY — within
+   * RATE_LIMIT_HRS). If a previous FAILED or EXPIRED request exists it is
+   * superseded — the user can always retry after a terminal outcome.
    *
    * The actual file generation runs async via _runExport() after this method
    * returns so the HTTP response comes back immediately (202 Accepted).
    */
   async requestExport(userId: string) {
-    // Rate limit check — block only on PENDING or READY within the window.
+    // Rate-limit check — block creation if any non-terminal export exists in
+    // the window. Non-terminal = PENDING | RUNNING | READY.
+    //
+    // Audit A1-C5-INF-2: RUNNING was previously omitted, which allowed a user
+    // to spam concurrent GDPR exports while a long-running export was in
+    // progress (each new request created another row that _runExport()
+    // immediately set to RUNNING, never matching the PENDING|READY predicate).
+    //
+    // We list the non-terminal states positively (rather than negating
+    // terminals) so the legal/GDPR-facing 1-per-24h promise is auditable from
+    // a single line. If DataExportStatus ever gains a new non-terminal value,
+    // both this list and DataExportStatus's terminal-set comment must be
+    // updated in the same PR.
+    const NON_TERMINAL_STATUSES = [
+      DataExportStatus.PENDING,
+      DataExportStatus.RUNNING,
+      DataExportStatus.READY,
+    ] as const;
     const windowStart = new Date(
       Date.now() - RATE_LIMIT_HRS * 60 * 60 * 1000,
     );
     const existing = await this.prisma.dataExportRequest.findFirst({
       where: {
         user_id: userId,
-        status: { in: [DataExportStatus.PENDING, DataExportStatus.READY] },
+        status: { in: [...NON_TERMINAL_STATUSES] },
         created_at: { gte: windowStart },
       },
       orderBy: { created_at: 'desc' },
@@ -104,12 +121,33 @@ export class DataExportService {
       );
     }
 
-    const record = await this.prisma.dataExportRequest.create({
-      data: {
-        user_id: userId,
-        status: DataExportStatus.PENDING,
-      },
-    });
+    // Authoritative DB-level duplicate guard (A1-C5-P1-2): even if two
+    // parallel requests both pass the findFirst check above (TOCTOU window),
+    // the partial unique index `data_export_request_one_active_per_user`
+    // (migration 20260525170000_data_export_one_active_per_user) ensures at
+    // most one non-terminal row per user. The second concurrent create will
+    // receive a Prisma P2002 (unique constraint violation) and is converted to
+    // a ConflictException here.
+    let record: Awaited<ReturnType<typeof this.prisma.dataExportRequest.create>>;
+    try {
+      record = await this.prisma.dataExportRequest.create({
+        data: {
+          user_id: userId,
+          status: DataExportStatus.PENDING,
+        },
+      });
+    } catch (e: unknown) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        throw new ConflictException({
+          error: 'EXPORT_ALREADY_IN_PROGRESS',
+          message: 'An export request is already in progress.',
+        });
+      }
+      throw e;
+    }
 
     // Fire-and-forget — do not await so the HTTP response returns immediately.
     this._runExport(record.id, userId).catch((err: Error) => {

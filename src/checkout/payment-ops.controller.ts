@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Body,
   Controller,
-  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -461,6 +460,11 @@ export class CoachPaymentOpsController {
 
   // Coach's own purchases — same data the OWNER drill-down view exposes,
   // but scoped to this coach.
+  //
+  // Coach inspects own purchase roster (scoped by req.user.id in the
+  // service). Never expose to students — leaks other students' purchase
+  // identifiers, amounts, and statuses.
+  @Roles('coach', 'owner')
   @Get('purchases')
   async listOwn(@Request() req: AuthedRequest) {
     const rows = await this.prisma.clientPurchase.findMany({
@@ -470,24 +474,26 @@ export class CoachPaymentOpsController {
     return { purchases: rows };
   }
 
+  // Coach drill-down on one purchase. Lookup is scoped by
+  // `coach_user_id` for non-owner callers and unscoped for OWNER, so
+  // missing rows and foreign-owned rows both collapse into a 404
+  // PURCHASE_NOT_FOUND (no 403-vs-404 enumeration of other coaches'
+  // purchase IDs). Students must never reach this surface.
+  @Roles('coach', 'owner')
   @Get('purchases/:id')
   async getOwn(
     @Request() req: AuthedRequest,
     @Param('id') purchaseId: string,
   ) {
-    const purchase = await this.prisma.clientPurchase.findUnique({
-      where: { id: purchaseId },
-    });
+    const where =
+      req.user.role === 'owner'
+        ? { id: purchaseId }
+        : { id: purchaseId, coach_user_id: req.user.id };
+    const purchase = await this.prisma.clientPurchase.findFirst({ where });
     if (!purchase) {
       throw new NotFoundException({
         error: 'PURCHASE_NOT_FOUND',
         message: `No purchase with id ${purchaseId}`,
-      });
-    }
-    if (purchase.coach_user_id !== req.user.id && req.user.role !== 'owner') {
-      throw new ForbiddenException({
-        error: 'NOT_YOUR_PURCHASE',
-        message: 'Coaches can only inspect their own purchases',
       });
     }
     const [splitEntries, transfers, dunningState] = await Promise.all([
@@ -510,6 +516,11 @@ export class CoachPaymentOpsController {
 
   // Coach's lifetime earnings ledger — all `destination` and
   // `head_coach_split` ledger entries where the coach is the payee.
+  //
+  // Coach reads their own payout ledger (scoped by req.user.id as payee).
+  // Exposes amounts, statuses, and reversal history; never let students
+  // see this.
+  @Roles('coach', 'owner')
   @Get('earnings')
   async earnings(@Request() req: AuthedRequest) {
     const entries = await this.ledger.findByPayee(req.user.id, { limit: 200 });
@@ -529,6 +540,11 @@ export class CoachPaymentOpsController {
   // Coach's failed / past-due payments and active dunning windows for
   // the coach's roster — so a coach can see "who on my roster is failing
   // to pay" without going through support.
+  //
+  // Coach reads dunning state on their own roster (scoped by
+  // coach_user_id = req.user.id). Exposes other-student payment-failure
+  // PII; must never be reachable by students.
+  @Roles('coach', 'owner')
   @Get('failed')
   async failedOnRoster(@Request() req: AuthedRequest) {
     const purchases = await this.prisma.clientPurchase.findMany({
@@ -545,6 +561,10 @@ export class CoachPaymentOpsController {
 
   // Effective fee policy for this coach (default + override). Lets a
   // coach see exactly what cut the platform / head coach is taking.
+  //
+  // Coach inspects their own fee policy (default + override). Scoped by
+  // req.user.id. Students have no fee-policy semantics; OWNER for support.
+  @Roles('coach', 'owner')
   @Get('fee-policy')
   async getOwnFeePolicy(@Request() req: AuthedRequest) {
     const [policy, override] = await Promise.all([
@@ -557,6 +577,11 @@ export class CoachPaymentOpsController {
   // Phase 6 coach-facing — payout readiness for the calling coach. Same
   // cached snapshot the admin endpoint reads, scoped to req.user.id so a
   // coach can never see another coach's payout state.
+  //
+  // Coach reads their own Stripe Connect payout readiness (charges
+  // enabled, payouts enabled, KYC requirements). Scoped by req.user.id;
+  // students have no Connect surface.
+  @Roles('coach', 'owner')
   @Get('payout-readiness')
   async getOwnPayoutReadiness(
     @Request() req: AuthedRequest,
@@ -569,6 +594,11 @@ export class CoachPaymentOpsController {
 
   // Phase 7 coach-facing — earnings summary for the calling coach.
   // Accepts ?from=ISO&to=ISO; defaults to last 30 days.
+  //
+  // Coach reads their own enterprise rollup (gross/net by period).
+  // Scoped by req.user.id in the analytics service; students must never
+  // see revenue numbers.
+  @Roles('coach', 'owner')
   @Get('summary')
   async getOwnEarningsSummary(
     @Request() req: AuthedRequest,

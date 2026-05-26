@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -466,7 +465,14 @@ export class AccountDeletionService {
 
     for (const candidate of candidates) {
       try {
-        await this.finalizeUserDeletion(candidate.id, { isAdminForced: false });
+        const result = await this.finalizeUserDeletion(candidate.id, { isAdminForced: false });
+
+        if (result && result.skipped) {
+          this.logger.log(
+            `AccountDeletion finalize: skipped user=${candidate.id} reason=${result.skipped}`,
+          );
+          continue;
+        }
 
         await this.writeDeletionAudit({
           userId: candidate.id,
@@ -569,7 +575,30 @@ export class AccountDeletionService {
   private async finalizeUserDeletion(
     userId: string,
     opts: { isAdminForced: boolean; actorId?: string },
-  ): Promise<void> {
+  ): Promise<{ skipped?: string } | void> {
+    // Pre-flight re-read (A1-C5-P1-4): abort early if the user cancelled
+    // their deletion request after the cron snapshotted the candidates list.
+    // This check is intentionally BEFORE the heavy anonymization steps so we
+    // never touch PII for a user who cancelled mid-cron.
+    //
+    // The admin-force-delete path (opts.isAdminForced=true) bypasses this check
+    // because it is a one-shot intentional scrub that does not require the user
+    // to have deletion_confirmed_at set.
+    if (!opts.isAdminForced) {
+      const preCheck = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { deletion_confirmed_at: true, deleted_at: true },
+      });
+      if (!preCheck) return { skipped: 'user-not-found' };
+      if (preCheck.deleted_at) return { skipped: 'already-deleted' };
+      if (!preCheck.deletion_confirmed_at) {
+        this.logger.warn(
+          `finalizeUserDeletion: cancelled mid-cron for ${userId} — aborting scrub`,
+        );
+        return { skipped: 'cancelled' };
+      }
+    }
+
     const tombstoneEmail = `deleted-${userId}@tombstone.invalid`;
     const tombstoneSupabaseId = `deleted-${userId}`;
     const now = new Date();
@@ -718,6 +747,25 @@ export class AccountDeletionService {
 
     // ── 12. Final transaction: delete user-owned rows + tombstone User ────────
     await this.prisma.$transaction(async (tx) => {
+      // Re-read inside the transaction (A1-C5-P1-4 belt-and-suspenders):
+      // A cancel could have arrived between the pre-flight check above and
+      // the transaction start. Re-verify here under serializable-ish
+      // transaction isolation before any destructive writes.
+      if (!opts.isAdminForced) {
+        const fresh = await tx.user.findUnique({
+          where: { id: userId },
+          select: { deletion_confirmed_at: true, deleted_at: true },
+        });
+        if (!fresh) return;
+        if (fresh.deleted_at) return;
+        if (!fresh.deletion_confirmed_at) {
+          this.logger.warn(
+            `finalizeUserDeletion tx: cancelled mid-cron for ${userId} — aborting scrub`,
+          );
+          return;
+        }
+      }
+
       // Belt-and-suspenders: explicitly delete Message rows where the user is
       // sender OR recipient BEFORE the User tombstone below.
       //

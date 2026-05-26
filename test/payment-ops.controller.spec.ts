@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import {
   AdminPaymentOpsController,
   CoachPaymentOpsController,
@@ -41,6 +41,11 @@ function makePrismaStub() {
       ),
       findUnique: jest.fn(async ({ where }: any) =>
         purchases.find((p) => p.id === where.id) ?? null,
+      ),
+      findFirst: jest.fn(async ({ where = {} }: any) =>
+        purchases.find((p) =>
+          Object.entries(where).every(([k, v]: any) => p[k] === v),
+        ) ?? null,
       ),
       count: jest.fn(async ({ where = {} }: any) =>
         purchases.filter((p) =>
@@ -425,15 +430,23 @@ describe('CoachPaymentOpsController', () => {
     expect(out.purchases[0].id).toBe('p1');
   });
 
-  it('forbids inspecting another coach purchase', async () => {
+  // Security-fix update (A1-P0-2): handler now scopes the WHERE by
+  // coach_user_id for non-owner callers, so a foreign-owned purchase
+  // and a nonexistent purchase both surface as 404 PURCHASE_NOT_FOUND.
+  // Previous assertion expected 403 NOT_YOUR_PURCHASE which leaked the
+  // existence of other coaches' purchase IDs.
+  it('collapses a foreign coach purchase into 404 PURCHASE_NOT_FOUND (no 403-vs-404 enumeration)', async () => {
     const { ctrl, prisma } = makeCoachController();
     prisma._purchases.push({
       id: 'p1',
       coach_user_id: 'other',
       client_user_id: 'cli',
     });
+    await expect(ctrl.getOwn(makeReq('me'), 'p1')).rejects.toMatchObject({
+      response: { error: 'PURCHASE_NOT_FOUND' },
+    });
     await expect(ctrl.getOwn(makeReq('me'), 'p1')).rejects.toBeInstanceOf(
-      ForbiddenException,
+      NotFoundException,
     );
   });
 

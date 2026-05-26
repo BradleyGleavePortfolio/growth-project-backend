@@ -18,6 +18,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { AuthedRequest } from '../auth/auth-request';
 import { MessagesSafetyService } from './messages-safety.service';
 import { ReportMessageDto } from './dto/report-message.dto';
@@ -45,7 +47,7 @@ import { ReportMessageDto } from './dto/report-message.dto';
 @ApiBearerAuth('bearer')
 @ApiResponse({ status: 401, description: 'Missing or invalid bearer token.' })
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class MessagesSafetyController {
   constructor(private readonly safety: MessagesSafetyService) {}
 
@@ -63,6 +65,11 @@ export class MessagesSafetyController {
   @ApiResponse({ status: 400, description: 'CANNOT_REPORT_OWN_MESSAGE' })
   @ApiResponse({ status: 404, description: 'MESSAGE_NOT_FOUND' })
   @ApiResponse({ status: 429, description: 'Too many reports — try later.' })
+  // C5 PR-A audit: safety surface — every logged-in user (student/coach/owner)
+  // must be able to report abusive content regardless of subscription. Scoped
+  // by req.user.id as reporter; the service rejects CANNOT_REPORT_OWN_MESSAGE.
+  // Existing @Throttle 20/hour/user is the abuse-vector mitigation.
+  @Roles('student', 'coach', 'owner')
   @Throttle({ default: { ttl: 3_600_000, limit: 20 } })
   @Post('messages/report')
   reportMessage(
@@ -86,6 +93,10 @@ export class MessagesSafetyController {
   @ApiResponse({ status: 400, description: 'CANNOT_BLOCK_SELF' })
   @ApiResponse({ status: 404, description: 'USER_NOT_FOUND' })
   @ApiResponse({ status: 429, description: 'Too many block requests — try later.' })
+  // C5 PR-A audit: every logged-in user must be able to block another user as
+  // a safety primitive (Apple App Review 1.2). Scoped by req.user.id as blocker;
+  // the path :id is the target. Service rejects CANNOT_BLOCK_SELF.
+  @Roles('student', 'coach', 'owner')
   @Throttle({ default: { ttl: 3_600_000, limit: 60 } })
   @Post('users/:id/block')
   blockUser(
@@ -105,6 +116,9 @@ export class MessagesSafetyController {
     description: 'Unblock recorded. { blockedUserId, unblocked: true }.',
   })
   @ApiResponse({ status: 429, description: 'Too many unblock requests — try later.' })
+  // C5 PR-A audit: idempotent reversal of a block. Scoped by req.user.id as
+  // blocker; only the caller's own block-row is removed. Any logged-in role.
+  @Roles('student', 'coach', 'owner')
   @Throttle({ default: { ttl: 3_600_000, limit: 60 } })
   @HttpCode(200)
   @Delete('users/:id/block')
@@ -124,6 +138,9 @@ export class MessagesSafetyController {
     status: 200,
     description: 'Array of { blockedId, displayName, blockedAt }.',
   })
+  // C5 PR-A audit: returns ONLY req.user.id's own blocklist — a user cannot
+  // read another user's blocks. Any logged-in role.
+  @Roles('student', 'coach', 'owner')
   @Get('users/blocks')
   listBlocks(@Request() req: AuthedRequest): Promise<
     Array<{ blockedId: string; displayName: string; blockedAt: string }>

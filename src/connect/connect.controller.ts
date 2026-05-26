@@ -11,6 +11,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
 import { ConnectService } from './connect.service';
 import { ConnectModuleState } from './connect.module-state';
@@ -33,6 +34,10 @@ export class ConnectController {
     private readonly connect: ConnectService,
   ) {}
 
+  // Coach (or OWNER acting on behalf) provisions their Stripe Connect
+  // account so they can accept payouts. Students never have a Connect
+  // account; exposing this to them would create dead/abandoned accounts.
+  @Roles('coach', 'owner')
   @Post('create')
   async createAccount(
     @Request() req: AuthedRequest,
@@ -50,6 +55,10 @@ export class ConnectController {
     }
   }
 
+  // Returns a Stripe-hosted onboarding URL for the requesting coach.
+  // Coach-only (owners may impersonate for support); students have
+  // nothing to onboard.
+  @Roles('coach', 'owner')
   @Post('onboarding-link')
   async onboardingLink(@Request() req: AuthedRequest) {
     this.assertReady();
@@ -60,6 +69,10 @@ export class ConnectController {
     }
   }
 
+  // Returns a Stripe Express dashboard login link for the coach's own
+  // Connect account — reveals balances/payouts and must never be reachable
+  // by students or by another coach.
+  @Roles('coach', 'owner')
   @Post('dashboard-link')
   async dashboardLink(@Request() req: AuthedRequest) {
     this.assertReady();
@@ -70,6 +83,10 @@ export class ConnectController {
     }
   }
 
+  // Coach reads their own Connect account status (charges_enabled,
+  // deauthorized_at, etc.). Scoped by req.user.id; never accepts a
+  // coach_id query. Students have no Connect record.
+  @Roles('coach', 'owner')
   @Get('me')
   async me(@Request() req: AuthedRequest) {
     this.assertReady();

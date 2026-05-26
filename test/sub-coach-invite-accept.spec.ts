@@ -16,6 +16,7 @@
 // service tests use so they stay cheap and deterministic.
 
 import 'reflect-metadata';
+import { createHash } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -23,6 +24,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { SubCoachesService } from '../src/sub-coaches/sub-coaches.service';
+
+function sha256hex(raw: string): string {
+  return createHash('sha256').update(raw).digest('hex');
+}
 
 interface MockPrisma {
   subCoachInvite: {
@@ -97,6 +102,153 @@ function pastDate(days = 1): Date {
 }
 
 const VALID_TOKEN = 'a'.repeat(32);
+
+// ── invite token hashing (P1-2 fix) ────────────────────────────────
+
+describe('SubCoachesService.accept — token_hash lookup (P1-2)', () => {
+  it('resolves invite by hashing the presented token (not plaintext lookup)', async () => {
+    // Simulate a new-style invite stored with token_hash only.
+    const prisma = buildPrisma({
+      subCoachInvite: {
+        // First call: hash-based lookup succeeds → returns the invite.
+        // Second call (legacy fallback) should NOT be reached.
+        findUnique: jest.fn(async () => inviteRow()),
+        update: jest.fn(async () => ({ id: 'inv-1' })),
+      },
+      user: {
+        findUnique: jest.fn(async () => ({ id: 'x', name: 'X' })),
+      },
+    });
+    const svc = new SubCoachesService(prisma as never, buildTeam() as never);
+    const out = await svc.accept('sub-1', 'coach', 'sub@x.test', VALID_TOKEN);
+    expect(out.ok).toBe(true);
+    // The FIRST findUnique call must use token_hash (the hash of the presented token).
+    const firstCall = prisma.subCoachInvite.findUnique.mock.calls[0][0];
+    expect(firstCall.where).toHaveProperty('token_hash', sha256hex(VALID_TOKEN));
+    // The second call (legacy fallback) should not have happened when hash hit.
+    expect(prisma.subCoachInvite.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to legacy plaintext token lookup when hash lookup misses', async () => {
+    // Simulate a legacy invite stored with plaintext token only (pre-rollout row).
+    const legacyInvite = inviteRow();
+    const prisma = buildPrisma({
+      subCoachInvite: {
+        // First call (hash lookup): miss. Second call (legacy): hit.
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce(null)           // hash miss
+          .mockResolvedValueOnce(legacyInvite),  // legacy hit
+        update: jest.fn(async () => ({ id: 'inv-1' })),
+      },
+      user: {
+        findUnique: jest.fn(async () => ({ id: 'x', name: 'X' })),
+      },
+    });
+    const svc = new SubCoachesService(prisma as never, buildTeam() as never);
+    const out = await svc.accept('sub-1', 'coach', 'sub@x.test', VALID_TOKEN);
+    expect(out.ok).toBe(true);
+    // Both lookups must have fired.
+    expect(prisma.subCoachInvite.findUnique).toHaveBeenCalledTimes(2);
+    const firstCall = prisma.subCoachInvite.findUnique.mock.calls[0][0];
+    const secondCall = prisma.subCoachInvite.findUnique.mock.calls[1][0];
+    expect(firstCall.where).toHaveProperty('token_hash');
+    // Legacy fallback must use the raw (plaintext) token.
+    expect(secondCall.where).toHaveProperty('token', VALID_TOKEN);
+  });
+
+  it('returns 404 when both hash and legacy lookup miss (wrong token)', async () => {
+    const prisma = buildPrisma({
+      subCoachInvite: {
+        findUnique: jest.fn(async () => null), // both lookups miss
+        update: jest.fn(),
+      },
+    });
+    const svc = new SubCoachesService(prisma as never, buildTeam() as never);
+    await expect(
+      svc.accept('sub-1', 'coach', 'sub@x.test', VALID_TOKEN),
+    ).rejects.toThrow(NotFoundException);
+    // Both lookups fired.
+    expect(prisma.subCoachInvite.findUnique).toHaveBeenCalledTimes(2);
+  });
+
+  it('accept is single-use — second accept with same token from a different user throws invite_already_used', async () => {
+    const consumedRow = inviteRow({
+      accepted_at: new Date(),
+      accepted_by_user_id: 'sub-1',
+    });
+    const prisma = buildPrisma({
+      subCoachInvite: {
+        findUnique: jest.fn(async () => consumedRow),
+        update: jest.fn(),
+      },
+    });
+    const svc = new SubCoachesService(prisma as never, buildTeam() as never);
+    // A different user (sub-2) tries to redeem the same token.
+    await expect(
+      svc.accept('sub-2', 'coach', 'sub@x.test', VALID_TOKEN),
+    ).rejects.toThrow(ConflictException);
+  });
+});
+
+describe('SubCoachesService.previewByToken — token_hash lookup (P1-2)', () => {
+  it('resolves preview by hash-first lookup, not plaintext', async () => {
+    const prisma = buildPrisma({
+      subCoachInvite: {
+        findUnique: jest.fn(async () => ({
+          id: 'inv-1',
+          email: 'sub@x.test',
+          name: null,
+          max_clients: null,
+          token: VALID_TOKEN,
+          expires_at: futureDate(),
+          accepted_at: null,
+          revoked_at: null,
+          head_coach: {
+            id: 'head-1',
+            name: 'Head',
+            coach_profile: null,
+          },
+        })),
+        update: jest.fn(),
+      },
+    });
+    const svc = new SubCoachesService(prisma as never, buildTeam() as never);
+    await svc.previewByToken(VALID_TOKEN);
+    const firstCall = prisma.subCoachInvite.findUnique.mock.calls[0][0];
+    // Must use token_hash for the primary lookup.
+    expect(firstCall.where).toHaveProperty('token_hash', sha256hex(VALID_TOKEN));
+  });
+
+  it('falls back to legacy plaintext lookup when hash misses', async () => {
+    const inviteWithHead = {
+      id: 'inv-1',
+      email: 'sub@x.test',
+      name: null,
+      max_clients: null,
+      token: VALID_TOKEN,
+      expires_at: futureDate(),
+      accepted_at: null,
+      revoked_at: null,
+      head_coach: { id: 'head-1', name: 'Head', coach_profile: null },
+    };
+    const prisma = buildPrisma({
+      subCoachInvite: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce(null)          // hash miss
+          .mockResolvedValueOnce(inviteWithHead), // legacy hit
+        update: jest.fn(),
+      },
+    });
+    const svc = new SubCoachesService(prisma as never, buildTeam() as never);
+    const out = await svc.previewByToken(VALID_TOKEN);
+    expect(out.status).toBe('pending');
+    expect(prisma.subCoachInvite.findUnique).toHaveBeenCalledTimes(2);
+    const secondCall = prisma.subCoachInvite.findUnique.mock.calls[1][0];
+    expect(secondCall.where).toHaveProperty('token', VALID_TOKEN);
+  });
+});
 
 // ── previewByToken ──────────────────────────────────────────────────
 

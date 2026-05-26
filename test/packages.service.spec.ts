@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { PackagesService } from '../src/packages/packages.service';
@@ -13,8 +12,13 @@ function makePrismaStub() {
       findUnique: jest.fn(async ({ where }: any) =>
         rows.find((r) => r.id === where.id) ?? null,
       ),
+      findFirst: jest.fn(async ({ where }: any) =>
+        rows.find((r) =>
+          Object.entries(where).every(([k, v]) => r[k] === v),
+        ) ?? null,
+      ),
       findMany: jest.fn(async ({ where, orderBy }: any) => {
-        let out = rows.filter((r) =>
+        const out = rows.filter((r) =>
           Object.entries(where).every(([k, v]) => {
             if (v === null) return r[k] === null || r[k] === undefined;
             if (typeof v === 'object' && v !== null) {
@@ -141,11 +145,15 @@ describe('PackagesService', () => {
   });
 
   describe('update', () => {
-    it('rejects update by non-owner', async () => {
+    it('rejects update by non-owner with 404 PACKAGE_NOT_FOUND (DL-5 enumeration fix)', async () => {
       const pkg = await svc.create('coach-1', { name: 'p', amount_cents: 1000 });
-      await expect(
-        svc.update('coach-2', pkg.id, { name: 'p2' }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      const err = await svc
+        .update('coach-2', pkg.id, { name: 'p2' })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(NotFoundException);
+      expect((err as NotFoundException).getResponse()).toMatchObject({
+        error: 'PACKAGE_NOT_FOUND',
+      });
     });
 
     it('returns 404 for unknown id', async () => {
@@ -173,6 +181,33 @@ describe('PackagesService', () => {
       const updated = await svc.update('coach-1', pkg.id, { name: 'p2' });
       expect(updated.stripe_price_id).toBe('price_keep');
     });
+  });
+
+  describe('requireOwnedPackage', () => {
+    it(
+      'requireOwnedPackage collapses unknown-id and foreign-coach-id into 404 PACKAGE_NOT_FOUND (DL-5 enumeration fix)',
+      async () => {
+        const pkg = await svc.create('coach-1', { name: 'pkg', amount_cents: 5000 });
+
+        // Case 1: completely unknown ID → must 404 with PACKAGE_NOT_FOUND
+        const errUnknown = await (svc as any)
+          .requireOwnedPackage('coach-1', 'nonexistent-id')
+          .catch((e: unknown) => e);
+        expect(errUnknown).toBeInstanceOf(NotFoundException);
+        expect((errUnknown as NotFoundException).getResponse()).toMatchObject({
+          error: 'PACKAGE_NOT_FOUND',
+        });
+
+        // Case 2: valid ID belonging to a different coach → must also 404 PACKAGE_NOT_FOUND (not 403)
+        const errForeign = await (svc as any)
+          .requireOwnedPackage('coach-2', pkg.id)
+          .catch((e: unknown) => e);
+        expect(errForeign).toBeInstanceOf(NotFoundException);
+        expect((errForeign as NotFoundException).getResponse()).toMatchObject({
+          error: 'PACKAGE_NOT_FOUND',
+        });
+      },
+    );
   });
 
   describe('archive', () => {

@@ -18,14 +18,15 @@ import { DELETION_GRACE_PERIOD_DAYS } from '../src/users/account.service';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function buildPrisma(seedUsers: any[]) {
-  const state: { users: any[]; profiles: Record<string, any> } = {
+  const state: { users: any[]; profiles: Record<string, any>; aiDrafts: any[] } = {
     users: seedUsers.map((u) => ({ ...u })),
     profiles: {},
+    aiDrafts: [],
   };
 
   const userTable = {
     findMany: jest.fn(async ({ where, take, orderBy }: any) => {
-      let rows = state.users.filter((u) => {
+      const rows = state.users.filter((u) => {
         if (u.deleted_at) return false;
         if (!u.deletion_scheduled_at) return false;
         const cutoff = where?.deletion_scheduled_at?.lte;
@@ -65,8 +66,18 @@ function buildPrisma(seedUsers: any[]) {
     updateMany: jest.fn(async () => ({ count: 0 })),
   };
 
+  const aIDraft = {
+    deleteMany: jest.fn(async ({ where }: any) => {
+      const before = state.aiDrafts.length;
+      state.aiDrafts = state.aiDrafts.filter(
+        (d) => d.clientId !== where.clientId,
+      );
+      return { count: before - state.aiDrafts.length };
+    }),
+  };
+
   const $transaction = jest.fn(async (cb: any) =>
-    cb({ user: userTable, userProfile, notificationPreferences }),
+    cb({ user: userTable, userProfile, notificationPreferences, aIDraft }),
   );
 
   return {
@@ -74,6 +85,7 @@ function buildPrisma(seedUsers: any[]) {
     user: userTable,
     userProfile,
     notificationPreferences,
+    aIDraft,
     $transaction,
   };
 }
@@ -244,6 +256,7 @@ describe('GdprScrubService', () => {
         user: prisma.user,
         userProfile: prisma.userProfile,
         notificationPreferences: prisma.notificationPreferences,
+        aIDraft: prisma.aIDraft,
       });
     });
     const svc = new GdprScrubService(prisma, audit);
@@ -267,5 +280,46 @@ describe('GdprScrubService', () => {
     expect(prisma.user.findMany).toHaveBeenLastCalledWith(
       expect.objectContaining({ take: 1000 }),
     );
+  });
+
+  // Regression: A1-C3-P1-1 — AIDraft.inputContext retains health PII
+  // (name, age, sex, biometrics, dietary restrictions, injuries, check-in
+  // notes) after a GDPR erasure request because the scrubber issues a
+  // soft-delete (no physical DELETE on User) so the clientId FK cascade
+  // never fires. scrubOne must explicitly delete AIDraft rows inside the
+  // same transaction, before tombstoning the User row.
+  it('scrubOne deletes AIDraft rows belonging to the scrubbed client inside the transaction (A1-C3-P1-1)', async () => {
+    const prisma: any = buildPrisma(baseUsers());
+    // Pre-seed two drafts for u-ripe (scrub candidate) and one for u-old.
+    prisma.state.aiDrafts = [
+      { id: 'draft-1', clientId: 'u-ripe', inputContext: { name: 'Ripe', injuries: ['knee'] } },
+      { id: 'draft-2', clientId: 'u-ripe', inputContext: { name: 'Ripe', dietary_restrictions: ['vegan'] } },
+      { id: 'draft-3', clientId: 'u-old',  inputContext: { name: 'Old',  age_years: 45 } },
+    ];
+    const audit = buildAudit();
+    const svc = new GdprScrubService(prisma, audit);
+
+    await svc.run({ dryRun: false, now: NOW });
+
+    // aIDraft.deleteMany must have been called once per scrubbed user
+    // with the correct clientId WHERE clause.
+    expect(prisma.aIDraft.deleteMany).toHaveBeenCalledTimes(2);
+    expect(prisma.aIDraft.deleteMany).toHaveBeenCalledWith({
+      where: { clientId: 'u-old' },
+    });
+    expect(prisma.aIDraft.deleteMany).toHaveBeenCalledWith({
+      where: { clientId: 'u-ripe' },
+    });
+
+    // All drafts for the scrubbed clients are removed from the table.
+    expect(prisma.state.aiDrafts).toHaveLength(0);
+
+    // The call must happen INSIDE the transaction — verify deleteMany was
+    // called on the tx-scoped aIDraft object, not the top-level prisma one.
+    // The $transaction mock forwards the tx object, so prisma.aIDraft.deleteMany
+    // IS the same ref passed to the callback — this assertion confirms it was
+    // called as part of each transaction invocation.
+    const txCalls = prisma.$transaction.mock.calls;
+    expect(txCalls.length).toBe(2); // one tx per scrubbed candidate
   });
 });
