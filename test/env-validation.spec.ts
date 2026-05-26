@@ -3,7 +3,16 @@ import {
   assertEnv,
   isProdLike,
   looksLikePlaceholder,
+  MIN_CHECKOUT_RECOVERY_SECRET_LENGTH,
 } from '../src/common/env-validation';
+import { EnvValidationError } from '../src/common/errors/env-validation.error';
+
+// Audit A276-F3-P3-7 — single fixture for the CHECKOUT_RECOVERY_SECRET that
+// every test that needs a known-good prod-grade value uses. Kept generous
+// (48 chars, well above the 43-char RFC 7518 §3.2 floor) so that any future
+// bump of MIN_CHECKOUT_RECOVERY_SECRET_LENGTH does not silently break the
+// happy-path tests.
+const VALID_CHECKOUT_RECOVERY_SECRET = 'a'.repeat(48);
 
 // Silent logger — assertEnv normally writes to NestJS Logger; we don't want
 // every test that exercises a missing-var path to scribble to stdout.
@@ -93,7 +102,7 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     // minLength=32. Signs the 15-min recovery JWT and the 7-day guest
     // session cookie; the cookie consumer silently no-ops on missing
     // secret, so boot refuses to start prod without it.
-    CHECKOUT_RECOVERY_SECRET: 'a'.repeat(48),
+    CHECKOUT_RECOVERY_SECRET: VALID_CHECKOUT_RECOVERY_SECRET,
     // R43 — Coach Brief daily push dispatch. Feature-tier; explicit value
     // keeps the missingFeature list empty for the clean-prod-env test.
     COACH_BRIEF_NOTIFICATIONS_ENABLED: 'on',
@@ -253,7 +262,7 @@ describe('assertEnv', () => {
           GUEST_CHECKOUT_PII_SALT: 'a'.repeat(32),
           STRIPE_PUBLISHABLE_KEY: 'pk_test_inline_publishable_key',
           // Audit A276-P1-1 — prod-hardened with minLength=32.
-          CHECKOUT_RECOVERY_SECRET: 'a'.repeat(48),
+          CHECKOUT_RECOVERY_SECRET: VALID_CHECKOUT_RECOVERY_SECRET,
         },
         { logger: silentLogger as any },
       ),
@@ -287,7 +296,7 @@ describe('assertEnv', () => {
         GUEST_CHECKOUT_PII_SALT: 'a'.repeat(32),
         STRIPE_PUBLISHABLE_KEY: 'pk_test_inline_publishable_key',
         // Audit A276-P1-1 — prod-hardened with minLength=32.
-        CHECKOUT_RECOVERY_SECRET: 'a'.repeat(48),
+        CHECKOUT_RECOVERY_SECRET: VALID_CHECKOUT_RECOVERY_SECRET,
       },
       { logger: logger as any },
     );
@@ -374,7 +383,7 @@ describe('assertEnv', () => {
           GUEST_CHECKOUT_PII_SALT: 'a'.repeat(32),
           STRIPE_PUBLISHABLE_KEY: 'pk_test_inline_publishable_key',
           // Audit A276-P1-1 — prod-hardened with minLength=32.
-          CHECKOUT_RECOVERY_SECRET: 'a'.repeat(48),
+          CHECKOUT_RECOVERY_SECRET: VALID_CHECKOUT_RECOVERY_SECRET,
         },
         { enforceProd: false, logger: silentLogger as any },
       ),
@@ -582,14 +591,31 @@ describe('assertEnv — prod-tier validator failures are fatal (Audit #2 P2-B)',
   });
 });
 
-describe('assertEnv — CHECKOUT_RECOVERY_SECRET boot-time gate (Audit A276-P1-1)', () => {
+describe('assertEnv — CHECKOUT_RECOVERY_SECRET boot-time gate (Audit A276-P1-1 + A276-F3-P2-1)', () => {
   // Failure #36: CheckoutCookieService.resolveSecret() returns null when
-  // CHECKOUT_RECOVERY_SECRET is missing OR shorter than 32 chars, and
+  // CHECKOUT_RECOVERY_SECRET is missing OR shorter than the floor, and
   // silently skips writing the 7-day guest session cookie. A prod deploy
   // with the var missing would silently disable session-restore on every
-  // checkout flow. Boot now refuses to start in prod unless the secret is
-  // present AND ≥32 chars. CheckoutRecoveryService.getTokenKey() enforces
-  // the same ≥32-char floor at request time; we match it at boot.
+  // checkout flow.
+  //
+  // Floor: MIN_CHECKOUT_RECOVERY_SECRET_LENGTH = 43 (RFC 7518 §3.2 — HS256
+  // keys MUST carry ≥256 bits of entropy; 32 random bytes encoded base64url
+  // without padding = 43 chars). Boot, runtime cookie service, and runtime
+  // recovery service all share the same constant so they cannot drift.
+
+  // Boundary fixtures derived from the shared constant so a future bump
+  // of MIN_CHECKOUT_RECOVERY_SECRET_LENGTH automatically re-points the
+  // boundary tests at the new floor. The TS const-assertions below
+  // double-check the floor is exactly 43 at the moment the test runs —
+  // changing the floor in production code is a deliberate cross-team
+  // decision and SHOULD force a test edit.
+  it('floor constant is exactly 43 chars (256-bit per RFC 7518 §3.2)', () => {
+    expect(MIN_CHECKOUT_RECOVERY_SECRET_LENGTH).toBe(43);
+  });
+
+  const ONE_BELOW = 'a'.repeat(MIN_CHECKOUT_RECOVERY_SECRET_LENGTH - 1); // 42
+  const AT_FLOOR = 'a'.repeat(MIN_CHECKOUT_RECOVERY_SECRET_LENGTH);     // 43
+  const ABOVE_FLOOR = 'a'.repeat(MIN_CHECKOUT_RECOVERY_SECRET_LENGTH * 2); // 86
 
   it('throws when CHECKOUT_RECOVERY_SECRET is unset under NODE_ENV=production', () => {
     const env: NodeJS.ProcessEnv = { ...fullProdEnv() };
@@ -599,24 +625,70 @@ describe('assertEnv — CHECKOUT_RECOVERY_SECRET boot-time gate (Audit A276-P1-1
     );
   });
 
-  it('throws when CHECKOUT_RECOVERY_SECRET is set but shorter than 32 chars under NODE_ENV=production', () => {
+  it('throws with ENV_PROD_HARDENED_MISSING code when CHECKOUT_RECOVERY_SECRET is unset under prod (A276-F3-P3-6)', () => {
+    // Observability dashboards branch on EnvValidationError.code; a
+    // regression that switches the code to ENV_PROD_BLOCKERS when only
+    // one class of blocker exists would silently break alerting.
+    const env: NodeJS.ProcessEnv = { ...fullProdEnv() };
+    delete env.CHECKOUT_RECOVERY_SECRET;
+    try {
+      assertEnv(env, { logger: silentLogger as any });
+      fail('expected assertEnv to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(EnvValidationError);
+      expect((err as EnvValidationError).code).toBe('ENV_PROD_HARDENED_MISSING');
+      expect((err as EnvValidationError).variables).toContain(
+        'CHECKOUT_RECOVERY_SECRET',
+      );
+    }
+  });
+
+  it('throws when CHECKOUT_RECOVERY_SECRET is set but shorter than the floor under NODE_ENV=production', () => {
     expect(() =>
       assertEnv(
         {
           ...fullProdEnv(),
-          // 31 chars — one below the minimum that
-          // CheckoutRecoveryService.getTokenKey() enforces at request time.
-          CHECKOUT_RECOVERY_SECRET: 'a'.repeat(31),
+          // 42 chars — one below the floor.
+          CHECKOUT_RECOVERY_SECRET: ONE_BELOW,
         },
         { logger: silentLogger as any },
       ),
     ).toThrow(/CHECKOUT_RECOVERY_SECRET/);
   });
 
-  it('throws when CHECKOUT_RECOVERY_SECRET is whitespace-padded short value under prod', () => {
-    // Trim before length check — mirror the runtime services which call
-    // `.length >= 32` on a raw value but operators commonly paste with
-    // trailing newlines that hide a too-short secret.
+  it('throws with distinct ENV_PROD_HARDENED_TOO_SHORT code and "set but too short" wording when value is below floor (A276-F3-P3-4)', () => {
+    // Audit P3-4 — "missing" and "too short" must be distinguishable to
+    // the on-call operator who greps process.env for the var name. The
+    // error message says "is set but too short" (NOT "is missing") and
+    // the error code is ENV_PROD_HARDENED_TOO_SHORT (NOT _MISSING).
+    try {
+      assertEnv(
+        { ...fullProdEnv(), CHECKOUT_RECOVERY_SECRET: ONE_BELOW },
+        { logger: silentLogger as any },
+      );
+      fail('expected assertEnv to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(EnvValidationError);
+      expect((err as EnvValidationError).code).toBe(
+        'ENV_PROD_HARDENED_TOO_SHORT',
+      );
+      const msg = String((err as Error).message);
+      expect(msg).toContain('CHECKOUT_RECOVERY_SECRET');
+      expect(msg).toContain('set but too short');
+      // Reports the actual length so operators can sanity-check what
+      // landed in process.env without having to log the value itself.
+      expect(msg).toContain(`${ONE_BELOW.length} chars`);
+      expect(msg).toContain(`≥${MIN_CHECKOUT_RECOVERY_SECRET_LENGTH}`);
+      // Must NOT use the misleading "is missing" phrasing for a value
+      // that is in fact set in the env.
+      expect(msg).not.toContain('is missing');
+    }
+  });
+
+  it('throws when CHECKOUT_RECOVERY_SECRET is whitespace-padded short value under prod (trim parity)', () => {
+    // Boot trims before length check; runtime services (cookie + recovery)
+    // now do the same after audit A276-F3 hygiene pass, so a value like
+    // `"   aaaa   "` is rejected uniformly across all three call-sites.
     expect(() =>
       assertEnv(
         {
@@ -643,24 +715,70 @@ describe('assertEnv — CHECKOUT_RECOVERY_SECRET boot-time gate (Audit A276-P1-1
     ).toBe(true);
   });
 
-  it('does NOT throw when CHECKOUT_RECOVERY_SECRET is exactly 32 chars under prod', () => {
+  it('surfaces a validationWarning under NODE_ENV=development when CHECKOUT_RECOVERY_SECRET is too short (A276-F3-P3-5)', () => {
+    // Audit P3-5 — a dev contributor who sets the secret but accidentally
+    // pastes a 16-char dev key gets a logger.warn at boot, NOT a silent
+    // pass. Confirms the rule's `reason` claim that the validate callback
+    // surfaces the floor as a dev/staging warning so contributors see the
+    // issue before pushing to prod.
+    const r = evaluateEnv({
+      ...baseHardEnv(),
+      NODE_ENV: 'development',
+      CHECKOUT_RECOVERY_SECRET: 'a'.repeat(16),
+    });
+    expect(
+      r.validationWarnings.some(
+        (w) =>
+          w.startsWith('CHECKOUT_RECOVERY_SECRET:') &&
+          w.includes(`${MIN_CHECKOUT_RECOVERY_SECRET_LENGTH}`),
+      ),
+    ).toBe(true);
+  });
+
+  it('dev-mode does not throw when CHECKOUT_RECOVERY_SECRET is too short — only warns (A276-F3-P3-5)', () => {
+    // Companion to the previous test: confirms that the warning surfaced
+    // by evaluateEnv is logged-and-not-thrown by assertEnv under dev,
+    // matching the documented behaviour in the rule's `reason`.
+    const warn = jest.fn();
+    const logger = { ...silentLogger, warn };
+    expect(() =>
+      assertEnv(
+        {
+          ...baseHardEnv(),
+          NODE_ENV: 'development',
+          CHECKOUT_RECOVERY_SECRET: 'a'.repeat(16),
+        },
+        { logger: logger as any },
+      ),
+    ).not.toThrow();
+    const warned = warn.mock.calls.some((args) =>
+      String(args[0]).includes('CHECKOUT_RECOVERY_SECRET'),
+    );
+    expect(warned).toBe(true);
+  });
+
+  it('does NOT throw when CHECKOUT_RECOVERY_SECRET is exactly at the floor under prod (boundary: 43)', () => {
+    // Inclusive lower bound — a value exactly at MIN_CHECKOUT_RECOVERY_SECRET_LENGTH
+    // passes. Pairs with the 42-char failing boundary above to lock the
+    // floor in place.
+    expect(AT_FLOOR.length).toBe(MIN_CHECKOUT_RECOVERY_SECRET_LENGTH);
     expect(() =>
       assertEnv(
         {
           ...fullProdEnv(),
-          CHECKOUT_RECOVERY_SECRET: 'a'.repeat(32),
+          CHECKOUT_RECOVERY_SECRET: AT_FLOOR,
         },
         { logger: silentLogger as any },
       ),
     ).not.toThrow();
   });
 
-  it('does NOT throw when CHECKOUT_RECOVERY_SECRET is longer than 32 chars under prod', () => {
+  it('does NOT throw when CHECKOUT_RECOVERY_SECRET is longer than the floor under prod', () => {
     expect(() =>
       assertEnv(
         {
           ...fullProdEnv(),
-          CHECKOUT_RECOVERY_SECRET: 'a'.repeat(64),
+          CHECKOUT_RECOVERY_SECRET: ABOVE_FLOOR,
         },
         { logger: silentLogger as any },
       ),
@@ -670,12 +788,12 @@ describe('assertEnv — CHECKOUT_RECOVERY_SECRET boot-time gate (Audit A276-P1-1
   it('does NOT throw when CHECKOUT_RECOVERY_SECRET is missing in development', () => {
     // Dev/test consumers handle the missing secret with a 400 or no-op.
     // We don't want `npm run start:dev` to fail boot just because the
-    // contributor hasn't pasted a 32-char throwaway secret.
+    // contributor hasn't pasted a throwaway secret.
     const env: NodeJS.ProcessEnv = { ...baseHardEnv(), NODE_ENV: 'development' };
     expect(() => assertEnv(env, { logger: silentLogger as any })).not.toThrow();
   });
 
-  it('error message names CHECKOUT_RECOVERY_SECRET and references the audit code', () => {
+  it('error message names CHECKOUT_RECOVERY_SECRET and references the audit codes', () => {
     const env: NodeJS.ProcessEnv = { ...fullProdEnv() };
     delete env.CHECKOUT_RECOVERY_SECRET;
     try {

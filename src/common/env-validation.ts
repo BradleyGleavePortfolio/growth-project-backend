@@ -50,6 +50,24 @@ import { EnvValidationError } from './errors/env-validation.error';
 
 export type EnvTier = 'hard' | 'prod' | 'feature' | 'optional';
 
+// Audit A276-F3-P2-1 — single source of truth for the CHECKOUT_RECOVERY_SECRET
+// minimum length. Referenced from BOTH the boot validator (prodHardenedFeatureVars)
+// AND the runtime consumers (CheckoutCookieService, CheckoutRecoveryService) so
+// a future change in one place cannot drift out of step with the others.
+//
+// Why 43, not 32: CHECKOUT_RECOVERY_SECRET is used as the HMAC key for HS256
+// JWTs that travel in user-facing magic-link URLs (15-min recovery token) and
+// in 7-day guest_session cookies. RFC 7518 §3.2 (JSON Web Algorithms) requires
+// the HMAC key for HS256 to be at least as long as the hash output, i.e. 256
+// bits = 32 random bytes. Encoded base64url without padding that is 43 chars
+// (ceil(32 * 4 / 3) = 43). A 32-CHARACTER floor passes a 32-byte ASCII string
+// like 'aaa…aaa' which carries far less than 256 bits of entropy; a 43-char
+// base64url encoding of 32 CSPRNG bytes carries the full 256 bits. This is
+// the Stripe/Auth0-grade floor for HS256.
+//
+// Operators should generate the value with: `openssl rand -base64 32 | tr -d '=\n'`
+export const MIN_CHECKOUT_RECOVERY_SECRET_LENGTH = 43;
+
 export interface EnvRule {
   name: string;
   tier: EnvTier;
@@ -630,10 +648,11 @@ export const ENV_RULES: EnvRule[] = [
     name: 'CHECKOUT_RECOVERY_SECRET',
     tier: 'feature',
     reason:
-      'r48 / audit A276-P1-1 — HS256 key shared by CheckoutRecoveryService (signs the 15-minute magic-link JWT used to resume an abandoned checkout) AND CheckoutCookieService (signs the 7-day guest_session cookie). MUST be ≥32 chars of high-entropy data. REQUIRED in production: prodHardenedFeatureVars (see assertEnv) refuses to boot when missing or shorter than 32 chars under NODE_ENV=production. The recovery service throws 400 at request time when missing (loud failure), but the cookie service silently no-ops (failure #36), so a missing secret would deploy with the 7-day guest session cookie disabled and nobody would notice. The `validate` callback below surfaces the same ≥32 floor as a warning in dev/staging so contributors see the issue before pushing. Dev/test can leave it unset; both services skip / 400 with a clear message.',
+      'r48 / audit A276-P1-1 + A276-F3-P2-1 — HS256 key shared by CheckoutRecoveryService (signs the 15-minute magic-link JWT used to resume an abandoned checkout) AND CheckoutCookieService (signs the 7-day guest_session cookie). MUST be ≥43 chars of high-entropy data (RFC 7518 §3.2 requires HS256 keys to carry ≥256 bits of entropy; 32 random bytes encoded base64url without padding = 43 chars). REQUIRED in production: prodHardenedFeatureVars (see assertEnv) refuses to boot when missing or shorter than MIN_CHECKOUT_RECOVERY_SECRET_LENGTH chars under NODE_ENV=production. The recovery service throws 400 at request time when missing (loud failure), but the cookie service silently no-ops (failure #36), so a missing secret would deploy with the 7-day guest session cookie disabled and nobody would notice. The `validate` callback below surfaces the same floor as a warning in dev/staging so contributors see the issue before pushing. Dev/test can leave it unset; both services skip / 400 with a clear message. Generate with: `openssl rand -base64 32 | tr -d "=\n"`.',
     validate: (v) => {
-      if (v.trim().length < 32) {
-        return 'CHECKOUT_RECOVERY_SECRET must be at least 32 characters long.';
+      const trimmed = v.trim();
+      if (trimmed.length < MIN_CHECKOUT_RECOVERY_SECRET_LENGTH) {
+        return `CHECKOUT_RECOVERY_SECRET must be at least ${MIN_CHECKOUT_RECOVERY_SECRET_LENGTH} characters long (got ${trimmed.length}) — see RFC 7518 §3.2.`;
       }
       return null;
     },
@@ -1004,42 +1023,58 @@ export function assertEnv(
       },
       {
         name: 'CHECKOUT_RECOVERY_SECRET',
-        minLength: 32,
+        minLength: MIN_CHECKOUT_RECOVERY_SECRET_LENGTH,
         reason:
-          'r48 — signs the 15-minute checkout recovery JWT AND the 7-day guest session cookie. MUST be ≥32 chars; boot refuses to start prod when missing because the cookie path silently no-ops on missing secret (failure #36, audit A276-P1-1).',
+          'r48 / audit A276-P1-1 + A276-F3-P2-1 — signs the 15-minute checkout recovery JWT AND the 7-day guest session cookie. MUST be ≥43 chars (RFC 7518 §3.2: HS256 keys carry ≥256 bits of entropy = 32 random bytes = 43 base64url chars); boot refuses to start prod when missing or too short because the cookie path silently no-ops on weak/missing secret (failure #36).',
       },
     ];
-    const missing = prodHardenedFeatureVars.filter(
-      (v) => {
-        // ANDROID_CERT_SHA256_FINGERPRINTS accepts a comma/whitespace
-        // separated list; ANDROID_SHA256_FINGERPRINT is an accepted
-        // single-value alias. Either env var being set counts.
-        if (v.name === 'ANDROID_CERT_SHA256_FINGERPRINTS') {
-          const a = env.ANDROID_CERT_SHA256_FINGERPRINTS;
-          const b = env.ANDROID_SHA256_FINGERPRINT;
-          const ok =
-            (typeof a === 'string' && a.trim().length > 0) ||
-            (typeof b === 'string' && b.trim().length > 0);
-          return !ok;
-        }
-        const raw = env[v.name];
-        if (typeof raw !== 'string' || raw.trim().length === 0) {
-          return true;
-        }
-        // Audit A276-P1-1 — entries may opt into a minimum-length gate so
-        // a too-short secret (which would silently no-op at runtime in at
-        // least one consumer) is treated identically to a missing one.
-        // Presence-only entries (no minLength) keep their original
-        // behaviour: any non-empty trimmed value passes here.
-        if (
-          typeof v.minLength === 'number' &&
-          raw.trim().length < v.minLength
-        ) {
-          return true;
-        }
-        return false;
-      },
-    );
+    // Audit A276-F3-P3-4 — distinguish "missing" (var unset / blank) from
+    // "too short" (var IS set but fails the minLength entropy floor). An
+    // on-call operator who greps `process.env` for the var name should
+    // not see "is missing" when the var is in fact present in the env
+    // file. Two segments → two clearer 3am-pager messages.
+    const missing: Array<{ name: string; reason: string }> = [];
+    const tooShort: Array<{
+      name: string;
+      reason: string;
+      minLength: number;
+      actualLength: number;
+    }> = [];
+    for (const v of prodHardenedFeatureVars) {
+      // ANDROID_CERT_SHA256_FINGERPRINTS accepts a comma/whitespace
+      // separated list; ANDROID_SHA256_FINGERPRINT is an accepted
+      // single-value alias. Either env var being set counts.
+      if (v.name === 'ANDROID_CERT_SHA256_FINGERPRINTS') {
+        const a = env.ANDROID_CERT_SHA256_FINGERPRINTS;
+        const b = env.ANDROID_SHA256_FINGERPRINT;
+        const ok =
+          (typeof a === 'string' && a.trim().length > 0) ||
+          (typeof b === 'string' && b.trim().length > 0);
+        if (!ok) missing.push({ name: v.name, reason: v.reason });
+        continue;
+      }
+      const raw = env[v.name];
+      if (typeof raw !== 'string' || raw.trim().length === 0) {
+        missing.push({ name: v.name, reason: v.reason });
+        continue;
+      }
+      // Audit A276-P1-1 / A276-F3-P2-1 — entries may opt into a
+      // minimum-length gate so a too-short secret (which would silently
+      // no-op at runtime in at least one consumer) is rejected at boot.
+      // Presence-only entries (no minLength) keep their original
+      // behaviour: any non-empty trimmed value passes here.
+      if (
+        typeof v.minLength === 'number' &&
+        raw.trim().length < v.minLength
+      ) {
+        tooShort.push({
+          name: v.name,
+          reason: v.reason,
+          minLength: v.minLength,
+          actualLength: raw.trim().length,
+        });
+      }
+    }
     // Audit #5 P1-7 — aggregate every prod-side blocker discovered so far
     // (prod-hardened missing + missingProd + placeholderProd +
     // validationErrorsProd) into a SINGLE thrown error rather than throwing
@@ -1062,11 +1097,26 @@ export function assertEnv(
     const prodBlockerSegments: string[] = [];
     const prodBlockerVars: string[] = [];
     if (missing.length) {
+      // NOTE: "URL config" wording is retained for back-compat with existing
+      // test patterns and dashboard alerts; P3-3 (rewording) is tracked
+      // separately. The new too-short segment below uses clearer wording.
       prodBlockerSegments.push(
         `Production-required URL config is missing: ` +
           missing.map((v) => `${v.name} (${v.reason})`).join('; '),
       );
       prodBlockerVars.push(...missing.map((v) => v.name));
+    }
+    if (tooShort.length) {
+      prodBlockerSegments.push(
+        `Production-required env config is set but too short: ` +
+          tooShort
+            .map(
+              (v) =>
+                `${v.name} is ${v.actualLength} chars (need ≥${v.minLength}) — ${v.reason}`,
+            )
+            .join('; '),
+      );
+      prodBlockerVars.push(...tooShort.map((v) => v.name));
     }
     if (enforceProd && result.missingProd.length) {
       prodBlockerSegments.push(
@@ -1095,8 +1145,9 @@ export function assertEnv(
         const seg = prodBlockerSegments[0];
         logger.error(seg);
         // Map the segment back to its original code for back-compat.
-        const code: 'ENV_PROD_HARDENED_MISSING' | 'ENV_MISSING_PROD' | 'ENV_PLACEHOLDER_PROD' | 'ENV_VALIDATION_PROD' =
+        const code: 'ENV_PROD_HARDENED_MISSING' | 'ENV_PROD_HARDENED_TOO_SHORT' | 'ENV_MISSING_PROD' | 'ENV_PLACEHOLDER_PROD' | 'ENV_VALIDATION_PROD' =
           missing.length ? 'ENV_PROD_HARDENED_MISSING'
+          : tooShort.length ? 'ENV_PROD_HARDENED_TOO_SHORT'
           : result.missingProd.length ? 'ENV_MISSING_PROD'
           : result.placeholderProd.length ? 'ENV_PLACEHOLDER_PROD'
           : 'ENV_VALIDATION_PROD';

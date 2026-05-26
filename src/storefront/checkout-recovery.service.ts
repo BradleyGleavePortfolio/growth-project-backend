@@ -10,6 +10,7 @@ import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 import { PrismaService } from '../prisma.service';
 import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
+import { MIN_CHECKOUT_RECOVERY_SECRET_LENGTH } from '../common/env-validation';
 
 // r48 #5 — magic-link recovery for abandoned checkouts.
 //
@@ -275,19 +276,23 @@ export class CheckoutRecoveryService {
   }
 
   private getTokenKey(): Uint8Array {
-    const secret =
+    // Audit A276-F3-P2-1 — share the entropy floor with the boot validator
+    // (MIN_CHECKOUT_RECOVERY_SECRET_LENGTH = 43 → ≥256 bits per RFC 7518
+    // §3.2 for HS256). Trim defensively so a trailing newline from an
+    // operator paste doesn't slip through here while boot rejects it.
+    const raw =
       this.config.get<string>('CHECKOUT_RECOVERY_SECRET') ??
       process.env.CHECKOUT_RECOVERY_SECRET ??
       '';
-    if (!secret || secret.length < 32) {
+    const secret = raw.trim();
+    if (!secret || secret.length < MIN_CHECKOUT_RECOVERY_SECRET_LENGTH) {
       // Refuse to mint / verify with a weak secret.  Throwing here is
       // the lesser evil — better to fail loudly than to silently sign
       // tokens with a guessable key.  Production env validation will
       // catch this at boot; the throw is the runtime safety net.
       throw new BadRequestException({
         error: 'CHECKOUT_RECOVERY_NOT_CONFIGURED',
-        message:
-          'Recovery secret not configured. Set CHECKOUT_RECOVERY_SECRET to a 32+ char value.',
+        message: `Recovery secret not configured. Set CHECKOUT_RECOVERY_SECRET to a ${MIN_CHECKOUT_RECOVERY_SECRET_LENGTH}+ char value (256-bit entropy per RFC 7518 §3.2).`,
       });
     }
     return new TextEncoder().encode(secret);

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 import type { Response } from 'express';
+import { MIN_CHECKOUT_RECOVERY_SECRET_LENGTH } from '../common/env-validation';
 
 // r48 #11 — signed cookie fallback for guest sessions.
 //
@@ -110,10 +111,17 @@ export class CheckoutCookieService {
   }
 
   private resolveSecret(): string | null {
-    const secret =
+    // Audit A276-F3-P2-1 — share the entropy floor with the boot
+    // validator (MIN_CHECKOUT_RECOVERY_SECRET_LENGTH = 43 → ≥256 bits per
+    // RFC 7518 §3.2 for HS256). Also `.trim()` defensively: whitespace
+    // from an operator paste (e.g. trailing newline) is not entropy and
+    // would have produced subtle JWT-signature mismatches between sign
+    // and verify if any caller normalised differently.
+    const raw =
       this.config.get<string>('CHECKOUT_RECOVERY_SECRET') ??
       process.env.CHECKOUT_RECOVERY_SECRET ??
       '';
-    return secret.length >= 32 ? secret : null;
+    const secret = raw.trim();
+    return secret.length >= MIN_CHECKOUT_RECOVERY_SECRET_LENGTH ? secret : null;
   }
 }
