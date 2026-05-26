@@ -3,9 +3,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
   Optional,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 import { PrismaService } from '../prisma.service';
 import { EmailService } from '../email/email.service';
@@ -45,22 +48,77 @@ const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1h
 const RATE_LIMIT_MAX = 3;
 const RECOVERY_TYPE = 'checkout_recovery';
 
+// A276-P1-3 — single-use guard.
+//
+// Every recovery JWT now carries a random `jti` claim (uuidv4).
+// On verifyToken, after all signature/expiry/row checks pass, we
+// SETNX co:rec:jti:<jti> 1 EX 900 — if the key already exists
+// (previously consumed within the 15-minute exp window) we throw
+// `RECOVERY_TOKEN_USED`. SETNX is the LAST step of verification so
+// a failing earlier check (bad signature, expired, GuestCheckout
+// missing) does not consume the token.
+//
+// Backwards compatibility: tokens minted before this commit have no
+// `jti` claim. Those tokens are now rejected with the generic
+// `RECOVERY_TOKEN_INVALID` error — acceptable because they expire in
+// at most 15 minutes and the security improvement (no replay) is
+// worth the brief disruption to in-flight magic links.
+const RECOVERY_JTI_REDIS_PREFIX = 'co:rec:jti:';
+const RECOVERY_MEMORY_CAP = 1024;
+
 interface RecoveryClaims extends JWTPayload {
   st: string; // share_token
   em: string; // email
   gid: string; // guest_checkout_id
   type: typeof RECOVERY_TYPE;
+  jti: string; // random uuid — single-use guard key
 }
 
 @Injectable()
-export class CheckoutRecoveryService {
+export class CheckoutRecoveryService implements OnModuleInit {
   private readonly logger = new Logger(CheckoutRecoveryService.name);
+
+  // Redis is used to atomically mark a `jti` as consumed (SETNX). Mirrors
+  // CheckoutIdempotencyService's pattern (dynamic ioredis import, lazy
+  // connect, in-memory fallback for dev/test boots without REDIS_URL).
+  // A different key prefix keeps the namespace clean.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private redis: any | null = null;
+  /** In-memory fallback for dev/test boots without REDIS_URL. Single
+   * process only — production MUST set REDIS_URL or replays across
+   * Fly machines remain possible. */
+  private readonly memory = new Map<string, number>(); // key -> expiresAtMs
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     @Optional() private readonly email?: EmailService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    const redisUrl = this.config.get<string>('REDIS_URL');
+    if (!redisUrl) {
+      this.logger.log(
+        'CheckoutRecoveryService: REDIS_URL unset — using in-memory single-use guard (single-process)',
+      );
+      return;
+    }
+    try {
+      // Dynamic import so unit tests + dev boots without ioredis still work.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { default: Redis } = await import('ioredis');
+      this.redis = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1 });
+      await this.redis.connect();
+      this.logger.log('CheckoutRecoveryService: Redis single-use guard connected');
+    } catch (err) {
+      this.logger.warn(
+        `CheckoutRecoveryService: Redis unavailable, falling back to in-memory: ${
+          err instanceof Error ? err.message : 'unknown'
+        }`,
+      );
+      this.redis = null;
+    }
+  }
 
   /**
    * Send a recovery link to the guest's email.  Returns { sent: true }
@@ -202,6 +260,15 @@ export class CheckoutRecoveryService {
         message: 'This recovery link is no longer valid.',
       });
     }
+    // A276-P1-3 — require `jti`. Legacy tokens (pre-this-commit) without
+    // a jti claim cannot be marked single-use and so are no longer
+    // accepted. The 15-min exp bounds the disruption.
+    if (typeof claims.jti !== 'string' || claims.jti.length === 0) {
+      throw new NotFoundException({
+        error: 'RECOVERY_TOKEN_INVALID',
+        message: 'This recovery link is no longer valid.',
+      });
+    }
     // Cross-check the GuestCheckout row still exists + matches.
     const row = await this.prisma.guestCheckout.findUnique({
       where: { id: claims.gid },
@@ -216,11 +283,86 @@ export class CheckoutRecoveryService {
         message: 'This recovery link is no longer valid.',
       });
     }
+    // A276-P1-3 — single-use guard. Done LAST in verification so a token
+    // is only consumed once every other check has passed. If Redis is
+    // configured but errors out, we FAIL CLOSED — better to deny a
+    // legitimate retry than to allow a replay.
+    await this.markJtiConsumedOrThrow(claims.jti);
     return {
       share_token: claims.st,
       email: claims.em,
       guest_checkout_id: claims.gid,
     };
+  }
+
+  /**
+   * Atomically claim the JWT's `jti` as "consumed" via Redis SETNX with
+   * a TTL matching the JWT's exp (900s). Throws RECOVERY_TOKEN_USED on
+   * collision, and FAILS CLOSED if the backing store is unreachable.
+   */
+  private async markJtiConsumedOrThrow(jti: string): Promise<void> {
+    const key = `${RECOVERY_JTI_REDIS_PREFIX}${jti}`;
+    if (this.redis) {
+      let setResult: unknown;
+      try {
+        // SET NX EX — atomic. Returns 'OK' if we won (first use), null otherwise.
+        setResult = await this.redis.set(
+          key,
+          '1',
+          'EX',
+          RECOVERY_JWT_TTL_SECONDS,
+          'NX',
+        );
+      } catch (err) {
+        // Fail closed: Redis is the source of truth for single-use; if
+        // we cannot reach it we must not allow the token through.
+        this.logger.error(
+          `recovery single-use guard: Redis SETNX failed, denying: ${
+            err instanceof Error ? err.message : 'unknown'
+          }`,
+        );
+        throw new UnauthorizedException({
+          error: 'RECOVERY_TOKEN_USED',
+          message: 'This recovery link has already been used. Request a new one.',
+        });
+      }
+      if (setResult !== 'OK') {
+        throw new UnauthorizedException({
+          error: 'RECOVERY_TOKEN_USED',
+          message: 'This recovery link has already been used. Request a new one.',
+        });
+      }
+      return;
+    }
+    // No Redis — in-memory fallback (dev/test only).
+    this.memoryClaimOrThrow(key);
+  }
+
+  private memoryClaimOrThrow(key: string): void {
+    const now = Date.now();
+    const existing = this.memory.get(key);
+    if (existing !== undefined && existing > now) {
+      throw new UnauthorizedException({
+        error: 'RECOVERY_TOKEN_USED',
+        message: 'This recovery link has already been used. Request a new one.',
+      });
+    }
+    // Lazy GC + cap to keep the map bounded across long-running test runs.
+    if (this.memory.size >= RECOVERY_MEMORY_CAP) {
+      for (const [k, exp] of this.memory) {
+        if (exp <= now) this.memory.delete(k);
+      }
+      if (this.memory.size >= RECOVERY_MEMORY_CAP) {
+        const firstKey = this.memory.keys().next().value;
+        if (firstKey !== undefined) this.memory.delete(firstKey);
+      }
+    }
+    this.memory.set(key, now + RECOVERY_JWT_TTL_SECONDS * 1000);
+  }
+
+  /** Test seam — clears the in-memory single-use set between cases. */
+  resetForTests(): void {
+    this.memory.clear();
   }
 
   /**
@@ -262,6 +404,10 @@ export class CheckoutRecoveryService {
     email: string,
     guestCheckoutId: string,
   ): Promise<string> {
+    // A276-P1-3 — every recovery JWT gets a random jti so the verifier
+    // can mark it consumed (Redis SETNX) and reject replays within the
+    // 15-minute exp window.
+    const jti = randomUUID();
     return new SignJWT({
       st: shareToken,
       em: email.toLowerCase(),
@@ -269,6 +415,7 @@ export class CheckoutRecoveryService {
       type: RECOVERY_TYPE,
     })
       .setProtectedHeader({ alg: 'HS256' })
+      .setJti(jti)
       .setIssuedAt()
       .setExpirationTime(`${RECOVERY_JWT_TTL_SECONDS}s`)
       .sign(this.getTokenKey());
