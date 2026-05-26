@@ -1,5 +1,33 @@
 # Pre-Existing Red Test Suites — Outside PR #267 Scope
 
+> **R10 RETIRED — 2026-05-26**
+>
+> R10 ("grandfathered failing tests on main are allowed to remain red
+while a domain ticket exists") is **retired**. Investigation showed the
+3 remaining grandfathered failures on `main` were all stale test-helper
+bugs introduced when source code was hardened (audit IDs A1-C5-P1-1,
+A1-C5-P1-3, A1-C5-P1-4). Source was correct in every case; the tests
+needed updating. All 3 were fixed in branch
+`chore/r10-cleanup-fix-stale-tests`:
+>
+> - `test/account-deletion.service.spec.ts` — `??` operator silently
+>   substituted default Date for explicit `null` overrides (helper
+>   bug, A1-C5-P1-4)
+> - `test/email.service.spec.ts` — test expected graceful failed-return
+>   but source was hardened to throw `BadRequestException`
+>   (post-A1-C5-P1-1)
+> - `test/recent-auth.guard.spec.ts` — JS default parameter substituted
+>   valid secret for explicit `undefined` (helper bug,
+>   A1-C5-P1-3 audit class)
+>
+> **New CLEAN bar (replaces R10 grandfathering):**
+> CI green on main + 0 P0 + 0 P1 + 0 P2.
+>
+> No new grandfathered failures will be accepted. PRs introducing
+failing tests on main must fix them in the same PR or open a P0/P1/P2
+bug. This entry is left in place so old PRs and audits that reference
+R10 remain traceable; the rationale below is historical only.
+
 Audit finding reference: **P2-9** (FINDINGS_audit4_pr267.md).
 
 This document enumerates the Jest suites that were already failing on
