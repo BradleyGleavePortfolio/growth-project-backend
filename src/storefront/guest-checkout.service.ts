@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -161,12 +162,14 @@ export class GuestCheckoutService {
     private readonly config: ConfigService,
     // r48 #3 — content-addressable PI cache so a network-dropped
     // retry that rolled a fresh idempotency_key still reuses the
-    // existing Stripe PaymentIntent.  @Optional() not strictly
-    // necessary (the module provides it unconditionally), but defensive
-    // against legacy unit tests that hand-construct this service.
+    // existing Stripe PaymentIntent.  @Optional() so legacy unit
+    // tests that hand-construct this service via Test.createTestingModule
+    // don't need to register a stub.
+    @Optional()
     private readonly idempotencyCache?: CheckoutIdempotencyService,
     // r48 #7 + #8 — live Stripe Connect preflight (60s cache).  Same
     // optional wiring as above.
+    @Optional()
     private readonly preflight?: ConnectPreflightService,
   ) {}
 
