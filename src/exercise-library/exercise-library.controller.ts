@@ -1,7 +1,11 @@
 /**
  * ExerciseLibraryController — coach-facing exercise catalog search.
  *
- * All routes are protected by the global JwtAuthGuard; no @Public() decorator.
+ * Auth: every route is JWT-authenticated by the global JwtAuthGuard.
+ * RBAC: gated to @Roles('coach', 'owner') via RolesGuard so students /
+ *       clients cannot drain the platform's paid RapidAPI quota.
+ *       Mirrors the WorkoutBuilderController gating exactly so the two
+ *       coach-facing surfaces have identical posture.
  *
  * Routes:
  *   GET /exercises/search   — paginated search with optional filters
@@ -16,6 +20,7 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -25,11 +30,16 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { ExerciseLibraryService } from './exercise-library.service';
 import { ExerciseSearchResult, Exercise } from './exercise.entity';
 
 @ApiTags('exercises')
 @ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('coach', 'owner')
 @Controller('exercises')
 export class ExerciseLibraryController {
   constructor(private readonly exerciseLibrary: ExerciseLibraryService) {}
