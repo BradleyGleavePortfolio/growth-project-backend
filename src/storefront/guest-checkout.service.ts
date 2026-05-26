@@ -639,7 +639,15 @@ export class GuestCheckoutService {
   // delivery against a converted row would attempt to create a second
   // Supabase user.
 
-  async handlePaymentSucceeded(paymentIntentId: string): Promise<void> {
+  // A276-P0-2 — chargeInfo carries the Stripe-hosted receipt URL (or the
+  // charge id we'd retrieve to look it up). Both are optional so legacy
+  // callers without the upgraded billing dispatcher still work; the
+  // receipt simply ends up null and gets filled in by a later replay or
+  // operator-driven backfill.
+  async handlePaymentSucceeded(
+    paymentIntentId: string,
+    chargeInfo?: { chargeId: string | null; receiptUrl: string | null },
+  ): Promise<void> {
     try {
       // Atomic pending→paid transition. updateMany with WHERE status =
       // 'pending' is the canonical "claim once" pattern: if count = 0,
@@ -675,6 +683,34 @@ export class GuestCheckoutService {
         return;
       }
 
+      // A276-P0-2 — resolve the Stripe-hosted receipt_url and persist it
+      // on the GuestCheckout row BEFORE convertGuestToUser, so the
+      // welcome-email path (which reads the row) ships the receipt link
+      // in the same outgoing email. resolveReceiptUrl is best-effort:
+      // failures (Stripe blip, missing charge id) leave receipt_url null
+      // and the welcome email omits the "View receipt" line.
+      const receiptUrl = await this.resolveReceiptUrl(
+        paymentIntentId,
+        chargeInfo,
+      );
+      if (receiptUrl) {
+        await this.prisma.guestCheckout
+          .updateMany({
+            where: {
+              stripe_payment_intent_id: paymentIntentId,
+              receipt_url: null,
+            },
+            data: { receipt_url: receiptUrl },
+          })
+          .catch((err) => {
+            // Receipt URL persistence is non-critical — log and continue
+            // so a DB blip here never blocks the conversion path.
+            this.logger.warn(
+              `receipt_url persist failed for ${paymentIntentId} (tag=${safeErrorTag(err)})`,
+            );
+          });
+      }
+
       // P1-4 — Guest conversion runs INLINE, before the webhook returns.
       // The previous setImmediate path acknowledged Stripe before account
       // creation finished; if the process exited (Fly redeploy, OOM, hard
@@ -685,12 +721,60 @@ export class GuestCheckoutService {
       //
       // Any unrecoverable error inside convertGuestToUser flips the row
       // to 'failed' so the reconciliation job has a clear signal.
-      await this.convertGuestToUser(checkout);
+      const checkoutWithReceipt = receiptUrl
+        ? { ...checkout, receipt_url: receiptUrl }
+        : checkout;
+      await this.convertGuestToUser(checkoutWithReceipt);
     } catch (err) {
       // Webhook MUST return 200 — log + swallow.
       this.logger.error(
         `handlePaymentSucceeded crashed (tag=${safeErrorTag(err)})`,
       );
+    }
+  }
+
+  // A276-P0-2 — Stripe Connect destination charges generate a hosted,
+  // signed, branded receipt URL on every Charge (pay.stripe.com/receipts/…).
+  // We prefer the URL handed in from the webhook payload (no extra Stripe
+  // round-trip); fall back to retrieving the Charge by id when the event
+  // only carried a charge id; final fallback is to retrieve the
+  // PaymentIntent and chase its latest_charge. Returns null when none of
+  // those paths produced a usable https URL.
+  private async resolveReceiptUrl(
+    paymentIntentId: string,
+    chargeInfo?: { chargeId: string | null; receiptUrl: string | null },
+  ): Promise<string | null> {
+    const fromEvent = chargeInfo?.receiptUrl;
+    if (typeof fromEvent === 'string' && /^https:\/\//.test(fromEvent)) {
+      return fromEvent;
+    }
+    let chargeId = chargeInfo?.chargeId ?? null;
+    try {
+      if (!chargeId) {
+        const pi = await this.stripe.retrievePaymentIntent(paymentIntentId);
+        if (!pi || typeof pi !== 'object') return null;
+        const lc = (pi as { latest_charge?: string | null }).latest_charge;
+        if (typeof lc === 'string' && lc.length > 0) chargeId = lc;
+        else if (
+          pi.charges?.data &&
+          pi.charges.data.length > 0 &&
+          typeof pi.charges.data[0].id === 'string'
+        ) {
+          chargeId = pi.charges.data[0].id as string;
+        }
+      }
+      if (!chargeId) return null;
+      const charge = await this.stripe.retrieveCharge(chargeId);
+      const url = (charge as { receipt_url?: string | null }).receipt_url;
+      if (typeof url === 'string' && /^https:\/\//.test(url)) {
+        return url;
+      }
+      return null;
+    } catch (err) {
+      this.logger.warn(
+        `resolveReceiptUrl: Stripe lookup failed for pi=${paymentIntentId} (tag=${safeErrorTag(err)})`,
+      );
+      return null;
     }
   }
 
@@ -1289,6 +1373,18 @@ export class GuestCheckoutService {
             packageName,
           )}</strong> to your existing Growth Project account — sign in with your usual credentials.</p>`;
 
+    // A276-P0-2 — Stripe-hosted receipt link. Only rendered when the
+    // upstream resolveReceiptUrl produced an https URL (rejects local://
+    // legacy values and any non-https schemes via escapeAttr).
+    const stripeReceiptUrl = (checkout as { receipt_url?: string | null }).receipt_url ?? null;
+    const receiptLine =
+      typeof stripeReceiptUrl === 'string' &&
+      /^https:\/\//.test(stripeReceiptUrl)
+        ? `<p style="margin-top:16px;"><a href="${escapeAttr(
+            stripeReceiptUrl,
+          )}" style="color:#1A1A1A;text-decoration:underline;">View your receipt</a></p>`
+        : '';
+
     const body = {
       from: fromAddress,
       to: checkout.guest_email,
@@ -1297,6 +1393,7 @@ export class GuestCheckoutService {
 <h1 style="font-family:Georgia,serif;color:#1A1A1A;">Welcome, ${escapeHtml(checkout.guest_name)}.</h1>
 <p>You're enrolled in <strong>${escapeHtml(packageName)}</strong> with ${escapeHtml(coachName)}.</p>
 ${credentials}
+${receiptLine}
 <p style="margin-top:24px;"><a href="${escapeAttr(appStoreUrl)}" style="background:#C9A84C;color:#1A1A1A;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Download for iOS</a> &nbsp;
 <a href="${escapeAttr(playStoreUrl)}" style="background:#C9A84C;color:#1A1A1A;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Download for Android</a></p>
 </body></html>`,

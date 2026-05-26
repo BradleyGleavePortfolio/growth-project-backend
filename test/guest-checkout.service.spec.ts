@@ -113,6 +113,9 @@ describe('GuestCheckoutService', () => {
   let stripe: {
     createPaymentIntent: jest.Mock;
     retrievePaymentIntent: jest.Mock;
+    // A276-P0-2 — retrieveCharge resolves the Stripe-hosted receipt_url
+    // when the webhook payload didn't carry it expanded.
+    retrieveCharge: jest.Mock;
   };
   let supabaseAdminMock: {
     createUser: jest.Mock;
@@ -125,6 +128,9 @@ describe('GuestCheckoutService', () => {
     stripe = {
       createPaymentIntent: jest.fn(),
       retrievePaymentIntent: jest.fn(),
+      // A276-P0-2 — default to a no-charge response so existing tests
+      // (which don't care about receipt_url) keep passing.
+      retrieveCharge: jest.fn().mockResolvedValue({ id: 'ch_default', receipt_url: null }),
     };
     supabaseAdminMock = {
       createUser: jest.fn(),
@@ -664,6 +670,173 @@ describe('GuestCheckoutService', () => {
       await expect(
         service.handlePaymentSucceeded('pi_xyz'),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  // A276-P0-2 — Stripe-hosted receipt URL is the canonical buyer-facing
+  // receipt in this PR (replaces the broken local:// PDF path). The
+  // welcome email must surface a pay.stripe.com link and the
+  // GuestCheckout row must persist the same URL so admin tools and
+  // support resends can use it. The 2% TGP application fee path must
+  // remain undisturbed.
+  describe('handlePaymentSucceeded — Stripe receipt_url (A276-P0-2)', () => {
+    function paidCheckoutRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'gc-r',
+        package_id: 'pkg-1',
+        package: {
+          coach: { id: 'coach-1' },
+          coach_id: 'coach-1',
+          amount_cents: 29700,
+          currency: 'usd',
+          billing_type: 'one_time',
+          name: 'Pack',
+        },
+        idempotency_key: IDEMP_KEY,
+        guest_email: 'jane@example.com',
+        guest_name: 'Jane',
+        stripe_payment_intent_id: 'pi_r',
+        stripe_customer_id: null,
+        status: 'paid',
+        ...overrides,
+      };
+    }
+
+    it('persists the Stripe-hosted receipt_url on the GuestCheckout row when the event payload carries it', async () => {
+      // Initial pending→paid claim succeeds.
+      prisma.guestCheckout.updateMany
+        .mockResolvedValueOnce({ count: 1 }) // claim
+        .mockResolvedValueOnce({ count: 1 }); // receipt_url persist
+      const row = paidCheckoutRow();
+      prisma.guestCheckout.findUnique
+        .mockResolvedValueOnce(row) // post-claim read
+        .mockResolvedValueOnce(row); // convertGuestToUser re-read
+      supabaseAdminMock.createUser.mockResolvedValueOnce({
+        data: { user: { id: 'sb-r' } },
+        error: null,
+      });
+      prisma.connectAccount.findUnique.mockResolvedValueOnce({
+        stripe_account_id: 'acct_dest',
+      });
+      prisma.user.upsert.mockResolvedValueOnce({ id: 'usr-r', coach_id: 'coach-1' });
+      prisma.clientPurchase.findFirst.mockResolvedValueOnce(null);
+      prisma.clientPurchase.create.mockResolvedValueOnce({ id: 'cp-r' });
+      prisma.guestCheckout.update.mockResolvedValueOnce({ id: 'gc-r' });
+
+      await service.handlePaymentSucceeded('pi_r', {
+        chargeId: 'ch_abc',
+        receiptUrl: 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF9-test',
+      });
+
+      // Second updateMany call is the receipt_url persist.
+      const persistCall = prisma.guestCheckout.updateMany.mock.calls[1];
+      expect(persistCall[0]).toMatchObject({
+        where: {
+          stripe_payment_intent_id: 'pi_r',
+          receipt_url: null,
+        },
+        data: {
+          receipt_url: 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF9-test',
+        },
+      });
+      // No extra Stripe round-trip when the event already carried the URL.
+      expect(stripe.retrieveCharge).not.toHaveBeenCalled();
+      expect(stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+    });
+
+    it('falls back to stripe.retrieveCharge when the event payload only carries chargeId', async () => {
+      prisma.guestCheckout.updateMany
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 1 });
+      const row = paidCheckoutRow();
+      prisma.guestCheckout.findUnique
+        .mockResolvedValueOnce(row)
+        .mockResolvedValueOnce(row);
+      stripe.retrieveCharge.mockResolvedValueOnce({
+        id: 'ch_abc',
+        receipt_url: 'https://pay.stripe.com/receipts/payment/abc',
+      });
+      supabaseAdminMock.createUser.mockResolvedValueOnce({
+        data: { user: { id: 'sb-r2' } },
+        error: null,
+      });
+      prisma.connectAccount.findUnique.mockResolvedValueOnce({
+        stripe_account_id: 'acct_dest',
+      });
+      prisma.user.upsert.mockResolvedValueOnce({ id: 'usr-r2', coach_id: 'coach-1' });
+      prisma.clientPurchase.findFirst.mockResolvedValueOnce(null);
+      prisma.clientPurchase.create.mockResolvedValueOnce({ id: 'cp-r2' });
+      prisma.guestCheckout.update.mockResolvedValueOnce({});
+
+      await service.handlePaymentSucceeded('pi_r', {
+        chargeId: 'ch_abc',
+        receiptUrl: null,
+      });
+
+      expect(stripe.retrieveCharge).toHaveBeenCalledWith('ch_abc');
+      const persistCall = prisma.guestCheckout.updateMany.mock.calls[1];
+      expect(persistCall[0].data.receipt_url).toBe(
+        'https://pay.stripe.com/receipts/payment/abc',
+      );
+    });
+
+    it('rejects non-https receipt URLs (no local:// or javascript: leaks)', async () => {
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+      const row = paidCheckoutRow();
+      prisma.guestCheckout.findUnique
+        .mockResolvedValueOnce(row)
+        .mockResolvedValueOnce(row);
+      stripe.retrieveCharge.mockResolvedValueOnce({
+        id: 'ch_bad',
+        receipt_url: 'javascript:alert(1)',
+      });
+      supabaseAdminMock.createUser.mockResolvedValueOnce({
+        data: { user: { id: 'sb-r3' } },
+        error: null,
+      });
+      prisma.connectAccount.findUnique.mockResolvedValueOnce({
+        stripe_account_id: 'acct_dest',
+      });
+      prisma.user.upsert.mockResolvedValueOnce({ id: 'usr-r3', coach_id: 'coach-1' });
+      prisma.clientPurchase.findFirst.mockResolvedValueOnce(null);
+      prisma.clientPurchase.create.mockResolvedValueOnce({ id: 'cp-r3' });
+      prisma.guestCheckout.update.mockResolvedValueOnce({});
+
+      await service.handlePaymentSucceeded('pi_r', {
+        chargeId: 'ch_bad',
+        receiptUrl: null,
+      });
+
+      // The malicious URL must NOT have been persisted; only the
+      // pending→paid claim updateMany ran.
+      const persistAttempts = prisma.guestCheckout.updateMany.mock.calls.filter(
+        (c: unknown[]) =>
+          (c[0] as { data?: { receipt_url?: string } })?.data?.receipt_url !== undefined,
+      );
+      expect(persistAttempts).toHaveLength(0);
+    });
+
+    // Regression — application_fee_amount (2% TGP platform fee plus the
+    // Stripe pass-through estimate) is unchanged by the receipt wiring.
+    // The PI create path runs at createIntent time; receipt resolution
+    // runs at payment_intent.succeeded time and must NOT touch the fee.
+    it('does not disturb the 2% application_fee_amount (regression)', async () => {
+      prisma.coachPackage.findUnique.mockResolvedValueOnce(makePkg());
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
+      prisma.guestCheckout.create.mockResolvedValueOnce({
+        id: 'gc-fee',
+        idempotency_key: IDEMP_KEY,
+      });
+      stripe.createPaymentIntent.mockResolvedValueOnce({
+        id: 'pi_fee',
+        client_secret: 's',
+      });
+      prisma.guestCheckout.update.mockResolvedValueOnce({});
+      await service.createIntent('tok123', baseDto);
+      // Same fee as the canonical PI-create test — 1485¢ for $297 package.
+      expect(
+        stripe.createPaymentIntent.mock.calls[0][0].applicationFeeAmount,
+      ).toBe(1485);
     });
   });
 

@@ -135,16 +135,42 @@ export class BillingService {
             // Already dispatched to checkoutWebhooks above.
             break;
           case 'payment_intent.succeeded': {
+            // A276-P0-2 — pass the latest_charge id alongside the PI id so
+            // GuestCheckoutService can fetch the Stripe-hosted receipt_url
+            // from the Charge object. Stripe API 2024-09-30.acacia returns
+            // latest_charge as a charge id string on the PaymentIntent.
             const pi = event.data.object as {
               id?: string;
               metadata?: Record<string, string>;
+              latest_charge?: string | { id?: string; receipt_url?: string } | null;
+              charges?: { data?: Array<{ id?: string; receipt_url?: string }> };
             };
             if (
               this.guestCheckout &&
               pi?.id &&
               pi.metadata?.[GUEST_CHECKOUT_METADATA_KEY]
             ) {
-              await this.guestCheckout.handlePaymentSucceeded(pi.id);
+              // Prefer the expanded latest_charge (object form) so a
+              // single webhook delivery never has to hit Stripe again for
+              // the receipt URL. Fall back to charges.data[0] for older
+              // event shapes; final fallback is a charge id string the
+              // handler can retrieve.
+              let chargeId: string | null = null;
+              let receiptUrl: string | null = null;
+              if (typeof pi.latest_charge === 'string') {
+                chargeId = pi.latest_charge;
+              } else if (pi.latest_charge && typeof pi.latest_charge === 'object') {
+                chargeId = pi.latest_charge.id ?? null;
+                receiptUrl = pi.latest_charge.receipt_url ?? null;
+              }
+              if (!receiptUrl && pi.charges?.data?.[0]) {
+                chargeId = chargeId ?? pi.charges.data[0].id ?? null;
+                receiptUrl = pi.charges.data[0].receipt_url ?? null;
+              }
+              await this.guestCheckout.handlePaymentSucceeded(
+                pi.id,
+                { chargeId, receiptUrl },
+              );
             }
             break;
           }

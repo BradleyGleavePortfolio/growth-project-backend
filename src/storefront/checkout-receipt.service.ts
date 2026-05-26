@@ -6,6 +6,18 @@ import { EmailTemplateKey } from '../email/email.types';
 
 // r48 #14 — branded PDF receipts.
 //
+// A276-P0-2 (r48-followup) — DEPRECATED. The buyer-facing receipt path
+// is now Stripe's hosted, signed, branded receipt URL
+// (pay.stripe.com/receipts/…) emitted by GuestCheckoutService on
+// payment_intent.succeeded. The Cron-driven sweeper that called into
+// this service is gated OFF by default (CheckoutReceiptScheduler
+// requires LEGACY_PDF_RECEIPT_ENABLED=true). Kept in the tree so a
+// future PR can revive branded PDFs once shared S3 infra lands. Do
+// NOT re-enable in production without wiring storeReceipt() to S3
+// first — the local FS path produces unreachable local:// URLs.
+//
+// Original design notes (preserved for the revive-this-later PR):
+//
 // On payment_intent.succeeded we kick a deferred receipt generation
 // (queued by the existing Cron-driven sweeper, not BullMQ — same
 // rationale as #2).  The receipt:
