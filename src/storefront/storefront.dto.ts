@@ -40,7 +40,7 @@ export class GuestCheckoutDto {
   @IsString()
   @MinLength(8)
   @MaxLength(128)
-  @Matches(/^[A-Za-z0-9_\-]+$/, {
+  @Matches(/^[A-Za-z0-9_-]+$/, {
     message: 'session_id must be url-safe alphanumeric.',
   })
   session_id?: string;
@@ -65,7 +65,7 @@ export class GuestCheckoutResumeDto {
   @IsString()
   @MinLength(8)
   @MaxLength(128)
-  @Matches(/^[A-Za-z0-9_\-]+$/)
+  @Matches(/^[A-Za-z0-9_-]+$/)
   session_id?: string;
 }
 
