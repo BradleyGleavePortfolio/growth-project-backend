@@ -190,9 +190,11 @@ a:hover{text-decoration:underline;}
 }
 .hero__bg{
   position:absolute;inset:0;
-  background-size:cover;background-position:center;
+  width:100%;height:100%;
+  object-fit:cover;object-position:center;
   filter:brightness(.55);
   transition:filter .3s;
+  z-index:0;
 }
 .hero__content{
   position:relative;z-index:1;
@@ -468,11 +470,20 @@ function renderHero(payload: Record<string, unknown>, page: CoachLandingPage, co
   const imgUrl = String(payload.hero_image_url || page.hero_image_url || '');
   const ctaLabel = esc(page.primary_cta_label || 'Get Started');
   const ctaHref = escAttr(`/p/${coachSlug}/${pageSlug}/checkout`);
-  const bgStyle = imgUrl ? `style="background-image:url('${escAttr(imgUrl)}')"` : '';
+  // Use an <img> element instead of background-image:url('…') to avoid the
+  // CSS string-injection attack: `escAttr` HTML-escapes apostrophes to &#39;
+  // but the browser's HTML attribute decoder restores them before the CSS
+  // parser runs, allowing a coached-supplied URL to break out of the url()
+  // context.  An <img src="…"> attribute is fully contained — escAttr already
+  // rejects non-http(s) / non-relative URLs by substituting '#', and there is
+  // no secondary CSS string decoding step.
+  const bgImg = imgUrl
+    ? `<img class="hero__bg" src="${escAttr(imgUrl)}" alt="" aria-hidden="true" />`
+    : '';
 
   return `
 <section class="hero lp-section--full" aria-label="Hero">
-  <div class="hero__bg" ${bgStyle}></div>
+  ${bgImg}
   <div class="hero__content">
     <h1>${nl2br(headline)}</h1>
     ${sub ? `<p class="hero__sub">${nl2br(sub)}</p>` : ''}
