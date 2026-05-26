@@ -139,6 +139,17 @@ export class StorefrontPublicController {
   // flight checkout without re-confirming the form. Returns either the
   // existing GuestCheckout row's resumable details, or 404 when nothing
   // recoverable exists (or when the resume window has expired).
+  //
+  // A276-P1-2 — apply the long-window IP rate limiter (5/hour, Redis-
+  // backed) so the three recovery routes share the same hour-scale
+  // budget the create-intent path uses. The limiter exposes a single
+  // per-IP bucket (no per-route key); we therefore apply it uniformly
+  // to all three new routes (resume, send-recovery-link, resume/:jwt)
+  // — option (2) from the audit. A separate per-bucket key would have
+  // been preferable for the email path but is out-of-scope for this
+  // controller-level fix; an attacker who burns the 5/hr bucket on
+  // resume calls also loses access to the email-send path, which is a
+  // net win for abuse resistance.
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @Post('join/:token/checkout/resume')
@@ -146,7 +157,23 @@ export class StorefrontPublicController {
   async resumeGuestCheckout(
     @Param('token', new ShareTokenPipe()) token: string,
     @Body() body: GuestCheckoutResumeDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ) {
+    // A276-P1-2 — long-window IP bucket (5/hr) before doing work.
+    const ip = this.extractIp(req);
+    const rate = await this.ipLimiter.checkAndIncrement(ip);
+    if (!rate.allowed) {
+      res.setHeader('Retry-After', String(rate.retryAfterSeconds));
+      throw new HttpException(
+        {
+          error: 'TOO_MANY_REQUESTS',
+          message: 'Too many checkout attempts. Please try again later.',
+          retry_after_seconds: rate.retryAfterSeconds,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
     const result = await this.recovery.resumeFromCredentials(
       token,
       body.guest_email,
@@ -168,6 +195,13 @@ export class StorefrontPublicController {
   // { sent: true } regardless of whether a matching checkout exists
   // (enumeration resistance). Tighter throttle than the create path
   // because this triggers an outbound email.
+  //
+  // A276-P1-2 — also gated by the long-window IP rate limiter (5/hr).
+  // The bucket is shared with the create-intent and resume routes
+  // (see resumeGuestCheckout note). EmailSendLog provides a separate
+  // per-recipient 3/hr cap downstream; together they bound an
+  // attacker to 5 send attempts per IP per hour regardless of how
+  // many recipient addresses they try.
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 6 } })
   @Post('join/:token/checkout/send-recovery-link')
@@ -175,7 +209,23 @@ export class StorefrontPublicController {
   async sendRecoveryLink(
     @Param('token', new ShareTokenPipe()) token: string,
     @Body() body: SendRecoveryLinkDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ) {
+    // A276-P1-2 — long-window IP bucket (5/hr) before triggering email.
+    const ip = this.extractIp(req);
+    const rate = await this.ipLimiter.checkAndIncrement(ip);
+    if (!rate.allowed) {
+      res.setHeader('Retry-After', String(rate.retryAfterSeconds));
+      throw new HttpException(
+        {
+          error: 'TOO_MANY_REQUESTS',
+          message: 'Too many checkout attempts. Please try again later.',
+          retry_after_seconds: rate.retryAfterSeconds,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
     return this.recovery.sendRecoveryLink(token, body.guest_email);
   }
 
@@ -185,6 +235,9 @@ export class StorefrontPublicController {
   // checkout page with the guest_checkout_id pre-attached. We do the
   // verification + cross-check in the service so the route stays a
   // thin redirect.
+  //
+  // A276-P1-2 — IP rate limiter (5/hr) applied before verifyToken so
+  // an attacker cannot brute-force the 15-min JWT space at 30/min.
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @Get('join/:token/checkout/resume/:jwt')
@@ -192,7 +245,23 @@ export class StorefrontPublicController {
   async resumeFromMagicLink(
     @Param('token', new ShareTokenPipe()) token: string,
     @Param('jwt') jwt: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ) {
+    // A276-P1-2 — long-window IP bucket (5/hr) before verifying token.
+    const ip = this.extractIp(req);
+    const rate = await this.ipLimiter.checkAndIncrement(ip);
+    if (!rate.allowed) {
+      res.setHeader('Retry-After', String(rate.retryAfterSeconds));
+      throw new HttpException(
+        {
+          error: 'TOO_MANY_REQUESTS',
+          message: 'Too many checkout attempts. Please try again later.',
+          retry_after_seconds: rate.retryAfterSeconds,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
     const claims = await this.recovery.verifyToken(token, jwt);
     const base = (
       this.config.get<string>('STOREFRONT_BASE_URL') ??
