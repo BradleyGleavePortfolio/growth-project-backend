@@ -15,7 +15,7 @@ import { SupabaseService } from '../src/supabase/supabase.service';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function buildUserRow(overrides: Partial<{
+type UserRowOverrides = Partial<{
   id: string;
   deletion_confirmed_at: Date | null;
   deleted_at: Date | null;
@@ -23,16 +23,23 @@ function buildUserRow(overrides: Partial<{
   name: string;
   role: string;
   supabase_id: string | null;
-}> = {}) {
-  return {
-    id: overrides.id ?? 'user-1',
-    deletion_confirmed_at: overrides.deletion_confirmed_at ?? new Date(Date.now() - 15 * 86400 * 1000),
-    deleted_at: overrides.deleted_at ?? null,
-    email: overrides.email ?? 'user@example.com',
-    name: overrides.name ?? 'Test User',
-    role: overrides.role ?? 'student',
-    supabase_id: overrides.supabase_id ?? 'supa-1',
-  };
+}>;
+
+const DEFAULT_USER_ROW = {
+  id: 'user-1',
+  deletion_confirmed_at: new Date(Date.now() - 15 * 86400 * 1000) as Date | null,
+  deleted_at: null as Date | null,
+  email: 'user@example.com',
+  name: 'Test User',
+  role: 'student',
+  supabase_id: 'supa-1' as string | null,
+};
+
+// Use spread (NOT ??) so explicit `null` in overrides is preserved.
+// Nullish coalescing falls through for both `null` and `undefined`, which
+// silently substituted defaults for tests passing `deletion_confirmed_at: null`.
+function buildUserRow(overrides: UserRowOverrides = {}) {
+  return { ...DEFAULT_USER_ROW, ...overrides };
 }
 
 /** Minimal prisma mock that tracks whether any destructive calls are made. */
