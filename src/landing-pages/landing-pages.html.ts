@@ -959,8 +959,11 @@ export function renderPublicPage(
   const description = page.subheadline || `Work with ${coachName}.`;
 
   // A short social-proof line under the hero CTA.  Pulled from coach bio
-  // when present; otherwise omitted (no fake numbers).
-  const proofLine = profile?.bio ? '' : '';
+  // when present (capped so it stays a one-liner); otherwise omitted (no
+  // fake numbers, no fallback strings — empty hero stays empty).
+  const proofLine = profile?.bio
+    ? profile.bio.replace(/\s+/g, ' ').trim().slice(0, 140)
+    : '';
 
   // Schema.org JSON-LD — escaped against </script> breakout (safeJsonLd).
   const jsonLd = safeJsonLd({
