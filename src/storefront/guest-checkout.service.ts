@@ -30,6 +30,8 @@ import type { GuestCheckoutDto } from './storefront.dto';
 import type { GuestCheckoutResult } from './storefront.types';
 import { CheckoutIdempotencyService } from './checkout-idempotency.service';
 import { ConnectPreflightService } from './connect-preflight.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationKind } from '../notifications/notification-kind';
 
 // Platform cut on every guest checkout. Stripe's minimum application_fee
 // is 50 cents — packages priced low enough that 2% falls below the floor
@@ -171,6 +173,13 @@ export class GuestCheckoutService {
     // optional wiring as above.
     @Optional()
     private readonly preflight?: ConnectPreflightService,
+    // A276-P1-4 — NotificationsService is the system-wide in-app + push
+    // notification gateway. We use it to surface refund + dispute events
+    // to the coach who sold the package. @Optional() so legacy unit tests
+    // that hand-construct this service via Test.createTestingModule keep
+    // working; a missing notifier degrades to a log line.
+    @Optional()
+    private readonly notifications?: NotificationsService,
   ) {}
 
   // POST /v1/packages/public/join/:token/checkout
@@ -794,14 +803,29 @@ export class GuestCheckoutService {
     }
   }
 
-  // r48 #13 — refund handler.  Called by BillingService on
-  // charge.refunded webhooks AFTER the existing
-  // RefundDisputeHandlerService has refused the event (no matching
-  // ClientPurchase).  We claim the event only when the charge maps
-  // to a GuestCheckout via payment_intent; otherwise no-op.
+  // r48 #13 + A276-P1-4 — refund handler.
   //
-  // Returns { claimed: true } when we matched + updated.  Idempotent:
-  // updateMany with WHERE refunded_at IS NULL collapses re-deliveries.
+  // Called by BillingService on charge.refunded webhooks AFTER the
+  // existing CheckoutWebhookHandlerService has refused the event (no
+  // matching ClientPurchase via stripe_checkout_session_id).  We claim
+  // the event when the PaymentIntent maps either to a GuestCheckout row
+  // (legacy path) or to a ClientPurchase row whose entitlement we own
+  // (the storefront writes both for guest checkouts).
+  //
+  // Audit #5 P1-4 — a full refund MUST revoke the client's entitlement
+  // and notify the coach.  The previous implementation only stamped
+  // refunded_at on GuestCheckout, leaving the client with continued app
+  // access and giving the coach no signal that money came back.
+  //
+  // All writes run inside a single $transaction so partial state is
+  // never visible to a concurrent reader.  Idempotent: re-deliveries
+  // collapse via the WHERE refunded_at IS NULL guard on GuestCheckout
+  // and entitlement_active=true guard on ClientPurchase.
+  //
+  // Partial refunds DO NOT revoke entitlement — the client paid for
+  // something and Stripe's amount_refunded < amount means the coach is
+  // crediting back a portion, not unwinding the sale.  We still stamp
+  // refunded_at and notify the coach so they have a paper trail.
   async handleChargeRefunded(
     paymentIntentId: string,
     chargeAmount: number,
@@ -810,62 +834,172 @@ export class GuestCheckoutService {
     try {
       const row = await this.prisma.guestCheckout.findUnique({
         where: { stripe_payment_intent_id: paymentIntentId },
+        include: { package: { select: { coach_id: true } } },
       });
-      if (!row) return { claimed: false };
-      const fullyRefunded = amountRefunded >= chargeAmount;
-      const newStatus = fullyRefunded ? 'refunded' : row.status;
-      const claim = await this.prisma.guestCheckout.updateMany({
-        where: {
-          stripe_payment_intent_id: paymentIntentId,
-          refunded_at: null,
-        },
-        data: {
-          status: newStatus,
-          refunded_at: new Date(),
-        },
+      const fullyRefunded = chargeAmount > 0 && amountRefunded >= chargeAmount;
+      const newStatus = fullyRefunded ? 'refunded' : row?.status ?? 'refunded';
+
+      // A276-P1-4 — even when there's no GuestCheckout row, an authed
+      // ClientPurchase may exist (post-converted guest, or future direct-
+      // checkout flows that route through this handler).  Both writes
+      // share a single $transaction so a partial failure rolls back.
+      const result = await this.prisma.$transaction(async (tx) => {
+        let guestClaimed = 0;
+        if (row) {
+          const claim = await tx.guestCheckout.updateMany({
+            where: {
+              stripe_payment_intent_id: paymentIntentId,
+              refunded_at: null,
+            },
+            data: {
+              status: newStatus,
+              refunded_at: new Date(),
+            },
+          });
+          guestClaimed = claim.count;
+        }
+
+        // Revoke entitlement on the matching ClientPurchase row(s) when
+        // the refund is full.  A partial refund leaves entitlement_active
+        // alone so the client keeps the access they paid net-of-credit
+        // for.  status:'refunded' is reserved for full refunds; partial
+        // refunds keep the existing status (paid/active) untouched.
+        let purchaseClaimed = 0;
+        if (fullyRefunded) {
+          const cp = await tx.clientPurchase.updateMany({
+            where: {
+              stripe_payment_intent_id: paymentIntentId,
+              entitlement_active: true,
+            },
+            data: {
+              entitlement_active: false,
+              status: 'refunded',
+            },
+          });
+          purchaseClaimed = cp.count;
+        }
+        return { guestClaimed, purchaseClaimed };
       });
-      if (claim.count === 0) {
-        // Already processed by a prior delivery.
-        return { claimed: true };
+
+      // Notify the coach.  Best-effort — a notification failure must
+      // not roll the refund write back (the money already moved on
+      // Stripe's side; we MUST persist the refunded_at stamp).
+      // Only fire when this delivery actually claimed something so
+      // duplicate webhook re-deliveries don't double-notify.
+      const coachUserId = row?.package?.coach_id ?? null;
+      const claimedSomething =
+        result.guestClaimed > 0 || result.purchaseClaimed > 0;
+      if (claimedSomething && coachUserId && this.notifications) {
+        const dollars = (amountRefunded / 100).toFixed(2);
+        const body = fullyRefunded
+          ? `Refund processed: $${dollars} returned to client.`
+          : `Partial refund: $${dollars} returned to client.`;
+        await this.notifications
+          .createNotification({
+            user_id: coachUserId,
+            kind: NotificationKind.COACH_ALERT,
+            body,
+            payload: {
+              event: 'refund_processed',
+              payment_intent_id: paymentIntentId,
+              amount_refunded_cents: amountRefunded,
+              amount_cents: chargeAmount,
+              fully_refunded: fullyRefunded,
+              entitlement_revoked: fullyRefunded,
+            },
+            deep_link: 'tgp://coach/billing/refunds',
+            channel: 'inapp',
+          })
+          .catch((err) => {
+            this.logger.warn(
+              `coach refund notification failed pi=${paymentIntentId} (tag=${safeErrorTag(err)})`,
+            );
+          });
+      }
+
+      if (!row && result.purchaseClaimed === 0) {
+        // Neither table held this PI — not our event.
+        return { claimed: false };
       }
       this.logger.log(
-        `guest checkout refunded: pi=${paymentIntentId} amount_refunded=${amountRefunded}/${chargeAmount} (full=${fullyRefunded})`,
+        `guest checkout refunded: pi=${paymentIntentId} amount_refunded=${amountRefunded}/${chargeAmount} (full=${fullyRefunded}, entitlement_revoked=${result.purchaseClaimed})`,
       );
       return { claimed: true };
     } catch (err) {
       this.logger.error(
         `handleChargeRefunded crashed (tag=${safeErrorTag(err)})`,
       );
+      // A276-P1-5 (Fix 7) will replace this swallow with a re-throw so
+      // Stripe retries the delivery.  Left in place here for the Fix 6
+      // commit so the behaviour change is one diff per audit finding.
       return { claimed: false };
     }
   }
 
-  // r48 #13 — dispute opened handler.
+  // r48 #13 + A276-P1-4 — dispute opened handler.
+  //
+  // A dispute is NOT a refund — Stripe has only flagged the charge for
+  // chargeback review.  We MUST NOT revoke entitlement here: a dispute
+  // can be won, in which case the client keeps the package they paid
+  // for.  The coach IS notified at high priority so they can submit
+  // evidence inside Stripe's 7-day window.  Entitlement revocation
+  // happens later if/when charge.refunded fires (Stripe issues an
+  // automatic refund on a lost dispute).
   async handleDisputeOpened(
     paymentIntentId: string,
     reason: string | null,
   ): Promise<{ claimed: boolean }> {
     try {
-      const claim = await this.prisma.guestCheckout.updateMany({
-        where: {
-          stripe_payment_intent_id: paymentIntentId,
-          disputed_at: null,
-        },
-        data: {
-          status: 'disputed',
-          disputed_at: new Date(),
-          dispute_reason: (reason ?? '').slice(0, 500) || null,
-        },
-      });
-      if (claim.count === 0) {
-        // No row matched OR already disputed.  Look up the row to
-        // disambiguate before declaring no-claim.
-        const row = await this.prisma.guestCheckout.findUnique({
-          where: { stripe_payment_intent_id: paymentIntentId },
+      const safeReason = (reason ?? '').slice(0, 500) || null;
+
+      const result = await this.prisma.$transaction(async (tx) => {
+        const claim = await tx.guestCheckout.updateMany({
+          where: {
+            stripe_payment_intent_id: paymentIntentId,
+            disputed_at: null,
+          },
+          data: {
+            status: 'disputed',
+            disputed_at: new Date(),
+            dispute_reason: safeReason,
+          },
         });
-        if (!row) return { claimed: false };
-        return { claimed: true };
+        return { guestClaimed: claim.count };
+      });
+
+      // Look up the row for routing (coach_id) regardless of whether the
+      // updateMany flipped a fresh row — a re-delivery still needs to be
+      // declared claimed.
+      const row = await this.prisma.guestCheckout.findUnique({
+        where: { stripe_payment_intent_id: paymentIntentId },
+        include: { package: { select: { coach_id: true } } },
+      });
+      if (!row) return { claimed: false };
+
+      // Notify the coach (best-effort).  Only on the delivery that
+      // actually flipped the row so re-deliveries don't double-notify.
+      const coachUserId = row.package?.coach_id ?? null;
+      if (result.guestClaimed > 0 && coachUserId && this.notifications) {
+        await this.notifications
+          .createNotification({
+            user_id: coachUserId,
+            kind: NotificationKind.COACH_ALERT,
+            body: `Chargeback opened on a guest checkout. Submit evidence in Stripe within 7 days.`,
+            payload: {
+              event: 'dispute_opened',
+              payment_intent_id: paymentIntentId,
+              reason: safeReason,
+            },
+            deep_link: 'tgp://coach/billing/disputes',
+            channel: 'inapp',
+          })
+          .catch((err) => {
+            this.logger.warn(
+              `coach dispute notification failed pi=${paymentIntentId} (tag=${safeErrorTag(err)})`,
+            );
+          });
       }
+
       this.logger.warn(
         `guest checkout disputed: pi=${paymentIntentId} reason=${reason ?? 'none'}`,
       );
@@ -874,6 +1008,8 @@ export class GuestCheckoutService {
       this.logger.error(
         `handleDisputeOpened crashed (tag=${safeErrorTag(err)})`,
       );
+      // A276-P1-5 (Fix 7) will replace this swallow with a re-throw so
+      // Stripe retries the delivery.
       return { claimed: false };
     }
   }
