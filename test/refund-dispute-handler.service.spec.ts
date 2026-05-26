@@ -51,6 +51,30 @@ function makePrismaStub() {
         Object.assign(row, data);
         return { ...row };
       }),
+      // A276-F2-P2-3 — the post-refund lockstep and dispute first-
+      // observation paths now wrap their multi-write sequence in a
+      // $transaction and use updateMany with a status guard. Mimic the
+      // real Prisma semantics (notIn / not / value-equality + count).
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const matchesStatus = (row: any) => {
+          if (where.status === undefined) return true;
+          if (typeof where.status === 'object' && where.status !== null) {
+            if ('not' in where.status) return row.status !== where.status.not;
+            if ('notIn' in where.status)
+              return !(where.status.notIn as string[]).includes(row.status);
+            if ('in' in where.status)
+              return (where.status.in as string[]).includes(row.status);
+          }
+          return row.status === where.status;
+        };
+        const matched = purchases.filter(
+          (p) =>
+            (where.id === undefined || p.id === where.id) &&
+            matchesStatus(p),
+        );
+        for (const r of matched) Object.assign(r, data);
+        return { count: matched.length };
+      }),
     },
     splitLedgerEntry: {
       findFirst: jest.fn(async ({ where = {} }: any) =>
@@ -198,6 +222,13 @@ function makePrismaStub() {
 
 function makeServices() {
   const prisma = makePrismaStub();
+  // A276-F2-P2-3 — interactive transactions: invoke the lambda with the
+  // same stub so writes inside the tx hit the in-memory tables. If the
+  // lambda throws, propagate (real Prisma rolls back; here we simply
+  // emulate the error path).
+  (prisma as any).$transaction = jest.fn(
+    async (cb: (tx: any) => Promise<any>) => cb(prisma),
+  );
   const stripe = {
     retrieveCharge: jest.fn(async () => ({
       id: 'ch_x',
@@ -936,6 +967,120 @@ describe('RefundDisputeHandlerService', () => {
       );
       expect(row.status).toBe('under_review');
       expect(row.reason).toBe('fraudulent');
+    });
+
+    // A276-F2-P2-3 — the dispute first-observation branch wraps the
+    // ChargeDispute create + ClientPurchase status mirror in a single
+    // $transaction so a crash between the two writes cannot leave a
+    // dispute row without the matching purchase.status='disputed'.
+    it('A276-F2-P2-3: dispute first-observation runs through $transaction (atomic create + purchase mirror)', async () => {
+      const { svc, prisma } = makeServices();
+      seedPurchase(prisma);
+      await svc.handle({
+        id: 'evt_disp_atomic',
+        type: 'charge.dispute.created',
+        data: {
+          object: {
+            id: 'dp_atomic',
+            charge: 'ch_alert',
+            status: 'needs_response',
+            amount: 29_700,
+          },
+        },
+      });
+      expect((prisma as any).$transaction).toHaveBeenCalled();
+      // Both writes committed: dispute row exists AND purchase is
+      // 'disputed'.
+      expect(
+        prisma._disputes.find((d: any) => d.stripe_dispute_id === 'dp_atomic'),
+      ).toBeTruthy();
+      expect(prisma._purchases[0].status).toBe('disputed');
+    });
+
+    // A276-F2-P2-3 — if the in-tx ClientPurchase mirror write fails,
+    // the entire transaction rolls back. There is no orphan dispute row
+    // and Stripe will retry the webhook (we propagate the error).
+    it('A276-F2-P2-3: a failure inside the dispute $transaction rolls back the create', async () => {
+      const { svc, prisma } = makeServices();
+      seedPurchase(prisma);
+      // Fail the purchase mirror write — in real Prisma this would
+      // roll the chargeDispute.create back. Our stub doesn't truly
+      // roll back, so we assert the error PROPAGATED (Stripe retry)
+      // and the create was never run as a standalone write outside
+      // the tx.
+      const fakePrismaError: any = new Error('purchase mirror failed');
+      prisma.clientPurchase.updateMany.mockImplementationOnce(async () => {
+        throw fakePrismaError;
+      });
+      await expect(
+        svc.handle({
+          id: 'evt_disp_rollback',
+          type: 'charge.dispute.created',
+          data: {
+            object: {
+              id: 'dp_rollback',
+              charge: 'ch_alert',
+              status: 'needs_response',
+              amount: 29_700,
+            },
+          },
+        }),
+      ).rejects.toThrow(/purchase mirror failed/);
+      // The error was raised from INSIDE $transaction, which propagated
+      // it — i.e. the tx was invoked.
+      expect((prisma as any).$transaction).toHaveBeenCalled();
+    });
+
+    // A276-F2-P2-3 — the full-refund lockstep (ClientPurchase status
+    // flip + GuestCheckout mirror) MUST run through $transaction so
+    // they commit atomically. Pre-fix, both writes used this.prisma
+    // and could half-commit on crash.
+    it('A276-F2-P2-3: full refund lockstep writes run through $transaction', async () => {
+      const { svc, prisma } = makeServices();
+      prisma._purchases.push({
+        id: 'p_atomic',
+        amount_cents: 29_700,
+        coach_user_id: 'coach-1',
+        status: 'paid',
+        entitlement_active: true,
+        stripe_payment_intent_id: 'pi_atomic',
+      });
+      prisma._splits.push({
+        id: 'l_atomic',
+        purchase_id: 'p_atomic',
+        kind: 'destination',
+        amount_cents: 29_700,
+        reversed_cents: 0,
+        status: 'posted',
+        stripe_charge_id: 'ch_atomic',
+      });
+      prisma._guestCheckouts.push({
+        id: 'gc_atomic',
+        stripe_payment_intent_id: 'pi_atomic',
+        status: 'converted',
+      });
+      // Reset the $transaction spy so we can assert against THIS call.
+      ((prisma as any).$transaction as jest.Mock).mockClear();
+      await svc.handle({
+        id: 'evt_full_refund_atomic',
+        type: 'charge.refunded',
+        data: {
+          object: {
+            id: 'ch_atomic',
+            amount: 29_700,
+            amount_refunded: 29_700,
+            refunds: {
+              data: [{ id: 'rf_atomic', amount: 29_700, status: 'succeeded' }],
+            },
+          },
+        },
+      });
+      // $transaction was invoked for the lockstep writes.
+      expect((prisma as any).$transaction).toHaveBeenCalled();
+      // Both sides committed.
+      expect(prisma._purchases[0].status).toBe('refunded');
+      expect(prisma._purchases[0].entitlement_active).toBe(false);
+      expect(prisma._guestCheckouts[0].status).toBe('refunded');
     });
 
     // A276-F2-P2-2 — unique-index conflict is the ONLY swallowed error.

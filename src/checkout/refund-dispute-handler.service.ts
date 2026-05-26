@@ -156,34 +156,52 @@ export class RefundDisputeHandlerService {
       typeof charge.amount_refunded === 'number' ? charge.amount_refunded : 0;
     const fullyRefunded = totalAmount > 0 && refundedCents >= totalAmount;
     if (fullyRefunded) {
-      // WHERE-guard on status keeps this idempotent under Stripe
-      // redelivery (the second delivery sees status already 'refunded'
-      // and the update is a no-op write of the same values).
-      await this.prisma.clientPurchase.update({
-        where: { id: purchase.id },
-        data: { status: 'refunded', entitlement_active: false },
-      });
-
-      // A276 P1-2 (refix) — keep the originating GuestCheckout row in
-      // lockstep. After conversion the row's status is 'converted'; a
-      // refund of the underlying charge must flip it to 'refunded' so
-      // admin reports that filter `GuestCheckout WHERE status='refunded'`
-      // surface the transaction. updateMany with a status guard makes
-      // this idempotent under Stripe redelivery and a no-op when no
-      // GuestCheckout exists (direct ClientPurchase paths). We never
-      // re-stamp refunded_at here — the GuestCheckout-path handler
-      // (handleChargeRefunded) owns that field's audit trail; in the
-      // post-conversion case it stays null, which correctly reflects
-      // "never refunded through the guest path".
-      if (purchase.stripe_payment_intent_id) {
-        await this.prisma.guestCheckout.updateMany({
-          where: {
-            stripe_payment_intent_id: purchase.stripe_payment_intent_id,
-            status: { not: 'refunded' },
-          },
-          data: { status: 'refunded' },
+      // A276-F2-P2-3 — the ClientPurchase status flip and the
+      // GuestCheckout lockstep mirror MUST commit atomically. The
+      // previous implementation issued both writes on `this.prisma`,
+      // so a crash between the two could leave ClientPurchase='refunded'
+      // / GuestCheckout='converted' until the Stripe retry converged
+      // via the WHERE guards. The WHERE-guards still keep both writes
+      // idempotent under Stripe redelivery; the transaction adds the
+      // crash-safety the audit flagged as missing.
+      //
+      // We deliberately do NOT include the upstream ledger reversals
+      // or the Stripe-side transfer reversal in this transaction
+      // because those involve Stripe HTTP calls (transfers.reverse)
+      // — the exact in-tx HTTP anti-pattern P1-3 / P2-1 eliminate.
+      // The ledger writes have already committed on `this.prisma`
+      // above and the WHERE-guards make every step idempotent on
+      // Stripe retry.
+      await this.prisma.$transaction(async (tx) => {
+        // WHERE-guard on status keeps this idempotent under Stripe
+        // redelivery (the second delivery sees status already 'refunded'
+        // and the updateMany returns count=0 as a no-op).
+        await tx.clientPurchase.updateMany({
+          where: { id: purchase.id, status: { not: 'refunded' } },
+          data: { status: 'refunded', entitlement_active: false },
         });
-      }
+
+        // A276 P1-2 (refix) — keep the originating GuestCheckout row in
+        // lockstep. After conversion the row's status is 'converted'; a
+        // refund of the underlying charge must flip it to 'refunded' so
+        // admin reports that filter `GuestCheckout WHERE status='refunded'`
+        // surface the transaction. updateMany with a status guard makes
+        // this idempotent under Stripe redelivery and a no-op when no
+        // GuestCheckout exists (direct ClientPurchase paths). We never
+        // re-stamp refunded_at here — the GuestCheckout-path handler
+        // (handleChargeRefunded) owns that field's audit trail; in the
+        // post-conversion case it stays null, which correctly reflects
+        // "never refunded through the guest path".
+        if (purchase.stripe_payment_intent_id) {
+          await tx.guestCheckout.updateMany({
+            where: {
+              stripe_payment_intent_id: purchase.stripe_payment_intent_id,
+              status: { not: 'refunded' },
+            },
+            data: { status: 'refunded' },
+          });
+        }
+      });
     }
 
     // A276 P0-2 (refix) — emit COACH_ALERT once per refund id whose
@@ -528,20 +546,52 @@ export class RefundDisputeHandlerService {
     // this delivery is NOT the first observation and we fall through
     // to the update branch without firing the alert. The `create`
     // success path is the one-and-only first-observation signal.
+    //
+    // A276-F2-P2-3 — the dispute row insert and the ClientPurchase
+    // status flip to 'disputed' (when this is the first observation of
+    // an `initial=true` event) MUST commit atomically. The previous
+    // implementation issued both writes on `this.prisma` so a crash
+    // between them could leave a ChargeDispute row without the
+    // matching ClientPurchase.status='disputed' until Stripe retried.
+    // We wrap the first-observation branch in a single `$transaction`.
+    // On the race-loser branch (P2002) the in-tx create rolls back
+    // (no orphan write) and we apply the update outside the tx.
+    // Capture narrowed values for the closure (TS does not preserve
+    // the early-return narrowing across the $transaction lambda).
+    const disputeId: string = dispute.id;
+    const chargeId: string = dispute.charge;
     let isFirstObservation: boolean;
     let row: ChargeDispute;
     try {
-      row = await this.prisma.chargeDispute.create({
-        data: {
-          purchase_id: purchase.id,
-          stripe_dispute_id: dispute.id,
-          stripe_charge_id: dispute.charge,
-          amount_cents: typeof dispute.amount === 'number' ? dispute.amount : 0,
-          currency: dispute.currency ?? 'usd',
-          status: dispute.status ?? 'needs_response',
-          reason: dispute.reason ?? null,
-          evidence_due_by: dueBy,
-        },
+      row = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.chargeDispute.create({
+          data: {
+            purchase_id: purchase.id,
+            stripe_dispute_id: disputeId,
+            stripe_charge_id: chargeId,
+            amount_cents:
+              typeof dispute.amount === 'number' ? dispute.amount : 0,
+            currency: dispute.currency ?? 'usd',
+            status: dispute.status ?? 'needs_response',
+            reason: dispute.reason ?? null,
+            evidence_due_by: dueBy,
+          },
+        });
+        if (initial) {
+          // Mirror the purchase status to 'disputed' in the same tx so
+          // a reader who sees the dispute row also sees the purchase
+          // marked disputed. WHERE-guarded so re-deliveries are
+          // no-ops (and so an already-refunded purchase isn't dragged
+          // back to 'disputed' by a stale event).
+          await tx.clientPurchase.updateMany({
+            where: {
+              id: purchase.id,
+              status: { notIn: ['disputed', 'refunded'] },
+            },
+            data: { status: 'disputed' },
+          });
+        }
+        return created;
       });
       isFirstObservation = true;
     } catch (err) {
@@ -554,10 +604,12 @@ export class RefundDisputeHandlerService {
       ) {
         throw err;
       }
-      // Race lost — another delivery wrote first. Update in-place and
-      // skip the alert.
+      // Race lost — another delivery wrote first. The in-tx create
+      // rolled back automatically. Update the dispute row in-place and
+      // skip the alert. The purchase status was already mirrored by
+      // the winning delivery's tx, so we do NOT re-write it here.
       row = await this.prisma.chargeDispute.update({
-        where: { stripe_dispute_id: dispute.id },
+        where: { stripe_dispute_id: disputeId },
         data: {
           status: dispute.status ?? 'needs_response',
           reason: dispute.reason ?? null,
@@ -567,12 +619,6 @@ export class RefundDisputeHandlerService {
         },
       });
       isFirstObservation = false;
-    }
-    if (initial) {
-      await this.prisma.clientPurchase.update({
-        where: { id: purchase.id },
-        data: { status: 'disputed' },
-      });
     }
 
     // A276 P1-1 (refix) — emit COACH_ALERT on the FIRST observation of
