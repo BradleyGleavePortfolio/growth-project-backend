@@ -14,3 +14,15 @@
 12. THE OWNER CANNOT CHECK FLY OR GCP VALUES DIRECTLY — DO NOT ASK.
 13. OAUTH CONSENT SCREEN MUST BE IN PRODUCTION MODE (LAUNCHING IN FRONT OF 800 PEOPLE).
 14. ALWAYS BUILD WITH THE LATEST VERSION OF ALL "PLUMBING" — DEPENDENCIES, LIBRARIES, SDKS, RUNTIMES, GITHUB ACTIONS, TOOLING. WHEN STARTING ANY NEW FEATURE OR PR, USE THE NEWEST STABLE VERSION OF EVERY DEPENDENCY IT TOUCHES. WHEN DEPENDABOT OPENS AN UPGRADE PR, "MERGE IT" IS THE DEFAULT OUTCOME. MAJOR-VERSION BREAKS GET THEIR OWN PR + AUDIT, NEVER DEFERRED INDEFINITELY. STALE PLUMBING IS TECH DEBT.
+
+## Retired rules
+
+- **R10 — RETIRED 2026-05-26.** Original intent: grandfathered failing
+  tests on `main` could remain red while a domain ticket existed. The
+  3 remaining grandfathered failures turned out to be stale test-helper
+  bugs (A1-C5-P1-1, A1-C5-P1-3, A1-C5-P1-4), all fixed in
+  `chore/r10-cleanup-fix-stale-tests`. New CLEAN bar replaces R10:
+  **CI green + 0 P0 + 0 P1 + 0 P2** on `main` at all times. Rule
+  reference preserved here so old PRs/audits citing R10 remain
+  traceable. See `docs/PRE_EXISTING_TEST_FAILURES.md` for the full
+  retirement note.
