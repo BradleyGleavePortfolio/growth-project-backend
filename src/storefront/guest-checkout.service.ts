@@ -28,6 +28,7 @@ import { isConnectAccountReadyForCheckout } from './storefront.service';
 import type { GuestCheckoutDto } from './storefront.dto';
 import type { GuestCheckoutResult } from './storefront.types';
 import { CheckoutIdempotencyService } from './checkout-idempotency.service';
+import { ConnectPreflightService } from './connect-preflight.service';
 
 // Platform cut on every guest checkout. Stripe's minimum application_fee
 // is 50 cents — packages priced low enough that 2% falls below the floor
@@ -164,6 +165,9 @@ export class GuestCheckoutService {
     // necessary (the module provides it unconditionally), but defensive
     // against legacy unit tests that hand-construct this service.
     private readonly idempotencyCache?: CheckoutIdempotencyService,
+    // r48 #7 + #8 — live Stripe Connect preflight (60s cache).  Same
+    // optional wiring as above.
+    private readonly preflight?: ConnectPreflightService,
   ) {}
 
   // POST /v1/packages/public/join/:token/checkout
@@ -217,6 +221,35 @@ export class GuestCheckoutService {
         error: 'PACKAGE_UNAVAILABLE',
         message: 'This coach is not currently accepting new clients.',
       });
+    }
+
+    // r48 #7 — live Stripe preflight (60s Redis cache).  The mirror
+    // check above is the stable baseline; this catches a coach who
+    // disconnected Stripe after the GET resolved but before the POST.
+    // Cache lookups are O(1); cache miss is one Stripe API call per
+    // 60s per connected account.
+    let walletSupports: { apple: boolean; google: boolean } = {
+      apple: false,
+      google: false,
+    };
+    if (this.preflight) {
+      const live = await this.preflight.getReadiness(
+        connectAccount.stripe_account_id,
+      );
+      if (!live.charges_enabled) {
+        this.logger.warn(
+          `Checkout preflight: live charges disabled for ${connectAccount.stripe_account_id} (disabled_reason=${live.disabled_reason ?? 'null'})`,
+        );
+        throw new ServiceUnavailableException({
+          error: 'COACH_PAYOUT_DISABLED',
+          message:
+            'This coach is not currently accepting payments. Please contact them directly.',
+        });
+      }
+      walletSupports = {
+        apple: live.supports_apple_pay,
+        google: live.supports_google_pay,
+      };
     }
 
     // Audit #3 P1-5 — recurring packages cannot be sold through Phase 1
@@ -294,6 +327,8 @@ export class GuestCheckoutService {
             client_secret: cached.client_secret,
             payment_intent_id: cached.payment_intent_id,
             guest_checkout_id: cachedRow.id,
+            supports_apple_pay: walletSupports.apple,
+            supports_google_pay: walletSupports.google,
           };
         }
       }
@@ -508,6 +543,8 @@ export class GuestCheckoutService {
       client_secret: paymentIntent.client_secret,
       payment_intent_id: paymentIntent.id,
       guest_checkout_id: sentinel.id,
+      supports_apple_pay: walletSupports.apple,
+      supports_google_pay: walletSupports.google,
     };
   }
 

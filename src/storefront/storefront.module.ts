@@ -3,6 +3,7 @@ import { ConnectModule } from '../connect/connect.module';
 import { EmailModule } from '../email/email.module';
 import { CheckoutIdempotencyService } from './checkout-idempotency.service';
 import { CheckoutRecoveryService } from './checkout-recovery.service';
+import { ConnectPreflightService } from './connect-preflight.service';
 import { GuestCheckoutPiiScrubService } from './guest-checkout-pii-scrub.service';
 import { GuestCheckoutReconciliationService } from './guest-checkout-reconciliation.service';
 import { GuestCheckoutService } from './guest-checkout.service';
@@ -41,6 +42,9 @@ import { StorefrontService } from './storefront.service';
     CheckoutIdempotencyService,
     // r48 #4 + #5 — resume endpoint + magic-link recovery (15-min JWT).
     CheckoutRecoveryService,
+    // r48 #7 + #8 — Stripe Connect preflight cache (60s Redis TTL) +
+    // Apple/Google Pay capability flags.
+    ConnectPreflightService,
   ],
   exports: [GuestCheckoutService],
 })
