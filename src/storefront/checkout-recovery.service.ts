@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleDestroy,
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
@@ -75,7 +76,7 @@ interface RecoveryClaims extends JWTPayload {
 }
 
 @Injectable()
-export class CheckoutRecoveryService implements OnModuleInit {
+export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CheckoutRecoveryService.name);
 
   // Redis is used to atomically mark a `jti` as consumed (SETNX). Mirrors
@@ -111,9 +112,16 @@ export class CheckoutRecoveryService implements OnModuleInit {
     //      the same cross-machine replay bug exposed in any non-literal-prod
     //      multi-machine env. Treat staging as fail-closed alongside prod.
     // Only an EXPLICIT 'development' or 'test' value enables the fallback.
+    // A276-F5-P3-3 — normalize NODE_ENV for trim/case fragility. A value
+    // like ' production' (whitespace from a docker-compose interpolation
+    // gotcha) or 'Production' (case) would have failed the strict ===
+    // check and silently demoted prod. .trim().toLowerCase() hardens both.
     const nodeEnvRaw =
       this.config.get<string>('NODE_ENV') ?? process.env.NODE_ENV ?? undefined;
-    const nodeEnv = nodeEnvRaw === undefined ? undefined : nodeEnvRaw;
+    const nodeEnv =
+      typeof nodeEnvRaw === 'string'
+        ? nodeEnvRaw.trim().toLowerCase() || undefined
+        : undefined;
     const isProd = !nodeEnv || nodeEnv === 'production' || nodeEnv === 'staging';
     if (!redisUrl) {
       // A276-F5-P1-1 / F5-P2-1+2 — REDIS_URL is REQUIRED in any
@@ -339,6 +347,32 @@ export class CheckoutRecoveryService implements OnModuleInit {
     // is only consumed once every other check has passed. If Redis is
     // configured but errors out, we FAIL CLOSED — better to deny a
     // legitimate retry than to allow a replay.
+    //
+    // A276-F5-P3-2 — residual timing-oracle decision (DOCUMENTED, NOT FIXED).
+    // Failure legs that reach this point (Redis SETNX or in-memory check,
+    // legs 7-9 in the enumeration-resistance test) take a network round-trip
+    // (~0.5-5ms for Redis, ~0µs for in-memory) longer than legs 1-6 (which
+    // return before any Redis call). An attacker with millisecond-resolution
+    // timing across many requests could in theory distinguish "this JWT
+    // was structurally valid + matched a real GuestCheckout row" from
+    // "this JWT failed an earlier check (signature/typ/share-token/expiry)".
+    //
+    // ACCEPTED as a residual P3 for this service for two reasons:
+    //   1. Threat model: a payment-recovery link is much less sensitive
+    //      than a password-reset link — the worst case is an attacker
+    //      who already has a stolen JWT learns the structural validity
+    //      bit, which they could also learn by just trying the link.
+    //      The timing oracle does NOT leak the token or any other user's
+    //      data, and the 15-min exp + single-use bound the damage.
+    //   2. Constant-time mitigation would require either (a) inserting a
+    //      Redis call into every early-fail leg (invasive, increases
+    //      cluster load on adversarial input) or (b) a sleep-floor on
+    //      every response (~50ms latency hit on the happy path for every
+    //      legitimate retry). Both trade real user pain for a marginal
+    //      hardening against an attacker who already has the JWT.
+    // If we ever reuse this surface for a higher-sensitivity flow
+    // (password reset, account takeover recovery) revisit and add a
+    // sleep-floor + a normalized checkRedis call on every leg.
     await this.markJtiConsumedOrThrow(claims.jti);
     return {
       share_token: claims.st,
@@ -422,9 +456,68 @@ export class CheckoutRecoveryService implements OnModuleInit {
     this.memory.set(key, now + RECOVERY_JWT_TTL_SECONDS * 1000);
   }
 
-  /** Test seam — clears the in-memory single-use set between cases. */
+  /**
+   * Test seam — clears the in-memory single-use set between cases.
+   *
+   * A276-F5-P3-4 — runtime-guarded. Carried over from the prior audit
+   * (F5-P2-1) and a foot-gun: a misuse in production code could wipe
+   * state. The simpler decacorn fix (vs. moving the seam to a test-only
+   * file) is a hard runtime guard — throw immediately if invoked outside
+   * the test environment. Symmetric with the default-secure NODE_ENV
+   * handling in onModuleInit: only an EXPLICIT 'test' env unlocks it.
+   */
   resetForTests(): void {
+    const envRaw = process.env.NODE_ENV;
+    const env = typeof envRaw === 'string' ? envRaw.trim().toLowerCase() : undefined;
+    if (env !== 'test') {
+      throw new Error(
+        'CheckoutRecoveryService.resetForTests() called outside the test environment. ' +
+          'This method is a test-only seam; calling it in dev/staging/prod would wipe ' +
+          'the in-memory single-use set and is unsafe.',
+      );
+    }
     this.memory.clear();
+  }
+
+  /**
+   * A276-F5-P3-1 — disconnect cleanup belt. Without this, a Redis client
+   * created in onModuleInit lives until process exit, leaking the
+   * connection across hot reloads (nest start --watch) and graceful
+   * restarts. Graceful path: client.quit() with a 2s timeout so a hung
+   * server can't block module destruction; force path: disconnect().
+   * Errors are swallowed — we're already on the teardown path and the
+   * supervisor will reap the process.
+   */
+  async onModuleDestroy(): Promise<void> {
+    const client = this.redis;
+    if (!client) return;
+    this.redis = null;
+    try {
+      // Race quit() against a 2s timeout. If the broker is hung, the
+      // graceful quit can stall indefinitely; the force-disconnect floor
+      // ensures teardown completes.
+      await Promise.race([
+        (async () => {
+          if (typeof client.quit === 'function') {
+            await client.quit();
+          }
+        })(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error('quit-timeout')), 2_000).unref?.(),
+        ),
+      ]);
+      this.logger.log('CheckoutRecoveryService: Redis client quit() OK');
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : 'unknown';
+      this.logger.warn(
+        `CheckoutRecoveryService: Redis quit() failed or timed out, forcing disconnect: ${detail}`,
+      );
+      try {
+        client.disconnect?.();
+      } catch {
+        /* ignore — we're tearing down */
+      }
+    }
   }
 
   /**

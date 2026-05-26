@@ -732,3 +732,173 @@ describe('CheckoutRecoveryService.onModuleInit — boot fail-closed (A276-F5-P1-
     expect((svc as any).redis).toBeNull();
   });
 });
+
+// A276-F5-P3-3 — NODE_ENV trim/case normalization. ' production' (whitespace
+// from a docker-compose interpolation gotcha) and 'Production' (case) used
+// to silently demote prod to in-memory mode because the strict equality
+// failed. .trim().toLowerCase() hardens both.
+describe('CheckoutRecoveryService.onModuleInit — NODE_ENV normalization (A276-F5-P3-3)', () => {
+  const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+  afterEach(() => {
+    process.env.NODE_ENV = ORIGINAL_NODE_ENV;
+    jest.resetModules();
+  });
+
+  function bootSvc(nodeEnv: string | undefined) {
+    const config = {
+      get: jest.fn((k: string) => {
+        if (k === 'CHECKOUT_RECOVERY_SECRET') return VALID_SECRET;
+        if (k === 'REDIS_URL') return undefined;
+        if (k === 'NODE_ENV') return nodeEnv;
+        return undefined;
+      }),
+    } as unknown as ConfigService;
+    const prisma = { guestCheckout: { findUnique: jest.fn() } } as any;
+    return new CheckoutRecoveryService(prisma, config);
+  }
+
+  it("NODE_ENV=' production' (leading space) → normalized + treated as prod → THROWS", async () => {
+    const svc = bootSvc(' production');
+    await expect(svc.onModuleInit()).rejects.toThrow(/REDIS_URL is required in production/);
+  });
+
+  it("NODE_ENV='Production' (mixed case) → normalized + treated as prod → THROWS", async () => {
+    const svc = bootSvc('Production');
+    await expect(svc.onModuleInit()).rejects.toThrow(/REDIS_URL is required in production/);
+  });
+
+  it("NODE_ENV=' STAGING ' (case + whitespace) → normalized to 'staging' → THROWS", async () => {
+    const svc = bootSvc(' STAGING ');
+    await expect(svc.onModuleInit()).rejects.toThrow(/REDIS_URL is required in staging/);
+  });
+
+  it("NODE_ENV='   ' (whitespace only) → normalizes to undefined → treated as prod (default-secure) → THROWS", async () => {
+    const svc = bootSvc('   ');
+    await expect(svc.onModuleInit()).rejects.toThrow(/REDIS_URL is required/);
+  });
+
+  it("NODE_ENV='DEVELOPMENT' (case) → normalized to 'development' → RESOLVES (fallback)", async () => {
+    const svc = bootSvc('DEVELOPMENT');
+    await expect(svc.onModuleInit()).resolves.toBeUndefined();
+    expect((svc as any).redis).toBeNull();
+  });
+});
+
+// A276-F5-P3-1 — onModuleDestroy releases the Redis client cleanly. Without
+// this, the client lives until process exit, leaking the connection across
+// hot reloads and graceful restarts.
+describe('CheckoutRecoveryService.onModuleDestroy — disconnect cleanup (A276-F5-P3-1)', () => {
+  function svcWithClient(client: unknown) {
+    const config = {
+      get: jest.fn((k: string) => (k === 'CHECKOUT_RECOVERY_SECRET' ? VALID_SECRET : undefined)),
+    } as unknown as ConfigService;
+    const prisma = { guestCheckout: { findUnique: jest.fn() } } as any;
+    const svc = new CheckoutRecoveryService(prisma, config);
+    (svc as any).redis = client;
+    return svc;
+  }
+
+  it('calls client.quit() and nulls out the client (graceful path)', async () => {
+    const quit = jest.fn().mockResolvedValue('OK');
+    const disconnect = jest.fn();
+    const svc = svcWithClient({ quit, disconnect });
+    await svc.onModuleDestroy();
+    expect(quit).toHaveBeenCalledTimes(1);
+    expect(disconnect).not.toHaveBeenCalled();
+    expect((svc as any).redis).toBeNull();
+  });
+
+  it('falls back to client.disconnect() when quit() rejects (force path)', async () => {
+    const quit = jest.fn().mockRejectedValue(new Error('broker hung'));
+    const disconnect = jest.fn();
+    const svc = svcWithClient({ quit, disconnect });
+    await svc.onModuleDestroy();
+    expect(quit).toHaveBeenCalledTimes(1);
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect((svc as any).redis).toBeNull();
+  });
+
+  it('falls back to client.disconnect() when quit() hangs past the 2s timeout', async () => {
+    jest.useFakeTimers();
+    const resolveQuitRef: { current: null | (() => void) } = { current: null };
+    const quit = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveQuitRef.current = resolve;
+        }),
+    );
+    const disconnect = jest.fn();
+    const svc = svcWithClient({ quit, disconnect });
+    const destroyPromise = svc.onModuleDestroy();
+    // Fast-forward past the 2s timeout floor.
+    jest.advanceTimersByTime(2_001);
+    // Yield to allow the timeout's reject to resolve the Promise.race.
+    await Promise.resolve();
+    await Promise.resolve();
+    jest.useRealTimers();
+    // Clean up the dangling quit() so the destroyPromise can settle.
+    if (resolveQuitRef.current) resolveQuitRef.current();
+    await destroyPromise;
+    expect(quit).toHaveBeenCalledTimes(1);
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect((svc as any).redis).toBeNull();
+  });
+
+  it('no-ops when no Redis client is attached (in-memory mode)', async () => {
+    const svc = svcWithClient(null);
+    await expect(svc.onModuleDestroy()).resolves.toBeUndefined();
+    expect((svc as any).redis).toBeNull();
+  });
+});
+
+// A276-F5-P3-4 — resetForTests() is now guarded by a runtime check so a
+// misuse in prod (or even dev) code can't wipe the in-memory single-use set.
+describe('CheckoutRecoveryService.resetForTests — runtime guard (A276-F5-P3-4)', () => {
+  const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+  afterEach(() => {
+    process.env.NODE_ENV = ORIGINAL_NODE_ENV;
+  });
+
+  function bareSvc() {
+    const config = {
+      get: jest.fn((k: string) => (k === 'CHECKOUT_RECOVERY_SECRET' ? VALID_SECRET : undefined)),
+    } as unknown as ConfigService;
+    const prisma = { guestCheckout: { findUnique: jest.fn() } } as any;
+    return new CheckoutRecoveryService(prisma, config);
+  }
+
+  it("NODE_ENV='test' → resetForTests() succeeds and clears the in-memory set", () => {
+    process.env.NODE_ENV = 'test';
+    const svc = bareSvc();
+    (svc as any).memory.set('co:rec:jti:abc', Date.now() + 60_000);
+    expect((svc as any).memory.size).toBe(1);
+    expect(() => svc.resetForTests()).not.toThrow();
+    expect((svc as any).memory.size).toBe(0);
+  });
+
+  it("NODE_ENV='production' → resetForTests() THROWS (would wipe single-use state)", () => {
+    process.env.NODE_ENV = 'production';
+    const svc = bareSvc();
+    (svc as any).memory.set('co:rec:jti:abc', Date.now() + 60_000);
+    expect(() => svc.resetForTests()).toThrow(/outside the test environment/);
+    expect((svc as any).memory.size).toBe(1); // state untouched
+  });
+
+  it("NODE_ENV='development' → resetForTests() THROWS (only explicit 'test' unlocks)", () => {
+    process.env.NODE_ENV = 'development';
+    const svc = bareSvc();
+    expect(() => svc.resetForTests()).toThrow(/outside the test environment/);
+  });
+
+  it('NODE_ENV unset → resetForTests() THROWS (default-secure)', () => {
+    delete process.env.NODE_ENV;
+    const svc = bareSvc();
+    expect(() => svc.resetForTests()).toThrow(/outside the test environment/);
+  });
+
+  it("NODE_ENV=' TEST ' (case + whitespace) → normalized → resetForTests() succeeds", () => {
+    process.env.NODE_ENV = ' TEST ';
+    const svc = bareSvc();
+    expect(() => svc.resetForTests()).not.toThrow();
+  });
+});
