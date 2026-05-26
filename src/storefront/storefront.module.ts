@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConnectModule } from '../connect/connect.module';
+import { EmailModule } from '../email/email.module';
 import { CheckoutIdempotencyService } from './checkout-idempotency.service';
+import { CheckoutRecoveryService } from './checkout-recovery.service';
 import { GuestCheckoutPiiScrubService } from './guest-checkout-pii-scrub.service';
 import { GuestCheckoutReconciliationService } from './guest-checkout-reconciliation.service';
 import { GuestCheckoutService } from './guest-checkout.service';
@@ -22,6 +24,9 @@ import { StorefrontService } from './storefront.service';
     // Stripe Account reads (publishable key) and PaymentIntent creation.
     // KmsModule is @Global() — no import needed for CheckoutIdempotencyService.
     ConnectModule,
+    // r48 #5 — EmailModule re-exports EmailService for the recovery
+    // magic-link send path.
+    EmailModule,
   ],
   controllers: [StorefrontPublicController],
   providers: [
@@ -34,6 +39,8 @@ import { StorefrontService } from './storefront.service';
     // r48 #3 — content-addressable PI cache (Redis SETNX + KMS-encrypted
     // client_secret at rest).
     CheckoutIdempotencyService,
+    // r48 #4 + #5 — resume endpoint + magic-link recovery (15-min JWT).
+    CheckoutRecoveryService,
   ],
   exports: [GuestCheckoutService],
 })
