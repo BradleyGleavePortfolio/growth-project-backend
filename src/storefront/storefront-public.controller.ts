@@ -9,7 +9,6 @@ import {
   Param,
   PipeTransform,
   Post,
-  Redirect,
   Req,
   Res,
 } from '@nestjs/common';
@@ -238,16 +237,24 @@ export class StorefrontPublicController {
   //
   // A276-P1-2 — IP rate limiter (5/hr) applied before verifyToken so
   // an attacker cannot brute-force the 15-min JWT space at 30/min.
+  // A276-P1-3 (controller half) — `Referrer-Policy: no-referrer` is
+  // set on the redirect response so the destination origin never
+  // sees the prior `…/resume/<jwt>` URL via the Referer header.
+  // (The single-use enforcement of the JWT itself lives in
+  // checkout-recovery.service.ts and is handled in a companion
+  // commit.)
+  //
+  // Note: @Redirect is replaced with explicit res.redirect so we can
+  // set headers on the same response. The 302 status is preserved.
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @Get('join/:token/checkout/resume/:jwt')
-  @Redirect(undefined, HttpStatus.FOUND)
   async resumeFromMagicLink(
     @Param('token', new ShareTokenPipe()) token: string,
     @Param('jwt') jwt: string,
     @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
+    @Res() res: Response,
+  ): Promise<void> {
     // A276-P1-2 — long-window IP bucket (5/hr) before verifying token.
     const ip = this.extractIp(req);
     const rate = await this.ipLimiter.checkAndIncrement(ip);
@@ -268,12 +275,16 @@ export class StorefrontPublicController {
       'https://joingrowthproject.com'
     ).replace(/\/+$/, '');
     // SSR layer accepts ?resume=<guest_checkout_id> on the join page
-    // to re-attach the abandoned checkout.
-    return {
-      url: `${base}/p/${encodeURIComponent(
-        claims.share_token,
-      )}?resume=${encodeURIComponent(claims.guest_checkout_id)}`,
-      statusCode: HttpStatus.FOUND,
-    };
+    // to re-attach the abandoned checkout. The destination URL
+    // intentionally does NOT carry the JWT in any query param — the
+    // share_token and guest_checkout_id are the only values forwarded
+    // (audit A276-P1-3).
+    const url = `${base}/p/${encodeURIComponent(
+      claims.share_token,
+    )}?resume=${encodeURIComponent(claims.guest_checkout_id)}`;
+    // A276-P1-3 (controller half) — prevent Referer leakage of the
+    // 15-min recovery JWT to the storefront origin.
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.redirect(HttpStatus.FOUND, url);
   }
 }

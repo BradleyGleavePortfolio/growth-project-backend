@@ -2,8 +2,8 @@ import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { StorefrontPublicController } from '../src/storefront/storefront-public.controller';
 
-// A276-P1-2 — controller-scoped tests for the IP rate-limiter
-// hardening on the three new recovery routes.
+// A276-P1-2 / A276-P1-3 — controller-scoped tests for the rate-limiter
+// hardening and the Referrer-Policy header on the magic-link redirect.
 //
 // All collaborators are jest mocks; we instantiate the controller
 // directly (no Nest TestingModule) because every concern under test is
@@ -22,7 +22,10 @@ function makeReq(): Request {
   } as unknown as Request;
 }
 
-function makeRes(): Response & { _headers: Record<string, string> } {
+function makeRes(): Response & {
+  _headers: Record<string, string>;
+  _redirect?: { status: number; url: string };
+} {
   const headers: Record<string, string> = {};
   const res = {
     _headers: headers,
@@ -30,8 +33,15 @@ function makeRes(): Response & { _headers: Record<string, string> } {
       headers[name] = value;
       return this as unknown as Response;
     },
+    redirect(status: number, url: string) {
+      (this as unknown as { _redirect: unknown })._redirect = { status, url };
+      return undefined;
+    },
   };
-  return res as unknown as Response & { _headers: Record<string, string> };
+  return res as unknown as Response & {
+    _headers: Record<string, string>;
+    _redirect?: { status: number; url: string };
+  };
 }
 
 function build(deps: {
@@ -112,21 +122,30 @@ describe('StorefrontPublicController — A276-P1-2 IP rate limiter on recovery r
       };
       const { controller } = build({ ipLimiter, recovery });
       const res = makeRes();
-      let caught: unknown = null;
+      await expect(
+        controller.resumeGuestCheckout(
+          SHARE_TOKEN,
+          { guest_email: 'j@example.com' } as never,
+          makeReq(),
+          res as never,
+        ),
+      ).rejects.toMatchObject({
+        getStatus: expect.any(Function),
+      });
+      // Verify HttpException carries 429
       try {
         await controller.resumeGuestCheckout(
           SHARE_TOKEN,
           { guest_email: 'j@example.com' } as never,
           makeReq(),
-          res as never,
+          makeRes() as never,
         );
       } catch (err) {
-        caught = err;
+        expect(err).toBeInstanceOf(HttpException);
+        expect((err as HttpException).getStatus()).toBe(
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
       }
-      expect(caught).toBeInstanceOf(HttpException);
-      expect((caught as HttpException).getStatus()).toBe(
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
       expect(res._headers['Retry-After']).toBe('1234');
       expect(recovery.resumeFromCredentials).not.toHaveBeenCalled();
     });
@@ -247,23 +266,94 @@ describe('StorefrontPublicController — A276-P1-2 IP rate limiter on recovery r
       expect(recovery.verifyToken).not.toHaveBeenCalled();
     });
   });
+});
 
-  describe('resume credential flow surfaces NotFound', () => {
-    it('returns 404 when recovery service finds nothing', async () => {
-      const recovery = {
-        resumeFromCredentials: jest.fn().mockResolvedValue(null),
-        sendRecoveryLink: jest.fn(),
-        verifyToken: jest.fn(),
-      };
-      const { controller } = build({ recovery });
-      await expect(
-        controller.resumeGuestCheckout(
-          SHARE_TOKEN,
-          { guest_email: 'unknown@example.com' } as never,
-          makeReq(),
-          makeRes() as never,
-        ),
-      ).rejects.toBeInstanceOf(NotFoundException);
-    });
+describe('StorefrontPublicController — A276-P1-3 (controller half) Referrer-Policy on resume redirect', () => {
+  it('sets Referrer-Policy: no-referrer before redirecting', async () => {
+    const recovery = {
+      resumeFromCredentials: jest.fn(),
+      sendRecoveryLink: jest.fn(),
+      verifyToken: jest.fn().mockResolvedValue({
+        share_token: SHARE_TOKEN,
+        guest_checkout_id: 'gc_abc',
+      }),
+    };
+    const { controller } = build({ recovery });
+    const res = makeRes();
+    await controller.resumeFromMagicLink(
+      SHARE_TOKEN,
+      'eyJ.fake.jwt',
+      makeReq(),
+      res as never,
+    );
+    expect(res._headers['Referrer-Policy']).toBe('no-referrer');
+  });
+
+  it('issues a 302 redirect with the storefront URL (status preserved)', async () => {
+    const recovery = {
+      resumeFromCredentials: jest.fn(),
+      sendRecoveryLink: jest.fn(),
+      verifyToken: jest.fn().mockResolvedValue({
+        share_token: SHARE_TOKEN,
+        guest_checkout_id: 'gc_abc',
+      }),
+    };
+    const config = {
+      get: jest.fn().mockReturnValue('https://example.test/'),
+    };
+    const { controller } = build({ recovery, config });
+    const res = makeRes();
+    await controller.resumeFromMagicLink(
+      SHARE_TOKEN,
+      'eyJ.fake.jwt',
+      makeReq(),
+      res as never,
+    );
+    expect(res._redirect?.status).toBe(HttpStatus.FOUND);
+    // No JWT in the destination URL (audit P1-3).
+    expect(res._redirect?.url).not.toContain('eyJ.fake.jwt');
+    expect(res._redirect?.url).toContain(SHARE_TOKEN);
+    expect(res._redirect?.url).toContain('resume=gc_abc');
+  });
+
+  it('does not include the JWT as a query param in the destination URL', async () => {
+    const recovery = {
+      resumeFromCredentials: jest.fn(),
+      sendRecoveryLink: jest.fn(),
+      verifyToken: jest.fn().mockResolvedValue({
+        share_token: SHARE_TOKEN,
+        guest_checkout_id: 'gc_abc',
+      }),
+    };
+    const { controller } = build({ recovery });
+    const res = makeRes();
+    await controller.resumeFromMagicLink(
+      SHARE_TOKEN,
+      'eyJ.fake.jwt',
+      makeReq(),
+      res as never,
+    );
+    const url = res._redirect?.url ?? '';
+    const query = url.split('?')[1] ?? '';
+    expect(query).not.toMatch(/jwt|token=eyJ/i);
+  });
+});
+
+describe('StorefrontPublicController — resume credential flow surfaces NotFound', () => {
+  it('returns 404 when recovery service finds nothing', async () => {
+    const recovery = {
+      resumeFromCredentials: jest.fn().mockResolvedValue(null),
+      sendRecoveryLink: jest.fn(),
+      verifyToken: jest.fn(),
+    };
+    const { controller } = build({ recovery });
+    await expect(
+      controller.resumeGuestCheckout(
+        SHARE_TOKEN,
+        { guest_email: 'unknown@example.com' } as never,
+        makeReq(),
+        makeRes() as never,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
