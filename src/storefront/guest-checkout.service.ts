@@ -926,13 +926,20 @@ export class GuestCheckoutService {
       );
       return { claimed: true };
     } catch (err) {
+      // A276-P1-5 — PROPAGATE.  BillingService.handleEvent wraps the
+      // webhook dispatch in a Prisma \$transaction whose final write is
+      // tx.stripeProcessedEvent.updateMany(handler_completed_at).  If we
+      // swallow here, that dedup row commits with no side-effect having
+      // run, Stripe ack's the delivery, and the refund row stays stuck
+      // in status:'paid' forever — the money came back but the buyer
+      // keeps app access.  Re-throwing rolls back the outer transaction
+      // (the StripeProcessedEvent insert AND the handler_completed_at
+      // stamp), Stripe sees a 5xx, and retries on its exponential backoff
+      // schedule (up to 3 days).
       this.logger.error(
-        `handleChargeRefunded crashed (tag=${safeErrorTag(err)})`,
+        `handleChargeRefunded crashed (tag=${safeErrorTag(err)}) — propagating for Stripe retry`,
       );
-      // A276-P1-5 (Fix 7) will replace this swallow with a re-throw so
-      // Stripe retries the delivery.  Left in place here for the Fix 6
-      // commit so the behaviour change is one diff per audit finding.
-      return { claimed: false };
+      throw err;
     }
   }
 
@@ -1005,12 +1012,15 @@ export class GuestCheckoutService {
       );
       return { claimed: true };
     } catch (err) {
+      // A276-P1-5 — PROPAGATE.  Same reasoning as handleChargeRefunded:
+      // swallowing leaves StripeProcessedEvent committed with no row
+      // update, and Stripe will never re-deliver the dispute notice.
+      // For chargebacks specifically, missing the 7-day evidence window
+      // because of a transient DB error is a direct money loss.
       this.logger.error(
-        `handleDisputeOpened crashed (tag=${safeErrorTag(err)})`,
+        `handleDisputeOpened crashed (tag=${safeErrorTag(err)}) — propagating for Stripe retry`,
       );
-      // A276-P1-5 (Fix 7) will replace this swallow with a re-throw so
-      // Stripe retries the delivery.
-      return { claimed: false };
+      throw err;
     }
   }
 

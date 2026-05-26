@@ -1074,4 +1074,67 @@ describe('GuestCheckoutService', () => {
       expect(notifications.createNotification).not.toHaveBeenCalled();
     });
   });
+
+  // A276-P1-5 — BillingService.handleEvent wraps every webhook dispatch
+  // in a Prisma \$transaction whose final write is
+  // StripeProcessedEvent.handler_completed_at.  If the refund / dispute
+  // handlers swallow errors and return { claimed: false }, the dedup row
+  // commits, Stripe ack's the delivery, and the refund row stays stuck
+  // in 'paid' forever.  These tests pin the new behaviour: a Prisma /
+  // notifier-internal error during the writes MUST re-throw so the
+  // outer transaction rolls back and Stripe retries.
+  //
+  // A legitimate soft no-op (PI unknown to either table) is NOT an error
+  // — it returns { claimed: false } cleanly so other handlers can take
+  // the event.
+  describe('handler error propagation (A276-P1-5 / Fix 7)', () => {
+    it('handleChargeRefunded re-throws when the $transaction errors (Stripe retry)', async () => {
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce({
+        id: 'gc-x',
+        stripe_payment_intent_id: 'pi_boom',
+        status: 'paid',
+        refunded_at: null,
+        package: { coach_id: 'coach-1' },
+      });
+      // Simulate a transient DB error inside the transaction.
+      prisma.$transaction.mockImplementationOnce(() => {
+        throw new Error('db connection lost');
+      });
+
+      await expect(
+        service.handleChargeRefunded('pi_boom', 1000, 1000),
+      ).rejects.toThrow('db connection lost');
+      // Coach must NOT have been notified for a failed write — the
+      // transaction rolled back, the refund state didn't change.
+      expect(notifications.createNotification).not.toHaveBeenCalled();
+    });
+
+    it('handleDisputeOpened re-throws when the $transaction errors (Stripe retry)', async () => {
+      prisma.$transaction.mockImplementationOnce(() => {
+        throw new Error('db connection lost');
+      });
+
+      await expect(
+        service.handleDisputeOpened('pi_boom', 'fraudulent'),
+      ).rejects.toThrow('db connection lost');
+      expect(notifications.createNotification).not.toHaveBeenCalled();
+    });
+
+    // Soft no-op stays soft: PI unknown is NOT a retryable error.
+    it('handleChargeRefunded returns claimed:false (no throw) for unknown PI', async () => {
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
+      prisma.clientPurchase.updateMany.mockResolvedValueOnce({ count: 0 });
+      await expect(
+        service.handleChargeRefunded('pi_never_seen', 1000, 1000),
+      ).resolves.toEqual({ claimed: false });
+    });
+
+    it('handleDisputeOpened returns claimed:false (no throw) for unknown PI', async () => {
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 0 });
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
+      await expect(
+        service.handleDisputeOpened('pi_never_seen', 'fraudulent'),
+      ).resolves.toEqual({ claimed: false });
+    });
+  });
 });
