@@ -2950,6 +2950,14 @@ model GuestCheckout {
   /// so a future run skips it without paying the hash compute.
   scrubbed_at DateTime?
 
+  /// R47 Phase 3 — landing page referrer.  When a checkout originated
+  /// from a CoachLandingPage's primary CTA the storefront stamps this
+  /// column so analytics can compute $/visitor per page.  Nullable —
+  /// direct storefront URLs (not from a landing page) leave it null.
+  /// No FK relation declared to avoid Prisma generating an inverse
+  /// relation on CoachLandingPage; analytics queries filter by id only.
+  landing_page_id String?
+
   @@index([package_id])
   @@index([status])
   // Audit #4 P2-6 — raw email index removed. Indexing guest_email
@@ -2967,6 +2975,9 @@ model GuestCheckout {
   // Audit #3 P2-3 — scrub worker scans rows whose data_retention_at
   // has elapsed and that have not been scrubbed yet.
   @@index([data_retention_at, scrubbed_at])
+  // R47 — analytics: revenue rollup for a landing page filters by
+  // landing_page_id + status. Index supports the GET /analytics query.
+  @@index([landing_page_id, status])
 }
 
 // Phase 3 Connect — Per-client Stripe Customer on the platform account.
@@ -4113,6 +4124,13 @@ model CoachLandingLead {
   crm_sync_status   CrmSyncStatus    @default(pending)
   crm_synced_at     DateTime?
   crm_error         String?
+  // R47 Phase 3 — per-provider sync state. `synced_to` lists CrmProvider
+  // values that have successfully accepted this lead (e.g. ['hubspot',
+  // 'mailchimp']). `external_ids` maps provider → external id returned by
+  // the provider API, so we can dedupe future updates or correlate webhook
+  // events. Both are written by the lead-sync worker (PR #3).
+  synced_to         String[]
+  external_ids      Json             @default("{}")
   // Set when this lead subsequently signs up and becomes a TGP User.
   // No FK — cross-table reference kept soft to survive user deletion.
   converted_user_id String?
