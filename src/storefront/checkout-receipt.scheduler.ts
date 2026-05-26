@@ -5,21 +5,23 @@ import { CheckoutReceiptService } from './checkout-receipt.service';
 
 // r48 #14 — branded PDF receipt scheduler.
 //
-// Runs every minute; finds paid/converted GuestCheckout rows whose
-// receipt_url is still NULL and generates + emails the receipt.
-// 60-second target is satisfied by the EVERY_MINUTE cron (max
-// in-flight = 60s after payment_intent.succeeded lands).
+// A276-P0-2 (r48-followup) — PDF receipts deprecated in favor of Stripe-
+// hosted receipt_url (pay.stripe.com/receipts/…). The scheduler is
+// gated OFF by default and only runs when LEGACY_PDF_RECEIPT_ENABLED=true.
+// Code is kept in the tree so a future PR can revive branded PDFs once
+// shared S3 infra (DATA_EXPORT_BUCKET pattern) lands. The legacy
+// CHECKOUT_RECEIPT_DISABLED override is honoured for one more release
+// as a soft-deprecation in case any environment relied on it.
 //
-// Decoupled from the inline webhook on purpose:
+// Historical context (still applicable should the path be revived):
 //   * PDF rendering + S3 upload + email send is up to 1-2s per row;
 //     running inside the webhook would stretch every Stripe round-
 //     trip and risk the timeout retry chain.
 //   * A failure (Resend outage, FS unwritable, OOM) here doesn't fail
 //     the webhook — it just leaves receipt_url NULL and the next
 //     tick retries idempotently.
-//
-// Batch size kept small (10) so a backlog from a Stripe outage
-// doesn't monopolise pdfkit's synchronous render loop.
+//   * Batch size kept small (10) so a backlog from a Stripe outage
+//     doesn't monopolise pdfkit's synchronous render loop.
 
 const BATCH_SIZE = 10;
 
@@ -35,6 +37,16 @@ export class CheckoutReceiptScheduler {
   @Cron(CronExpression.EVERY_MINUTE, { name: 'checkout-receipt' })
   async run(): Promise<void> {
     if (process.env.NODE_ENV === 'test') return;
+    // A276-P0-2 — default OFF. Stripe-hosted receipt_url is the
+    // canonical buyer-facing receipt path now (welcome email emits
+    // pay.stripe.com/receipts/…). Revive by setting
+    // LEGACY_PDF_RECEIPT_ENABLED=true; do NOT do this in production
+    // until shared S3 infra is wired — the current storeReceipt path
+    // writes to ephemeral local FS which is lost on Fly redeploy and
+    // produces unreachable local:// URLs.
+    if (process.env.LEGACY_PDF_RECEIPT_ENABLED !== 'true') return;
+    // Legacy override kept for one release as soft-deprecation. Always
+    // a no-op now that the path is opted-in via LEGACY_PDF_RECEIPT_ENABLED.
     if (process.env.CHECKOUT_RECEIPT_DISABLED === 'true') return;
     try {
       const processed = await this.runOnce();

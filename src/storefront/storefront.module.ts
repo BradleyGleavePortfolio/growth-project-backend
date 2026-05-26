@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { ConnectModule } from '../connect/connect.module';
 import { EmailModule } from '../email/email.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { CheckoutCookieService } from './checkout-cookie.service';
 import { CheckoutIdempotencyService } from './checkout-idempotency.service';
 import { CheckoutIpRateLimiterService } from './checkout-rate-limiter.service';
@@ -33,6 +34,13 @@ import { StorefrontService } from './storefront.service';
     // r48 #5 — EmailModule re-exports EmailService for the recovery
     // magic-link send path.
     EmailModule,
+    // A276-P1-4 (refix) — NotificationsModule exports NotificationsService
+    // so the refund + dispute webhook handlers can alert the coach in-app.
+    // The dependency is HARD on GuestCheckoutService (no @Optional()): a
+    // missing notifier is a wiring bug, not a graceful degradation; module
+    // boot fails fast so the operator notices before any refund silently
+    // strands the coach without a signal.
+    NotificationsModule,
   ],
   controllers: [StorefrontPublicController],
   providers: [

@@ -2904,10 +2904,15 @@ model GuestCheckout {
   ///   conversion_failed_retryable → converted                    (reconciliation OK)
   ///   conversion_failed_retryable → conversion_failed_terminal   (>= 5 retries)
   ///   pending                    → failed                        (Stripe PI failed)
+  ///   paid|converted             → refunded                      (charge.refunded — full)
+  ///   paid|converted             → disputed                      (charge.dispute.created)
   /// `failed` is the legacy terminal state for the pre-checkout
   /// failure path (Stripe rejected the PI). It is NOT reachable from
   /// `paid` — once we have money, the row only moves through retryable
   /// reconciliation. Audit #3 P1-6 added that durability.
+  /// A276 P0-1: `refunded` and `disputed` are first-class terminals
+  /// admitted by the GuestCheckout_status_check constraint (see
+  /// migration 20260921000000_add_refunded_disputed_to_guest_checkout_status).
   status String @default("pending")
 
   /// FK to User row created after payment succeeds. Null until converted.

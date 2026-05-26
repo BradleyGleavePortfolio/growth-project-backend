@@ -12,6 +12,7 @@ import {
 } from '../src/connect/stripe-connect-api.service';
 import { SupabaseService } from '../src/supabase/supabase.service';
 import { GuestCheckoutService } from '../src/storefront/guest-checkout.service';
+import { NotificationsService } from '../src/notifications/notifications.service';
 
 // R43 — GuestCheckoutService tests. Prisma, Stripe, and Supabase are all
 // mocked. We test: package resolution, idempotency (replay path), Stripe
@@ -69,7 +70,13 @@ interface PrismaMocks {
     update: jest.Mock;
     upsert: jest.Mock; // r48 #12 — atomic upsert path
   };
-  clientPurchase: { findFirst: jest.Mock; create: jest.Mock };
+  clientPurchase: {
+    findFirst: jest.Mock;
+    create: jest.Mock;
+    // A276-P1-4 — refund handler revokes entitlement on the
+    // matching ClientPurchase row via updateMany.
+    updateMany: jest.Mock;
+  };
   connectAccount: { findUnique: jest.Mock };
   $transaction: jest.Mock;
 }
@@ -81,7 +88,11 @@ function buildPrismaMocks(): PrismaMocks {
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
-      updateMany: jest.fn(),
+      // A276-P1-2 — default to no-op so unrelated tests keep passing.
+      // handleChargeRefunded may emit two updateMany calls (the initial
+      // refunded_at stamp and the partial→full status upgrade); tests
+      // that don't override the default see a benign count:0 for both.
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     user: {
@@ -93,7 +104,12 @@ function buildPrismaMocks(): PrismaMocks {
       // the freshly-stubbed user row on first call.
       upsert: jest.fn(),
     },
-    clientPurchase: { findFirst: jest.fn(), create: jest.fn() },
+    clientPurchase: {
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      // A276-P1-4 — default to no-op so unrelated tests keep passing.
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
     connectAccount: {
       findUnique: jest.fn().mockResolvedValue({ stripe_account_id: 'acct_x' }),
     },
@@ -113,18 +129,31 @@ describe('GuestCheckoutService', () => {
   let stripe: {
     createPaymentIntent: jest.Mock;
     retrievePaymentIntent: jest.Mock;
+    // A276-P0-2 — retrieveCharge resolves the Stripe-hosted receipt_url
+    // when the webhook payload didn't carry it expanded.
+    retrieveCharge: jest.Mock;
   };
   let supabaseAdminMock: {
     createUser: jest.Mock;
     listUsers: jest.Mock;
     generateLink: jest.Mock;
   };
+  // A276-P1-4 — NotificationsService mock. Refund + dispute handlers
+  // surface coach-facing alerts via createNotification; we capture the
+  // call to assert on body/kind/payload.
+  let notifications: { createNotification: jest.Mock };
 
   beforeEach(async () => {
     prisma = buildPrismaMocks();
     stripe = {
       createPaymentIntent: jest.fn(),
       retrievePaymentIntent: jest.fn(),
+      // A276-P0-2 — default to a no-charge response so existing tests
+      // (which don't care about receipt_url) keep passing.
+      retrieveCharge: jest.fn().mockResolvedValue({ id: 'ch_default', receipt_url: null }),
+    };
+    notifications = {
+      createNotification: jest.fn().mockResolvedValue({ id: 'notif-1' }),
     };
     supabaseAdminMock = {
       createUser: jest.fn(),
@@ -156,6 +185,10 @@ describe('GuestCheckoutService', () => {
           },
         },
         { provide: ConfigService, useValue: { get: () => undefined } },
+        // A276-P1-4 — inject the notifier so refund/dispute tests can
+        // assert on coach alerts. @Optional() in the service keeps
+        // legacy hand-built test modules valid.
+        { provide: NotificationsService, useValue: notifications },
       ],
     }).compile();
     service = module.get(GuestCheckoutService);
@@ -667,6 +700,244 @@ describe('GuestCheckoutService', () => {
     });
   });
 
+  // A276-P0-2 — Stripe-hosted receipt URL is the canonical buyer-facing
+  // receipt in this PR (replaces the broken local:// PDF path). The
+  // welcome email must surface a pay.stripe.com link and the
+  // GuestCheckout row must persist the same URL so admin tools and
+  // support resends can use it. The 2% TGP application fee path must
+  // remain undisturbed.
+  describe('handlePaymentSucceeded — Stripe receipt_url (A276-P0-2)', () => {
+    function paidCheckoutRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'gc-r',
+        package_id: 'pkg-1',
+        package: {
+          coach: { id: 'coach-1' },
+          coach_id: 'coach-1',
+          amount_cents: 29700,
+          currency: 'usd',
+          billing_type: 'one_time',
+          name: 'Pack',
+        },
+        idempotency_key: IDEMP_KEY,
+        guest_email: 'jane@example.com',
+        guest_name: 'Jane',
+        stripe_payment_intent_id: 'pi_r',
+        stripe_customer_id: null,
+        status: 'paid',
+        ...overrides,
+      };
+    }
+
+    it('persists the Stripe-hosted receipt_url on the GuestCheckout row when the event payload carries it', async () => {
+      // Initial pending→paid claim succeeds.
+      prisma.guestCheckout.updateMany
+        .mockResolvedValueOnce({ count: 1 }) // claim
+        .mockResolvedValueOnce({ count: 1 }); // receipt_url persist
+      const row = paidCheckoutRow();
+      prisma.guestCheckout.findUnique
+        .mockResolvedValueOnce(row) // post-claim read
+        .mockResolvedValueOnce(row); // convertGuestToUser re-read
+      supabaseAdminMock.createUser.mockResolvedValueOnce({
+        data: { user: { id: 'sb-r' } },
+        error: null,
+      });
+      prisma.connectAccount.findUnique.mockResolvedValueOnce({
+        stripe_account_id: 'acct_dest',
+      });
+      prisma.user.upsert.mockResolvedValueOnce({ id: 'usr-r', coach_id: 'coach-1' });
+      prisma.clientPurchase.findFirst.mockResolvedValueOnce(null);
+      prisma.clientPurchase.create.mockResolvedValueOnce({ id: 'cp-r' });
+      prisma.guestCheckout.update.mockResolvedValueOnce({ id: 'gc-r' });
+
+      await service.handlePaymentSucceeded('pi_r', {
+        chargeId: 'ch_abc',
+        receiptUrl: 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF9-test',
+      });
+
+      // Second updateMany call is the receipt_url persist.
+      const persistCall = prisma.guestCheckout.updateMany.mock.calls[1];
+      expect(persistCall[0]).toMatchObject({
+        where: {
+          stripe_payment_intent_id: 'pi_r',
+          receipt_url: null,
+        },
+        data: {
+          receipt_url: 'https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF9-test',
+        },
+      });
+      // No extra Stripe round-trip when the event already carried the URL.
+      expect(stripe.retrieveCharge).not.toHaveBeenCalled();
+      expect(stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+    });
+
+    it('falls back to stripe.retrieveCharge when the event payload only carries chargeId', async () => {
+      prisma.guestCheckout.updateMany
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 1 });
+      const row = paidCheckoutRow();
+      prisma.guestCheckout.findUnique
+        .mockResolvedValueOnce(row)
+        .mockResolvedValueOnce(row);
+      stripe.retrieveCharge.mockResolvedValueOnce({
+        id: 'ch_abc',
+        receipt_url: 'https://pay.stripe.com/receipts/payment/abc',
+      });
+      supabaseAdminMock.createUser.mockResolvedValueOnce({
+        data: { user: { id: 'sb-r2' } },
+        error: null,
+      });
+      prisma.connectAccount.findUnique.mockResolvedValueOnce({
+        stripe_account_id: 'acct_dest',
+      });
+      prisma.user.upsert.mockResolvedValueOnce({ id: 'usr-r2', coach_id: 'coach-1' });
+      prisma.clientPurchase.findFirst.mockResolvedValueOnce(null);
+      prisma.clientPurchase.create.mockResolvedValueOnce({ id: 'cp-r2' });
+      prisma.guestCheckout.update.mockResolvedValueOnce({});
+
+      await service.handlePaymentSucceeded('pi_r', {
+        chargeId: 'ch_abc',
+        receiptUrl: null,
+      });
+
+      expect(stripe.retrieveCharge).toHaveBeenCalledWith('ch_abc');
+      const persistCall = prisma.guestCheckout.updateMany.mock.calls[1];
+      expect(persistCall[0].data.receipt_url).toBe(
+        'https://pay.stripe.com/receipts/payment/abc',
+      );
+    });
+
+    it('rejects non-https receipt URLs (no local:// or javascript: leaks)', async () => {
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+      const row = paidCheckoutRow();
+      prisma.guestCheckout.findUnique
+        .mockResolvedValueOnce(row)
+        .mockResolvedValueOnce(row);
+      stripe.retrieveCharge.mockResolvedValueOnce({
+        id: 'ch_bad',
+        receipt_url: 'javascript:alert(1)',
+      });
+      supabaseAdminMock.createUser.mockResolvedValueOnce({
+        data: { user: { id: 'sb-r3' } },
+        error: null,
+      });
+      prisma.connectAccount.findUnique.mockResolvedValueOnce({
+        stripe_account_id: 'acct_dest',
+      });
+      prisma.user.upsert.mockResolvedValueOnce({ id: 'usr-r3', coach_id: 'coach-1' });
+      prisma.clientPurchase.findFirst.mockResolvedValueOnce(null);
+      prisma.clientPurchase.create.mockResolvedValueOnce({ id: 'cp-r3' });
+      prisma.guestCheckout.update.mockResolvedValueOnce({});
+
+      await service.handlePaymentSucceeded('pi_r', {
+        chargeId: 'ch_bad',
+        receiptUrl: null,
+      });
+
+      // The malicious URL must NOT have been persisted; only the
+      // pending→paid claim updateMany ran.
+      const persistAttempts = prisma.guestCheckout.updateMany.mock.calls.filter(
+        (c: unknown[]) =>
+          (c[0] as { data?: { receipt_url?: string } })?.data?.receipt_url !== undefined,
+      );
+      expect(persistAttempts).toHaveLength(0);
+    });
+
+    // A276-F2-P2-1 — degraded-path Stripe blip MUST NOT trigger a second
+    // HTTP call inside the outer $transaction. BillingService signals
+    // `preResolveAttempted=true` when the outside-tx Stripe lookup ran
+    // (success or failure). resolveReceiptUrl honours that flag and
+    // returns null immediately instead of calling stripe.retrieveCharge
+    // again from inside the tx — the exact anti-pattern P1-3 was meant
+    // to eliminate.
+    it('A276-F2-P2-1: resolveReceiptUrl skips Stripe HTTP when preResolveAttempted=true and receiptUrl=null', async () => {
+      const url = await service.resolveReceiptUrl('pi_blip', {
+        chargeId: 'ch_blip',
+        receiptUrl: null,
+        preResolveAttempted: true,
+      });
+      expect(url).toBeNull();
+      expect(stripe.retrieveCharge).not.toHaveBeenCalled();
+      expect(stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+    });
+
+    it('A276-F2-P2-1: resolveReceiptUrl still uses pre-resolved https URL when preResolveAttempted=true (happy path)', async () => {
+      const url = await service.resolveReceiptUrl('pi_happy', {
+        chargeId: 'ch_happy',
+        receiptUrl: 'https://pay.stripe.com/receipts/abc',
+        preResolveAttempted: true,
+      });
+      expect(url).toBe('https://pay.stripe.com/receipts/abc');
+      expect(stripe.retrieveCharge).not.toHaveBeenCalled();
+      expect(stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+    });
+
+    it('A276-F2-P2-1: handlePaymentSucceeded with preResolveAttempted=true + null URL does NOT call retrieveCharge', async () => {
+      // The degraded path: BillingService already tried, Stripe was
+      // down, we proceed with null URL. The inner handler MUST NOT
+      // retry Stripe (it would be inside the outer billing tx).
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+      const row = paidCheckoutRow();
+      prisma.guestCheckout.findUnique
+        .mockResolvedValueOnce(row)
+        .mockResolvedValueOnce(row);
+      supabaseAdminMock.createUser.mockResolvedValueOnce({
+        data: { user: { id: 'sb-blip' } },
+        error: null,
+      });
+      prisma.connectAccount.findUnique.mockResolvedValueOnce({
+        stripe_account_id: 'acct_dest',
+      });
+      prisma.user.upsert.mockResolvedValueOnce({
+        id: 'usr-blip',
+        coach_id: 'coach-1',
+      });
+      prisma.clientPurchase.findFirst.mockResolvedValueOnce(null);
+      prisma.clientPurchase.create.mockResolvedValueOnce({ id: 'cp-blip' });
+      prisma.guestCheckout.update.mockResolvedValueOnce({});
+
+      await service.handlePaymentSucceeded('pi_r', {
+        chargeId: 'ch_blip',
+        receiptUrl: null,
+        preResolveAttempted: true,
+      });
+
+      // No in-tx Stripe HTTP fired on the degraded path.
+      expect(stripe.retrieveCharge).not.toHaveBeenCalled();
+      expect(stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+      // receipt_url is never persisted (still null).
+      const persistAttempts = prisma.guestCheckout.updateMany.mock.calls.filter(
+        (c: unknown[]) =>
+          (c[0] as { data?: { receipt_url?: string } })?.data?.receipt_url !==
+          undefined,
+      );
+      expect(persistAttempts).toHaveLength(0);
+    });
+
+    // Regression — application_fee_amount (2% TGP platform fee plus the
+    // Stripe pass-through estimate) is unchanged by the receipt wiring.
+    // The PI create path runs at createIntent time; receipt resolution
+    // runs at payment_intent.succeeded time and must NOT touch the fee.
+    it('does not disturb the 2% application_fee_amount (regression)', async () => {
+      prisma.coachPackage.findUnique.mockResolvedValueOnce(makePkg());
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
+      prisma.guestCheckout.create.mockResolvedValueOnce({
+        id: 'gc-fee',
+        idempotency_key: IDEMP_KEY,
+      });
+      stripe.createPaymentIntent.mockResolvedValueOnce({
+        id: 'pi_fee',
+        client_secret: 's',
+      });
+      prisma.guestCheckout.update.mockResolvedValueOnce({});
+      await service.createIntent('tok123', baseDto);
+      // Same fee as the canonical PI-create test — 1485¢ for $297 package.
+      expect(
+        stripe.createPaymentIntent.mock.calls[0][0].applicationFeeAmount,
+      ).toBe(1485);
+    });
+  });
+
   describe('handlePaymentFailed', () => {
     it('transitions a pending row to failed', async () => {
       prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
@@ -684,6 +955,359 @@ describe('GuestCheckoutService', () => {
       await expect(
         service.handlePaymentFailed('pi_x'),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  // A276-P1-4 — refund must revoke entitlement on a full refund and
+  // notify the selling coach. A partial refund stamps refunded_at but
+  // leaves entitlement_active alone. A dispute notifies the coach at
+  // high priority but MUST NOT revoke entitlement (it can be won).
+  describe('handleChargeRefunded (A276-P1-4)', () => {
+    function refundedGuestRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'gc-ref-1',
+        stripe_payment_intent_id: 'pi_ref',
+        status: 'paid',
+        refunded_at: null,
+        package: { coach_id: 'coach-1' },
+        ...overrides,
+      };
+    }
+
+    it('full refund: revokes ClientPurchase entitlement, stamps GuestCheckout, notifies coach', async () => {
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(refundedGuestRow());
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+      prisma.clientPurchase.updateMany.mockResolvedValueOnce({ count: 1 });
+
+      const result = await service.handleChargeRefunded('pi_ref', 29700, 29700);
+
+      expect(result).toEqual({ claimed: true });
+      // GuestCheckout flipped to 'refunded' with refunded_at stamped.
+      const gcCall = prisma.guestCheckout.updateMany.mock.calls[0];
+      expect(gcCall[0]).toMatchObject({
+        where: { stripe_payment_intent_id: 'pi_ref', refunded_at: null },
+        data: { status: 'refunded' },
+      });
+      expect(gcCall[0].data.refunded_at).toBeInstanceOf(Date);
+      // ClientPurchase entitlement revoked.
+      expect(prisma.clientPurchase.updateMany).toHaveBeenCalledWith({
+        where: {
+          stripe_payment_intent_id: 'pi_ref',
+          entitlement_active: true,
+        },
+        data: { entitlement_active: false, status: 'refunded' },
+      });
+      // Both writes ran inside one transaction.
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      // Coach was notified.
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+      const notif = notifications.createNotification.mock.calls[0][0];
+      expect(notif).toMatchObject({
+        user_id: 'coach-1',
+        kind: 'coach_alert',
+        channel: 'inapp',
+      });
+      expect(notif.body).toContain('$297.00');
+      expect(notif.payload).toMatchObject({
+        event: 'refund_processed',
+        fully_refunded: true,
+        entitlement_revoked: true,
+        payment_intent_id: 'pi_ref',
+      });
+    });
+
+    it('partial refund: stamps GuestCheckout but does NOT revoke entitlement', async () => {
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(refundedGuestRow());
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+
+      // 100 of 29700 refunded — partial.
+      const result = await service.handleChargeRefunded('pi_ref', 29700, 100);
+
+      expect(result).toEqual({ claimed: true });
+      // ClientPurchase entitlement-revoke updateMany must NOT have fired.
+      expect(prisma.clientPurchase.updateMany).not.toHaveBeenCalled();
+      // Coach is still notified, but with fully_refunded:false.
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+      const notif = notifications.createNotification.mock.calls[0][0];
+      expect(notif.body).toContain('Partial refund');
+      expect(notif.body).toContain('$1.00');
+      expect(notif.payload).toMatchObject({
+        fully_refunded: false,
+        entitlement_revoked: false,
+      });
+    });
+
+    it('idempotent on re-delivery: second call no-ops the entitlement revoke', async () => {
+      // First delivery flipped both rows.
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(
+        refundedGuestRow({ status: 'refunded', refunded_at: new Date() }),
+      );
+      // updateMany WHERE refunded_at:null catches nothing.
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 0 });
+      // ClientPurchase WHERE entitlement_active:true also catches nothing.
+      prisma.clientPurchase.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      const result = await service.handleChargeRefunded('pi_ref', 29700, 29700);
+
+      // Still claimed (the row exists), but no notification fired since
+      // nothing actually changed in this delivery.
+      expect(result).toEqual({ claimed: true });
+      expect(notifications.createNotification).not.toHaveBeenCalled();
+    });
+
+    it('returns claimed:false when no GuestCheckout AND no ClientPurchase matches', async () => {
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
+      prisma.clientPurchase.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      const result = await service.handleChargeRefunded('pi_unknown', 1000, 1000);
+
+      expect(result).toEqual({ claimed: false });
+      expect(notifications.createNotification).not.toHaveBeenCalled();
+    });
+
+    it('notification failure does not roll back the refund write', async () => {
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(refundedGuestRow());
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+      prisma.clientPurchase.updateMany.mockResolvedValueOnce({ count: 1 });
+      notifications.createNotification.mockRejectedValueOnce(
+        new Error('expo down'),
+      );
+
+      const result = await service.handleChargeRefunded('pi_ref', 29700, 29700);
+
+      expect(result).toEqual({ claimed: true });
+      // The refund + entitlement-revoke writes still ran.
+      expect(prisma.guestCheckout.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.clientPurchase.updateMany).toHaveBeenCalledTimes(1);
+    });
+
+    // A276-P1-2 (refix) — Stripe delivers charge.refunded once per
+    // refund. A partial-then-full sequence is two distinct events; the
+    // first stamps refunded_at on GuestCheckout but leaves status='paid'
+    // (or 'converted'), and on the second delivery the original
+    // updateMany WHERE refunded_at:null guard would skip GuestCheckout
+    // entirely, leaving its status desynced from ClientPurchase.status=
+    // 'refunded'. The fix issues a second updateMany when the first
+    // claims zero and the cumulative amount is fully refunded.
+    it('partial-then-full: second delivery upgrades GuestCheckout.status to refunded even though refunded_at was set on the first', async () => {
+      // Second delivery: refunded_at already stamped from a prior
+      // partial refund, so the row.status is still 'paid' and
+      // refunded_at is non-null.
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(
+        refundedGuestRow({ status: 'paid', refunded_at: new Date() }),
+      );
+      // First updateMany (WHERE refunded_at:null) claims zero.
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 0 });
+      // Second updateMany (the partial→full upgrade) claims one.
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+      // ClientPurchase entitlement-revoke claims one (this is the
+      // delivery that completes the full refund).
+      prisma.clientPurchase.updateMany.mockResolvedValueOnce({ count: 1 });
+
+      const result = await service.handleChargeRefunded('pi_ref', 29700, 29700);
+
+      expect(result).toEqual({ claimed: true });
+      // Both updateMany calls fired.
+      expect(prisma.guestCheckout.updateMany).toHaveBeenCalledTimes(2);
+      // First call: original stamp guard.
+      expect(prisma.guestCheckout.updateMany.mock.calls[0][0]).toMatchObject({
+        where: { stripe_payment_intent_id: 'pi_ref', refunded_at: null },
+        data: { status: 'refunded' },
+      });
+      // Second call: the partial→full status upgrade. MUST guard on
+      // status != 'refunded' so a third re-delivery is a no-op, and
+      // MUST NOT re-stamp refunded_at (preserves original timestamp).
+      const upgradeCall = prisma.guestCheckout.updateMany.mock.calls[1][0];
+      expect(upgradeCall).toMatchObject({
+        where: {
+          stripe_payment_intent_id: 'pi_ref',
+          status: { not: 'refunded' },
+        },
+        data: { status: 'refunded' },
+      });
+      expect(upgradeCall.data.refunded_at).toBeUndefined();
+      // ClientPurchase entitlement was revoked.
+      expect(prisma.clientPurchase.updateMany).toHaveBeenCalledTimes(1);
+      // Coach was notified — the partial→full transition is exactly
+      // the moment a coach needs to know entitlement just flipped.
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+      const notif = notifications.createNotification.mock.calls[0][0];
+      expect(notif.payload).toMatchObject({
+        fully_refunded: true,
+        entitlement_revoked: true,
+      });
+    });
+
+    // A276-P1-2 (refix) — third re-delivery after a partial→full
+    // completion must be a no-op in both branches.
+    it('partial-then-full: third re-delivery (status already refunded) is a no-op and does not re-notify', async () => {
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(
+        refundedGuestRow({ status: 'refunded', refunded_at: new Date() }),
+      );
+      // WHERE refunded_at:null guard catches nothing.
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 0 });
+      // WHERE status:{not:'refunded'} also catches nothing.
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 0 });
+      prisma.clientPurchase.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      const result = await service.handleChargeRefunded('pi_ref', 29700, 29700);
+
+      expect(result).toEqual({ claimed: true });
+      expect(notifications.createNotification).not.toHaveBeenCalled();
+    });
+
+    // A276-P1-2 (refix) — also covers the converted-guest case where
+    // the row's status is 'converted' (post-conversion partial refund
+    // through the guest-checkout webhook fallback path).
+    it('partial-then-full on converted row: upgrades converted→refunded on the closing delivery', async () => {
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(
+        refundedGuestRow({ status: 'converted', refunded_at: new Date() }),
+      );
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 0 });
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+      prisma.clientPurchase.updateMany.mockResolvedValueOnce({ count: 1 });
+
+      const result = await service.handleChargeRefunded('pi_ref', 29700, 29700);
+
+      expect(result).toEqual({ claimed: true });
+      expect(prisma.guestCheckout.updateMany.mock.calls[1][0]).toMatchObject({
+        where: {
+          stripe_payment_intent_id: 'pi_ref',
+          status: { not: 'refunded' },
+        },
+        data: { status: 'refunded' },
+      });
+    });
+  });
+
+  describe('handleDisputeOpened (A276-P1-4)', () => {
+    function disputedRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'gc-disp-1',
+        stripe_payment_intent_id: 'pi_disp',
+        status: 'paid',
+        disputed_at: null,
+        package: { coach_id: 'coach-1' },
+        ...overrides,
+      };
+    }
+
+    it('stamps disputed_at + dispute_reason, notifies coach, does NOT revoke entitlement', async () => {
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(disputedRow());
+
+      const result = await service.handleDisputeOpened(
+        'pi_disp',
+        'fraudulent',
+      );
+
+      expect(result).toEqual({ claimed: true });
+      const call = prisma.guestCheckout.updateMany.mock.calls[0];
+      expect(call[0]).toMatchObject({
+        where: { stripe_payment_intent_id: 'pi_disp', disputed_at: null },
+        data: { status: 'disputed', dispute_reason: 'fraudulent' },
+      });
+      // CRITICAL — dispute MUST NOT revoke entitlement.
+      expect(prisma.clientPurchase.updateMany).not.toHaveBeenCalled();
+      // Coach notified.
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+      const notif = notifications.createNotification.mock.calls[0][0];
+      expect(notif).toMatchObject({
+        user_id: 'coach-1',
+        kind: 'coach_alert',
+      });
+      expect(notif.body).toContain('Chargeback');
+      expect(notif.payload).toMatchObject({
+        event: 'dispute_opened',
+        payment_intent_id: 'pi_disp',
+        reason: 'fraudulent',
+      });
+    });
+
+    it('idempotent on re-delivery: no second notification', async () => {
+      // Row already stamped on prior delivery — updateMany no-ops.
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 0 });
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(
+        disputedRow({ disputed_at: new Date(), status: 'disputed' }),
+      );
+
+      const result = await service.handleDisputeOpened('pi_disp', 'fraudulent');
+
+      expect(result).toEqual({ claimed: true });
+      expect(notifications.createNotification).not.toHaveBeenCalled();
+    });
+
+    it('claims:false when PaymentIntent is unknown to GuestCheckout', async () => {
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 0 });
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
+
+      const result = await service.handleDisputeOpened('pi_unknown', 'fraudulent');
+
+      expect(result).toEqual({ claimed: false });
+      expect(notifications.createNotification).not.toHaveBeenCalled();
+    });
+  });
+
+  // A276-P1-5 — BillingService.handleEvent wraps every webhook dispatch
+  // in a Prisma \$transaction whose final write is
+  // StripeProcessedEvent.handler_completed_at.  If the refund / dispute
+  // handlers swallow errors and return { claimed: false }, the dedup row
+  // commits, Stripe ack's the delivery, and the refund row stays stuck
+  // in 'paid' forever.  These tests pin the new behaviour: a Prisma /
+  // notifier-internal error during the writes MUST re-throw so the
+  // outer transaction rolls back and Stripe retries.
+  //
+  // A legitimate soft no-op (PI unknown to either table) is NOT an error
+  // — it returns { claimed: false } cleanly so other handlers can take
+  // the event.
+  describe('handler error propagation (A276-P1-5 / Fix 7)', () => {
+    it('handleChargeRefunded re-throws when the $transaction errors (Stripe retry)', async () => {
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce({
+        id: 'gc-x',
+        stripe_payment_intent_id: 'pi_boom',
+        status: 'paid',
+        refunded_at: null,
+        package: { coach_id: 'coach-1' },
+      });
+      // Simulate a transient DB error inside the transaction.
+      prisma.$transaction.mockImplementationOnce(() => {
+        throw new Error('db connection lost');
+      });
+
+      await expect(
+        service.handleChargeRefunded('pi_boom', 1000, 1000),
+      ).rejects.toThrow('db connection lost');
+      // Coach must NOT have been notified for a failed write — the
+      // transaction rolled back, the refund state didn't change.
+      expect(notifications.createNotification).not.toHaveBeenCalled();
+    });
+
+    it('handleDisputeOpened re-throws when the $transaction errors (Stripe retry)', async () => {
+      prisma.$transaction.mockImplementationOnce(() => {
+        throw new Error('db connection lost');
+      });
+
+      await expect(
+        service.handleDisputeOpened('pi_boom', 'fraudulent'),
+      ).rejects.toThrow('db connection lost');
+      expect(notifications.createNotification).not.toHaveBeenCalled();
+    });
+
+    // Soft no-op stays soft: PI unknown is NOT a retryable error.
+    it('handleChargeRefunded returns claimed:false (no throw) for unknown PI', async () => {
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
+      prisma.clientPurchase.updateMany.mockResolvedValueOnce({ count: 0 });
+      await expect(
+        service.handleChargeRefunded('pi_never_seen', 1000, 1000),
+      ).resolves.toEqual({ claimed: false });
+    });
+
+    it('handleDisputeOpened returns claimed:false (no throw) for unknown PI', async () => {
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 0 });
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
+      await expect(
+        service.handleDisputeOpened('pi_never_seen', 'fraudulent'),
+      ).resolves.toEqual({ claimed: false });
     });
   });
 });

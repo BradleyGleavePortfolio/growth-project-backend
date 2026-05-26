@@ -4,7 +4,6 @@ import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 import { DigestService } from './digest.service';
 import { DigestScheduler } from './digest.scheduler';
-import { AuthModule } from '../auth/auth.module';
 import { MilestoneReachedEmitter } from './emitters/milestone-reached.emitter';
 import { MessageReceivedEmitter } from './emitters/message-received.emitter';
 import { MissedCheckinEmitter } from './emitters/missed-checkin.emitter';
@@ -23,8 +22,19 @@ import { BookingEmitter } from './emitters/booking.emitter';
 // Phase 9: All emitters + DigestService + DigestScheduler are also exported
 // so other modules (check-ins, weight, build-week, messaging, PTM) can
 // inject individual emitters without circular dependencies.
+//
+// A276-P0-2 (refix) — AuthModule import removed. NotificationsController's
+// `@UseGuards(JwtAuthGuard, RolesGuard)` resolves through the @Global
+// SecurityGuardsModule (see src/common/security/security-guards.module.ts
+// and the doc-comment in src/auth/auth.module.ts). NotificationsService
+// itself has no AuthService dependency. Removing the stale AuthModule edge
+// closes the BillingModule → CheckoutModule → NotificationsModule →
+// AuthModule → InviteCodesModule → BillingModule cycle that the new
+// CheckoutModule → NotificationsModule edge would otherwise open, and
+// aligns NotificationsModule with the post-hotfix-#243 architecture that
+// every other feature module already follows.
 @Module({
-  imports: [AuthModule, ConfigModule],
+  imports: [ConfigModule],
   controllers: [NotificationsController],
   providers: [
     NotificationsService,
