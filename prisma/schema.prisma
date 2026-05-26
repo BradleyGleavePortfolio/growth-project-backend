@@ -409,6 +409,10 @@ model User {
   // FK side so all a coach's pages + integrations vanish on account hard-delete.
   landing_pages    CoachLandingPage[]    @relation("CoachLandingPagesCoach")
   crm_integrations CoachCrmIntegration[] @relation("CoachCrmCoach")
+  // R49 — Coach landing page custom domains (Pro+ tier). A coach can claim
+  // many domains (one per landing page); rows cascade with the coach on
+  // account hard-delete via the FK below.
+  landing_page_domains CoachLandingPageDomain[] @relation("CoachLandingPageDomainCoach")
 
   @@index([coach_id])
   @@index([deletion_scheduled_at])
@@ -4056,6 +4060,8 @@ model CoachLandingPage {
   sections CoachLandingPageSection[]
   leads    CoachLandingLead[]
   views    CoachLandingPageView[]
+  // R49 — custom domains claimed for this page (Pro+ only, 1:N).
+  domains  CoachLandingPageDomain[]
 
   // @@unique enforces per-coach slug uniqueness — two coaches can share a
   // slug word but not the same (coach_id, slug) pair.
@@ -4180,4 +4186,76 @@ model CoachCrmIntegration {
 
   // Fast "get all integrations for coach" query from the CRM settings screen.
   @@index([coach_id])
+}
+
+// ============================================================
+// R49 — COACH LANDING PAGE CUSTOM DOMAINS (Phase 4: CNAME, Pro+)
+// Pro+ coaches can point a domain (e.g. coaching.example.com) at
+// their landing page. Verification is a two-step DNS dance:
+//   1. TXT record on `_tgp-verify.<domain>` containing `tgp-verify=<token>`
+//      proves the coach controls the zone.
+//   2. CNAME `<domain>` → `custom.joingrowthproject.com` directs traffic
+//      at our Fly app so SNI routing can resolve by Host header.
+// Once verified, the Fly cert worker calls `addCertificate(appId, host)`
+// to provision a Let's Encrypt cert via Fly's managed ACME flow.
+// ============================================================
+
+// DomainVerificationStatus — DNS verification state machine:
+//   pending  → row just created, DNS check has not run or has not seen
+//              the required TXT + CNAME records yet.
+//   verified → most recent DNS check found both records correct.
+//   failed   → repeated DNS checks consistently failed; surfaced in the
+//              coach UI so they can fix the records.
+//   revoked  → coach deleted the domain via DELETE; row is kept for
+//              audit until cascade fires (or hard-deleted on revoke).
+enum DomainVerificationStatus {
+  pending
+  verified
+  failed
+  revoked
+}
+
+// DomainCertStatus — Fly-managed Let's Encrypt cert lifecycle:
+//   none      → no cert request yet (verification not complete)
+//   requested → Fly addCertificate called; ACME challenge in flight
+//   issued    → cert is Ready on the Fly side; SNI traffic served
+//   failed    → ACME failed after 3 retries; coach must investigate
+//   expired   → cert was issued but renewal failed; service degraded
+enum DomainCertStatus {
+  none
+  requested
+  issued
+  failed
+  expired
+}
+
+// CoachLandingPageDomain — one row per claimed custom domain.
+// IDs stay TEXT to match the surrounding landing-pages schema (which
+// uses cuid by default; the spec brief's `@db.Uuid` would break FK
+// against CoachLandingPage.id whose type is TEXT).
+model CoachLandingPageDomain {
+  id                  String   @id @default(cuid())
+  coach_id            String
+  coach               User             @relation("CoachLandingPageDomainCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  landing_page_id     String
+  landing_page        CoachLandingPage @relation(fields: [landing_page_id], references: [id], onDelete: Cascade)
+  // Lowercase, no protocol, no path, no port — RFC 1123 hostname.
+  domain              String   @unique
+  // 32-byte hex token written into TXT at `_tgp-verify.<domain>`.
+  verification_token  String
+  verification_status DomainVerificationStatus @default(pending)
+  cert_status         DomainCertStatus         @default(none)
+  cert_issued_at      DateTime?
+  cert_expires_at     DateTime?
+  // Fly's hostname-scoped certificate id, returned by addCertificate.
+  fly_cert_id         String?
+  last_check_at       DateTime?
+  last_error          String?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  @@index([coach_id])
+  @@index([domain])
+  @@index([verification_status, cert_status])
+  @@map("coach_landing_page_domain")
 }
