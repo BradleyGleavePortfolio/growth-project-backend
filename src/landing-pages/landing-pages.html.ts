@@ -36,6 +36,28 @@ export type PageWithContext = CoachLandingPage & {
   };
 };
 
+// ─── JSON-LD safe serialiser ────────────────────────────────────────────────
+
+/**
+ * Serialise an object as JSON that is safe to inline inside a
+ * <script type="application/ld+json"> block.
+ *
+ * JSON.stringify does NOT escape `<`, `>`, or `&`, so a value such as
+ * `</script><img onerror=…>` will terminate the script element and inject
+ * arbitrary HTML.  The canonical fix (used by Google's safe-html guide and
+ * Angular's SSR renderer) is to unicode-escape every angle bracket and
+ * ampersand.  U+2028 / U+2029 are also escaped because some JS engines
+ * (pre-ES2019 spec) treat them as line terminators inside string literals.
+ */
+function safeJsonLd(obj: unknown): string {
+  return JSON.stringify(obj)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
 // ─── HTML escape helpers ──────────────────────────────────────────────────────
 
 function esc(s: string | null | undefined): string {
@@ -719,8 +741,9 @@ export function renderPublicPage(
   const title = `${esc(page.headline)} — ${esc(businessName || coachName)}`;
   const description = page.subheadline || `Work with ${coachName} to reach your goals.`;
 
-  // Schema.org JSON-LD
-  const jsonLd = JSON.stringify({
+  // Schema.org JSON-LD — use safeJsonLd (not JSON.stringify) to prevent
+  // </script> breakout inside the <script type="application/ld+json"> block.
+  const jsonLd = safeJsonLd({
     '@context': 'https://schema.org',
     '@graph': [
       {
