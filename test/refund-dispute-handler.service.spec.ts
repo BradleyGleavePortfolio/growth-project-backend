@@ -191,14 +191,21 @@ function makeServices() {
   const payoutReadiness = {
     recordPayoutEvent: jest.fn(async () => null),
   } as any;
+  // A276 P0-2 (refix) — NotificationsService is a HARD dependency on
+  // RefundDisputeHandlerService. Tests inject an explicit stub so we can
+  // assert COACH_ALERT emission shape + count.
+  const notifications = {
+    createNotification: jest.fn(async () => undefined),
+  } as any;
   const svc = new RefundDisputeHandlerService(
     prisma as any,
     stripe,
     ledger,
     transfers,
     payoutReadiness,
+    notifications,
   );
-  return { svc, prisma, stripe, ledger, transfers, payoutReadiness };
+  return { svc, prisma, stripe, ledger, transfers, payoutReadiness, notifications };
 }
 
 describe('RefundDisputeHandlerService', () => {
@@ -415,5 +422,318 @@ describe('RefundDisputeHandlerService', () => {
       data: { object: {} },
     });
     expect(result.claimed).toBe(false);
+  });
+
+  // --- A276 P0-2 + P1-1 (refix): COACH_ALERT on post-conversion path ---
+
+  describe('COACH_ALERT post-conversion (A276-P0-2 + P1-1 refix)', () => {
+    function seedPurchase(prisma: any, overrides: any = {}) {
+      const purchase = {
+        id: 'p_alert',
+        amount_cents: 29_700,
+        coach_user_id: 'coach-1',
+        status: 'paid',
+        entitlement_active: true,
+        ...overrides,
+      };
+      prisma._purchases.push(purchase);
+      prisma._splits.push({
+        id: 'l_alert',
+        purchase_id: purchase.id,
+        kind: 'destination',
+        amount_cents: purchase.amount_cents - 297,
+        reversed_cents: 0,
+        status: 'posted',
+        stripe_charge_id: 'ch_alert',
+      });
+      return purchase;
+    }
+
+    it('emits exactly one COACH_ALERT per refund.id on the post-conversion charge.refunded path', async () => {
+      const { svc, prisma, notifications } = makeServices();
+      seedPurchase(prisma);
+      await svc.handle({
+        id: 'evt_full',
+        type: 'charge.refunded',
+        data: {
+          object: {
+            id: 'ch_alert',
+            amount: 29_700,
+            amount_refunded: 29_700,
+            refunds: {
+              data: [
+                {
+                  id: 'rf_full',
+                  amount: 29_700,
+                  status: 'succeeded',
+                  reason: 'requested_by_customer',
+                },
+              ],
+            },
+          },
+        },
+      });
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+      const call = notifications.createNotification.mock.calls[0][0];
+      expect(call.user_id).toBe('coach-1');
+      expect(call.kind).toBe('coach_alert');
+      expect(call.deep_link).toBe('tgp://coach/billing/refunds');
+      expect(call.channel).toBe('inapp');
+      expect(call.body).toMatch(/Refund processed: \$297\.00/);
+      expect(call.payload).toMatchObject({
+        event: 'refund_processed',
+        purchase_id: 'p_alert',
+        stripe_refund_id: 'rf_full',
+        stripe_charge_id: 'ch_alert',
+        amount_refunded_cents: 29_700,
+        fully_refunded: true,
+        entitlement_revoked: true,
+      });
+    });
+
+    it('partial refund emits a partial-shaped COACH_ALERT and keeps entitlement_active', async () => {
+      const { svc, prisma, notifications } = makeServices();
+      seedPurchase(prisma);
+      await svc.handle({
+        id: 'evt_partial',
+        type: 'charge.refunded',
+        data: {
+          object: {
+            id: 'ch_alert',
+            amount: 29_700,
+            amount_refunded: 10_000,
+            refunds: {
+              data: [
+                {
+                  id: 'rf_partial',
+                  amount: 10_000,
+                  status: 'succeeded',
+                  reason: null,
+                },
+              ],
+            },
+          },
+        },
+      });
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+      const call = notifications.createNotification.mock.calls[0][0];
+      expect(call.body).toMatch(/Partial refund: \$100\.00/);
+      expect(call.payload.fully_refunded).toBe(false);
+      expect(call.payload.entitlement_revoked).toBe(false);
+      // Purchase keeps entitlement.
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+      expect(prisma._purchases[0].status).toBe('paid');
+    });
+
+    it('redelivery of the same charge.refunded does not double-notify', async () => {
+      const { svc, prisma, notifications } = makeServices();
+      seedPurchase(prisma);
+      const event = {
+        id: 'evt_redeliver',
+        type: 'charge.refunded',
+        data: {
+          object: {
+            id: 'ch_alert',
+            amount: 29_700,
+            amount_refunded: 29_700,
+            refunds: {
+              data: [
+                { id: 'rf_once', amount: 29_700, status: 'succeeded' },
+              ],
+            },
+          },
+        },
+      };
+      await svc.handle(event);
+      await svc.handle(event);
+      // Stripe redelivery: same refund id, same outcome. We must not
+      // fire a second COACH_ALERT.
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+    });
+
+    it('pending refund (status != succeeded) does NOT notify', async () => {
+      const { svc, prisma, notifications } = makeServices();
+      seedPurchase(prisma);
+      await svc.handle({
+        id: 'evt_pending',
+        type: 'charge.refunded',
+        data: {
+          object: {
+            id: 'ch_alert',
+            amount: 29_700,
+            amount_refunded: 0,
+            refunds: {
+              data: [{ id: 'rf_pending', amount: 29_700, status: 'pending' }],
+            },
+          },
+        },
+      });
+      expect(notifications.createNotification).not.toHaveBeenCalled();
+    });
+
+    it('notifier failure does NOT roll back the refund / ledger writes', async () => {
+      const { svc, prisma, notifications } = makeServices();
+      seedPurchase(prisma);
+      notifications.createNotification.mockRejectedValueOnce(
+        new Error('expo unreachable'),
+      );
+      const result = await svc.handle({
+        id: 'evt_notifier_fail',
+        type: 'charge.refunded',
+        data: {
+          object: {
+            id: 'ch_alert',
+            amount: 29_700,
+            amount_refunded: 29_700,
+            refunds: {
+              data: [{ id: 'rf_n', amount: 29_700, status: 'succeeded' }],
+            },
+          },
+        },
+      });
+      expect(result.claimed).toBe(true);
+      // The ledger reversal + purchase update commit even when the alert
+      // throws — the refund row is the source of truth.
+      expect(prisma._refunds[0].ledger_reversed).toBe(true);
+      expect(prisma._purchases[0].status).toBe('refunded');
+      expect(prisma._purchases[0].entitlement_active).toBe(false);
+    });
+
+    it('charge.dispute.created emits one COACH_ALERT with disputes deep_link', async () => {
+      const { svc, prisma, notifications } = makeServices();
+      seedPurchase(prisma);
+      const dueByEpoch = Math.floor(Date.now() / 1000) + 7 * 86400;
+      await svc.handle({
+        id: 'evt_disp_open',
+        type: 'charge.dispute.created',
+        data: {
+          object: {
+            id: 'dp_alert',
+            charge: 'ch_alert',
+            status: 'needs_response',
+            amount: 29_700,
+            currency: 'usd',
+            reason: 'fraudulent',
+            evidence_details: { due_by: dueByEpoch },
+          },
+        },
+      });
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+      const call = notifications.createNotification.mock.calls[0][0];
+      expect(call.user_id).toBe('coach-1');
+      expect(call.kind).toBe('coach_alert');
+      expect(call.deep_link).toBe('tgp://coach/billing/disputes');
+      expect(call.body).toMatch(/Chargeback opened/);
+      expect(call.payload).toMatchObject({
+        event: 'dispute_opened',
+        purchase_id: 'p_alert',
+        stripe_dispute_id: 'dp_alert',
+        stripe_charge_id: 'ch_alert',
+        reason: 'fraudulent',
+      });
+      expect(typeof call.payload.evidence_due_by).toBe('string');
+    });
+
+    it('redelivery of the same charge.dispute.created does not double-notify', async () => {
+      const { svc, prisma, notifications } = makeServices();
+      seedPurchase(prisma);
+      const event = {
+        id: 'evt_disp_redeliver',
+        type: 'charge.dispute.created',
+        data: {
+          object: {
+            id: 'dp_once',
+            charge: 'ch_alert',
+            status: 'needs_response',
+            amount: 29_700,
+          },
+        },
+      };
+      await svc.handle(event);
+      await svc.handle(event);
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+    });
+
+    it('charge.dispute.updated DOES alert when no prior created was seen (out-of-order delivery)', async () => {
+      const { svc, prisma, notifications } = makeServices();
+      seedPurchase(prisma);
+      // Stripe may deliver an `updated` before `created` if the created
+      // event was dropped. We still alert so the 7-day evidence window
+      // isn't lost.
+      await svc.handle({
+        id: 'evt_disp_update_first',
+        type: 'charge.dispute.updated',
+        data: {
+          object: {
+            id: 'dp_oo',
+            charge: 'ch_alert',
+            status: 'under_review',
+            amount: 29_700,
+          },
+        },
+      });
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+      const call = notifications.createNotification.mock.calls[0][0];
+      expect(call.payload.event).toBe('dispute_opened');
+    });
+
+    it('charge.dispute.updated after a prior created does NOT re-notify', async () => {
+      const { svc, prisma, notifications } = makeServices();
+      seedPurchase(prisma);
+      await svc.handle({
+        id: 'evt_disp_create',
+        type: 'charge.dispute.created',
+        data: {
+          object: {
+            id: 'dp_seq',
+            charge: 'ch_alert',
+            status: 'needs_response',
+            amount: 29_700,
+          },
+        },
+      });
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+      await svc.handle({
+        id: 'evt_disp_update',
+        type: 'charge.dispute.updated',
+        data: {
+          object: {
+            id: 'dp_seq',
+            charge: 'ch_alert',
+            status: 'under_review',
+            amount: 29_700,
+          },
+        },
+      });
+      // Still just the one notification from the created event.
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+    });
+
+    it('admin-initiated refund emits a COACH_ALERT once', async () => {
+      const { svc, prisma, stripe, notifications } = makeServices();
+      seedPurchase(prisma, { stripe_payment_intent_id: 'pi_admin' });
+      // Override the default mock so Stripe returns a FULL refund of
+      // the purchase amount; the admin path uses the Stripe-returned
+      // amount as the canonical refund amount.
+      stripe.createRefund.mockResolvedValueOnce({
+        id: 'rf_admin_full',
+        amount: 29_700,
+        status: 'succeeded',
+      });
+      await svc.createAdminRefund({
+        purchase_id: 'p_alert',
+        amount_cents: 29_700,
+        reason: 'requested_by_customer',
+        note: null,
+        initiated_by_user_id: 'owner-1',
+      });
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+      const call = notifications.createNotification.mock.calls[0][0];
+      expect(call.deep_link).toBe('tgp://coach/billing/refunds');
+      expect(call.payload.event).toBe('refund_processed');
+      expect(call.payload.fully_refunded).toBe(true);
+      expect(prisma._purchases[0].status).toBe('refunded');
+      expect(prisma._purchases[0].entitlement_active).toBe(false);
+    });
   });
 });
