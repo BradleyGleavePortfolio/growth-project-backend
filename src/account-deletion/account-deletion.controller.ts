@@ -18,6 +18,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { RecentAuthGuard } from '../auth/recent-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AllowDeletionScheduled } from '../common/decorators/allow-deletion-scheduled.decorator';
@@ -75,6 +76,16 @@ export class AccountDeletionController {
       },
     },
   })
+  // C5 PR-A audit: GDPR right-to-erasure entrypoint. Any logged-in user must be
+  // able to initiate deletion of their own account, regardless of role. Scoped
+  // by req.user.id below — a user cannot start another user's deletion.
+  // RecentAuthGuard: requestDeletion starts the destructive flow; require a
+  // fresh re-auth factor before the email token is even minted (defense in
+  // depth against session-hijack to delete). Resolves the P0 recorded in
+  // STOP_AND_ASK_C5.md for this handler. See the comment above
+  // confirmDeletion for why the guard is intentionally NOT attached there.
+  @Roles('student', 'coach', 'owner')
+  @UseGuards(RolesGuard, RecentAuthGuard)
   @Post('me/delete-account')
   @HttpCode(200)
   requestDeletion(@Request() req: AuditableRequest & AuthedRequest) {
@@ -98,6 +109,22 @@ export class AccountDeletionController {
     },
   })
   @ApiResponse({ status: 401, description: 'Invalid or expired token.' })
+  // C5 PR-A audit: token-bound confirmation of the deletion request. The
+  // one-time email token is the authorising secret; the JWT identity merely
+  // gates the endpoint surface so anonymous traffic is rejected before the
+  // token check runs. Any logged-in user (student/coach/owner) may confirm
+  // their own deletion.
+  //
+  // confirmDeletion intentionally does NOT carry RecentAuthGuard. The
+  // single-use email-token link IS the out-of-band re-auth factor for
+  // the destructive step — a CPO Doctrine §4-equivalent strong factor.
+  // Adding RecentAuthGuard here would require the user to be freshly
+  // logged in in the same browser that opens the email link, which is
+  // architecturally hostile to the email-flow UX. Top-tier IAM designs
+  // (Google account-deletion, AWS root credential flows) require one
+  // strong OOB factor, not both. This decision is intentional.
+  @Roles('student', 'coach', 'owner')
+  @UseGuards(RolesGuard)
   @Get('me/delete-account/confirm')
   @AllowDeletionScheduled()
   confirmDeletion(@Query('token') token: string) {
@@ -111,6 +138,10 @@ export class AccountDeletionController {
   })
   @ApiResponse({ status: 200, description: 'Deletion cancelled.' })
   @ApiResponse({ status: 400, description: 'No pending deletion or grace period expired.' })
+  // C5 PR-A audit: reversal of a pending deletion. Scoped by req.user.id —
+  // a user can only cancel their own pending deletion. Any logged-in role.
+  @Roles('student', 'coach', 'owner')
+  @UseGuards(RolesGuard)
   @Post('me/delete-account/cancel')
   @HttpCode(200)
   @AllowDeletionScheduled()
@@ -134,6 +165,10 @@ export class AccountDeletionController {
       },
     },
   })
+  // C5 PR-A audit: read-only status of the caller's own deletion lifecycle.
+  // Scoped by req.user.id. Any logged-in role.
+  @Roles('student', 'coach', 'owner')
+  @UseGuards(RolesGuard)
   @Get('me/delete-account/status')
   @AllowDeletionScheduled()
   getStatus(@Request() req: AuthedRequest) {

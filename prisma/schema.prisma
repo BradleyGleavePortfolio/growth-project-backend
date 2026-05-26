@@ -1329,6 +1329,12 @@ enum DataExportStatus {
 // flow. Users should download their data BEFORE requesting account
 // deletion. The delete-account module (src/gdpr/) checks for a READY
 // export and surfaces a warning if none exists in the last 7 days.
+// NOTE (A1-C5-P1-2): A partial unique index enforcing at most one non-terminal
+// (PENDING | RUNNING | READY) DataExportRequest per user exists in the raw
+// migration `20260525170000_data_export_one_active_per_user`. Prisma DSL does
+// NOT support partial indexes (WHERE-clause predicates), so the index is NOT
+// representable here. Any @@unique declaration would be incorrect — refer to
+// the migration SQL file for the authoritative constraint definition.
 model DataExportRequest {
   id              String           @id @default(uuid())
   user_id         String
@@ -3648,4 +3654,28 @@ model ChurnIntervention {
   @@index([coach_id, status, created_at])
   @@index([client_id, created_at])
   @@index([coach_id, client_id])
+}
+
+// ── RecentAuthNonce (A1-C5-P1-3) ─────────────────────────────────────────────
+// Single-use store for RecentAuthGuard HMAC tokens. Each token may be
+// presented exactly once within its TTL window. A second presentation of
+// the same token is rejected with 403 RECENT_AUTH_TOKEN_ALREADY_USED.
+//
+// The `hmac_suffix` column stores the first 16 hex characters of the full
+// HMAC — sufficient to uniquely identify a token within the 5-minute TTL
+// window without storing the full 64-char HMAC. The unique constraint on
+// hmac_suffix is the enforcement mechanism; Prisma P2002 on insert = replay.
+//
+// A background cron (or the guard itself) SHOULD clean up expired nonces.
+// The @@index([expires_at]) supports efficient sweeps. Until a cleanup job
+// is wired, rows are bounded by the 5-minute TTL and low traffic volume.
+model RecentAuthNonce {
+  id          String   @id @default(cuid())
+  hmac_suffix String   @unique
+  user_id     String
+  expires_at  DateTime
+  created_at  DateTime @default(now())
+
+  @@index([expires_at])
+  @@map("recent_auth_nonce")
 }
