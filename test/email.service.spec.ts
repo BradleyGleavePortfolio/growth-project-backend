@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { EmailService } from '../src/email/email.service';
 import { EmailTemplateKey } from '../src/email/email.types';
@@ -180,17 +181,30 @@ describe('EmailService', () => {
       expect(prisma.emailSendLog.update).not.toHaveBeenCalled();
     });
 
-    it('returns failed (not throw) on an invalid recipient', async () => {
+    it('throws BadRequestException on an invalid recipient (post-A1-C5-P1-1 hardening)', async () => {
+      // Source was hardened (A1-C5-P1-1) to THROW on invalid recipients
+      // (no '@', CRLF, or comma-separated addresses) rather than gracefully
+      // returning { status: 'failed' }. The throw is the new contract — it
+      // surfaces programmer errors loudly instead of silently logging a
+      // 'failed' row that callers may never check.
       const prisma = mockPrisma();
       const svc = new EmailService(prisma, mockConfig({}));
-      const res = await svc.send({
-        to: 'not-an-email',
-        template: EmailTemplateKey.COACH_INVITES_CLIENT,
-        idempotencyKey: 'invite:bad',
-        data: {},
-      });
-      expect(res.status).toBe('failed');
-      expect(res.error).toMatch(/invalid recipient/);
+      await expect(
+        svc.send({
+          to: 'not-an-email',
+          template: EmailTemplateKey.COACH_INVITES_CLIENT,
+          idempotencyKey: 'invite:bad',
+          data: {},
+        }),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        svc.send({
+          to: 'not-an-email',
+          template: EmailTemplateKey.COACH_INVITES_CLIENT,
+          idempotencyKey: 'invite:bad-2',
+          data: {},
+        }),
+      ).rejects.toThrow(/Invalid recipient email address/);
       expect(prisma.emailSendLog.create).not.toHaveBeenCalled();
     });
 

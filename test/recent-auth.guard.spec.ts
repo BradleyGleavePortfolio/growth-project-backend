@@ -50,8 +50,13 @@ function buildPrismaMock(
   } as unknown as PrismaService;
 }
 
+// No default value here — every caller MUST be explicit about the secret
+// they're injecting. Previously this defaulted to SECRET, which meant
+// `makeConfigSvc(undefined)` silently substituted the valid secret back
+// in (JS default-parameter semantics), defeating the
+// "missing-secret → 403" test (A1-C5-P1-3 audit class).
 function makeConfigSvc(
-  secret: string | null | undefined = SECRET,
+  secret: string | null | undefined,
 ): ConfigService {
   return {
     get: jest.fn().mockImplementation((k: string) => {
@@ -78,7 +83,7 @@ describe('RecentAuthGuard', () => {
 
   beforeEach(() => {
     prismaMock = buildPrismaMock();
-    guard = new RecentAuthGuard(makeConfigSvc(), prismaMock);
+    guard = new RecentAuthGuard(makeConfigSvc(SECRET), prismaMock);
   });
 
   it('throws 403 when RECENT_AUTH_SECRET is not configured', async () => {
@@ -154,7 +159,7 @@ describe('RecentAuthGuard', () => {
       { code: 'P2002', clientVersion: '5.0.0', meta: {} },
     );
     const guardReplay = new RecentAuthGuard(
-      makeConfigSvc(),
+      makeConfigSvc(SECRET),
       buildPrismaMock(() => Promise.reject(p2002)),
     );
     const token = makeToken(USER_ID, Date.now(), SECRET);
@@ -172,7 +177,7 @@ describe('RecentAuthGuard', () => {
   it('fails closed (403) when the nonce write encounters an unexpected DB error', async () => {
     const dbError = new Error('connection timeout');
     const guardDbErr = new RecentAuthGuard(
-      makeConfigSvc(),
+      makeConfigSvc(SECRET),
       buildPrismaMock(() => Promise.reject(dbError)),
     );
     const token = makeToken(USER_ID, Date.now(), SECRET);
