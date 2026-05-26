@@ -750,7 +750,19 @@ export class GuestCheckoutService {
   // only carried a charge id; final fallback is to retrieve the
   // PaymentIntent and chase its latest_charge. Returns null when none of
   // those paths produced a usable https URL.
-  private async resolveReceiptUrl(
+  //
+  // A276-P1-3 — made public so BillingService can pre-resolve the URL
+  // BEFORE opening its outer $transaction. Stripe API 2024-09-30.acacia
+  // event payloads carry latest_charge only as a string id, which means
+  // this method always falls through to a synchronous retrieveCharge HTTP
+  // call. Running that call inside a Prisma interactive transaction
+  // holds the Postgres connection for the full Stripe round-trip and
+  // saturates the pool under any Stripe latency — the canonical Prisma
+  // anti-pattern. BillingService now invokes this OUTSIDE its tx and
+  // hands the result back via the chargeInfo argument so the inner call
+  // (still made from handlePaymentSucceeded) short-circuits on the https
+  // guard at the top of the method.
+  async resolveReceiptUrl(
     paymentIntentId: string,
     chargeInfo?: { chargeId: string | null; receiptUrl: string | null },
   ): Promise<string | null> {
