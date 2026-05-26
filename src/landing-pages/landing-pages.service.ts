@@ -376,10 +376,16 @@ export class LandingPageService {
     });
     if (!page) throw new NotFoundException({ error: 'PAGE_NOT_FOUND' });
 
-    const [views, leads, revenueAgg] = await Promise.all([
+    // R47: 30-day window. The endpoint is the dashboard "last 30 days"
+    // panel; we keep the rollup column-free (no historical snapshots) and
+    // compute fresh on each request from the source tables.
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    const [views, leadsCount, checkouts] = await Promise.all([
       this.prisma.coachLandingPageView.findMany({
-        where: { page_id: pageId },
+        where: { page_id: pageId, created_at: { gte: thirtyDaysAgo } },
         select: {
+          ip_hash: true,
           scroll_depth: true,
           cta_clicked: true,
           form_submitted: true,
@@ -389,14 +395,28 @@ export class LandingPageService {
           utm_campaign: true,
         },
       }),
-      this.prisma.coachLandingLead.count({ where: { page_id: pageId } }),
-      // $/visitor: sum GuestCheckout amounts where page_id matches
-      // GuestCheckout links to CoachLandingPage via metadata (PR #3 wires CRM)
-      // For now, query via the page's package_ids cross-reference
-      Promise.resolve(null as null),
+      this.prisma.coachLandingLead.count({
+        where: { page_id: pageId, created_at: { gte: thirtyDaysAgo } },
+      }),
+      // R47 revenue rollup: GuestCheckout rows landing-stamped with this
+      // page id, in the paid/converted states (excludes pending + failed).
+      // Join CoachPackage to read amount_cents — GuestCheckout itself
+      // does not store the captured amount (intent is per-package).
+      this.prisma.guestCheckout.findMany({
+        where: {
+          landing_page_id: pageId,
+          status: { in: ['paid', 'converted'] },
+          created_at: { gte: thirtyDaysAgo },
+        },
+        select: {
+          status: true,
+          package: { select: { amount_cents: true } },
+        },
+      }),
     ]);
 
     const totalViews = views.length;
+    const uniqueVisitors = new Set(views.map((v) => v.ip_hash)).size;
     const ctaClicks = views.filter((v) => v.cta_clicked).length;
     const formSubmits = views.filter((v) => v.form_submitted).length;
     const scrollDepths = views
@@ -406,6 +426,24 @@ export class LandingPageService {
       scrollDepths.length > 0
         ? Math.round(scrollDepths.reduce((a, b) => a + b, 0) / scrollDepths.length)
         : null;
+
+    // Revenue + conversion rollup (R47).
+    const checkoutsCompleted = checkouts.length;
+    const revenueCents = checkouts.reduce(
+      (acc, c) => acc + (c.package?.amount_cents ?? 0),
+      0,
+    );
+    // $/visitor = revenue (dollars) divided by unique visitors. Returns
+    // null when the denominator is 0 to avoid surfacing Infinity / NaN
+    // in the coach UI.  Rounded to 2 decimals for display.
+    const dollarsPerVisitor =
+      uniqueVisitors > 0
+        ? Math.round((revenueCents / 100 / uniqueVisitors) * 100) / 100
+        : null;
+    const conversionRate =
+      uniqueVisitors > 0
+        ? Math.round((checkoutsCompleted / uniqueVisitors) * 10000) / 10000
+        : 0;
 
     // UTM breakdown
     const utmBreakdown = views.reduce(
@@ -442,14 +480,19 @@ export class LandingPageService {
 
     return {
       page_id: pageId,
+      period: 'last_30d' as const,
       total_views: totalViews,
-      total_leads: leads,
+      unique_visitors: uniqueVisitors,
+      total_leads: leadsCount,
+      lead_form_submits: formSubmits,
+      checkout_starts: ctaClicks,
+      checkouts_completed: checkoutsCompleted,
+      revenue_cents: revenueCents,
+      conversion_rate: conversionRate,
+      dollars_per_visitor: dollarsPerVisitor,
       avg_scroll_depth: avgScrollDepth,
       cta_click_rate: totalViews > 0 ? ctaClicks / totalViews : 0,
       form_submit_rate: totalViews > 0 ? formSubmits / totalViews : 0,
-      // $/visitor: calculated from GuestCheckout data; PR #3 wires full CRM
-      // TODO PR #3: join GuestCheckout WHERE page_id = pageId to compute revenue
-      dollars_per_visitor: null,
       top_referrers: topReferrers,
       utm_breakdown: utmBreakdown,
     };

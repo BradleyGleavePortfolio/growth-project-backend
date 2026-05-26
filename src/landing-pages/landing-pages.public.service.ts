@@ -1,10 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma.service';
 import { LandingPageService } from './landing-pages.service';
 import { renderPublicPage, renderNotFound } from './landing-pages.html';
 import type { ViewEventDto } from './dto/view-event.dto';
 import type { LeadSubmitDto } from './dto/lead-submit.dto';
+import { LeadSyncQueue } from './crm/lead-sync.queue';
+import { LeadRateLimiterService } from './lead-rate-limiter.service';
 
 @Injectable()
 export class LandingPagePublicService {
@@ -13,6 +15,8 @@ export class LandingPagePublicService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly landingPageService: LandingPageService,
+    private readonly leadSyncQueue: LeadSyncQueue,
+    private readonly rateLimiter: LeadRateLimiterService,
   ) {}
 
   // ─── Public page render ─────────────────────────────────────────────────
@@ -114,7 +118,21 @@ export class LandingPagePublicService {
       return { ok: false };
     }
 
-    await this.prisma.coachLandingLead.create({
+    // R47 abuse guard: 100 leads/day/page in UTC, Redis-backed counter.
+    const limit = await this.rateLimiter.checkAndIncrement(page.id);
+    if (!limit.allowed) {
+      // 429 with Retry-After: seconds until next UTC midnight.
+      throw new HttpException(
+        {
+          error: 'TOO_MANY_LEADS',
+          message: 'Daily lead capacity reached for this page',
+          retry_after_seconds: limit.retryAfterSeconds,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const created = await this.prisma.coachLandingLead.create({
       data: {
         page_id: page.id,
         coach_id: page.coach_id,
@@ -128,9 +146,18 @@ export class LandingPagePublicService {
           goal: dto.goal,
         } as any,
         crm_sync_status: 'pending',
-        // PR #3 picks up pending leads for CRM sync
       },
     });
+
+    // R47: hand off to the CRM sync queue.  The processor scans pending
+    // leads on a cron tick — `enqueue()` is a no-op today but the
+    // explicit call site lets us swap in BullMQ without touching public.
+    // Queue failure must NEVER fail the visitor POST.
+    try {
+      await this.leadSyncQueue.enqueue(created.id);
+    } catch (err) {
+      this.logger.warn(`lead-sync enqueue failed for ${created.id}: ${String(err)}`);
+    }
 
     return { ok: true };
   }
