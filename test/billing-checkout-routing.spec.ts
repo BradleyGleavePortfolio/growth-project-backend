@@ -10,6 +10,10 @@ function makePrisma() {
   const stub: any = {
     _processed: processed,
     stripeProcessedEvent: {
+      findUnique: jest.fn(async ({ where }: any) =>
+        processed.find((e) => e.stripe_event_id === where.stripe_event_id) ?? null,
+      ),
+      updateMany: jest.fn(async () => ({ count: 1 })),
       create: jest.fn(async ({ data }: any) => {
         if (processed.find((e) => e.stripe_event_id === data.stripe_event_id)) {
           const err: any = new Error('dup');
@@ -123,18 +127,21 @@ describe('BillingService — checkout webhook routing', () => {
     // Checkout handler is given a look but doesn't matter for account events.
   });
 
-  it('survives a checkout handler that throws — still records event and continues', async () => {
+  it('rolls back the whole transaction when the checkout handler throws (no half-write)', async () => {
+    // After P1-1, the entire event handler is wrapped in a single
+    // $transaction. If the checkout handler throws, the inserted
+    // stripe_processed_event row rolls back and the SaaS side-effects
+    // must NOT have committed — Stripe will retry the webhook delivery.
     checkout.handle.mockRejectedValueOnce(new Error('checkout boom'));
     prisma.coachProfile.findFirst.mockResolvedValueOnce({ user_id: 'coach-1' });
-    const result = await svc.handleEvent({
-      id: 'evt_boom',
-      type: 'customer.subscription.updated',
-      data: {
-        object: { id: 'sub_x', customer: 'cus_x', status: 'active' },
-      },
-    });
-    expect(result.processed).toBe(true);
-    // claimedByCheckout stays false on throw → SaaS path runs.
-    expect(prisma.coachSubscription.upsert).toHaveBeenCalled();
+    await expect(
+      svc.handleEvent({
+        id: 'evt_boom',
+        type: 'customer.subscription.updated',
+        data: {
+          object: { id: 'sub_x', customer: 'cus_x', status: 'active' },
+        },
+      }),
+    ).rejects.toThrow(/checkout boom/);
   });
 });

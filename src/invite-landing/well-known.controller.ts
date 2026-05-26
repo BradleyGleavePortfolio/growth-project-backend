@@ -1,8 +1,16 @@
-import { Controller, Get, HttpStatus, Logger, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpStatus,
+  InternalServerErrorException,
+  Logger,
+  Res,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
+import { isProdLike } from '../common/env-validation';
 
 // Public, env-backed `.well-known` documents required for iOS Universal Links
 // and Android App Links.
@@ -26,17 +34,29 @@ import { Public } from '../common/decorators/public.decorator';
 //   - MUST be Content-Type: application/json
 //
 // Both files are driven by env vars so the same image deploys to staging /
-// production with different Team IDs / SHA256 fingerprints. When required
-// env vars are unset we return a stub document with empty arrays so the
-// path resolves with 200 OK (avoids App Store reviewers seeing a 404) and
-// the device just learns there is no registered association.
+// production with different Team IDs / SHA256 fingerprints.
 //
-// Required env vars (documented in README "Placeholders / TODO env vars"):
+// Audit #3 P1-11 — required env handling is environment-sensitive:
+//   * In dev/test, missing env → log a warning and serve a syntactically
+//     valid stub (empty `details`/`relation` arrays). Keeps `npm run
+//     start:dev` ergonomic for contributors who don't have Apple/Android
+//     credentials locally.
+//   * In prod/staging, missing env at boot fails assertEnv() (the
+//     APPLE_TEAM_ID and ANDROID_CERT_SHA256_FINGERPRINTS entries in
+//     prodHardenedFeatureVars), so the controller never sees a missing
+//     value. As belt-and-suspenders, the handlers themselves throw 500
+//     if they somehow run with empty values under prod — better to fail
+//     the deploy than to silently teach iOS/Android that no association
+//     exists.
+//
+// Required env vars (see the README env-var reference section):
 //   APPLE_TEAM_ID                 — e.g. "ABCDE12345" (Apple Developer Team)
 //   IOS_BUNDLE_ID                 — defaults to com.growthproject.app
-//   ANDROID_PACKAGE_NAME          — defaults to com.tgp.app
+//   ANDROID_PACKAGE_NAME          — defaults to com.growthproject.app
 //   ANDROID_CERT_SHA256_FINGERPRINTS — comma-separated SHA256 cert
 //     fingerprints, e.g. "AA:BB:CC:...:00,DD:EE:..." (release + upload)
+//   ANDROID_SHA256_FINGERPRINT    — single-value alias accepted alongside
+//     ANDROID_CERT_SHA256_FINGERPRINTS
 @ApiTags('well-known')
 @Controller('.well-known')
 export class WellKnownController {
@@ -53,9 +73,39 @@ export class WellKnownController {
     const bundleId =
       (process.env.IOS_BUNDLE_ID ?? '').trim() || 'com.growthproject.app';
 
-    // appID is "<TeamID>.<BundleID>". When the Team ID is unset we still
-    // return a syntactically valid AASA so the OS lookup completes with a
-    // 200 — the associated-domains entitlement just won't activate yet.
+    // Audit #4 P2-1 — AASA is a production-only artifact. Apple's
+    // CDN polls the prod host; serving the doc anywhere else risks
+    // (a) leaking the production Team ID + bundle ID through a dev
+    // or staging environment that happens to ship with the same env
+    // vars set, and (b) accidentally activating Universal Links on
+    // a non-prod host. Refuse to emit on non-prod even when the env
+    // vars are set; ops who need to test the surface can flip
+    // NODE_ENV=production locally.
+    if (!isProdLike(process.env.NODE_ENV)) {
+      res.status(HttpStatus.NOT_FOUND).send();
+      return;
+    }
+
+    if (!teamId) {
+      if (isProdLike(process.env.NODE_ENV)) {
+        // Belt-and-suspenders for P1-11 — env-validation should have
+        // already crashed the boot. If it didn't, refuse to serve a
+        // stub that teaches iOS there is no association. 500 is the
+        // right surface here: a missing AASA in prod is a deploy bug,
+        // not a per-request error.
+        this.logger.error(
+          'APPLE_TEAM_ID unset in production — refusing to serve stub AASA. Set APPLE_TEAM_ID and redeploy.',
+        );
+        throw new InternalServerErrorException({
+          error: 'AASA_MISCONFIGURED',
+          message: 'Universal Links are not configured.',
+        });
+      }
+      this.logger.warn(
+        'APPLE_TEAM_ID unset — serving stub AASA. Universal Links will not activate until set. (dev/test only — production refuses to boot without this.)',
+      );
+    }
+
     const appID = teamId ? `${teamId}.${bundleId}` : '';
 
     // Paths use NSUserActivityTypes-friendly globs. We match the two public
@@ -89,11 +139,6 @@ export class WellKnownController {
           applinks: { apps: [], details: [] },
         };
 
-    if (!teamId) {
-      this.logger.warn(
-        'APPLE_TEAM_ID unset — serving stub AASA. Universal Links will not activate until set.',
-      );
-    }
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     // Short cache (1 hour). Apple polls infrequently; coaches rolling a
     // bundle id or Team ID should not wait days for the OS to refresh.
@@ -106,14 +151,32 @@ export class WellKnownController {
   @Throttle({ default: { ttl: 60_000, limit: 240 } })
   assetLinks(@Res() res: Response) {
     const packageName =
-      (process.env.ANDROID_PACKAGE_NAME ?? '').trim() || 'com.tgp.app';
+      (process.env.ANDROID_PACKAGE_NAME ?? '').trim() || 'com.growthproject.app';
+    // R43 — accept ANDROID_SHA256_FINGERPRINT as a single-value alias
+    // for ANDROID_CERT_SHA256_FINGERPRINTS so the storefront deploy
+    // doesn't have to duplicate the value. Either env var (or both)
+    // produces the same merged fingerprint list.
     const fingerprints = parseFingerprints(
-      process.env.ANDROID_CERT_SHA256_FINGERPRINTS,
+      [
+        process.env.ANDROID_CERT_SHA256_FINGERPRINTS,
+        process.env.ANDROID_SHA256_FINGERPRINT,
+      ]
+        .filter((s): s is string => typeof s === 'string' && s.length > 0)
+        .join(','),
     );
 
     if (fingerprints.length === 0) {
+      if (isProdLike(process.env.NODE_ENV)) {
+        this.logger.error(
+          'ANDROID_CERT_SHA256_FINGERPRINTS unset in production — refusing to serve stub assetlinks.json. Set ANDROID_CERT_SHA256_FINGERPRINTS (or ANDROID_SHA256_FINGERPRINT) and redeploy.',
+        );
+        throw new InternalServerErrorException({
+          error: 'ASSETLINKS_MISCONFIGURED',
+          message: 'Android App Links are not configured.',
+        });
+      }
       this.logger.warn(
-        'ANDROID_CERT_SHA256_FINGERPRINTS unset — serving stub assetlinks.json. App Links will not activate until set.',
+        'ANDROID_CERT_SHA256_FINGERPRINTS unset — serving stub assetlinks.json. App Links will not activate until set. (dev/test only — production refuses to boot without this.)',
       );
     }
 

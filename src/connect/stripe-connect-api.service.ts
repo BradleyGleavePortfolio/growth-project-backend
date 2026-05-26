@@ -225,14 +225,22 @@ export class StripeConnectApiService {
     account: string;
     refreshUrl: string;
     returnUrl: string;
+    idempotencyKey: string;
   }): Promise<StripeAccountLink> {
+    if (!args.idempotencyKey) {
+      throw new Error('createAccountLink requires an idempotencyKey (R19)');
+    }
     const form: Record<string, string> = {
       account: args.account,
       refresh_url: args.refreshUrl,
       return_url: args.returnUrl,
       type: 'account_onboarding',
     };
-    return this.post<StripeAccountLink>('/account_links', form);
+    return this.post<StripeAccountLink>(
+      '/account_links',
+      form,
+      args.idempotencyKey,
+    );
   }
 
   async createLoginLink(accountId: string): Promise<StripeLoginLink> {
@@ -444,22 +452,43 @@ export class StripeConnectApiService {
   // Phase 7 — Payment Sheet (in-app checkout). Creates a PaymentIntent
   // directly on the platform account with destination charges so the
   // mobile Payment Sheet can complete without a browser redirect.
+  //
+  // Audit #3 P1-10 — destination-charge PaymentIntents now also carry
+  // `on_behalf_of` set to the same connected-account id used for
+  // transfer_data[destination]. Without on_behalf_of, Stripe treats
+  // the platform account as the merchant of record for risk and
+  // statement-descriptor purposes, which is wrong for connected-account
+  // commerce (the connected coach is the seller). Setting both fields
+  // makes the connected account the merchant of record AND the
+  // destination of the funds, matching Stripe's documented destination-
+  // charge pattern for marketplaces.
   async createPaymentIntent(params: {
     amount: number;
     currency: string;
-    customer: string;
+    // P2-3 — `customer` is optional on Stripe's PaymentIntent endpoint.
+    // Guest checkout has no Customer yet; sending `customer=""` is not the
+    // same as omitting the field and can be rejected by Stripe.
+    customer?: string;
     applicationFeeAmount: number;
     transferDestination: string;
+    // Audit #3 P1-10 — connected-account id Stripe should treat as the
+    // merchant of record. Required for destination charges; defaults to
+    // transferDestination on the caller side so guest-checkout and the
+    // in-app Payment Sheet are forced to provide it explicitly.
+    onBehalfOf: string;
     metadata: Record<string, string>;
     idempotencyKey: string;
   }): Promise<StripePaymentIntentObject> {
     const form: Record<string, string> = {
       amount: String(params.amount),
       currency: params.currency,
-      customer: params.customer,
       application_fee_amount: String(params.applicationFeeAmount),
       'transfer_data[destination]': params.transferDestination,
+      on_behalf_of: params.onBehalfOf,
     };
+    if (typeof params.customer === 'string' && params.customer.length > 0) {
+      form.customer = params.customer;
+    }
     for (const [k, v] of Object.entries(params.metadata)) {
       form[`metadata[${k}]`] = v;
     }

@@ -92,10 +92,17 @@ export class ConnectService {
       'STRIPE_CONNECT_RETURN_URL',
       process.env.STRIPE_CONNECT_RETURN_URL,
     );
+    // Idempotency key bucketed per coach + connected account + 5-minute window
+    // so retried RPC calls (mobile flaky network) reuse the same Stripe row.
+    // Stripe account_links expire in ~5 min so a fresh bucket every 5 min keeps
+    // the user out of the "expired link" trap when they retry after a delay.
+    const fiveMinBucket = Math.floor(Date.now() / (5 * 60 * 1000));
+    const idempotencyKey = `account_link:${coachUserId}:${row.stripe_account_id}:${fiveMinBucket}`;
     const link = await this.stripeConnect.createAccountLink({
       account: row.stripe_account_id,
       refreshUrl,
       returnUrl,
+      idempotencyKey,
     });
     return { url: link.url, expires_at: link.expires_at };
   }

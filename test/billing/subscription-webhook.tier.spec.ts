@@ -46,7 +46,9 @@ function makeSvc(
   const coachId = 'coach-tier-test-1';
   const prisma: any = {
     stripeProcessedEvent: {
+      findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({}),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     coachProfile: {
       findFirst: jest.fn().mockResolvedValue({
@@ -79,7 +81,9 @@ function makeDeletedSvc(updateManyCapture: jest.Mock, profileResult: any | null 
   const coachId = 'coach-deleted-test-1';
   const prisma: any = {
     stripeProcessedEvent: {
+      findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({}),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     coachProfile: {
       findFirst: jest.fn().mockResolvedValue(

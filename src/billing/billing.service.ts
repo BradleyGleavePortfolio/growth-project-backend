@@ -1,4 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { CoachTier, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
@@ -7,6 +8,10 @@ import { CheckoutWebhookHandlerService } from '../checkout/checkout-webhook-hand
 import { ConnectService } from '../connect/connect.service';
 import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
+// R43 Storefront Phase 1 — guest checkout webhook routing. Optional so
+// the billing module still boots in environments that have not imported
+// StorefrontModule (legacy tests, half-built deploys).
+import { GUEST_CHECKOUT_METADATA_KEY, GuestCheckoutService } from '../storefront/guest-checkout.service';
 
 // BillingService is the system of record for the Stripe-mirror tables. The
 // webhook controller hands it parsed Stripe event objects; this service
@@ -44,102 +49,156 @@ export class BillingService {
     // BillingService without the email module still work. When present
     // it dispatches dunning email on invoice.payment_failed.
     @Optional() private email?: EmailService,
+    // R43 — Optional so the billing module still boots when
+    // StorefrontModule is not imported (e.g. minimal test wiring).
+    @Optional() private guestCheckout?: GuestCheckoutService,
   ) {}
 
   // Idempotently process an event. Returns { processed: true } on first
-  // delivery, { processed: false, alreadyProcessed: true } on duplicates so
-  // the caller can return 200 either way (Stripe stops retrying after a 2xx).
+  // delivery, { processed: false, alreadyProcessed: true } on duplicates.
   //
-  // Insert-first idempotency: we claim the event id by inserting into
-  // StripeProcessedEvent before running the handler. Two concurrent
-  // deliveries of the same event id race on the @id unique constraint; the
-  // loser hits P2002 and short-circuits as already-processed. This closes
-  // the read-then-write race the previous implementation had.
+  // Audit #4 P1-1 — transactional integrity: the dedup-row insert and ALL
+  // domain writes for this delivery run inside a single Prisma
+  // `$transaction`. If any handler throws, the transaction rolls back —
+  // the dedup row is undone, the domain writes are undone, and we
+  // re-throw. The webhook controller then returns non-2xx and Stripe
+  // retries the same event id until the transaction commits. We never
+  // acknowledge an event whose side effects failed to commit.
   //
-  // Handler errors *after* the claim are logged but the event stays
-  // recorded — same poison-pill protection as the prior `finally` pattern,
-  // but no longer racy.
+  // External handlers (CheckoutWebhookHandlerService, GuestCheckoutService)
+  // run inside the same try/catch — if they throw we propagate. They
+  // currently manage their own internal transactions; their writes
+  // commit when they return success. The dedup row commits last on
+  // success, so a partial external-handler failure cannot leave the
+  // dedup row claimed.
   async handleEvent(event: StripeEvent) {
     if (!event?.id || !event?.type) {
       return { processed: false, reason: 'malformed' };
     }
 
-    try {
-      await this.prisma.stripeProcessedEvent.create({
-        data: { stripe_event_id: event.id, type: event.type },
-      });
-    } catch (err) {
-      if (this.isUniqueViolation(err)) {
-        return { processed: false, alreadyProcessed: true };
-      }
-      throw err;
+    // Fast-path duplicate check OUTSIDE any transaction so concurrent
+    // deliveries of the same event don't both open a transaction that
+    // will race on the unique index. The authoritative dedup is still
+    // the unique-index INSERT inside the transaction below.
+    const existing = await this.prisma.stripeProcessedEvent.findUnique({
+      where: { stripe_event_id: event.id },
+      select: { stripe_event_id: true, handler_completed_at: true },
+    });
+    if (existing) {
+      return { processed: false, alreadyProcessed: true };
     }
 
     try {
-      // Phase 2-3 Connect — give the checkout handler first refusal on
-      // events that may belong to a coach-package purchase. If it claims
-      // the event, skip the SaaS-coach-subscription path so the two
-      // streams don't both try to upsert state from the same payload.
-      let claimedByCheckout = false;
-      if (this.checkoutWebhooks) {
-        try {
+      await this.prisma.$transaction(async (tx) => {
+        // Insert the dedup row INSIDE the transaction. A concurrent
+        // delivery that started before this transaction commits will
+        // either (a) see the row in its own findUnique fast-path above
+        // and short-circuit, or (b) lose the unique-constraint race
+        // here and we translate that to an alreadyProcessed return.
+        await tx.stripeProcessedEvent.create({
+          data: { stripe_event_id: event.id, type: event.type },
+        });
+
+        // Phase 2-3 Connect — give the checkout handler first refusal
+        // on events that may belong to a coach-package purchase. If it
+        // throws we propagate so the outer transaction rolls back and
+        // Stripe retries. The checkout handler manages its own writes
+        // via this.prisma; until its API is refactored to accept a
+        // TransactionClient those writes are not inside this tx, but
+        // any failure still surfaces here so we never ack a failed
+        // side effect.
+        let claimedByCheckout = false;
+        if (this.checkoutWebhooks) {
           const result = await this.checkoutWebhooks.handle(event);
           claimedByCheckout = !!result.claimed;
-        } catch (err) {
-          this.logger.error(
-            `CheckoutWebhookHandler failed event=${event.id} type=${event.type}: ${(err as Error)?.message ?? String(err)}`,
-          );
         }
-      }
 
-      switch (event.type) {
-        case 'customer.subscription.created':
-        case 'customer.subscription.updated':
-          if (!claimedByCheckout) await this.applySubscription(event);
-          break;
-        case 'customer.subscription.deleted':
-          if (!claimedByCheckout) await this.applySubscriptionDeleted(event);
-          break;
-        case 'invoice.paid':
-          if (!claimedByCheckout) await this.applyInvoicePaid(event);
-          break;
-        case 'invoice.payment_failed':
-          if (!claimedByCheckout) await this.applyInvoicePaymentFailed(event);
-          break;
-        case 'customer.updated':
-          if (!claimedByCheckout) await this.applyCustomerUpdated(event);
-          break;
-        // Checkout / payment events are owned entirely by
-        // CheckoutWebhookHandlerService (no SaaS-coach-subscription path).
-        case 'checkout.session.completed':
-        case 'checkout.session.expired':
-        case 'payment_intent.succeeded':
-        case 'payment_intent.payment_failed':
-          // Already dispatched above; nothing more to do.
-          break;
-        // Phase 1 Connect — Express account state mirror. Same endpoint
-        // receives both test-mode and live-mode events (livemode flag is
-        // ignored here intentionally — both modes process identically).
-        case 'account.updated':
-        case 'capability.updated':
-          await this.applyConnectAccountUpdated(event);
-          break;
-        case 'account.application.deauthorized':
-          await this.applyConnectAccountDeauthorized(event);
-          break;
-        default:
-          this.logger.log(`Ignoring unhandled Stripe event type: ${event.type}`);
-      }
+        switch (event.type) {
+          case 'customer.subscription.created':
+          case 'customer.subscription.updated':
+            if (!claimedByCheckout) await this.applySubscription(event, tx);
+            break;
+          case 'customer.subscription.deleted':
+            if (!claimedByCheckout) await this.applySubscriptionDeleted(event, tx);
+            break;
+          case 'invoice.paid':
+            if (!claimedByCheckout) await this.applyInvoicePaid(event, tx);
+            break;
+          case 'invoice.payment_failed':
+            if (!claimedByCheckout) await this.applyInvoicePaymentFailed(event, tx);
+            break;
+          case 'customer.updated':
+            if (!claimedByCheckout) await this.applyCustomerUpdated(event, tx);
+            break;
+          case 'checkout.session.completed':
+          case 'checkout.session.expired':
+            // Already dispatched to checkoutWebhooks above.
+            break;
+          case 'payment_intent.succeeded': {
+            const pi = event.data.object as {
+              id?: string;
+              metadata?: Record<string, string>;
+            };
+            if (
+              this.guestCheckout &&
+              pi?.id &&
+              pi.metadata?.[GUEST_CHECKOUT_METADATA_KEY]
+            ) {
+              await this.guestCheckout.handlePaymentSucceeded(pi.id);
+            }
+            break;
+          }
+          case 'payment_intent.payment_failed': {
+            const pi = event.data.object as {
+              id?: string;
+              metadata?: Record<string, string>;
+            };
+            if (
+              this.guestCheckout &&
+              pi?.id &&
+              pi.metadata?.[GUEST_CHECKOUT_METADATA_KEY]
+            ) {
+              await this.guestCheckout.handlePaymentFailed(pi.id);
+            }
+            break;
+          }
+          case 'account.updated':
+          case 'capability.updated':
+            await this.applyConnectAccountUpdated(event, tx);
+            break;
+          case 'account.application.deauthorized':
+            await this.applyConnectAccountDeauthorized(event, tx);
+            break;
+          default:
+            this.logger.log(`Ignoring unhandled Stripe event type: ${event.type}`);
+        }
+
+        // Mark handler-complete in the SAME transaction so the row is
+        // never visible with handler_completed_at = NULL on commit.
+        await tx.stripeProcessedEvent.updateMany({
+          where: {
+            stripe_event_id: event.id,
+            handler_completed_at: null,
+          },
+          data: { handler_completed_at: new Date() },
+        });
+      });
     } catch (err) {
-      // The event id is already recorded, so a poison-pill payload won't
-      // loop through Stripe's retry queue. Surface the error in logs and
-      // return — the caller still treats this as a successful delivery
-      // because retrying would just hit the idempotency short-circuit.
+      // If the failure is a unique-constraint violation, a concurrent
+      // delivery beat us to the insert; treat as duplicate.
+      if (this.isUniqueViolation(err)) {
+        return { processed: false, alreadyProcessed: true };
+      }
+      // Any other error: roll back (already done by Prisma) and re-throw
+      // so the controller returns non-2xx. Stripe will retry the same
+      // event id and the next attempt will commit cleanly once the
+      // transient cause clears.
       this.logger.error(
         `Stripe event handler failed event=${event.id} type=${event.type}: ${
           (err as Error)?.message ?? String(err)
         }`,
       );
+      throw err;
     }
     return { processed: true };
   }
@@ -157,15 +216,21 @@ export class BillingService {
     return false;
   }
 
-  // Resolve coach by stripe customer id via CoachProfile.
-  private async resolveCoachByCustomer(customerId: string | undefined | null) {
+  // Resolve coach by stripe customer id via CoachProfile. Accepts a
+  // Prisma TransactionClient so the lookup participates in the outer
+  // webhook transaction — same connection, same isolation level, no
+  // read-after-write skew.
+  private async resolveCoachByCustomer(
+    customerId: string | undefined | null,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
     if (!customerId) return null;
     // CoachProfile.stripe_customer_id is not @unique on the canonical Phase 1A
     // shape (CoachSubscription owns the @unique on its own customer mirror),
     // so we use findFirst here. Order by created_at desc so that if two
     // profiles share the same customer id (duplicate Stripe customer creation
     // race) we consistently pick the most-recently created one.
-    const profile = await this.prisma.coachProfile.findFirst({
+    const profile = await db.coachProfile.findFirst({
       where: { stripe_customer_id: customerId },
       orderBy: { created_at: 'desc' },
     });
@@ -177,7 +242,10 @@ export class BillingService {
     return new Date(seconds * 1000);
   }
 
-  private async applySubscription(event: StripeEvent) {
+  private async applySubscription(
+    event: StripeEvent,
+    tx: Prisma.TransactionClient,
+  ) {
     const sub = event.data.object as {
       id?: string;
       customer?: string;
@@ -204,40 +272,40 @@ export class BillingService {
     //   past_due → tier stays 'pro' in the DB
     //   → SubscriptionGuard handles the 7-day grace window (spec §6)
     // This ensures a momentary payment failure does not strip Pro access.
-    let tierUpdate: { tier?: string } = {};
+    let tierUpdate: { tier?: CoachTier } = {};
     if (status === 'active' || status === 'trialing') {
-      tierUpdate = { tier: 'pro' };
+      tierUpdate = { tier: CoachTier.pro };
     } else if (status === 'canceled' || status === 'incomplete_expired') {
-      tierUpdate = { tier: 'free' };
+      tierUpdate = { tier: CoachTier.free };
     }
     // past_due: no tier change — guard handles grace
     // incomplete/unpaid: no tier change
     // Keep backward-compat alias for the create/update spread below:
     const tierForActiveSubscription = tierUpdate.tier;
 
-    // Wrap the profile lookup and subscription upsert in a transaction so that
-    // concurrent customer.subscription.created + customer.subscription.updated
+    // Profile lookup + subscription upsert run inside the outer webhook
+    // transaction (passed in as `tx`). Concurrent created+updated
     // deliveries cannot interleave the read and the write, which would
     // cross-link subscription IDs to the wrong coach row.
-    const coachId = await this.prisma.$transaction(async (tx) => {
-      const profile = await tx.coachProfile.findFirst({
-        where: { stripe_customer_id: sub.customer },
-        orderBy: { created_at: 'desc' },
-      });
-      if (!profile) return null;
-      // TODO(post-merge): Remove `as any` cast once `prisma generate` runs in CI
-      // against the migrated schema and coachSubscription is typed with tier/status fields.
-      await (tx.coachSubscription.upsert as any)({
-        where: { coach_id: profile.user_id },
+    const profile = await tx.coachProfile.findFirst({
+      where: { stripe_customer_id: sub.customer },
+      orderBy: { created_at: 'desc' },
+    });
+    const coachId = profile?.user_id ?? null;
+    if (coachId) {
+      await tx.coachSubscription.upsert({
+        where: { coach_id: coachId },
         create: {
-          coach_id: profile.user_id,
+          coach_id: coachId,
           stripe_customer_id: sub.customer,
           stripe_subscription_id: sub.id,
           stripe_price_id: priceId,
           status,
           // Set tier per status: pro on active/trialing, free on canceled/
           // incomplete_expired, schema-default 'free' on first create otherwise.
-          ...(tierForActiveSubscription !== undefined ? { tier: tierForActiveSubscription } : {}),
+          ...(tierForActiveSubscription !== undefined
+            ? { tier: tierForActiveSubscription }
+            : {}),
           current_period_end: this.toDate(sub.current_period_end),
           trial_end: this.toDate(sub.trial_end ?? null),
           cancel_at_period_end: !!sub.cancel_at_period_end,
@@ -250,14 +318,15 @@ export class BillingService {
           // Set tier per status: active|trialing → pro, canceled|
           // incomplete_expired → free, past_due/incomplete → no change
           // (leave existing tier value unchanged in the DB).
-          ...(tierForActiveSubscription !== undefined ? { tier: tierForActiveSubscription } : {}),
+          ...(tierForActiveSubscription !== undefined
+            ? { tier: tierForActiveSubscription }
+            : {}),
           current_period_end: this.toDate(sub.current_period_end),
           trial_end: this.toDate(sub.trial_end ?? null),
           cancel_at_period_end: !!sub.cancel_at_period_end,
         },
       });
-      return profile.user_id;
-    });
+    }
     if (!coachId) {
       this.logger.warn(
         `Subscription ${sub.id} for unknown customer ${sub.customer}`,
@@ -290,9 +359,12 @@ export class BillingService {
     });
   }
 
-  private async applySubscriptionDeleted(event: StripeEvent) {
+  private async applySubscriptionDeleted(
+    event: StripeEvent,
+    tx: Prisma.TransactionClient,
+  ) {
     const sub = event.data.object as { id?: string; customer?: string };
-    const coachId = await this.resolveCoachByCustomer(sub?.customer);
+    const coachId = await this.resolveCoachByCustomer(sub?.customer, tx);
     if (!coachId) return;
     // Hybrid pricing (spec §9): on subscription deleted, set tier='free'.
     // Do NOT delete the row — preserves audit trail and stripe_customer_id
@@ -307,11 +379,14 @@ export class BillingService {
     // Use updateMany (not update) so that an out-of-order delete event for a
     // coach with no subscription row is a graceful no-op rather than a P2025
     // throw. updateMany with 0 matching rows silently does nothing.
-    // TODO(post-merge): Remove `as any` cast once `prisma generate` runs in CI
-    // against the migrated schema and coachSubscription is typed with tier/status fields.
-    await (this.prisma.coachSubscription.updateMany as any)({
+    await tx.coachSubscription.updateMany({
       where: { coach_id: coachId },
-      data: { status: 'canceled', cancel_at_period_end: false, tier: 'free', updated_at: new Date() },
+      data: {
+        status: 'canceled',
+        cancel_at_period_end: false,
+        tier: CoachTier.free,
+        updated_at: new Date(),
+      },
     });
     this.analytics.capture(coachId, Events.SUBSCRIPTION_CANCELED, {});
     await this.audit.write({
@@ -330,7 +405,10 @@ export class BillingService {
     });
   }
 
-  private async applyInvoicePaid(event: StripeEvent) {
+  private async applyInvoicePaid(
+    event: StripeEvent,
+    tx: Prisma.TransactionClient,
+  ) {
     const inv = event.data.object as {
       id?: string;
       customer?: string;
@@ -345,9 +423,9 @@ export class BillingService {
       status_transitions?: { paid_at?: number };
     };
     if (!inv?.id) return;
-    const coachId = await this.resolveCoachByCustomer(inv.customer);
+    const coachId = await this.resolveCoachByCustomer(inv.customer, tx);
     if (!coachId) return;
-    await this.prisma.invoice.upsert({
+    await tx.invoice.upsert({
       where: { stripe_invoice_id: inv.id },
       create: {
         coach_id: coachId,
@@ -373,7 +451,7 @@ export class BillingService {
     // invoice.payment_failed), restore it to active so the guard allows
     // access immediately without waiting for a customer.subscription.updated
     // event (which Stripe may deliver slightly later).
-    await this.prisma.coachSubscription.updateMany({
+    await tx.coachSubscription.updateMany({
       where: { coach_id: coachId },
       data: { last_payment_failed_at: null, failed_payments_this_month: 0 },
     });
@@ -381,7 +459,7 @@ export class BillingService {
     // We only upgrade past_due → active, never touch canceled/paused/trialing.
     // The authoritative status arrives via customer.subscription.updated;
     // this is a best-effort recovery that removes the lockout immediately.
-    await this.prisma.coachSubscription.updateMany({
+    await tx.coachSubscription.updateMany({
       where: { coach_id: coachId, status: 'past_due' },
       data: { status: 'active' },
     });
@@ -407,17 +485,20 @@ export class BillingService {
     });
   }
 
-  private async applyInvoicePaymentFailed(event: StripeEvent) {
+  private async applyInvoicePaymentFailed(
+    event: StripeEvent,
+    tx: Prisma.TransactionClient,
+  ) {
     const inv = event.data.object as {
       id?: string;
       customer?: string;
       amount_due?: number;
       last_payment_error?: { message?: string };
     };
-    const coachId = await this.resolveCoachByCustomer(inv?.customer);
+    const coachId = await this.resolveCoachByCustomer(inv?.customer, tx);
     if (!coachId) return;
     const now = new Date();
-    await this.prisma.paymentFailure.create({
+    await tx.paymentFailure.create({
       data: {
         coach_id: coachId,
         stripe_invoice_id: inv?.id ?? null,
@@ -427,7 +508,7 @@ export class BillingService {
         occurred_at: now,
       },
     });
-    await this.prisma.coachSubscription.updateMany({
+    await tx.coachSubscription.updateMany({
       where: { coach_id: coachId, status: { notIn: ['canceled', 'paused'] } },
       data: {
         status: 'past_due',
@@ -513,7 +594,10 @@ export class BillingService {
     }
   }
 
-  private async applyCustomerUpdated(event: StripeEvent) {
+  private async applyCustomerUpdated(
+    event: StripeEvent,
+    tx: Prisma.TransactionClient,
+  ) {
     const cus = event.data.object as {
       id?: string;
       email?: string | null;
@@ -525,12 +609,12 @@ export class BillingService {
       };
     };
     if (!cus?.id) return;
-    const coachId = await this.resolveCoachByCustomer(cus.id);
+    const coachId = await this.resolveCoachByCustomer(cus.id, tx);
     if (!coachId) return;
     const dpm = cus.invoice_settings?.default_payment_method;
     const last4 =
       dpm && typeof dpm === 'object' ? dpm.card?.last4 ?? null : null;
-    await this.prisma.coachSubscription.updateMany({
+    await tx.coachSubscription.updateMany({
       where: { coach_id: coachId },
       data: {
         billing_email: cus.email ?? null,
@@ -543,7 +627,15 @@ export class BillingService {
   // capability.updated event. The Stripe payload is the snapshot at event
   // time; we re-read via ConnectService.syncFromStripe so we always reflect
   // the freshest server state and never drift.
-  private async applyConnectAccountUpdated(event: StripeEvent) {
+  // Connect account events are forwarded to ConnectService, which manages
+  // its own writes. The `tx` parameter is accepted for symmetry with other
+  // handlers and so future refactors can wire ConnectService into the same
+  // transaction without changing the call sites here.
+  private async applyConnectAccountUpdated(
+    event: StripeEvent,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _tx: Prisma.TransactionClient,
+  ) {
     const obj = event.data.object as { id?: string; account?: string };
     const accountId =
       typeof obj?.id === 'string' && obj.id.startsWith('acct_')
@@ -580,7 +672,11 @@ export class BillingService {
     });
   }
 
-  private async applyConnectAccountDeauthorized(event: StripeEvent) {
+  private async applyConnectAccountDeauthorized(
+    event: StripeEvent,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _tx: Prisma.TransactionClient,
+  ) {
     const obj = event.data.object as { id?: string; account?: string };
     const accountId =
       typeof obj?.id === 'string' && obj.id.startsWith('acct_')

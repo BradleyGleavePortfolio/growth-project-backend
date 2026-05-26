@@ -378,10 +378,10 @@ model User {
   // Field names are prefixed `sub_coach_overlay_*` to avoid collision with
   // the Team Mode `sub_coach_assignments_as_*` fields above, which point at
   // the older TeamSubCoachAssignment model.
-  sub_coach_overlay_as_head     SubCoachAssignment[]         @relation("SubCoachAssignmentHead")
-  sub_coach_overlay_as_sub      SubCoachAssignment[]         @relation("SubCoachAssignmentSub")
-  sub_coach_overlay_as_client   SubCoachAssignment[]         @relation("SubCoachAssignmentClient")
-  sub_coach_overlay_as_actor    SubCoachAssignment[]         @relation("SubCoachAssignmentActor")
+  sub_coach_overlay_as_head     SubCoachAssignment[]          @relation("SubCoachAssignmentHead")
+  sub_coach_overlay_as_sub      SubCoachAssignment[]          @relation("SubCoachAssignmentSub")
+  sub_coach_overlay_as_client   SubCoachAssignment[]          @relation("SubCoachAssignmentClient")
+  sub_coach_overlay_as_actor    SubCoachAssignment[]          @relation("SubCoachAssignmentActor")
   sub_coach_idempotency_records SubCoachMutationIdempotency[] @relation("SubCoachIdempotencyActor")
 
   // Coach Command Center — churn intervention drafts the coach has
@@ -390,6 +390,11 @@ model User {
   // ChurnIntervention rows and only students receive them.
   churn_interventions_as_coach  ChurnIntervention[] @relation("ChurnInterventionCoach")
   churn_interventions_as_client ChurnIntervention[] @relation("ChurnInterventionClient")
+
+  // R43 Storefront Phase 1 — User rows minted from a guest checkout point
+  // back at the originating GuestCheckout row. SetNull on GuestCheckout
+  // when this User is hard-deleted so audit history survives PII scrub.
+  guest_checkouts_created GuestCheckout[] @relation("GuestCheckoutUser")
 
   @@index([coach_id])
   @@index([deletion_scheduled_at])
@@ -496,12 +501,24 @@ model PaymentFailure {
 
 // Idempotency table for Stripe webhook delivery. Stripe retries deliveries on
 // timeouts, so we record every event id and short-circuit duplicates.
+//
+// Audit #3 P1-7 — event-receipt is recorded immediately (processed_at is
+// always present), but handler-completion is recorded separately via
+// handler_completed_at. The webhook treats an event as durably processed
+// only when both columns are set. If the handler crashes after insert
+// but before completion, the reconciliation worker picks the row up by
+// scanning for handler_completed_at IS NULL plus an age threshold, and
+// Stripe may also redeliver (we still 200 on the redelivery, because the
+// reconciliation worker covers the re-fulfilment path — see
+// GuestCheckoutReconciliationService).
 model StripeProcessedEvent {
-  stripe_event_id String   @id
-  type            String
-  processed_at    DateTime @default(now())
+  stripe_event_id      String    @id
+  type                 String
+  processed_at         DateTime  @default(now())
+  handler_completed_at DateTime?
 
   @@index([processed_at])
+  @@index([handler_completed_at])
 }
 
 // Phase 1 Connect — Stripe Express account per coach. The coach goes through
@@ -1013,18 +1030,18 @@ model WaterLog {
 // as read. The composite index on (coach_id, client_id, created_at) makes the
 // paginated-thread query a single index seek.
 model CoachMessage {
-  id                 String    @id @default(uuid())
+  id                 String          @id @default(uuid())
   // FK columns are nullable + SET NULL on delete so a hard-deleted user
   // does not cascade away the thread history. The GDPR scrub uses
   // soft-delete + PII zero-out today, so these typically remain non-null
   // in practice; SET NULL is the defensive posture if the worker is ever
   // changed to issue actual DELETEs.
   coach_id           String?
-  coach              User?     @relation("CoachMessagesAsCoach", fields: [coach_id], references: [id], onDelete: SetNull)
+  coach              User?           @relation("CoachMessagesAsCoach", fields: [coach_id], references: [id], onDelete: SetNull)
   client_id          String?
-  client             User?     @relation("CoachMessagesAsClient", fields: [client_id], references: [id], onDelete: SetNull)
+  client             User?           @relation("CoachMessagesAsClient", fields: [client_id], references: [id], onDelete: SetNull)
   sender_id          String?
-  sender             User?     @relation("CoachMessagesSender", fields: [sender_id], references: [id], onDelete: SetNull)
+  sender             User?           @relation("CoachMessagesSender", fields: [sender_id], references: [id], onDelete: SetNull)
   // Phase 6C: body becomes optional when a voice attachment is present. The
   // service still requires at least one of `body` or `voice_url` to be set so
   // we never persist an empty thread row. Doctrine: voice metadata
@@ -1035,10 +1052,10 @@ model CoachMessage {
   voice_duration_sec Int?
   voice_size_bytes   Int?
   voice_content_type String?
-  created_at         DateTime  @default(now())
+  created_at         DateTime        @default(now())
   read_at            DateTime?
   // Apple 1.2 safety — reverse relation for MessageReport.
-  reports            MessageReport[]  @relation("MessageReportTarget")
+  reports            MessageReport[] @relation("MessageReportTarget")
 
   @@index([coach_id])
   @@index([client_id])
@@ -1058,24 +1075,24 @@ model CoachMessage {
 // new one. messageId is indexed independently because admin tooling needs to
 // look up "all reports against this message".
 model MessageReport {
-  id                   String          @id @default(uuid())
+  id                   String       @id @default(uuid())
   reporter_id          String
-  reporter             User            @relation("MessageReportReporter", fields: [reporter_id], references: [id], onDelete: Cascade)
+  reporter             User         @relation("MessageReportReporter", fields: [reporter_id], references: [id], onDelete: Cascade)
   message_id           String
-  message              CoachMessage    @relation("MessageReportTarget", fields: [message_id], references: [id], onDelete: Cascade)
+  message              CoachMessage @relation("MessageReportTarget", fields: [message_id], references: [id], onDelete: Cascade)
   // Denormalized thread participants at the moment the report was filed so
   // the admin console can scope reports to a coach without re-reading the
   // message row. coach_id is also the natural tenant key for the report.
   coach_id             String?
   client_id            String?
-  reason               String          // 'spam' | 'harassment' | 'sexual' | 'self_harm' | 'other'
-  details              String?         // optional free-text, capped to 1000 chars by DTO
-  status               String          @default("pending") // 'pending' | 'reviewed' | 'dismissed'
-  action               String?         // 'none' | 'warning' | 'suspended' | 'removed'
+  reason               String // 'spam' | 'harassment' | 'sexual' | 'self_harm' | 'other'
+  details              String? // optional free-text, capped to 1000 chars by DTO
+  status               String       @default("pending") // 'pending' | 'reviewed' | 'dismissed'
+  action               String? // 'none' | 'warning' | 'suspended' | 'removed'
   reviewed_at          DateTime?
   reviewed_by_admin_id String?
-  reviewed_by_admin    User?           @relation("MessageReportReviewer", fields: [reviewed_by_admin_id], references: [id], onDelete: SetNull)
-  created_at           DateTime        @default(now())
+  reviewed_by_admin    User?        @relation("MessageReportReviewer", fields: [reviewed_by_admin_id], references: [id], onDelete: SetNull)
+  created_at           DateTime     @default(now())
 
   @@unique([reporter_id, message_id], name: "MessageReport_reporter_message_key")
   @@index([reporter_id, created_at(sort: Desc)])
@@ -1906,21 +1923,21 @@ model WorkoutPlanExercise {
 }
 
 model ClientWorkoutAssignment {
-  id                   String      @id @default(uuid())
-  workout_plan_id      String
-  workout_plan         WorkoutPlan @relation(fields: [workout_plan_id], references: [id], onDelete: Cascade)
-  client_id            String
-  client               User        @relation("ClientWorkoutAssignments", fields: [client_id], references: [id], onDelete: Cascade)
-  assigned_by_coach_id String
-  assigned_by_coach    User        @relation("CoachWorkoutAssignments", fields: [assigned_by_coach_id], references: [id], onDelete: Cascade)
-  scheduled_for        DateTime
-  completed_at         DateTime?
+  id                         String      @id @default(uuid())
+  workout_plan_id            String
+  workout_plan               WorkoutPlan @relation(fields: [workout_plan_id], references: [id], onDelete: Cascade)
+  client_id                  String
+  client                     User        @relation("ClientWorkoutAssignments", fields: [client_id], references: [id], onDelete: Cascade)
+  assigned_by_coach_id       String
+  assigned_by_coach          User        @relation("CoachWorkoutAssignments", fields: [assigned_by_coach_id], references: [id], onDelete: Cascade)
+  scheduled_for              DateTime
+  completed_at               DateTime?
   // Rating of Perceived Exertion 1–10; null until completed.
-  post_rpe             Int?
-  post_notes           String?
-  idempotency_key      String?     @unique
-  completion_payload   Json?
-  started_at           DateTime?
+  post_rpe                   Int?
+  post_notes                 String?
+  idempotency_key            String?     @unique
+  completion_payload         Json?
+  started_at                 DateTime?
   completion_idempotency_key String?
 
   @@index([client_id, scheduled_for])
@@ -2809,9 +2826,129 @@ model CoachPackage {
 
   purchases ClientPurchase[]
 
+  // R43 Storefront Phase 1 — guest-checkout share links.
+  // share_token is minted on demand via POST /packages/:id/share-link and
+  // never rotated. share_link_enabled lets a coach pause acquisitions
+  // without throwing the token away (so existing pasted links 404 cleanly
+  // and can be re-enabled later). share_link_generated_at records the
+  // first mint timestamp — never updated on subsequent reads (idempotent).
+  // Audit #4 P2-4 — share_link_expires_at is an optional hard wall-clock
+  // expiry the coach can set (e.g. a 30-day campaign). share_link_revoked_at
+  // marks a permanently dead token; revocation is a one-way operation and
+  // a fresh mint after revoke produces a new token rather than reviving
+  // the old one.
+  share_token             String?   @unique
+  share_link_enabled      Boolean   @default(true)
+  share_link_generated_at DateTime?
+  share_link_expires_at   DateTime?
+  share_link_revoked_at   DateTime?
+
+  // R43 — each package may have many guest checkout attempts (one row per
+  // distinct idempotency_key).
+  guest_checkouts GuestCheckout[]
+
   @@index([coach_id, is_active])
   @@index([coach_id, archived_at])
   @@index([stripe_price_id])
+}
+
+// R43 Storefront Phase 1 — guest checkout state machine.
+//
+// One row per non-authed purchase attempt against a CoachPackage share
+// link. Created when the storefront calls POST /packages/public/join/:token
+// /checkout; mutated only by the Stripe webhook handler and the
+// post-payment account-creation flow.
+//
+// Status lifecycle:
+//   pending → paid       (webhook payment_intent.succeeded)
+//   pending → failed     (webhook payment_intent.payment_failed)
+//   paid    → converted  (Supabase user + ClientPurchase row created)
+//
+// RLS: ENABLE + FORCE + restrictive deny-all for anon / authenticated
+// roles. The Prisma service-role connection bypasses RLS, which is the
+// ONLY write path. See the migration_sql block in
+// prisma/migrations/<timestamp>_r43_storefront_phase1/migration.sql.
+model GuestCheckout {
+  id         String       @id @default(uuid())
+  package_id String
+  package    CoachPackage @relation(fields: [package_id], references: [id])
+
+  stripe_payment_intent_id String  @unique
+  stripe_customer_id       String?
+
+  guest_email String
+  guest_name  String
+
+  /// State machine — enforced by a CHECK constraint at the DB layer:
+  ///   pending                    → paid                          (Stripe webhook)
+  ///   paid                       → converted                     (Supabase + DB OK)
+  ///   paid                       → conversion_failed_retryable   (transient failure)
+  ///   conversion_failed_retryable → converted                    (reconciliation OK)
+  ///   conversion_failed_retryable → conversion_failed_terminal   (>= 5 retries)
+  ///   pending                    → failed                        (Stripe PI failed)
+  /// `failed` is the legacy terminal state for the pre-checkout
+  /// failure path (Stripe rejected the PI). It is NOT reachable from
+  /// `paid` — once we have money, the row only moves through retryable
+  /// reconciliation. Audit #3 P1-6 added that durability.
+  status String @default("pending")
+
+  /// FK to User row created after payment succeeds. Null until converted.
+  created_user_id String?
+  created_user    User?   @relation("GuestCheckoutUser", fields: [created_user_id], references: [id])
+
+  /// UUID v4 generated by the storefront and sent with POST /checkout.
+  /// Server dedups via the unique constraint + P2002 catch so retries
+  /// collapse to the same row.
+  idempotency_key String @unique
+
+  /// Audit #3 P1-6 — reconciliation bookkeeping. retry_count counts
+  /// Supabase-create / DB-transaction reconciliation attempts on
+  /// `conversion_failed_retryable` rows; last_error stores the
+  /// short tag (e.g. `supabase_timeout`, `db_unique_violation`) for
+  /// operator dashboards; last_retry_at lets the worker back off and
+  /// prevents tight-loop reprocessing. Hard cap is 5 — past that the
+  /// row moves to `conversion_failed_terminal` and pages on-call.
+  retry_count   Int       @default(0)
+  last_error    String?
+  last_retry_at DateTime?
+
+  created_at DateTime @default(now())
+
+  /// Pending intents older than this are considered stale. Set to
+  /// created_at + 24h at row creation. Webhook handlers refuse to fulfil
+  /// rows past this point.
+  expires_at DateTime
+
+  /// Audit #3 P2-3 — PII retention deadline. Set to created_at + 13
+  /// months at row creation. A daily scrub job hashes guest_email and
+  /// redacts guest_name on rows past this deadline that never
+  /// converted to a real User (created_user_id IS NULL) — converted
+  /// rows have a User record that holds the same identity data with
+  /// its own retention rules. 13 months is the default GDPR-style
+  /// retention window for transactional purchase records.
+  data_retention_at DateTime?
+
+  /// Audit #3 P2-3 — set once the scrub job has anonymised this row
+  /// so a future run skips it without paying the hash compute.
+  scrubbed_at DateTime?
+
+  @@index([package_id])
+  @@index([status])
+  // Audit #4 P2-6 — raw email index removed. Indexing guest_email
+  // gave an attacker with read access to the index pages a
+  // material privacy surface (it inverts the salted scrub) without
+  // any equivalent query benefit; we never look guests up by raw
+  // email at runtime. The scrub job streams rows by
+  // (data_retention_at, scrubbed_at), so removing the email index
+  // does not regress the scrub plan.
+  @@index([stripe_payment_intent_id])
+  // Reconciliation worker scans status='conversion_failed_retryable'
+  // rows ordered by last_retry_at NULLS FIRST. The composite index
+  // serves both the scan filter and the ordering.
+  @@index([status, last_retry_at])
+  // Audit #3 P2-3 — scrub worker scans rows whose data_retention_at
+  // has elapsed and that have not been scrubbed yet.
+  @@index([data_retention_at, scrubbed_at])
 }
 
 // Phase 3 Connect — Per-client Stripe Customer on the platform account.
@@ -3560,18 +3697,18 @@ model EmailSendLog {
 // (unassigned_at IS NULL) row per client at a time — enforced by a
 // partial unique index in the migration.
 model SubCoachAssignment {
-  id              String    @id @default(uuid())
-  head_coach_id   String
-  head_coach      User      @relation("SubCoachAssignmentHead", fields: [head_coach_id], references: [id], onUpdate: Cascade, onDelete: Restrict)
-  sub_coach_id    String
-  sub_coach       User      @relation("SubCoachAssignmentSub", fields: [sub_coach_id], references: [id], onUpdate: Cascade, onDelete: Restrict)
-  client_id       String
-  client          User      @relation("SubCoachAssignmentClient", fields: [client_id], references: [id], onUpdate: Cascade, onDelete: Restrict)
-  assigned_at     DateTime  @default(now())
-  unassigned_at   DateTime?
-  assigned_by_id  String?
-  assigned_by     User?     @relation("SubCoachAssignmentActor", fields: [assigned_by_id], references: [id], onUpdate: Cascade, onDelete: SetNull)
-  reason          String?
+  id             String    @id @default(uuid())
+  head_coach_id  String
+  head_coach     User      @relation("SubCoachAssignmentHead", fields: [head_coach_id], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  sub_coach_id   String
+  sub_coach      User      @relation("SubCoachAssignmentSub", fields: [sub_coach_id], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  client_id      String
+  client         User      @relation("SubCoachAssignmentClient", fields: [client_id], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  assigned_at    DateTime  @default(now())
+  unassigned_at  DateTime?
+  assigned_by_id String?
+  assigned_by    User?     @relation("SubCoachAssignmentActor", fields: [assigned_by_id], references: [id], onUpdate: Cascade, onDelete: SetNull)
+  reason         String?
 
   @@index([head_coach_id])
   @@index([sub_coach_id, unassigned_at])
@@ -3625,31 +3762,31 @@ model SubCoachMutationIdempotency {
 // RLS: ENABLE + FORCE ROW LEVEL SECURITY. Coaches can only read/write
 // their own rows (coach_id = auth.uid()); clients have no access at all.
 model ChurnIntervention {
-  id                  String    @id @default(uuid())
-  coach_id            String
-  coach               User      @relation("ChurnInterventionCoach", fields: [coach_id], references: [id], onDelete: Cascade)
-  client_id           String
-  client              User      @relation("ChurnInterventionClient", fields: [client_id], references: [id], onDelete: Cascade)
-  draft_text          String
-  edited_text         String?
+  id                   String    @id @default(uuid())
+  coach_id             String
+  coach                User      @relation("ChurnInterventionCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  client_id            String
+  client               User      @relation("ChurnInterventionClient", fields: [client_id], references: [id], onDelete: Cascade)
+  draft_text           String
+  edited_text          String?
   // 'draft' | 'edited' | 'sent' | 'dismissed'
-  status              String    @default("draft")
-  alert_id            String?
-  risk_score_at_draft Float?
-  top_factor          String?
-  idempotency_key     String    @unique
+  status               String    @default("draft")
+  alert_id             String?
+  risk_score_at_draft  Float?
+  top_factor           String?
+  idempotency_key      String    @unique
   // Separate idempotency key for the send transition. Distinct from
   // the draft `idempotency_key` so a coach can retry a send (a network
   // failure on POST /send) without colliding with the draft key. Unique
   // to dedup concurrent or replayed send requests.
-  send_idempotency_key String?  @unique
-  created_at          DateTime  @default(now())
-  sent_at             DateTime?
-  dismissed_at        DateTime?
+  send_idempotency_key String?   @unique
+  created_at           DateTime  @default(now())
+  sent_at              DateTime?
+  dismissed_at         DateTime?
   // FK to the CoachNudge row created when sent (null until sent). Not a
   // hard relation — CoachNudge may be SetNull on user delete, and we
   // tolerate the dangle.
-  nudge_id            String?
+  nudge_id             String?
 
   @@index([coach_id, status, created_at])
   @@index([client_id, created_at])

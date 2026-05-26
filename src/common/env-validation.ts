@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { EnvValidationError } from './errors/env-validation.error';
 
 // Centralized boot-time environment validation. Replaces the small
 // `assertRequiredEnv()` helper that lived inline in src/main.ts. The goals
@@ -124,7 +125,7 @@ export const ENV_RULES: EnvRule[] = [
     name: 'PLAY_STORE_URL',
     tier: 'feature',
     reason:
-      'Google Play Store URL surfaced on the public invite landing page. Falls back to com.tgp.app placeholder when unset; set once the Play Store listing exists.',
+      'Google Play Store URL surfaced on the public invite landing page. Falls back to a com.growthproject.app placeholder when unset; set once the Play Store listing exists.',
   },
   {
     name: 'CORS_ORIGINS',
@@ -145,10 +146,32 @@ export const ENV_RULES: EnvRule[] = [
       'Stripe API key used by BillingService for portal/subscription calls. Coach/owner billing routes return 400 STRIPE_NOT_CONFIGURED when unset, so leaving it unset is the right state until Stripe is provisioned.',
   },
   {
+    name: 'STRIPE_PUBLISHABLE_KEY',
+    tier: 'feature',
+    reason:
+      'R43 storefront — publishable key embedded in the guest-checkout payment response so the browser Stripe.js SDK can confirm the PaymentIntent. REQUIRED in staging/production (enforced via prodHardenedFeatureVars): the storefront service throws ServiceUnavailable on every public package request when missing, silently 503-ing the storefront on day one. MUST begin with "pk_test_" or "pk_live_"; secret keys (sk_*) are rejected at boot to catch copy-paste swaps.',
+    validate: (v) => {
+      const trimmed = v.trim();
+      if (trimmed.length === 0) return 'STRIPE_PUBLISHABLE_KEY must not be empty.';
+      if (!/^pk_(test|live)_/.test(trimmed)) {
+        return 'STRIPE_PUBLISHABLE_KEY must start with "pk_test_" or "pk_live_". Secret keys (sk_*) are not accepted.';
+      }
+      return null;
+    },
+  },
+  {
     name: 'STRIPE_WEBHOOK_SECRET',
     tier: 'feature',
     reason:
-      'HMAC signing secret for /v1/webhooks/stripe. Without it the webhook controller rejects every request with 400 — no boot dependency. Set this *before* pointing Stripe at the webhook URL.',
+      'HMAC signing secret for /v1/webhooks/stripe. Without it the webhook controller rejects every request with 400 — no boot dependency. Set this *before* pointing Stripe at the webhook URL. Audit #5 P2-2 — validator catches the most common operator typo: a value that does not start with the canonical Stripe "whsec_" prefix. Length is not enforced here so dev/test fixtures using short stub values still pass; the webhook controller will reject any malformed signature at request time.',
+    validate: (v) => {
+      const trimmed = v.trim();
+      if (trimmed.length === 0) return null;
+      if (!trimmed.startsWith('whsec_')) {
+        return 'STRIPE_WEBHOOK_SECRET must start with "whsec_" (Stripe webhook-secret format).';
+      }
+      return null;
+    },
   },
   {
     name: 'STRIPE_WEBHOOK_SECRET_NEXT',
@@ -566,6 +589,63 @@ export const ENV_RULES: EnvRule[] = [
   },
 
   // ============================================================
+  // R43 — TGP Storefront Phase 1 (guest checkout + share links)
+  // ============================================================
+  {
+    name: 'STOREFRONT_BASE_URL',
+    tier: 'feature',
+    reason:
+      'R43 — base URL of the Next.js storefront (e.g. https://joingrowthproject.com). Used to build share_url responses for POST /v1/coach/packages/:id/share-link and the success/cancel redirects on guest checkout. Defaults to https://joingrowthproject.com in dev only; production must set explicitly (enforced in prodHardenedFeatureVars below).',
+    validate: (v) => {
+      const parsed = parseStorefrontBaseUrl(v);
+      if (!parsed.ok) return parsed.message;
+      return null;
+    },
+  },
+  {
+    name: 'APPLE_TEAM_ID',
+    tier: 'feature',
+    reason:
+      'R43 / Universal Links — Apple Developer Team ID (10-char alphanumeric). When set, /.well-known/apple-app-site-association serves a valid AASA mapping /join/* + /invite/* to the iOS app; when unset, the route returns a syntactically-valid stub and Universal Links do not activate (warning logged).',
+  },
+  {
+    name: 'ANDROID_SHA256_FINGERPRINT',
+    tier: 'feature',
+    reason:
+      'R43 / Android App Links — SHA-256 of the Android signing certificate (AA:BB:CC:... colon-separated uppercase hex). Alias for ANDROID_CERT_SHA256_FINGERPRINTS used by the storefront deploy. Either env var (or both) feeds /.well-known/assetlinks.json; when neither is set, App Links do not activate (warning logged).',
+  },
+  {
+    name: 'RESEND_API_KEY',
+    tier: 'feature',
+    reason:
+      'R43 — Resend API key used to dispatch the guest-checkout welcome email. When unset, the guest checkout flow still completes (account + entitlement created) but the welcome email is skipped and logged. Set this before launch.',
+  },
+  {
+    name: 'GUEST_CHECKOUT_PII_SALT',
+    tier: 'feature',
+    reason:
+      'R43 — stable per-deploy salt fed into sha256(lower(email) || salt) for GuestCheckoutPiiScrubService. REQUIRED in staging/production: prodHardenedFeatureVars refuses to boot without it (see below) because a missing salt would fall back to the dev constant baked into the repo, producing reversible hashes against any known email list and defeating the GDPR retention scrub. Dev/test use a deterministic build-time constant. Rotate only when the historical hashes need to be invalidated.',
+  },
+  {
+    name: 'RESEND_FROM_EMAIL',
+    tier: 'feature',
+    reason:
+      'R43 — From-address Resend uses for the guest-checkout welcome email (e.g. "Growth Project <welcome@trygrowthproject.com>"). Falls back to a brand-aligned default in dev/test; production must set explicitly (enforced in prodHardenedFeatureVars) so welcome mail is sent from a verified domain. Audit #5 P2-3 — customer-facing copy uses the brand name "Growth Project", never the internal abbreviation "TGP". Never hard-code the address — Resend rejects sends from unverified domains and dropping welcome mail silently in production is a launch-blocker.',
+    validate: (v) => {
+      if (v.trim().length === 0) return 'RESEND_FROM_EMAIL must not be empty.';
+      // Accept either a bare address or RFC 5322 "Display <addr>" — both
+      // are valid Resend `from` inputs. We just require an @ in the
+      // angle-bracket portion when one is present, or in the bare value.
+      const angle = v.match(/<([^>]+)>/);
+      const addr = (angle ? angle[1] : v).trim();
+      if (!addr.includes('@')) {
+        return 'RESEND_FROM_EMAIL must contain a valid email address.';
+      }
+      return null;
+    },
+  },
+
+  // ============================================================
   // Exercise Video Providers
   // ============================================================
   {
@@ -618,6 +698,47 @@ export interface EnvValidationResult {
 export function isProdLike(nodeEnv: string | undefined): boolean {
   const v = (nodeEnv || '').toLowerCase();
   return v === 'production' || v === 'staging';
+}
+
+// Centralised parser for STOREFRONT_BASE_URL. Single source of truth shared
+// by env-validation (boot-time warn/throw), src/main.ts (CORS auto-include),
+// share-link service (share_url construction), and storefront service
+// (success/cancel redirects). Returns the canonical form (no trailing
+// slash) and the bare origin string browsers send in the `Origin` header.
+//
+// Requires an absolute http(s) URL with a non-empty host. Anything else is
+// rejected with a structured message — callers decide whether to throw or
+// warn based on NODE_ENV.
+export type StorefrontBaseUrlParse =
+  | { ok: true; canonical: string; origin: string }
+  | { ok: false; message: string };
+
+export function parseStorefrontBaseUrl(raw: string | undefined): StorefrontBaseUrlParse {
+  const trimmed = (raw ?? '').trim();
+  if (trimmed.length === 0) {
+    return { ok: false, message: 'STOREFRONT_BASE_URL must not be empty.' };
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return {
+      ok: false,
+      message: 'STOREFRONT_BASE_URL must be an absolute http(s) URL.',
+    };
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return {
+      ok: false,
+      message: 'STOREFRONT_BASE_URL must use the http or https protocol.',
+    };
+  }
+  if (!parsed.host) {
+    return { ok: false, message: 'STOREFRONT_BASE_URL must include a host.' };
+  }
+  const canonical = `${parsed.protocol}//${parsed.host}${parsed.pathname.replace(/\/$/, '')}`;
+  const origin = `${parsed.protocol}//${parsed.host}`;
+  return { ok: true, canonical, origin };
 }
 
 // Detects values that look like unfilled placeholders the operator forgot to
@@ -736,7 +857,10 @@ export function assertEnv(
   if (result.missingHard.length) {
     const msg = `Missing required env vars: ${result.missingHard.join(', ')}`;
     logger.error(msg);
-    throw new Error(msg);
+    throw new EnvValidationError(msg, {
+      code: 'ENV_MISSING_HARD',
+      variables: result.missingHard,
+    });
   }
 
   // REDIS_URL is feature-tier (dev/test fall back to in-memory) but is
@@ -751,7 +875,10 @@ export function assertEnv(
         'REDIS_URL is required in production. Set REDIS_URL=redis(s)://host:port[/db] before deploy. ' +
         'See README.md "Placeholders / TODO env vars" section.';
       logger.error(msg);
-      throw new Error(msg);
+      throw new EnvValidationError(msg, {
+        code: 'ENV_REDIS_URL_REQUIRED',
+        variables: ['REDIS_URL'],
+      });
     }
 
     // Production-only hardening for feature-tier URL config: the
@@ -789,17 +916,132 @@ export function assertEnv(
         name: 'ANTHROPIC_API_KEY',
         reason: 'Primary AI provider; app boots without it but all client AI guide responses fall back to deterministic local content indistinguishable from real AI.',
       },
+      {
+        name: 'STOREFRONT_BASE_URL',
+        reason:
+          'R43 storefront — without it the share-link service falls back to the dev-only canonical origin and the storefront origin is missing from CORS, breaking the public package endpoint from any browser.',
+      },
+      {
+        name: 'RESEND_FROM_EMAIL',
+        reason:
+          'R43 storefront — Resend rejects sends from unverified domains. Without an explicit from-address tied to a verified domain, welcome mail drops silently and guests never receive credentials/invite links.',
+      },
+      {
+        name: 'APPLE_TEAM_ID',
+        reason:
+          'R43 / Universal Links — without APPLE_TEAM_ID the .well-known/apple-app-site-association document is structurally empty, so iOS refuses to associate /join/* and /invite/* links with the installed app. Production must NEVER serve a stub AASA.',
+      },
+      {
+        name: 'ANDROID_CERT_SHA256_FINGERPRINTS',
+        reason:
+          'R43 / Android App Links — without an Android signing-cert SHA256 fingerprint, the .well-known/assetlinks.json document is empty and Android refuses to associate /join/* and /invite/* links with the installed app. Production must NEVER serve a stub assetlinks.json. ANDROID_SHA256_FINGERPRINT is accepted as an alias.',
+      },
+      {
+        name: 'GUEST_CHECKOUT_PII_SALT',
+        reason:
+          'Audit #4 P2-2 — GuestCheckoutPiiScrubService refuses to run on prod without an explicit salt. A missing salt would fall back to the dev constant baked into the repo, producing reversible hashes against any known email list and defeating the GDPR retention scrub.',
+      },
+      {
+        name: 'STRIPE_PUBLISHABLE_KEY',
+        reason:
+          'Audit #5 P0-2 — StorefrontService.getPublicPackageByToken returns 503 SERVICE_UNAVAILABLE on every public package request when STRIPE_PUBLISHABLE_KEY is unset. A clean prod deploy without it passes boot then silently 503s the entire storefront. Must be the publishable counterpart (pk_test_*/pk_live_*) of STRIPE_SECRET_KEY.',
+      },
     ];
     const missing = prodHardenedFeatureVars.filter(
-      (v) =>
-        typeof env[v.name] !== 'string' || env[v.name]!.trim().length === 0,
+      (v) => {
+        // ANDROID_CERT_SHA256_FINGERPRINTS accepts a comma/whitespace
+        // separated list; ANDROID_SHA256_FINGERPRINT is an accepted
+        // single-value alias. Either env var being set counts.
+        if (v.name === 'ANDROID_CERT_SHA256_FINGERPRINTS') {
+          const a = env.ANDROID_CERT_SHA256_FINGERPRINTS;
+          const b = env.ANDROID_SHA256_FINGERPRINT;
+          const ok =
+            (typeof a === 'string' && a.trim().length > 0) ||
+            (typeof b === 'string' && b.trim().length > 0);
+          return !ok;
+        }
+        return (
+          typeof env[v.name] !== 'string' ||
+          env[v.name]!.trim().length === 0
+        );
+      },
     );
+    // Audit #5 P1-7 — aggregate every prod-side blocker discovered so far
+    // (prod-hardened missing + missingProd + placeholderProd +
+    // validationErrorsProd) into a SINGLE thrown error rather than throwing
+    // on the first one and forcing the operator into a deploy-fix-deploy
+    // cycle. The hard-tier missing/placeholder checks above already ran
+    // and exited before we reached this block, so we know the operator
+    // has at least cleared those.
+    //
+    // Each contributing class still has its own stable code surfaced via
+    // the EnvValidationError.variables[] / message so observability can
+    // distinguish them; the combined error uses ENV_PROD_BLOCKERS.
+    //
+    // The aggregation respects enforceProd: when an operator/test
+    // explicitly opts into enforceProd=false (e.g. a soak test with
+    // deliberately broken secrets) we DO NOT throw on the prod-tier
+    // missing / placeholder / validator failures here — they fall
+    // through to the warn-only branches below. The prod-hardened
+    // "missing" class still throws regardless because those vars cover
+    // routing/CORS defaults that would silently misroute traffic.
+    const prodBlockerSegments: string[] = [];
+    const prodBlockerVars: string[] = [];
     if (missing.length) {
-      const msg =
+      prodBlockerSegments.push(
         `Production-required URL config is missing: ` +
-        missing.map((v) => `${v.name} (${v.reason})`).join('; ');
-      logger.error(msg);
-      throw new Error(msg);
+          missing.map((v) => `${v.name} (${v.reason})`).join('; '),
+      );
+      prodBlockerVars.push(...missing.map((v) => v.name));
+    }
+    if (enforceProd && result.missingProd.length) {
+      prodBlockerSegments.push(
+        `Missing production-required env vars (NODE_ENV=${env.NODE_ENV}): ${result.missingProd.join(', ')}`,
+      );
+      prodBlockerVars.push(...result.missingProd);
+    }
+    if (enforceProd && result.placeholderProd.length) {
+      prodBlockerSegments.push(
+        `Production-tier env vars contain placeholder values (NODE_ENV=${env.NODE_ENV}): ${result.placeholderProd.join(', ')}`,
+      );
+      prodBlockerVars.push(...result.placeholderProd);
+    }
+    if (enforceProd && result.validationErrorsProd.length) {
+      prodBlockerSegments.push(
+        `Production-tier env vars failed validation (NODE_ENV=${env.NODE_ENV}): ${result.validationErrorsProd.join('; ')}`,
+      );
+    }
+    if (prodBlockerSegments.length > 0) {
+      // Preserve the single-cause error code (and message-prefix the
+      // existing test patterns match against) when there is exactly one
+      // class of blocker — old assertions like `.toThrow(/Production-required URL config is missing/)`
+      // keep passing. The combined-throw is only used when multiple
+      // classes of blocker would otherwise force a redeploy cycle.
+      if (prodBlockerSegments.length === 1) {
+        const seg = prodBlockerSegments[0];
+        logger.error(seg);
+        // Map the segment back to its original code for back-compat.
+        const code: 'ENV_PROD_HARDENED_MISSING' | 'ENV_MISSING_PROD' | 'ENV_PLACEHOLDER_PROD' | 'ENV_VALIDATION_PROD' =
+          missing.length ? 'ENV_PROD_HARDENED_MISSING'
+          : result.missingProd.length ? 'ENV_MISSING_PROD'
+          : result.placeholderProd.length ? 'ENV_PLACEHOLDER_PROD'
+          : 'ENV_VALIDATION_PROD';
+        throw new EnvValidationError(seg, {
+          code,
+          variables: prodBlockerVars,
+        });
+      }
+      // Multiple classes — combine into one report so the operator fixes
+      // them all in a single redeploy. The code switches to ENV_PROD_BLOCKERS
+      // so observability dashboards can branch.
+      const combined =
+        `Production env validation found multiple blockers (NODE_ENV=${env.NODE_ENV}) — fix all before redeploy:\n  • ` +
+        prodBlockerSegments.join('\n  • ');
+      logger.error(combined);
+      throw new EnvValidationError(combined, {
+        code: 'ENV_PROD_BLOCKERS',
+        variables: prodBlockerVars,
+      });
     }
   }
 
@@ -808,14 +1050,23 @@ export function assertEnv(
   if (result.placeholderHard.length) {
     const msg = `Required env vars contain placeholder values (replace with real values): ${result.placeholderHard.join(', ')}`;
     logger.error(msg);
-    throw new Error(msg);
+    throw new EnvValidationError(msg, {
+      code: 'ENV_PLACEHOLDER_HARD',
+      variables: result.placeholderHard,
+    });
   }
 
   if (result.missingProd.length) {
     if (enforceProd) {
+      // Already handled by the aggregated block above. This branch only
+      // fires when enforceProd is explicitly true while NODE_ENV is not
+      // production (an edge case used by some test paths).
       const msg = `Missing production-required env vars (NODE_ENV=${env.NODE_ENV}): ${result.missingProd.join(', ')}`;
       logger.error(msg);
-      throw new Error(msg);
+      throw new EnvValidationError(msg, {
+        code: 'ENV_MISSING_PROD',
+        variables: result.missingProd,
+      });
     } else {
       logger.warn(
         `Production-tier env vars missing (ok in dev, required for staging/prod): ${result.missingProd.join(', ')}`,
@@ -827,7 +1078,10 @@ export function assertEnv(
     if (enforceProd) {
       const msg = `Production-tier env vars contain placeholder values (NODE_ENV=${env.NODE_ENV}): ${result.placeholderProd.join(', ')}`;
       logger.error(msg);
-      throw new Error(msg);
+      throw new EnvValidationError(msg, {
+        code: 'ENV_PLACEHOLDER_PROD',
+        variables: result.placeholderProd,
+      });
     } else {
       logger.warn(
         `Production-tier env vars contain placeholder values (ok in dev, required for staging/prod): ${result.placeholderProd.join(', ')}`,
@@ -844,7 +1098,10 @@ export function assertEnv(
   if (result.validationErrorsProd.length && enforceProd) {
     const msg = `Production-tier env vars failed validation (NODE_ENV=${env.NODE_ENV}): ${result.validationErrorsProd.join('; ')}`;
     logger.error(msg);
-    throw new Error(msg);
+    throw new EnvValidationError(msg, {
+      code: 'ENV_VALIDATION_ERROR_PROD',
+      variables: result.validationErrorsProd.map((s) => s.split(':')[0]),
+    });
   }
 
   // Feature-tier vars never block boot. Warn loudly under prod-like

@@ -33,6 +33,9 @@ function buildPrisma() {
       ),
     },
     stripeProcessedEvent: {
+      findUnique: jest.fn(async ({ where }: any) =>
+        processed.find((e) => e.stripe_event_id === where.stripe_event_id) ?? null,
+      ),
       create: jest.fn(async ({ data }: any) => {
         if (processed.find((e) => e.stripe_event_id === data.stripe_event_id)) {
           const err: any = new Error('Unique constraint failed');
@@ -42,6 +45,7 @@ function buildPrisma() {
         processed.push(data);
         return data;
       }),
+      updateMany: jest.fn(async () => ({ count: 1 })),
     },
     coachSubscription: {
       upsert: jest.fn(async ({ where, create }: any) => {

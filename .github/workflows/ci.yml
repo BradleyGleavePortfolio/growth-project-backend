@@ -103,4 +103,15 @@ jobs:
           # (storefront payment confirmation). Pre-staged for the same
           # reason as GUEST_CHECKOUT_PII_SALT.
           STRIPE_PUBLISHABLE_KEY: pk_test_ci
+          # R43 storefront — STOREFRONT_BASE_URL, RESEND_FROM_EMAIL,
+          # APPLE_TEAM_ID, and ANDROID_CERT_SHA256_FINGERPRINTS are
+          # prod-hardened by this PR (#267). Each one's absence in prod
+          # would silently misroute traffic (Universal Links, App
+          # Links, CORS) or drop welcome mail from an unverified
+          # domain. Supply CI stubs so the env-validation gate stays
+          # green once this PR lands on main.
+          STOREFRONT_BASE_URL: https://storefront.example.com
+          RESEND_FROM_EMAIL: 'Growth Project <welcome@trygrowthproject.com>'
+          APPLE_TEAM_ID: TEAMID1234
+          ANDROID_CERT_SHA256_FINGERPRINTS: 'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99'
         run: node -e "require('./dist/common/env-validation').assertEnv()"

@@ -99,6 +99,9 @@ import { RlsContextInterceptor } from './common/interceptors/rls-context.interce
 import { SecurityGuardsModule } from './common/security/security-guards.module';
 // Phase 11 Track 7 — Sub-coach roster, analytics, and reassignment.
 import { SubCoachModule } from './sub-coach/sub-coach.module';
+// R43 — TGP Storefront Phase 1: package share links + guest checkout.
+import { ShareLinkModule } from './share-link/share-link.module';
+import { StorefrontModule } from './storefront/storefront.module';
 
 @Module({
   imports: [
@@ -284,6 +287,12 @@ import { SubCoachModule } from './sub-coach/sub-coach.module';
     SecretsModule,
     // Phase 11 Track 7 — Sub-coach roster, analytics, and reassignment.
     SubCoachModule,
+    // R43 — TGP Storefront Phase 1: package share links + guest checkout
+    // via Stripe (2% application fee). Public storefront endpoints under
+    // /v1/packages/public/*; coach-only mint endpoint under
+    // /v1/coach/packages/:id/share-link.
+    ShareLinkModule,
+    StorefrontModule,
   ],
   providers: [
     // SECURITY: global JWT auth guard — every route is private by default.

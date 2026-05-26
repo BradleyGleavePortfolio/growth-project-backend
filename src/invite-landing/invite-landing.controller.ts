@@ -75,7 +75,7 @@ export class InviteLandingController {
       'https://apps.apple.com/app/the-growth-project/id0';
     const playStore =
       process.env.PLAY_STORE_URL ||
-      'https://play.google.com/store/apps/details?id=com.tgp.app';
+      'https://play.google.com/store/apps/details?id=com.growthproject.app';
 
     const html = this.landing.renderValid({
       code,
