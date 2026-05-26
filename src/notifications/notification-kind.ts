@@ -37,6 +37,14 @@ export const NotificationKind = {
   CLIENT_DIGEST: 'client_digest',
   COACH_DIGEST: 'coach_digest',
 
+  // R51 — Coach onboarding nudge. One kind for all 5 day variants; the
+  // payload carries `day` and `milestone` for filtering. Falls under
+  // the existing `digest` preference cluster for inapp/email gating
+  // (no separate opt-out toggle in v1 — the coach disables the whole
+  // sequence via POST /v1/coaches/me/onboarding/opt-out, which sets
+  // CoachOnboardingState.opted_out_at).
+  ONBOARDING_NUDGE: 'onboarding_nudge',
+
   // Concierge booking lifecycle (PR feat/concierge-booking-notifications).
   // The seven kinds form one preference cluster ("booking_*"); a future
   // PR can split per-event if product wants finer control.

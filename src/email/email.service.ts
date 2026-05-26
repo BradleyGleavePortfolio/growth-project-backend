@@ -42,6 +42,11 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
   'weekly-digest': 'Your weekly Growth Project summary',
   'payment-receipt': 'Receipt for your Growth Project subscription',
   'dunning-final': 'Final notice — your subscription will be canceled',
+  // R51 — subject is supplied dynamically by OnboardingNudgeService
+  // because the 5 day variants need different subject lines.  The
+  // Handlebars {{subject}} placeholder is resolved against `data`
+  // passed to EmailService.send.
+  'first-client-nudge-v1': '{{subject}}',
 };
 
 // EmailService is the single entry point for sending transactional email.

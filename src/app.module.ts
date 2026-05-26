@@ -107,6 +107,9 @@ import { StorefrontModule } from './storefront/storefront.module';
 // + storefront routing. Public routes at /p/:coachSlug/:pageSlug mounted
 // outside the /api prefix (see main.ts exclude list).
 import { LandingPagesModule } from './landing-pages/landing-pages.module';
+// R51 — first-client nudge engine. Daily local-9am cron + coach-facing
+// progress strip + share-template snippets.
+import { OnboardingModule } from './onboarding/onboarding.module';
 
 @Module({
   imports: [
@@ -306,6 +309,9 @@ import { LandingPagesModule } from './landing-pages/landing-pages.module';
     // R46 — Landing Pages Phase 2. Coach CRUD at /api/v1/coach/landing-pages/*;
     // public SSR at /p/:coachSlug/:pageSlug (excluded from /api prefix, see main.ts).
     LandingPagesModule,
+    // R51 — first-client nudge engine. Daily local-9am cron + coach
+    // progress + share-template endpoint under /api/v1/coaches/me/*.
+    OnboardingModule,
   ],
   providers: [
     // SECURITY: global JWT auth guard — every route is private by default.

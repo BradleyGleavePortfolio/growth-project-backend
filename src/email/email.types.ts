@@ -11,6 +11,11 @@ export const EmailTemplateKey = {
   WEEKLY_DIGEST: 'weekly-digest',
   PAYMENT_RECEIPT: 'payment-receipt',
   DUNNING_FINAL: 'dunning-final',
+  // R51 — first-client nudge engine. One template; per-day copy is
+  // passed in as `body_html` from OnboardingNudgeService.pickNudge so
+  // we do not need five separate .hbs files for the day-1/2/3/5/7
+  // variants. Subject is supplied via the same data payload.
+  FIRST_CLIENT_NUDGE_V1: 'first-client-nudge-v1',
 } as const;
 export type EmailTemplateKey =
   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];
