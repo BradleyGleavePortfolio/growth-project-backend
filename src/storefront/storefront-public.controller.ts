@@ -3,16 +3,20 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpException,
   HttpStatus,
   NotFoundException,
   Param,
   PipeTransform,
   Post,
   Redirect,
+  Req,
+  Res,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
+import type { Request, Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { SHARE_TOKEN_REGEX } from '../share-link/share-link.service';
 import {
@@ -23,6 +27,8 @@ import {
 import { GuestCheckoutService } from './guest-checkout.service';
 import { StorefrontService } from './storefront.service';
 import { CheckoutRecoveryService } from './checkout-recovery.service';
+import { CheckoutIpRateLimiterService } from './checkout-rate-limiter.service';
+import { CheckoutCookieService } from './checkout-cookie.service';
 
 // P1-3 / P2-1 — controller-level token shape check. A malformed token is
 // rejected as 404 before the service or Prisma sees it, so brute-force
@@ -55,7 +61,23 @@ export class StorefrontPublicController {
     private readonly guestCheckout: GuestCheckoutService,
     private readonly recovery: CheckoutRecoveryService,
     private readonly config: ConfigService,
+    private readonly ipLimiter: CheckoutIpRateLimiterService,
+    private readonly cookies: CheckoutCookieService,
   ) {}
+
+  // Extract a client IP from the request, honoring Fly's
+  // `fly-client-ip` then x-forwarded-for chains.  Defensive against
+  // malformed/missing headers — never returns empty.
+  private extractIp(req: Request): string {
+    const flyIp = (req.headers['fly-client-ip'] as string | undefined)?.trim();
+    if (flyIp) return flyIp;
+    const xff = (req.headers['x-forwarded-for'] as string | undefined) ?? '';
+    if (xff) {
+      const first = xff.split(',')[0]?.trim();
+      if (first) return first;
+    }
+    return (req.ip ?? req.socket?.remoteAddress ?? 'unknown').toString();
+  }
 
   // GET /api/v1/packages/public/join/:token
   // Returns coach + package metadata for the storefront SSR layer.
@@ -71,6 +93,11 @@ export class StorefrontPublicController {
   // Creates (or replays) the Stripe PaymentIntent. Tighter throttle: a
   // single coach link should not see >20 checkout attempts per minute
   // from one IP unless something is wrong.
+  //
+  // r48 #10 + #11: long-window IP limiter (5/hour) backs up the
+  // per-minute Nest throttler; on success we attach the signed
+  // 7-day guest-session cookie so a returning buyer can surface
+  // recent purchases without a re-confirm.
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @Post('join/:token/checkout')
@@ -78,8 +105,32 @@ export class StorefrontPublicController {
   async createGuestCheckout(
     @Param('token', new ShareTokenPipe()) token: string,
     @Body() body: GuestCheckoutDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this.guestCheckout.createIntent(token, body);
+    const ip = this.extractIp(req);
+    const rate = await this.ipLimiter.checkAndIncrement(ip);
+    if (!rate.allowed) {
+      // 429 with Retry-After header (seconds until next bucket).
+      res.setHeader('Retry-After', String(rate.retryAfterSeconds));
+      throw new HttpException(
+        {
+          error: 'TOO_MANY_REQUESTS',
+          message: 'Too many checkout attempts. Please try again later.',
+          retry_after_seconds: rate.retryAfterSeconds,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    const result = await this.guestCheckout.createIntent(token, body);
+    // r48 #11 — attach the 7-day signed cookie.  Best-effort:
+    // a write failure does NOT roll back the checkout (the response
+    // body still carries everything the storefront needs).
+    await this.cookies.setSessionCookie(res, {
+      email: body.guest_email,
+      guest_checkout_id: result.guest_checkout_id,
+    });
+    return result;
   }
 
   // r48 #4 — POST /v1/packages/public/join/:token/checkout/resume

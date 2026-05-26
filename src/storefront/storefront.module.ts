@@ -1,9 +1,12 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { ConnectModule } from '../connect/connect.module';
 import { EmailModule } from '../email/email.module';
+import { CheckoutCookieService } from './checkout-cookie.service';
 import { CheckoutIdempotencyService } from './checkout-idempotency.service';
+import { CheckoutIpRateLimiterService } from './checkout-rate-limiter.service';
 import { CheckoutRecoveryService } from './checkout-recovery.service';
 import { ConnectPreflightService } from './connect-preflight.service';
+import { WebviewDetectMiddleware } from './webview-detect.middleware';
 import { GuestCheckoutPiiScrubService } from './guest-checkout-pii-scrub.service';
 import { GuestCheckoutReconciliationService } from './guest-checkout-reconciliation.service';
 import { GuestCheckoutService } from './guest-checkout.service';
@@ -45,7 +48,26 @@ import { StorefrontService } from './storefront.service';
     // r48 #7 + #8 — Stripe Connect preflight cache (60s Redis TTL) +
     // Apple/Google Pay capability flags.
     ConnectPreflightService,
+    // r48 #10 — 5-attempts-per-hour-per-IP backstop on the checkout
+    // create path.  Backs up the existing Nest @Throttle.
+    CheckoutIpRateLimiterService,
+    // r48 #11 — 7-day signed guest-session cookie.
+    CheckoutCookieService,
+    // r48 #9 — webview UA interstitial middleware.  Registered as
+    // a provider so Nest DI can construct it for forRoutes().
+    WebviewDetectMiddleware,
   ],
   exports: [GuestCheckoutService],
 })
-export class StorefrontModule {}
+export class StorefrontModule implements NestModule {
+  // r48 #9 — webview UA interstitial.  Mount as middleware ONLY on
+  // GET /v1/packages/public/* so AJAX POSTs from the storefront's SSR
+  // page (which runs in the user's real browser after they switched)
+  // pass through untouched.  Middleware itself filters on req.method
+  // === 'GET' but the route-binding is the first line of defence.
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(WebviewDetectMiddleware)
+      .forRoutes({ path: 'v1/packages/public/*', method: RequestMethod.GET });
+  }
+}
