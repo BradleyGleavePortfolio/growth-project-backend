@@ -34,10 +34,12 @@ import { StorefrontService } from './storefront.service';
     // r48 #5 — EmailModule re-exports EmailService for the recovery
     // magic-link send path.
     EmailModule,
-    // A276-P1-4 — NotificationsModule exports NotificationsService so the
-    // refund + dispute webhook handlers can alert the coach in-app. The
-    // dependency is @Optional() in GuestCheckoutService so legacy unit
-    // tests that hand-construct the service do not need to wire a stub.
+    // A276-P1-4 (refix) — NotificationsModule exports NotificationsService
+    // so the refund + dispute webhook handlers can alert the coach in-app.
+    // The dependency is HARD on GuestCheckoutService (no @Optional()): a
+    // missing notifier is a wiring bug, not a graceful degradation; module
+    // boot fails fast so the operator notices before any refund silently
+    // strands the coach without a signal.
     NotificationsModule,
   ],
   controllers: [StorefrontPublicController],

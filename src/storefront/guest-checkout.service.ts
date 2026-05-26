@@ -163,6 +163,24 @@ export class GuestCheckoutService {
     private readonly stripe: StripeConnectApiService,
     private readonly supabase: SupabaseService,
     private readonly config: ConfigService,
+    // A276-P1-4 (refix) — NotificationsService is the system-wide
+    // in-app + push notification gateway. We use it to surface refund
+    // + dispute events to the coach who sold the package.
+    //
+    // HARD dependency: a missing notifier is a wiring bug, not a
+    // graceful degradation. Under the previous @Optional() wiring a
+    // misconfigured deploy (StorefrontModule not importing
+    // NotificationsModule) would let refunds succeed, entitlements
+    // flip, and the coach receive ZERO signal — with no log line
+    // distinguishing "no notifier" from "notifier called fine". Audit
+    // P1-4 called this the missing safety net. Failing module boot
+    // surfaces the wiring bug immediately; tests that exercise this
+    // service inject an explicit stub.
+    //
+    // Declared before the @Optional() params because TypeScript forbids
+    // a required parameter after an optional one. Nest DI is type-based
+    // so the parameter order has no effect at injection time.
+    private readonly notifications: NotificationsService,
     // r48 #3 — content-addressable PI cache so a network-dropped
     // retry that rolled a fresh idempotency_key still reuses the
     // existing Stripe PaymentIntent.  @Optional() so legacy unit
@@ -174,13 +192,6 @@ export class GuestCheckoutService {
     // optional wiring as above.
     @Optional()
     private readonly preflight?: ConnectPreflightService,
-    // A276-P1-4 — NotificationsService is the system-wide in-app + push
-    // notification gateway. We use it to surface refund + dispute events
-    // to the coach who sold the package. @Optional() so legacy unit tests
-    // that hand-construct this service via Test.createTestingModule keep
-    // working; a missing notifier degrades to a log line.
-    @Optional()
-    private readonly notifications?: NotificationsService,
   ) {}
 
   // POST /v1/packages/public/join/:token/checkout
@@ -947,7 +958,7 @@ export class GuestCheckoutService {
       const coachUserId = row?.package?.coach_id ?? null;
       const claimedSomething =
         result.guestClaimed > 0 || result.purchaseClaimed > 0;
-      if (claimedSomething && coachUserId && this.notifications) {
+      if (claimedSomething && coachUserId) {
         const dollars = (amountRefunded / 100).toFixed(2);
         const body = fullyRefunded
           ? `Refund processed: $${dollars} returned to client.`
@@ -1044,7 +1055,7 @@ export class GuestCheckoutService {
       // Notify the coach (best-effort).  Only on the delivery that
       // actually flipped the row so re-deliveries don't double-notify.
       const coachUserId = row.package?.coach_id ?? null;
-      if (result.guestClaimed > 0 && coachUserId && this.notifications) {
+      if (result.guestClaimed > 0 && coachUserId) {
         await this.notifications
           .createNotification({
             user_id: coachUserId,
