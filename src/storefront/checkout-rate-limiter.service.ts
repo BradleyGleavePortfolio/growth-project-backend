@@ -19,44 +19,53 @@ import { isIPv4, isIPv6 } from 'net';
 // per-IP throttling, but its window is 60s/20 which is too generous
 // for hour-scale abuse.  This service is the long-window backstop.
 
-// A276-F4-P1-B — the *default* per-IP ceiling. Each call site may
-// override this via the `maxAttempts` option to express cost
-// asymmetry between routes (e.g. /send-recovery-link sends email and
-// is tighter; /resume/:jwt is verify-only and can be looser). The
-// default is preserved so any future call site that omits the
-// option keeps the historical behavior.
-const DEFAULT_MAX_ATTEMPTS_PER_HOUR = 5;
 const TTL_SECONDS = 3700; // bucket length 3600 + small slack
 const REDIS_KEY_PREFIX = 'co:rl:ip:';
+
+// A276-F4-P3-I — single source of truth for per-route bucket scopes.
+// Defined once here so the controller and the test files import the
+// same constants; a typo at any call site is a compile error rather
+// than a silently-minted isolated bucket.
+//
+// The values are the literal scope strings that become part of the
+// Redis key (`co:rl:ip:<scope>:<ip>:<hour>`). Changing a value here
+// will orphan the in-flight bucket under the old name during the
+// deploy hour — same one-hour transient as any scope rename. Avoid
+// without good cause.
+export const RATE_LIMIT_SCOPES = {
+  CreateIntent: 'create-intent',
+  Resume: 'resume',
+  SendRecoveryLink: 'send-recovery-link',
+  ResumeJwt: 'resume-jwt',
+} as const;
+
+export type RateLimitScope =
+  (typeof RATE_LIMIT_SCOPES)[keyof typeof RATE_LIMIT_SCOPES];
 
 export interface RateLimitResult {
   allowed: boolean;
   count: number;
   retryAfterSeconds: number;
-  /**
-   * Maximum attempts allowed in the current bucket window. Surfaced
-   * so the caller can populate the `RateLimit-Limit` response
-   * header (RFC 9239 draft) or log the effective ceiling alongside
-   * the count.
-   */
-  limit: number;
 }
 
 export interface CheckAndIncrementOptions {
   /**
-   * Bucket scope — typically a route identifier. Buckets with
-   * different scopes are independent, so exhausting one route's
-   * budget does NOT lock the caller out of the others.
+   * Bucket scope — a per-route identifier. Buckets with different
+   * scopes are independent, so exhausting one route's budget does
+   * NOT lock the caller out of the others.
    *
-   * Default: `'default'` (preserves the historical single-bucket
-   * behavior for any caller that omits the option).
+   * A276-F4-P3-I — typed to the union of known scopes so a typo at
+   * a call site fails at compile time.
+   * A276-F4-P3-J — required (no default fallback): every production
+   * call site must declare its scope explicitly.
    */
-  scope?: string;
+  scope: RateLimitScope;
   /**
    * Maximum attempts allowed in the (per-IP, per-scope, per-hour)
-   * bucket. Default: 5.
+   * bucket. Required — each route's ceiling is expressed at the
+   * call site to make cost asymmetry visible in code review.
    */
-  maxAttempts?: number;
+  maxAttempts: number;
 }
 
 @Injectable()
@@ -97,10 +106,32 @@ export class CheckoutIpRateLimiterService implements OnModuleInit {
 
   async checkAndIncrement(
     ip: string,
-    options: CheckAndIncrementOptions = {},
+    options: CheckAndIncrementOptions,
   ): Promise<RateLimitResult> {
-    const scope = options.scope ?? 'default';
-    const limit = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS_PER_HOUR;
+    // A276-F4-P3-J — exhaustiveness check: the switch below enumerates
+    // every member of RATE_LIMIT_SCOPES. If a new scope is added to
+    // the union without a corresponding case here, the `never`
+    // assignment fails to compile. This is the type-system
+    // replacement for the v1 `'default'` fallback that used to swallow
+    // unknown scopes at runtime.
+    switch (options.scope) {
+      case RATE_LIMIT_SCOPES.CreateIntent:
+      case RATE_LIMIT_SCOPES.Resume:
+      case RATE_LIMIT_SCOPES.SendRecoveryLink:
+      case RATE_LIMIT_SCOPES.ResumeJwt:
+        break;
+      default: {
+        const _exhaustive: never = options.scope;
+        // Unreachable at runtime under the typed contract; if we ever
+        // get here it means a caller defeated the type checker (e.g.
+        // `as RateLimitScope` cast). Bucket under a sentinel so the
+        // attempt is still counted rather than silently dropped.
+        void _exhaustive;
+        break;
+      }
+    }
+    const scope = options.scope;
+    const limit = options.maxAttempts;
     const hourBucket = Math.floor(Date.now() / 3_600_000);
     const key = `${REDIS_KEY_PREFIX}${scope}:${this.normalizeIp(ip)}:${hourBucket}`;
     const retryAfterSeconds = this.secondsUntilNextHour();
@@ -115,7 +146,6 @@ export class CheckoutIpRateLimiterService implements OnModuleInit {
           allowed: count <= limit,
           count,
           retryAfterSeconds,
-          limit,
         };
       } catch (err) {
         this.logger.warn(
@@ -269,7 +299,6 @@ export class CheckoutIpRateLimiterService implements OnModuleInit {
         allowed: existing.count <= limit,
         count: existing.count,
         retryAfterSeconds,
-        limit,
       };
     }
     const fresh = { count: 1, expiresAt: now + TTL_SECONDS * 1000 };
@@ -280,6 +309,6 @@ export class CheckoutIpRateLimiterService implements OnModuleInit {
         if (v.expiresAt <= now) this.memory.delete(k);
       }
     }
-    return { allowed: true, count: 1, retryAfterSeconds, limit };
+    return { allowed: true, count: 1, retryAfterSeconds };
   }
 }

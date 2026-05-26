@@ -1,6 +1,11 @@
 import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { StorefrontPublicController } from '../src/storefront/storefront-public.controller';
+import {
+  CheckoutIpRateLimiterService,
+  RATE_LIMIT_SCOPES,
+} from '../src/storefront/checkout-rate-limiter.service';
 
 // A276-P1-2 / A276-P1-3 — controller-scoped tests for the rate-limiter
 // hardening and the Referrer-Policy header on the magic-link redirect.
@@ -10,8 +15,8 @@ import { StorefrontPublicController } from '../src/storefront/storefront-public.
 // a pure-function call on the controller class. The IP limiter mock
 // returns `allowed:false` to simulate bucket exhaustion.
 
-const ALLOWED = { allowed: true, count: 1, retryAfterSeconds: 60, limit: 5 };
-const DENIED = { allowed: false, count: 6, retryAfterSeconds: 1234, limit: 5 };
+const ALLOWED = { allowed: true, count: 1, retryAfterSeconds: 60 };
+const DENIED = { allowed: false, count: 6, retryAfterSeconds: 1234 };
 const SHARE_TOKEN = 'abcdef1234567890abcdef1234567890';
 
 function makeReq(): Request {
@@ -114,7 +119,10 @@ describe('StorefrontPublicController — A276-P1-2 IP rate limiter on recovery r
       // shared-bucket behavior under a refactor.
       expect(ipLimiter.checkAndIncrement).toHaveBeenCalledWith(
         '203.0.113.7',
-        expect.objectContaining({ scope: 'resume', maxAttempts: 5 }),
+        expect.objectContaining({
+          scope: RATE_LIMIT_SCOPES.Resume,
+          maxAttempts: 5,
+        }),
       );
     });
 
@@ -618,10 +626,10 @@ describe('StorefrontPublicController — A276-F4-P1-B per-route IP buckets', () 
     );
 
     expect(calls.map((c) => c.options)).toEqual([
-      { scope: 'create-intent', maxAttempts: 10 },
-      { scope: 'resume', maxAttempts: 5 },
-      { scope: 'send-recovery-link', maxAttempts: 3 },
-      { scope: 'resume-jwt', maxAttempts: 10 },
+      { scope: RATE_LIMIT_SCOPES.CreateIntent, maxAttempts: 10 },
+      { scope: RATE_LIMIT_SCOPES.Resume, maxAttempts: 5 },
+      { scope: RATE_LIMIT_SCOPES.SendRecoveryLink, maxAttempts: 3 },
+      { scope: RATE_LIMIT_SCOPES.ResumeJwt, maxAttempts: 10 },
     ]);
     // Sanity — same IP, four routes, four distinct scopes.
     expect(new Set(calls.map((c) => c.ip))).toEqual(new Set(['203.0.113.7']));
@@ -645,17 +653,16 @@ describe('StorefrontPublicController — A276-F4-P1-B per-route IP buckets', () 
         .mockImplementation(
           async (
             ip: string,
-            options?: { scope?: string; maxAttempts?: number },
+            options: { scope: string; maxAttempts: number },
           ) => {
-            const scope = options?.scope ?? 'default';
-            const limit = options?.maxAttempts ?? 5;
+            const scope = options.scope;
+            const limit = options.maxAttempts;
             const next = (scopeCounts.get(`${ip}:${scope}`) ?? 0) + 1;
             scopeCounts.set(`${ip}:${scope}`, next);
             return {
               allowed: next <= limit,
               count: next,
               retryAfterSeconds: 1234,
-              limit,
             };
           },
         ),
@@ -725,17 +732,16 @@ describe('StorefrontPublicController — A276-F4-P1-B per-route IP buckets', () 
         .mockImplementation(
           async (
             ip: string,
-            options?: { scope?: string; maxAttempts?: number },
+            options: { scope: string; maxAttempts: number },
           ) => {
-            const scope = options?.scope ?? 'default';
-            const limit = options?.maxAttempts ?? 5;
+            const scope = options.scope;
+            const limit = options.maxAttempts;
             const next = (scopeCounts.get(`${ip}:${scope}`) ?? 0) + 1;
             scopeCounts.set(`${ip}:${scope}`, next);
             return {
               allowed: next <= limit,
               count: next,
               retryAfterSeconds: 1234,
-              limit,
             };
           },
         ),
@@ -771,5 +777,189 @@ describe('StorefrontPublicController — A276-F4-P1-B per-route IP buckets', () 
       HttpStatus.TOO_MANY_REQUESTS,
     );
     expect(recovery.sendRecoveryLink).toHaveBeenCalledTimes(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A276-F4-P3-K — cross-route lockout, real service (not a fake limiter).
+//
+// The describe above pins the cross-route property using a hand-rolled
+// fake `scopeCounts` map. That suffices to catch most regressions, but
+// has a known failure-mode: if a future refactor accidentally breaks
+// the real service's per-scope keying (e.g. dropping `scope` from the
+// Redis key template), the fake test still passes because the fake
+// implements the property the real one might have broken.
+//
+// This block wires the REAL `CheckoutIpRateLimiterService` (in-memory
+// mode, REDIS_URL unset) into the controller and asserts the same
+// property end-to-end. Now the keying contract is exercised through
+// the actual production code path: any drift between the controller's
+// scope literal and the service's key template trips the test.
+// ---------------------------------------------------------------------------
+
+describe('StorefrontPublicController — A276-F4-P3-K real-service cross-route isolation', () => {
+  function realLimiter(): CheckoutIpRateLimiterService {
+    const config = {
+      get: (_key: string) => undefined,
+    } as unknown as ConfigService;
+    return new CheckoutIpRateLimiterService(config);
+  }
+
+  it('exhausting /send-recovery-link does NOT block /resume — real service, same IP', async () => {
+    const ipLimiter = realLimiter();
+    await ipLimiter.onModuleInit();
+    ipLimiter.resetForTests();
+
+    const recovery = {
+      resumeFromCredentials: jest
+        .fn()
+        .mockResolvedValue({ guest_checkout_id: 'gc_1', resumable: true }),
+      sendRecoveryLink: jest.fn().mockResolvedValue({ sent: true }),
+      verifyToken: jest.fn(),
+    };
+    const guestCheckout = {
+      createIntent: jest.fn().mockResolvedValue({ guest_checkout_id: 'gc_1' }),
+    };
+    const cookies = { setSessionCookie: jest.fn() };
+    const storefront = { getPublicPackageByToken: jest.fn() };
+    const config = {
+      get: jest.fn().mockReturnValue('https://joingrowthproject.com'),
+    };
+
+    const controller = new StorefrontPublicController(
+      storefront as never,
+      guestCheckout as never,
+      recovery as never,
+      config as never,
+      ipLimiter as never,
+      cookies as never,
+    );
+
+    // Burn the send-recovery-link bucket: 3 allowed (limit=3), then 2
+    // over-cap. All five requests share the same IP.
+    const sendOutcomes: Array<'ok' | '429'> = [];
+    for (let i = 0; i < 5; i += 1) {
+      try {
+        await controller.sendRecoveryLink(
+          SHARE_TOKEN,
+          { guest_email: 'j@example.com' } as never,
+          makeReq(),
+          makeRes() as never,
+        );
+        sendOutcomes.push('ok');
+      } catch (err) {
+        if (
+          err instanceof HttpException &&
+          err.getStatus() === HttpStatus.TOO_MANY_REQUESTS
+        ) {
+          sendOutcomes.push('429');
+        } else {
+          throw err;
+        }
+      }
+    }
+    expect(sendOutcomes).toEqual(['ok', 'ok', 'ok', '429', '429']);
+    expect(recovery.sendRecoveryLink).toHaveBeenCalledTimes(3);
+
+    // /resume on the SAME IP must succeed — its bucket (scope=resume)
+    // is independent of send-recovery-link in the real service.
+    const resumeRes = makeRes();
+    await controller.resumeGuestCheckout(
+      SHARE_TOKEN,
+      { guest_email: 'j@example.com' } as never,
+      makeReq(),
+      resumeRes as never,
+    );
+    expect(recovery.resumeFromCredentials).toHaveBeenCalledTimes(1);
+    expect(resumeRes._headers['Retry-After']).toBeUndefined();
+
+    // /checkout (create-intent, limit=10) and /resume/:jwt (resume-jwt,
+    // limit=10) must also be untouched.
+    await controller.createGuestCheckout(
+      SHARE_TOKEN,
+      { guest_email: 'j@example.com' } as never,
+      makeReq(),
+      makeRes() as never,
+    );
+    expect(guestCheckout.createIntent).toHaveBeenCalledTimes(1);
+
+    recovery.verifyToken.mockResolvedValue({
+      share_token: SHARE_TOKEN,
+      guest_checkout_id: 'gc_1',
+    });
+    await controller.resumeFromMagicLink(
+      SHARE_TOKEN,
+      'eyJ.fake.jwt',
+      makeReq(),
+      makeRes() as never,
+    );
+    expect(recovery.verifyToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('/resume bucket independently exhausts at its own 5/hr ceiling (real service)', async () => {
+    // Pin that the /resume bucket honors its own limit through the
+    // real key template, independent of whatever load other scopes
+    // have. Exhaust /resume to 5 then assert the 6th call 429s while
+    // a fresh /checkout call on the same IP still succeeds.
+    const ipLimiter = realLimiter();
+    await ipLimiter.onModuleInit();
+    ipLimiter.resetForTests();
+
+    const recovery = {
+      resumeFromCredentials: jest
+        .fn()
+        .mockResolvedValue({ guest_checkout_id: 'gc_1', resumable: true }),
+      sendRecoveryLink: jest.fn(),
+      verifyToken: jest.fn(),
+    };
+    const guestCheckout = {
+      createIntent: jest.fn().mockResolvedValue({ guest_checkout_id: 'gc_1' }),
+    };
+    const cookies = { setSessionCookie: jest.fn() };
+    const storefront = { getPublicPackageByToken: jest.fn() };
+    const config = {
+      get: jest.fn().mockReturnValue('https://joingrowthproject.com'),
+    };
+    const controller = new StorefrontPublicController(
+      storefront as never,
+      guestCheckout as never,
+      recovery as never,
+      config as never,
+      ipLimiter as never,
+      cookies as never,
+    );
+
+    for (let i = 0; i < 5; i += 1) {
+      await controller.resumeGuestCheckout(
+        SHARE_TOKEN,
+        { guest_email: 'j@example.com' } as never,
+        makeReq(),
+        makeRes() as never,
+      );
+    }
+    let caught: unknown = null;
+    try {
+      await controller.resumeGuestCheckout(
+        SHARE_TOKEN,
+        { guest_email: 'j@example.com' } as never,
+        makeReq(),
+        makeRes() as never,
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(HttpException);
+    expect((caught as HttpException).getStatus()).toBe(
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+
+    // create-intent on the same IP is still allowed.
+    await controller.createGuestCheckout(
+      SHARE_TOKEN,
+      { guest_email: 'j@example.com' } as never,
+      makeReq(),
+      makeRes() as never,
+    );
+    expect(guestCheckout.createIntent).toHaveBeenCalledTimes(1);
   });
 });

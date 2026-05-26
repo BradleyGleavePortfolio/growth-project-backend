@@ -26,7 +26,10 @@ import {
 import { GuestCheckoutService } from './guest-checkout.service';
 import { StorefrontService } from './storefront.service';
 import { CheckoutRecoveryService } from './checkout-recovery.service';
-import { CheckoutIpRateLimiterService } from './checkout-rate-limiter.service';
+import {
+  CheckoutIpRateLimiterService,
+  RATE_LIMIT_SCOPES,
+} from './checkout-rate-limiter.service';
 import { CheckoutCookieService } from './checkout-cookie.service';
 
 // P1-3 / P2-1 — controller-level token shape check. A malformed token is
@@ -147,7 +150,7 @@ export class StorefrontPublicController {
   ) {
     const ip = this.extractIp(req);
     const rate = await this.ipLimiter.checkAndIncrement(ip, {
-      scope: 'create-intent',
+      scope: RATE_LIMIT_SCOPES.CreateIntent,
       maxAttempts: 10,
     });
     if (!rate.allowed) {
@@ -215,7 +218,7 @@ export class StorefrontPublicController {
     // A276-F4-P1-B — per-route bucket: scope=resume, 5/hr.
     const ip = this.extractIp(req);
     const rate = await this.ipLimiter.checkAndIncrement(ip, {
-      scope: 'resume',
+      scope: RATE_LIMIT_SCOPES.Resume,
       maxAttempts: 5,
     });
     if (!rate.allowed) {
@@ -274,7 +277,7 @@ export class StorefrontPublicController {
     // A276-F4-P1-B — per-route bucket: scope=send-recovery-link, 3/hr.
     const ip = this.extractIp(req);
     const rate = await this.ipLimiter.checkAndIncrement(ip, {
-      scope: 'send-recovery-link',
+      scope: RATE_LIMIT_SCOPES.SendRecoveryLink,
       maxAttempts: 3,
     });
     if (!rate.allowed) {
@@ -327,7 +330,7 @@ export class StorefrontPublicController {
     // A276-F4-P1-B — per-route bucket: scope=resume-jwt, 10/hr.
     const ip = this.extractIp(req);
     const rate = await this.ipLimiter.checkAndIncrement(ip, {
-      scope: 'resume-jwt',
+      scope: RATE_LIMIT_SCOPES.ResumeJwt,
       maxAttempts: 10,
     });
     if (!rate.allowed) {
