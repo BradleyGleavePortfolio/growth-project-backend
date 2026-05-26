@@ -89,6 +89,13 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     // Audit #5 P0-2 — STRIPE_PUBLISHABLE_KEY is prod-hardened.
     // StorefrontService 503s every public package request when missing.
     STRIPE_PUBLISHABLE_KEY: 'pk_test_clean_fullprodenv_publishable_key',
+    // R43 — Coach Brief daily push dispatch. Feature-tier; explicit value
+    // keeps the missingFeature list empty for the clean-prod-env test.
+    COACH_BRIEF_NOTIFICATIONS_ENABLED: 'on',
+    // Audit #4 P1-2 — Master kill switch for the entire Coach Brief
+    // surface (HTTP routes + cron). Feature-tier; explicit value keeps
+    // the missingFeature list empty for the clean-prod-env test.
+    COACH_BRIEF_ENABLED: 'on',
   };
 }
 

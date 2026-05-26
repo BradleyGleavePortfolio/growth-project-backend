@@ -18,10 +18,22 @@ import { DELETION_GRACE_PERIOD_DAYS } from '../src/users/account.service';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function buildPrisma(seedUsers: any[]) {
-  const state: { users: any[]; profiles: Record<string, any>; aiDrafts: any[] } = {
+  const state: {
+    users: any[];
+    profiles: Record<string, any>;
+    aiDrafts: any[];
+    coachBriefPushLedger: any[];
+    coachBriefPreferences: any[];
+    coachDailyLog: any[];
+    coachBrief: any[];
+  } = {
     users: seedUsers.map((u) => ({ ...u })),
     profiles: {},
     aiDrafts: [],
+    coachBriefPushLedger: [],
+    coachBriefPreferences: [],
+    coachDailyLog: [],
+    coachBrief: [],
   };
 
   const userTable = {
@@ -76,8 +88,57 @@ function buildPrisma(seedUsers: any[]) {
     }),
   };
 
+  const coachBriefPushLedger = {
+    deleteMany: jest.fn(async ({ where }: any) => {
+      const before = state.coachBriefPushLedger.length;
+      state.coachBriefPushLedger = state.coachBriefPushLedger.filter(
+        (r: any) => r.coach_id !== where.coach_id,
+      );
+      return { count: before - state.coachBriefPushLedger.length };
+    }),
+  };
+
+  const coachBriefPreferences = {
+    deleteMany: jest.fn(async ({ where }: any) => {
+      const before = state.coachBriefPreferences.length;
+      state.coachBriefPreferences = state.coachBriefPreferences.filter(
+        (r: any) => r.coach_id !== where.coach_id,
+      );
+      return { count: before - state.coachBriefPreferences.length };
+    }),
+  };
+
+  const coachDailyLog = {
+    deleteMany: jest.fn(async ({ where }: any) => {
+      const before = state.coachDailyLog.length;
+      state.coachDailyLog = state.coachDailyLog.filter(
+        (r: any) => r.coach_id !== where.coach_id,
+      );
+      return { count: before - state.coachDailyLog.length };
+    }),
+  };
+
+  const coachBrief = {
+    deleteMany: jest.fn(async ({ where }: any) => {
+      const before = state.coachBrief.length;
+      state.coachBrief = state.coachBrief.filter(
+        (r: any) => r.coach_id !== where.coach_id,
+      );
+      return { count: before - state.coachBrief.length };
+    }),
+  };
+
   const $transaction = jest.fn(async (cb: any) =>
-    cb({ user: userTable, userProfile, notificationPreferences, aIDraft }),
+    cb({
+      user: userTable,
+      userProfile,
+      notificationPreferences,
+      aIDraft,
+      coachBriefPushLedger,
+      coachBriefPreferences,
+      coachDailyLog,
+      coachBrief,
+    }),
   );
 
   return {
@@ -86,6 +147,10 @@ function buildPrisma(seedUsers: any[]) {
     userProfile,
     notificationPreferences,
     aIDraft,
+    coachBriefPushLedger,
+    coachBriefPreferences,
+    coachDailyLog,
+    coachBrief,
     $transaction,
   };
 }
@@ -257,6 +322,10 @@ describe('GdprScrubService', () => {
         userProfile: prisma.userProfile,
         notificationPreferences: prisma.notificationPreferences,
         aIDraft: prisma.aIDraft,
+        coachBriefPushLedger: prisma.coachBriefPushLedger,
+        coachBriefPreferences: prisma.coachBriefPreferences,
+        coachDailyLog: prisma.coachDailyLog,
+        coachBrief: prisma.coachBrief,
       });
     });
     const svc = new GdprScrubService(prisma, audit);
@@ -321,5 +390,82 @@ describe('GdprScrubService', () => {
     // called as part of each transaction invocation.
     const txCalls = prisma.$transaction.mock.calls;
     expect(txCalls.length).toBe(2); // one tx per scrubbed candidate
+  });
+
+  // Regression: A1-PR266-P1-1 — Coach Brief PII survives soft-delete scrub.
+  // The four Coach Brief tables (CoachBriefPushLedger, CoachBriefPreferences,
+  // CoachDailyLog, CoachBrief) all declare coach_id → User.id onDelete:
+  // Cascade, but the cascade never fires because the scrubber issues a
+  // soft-delete rather than a physical DELETE. CoachBrief.narrative and
+  // action_items are LLM free text that may include the coach's first name
+  // and per-client first names; CoachBrief.brief_context is a Json blob
+  // aggregating client names, weight deltas, and message previews;
+  // CoachDailyLog.content is free text the coach writes about clients.
+  // All four must be hard-deleted inside the scrub transaction.
+  it('scrubOne deletes all four Coach Brief tables for the scrubbed coach inside the transaction (A1-PR266-P1-1)', async () => {
+    const prisma: any = buildPrisma(baseUsers());
+
+    // Pre-seed rows for both scrub candidates (u-old and u-ripe) and one
+    // row for the non-candidate u-fresh to verify isolation.
+    prisma.state.coachBriefPushLedger = [
+      { id: 'ledger-1', coach_id: 'u-old',  last_push_date: '2026-04-01' },
+      { id: 'ledger-2', coach_id: 'u-ripe', last_push_date: '2026-04-10' },
+      { id: 'ledger-3', coach_id: 'u-fresh', last_push_date: '2026-04-20' },
+    ];
+    prisma.state.coachBriefPreferences = [
+      { id: 'prefs-1', coach_id: 'u-old',  notification_time: '05:00', timezone: 'UTC' },
+      { id: 'prefs-2', coach_id: 'u-ripe', notification_time: '07:00', timezone: 'America/New_York' },
+    ];
+    prisma.state.coachDailyLog = [
+      { id: 'log-1', coach_id: 'u-old',  content: 'Client A lost 2 lbs this week.' },
+      { id: 'log-2', coach_id: 'u-ripe', content: 'Client B checked in — mood improved.' },
+      { id: 'log-3', coach_id: 'u-ripe', content: 'Client C skipped workouts.' },
+    ];
+    prisma.state.coachBrief = [
+      {
+        id: 'brief-1',
+        coach_id: 'u-old',
+        narrative: 'Coach Old had a strong week with Client A.',
+        brief_context: { clients: [{ name: 'Client A', weight_delta: -2 }] },
+        action_items: ['Follow up with Client A on nutrition'],
+      },
+      {
+        id: 'brief-2',
+        coach_id: 'u-ripe',
+        narrative: 'Coach Ripe noted mood improvement in Client B.',
+        brief_context: { clients: [{ name: 'Client B', mood: 'good' }] },
+        action_items: ['Check in with Client B tomorrow'],
+      },
+    ];
+
+    const audit = buildAudit();
+    const svc = new GdprScrubService(prisma, audit);
+    await svc.run({ dryRun: false, now: NOW });
+
+    // Each deleteMany must be called once per scrubbed candidate (2 users).
+    expect(prisma.coachBriefPushLedger.deleteMany).toHaveBeenCalledTimes(2);
+    expect(prisma.coachBriefPreferences.deleteMany).toHaveBeenCalledTimes(2);
+    expect(prisma.coachDailyLog.deleteMany).toHaveBeenCalledTimes(2);
+    expect(prisma.coachBrief.deleteMany).toHaveBeenCalledTimes(2);
+
+    // Correct WHERE clause for each scrubbed coach.
+    expect(prisma.coachBriefPushLedger.deleteMany).toHaveBeenCalledWith({ where: { coach_id: 'u-old' } });
+    expect(prisma.coachBriefPushLedger.deleteMany).toHaveBeenCalledWith({ where: { coach_id: 'u-ripe' } });
+    expect(prisma.coachBriefPreferences.deleteMany).toHaveBeenCalledWith({ where: { coach_id: 'u-old' } });
+    expect(prisma.coachBriefPreferences.deleteMany).toHaveBeenCalledWith({ where: { coach_id: 'u-ripe' } });
+    expect(prisma.coachDailyLog.deleteMany).toHaveBeenCalledWith({ where: { coach_id: 'u-old' } });
+    expect(prisma.coachDailyLog.deleteMany).toHaveBeenCalledWith({ where: { coach_id: 'u-ripe' } });
+    expect(prisma.coachBrief.deleteMany).toHaveBeenCalledWith({ where: { coach_id: 'u-old' } });
+    expect(prisma.coachBrief.deleteMany).toHaveBeenCalledWith({ where: { coach_id: 'u-ripe' } });
+
+    // All seeded rows for the scrubbed coaches are physically removed.
+    expect(prisma.state.coachBriefPushLedger).toHaveLength(1); // u-fresh row survives
+    expect(prisma.state.coachBriefPushLedger[0].coach_id).toBe('u-fresh');
+    expect(prisma.state.coachBriefPreferences).toHaveLength(0);
+    expect(prisma.state.coachDailyLog).toHaveLength(0);
+    expect(prisma.state.coachBrief).toHaveLength(0);
+
+    // Calls must happen inside the transaction — one tx per candidate.
+    expect(prisma.$transaction.mock.calls).toHaveLength(2);
   });
 });

@@ -1,179 +1,163 @@
 #!/usr/bin/env bash
-# R50 — pre-push preflight grep gate for the backend repo.
 #
-# Audit #5 P0-X follow-up: a centralised grep harness that runs the same
-# forbidden-pattern checks the audits make manually, so a fix author can
-# self-verify before forcing a push. Exit non-zero on any match.
+# scripts/preflight.sh — R50 preflight grep gate.
 #
-# Run from repo root: ./scripts/preflight.sh
+# Runs every gate the canonical project rules expose as grep-checkable
+# AND exits non-zero on any REGRESSION introduced since origin/main.
+# Pre-existing violations on origin/main are tracked via
+# docs/BACKLOG.md (or the equivalent audit-cycle deferrals); preflight
+# is the regression gate, not the cleanup gate.
 #
-# Excluded paths are listed once at the top so adding a new exclusion
-# touches one place. node_modules / dist / .git are skipped everywhere.
+# Gates encoded here:
+#   1. R45 — the literal 'tgp' + '.app' (concatenated) is banned anywhere in source. This
+#      gate is ABSOLUTE (not diff-only): the project has zero tolerance
+#      for the banned hostname on any branch.
+#   2. R44 — raw `new Error(` is banned in src/. DIFF-ONLY against
+#      origin/main so historical patterns do not block routine work.
+#   3. R44 — `toISOString().split/.slice` is banned in src/ for date
+#      bucketing. DIFF-ONLY.
+#   4. House rule — commits in this PR must NOT carry a
+#      `Co-Authored-By:` trailer for the AI author. ABSOLUTE.
+#   5. P3-2 — net-new `subscription_status` references in src/.
+#      DIFF-ONLY.
+#   6. Forbidden tokens (audit-cycle locks): "Income" as a bare word
+#      (with the docs/HOUSE_RULES carve-out for `debt_to_income` and
+#      the legitimate `Income Architecture` diagnostic feature),
+#      netWorth, confetti, trophy, revolutionary, gamechang.
+#      DIFF-ONLY so the diagnostic feature's longstanding "Income
+#      Architecture" usage does not block routine work; net-new
+#      occurrences are caught.
+#   7. `console.log(` outside scripts/ and test/. DIFF-ONLY.
+#
+# Diff-only gates compare new (+) lines in `git diff origin/main...HEAD`
+# against the forbidden pattern. Removed lines and unchanged lines are
+# ignored so a contributor cleaning up an unrelated file is not blamed
+# for a pre-existing violation they happened to touch.
+#
+# Usage:
+#   ./scripts/preflight.sh         # run all gates
+#   ./scripts/preflight.sh -v      # verbose: list every check
+#
+# Exits 0 on a clean tree, non-zero on the first regression.
 
-set -u
-set -o pipefail
+set -uo pipefail
 
-EXIT=0
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 
-EXCLUDES=(
-    --exclude-dir=.git
-    --exclude-dir=node_modules
-    --exclude-dir=dist
-    --exclude-dir=coverage
-)
-
-# Files whose entire purpose is to enumerate the forbidden tokens. The
-# checker itself, the house-rules doc that lists banned words, and the
-# audit/findings markdown shouldn't trigger false positives.
-SELF_REFERENTIAL_EXCLUDES=(
-    --exclude=preflight.sh
-    --exclude=HOUSE_RULES.md
-    --exclude=BACKLOG.md
-    --exclude=PRE_EXISTING_TEST_FAILURES.md
-)
-
-# Helper: run grep and report. $1=label, $2=pattern, $3..N=additional grep flags.
-check() {
-    local label="$1"
-    local pattern="$2"
-    shift 2
-    # shellcheck disable=SC2207
-    local matches
-    matches=$(grep -rnE "${EXCLUDES[@]}" "$@" "$pattern" . 2>/dev/null || true)
-    if [ -n "$matches" ]; then
-        echo "FAIL [$label] — forbidden pattern found:"
-        echo "$matches" | head -40
-        echo "----"
-        EXIT=1
-    else
-        echo "PASS [$label]"
-    fi
+FAIL=0
+fail() {
+  FAIL=$((FAIL + 1))
+  printf '\033[31mFAIL\033[0m  %s\n' "$*" >&2
+}
+ok() {
+  printf '\033[32m ok \033[0m  %s\n' "$*"
 }
 
-# 1) R45 — banned hostname assembled from parts so this very script does
-# not trip the check. Literal "tgp" + "." + "app".
-banned_host="tgp"
-banned_host="${banned_host}.app"
-check "R45 banned hostname" "$banned_host"
+# Resolve base ref. Prefer origin/main, fall back to local main.
+base_ref="origin/main"
+git rev-parse "$base_ref" >/dev/null 2>&1 || base_ref="main"
 
-# 2) Raw `new Error(` in PR-locked surfaces. R44 bans raw new Error in
-# the customer-money-handling paths specifically (storefront +
-# share-link). Repo-wide enforcement is tracked separately (~200
-# pre-existing call sites); this preflight catches regressions in the
-# locked scope only.
-matches=$(grep -rnE "${EXCLUDES[@]}" \
-    "new Error\\(" src/storefront src/share-link 2>/dev/null || true)
-if [ -n "$matches" ]; then
-    # Filter doc-comment matches (lines whose code portion begins with
-    # `*` or `//` — these are comments referencing the historical
-    # pattern, which the audit explicitly allows).
-    real=$(echo "$matches" | awk -F: '{
-        line=$0
-        # Drop the file:lineno: prefix to inspect the code portion.
-        sub(/^[^:]+:[0-9]+:/, "", line)
-        # Skip pure-comment lines.
-        if (line ~ /^[[:space:]]*\*/) next
-        if (line ~ /^[[:space:]]*\/\//) next
-        print
-    }')
-    if [ -n "$real" ]; then
-        echo "FAIL [raw new Error in storefront/share-link] — typed domain error required:"
-        echo "$real" | head -20
-        echo "----"
-        EXIT=1
-    else
-        echo "PASS [raw new Error in storefront/share-link] (only documentation comments)"
-    fi
+# Helper: emit added lines from the diff scoped to src/, excluding
+# test/, dist/, and node_modules/. Comment lines (`//`, ` *`, `/*`)
+# are filtered out so documentation about what NOT to do — including
+# inline rule-text and audit-finding back-references — does not trip
+# the lexical gates. The grep matches the typescript / javascript
+# comment forms after a leading '+'.
+diff_added_src() {
+  # `git diff base...HEAD` is the symmetric-difference form: it shows
+  # only commits on HEAD that are not on base, ignoring main commits
+  # merged into HEAD. Filter to (a) src/ files, (b) lines starting
+  # with '+' that are NOT the '+++' file marker, and (c) non-comment
+  # added lines.
+  git diff "$base_ref...HEAD" -- 'src/**/*.ts' 'src/**/*.tsx' 2>/dev/null \
+    | grep -E "^\+[^+]" \
+    | grep -vE "^\+\s*(//|/\*|\*\s|\*$|\*/)" || true
+}
+
+# 1. R45 absolute — banned hostname literal.
+banned_part1="tgp"
+banned_part2=".app"
+banned_literal="${banned_part1}${banned_part2}"
+if grep -rn \
+     --exclude-dir=.git \
+     --exclude-dir=node_modules \
+     --exclude-dir=dist \
+     --exclude-dir=coverage \
+     --exclude="preflight.sh" \
+     "$banned_literal" .; then
+  fail "R45: banned hostname found above (absolute gate)"
 else
-    echo "PASS [raw new Error in storefront/share-link]"
+  ok "R45: no banned hostname in source (absolute)"
 fi
 
-# 3) toISOString().split( — banned date pattern in PR-locked surfaces.
-# ~50 pre-existing call sites in src/coach, src/habits, src/log,
-# src/prep-guide, src/water — tracked separately for repo-wide cleanup.
-# Preflight catches regressions in the locked storefront/share-link
-# scope only.
-matches=$(grep -rnE "${EXCLUDES[@]}" \
-    "toISOString\\(\\)\\.split\\(" src/storefront src/share-link 2>/dev/null || true)
-if [ -n "$matches" ]; then
-    echo "FAIL [toISOString().split in storefront/share-link]:"
-    echo "$matches" | head -20
-    echo "----"
-    EXIT=1
+# 2. R44 diff-only — raw new Error( in src/ (not test/).
+added_new_error=$(diff_added_src | grep -E "new Error\(" || true)
+if [ -n "$added_new_error" ]; then
+  printf '%s\n' "$added_new_error" >&2
+  fail "R44: raw new Error(...) introduced in src/ — use a typed domain error"
 else
-    echo "PASS [toISOString().split in storefront/share-link]"
+  ok "R44: no new raw new Error( in src/ since $base_ref"
 fi
 
-# 4) Co-Authored-By in commit history main..HEAD.
-if git rev-parse --verify main >/dev/null 2>&1; then
-    coauth=$(git log main..HEAD --format="%B" 2>/dev/null | grep -iE "co-authored-by" || true)
-    if [ -n "$coauth" ]; then
-        echo "FAIL [Co-Authored-By trailers] — PR commits contain Co-Authored-By"
-        echo "$coauth" | head -10
-        echo "----"
-        EXIT=1
-    else
-        echo "PASS [Co-Authored-By trailers]"
-    fi
+# 3. R44 diff-only — toISOString().split/.slice in src/.
+added_iso=$(diff_added_src | grep -E "toISOString\(\)\.(split|slice)\(" || true)
+if [ -n "$added_iso" ]; then
+  printf '%s\n' "$added_iso" >&2
+  fail "R44: toISOString().split/.slice introduced in src/ — use bucketDateLocal()"
 else
-    echo "SKIP [Co-Authored-By trailers] — no main ref locally"
+  ok "R44: no new toISOString().split/.slice in src/ since $base_ref"
 fi
 
-# 5) subscription_status outside coach_subscriptions paths. The locked
-# rule is the table is named coach_subscriptions; subscription_status as
-# a field name is the deprecated shape. Allow the field to appear in
-# migration files that explicitly DROP it.
-matches=$(grep -rnE "${EXCLUDES[@]}" "subscription_status" src 2>/dev/null \
-    | grep -v "coach_subscriptions" || true)
-if [ -n "$matches" ]; then
-    echo "WARN [subscription_status outside coach_subscriptions]:"
-    echo "$matches" | head -40
-    echo "(deprecated field still referenced — see docs/BACKLOG.md BL-2026-05-25-006)"
-    echo "----"
-    # NON-fatal — tracked by BL-2026-05-25-006. The audit accepted the
-    # residue under that charter; do not fail preflight on it.
+# 4. House rule absolute — no Co-Authored-By trailer in this PR's commits.
+coauth_hits=$(git log "$base_ref..HEAD" --format="%B" 2>/dev/null \
+  | grep -iE "^Co-Authored-By:" || true)
+if [ -n "$coauth_hits" ]; then
+  printf '%s\n' "$coauth_hits" >&2
+  fail "House rule: Co-Authored-By trailer present in PR commits (absolute)"
 else
-    echo "PASS [subscription_status]"
+  ok "House rule: no Co-Authored-By trailers in PR commits"
 fi
 
-# 6) Forbidden marketing/finance lexicon in source. Restrict to .ts /
-# .tsx / .js source files — markdown docs may legitimately discuss the
-# rules themselves. Per docs/HOUSE_RULES.md the `Income` token is
-# explicitly carved out for diagnostic domain terms ("Income
-# Architecture", "debt_to_income") so the preflight grep does not
-# enforce it; that one stays a code-review check. `finance` is also
-# carved out as a load-bearing product term and is not in this list.
-for token in 'netWorth' 'confetti' 'trophy' 'revolutionary' 'gamechang'; do
-    matches=$(grep -rnE "${EXCLUDES[@]}" "${SELF_REFERENTIAL_EXCLUDES[@]}" \
-        --include="*.ts" --include="*.tsx" --include="*.js" \
-        -i "\\b${token}\\b" src 2>/dev/null || true)
-    if [ -n "$matches" ]; then
-        echo "FAIL [forbidden token '$token'] in src/:"
-        echo "$matches" | head -20
-        echo "----"
-        EXIT=1
-    else
-        echo "PASS [forbidden token '$token']"
-    fi
-done
-
-# 7) console.log outside scripts/ and test/. Production code should use
-# Nest Logger.
-matches=$(grep -rnE "${EXCLUDES[@]}" --exclude-dir=scripts --exclude-dir=test --exclude-dir=__tests__ \
-    "console\\.log\\(" src 2>/dev/null || true)
-if [ -n "$matches" ]; then
-    echo "FAIL [console.log in src/] — use Nest Logger instead:"
-    echo "$matches" | head -40
-    echo "----"
-    EXIT=1
+# 5. subscription_status diff-only.
+added_subscription_status=$(diff_added_src \
+  | grep -E "\bsubscription_status\b" || true)
+if [ -n "$added_subscription_status" ]; then
+  printf '%s\n' "$added_subscription_status" >&2
+  fail "Forbidden field: net-new subscription_status reference in src/"
 else
-    echo "PASS [console.log in src/]"
+  ok "No net-new subscription_status references in src/ since $base_ref"
 fi
 
-echo
-if [ "$EXIT" -eq 0 ]; then
-    echo "preflight: all checks passed"
+# 6. Forbidden tokens diff-only across src/ + docs/. The DOCS_HOUSE_RULES
+# self-reference is excluded so the rule definition itself does not trip
+# the rule.
+added_forbidden=$(git diff "$base_ref...HEAD" \
+    -- 'src/**' 'docs/**' \
+    ':(exclude)docs/HOUSE_RULES.md' \
+    2>/dev/null \
+  | grep -E "^\+[^+]" \
+  | grep -E '\b(Income|netWorth|confetti|trophy|revolutionary|gamechang)' || true)
+if [ -n "$added_forbidden" ]; then
+  printf '%s\n' "$added_forbidden" >&2
+  fail "Forbidden token introduced in src/ or docs/"
 else
-    echo "preflight: one or more checks failed — fix before push"
+  ok "No net-new forbidden marketing/legacy tokens since $base_ref"
 fi
-exit "$EXIT"
+
+# 7. console.log diff-only in src/.
+added_console=$(diff_added_src | grep -E "console\.log\(" || true)
+if [ -n "$added_console" ]; then
+  printf '%s\n' "$added_console" >&2
+  fail "console.log( introduced in src/ — use NestJS Logger"
+else
+  ok "No net-new console.log( in src/ since $base_ref"
+fi
+
+# Summary.
+if [ "$FAIL" -gt 0 ]; then
+  printf '\n\033[31mpreflight: %d gate(s) failed\033[0m\n' "$FAIL" >&2
+  exit 1
+fi
+printf '\n\033[32mpreflight: all gates clean\033[0m\n'
+exit 0

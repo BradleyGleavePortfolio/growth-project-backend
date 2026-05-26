@@ -69,7 +69,24 @@ function makePrisma() {
         if (match(row, v as Record<string, unknown>)) return false;
         continue;
       }
-      if ((row as Record<string, unknown>)[k] !== v) return false;
+      const rowVal = (row as Record<string, unknown>)[k];
+      // Handle Prisma filter operators on a single field: { not: x }, { in: [...] }, { notIn: [...] }
+      if (v !== null && typeof v === 'object' && !(v instanceof Date)) {
+        const filter = v as Record<string, unknown>;
+        if ('not' in filter) {
+          if (rowVal === filter.not) return false;
+          continue;
+        }
+        if ('in' in filter) {
+          if (!(filter.in as unknown[]).includes(rowVal)) return false;
+          continue;
+        }
+        if ('notIn' in filter) {
+          if ((filter.notIn as unknown[]).includes(rowVal)) return false;
+          continue;
+        }
+      }
+      if (rowVal !== v) return false;
     }
     return true;
   }

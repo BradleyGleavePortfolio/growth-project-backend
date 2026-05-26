@@ -245,14 +245,31 @@ describe('CheckInsService', () => {
   });
 
   describe('coach reads', () => {
+    // listForClientByCoach defaults to a 30-day lookback when `from` is absent.
+    // Use a date inside that window (today) so the test does not silently
+    // age out as wall-clock time advances past the hardcoded literal.
+    //
+    // A5-P1-2 — avoid the `toISOString().split('T')[0]` / `.slice(0,10)`
+    // family of patterns: those return UTC dates and a TZ=UTC Fly host
+    // (or a contributor on the west coast) sees them tip over the
+    // calendar boundary in ways that break the "today is recent" guarantee
+    // this test needs. Build the YYYY-MM-DD string from the *local*
+    // calendar components so the value matches what the service-layer
+    // bucketDateLocal() would have produced for the same Date.
+    const recentDate = () => {
+      const d = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    };
+
     it("coach can read their client's check-ins", async () => {
-      await svc.upsertForClient('client-1', { date: '2026-04-24' } as any);
+      await svc.upsertForClient('client-1', { date: recentDate() } as any);
       const list = await svc.listForClientByCoach('coach-A', 'client-1', {} as any);
       expect(list).toHaveLength(1);
     });
 
     it("coach cannot read another coach's client (404)", async () => {
-      await svc.upsertForClient('client-other', { date: '2026-04-24' } as any);
+      await svc.upsertForClient('client-other', { date: recentDate() } as any);
       await expect(
         svc.listForClientByCoach('coach-A', 'client-other', {} as any),
       ).rejects.toBeInstanceOf(NotFoundException);

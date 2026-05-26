@@ -356,7 +356,13 @@ describe('V1CoachService', () => {
       const supabaseStub = {
         broadcastNewMessage: jest.fn().mockResolvedValue(undefined),
       } as any;
-      const svcWithSub = new V1CoachService(prisma as any, supabaseStub, subCoachScope);
+      const auditStubLocal = { write: jest.fn().mockResolvedValue(undefined) } as any;
+      const svcWithSub = new V1CoachService(
+        prisma as any,
+        supabaseStub,
+        auditStubLocal,
+        subCoachScope,
+      );
 
       const out = await svcWithSub.sendMessage(
         { id: 'coach-Sub', role: 'coach' as const },
