@@ -514,13 +514,13 @@ ${twitterImg}
 <script type="application/ld+json">${jsonLd}</script>
 
 <!-- Critical CSS inlined for instant first paint. No external stylesheet
-     blocks rendering; Geist + Fraunces fall through system stacks until
-     the WOFF2 files (preload below) finish. -->
+     blocks rendering. Both display (Fraunces) and body (Geist Sans)
+     declarations fall through to a system stack — see brandCss() — so
+     the page paints immediately on system fonts, with no FOIT and no
+     paint-blocking webfont request. A future self-hosted WOFF2 +
+     <link rel=preload> can be added when the static-asset pipeline
+     lands; until then the system fallback is the canonical behavior. -->
 <style>${brandCss(accent)}</style>
-
-<!-- Preload only the hero display font.  Body Geist falls back to system
-     sans (San Francisco / Segoe UI) until the WOFF2 lands; visitors on
-     fast connections see the swap, slow connections never block paint. -->
 </head>
 <body>
 ${body}
