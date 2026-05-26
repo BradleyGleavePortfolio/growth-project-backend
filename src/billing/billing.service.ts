@@ -246,13 +246,27 @@ export class BillingService {
               // outside-tx Stripe lookup. handlePaymentSucceeded's
               // resolveReceiptUrl short-circuits on a valid https URL
               // so no Stripe HTTP call fires inside this transaction.
+              //
+              // A276-F2-P2-1 — also signal `preResolveAttempted` so the
+              // inner resolveReceiptUrl does NOT issue a SECOND Stripe
+              // HTTP call on the degraded path (preResolve returned a
+              // non-null record but receiptUrl was null because the
+              // outside-tx Stripe lookup failed). On a continuing Stripe
+              // outage that second attempt would also block while the
+              // outer $transaction holds its Postgres connection —
+              // exactly the in-tx HTTP anti-pattern P1-3 was meant to
+              // eliminate. With the flag set, the inner resolver returns
+              // null immediately; the welcome email omits the receipt
+              // line and a future backfill job can fill it in.
+              let preResolveAttempted = false;
               if (!receiptUrl && preResolved && preResolved.id === pi.id) {
                 receiptUrl = preResolved.receiptUrl;
                 chargeId = chargeId ?? preResolved.chargeId;
+                preResolveAttempted = true;
               }
               await this.guestCheckout.handlePaymentSucceeded(
                 pi.id,
-                { chargeId, receiptUrl },
+                { chargeId, receiptUrl, preResolveAttempted },
               );
             }
             break;

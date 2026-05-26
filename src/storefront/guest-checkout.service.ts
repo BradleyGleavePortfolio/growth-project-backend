@@ -665,9 +665,22 @@ export class GuestCheckoutService {
   // callers without the upgraded billing dispatcher still work; the
   // receipt simply ends up null and gets filled in by a later replay or
   // operator-driven backfill.
+  //
+  // A276-F2-P2-1 — `preResolveAttempted` is set by BillingService when it
+  // already ran the outside-tx receipt lookup (success OR failure). When
+  // true and `receiptUrl` is null, the inner resolveReceiptUrl MUST NOT
+  // attempt another Stripe HTTP call (otherwise we re-introduce the
+  // in-transaction HTTP anti-pattern P1-3 was supposed to eliminate, on
+  // the Stripe-blip degraded path). The welcome email simply ships
+  // without the receipt line and an outbox/backfill job can fill it in
+  // later.
   async handlePaymentSucceeded(
     paymentIntentId: string,
-    chargeInfo?: { chargeId: string | null; receiptUrl: string | null },
+    chargeInfo?: {
+      chargeId: string | null;
+      receiptUrl: string | null;
+      preResolveAttempted?: boolean;
+    },
   ): Promise<void> {
     try {
       // Atomic pending→paid transition. updateMany with WHERE status =
@@ -773,13 +786,33 @@ export class GuestCheckoutService {
   // hands the result back via the chargeInfo argument so the inner call
   // (still made from handlePaymentSucceeded) short-circuits on the https
   // guard at the top of the method.
+  //
+  // A276-F2-P2-1 — when `preResolveAttempted` is true, BillingService
+  // already issued the Stripe HTTP lookup OUTSIDE the transaction; the
+  // result (success or null on Stripe blip) is final. We MUST NOT retry
+  // a second Stripe HTTP call here, because this method is invoked from
+  // handlePaymentSucceeded WHICH RUNS INSIDE BillingService's outer
+  // `$transaction` await — holding the Postgres connection across a
+  // Stripe round-trip is exactly the anti-pattern P1-3 was supposed to
+  // eliminate. On the degraded path (Stripe blip during pre-resolve),
+  // the receipt URL stays null, the welcome email omits the receipt
+  // line, and a future reconciliation/backfill job can fill it in.
   async resolveReceiptUrl(
     paymentIntentId: string,
-    chargeInfo?: { chargeId: string | null; receiptUrl: string | null },
+    chargeInfo?: {
+      chargeId: string | null;
+      receiptUrl: string | null;
+      preResolveAttempted?: boolean;
+    },
   ): Promise<string | null> {
     const fromEvent = chargeInfo?.receiptUrl;
     if (typeof fromEvent === 'string' && /^https:\/\//.test(fromEvent)) {
       return fromEvent;
+    }
+    // A276-F2-P2-1 — pre-resolve was attempted outside-tx. Honour the
+    // null result; do not retry HTTP from inside the outer transaction.
+    if (chargeInfo?.preResolveAttempted === true) {
+      return null;
     }
     let chargeId = chargeInfo?.chargeId ?? null;
     try {

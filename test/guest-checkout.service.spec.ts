@@ -843,6 +843,77 @@ describe('GuestCheckoutService', () => {
       expect(persistAttempts).toHaveLength(0);
     });
 
+    // A276-F2-P2-1 — degraded-path Stripe blip MUST NOT trigger a second
+    // HTTP call inside the outer $transaction. BillingService signals
+    // `preResolveAttempted=true` when the outside-tx Stripe lookup ran
+    // (success or failure). resolveReceiptUrl honours that flag and
+    // returns null immediately instead of calling stripe.retrieveCharge
+    // again from inside the tx — the exact anti-pattern P1-3 was meant
+    // to eliminate.
+    it('A276-F2-P2-1: resolveReceiptUrl skips Stripe HTTP when preResolveAttempted=true and receiptUrl=null', async () => {
+      const url = await service.resolveReceiptUrl('pi_blip', {
+        chargeId: 'ch_blip',
+        receiptUrl: null,
+        preResolveAttempted: true,
+      });
+      expect(url).toBeNull();
+      expect(stripe.retrieveCharge).not.toHaveBeenCalled();
+      expect(stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+    });
+
+    it('A276-F2-P2-1: resolveReceiptUrl still uses pre-resolved https URL when preResolveAttempted=true (happy path)', async () => {
+      const url = await service.resolveReceiptUrl('pi_happy', {
+        chargeId: 'ch_happy',
+        receiptUrl: 'https://pay.stripe.com/receipts/abc',
+        preResolveAttempted: true,
+      });
+      expect(url).toBe('https://pay.stripe.com/receipts/abc');
+      expect(stripe.retrieveCharge).not.toHaveBeenCalled();
+      expect(stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+    });
+
+    it('A276-F2-P2-1: handlePaymentSucceeded with preResolveAttempted=true + null URL does NOT call retrieveCharge', async () => {
+      // The degraded path: BillingService already tried, Stripe was
+      // down, we proceed with null URL. The inner handler MUST NOT
+      // retry Stripe (it would be inside the outer billing tx).
+      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+      const row = paidCheckoutRow();
+      prisma.guestCheckout.findUnique
+        .mockResolvedValueOnce(row)
+        .mockResolvedValueOnce(row);
+      supabaseAdminMock.createUser.mockResolvedValueOnce({
+        data: { user: { id: 'sb-blip' } },
+        error: null,
+      });
+      prisma.connectAccount.findUnique.mockResolvedValueOnce({
+        stripe_account_id: 'acct_dest',
+      });
+      prisma.user.upsert.mockResolvedValueOnce({
+        id: 'usr-blip',
+        coach_id: 'coach-1',
+      });
+      prisma.clientPurchase.findFirst.mockResolvedValueOnce(null);
+      prisma.clientPurchase.create.mockResolvedValueOnce({ id: 'cp-blip' });
+      prisma.guestCheckout.update.mockResolvedValueOnce({});
+
+      await service.handlePaymentSucceeded('pi_r', {
+        chargeId: 'ch_blip',
+        receiptUrl: null,
+        preResolveAttempted: true,
+      });
+
+      // No in-tx Stripe HTTP fired on the degraded path.
+      expect(stripe.retrieveCharge).not.toHaveBeenCalled();
+      expect(stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+      // receipt_url is never persisted (still null).
+      const persistAttempts = prisma.guestCheckout.updateMany.mock.calls.filter(
+        (c: unknown[]) =>
+          (c[0] as { data?: { receipt_url?: string } })?.data?.receipt_url !==
+          undefined,
+      );
+      expect(persistAttempts).toHaveLength(0);
+    });
+
     // Regression — application_fee_amount (2% TGP platform fee plus the
     // Stripe pass-through estimate) is unchanged by the receipt wiring.
     // The PI create path runs at createIntent time; receipt resolution

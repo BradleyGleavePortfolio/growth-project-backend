@@ -267,6 +267,86 @@ describe('BillingService — checkout webhook routing', () => {
       expect(args[1].chargeId).toBe('ch_guest');
       expect(args[1].receiptUrl).toBeNull();
     });
+
+    // A276-F2-P2-1 — Stripe-blip degraded path: BillingService MUST tell
+    // handlePaymentSucceeded that pre-resolve was already attempted so the
+    // inner resolveReceiptUrl short-circuits without issuing a SECOND
+    // Stripe HTTP call. Without this flag, on a continuing Stripe outage
+    // the inner resolver would attempt `stripe.retrieveCharge(chargeId)`
+    // again — INSIDE BillingService's outer `prisma.$transaction` await
+    // — reintroducing the in-tx HTTP anti-pattern P1-3 was meant to
+    // eliminate.
+    it('A276-F2-P2-1: sets preResolveAttempted=true on the degraded (null URL) path', async () => {
+      const guestCheckout = {
+        resolveReceiptUrl: jest.fn(async () => {
+          // Pre-resolve fails (Stripe blip).
+          throw new Error('stripe down');
+        }),
+        handlePaymentSucceeded: jest.fn(async () => {}),
+      };
+      const svcWithGuest = new BillingService(
+        prisma,
+        { capture: jest.fn(), identify: jest.fn() } as any,
+        { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any,
+        connect,
+        checkout,
+        undefined,
+        guestCheckout as any,
+      );
+
+      await svcWithGuest.handleEvent(buildGuestPi());
+
+      const args: any[] = (guestCheckout.handlePaymentSucceeded as jest.Mock).mock.calls[0] ?? [];
+      expect(args[1]).toEqual(
+        expect.objectContaining({
+          chargeId: 'ch_guest',
+          receiptUrl: null,
+          preResolveAttempted: true,
+        }),
+      );
+    });
+
+    it('A276-F2-P2-1: sets preResolveAttempted=true on the happy path so the inner resolver never reissues HTTP', async () => {
+      const guestCheckout = {
+        resolveReceiptUrl: jest.fn(
+          async () => 'https://pay.stripe.com/receipts/test',
+        ),
+        handlePaymentSucceeded: jest.fn(async () => {}),
+      };
+      const svcWithGuest = new BillingService(
+        prisma,
+        { capture: jest.fn(), identify: jest.fn() } as any,
+        { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any,
+        connect,
+        checkout,
+        undefined,
+        guestCheckout as any,
+      );
+
+      // Use an event whose payload does NOT already carry the receipt
+      // URL inline (latest_charge is a string), so the pre-resolved URL
+      // is the only source.
+      await svcWithGuest.handleEvent({
+        id: 'evt_pi_succ_happy',
+        type: 'payment_intent.succeeded' as const,
+        data: {
+          object: {
+            id: 'pi_guest',
+            metadata: { guest_checkout_idempotency_key: 'idem-test-1' },
+            latest_charge: 'ch_guest',
+          },
+        },
+      });
+
+      const args: any[] = (guestCheckout.handlePaymentSucceeded as jest.Mock).mock.calls[0] ?? [];
+      expect(args[1]).toEqual(
+        expect.objectContaining({
+          chargeId: 'ch_guest',
+          receiptUrl: 'https://pay.stripe.com/receipts/test',
+          preResolveAttempted: true,
+        }),
+      );
+    });
   });
 
   it('rolls back the whole transaction when the checkout handler throws (no half-write)', async () => {
