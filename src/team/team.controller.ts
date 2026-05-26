@@ -119,6 +119,12 @@ export class TeamController {
     @Param('sub_coach_id') subCoachId: string,
     @Body() body: UpdateRevenueSharingDto,
   ) {
-    return this.team.setRevenueSharing(req.user.id, subCoachId, body.enabled);
+    return this.team.setRevenueSharing(
+      req.user.id,
+      subCoachId,
+      body.enabled,
+      req.user.id,
+      req.user.role,
+    );
   }
 }

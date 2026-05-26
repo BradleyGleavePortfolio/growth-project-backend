@@ -133,6 +133,12 @@ export const AuditAction = {
   SUB_COACH_CLIENT_ASSIGNED: 'sub_coach.client_assigned',
   SUB_COACH_CLIENT_REASSIGNED: 'sub_coach.client_reassigned',
   SUB_COACH_CLIENT_UNASSIGNED: 'sub_coach.client_unassigned',
+
+  // --- Team / revenue-sharing (SOC2-material financial mutations) ---
+  // Fired when a head coach enables or disables a sub-coach's revenue split.
+  // previous_split_percent and new_split_percent are integer percentages
+  // (0 or 5 under current policy). Record is append-only; no PII in metadata.
+  TEAM_REVENUE_SHARING_UPDATED: 'team.revenue_sharing.updated',
 } as const;
 
 export type AuditActionValue = (typeof AuditAction)[keyof typeof AuditAction];
