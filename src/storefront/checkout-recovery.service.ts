@@ -97,9 +97,23 @@ export class CheckoutRecoveryService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     const redisUrl = this.config.get<string>('REDIS_URL');
+    const nodeEnv =
+      this.config.get<string>('NODE_ENV') ?? process.env.NODE_ENV ?? 'development';
+    const isProd = nodeEnv === 'production';
     if (!redisUrl) {
+      // A276-F5-P1-1 — REDIS_URL is REQUIRED in production. The in-memory
+      // fallback is single-process only; with ≥2 Fly machines behind a
+      // load balancer it cannot enforce single-use across the cluster,
+      // which defeats the whole point of the single-use guard.
+      if (isProd) {
+        const msg =
+          'CheckoutRecoveryService: REDIS_URL is required in production — refusing to boot. ' +
+          'The in-memory single-use guard is single-process and unsafe across the Fly cluster.';
+        this.logger.error(msg);
+        throw new Error(msg);
+      }
       this.logger.log(
-        'CheckoutRecoveryService: REDIS_URL unset — using in-memory single-use guard (single-process)',
+        'CheckoutRecoveryService: REDIS_URL unset — using in-memory single-use guard (single-process, dev/test only)',
       );
       return;
     }
@@ -111,10 +125,29 @@ export class CheckoutRecoveryService implements OnModuleInit {
       await this.redis.connect();
       this.logger.log('CheckoutRecoveryService: Redis single-use guard connected');
     } catch (err) {
+      // A276-F5-P1-1 — fail CLOSED in production. A boot-time Redis
+      // outage previously silently demoted us to the in-memory guard,
+      // re-opening the cross-machine replay window the JWT-jti work was
+      // designed to close. Refuse to start instead — the process
+      // supervisor (Fly) will retry until Redis is reachable.
+      const detail = err instanceof Error ? err.message : 'unknown';
+      if (isProd) {
+        this.logger.error(
+          `CheckoutRecoveryService: Redis connect failed in production — refusing to boot: ${detail}`,
+        );
+        // Best-effort cleanup of any half-open client before bubbling.
+        try {
+          this.redis?.disconnect?.();
+        } catch {
+          /* ignore — we're already aborting boot */
+        }
+        this.redis = null;
+        throw err instanceof Error
+          ? err
+          : new Error(`CheckoutRecoveryService Redis connect failed: ${detail}`);
+      }
       this.logger.warn(
-        `CheckoutRecoveryService: Redis unavailable, falling back to in-memory: ${
-          err instanceof Error ? err.message : 'unknown'
-        }`,
+        `CheckoutRecoveryService: Redis unavailable in ${nodeEnv}, falling back to in-memory (dev/test only): ${detail}`,
       );
       this.redis = null;
     }
