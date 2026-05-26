@@ -2950,6 +2950,31 @@ model GuestCheckout {
   /// so a future run skips it without paying the hash compute.
   scrubbed_at DateTime?
 
+  /// r48 Hardening — lost-webhook reconciler bookkeeping.  The
+  /// CheckoutReconcileScheduler scans pending rows older than 30s with
+  /// last_reconciled_at older than 10s and calls
+  /// stripe.paymentIntents.retrieve to recover from a dropped webhook.
+  /// NULL = never reconciled yet.
+  last_reconciled_at DateTime?
+  /// Capped at 30 polls (5 min). Past that the row is moved to
+  /// `reconcile_failed` and on-call is paged.
+  reconcile_attempts Int       @default(0)
+  /// r48 Hardening — package snapshot taken at PaymentIntent create.
+  /// Guards against a coach editing the package mid-checkout: the guest
+  /// gets the price/name they saw at intent time, not at fulfillment
+  /// time. Shape: { name, price_cents, currency, description, billing_period }.
+  package_snapshot   Json?
+  /// r48 Hardening — refund/dispute bookkeeping.  Stripe's charge.refunded
+  /// → refunded_at + status='refunded'.  charge.dispute.created →
+  /// disputed_at + dispute_reason + status='disputed'.  Coach is alerted
+  /// via the existing notifications path.
+  refunded_at        DateTime?
+  disputed_at        DateTime?
+  dispute_reason     String?   @db.VarChar(500)
+  /// r48 Hardening — branded PDF receipt URL (local:// in dev, s3:// in
+  /// prod). Set by the post-success ReceiptScheduler after generation.
+  receipt_url        String?
+
   @@index([package_id])
   @@index([status])
   // Audit #4 P2-6 — raw email index removed. Indexing guest_email
@@ -2967,6 +2992,10 @@ model GuestCheckout {
   // Audit #3 P2-3 — scrub worker scans rows whose data_retention_at
   // has elapsed and that have not been scrubbed yet.
   @@index([data_retention_at, scrubbed_at])
+  // r48 — lost-webhook reconciler scans pending rows ordered by
+  // (status, last_reconciled_at NULLS FIRST). The composite serves
+  // both the filter and the order-by.
+  @@index([status, last_reconciled_at])
 }
 
 // Phase 3 Connect — Per-client Stripe Customer on the platform account.

@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -11,6 +12,7 @@ import type {
   GuestCheckout,
   User,
 } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import {
   StripeConnectApiError,
@@ -26,6 +28,8 @@ import {
 import { isConnectAccountReadyForCheckout } from './storefront.service';
 import type { GuestCheckoutDto } from './storefront.dto';
 import type { GuestCheckoutResult } from './storefront.types';
+import { CheckoutIdempotencyService } from './checkout-idempotency.service';
+import { ConnectPreflightService } from './connect-preflight.service';
 
 // Platform cut on every guest checkout. Stripe's minimum application_fee
 // is 50 cents — packages priced low enough that 2% falls below the floor
@@ -156,6 +160,17 @@ export class GuestCheckoutService {
     private readonly stripe: StripeConnectApiService,
     private readonly supabase: SupabaseService,
     private readonly config: ConfigService,
+    // r48 #3 — content-addressable PI cache so a network-dropped
+    // retry that rolled a fresh idempotency_key still reuses the
+    // existing Stripe PaymentIntent.  @Optional() so legacy unit
+    // tests that hand-construct this service via Test.createTestingModule
+    // don't need to register a stub.
+    @Optional()
+    private readonly idempotencyCache?: CheckoutIdempotencyService,
+    // r48 #7 + #8 — live Stripe Connect preflight (60s cache).  Same
+    // optional wiring as above.
+    @Optional()
+    private readonly preflight?: ConnectPreflightService,
   ) {}
 
   // POST /v1/packages/public/join/:token/checkout
@@ -211,6 +226,35 @@ export class GuestCheckoutService {
       });
     }
 
+    // r48 #7 — live Stripe preflight (60s Redis cache).  The mirror
+    // check above is the stable baseline; this catches a coach who
+    // disconnected Stripe after the GET resolved but before the POST.
+    // Cache lookups are O(1); cache miss is one Stripe API call per
+    // 60s per connected account.
+    let walletSupports: { apple: boolean; google: boolean } = {
+      apple: false,
+      google: false,
+    };
+    if (this.preflight) {
+      const live = await this.preflight.getReadiness(
+        connectAccount.stripe_account_id,
+      );
+      if (!live.charges_enabled) {
+        this.logger.warn(
+          `Checkout preflight: live charges disabled for ${connectAccount.stripe_account_id} (disabled_reason=${live.disabled_reason ?? 'null'})`,
+        );
+        throw new ServiceUnavailableException({
+          error: 'COACH_PAYOUT_DISABLED',
+          message:
+            'This coach is not currently accepting payments. Please contact them directly.',
+        });
+      }
+      walletSupports = {
+        apple: live.supports_apple_pay,
+        google: live.supports_google_pay,
+      };
+    }
+
     // Audit #3 P1-5 — recurring packages cannot be sold through Phase 1
     // guest checkout. The previous guard checked the display labels
     // (`monthly`/`quarterly`/`annual`) which live in the interval
@@ -257,6 +301,41 @@ export class GuestCheckoutService {
 
     const normalisedEmail = dto.guest_email.toLowerCase().trim();
     const normalisedName = dto.guest_name.trim();
+
+    // r48 #3 — content-addressable idempotency check.  When the
+    // storefront supplies a session_id, hash (token + email + session_id)
+    // and look up a previously-minted PaymentIntent.  This rescues the
+    // network-drop case where the client rolled a fresh idempotency_key
+    // but is conceptually retrying the same checkout.
+    const contentHash =
+      this.idempotencyCache && dto.session_id
+        ? this.idempotencyCache.computeHash(token, normalisedEmail, dto.session_id)
+        : null;
+    if (this.idempotencyCache && contentHash) {
+      const cached = await this.idempotencyCache.lookupDecrypted(contentHash);
+      if (cached) {
+        // Cross-reference the DB row to make sure the cached PI hasn't
+        // been moved to a terminal state by Stripe.  If the row no longer
+        // exists or is no longer eligible for retry, fall through to the
+        // normal path and let the DB+Stripe checks decide.
+        const cachedRow = await this.prisma.guestCheckout.findUnique({
+          where: { stripe_payment_intent_id: cached.payment_intent_id },
+        });
+        if (
+          cachedRow &&
+          (cachedRow.status === 'pending' || cachedRow.status === 'paid') &&
+          cachedRow.expires_at > new Date()
+        ) {
+          return {
+            client_secret: cached.client_secret,
+            payment_intent_id: cached.payment_intent_id,
+            guest_checkout_id: cachedRow.id,
+            supports_apple_pay: walletSupports.apple,
+            supports_google_pay: walletSupports.google,
+          };
+        }
+      }
+    }
 
     // Fast-path: existing row for the same idempotency_key. We do this
     // BEFORE minting a Stripe PI so honest retries from the storefront
@@ -338,6 +417,20 @@ export class GuestCheckoutService {
           // hashes guest_email and redacts guest_name past this
           // deadline if the row never converted to a User.
           data_retention_at: new Date(Date.now() + PII_RETENTION_MS),
+          // r48 #6 — package snapshot at PI create time so a coach
+          // editing the package mid-checkout does not change what the
+          // guest is billed.  The amount, currency, and platform fee
+          // already capture in the Stripe PaymentIntent itself; the
+          // snapshot is what the receipt + admin tools render against.
+          package_snapshot: {
+            name: pkg.name,
+            price_cents: pkg.amount_cents,
+            currency: pkg.currency,
+            description: pkg.description ?? null,
+            billing_type: pkg.billing_type,
+            interval: pkg.interval ?? null,
+            interval_count: pkg.interval_count ?? null,
+          } as Prisma.InputJsonValue,
         },
       });
     } catch (err) {
@@ -434,10 +527,27 @@ export class GuestCheckoutService {
       if (!this.isUniqueViolation(err)) throw err;
     }
 
+    // r48 #3 — record the (PI id, secret) in the content-addressable
+    // cache so a future retry with the same (token, email, session_id)
+    // gets the existing secret back instead of minting a new PI.  KMS
+    // encrypts the secret at rest.  Best-effort: a cache write failure
+    // does NOT roll back the checkout.
+    if (this.idempotencyCache && contentHash) {
+      this.idempotencyCache
+        .checkOrStore(contentHash, paymentIntent.id, paymentIntent.client_secret)
+        .catch((err) => {
+          this.logger.warn(
+            `idempotency cache store failed (tag=${safeErrorTag(err)})`,
+          );
+        });
+    }
+
     return {
       client_secret: paymentIntent.client_secret,
       payment_intent_id: paymentIntent.id,
       guest_checkout_id: sentinel.id,
+      supports_apple_pay: walletSupports.apple,
+      supports_google_pay: walletSupports.google,
     };
   }
 
@@ -600,6 +710,90 @@ export class GuestCheckoutService {
     }
   }
 
+  // r48 #13 — refund handler.  Called by BillingService on
+  // charge.refunded webhooks AFTER the existing
+  // RefundDisputeHandlerService has refused the event (no matching
+  // ClientPurchase).  We claim the event only when the charge maps
+  // to a GuestCheckout via payment_intent; otherwise no-op.
+  //
+  // Returns { claimed: true } when we matched + updated.  Idempotent:
+  // updateMany with WHERE refunded_at IS NULL collapses re-deliveries.
+  async handleChargeRefunded(
+    paymentIntentId: string,
+    chargeAmount: number,
+    amountRefunded: number,
+  ): Promise<{ claimed: boolean }> {
+    try {
+      const row = await this.prisma.guestCheckout.findUnique({
+        where: { stripe_payment_intent_id: paymentIntentId },
+      });
+      if (!row) return { claimed: false };
+      const fullyRefunded = amountRefunded >= chargeAmount;
+      const newStatus = fullyRefunded ? 'refunded' : row.status;
+      const claim = await this.prisma.guestCheckout.updateMany({
+        where: {
+          stripe_payment_intent_id: paymentIntentId,
+          refunded_at: null,
+        },
+        data: {
+          status: newStatus,
+          refunded_at: new Date(),
+        },
+      });
+      if (claim.count === 0) {
+        // Already processed by a prior delivery.
+        return { claimed: true };
+      }
+      this.logger.log(
+        `guest checkout refunded: pi=${paymentIntentId} amount_refunded=${amountRefunded}/${chargeAmount} (full=${fullyRefunded})`,
+      );
+      return { claimed: true };
+    } catch (err) {
+      this.logger.error(
+        `handleChargeRefunded crashed (tag=${safeErrorTag(err)})`,
+      );
+      return { claimed: false };
+    }
+  }
+
+  // r48 #13 — dispute opened handler.
+  async handleDisputeOpened(
+    paymentIntentId: string,
+    reason: string | null,
+  ): Promise<{ claimed: boolean }> {
+    try {
+      const claim = await this.prisma.guestCheckout.updateMany({
+        where: {
+          stripe_payment_intent_id: paymentIntentId,
+          disputed_at: null,
+        },
+        data: {
+          status: 'disputed',
+          disputed_at: new Date(),
+          dispute_reason: (reason ?? '').slice(0, 500) || null,
+        },
+      });
+      if (claim.count === 0) {
+        // No row matched OR already disputed.  Look up the row to
+        // disambiguate before declaring no-claim.
+        const row = await this.prisma.guestCheckout.findUnique({
+          where: { stripe_payment_intent_id: paymentIntentId },
+        });
+        if (!row) return { claimed: false };
+        return { claimed: true };
+      }
+      this.logger.warn(
+        `guest checkout disputed: pi=${paymentIntentId} reason=${reason ?? 'none'}`,
+      );
+      return { claimed: true };
+    } catch (err) {
+      this.logger.error(
+        `handleDisputeOpened crashed (tag=${safeErrorTag(err)})`,
+      );
+      return { claimed: false };
+    }
+  }
+
   // ── Account creation flow ──────────────────────────────────────────────
   // Runs INLINE in the webhook (P1-4) so the conversion is durable. A
   // re-entry for a row already in 'converted' state is a no-op; any
@@ -677,27 +871,34 @@ export class GuestCheckoutService {
 
     try {
       await this.prisma.$transaction(async (tx) => {
-        // Upsert the Prisma User row mirrored from Supabase. If a User
-        // already exists (existing customer paying with the same email),
-        // we keep their coach_id intact rather than re-routing them
-        // to a new coach.
-        let dbUser = await tx.user.findUnique({
+        // r48 #12 — atomic user upsert.  Two parallel webhook deliveries
+        // (Stripe retries the same event id, our outer dedup is bypassed
+        // by a clock-skew or replica-lag race) used to both pass the
+        // findUnique → create path and one would P2002 on supabase_id.
+        // Now we always go through Prisma's upsert which collapses the
+        // race to a single CREATE INSERT ... ON CONFLICT under the hood.
+        //
+        // The 'create' side initialises coach_id; the 'update' side
+        // ONLY attaches coach_id when the existing row has none (the
+        // orphan-account heal path), so an existing client paying for
+        // a second coach's package doesn't get silently re-routed.
+        let dbUser = await tx.user.upsert({
           where: { supabase_id: supabaseUserId },
+          create: {
+            supabase_id: supabaseUserId,
+            email: checkout.guest_email,
+            name: checkout.guest_name,
+            role: 'student',
+            coach_id: checkout.package.coach_id,
+          },
+          update: {},
         });
-        if (!dbUser) {
-          dbUser = await tx.user.create({
-            data: {
-              supabase_id: supabaseUserId,
-              email: checkout.guest_email,
-              name: checkout.guest_name,
-              role: 'student',
-              coach_id: checkout.package.coach_id,
-            },
-          });
-        } else if (dbUser.coach_id == null) {
+        if (dbUser.coach_id == null) {
           // User existed but had no coach (rare — orphaned account).
-          // Attach them to the package's coach.
-          await tx.user.update({
+          // Attach them to the package's coach.  Done as a separate
+          // update so the upsert's 'update' branch stays a strict no-op
+          // when the row already has a coach (no accidental re-routing).
+          dbUser = await tx.user.update({
             where: { id: dbUser.id },
             data: { coach_id: checkout.package.coach_id },
           });

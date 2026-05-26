@@ -63,7 +63,12 @@ interface PrismaMocks {
     updateMany: jest.Mock;
     deleteMany: jest.Mock;
   };
-  user: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock };
+  user: {
+    findUnique: jest.Mock;
+    create: jest.Mock;
+    update: jest.Mock;
+    upsert: jest.Mock; // r48 #12 — atomic upsert path
+  };
   clientPurchase: { findFirst: jest.Mock; create: jest.Mock };
   connectAccount: { findUnique: jest.Mock };
   $transaction: jest.Mock;
@@ -83,6 +88,10 @@ function buildPrismaMocks(): PrismaMocks {
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      // r48 #12 — convertGuestToUser now uses tx.user.upsert.  Default
+      // behaviour matches the old (findUnique → create) path: return
+      // the freshly-stubbed user row on first call.
+      upsert: jest.fn(),
     },
     clientPurchase: { findFirst: jest.fn(), create: jest.fn() },
     connectAccount: {
@@ -461,7 +470,8 @@ describe('GuestCheckoutService', () => {
         stripe_account_id: 'acct_dest',
       });
       prisma.user.findUnique.mockResolvedValueOnce(null);
-      prisma.user.create.mockResolvedValueOnce({
+      // r48 #12 — convertGuestToUser now uses tx.user.upsert.
+      prisma.user.upsert.mockResolvedValueOnce({
         id: 'usr-1',
         coach_id: 'coach-1',
       });
@@ -625,7 +635,8 @@ describe('GuestCheckoutService', () => {
         .mockResolvedValueOnce({ data: { users: page1Users } })
         .mockResolvedValueOnce({ data: { users: page2Users } });
       prisma.user.findUnique.mockResolvedValueOnce(null);
-      prisma.user.create.mockResolvedValueOnce({
+      // r48 #12 — atomic upsert path.
+      prisma.user.upsert.mockResolvedValueOnce({
         id: 'usr-2',
         coach_id: 'coach-1',
       });
@@ -640,7 +651,8 @@ describe('GuestCheckoutService', () => {
       expect(supabaseAdminMock.listUsers.mock.calls[0][0].page).toBe(1);
       expect(supabaseAdminMock.listUsers.mock.calls[1][0].page).toBe(2);
       // User row created against the matched existing Supabase id.
-      expect(prisma.user.create.mock.calls[0][0].data.supabase_id).toBe(
+      // r48 #12 — upsert.where carries the supabase_id, not the create payload.
+      expect(prisma.user.upsert.mock.calls[0][0].where.supabase_id).toBe(
         'sb-match',
       );
     });
