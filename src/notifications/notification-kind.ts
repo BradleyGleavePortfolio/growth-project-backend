@@ -47,6 +47,14 @@ export const NotificationKind = {
   BOOKING_RESCHEDULED: 'booking_rescheduled',
   BOOKING_REMINDER_24H: 'booking_reminder_24h',
   BOOKING_REMINDER_1H: 'booking_reminder_1h',
+
+  // r50 Dunning v1 — failed-payment recovery lifecycle. One cluster
+  // ("dunning_*") so a coach can mute all of them with a single
+  // preference toggle if they're set up via auto-pay on a different card.
+  DUNNING_RETRY_ATTEMPT: 'dunning_retry_attempt',
+  DUNNING_FINAL_WARNING: 'dunning_final_warning',
+  DUNNING_RECOVERED: 'dunning_recovered',
+  DUNNING_CHURNED: 'dunning_churned',
 } as const;
 
 export type NotificationKindValue = (typeof NotificationKind)[keyof typeof NotificationKind];

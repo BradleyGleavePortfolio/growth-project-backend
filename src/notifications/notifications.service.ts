@@ -115,6 +115,13 @@ export class NotificationsService {
         booking_email: false,
         booking_push: true,
         booking_inapp: true,
+        // r50 Dunning — recovery lifecycle defaults. Email + in-app ON
+        // by default; this is account-critical comms (payment failed,
+        // last warning, recovered, churned). A coach can mute via
+        // PATCH /v1/notifications/preferences when launched.
+        dunning_email: true,
+        dunning_push: false,
+        dunning_inapp: true,
       };
     }
     return prefs;
@@ -631,6 +638,9 @@ export class NotificationsService {
     if (kind.startsWith('coach_alert')) return 'coach_alert';
     if (kind.startsWith('booking')) return 'booking';
     if (kind.startsWith('fasting')) return 'fasting';
+    // r50 — all dunning_* kinds share a single preference cluster so a
+    // coach can mute the whole recovery lifecycle with one toggle.
+    if (kind.startsWith('dunning')) return 'dunning';
     if (kind.includes('digest')) return 'digest';
     return 'digest'; // safe default — falls back to digest prefs
   }
