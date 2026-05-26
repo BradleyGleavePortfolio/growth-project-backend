@@ -627,6 +627,18 @@ export const ENV_RULES: EnvRule[] = [
       'R43 — stable per-deploy salt fed into sha256(lower(email) || salt) for GuestCheckoutPiiScrubService. REQUIRED in staging/production: prodHardenedFeatureVars refuses to boot without it (see below) because a missing salt would fall back to the dev constant baked into the repo, producing reversible hashes against any known email list and defeating the GDPR retention scrub. Dev/test use a deterministic build-time constant. Rotate only when the historical hashes need to be invalidated.',
   },
   {
+    name: 'CHECKOUT_RECOVERY_SECRET',
+    tier: 'feature',
+    reason:
+      'r48 / audit A276-P1-1 — HS256 key shared by CheckoutRecoveryService (signs the 15-minute magic-link JWT used to resume an abandoned checkout) AND CheckoutCookieService (signs the 7-day guest_session cookie). MUST be ≥32 chars of high-entropy data. REQUIRED in production: prodHardenedFeatureVars (see assertEnv) refuses to boot when missing or shorter than 32 chars under NODE_ENV=production. The recovery service throws 400 at request time when missing (loud failure), but the cookie service silently no-ops (failure #36), so a missing secret would deploy with the 7-day guest session cookie disabled and nobody would notice. The `validate` callback below surfaces the same ≥32 floor as a warning in dev/staging so contributors see the issue before pushing. Dev/test can leave it unset; both services skip / 400 with a clear message.',
+    validate: (v) => {
+      if (v.trim().length < 32) {
+        return 'CHECKOUT_RECOVERY_SECRET must be at least 32 characters long.';
+      }
+      return null;
+    },
+  },
+  {
     name: 'RESEND_FROM_EMAIL',
     tier: 'feature',
     reason:
@@ -926,7 +938,16 @@ export function assertEnv(
     // misroute production traffic belong here. Anything that returns a
     // 4xx at request time (Stripe API key) is fine to stay feature-tier
     // without this extra gate.
-    const prodHardenedFeatureVars: Array<{ name: string; reason: string }> = [
+    // Each entry asserts the var is present in prod. An optional `minLength`
+    // also asserts the trimmed value is at least N chars long — use this for
+    // secrets where a too-short value would degrade silently at runtime (the
+    // service no-ops or falls back to a dev default) rather than fail loudly.
+    // Entries without `minLength` keep the original presence-only semantics.
+    const prodHardenedFeatureVars: Array<{
+      name: string;
+      reason: string;
+      minLength?: number;
+    }> = [
       {
         name: 'PUBLIC_INVITE_BASE_URL',
         reason:
@@ -981,6 +1002,12 @@ export function assertEnv(
         reason:
           'Audit #5 P0-2 — StorefrontService.getPublicPackageByToken returns 503 SERVICE_UNAVAILABLE on every public package request when STRIPE_PUBLISHABLE_KEY is unset. A clean prod deploy without it passes boot then silently 503s the entire storefront. Must be the publishable counterpart (pk_test_*/pk_live_*) of STRIPE_SECRET_KEY.',
       },
+      {
+        name: 'CHECKOUT_RECOVERY_SECRET',
+        minLength: 32,
+        reason:
+          'r48 — signs the 15-minute checkout recovery JWT AND the 7-day guest session cookie. MUST be ≥32 chars; boot refuses to start prod when missing because the cookie path silently no-ops on missing secret (failure #36, audit A276-P1-1).',
+      },
     ];
     const missing = prodHardenedFeatureVars.filter(
       (v) => {
@@ -995,10 +1022,22 @@ export function assertEnv(
             (typeof b === 'string' && b.trim().length > 0);
           return !ok;
         }
-        return (
-          typeof env[v.name] !== 'string' ||
-          env[v.name]!.trim().length === 0
-        );
+        const raw = env[v.name];
+        if (typeof raw !== 'string' || raw.trim().length === 0) {
+          return true;
+        }
+        // Audit A276-P1-1 — entries may opt into a minimum-length gate so
+        // a too-short secret (which would silently no-op at runtime in at
+        // least one consumer) is treated identically to a missing one.
+        // Presence-only entries (no minLength) keep their original
+        // behaviour: any non-empty trimmed value passes here.
+        if (
+          typeof v.minLength === 'number' &&
+          raw.trim().length < v.minLength
+        ) {
+          return true;
+        }
+        return false;
       },
     );
     // Audit #5 P1-7 — aggregate every prod-side blocker discovered so far
