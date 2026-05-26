@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConnectModule } from '../connect/connect.module';
+import { CheckoutIdempotencyService } from './checkout-idempotency.service';
 import { GuestCheckoutPiiScrubService } from './guest-checkout-pii-scrub.service';
 import { GuestCheckoutReconciliationService } from './guest-checkout-reconciliation.service';
 import { GuestCheckoutService } from './guest-checkout.service';
@@ -19,6 +20,7 @@ import { StorefrontService } from './storefront.service';
   imports: [
     // ConnectModule re-exports StripeConnectApiService. We need it for
     // Stripe Account reads (publishable key) and PaymentIntent creation.
+    // KmsModule is @Global() — no import needed for CheckoutIdempotencyService.
     ConnectModule,
   ],
   controllers: [StorefrontPublicController],
@@ -29,6 +31,9 @@ import { StorefrontService } from './storefront.service';
     GuestCheckoutPiiScrubService,
     // r48 #2 — lost-webhook reconciler. Cron-driven; no need to export.
     LostWebhookReconcileService,
+    // r48 #3 — content-addressable PI cache (Redis SETNX + KMS-encrypted
+    // client_secret at rest).
+    CheckoutIdempotencyService,
   ],
   exports: [GuestCheckoutService],
 })

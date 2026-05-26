@@ -27,6 +27,7 @@ import {
 import { isConnectAccountReadyForCheckout } from './storefront.service';
 import type { GuestCheckoutDto } from './storefront.dto';
 import type { GuestCheckoutResult } from './storefront.types';
+import { CheckoutIdempotencyService } from './checkout-idempotency.service';
 
 // Platform cut on every guest checkout. Stripe's minimum application_fee
 // is 50 cents — packages priced low enough that 2% falls below the floor
@@ -157,6 +158,12 @@ export class GuestCheckoutService {
     private readonly stripe: StripeConnectApiService,
     private readonly supabase: SupabaseService,
     private readonly config: ConfigService,
+    // r48 #3 — content-addressable PI cache so a network-dropped
+    // retry that rolled a fresh idempotency_key still reuses the
+    // existing Stripe PaymentIntent.  @Optional() not strictly
+    // necessary (the module provides it unconditionally), but defensive
+    // against legacy unit tests that hand-construct this service.
+    private readonly idempotencyCache?: CheckoutIdempotencyService,
   ) {}
 
   // POST /v1/packages/public/join/:token/checkout
@@ -258,6 +265,39 @@ export class GuestCheckoutService {
 
     const normalisedEmail = dto.guest_email.toLowerCase().trim();
     const normalisedName = dto.guest_name.trim();
+
+    // r48 #3 — content-addressable idempotency check.  When the
+    // storefront supplies a session_id, hash (token + email + session_id)
+    // and look up a previously-minted PaymentIntent.  This rescues the
+    // network-drop case where the client rolled a fresh idempotency_key
+    // but is conceptually retrying the same checkout.
+    const contentHash =
+      this.idempotencyCache && dto.session_id
+        ? this.idempotencyCache.computeHash(token, normalisedEmail, dto.session_id)
+        : null;
+    if (this.idempotencyCache && contentHash) {
+      const cached = await this.idempotencyCache.lookupDecrypted(contentHash);
+      if (cached) {
+        // Cross-reference the DB row to make sure the cached PI hasn't
+        // been moved to a terminal state by Stripe.  If the row no longer
+        // exists or is no longer eligible for retry, fall through to the
+        // normal path and let the DB+Stripe checks decide.
+        const cachedRow = await this.prisma.guestCheckout.findUnique({
+          where: { stripe_payment_intent_id: cached.payment_intent_id },
+        });
+        if (
+          cachedRow &&
+          (cachedRow.status === 'pending' || cachedRow.status === 'paid') &&
+          cachedRow.expires_at > new Date()
+        ) {
+          return {
+            client_secret: cached.client_secret,
+            payment_intent_id: cached.payment_intent_id,
+            guest_checkout_id: cachedRow.id,
+          };
+        }
+      }
+    }
 
     // Fast-path: existing row for the same idempotency_key. We do this
     // BEFORE minting a Stripe PI so honest retries from the storefront
@@ -447,6 +487,21 @@ export class GuestCheckoutService {
       });
     } catch (err) {
       if (!this.isUniqueViolation(err)) throw err;
+    }
+
+    // r48 #3 — record the (PI id, secret) in the content-addressable
+    // cache so a future retry with the same (token, email, session_id)
+    // gets the existing secret back instead of minting a new PI.  KMS
+    // encrypts the secret at rest.  Best-effort: a cache write failure
+    // does NOT roll back the checkout.
+    if (this.idempotencyCache && contentHash) {
+      this.idempotencyCache
+        .checkOrStore(contentHash, paymentIntent.id, paymentIntent.client_secret)
+        .catch((err) => {
+          this.logger.warn(
+            `idempotency cache store failed (tag=${safeErrorTag(err)})`,
+          );
+        });
     }
 
     return {
