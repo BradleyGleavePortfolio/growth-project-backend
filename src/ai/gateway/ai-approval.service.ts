@@ -117,12 +117,6 @@ export class AiApprovalService {
     // inline-materialisation path used by WORKOUT_PROGRAM / MEAL_PLAN in
     // `coach-ai.service.ts:approveDraft`.
     let materialisationRef: string | null = null;
-    // True only when a materialiser ran AND reported a committed
-    // side-effect (`status='sent' | 'already_materialised'` with a non-null
-    // ref). The status flip below is gated on this so a race-loser, a
-    // STUCK-CLAIM, or a non-confirming materialiser outcome can NEVER
-    // result in the draft becoming `approved` without a downstream row.
-    let materialisationConfirmed = false;
     if (status === 'approved' && this.materialisers) {
       const materialiser = this.materialisers.resolve(draft.capability);
       if (materialiser) {
@@ -135,7 +129,8 @@ export class AiApprovalService {
             // committed. Refuse to flip status — surfacing 409 lets the
             // caller retry once the winner's outcome is known, and is
             // the only way to preserve the invariant that
-            // `status='approved'` implies a real CoachMessage row.
+            // `status='approved'` implies a real downstream row when
+            // such a row is expected.
             throw new ConflictException({
               error: 'AI_DRAFT_RACE_IN_FLIGHT',
               capability: draft.capability,
@@ -143,17 +138,11 @@ export class AiApprovalService {
                 'Another approver is currently materialising this draft. Retry after their decision settles.',
             });
           }
-          // `sent` and `already_materialised` are the only outcomes that
-          // confirm the side-effect committed; `noop` (no downstream row)
-          // is also a confirmed terminal state for capabilities that
-          // legitimately produce no row.
-          if (
-            result.status === 'sent' ||
-            result.status === 'noop' ||
-            result.status === 'already_materialised'
-          ) {
-            materialisationConfirmed = true;
-          }
+          // `sent` / `already_materialised` carry a non-null ref;
+          // `noop` is a legitimate terminal state for capabilities that
+          // intentionally produce no downstream row. All three are
+          // accepted; the decide-gate below distinguishes them at the
+          // ref level, not via a coarse confirmed-or-not flag.
         } catch (err) {
           if (err instanceof ConflictException) {
             // Don't audit-log the race state as a materialisation failure
@@ -209,20 +198,48 @@ export class AiApprovalService {
     // status='pending' so only the first approver's update lands, and the
     // second sees count=0 and is told to retry.
     //
-    // For approved decisions on capabilities that have a materialiser, we
-    // ADDITIONALLY require `materialised_ref IS NOT NULL`. This is the
-    // invariant that closes the PRODUCT-1 race (P1-1): even if a race-loser
-    // somehow reached this point without observing the winner's commit, the
-    // gate refuses to flip status until the downstream side-effect is
-    // visible. Capabilities with no registered materialiser, and the
-    // 'rejected' path, do not need this extra clause — they preserve the
-    // legacy status-flip-only semantics.
+    // For approved decisions where a materialiser actually committed a
+    // downstream row (`materialisationRef !== null`), we ADDITIONALLY
+    // require `materialised_ref IS NOT NULL`. This is the invariant that
+    // closes the PRODUCT-1 race (P1-1): even if a race-loser somehow
+    // reached this point without observing the winner's commit, the gate
+    // refuses to flip status until the downstream side-effect is visible.
+    //
+    // P2-A round-3: we gate on `materialisationRef !== null` rather than
+    // a broader `materialisationConfirmed` flag. The previous code added
+    // the clause for any non-error materialiser outcome — including
+    // `noop` — which has no ref by definition, so the gate would refuse
+    // to flip and 409 the caller. A `noop` materialiser is legitimate
+    // (the side-effect is a no-op, e.g. an idempotent ack); the gate
+    // should accept it. Approved-without-materialiser and rejected paths
+    // preserve the legacy status-flip-only semantics.
+    //
+    // P1-A round-3: for the 'rejected' path on capabilities with a
+    // registered materialiser, we ADDITIONALLY require
+    // `materialised_at IS NULL` — i.e. no materialiser claim is in
+    // flight. Without this clause a concurrent decide(approve) could be
+    // mid-`sendAsCoach` (claim held, message in flight) while we flip
+    // status to 'rejected' here, ending in `status='rejected',
+    // materialised_ref=non-null` after the approve writes its ref. That
+    // is the same trust-surface failure as PRODUCT-1 with the symptom
+    // flipped (rejected-but-sent). Refusing the reject while at !=
+    // null forces the rejecter to wait for the materialiser to either
+    // succeed (status goes 'approved' — reject no longer applicable) or
+    // rollback (at returns to null — reject can proceed). The 409
+    // returned in that window is the same retry contract the approver
+    // race uses.
     const decideGate: Record<string, unknown> = {
       id: draft.id,
       status: 'pending',
     };
-    if (status === 'approved' && materialisationConfirmed) {
+    if (status === 'approved' && materialisationRef !== null) {
       decideGate.materialised_ref = { not: null };
+    }
+    if (status === 'rejected' && this.materialisers) {
+      const materialiserForCap = this.materialisers.resolve(draft.capability);
+      if (materialiserForCap) {
+        decideGate.materialised_at = null;
+      }
     }
     const decideResult = await this.prisma.aiActionDraft.updateMany({
       where: decideGate,
@@ -288,9 +305,23 @@ export class AiApprovalService {
   // `expires_at` as `expired` and write a single AuditLog row per sweep.
   // Wired to a cron in a follow-up; kept as a service method here so
   // tests and one-off scripts can invoke it directly.
+  //
+  // P1-A round-3: the WHERE clause requires `materialised_at IS NULL` so
+  // we do not flip a draft to 'expired' while a materialiser holds an
+  // active claim mid-`sendAsCoach`. Otherwise the symmetric trust-surface
+  // failure of P1-A would land here too: the draft would end
+  // `status='expired', materialised_ref=non-null` and the client would
+  // have received a message the system regards as expired. Drafts in
+  // STUCK-CLAIM state (at != null, ref = null with no live writer) are
+  // intentionally left for ops to clear; the sweep is a best-effort
+  // hygiene pass, not a forcing function.
   async expireStaleDrafts(now: Date = new Date()): Promise<number> {
     const result = await this.prisma.aiActionDraft.updateMany({
-      where: { status: 'pending', expires_at: { lt: now } },
+      where: {
+        status: 'pending',
+        expires_at: { lt: now },
+        materialised_at: null,
+      },
       data: { status: 'expired' },
     });
     if (result.count > 0) {

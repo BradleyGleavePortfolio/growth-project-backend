@@ -141,13 +141,24 @@ export class CoachMessageMaterializer implements CapabilityMaterializer {
 
     // Optimistic idempotency lock. We claim the right to materialise this
     // draft by setting `materialised_at` in a conditional UPDATE that
-    // requires the column to currently be NULL. If another concurrent
-    // approver beat us to it (or a prior STUCK-CLAIM exists), `count` will
+    // requires:
+    //   - `materialised_at` currently NULL (no in-flight or completed claim).
+    //   - `status` currently 'pending' (P1-A round-3): a concurrent
+    //     `decide(reject)` or `expireStaleDrafts` cron could otherwise flip
+    //     status to 'rejected'/'expired' between our caller's status read
+    //     and this claim. Without the status clause our claim would still
+    //     succeed, sendAsCoach would deliver the message, and the draft
+    //     would end `status='rejected', materialised_ref=non-null` — same
+    //     trust-surface failure as PRODUCT-1 with the symptom flipped
+    //     (rejected-but-sent). The status clause closes that race at the
+    //     same row-lock that protects the at clause.
+    // If another concurrent approver beat us to it (or a prior STUCK-CLAIM
+    // exists, or a concurrent reject/expire flipped status), `count` will
     // be 0 and we enter the race-loser path below. P2-1: a row in state (b)
     // — `materialised_at!=null, materialised_ref=null` — will also produce
     // count=0; the race-loser path's polling + recovery loop handles it.
     const claim = await this.prisma.aiActionDraft.updateMany({
-      where: { id: draft.id, materialised_at: null },
+      where: { id: draft.id, materialised_at: null, status: 'pending' },
       data: { materialised_at: new Date() },
     });
     if (claim.count === 0) {
@@ -234,6 +245,19 @@ export class CoachMessageMaterializer implements CapabilityMaterializer {
           status: 'already_materialised',
           ref: fresh.materialised_ref,
         };
+      }
+      // P1-A round-3: detect a terminal status flip (reject / expired /
+      // already-approved-by-other). Without this check the poll would
+      // observe `materialised_at != null, materialised_ref = null` until
+      // budget exhaustion when the actual cause was a concurrent reject
+      // that beat our claim. We could "spin" pointlessly. Worse, if the
+      // recovery branch below saw `at = null` (a rolled-back winner) we
+      // would recurse into materialize() and try to claim — but with
+      // status flipped, the claim's `status:'pending'` clause would
+      // refuse forever. Detecting the flip here turns that loop into an
+      // immediate 'racing' response so decide() throws 409.
+      if (fresh.status !== 'pending') {
+        return { status: 'racing', ref: null };
       }
       if (!fresh.materialised_at) {
         // Winner rolled back. Re-attempt the claim ourselves. Re-enter
