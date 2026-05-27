@@ -73,7 +73,7 @@ export function redactSecrets(input: string): string {
   );
   out = out.replace(headerRe, '$1[REDACTED]');
   // Mailchimp-style anystring:<api_key> basic-auth (pre-encode form).
-  out = out.replace(/anystring:[A-Za-z0-9\-]+/g, 'anystring:[REDACTED]');
+  out = out.replace(/anystring:[A-Za-z0-9-]+/g, 'anystring:[REDACTED]');
   return out;
 }
 
