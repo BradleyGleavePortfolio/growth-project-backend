@@ -11,12 +11,6 @@ import { AnthropicAdapter } from './adapters/anthropic.adapter';
 import { CoachAIStateService } from './coach/coach-ai-state.service';
 import { COACH_AI_CAPABILITIES } from './coach/coach-ai.constants';
 
-// Perplexity API uses OpenAI-compatible endpoint
-const perplexity = new OpenAI({
-  apiKey: process.env.PERPLEXITY_API_KEY || '',
-  baseURL: 'https://api.perplexity.ai',
-});
-
 // Legacy payload kept exported because other code (e.g. /ai/context for the
 // mobile debug screen) still types against this shape. Internally the
 // ClientAIContext type is the source of truth.
@@ -62,6 +56,27 @@ export interface ChatResult {
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
+
+  // Perplexity uses the OpenAI-compatible HTTP surface, so we reuse the
+  // OpenAI SDK against the Perplexity baseURL. In SDK v5+ the constructor
+  // throws synchronously when no apiKey is provided, so we lazy-init on
+  // first use rather than at module load (which would break tests that
+  // boot the AI module without PERPLEXITY_API_KEY set).
+  private _perplexity: OpenAI | null = null;
+  private getPerplexityClient(): OpenAI {
+    if (!this._perplexity) {
+      const apiKey = process.env.PERPLEXITY_API_KEY?.trim();
+      if (!apiKey) {
+        throw new Error('PERPLEXITY_API_KEY is required for this operation');
+      }
+      this._perplexity = new OpenAI({
+        apiKey,
+        baseURL: 'https://api.perplexity.ai',
+      });
+    }
+    return this._perplexity;
+  }
+
   constructor(
     private prisma: PrismaService,
     private contextSvc: ClientAIContextService,
@@ -327,7 +342,7 @@ Now answer the user's next message using the rules above. Keep the answer under 
         { role: 'user', content: userMessage },
       ];
       try {
-        const response = await perplexity.chat.completions.create({
+        const response = await this.getPerplexityClient().chat.completions.create({
           model: 'sonar-pro',
           messages,
           temperature: 0.7,
