@@ -215,6 +215,30 @@ function makePrismaStub() {
         return { ...row };
       }),
     },
+    // DUNNING-V1 — cadence-attempt rows. recordFailure() schedules these,
+    // recordResolution() flips them to cancelled. Minimal stub.
+    dunningAttempt: {
+      findUnique: jest.fn(async () => null),
+      findFirst: jest.fn(async () => null),
+      findMany: jest.fn(async () => []),
+      create: jest.fn(async ({ data: input }: any) => {
+        const row = { id: 'a-' + ++n, status: 'pending', ...input };
+        (data as any).attempts = (data as any).attempts ?? [];
+        (data as any).attempts.push(row);
+        return { ...row };
+      }),
+      update: jest.fn(async ({ where, data: patch }: any) => {
+        const arr = (data as any).attempts ?? [];
+        const row = arr.find((a: any) => a.id === where.id) ?? {};
+        Object.assign(row, patch);
+        return { ...row };
+      }),
+      updateMany: jest.fn(async () => ({ count: 0 })),
+      deleteMany: jest.fn(async () => ({ count: 0 })),
+    },
+    user: {
+      findUnique: jest.fn(async () => null),
+    },
   };
 }
 
