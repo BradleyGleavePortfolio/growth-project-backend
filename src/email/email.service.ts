@@ -42,6 +42,12 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
   'weekly-digest': 'Your weekly Growth Project summary',
   'payment-receipt': 'Receipt for your Growth Project subscription',
   'dunning-final': 'Final notice — your subscription will be canceled',
+  // NUDGE-V1 — calm, lifestyle subject lines. No exclamation marks,
+  // no urgency, no streak numbers. "Here when you're ready."
+  'nudge-missed-checkin': 'A gentle check-in from The Growth Project',
+  'nudge-streak-broken': 'Your practice is here when you are',
+  'nudge-onboarding-abandoned': 'Pick up where you left off, {{first_name}}',
+  'nudge-inactive': 'Quietly waiting for you, {{first_name}}',
 };
 
 // EmailService is the single entry point for sending transactional email.

@@ -11,6 +11,12 @@ export const EmailTemplateKey = {
   WEEKLY_DIGEST: 'weekly-digest',
   PAYMENT_RECEIPT: 'payment-receipt',
   DUNNING_FINAL: 'dunning-final',
+  // NUDGE-V1 — behavioral re-engagement (one template per trigger).
+  // Tone: calm, premium, lifestyle. Never guilt. One CTA, one-tap unsubscribe.
+  NUDGE_MISSED_CHECKIN: 'nudge-missed-checkin',
+  NUDGE_STREAK_BROKEN: 'nudge-streak-broken',
+  NUDGE_ONBOARDING_ABANDONED: 'nudge-onboarding-abandoned',
+  NUDGE_INACTIVE: 'nudge-inactive',
 } as const;
 export type EmailTemplateKey =
   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];

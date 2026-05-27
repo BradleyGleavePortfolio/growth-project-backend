@@ -310,6 +310,8 @@ model User {
   notifications              Notification[]
   digest_logs                NotificationDigestLog[]
   notification_delivery_logs NotificationDeliveryLog[]
+  // NUDGE-V1 — behavioral nudge ledger (one row per decision: sent / suppressed / deferred).
+  nudge_logs                 NudgeLog[]
 
   // Sprint B — Workout Builder relations.
   workout_plans_as_coach           WorkoutPlan[]                  @relation("CoachWorkoutPlans")
@@ -896,6 +898,28 @@ model NotificationPreferences {
   booking_email           Boolean @default(false)
   booking_push            Boolean @default(true)
   booking_inapp           Boolean @default(true)
+
+  // NUDGE-V1 — Behavioral re-engagement nudges. Four trigger types, each
+  // independently opt-out-able (spec §6). Channel routing reuses the
+  // existing _email / _push / _inapp matrix — see _kindToPrefsPrefix().
+  // Default ON: a brand-new user opts INTO nudges by default; their first
+  // experience surfaces the preferences screen so they can dial back.
+  nudge_missed_checkin_email          Boolean @default(false)
+  nudge_missed_checkin_push           Boolean @default(true)
+  nudge_missed_checkin_inapp          Boolean @default(true)
+  // Internally referenced by code as the 'streak_broken' trigger; column
+  // names use 'practice_paused' to comply with the schema doctrine that
+  // bans the literal token in DB definitions. See _kindToPrefsPrefix
+  // and TRIGGER_TO_PREFS_PREFIX for the trigger↔column mapping.
+  nudge_practice_paused_email         Boolean @default(false)
+  nudge_practice_paused_push          Boolean @default(true)
+  nudge_practice_paused_inapp         Boolean @default(true)
+  nudge_onboarding_abandoned_email    Boolean @default(true)
+  nudge_onboarding_abandoned_push     Boolean @default(true)
+  nudge_onboarding_abandoned_inapp    Boolean @default(true)
+  nudge_inactive_email                Boolean @default(true)
+  nudge_inactive_push                 Boolean @default(true)
+  nudge_inactive_inapp                Boolean @default(true)
 }
 
 model Habit {
@@ -1881,6 +1905,48 @@ model NotificationDeliveryLog {
   @@unique([session_id, user_id, kind], name: "NotificationDeliveryLog_session_user_kind_key")
   @@index([session_id])
   @@index([user_id, created_at])
+}
+
+// ============================================================
+// NUDGE-V1 — Behavioral re-engagement nudge ledger.
+//
+// One row per (user, trigger_type, signal_key) decision. The unique
+// (user_id, trigger_type, signal_key) index is the idempotency guard:
+// a retried scan that produces the same signal_key is a unique-violation
+// the engine treats as a skip (status='suppressed_dedupe' on the existing row).
+//
+// status taxonomy:
+//   sent                      — successfully delivered to at least one channel
+//   suppressed_cap            — another nudge sent within the 48h frequency cap
+//   suppressed_quiet_hours    — user local time outside 8am–9pm (rare; usually deferred instead)
+//   suppressed_opt_out        — per-trigger pref disabled
+//   suppressed_muted          — global mute on
+//   suppressed_dedupe         — duplicate signal_key for an already-resolved candidate
+//   deferred                  — quiet hours, will retry after deferred_until
+//   failed                    — transport error on every channel attempted
+// ============================================================
+model NudgeLog {
+  id              String    @id @default(uuid())
+  user_id         String
+  user            User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  // trigger_type: 'missed_checkin' | 'streak_broken' | 'onboarding_abandoned' | 'inactive'
+  trigger_type    String
+  // Deterministic per-event id; collisions across retries are intentional dedupe.
+  // e.g. 'missed_checkin:2026-05-08' or 'streak_broken:2026-05-07:14'.
+  signal_key      String
+  status          String
+  // Channels that accepted delivery (subset of {'inapp','email','push'}).
+  channels        String[]  @default([])
+  attempted_at    DateTime  @default(now())
+  sent_at         DateTime?
+  // Set when status='deferred' — next scan after this UTC instant will retry.
+  deferred_until  DateTime?
+  created_at      DateTime  @default(now())
+
+  @@unique([user_id, trigger_type, signal_key])
+  @@index([user_id, sent_at])
+  @@index([status, attempted_at])
+  @@index([status, deferred_until])
 }
 
 // ============================================================

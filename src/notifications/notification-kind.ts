@@ -47,6 +47,14 @@ export const NotificationKind = {
   BOOKING_RESCHEDULED: 'booking_rescheduled',
   BOOKING_REMINDER_24H: 'booking_reminder_24h',
   BOOKING_REMINDER_1H: 'booking_reminder_1h',
+
+  // NUDGE-V1 — Behavioral re-engagement nudges. Four trigger types,
+  // each independently opt-out-able via NotificationPreferences.
+  // Tone standard: calm, premium, mindful — see src/notifications/nudges/copy.ts.
+  NUDGE_MISSED_CHECKIN: 'nudge_missed_checkin',
+  NUDGE_STREAK_BROKEN: 'nudge_streak_broken',
+  NUDGE_ONBOARDING_ABANDONED: 'nudge_onboarding_abandoned',
+  NUDGE_INACTIVE: 'nudge_inactive',
 } as const;
 
 export type NotificationKindValue = (typeof NotificationKind)[keyof typeof NotificationKind];
