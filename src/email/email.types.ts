@@ -11,6 +11,11 @@ export const EmailTemplateKey = {
   WEEKLY_DIGEST: 'weekly-digest',
   PAYMENT_RECEIPT: 'payment-receipt',
   DUNNING_FINAL: 'dunning-final',
+  // DUNNING-V1 — cadence templates. Append-only; do not reorder above.
+  PAYMENT_REMINDER_SOFT: 'payment-reminder-soft',
+  PAYMENT_REMINDER_URGENT: 'payment-reminder-urgent',
+  PAYMENT_FINAL_NOTICE: 'payment-final-notice',
+  PAYMENT_RECOVERED: 'payment-recovered',
 } as const;
 export type EmailTemplateKey =
   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];

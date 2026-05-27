@@ -41,7 +41,17 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
   'client-onboarding-welcome': 'Welcome to The Growth Project',
   'weekly-digest': 'Your weekly Growth Project summary',
   'payment-receipt': 'Receipt for your Growth Project subscription',
-  'dunning-final': 'Final notice — your subscription will be canceled',
+  // PR #281 P2-4: differentiated cadence subjects — Day 7 is a second
+  // warning that names the cutoff but stays recoverable; only Day 14 calls
+  // itself a final notice. Stillwater Standard: declarative, no exclamation,
+  // no all-caps.
+  'dunning-final': 'Your subscription is ending {{cancellation_date}}',
+  // DUNNING-V1 — cadence subjects. Append-only.
+  'payment-reminder-soft': "Heads up — we couldn't process your payment",
+  'payment-reminder-urgent': 'Your Growth Project payment is still failing',
+  'payment-final-notice':
+    "A second heads-up — subscription ends {{cancellation_date}} if payment doesn't go through",
+  'payment-recovered': "You're all set — payment received",
 };
 
 // EmailService is the single entry point for sending transactional email.

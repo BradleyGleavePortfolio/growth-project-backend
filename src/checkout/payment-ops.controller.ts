@@ -194,6 +194,70 @@ export class AdminPaymentOpsController {
     return this.dunning.runSweeper();
   }
 
+  // DUNNING-V1 — admin override surface. View / advance / reset / cancel /
+  // trigger-immediate for one purchase. The Linear / Stripe-style payment-
+  // ops dashboard binds buttons directly to these.
+  @Get('dunning/:purchaseId')
+  async getDunningState(@Param('purchaseId') purchaseId: string) {
+    const view = await this.dunning.getAdminView(purchaseId);
+    if (!view.state && !view.purchase) {
+      throw new NotFoundException({
+        error: 'DUNNING_NOT_FOUND',
+        message: `No dunning state or purchase for id ${purchaseId}`,
+      });
+    }
+    return view;
+  }
+
+  @Post('dunning/:purchaseId/advance')
+  async advanceDunning(@Param('purchaseId') purchaseId: string) {
+    try {
+      return await this.dunning.adminAdvance(purchaseId);
+    } catch (err) {
+      throw new BadRequestException({
+        error: 'DUNNING_ADVANCE_FAILED',
+        message: (err as Error).message,
+      });
+    }
+  }
+
+  @Post('dunning/:purchaseId/reset')
+  async resetDunning(@Param('purchaseId') purchaseId: string) {
+    try {
+      return await this.dunning.adminReset(purchaseId);
+    } catch (err) {
+      throw new BadRequestException({
+        error: 'DUNNING_RESET_FAILED',
+        message: (err as Error).message,
+      });
+    }
+  }
+
+  @Post('dunning/:purchaseId/cancel')
+  async cancelDunning(@Param('purchaseId') purchaseId: string) {
+    return this.dunning.adminCancel(purchaseId);
+  }
+
+  @Post('dunning/:purchaseId/trigger')
+  async triggerDunningReminder(@Param('purchaseId') purchaseId: string) {
+    try {
+      return await this.dunning.adminTriggerImmediate(purchaseId);
+    } catch (err) {
+      throw new BadRequestException({
+        error: 'DUNNING_TRIGGER_FAILED',
+        message: (err as Error).message,
+      });
+    }
+  }
+
+  // Read the in-process dunning metrics counter — used by ops dashboards
+  // and Prometheus scrape for the entered/recovered/escalated/cancelled
+  // funnel.
+  @Get('dunning/metrics/snapshot')
+  async getDunningMetrics() {
+    return { metrics: this.dunning.metrics.snapshot() };
+  }
+
   // Inspect a coach's effective fee policy (default + override).
   @Get('coaches/:id/fee-policy')
   async getCoachFeePolicy(@Param('id') coachId: string) {
