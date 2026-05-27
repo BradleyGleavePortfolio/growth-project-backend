@@ -1,6 +1,14 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { AuditService } from '../../audit/audit.service';
+import { CapabilityMaterializerRegistry } from './materialisers/capability-materialiser.registry';
 
 // Human-approval workflow for consequential AI outputs. AiActionDraft
 // rows land here as `pending`; an authorized human (coach for own-tenant
@@ -29,6 +37,11 @@ export class AiApprovalService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    // PR AI-3 (PRODUCT-1): optional so legacy unit tests that build the
+    // service via `new AiApprovalService(prisma, audit)` keep compiling. In
+    // production DI it's always provided via AiGatewayModule.
+    @Optional()
+    private materialisers: CapabilityMaterializerRegistry | null = null,
   ) {}
 
   async listPending(scope: { tenantCoachId?: string; subjectUserId?: string; limit?: number; status?: string }) {
@@ -91,6 +104,66 @@ export class AiApprovalService {
     }
 
     const status = input.decision;
+
+    // PR AI-3 (PRODUCT-1): for 'approved' decisions on capabilities that
+    // have a registered materialiser, run materialisation BEFORE flipping
+    // status. If the materialiser throws, the draft stays in 'pending' so
+    // the coach can retry — recreating PRODUCT-1 (silent status flip with
+    // no downstream send) is the one thing this PR exists to prevent.
+    //
+    // Capabilities WITHOUT a registered materialiser fall through to the
+    // legacy behaviour (status flip + audit only) — that preserves the
+    // inline-materialisation path used by WORKOUT_PROGRAM / MEAL_PLAN in
+    // `coach-ai.service.ts:approveDraft`.
+    let materialisationRef: string | null = null;
+    if (status === 'approved' && this.materialisers) {
+      const materialiser = this.materialisers.resolve(draft.capability);
+      if (materialiser) {
+        try {
+          const result = await materialiser.materialize(draft);
+          materialisationRef = result.ref ?? null;
+        } catch (err) {
+          // Surface as a 500 with the underlying message so the coach UI
+          // can render a retry CTA. The draft remains in 'pending' status,
+          // which means the next approve attempt will retry materialisation.
+          const msg = err instanceof Error ? err.message : String(err);
+          this.logger.error(
+            `Materialisation failed for draft ${draft.id} (capability=${draft.capability}): ${msg}`,
+          );
+          // Best-effort audit so ops can spot patterns of materialisation
+          // failure even when the request 500s out.
+          await this.audit
+            .write({
+              action: 'ai.draft_materialise_failed',
+              actorId: input.decider.id,
+              actorRole: input.decider.role,
+              targetType: 'ai_action_draft',
+              targetId: draft.id,
+              targetUserId: draft.subject_user_id ?? null,
+              tenantCoachId: draft.tenant_coach_id ?? null,
+              ip: input.ip ?? null,
+              userAgent: input.userAgent ?? null,
+              metadata: {
+                capability: draft.capability,
+                error: msg,
+              },
+            })
+            .catch(() => undefined);
+          throw new InternalServerErrorException({
+            error: 'AI_MATERIALISATION_FAILED',
+            capability: draft.capability,
+            reason: msg,
+          });
+        }
+      } else {
+        // No-op materialiser for this capability. Log a debug-level note so
+        // the path is observable in dev without spamming production logs.
+        this.logger.debug?.(
+          `No materialiser registered for capability=${draft.capability}; proceeding with status flip only.`,
+        );
+      }
+    }
+
     const updated = await this.prisma.aiActionDraft.update({
       where: { id: draft.id },
       data: {
@@ -121,6 +194,7 @@ export class AiApprovalService {
         capability: draft.capability,
         requester_id: draft.requester_id,
         note: input.note ?? null,
+        materialised_ref: materialisationRef,
       },
     });
 
