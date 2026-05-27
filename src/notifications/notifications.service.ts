@@ -1,7 +1,12 @@
 import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
-import Expo, { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
+// expo-server-sdk v6 is ESM-only and exports `Expo` as a NAMED export
+// (no default export). Jest handles the ESM transform via the
+// `transformIgnorePatterns` allowlist in jest.config.js — see that file for
+// the rationale (one ESM dep in an otherwise CJS project; full ESM
+// conversion would be a multi-day effort).
+import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { UpdateNotificationPreferencesDto, GetNotificationsQueryDto } from './notifications.dto';
