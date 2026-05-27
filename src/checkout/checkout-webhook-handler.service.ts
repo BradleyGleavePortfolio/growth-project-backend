@@ -73,6 +73,11 @@ export class CheckoutWebhookHandlerService {
       case 'payment_intent.payment_failed':
         return this.applyPaymentIntentFailed(event);
       case 'invoice.paid':
+      // DUNNING-V1 — invoice.payment_succeeded mirrors invoice.paid in
+      // Stripe's docs for the subscription-renewal path; some accounts
+      // emit one, some the other. We route both to the same handler so
+      // the dunning window resolution is robust either way.
+      case 'invoice.payment_succeeded':
         return this.applyInvoicePaid(event);
       case 'invoice.payment_failed':
         return this.applyInvoicePaymentFailed(event);
@@ -293,6 +298,17 @@ export class CheckoutWebhookHandlerService {
         canceled_at: this.toDate(sub.canceled_at) ?? new Date(),
       },
     });
+    // DUNNING-V1 — explicitly terminate the dunning window so no further
+    // cadence reminders fire after Stripe (or the customer) cancels.
+    if (this.dunning) {
+      try {
+        await this.dunning.terminate(purchase.id, 'subscription_deleted');
+      } catch (err) {
+        this.logger.warn(
+          `dunning.terminate failed purchase=${purchase.id}: ${(err as Error).message}`,
+        );
+      }
+    }
     return { claimed: true, purchase_id: purchase.id };
   }
 
