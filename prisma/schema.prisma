@@ -3294,11 +3294,55 @@ model DunningState {
   cancel_scheduled_at      DateTime?
   resolved_at              DateTime?
   abandoned_at             DateTime?
+  // DUNNING-V1 — cadence state. step_index is the highest cadence step
+  // that has fired (-1 = none yet, 0 = soft sent, 1 = urgent sent, 2 =
+  // final sent, 3 = cancelled). next_attempt_at = scheduled_for of the
+  // earliest pending DunningAttempt, denormalized so the tick loop can
+  // index-scan on (status, next_attempt_at).
+  step_index               Int            @default(-1)
+  next_attempt_at          DateTime?
+  entered_at               DateTime?
+  recovered_at             DateTime?
+  escalated_at             DateTime?
   created_at               DateTime       @default(now())
   updated_at               DateTime       @updatedAt
 
+  attempts                 DunningAttempt[]
+
   @@index([status])
   @@index([status, cancel_scheduled_at])
+  @@index([status, next_attempt_at])
+}
+
+// DUNNING-V1 — one row per scheduled cadence step.
+//
+// At first failure DunningService schedules N attempts (one per cadence
+// day) all with status='pending'. The tick loop drains any whose
+// scheduled_for <= now. (dunning_state_id, step_index) is unique so
+// re-running recordFailure is idempotent. Once sent, sent_at is stamped
+// and email_idempotency_key is the dedup key handed to EmailService.
+model DunningAttempt {
+  id                     String       @id @default(uuid())
+  dunning_state_id       String
+  dunning_state          DunningState @relation(fields: [dunning_state_id], references: [id], onDelete: Cascade)
+  // 0..N — position in the cadence. -1 reserved for ad-hoc "trigger now"
+  // re-fires created by admin override.
+  step_index             Int
+  // soft | urgent | final | recovered | cancelled
+  kind                   String
+  scheduled_for          DateTime
+  // pending | sent | failed | skipped | cancelled
+  status                 String       @default("pending")
+  sent_at                DateTime?
+  email_idempotency_key  String?      @unique
+  provider_message_id    String?
+  failure_reason         String?
+  created_at             DateTime     @default(now())
+  updated_at             DateTime     @updatedAt
+
+  @@unique([dunning_state_id, step_index])
+  @@index([status, scheduled_for])
+  @@index([dunning_state_id, status])
 }
 
 // Phase 5 Connect — Outbound reminder log.

@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+  <body style="font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a;">
+    <h1 style="font-size: 22px; margin: 0 0 16px; color: #047857;">You're all set — payment received</h1>
+    <p>Hi{{#if recipient_name}} {{recipient_name}}{{/if}},</p>
+    <p>Good news: we collected your <strong>{{amount_display}}</strong> payment for your Growth Project subscription. Your account is back in good standing and there's nothing else you need to do.</p>
+    <p style="margin: 24px 0;">
+      <a href="{{billing_portal_url}}" style="display: inline-block; background: #047857; color: #fff; padding: 12px 22px; border-radius: 8px; text-decoration: none; font-weight: 600;">View billing details</a>
+    </p>
+    <p style="font-size: 14px; color: #555;">Thanks for sticking with us{{#if coach_name}} and with {{coach_name}}{{/if}}. Back to the work.</p>
+    <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 32px 0;" />
+    <p style="font-size: 12px; color: #888;">Receipts and invoices live in your billing portal anytime.</p>
+  </body>
+</html>

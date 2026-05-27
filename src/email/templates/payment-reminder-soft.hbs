@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <body style="font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a;">
+    <h1 style="font-size: 22px; margin: 0 0 16px;">Heads up — your payment didn't go through</h1>
+    <p>Hi{{#if recipient_name}} {{recipient_name}}{{/if}},</p>
+    <p>We weren't able to process your most recent payment of <strong>{{amount_display}}</strong> for your Growth Project subscription. This happens sometimes — a card expired, an issuer flagged the charge, or the bank just had a bad minute.</p>
+    <p>We'll try again automatically. If you'd like to update your card now and skip the wait, just tap below:</p>
+    <p style="margin: 24px 0;">
+      <a href="{{billing_portal_url}}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 12px 22px; border-radius: 8px; text-decoration: none; font-weight: 600;">Update payment method</a>
+    </p>
+    <p style="font-size: 14px; color: #555;">You'll keep full access to coaching{{#if coach_name}} from {{coach_name}}{{/if}} while we sort this out.</p>
+    <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 32px 0;" />
+    <p style="font-size: 12px; color: #888;">Questions? Reply to this email — a human will read it.</p>
+  </body>
+</html>

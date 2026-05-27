@@ -42,6 +42,11 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
   'weekly-digest': 'Your weekly Growth Project summary',
   'payment-receipt': 'Receipt for your Growth Project subscription',
   'dunning-final': 'Final notice — your subscription will be canceled',
+  // DUNNING-V1 — cadence subjects. Append-only.
+  'payment-reminder-soft': "Heads up — we couldn't process your payment",
+  'payment-reminder-urgent': 'Your Growth Project payment is still failing',
+  'payment-final-notice': 'Final notice — subscription will be canceled {{cancellation_date}}',
+  'payment-recovered': "You're all set — payment received",
 };
 
 // EmailService is the single entry point for sending transactional email.
