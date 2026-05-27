@@ -19,8 +19,21 @@
 import type { AiActionDraft } from '@prisma/client';
 
 export interface MaterializeResult {
-  /** Logical status of the side-effect after materialisation. */
-  status: 'sent' | 'noop' | 'already_materialised';
+  /**
+   * Logical status of the side-effect after materialisation.
+   *
+   * - `sent`: this call performed the side-effect (e.g. created a CoachMessage).
+   * - `already_materialised`: a prior successful run had already produced the
+   *   side-effect; this call was a no-op and `ref` MUST be non-null (it points
+   *   at the original downstream row).
+   * - `noop`: nothing to do for this capability.
+   * - `racing`: a concurrent caller currently holds the materialisation claim
+   *   but the downstream side-effect has not yet been observably committed
+   *   (`materialised_ref` not set). The caller MUST NOT flip status — it
+   *   should surface a conflict to the user so the operation can be retried
+   *   after the winner's outcome is known.
+   */
+  status: 'sent' | 'noop' | 'already_materialised' | 'racing';
   /**
    * Provider-side identifier when the materialiser produced a downstream row
    * (e.g. CoachMessage.id). Persisted on AiActionDraft.materialised_ref so

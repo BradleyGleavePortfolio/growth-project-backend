@@ -95,14 +95,25 @@ export class CoachMessageMaterializer implements CapabilityMaterializer {
   }
 
   async materialize(draft: AiActionDraft): Promise<MaterializeResult> {
-    // Idempotency short-circuit: a prior successful run wrote
-    // `materialised_at`. Bail out without re-sending. The caller (decide())
-    // will still flip status to 'approved' if needed — that path is also
-    // idempotent because decide() refuses to re-decide a non-pending draft.
-    if (draft.materialised_at) {
+    // P1-1 / P2-1 — the invariant we hold for callers (AiApprovalService.decide):
+    //   `status='approved'` MUST imply a committed downstream side-effect
+    //   (`materialised_ref` non-null). To make that safe under concurrency the
+    //   materialiser distinguishes THREE in-flight states on the draft row:
+    //     (a) `materialised_at=null, materialised_ref=null` — never claimed.
+    //     (b) `materialised_at!=null, materialised_ref=null` — claim held; the
+    //         winner is either in-flight OR has crashed without rolling back
+    //         (STUCK-CLAIM, P2-1 — a transient DB error during the rollback
+    //         path). Indistinguishable from in-flight on a single read.
+    //     (c) `materialised_at!=null, materialised_ref!=null` — committed
+    //         success; the side-effect is done.
+    //   Only (c) is safe to treat as "already_materialised". (a) is the
+    //   normal claim path. (b) is the failure mode that PRODUCT-1 recurred
+    //   from before this PR — short-circuiting on (b) flips status to
+    //   'approved' with no message sent.
+    if (draft.materialised_at && draft.materialised_ref) {
       return {
         status: 'already_materialised',
-        ref: draft.materialised_ref ?? null,
+        ref: draft.materialised_ref,
       };
     }
 
@@ -131,21 +142,26 @@ export class CoachMessageMaterializer implements CapabilityMaterializer {
     // Optimistic idempotency lock. We claim the right to materialise this
     // draft by setting `materialised_at` in a conditional UPDATE that
     // requires the column to currently be NULL. If another concurrent
-    // approver beat us to it, `count` will be 0 and we bail out.
+    // approver beat us to it (or a prior STUCK-CLAIM exists), `count` will
+    // be 0 and we enter the race-loser path below. P2-1: a row in state (b)
+    // — `materialised_at!=null, materialised_ref=null` — will also produce
+    // count=0; the race-loser path's polling + recovery loop handles it.
     const claim = await this.prisma.aiActionDraft.updateMany({
       where: { id: draft.id, materialised_at: null },
       data: { materialised_at: new Date() },
     });
     if (claim.count === 0) {
-      // Race lost — the other caller is doing the send. Re-read to expose
-      // the ref they wrote (if any) so the caller's response is accurate.
-      const fresh = await this.prisma.aiActionDraft.findUnique({
-        where: { id: draft.id },
-      });
-      return {
-        status: 'already_materialised',
-        ref: fresh?.materialised_ref ?? null,
-      };
+      // Race lost (or STUCK-CLAIM present). We do NOT assume the winner
+      // succeeded — that's the PRODUCT-1 trap. Instead poll the draft row
+      // until either:
+      //   - `materialised_ref` becomes non-null (winner committed) → return
+      //     `already_materialised` so decide() can record the link.
+      //   - `materialised_at` returns to null (winner rolled back) → loop
+      //     and attempt the claim again ourselves.
+      //   - The poll budget elapses → return `status: 'racing'` so decide()
+      //     refuses to flip status and surfaces a conflict to the caller,
+      //     who can retry after the winner finishes.
+      return this.awaitWinnerOrRecover(draft, payload);
     }
 
     // Send. If `sendAsCoach` throws (auth boundary, blocked sender, DB
@@ -185,5 +201,63 @@ export class CoachMessageMaterializer implements CapabilityMaterializer {
     });
 
     return { status: 'sent', ref: sentId };
+  }
+
+  // Race-loser / STUCK-CLAIM recovery. Bounded polling: short enough that a
+  // legitimate winner has time to finish a typical `sendAsCoach` round-trip,
+  // long enough that we don't pile up open requests waiting on a wedged DB.
+  // Returns `already_materialised` if the winner commits, recurses into a
+  // fresh claim attempt if the winner rolls back, and falls back to
+  // `racing` so decide() can surface a 409 to the caller.
+  private static readonly RACE_POLL_ATTEMPTS = 10;
+  private static readonly RACE_POLL_INTERVAL_MS = 100;
+
+  private async awaitWinnerOrRecover(
+    draft: AiActionDraft,
+    payload: CoachMessagePayload,
+  ): Promise<MaterializeResult> {
+    for (let i = 0; i < CoachMessageMaterializer.RACE_POLL_ATTEMPTS; i++) {
+      const fresh = await this.prisma.aiActionDraft.findUnique({
+        where: { id: draft.id },
+      });
+      if (!fresh) {
+        // Draft vanished mid-flight — surface as racing so decide() throws
+        // a conflict rather than flipping status on a row that no longer
+        // exists.
+        return { status: 'racing', ref: null };
+      }
+      if (fresh.materialised_ref) {
+        return {
+          status: 'already_materialised',
+          ref: fresh.materialised_ref,
+        };
+      }
+      if (!fresh.materialised_at) {
+        // Winner rolled back. Re-attempt the claim ourselves. Re-enter
+        // materialize() with the freshly observed draft so the recursive
+        // call sees state (a) (no claim) and proceeds normally. Recursion
+        // is bounded by the poll budget on our side; if our own claim is
+        // lost again to a third caller we'll re-poll under that caller's
+        // ownership. No unbounded loops.
+        return this.materialize(fresh as AiActionDraft);
+      }
+      await this.sleep(CoachMessageMaterializer.RACE_POLL_INTERVAL_MS);
+    }
+    // Winner is still in-flight (or genuinely stuck) after the poll
+    // budget. We cannot prove the side-effect committed, so we MUST NOT
+    // let decide() flip status. Returning `racing` is the explicit signal
+    // for that. The caller will see a 409 and can retry.
+    this.logger.warn(
+      `CoachMessageMaterializer: race-loser poll budget exhausted for draft ${draft.id}; surfacing racing state.`,
+    );
+    // Reference payload deliberately so the helper signature is stable
+    // even when future variants of the race-recovery path may need to
+    // re-validate the persisted payload mid-poll.
+    void payload;
+    return { status: 'racing', ref: null };
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

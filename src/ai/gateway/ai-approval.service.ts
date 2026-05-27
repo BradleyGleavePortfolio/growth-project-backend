@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
@@ -116,13 +117,50 @@ export class AiApprovalService {
     // inline-materialisation path used by WORKOUT_PROGRAM / MEAL_PLAN in
     // `coach-ai.service.ts:approveDraft`.
     let materialisationRef: string | null = null;
+    // True only when a materialiser ran AND reported a committed
+    // side-effect (`status='sent' | 'already_materialised'` with a non-null
+    // ref). The status flip below is gated on this so a race-loser, a
+    // STUCK-CLAIM, or a non-confirming materialiser outcome can NEVER
+    // result in the draft becoming `approved` without a downstream row.
+    let materialisationConfirmed = false;
     if (status === 'approved' && this.materialisers) {
       const materialiser = this.materialisers.resolve(draft.capability);
       if (materialiser) {
         try {
           const result = await materialiser.materialize(draft);
           materialisationRef = result.ref ?? null;
+          if (result.status === 'racing') {
+            // P1-1: a concurrent approver holds the materialisation claim
+            // but the downstream side-effect has not been observably
+            // committed. Refuse to flip status — surfacing 409 lets the
+            // caller retry once the winner's outcome is known, and is
+            // the only way to preserve the invariant that
+            // `status='approved'` implies a real CoachMessage row.
+            throw new ConflictException({
+              error: 'AI_DRAFT_RACE_IN_FLIGHT',
+              capability: draft.capability,
+              reason:
+                'Another approver is currently materialising this draft. Retry after their decision settles.',
+            });
+          }
+          // `sent` and `already_materialised` are the only outcomes that
+          // confirm the side-effect committed; `noop` (no downstream row)
+          // is also a confirmed terminal state for capabilities that
+          // legitimately produce no row.
+          if (
+            result.status === 'sent' ||
+            result.status === 'noop' ||
+            result.status === 'already_materialised'
+          ) {
+            materialisationConfirmed = true;
+          }
         } catch (err) {
+          if (err instanceof ConflictException) {
+            // Don't audit-log the race state as a materialisation failure
+            // — it's a benign concurrency outcome and the winner will
+            // record the success. Re-throw so the caller sees a 409.
+            throw err;
+          }
           // Surface as a 500 with the underlying message so the coach UI
           // can render a retry CTA. The draft remains in 'pending' status,
           // which means the next approve attempt will retry materialisation.
@@ -164,8 +202,30 @@ export class AiApprovalService {
       }
     }
 
-    const updated = await this.prisma.aiActionDraft.update({
-      where: { id: draft.id },
+    // P2-3 / P1-1 — atomic decide guard. Two concurrent approvers could both
+    // pass the status==='pending' in-memory check above; without an atomic
+    // gate the second writer overwrites `decided_by_id` and the audit trail
+    // loses the actual decider. We therefore use updateMany with WHERE
+    // status='pending' so only the first approver's update lands, and the
+    // second sees count=0 and is told to retry.
+    //
+    // For approved decisions on capabilities that have a materialiser, we
+    // ADDITIONALLY require `materialised_ref IS NOT NULL`. This is the
+    // invariant that closes the PRODUCT-1 race (P1-1): even if a race-loser
+    // somehow reached this point without observing the winner's commit, the
+    // gate refuses to flip status until the downstream side-effect is
+    // visible. Capabilities with no registered materialiser, and the
+    // 'rejected' path, do not need this extra clause — they preserve the
+    // legacy status-flip-only semantics.
+    const decideGate: Record<string, unknown> = {
+      id: draft.id,
+      status: 'pending',
+    };
+    if (status === 'approved' && materialisationConfirmed) {
+      decideGate.materialised_ref = { not: null };
+    }
+    const decideResult = await this.prisma.aiActionDraft.updateMany({
+      where: decideGate,
       data: {
         status,
         decided_by_id: input.decider.id,
@@ -173,6 +233,29 @@ export class AiApprovalService {
         decision_note: input.note ?? null,
       },
     });
+    if (decideResult.count === 0) {
+      // Another approver already decided this draft (P2-3) OR — for the
+      // approved-with-materialiser path — the materialisation has not
+      // observably committed (P1-1 belt-and-braces). Surface as 409 so the
+      // caller refreshes and tries again. We do NOT need to roll back the
+      // materialisation here: either the winner already owns the success
+      // (no rollback needed) or our materialise() call earlier returned
+      // `racing` (no claim held, nothing to undo).
+      throw new ConflictException({
+        error: 'AI_DRAFT_ALREADY_DECIDED',
+        capability: draft.capability,
+        reason:
+          'Draft was decided by another approver before this request landed.',
+      });
+    }
+    const updated = await this.prisma.aiActionDraft.findUnique({
+      where: { id: draft.id },
+    });
+    if (!updated) {
+      // Should be unreachable — updateMany returned count=1 a moment ago —
+      // but TypeScript still requires we treat findUnique as nullable.
+      throw new InternalServerErrorException('Draft not found after decide');
+    }
 
     // Reflect the decision on the linked audit row, if any.
     await this.prisma.aiRequestAudit.updateMany({

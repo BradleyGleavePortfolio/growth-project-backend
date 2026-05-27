@@ -9,6 +9,26 @@ import type { CapabilityMaterializer } from '../src/ai/gateway/materialisers/cap
 // calls the right materialiser exactly once on approve, never on reject,
 // and that materialisation failures keep the draft in 'pending'.
 
+function matchesWhere(row: any, where: any): boolean {
+  // Minimal-but-faithful match for the fields the materialiser+decide()
+  // touch: `id`, `status`, `materialised_at` (nullable + { not: null }),
+  // `materialised_ref` (nullable + { not: null }).
+  for (const key of Object.keys(where)) {
+    const cond = where[key];
+    const v = row[key];
+    if (cond === null) {
+      if (v !== null && v !== undefined) return false;
+    } else if (cond && typeof cond === 'object' && 'not' in cond) {
+      if (cond.not === null) {
+        if (v === null || v === undefined) return false;
+      } else if (v === cond.not) return false;
+    } else {
+      if (v !== cond) return false;
+    }
+  }
+  return true;
+}
+
 function buildPrisma(seed: any[]) {
   const drafts = [...seed];
   return {
@@ -19,10 +39,23 @@ function buildPrisma(seed: any[]) {
       ),
       update: jest.fn(async ({ where, data }: any) => {
         const i = drafts.findIndex((d) => d.id === where.id);
+        if (i < 0) throw new Error('not found');
         drafts[i] = { ...drafts[i], ...data };
         return drafts[i];
       }),
-      updateMany: jest.fn(async () => ({ count: 1 })),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        // PR AI-3 refixer round 2: the decide() gate + materialiser claim
+        // both go through updateMany; emulate Prisma's predicate filtering
+        // so concurrent-race tests get an accurate count and mutation.
+        let count = 0;
+        for (let i = 0; i < drafts.length; i++) {
+          if (matchesWhere(drafts[i], where)) {
+            drafts[i] = { ...drafts[i], ...data };
+            count++;
+          }
+        }
+        return { count };
+      }),
     },
     aiRequestAudit: {
       updateMany: jest.fn(async () => ({ count: 1 })),
@@ -33,14 +66,32 @@ function buildPrisma(seed: any[]) {
   } as any;
 }
 
-function makeMaterializer(capability: string, behaviour?: () => Promise<any>): CapabilityMaterializer & { calls: number } {
+function makeMaterializer(
+  capability: string,
+  behaviour?: (draft: any, prisma: any) => Promise<any>,
+  prisma?: any,
+): CapabilityMaterializer & { calls: number } {
   const mat: any = {
     capability,
     canHandle: (c: string) => c === capability,
     calls: 0,
-    materialize: jest.fn(async () => {
+    materialize: jest.fn(async (draft: any) => {
       mat.calls += 1;
-      if (behaviour) return behaviour();
+      if (behaviour) return behaviour(draft, prisma);
+      // Default: emulate the real CoachMessageMaterializer's commit by
+      // claiming the row, writing materialised_ref, and returning the ref.
+      // This matches the decide() gate which requires materialised_ref to
+      // be observable in the DB before status flips.
+      if (prisma) {
+        await prisma.aiActionDraft.updateMany({
+          where: { id: draft.id, materialised_at: null },
+          data: { materialised_at: new Date() },
+        });
+        await prisma.aiActionDraft.update({
+          where: { id: draft.id },
+          data: { materialised_ref: 'downstream-1' },
+        });
+      }
       return { status: 'sent', ref: 'downstream-1' };
     }),
   };
@@ -60,8 +111,8 @@ describe('AiApprovalService + CapabilityMaterializerRegistry (integration)', () 
     };
     const prisma = buildPrisma([draft]);
     const audit = new AuditService(prisma);
-    const coachMat = makeMaterializer('draft.coach_message');
-    const workoutMat = makeMaterializer('draft.workout_program');
+    const coachMat = makeMaterializer('draft.coach_message', undefined, prisma);
+    const workoutMat = makeMaterializer('draft.workout_program', undefined, prisma);
     const registry = new CapabilityMaterializerRegistry([coachMat, workoutMat]);
     const svc = new AiApprovalService(prisma, audit, registry);
 
@@ -96,7 +147,7 @@ describe('AiApprovalService + CapabilityMaterializerRegistry (integration)', () 
     };
     const prisma = buildPrisma([draft]);
     const audit = new AuditService(prisma);
-    const coachMat = makeMaterializer('draft.coach_message');
+    const coachMat = makeMaterializer('draft.coach_message', undefined, prisma);
     const registry = new CapabilityMaterializerRegistry([coachMat]);
     const svc = new AiApprovalService(prisma, audit, registry);
 
@@ -127,7 +178,7 @@ describe('AiApprovalService + CapabilityMaterializerRegistry (integration)', () 
     };
     const prisma = buildPrisma([draft]);
     const audit = new AuditService(prisma);
-    const coachMat = makeMaterializer('draft.coach_message');
+    const coachMat = makeMaterializer('draft.coach_message', undefined, prisma);
     const registry = new CapabilityMaterializerRegistry([coachMat]);
     const svc = new AiApprovalService(prisma, audit, registry);
 
@@ -155,7 +206,7 @@ describe('AiApprovalService + CapabilityMaterializerRegistry (integration)', () 
     const audit = new AuditService(prisma);
     const coachMat = makeMaterializer('draft.coach_message', async () => {
       throw new Error('downstream messaging failure');
-    });
+    }, prisma);
     const registry = new CapabilityMaterializerRegistry([coachMat]);
     const svc = new AiApprovalService(prisma, audit, registry);
 
