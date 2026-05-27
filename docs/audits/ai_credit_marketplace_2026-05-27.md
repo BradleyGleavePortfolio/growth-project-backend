@@ -57,18 +57,25 @@ The 80% walkthrough is the marquee Stillwater-Standard moment: tactile feedback 
 
 ---
 
-## Credit Packs
+## Credit Packs (face-value pricing — you pay $X, you get $X displayed credit)
+
+**Pricing model (locked 2026-05-27 12:53 PDT, per user direction):**
+- Coach pays $X → Coach gets exactly $X added to displayed allowance.
+- TGP's actual Anthropic cost = $X / 5 (multiplier baked into base subsidy is removed for packs).
+- **TGP gross margin per pack: 80%** (before Stripe fees ~3% → effective ~77% net).
 
 Stripe products defined as both one-shot and recurring options. Buyer = Coach (the head coach paying for the team).
 
-| Pack | Price | Actual headroom added | Displayed | One-shot | Recurring |
-|---|---|---|---|---|---|
-| **Boost** | $19.99 | +$10 actual | +$50 displayed | ✓ | ✓ |
-| **Pro** | $49.99 | +$20 actual | +$100 displayed | ✓ | ✓ |
-| **Power** | $129.99 | +$50 actual | +$250 displayed | ✓ | ✓ |
-| **Team** | $249.99 | +$100 actual | +$500 displayed | ✓ | ✓ |
+| Pack | Coach pays | Displayed credit added | Actual headroom (TGP cost) | TGP margin | One-shot | Recurring |
+|---|---|---|---|---|---|---|
+| **Small** | $25 | +$25 displayed | +$5 actual | $20 / 80% | ✓ | ✓ |
+| **Medium** | $50 | +$50 displayed | +$10 actual | $40 / 80% | ✓ | ✓ |
+| **Large** | $99 | +$99 displayed | +$19.80 actual | $79.20 / 80% | ✓ | ✓ |
+| **Custom** | $X (min $10, max $500) | +$X displayed | +$X/5 actual | 80% | ✓ | One-shot only |
 
-Margin on credit packs: 50% gross (i.e. Pack price = 2× actual Anthropic ceiling added). Stripe fees (~3%) come off the top → ~47% effective margin per pack.
+**Mental model:** Coach sees "$50 buys $50 more AI" — no multiplier math exposed.
+
+**Asymmetry note (for UI):** The base allowance gives coaches a 5× headroom subsidy ($40 actual = $200 displayed). Credit packs at face value give them 1× headroom ($50 = $50). That's deliberate — the base is a generous onboarding gift, packs are commercial pricing. Hide the multiplier math entirely from the coach. Display every credit-pack option as a single number per side ("$50 → $50 of AI").
 
 ---
 
@@ -106,10 +113,10 @@ model CoachCreditPackPurchase {
   id                       String   @id @default(cuid())
   coach_id                 String
   stripe_invoice_id        String   @unique
-  pack_sku                 String   // 'boost' | 'pro' | 'power' | 'team'
-  price_paid_cents         Int
-  actual_headroom_cents    Int      // 1000 | 2000 | 5000 | 10000
-  display_added_cents      Int      // 5000 | 10000 | 25000 | 50000
+  pack_sku                 String   // 'small' | 'medium' | 'large' | 'custom'
+  price_paid_cents         Int      // 2500 | 5000 | 9900 | custom (1000– 50000)
+  actual_headroom_cents    Int      // price_paid_cents / 5
+  display_added_cents      Int      // == price_paid_cents (face value)
   is_recurring             Boolean
   applied_to_period        DateTime @db.Date
   created_at               DateTime @default(now())
