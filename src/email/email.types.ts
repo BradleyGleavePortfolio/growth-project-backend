@@ -3,6 +3,16 @@
 // these strings stable — they appear in EmailSendLog rows and in audit
 // metadata, so renaming requires a backfill.
 export const EmailTemplateKey = {
+  // NUDGE-V1 — behavioral re-engagement (one template per trigger).
+  // Tone: calm, premium, lifestyle. Never guilt. One CTA, one-tap unsubscribe.
+  // Placed at top of the record to avoid textual-merge collision with
+  // PR #281 (dunning-v1) which appends after DUNNING_FINAL. Both blocks
+  // are independent hunks; merge order is irrelevant.
+  NUDGE_MISSED_CHECKIN: 'nudge-missed-checkin',
+  NUDGE_STREAK_BROKEN: 'nudge-streak-broken',
+  NUDGE_ONBOARDING_ABANDONED: 'nudge-onboarding-abandoned',
+  NUDGE_INACTIVE: 'nudge-inactive',
+  // ─── existing template keys below; append new keys above the legacy block ───
   COACH_INVITES_CLIENT: 'coach-invites-client',
   PAYMENT_REMINDER: 'payment-reminder',
   PAYMENT_FAILED: 'payment-failed',

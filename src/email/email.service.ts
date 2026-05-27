@@ -33,6 +33,16 @@ interface EmailTransport {
 // localisation can later attach to one map. Subjects may contain a single
 // {{var}} placeholder which is resolved against `data`.
 const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
+  // NUDGE-V1 — calm, lifestyle subject lines. No exclamation marks,
+  // no urgency, no streak numbers. "Here when you're ready."
+  // Placed at top of the record to avoid textual-merge collision with
+  // PR #281 (dunning-v1) which appends after 'dunning-final'. Both blocks
+  // are independent hunks; merge order is irrelevant.
+  'nudge-missed-checkin': 'A gentle check-in from The Growth Project',
+  'nudge-streak-broken': 'Your practice is here when you are',
+  'nudge-onboarding-abandoned': 'Pick up where you left off, {{first_name}}',
+  'nudge-inactive': 'Quietly waiting for you, {{first_name}}',
+  // ─── existing templates below; append new templates above the legacy block ───
   'coach-invites-client': '{{coach_name}} invited you to The Growth Project',
   'payment-reminder': 'Your subscription payment is due soon',
   'payment-failed': 'We could not process your payment',

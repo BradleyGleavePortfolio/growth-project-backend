@@ -12,6 +12,10 @@ import { CheckinSubmittedEmitter } from './emitters/checkin-submitted.emitter';
 import { BuildWeekDayUnlockedEmitter } from './emitters/build-week-day-unlocked.emitter';
 import { CoachAlertEmitter } from './emitters/coach-alert.emitter';
 import { BookingEmitter } from './emitters/booking.emitter';
+// NUDGE-V1 — behavioral re-engagement subsystem.
+import { NudgeEngineService } from './nudges/nudge-engine.service';
+import { NudgeDetectorService } from './nudges/nudge-detector.service';
+import { NudgeScheduler } from './nudges/nudge.scheduler';
 
 // PrismaService is provided globally via PrismaModule.
 //
@@ -34,6 +38,8 @@ import { BookingEmitter } from './emitters/booking.emitter';
 // aligns NotificationsModule with the post-hotfix-#243 architecture that
 // every other feature module already follows.
 @Module({
+  // NUDGE-V1: EmailService comes from the @Global EmailModule — no
+  // import required. NudgeEngineService injects it as Optional.
   imports: [ConfigModule],
   controllers: [NotificationsController],
   providers: [
@@ -48,6 +54,10 @@ import { BookingEmitter } from './emitters/booking.emitter';
     BuildWeekDayUnlockedEmitter,
     CoachAlertEmitter,
     BookingEmitter,
+    // NUDGE-V1 providers.
+    NudgeEngineService,
+    NudgeDetectorService,
+    NudgeScheduler,
   ],
   exports: [
     NotificationsService,
@@ -60,6 +70,8 @@ import { BookingEmitter } from './emitters/booking.emitter';
     BuildWeekDayUnlockedEmitter,
     CoachAlertEmitter,
     BookingEmitter,
+    NudgeEngineService,
+    NudgeDetectorService,
   ],
 })
 export class NotificationsModule {}

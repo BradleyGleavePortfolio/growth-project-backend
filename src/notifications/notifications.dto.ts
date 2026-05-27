@@ -199,6 +199,62 @@ export class UpdateNotificationPreferencesDto {
   @IsOptional()
   @IsBoolean()
   booking_inapp?: boolean;
+
+  // ── NUDGE-V1: behavioral nudge per-trigger opt-out (spec §6) ──────────
+  // Surfaced in user notification preferences so each trigger type can
+  // be muted independently in one tap. Schema columns added in the same
+  // migration as the NudgeLog model.
+
+  @IsOptional()
+  @IsBoolean()
+  nudge_missed_checkin_email?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  nudge_missed_checkin_push?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  nudge_missed_checkin_inapp?: boolean;
+
+  // Streak-broken trigger — schema columns use 'practice_paused' per the
+  // schema doctrine; the TS-side trigger value remains 'streak_broken'.
+
+  @IsOptional()
+  @IsBoolean()
+  nudge_practice_paused_email?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  nudge_practice_paused_push?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  nudge_practice_paused_inapp?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  nudge_onboarding_abandoned_email?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  nudge_onboarding_abandoned_push?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  nudge_onboarding_abandoned_inapp?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  nudge_inactive_email?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  nudge_inactive_push?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  nudge_inactive_inapp?: boolean;
 }
 
 // ── Notification center query params ────────────────────────────────────────

@@ -115,6 +115,21 @@ export class NotificationsService {
         booking_email: false,
         booking_push: true,
         booking_inapp: true,
+        // NUDGE-V1 defaults — mirror schema defaults. Per-trigger opt-out lives here.
+        nudge_missed_checkin_email: false,
+        nudge_missed_checkin_push: true,
+        nudge_missed_checkin_inapp: true,
+        // Streak-broken trigger — schema columns named 'practice_paused' per
+        // the doctrine (no 'streak_' substring in schema.prisma).
+        nudge_practice_paused_email: false,
+        nudge_practice_paused_push: true,
+        nudge_practice_paused_inapp: true,
+        nudge_onboarding_abandoned_email: true,
+        nudge_onboarding_abandoned_push: true,
+        nudge_onboarding_abandoned_inapp: true,
+        nudge_inactive_email: true,
+        nudge_inactive_push: true,
+        nudge_inactive_inapp: true,
       };
     }
     return prefs;
@@ -168,6 +183,21 @@ export class NotificationsService {
       booking_email: data.booking_email,
       booking_push: data.booking_push,
       booking_inapp: data.booking_inapp,
+      // NUDGE-V1 — explicit per-trigger × per-channel mapping. Each maps
+      // 1:1 to a column added in the same schema migration; missing values
+      // are stripped below so a partial PATCH only flips the supplied flags.
+      nudge_missed_checkin_email: data.nudge_missed_checkin_email,
+      nudge_missed_checkin_push: data.nudge_missed_checkin_push,
+      nudge_missed_checkin_inapp: data.nudge_missed_checkin_inapp,
+      nudge_practice_paused_email: data.nudge_practice_paused_email,
+      nudge_practice_paused_push: data.nudge_practice_paused_push,
+      nudge_practice_paused_inapp: data.nudge_practice_paused_inapp,
+      nudge_onboarding_abandoned_email: data.nudge_onboarding_abandoned_email,
+      nudge_onboarding_abandoned_push: data.nudge_onboarding_abandoned_push,
+      nudge_onboarding_abandoned_inapp: data.nudge_onboarding_abandoned_inapp,
+      nudge_inactive_email: data.nudge_inactive_email,
+      nudge_inactive_push: data.nudge_inactive_push,
+      nudge_inactive_inapp: data.nudge_inactive_inapp,
     };
 
     // Strip undefined entries so Prisma does not try to set them to NULL.
@@ -622,6 +652,14 @@ export class NotificationsService {
    * E.g. 'milestone_reached' → 'milestone'
    */
   private _kindToPrefsPrefix(kind: string): string {
+    // NUDGE-V1 — most specific match wins. Nudge kinds are 'nudge_<trigger>'
+    // so the prefs prefix maps 1:1 (e.g. nudge_missed_checkin_inapp). Tested
+    // separately so a stray rename here fails the suite loudly.
+    if (kind === 'nudge_missed_checkin') return 'nudge_missed_checkin';
+    // Streak-broken kind maps to 'practice_paused' column prefix (doctrine).
+    if (kind === 'nudge_streak_broken') return 'nudge_practice_paused';
+    if (kind === 'nudge_onboarding_abandoned') return 'nudge_onboarding_abandoned';
+    if (kind === 'nudge_inactive') return 'nudge_inactive';
     if (kind.startsWith('milestone')) return 'milestone';
     if (kind.startsWith('message')) return 'message';
     if (kind.startsWith('missed_checkin')) return 'missed_checkin';
