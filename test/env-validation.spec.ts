@@ -114,6 +114,14 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     // explicit value keeps the missingFeature list empty for the
     // clean-prod-env test. Default is 7 when absent.
     COACH_BRIEF_RETENTION_DAYS: '7',
+    // Audit #6 P0-4 — KMS_MASTER_KEY is prod-hardened. KmsService.encrypt()
+    // falls back to a PLAINTEXT: marker prefix when unset, so production
+    // refuses to boot without it. 32 raw bytes base64-encoded.
+    KMS_MASTER_KEY: 'dGVzdC1rZXktMzItYnl0ZXMtZm9yLXVuaXQtdGVzdGluZw==',
+    // Audit #6 P1-2 — LANDING_VIEW_HASH_SECRET is prod-hardened. Production
+    // refuses to boot without an explicit secret so the per-visitor daily
+    // hash is not predictable.
+    LANDING_VIEW_HASH_SECRET: 'test-landing-view-hash-secret-at-least-32-chars-long',
   };
 }
 
@@ -261,6 +269,10 @@ describe('assertEnv', () => {
           // Audit #5 P0-1 / P0-2 — prod-hardened additions.
           GUEST_CHECKOUT_PII_SALT: 'a'.repeat(32),
           STRIPE_PUBLISHABLE_KEY: 'pk_test_inline_publishable_key',
+          // Audit #6 P0-4 / P1-2 — prod-hardened additions (KMS at-rest key,
+          // landing-view daily-hash secret). Both gate prod boot now.
+          KMS_MASTER_KEY: 'dGVzdC1rZXktMzItYnl0ZXMtZm9yLXVuaXQtdGVzdGluZw==',
+          LANDING_VIEW_HASH_SECRET: 'test-landing-view-hash-secret-at-least-32-chars-long',
           // Audit A276-P1-1 — prod-hardened with minLength=32.
           CHECKOUT_RECOVERY_SECRET: VALID_CHECKOUT_RECOVERY_SECRET,
         },
@@ -295,6 +307,10 @@ describe('assertEnv', () => {
         // Audit #5 P0-1 / P0-2 — prod-hardened additions.
         GUEST_CHECKOUT_PII_SALT: 'a'.repeat(32),
         STRIPE_PUBLISHABLE_KEY: 'pk_test_inline_publishable_key',
+        // Audit #6 P0-4 / P1-2 — prod-hardened additions (KMS at-rest key,
+        // landing-view daily-hash secret). Both gate prod boot now.
+        KMS_MASTER_KEY: 'dGVzdC1rZXktMzItYnl0ZXMtZm9yLXVuaXQtdGVzdGluZw==',
+        LANDING_VIEW_HASH_SECRET: 'test-landing-view-hash-secret-at-least-32-chars-long',
         // Audit A276-P1-1 — prod-hardened with minLength=32.
         CHECKOUT_RECOVERY_SECRET: VALID_CHECKOUT_RECOVERY_SECRET,
       },
@@ -382,6 +398,10 @@ describe('assertEnv', () => {
           // Audit #5 P0-1 / P0-2 — prod-hardened additions.
           GUEST_CHECKOUT_PII_SALT: 'a'.repeat(32),
           STRIPE_PUBLISHABLE_KEY: 'pk_test_inline_publishable_key',
+          // Audit #6 P0-4 / P1-2 — prod-hardened additions (KMS at-rest key,
+          // landing-view daily-hash secret). Both gate prod boot now.
+          KMS_MASTER_KEY: 'dGVzdC1rZXktMzItYnl0ZXMtZm9yLXVuaXQtdGVzdGluZw==',
+          LANDING_VIEW_HASH_SECRET: 'test-landing-view-hash-secret-at-least-32-chars-long',
           // Audit A276-P1-1 — prod-hardened with minLength=32.
           CHECKOUT_RECOVERY_SECRET: VALID_CHECKOUT_RECOVERY_SECRET,
         },

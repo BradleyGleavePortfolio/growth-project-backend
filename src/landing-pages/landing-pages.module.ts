@@ -1,10 +1,21 @@
 /**
- * LandingPagesModule — R46 Coach Landing Page Builder.
+ * LandingPagesModule — R46/R47 Coach Landing Page Builder.
  *
- * Phase 2: Coach CRUD + public SSR renderer + storefront routing.
- * Phase 3: CRM adapters (separate PR).
- * Phase 4 (CNAME): Custom-domain claim + DNS verify (this PR).
+ * Phase 2 (R46): Coach CRUD + public SSR renderer + storefront routing.
+ * Phase 3 (R47): CRM adapters + lead sync worker + analytics rollup.
+ * Phase 4 (CNAME, PR #280): Custom-domain claim + DNS verify.
+ *
+ * Phase 3 wiring:
+ *   - CoachCrmService              — encrypted CRM config CRUD
+ *   - CrmRegistryService           — provider → adapter map
+ *   - CrmController                — coach mgmt endpoints
+ *   - LeadSyncQueue                — enqueue façade (future BullMQ swap)
+ *   - LeadSyncProcessor            — cron worker (1/min) draining pending leads
+ *   - LeadRateLimiterService       — Redis 100-leads-per-page-per-UTC-day cap
+ *
+ * Phase 4 wiring:
  *   - CustomDomainService — race-safe claim + 3s-timeout CNAME verify.
+ *   - DnsVerifier — injectable so tests can swap in a fake resolver.
  *   - Fly cert issuance + the verification cron land in a follow-up PR.
  */
 import { Module } from '@nestjs/common';
@@ -16,21 +27,32 @@ import { CustomDomainController } from './custom-domain.controller';
 import { CustomDomainService } from './custom-domain.service';
 import { DnsVerifier } from './dns-verifier';
 import { AnalyticsModule } from '../analytics/analytics.module';
+import { CrmController } from './crm/crm.controller';
+import { CoachCrmService } from './crm/crm.service';
+import { CrmRegistryService } from './crm/crm-registry.service';
+import { LeadSyncQueue } from './crm/lead-sync.queue';
+import { LeadSyncProcessor } from './crm/lead-sync.processor';
+import { LeadRateLimiterService } from './lead-rate-limiter.service';
 
 @Module({
   imports: [
-    // PrismaModule is @Global — no explicit import needed.
-    // AnalyticsModule provides AnalyticsService for landing.published events.
+    // PrismaModule + KmsModule are @Global — no explicit import needed.
     AnalyticsModule,
   ],
   controllers: [
     LandingPageController,
     LandingPagePublicController,
+    CrmController,
     CustomDomainController,
   ],
   providers: [
     LandingPageService,
     LandingPagePublicService,
+    CoachCrmService,
+    CrmRegistryService,
+    LeadSyncQueue,
+    LeadSyncProcessor,
+    LeadRateLimiterService,
     CustomDomainService,
     // DnsVerifier is injectable so tests can swap in a fake resolver.
     DnsVerifier,
@@ -38,6 +60,8 @@ import { AnalyticsModule } from '../analytics/analytics.module';
   exports: [
     LandingPageService,
     LandingPagePublicService,
+    CoachCrmService,
+    CrmRegistryService,
     CustomDomainService,
   ],
 })

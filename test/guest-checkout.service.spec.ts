@@ -57,6 +57,7 @@ const baseDto = {
 
 interface PrismaMocks {
   coachPackage: { findUnique: jest.Mock };
+  coachLandingPage: { findFirst: jest.Mock };
   guestCheckout: {
     findUnique: jest.Mock;
     create: jest.Mock;
@@ -84,6 +85,7 @@ interface PrismaMocks {
 function buildPrismaMocks(): PrismaMocks {
   const mocks: PrismaMocks = {
     coachPackage: { findUnique: jest.fn() },
+    coachLandingPage: { findFirst: jest.fn() },
     guestCheckout: {
       findUnique: jest.fn(),
       create: jest.fn(),
@@ -244,6 +246,74 @@ describe('GuestCheckoutService', () => {
       prisma.guestCheckout.update.mockResolvedValueOnce({});
       await expect(service.createIntent('tok123', baseDto)).resolves.toMatchObject({
         payment_intent_id: 'pi_xyz',
+      });
+    });
+
+    // Audit #6 P0-5 — landing_page_id propagation.
+    describe('landing_page_id propagation (P0-5)', () => {
+      const VALID_LP = 'cl1234567890abcdefghij';
+      const otherCoachLP = 'cl0000000000xxxxxxxxxx';
+
+      function wirePaymentSuccess() {
+        prisma.coachPackage.findUnique.mockResolvedValueOnce(makePkg());
+        prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
+        prisma.guestCheckout.create.mockImplementationOnce(
+          async (args: { data: Record<string, unknown> }) => ({
+            id: 'gc-lp',
+            ...args.data,
+          }),
+        );
+        stripe.createPaymentIntent.mockResolvedValueOnce({
+          id: 'pi_lp',
+          client_secret: 'pi_lp_secret',
+        });
+        prisma.guestCheckout.update.mockResolvedValueOnce({});
+      }
+
+      it('writes landing_page_id when the page belongs to the package coach AND lists the package', async () => {
+        wirePaymentSuccess();
+        prisma.coachLandingPage.findFirst.mockResolvedValueOnce({
+          id: VALID_LP,
+          package_ids: ['pkg-1', 'pkg-2'],
+        });
+        await service.createIntent('tok123', baseDto, VALID_LP);
+        const createCall = prisma.guestCheckout.create.mock.calls[0][0];
+        expect(createCall.data.landing_page_id).toBe(VALID_LP);
+      });
+
+      it('clears landing_page_id when the page belongs to a DIFFERENT coach', async () => {
+        wirePaymentSuccess();
+        prisma.coachLandingPage.findFirst.mockResolvedValueOnce(null);
+        await service.createIntent('tok123', baseDto, otherCoachLP);
+        const createCall = prisma.guestCheckout.create.mock.calls[0][0];
+        expect(createCall.data.landing_page_id).toBeNull();
+      });
+
+      it('clears landing_page_id when the page does NOT list the package', async () => {
+        wirePaymentSuccess();
+        prisma.coachLandingPage.findFirst.mockResolvedValueOnce({
+          id: VALID_LP,
+          package_ids: ['pkg-other'],
+        });
+        await service.createIntent('tok123', baseDto, VALID_LP);
+        const createCall = prisma.guestCheckout.create.mock.calls[0][0];
+        expect(createCall.data.landing_page_id).toBeNull();
+      });
+
+      it('rejects malformed landing_page_id without querying the database', async () => {
+        wirePaymentSuccess();
+        await service.createIntent('tok123', baseDto, '../etc/passwd');
+        expect(prisma.coachLandingPage.findFirst).not.toHaveBeenCalled();
+        const createCall = prisma.guestCheckout.create.mock.calls[0][0];
+        expect(createCall.data.landing_page_id).toBeNull();
+      });
+
+      it('leaves landing_page_id null when no lp param is given', async () => {
+        wirePaymentSuccess();
+        await service.createIntent('tok123', baseDto);
+        expect(prisma.coachLandingPage.findFirst).not.toHaveBeenCalled();
+        const createCall = prisma.guestCheckout.create.mock.calls[0][0];
+        expect(createCall.data.landing_page_id).toBeNull();
       });
     });
 

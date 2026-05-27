@@ -1,10 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma.service';
 import { LandingPageService } from './landing-pages.service';
 import { renderPublicPage, renderNotFound } from './landing-pages.html';
 import type { ViewEventDto } from './dto/view-event.dto';
 import type { LeadSubmitDto } from './dto/lead-submit.dto';
+import { LeadSyncQueue } from './crm/lead-sync.queue';
+import { LeadRateLimiterService } from './lead-rate-limiter.service';
 
 @Injectable()
 export class LandingPagePublicService {
@@ -13,6 +15,8 @@ export class LandingPagePublicService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly landingPageService: LandingPageService,
+    private readonly leadSyncQueue: LeadSyncQueue,
+    private readonly rateLimiter: LeadRateLimiterService,
   ) {}
 
   // ─── Public page render ─────────────────────────────────────────────────
@@ -90,7 +94,11 @@ export class LandingPagePublicService {
       'https://app.trygrowthproject.com';
 
     if (pkg.share_token) {
-      return `${storefrontBase}/v1/packages/public/join/${pkg.share_token}`;
+      // R47 / Audit #6 P0-5 — propagate landing page id through to the
+      // storefront so the GuestCheckout row records WHICH page sourced
+      // the conversion. Without this, $/visitor analytics is structurally
+      // broken (revenue rollup joins on GuestCheckout.landing_page_id).
+      return `${storefrontBase}/v1/packages/public/join/${pkg.share_token}?lp=${encodeURIComponent(page.id)}`;
     }
 
     // Fallback: no share token yet → return null to signal 404
@@ -114,7 +122,21 @@ export class LandingPagePublicService {
       return { ok: false };
     }
 
-    await this.prisma.coachLandingLead.create({
+    // R47 abuse guard: 100 leads/day/page in UTC, Redis-backed counter.
+    const limit = await this.rateLimiter.checkAndIncrement(page.id);
+    if (!limit.allowed) {
+      // 429 with Retry-After: seconds until next UTC midnight.
+      throw new HttpException(
+        {
+          error: 'TOO_MANY_LEADS',
+          message: 'Daily lead capacity reached for this page',
+          retry_after_seconds: limit.retryAfterSeconds,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const created = await this.prisma.coachLandingLead.create({
       data: {
         page_id: page.id,
         coach_id: page.coach_id,
@@ -128,9 +150,18 @@ export class LandingPagePublicService {
           goal: dto.goal,
         } as any,
         crm_sync_status: 'pending',
-        // PR #3 picks up pending leads for CRM sync
       },
     });
+
+    // R47: hand off to the CRM sync queue.  The processor scans pending
+    // leads on a cron tick — `enqueue()` is a no-op today but the
+    // explicit call site lets us swap in BullMQ without touching public.
+    // Queue failure must NEVER fail the visitor POST.
+    try {
+      await this.leadSyncQueue.enqueue(created.id);
+    } catch (err) {
+      this.logger.warn(`lead-sync enqueue failed for ${created.id}: ${String(err)}`);
+    }
 
     return { ok: true };
   }
@@ -193,7 +224,23 @@ export class LandingPagePublicService {
     // In production this should use a secret key from env.
     // For now, use a deterministic daily rotation so hashes cannot be
     // correlated across days (GDPR requirement per spec §4.1).
-    const secret = process.env.LANDING_VIEW_HASH_SECRET || 'landing-views-daily-salt';
+    // Audit #6 P1-2 — no dev fallback in production. The fallback
+    // constant would make every visitor hash predictable (and the
+    // unique_visitors count linkable across coaches) for any operator
+    // who shipped without setting the secret. env-validation also gates
+    // this at boot, but we double-check at use site so a hot env
+    // rotation still fails closed.
+    const secret = process.env.LANDING_VIEW_HASH_SECRET;
+    if (!secret || !secret.trim()) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          'LANDING_VIEW_HASH_SECRET is required in production — refusing to derive a predictable visitor hash.',
+        );
+      }
+      // Non-prod fallback keeps unit tests and local dev quiet.
+      const fallback = 'landing-views-daily-salt';
+      return createHash('sha256').update(`${fallback}:${day}`).digest('hex').slice(0, 16);
+    }
     return createHash('sha256').update(`${secret}:${day}`).digest('hex').slice(0, 16);
   }
 

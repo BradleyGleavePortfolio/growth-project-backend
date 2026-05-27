@@ -9,6 +9,7 @@ import {
   Param,
   PipeTransform,
   Post,
+  Query,
   Req,
   Res,
 } from '@nestjs/common';
@@ -147,6 +148,13 @@ export class StorefrontPublicController {
     @Body() body: GuestCheckoutDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
+    // R47 / Audit #6 P0-5 — landing page id propagation. The landing-page
+    // checkout redirect appends `?lp=<pageId>`. We accept it as a query
+    // param (rather than baking it into the body DTO) so existing direct
+    // storefront integrations continue to work without modification.
+    // Service-side, the id is validated against (a) the coach who owns
+    // the share_token's package and (b) the page lists that package.
+    @Query('lp') lp?: string,
   ) {
     const ip = this.extractIp(req);
     const rate = await this.ipLimiter.checkAndIncrement(ip, {
@@ -165,7 +173,7 @@ export class StorefrontPublicController {
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
-    const result = await this.guestCheckout.createIntent(token, body);
+    const result = await this.guestCheckout.createIntent(token, body, lp);
     // r48 #11 — attach the 7-day signed cookie.  Best-effort:
     // a write failure does NOT roll back the checkout (the response
     // body still carries everything the storefront needs).

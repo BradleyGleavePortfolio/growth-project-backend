@@ -153,4 +153,39 @@ describe('KmsService', () => {
       expect(svc.encrypt('x')).toBe('PLAINTEXT:x');
     });
   });
+
+  // Audit #6 P0-4 — fail-fast in production rather than persisting plaintext.
+  describe('production fail-fast behavior', () => {
+    beforeEach(() => {
+      delete process.env.KMS_MASTER_KEY;
+      process.env.NODE_ENV = 'production';
+    });
+    afterEach(() => {
+      process.env.NODE_ENV = originalEnv.NODE_ENV;
+    });
+
+    it('encrypt THROWS in production when KMS_MASTER_KEY is unset', () => {
+      const svc = build();
+      expect(() => svc.encrypt('hello')).toThrow(/refusing to persist plaintext/);
+    });
+
+    it('encrypt THROWS in production when KMS_MASTER_KEY is malformed', () => {
+      process.env.KMS_MASTER_KEY = Buffer.from('short').toString('base64');
+      const svc = build();
+      expect(() => svc.encrypt('hello')).toThrow(/refusing to persist plaintext/);
+    });
+
+    it('encrypt of empty string still returns empty without throwing', () => {
+      const svc = build();
+      expect(svc.encrypt('')).toBe('');
+    });
+
+    it('encrypt works normally in production WHEN key is present', () => {
+      process.env.KMS_MASTER_KEY = VALID_KEY_B64;
+      const svc = build();
+      const ct = svc.encrypt('hello');
+      expect(ct).not.toMatch(/^PLAINTEXT:/);
+      expect(svc.decrypt(ct)).toBe('hello');
+    });
+  });
 });

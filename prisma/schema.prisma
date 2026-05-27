@@ -3031,6 +3031,14 @@ model GuestCheckout {
   /// so a future run skips it without paying the hash compute.
   scrubbed_at DateTime?
 
+  /// R47 Phase 3 — landing page referrer.  When a checkout originated
+  /// from a CoachLandingPage's primary CTA the storefront stamps this
+  /// column so analytics can compute $/visitor per page.  Nullable —
+  /// direct storefront URLs (not from a landing page) leave it null.
+  /// No FK relation declared to avoid Prisma generating an inverse
+  /// relation on CoachLandingPage; analytics queries filter by id only.
+  landing_page_id String?
+
   /// r48 Hardening — lost-webhook reconciler bookkeeping.  The
   /// CheckoutReconcileScheduler scans pending rows older than 30s with
   /// last_reconciled_at older than 10s and calls
@@ -3073,6 +3081,9 @@ model GuestCheckout {
   // Audit #3 P2-3 — scrub worker scans rows whose data_retention_at
   // has elapsed and that have not been scrubbed yet.
   @@index([data_retention_at, scrubbed_at])
+  // R47 — analytics: revenue rollup for a landing page filters by
+  // landing_page_id + status. Index supports the GET /analytics query.
+  @@index([landing_page_id, status])
   // r48 — lost-webhook reconciler scans pending rows ordered by
   // (status, last_reconciled_at NULLS FIRST). The composite serves
   // both the filter and the order-by.
@@ -4171,6 +4182,10 @@ enum LandingSectionKind {
 // to `synced`, `failed` (after 3 retries), or `skipped` (no integration).
 enum CrmSyncStatus {
   pending
+  // Audit #6 P0-6 — transient state set by the lead-sync worker via
+  // SKIP LOCKED claim. A row in 'syncing' is owned by exactly one
+  // worker replica; recovery cron returns stuck rows to 'pending'.
+  syncing
   synced
   failed
   skipped
@@ -4301,6 +4316,13 @@ model CoachLandingLead {
   crm_sync_status   CrmSyncStatus    @default(pending)
   crm_synced_at     DateTime?
   crm_error         String?
+  // R47 Phase 3 — per-provider sync state. `synced_to` lists CrmProvider
+  // values that have successfully accepted this lead (e.g. ['hubspot',
+  // 'mailchimp']). `external_ids` maps provider → external id returned by
+  // the provider API, so we can dedupe future updates or correlate webhook
+  // events. Both are written by the lead-sync worker (PR #3).
+  synced_to         String[]
+  external_ids      Json             @default("{}")
   // Set when this lead subsequently signs up and becomes a TGP User.
   // No FK — cross-table reference kept soft to survive user deletion.
   converted_user_id String?
@@ -4310,8 +4332,20 @@ model CoachLandingLead {
   @@index([page_id, created_at])
   // Coach dashboard: all leads across pages for one coach, newest first.
   @@index([coach_id, created_at])
+  // R47 Phase 3 / Audit #6 P0-6 — persistent retry state. Survives
+  // process restarts (the in-memory Map version reset attempts to 0 on
+  // every boot, which let a poisoned lead retry indefinitely after a
+  // deploy). `next_eligible_at` is the earliest UTC instant the worker
+  // is allowed to try this lead again; the SKIP LOCKED claim filters on
+  // it so a backed-off lead doesn't block the head of the queue.
+  attempts          Int              @default(0)
+  next_eligible_at  DateTime?
+
   // CRM sync worker: claim all pending leads in one index scan.
   @@index([crm_sync_status])
+  // Audit #6 P0-6 — worker claim filter "pending AND eligible-now"
+  // hits this composite on every tick.
+  @@index([crm_sync_status, next_eligible_at])
 }
 
 // CoachLandingPageView — anonymized analytics event per page visit.
@@ -4344,8 +4378,12 @@ model CoachLandingPageView {
 // CoachCrmIntegration — per-coach CRM connection config.
 // A coach may have one integration per provider; multiple pages can
 // share the same integration. Credentials are AES-256-GCM encrypted
-// at rest with env key LANDING_CRM_AES_KEY (decrypted only inside
+// at rest with env key KMS_MASTER_KEY (decrypted only inside
 // CoachCrmService, never returned to the client — spec §7).
+// Audit #6 P1-9 — (coach_id, provider) must be unique so the upsert
+// path in CoachCrmService cannot race itself into two rows for the
+// same provider on the same coach (which would silently fan out
+// duplicate leads on every sync tick). Enforced at the model below.
 model CoachCrmIntegration {
   id                    String      @id @default(cuid())
   coach_id              String
@@ -4368,4 +4406,6 @@ model CoachCrmIntegration {
 
   // Fast "get all integrations for coach" query from the CRM settings screen.
   @@index([coach_id])
+  // Audit #6 P1-9 — prevents two rows for the same (coach, provider).
+  @@unique([coach_id, provider])
 }

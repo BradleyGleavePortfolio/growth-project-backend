@@ -212,6 +212,7 @@ export class GuestCheckoutService {
   async createIntent(
     token: string,
     dto: GuestCheckoutDto,
+    landingPageId?: string,
   ): Promise<GuestCheckoutResult> {
     const pkg = await this.prisma.coachPackage.findUnique({
       where: { share_token: token },
@@ -322,6 +323,32 @@ export class GuestCheckoutService {
 
     const normalisedEmail = dto.guest_email.toLowerCase().trim();
     const normalisedName = dto.guest_name.trim();
+
+    // R47 / Audit #6 P0-5 — validate the optional landing_page_id query
+    // param. We must defend against three classes of abuse:
+    //   (a) a malformed string (cuid shape only),
+    //   (b) a page owned by a DIFFERENT coach (cross-coach attribution
+    //       theft — attacker pastes their own landing page id onto a
+    //       competitor's storefront URL to steal credit), and
+    //   (c) a page that does not list this package (visitor went to a
+    //       page that doesn't sell this tier; refuse to credit it).
+    // Any failure quietly clears the value to null; we never throw, so
+    // the checkout still succeeds — we just don't record bogus
+    // attribution. CUID shape is the same prefix Prisma uses elsewhere.
+    let validatedLandingPageId: string | null = null;
+    if (typeof landingPageId === 'string' && /^[a-z0-9]{20,40}$/i.test(landingPageId)) {
+      const lp = await this.prisma.coachLandingPage.findFirst({
+        where: { id: landingPageId, coach_id: pkg.coach.id, status: 'published' },
+        select: { id: true, package_ids: true },
+      });
+      if (lp && Array.isArray(lp.package_ids) && lp.package_ids.includes(pkg.id)) {
+        validatedLandingPageId = lp.id;
+      } else {
+        this.logger.warn(
+          `Checkout: landing_page_id ${landingPageId} rejected (coach mismatch or page does not list package ${pkg.id}).`,
+        );
+      }
+    }
 
     // r48 #3 — content-addressable idempotency check.  When the
     // storefront supplies a session_id, hash (token + email + session_id)
@@ -438,6 +465,13 @@ export class GuestCheckoutService {
           // hashes guest_email and redacts guest_name past this
           // deadline if the row never converted to a User.
           data_retention_at: new Date(Date.now() + PII_RETENTION_MS),
+          // R47 / Audit #6 P0-5 — landing_page_id is the source page that
+          // sent the visitor to checkout. Validated above against
+          // CoachLandingPage.coach_id == pkg.coach_id AND the page's
+          // package_ids list contains pkg.id; failed validation leaves
+          // the column null so the analytics rollup ignores it (rather
+          // than miscrediting the conversion to an arbitrary page).
+          landing_page_id: validatedLandingPageId,
           // r48 #6 — package snapshot at PI create time so a coach
           // editing the package mid-checkout does not change what the
           // guest is billed.  The amount, currency, and platform fee
