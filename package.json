@@ -38,7 +38,7 @@
     "axios": "^1.16.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
-    "expo-server-sdk": "^3.7.0",
+    "expo-server-sdk": "^6.1.0",
     "handlebars": "^4.7.8",
     "helmet": "^8.1.0",
     "ioredis": "^5.10.1",
@@ -52,6 +52,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@babel/preset-env": "^7.29.7",
     "@eslint/js": "^10.0.1",
     "@flydotio/dockerfile": "^0.7.10",
     "@nestjs/cli": "^11.0.0",
@@ -62,6 +63,7 @@
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.60.0",
     "@typescript-eslint/parser": "^8.60.0",
+    "babel-jest": "^30.4.1",
     "eslint": "^10.4.0",
     "globals": "^17.6.0",
     "jest": "^30.4.2",
