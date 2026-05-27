@@ -30,4 +30,11 @@ export interface GuestCheckoutResult {
   client_secret: string;
   payment_intent_id: string;
   guest_checkout_id: string;
+  // r48 #8 — wallet capability flags returned alongside the PaymentIntent
+  // so the storefront can render Apple Pay / Google Pay buttons only when
+  // the coach's connected account actually supports them. Defaults to
+  // `false` on legacy / unconfigured boots so the storefront falls back
+  // to card-only.
+  supports_apple_pay?: boolean;
+  supports_google_pay?: boolean;
 }

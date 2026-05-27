@@ -71,6 +71,65 @@ export class BillingService {
   // commit when they return success. The dedup row commits last on
   // success, so a partial external-handler failure cannot leave the
   // dedup row claimed.
+  // A276-P1-3 — pre-resolves the Stripe-hosted receipt_url for a
+  // guest-checkout payment_intent.succeeded event BEFORE the outer
+  // $transaction opens. Returns { id, chargeId, receiptUrl } when the
+  // event is a guest-checkout PI; null otherwise. Failures (Stripe blip,
+  // unrelated event) are absorbed and surface as null — the inner
+  // handler still has its own resolveReceiptUrl fallback path, so a
+  // pre-resolve miss degrades cleanly to the legacy in-tx lookup. The
+  // method is only called when the event type is payment_intent.succeeded
+  // and the metadata flag identifies a guest-checkout PI.
+  private async preResolveReceiptUrl(
+    event: StripeEvent,
+  ): Promise<{
+    id: string;
+    chargeId: string | null;
+    receiptUrl: string | null;
+  } | null> {
+    if (event.type !== 'payment_intent.succeeded') return null;
+    if (!this.guestCheckout) return null;
+    const pi = event.data.object as {
+      id?: string;
+      metadata?: Record<string, string>;
+      latest_charge?: string | { id?: string; receipt_url?: string } | null;
+      charges?: { data?: Array<{ id?: string; receipt_url?: string }> };
+    };
+    if (!pi?.id || !pi.metadata?.[GUEST_CHECKOUT_METADATA_KEY]) return null;
+
+    // Extract whatever the event payload already carries so the inner
+    // resolver short-circuits without an HTTP round-trip when possible.
+    let chargeId: string | null = null;
+    let receiptUrl: string | null = null;
+    if (typeof pi.latest_charge === 'string') {
+      chargeId = pi.latest_charge;
+    } else if (pi.latest_charge && typeof pi.latest_charge === 'object') {
+      chargeId = pi.latest_charge.id ?? null;
+      receiptUrl = pi.latest_charge.receipt_url ?? null;
+    }
+    if (!receiptUrl && pi.charges?.data?.[0]) {
+      chargeId = chargeId ?? pi.charges.data[0].id ?? null;
+      receiptUrl = pi.charges.data[0].receipt_url ?? null;
+    }
+
+    try {
+      // resolveReceiptUrl is best-effort and never throws — it returns
+      // null on any Stripe error after logging a warning. We still wrap
+      // in try/catch as defence-in-depth so a future regression in the
+      // helper can never propagate up and roll the dedup row back.
+      const resolved = await this.guestCheckout.resolveReceiptUrl(pi.id, {
+        chargeId,
+        receiptUrl,
+      });
+      return { id: pi.id, chargeId, receiptUrl: resolved };
+    } catch (err) {
+      this.logger.warn(
+        `preResolveReceiptUrl: lookup failed for pi=${pi.id}: ${(err as Error).message}`,
+      );
+      return { id: pi.id, chargeId, receiptUrl };
+    }
+  }
+
   async handleEvent(event: StripeEvent) {
     if (!event?.id || !event?.type) {
       return { processed: false, reason: 'malformed' };
@@ -87,6 +146,22 @@ export class BillingService {
     if (existing) {
       return { processed: false, alreadyProcessed: true };
     }
+
+    // A276-P1-3 — pre-resolve the Stripe-hosted receipt_url BEFORE the
+    // outer $transaction opens. Stripe API 2024-09-30.acacia event
+    // payloads only carry latest_charge as a string id (the charges
+    // attribute was removed by Stripe in 2022-11-15), so the historical
+    // path inside GuestCheckoutService.resolveReceiptUrl ALWAYS did a
+    // synchronous Stripe HTTP retrieveCharge inside the outer
+    // $transaction — holding the Postgres connection for the full
+    // round-trip (200ms–2s typical, Prisma's default interactive
+    // transaction timeout is 5s). Under any Stripe slowness this
+    // saturated the pool and triggered Stripe webhook retries on
+    // rollback. Doing the lookup here keeps the URL in the welcome
+    // email AND keeps the DB transaction Stripe-HTTP-free. Best-effort:
+    // a Stripe blip leaves preResolved.receiptUrl null and the welcome
+    // email simply omits the "View receipt" line (degraded, not broken).
+    const preResolved = await this.preResolveReceiptUrl(event);
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -135,16 +210,64 @@ export class BillingService {
             // Already dispatched to checkoutWebhooks above.
             break;
           case 'payment_intent.succeeded': {
+            // A276-P0-2 — pass the latest_charge id alongside the PI id so
+            // GuestCheckoutService can fetch the Stripe-hosted receipt_url
+            // from the Charge object. Stripe API 2024-09-30.acacia returns
+            // latest_charge as a charge id string on the PaymentIntent.
             const pi = event.data.object as {
               id?: string;
               metadata?: Record<string, string>;
+              latest_charge?: string | { id?: string; receipt_url?: string } | null;
+              charges?: { data?: Array<{ id?: string; receipt_url?: string }> };
             };
             if (
               this.guestCheckout &&
               pi?.id &&
               pi.metadata?.[GUEST_CHECKOUT_METADATA_KEY]
             ) {
-              await this.guestCheckout.handlePaymentSucceeded(pi.id);
+              // Prefer the expanded latest_charge (object form) so a
+              // single webhook delivery never has to hit Stripe again for
+              // the receipt URL. Fall back to charges.data[0] for older
+              // event shapes; final fallback is a charge id string the
+              // handler can retrieve.
+              let chargeId: string | null = null;
+              let receiptUrl: string | null = null;
+              if (typeof pi.latest_charge === 'string') {
+                chargeId = pi.latest_charge;
+              } else if (pi.latest_charge && typeof pi.latest_charge === 'object') {
+                chargeId = pi.latest_charge.id ?? null;
+                receiptUrl = pi.latest_charge.receipt_url ?? null;
+              }
+              if (!receiptUrl && pi.charges?.data?.[0]) {
+                chargeId = chargeId ?? pi.charges.data[0].id ?? null;
+                receiptUrl = pi.charges.data[0].receipt_url ?? null;
+              }
+              // A276-P1-3 — prefer the pre-resolved URL from the
+              // outside-tx Stripe lookup. handlePaymentSucceeded's
+              // resolveReceiptUrl short-circuits on a valid https URL
+              // so no Stripe HTTP call fires inside this transaction.
+              //
+              // A276-F2-P2-1 — also signal `preResolveAttempted` so the
+              // inner resolveReceiptUrl does NOT issue a SECOND Stripe
+              // HTTP call on the degraded path (preResolve returned a
+              // non-null record but receiptUrl was null because the
+              // outside-tx Stripe lookup failed). On a continuing Stripe
+              // outage that second attempt would also block while the
+              // outer $transaction holds its Postgres connection —
+              // exactly the in-tx HTTP anti-pattern P1-3 was meant to
+              // eliminate. With the flag set, the inner resolver returns
+              // null immediately; the welcome email omits the receipt
+              // line and a future backfill job can fill it in.
+              let preResolveAttempted = false;
+              if (!receiptUrl && preResolved && preResolved.id === pi.id) {
+                receiptUrl = preResolved.receiptUrl;
+                chargeId = chargeId ?? preResolved.chargeId;
+                preResolveAttempted = true;
+              }
+              await this.guestCheckout.handlePaymentSucceeded(
+                pi.id,
+                { chargeId, receiptUrl, preResolveAttempted },
+              );
             }
             break;
           }
@@ -160,6 +283,55 @@ export class BillingService {
             ) {
               await this.guestCheckout.handlePaymentFailed(pi.id);
             }
+            break;
+          }
+          // r48 #1 — log requires_action but don't treat as failure.
+          // Stripe Elements drives the 3DS challenge on the client; the
+          // payment ultimately resolves to succeeded or payment_failed.
+          case 'payment_intent.requires_action': {
+            const pi = event.data.object as { id?: string };
+            this.logger.log(
+              `payment_intent.requires_action received for ${pi?.id ?? 'unknown'} — 3DS in progress on client`,
+            );
+            break;
+          }
+          // r48 #13 — refund webhook.  CheckoutWebhookHandlerService
+          // (above) claims this event when it maps to a ClientPurchase;
+          // if it didn't claim, fall back to the GuestCheckout path so
+          // a guest refund flips status='refunded' + refunded_at and
+          // surfaces to the coach via the existing notifications path.
+          case 'charge.refunded': {
+            if (claimedByCheckout) break;
+            if (!this.guestCheckout) break;
+            const charge = event.data.object as {
+              payment_intent?: string;
+              amount?: number;
+              amount_refunded?: number;
+            };
+            if (!charge.payment_intent) break;
+            await this.guestCheckout.handleChargeRefunded(
+              charge.payment_intent,
+              typeof charge.amount === 'number' ? charge.amount : 0,
+              typeof charge.amount_refunded === 'number'
+                ? charge.amount_refunded
+                : 0,
+            );
+            break;
+          }
+          // r48 #13 — dispute opened.  Same fall-through semantics as
+          // charge.refunded above.
+          case 'charge.dispute.created': {
+            if (claimedByCheckout) break;
+            if (!this.guestCheckout) break;
+            const dispute = event.data.object as {
+              payment_intent?: string;
+              reason?: string;
+            };
+            if (!dispute.payment_intent) break;
+            await this.guestCheckout.handleDisputeOpened(
+              dispute.payment_intent,
+              dispute.reason ?? null,
+            );
             break;
           }
           case 'account.updated':

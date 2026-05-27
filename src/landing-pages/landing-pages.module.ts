@@ -3,6 +3,7 @@
  *
  * Phase 2 (R46): Coach CRUD + public SSR renderer + storefront routing.
  * Phase 3 (R47): CRM adapters + lead sync worker + analytics rollup.
+ * Phase 4 (CNAME, PR #280): Custom-domain claim + DNS verify.
  *
  * Phase 3 wiring:
  *   - CoachCrmService              — encrypted CRM config CRUD
@@ -12,14 +13,19 @@
  *   - LeadSyncProcessor            — cron worker (1/min) draining pending leads
  *   - LeadRateLimiterService       — Redis 100-leads-per-page-per-UTC-day cap
  *
- * Phase 4 (custom domain Pro+) TODO:
- *   - CustomDomainService          — DNS verification cron + Fly cert mgmt
+ * Phase 4 wiring:
+ *   - CustomDomainService — race-safe claim + 3s-timeout CNAME verify.
+ *   - DnsVerifier — injectable so tests can swap in a fake resolver.
+ *   - Fly cert issuance + the verification cron land in a follow-up PR.
  */
 import { Module } from '@nestjs/common';
 import { LandingPageController } from './landing-pages.controller';
 import { LandingPagePublicController } from './landing-pages.public.controller';
 import { LandingPageService } from './landing-pages.service';
 import { LandingPagePublicService } from './landing-pages.public.service';
+import { CustomDomainController } from './custom-domain.controller';
+import { CustomDomainService } from './custom-domain.service';
+import { DnsVerifier } from './dns-verifier';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { CrmController } from './crm/crm.controller';
 import { CoachCrmService } from './crm/crm.service';
@@ -37,6 +43,7 @@ import { LeadRateLimiterService } from './lead-rate-limiter.service';
     LandingPageController,
     LandingPagePublicController,
     CrmController,
+    CustomDomainController,
   ],
   providers: [
     LandingPageService,
@@ -46,12 +53,16 @@ import { LeadRateLimiterService } from './lead-rate-limiter.service';
     LeadSyncQueue,
     LeadSyncProcessor,
     LeadRateLimiterService,
+    CustomDomainService,
+    // DnsVerifier is injectable so tests can swap in a fake resolver.
+    DnsVerifier,
   ],
   exports: [
     LandingPageService,
     LandingPagePublicService,
     CoachCrmService,
     CrmRegistryService,
+    CustomDomainService,
   ],
 })
 export class LandingPagesModule {}

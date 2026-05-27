@@ -11,7 +11,15 @@ import {
   StripeConnectApiError,
   StripeConnectApiService,
 } from '../connect/stripe-connect-api.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationKind } from '../notifications/notification-kind';
 import { PrismaService } from '../prisma.service';
+
+// A276 P0-2 + P1-1 (refix) — deep-link routes for coach in-app alerts.
+// Mirrors the guest-checkout path; mobile deep-link routing config owns
+// the surface that these tgp:// URIs hit.
+const COACH_REFUND_DEEP_LINK = 'tgp://coach/billing/refunds';
+const COACH_DISPUTE_DEEP_LINK = 'tgp://coach/billing/disputes';
 
 // RefundDisputeHandlerService — webhook + admin-driven side of the
 // refund / dispute / payout pipeline.
@@ -45,12 +53,20 @@ import { PrismaService } from '../prisma.service';
 export class RefundDisputeHandlerService {
   private readonly logger = new Logger(RefundDisputeHandlerService.name);
 
+  // A276 P0-2 + P1-1 (refix) — NotificationsService is a HARD dependency,
+  // not @Optional(). Coach notification is on the money path: a refund
+  // or chargeback that doesn't reach the coach is functionally identical
+  // to the bug fix 6 was meant to solve (coach learns about lost money
+  // only by glancing at Stripe). If DI ever fails to provide this,
+  // module boot fails — the alternative (silent no-op) is the exact
+  // anti-pattern P1-4 flagged.
   constructor(
     private prisma: PrismaService,
     private stripe: StripeConnectApiService,
     private ledger: SplitLedgerService,
     private transfers: TransferOrchestratorService,
     private payoutReadiness: PayoutReadinessService,
+    private notifications: NotificationsService,
   ) {}
 
   // Webhook entry point — returns claimed=true iff we matched to a
@@ -98,10 +114,20 @@ export class RefundDisputeHandlerService {
     const purchase = await this.resolvePurchaseByCharge(charge.id);
     if (!purchase) return { claimed: false, reason: 'no_matching_purchase' };
 
+    // A276 P0-2 (refix) — track per-refund-id transitions so we emit
+    // exactly one COACH_ALERT per refund.id even under Stripe redelivery.
+    // upsertAndApplyRefund returns { ledger_just_reversed: boolean } so
+    // we know which refund ids transitioned this delivery; redeliveries
+    // see ledger_reversed already true and skip.
     const refunds = charge.refunds?.data ?? [];
+    const newlyAppliedRefunds: Array<{
+      id: string;
+      amount_cents: number;
+      reason: string | null;
+    }> = [];
     for (const r of refunds) {
       if (!r.id) continue;
-      await this.upsertAndApplyRefund({
+      const outcome = await this.upsertAndApplyRefund({
         purchase,
         stripe_refund_id: r.id,
         stripe_charge_id: charge.id,
@@ -109,20 +135,92 @@ export class RefundDisputeHandlerService {
         status: r.status ?? 'pending',
         reason: r.reason ?? null,
       });
+      if (outcome.ledger_just_reversed) {
+        newlyAppliedRefunds.push({
+          id: r.id,
+          amount_cents: typeof r.amount === 'number' ? r.amount : 0,
+          reason: r.reason ?? null,
+        });
+      }
     }
 
-    // Update purchase-level state.
+    // Update purchase-level state. A276 P1-2 (refix) — the GuestCheckout
+    // and ClientPurchase paths both transition to 'refunded' when the
+    // CUMULATIVE amount_refunded reaches the charge amount (Stripe's
+    // refunded charges carry the running total). Partial refunds keep
+    // entitlement_active true; the client keeps the access they paid
+    // net-of-credit for.
     const totalAmount =
       typeof charge.amount === 'number' ? charge.amount : purchase.amount_cents;
     const refundedCents =
       typeof charge.amount_refunded === 'number' ? charge.amount_refunded : 0;
-    const fullyRefunded = refundedCents >= totalAmount;
+    const fullyRefunded = totalAmount > 0 && refundedCents >= totalAmount;
     if (fullyRefunded) {
-      await this.prisma.clientPurchase.update({
-        where: { id: purchase.id },
-        data: { status: 'refunded', entitlement_active: false },
+      // A276-F2-P2-3 — the ClientPurchase status flip and the
+      // GuestCheckout lockstep mirror MUST commit atomically. The
+      // previous implementation issued both writes on `this.prisma`,
+      // so a crash between the two could leave ClientPurchase='refunded'
+      // / GuestCheckout='converted' until the Stripe retry converged
+      // via the WHERE guards. The WHERE-guards still keep both writes
+      // idempotent under Stripe redelivery; the transaction adds the
+      // crash-safety the audit flagged as missing.
+      //
+      // We deliberately do NOT include the upstream ledger reversals
+      // or the Stripe-side transfer reversal in this transaction
+      // because those involve Stripe HTTP calls (transfers.reverse)
+      // — the exact in-tx HTTP anti-pattern P1-3 / P2-1 eliminate.
+      // The ledger writes have already committed on `this.prisma`
+      // above and the WHERE-guards make every step idempotent on
+      // Stripe retry.
+      await this.prisma.$transaction(async (tx) => {
+        // WHERE-guard on status keeps this idempotent under Stripe
+        // redelivery (the second delivery sees status already 'refunded'
+        // and the updateMany returns count=0 as a no-op).
+        await tx.clientPurchase.updateMany({
+          where: { id: purchase.id, status: { not: 'refunded' } },
+          data: { status: 'refunded', entitlement_active: false },
+        });
+
+        // A276 P1-2 (refix) — keep the originating GuestCheckout row in
+        // lockstep. After conversion the row's status is 'converted'; a
+        // refund of the underlying charge must flip it to 'refunded' so
+        // admin reports that filter `GuestCheckout WHERE status='refunded'`
+        // surface the transaction. updateMany with a status guard makes
+        // this idempotent under Stripe redelivery and a no-op when no
+        // GuestCheckout exists (direct ClientPurchase paths). We never
+        // re-stamp refunded_at here — the GuestCheckout-path handler
+        // (handleChargeRefunded) owns that field's audit trail; in the
+        // post-conversion case it stays null, which correctly reflects
+        // "never refunded through the guest path".
+        if (purchase.stripe_payment_intent_id) {
+          await tx.guestCheckout.updateMany({
+            where: {
+              stripe_payment_intent_id: purchase.stripe_payment_intent_id,
+              status: { not: 'refunded' },
+            },
+            data: { status: 'refunded' },
+          });
+        }
       });
     }
+
+    // A276 P0-2 (refix) — emit COACH_ALERT once per refund id whose
+    // ledger reversal we just applied in THIS delivery. Order matters:
+    // we fire AFTER the purchase-level status update so a coach who
+    // taps through sees the correct entitlement state immediately.
+    // Notifier failures are caught inside emitRefundCoachAlert; the
+    // refund + ledger writes have already committed and we never roll
+    // them back on a downstream-signal failure.
+    for (const r of newlyAppliedRefunds) {
+      await this.emitRefundCoachAlert({
+        purchase,
+        amount_cents: r.amount_cents,
+        stripe_refund_id: r.id,
+        stripe_charge_id: charge.id,
+        reason: r.reason,
+      });
+    }
+
     return { claimed: true, purchase_id: purchase.id };
   }
 
@@ -157,6 +255,12 @@ export class RefundDisputeHandlerService {
   // Idempotently create a refund row + apply ledger reversals. Safe to
   // re-run with the same payload — composite-unique on stripe_refund_id
   // + ledger.applyReversal monotonically increases reversed_cents.
+  //
+  // Returns { row, ledger_just_reversed } so callers can detect the
+  // one-and-only delivery that transitioned ledger_reversed false →
+  // true for this refund.id and use that as their COACH_ALERT
+  // idempotency key (A276 P0-2 refix). Redeliveries see
+  // ledger_just_reversed=false and skip downstream signalling.
   async upsertAndApplyRefund(args: {
     purchase: ClientPurchase;
     stripe_refund_id: string;
@@ -166,7 +270,7 @@ export class RefundDisputeHandlerService {
     reason: string | null;
     note?: string | null;
     initiated_by_user_id?: string | null;
-  }): Promise<ChargeRefund> {
+  }): Promise<{ row: ChargeRefund; ledger_just_reversed: boolean }> {
     const existing = await this.prisma.chargeRefund.findUnique({
       where: { stripe_refund_id: args.stripe_refund_id },
     });
@@ -200,15 +304,73 @@ export class RefundDisputeHandlerService {
     // Apply ledger reversals only once per refund (idempotency flag),
     // and only when the refund is actually `succeeded` — pending refunds
     // shouldn't move our books.
-    if (args.status !== 'succeeded' || row.ledger_reversed) return row;
+    if (args.status !== 'succeeded' || row.ledger_reversed) {
+      return { row, ledger_just_reversed: false };
+    }
 
     await this.applyLedgerReversal(args.purchase.id, args.amount_cents);
     await this.applyHeadCoachReversal(args.purchase.id, args.amount_cents);
 
-    return this.prisma.chargeRefund.update({
+    const updated = await this.prisma.chargeRefund.update({
       where: { id: row.id },
       data: { ledger_reversed: true, transfer_reversed: true },
     });
+    return { row: updated, ledger_just_reversed: true };
+  }
+
+  // A276 P0-2 (refix) — single source of truth for the post-conversion
+  // refund COACH_ALERT envelope. Pulled out so both the webhook path
+  // (upsertAndApplyRefund) and any future admin-initiated refund path
+  // emit the same shape. Idempotency is enforced by the caller (only
+  // called once per ChargeRefund.ledger_reversed transition).
+  private async emitRefundCoachAlert(args: {
+    purchase: ClientPurchase;
+    amount_cents: number;
+    stripe_refund_id: string;
+    stripe_charge_id: string;
+    reason: string | null;
+  }): Promise<void> {
+    try {
+      // Determine whether this refund is full (purchase fully refunded)
+      // or partial — affects the message body and entitlement_revoked
+      // payload field. We re-read the purchase rather than relying on
+      // the in-memory copy because applyLedgerReversal + the
+      // fullyRefunded purchase.update may have transitioned its status.
+      const fresh = await this.prisma.clientPurchase.findUnique({
+        where: { id: args.purchase.id },
+      });
+      const isFullRefund =
+        !!fresh && fresh.status === 'refunded' && !fresh.entitlement_active;
+      const dollars = (args.amount_cents / 100).toFixed(2);
+      const body = isFullRefund
+        ? `Refund processed: $${dollars} returned to client.`
+        : `Partial refund: $${dollars} returned to client.`;
+      await this.notifications.createNotification({
+        user_id: args.purchase.coach_user_id,
+        kind: NotificationKind.COACH_ALERT,
+        body,
+        payload: {
+          event: 'refund_processed',
+          purchase_id: args.purchase.id,
+          stripe_refund_id: args.stripe_refund_id,
+          stripe_charge_id: args.stripe_charge_id,
+          amount_refunded_cents: args.amount_cents,
+          amount_cents: args.purchase.amount_cents,
+          fully_refunded: isFullRefund,
+          entitlement_revoked: isFullRefund,
+          reason: args.reason,
+        },
+        deep_link: COACH_REFUND_DEEP_LINK,
+        channel: 'inapp',
+      });
+    } catch (err) {
+      // Coach alert is a downstream signal; the refund itself has
+      // already committed. We log with PII-safe context (refund id,
+      // charge id, coach id) so ops can replay the alert manually.
+      this.logger.warn(
+        `coach refund notification failed refund=${args.stripe_refund_id} charge=${args.stripe_charge_id} coach=${args.purchase.coach_user_id}: ${(err as Error).message}`,
+      );
+    }
   }
 
   // Reverses the destination + application_fee ledger slices
@@ -365,31 +527,173 @@ export class RefundDisputeHandlerService {
       typeof dispute.evidence_details?.due_by === 'number'
         ? new Date(dispute.evidence_details.due_by * 1000)
         : null;
-    const row = await this.prisma.chargeDispute.upsert({
-      where: { stripe_dispute_id: dispute.id },
-      create: {
-        purchase_id: purchase.id,
-        stripe_dispute_id: dispute.id,
-        stripe_charge_id: dispute.charge,
-        amount_cents: typeof dispute.amount === 'number' ? dispute.amount : 0,
-        currency: dispute.currency ?? 'usd',
-        status: dispute.status ?? 'needs_response',
-        reason: dispute.reason ?? null,
-        evidence_due_by: dueBy,
-      },
-      update: {
-        status: dispute.status ?? 'needs_response',
-        reason: dispute.reason ?? null,
-        evidence_due_by: dueBy ?? undefined,
-        amount_cents: typeof dispute.amount === 'number' ? dispute.amount : undefined,
-      },
-    });
-    if (initial) {
-      await this.prisma.clientPurchase.update({
-        where: { id: purchase.id },
-        data: { status: 'disputed' },
+    // A276 P0-2 / P1-1 (refix) — detect the first observation of this
+    // dispute id so we emit the coach alert EXACTLY ONCE under Stripe
+    // redelivery.
+    //
+    // A276-F2-P2-2 (refix) — the previous implementation read
+    // `findUnique` and then called `upsert`. Two concurrent webhook
+    // deliveries (e.g. `charge.dispute.created` and `charge.dispute.
+    // updated` for the same dispute_id, or two replicas processing the
+    // same Stripe redelivery in parallel) could BOTH observe
+    // `existingDispute=null` between the read and the create, then both
+    // emit COACH_ALERT — the coach gets two pings for one dispute.
+    //
+    // Fix: rely on the DB-level unique index on `stripe_dispute_id`
+    // (see prisma/schema.prisma `ChargeDispute.stripe_dispute_id @unique`).
+    // Attempt `create` first; on P2002 (unique-violation) we KNOW a
+    // concurrent or prior delivery has already inserted the row, so
+    // this delivery is NOT the first observation and we fall through
+    // to the update branch without firing the alert. The `create`
+    // success path is the one-and-only first-observation signal.
+    //
+    // A276-F2-P2-3 — the dispute row insert and the ClientPurchase
+    // status flip to 'disputed' (when this is the first observation of
+    // an `initial=true` event) MUST commit atomically. The previous
+    // implementation issued both writes on `this.prisma` so a crash
+    // between them could leave a ChargeDispute row without the
+    // matching ClientPurchase.status='disputed' until Stripe retried.
+    // We wrap the first-observation branch in a single `$transaction`.
+    // On the race-loser branch (P2002) the in-tx create rolls back
+    // (no orphan write) and we apply the update outside the tx.
+    // Capture narrowed values for the closure (TS does not preserve
+    // the early-return narrowing across the $transaction lambda).
+    const disputeId: string = dispute.id;
+    const chargeId: string = dispute.charge;
+    let isFirstObservation: boolean;
+    let row: ChargeDispute;
+    try {
+      row = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.chargeDispute.create({
+          data: {
+            purchase_id: purchase.id,
+            stripe_dispute_id: disputeId,
+            stripe_charge_id: chargeId,
+            amount_cents:
+              typeof dispute.amount === 'number' ? dispute.amount : 0,
+            currency: dispute.currency ?? 'usd',
+            status: dispute.status ?? 'needs_response',
+            reason: dispute.reason ?? null,
+            evidence_due_by: dueBy,
+          },
+        });
+        if (initial) {
+          // Mirror the purchase status to 'disputed' in the same tx so
+          // a reader who sees the dispute row also sees the purchase
+          // marked disputed. WHERE-guarded so re-deliveries are
+          // no-ops (and so an already-refunded purchase isn't dragged
+          // back to 'disputed' by a stale event).
+          await tx.clientPurchase.updateMany({
+            where: {
+              id: purchase.id,
+              status: { notIn: ['disputed', 'refunded'] },
+            },
+            data: { status: 'disputed' },
+          });
+        }
+        return created;
       });
+      isFirstObservation = true;
+    } catch (err) {
+      // Prisma raises P2002 on a unique-constraint violation. Anything
+      // else (e.g. connection error) we propagate so Stripe retries.
+      if (
+        !err ||
+        typeof err !== 'object' ||
+        (err as { code?: string }).code !== 'P2002'
+      ) {
+        throw err;
+      }
+      // Race lost — another delivery wrote first. The in-tx create
+      // rolled back automatically. Update the dispute row in-place and
+      // skip the alert.
+      //
+      // A279-P2-A — ALSO mirror ClientPurchase.status='disputed' here
+      // when `initial` is true. Out-of-order Stripe delivery
+      // (`charge.dispute.updated` arriving BEFORE `charge.dispute.created`)
+      // means the winning row may have been inserted by the `updated`
+      // delivery (which sets `initial=false` upstream) and so never
+      // mirrored the purchase status. When the `created` event later
+      // hits P2002 here, `initial=true` is the only signal we have that
+      // the purchase should be flipped to 'disputed'. The pre-031f57ca
+      // code mirrored unconditionally after the upsert; 031f57ca moved
+      // it into the create-success branch and silently lost this path.
+      //
+      // Wrap both writes in a single `$transaction` so a reader who
+      // sees the dispute UPDATE also sees the purchase flip (same
+      // atomicity guarantee the create branch already enforces).
+      // The `notIn: ['disputed', 'refunded']` guard keeps the write
+      // idempotent and preserves the "don't drag an already-refunded
+      // purchase back to disputed" invariant.
+      row = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.chargeDispute.update({
+          where: { stripe_dispute_id: disputeId },
+          data: {
+            status: dispute.status ?? 'needs_response',
+            reason: dispute.reason ?? null,
+            evidence_due_by: dueBy ?? undefined,
+            amount_cents:
+              typeof dispute.amount === 'number' ? dispute.amount : undefined,
+          },
+        });
+        if (initial) {
+          await tx.clientPurchase.updateMany({
+            where: {
+              id: purchase.id,
+              status: { notIn: ['disputed', 'refunded'] },
+            },
+            data: { status: 'disputed' },
+          });
+        }
+        return updated;
+      });
+      isFirstObservation = false;
     }
+
+    // A276 P1-1 (refix) — emit COACH_ALERT on the FIRST observation of
+    // this dispute id. We deliberately key on "is this row new" rather
+    // than `initial` alone: a `charge.dispute.updated` arriving before
+    // we've ever seen `charge.dispute.created` (because the created
+    // event was dropped or arrived out of order) still needs to alert
+    // the coach so they don't miss the 7-day evidence window.
+    //
+    // A276-F2-P2-2 — `isFirstObservation` is the row-count signal from
+    // the create-or-conflict pattern above: true iff THIS process won
+    // the DB-level race to insert this stripe_dispute_id. Parallel
+    // deliveries see the conflict and skip the alert. The DB unique
+    // index is the serialisation point.
+    //
+    // Notifier failures are caught; the dispute row has already
+    // committed and we never roll it back on a downstream-signal failure.
+    if (isFirstObservation) {
+      try {
+        const evidenceDueByISO = dueBy ? dueBy.toISOString() : null;
+        // Trim the dispute reason the same way the guest-checkout
+        // handler does (500 chars; matches the schema's VarChar).
+        const safeReason = (dispute.reason ?? '').slice(0, 500) || null;
+        await this.notifications.createNotification({
+          user_id: purchase.coach_user_id,
+          kind: NotificationKind.COACH_ALERT,
+          body: 'Chargeback opened on a client purchase. Submit evidence in Stripe within 7 days.',
+          payload: {
+            event: 'dispute_opened',
+            purchase_id: purchase.id,
+            stripe_dispute_id: dispute.id,
+            stripe_charge_id: dispute.charge,
+            reason: safeReason,
+            amount_cents: row.amount_cents,
+            evidence_due_by: evidenceDueByISO,
+          },
+          deep_link: COACH_DISPUTE_DEEP_LINK,
+          channel: 'inapp',
+        });
+      } catch (err) {
+        this.logger.warn(
+          `coach dispute notification failed dispute=${dispute.id} charge=${dispute.charge} coach=${purchase.coach_user_id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
     return { claimed: true, purchase_id: row.purchase_id };
   }
 
@@ -532,7 +836,7 @@ export class RefundDisputeHandlerService {
       },
       idempotencyKey,
     });
-    return this.upsertAndApplyRefund({
+    const outcome = await this.upsertAndApplyRefund({
       purchase,
       stripe_refund_id: stripe.id,
       stripe_charge_id: chargeId,
@@ -542,6 +846,35 @@ export class RefundDisputeHandlerService {
       note: args.note ?? null,
       initiated_by_user_id: args.initiated_by_user_id,
     });
+    // A276 P0-2 (refix) — admin-initiated refund: re-read the purchase
+    // (admin path doesn't go through the webhook's purchase.update
+    // branch, so we use the row state at call time) and emit the same
+    // COACH_ALERT shape. Gated on ledger_just_reversed so a re-issued
+    // admin refund (same idempotency key, same amount) doesn't double-
+    // notify.
+    if (outcome.ledger_just_reversed) {
+      const amount_cents =
+        typeof stripe.amount === 'number'
+          ? stripe.amount
+          : args.amount_cents ?? purchase.amount_cents;
+      // Admin refund implicitly fully refunds when amount matches the
+      // purchase amount. Mirror the webhook's purchase-state update so
+      // emitRefundCoachAlert observes the correct status.
+      if (amount_cents >= purchase.amount_cents) {
+        await this.prisma.clientPurchase.update({
+          where: { id: purchase.id },
+          data: { status: 'refunded', entitlement_active: false },
+        });
+      }
+      await this.emitRefundCoachAlert({
+        purchase,
+        amount_cents,
+        stripe_refund_id: stripe.id,
+        stripe_charge_id: chargeId,
+        reason: args.reason ?? null,
+      });
+    }
+    return outcome.row;
   }
 
   private async resolveChargeIdForPurchase(

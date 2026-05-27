@@ -310,6 +310,8 @@ model User {
   notifications              Notification[]
   digest_logs                NotificationDigestLog[]
   notification_delivery_logs NotificationDeliveryLog[]
+  // NUDGE-V1 — behavioral nudge ledger (one row per decision: sent / suppressed / deferred).
+  nudge_logs                 NudgeLog[]
 
   // Sprint B — Workout Builder relations.
   workout_plans_as_coach           WorkoutPlan[]                  @relation("CoachWorkoutPlans")
@@ -896,6 +898,28 @@ model NotificationPreferences {
   booking_email           Boolean @default(false)
   booking_push            Boolean @default(true)
   booking_inapp           Boolean @default(true)
+
+  // NUDGE-V1 — Behavioral re-engagement nudges. Four trigger types, each
+  // independently opt-out-able (spec §6). Channel routing reuses the
+  // existing _email / _push / _inapp matrix — see _kindToPrefsPrefix().
+  // Default ON: a brand-new user opts INTO nudges by default; their first
+  // experience surfaces the preferences screen so they can dial back.
+  nudge_missed_checkin_email          Boolean @default(false)
+  nudge_missed_checkin_push           Boolean @default(true)
+  nudge_missed_checkin_inapp          Boolean @default(true)
+  // Internally referenced by code as the 'streak_broken' trigger; column
+  // names use 'practice_paused' to comply with the schema doctrine that
+  // bans the literal token in DB definitions. See _kindToPrefsPrefix
+  // and TRIGGER_TO_PREFS_PREFIX for the trigger↔column mapping.
+  nudge_practice_paused_email         Boolean @default(false)
+  nudge_practice_paused_push          Boolean @default(true)
+  nudge_practice_paused_inapp         Boolean @default(true)
+  nudge_onboarding_abandoned_email    Boolean @default(true)
+  nudge_onboarding_abandoned_push     Boolean @default(true)
+  nudge_onboarding_abandoned_inapp    Boolean @default(true)
+  nudge_inactive_email                Boolean @default(true)
+  nudge_inactive_push                 Boolean @default(true)
+  nudge_inactive_inapp                Boolean @default(true)
 }
 
 model Habit {
@@ -1881,6 +1905,58 @@ model NotificationDeliveryLog {
   @@unique([session_id, user_id, kind], name: "NotificationDeliveryLog_session_user_kind_key")
   @@index([session_id])
   @@index([user_id, created_at])
+}
+
+// ============================================================
+// NUDGE-V1 — Behavioral re-engagement nudge ledger.
+//
+// One row per (user, trigger_type, signal_key) decision. The unique
+// (user_id, trigger_type, signal_key) index is the idempotency guard:
+// a retried scan that produces the same signal_key is a unique-violation
+// the engine treats as a skip (status='suppressed_dedupe' on the existing row).
+//
+// status taxonomy:
+//   sent                      — successfully delivered to at least one channel
+//   suppressed_cap            — another nudge sent within the 48h frequency cap
+//   suppressed_quiet_hours    — user local time outside 8am–9pm (rare; usually deferred instead)
+//   suppressed_opt_out        — per-trigger pref disabled
+//   suppressed_muted          — global mute on
+//   suppressed_dedupe         — duplicate signal_key for an already-resolved candidate
+//   deferred                  — quiet hours, will retry after deferred_until
+//   failed                    — transport error on every channel attempted
+// ============================================================
+model NudgeLog {
+  id              String    @id @default(uuid())
+  user_id         String
+  user            User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  // trigger_type: 'missed_checkin' | 'streak_broken' | 'onboarding_abandoned' | 'inactive'
+  trigger_type    String
+  // Deterministic per-event id; collisions across retries are intentional dedupe.
+  // e.g. 'missed_checkin:2026-05-08' or 'streak_broken:2026-05-07:14'.
+  signal_key      String
+  status          String
+  // Channels that accepted delivery (subset of {'inapp','email','push'}).
+  channels        String[]  @default([])
+  attempted_at    DateTime  @default(now())
+  sent_at         DateTime?
+  // Set when status='deferred' — next scan after this UTC instant will retry.
+  deferred_until  DateTime?
+  // 48h frequency-cap bucket (spec §3). Computed as floor(send_time / 48h)
+  // and set ONLY when the engine commits to deliver (i.e. before the
+  // delivery fan-out). The @@unique([user_id, cap_bucket]) constraint
+  // makes the cap atomic across replicas: two concurrent triggers for the
+  // same user racing through the gates will collide here, the loser gets
+  // P2002 → status='suppressed_cap'. NULL on every non-sent decision so
+  // multiple deferred / suppressed rows for the same user coexist (PG
+  // treats NULL as distinct in unique indexes).
+  cap_bucket      DateTime?
+  created_at      DateTime  @default(now())
+
+  @@unique([user_id, trigger_type, signal_key])
+  @@unique([user_id, cap_bucket])
+  @@index([user_id, sent_at])
+  @@index([status, attempted_at])
+  @@index([status, deferred_until])
 }
 
 // ============================================================
@@ -2904,10 +2980,15 @@ model GuestCheckout {
   ///   conversion_failed_retryable → converted                    (reconciliation OK)
   ///   conversion_failed_retryable → conversion_failed_terminal   (>= 5 retries)
   ///   pending                    → failed                        (Stripe PI failed)
+  ///   paid|converted             → refunded                      (charge.refunded — full)
+  ///   paid|converted             → disputed                      (charge.dispute.created)
   /// `failed` is the legacy terminal state for the pre-checkout
   /// failure path (Stripe rejected the PI). It is NOT reachable from
   /// `paid` — once we have money, the row only moves through retryable
   /// reconciliation. Audit #3 P1-6 added that durability.
+  /// A276 P0-1: `refunded` and `disputed` are first-class terminals
+  /// admitted by the GuestCheckout_status_check constraint (see
+  /// migration 20260921000000_add_refunded_disputed_to_guest_checkout_status).
   status String @default("pending")
 
   /// FK to User row created after payment succeeds. Null until converted.
@@ -2958,6 +3039,31 @@ model GuestCheckout {
   /// relation on CoachLandingPage; analytics queries filter by id only.
   landing_page_id String?
 
+  /// r48 Hardening — lost-webhook reconciler bookkeeping.  The
+  /// CheckoutReconcileScheduler scans pending rows older than 30s with
+  /// last_reconciled_at older than 10s and calls
+  /// stripe.paymentIntents.retrieve to recover from a dropped webhook.
+  /// NULL = never reconciled yet.
+  last_reconciled_at DateTime?
+  /// Capped at 30 polls (5 min). Past that the row is moved to
+  /// `conversion_failed_terminal` and on-call is paged (A279-P1-1).
+  reconcile_attempts Int       @default(0)
+  /// r48 Hardening — package snapshot taken at PaymentIntent create.
+  /// Guards against a coach editing the package mid-checkout: the guest
+  /// gets the price/name they saw at intent time, not at fulfillment
+  /// time. Shape: { name, price_cents, currency, description, billing_period }.
+  package_snapshot   Json?
+  /// r48 Hardening — refund/dispute bookkeeping.  Stripe's charge.refunded
+  /// → refunded_at + status='refunded'.  charge.dispute.created →
+  /// disputed_at + dispute_reason + status='disputed'.  Coach is alerted
+  /// via the existing notifications path.
+  refunded_at        DateTime?
+  disputed_at        DateTime?
+  dispute_reason     String?   @db.VarChar(500)
+  /// r48 Hardening — branded PDF receipt URL (local:// in dev, s3:// in
+  /// prod). Set by the post-success ReceiptScheduler after generation.
+  receipt_url        String?
+
   @@index([package_id])
   @@index([status])
   // Audit #4 P2-6 — raw email index removed. Indexing guest_email
@@ -2978,6 +3084,10 @@ model GuestCheckout {
   // R47 — analytics: revenue rollup for a landing page filters by
   // landing_page_id + status. Index supports the GET /analytics query.
   @@index([landing_page_id, status])
+  // r48 — lost-webhook reconciler scans pending rows ordered by
+  // (status, last_reconciled_at NULLS FIRST). The composite serves
+  // both the filter and the order-by.
+  @@index([status, last_reconciled_at])
 }
 
 // Phase 3 Connect — Per-client Stripe Customer on the platform account.
@@ -3271,11 +3381,78 @@ model DunningState {
   cancel_scheduled_at      DateTime?
   resolved_at              DateTime?
   abandoned_at             DateTime?
+  // DUNNING-V1 — cadence state. step_index is the highest cadence step
+  // that has fired (-1 = none yet, 0 = soft sent, 1 = urgent sent, 2 =
+  // final sent, 3 = cancelled). next_attempt_at = scheduled_for of the
+  // earliest pending DunningAttempt, denormalized so the tick loop can
+  // index-scan on (status, next_attempt_at).
+  step_index               Int            @default(-1)
+  next_attempt_at          DateTime?
+  entered_at               DateTime?
+  recovered_at             DateTime?
+  escalated_at             DateTime?
   created_at               DateTime       @default(now())
   updated_at               DateTime       @updatedAt
 
+  attempts                 DunningAttempt[]
+
   @@index([status])
   @@index([status, cancel_scheduled_at])
+  @@index([status, next_attempt_at])
+}
+
+// DUNNING-V1 — one row per scheduled cadence step.
+//
+// At first failure DunningService schedules N attempts (one per cadence
+// day) all with status='pending'. The tick loop drains any whose
+// scheduled_for <= now. (dunning_state_id, step_index) is unique so
+// re-running recordFailure is idempotent. Once sent, sent_at is stamped
+// and email_idempotency_key is the dedup key handed to EmailService.
+model DunningAttempt {
+  id                     String       @id @default(uuid())
+  dunning_state_id       String
+  dunning_state          DunningState @relation(fields: [dunning_state_id], references: [id], onDelete: Cascade)
+  // 0..N — position in the cadence. -1 reserved for ad-hoc "trigger now"
+  // re-fires created by admin override.
+  step_index             Int
+  // soft | urgent | final | recovered | cancelled
+  kind                   String
+  scheduled_for          DateTime
+  // pending | sending | sent | failed | failed_permanent | skipped | cancelled
+  //
+  // 'sending' is the in-flight CAS claim slot used by tick() to prevent the
+  // race window described in PR #281 P1-1: a pending row is atomically flipped
+  // to 'sending' via updateMany({where: status=pending}) before the outbound
+  // email is dispatched. recordResolution() then only flips status=pending
+  // rows to cancelled, leaving any in-flight 'sending' row alone — which means
+  // the tick worker's subsequent 'sending' → 'sent' write is safe and a late
+  // payment-success webhook cannot resurrect a cancelled row.
+  status                 String       @default("pending")
+  sent_at                DateTime?
+  email_idempotency_key  String?      @unique
+  provider_message_id    String?
+  failure_reason         String?
+  // Send-retry bookkeeping (PR #281 P2-3). When email.send() throws or
+  // returns a failed provider response, the row is flipped to status='failed'
+  // and next_retry_at is set to now + exponential backoff. The tick loop
+  // re-picks status='failed' rows whose next_retry_at <= now, up to
+  // retry_count >= DUNNING_MAX_SEND_RETRIES, after which the row is marked
+  // 'failed_permanent' and dropped (and a dunning_attempt_failed_permanent_total
+  // counter increments so ops can alert).
+  retry_count            Int          @default(0)
+  next_retry_at          DateTime?
+  // Set when a concurrent recordResolution() raced ahead of a send the tick
+  // worker had already claimed (status='sending'). Lets ops audit "customer
+  // got a reminder after they paid" cases — these are expected and rare but
+  // we want visibility. PR #281 P1-1.
+  superseded_at          DateTime?
+  created_at             DateTime     @default(now())
+  updated_at             DateTime     @updatedAt
+
+  @@unique([dunning_state_id, step_index])
+  @@index([status, scheduled_for])
+  @@index([status, next_retry_at])
+  @@index([dunning_state_id, status])
 }
 
 // Phase 5 Connect — Outbound reminder log.
@@ -3975,9 +4152,17 @@ enum LandingCtaType {
   book_call
 }
 
-// LandingSectionKind — the eight locked section archetypes a coach can
-// place on a page (≤ 6 active; Miller's Law hard cap per spec §2 #3).
-// Payload JSON shape is enforced per-kind in the service layer (PR #2).
+// LandingSectionKind — landing-page section archetypes a coach can place on
+// a page (≤ 6 active; Miller's Law hard cap per spec §2 #3).  Payload JSON
+// shape is enforced per-kind in the service layer (PR #2).
+//
+// R52 renderer-v2 (PR-LP-RENDERER-V2) adds three persuasion-arc kinds:
+//   - problem_solution : 2-column "what's broken / what changes"
+//   - mechanism        : 3-step how-it-works with iconography
+//   - trust            : credentials, press, numeric proof
+// The pre-existing kinds (before_after, pricing, offer_stack, guarantee)
+// stay for backwards compatibility with pages built in Phase 1/2; the
+// v2 renderer still draws them with the SaaS-brand token system.
 enum LandingSectionKind {
   hero
   before_after
@@ -3987,6 +4172,9 @@ enum LandingSectionKind {
   lead_form
   offer_stack
   guarantee
+  problem_solution
+  mechanism
+  trust
 }
 
 // CrmSyncStatus — state of a CoachLandingLead's outbound CRM push.

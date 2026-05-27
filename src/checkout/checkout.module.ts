@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConnectModule } from '../connect/connect.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { PackagesModule } from '../packages/packages.module';
 import { AdminAnalyticsService } from './admin-analytics.service';
 import {
@@ -34,7 +35,17 @@ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 // the structural fix for the cycle (CheckoutModule no longer needs to
 // import AuthModule, and AuthModule no longer needs to provide guards).
 @Module({
-  imports: [ConnectModule, PackagesModule],
+  // A276 P0-2 (refix) — NotificationsModule is imported so
+  // RefundDisputeHandlerService can emit COACH_ALERTs on the
+  // post-conversion refund + dispute paths (the dominant production
+  // case: refunds arrive after convertGuestToUser has stamped a
+  // ClientPurchase row). The dependency is HARD: missing wiring fails
+  // module boot rather than silently no-opping.
+  imports: [
+    ConnectModule,
+    PackagesModule,
+    NotificationsModule,
+  ],
   controllers: [
     CheckoutController,
     CoachPurchasesController,

@@ -394,10 +394,13 @@ describe('LandingPagePublicService', () => {
 // ─── renderNotFound standalone ────────────────────────────────────────────────
 
 describe('renderNotFound', () => {
-  it('returns quiet-luxury HTML', () => {
+  it('returns dark-mode SaaS-brand HTML', () => {
     const html = renderNotFound();
     expect(html).toContain('<!doctype html>');
     expect(html).toContain('noindex,nofollow');
-    expect(html).toContain("isn't available");
+    // v2 uses a typographic apostrophe in the headline (&rsquo;).
+    expect(html).toMatch(/isn[&'’']/);
+    // v2 dark-mode tokens — the SaaS palette replaced the cream brand.
+    expect(html).toContain('#0b0b0c');
   });
 });

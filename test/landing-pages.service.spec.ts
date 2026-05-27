@@ -83,11 +83,29 @@ function makePrisma() {
           if (where.coach_id && page.coach_id !== where.coach_id) return false;
           if (where.slug && page.slug !== where.slug) return false;
           if (where.status && page.status !== where.status) return false;
+          // CNAME Phase 4: findPublishedByCustomDomain() filters.
+          if (where.custom_domain !== undefined && page.custom_domain !== where.custom_domain) {
+            return false;
+          }
+          if (where.custom_domain_verified_at?.not === null) {
+            if (page.custom_domain_verified_at == null) return false;
+          }
           return true;
         });
         if (!p) return null;
         if (include?.sections) {
-          return { ...p, sections: sections.filter((s: any) => s.page_id === p.id), coach: { id: p.coach_id, name: 'Test Coach', coach_practice_type: null, profile: null } };
+          return {
+            ...p,
+            sections: sections.filter((s: any) => s.page_id === p.id),
+            coach: include?.coach
+              ? {
+                  id: p.coach_id,
+                  name: 'Test Coach',
+                  coach_practice_type: null,
+                  coach_profile: profiles.find((pr: any) => pr.coach_id === p.coach_id) ?? null,
+                }
+              : { id: p.coach_id, name: 'Test Coach', coach_practice_type: null, profile: null },
+          };
         }
         return p;
       }),
@@ -593,6 +611,91 @@ describe('LandingPageService', () => {
       }
       const result = await svc.getLeads('coach-1', 'p1', { limit: 3 });
       expect(result.items.length).toBeLessThanOrEqual(4); // take limit+1
+    });
+  });
+
+  // ─── findPublishedByCustomDomain (CNAME Phase 4) ─────────────────────────
+  //
+  // Security-critical helper that gates public renderer routing to
+  // DNS-verified custom domains only. P2-2 in the PR audit — added here
+  // so a future host-header wiring PR can't accidentally drop the
+  // `verified_at` filter (the anti-phishing gate) without a red test.
+
+  describe('findPublishedByCustomDomain', () => {
+    it('returns the published page when the custom_domain is verified', async () => {
+      prisma._pages.push({
+        id: 'page-cname-ok',
+        coach_id: 'coach-1',
+        title: 'Verified storefront',
+        slug: 'verified-storefront',
+        status: 'published',
+        custom_domain: 'verified.example.com',
+        custom_domain_verified_at: new Date('2026-01-01T00:00:00Z'),
+      });
+
+      const page = await svc.findPublishedByCustomDomain('verified.example.com');
+      expect(page).not.toBeNull();
+      expect(page!.id).toBe('page-cname-ok');
+      expect(page!.custom_domain).toBe('verified.example.com');
+      // Renderer-shape includes are wired (sections + coach).
+      expect(Array.isArray((page as any).sections)).toBe(true);
+      expect((page as any).coach).toBeDefined();
+    });
+
+    it('returns null when the custom_domain is claimed but NOT verified (verified_at: null)', async () => {
+      // Anti-phishing gate: a coach who CNAMEs at us without
+      // DNS-verification must NEVER be served on the public renderer.
+      prisma._pages.push({
+        id: 'page-cname-unverified',
+        coach_id: 'coach-attacker',
+        title: 'Attacker page',
+        slug: 'attacker-page',
+        status: 'published',
+        custom_domain: 'unverified.example.com',
+        custom_domain_verified_at: null,
+      });
+
+      const page = await svc.findPublishedByCustomDomain('unverified.example.com');
+      expect(page).toBeNull();
+    });
+
+    it('returns null when the page status is not "published" (draft/archived must not leak)', async () => {
+      prisma._pages.push({
+        id: 'page-cname-draft',
+        coach_id: 'coach-1',
+        title: 'Draft with verified CNAME',
+        slug: 'draft-cname',
+        status: 'draft', // <-- not published
+        custom_domain: 'draft.example.com',
+        custom_domain_verified_at: new Date('2026-01-01T00:00:00Z'),
+      });
+
+      const page = await svc.findPublishedByCustomDomain('draft.example.com');
+      expect(page).toBeNull();
+    });
+
+    it('normalises the incoming host: lowercases, strips port, strips trailing dot', async () => {
+      prisma._pages.push({
+        id: 'page-cname-norm',
+        coach_id: 'coach-1',
+        title: 'Normalised',
+        slug: 'normalised',
+        status: 'published',
+        custom_domain: 'norm.example.com',
+        custom_domain_verified_at: new Date('2026-01-01T00:00:00Z'),
+      });
+
+      // Mixed case + port + trailing dot all resolve to the same row.
+      const a = await svc.findPublishedByCustomDomain('Norm.Example.COM:443');
+      const b = await svc.findPublishedByCustomDomain('norm.example.com.');
+      expect(a?.id).toBe('page-cname-norm');
+      expect(b?.id).toBe('page-cname-norm');
+    });
+
+    it('returns null for empty / undefined host inputs', async () => {
+      expect(await svc.findPublishedByCustomDomain('')).toBeNull();
+      // Host is typed `string` upstream; defensive null-handling still matters.
+      expect(await svc.findPublishedByCustomDomain(undefined as any)).toBeNull();
     });
   });
 });
