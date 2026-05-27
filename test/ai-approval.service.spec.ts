@@ -1,6 +1,23 @@
 import { AiApprovalService } from '../src/ai/gateway/ai-approval.service';
 import { AuditService } from '../src/audit/audit.service';
 
+function matchesWhere(row: any, where: any): boolean {
+  for (const key of Object.keys(where)) {
+    const cond = where[key];
+    const v = row[key];
+    if (cond === null) {
+      if (v !== null && v !== undefined) return false;
+    } else if (cond && typeof cond === 'object' && 'not' in cond) {
+      if (cond.not === null) {
+        if (v === null || v === undefined) return false;
+      } else if (v === cond.not) return false;
+    } else {
+      if (v !== cond) return false;
+    }
+  }
+  return true;
+}
+
 function buildPrisma(seed: any[] = []) {
   const drafts: any[] = [...seed];
   return {
@@ -23,7 +40,21 @@ function buildPrisma(seed: any[] = []) {
         drafts[i] = { ...drafts[i], ...data };
         return drafts[i];
       }),
-      updateMany: jest.fn(async () => ({ count: 0 })),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        // PR AI-3 refixer round 2: decide() now uses updateMany with a
+        // status='pending' gate (and materialised_ref:{not:null} when a
+        // materialiser confirmed the side-effect). Emulate Prisma's
+        // predicate filtering so the existing unit tests for the legacy
+        // status-flip path keep observing the mutated row.
+        let count = 0;
+        for (let i = 0; i < drafts.length; i++) {
+          if (matchesWhere(drafts[i], where)) {
+            drafts[i] = { ...drafts[i], ...data };
+            count++;
+          }
+        }
+        return { count };
+      }),
     },
     aiRequestAudit: {
       updateMany: jest.fn(async () => ({ count: 1 })),

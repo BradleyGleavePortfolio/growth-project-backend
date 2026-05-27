@@ -2249,6 +2249,17 @@ model AiActionDraft {
   decision_note   String?
   audit_row       AiRequestAudit? @relation("AiAuditDraft")
   expires_at      DateTime?
+  // PR AI-3 PRODUCT-1: when capability materialisation succeeds (e.g.
+  // draft.coach_message → sendAsCoach), this timestamp is set. It is the
+  // single source of truth that an approved draft was actually executed
+  // — separate from `status='approved'` which only records the decision.
+  // A non-null value also serves as the idempotency marker so concurrent
+  // approvals cannot double-materialise.
+  materialised_at DateTime?
+  // PR AI-3: identifier of the downstream row produced by materialisation
+  // (e.g. CoachMessage.id when capability=draft.coach_message). Nullable
+  // because not every capability emits a single addressable row.
+  materialised_ref String?
   created_at      DateTime        @default(now())
   updated_at      DateTime        @default(now()) @updatedAt
 

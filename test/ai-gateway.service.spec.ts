@@ -106,7 +106,14 @@ describe('AiGatewayService', () => {
       tenantCoachId: 'coach-1',
       userMessage: 'Draft a check-in nudge for the client.',
       systemPrompt: 'context',
-      proposedActionPayload: { to_user_id: 'client-1', body: 'Hey, how is the week?' },
+      // PR AI-3 (PRODUCT-1): payload must match CoachMessagePayloadSchema —
+      // { clientId: uuid, body: non-empty string } — or draft creation 400s
+      // BEFORE persistence. UUIDs are required (not just any string) so the
+      // downstream MessagingService.sendAsCoach call can resolve a client.
+      proposedActionPayload: {
+        clientId: '22222222-2222-2222-2222-222222222222',
+        body: 'Hey, how is the week?',
+      },
     });
     expect(result.approvalRequired).toBe(true);
     expect(result.approvalStatus).toBe('pending');
@@ -118,6 +125,7 @@ describe('AiGatewayService', () => {
     expect(draftData.requester_id).toBe('coach-1');
     expect(draftData.subject_user_id).toBe('client-1');
     expect(draftData.tenant_coach_id).toBe('coach-1');
+    expect(draftData.payload.body).toBe('Hey, how is the week?');
     const auditData = prisma.aiRequestAudit.create.mock.calls[0][0].data;
     expect(auditData.approval_status).toBe('pending');
     expect(auditData.approval_draft_id).toBe(result.approvalDraftId);
@@ -135,6 +143,30 @@ describe('AiGatewayService', () => {
     });
     expect(result.reply).toMatch(/\[ai-disabled\]/);
     expect(result.auditId).toBe('');
+  });
+
+  it('rejects a draft.coach_message invocation with a malformed payload BEFORE persisting the draft row (PR AI-3 PRODUCT-1)', async () => {
+    // Verifies the shift-left validation: malformed payloads must 400 at
+    // invoke time so the coach never sees a broken draft card. Critically,
+    // aiActionDraft.create must NOT be called — we don't want orphan rows
+    // that the materialiser would later reject.
+    process.env.AI_GATEWAY_REQUIRE_APPROVAL = 'draft.coach_message';
+    const { svc, prisma } = buildSvc();
+    await expect(
+      svc.invoke({
+        capability: 'draft.coach_message',
+        requester: { id: 'coach-1', role: 'coach' },
+        subjectUserId: 'client-1',
+        tenantCoachId: 'coach-1',
+        userMessage: 'Draft a nudge.',
+        systemPrompt: 'context',
+        // clientId is not a UUID + body is empty whitespace — two violations.
+        proposedActionPayload: { clientId: 'not-a-uuid', body: '   ' },
+      }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'AI_DRAFT_PAYLOAD_INVALID' }),
+    });
+    expect(prisma.aiActionDraft.create).not.toHaveBeenCalled();
   });
 
   it('throws when invoked without an authenticated requester', async () => {

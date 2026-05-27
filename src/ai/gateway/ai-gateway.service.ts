@@ -1,12 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
+import { ZodError } from 'zod';
 import { PrismaService } from '../../prisma.service';
 import { AiGatewayConfig } from './ai-gateway.config';
 import { AiRedactionService, RedactionSummary } from './ai-redaction.service';
 import { AiProviderRegistry } from './providers/provider-registry';
 import { AiChatTurn, AiProviderResponse } from './providers/ai-provider.types';
 import { ProvenanceRef } from './data-quality.types';
+import {
+  COACH_MESSAGE_CAPABILITY,
+  assertCoachMessagePayload,
+} from './materialisers/coach-message.materialiser';
 
 // Caller-side surface. Controllers and services hand the gateway a
 // "request" describing what they want done, plus the already-permission-
@@ -137,6 +142,32 @@ export class AiGatewayService {
     let approvalStatus: AiGatewayResult['approvalStatus'] = 'not_required';
 
     if (approvalRequired) {
+      // PR AI-3 (PRODUCT-1): validate capability-specific payload BEFORE
+      // persisting the draft. This shifts the failure earlier — a malformed
+      // payload never lands in the database, so the coach never sees a
+      // broken draft card. Each capability that has a materialiser also
+      // owns its schema; capabilities without a materialiser fall through
+      // to the legacy behaviour (any-shape payload accepted) so we don't
+      // break paths that haven't migrated yet.
+      const proposedPayload = req.proposedActionPayload ?? { reply: response.text };
+      if (req.capability === COACH_MESSAGE_CAPABILITY) {
+        try {
+          assertCoachMessagePayload(proposedPayload);
+        } catch (err) {
+          if (err instanceof ZodError) {
+            throw new BadRequestException({
+              error: 'AI_DRAFT_PAYLOAD_INVALID',
+              capability: req.capability,
+              issues: err.issues.map((i) => ({
+                path: i.path.join('.'),
+                message: i.message,
+                code: i.code,
+              })),
+            });
+          }
+          throw err;
+        }
+      }
       const draft = await this.prisma.aiActionDraft.create({
         data: {
           capability: req.capability,
@@ -144,7 +175,7 @@ export class AiGatewayService {
           requester_id: req.requester.id,
           subject_user_id: req.subjectUserId ?? null,
           tenant_coach_id: req.tenantCoachId ?? null,
-          payload: (req.proposedActionPayload ?? { reply: response.text }) as Prisma.InputJsonValue,
+          payload: proposedPayload as Prisma.InputJsonValue,
           rationale: response.text.slice(0, 1000),
           redacted_inputs: redactionSummary as unknown as Prisma.InputJsonValue,
           provenance: provenance as unknown as Prisma.InputJsonValue,
