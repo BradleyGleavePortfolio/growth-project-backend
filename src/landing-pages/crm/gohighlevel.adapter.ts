@@ -27,6 +27,14 @@ const GHL_BASE_URL = 'https://services.leadconnectorhq.com';
 const GHL_API_VERSION = '2021-07-28';
 const TIMEOUT_MS = 10_000;
 
+// GoHighLevel location IDs are stable alphanumeric strings (typically 24
+// chars). Validating before path interpolation closes the path-traversal
+// vector at audit #6 P0-3 (e.g. `locationId = '../oauth/...'`).
+const GHL_LOCATION_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+export function isValidGhlLocationId(id: unknown): id is string {
+  return typeof id === 'string' && GHL_LOCATION_ID_RE.test(id);
+}
+
 function splitName(full: string | null | undefined): { firstName: string; lastName: string } {
   if (!full) return { firstName: '', lastName: '' };
   const trimmed = full.trim();
@@ -57,6 +65,9 @@ export class GoHighLevelAdapter implements CrmAdapter {
     const locationId = config.locationId;
     if (!token) throw new CrmAuthError(this.name, 'api_key missing from config');
     if (!locationId) throw new CrmAuthError(this.name, 'locationId missing from config');
+    if (!isValidGhlLocationId(locationId)) {
+      throw new CrmAuthError(this.name, 'invalid locationId format');
+    }
     const { firstName, lastName } = splitName(lead.name);
     const body: Record<string, unknown> = {
       locationId,
@@ -72,6 +83,7 @@ export class GoHighLevelAdapter implements CrmAdapter {
         headers: this.commonHeaders(token),
         timeout: TIMEOUT_MS,
         validateStatus: () => true,
+        maxRedirects: 0,
       });
       if (resp.status === 429) {
         const retryAfterSec = Number(resp.headers['retry-after']) || 60;
@@ -106,6 +118,9 @@ export class GoHighLevelAdapter implements CrmAdapter {
     const locationId = config.locationId;
     if (!token) throw new CrmAuthError(this.name, 'api_key missing from config');
     if (!locationId) throw new CrmAuthError(this.name, 'locationId missing from config');
+    if (!isValidGhlLocationId(locationId)) {
+      throw new CrmAuthError(this.name, 'invalid locationId format');
+    }
     try {
       const resp = await axios.get(
         `${GHL_BASE_URL}/locations/${locationId}`,
@@ -113,6 +128,7 @@ export class GoHighLevelAdapter implements CrmAdapter {
           headers: this.commonHeaders(token),
           timeout: TIMEOUT_MS,
           validateStatus: () => true,
+          maxRedirects: 0,
         },
       );
       if (resp.status === 401 || resp.status === 403) {

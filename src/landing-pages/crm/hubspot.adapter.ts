@@ -78,6 +78,7 @@ export class HubSpotAdapter implements CrmAdapter {
             'Content-Type': 'application/json',
           },
           timeout: TIMEOUT_MS,
+          maxRedirects: 0,
           validateStatus: () => true,
         },
       );
@@ -121,6 +122,7 @@ export class HubSpotAdapter implements CrmAdapter {
         {
           headers: { Authorization: `Bearer ${token}` },
           timeout: TIMEOUT_MS,
+          maxRedirects: 0,
           validateStatus: () => true,
         },
       );

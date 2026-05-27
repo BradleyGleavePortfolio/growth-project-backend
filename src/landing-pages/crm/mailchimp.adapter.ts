@@ -28,6 +28,14 @@ import { safeErrorMessage } from './_redact';
 
 const TIMEOUT_MS = 10_000;
 
+// Mailchimp list IDs are stable alphanumeric strings (typically 10
+// hex chars). Validating before path interpolation closes the path-
+// traversal vector at audit #6 P0-3 (e.g. `list_id = '../campaigns/<id>'`).
+const MC_LIST_ID_RE = /^[a-zA-Z0-9]{1,32}$/;
+export function isValidMailchimpListId(id: unknown): id is string {
+  return typeof id === 'string' && MC_LIST_ID_RE.test(id);
+}
+
 function inferDc(apiKey: string): string | null {
   const idx = apiKey.lastIndexOf('-');
   if (idx === -1) return null;
@@ -62,6 +70,9 @@ export class MailchimpAdapter implements CrmAdapter {
     const listId = config.list_id;
     if (!apiKey) throw new CrmAuthError(this.name, 'api_key missing from config');
     if (!listId) throw new CrmAuthError(this.name, 'list_id missing from config');
+    if (!isValidMailchimpListId(listId)) {
+      throw new CrmAuthError(this.name, 'invalid list_id format');
+    }
     const dc = inferDc(apiKey);
     if (!dc) throw new CrmAuthError(this.name, 'api_key has no recognizable dc suffix');
 
@@ -85,6 +96,7 @@ export class MailchimpAdapter implements CrmAdapter {
           },
           timeout: TIMEOUT_MS,
           validateStatus: () => true,
+          maxRedirects: 0,
         },
       );
       if (resp.status === 429) {
@@ -118,6 +130,9 @@ export class MailchimpAdapter implements CrmAdapter {
     const listId = config.list_id;
     if (!apiKey) throw new CrmAuthError(this.name, 'api_key missing from config');
     if (!listId) throw new CrmAuthError(this.name, 'list_id missing from config');
+    if (!isValidMailchimpListId(listId)) {
+      throw new CrmAuthError(this.name, 'invalid list_id format');
+    }
     const dc = inferDc(apiKey);
     if (!dc) throw new CrmAuthError(this.name, 'api_key has no recognizable dc suffix');
     const auth = Buffer.from(`anystring:${apiKey}`).toString('base64');
@@ -128,6 +143,7 @@ export class MailchimpAdapter implements CrmAdapter {
           headers: { Authorization: `Basic ${auth}` },
           timeout: TIMEOUT_MS,
           validateStatus: () => true,
+          maxRedirects: 0,
         },
       );
       if (resp.status === 401 || resp.status === 403) {

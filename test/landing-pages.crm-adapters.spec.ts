@@ -195,6 +195,40 @@ describe('GoHighLevelAdapter', () => {
     );
   });
 
+  // P0-3 — locationId injection through body parameter
+  it.each([
+    'loc/../bad',
+    'loc with space',
+    'loc?x',
+    'loc#',
+    'loc.dot',
+    'a'.repeat(80),
+    '',
+    '<script>',
+  ])('rejects malicious locationId %p', async (locationId) => {
+    await expect(
+      adapter.pushLead(LEAD, PAGE, { api_key: 'k', locationId }),
+    ).rejects.toBeInstanceOf(CrmAuthError);
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('verifyConfig also rejects malicious locationId', async () => {
+    await expect(
+      adapter.verifyConfig({ api_key: 'k', locationId: 'loc/../x' }),
+    ).rejects.toBeInstanceOf(CrmAuthError);
+  });
+
+  it('sets maxRedirects:0 on push', async () => {
+    mockedAxios.post.mockResolvedValueOnce({
+      status: 201,
+      data: { contact: { id: 'g1' } },
+      headers: {},
+    });
+    await adapter.pushLead(LEAD, PAGE, { api_key: 'k', locationId: 'good_loc-1' });
+    const opts = mockedAxios.post.mock.calls[0][2];
+    expect(opts.maxRedirects).toBe(0);
+  });
+
   it('throws CrmRateLimitError on 429 honoring Retry-After', async () => {
     mockedAxios.post.mockResolvedValueOnce({
       status: 429,
@@ -240,6 +274,42 @@ describe('MailchimpAdapter', () => {
     ).rejects.toBeInstanceOf(CrmAuthError);
   });
 
+  // P0-3 — list_id path traversal
+  it.each([
+    'L1/../../members',
+    'L1/extra',
+    'L1?',
+    'L1#',
+    '../foo',
+    'has space',
+    'a'.repeat(40),
+    '',
+    'L\nL',
+  ])('rejects malicious list_id %p', async (list_id) => {
+    await expect(
+      adapter.pushLead(LEAD, PAGE, { api_key: 'k-us19', list_id }),
+    ).rejects.toBeInstanceOf(CrmAuthError);
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('verifyConfig also rejects malicious list_id', async () => {
+    mockedAxios.get.mockResolvedValueOnce({ status: 200, data: {}, headers: {} });
+    await expect(
+      adapter.verifyConfig({ api_key: 'k-us19', list_id: 'L1/../x' }),
+    ).rejects.toBeInstanceOf(CrmAuthError);
+  });
+
+  it('sets maxRedirects:0 on push', async () => {
+    mockedAxios.post.mockResolvedValueOnce({
+      status: 200,
+      data: { id: 'mc' },
+      headers: {},
+    });
+    await adapter.pushLead(LEAD, PAGE, { api_key: 'k-us19', list_id: 'GoodList1' });
+    const opts = mockedAxios.post.mock.calls[0][2];
+    expect(opts.maxRedirects).toBe(0);
+  });
+
   it('uses Basic anystring:<api_key> auth', async () => {
     mockedAxios.post.mockResolvedValueOnce({
       status: 200,
@@ -281,6 +351,42 @@ describe('ActiveCampaignAdapter', () => {
     await expect(adapter.pushLead(LEAD, PAGE, { api_token: 'k' })).rejects.toBeInstanceOf(
       CrmAuthError,
     );
+  });
+
+  // P0-2 — account hijack via URL injection
+  it.each([
+    'evil.com/x',
+    'evil.com#',
+    'evil.com?',
+    'evil@attacker.com',
+    'foo bar',
+    'UPPER',
+    '../etc',
+    'a'.repeat(80),
+    '',
+    '-leading',
+  ])('rejects malicious account %p', async (account) => {
+    await expect(
+      adapter.pushLead(LEAD, PAGE, { account, api_token: 'tok' }),
+    ).rejects.toBeInstanceOf(CrmAuthError);
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('verifyConfig also rejects malicious account', async () => {
+    await expect(
+      adapter.verifyConfig({ account: 'evil.com/x', api_token: 'tok' }),
+    ).rejects.toBeInstanceOf(CrmAuthError);
+  });
+
+  it('builds URL safely via URL ctor and sets maxRedirects:0', async () => {
+    mockedAxios.post.mockResolvedValueOnce({
+      status: 200,
+      data: { contact: { id: '1' } },
+      headers: {},
+    });
+    await adapter.pushLead(LEAD, PAGE, { account: 'good-acct', api_token: 'tok' });
+    const opts = mockedAxios.post.mock.calls[0][2];
+    expect(opts.maxRedirects).toBe(0);
   });
 });
 
