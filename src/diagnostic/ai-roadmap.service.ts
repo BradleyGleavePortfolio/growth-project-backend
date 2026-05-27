@@ -59,17 +59,29 @@ interface RoadmapInput {
 @Injectable()
 export class AiRoadmapService {
   private readonly logger = new Logger(AiRoadmapService.name);
-  private readonly client: OpenAI;
 
-  constructor(private readonly prisma: PrismaService) {
-    // Same Perplexity-OpenAI compatibility shim used by AiService. Kept
-    // local so the diagnostic module does not depend on AiService's
-    // user-context plumbing (which is for authed clients only).
-    this.client = new OpenAI({
-      apiKey: process.env.PERPLEXITY_API_KEY || '',
-      baseURL: 'https://api.perplexity.ai',
-    });
+  // Lazy-init: OpenAI SDK v5+ throws synchronously when apiKey is empty,
+  // so the client cannot be built at provider construction (env var is
+  // unset in test boots and any environment without diagnostic AI).
+  private _client: OpenAI | null = null;
+  private getClient(): OpenAI {
+    if (!this._client) {
+      const apiKey = process.env.PERPLEXITY_API_KEY?.trim();
+      if (!apiKey) {
+        throw new Error('PERPLEXITY_API_KEY is required for this operation');
+      }
+      // Same Perplexity-OpenAI compatibility shim used by AiService. Kept
+      // local so the diagnostic module does not depend on AiService's
+      // user-context plumbing (which is for authed clients only).
+      this._client = new OpenAI({
+        apiKey,
+        baseURL: 'https://api.perplexity.ai',
+      });
+    }
+    return this._client;
   }
+
+  constructor(private readonly prisma: PrismaService) {}
 
   buildUserPrompt(body: SubmitDiagnosticDto, scores: DiagnosticScores, buckets: DiagnosticBuckets): string {
     const catalog = loadCatalog();
@@ -131,7 +143,7 @@ export class AiRoadmapService {
 
     const userPrompt = this.buildUserPrompt(body, scores, buckets);
     try {
-      const response = await this.client.chat.completions.create({
+      const response = await this.getClient().chat.completions.create({
         model: 'sonar-pro',
         messages: [
           { role: 'system', content: ROADMAP_SYSTEM_PROMPT },

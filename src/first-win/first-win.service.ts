@@ -33,18 +33,26 @@ const FALLBACK_MESSAGES: Record<WinType, string> = {
     'Logging your first meal starts your nutrition baseline. Three days of honest data tells your coach more about your habits than any intake form.',
 };
 
-// Perplexity API (OpenAI-compatible) for the 2-sentence first-data-point message.
-// Lazy-init so the module loads cleanly even without a key.
-function buildPerplexityClient(): OpenAI | null {
-  const key = process.env.PERPLEXITY_API_KEY?.trim();
-  if (!key) return null;
-  return new OpenAI({ apiKey: key, baseURL: 'https://api.perplexity.ai' });
-}
-
 @Injectable()
 export class FirstWinService {
   private readonly logger = new Logger(FirstWinService.name);
-  private readonly perplexity: OpenAI | null = buildPerplexityClient();
+
+  // Lazy-init: OpenAI SDK v5+ throws synchronously when apiKey is empty,
+  // so we defer construction until first use and read the env var at call
+  // time. Returns null when the key is unset so callers can fall back to
+  // the deterministic message without an exception path.
+  private _perplexity: OpenAI | null = null;
+  private _perplexityInitialized = false;
+  private getPerplexityClient(): OpenAI | null {
+    if (!this._perplexityInitialized) {
+      const key = process.env.PERPLEXITY_API_KEY?.trim();
+      this._perplexity = key
+        ? new OpenAI({ apiKey: key, baseURL: 'https://api.perplexity.ai' })
+        : null;
+      this._perplexityInitialized = true;
+    }
+    return this._perplexity;
+  }
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -121,7 +129,8 @@ export class FirstWinService {
    * over adjectives, 2 sentences only.
    */
   private async generateFirstDataPointMessage(winType: WinType): Promise<string> {
-    if (!this.perplexity) {
+    const perplexity = this.getPerplexityClient();
+    if (!perplexity) {
       return FALLBACK_MESSAGES[winType];
     }
 
@@ -142,7 +151,7 @@ export class FirstWinService {
     const userMessage = `The client has just ${winLabel[winType]}. Write the 2-sentence message.`;
 
     try {
-      const response = await this.perplexity.chat.completions.create({
+      const response = await perplexity.chat.completions.create({
         model: 'sonar-pro',
         messages: [
           { role: 'system', content: systemPrompt },
