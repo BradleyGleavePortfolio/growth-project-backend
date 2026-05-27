@@ -72,11 +72,11 @@ export class CheckoutWebhookHandlerService {
         return this.applyPaymentIntentSucceeded(event);
       case 'payment_intent.payment_failed':
         return this.applyPaymentIntentFailed(event);
-      case 'invoice.paid':
       // DUNNING-V1 — invoice.payment_succeeded mirrors invoice.paid in
       // Stripe's docs for the subscription-renewal path; some accounts
       // emit one, some the other. We route both to the same handler so
       // the dunning window resolution is robust either way.
+      case 'invoice.paid':
       case 'invoice.payment_succeeded':
         return this.applyInvoicePaid(event);
       case 'invoice.payment_failed':
