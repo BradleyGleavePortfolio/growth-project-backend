@@ -67,6 +67,19 @@ export interface NudgeOutcome {
 /** Hard cap (spec §3). Tested explicitly so a future tweak fails loudly. */
 export const NUDGE_FREQUENCY_CAP_MS = 48 * 60 * 60 * 1000;
 
+/**
+ * Compute the 48h cap-bucket start instant for a given moment. Used to
+ * key the unique (user_id, cap_bucket) index on NudgeLog — two concurrent
+ * triggers for the same user racing through the engine collide on this
+ * value, the DB rejects the second insert, and the engine flips that row
+ * to status='suppressed_cap'. Bucketing is anchored at the Unix epoch so
+ * the boundaries are deterministic and replica-independent.
+ */
+export function capBucketStart(now: Date): Date {
+  const ms = now.getTime();
+  return new Date(Math.floor(ms / NUDGE_FREQUENCY_CAP_MS) * NUDGE_FREQUENCY_CAP_MS);
+}
+
 /** Quiet hours (spec §4). Local clock, user timezone. */
 export const NUDGE_QUIET_HOURS_START = 21; // 9pm — first hour of suppression
 export const NUDGE_QUIET_HOURS_END = 8;   // 8am — first hour open again

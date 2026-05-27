@@ -23,6 +23,7 @@ interface FakeLogRow {
   attempted_at: Date;
   sent_at: Date | null;
   deferred_until: Date | null;
+  cap_bucket: Date | null;
 }
 
 function makeFakePrisma(prefs: Record<string, unknown> = {}) {
@@ -56,6 +57,7 @@ function makeFakePrisma(prefs: Record<string, unknown> = {}) {
             attempted_at: data.attempted_at ?? new Date(),
             sent_at: null,
             deferred_until: null,
+            cap_bucket: null,
           };
           logs.push(row);
           return select?.id ? { id: row.id } : row;
@@ -63,6 +65,26 @@ function makeFakePrisma(prefs: Record<string, unknown> = {}) {
         update: jest.fn(async ({ where, data }: any) => {
           const row = logs.find((l) => l.id === where.id);
           if (!row) throw new Error(`row ${where.id} missing`);
+          // Enforce the @@unique([user_id, cap_bucket]) constraint: if
+          // this update would set cap_bucket to a value another row
+          // already holds for the same user, raise P2002 — same way the
+          // real DB would. NULL is treated as distinct (PG default).
+          if (data.cap_bucket != null) {
+            const collision = logs.find(
+              (l) =>
+                l.id !== row.id &&
+                l.user_id === row.user_id &&
+                l.cap_bucket != null &&
+                l.cap_bucket.getTime() === (data.cap_bucket as Date).getTime(),
+            );
+            if (collision) {
+              const err: any = new PrismaClientKnownRequestError(
+                'cap_bucket duplicate',
+                { code: 'P2002', clientVersion: 'x' } as any,
+              );
+              throw err;
+            }
+          }
           Object.assign(row, data);
           return row;
         }),
@@ -351,5 +373,181 @@ describe('NudgeEngineService — five gates', () => {
 
     expect(out.status).toBe(NudgeStatus.SENT);
     expect(out.channels.sort()).toEqual(['inapp', 'push']);
+  });
+
+  // ─── P1-2 refix: atomic cap reservation ──────────────────────────────────
+  // The pre-refix read-side cap could let two concurrent triggers slip
+  // through because both could observe "no sent row yet" before either
+  // wrote. The unique (user_id, cap_bucket) index forces serialization
+  // at the DB — exactly one delivery, one suppressed_cap.
+  it('concurrent triggers for the same user collide on cap_bucket: exactly one sent + one suppressed_cap', async () => {
+    const { prisma, logs } = makeFakePrisma();
+    const notifs = fakeNotifications({ ...defaultPrefs });
+    const svc = new NudgeEngineService(prisma as any, notifs as any);
+
+    // Fire two different-trigger candidates concurrently. Both pass the
+    // dedupe, mute, opt-out and read-side cap gates; only one wins the
+    // atomic cap_bucket reservation.
+    const results = await Promise.all([
+      svc.process(
+        {
+          user_id: 'user-1',
+          trigger_type: NudgeTriggerType.MISSED_CHECKIN,
+          signal_key: 'missed_checkin:concurrent',
+        },
+        NOON_LA_UTC,
+      ),
+      svc.process(
+        {
+          user_id: 'user-1',
+          trigger_type: NudgeTriggerType.STREAK_BROKEN,
+          signal_key: 'streak_broken:concurrent',
+        },
+        NOON_LA_UTC,
+      ),
+    ]);
+
+    const statuses = results.map((r) => r.status).sort();
+    expect(statuses).toEqual([NudgeStatus.SENT, NudgeStatus.SUPPRESSED_CAP].sort());
+
+    // Both NudgeLog rows exist; one carries a non-null cap_bucket, the
+    // other has cap_bucket=null (DB rejected the reservation).
+    expect(logs).toHaveLength(2);
+    const withBucket = logs.filter((l) => l.cap_bucket != null);
+    expect(withBucket).toHaveLength(1);
+    expect(withBucket[0].status).toBe('sent');
+    const withoutBucket = logs.filter((l) => l.cap_bucket == null);
+    expect(withoutBucket[0].status).toBe('suppressed_cap');
+  });
+
+  it('cap_bucket is NOT reserved for non-sent terminals (mute / opt-out / dedupe / defer)', async () => {
+    // A muted user's row should leave cap_bucket null so a future
+    // un-mute does not see a phantom "cap held" state.
+    const { prisma, logs } = makeFakePrisma();
+    const notifs = fakeNotifications({ ...defaultPrefs, muted: true });
+    const svc = new NudgeEngineService(prisma as any, notifs as any);
+
+    await svc.process(baseCandidate(), NOON_LA_UTC);
+    expect(logs[0].status).toBe('suppressed_muted');
+    expect(logs[0].cap_bucket).toBeNull();
+  });
+
+  // ─── P2-4 refix: reprocessDeferred + processExisting coverage ────────────
+  it('reprocessDeferred re-runs a quiet-hours-deferred row through the gates and delivers when window opens', async () => {
+    const { prisma, logs } = makeFakePrisma();
+    const notifs = fakeNotifications({ ...defaultPrefs });
+    const svc = new NudgeEngineService(prisma as any, notifs as any);
+
+    // First pass at 3am local LA: deferred to 8am.
+    const earlyMorning = new Date('2026-05-08T10:00:00Z');
+    const deferred = await svc.process(baseCandidate(), earlyMorning);
+    expect(deferred.status).toBe(NudgeStatus.DEFERRED);
+    expect(deferred.deferred_until!.toISOString()).toBe('2026-05-08T15:00:00.000Z');
+
+    // Wire up findMany so reprocessDeferred can see the row.
+    (prisma as any).nudgeLog.findMany = jest.fn(async ({ where }: any) => {
+      const due = logs.filter(
+        (l) =>
+          l.status === where.status &&
+          l.deferred_until != null &&
+          where.deferred_until?.lte != null &&
+          l.deferred_until <= where.deferred_until.lte,
+      );
+      return due.map((l) => ({
+        id: l.id,
+        user_id: l.user_id,
+        trigger_type: l.trigger_type,
+        signal_key: l.signal_key,
+      }));
+    });
+
+    // Run at 8:01am local LA — deferred_until has elapsed.
+    const eightOhOne = new Date('2026-05-08T15:01:00Z');
+    const count = await svc.reprocessDeferred(eightOhOne);
+    expect(count).toBe(1);
+
+    // The row that was deferred is now SENT and holds the cap bucket.
+    expect(logs).toHaveLength(1);
+    expect(logs[0].status).toBe('sent');
+    expect(logs[0].cap_bucket).not.toBeNull();
+  });
+
+  it('reprocessDeferred skips a deferred row when its trigger has since been opted out', async () => {
+    const { prisma, logs } = makeFakePrisma();
+    // First defer the row under nudge-friendly prefs.
+    let currentPrefs: Record<string, unknown> = { ...defaultPrefs };
+    const notifs = {
+      getPreferences: jest.fn(async () => currentPrefs),
+      createNotification: jest.fn(async (input: any) => ({ id: 'n', ...input })),
+      pushToUser: jest.fn(async () => ({ delivered: true, code: 'delivered' })),
+    };
+    const svc = new NudgeEngineService(prisma as any, notifs as any);
+
+    const earlyMorning = new Date('2026-05-08T10:00:00Z');
+    const deferred = await svc.process(baseCandidate(), earlyMorning);
+    expect(deferred.status).toBe(NudgeStatus.DEFERRED);
+
+    // User opts out of missed_checkin between the defer and the reprocess.
+    currentPrefs = {
+      ...defaultPrefs,
+      nudge_missed_checkin_email: false,
+      nudge_missed_checkin_push: false,
+      nudge_missed_checkin_inapp: false,
+    };
+
+    (prisma as any).nudgeLog.findMany = jest.fn(async ({ where }: any) => {
+      const due = logs.filter(
+        (l) =>
+          l.status === where.status &&
+          l.deferred_until != null &&
+          where.deferred_until?.lte != null &&
+          l.deferred_until <= where.deferred_until.lte,
+      );
+      return due.map((l) => ({
+        id: l.id,
+        user_id: l.user_id,
+        trigger_type: l.trigger_type,
+        signal_key: l.signal_key,
+      }));
+    });
+
+    const eightOhOne = new Date('2026-05-08T15:01:00Z');
+    const count = await svc.reprocessDeferred(eightOhOne);
+    expect(count).toBe(1);
+
+    // Row finalises as suppressed_opt_out, no cap_bucket reserved.
+    expect(logs[0].status).toBe('suppressed_opt_out');
+    expect(logs[0].cap_bucket).toBeNull();
+  });
+
+  it('reprocessDeferred is idempotent: a re-run after success is a no-op', async () => {
+    const { prisma, logs } = makeFakePrisma();
+    const notifs = fakeNotifications({ ...defaultPrefs });
+    const svc = new NudgeEngineService(prisma as any, notifs as any);
+
+    const earlyMorning = new Date('2026-05-08T10:00:00Z');
+    await svc.process(baseCandidate(), earlyMorning);
+
+    (prisma as any).nudgeLog.findMany = jest.fn(async ({ where }: any) =>
+      logs
+        .filter(
+          (l) =>
+            l.status === where.status &&
+            l.deferred_until != null &&
+            where.deferred_until?.lte != null &&
+            l.deferred_until <= where.deferred_until.lte,
+        )
+        .map((l) => ({
+          id: l.id,
+          user_id: l.user_id,
+          trigger_type: l.trigger_type,
+          signal_key: l.signal_key,
+        })),
+    );
+
+    const eightOhOne = new Date('2026-05-08T15:01:00Z');
+    expect(await svc.reprocessDeferred(eightOhOne)).toBe(1);
+    // Row is now status='sent' — not 'deferred'. Second call finds nothing.
+    expect(await svc.reprocessDeferred(eightOhOne)).toBe(0);
   });
 });

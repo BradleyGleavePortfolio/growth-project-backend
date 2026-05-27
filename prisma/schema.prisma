@@ -1941,9 +1941,19 @@ model NudgeLog {
   sent_at         DateTime?
   // Set when status='deferred' — next scan after this UTC instant will retry.
   deferred_until  DateTime?
+  // 48h frequency-cap bucket (spec §3). Computed as floor(send_time / 48h)
+  // and set ONLY when the engine commits to deliver (i.e. before the
+  // delivery fan-out). The @@unique([user_id, cap_bucket]) constraint
+  // makes the cap atomic across replicas: two concurrent triggers for the
+  // same user racing through the gates will collide here, the loser gets
+  // P2002 → status='suppressed_cap'. NULL on every non-sent decision so
+  // multiple deferred / suppressed rows for the same user coexist (PG
+  // treats NULL as distinct in unique indexes).
+  cap_bucket      DateTime?
   created_at      DateTime  @default(now())
 
   @@unique([user_id, trigger_type, signal_key])
+  @@unique([user_id, cap_bucket])
   @@index([user_id, sent_at])
   @@index([status, attempted_at])
   @@index([status, deferred_until])

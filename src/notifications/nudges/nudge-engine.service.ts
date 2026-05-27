@@ -38,6 +38,7 @@ import {
   NudgeOutcome,
   NudgeStatus,
   NudgeTriggerType,
+  capBucketStart,
 } from './nudge.types';
 
 /** Map trigger → email template key. Keeps the engine declarative. */
@@ -174,6 +175,17 @@ export class NudgeEngineService {
         };
       }
 
+      // ── Atomic cap reservation ───────────────────────────────────────
+      // Race-safe enforcement of spec §3 "max 1 nudge per user per 48h".
+      // Two concurrent triggers (different trigger_type, same user) both
+      // passed the read-side cap check above; the unique
+      // (user_id, cap_bucket) index makes the WRITE side serialise. The
+      // loser sees P2002 → status='suppressed_cap', no delivery occurs.
+      const reserved = await this.tryReserveCapBucket(logRow.id, candidate.user_id, now);
+      if (!reserved) {
+        return this.finalize(logRow.id, NudgeStatus.SUPPRESSED_CAP, [], candidate, now);
+      }
+
       // ── Deliver ──────────────────────────────────────────────────────
       const delivered = await this.deliver(candidate, channels, prefs);
       if (delivered.length === 0) {
@@ -233,6 +245,51 @@ export class NudgeEngineService {
   // ── internals ────────────────────────────────────────────────────────
 
   /**
+   * Atomically reserve the (user_id, cap_bucket) slot for this candidate.
+   *
+   * Returns true if the slot was successfully claimed (this row owns the
+   * cap window for the next 48h), false if another concurrent row already
+   * holds it (caller must terminate with status='suppressed_cap').
+   *
+   * Race model: two replicas firing `nudge-detection` at the same
+   * every-15-min boundary both pass the read-side Gate 4 check. They then both
+   * call this method. The unique @@unique([user_id, cap_bucket]) index
+   * on NudgeLog rejects the second update with P2002; we catch the
+   * violation and return false. This is the ONLY hard primitive
+   * preventing two nudges to the same user inside one 48h bucket.
+   *
+   * Why update (not create): the NudgeLog row already exists (claimed
+   * at Gate 1 dedupe). We mutate cap_bucket in place. NULL on every
+   * non-sent row — PG treats NULL as distinct in unique indexes, so
+   * sibling deferred / suppressed_opt_out / suppressed_muted rows for
+   * the same user do not collide.
+   */
+  private async tryReserveCapBucket(
+    logId: string,
+    userId: string,
+    now: Date,
+  ): Promise<boolean> {
+    const bucket = capBucketStart(now);
+    try {
+      await this.prisma.nudgeLog.update({
+        where: { id: logId },
+        data: { cap_bucket: bucket },
+      });
+      return true;
+    } catch (err) {
+      if (err instanceof PrismaClientKnownRequestError && err.code === 'P2002') {
+        this.logger.debug(
+          `nudge.cap_bucket conflict user=${userId} bucket=${bucket.toISOString()} — sibling tick already holds slot`,
+        );
+        return false;
+      }
+      // Non-unique-violation update error: bubble up so the outer catch
+      // logs it and the row finalises as 'failed'.
+      throw err;
+    }
+  }
+
+  /**
    * Gate walk for a row that already exists (used by reprocessDeferred).
    * Identical logic to `process` minus the row-creation step.
    */
@@ -276,6 +333,11 @@ export class NudgeEngineService {
           log_id: logId,
           deferred_until: quiet.deferred_until,
         };
+      }
+      // Atomic cap reservation — see process() for full rationale.
+      const reserved = await this.tryReserveCapBucket(logId, candidate.user_id, now);
+      if (!reserved) {
+        return this.finalize(logId, NudgeStatus.SUPPRESSED_CAP, [], candidate, now);
       }
       const delivered = await this.deliver(candidate, channels, prefs);
       if (delivered.length === 0) {
