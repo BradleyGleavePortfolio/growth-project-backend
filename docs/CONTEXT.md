@@ -38,9 +38,11 @@ The user's vision for the app: **one notch above what a decacorn would ship — 
 - [`design-intelligence/mobile-app-design-intelligence.md`](./design-intelligence/mobile-app-design-intelligence.md) — 134KB exhaustive mobile design reference
 - [`design-intelligence/website-landing-page-design-intelligence.md`](./design-intelligence/website-landing-page-design-intelligence.md) — 81KB landing page design reference
 
-## Section: Hygiene findings (codebase) — 17 ranked findings, 6-PR sequence
+## Section: Hygiene findings (codebase) — 17 ranked + 28 verbatim, 6-PR sequence
 
-- [`audits/codebase_hygiene_findings.md`](./audits/codebase_hygiene_findings.md) — all 17, grouped into PRs A→F
+- [`audits/codebase_hygiene_findings.md`](./audits/codebase_hygiene_findings.md) — all 17 ranked findings + Batch 3 mapping, grouped into PRs A→F (with PR-G/PR-H for new Batch 3 items)
+- [`audits/issue_register_28_findings_2026-05-26.md`](./audits/issue_register_28_findings_2026-05-26.md) — **Batch 3:** 28-issue full architectural register (verbatim from third-party inspection, file:line precision, big-picture solutions)
+- [`audits/issue_register_28_findings_2026-05-26.docx`](./audits/issue_register_28_findings_2026-05-26.docx) — original docx for fidelity
 
 The 6-PR hygiene sweep sequence:
 - **PR-A**: AI cost + security hardening (LLM spend cap, GatewayInvokeDto, throttle, role injection) — actively bleeding P&L edge
