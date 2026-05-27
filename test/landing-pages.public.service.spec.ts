@@ -287,6 +287,15 @@ describe('LandingPagePublicService', () => {
       const url = await svc.resolveCheckoutUrl('GP-JANE1', 'my-page', 'pkg-1');
       expect(url).toBeNull();
     });
+
+    // Audit #6 P0-5 — landing page id propagation via ?lp= query param.
+    it('appends ?lp=<pageId> so storefront can credit the source page', async () => {
+      const page = makePublishedPage();
+      const { svc } = makePublicSvc(page, 'tok_abc123def456ghi78');
+      const url = await svc.resolveCheckoutUrl('GP-JANE1', 'my-page', 'pkg-1');
+      expect(url).toMatch(/[?&]lp=/);
+      expect(url).toContain(`lp=${encodeURIComponent(page.id)}`);
+    });
   });
 
   describe('submitLead', () => {

@@ -8,6 +8,7 @@ import {
   Param,
   PipeTransform,
   Post,
+  Query,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
@@ -69,7 +70,14 @@ export class StorefrontPublicController {
   async createGuestCheckout(
     @Param('token', new ShareTokenPipe()) token: string,
     @Body() body: GuestCheckoutDto,
+    // R47 / Audit #6 P0-5 — landing page id propagation. The landing-page
+    // checkout redirect appends `?lp=<pageId>`. We accept it as a query
+    // param (rather than baking it into the body DTO) so existing direct
+    // storefront integrations continue to work without modification.
+    // Service-side, the id is validated against (a) the coach who owns
+    // the share_token's package and (b) the page lists that package.
+    @Query('lp') lp?: string,
   ) {
-    return this.guestCheckout.createIntent(token, body);
+    return this.guestCheckout.createIntent(token, body, lp);
   }
 }

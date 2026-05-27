@@ -94,7 +94,11 @@ export class LandingPagePublicService {
       'https://app.trygrowthproject.com';
 
     if (pkg.share_token) {
-      return `${storefrontBase}/v1/packages/public/join/${pkg.share_token}`;
+      // R47 / Audit #6 P0-5 — propagate landing page id through to the
+      // storefront so the GuestCheckout row records WHICH page sourced
+      // the conversion. Without this, $/visitor analytics is structurally
+      // broken (revenue rollup joins on GuestCheckout.landing_page_id).
+      return `${storefrontBase}/v1/packages/public/join/${pkg.share_token}?lp=${encodeURIComponent(page.id)}`;
     }
 
     // Fallback: no share token yet → return null to signal 404
@@ -220,7 +224,23 @@ export class LandingPagePublicService {
     // In production this should use a secret key from env.
     // For now, use a deterministic daily rotation so hashes cannot be
     // correlated across days (GDPR requirement per spec §4.1).
-    const secret = process.env.LANDING_VIEW_HASH_SECRET || 'landing-views-daily-salt';
+    // Audit #6 P1-2 — no dev fallback in production. The fallback
+    // constant would make every visitor hash predictable (and the
+    // unique_visitors count linkable across coaches) for any operator
+    // who shipped without setting the secret. env-validation also gates
+    // this at boot, but we double-check at use site so a hot env
+    // rotation still fails closed.
+    const secret = process.env.LANDING_VIEW_HASH_SECRET;
+    if (!secret || !secret.trim()) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          'LANDING_VIEW_HASH_SECRET is required in production — refusing to derive a predictable visitor hash.',
+        );
+      }
+      // Non-prod fallback keeps unit tests and local dev quiet.
+      const fallback = 'landing-views-daily-salt';
+      return createHash('sha256').update(`${fallback}:${day}`).digest('hex').slice(0, 16);
+    }
     return createHash('sha256').update(`${secret}:${day}`).digest('hex').slice(0, 16);
   }
 
