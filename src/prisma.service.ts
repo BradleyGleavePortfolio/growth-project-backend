@@ -6,6 +6,16 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   private readonly logger = new Logger(PrismaService.name);
 
   async onModuleInit() {
+    // Prisma v6 surfaces `$connect()` failures through the v8 unhandled-rejection
+    // hook more aggressively than v5 did, which trips Jest's beforeAll boundary in
+    // unit tests that boot the full AppModule without a real database (e.g.
+    // test/openapi-spec.spec.ts). Unit tests never hit the real client — every
+    // suite injects a mock via DI — so the production `$connect()` path is dead
+    // weight in NODE_ENV=test. Skip it and let the real boot path in `npm start`
+    // continue to fire-and-forget the connection on production/staging.
+    if (process.env.NODE_ENV === 'test') {
+      return;
+    }
     if (process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('connection_limit=')) {
       this.logger.warn('DATABASE_URL has no connection_limit — Prisma will use its default. See docs/database-pool.md');
     }
