@@ -1,6 +1,6 @@
 # PROJECT_STATE.md — Master Source of Truth
 
-**Last updated:** 2026-05-26 18:25 PDT
+**Last updated:** 2026-05-26 19:40 PDT
 **Maintained by:** Computer (the AI agent)
 **Read this file FIRST on every session resume.**
 
@@ -44,16 +44,22 @@ Haptics, micro-animations, thoughtful path design through every screen. The 7 pr
 ## 1. Repo State
 
 **Repo:** `BradleyGleavePortfolio/growth-project-backend`
-**Main HEAD as of last write:** `22f21caf` — "Checkout hardening integration (#279)"
+**Main HEAD as of last write:** `e17c362a` — "Nudge v1 (#282)". Train merged: `b552df28` (#280 CNAME P4) → `a3e79c10` (#281 Dunning v1) → `e17c362a` (#282 Nudge v1).
 **Sibling repos:** `BradleyGleavePortfolio/growth-project-mobile`, `BradleyGleavePortfolio/tgp-platform-site`
 
-### Open PRs (this session's work)
+### Recently shipped (this session's work — all merged)
 
-| PR | Title | HEAD | Status | Owner |
-|---|---|---|---|---|
-| **#280** | feat(landing-pages): CNAME Phase 4 — prisma regen + claim race + DNS timeout | `c6b3dafc` | CI ✅ CLEAN+MERGEABLE — audit in flight | Computer to merge when CLEAN audit returns |
-| **#281** | feat(checkout): Dunning v1 — webhook-driven cadence + admin override + 4 templates | `af02b8e8` | CI was FAILURE (lint), fixed `af02b8e8`, re-running | Computer to merge when CLEAN |
-| **#282** | feat(notifications): Nudge v1 — 4 triggers, frequency cap, quiet hours, opt-out | `9703eabb` | CI IN_PROGRESS | Computer to audit + merge when green |
+| PR | Title | Merge commit | Audit chain |
+|---|---|---|---|
+| #280 | CNAME Phase 4 — prisma regen + claim race + DNS timeout | `b552df28` | v1 DIRTY 0/0/2/12 → refix → v2 CLEAN 0/0/0/13 |
+| #281 | Dunning v1 — webhook-driven cadence + admin override + 4 templates | `a3e79c10` | v1 DIRTY 0/1/4/5 → refix → v2 CLEAN 0/0/0/5 |
+| #282 | Nudge v1 — 4 triggers, frequency cap, quiet hours, opt-out | `e17c362a` | v1 DIRTY 0/2/4/5 → refix → v2 CLEAN 0/0/0/7 |
+
+### Open PRs (this session)
+
+| PR | Title | Status |
+|---|---|---|
+| **#283** | docs: persist operator state | THIS PR. Awaiting CI + audit + merge. |
 
 ### Open PRs (pre-existing, in queue)
 
@@ -66,15 +72,12 @@ Haptics, micro-animations, thoughtful path design through every screen. The 7 pr
 | #183 | Phase 11 talent marketplace scaffold | Older. Stale check needed before action. |
 | #105, #251, #255, #256, #257, #258 | Dependabot deps | Sweep after main train completes. |
 
-### Worktrees (current)
+### Worktrees (as of last write)
 
 | Worktree | Branch | Status |
 |---|---|---|
-| `/home/user/workspace/repos/growth-project-backend` | main | clean (may have local stash@{1}) |
-| `/home/user/workspace/tgp/backend-cname-phase4` | feat/cname-phase4-prisma-race-dns | PR #280 done, remove after merge |
-| `/home/user/workspace/tgp/backend-dunning-v1` | feat/dunning-v1-rewrite | PR #281 in flight |
-| `/home/user/workspace/tgp/backend-nudge-v1` | feat/nudge-v1-wiring | PR #282 in flight |
-| `/home/user/workspace/tgp/backend-280-audit` | (detached at c6b3dafc) | Audit subagent in progress |
+| `/home/user/workspace/repos/growth-project-backend` | main | clean at `e17c362a` (may have local stash@{1}) |
+| `/home/user/workspace/tgp/backend-docs-context` | docs/operator-state-2026-05-26 | This PR (#283) |
 
 **Mobile repo:** `/home/user/workspace/repos/growth-project-mobile`, branch `agent/cpo/r-new-github-source-of-truth/e1477683`
 **Platform site:** `/home/user/workspace/repos/tgp-platform-site`
@@ -83,11 +86,11 @@ Haptics, micro-animations, thoughtful path design through every screen. The 7 pr
 
 ## 2. Active Workstreams (live this session)
 
-| Workstream | Subagent ID | Status | Output location |
-|---|---|---|---|
-| Nudge v1 (CI) | n/a (subagent done, waiting on CI) | IN_PROGRESS | PR #282 |
-| PR #280 CNAME audit | `pr_280_cname_p4_audit_mpndsta3` | RUNNING | `/home/user/workspace/audits/pr280_audit.md` |
-| Dunning v1 CI re-run after lint fix | n/a (auto on push) | IN_PROGRESS | PR #281 |
+| Workstream | Status | Output location |
+|---|---|---|
+| Docs PR #283 (this PR) | awaiting CI + audit + merge | `docs/` directory |
+
+Merge train (#280, #281, #282) — DONE.
 
 ---
 
@@ -110,15 +113,22 @@ Haptics, micro-animations, thoughtful path design through every screen. The 7 pr
 15. ✅ Dunning v1 subagent returned: PR #281, CI failed lint, Computer fixed + pushed `af02b8e8`.
 16. ✅ Nudge v1 subagent returned: PR #282 opened.
 17. ✅ Wrote `PROJECT_STATE.md` (this file).
+18. ✅ PR #280 v2 audit CLEAN → **merged `b552df28`**, cleaned up worktrees.
+19. ✅ PR #281 v1 audit DIRTY 0/1/4/5 → refix (1 P1 + 4 P2s in 2 commits) → v2 audit CLEAN → **merged `a3e79c10`**, cleaned up.
+20. ✅ PR #282 v1 audit DIRTY 0/2/4/5 → refix (2 P1 + 4 P2s in 3 commits) → v2 audit CLEAN → **merged `e17c362a`**, cleaned up.
+21. 🔄 Opened PR #283 (this docs persistence PR) — committing operator state to repo so it survives session boundaries.
 
 ---
 
 ## 4. Backlog (Sequenced Roadmap)
 
-### Tier 1 — In flight / next merge cycle
-1. **PR #280 merge** when CLEAN audit returns (audit subagent running now)
-2. **PR #281 merge** when CI re-run goes green + post-fix audit returns CLEAN
-3. **PR #282 audit + merge** when CI completes
+### Tier 1 — In flight
+1. **PR #283 docs persistence** (this PR) — awaiting CI + audit + merge
+
+### Tier 1 (just shipped)
+- ✅ PR #280 CNAME P4 — merged `b552df28`
+- ✅ PR #281 Dunning v1 — merged `a3e79c10`
+- ✅ PR #282 Nudge v1 — merged `e17c362a`
 
 ### Tier 2 — Next backend train (per user sequencing)
 4. **PR #272 CRM Phase 3** — known: 3 P0 SSRFs to fix + $/visitor metric missing. Needs exhaustive audit first.
