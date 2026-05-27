@@ -586,6 +586,48 @@ export class LandingPageService {
     return page;
   }
 
+  /**
+   * Public lookup by verified custom domain (CNAME Phase 4).
+   *
+   * Returns the single published page whose `custom_domain` matches the
+   * incoming Host header AND has been DNS-verified. We only route traffic
+   * to verified domains so an attacker who CNAMEs at us cannot front-run
+   * a coach's marketing.
+   */
+  async findPublishedByCustomDomain(host: string) {
+    if (!host) return null;
+    const domain = host.toLowerCase().split(':')[0]!.replace(/\.$/, '');
+    if (!domain) return null;
+
+    const page = await this.prisma.coachLandingPage.findFirst({
+      where: {
+        custom_domain: domain,
+        custom_domain_verified_at: { not: null },
+        status: 'published',
+      },
+      include: {
+        sections: { orderBy: { order_index: 'asc' } },
+        coach: {
+          select: {
+            id: true,
+            name: true,
+            coach_practice_type: true,
+            coach_profile: {
+              select: {
+                business_name: true,
+                bio: true,
+                branding_accent_color: true,
+                branding_logo_url: true,
+                invite_code: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    return page;
+  }
+
   async findPublishedPackages(packageIds: string[]) {
     if (!packageIds.length) return [];
     return this.prisma.coachPackage.findMany({
