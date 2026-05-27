@@ -77,7 +77,7 @@ function makePrisma(pages: Page[], subs: Sub[]) {
         );
       }),
       update: jest.fn(async ({ where, data }: any) => {
-        // top-level update path (verify success + release)
+        // top-level update path (release only — verify success now uses updateMany).
         const page = pages.find((p) => p.id === where.id);
         if (!page) throw new Error('page not found');
         if (data.custom_domain !== undefined) {
@@ -95,6 +95,34 @@ function makePrisma(pages: Page[], subs: Sub[]) {
           page.custom_domain_verified_at = data.custom_domain_verified_at;
         }
         return { ...page };
+      }),
+      // verify() uses updateMany to re-assert `custom_domain` in the WHERE
+      // clause — closing the TOCTOU window between the ownership read and
+      // the verified_at stamp. We honor the full where shape so the test
+      // can exercise both the match and no-match paths.
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const matches = pages.filter((p) => {
+          if (where.id && p.id !== where.id) return false;
+          if (where.custom_domain !== undefined && p.custom_domain !== where.custom_domain) {
+            return false;
+          }
+          return true;
+        });
+        for (const page of matches) {
+          if (data.custom_domain_verified_at !== undefined) {
+            page.custom_domain_verified_at = data.custom_domain_verified_at;
+          }
+          if (data.custom_domain !== undefined) {
+            page.custom_domain = data.custom_domain;
+          }
+        }
+        return { count: matches.length };
+      }),
+      // Used by verify() after the stamp UPDATE to surface the authoritative
+      // server timestamp in the response.
+      findUnique: jest.fn(async ({ where }: any) => {
+        const p = pages.find((page) => page.id === where.id);
+        return p ? { ...p } : null;
       }),
     },
     coachSubscription: {
@@ -342,6 +370,41 @@ describe('CustomDomainService', () => {
         NotFoundException,
       );
     });
+
+    it(
+      'TOCTOU: refuses to stamp verified_at if custom_domain swapped during the DNS window',
+      async () => {
+        // Reproduce P2-1: the coach DNS-verifies `verified.example.com`,
+        // but between the ownership read and the post-DNS stamp UPDATE
+        // re-claims to `attacker.example.com`. The fix re-asserts the
+        // verified domain in the WHERE clause; the stamp must miss and
+        // we must report `domain_changed` rather than falsely stamping
+        // the new (unverified) host.
+        const page = makePage({ custom_domain: 'verified.example.com' });
+        const prisma = makePrisma([page], [PRO]);
+
+        // DNS stub mutates the bound domain mid-lookup — simulating a
+        // concurrent re-claim landing during the 3s DNS window.
+        const dns: DnsVerifier = {
+          verifyCname: jest.fn(async () => {
+            page.custom_domain = 'attacker.example.com';
+            return { status: 'ok', targets: ['cname.trygrowthproject.com'] };
+          }),
+        } as unknown as DnsVerifier;
+
+        const svc = new CustomDomainService(prisma, dns);
+        const out = await svc.verify('coach-1', 'page-1');
+
+        // Outcome surfaces the race; verified_at is NOT stamped.
+        expect(out.outcome).toEqual({ status: 'domain_changed' });
+        expect(out.verified_at).toBeNull();
+        expect(page.custom_domain).toBe('attacker.example.com');
+        expect(page.custom_domain_verified_at).toBeNull();
+        // The response reports the domain we actually DNS-verified, not
+        // the post-swap value the row now holds.
+        expect(out.custom_domain).toBe('verified.example.com');
+      },
+    );
   });
 
   describe('release()', () => {

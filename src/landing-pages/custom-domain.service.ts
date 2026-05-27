@@ -175,23 +175,56 @@ export class CustomDomainService {
     }
 
     const target = cnameTarget();
-    const outcome = await this.dns.verifyCname(page.custom_domain, target);
+    // Snapshot the domain we are about to DNS-verify. The row could be
+    // re-claimed and swapped to a different value during the up-to-3s
+    // DNS window; we must re-assert it on the stamp UPDATE so we never
+    // stamp `verified_at` on a domain we did not actually verify.
+    const verifyingDomain = page.custom_domain;
+    const outcome: VerifyOutcome = await this.dns.verifyCname(
+      verifyingDomain,
+      target,
+    );
 
     let verifiedAt: Date | null = page.custom_domain_verified_at ?? null;
+    let effectiveOutcome: VerifyOutcome = outcome;
     if (outcome.status === 'ok') {
-      const updated = await this.prisma.coachLandingPage.update({
-        where: { id: pageId },
+      // P2-1 fix: re-assert `custom_domain` in the where clause to close
+      // the TOCTOU window between the ownership read and the stamp UPDATE.
+      // If the coach (or any other actor) swapped the bound domain during
+      // the DNS lookup, this matches 0 rows and we report `domain_changed`
+      // — we MUST NOT stamp `verified_at` on the new (unverified) host.
+      // `updateMany` is used (rather than `update`) so the non-match case
+      // returns `{ count: 0 }` instead of throwing P2025.
+      const stamped = await this.prisma.coachLandingPage.updateMany({
+        where: { id: pageId, custom_domain: verifyingDomain },
         data: { custom_domain_verified_at: new Date() },
-        select: { custom_domain_verified_at: true },
       });
-      verifiedAt = updated.custom_domain_verified_at;
+
+      if (stamped.count === 0) {
+        // The bound domain changed mid-verify; treat as benign no-op.
+        // The caller can re-issue verify against the new binding.
+        this.logger.warn(
+          `verify(): custom_domain swapped during DNS window for page ${pageId} ` +
+            `(verified=${verifyingDomain}); refusing to stamp verified_at.`,
+        );
+        effectiveOutcome = { status: 'domain_changed' };
+        verifiedAt = null;
+      } else {
+        // Read back the stamp so the response surfaces the authoritative
+        // server timestamp.
+        const fresh = await this.prisma.coachLandingPage.findUnique({
+          where: { id: pageId },
+          select: { custom_domain_verified_at: true },
+        });
+        verifiedAt = fresh?.custom_domain_verified_at ?? null;
+      }
     }
 
     return {
       page_id: page.id,
-      custom_domain: page.custom_domain,
+      custom_domain: verifyingDomain,
       cname_target: target,
-      outcome,
+      outcome: effectiveOutcome,
       verified_at: verifiedAt,
     };
   }

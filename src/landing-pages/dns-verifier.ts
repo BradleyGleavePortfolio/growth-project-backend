@@ -46,7 +46,16 @@ export type VerifyOutcome =
   | { status: 'wrong_target'; targets: string[] }
   | { status: 'nxdomain' }
   | { status: 'timeout' }
-  | { status: 'error'; code: string };
+  | { status: 'error'; code: string }
+  /**
+   * The bound `custom_domain` changed between the ownership read and the
+   * post-DNS stamp UPDATE — we DNS-verified one host but the row now
+   * points at another. Emitted by `CustomDomainService.verify()` only;
+   * the DNS layer itself never produces this status. Surfacing it as a
+   * `VerifyOutcome` variant lets the controller render it via the same
+   * 200-with-reason path as every other non-`ok` state.
+   */
+  | { status: 'domain_changed' };
 
 /**
  * DnsVerifier — wraps the Node DNS resolver with a hard timeout.
