@@ -398,10 +398,29 @@ export class LandingPageService {
       this.prisma.coachLandingLead.count({
         where: { page_id: pageId, created_at: { gte: thirtyDaysAgo } },
       }),
-      // R47 revenue rollup: GuestCheckout rows landing-stamped with this
-      // page id, in the paid/converted states (excludes pending + failed).
-      // Join CoachPackage to read amount_cents — GuestCheckout itself
-      // does not store the captured amount (intent is per-package).
+      // R47 gross-attempts rollup (Audit #6 P1-3).
+      //
+      // We deliberately label this `gross_attempts_cents`, NOT `revenue`.
+      // The amount we sum here is `package.amount_cents` — the *list*
+      // price of the package at the time of the read, not the captured
+      // amount on the Stripe charge. That means:
+      //   • discounts / coupons are ignored
+      //   • partial refunds are ignored
+      //   • full refunds / chargebacks are NOT subtracted
+      //   • disputed but not-yet-reversed charges still count
+      //
+      // Status allow-list is intentionally explicit (no negative match):
+      //   - 'paid'        — Stripe webhook confirmed funds captured
+      //   - 'converted'   — paid + downstream User+entitlement created
+      // We exclude all failure / pending / reconciliation states
+      // ('pending', 'failed', 'conversion_failed_retryable',
+      // 'conversion_failed_terminal') and any future refund/dispute
+      // states by virtue of using an allow-list rather than a deny-list.
+      //
+      // Net revenue (amount_received - amount_refunded) requires either
+      // a denormalized column on GuestCheckout or a join through Stripe
+      // charge ledger; both are follow-up work. Until then the metric is
+      // labelled accurately so coaches aren't misled.
       this.prisma.guestCheckout.findMany({
         where: {
           landing_page_id: pageId,
@@ -416,7 +435,15 @@ export class LandingPageService {
     ]);
 
     const totalViews = views.length;
-    const uniqueVisitors = new Set(views.map((v) => v.ip_hash)).size;
+    // Audit #6 P1-4 — daily-salt rotation makes the same visitor hash
+    // to N distinct ip_hash values over an N-day window, so a 30-day
+    // Set.size over ip_hash systematically over-counts unique visitors
+    // (and correspondingly under-counts conversion rate). We expose
+    // this as `active_visitor_days` instead of `unique_visitors` until
+    // a stable visitor cookie is in place. Naming is honest about
+    // what the number actually measures: distinct (visitor, UTC-day)
+    // pairs over the rollup window.
+    const activeVisitorDays = new Set(views.map((v) => v.ip_hash)).size;
     const ctaClicks = views.filter((v) => v.cta_clicked).length;
     const formSubmits = views.filter((v) => v.form_submitted).length;
     const scrollDepths = views
@@ -427,22 +454,28 @@ export class LandingPageService {
         ? Math.round(scrollDepths.reduce((a, b) => a + b, 0) / scrollDepths.length)
         : null;
 
-    // Revenue + conversion rollup (R47).
+    // Gross-attempts + conversion rollup (R47, Audit #6 P1-3/P1-4).
     const checkoutsCompleted = checkouts.length;
-    const revenueCents = checkouts.reduce(
+    const grossAttemptsCents = checkouts.reduce(
       (acc, c) => acc + (c.package?.amount_cents ?? 0),
       0,
     );
-    // $/visitor = revenue (dollars) divided by unique visitors. Returns
-    // null when the denominator is 0 to avoid surfacing Infinity / NaN
-    // in the coach UI.  Rounded to 2 decimals for display.
-    const dollarsPerVisitor =
-      uniqueVisitors > 0
-        ? Math.round((revenueCents / 100 / uniqueVisitors) * 100) / 100
+    // Dollars per active visitor-day = gross-attempts (dollars) divided
+    // by distinct (visitor, day) pairs. Returns null when the denominator
+    // is 0 to avoid surfacing Infinity / NaN in the coach UI. Rounded to
+    // 2 decimals for display.
+    //
+    // NB: this is NOT $/unique-visitor in the strict sense — see the
+    // active_visitor_days note above. We use the same denominator for
+    // conversion_rate so the two metrics are at least internally
+    // consistent.
+    const dollarsPerActiveVisitorDay =
+      activeVisitorDays > 0
+        ? Math.round((grossAttemptsCents / 100 / activeVisitorDays) * 100) / 100
         : null;
     const conversionRate =
-      uniqueVisitors > 0
-        ? Math.round((checkoutsCompleted / uniqueVisitors) * 10000) / 10000
+      activeVisitorDays > 0
+        ? Math.round((checkoutsCompleted / activeVisitorDays) * 10000) / 10000
         : 0;
 
     // UTM breakdown
@@ -482,14 +515,22 @@ export class LandingPageService {
       page_id: pageId,
       period: 'last_30d' as const,
       total_views: totalViews,
-      unique_visitors: uniqueVisitors,
+      // Audit #6 P1-4 — renamed from `unique_visitors`. See comment
+      // above for why ip_hash over a 30-day window is not a true
+      // unique-visitor count.
+      active_visitor_days: activeVisitorDays,
       total_leads: leadsCount,
       lead_form_submits: formSubmits,
       checkout_starts: ctaClicks,
       checkouts_completed: checkoutsCompleted,
-      revenue_cents: revenueCents,
+      // Audit #6 P1-3 — renamed from `revenue_cents`. This is the
+      // sum of list-price amounts for paid/converted checkouts
+      // attributed to this page; it is not net revenue.
+      gross_attempts_cents: grossAttemptsCents,
       conversion_rate: conversionRate,
-      dollars_per_visitor: dollarsPerVisitor,
+      // Audit #6 P1-3/P1-4 — renamed from `dollars_per_visitor`. The
+      // denominator is `active_visitor_days`, not unique visitors.
+      dollars_per_active_visitor_day: dollarsPerActiveVisitorDay,
       avg_scroll_depth: avgScrollDepth,
       cta_click_rate: totalViews > 0 ? ctaClicks / totalViews : 0,
       form_submit_rate: totalViews > 0 ? formSubmits / totalViews : 0,
