@@ -43,6 +43,9 @@ The user's vision for the app: **one notch above what a decacorn would ship — 
 - [`audits/codebase_hygiene_findings.md`](./audits/codebase_hygiene_findings.md) — all 17 ranked findings + Batch 3 mapping, grouped into PRs A→F (with PR-G/PR-H for new Batch 3 items)
 - [`audits/issue_register_28_findings_2026-05-26.md`](./audits/issue_register_28_findings_2026-05-26.md) — **Batch 3:** 28-issue full architectural register (verbatim from third-party inspection, file:line precision, big-picture solutions)
 - [`audits/issue_register_28_findings_2026-05-26.docx`](./audits/issue_register_28_findings_2026-05-26.docx) — original docx for fidelity
+- [`audits/coach_data_accuracy_subcoach_experience_2026-05-27.md`](./audits/coach_data_accuracy_subcoach_experience_2026-05-27.md) — **Batch 4:** Coach data accuracy + sub-coach experience register (15 findings: 4 P0 SC-1..SC-4, 11 P1 CC-1..CC-5 / EFF-1..EFF-3 / LTV-1..LTV-3) verbatim from third-party inspection
+- [`audits/coach_data_accuracy_subcoach_experience_2026-05-27.docx`](./audits/coach_data_accuracy_subcoach_experience_2026-05-27.docx) — original docx for fidelity
+- [`audits/architectural_refactor_priorities_2026-05-27.md`](./audits/architectural_refactor_priorities_2026-05-27.md) — **Architectural review:** Repository Pattern (D), Fat Controller (C), High-CCN decomposition (B-) — 4 prioritized structural fixes (verbatim)
 
 The 6-PR hygiene sweep sequence:
 - **PR-A**: AI cost + security hardening (LLM spend cap, GatewayInvokeDto, throttle, role injection) — actively bleeding P&L edge
