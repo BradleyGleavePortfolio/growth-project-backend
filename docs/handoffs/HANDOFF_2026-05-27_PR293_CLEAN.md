@@ -226,3 +226,189 @@ None active at handoff time. No skill reloads required to resume — the resume 
 4. Clean up worktrees per section 3.
 5. File the 3 standing follow-ups from section 5 as GitHub issues (P3-α stuck-claim runbook, expireStaleDrafts test, Retry-After header).
 6. Begin **PR AI-1** (combined spend envelope + cron caps + unread-guard) per canonical doc. Single-track, no parallel AI work.
+
+---
+
+## 13. Repo Governance Files (READ on session start — they govern every action)
+
+These live at the repo root on `main`. The next operator should read them before any code change:
+
+- **`AGENT_RULES.md`** — Full R1-R61 rules with retirement notes. R56-R60 worktree discipline (codified after "CHECKOUT-HARDENING trampling incident"). R61 push-every-2-min. R10 RETIRED 2026-05-26 (replaced by CLEAN bar: CI green + 0 P0/P1/P2 on main always).
+- **`ENGINEERING_RULES.md`** — Concrete engineering guardrails: tenant isolation patterns (`assertXOwnsY` helpers, 404 not 403 to avoid ID probing), RLS-in-same-migration policy, semantic HTTP codes (402 entitlement, 403 access, 404 not-found/hidden, 409 conflict, 410 gone), `app.current_user_id()` / `app.is_owner()` (never `auth.uid()` directly), append-only migrations, sub-coach guardrails (`HeadCoachOnlyGuard`, `NoActiveSubCoachGuard`).
+- **`PERP_HANDOFF.md`** — Cross-session Computer handoff log (top-of-file is most recent). Update this file when ending a substantive session.
+- **`BACKLOG.md`** — repo-tracked backlog (not the same as the audit-docs roadmap).
+- **`CHANGELOG.md`** — 38KB, real changelog kept up to date.
+- **`README.md`** — 135KB; functions as a living architectural doc as well as onboarding README.
+
+---
+
+## 14. Other Open PRs (DO NOT TOUCH unless instructed)
+
+```
+#295  docs(handoff): operator handoff — PR #293 CLEAN, merge-ready, AI-1 next     [docs/handoff-pr293-clean-2026-05-27]  ← this session's handoff PR, safe to merge
+#277  feat(rules): R15 — GitHub is the only source of truth                       [agent/cpo/r-new-github-source-of-truth/e1477683]
+#275  docs: operator handoff 2026-05-26 (Sprint A, audits, R1-R61, 30+ features)  [chore/operator-handoff-2026-05-26]
+#268  PR-RLS-01: Helper function search_path lockdown + HIBP enable               [DRAFT]
+#183  feat(phase-11/talent-marketplace): application + pool + Stripe Connect      [long-running feature branch]
+```
+
+User's directive this session was **single-track, no parallel AI work**. Treat #277, #275, #268, #183 as out-of-scope for the AI bugs sweep — do not interleave them.
+
+---
+
+## 15. Open Issues (track but do not assume scope)
+
+```
+#261  Server-side entitlement gaps surfaced by mobile paywall wire-up
+#260  Entitlement gating: product decision on free-tier surfaces
+#144  feat(coach-alerts): wire finance_eod_gap emitter once Agent 1A federation lands
+```
+
+The 3 P3 follow-ups identified in PR #293 round-3 audit should be filed as NEW issues after merge:
+
+1. Stuck-claim runbook + admin endpoint for ops recovery (P3-α from round-3 audit)
+2. `expireStaleDrafts` `materialised_at: null` clause dedicated test
+3. `Retry-After` header on 409 responses (P3-C carry from round-2)
+
+---
+
+## 16. Stale Remote Branches to Clean Up (optional housekeeping)
+
+These dependabot branches are leftover after the dep-sweep merges and should be deleted from origin:
+
+```
+dep/eslint                                           (replaced by #286, merged)
+dep/expo                                             (replaced by #287, merged)
+dep/openai                                           (replaced by #285, merged)
+dep/prisma6                                          (replaced by #289, merged)
+```
+
+Plus many old feature/docs branches in section "Branches on remote" of this audit. Defer until user requests cleanup.
+
+---
+
+## 17. Recently Merged PRs (last 15, for context)
+
+```
+#294  2026-05-27  docs(audits): canonical AI Usage Economics plan
+#293  2026-05-27  feat(ai): approval-loop materialiser (PRODUCT-1)              ← THIS SESSION
+#292  2026-05-27  docs(audits): credit-pack face-value pricing
+#291  2026-05-27  docs(audits): AI Credit Marketplace spec
+#290  2026-05-27  docs(audits): Bug Register Round 3 (Open Hunt)
+#289  2026-05-27  chore(deps): @prisma/client + prisma CLI 5→6.19.3
+#288  2026-05-27  docs(audits): Batch 4 coach data accuracy + sub-coach experience
+#287  2026-05-27  chore(deps): expo-server-sdk v6 + Jest ESM allowlist
+#286  2026-05-27  chore(deps): eslint v10 + @typescript-eslint v8 (flat config)
+#285  2026-05-27  chore(deps): openai v6 + lazy-init refactor
+#284  2026-05-27  docs(audits): Batch 3 — 28-issue architectural register
+#283  2026-05-27  docs: PROJECT_STATE, Stillwater Standard, hygiene + UX audits
+#282  2026-05-27  feat(notifications): Nudge v1 (4 triggers, frequency cap, quiet hours)
+#281  2026-05-27  feat(checkout): Dunning v1 (webhook-driven cadence + admin override)
+#280  2026-05-27  feat(landing-pages): CNAME Phase 4 (prisma regen + claim race + DNS timeout)
+```
+
+---
+
+## 18. Audit Docs Directory (`docs/audits/` on main)
+
+Most-recent audit docs that inform the AI-1..AI-5 sequencing:
+
+```
+ai_usage_economics_plan_2026-05-27.md          ← CANONICAL — read first
+ai_credit_marketplace_2026-05-27.md            ← Credits-1/2/3 spec
+bug_register_round3_open_hunt_2026-05-27.md    ← 18 findings, includes BUG-S3 GDPR-AIDraft
+architectural_refactor_priorities_2026-05-27.md
+coach_data_accuracy_subcoach_experience_2026-05-27.md
+codebase_hygiene_findings.md
+issue_register_28_findings_2026-05-26.md       ← Batch 3 full architectural register
+```
+
+Plus per-PR audit/refixer reports for #272, #276 (multi-round), #279, #280-#283, #285-#289, #293.
+
+---
+
+## 19. CI / Workflow Knowledge
+
+`.github/workflows/`:
+- `ci.yml` — Main CI (`build-and-test`). **Does NOT auto-trigger on PR push.** Must dispatch: `gh workflow run CI --ref <branch>` after every push.
+- `fly-deploy.yml` — Fly.io deploy
+- `fly-logs.yml` — Fly log fetcher
+- `fly-secrets-set.yml`, `fly-db-secrets-set.yml` — secret rotation (owner-only; do not touch)
+
+Lockfile rebuild after rebase: `npm install --package-lock-only --ignore-scripts --legacy-peer-deps`.
+
+---
+
+## 20. Key Source Tree Surfaces (for AI-1..AI-5 PRs)
+
+```
+src/ai/gateway/
+  ai-approval.service.ts                       ← PR #293 changes (decide gate, race poll)
+  ai-gateway.service.ts                        ← invoke path, throttle, cost tracking
+  ai-gateway.module.ts                         ← DI wiring + capability registration
+  materialisers/
+    capability-materialiser.interface.ts       ← new in #293
+    capability-materialiser.registry.ts        ← new in #293
+    coach-message.materialiser.ts              ← new in #293 (claim/poll/recover logic lives here)
+prisma/schema.prisma                           ← AIDraft / AiActionDraft model + materialised_at, materialised_ref columns
+prisma/migrations/20261110000000_ai_action_draft_materialised/migration.sql
+```
+
+When you start AI-1 (combined spend envelope), expect to touch:
+- `src/ai/gateway/ai-gateway.service.ts` (envelope check on invoke)
+- `prisma/schema.prisma` (envelope state model, or extend Coach with monthly counters)
+- New cron module for daily brief generation with unread-streak guard
+- New DTO contract for coach + clients combined cost
+
+---
+
+## 21. Connectors / External Services
+
+```
+github_mcp_direct   AVAILABLE but DO NOT USE — always use `gh` CLI via bash with api_credentials=["github"]
+supabase            available — DB is Postgres on Supabase (used for RLS policies, not direct queries from agent)
+sentry              available — error monitoring, may need to check error rates after AI PRs land
+posthog__pipedream  available — product analytics events
+finance             available — unused this session
+```
+
+External services in use by the app (informational; do not poke without user direction):
+- Fly.io (compute + Postgres) — owner cannot check Fly secrets directly per R12
+- Stripe (Connect Express, Checkout, Webhooks) — dunning v1 lives here
+- Expo (push notifications, expo-server-sdk v6 since #287)
+- Twilio (SMS) — via `sendAsCoach` in messaging service
+- Anthropic API — the `$40/coach actual cost` is Anthropic spend
+- OpenAI v6 — also wired since #285 lazy-init refactor
+
+---
+
+## 22. User Persona & Communication Norms
+
+- Owner ≈ "7th grader tech literacy" per R3 — explain trade-offs in simple language.
+- Owner cannot check Fly or GCP values directly (R12). Don't ask them to.
+- Owner ships in front of 800 people — uptime and polish matter (R7, R13, Stillwater Standard).
+- Owner is funding sandbox credits personally (R52 — "wasted credits = food out of daughter's mouth"). Be surgical.
+- Owner expects R56 worktree discipline + R61 push-every-2-min observable on every PR.
+- Author identity on commits: `Dynasia G <dynasia@trygrowthproject.com>`. NO Co-Authored-By footer.
+- Push direction is occasionally ambiguous ("just merge it" vs "wait for me") — when in doubt, confirm before irreversible actions.
+
+---
+
+## 23. Things This Session Almost Got Wrong (lessons)
+
+1. **First refixer round** missed the symmetric "approve+reject" race because the refixer focused on approve+approve (the explicit P1 in the audit). Audit caught it round 2. → Always trace ALL ordering combinations when fixing races, not just the named one.
+2. **Round-2 refixer's claim WHERE** had `materialised_at: null` only — no status check. Round-3 added `status:'pending'`. → Multi-layer defense: claim-time guard + commit-time gate + symmetric guards on every status-mutating path (reject, expire).
+3. **`materialisationConfirmed` flag** initially conflated "side-effect committed" with "downstream ref exists" — caused latent noop-incompatibility bug. → Don't overload boolean flags; distinguish "operation succeeded" from "produced an artifact."
+4. **CI doesn't auto-trigger on PR push** — easy to forget; manifested as "why is CI still showing old SHA?" twice this session. → Always `gh workflow run CI --ref <branch>` after a push.
+5. **Worktree delete failed during merge** because the feature worktree still had the branch checked out. → Either remove worktrees before `gh pr merge --delete-branch`, or accept that the local branch needs manual cleanup post-merge (this session's path).
+
+---
+
+## 24. If the Sandbox Dies Mid-Work (R61 recovery)
+
+All work is on GitHub. The only thing local-only is:
+- `/home/user/workspace/audits/*.md` — audit reports (not yet on main; the canonical ones are filed via PR)
+- `/home/user/workspace/HANDOFF_2026-05-27_PR293_CLEAN.md` — this doc (now also at `docs/handoffs/` on PR #295)
+- `/home/user/workspace/ai_bugs_sweep_plan.md` — local plan tracker
+
+Recovery: re-clone the repo, `git checkout main`, read `docs/handoffs/HANDOFF_2026-05-27_PR293_CLEAN.md` (after #295 merges) or this file from sandbox if it survives.
