@@ -1,13 +1,14 @@
 # Codebase Hygiene Findings — R1 Bar Violations
 
-**Source:** User-provided observations, 2026-05-26 (two batches: 8 controller-hygiene + 9 billing/AI)
+**Source:** User-provided observations, 2026-05-26 (three batches now: 8 controller-hygiene + 9 billing/AI + 28-issue full register)
 **Repo:** `growth-project-backend`
-**Status:** TRACKED — to address after CNAME / Dunning / Nudge train completes
+**Status:** TRACKED — CNAME / Dunning / Nudge train complete. Sweep in progress.
 **R1 reference:** "Does this raise the bar of quality OR hold the bar at decacorn quality?"
 
 **Batches:**
 - Batch 1 (Findings #1-#8): Controller hygiene — @Roles, throttle parity, cursor pagination, DTO validation, guard hoisting, dead routes, Swagger
 - Batch 2 (Findings #9-#17): Billing + AI — duplicated controllers, missing throttles on Stripe/LLM mints, no cost caps, prompt injection, offset pagination
+- **Batch 3 (28 issues, full register, 2026-05-26 evening):** Extends and overlaps with Batches 1-2 with file:line precision and architecture-grade big-picture solutions. Filed verbatim at [`issue_register_28_findings_2026-05-26.md`](./issue_register_28_findings_2026-05-26.md). Sections: Part 1 General Architecture (Issues 1-8), Part 2 Billing (B1-B9), Part 3 AI Architecture (A1-A9), plus PRODUCT-1 (AI Approval Loop) and PRODUCT-2 (Autonomous AI Brief failure modes).
 
 ---
 
@@ -213,3 +214,42 @@ User-provided 2026-05-26 post-batch-1. Ranked into the master ordering at the en
 
 ## Total estimate
 ~6 small/medium PRs. ~3-5 day full sweep at sustained pace with audit cycles between each.
+
+---
+
+## Batch 3 — Full 28-issue register (verbatim) — 2026-05-26 evening
+
+A full third-party architectural inspection of `growth-project-backend` covering 28 issues across General Architecture, Billing, AI Architecture, and Product/AI loops. Each entry has a precise **The Problem** technical description and **Big-Picture Solution** at architecture grade.
+
+**Filed verbatim:** [`issue_register_28_findings_2026-05-26.md`](./issue_register_28_findings_2026-05-26.md)
+**Original docx preserved:** [`issue_register_28_findings_2026-05-26.docx`](./issue_register_28_findings_2026-05-26.docx)
+
+### Overlap with Batches 1-2
+Many Batch 3 issues restate Batches 1-2 with deeper detail. Notable mappings:
+- Batch 3 Issue 1 (payment-ops Swagger) ≡ Batch 1 #8 ≡ PR-E
+- Batch 3 Issue 2 (admin cursor pagination) ≡ Batch 1 #3 + Batch 2 #17 → PR-D
+- Batch 3 Issue 3 (real-meal-plans guard hoisting) ≡ Batch 1 #5 → PR-C
+- Batch 3 Issue 5 (coach-messaging @Roles) ≡ Batch 1 #1 → PR-C
+- Batch 3 Issue 7 (storefront GET throttle) ≡ Batch 1 #2 → PR-C
+- Batch 3 Issue 8 (admin Swagger) ≡ Batch 2 #17 → PR-D
+- Batch 3 B1-B4 (portal-session dedup + throttles + DTO) ≡ Batch 2 #12-#15 → PR-B
+- Batch 3 A1-A3, A5 (gateway DTO + spend cap + prompt injection + throttle) ≡ Batch 2 #9, #10, #11, #16 → PR-A
+
+### New Batch 3 issues NOT in Batches 1-2
+- **Issue 4** — Dead 410 endpoint with no scheduled removal date (`src/users/users.controller.ts:75`)
+- **Issue 6** — Admin query params parsed with raw parseInt, not validated DTOs
+- **B5** — Coach Purchase List is an unbounded DB query
+- **B6** — Earnings history silently truncates at 200 with no export path
+- **B7** — `transfer.failed` and `payout.failed` Stripe events are unhandled
+- **B8** — Stripe Connect link endpoints have no rate limit
+- **B9** — `start-subscription` missing `@Roles` defence-in-depth
+- **A4** — Coach Brief history uses offset pagination
+- **A6** — `POST /ai/chat` passes unsanitised messages to the LLM
+- **A7** — Every AI chat response leaks the LLM provider name to clients
+- **A8** — AI context endpoints have no rate limit
+- **A9** — Chat history `role` field accepts any string on the base path
+- **PRODUCT-1** — The AI Approval Loop terminates with a status flip (no human review checkpoint)
+- **PRODUCT-2** — Autonomous AI Brief has structural failure modes not surfaced to coach
+
+### Sweep update
+The 6-PR sweep (A→F) above remains the **core sequence**. After PR-F lands, run a **PR-G** for the new-only Batch 3 items above (especially B7 `transfer.failed`/`payout.failed` unhandled — likely P1, money-path) and a **PR-H** for the PRODUCT-1/2 issues (AI loop human-review gates). Detailed sequencing to be determined after PR-A through PR-F complete and Batch 3 audit returns.
