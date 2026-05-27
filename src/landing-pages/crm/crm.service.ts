@@ -101,31 +101,28 @@ export class CoachCrmService {
 
     const encrypted = this.kms.encrypt(JSON.stringify(config));
 
-    // Use Prisma upsert against the (coach_id, provider) composite. The
-    // schema doesn't declare a compound @@unique today, so we emulate the
-    // upsert with a findFirst + create/update — atomic enough for this
-    // low-frequency, coach-driven write path. (A future migration can add
-    // the @@unique([coach_id, provider]) if write contention warrants it.)
-    const existing = await this.prisma.coachCrmIntegration.findFirst({
-      where: { coach_id: coachId, provider },
+    // Audit #6 P1-9 (audit numbering) / TODO list P1-8 — atomic upsert
+    // against the (coach_id, provider) compound @@unique. The previous
+    // findFirst + create/update split was racy: two simultaneous
+    // POST /coach/crm calls could both miss the findFirst, both call
+    // create, and the schema would happily store two rows for the same
+    // (coach, provider) pair. The lead-sync worker would then fan out
+    // every lead twice. The migration adds the unique index so this
+    // upsert is the single, atomic write path.
+    const row = await this.prisma.coachCrmIntegration.upsert({
+      where: { coach_id_provider: { coach_id: coachId, provider } },
+      update: {
+        credentials_encrypted: encrypted,
+        enabled: true,
+        last_error: null,
+      },
+      create: {
+        coach_id: coachId,
+        provider,
+        credentials_encrypted: encrypted,
+        field_mapping: {},
+      },
     });
-    const row = existing
-      ? await this.prisma.coachCrmIntegration.update({
-          where: { id: existing.id },
-          data: {
-            credentials_encrypted: encrypted,
-            enabled: true,
-            last_error: null,
-          },
-        })
-      : await this.prisma.coachCrmIntegration.create({
-          data: {
-            coach_id: coachId,
-            provider,
-            credentials_encrypted: encrypted,
-            field_mapping: {},
-          },
-        });
     return toSummary(row);
   }
 

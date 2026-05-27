@@ -3994,6 +3994,10 @@ enum LandingSectionKind {
 // to `synced`, `failed` (after 3 retries), or `skipped` (no integration).
 enum CrmSyncStatus {
   pending
+  // Audit #6 P0-6 — transient state set by the lead-sync worker via
+  // SKIP LOCKED claim. A row in 'syncing' is owned by exactly one
+  // worker replica; recovery cron returns stuck rows to 'pending'.
+  syncing
   synced
   failed
   skipped
@@ -4140,8 +4144,20 @@ model CoachLandingLead {
   @@index([page_id, created_at])
   // Coach dashboard: all leads across pages for one coach, newest first.
   @@index([coach_id, created_at])
+  // R47 Phase 3 / Audit #6 P0-6 — persistent retry state. Survives
+  // process restarts (the in-memory Map version reset attempts to 0 on
+  // every boot, which let a poisoned lead retry indefinitely after a
+  // deploy). `next_eligible_at` is the earliest UTC instant the worker
+  // is allowed to try this lead again; the SKIP LOCKED claim filters on
+  // it so a backed-off lead doesn't block the head of the queue.
+  attempts          Int              @default(0)
+  next_eligible_at  DateTime?
+
   // CRM sync worker: claim all pending leads in one index scan.
   @@index([crm_sync_status])
+  // Audit #6 P0-6 — worker claim filter "pending AND eligible-now"
+  // hits this composite on every tick.
+  @@index([crm_sync_status, next_eligible_at])
 }
 
 // CoachLandingPageView — anonymized analytics event per page visit.
@@ -4176,6 +4192,10 @@ model CoachLandingPageView {
 // share the same integration. Credentials are AES-256-GCM encrypted
 // at rest with env key KMS_MASTER_KEY (decrypted only inside
 // CoachCrmService, never returned to the client — spec §7).
+// Audit #6 P1-9 — (coach_id, provider) must be unique so the upsert
+// path in CoachCrmService cannot race itself into two rows for the
+// same provider on the same coach (which would silently fan out
+// duplicate leads on every sync tick). Enforced at the model below.
 model CoachCrmIntegration {
   id                    String      @id @default(cuid())
   coach_id              String
@@ -4198,4 +4218,6 @@ model CoachCrmIntegration {
 
   // Fast "get all integrations for coach" query from the CRM settings screen.
   @@index([coach_id])
+  // Audit #6 P1-9 — prevents two rows for the same (coach, provider).
+  @@unique([coach_id, provider])
 }

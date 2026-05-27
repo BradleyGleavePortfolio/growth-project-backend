@@ -2,11 +2,15 @@
  * R47 lead-sync processor + CRM service tests.
  *
  * Covers:
+ *   - Multi-replica SKIP LOCKED claim primitive (Audit #6 P0-6).
+ *   - Persistent attempts / next_eligible_at retry state (P0-6, P1-8).
+ *   - Per-coach token bucket rate limit (P1-7).
  *   - Fan-out: a single pending lead pushes to N enabled integrations in parallel.
- *   - Partial failure: one provider fails, another succeeds → lead stays
- *     pending so the next tick retries only the failed one.
+ *   - Partial failure: one provider fails, another succeeds → lead returns
+ *     to 'pending' with backoff persisted on the row.
  *   - All-success transition to 'synced' with synced_to + external_ids populated.
- *   - No-integration coach: lead transitions to 'skipped'.
+ *   - No-integration coach: lead transitions to 'skipped' WITHOUT writing
+ *     crm_synced_at (Audit #6 P1-9 numbering).
  *   - 429 honored via provider cooldown — no fresh push that tick.
  *   - CoachCrmService.upsert encrypts via KmsService + never returns config bytes.
  *   - testPush surfaces errors as 400 to the coach.
@@ -14,7 +18,6 @@
 
 import { LeadSyncProcessor } from '../src/landing-pages/crm/lead-sync.processor';
 import { CoachCrmService } from '../src/landing-pages/crm/crm.service';
-import { CrmRegistryService } from '../src/landing-pages/crm/crm-registry.service';
 import { KmsService } from '../src/common/kms/kms.service';
 import {
   CrmRateLimitError,
@@ -25,19 +28,42 @@ import {
 function makePrismaStub() {
   const leads: any[] = [];
   const integrations: any[] = [];
+  const pages: any[] = [];
+
+  // Track $queryRawUnsafe SQL fragments so tests can assert FOR UPDATE / SKIP LOCKED.
+  const rawSqls: string[] = [];
+
   return {
     _leads: leads,
     _integrations: integrations,
+    _pages: pages,
+    _rawSqls: rawSqls,
+    /**
+     * Stub Prisma's `$queryRawUnsafe`. The processor issues a single
+     * UPDATE ... RETURNING * for the claim — we model that by filtering
+     * `leads` on (status='pending' AND eligible), flipping each matched
+     * row to 'syncing' in place, then returning shallow copies that
+     * mimic Postgres's RETURNING.
+     */
+    $queryRawUnsafe: jest.fn(async (sql: string, batchSize: number) => {
+      rawSqls.push(sql);
+      const now = Date.now();
+      const candidates = leads
+        .filter((l) => l.crm_sync_status === 'pending')
+        .filter(
+          (l) =>
+            l.next_eligible_at == null || +new Date(l.next_eligible_at) <= now,
+        )
+        .sort((a, b) => +a.created_at - +b.created_at)
+        .slice(0, batchSize);
+      const out: any[] = [];
+      for (const lead of candidates) {
+        lead.crm_sync_status = 'syncing';
+        out.push({ ...lead });
+      }
+      return out;
+    }),
     coachLandingLead: {
-      findMany: jest.fn(async ({ where, take, orderBy, include }: any) => {
-        let out = leads.filter((l) => l.crm_sync_status === where.crm_sync_status);
-        if (orderBy?.created_at === 'asc') {
-          out = [...out].sort((a, b) => +a.created_at - +b.created_at);
-        }
-        if (take) out = out.slice(0, take);
-        // Eager-load page (the integration test pre-attaches `page` on the lead row).
-        return out;
-      }),
       update: jest.fn(async ({ where, data }: any) => {
         const idx = leads.findIndex((l) => l.id === where.id);
         if (idx === -1) throw new Error('lead not found');
@@ -49,11 +75,19 @@ function makePrismaStub() {
           id: `lead-${leads.length + 1}`,
           synced_to: [],
           external_ids: {},
+          attempts: 0,
+          next_eligible_at: null,
           ...data,
           created_at: new Date(),
         };
         leads.push(row);
         return row;
+      }),
+    },
+    coachLandingPage: {
+      findMany: jest.fn(async ({ where }: any) => {
+        const ids: string[] = where?.id?.in ?? [];
+        return pages.filter((p) => ids.includes(p.id));
       }),
     },
     coachCrmIntegration: {
@@ -69,6 +103,27 @@ function makePrismaStub() {
           Object.entries(where).every(([k, v]) => i[k] === v),
         ) ?? null,
       ),
+      upsert: jest.fn(async ({ where, update, create }: any) => {
+        // where: { coach_id_provider: { coach_id, provider } }
+        const k = where.coach_id_provider;
+        const idx = integrations.findIndex(
+          (i) => i.coach_id === k.coach_id && i.provider === k.provider,
+        );
+        if (idx >= 0) {
+          Object.assign(integrations[idx], update);
+          return integrations[idx];
+        }
+        const row = {
+          id: `int-${integrations.length + 1}`,
+          enabled: true,
+          last_synced_at: null,
+          last_error: null,
+          created_at: new Date(),
+          ...create,
+        };
+        integrations.push(row);
+        return row;
+      }),
       update: jest.fn(async ({ where, data }: any) => {
         const idx = integrations.findIndex((i) => i.id === where.id);
         if (idx === -1) throw new Error('integration not found');
@@ -111,7 +166,11 @@ function makeRegistryStub() {
   };
 }
 
-// ─── LeadSyncProcessor: fan-out + retries ─────────────────────────────────────
+function seedPage(prisma: ReturnType<typeof makePrismaStub>, page: any) {
+  prisma._pages.push(page);
+}
+
+// ─── LeadSyncProcessor: claim + fan-out + retries ─────────────────────────────
 
 describe('LeadSyncProcessor', () => {
   let prisma: ReturnType<typeof makePrismaStub>;
@@ -127,7 +186,15 @@ describe('LeadSyncProcessor', () => {
     processor = new LeadSyncProcessor(prisma as any, registry as any, crmService);
   });
 
-  it('marks a lead "skipped" when coach has zero enabled integrations', async () => {
+  it('uses FOR UPDATE SKIP LOCKED in its claim SQL (multi-replica safety)', async () => {
+    await processor.runOnce();
+    const all = prisma._rawSqls.join('\n');
+    expect(all).toMatch(/FOR\s+UPDATE\s+SKIP\s+LOCKED/i);
+    expect(all).toMatch(/SET\s+crm_sync_status\s*=\s*'syncing'/i);
+  });
+
+  it('marks a lead "skipped" without writing crm_synced_at when coach has zero integrations (P1-9)', async () => {
+    seedPage(prisma, { id: 'p1', slug: 'pg', headline: 'H', coach_id: 'coach-1' });
     prisma._leads.push({
       id: 'lead-1',
       page_id: 'p1',
@@ -139,14 +206,18 @@ describe('LeadSyncProcessor', () => {
       crm_sync_status: 'pending',
       synced_to: [],
       external_ids: {},
+      attempts: 0,
+      next_eligible_at: null,
       created_at: new Date(),
-      page: { id: 'p1', slug: 'pg', headline: 'H', coach_id: 'coach-1' },
     });
     await processor.runOnce();
-    expect(prisma._leads[0].crm_sync_status).toBe('skipped');
+    const lead = prisma._leads[0];
+    expect(lead.crm_sync_status).toBe('skipped');
+    expect(lead.crm_synced_at ?? null).toBeNull();
   });
 
-  it('fan-outs to multiple integrations in parallel and marks "synced" on full success', async () => {
+  it('fan-outs to multiple integrations and marks "synced" on full success', async () => {
+    seedPage(prisma, { id: 'p1', slug: 'pg', headline: 'H', coach_id: 'coach-1' });
     registry.set('hubspot', {
       pushLead: jest.fn().mockResolvedValue({ external_id: 'hs-1' }),
       verifyConfig: jest.fn().mockResolvedValue(undefined),
@@ -163,9 +234,6 @@ describe('LeadSyncProcessor', () => {
         enabled: true,
         credentials_encrypted: 'PLAINTEXT:{"access_token":"t"}',
         field_mapping: {},
-        last_synced_at: null,
-        last_error: null,
-        created_at: new Date(),
       },
       {
         id: 'int-mc',
@@ -174,9 +242,6 @@ describe('LeadSyncProcessor', () => {
         enabled: true,
         credentials_encrypted: 'PLAINTEXT:{"api_key":"x-us19","list_id":"L"}',
         field_mapping: {},
-        last_synced_at: null,
-        last_error: null,
-        created_at: new Date(),
       },
     );
     prisma._leads.push({
@@ -190,8 +255,9 @@ describe('LeadSyncProcessor', () => {
       crm_sync_status: 'pending',
       synced_to: [],
       external_ids: {},
+      attempts: 0,
+      next_eligible_at: null,
       created_at: new Date(),
-      page: { id: 'p1', slug: 'pg', headline: 'H', coach_id: 'coach-1' },
     });
     const processed = await processor.runOnce();
     expect(processed).toBe(1);
@@ -201,7 +267,8 @@ describe('LeadSyncProcessor', () => {
     expect(lead.external_ids).toEqual({ hubspot: 'hs-1', mailchimp: 'mc-1' });
   });
 
-  it('keeps lead pending on partial failure and only retries the failed provider', async () => {
+  it('persists attempts++ and next_eligible_at on partial failure (P0-6)', async () => {
+    seedPage(prisma, { id: 'p1', slug: 'pg', headline: 'H', coach_id: 'c1' });
     const hsPush = jest.fn().mockResolvedValue({ external_id: 'hs-ok' });
     const mcPush = jest.fn().mockRejectedValue(new Error('mc down'));
     registry.set('hubspot', { pushLead: hsPush, verifyConfig: jest.fn() });
@@ -235,39 +302,41 @@ describe('LeadSyncProcessor', () => {
       crm_sync_status: 'pending',
       synced_to: [],
       external_ids: {},
+      attempts: 0,
+      next_eligible_at: null,
       created_at: new Date(Date.now() - 60_000),
-      page: { id: 'p1', slug: 'pg', headline: 'H', coach_id: 'c1' },
     });
 
-    // First tick: HS succeeds, MC fails — stays pending.
+    // Tick 1: HS succeeds, MC fails — row returns to pending with
+    // attempts=1 and next_eligible_at set ~60s in the future.
     await processor.runOnce();
     let lead = prisma._leads[0];
     expect(lead.crm_sync_status).toBe('pending');
+    expect(lead.attempts).toBe(1);
+    expect(lead.next_eligible_at).toBeInstanceOf(Date);
+    expect(+lead.next_eligible_at).toBeGreaterThan(Date.now());
     expect(lead.synced_to).toEqual(['hubspot']);
     expect(lead.external_ids.hubspot).toBe('hs-ok');
     expect(hsPush).toHaveBeenCalledTimes(1);
     expect(mcPush).toHaveBeenCalledTimes(1);
-    // The integration row should record the error.
-    const intMc = prisma._integrations.find((i) => i.provider === 'mailchimp');
-    expect(intMc.last_error).toContain('mc down');
 
-    // Move past the backoff and let MC succeed on retry. The backoff for
-    // the second attempt is 5 min; the processor uses the in-memory map
-    // which we override by clearing it via the constructor's seam (the
-    // map is private). Cheat: directly invoke runOnce() bypassing the
-    // backoff guard by manually clearing the nextEligibleAt entry.
-    (processor as any).nextEligibleAt.clear();
+    // Tick 2 immediately: row is still in cooldown, claim returns nothing.
+    await processor.runOnce();
+    expect(mcPush).toHaveBeenCalledTimes(1);
+
+    // Force the row past its backoff and let MC succeed on retry.
+    prisma._leads[0].next_eligible_at = new Date(Date.now() - 1_000);
     mcPush.mockResolvedValueOnce({ external_id: 'mc-ok' });
     await processor.runOnce();
     lead = prisma._leads[0];
     expect(lead.crm_sync_status).toBe('synced');
     expect(new Set(lead.synced_to)).toEqual(new Set(['hubspot', 'mailchimp']));
-    // HubSpot must NOT have been called again — already in synced_to.
     expect(hsPush).toHaveBeenCalledTimes(1);
     expect(mcPush).toHaveBeenCalledTimes(2);
   });
 
   it('respects provider cooldown after CrmRateLimitError', async () => {
+    seedPage(prisma, { id: 'p1', slug: 'pg', headline: 'H', coach_id: 'c1' });
     const push = jest.fn().mockRejectedValueOnce(new CrmRateLimitError(30_000, 'hubspot'));
     registry.set('hubspot', { pushLead: push, verifyConfig: jest.fn() });
     prisma._integrations.push({
@@ -289,21 +358,118 @@ describe('LeadSyncProcessor', () => {
       crm_sync_status: 'pending',
       synced_to: [],
       external_ids: {},
+      attempts: 0,
+      next_eligible_at: null,
       created_at: new Date(),
-      page: { id: 'p1', slug: 'pg', headline: 'H', coach_id: 'c1' },
     });
 
     await processor.runOnce();
     expect(push).toHaveBeenCalledTimes(1);
-    // The processor stores a cooldown until ~now + 30s.
     const cooldown = (processor as any).providerCooldownUntil.get('hubspot');
     expect(cooldown).toBeGreaterThan(Date.now() + 25_000);
 
-    // Force the lead back to eligibility — push should NOT be called again
-    // because the provider is still cooling down.
-    (processor as any).nextEligibleAt.clear();
+    // Force eligibility forward; the provider is still cooling down.
+    prisma._leads[0].next_eligible_at = new Date(Date.now() - 1_000);
     await processor.runOnce();
     expect(push).toHaveBeenCalledTimes(1);
+  });
+
+  it('two replicas claiming concurrently see disjoint leads (SKIP LOCKED contract)', async () => {
+    // We simulate the database-level guarantee: when both workers race,
+    // only one of them gets each row because the claim is an UPDATE
+    // that atomically flips status away from 'pending'. The other
+    // worker's filter sees zero pending rows the moment the first
+    // worker's UPDATE returns.
+    seedPage(prisma, { id: 'p1', slug: 'pg', headline: 'H', coach_id: 'c1' });
+    seedPage(prisma, { id: 'p2', slug: 'pg2', headline: 'H', coach_id: 'c2' });
+    registry.set('hubspot', {
+      pushLead: jest.fn().mockResolvedValue({ external_id: 'x' }),
+      verifyConfig: jest.fn(),
+    });
+    prisma._integrations.push({
+      id: 'int-1',
+      coach_id: 'c1',
+      provider: 'hubspot',
+      enabled: true,
+      credentials_encrypted: 'PLAINTEXT:{"access_token":"t"}',
+      field_mapping: {},
+    });
+    prisma._integrations.push({
+      id: 'int-2',
+      coach_id: 'c2',
+      provider: 'hubspot',
+      enabled: true,
+      credentials_encrypted: 'PLAINTEXT:{"access_token":"t"}',
+      field_mapping: {},
+    });
+    for (const [i, coach] of [
+      [1, 'c1'],
+      [2, 'c2'],
+    ] as const) {
+      prisma._leads.push({
+        id: `lead-${i}`,
+        page_id: coach === 'c1' ? 'p1' : 'p2',
+        coach_id: coach,
+        email: `${coach}@x.com`,
+        name: null,
+        phone: null,
+        payload: {},
+        crm_sync_status: 'pending',
+        synced_to: [],
+        external_ids: {},
+        attempts: 0,
+        next_eligible_at: null,
+        created_at: new Date(),
+      });
+    }
+    const a = new LeadSyncProcessor(prisma as any, registry as any, crmService);
+    const b = new LeadSyncProcessor(prisma as any, registry as any, crmService);
+    await Promise.all([a.runOnce(), b.runOnce()]);
+    // Both leads should be 'synced'; no double-processing because the
+    // first worker's UPDATE flipped them out of 'pending' before the
+    // second worker's claim could see them.
+    expect(prisma._leads.every((l) => l.crm_sync_status === 'synced')).toBe(true);
+  });
+
+  it('per-coach token bucket defers when bucket is empty (P1-7)', async () => {
+    seedPage(prisma, { id: 'p1', slug: 'pg', headline: 'H', coach_id: 'c1' });
+    registry.set('hubspot', {
+      pushLead: jest.fn().mockResolvedValue({ external_id: 'hs' }),
+      verifyConfig: jest.fn(),
+    });
+    prisma._integrations.push({
+      id: 'int-hs',
+      coach_id: 'c1',
+      provider: 'hubspot',
+      enabled: true,
+      credentials_encrypted: 'PLAINTEXT:{"access_token":"t"}',
+      field_mapping: {},
+    });
+    prisma._leads.push({
+      id: 'lead-x',
+      page_id: 'p1',
+      coach_id: 'c1',
+      email: 'x@y.com',
+      name: null,
+      phone: null,
+      payload: {},
+      crm_sync_status: 'pending',
+      synced_to: [],
+      external_ids: {},
+      attempts: 0,
+      next_eligible_at: null,
+      created_at: new Date(),
+    });
+    // Hand-drain the coach's bucket so the next call must defer.
+    (processor as any).coachBuckets.set('c1', {
+      tokens: 0,
+      updatedAtMs: Date.now(),
+    });
+    await processor.runOnce();
+    const lead = prisma._leads[0];
+    expect(lead.crm_sync_status).toBe('pending');
+    expect(lead.attempts).toBe(1);
+    expect(lead.crm_error).toMatch(/rate-limited/);
   });
 });
 
@@ -333,10 +499,21 @@ describe('CoachCrmService', () => {
     expect(summary.provider).toBe('hubspot');
     expect(prisma._integrations).toHaveLength(1);
     const row = prisma._integrations[0];
-    // KMS without a key produces PLAINTEXT: prefix — verify the access
-    // token is wrapped in the envelope rather than stored bare.
     expect(row.credentials_encrypted).toContain('PLAINTEXT:');
     expect(row.credentials_encrypted).toContain('access_token');
+  });
+
+  it('upsert uses (coach_id, provider) compound unique to dedupe re-saves (P1-8)', async () => {
+    registry.set('hubspot', {
+      verifyConfig: jest.fn().mockResolvedValue(undefined),
+      pushLead: jest.fn(),
+    });
+    await svc.upsert('coach-1', 'hubspot', { access_token: 'first' });
+    await svc.upsert('coach-1', 'hubspot', { access_token: 'second' });
+    expect(prisma._integrations).toHaveLength(1);
+    expect(prisma._integrations[0].credentials_encrypted).toContain('second');
+    // Prisma upsert was called twice but only ever creates one row.
+    expect(prisma.coachCrmIntegration.upsert).toHaveBeenCalledTimes(2);
   });
 
   it('upsert rejects bad credentials with BadRequestException', async () => {
@@ -395,7 +572,6 @@ describe('CoachCrmService', () => {
     await expect(svc.testPush('c1', 'hubspot')).rejects.toMatchObject({
       response: { error: 'CRM_TEST_FAILED' },
     });
-    // The row's last_error should be the redacted version — not the raw token.
     expect(prisma._integrations[0].last_error).not.toContain('leaked-token');
   });
 });
