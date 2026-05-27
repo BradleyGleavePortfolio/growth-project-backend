@@ -4174,7 +4174,7 @@ model CoachLandingPageView {
 // CoachCrmIntegration — per-coach CRM connection config.
 // A coach may have one integration per provider; multiple pages can
 // share the same integration. Credentials are AES-256-GCM encrypted
-// at rest with env key LANDING_CRM_AES_KEY (decrypted only inside
+// at rest with env key KMS_MASTER_KEY (decrypted only inside
 // CoachCrmService, never returned to the client — spec §7).
 model CoachCrmIntegration {
   id                    String      @id @default(cuid())

@@ -70,6 +70,12 @@ export class KmsService {
     }
     const key = this.loadKey();
     if (!key) {
+      // Fail-fast in production — never persist plaintext secrets.
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          `KMS not configured (${this.cachedKeyError ?? 'KMS_MASTER_KEY unset'}) — refusing to persist plaintext in production. Set a valid KMS_MASTER_KEY (32 raw bytes, base64-encoded).`,
+        );
+      }
       this.warnMissingKeyOnce();
       return `${PLAINTEXT_MARKER}${plaintext}`;
     }

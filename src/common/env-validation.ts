@@ -981,6 +981,16 @@ export function assertEnv(
         reason:
           'Audit #5 P0-2 — StorefrontService.getPublicPackageByToken returns 503 SERVICE_UNAVAILABLE on every public package request when STRIPE_PUBLISHABLE_KEY is unset. A clean prod deploy without it passes boot then silently 503s the entire storefront. Must be the publishable counterpart (pk_test_*/pk_live_*) of STRIPE_SECRET_KEY.',
       },
+      {
+        name: 'KMS_MASTER_KEY',
+        reason:
+          'Audit #6 P0-4 — KmsService.encrypt() falls back to a PLAINTEXT: marker prefix when KMS_MASTER_KEY is unset, persisting CRM api_token / api_key / webhook secret values in cleartext. Production must NEVER persist plaintext credentials. Must be 32 raw bytes, base64-encoded.',
+      },
+      {
+        name: 'LANDING_VIEW_HASH_SECRET',
+        reason:
+          'Audit #6 P1-2 — LandingPagesPublicService.dailySalt() falls back to the hard-coded "landing-views-daily-salt" constant when unset, making the per-visitor hash predictable and trivially re-identifiable. Production must set an unpredictable secret.',
+      },
     ];
     const missing = prodHardenedFeatureVars.filter(
       (v) => {
