@@ -3,7 +3,7 @@ import { AuditService } from '../src/audit/audit.service';
 import { CapabilityMaterializerRegistry } from '../src/ai/gateway/materialisers/capability-materialiser.registry';
 import type { CapabilityMaterializer } from '../src/ai/gateway/materialisers/capability-materialiser.interface';
 import { CoachMessageMaterializer } from '../src/ai/gateway/materialisers/coach-message.materialiser';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, InternalServerErrorException } from '@nestjs/common';
 
 // PR AI-3 (PRODUCT-1) — integration coverage for AiApprovalService.decide
 // + CapabilityMaterializerRegistry. The unit specs cover each piece in
@@ -101,6 +101,22 @@ function makeMaterializer(
 }
 
 describe('AiApprovalService + CapabilityMaterializerRegistry (integration)', () => {
+  // P3-A round-3: save+restore the static poll-tuning fields so a test
+  // that mutates them (race tests below) cannot leak into other tests in
+  // this file — or, more dangerously, into other suites running in the
+  // same Jest worker. The materialiser exposes them static so production
+  // code can keep its slow-but-safe defaults; tests need fast variants.
+  let originalRacePollAttempts: number;
+  let originalRacePollIntervalMs: number;
+  beforeEach(() => {
+    originalRacePollAttempts = CoachMessageMaterializer.RACE_POLL_ATTEMPTS;
+    originalRacePollIntervalMs = CoachMessageMaterializer.RACE_POLL_INTERVAL_MS;
+  });
+  afterEach(() => {
+    CoachMessageMaterializer.RACE_POLL_ATTEMPTS = originalRacePollAttempts;
+    CoachMessageMaterializer.RACE_POLL_INTERVAL_MS = originalRacePollIntervalMs;
+  });
+
   it('decide(approved) on a draft.coach_message draft invokes the coach-message materialiser exactly once with the draft', async () => {
     const draft = {
       id: 'd-coach-1',
@@ -324,12 +340,22 @@ describe('AiApprovalService + CapabilityMaterializerRegistry (integration)', () 
 
     const winnerResult: any = await winnerP;
     const loserResult: any = await loserP;
-    expect(winnerResult.__error).toBeDefined();
 
-    // Loser MUST see a clear error (either 409 racing or 500 materialise
-    // failed when it recovered the claim itself and the same provider
-    // outage repeated).
-    expect(loserResult.__error).toBeDefined();
+    // P3-F round-3: pin error TYPES — a regression that throws a generic
+    // 500 or no error at all must NOT pass this test.
+    //
+    // Winner's `sendAsCoach` threw → decide() catches non-Conflict, writes
+    // ai.draft_materialise_failed audit, throws InternalServerErrorException.
+    expect(winnerResult.__error).toBeInstanceOf(InternalServerErrorException);
+    // Loser sees one of two outcomes depending on race timing:
+    //   - poll observes the winner's rollback → recurses into a fresh
+    //     claim → its own sendAsCoach throws (same outage mock) → 500.
+    //   - poll budget exhausted → returns 'racing' → decide() throws 409.
+    // Either is acceptable as long as the type is one of these two.
+    expect(
+      loserResult.__error instanceof InternalServerErrorException ||
+        loserResult.__error instanceof ConflictException,
+    ).toBe(true);
 
     // Final state: status remains 'pending' — the entire point.
     expect(prisma.drafts[0].status).toBe('pending');
@@ -467,6 +493,18 @@ describe('AiApprovalService + CapabilityMaterializerRegistry (integration)', () 
     expect(winnerResult.decided_by_id).toBe('owner-WIN');
     expect(winnerResult.materialised_ref).toBe('msg-1');
     expect(loserError).toBeInstanceOf(ConflictException);
+    // P3-F round-3: pin the body's `error` code so a regression that
+    // throws a different ConflictException (e.g. an unrelated 409 from a
+    // future feature) doesn't pass this assertion. Acceptable codes are
+    // either of the two race outcomes; in this test the loser observed
+    // the winner's committed ref then lost the gate, so the code is
+    // AI_DRAFT_ALREADY_DECIDED. AI_DRAFT_RACE_IN_FLIGHT is the alternate
+    // when the poll budget exhausted.
+    const loserBody = (loserError as ConflictException).getResponse() as { error?: string };
+    expect(
+      loserBody.error === 'AI_DRAFT_ALREADY_DECIDED' ||
+        loserBody.error === 'AI_DRAFT_RACE_IN_FLIGHT',
+    ).toBe(true);
 
     // Final draft state: decided_by remains the winner — never overwritten.
     expect(prisma.drafts[0].decided_by_id).toBe('owner-WIN');
@@ -474,6 +512,179 @@ describe('AiApprovalService + CapabilityMaterializerRegistry (integration)', () 
     // Exactly one sendAsCoach landed (idempotency held).
     expect(messaging.sendAsCoach).toHaveBeenCalledTimes(1);
   }, 10000);
+
+  // -----------------------------------------------------------------
+  // PR AI-3 refixer round 3 (P1-A + P2-A) — approve+reject race regression
+  // tests + noop-materialiser gate-compat test.
+  // -----------------------------------------------------------------
+
+  it('P1-A approve_reject_race_reject_first_does_not_deliver: reject lands before claim → message NOT sent, draft = rejected', async () => {
+    // Trace: rejecter beats the approver to the gate. Without the
+    // round-3 fix the approver's materialiser claim would still succeed
+    // (no status check in the WHERE), sendAsCoach would deliver the
+    // message, and the draft would end status='rejected' with a real
+    // CoachMessage row. With the fix the claim's `status:'pending'`
+    // clause refuses the claim, the materialiser enters the poll branch,
+    // observes the status flip, returns 'racing' and decide() throws
+    // 409 to the approver.
+    const draft = buildRaceDraft('a01');
+    const prisma = buildPrisma([draft]);
+    const audit = new AuditService(prisma);
+
+    const sendAsCoach = jest.fn(async () => ({ id: 'msg-should-not-exist' }));
+    const messaging: any = { sendAsCoach };
+    const mat = new CoachMessageMaterializer(prisma, messaging);
+    CoachMessageMaterializer.RACE_POLL_INTERVAL_MS = 2;
+    CoachMessageMaterializer.RACE_POLL_ATTEMPTS = 3;
+    const registry = new CapabilityMaterializerRegistry([mat]);
+    const svc = new AiApprovalService(prisma, audit, registry);
+
+    // Reject FIRST — flips status synchronously before approve arrives.
+    const rejectResult = await svc.decide({
+      draftId: draft.id,
+      decider: { id: 'owner-REJECT', role: 'owner' },
+      decision: 'rejected',
+      note: 'unsafe content',
+    });
+    expect(rejectResult.status).toBe('rejected');
+
+    // Now approve arrives. The status check at the top of decide()
+    // already covers this case (throws ForbiddenException for non-pending)
+    // — that's the trivial outcome. The real concern is the race-within-
+    // materialiser case where both passed the initial check and then
+    // status flipped mid-materialise. We exercise that explicitly in the
+    // next test by latching sendAsCoach.
+    let approveError: any = null;
+    try {
+      await svc.decide({
+        draftId: draft.id,
+        decider: { id: 'owner-APPROVE', role: 'owner' },
+        decision: 'approved',
+      });
+    } catch (err) {
+      approveError = err;
+    }
+    expect(approveError).toBeDefined();
+    // sendAsCoach MUST NOT have been called.
+    expect(sendAsCoach).not.toHaveBeenCalled();
+    // Draft remains rejected, no materialised_ref.
+    expect(prisma.drafts[0].status).toBe('rejected');
+    expect(prisma.drafts[0].materialised_ref).toBeNull();
+  }, 10000);
+
+  it('P1-A approve_reject_race_during_materialise: reject lands while sendAsCoach is in flight → reject is 409d, message commits, draft = approved', async () => {
+    // This is the harder race: both deciders pass the initial in-memory
+    // status check. Approver enters materialiser, takes the claim
+    // (materialised_at set, status still 'pending'). While sendAsCoach is
+    // in flight, the rejecter reaches the decide() gate. Without round-3
+    // the reject gate `{id, status:'pending'}` matches (status hasn't
+    // flipped yet) and flips to 'rejected'; approver's gate then 409s
+    // but the message has already been sent. With round-3 the reject
+    // gate additionally requires `materialised_at: null` so the reject
+    // sees count=0 → 409 to rejecter. Approver completes cleanly.
+    const draft = buildRaceDraft('a02');
+    const prisma = buildPrisma([draft]);
+    const audit = new AuditService(prisma);
+
+    let sendStarted = false;
+    let releaseSend: (() => void) | null = null;
+    const sendBarrier = new Promise<void>((resolve) => {
+      releaseSend = resolve;
+    });
+    const sendAsCoach = jest.fn(async () => {
+      sendStarted = true;
+      await sendBarrier;
+      return { id: 'msg-approve-1' };
+    });
+    const messaging: any = { sendAsCoach };
+    const mat = new CoachMessageMaterializer(prisma, messaging);
+    CoachMessageMaterializer.RACE_POLL_INTERVAL_MS = 5;
+    CoachMessageMaterializer.RACE_POLL_ATTEMPTS = 20;
+    const registry = new CapabilityMaterializerRegistry([mat]);
+    const svc = new AiApprovalService(prisma, audit, registry);
+
+    const approveP = svc.decide({
+      draftId: draft.id,
+      decider: { id: 'owner-APPROVE', role: 'owner' },
+      decision: 'approved',
+    });
+    // Wait until the approver's sendAsCoach is in flight (claim held).
+    for (let i = 0; i < 50 && !sendStarted; i++) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(sendStarted).toBe(true);
+    // Claim is held — materialised_at is non-null on the row.
+    expect(prisma.drafts[0].materialised_at).not.toBeNull();
+    expect(prisma.drafts[0].status).toBe('pending');
+
+    // Rejecter arrives. Its gate MUST refuse because materialised_at !=
+    // null (round-3 reject-gate clause). Capture the error.
+    let rejectError: any = null;
+    try {
+      await svc.decide({
+        draftId: draft.id,
+        decider: { id: 'owner-REJECT', role: 'owner' },
+        decision: 'rejected',
+        note: 'too late, in flight',
+      });
+    } catch (err) {
+      rejectError = err;
+    }
+    expect(rejectError).toBeInstanceOf(ConflictException);
+
+    // Release the approver's sendAsCoach. The approver should now
+    // commit cleanly.
+    releaseSend!();
+    const approveResult = await approveP;
+    expect(approveResult.status).toBe('approved');
+    expect(approveResult.materialised_ref).toBe('msg-approve-1');
+    expect(sendAsCoach).toHaveBeenCalledTimes(1);
+    // Draft is approved, the message was sent.
+    expect(prisma.drafts[0].status).toBe('approved');
+    expect(prisma.drafts[0].materialised_ref).toBe('msg-approve-1');
+  }, 10000);
+
+  it('P2-A noop_materialise_does_not_409_decide: a materialiser returning {status:noop, ref:null} flips status to approved', async () => {
+    // Round-3 gate change: decide() no longer requires
+    // `materialised_ref IS NOT NULL` for every confirmed outcome. The
+    // gate is added only when the materialiser actually emitted a ref.
+    // A capability whose materialiser legitimately performs a no-op
+    // side-effect (e.g. idempotent ack) must not be 409d by the gate.
+    const noopCapability = 'draft.noop_test_capability';
+    const noopMat: any = {
+      capability: noopCapability,
+      canHandle: (c: string) => c === noopCapability,
+      materialize: jest.fn(async () => ({ status: 'noop', ref: null })),
+    };
+    const draft = {
+      id: '22222222-2222-2222-2222-aaaaaaaaaaaa',
+      status: 'pending',
+      capability: noopCapability,
+      requester_id: 'coach-1',
+      subject_user_id: 'client-1',
+      tenant_coach_id: 'coach-1',
+      payload: { whatever: 'noop' },
+      materialised_at: null,
+      materialised_ref: null,
+    };
+    const prisma = buildPrisma([draft]);
+    const audit = new AuditService(prisma);
+    const registry = new CapabilityMaterializerRegistry([noopMat]);
+    const svc = new AiApprovalService(prisma, audit, registry);
+
+    const updated = await svc.decide({
+      draftId: draft.id,
+      decider: { id: 'owner-1', role: 'owner' },
+      decision: 'approved',
+    });
+
+    expect(noopMat.materialize).toHaveBeenCalledTimes(1);
+    expect(updated.status).toBe('approved');
+    expect(updated.materialised_ref).toBeNull();
+    // Audit row still records the (null) ref.
+    const auditMeta = prisma.auditLog.create.mock.calls[0][0].data.metadata;
+    expect(auditMeta.materialised_ref).toBeNull();
+  });
 
   it('preserves legacy behaviour when constructed without a registry (status flips, no materialisation attempted)', async () => {
     const draft = {
