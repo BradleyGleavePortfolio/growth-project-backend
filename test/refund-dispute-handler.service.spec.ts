@@ -969,6 +969,109 @@ describe('RefundDisputeHandlerService', () => {
       expect(row.reason).toBe('fraudulent');
     });
 
+    // A279-P2-A — out-of-order Stripe dispute deliveries.
+    //
+    // Scenario: `charge.dispute.updated` arrives first (so the winning
+    // create runs with initial=false and does NOT mirror the purchase
+    // status); then `charge.dispute.created` arrives second with
+    // initial=true, hits P2002 in the create branch, and falls through
+    // to the P2002 catch UPDATE. Pre-A279-P2-A that catch branch did
+    // NOT mirror ClientPurchase.status, so purchase.status stayed
+    // 'paid' forever even though a real dispute was open.
+    //
+    // This test would FAIL on the pre-A279-P2-A source (purchase.status
+    // === 'paid').
+    it('A279-P2-A: out-of-order updated→created sequence still flips ClientPurchase.status to disputed', async () => {
+      const { svc, prisma, notifications } = makeServices();
+      seedPurchase(prisma);
+
+      // 1. `updated` arrives first — initial=false. The winning create
+      //    inserts the row but does NOT mirror purchase.status (the
+      //    create-branch mirror is guarded by `if (initial)`).
+      await svc.handle({
+        id: 'evt_disp_oo_updated_first',
+        type: 'charge.dispute.updated',
+        data: {
+          object: {
+            id: 'dp_oo_seq',
+            charge: 'ch_alert',
+            status: 'under_review',
+            amount: 29_700,
+          },
+        },
+      });
+      // First-observation alert fired (out-of-order delivery still
+      // notifies; existing contract).
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+      // But purchase is still 'paid' — initial=false skipped the mirror.
+      expect(prisma._purchases[0].status).toBe('paid');
+
+      // 2. `created` arrives second — initial=true. Hits P2002 (the
+      //    row exists), falls into the catch branch. The A279-P2-A fix
+      //    mirrors ClientPurchase.status='disputed' in that branch.
+      await svc.handle({
+        id: 'evt_disp_oo_created_second',
+        type: 'charge.dispute.created',
+        data: {
+          object: {
+            id: 'dp_oo_seq',
+            charge: 'ch_alert',
+            status: 'needs_response',
+            amount: 29_700,
+            reason: 'fraudulent',
+          },
+        },
+      });
+
+      // No double-alert (P2002 catch is not the first-observation).
+      expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+      // The contract this test enforces: purchase mirror MUST converge
+      // to 'disputed' even when the create event arrives second.
+      expect(prisma._purchases[0].status).toBe('disputed');
+      // The dispute row converged to the latest create payload too.
+      const row = prisma._disputes.find(
+        (d: any) => d.stripe_dispute_id === 'dp_oo_seq',
+      );
+      expect(row.reason).toBe('fraudulent');
+    });
+
+    // A279-P2-A — the P2002 catch branch must NOT overwrite an
+    // already-refunded purchase. The `notIn: ['disputed', 'refunded']`
+    // WHERE guard preserves the existing invariant from the create
+    // branch: a stale dispute event arriving after a refund is a no-op.
+    it('A279-P2-A: P2002 catch branch does NOT drag a refunded purchase back to disputed', async () => {
+      const { svc, prisma, notifications } = makeServices();
+      const purchase = seedPurchase(prisma, { status: 'refunded' });
+      void purchase;
+      // Pre-seed the dispute row so create() raises P2002 — simulates
+      // the race-loser arriving after a refund landed.
+      prisma._disputes.push({
+        id: 'dp-existing-refunded',
+        stripe_dispute_id: 'dp_after_refund',
+        stripe_charge_id: 'ch_alert',
+        purchase_id: 'p_alert',
+        status: 'needs_response',
+        amount_cents: 29_700,
+        ledger_reversed: false,
+      });
+      await svc.handle({
+        id: 'evt_disp_after_refund',
+        type: 'charge.dispute.created',
+        data: {
+          object: {
+            id: 'dp_after_refund',
+            charge: 'ch_alert',
+            status: 'under_review',
+            amount: 29_700,
+          },
+        },
+      });
+      // No alert (the row already existed; this is the race-loser path).
+      expect(notifications.createNotification).not.toHaveBeenCalled();
+      // Purchase stayed 'refunded' — the notIn guard rejected the write.
+      expect(prisma._purchases[0].status).toBe('refunded');
+    });
+
     // A276-F2-P2-3 — the dispute first-observation branch wraps the
     // ChargeDispute create + ClientPurchase status mirror in a single
     // $transaction so a crash between the two writes cannot leave a

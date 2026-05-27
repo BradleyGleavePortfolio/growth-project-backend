@@ -606,17 +606,46 @@ export class RefundDisputeHandlerService {
       }
       // Race lost — another delivery wrote first. The in-tx create
       // rolled back automatically. Update the dispute row in-place and
-      // skip the alert. The purchase status was already mirrored by
-      // the winning delivery's tx, so we do NOT re-write it here.
-      row = await this.prisma.chargeDispute.update({
-        where: { stripe_dispute_id: disputeId },
-        data: {
-          status: dispute.status ?? 'needs_response',
-          reason: dispute.reason ?? null,
-          evidence_due_by: dueBy ?? undefined,
-          amount_cents:
-            typeof dispute.amount === 'number' ? dispute.amount : undefined,
-        },
+      // skip the alert.
+      //
+      // A279-P2-A — ALSO mirror ClientPurchase.status='disputed' here
+      // when `initial` is true. Out-of-order Stripe delivery
+      // (`charge.dispute.updated` arriving BEFORE `charge.dispute.created`)
+      // means the winning row may have been inserted by the `updated`
+      // delivery (which sets `initial=false` upstream) and so never
+      // mirrored the purchase status. When the `created` event later
+      // hits P2002 here, `initial=true` is the only signal we have that
+      // the purchase should be flipped to 'disputed'. The pre-031f57ca
+      // code mirrored unconditionally after the upsert; 031f57ca moved
+      // it into the create-success branch and silently lost this path.
+      //
+      // Wrap both writes in a single `$transaction` so a reader who
+      // sees the dispute UPDATE also sees the purchase flip (same
+      // atomicity guarantee the create branch already enforces).
+      // The `notIn: ['disputed', 'refunded']` guard keeps the write
+      // idempotent and preserves the "don't drag an already-refunded
+      // purchase back to disputed" invariant.
+      row = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.chargeDispute.update({
+          where: { stripe_dispute_id: disputeId },
+          data: {
+            status: dispute.status ?? 'needs_response',
+            reason: dispute.reason ?? null,
+            evidence_due_by: dueBy ?? undefined,
+            amount_cents:
+              typeof dispute.amount === 'number' ? dispute.amount : undefined,
+          },
+        });
+        if (initial) {
+          await tx.clientPurchase.updateMany({
+            where: {
+              id: purchase.id,
+              status: { notIn: ['disputed', 'refunded'] },
+            },
+            data: { status: 'disputed' },
+          });
+        }
+        return updated;
       });
       isFirstObservation = false;
     }
