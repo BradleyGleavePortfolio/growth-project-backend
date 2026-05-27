@@ -11,10 +11,19 @@
  *
  * Required config: url        (https URL, validated by verifyConfig)
  * Optional config: secret     (when present, signs the body)
+ *
+ * SECURITY (audit #6 P0-1):
+ *   The URL is run through `assertPublicHttpsUrl` (src/common/net/ssrf-guard.ts)
+ *   on every push and verify — rejects private/loopback/link-local/IMDS
+ *   ranges on both IPv4 and IPv6. The axios request is pinned to the
+ *   resolved IP via a custom `lookup` callback to defeat DNS rebinding,
+ *   and `maxRedirects: 0` ensures axios never follows a 30x into a
+ *   private destination.
  */
 
 import axios from 'axios';
 import { createHmac } from 'crypto';
+import https from 'https';
 import {
   CrmAdapter,
   CrmAuthError,
@@ -25,17 +34,9 @@ import {
   LeadInput,
 } from './crm-adapter.interface';
 import { safeErrorMessage } from './_redact';
+import { assertPublicHttpsUrl, lookupForResolved } from '../../common/net/ssrf-guard';
 
 const TIMEOUT_MS = 10_000;
-
-function isHttpsUrl(raw: string): boolean {
-  try {
-    const u = new URL(raw);
-    return u.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
 
 export class WebhookAdapter implements CrmAdapter {
   readonly name = 'webhook';
@@ -45,10 +46,13 @@ export class WebhookAdapter implements CrmAdapter {
     landingPage: LandingPageContext,
     config: CrmConfig,
   ): Promise<CrmPushResult> {
-    const url = config.url;
-    if (!url) throw new CrmAuthError(this.name, 'url missing from config');
-    if (!isHttpsUrl(url)) {
-      throw new CrmAuthError(this.name, 'url must be https');
+    const rawUrl = config.url;
+    if (!rawUrl) throw new CrmAuthError(this.name, 'url missing from config');
+    let asserted;
+    try {
+      asserted = await assertPublicHttpsUrl(rawUrl);
+    } catch (err) {
+      throw new CrmAuthError(this.name, `url rejected: ${(err as Error).message}`);
     }
     const body = {
       event: 'landing_lead.created',
@@ -74,12 +78,15 @@ export class WebhookAdapter implements CrmAdapter {
       const sig = createHmac('sha256', config.secret).update(bodyJson).digest('hex');
       headers['X-TGP-Signature'] = `sha256=${sig}`;
     }
+    const agent = new https.Agent({ lookup: lookupForResolved(asserted.resolved) });
     try {
-      const resp = await axios.post(url, bodyJson, {
+      const resp = await axios.post(asserted.url.toString(), bodyJson, {
         headers,
         timeout: TIMEOUT_MS,
         validateStatus: () => true,
         transformRequest: [(d) => d], // bodyJson is already a string
+        maxRedirects: 0,
+        httpsAgent: agent,
       });
       if (resp.status === 429) {
         const retryAfterSec = Number(resp.headers['retry-after']) || 60;
@@ -89,6 +96,11 @@ export class WebhookAdapter implements CrmAdapter {
         // Generic webhook can refuse signed payloads — surface as auth.
         throw new CrmAuthError(this.name, `status ${resp.status}`);
       }
+      if (resp.status >= 300 && resp.status < 400) {
+        throw new Error(
+          `Webhook returned redirect (status ${resp.status}); not followed (SSRF guard)`,
+        );
+      }
       if (resp.status < 200 || resp.status >= 300) {
         throw new Error(`Webhook returned status ${resp.status}`);
       }
@@ -97,7 +109,7 @@ export class WebhookAdapter implements CrmAdapter {
         (resp.headers['x-request-id'] as string | undefined) ??
         (resp.headers['x-tgp-receiver-id'] as string | undefined) ??
         '';
-      return { external_id: requestId };
+      return { external_id: requestId || `tgp-${lead.id}` };
     } catch (err) {
       if (err instanceof CrmRateLimitError || err instanceof CrmAuthError) throw err;
       throw new Error(`Webhook pushLead failed: ${safeErrorMessage(err)}`);
@@ -105,18 +117,22 @@ export class WebhookAdapter implements CrmAdapter {
   }
 
   async verifyConfig(config: CrmConfig): Promise<void> {
-    const url = config.url;
-    if (!url) throw new CrmAuthError(this.name, 'url missing from config');
-    if (!isHttpsUrl(url)) {
-      throw new CrmAuthError(this.name, 'url must be https');
+    const rawUrl = config.url;
+    if (!rawUrl) throw new CrmAuthError(this.name, 'url missing from config');
+    let asserted;
+    try {
+      asserted = await assertPublicHttpsUrl(rawUrl);
+    } catch (err) {
+      throw new CrmAuthError(this.name, `url rejected: ${(err as Error).message}`);
     }
+    const agent = new https.Agent({ lookup: lookupForResolved(asserted.resolved) });
     // Verify by posting a synthetic ping event.  Most generic webhook
     // receivers (Zapier, Make) respond 200 to any well-formed POST.  We
     // don't fail on 4xx here because some receivers reject the event
     // type but accept the URL — the real test is at pushLead time.
     try {
       const resp = await axios.post(
-        url,
+        asserted.url.toString(),
         JSON.stringify({ event: 'tgp.ping', ts: Date.now() }),
         {
           headers: {
@@ -126,10 +142,17 @@ export class WebhookAdapter implements CrmAdapter {
           timeout: TIMEOUT_MS,
           validateStatus: () => true,
           transformRequest: [(d) => d],
+          maxRedirects: 0,
+          httpsAgent: agent,
         },
       );
       if (resp.status >= 500) {
         throw new Error(`Webhook verifyConfig got 5xx (status ${resp.status})`);
+      }
+      if (resp.status >= 300 && resp.status < 400) {
+        throw new Error(
+          `Webhook verifyConfig got redirect (status ${resp.status}); not followed (SSRF guard)`,
+        );
       }
       // 2xx-4xx is considered a reachable endpoint.
     } catch (err) {

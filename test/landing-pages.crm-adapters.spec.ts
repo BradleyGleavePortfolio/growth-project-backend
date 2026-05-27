@@ -26,6 +26,41 @@ const mockedAxios = axios as unknown as { post: jest.Mock; get: jest.Mock };
 mockedAxios.post = jest.fn();
 mockedAxios.get = jest.fn();
 
+// ─── DNS mock — keeps the SSRF guard happy for fixture hostnames ──────────
+// The webhook adapter resolves the URL host before issuing the axios call.
+// We stub dns.lookup so 'hook.example.com' (and other fixture hosts) resolve
+// to a public IP, letting the test exercise the rest of the adapter logic
+// without making a real DNS query.
+jest.mock('dns', () => {
+  const actual = jest.requireActual('dns');
+  return {
+    ...actual,
+    lookup: (
+      hostname: string,
+      _opts: unknown,
+      cb: (
+        err: NodeJS.ErrnoException | null,
+        result: Array<{ address: string; family: number }>,
+      ) => void,
+    ) => {
+      // Test hosts can override the default per-test by writing into
+      // globalThis.__crmDnsMap[hostname]. Otherwise we resolve to a
+      // single public address so the SSRF guard accepts the URL.
+      const map = (globalThis as { __crmDnsMap?: Record<string, Array<{ address: string; family: number }>> }).__crmDnsMap;
+      const entry = map?.[hostname];
+      if (entry) {
+        cb(null, entry);
+        return;
+      }
+      cb(null, [{ address: '93.184.216.34', family: 4 }]);
+    },
+  };
+});
+
+beforeEach(() => {
+  (globalThis as { __crmDnsMap?: Record<string, unknown> }).__crmDnsMap = {};
+});
+
 // ─── Shared fixtures ──────────────────────────────────────────────────────────
 
 const LEAD = {
@@ -288,6 +323,33 @@ describe('WebhookAdapter', () => {
 
   it('rejects missing url', async () => {
     await expect(adapter.pushLead(LEAD, PAGE, {})).rejects.toBeInstanceOf(CrmAuthError);
+  });
+
+  // SSRF guard — audit #6 P0-1
+  it('rejects URLs whose host resolves to a private IP', async () => {
+    (globalThis as unknown as { __crmDnsMap: Record<string, Array<{ address: string; family: number }>> }).__crmDnsMap = {
+      'imds.evil.test': [{ address: '169.254.169.254', family: 4 }],
+    };
+    await expect(
+      adapter.pushLead(LEAD, PAGE, { url: 'https://imds.evil.test/' }),
+    ).rejects.toBeInstanceOf(CrmAuthError);
+  });
+
+  it('rejects userinfo host-hijack attempts (x@evil.com)', async () => {
+    await expect(
+      adapter.pushLead(LEAD, PAGE, { url: 'https://x@evil.example.com/' }),
+    ).rejects.toBeInstanceOf(CrmAuthError);
+  });
+
+  it('treats 30x as a configuration error (no redirect follow)', async () => {
+    mockedAxios.post.mockResolvedValueOnce({
+      status: 302,
+      data: '',
+      headers: { location: 'http://169.254.169.254/' },
+    });
+    await expect(
+      adapter.pushLead(LEAD, PAGE, { url: 'https://hook.example.com/x' }),
+    ).rejects.toThrow(/redirect/);
   });
 });
 
