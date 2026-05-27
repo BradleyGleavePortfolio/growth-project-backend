@@ -990,4 +990,50 @@ describe('DunningService v1', () => {
       ).toBe(1);
     },
   );
+
+  // ── PR #281 P2-4 regression: template tone differentiation ─────────────
+
+  it(
+    'P2-4: Day 7 (payment-final-notice) is NOT a “final notice” — only Day 14 ' +
+      '(dunning-final) carries the actual final framing',
+    async () => {
+      // We assert at the source-of-truth subject-line level so the test
+      // doesn't depend on Handlebars compilation in the test env.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fs = require('fs');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const path = require('path');
+      const day7 = fs.readFileSync(
+        path.resolve(
+          __dirname,
+          '../src/email/templates/payment-final-notice.hbs',
+        ),
+        'utf8',
+      );
+      const day14 = fs.readFileSync(
+        path.resolve(__dirname, '../src/email/templates/dunning-final.hbs'),
+        'utf8',
+      );
+      // Day 7 must not use the phrase "final notice" — it's a second
+      // warning, not the terminal one.
+      expect(day7.toLowerCase()).not.toContain('final notice');
+      // Day 7 explicitly frames itself as a second / earlier warning.
+      expect(day7).toMatch(/second|heads-up|cutoff|still/i);
+      // Day 14 carries the actual cancellation framing.
+      expect(day14.toLowerCase()).toMatch(/ending|will end|subscription/);
+      // Stillwater Standard tone: no exclamation-point CTAs / copy. We strip
+      // the HTML doctype/tag !s before matching so the structural markup
+      // doesn't false-positive.
+      const day7Copy = day7.replace(/<![^>]*>/g, '').replace(/<[^>]+>/g, ' ');
+      const day14Copy = day14.replace(/<![^>]*>/g, '').replace(/<[^>]+>/g, ' ');
+      expect(day7Copy).not.toMatch(/!/);
+      expect(day14Copy).not.toMatch(/!/);
+      // Templates use distinct H1 copy (no overlap on the “Final notice”
+      // headline that the audit flagged).
+      const day7H1 = /<h1[^>]*>([^<]+)<\/h1>/.exec(day7)?.[1] ?? '';
+      const day14H1 = /<h1[^>]*>([^<]+)<\/h1>/.exec(day14)?.[1] ?? '';
+      expect(day7H1).not.toBe(day14H1);
+      expect(day7H1.toLowerCase()).not.toContain('final notice');
+    },
+  );
 });
