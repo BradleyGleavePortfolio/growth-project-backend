@@ -209,8 +209,11 @@ export class CoachMessageMaterializer implements CapabilityMaterializer {
   // Returns `already_materialised` if the winner commits, recurses into a
   // fresh claim attempt if the winner rolls back, and falls back to
   // `racing` so decide() can surface a 409 to the caller.
-  private static readonly RACE_POLL_ATTEMPTS = 10;
-  private static readonly RACE_POLL_INTERVAL_MS = 100;
+  //
+  // These are non-readonly so the race-window integration tests can shorten
+  // them; production code never mutates them.
+  static RACE_POLL_ATTEMPTS = 10;
+  static RACE_POLL_INTERVAL_MS = 100;
 
   private async awaitWinnerOrRecover(
     draft: AiActionDraft,
