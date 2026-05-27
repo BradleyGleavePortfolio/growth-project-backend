@@ -125,4 +125,9 @@ jobs:
           RESEND_FROM_EMAIL: 'Growth Project <welcome@trygrowthproject.com>'
           APPLE_TEAM_ID: TEAMID1234
           ANDROID_CERT_SHA256_FINGERPRINTS: 'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99'
+          # CHECKOUT_RECOVERY_SECRET was promoted to prod tier with a 43-char
+          # floor (RFC 7518 §3.2) by fix-3-env (audit A276-F3-P2-1). Signs the
+          # 15-minute checkout recovery JWT AND the 7-day guest session cookie.
+          # The simulated-prod env-validation gate must supply a ≥43-char value.
+          CHECKOUT_RECOVERY_SECRET: ci-checkout-recovery-secret-43chars-base64url-pad
         run: node -e "require('./dist/common/env-validation').assertEnv()"
