@@ -38,6 +38,66 @@ const WEBVIEW_UA_PATTERNS: ReadonlyArray<string> = [
 
 const INTERSTITIAL_PATH_PREFIX = '/v1/packages/public/';
 
+// A279-P2-1 — host allow-list for the interstitial's visible "Open in
+// Safari/Chrome" link + copy-paste URL.
+//
+// Failure mode: Express here has NO `trust proxy` configured. Fly's edge
+// forwards arbitrary client headers verbatim, so an attacker can craft
+// a request to the storefront with a malicious `X-Forwarded-Host`
+// (or even `Host`) that lands the buyer on a phishing domain via the
+// interstitial we render. Since we render the host into both a clickable
+// <a href> AND a copy-paste <code> block, this is a classic
+// open-redirect / brand-injection vector even though no server-side
+// redirect is issued.
+//
+// Mitigation: only render hosts that are in this explicit allow-list.
+// Any header value not in the set falls through to the next source; the
+// final fallback is the hard-coded canonical host below.
+const ALLOWED_INTERSTITIAL_HOSTS: ReadonlySet<string> = new Set([
+  'joingrowthproject.com',
+  'app.joingrowthproject.com',
+  'trygrowthproject.com',
+  'app.trygrowthproject.com',
+]);
+
+const DEFAULT_INTERSTITIAL_HOST = 'joingrowthproject.com';
+
+// Normalise + validate one candidate host value (header form). Strips
+// any `:port` suffix and lower-cases (DNS is case-insensitive). Returns
+// the normalised host iff it is in the allow-list, else null.
+function normaliseAndCheck(candidate: string | undefined): string | null {
+  if (!candidate) return null;
+  // X-Forwarded-Host may be a comma-separated chain; take the FIRST
+  // value only — that is the original client-facing host as RFC 7239
+  // and the de-facto X-Forwarded-* convention define it.
+  const first = candidate.split(',')[0]?.trim();
+  if (!first) return null;
+  // Strip an explicit port suffix (`host:443`). IPv6 literals in URIs
+  // are bracketed (`[::1]:443`); we don't allow those anyway (not in
+  // the set) so the naive split is safe for the production hosts.
+  const noPort = first.split(':')[0]?.trim().toLowerCase();
+  if (!noPort) return null;
+  return ALLOWED_INTERSTITIAL_HOSTS.has(noPort) ? noPort : null;
+}
+
+// Resolve the host the interstitial should reference, validated against
+// the allow-list. Order: X-Forwarded-Host → Host → hard-coded default.
+// Each candidate is validated independently; a malicious value FALLS
+// THROUGH to the next source rather than poisoning the result.
+export function resolveTrustedHost(req: {
+  headers: Record<string, string | string[] | undefined>;
+}): string {
+  const xfh = req.headers['x-forwarded-host'];
+  const host = req.headers['host'];
+  const xfhValue = Array.isArray(xfh) ? xfh[0] : xfh;
+  const hostValue = Array.isArray(host) ? host[0] : host;
+  return (
+    normaliseAndCheck(xfhValue) ??
+    normaliseAndCheck(hostValue) ??
+    DEFAULT_INTERSTITIAL_HOST
+  );
+}
+
 function detectWebview(userAgent: string): string | null {
   if (!userAgent) return null;
   // Lowercase comparison so we don't miss a future client that
@@ -130,10 +190,13 @@ export class WebviewDetectMiddleware implements NestMiddleware {
       ((req.headers['x-forwarded-proto'] as string | undefined) ?? 'https').split(
         ',',
       )[0].trim();
-    const host =
-      (req.headers['x-forwarded-host'] as string | undefined) ??
-      (req.headers['host'] as string | undefined) ??
-      'joingrowthproject.com';
+    // A279-P2-1 — host MUST be allow-listed. See ALLOWED_INTERSTITIAL_HOSTS
+    // above. Reading X-Forwarded-Host directly is unsafe here because
+    // Express has no `trust proxy` configured and Fly's edge passes
+    // client headers through verbatim.
+    const host = resolveTrustedHost(req as unknown as {
+      headers: Record<string, string | string[] | undefined>;
+    });
     const fullUrl = `${proto}://${host}${req.originalUrl}`;
 
     this.logger.debug(`webview detected (${matched}) on ${req.path}`);
