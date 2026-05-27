@@ -2962,7 +2962,7 @@ model GuestCheckout {
   /// NULL = never reconciled yet.
   last_reconciled_at DateTime?
   /// Capped at 30 polls (5 min). Past that the row is moved to
-  /// `reconcile_failed` and on-call is paged.
+  /// `conversion_failed_terminal` and on-call is paged (A279-P1-1).
   reconcile_attempts Int       @default(0)
   /// r48 Hardening — package snapshot taken at PaymentIntent create.
   /// Guards against a coach editing the package mid-checkout: the guest

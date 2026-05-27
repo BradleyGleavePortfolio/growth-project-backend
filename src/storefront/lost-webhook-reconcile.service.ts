@@ -20,7 +20,8 @@ import { GuestCheckoutService } from './guest-checkout.service';
 // have ((guestCheckout.handlePaymentSucceeded). Cap at
 // MAX_RECONCILE_ATTEMPTS polls (5 min worth at 10s repeats; we run at
 // 1-minute cron cadence so 5 attempts = ~5 min) — past that flip to
-// 'reconcile_failed' and page on-call.
+// 'conversion_failed_terminal' (semantically: this guest never
+// converted and we're giving up) and page on-call.
 //
 // Cancellation: a row that flips to 'paid'/'converted' via webhook
 // is no longer matched by the WHERE status='pending' filter on the
@@ -71,7 +72,7 @@ export class LostWebhookReconcileService {
   /**
    * Exposed for tests + ops "drain" tooling. Returns the number of
    * rows that observed a state change (succeeded reconciled OR moved
-   * to reconcile_failed); rows that polled-but-stayed-pending count
+   * to conversion_failed_terminal); rows that polled-but-stayed-pending count
    * as zero so the log line reflects work actually done.
    */
   async runOnce(now: Date = new Date()): Promise<number> {
@@ -124,11 +125,18 @@ export class LostWebhookReconcileService {
 
     if (claimed.reconcile_attempts > MAX_RECONCILE_ATTEMPTS) {
       // Bail out: stamp a terminal state so this row is no longer
-      // picked up.  Operator dashboard surfaces 'reconcile_failed' so
-      // on-call can refund manually.
+      // picked up.  Operator dashboard surfaces 'conversion_failed_terminal'
+      // so on-call can refund manually.
+      //
+      // A279-P1-1: was 'reconcile_failed' — not in GuestCheckout_status_check
+      // nor in GUEST_CHECKOUT_STATUSES, so Postgres raised 23514, the
+      // surrounding try/catch swallowed it, the row stayed 'pending', and
+      // the cron polled Stripe every minute burning API quota. Reusing the
+      // existing valid terminal status preserves the intent (operator
+      // intervention required) with zero schema change.
       await this.prisma.guestCheckout.updateMany({
         where: { id: checkoutId, status: 'pending' },
-        data: { status: 'reconcile_failed' },
+        data: { status: 'conversion_failed_terminal' },
       });
       this.logger.warn(
         `lost-webhook-reconcile: bailing out on ${checkoutId} after ${claimed.reconcile_attempts} attempts`,
