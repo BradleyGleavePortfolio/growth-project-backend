@@ -52,6 +52,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@flydotio/dockerfile": "^0.7.10",
     "@nestjs/cli": "^11.0.0",
     "@nestjs/testing": "^11.1.23",
@@ -59,14 +60,16 @@
     "@types/node": "^25.9.1",
     "@types/passport-jwt": "^4.0.0",
     "@types/ws": "^8.18.1",
-    "@typescript-eslint/eslint-plugin": "^6.21.0",
-    "@typescript-eslint/parser": "^6.21.0",
-    "eslint": "^8.57.1",
+    "@typescript-eslint/eslint-plugin": "^8.60.0",
+    "@typescript-eslint/parser": "^8.60.0",
+    "eslint": "^10.4.0",
+    "globals": "^17.6.0",
     "jest": "^30.4.2",
     "prisma": "^5.0.0",
     "ts-jest": "^29.4.9",
     "ts-node": "^10.9.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "typescript-eslint": "^8.60.0"
   },
   "overrides": {
     "qs": "6.15.2",
