@@ -54,6 +54,14 @@ import { PrismaService } from '../prisma.service';
 
 export const DUNNING_GRACE_DAYS_DEFAULT = 7;
 export const DUNNING_MAX_FAILURES_DEFAULT = 4;
+// Max email-send retries per DunningAttempt before the row is marked
+// 'failed_permanent' and dropped from the tick scan. Picked empirically:
+// 3 retries with exponential 1h → 4h → 16h backoff covers transient
+// SES/Resend outages without holding a stuck row for more than a day.
+export const DUNNING_MAX_SEND_RETRIES_DEFAULT = 3;
+// Exponential backoff base, in milliseconds. Schedule for retry N is
+// now + base * 4^N. (1h, 4h, 16h with the default base.)
+export const DUNNING_RETRY_BACKOFF_MS_DEFAULT = 60 * 60 * 1000;
 
 export type DunningStepKind =
   | 'soft'
@@ -87,6 +95,8 @@ export interface DunningConfig {
   cadence: DunningCadenceStep[];
   graceDays: number;
   maxFailures: number;
+  maxSendRetries: number;
+  retryBackoffMs: number;
 }
 
 // Parse env override of cadence days, preserving template/kind ordering from
@@ -117,7 +127,17 @@ export function resolveDunningConfig(env?: NodeJS.ProcessEnv): DunningConfig {
     'DUNNING_MAX_FAILURES',
     DUNNING_MAX_FAILURES_DEFAULT,
   );
-  return { cadence, graceDays, maxFailures };
+  const maxSendRetries = numEnv(
+    env,
+    'DUNNING_MAX_SEND_RETRIES',
+    DUNNING_MAX_SEND_RETRIES_DEFAULT,
+  );
+  const retryBackoffMs = numEnv(
+    env,
+    'DUNNING_RETRY_BACKOFF_MS',
+    DUNNING_RETRY_BACKOFF_MS_DEFAULT,
+  );
+  return { cadence, graceDays, maxFailures, maxSendRetries, retryBackoffMs };
 }
 
 function numEnv(env: NodeJS.ProcessEnv | undefined, k: string, d: number): number {
@@ -200,6 +220,20 @@ export class DunningService {
         ? { status: 'active', recovered_at: null, resolved_at: null, step_index: -1 }
         : null;
 
+    // PR #281 P2-2: an active state row with step_index === -1 AND no
+    // attempts on disk is the shape adminReset() leaves behind — the row
+    // is intentionally re-armable. Treat it as a fresh window so the new
+    // recordFailure() schedules a Day 0 cadence rather than no-op'ing on
+    // the legacy guard.
+    const isResetReArm =
+      existing &&
+      existing.status === 'active' &&
+      existing.step_index === -1 &&
+      !reopened &&
+      (await this.prisma.dunningAttempt.count({
+        where: { dunning_state_id: existing.id },
+      })) === 0;
+
     const row = existing
       ? await this.prisma.dunningState.update({
           where: { purchase_id: purchase.id },
@@ -242,13 +276,15 @@ export class DunningService {
           },
         });
 
-    const isFreshWindow = !existing || !!reopened;
+    const isFreshWindow = !existing || !!reopened || !!isResetReArm;
     if (isFreshWindow) {
       // When reopening after a recovered window, the previous cadence's
       // attempts were cancelled but still occupy (dunning_state_id,
       // step_index) slots. Purge them so the new cadence can take 0..N
-      // again without unique-violation collisions.
-      if (reopened) {
+      // again without unique-violation collisions. (adminReset() already
+      // deletes attempts; this guard is a no-op in the re-arm path but
+      // keeps the invariant local.)
+      if (reopened || isResetReArm) {
         await this.prisma.dunningAttempt.deleteMany({
           where: { dunning_state_id: row.id },
         });
@@ -301,9 +337,23 @@ export class DunningService {
     if (!existing || existing.status !== 'active') return existing;
 
     // Cancel pending cadence attempts so the tick loop won't fire them.
+    // PR #281 P1-1: the where clause is scoped to status='pending' only —
+    // any row currently in 'sending' (a tick worker has CAS-claimed it and
+    // is mid-flight to the email provider) is left alone. Once the worker
+    // finishes, it transitions sending → sent, and we never flip a sent
+    // row back to cancelled. We DO stamp superseded_at on any failed/
+    // retry-pending rows so ops can audit "customer received a reminder
+    // after they paid" cases without losing the row history.
     await this.prisma.dunningAttempt.updateMany({
       where: { dunning_state_id: existing.id, status: 'pending' },
       data: { status: 'cancelled' },
+    });
+    await this.prisma.dunningAttempt.updateMany({
+      where: {
+        dunning_state_id: existing.id,
+        status: { in: ['sending', 'failed'] },
+      },
+      data: { superseded_at: new Date() },
     });
 
     const updated = await this.prisma.dunningState.update({
@@ -380,11 +430,21 @@ export class DunningService {
     skipped: number;
     failed: number;
   }> {
-    const due = await this.prisma.dunningAttempt.findMany({
+    // Two query passes so we don't have to OR over status — keeps the index
+    // scan on (status, scheduled_for) and (status, next_retry_at) clean.
+    //   1. status='pending' and scheduled_for <= now  — first-time sends.
+    //   2. status='failed'  and next_retry_at  <= now — retries (PR #281 P2-3).
+    const pendingDue = await this.prisma.dunningAttempt.findMany({
       where: { status: 'pending', scheduled_for: { lte: now } },
       orderBy: { scheduled_for: 'asc' },
       take: limit,
     });
+    const retryDue = await this.prisma.dunningAttempt.findMany({
+      where: { status: 'failed', next_retry_at: { lte: now } },
+      orderBy: { next_retry_at: 'asc' },
+      take: Math.max(0, limit - pendingDue.length),
+    });
+    const due = [...pendingDue, ...retryDue];
 
     let sent = 0;
     let skipped = 0;
@@ -415,30 +475,93 @@ export class DunningService {
         continue;
       }
 
-      const result = await this.fireAttempt(attempt, state, purchase);
+      const result = await this.fireAttempt(attempt, state, purchase, now);
       if (result === 'sent') sent += 1;
-      else if (result === 'skipped') skipped += 1;
+      else if (result === 'skipped' || result === 'raced') skipped += 1;
       else failed += 1;
     }
 
     return { sent, skipped, failed };
   }
 
-  // Fire one attempt — sends the email via EmailService (or logs it when
-  // EmailService isn't wired, which is the unit-test path), then advances
-  // DunningState.step_index. Idempotent: if the attempt is already in a
-  // terminal status this no-ops.
+  // Fire one attempt — atomically claims the row (CAS pending|failed →
+  // sending), sends the email, then transitions sending → sent. The CAS
+  // claim closes the PR #281 P1-1 race: a concurrent recordResolution()
+  // can only flip 'pending' rows to 'cancelled', so once a row is
+  // 'sending' it is owned by this tick worker and the late-arriving
+  // resolution leaves it alone (cancellation just sets superseded_at on
+  // the now-in-flight row for audit).
   private async fireAttempt(
     attempt: DunningAttempt,
     state: DunningState,
     purchase: ClientPurchase,
-  ): Promise<'sent' | 'skipped' | 'failed'> {
-    if (attempt.status !== 'pending') return 'skipped';
+    now: Date = new Date(),
+  ): Promise<'sent' | 'skipped' | 'failed' | 'raced'> {
+    // We accept either an initial pending row or a retry-eligible failed
+    // row. Anything else is terminal for tick purposes.
+    const fromStatus = attempt.status;
+    if (fromStatus !== 'pending' && fromStatus !== 'failed') return 'skipped';
+
+    // CAS claim: pending|failed → sending under a single SQL statement.
+    // updateMany returns {count}, so count===0 means someone else (a
+    // concurrent recordResolution / terminate / tick replica) already moved
+    // the row out from under us. Bail without sending.
+    const claim = await this.prisma.dunningAttempt.updateMany({
+      where: { id: attempt.id, status: fromStatus },
+      data: { status: 'sending' },
+    });
+    if (claim.count === 0) {
+      this.metrics.inc('dunning_send_race_total');
+      this.logEvent('dunning.attempt_raced', {
+        purchase_id: purchase.id,
+        dunning_state_id: state.id,
+        attempt_id: attempt.id,
+        step_index: attempt.step_index,
+        from_status: fromStatus,
+      });
+      return 'raced';
+    }
 
     const step = this.cadenceStep(attempt.step_index);
     const idemKey = `dunning:${attempt.id}`;
 
     try {
+      // Special handling for the Day 14 "cancelled" cadence step (PR #281
+      // P2-1): refresh subscription state from Stripe / DB before sending.
+      // If the subscription is no longer pending cancellation, suppress the
+      // outbound email — the cadence's job is done, the grace-period sweeper
+      // / payment-recovery webhook handles the actual terminal copy.
+      if (step?.kind === 'cancelled') {
+        const fresh = await this.refreshCancellationView(state, purchase);
+        if (!fresh.shouldSend) {
+          await this.prisma.dunningAttempt.update({
+            where: { id: attempt.id },
+            data: {
+              status: 'skipped',
+              failure_reason: fresh.reason,
+              email_idempotency_key: idemKey,
+            },
+          });
+          this.logEvent('dunning.attempt_skipped', {
+            purchase_id: purchase.id,
+            attempt_id: attempt.id,
+            step_index: attempt.step_index,
+            reason: fresh.reason,
+          });
+          // We still advance step_index so the cadence moves on; the row
+          // is terminal and the next tick won't re-pick it.
+          await this.advanceState(state, attempt);
+          return 'skipped';
+        }
+        // Apply the fresh cancellation date to the email payload below by
+        // mutating a local view of state. We don't write the timestamp back
+        // to DunningState here — the subscription webhook owns that.
+        state = {
+          ...state,
+          cancel_scheduled_at: fresh.cancellationDate ?? state.cancel_scheduled_at,
+        } as DunningState;
+      }
+
       if (this.email) {
         const recipient = await this.lookupRecipientEmail(purchase.client_user_id);
         if (!recipient) {
@@ -464,14 +587,20 @@ export class DunningService {
           idempotencyKey: idemKey,
           data: this.buildEmailData(state, purchase, recipient.name),
         });
+        if (send.status === 'failed') {
+          // Treat provider "failed" the same as a thrown exception so the
+          // retry path is unified.
+          throw new Error(send.error ?? 'email_provider_failed');
+        }
         await this.prisma.dunningAttempt.update({
           where: { id: attempt.id },
           data: {
-            status: send.status === 'failed' ? 'failed' : 'sent',
+            status: 'sent',
             sent_at: new Date(),
             email_idempotency_key: idemKey,
             provider_message_id: send.providerMessageId,
-            failure_reason: send.error ?? null,
+            failure_reason: null,
+            next_retry_at: null,
           },
         });
       } else {
@@ -484,6 +613,7 @@ export class DunningService {
             status: 'sent',
             sent_at: new Date(),
             email_idempotency_key: idemKey,
+            next_retry_at: null,
           },
         });
       }
@@ -491,6 +621,7 @@ export class DunningService {
       await this.advanceState(state, attempt);
 
       this.metrics.inc('dunning_attempt_sent_total');
+      if (fromStatus === 'failed') this.metrics.inc('dunning_attempt_retry_succeeded_total');
       if (attempt.step_index >= 2) this.metrics.inc('dunning_escalated_total');
       this.logEvent('dunning.attempt_sent', {
         purchase_id: purchase.id,
@@ -498,17 +629,52 @@ export class DunningService {
         attempt_id: attempt.id,
         step_index: attempt.step_index,
         kind: attempt.kind,
+        retried: fromStatus === 'failed',
       });
       return 'sent';
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'unknown';
-      await this.prisma.dunningAttempt.update({
+      // Retry bookkeeping: bump retry_count, schedule next_retry_at, or
+      // mark failed_permanent if we've blown the budget.
+      const fresh = await this.prisma.dunningAttempt.findUnique({
         where: { id: attempt.id },
-        data: { status: 'failed', failure_reason: msg.slice(0, 500) },
       });
-      this.logger.warn(
-        `dunning.attempt_failed attempt=${attempt.id} step=${attempt.step_index}: ${msg}`,
-      );
+      const nextCount = (fresh?.retry_count ?? attempt.retry_count ?? 0) + 1;
+      if (nextCount > this.cfg.maxSendRetries) {
+        await this.prisma.dunningAttempt.update({
+          where: { id: attempt.id },
+          data: {
+            status: 'failed_permanent',
+            failure_reason: msg.slice(0, 500),
+            retry_count: nextCount,
+            next_retry_at: null,
+          },
+        });
+        this.metrics.inc('dunning_attempt_failed_permanent_total');
+        this.logger.warn(
+          `dunning.attempt_failed_permanent attempt=${attempt.id} step=${attempt.step_index} retries=${nextCount}: ${msg}`,
+        );
+        // Move the cadence forward so a stuck send doesn't block later
+        // steps from firing.
+        await this.advanceState(state, attempt);
+      } else {
+        const nextRetryAt = new Date(
+          now.getTime() + this.cfg.retryBackoffMs * Math.pow(4, nextCount - 1),
+        );
+        await this.prisma.dunningAttempt.update({
+          where: { id: attempt.id },
+          data: {
+            status: 'failed',
+            failure_reason: msg.slice(0, 500),
+            retry_count: nextCount,
+            next_retry_at: nextRetryAt,
+          },
+        });
+        this.metrics.inc('dunning_attempt_failed_total');
+        this.logger.warn(
+          `dunning.attempt_failed attempt=${attempt.id} step=${attempt.step_index} retry=${nextCount}/${this.cfg.maxSendRetries} next_at=${nextRetryAt.toISOString()}: ${msg}`,
+        );
+      }
       return 'failed';
     }
   }
@@ -553,17 +719,46 @@ export class DunningService {
     return this.getAdminView(purchaseId);
   }
 
-  // Reset — purge pending attempts but keep the state row in active.
+  // Reset — wipe the in-flight cadence completely and re-arm so the next
+  // webhook-driven recordFailure() starts a fresh Day 0 window. PR #281
+  // P2-2: the previous implementation flipped pending rows to cancelled
+  // but left them in place, which meant a subsequent recordFailure() on
+  // the same purchase_id (no reopen branch because state.status stays
+  // 'active') would hit (dunning_state_id, step_index) unique-violations
+  // and silently skip scheduling any new attempts. We now hard-delete all
+  // attempts and bring the state row back to the cleanest baseline short
+  // of dropping it entirely — last_failure_at = null, failure_count = 0,
+  // grace_period_ends_at and cancel_scheduled_at cleared. The state row
+  // stays so getAdminView() can still find it for audit, but the next
+  // failure walks the "existing && reopened-style" code path and gets a
+  // fresh cadence scheduled from scratch.
   async adminReset(purchaseId: string): Promise<DunningAdminView> {
     const state = await this.requireActiveState(purchaseId);
-    await this.prisma.dunningAttempt.updateMany({
-      where: { dunning_state_id: state.id, status: 'pending' },
-      data: { status: 'cancelled' },
+    // Hard-delete attempts — cancelled rows would still occupy step_index
+    // slots and unique-violate the next scheduleCadence(). See audit.
+    await this.prisma.dunningAttempt.deleteMany({
+      where: { dunning_state_id: state.id },
     });
+    // Clear cadence + grace baselines so the next recordFailure() schedules
+    // Day 0 at "now" rather than reusing a week-old window.
     await this.prisma.dunningState.update({
       where: { id: state.id },
-      data: { next_attempt_at: null, step_index: -1 },
+      data: {
+        next_attempt_at: null,
+        step_index: -1,
+        failure_count: 0,
+        last_attempt_number: null,
+        last_failed_amount_cents: null,
+        last_failure_at: null,
+        last_failure_reason: null,
+        grace_period_ends_at: null,
+        cancel_scheduled_at: null,
+        recovered_at: null,
+        resolved_at: null,
+        escalated_at: null,
+      },
     });
+    this.metrics.inc('dunning_admin_reset_total');
     this.logEvent('dunning.admin_reset', {
       purchase_id: purchaseId,
       dunning_state_id: state.id,
@@ -883,6 +1078,100 @@ export class DunningService {
         ...(attempt.step_index >= 2 ? { escalated_at: new Date() } : {}),
       },
     });
+  }
+
+  // PR #281 P2-1: by the time the Day 14 cadence step fires, the
+  // cancellation timestamps on DunningState (cancel_scheduled_at /
+  // grace_period_ends_at) may be a week stale — they were stamped at Day 0
+  // / Day 7 and the customer may have updated cards, paid out-of-band,
+  // or cancelled themselves in between. Refresh from the freshest source
+  // available (Stripe Subscription.cancel_at / canceled_at), with a
+  // graceful fallback to a forward-looking +24h if Stripe doesn't surface
+  // a future cancel_at. Returns shouldSend=false if the subscription is
+  // no longer pending cancellation (already canceled OR not flagged for
+  // cancel-at-period-end and not past_due) so we don't email a customer
+  // about a cancellation that's no longer scheduled.
+  private async refreshCancellationView(
+    state: DunningState,
+    purchase: ClientPurchase,
+  ): Promise<{
+    shouldSend: boolean;
+    cancellationDate: Date | null;
+    reason: string;
+  }> {
+    if (!purchase.stripe_subscription_id) {
+      // No subscription to inspect — fall back to the recorded cancel
+      // timestamp, but only if it's still forward-looking.
+      const cd = state.cancel_scheduled_at ?? state.grace_period_ends_at;
+      if (!cd || cd.getTime() <= Date.now()) {
+        return {
+          shouldSend: false,
+          cancellationDate: null,
+          reason: 'cancellation_date_in_past',
+        };
+      }
+      return { shouldSend: true, cancellationDate: cd, reason: 'no_stripe_sub' };
+    }
+    try {
+      const sub = await this.stripe.retrieveSubscription(
+        purchase.stripe_subscription_id,
+      );
+      // Already canceled — the customer.subscription.deleted webhook will
+      // (or already did) drive the terminal copy; don't double-message.
+      if (sub.status === 'canceled' || sub.canceled_at) {
+        return {
+          shouldSend: false,
+          cancellationDate: null,
+          reason: 'subscription_already_canceled',
+        };
+      }
+      // Subscription recovered (active / trialing) and no longer flagged
+      // for cancel-at-period-end — customer paid and we don't need to send
+      // a Day 14 "final" copy at all.
+      const stillPendingCancel =
+        sub.cancel_at_period_end === true ||
+        typeof (sub as Record<string, unknown>).cancel_at === 'number' ||
+        sub.status === 'past_due' ||
+        sub.status === 'unpaid';
+      if (!stillPendingCancel) {
+        return {
+          shouldSend: false,
+          cancellationDate: null,
+          reason: 'subscription_no_longer_pending_cancel',
+        };
+      }
+      // Build a fresh cancellation date. Stripe's `cancel_at` (seconds-
+      // since-epoch) is the source of truth when set; otherwise fall back
+      // to current_period_end; final fallback is now + 24h so the email
+      // never shows a past date.
+      const cancelAtSec =
+        (sub as Record<string, unknown>).cancel_at as number | undefined;
+      const periodEndSec = sub.current_period_end;
+      const fallbackMs = Date.now() + 24 * 60 * 60 * 1000;
+      const cancellationMs =
+        (typeof cancelAtSec === 'number' && cancelAtSec * 1000) ||
+        (typeof periodEndSec === 'number' && periodEndSec * 1000) ||
+        fallbackMs;
+      const fresh = new Date(
+        cancellationMs > Date.now() ? cancellationMs : fallbackMs,
+      );
+      return {
+        shouldSend: true,
+        cancellationDate: fresh,
+        reason: 'refreshed_from_stripe',
+      };
+    } catch (err) {
+      // Stripe failures shouldn't block the send entirely — fall back to
+      // a forward-looking +24h so the email at least shows a sane date.
+      this.logger.warn(
+        `dunning.refreshCancellationView Stripe fetch failed sub=${purchase.stripe_subscription_id}: ${(err as Error).message}`,
+      );
+      return {
+        shouldSend: true,
+        cancellationDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        reason: 'stripe_fetch_failed_fallback',
+      };
+    }
   }
 
   private async sendRecoveryEmail(state: DunningState) {

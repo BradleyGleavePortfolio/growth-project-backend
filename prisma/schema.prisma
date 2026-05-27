@@ -3331,17 +3331,40 @@ model DunningAttempt {
   // soft | urgent | final | recovered | cancelled
   kind                   String
   scheduled_for          DateTime
-  // pending | sent | failed | skipped | cancelled
+  // pending | sending | sent | failed | failed_permanent | skipped | cancelled
+  //
+  // 'sending' is the in-flight CAS claim slot used by tick() to prevent the
+  // race window described in PR #281 P1-1: a pending row is atomically flipped
+  // to 'sending' via updateMany({where: status=pending}) before the outbound
+  // email is dispatched. recordResolution() then only flips status=pending
+  // rows to cancelled, leaving any in-flight 'sending' row alone — which means
+  // the tick worker's subsequent 'sending' → 'sent' write is safe and a late
+  // payment-success webhook cannot resurrect a cancelled row.
   status                 String       @default("pending")
   sent_at                DateTime?
   email_idempotency_key  String?      @unique
   provider_message_id    String?
   failure_reason         String?
+  // Send-retry bookkeeping (PR #281 P2-3). When email.send() throws or
+  // returns a failed provider response, the row is flipped to status='failed'
+  // and next_retry_at is set to now + exponential backoff. The tick loop
+  // re-picks status='failed' rows whose next_retry_at <= now, up to
+  // retry_count >= DUNNING_MAX_SEND_RETRIES, after which the row is marked
+  // 'failed_permanent' and dropped (and a dunning_attempt_failed_permanent_total
+  // counter increments so ops can alert).
+  retry_count            Int          @default(0)
+  next_retry_at          DateTime?
+  // Set when a concurrent recordResolution() raced ahead of a send the tick
+  // worker had already claimed (status='sending'). Lets ops audit "customer
+  // got a reminder after they paid" cases — these are expected and rare but
+  // we want visibility. PR #281 P1-1.
+  superseded_at          DateTime?
   created_at             DateTime     @default(now())
   updated_at             DateTime     @updatedAt
 
   @@unique([dunning_state_id, step_index])
   @@index([status, scheduled_for])
+  @@index([status, next_retry_at])
   @@index([dunning_state_id, status])
 }
 

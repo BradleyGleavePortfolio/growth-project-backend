@@ -138,6 +138,11 @@ function makePrismaStub() {
           if (where.status && a.status !== where.status) return false;
           if (where.scheduled_for?.lte && !(a.scheduled_for <= where.scheduled_for.lte))
             return false;
+          if (
+            where.next_retry_at?.lte &&
+            !(a.next_retry_at && a.next_retry_at <= where.next_retry_at.lte)
+          )
+            return false;
           if (where.step_index?.lt !== undefined && !(a.step_index < where.step_index.lt))
             return false;
           if (where.step_index?.gte !== undefined && !(a.step_index >= where.step_index.gte))
@@ -151,6 +156,13 @@ function makePrismaStub() {
         }
         if (orderBy?.step_index === 'asc') {
           rows = [...rows].sort((a, b) => a.step_index - b.step_index);
+        }
+        if (orderBy?.next_retry_at === 'asc') {
+          rows = [...rows].sort(
+            (a, b) =>
+              (a.next_retry_at?.getTime() ?? 0) -
+              (b.next_retry_at?.getTime() ?? 0),
+          );
         }
         if (take) rows = rows.slice(0, take);
         return rows.map((r) => ({ ...r }));
@@ -171,6 +183,9 @@ function makePrismaStub() {
           created_at: new Date(),
           updated_at: new Date(),
           status: 'pending',
+          retry_count: 0,
+          next_retry_at: null,
+          superseded_at: null,
           ...data,
         };
         attempts.push(row);
@@ -184,12 +199,19 @@ function makePrismaStub() {
       updateMany: jest.fn(async ({ where = {}, data }: any) => {
         let count = 0;
         for (const a of attempts) {
+          if (where.id && a.id !== where.id) continue;
           if (
             where.dunning_state_id &&
             a.dunning_state_id !== where.dunning_state_id
           )
             continue;
-          if (where.status && a.status !== where.status) continue;
+          if (where.status) {
+            if (typeof where.status === 'string') {
+              if (a.status !== where.status) continue;
+            } else if (Array.isArray(where.status?.in)) {
+              if (!where.status.in.includes(a.status)) continue;
+            }
+          }
           Object.assign(a, data);
           count += 1;
         }
@@ -208,6 +230,25 @@ function makePrismaStub() {
           count += 1;
         }
         return { count };
+      }),
+      count: jest.fn(async ({ where = {} }: any) => {
+        let n = 0;
+        for (const a of attempts) {
+          if (
+            where.dunning_state_id &&
+            a.dunning_state_id !== where.dunning_state_id
+          )
+            continue;
+          if (where.status) {
+            if (typeof where.status === 'string') {
+              if (a.status !== where.status) continue;
+            } else if (Array.isArray(where.status?.in)) {
+              if (!where.status.in.includes(a.status)) continue;
+            }
+          }
+          n += 1;
+        }
+        return n;
       }),
     },
     paymentReminder: {
@@ -254,6 +295,13 @@ function makePrismaStub() {
 
 class StripeStub extends StripeConnectApiService {
   cancelSubscription = jest.fn(async (id: string) => ({ id, status: 'canceled' }));
+  retrieveSubscription = jest.fn(async (id: string) => ({
+    id,
+    status: 'past_due',
+    cancel_at_period_end: true,
+    cancel_at: Math.floor(Date.now() / 1000) + 24 * 3600,
+    current_period_end: Math.floor(Date.now() / 1000) + 24 * 3600,
+  })) as any;
 }
 
 const PURCHASE = {
@@ -598,4 +646,348 @@ describe('DunningService v1', () => {
     expect(view.attempts).toHaveLength(0);
     expect(view.purchase).not.toBeNull();
   });
+
+  // ── PR #281 P1-1 regression: tick / recordResolution race ────────────
+
+  it(
+    'P1-1: recordResolution running between fireAttempt claim and email-send ' +
+      'does NOT flip the sent row back to cancelled and does NOT cancel the ' +
+      'already-claimed in-flight row',
+    async () => {
+      // Inject a slow email transport so we can race recordResolution into
+      // the gap between the CAS claim and the send-completion update.
+      let releaseEmail!: () => void;
+      const emailGate = new Promise<void>((resolve) => {
+        releaseEmail = resolve;
+      });
+      const emailStub: any = {
+        send: jest.fn(async () => {
+          await emailGate;
+          return { status: 'sent', providerMessageId: 'msg-1', error: null };
+        }),
+      };
+      svc = new DunningService(prisma, stripe as any, emailStub);
+
+      await svc.recordFailure({
+        purchase: PURCHASE,
+        stripe_invoice_id: 'inv_1',
+        amount_due_cents: 9900,
+        attempt_number: 1,
+        reason: null,
+      });
+
+      // Start tick() but don't await yet — it'll claim the row and block
+      // inside email.send() at the gate.
+      const tickPromise = svc.tick(new Date());
+      // Yield enough to let tick() reach the email.send() await.
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+
+      // The Day 0 row should now be 'sending' (CAS-claimed). The remaining
+      // three rows are still 'pending'.
+      const claimed = prisma._attempts.find(
+        (a: any) => a.step_index === 0,
+      );
+      expect(claimed.status).toBe('sending');
+      expect(
+        prisma._attempts.filter((a: any) => a.status === 'pending'),
+      ).toHaveLength(3);
+
+      // Race the recovery webhook in mid-flight.
+      await svc.recordResolution('p1');
+
+      // The three pending rows get cancelled; the 'sending' row is left
+      // alone (no double-cancel of the in-flight slot).
+      const afterResolution = prisma._attempts.map((a: any) => a.status).sort();
+      expect(afterResolution).toEqual(
+        ['cancelled', 'cancelled', 'cancelled', 'sending'].sort(),
+      );
+      // Audit stamp on the in-flight row so ops can find the race case.
+      expect(claimed.superseded_at).toBeInstanceOf(Date);
+
+      // Release the email and let tick complete its sending → sent flip.
+      releaseEmail();
+      await tickPromise;
+
+      // Final invariant: the claimed row landed at 'sent' (not cancelled),
+      // and no cancelled row was resurrected to 'sent'.
+      expect(claimed.status).toBe('sent');
+      const cancelledRows = prisma._attempts.filter(
+        (a: any) => a.status === 'cancelled',
+      );
+      expect(cancelledRows).toHaveLength(3);
+      // And the race counter saw exactly zero — the in-flight send was not
+      // a race; only an attempt to CAS a non-pending row would bump it.
+      expect(svc.metrics.get('dunning_send_race_total')).toBe(0);
+    },
+  );
+
+  it(
+    'P1-1: when fireAttempt finds the row has been cancelled between findMany ' +
+      'and the CAS claim, the send is blocked and dunning_send_race_total bumps',
+    async () => {
+      const emailStub: any = {
+        send: jest.fn(async () => ({
+          status: 'sent',
+          providerMessageId: 'msg-1',
+          error: null,
+        })),
+      };
+      svc = new DunningService(prisma, stripe as any, emailStub);
+      await svc.recordFailure({
+        purchase: PURCHASE,
+        stripe_invoice_id: 'inv_1',
+        amount_due_cents: 9900,
+        attempt_number: 1,
+        reason: null,
+      });
+      // Reach into the service's private fireAttempt to simulate the
+      // exact race the audit describes: tick() has already read the row
+      // as 'pending', then between that read and the CAS claim a parallel
+      // recordResolution() flipped it to 'cancelled'. We model that here
+      // by stashing a stale snapshot, cancelling the row out from under
+      // it, and then calling fireAttempt with the stale snapshot.
+      const stale = { ...prisma._attempts[0] };
+      await svc.recordResolution('p1');
+      const state = prisma._dunning[0];
+      const purchase = prisma._purchases[0];
+      const result = await (svc as any).fireAttempt(
+        stale,
+        state,
+        purchase,
+        new Date(),
+      );
+      expect(result).toBe('raced');
+      expect(emailStub.send).not.toHaveBeenCalled();
+      expect(svc.metrics.get('dunning_send_race_total')).toBe(1);
+    },
+  );
+
+  // ── PR #281 P2-1 regression: Day 14 stale cancellation_date ─────────────
+
+  it(
+    'P2-1: Day 14 cadence step does NOT send dunning-final if the Stripe ' +
+      'subscription is no longer pending cancellation',
+    async () => {
+      // Subscription has been quietly fixed by the customer out-of-band.
+      stripe.retrieveSubscription = jest.fn(async (id: string) => ({
+        id,
+        status: 'active',
+        cancel_at_period_end: false,
+        cancel_at: null,
+        canceled_at: null,
+      })) as any;
+      const emailStub: any = {
+        send: jest.fn(async () => ({
+          status: 'sent',
+          providerMessageId: 'msg',
+          error: null,
+        })),
+      };
+      svc = new DunningService(prisma, stripe as any, emailStub);
+      await svc.recordFailure({
+        purchase: PURCHASE,
+        stripe_invoice_id: 'inv_1',
+        amount_due_cents: 9900,
+        attempt_number: 1,
+        reason: null,
+      });
+      // Day 14: the cadence Day 14 step (index 3, kind 'cancelled') would
+      // fire here, but the freshness check on Stripe should suppress it.
+      const r = await svc.tick(new Date(Date.now() + 14 * 24 * 3600 * 1000));
+      // 3 earlier steps fired normally; Day 14 was suppressed (skipped).
+      expect(r.sent).toBe(3);
+      expect(r.skipped).toBeGreaterThanOrEqual(1);
+      const day14 = prisma._attempts.find((a: any) => a.step_index === 3);
+      expect(day14.status).toBe('skipped');
+      // dunning-final template was never rendered for the customer.
+      const dunningFinalCalls = emailStub.send.mock.calls.filter(
+        (call: any[]) => call[0]?.template === 'dunning-final',
+      );
+      expect(dunningFinalCalls).toHaveLength(0);
+    },
+  );
+
+  it(
+    'P2-1: Day 14 step uses fresh Stripe cancel_at, not the stale Day 0 ' +
+      'cancellation_date',
+    async () => {
+      // Stripe returns a forward-looking cancel_at 24h from now — well after
+      // the stale Day 0 timestamp.
+      const freshCancelSec = Math.floor(Date.now() / 1000) + 15 * 24 * 3600;
+      stripe.retrieveSubscription = jest.fn(async (id: string) => ({
+        id,
+        status: 'past_due',
+        cancel_at_period_end: true,
+        cancel_at: freshCancelSec,
+        current_period_end: freshCancelSec,
+      })) as any;
+      const emailStub: any = {
+        send: jest.fn(async () => ({
+          status: 'sent',
+          providerMessageId: 'msg',
+          error: null,
+        })),
+      };
+      svc = new DunningService(prisma, stripe as any, emailStub);
+      await svc.recordFailure({
+        purchase: PURCHASE,
+        stripe_invoice_id: 'inv_1',
+        amount_due_cents: 9900,
+        attempt_number: 1,
+        reason: null,
+      });
+      await svc.tick(new Date(Date.now() + 14 * 24 * 3600 * 1000));
+      const dunningFinalCall = emailStub.send.mock.calls.find(
+        (call: any[]) => call[0]?.template === 'dunning-final',
+      );
+      expect(dunningFinalCall).toBeDefined();
+      const cancellationDate = dunningFinalCall![0].data.cancellation_date;
+      // The date in the email is derived from the fresh Stripe cancel_at,
+      // not the week-old DunningState.cancel_scheduled_at.
+      const expected = new Date(freshCancelSec * 1000).toISOString().slice(0, 10);
+      expect(cancellationDate).toBe(expected);
+    },
+  );
+
+  // ── PR #281 P2-2 regression: adminReset re-arm ────────────────────────
+
+  it(
+    'P2-2: adminReset followed by a new payment failure restarts the cadence ' +
+      'at Day 0 with a full set of fresh pending attempts',
+    async () => {
+      await svc.recordFailure({
+        purchase: PURCHASE,
+        stripe_invoice_id: 'inv_1',
+        amount_due_cents: 9900,
+        attempt_number: 1,
+        reason: 'first_failure',
+      });
+      // Walk a few cadence ticks so the step_index moves up.
+      await svc.tick(new Date());
+      expect(prisma._dunning[0].step_index).toBe(0);
+
+      // Ops admin-resets the runaway cadence.
+      await svc.adminReset('p1');
+      // Baseline assertions: state is re-armable, no attempts on disk.
+      expect(prisma._dunning[0].step_index).toBe(-1);
+      expect(prisma._dunning[0].failure_count).toBe(0);
+      expect(prisma._dunning[0].last_failure_at).toBeNull();
+      expect(prisma._attempts).toHaveLength(0);
+
+      // A new failure fires later — must restart Day 0 fresh.
+      await svc.recordFailure({
+        purchase: PURCHASE,
+        stripe_invoice_id: 'inv_2',
+        amount_due_cents: 9900,
+        attempt_number: 1,
+        reason: 'second_failure',
+      });
+      const pending = prisma._attempts.filter((a: any) => a.status === 'pending');
+      expect(pending).toHaveLength(DEFAULT_DUNNING_CADENCE.length);
+      expect(pending.map((a: any) => a.step_index).sort()).toEqual([0, 1, 2, 3]);
+      // Day 0 attempt is scheduled for ~now (within a minute), not stuck in
+      // the past.
+      const day0 = pending.find((a: any) => a.step_index === 0);
+      expect(
+        Math.abs(day0.scheduled_for.getTime() - Date.now()),
+      ).toBeLessThan(60 * 1000);
+    },
+  );
+
+  // ── PR #281 P2-3 regression: failed-attempt retry ───────────────────
+
+  it(
+    'P2-3: tick retries a failed attempt once the backoff has elapsed, and ' +
+      'a transient SES outage no longer drops the reminder',
+    async () => {
+      // First call to email.send throws (provider outage); second call
+      // succeeds. Verifies the retry path picks up the failed row.
+      let attempts = 0;
+      const emailStub: any = {
+        send: jest.fn(async () => {
+          attempts += 1;
+          if (attempts === 1) {
+            throw new Error('SES temporarily unavailable');
+          }
+          return { status: 'sent', providerMessageId: 'msg-2', error: null };
+        }),
+      };
+      svc = new DunningService(prisma, stripe as any, emailStub);
+      await svc.recordFailure({
+        purchase: PURCHASE,
+        stripe_invoice_id: 'inv_1',
+        amount_due_cents: 9900,
+        attempt_number: 1,
+        reason: null,
+      });
+
+      // Day 0 tick: send throws → row goes to 'failed' with next_retry_at
+      // set to ~1h from now.
+      const t0 = Date.now();
+      const r1 = await svc.tick(new Date(t0));
+      expect(r1.failed).toBe(1);
+      const day0 = prisma._attempts.find((a: any) => a.step_index === 0);
+      expect(day0.status).toBe('failed');
+      expect(day0.retry_count).toBe(1);
+      expect(day0.next_retry_at).toBeInstanceOf(Date);
+
+      // Tick again immediately — backoff hasn't elapsed, retry not picked.
+      const r2 = await svc.tick(new Date(t0 + 60 * 1000));
+      expect(r2.sent).toBe(0);
+      expect(day0.status).toBe('failed');
+
+      // Tick once the backoff has passed — the row is re-picked and the
+      // second send succeeds.
+      const r3 = await svc.tick(new Date(t0 + 2 * 60 * 60 * 1000));
+      expect(r3.sent).toBe(1);
+      expect(day0.status).toBe('sent');
+      expect(
+        svc.metrics.get('dunning_attempt_retry_succeeded_total'),
+      ).toBe(1);
+    },
+  );
+
+  it(
+    'P2-3: after DUNNING_MAX_SEND_RETRIES exhaustions a failed attempt is ' +
+      'marked failed_permanent and dunning_attempt_failed_permanent_total ' +
+      'increments',
+    async () => {
+      const emailStub: any = {
+        send: jest.fn(async () => {
+          throw new Error('SES gone for good');
+        }),
+      };
+      svc = new DunningService(prisma, stripe as any, emailStub);
+      await svc.recordFailure({
+        purchase: PURCHASE,
+        stripe_invoice_id: 'inv_1',
+        amount_due_cents: 9900,
+        attempt_number: 1,
+        reason: null,
+      });
+      // Scope this test to Day 0 only by removing the later cadence rows
+      // from the stub — we just want to assert the retry-budget invariant
+      // for one attempt without conflating it with the rest of the cadence.
+      for (let i = prisma._attempts.length - 1; i >= 0; i--) {
+        if (prisma._attempts[i].step_index !== 0) {
+          prisma._attempts.splice(i, 1);
+        }
+      }
+      const t0 = Date.now();
+      // Default DUNNING_MAX_SEND_RETRIES = 3 — first tick fires the
+      // pending row (retry_count 0→1), then 3 more far-future ticks bump
+      // retry_count to 2, 3, 4. On the 4th send (the third retry) the
+      // count exceeds the budget and the row goes permanent.
+      await svc.tick(new Date(t0));
+      const day0 = prisma._attempts.find((a: any) => a.step_index === 0);
+      for (let i = 1; i <= 3; i++) {
+        await svc.tick(new Date(t0 + i * 365 * 24 * 3600 * 1000));
+      }
+      expect(day0.status).toBe('failed_permanent');
+      expect(
+        svc.metrics.get('dunning_attempt_failed_permanent_total'),
+      ).toBe(1);
+    },
+  );
 });
