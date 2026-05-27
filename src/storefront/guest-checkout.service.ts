@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -11,6 +12,7 @@ import type {
   GuestCheckout,
   User,
 } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import {
   StripeConnectApiError,
@@ -26,6 +28,11 @@ import {
 import { isConnectAccountReadyForCheckout } from './storefront.service';
 import type { GuestCheckoutDto } from './storefront.dto';
 import type { GuestCheckoutResult } from './storefront.types';
+import { CheckoutIdempotencyService } from './checkout-idempotency.service';
+import { ConnectPreflightService } from './connect-preflight.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationKind } from '../notifications/notification-kind';
+import { type GuestCheckoutStatus } from './guest-checkout-status';
 
 // Platform cut on every guest checkout. Stripe's minimum application_fee
 // is 50 cents — packages priced low enough that 2% falls below the floor
@@ -156,6 +163,35 @@ export class GuestCheckoutService {
     private readonly stripe: StripeConnectApiService,
     private readonly supabase: SupabaseService,
     private readonly config: ConfigService,
+    // A276-P1-4 (refix) — NotificationsService is the system-wide
+    // in-app + push notification gateway. We use it to surface refund
+    // + dispute events to the coach who sold the package.
+    //
+    // HARD dependency: a missing notifier is a wiring bug, not a
+    // graceful degradation. Under the previous @Optional() wiring a
+    // misconfigured deploy (StorefrontModule not importing
+    // NotificationsModule) would let refunds succeed, entitlements
+    // flip, and the coach receive ZERO signal — with no log line
+    // distinguishing "no notifier" from "notifier called fine". Audit
+    // P1-4 called this the missing safety net. Failing module boot
+    // surfaces the wiring bug immediately; tests that exercise this
+    // service inject an explicit stub.
+    //
+    // Declared before the @Optional() params because TypeScript forbids
+    // a required parameter after an optional one. Nest DI is type-based
+    // so the parameter order has no effect at injection time.
+    private readonly notifications: NotificationsService,
+    // r48 #3 — content-addressable PI cache so a network-dropped
+    // retry that rolled a fresh idempotency_key still reuses the
+    // existing Stripe PaymentIntent.  @Optional() so legacy unit
+    // tests that hand-construct this service via Test.createTestingModule
+    // don't need to register a stub.
+    @Optional()
+    private readonly idempotencyCache?: CheckoutIdempotencyService,
+    // r48 #7 + #8 — live Stripe Connect preflight (60s cache).  Same
+    // optional wiring as above.
+    @Optional()
+    private readonly preflight?: ConnectPreflightService,
   ) {}
 
   // POST /v1/packages/public/join/:token/checkout
@@ -211,6 +247,35 @@ export class GuestCheckoutService {
       });
     }
 
+    // r48 #7 — live Stripe preflight (60s Redis cache).  The mirror
+    // check above is the stable baseline; this catches a coach who
+    // disconnected Stripe after the GET resolved but before the POST.
+    // Cache lookups are O(1); cache miss is one Stripe API call per
+    // 60s per connected account.
+    let walletSupports: { apple: boolean; google: boolean } = {
+      apple: false,
+      google: false,
+    };
+    if (this.preflight) {
+      const live = await this.preflight.getReadiness(
+        connectAccount.stripe_account_id,
+      );
+      if (!live.charges_enabled) {
+        this.logger.warn(
+          `Checkout preflight: live charges disabled for ${connectAccount.stripe_account_id} (disabled_reason=${live.disabled_reason ?? 'null'})`,
+        );
+        throw new ServiceUnavailableException({
+          error: 'COACH_PAYOUT_DISABLED',
+          message:
+            'This coach is not currently accepting payments. Please contact them directly.',
+        });
+      }
+      walletSupports = {
+        apple: live.supports_apple_pay,
+        google: live.supports_google_pay,
+      };
+    }
+
     // Audit #3 P1-5 — recurring packages cannot be sold through Phase 1
     // guest checkout. The previous guard checked the display labels
     // (`monthly`/`quarterly`/`annual`) which live in the interval
@@ -257,6 +322,41 @@ export class GuestCheckoutService {
 
     const normalisedEmail = dto.guest_email.toLowerCase().trim();
     const normalisedName = dto.guest_name.trim();
+
+    // r48 #3 — content-addressable idempotency check.  When the
+    // storefront supplies a session_id, hash (token + email + session_id)
+    // and look up a previously-minted PaymentIntent.  This rescues the
+    // network-drop case where the client rolled a fresh idempotency_key
+    // but is conceptually retrying the same checkout.
+    const contentHash =
+      this.idempotencyCache && dto.session_id
+        ? this.idempotencyCache.computeHash(token, normalisedEmail, dto.session_id)
+        : null;
+    if (this.idempotencyCache && contentHash) {
+      const cached = await this.idempotencyCache.lookupDecrypted(contentHash);
+      if (cached) {
+        // Cross-reference the DB row to make sure the cached PI hasn't
+        // been moved to a terminal state by Stripe.  If the row no longer
+        // exists or is no longer eligible for retry, fall through to the
+        // normal path and let the DB+Stripe checks decide.
+        const cachedRow = await this.prisma.guestCheckout.findUnique({
+          where: { stripe_payment_intent_id: cached.payment_intent_id },
+        });
+        if (
+          cachedRow &&
+          (cachedRow.status === 'pending' || cachedRow.status === 'paid') &&
+          cachedRow.expires_at > new Date()
+        ) {
+          return {
+            client_secret: cached.client_secret,
+            payment_intent_id: cached.payment_intent_id,
+            guest_checkout_id: cachedRow.id,
+            supports_apple_pay: walletSupports.apple,
+            supports_google_pay: walletSupports.google,
+          };
+        }
+      }
+    }
 
     // Fast-path: existing row for the same idempotency_key. We do this
     // BEFORE minting a Stripe PI so honest retries from the storefront
@@ -338,6 +438,20 @@ export class GuestCheckoutService {
           // hashes guest_email and redacts guest_name past this
           // deadline if the row never converted to a User.
           data_retention_at: new Date(Date.now() + PII_RETENTION_MS),
+          // r48 #6 — package snapshot at PI create time so a coach
+          // editing the package mid-checkout does not change what the
+          // guest is billed.  The amount, currency, and platform fee
+          // already capture in the Stripe PaymentIntent itself; the
+          // snapshot is what the receipt + admin tools render against.
+          package_snapshot: {
+            name: pkg.name,
+            price_cents: pkg.amount_cents,
+            currency: pkg.currency,
+            description: pkg.description ?? null,
+            billing_type: pkg.billing_type,
+            interval: pkg.interval ?? null,
+            interval_count: pkg.interval_count ?? null,
+          } as Prisma.InputJsonValue,
         },
       });
     } catch (err) {
@@ -434,10 +548,27 @@ export class GuestCheckoutService {
       if (!this.isUniqueViolation(err)) throw err;
     }
 
+    // r48 #3 — record the (PI id, secret) in the content-addressable
+    // cache so a future retry with the same (token, email, session_id)
+    // gets the existing secret back instead of minting a new PI.  KMS
+    // encrypts the secret at rest.  Best-effort: a cache write failure
+    // does NOT roll back the checkout.
+    if (this.idempotencyCache && contentHash) {
+      this.idempotencyCache
+        .checkOrStore(contentHash, paymentIntent.id, paymentIntent.client_secret)
+        .catch((err) => {
+          this.logger.warn(
+            `idempotency cache store failed (tag=${safeErrorTag(err)})`,
+          );
+        });
+    }
+
     return {
       client_secret: paymentIntent.client_secret,
       payment_intent_id: paymentIntent.id,
       guest_checkout_id: sentinel.id,
+      supports_apple_pay: walletSupports.apple,
+      supports_google_pay: walletSupports.google,
     };
   }
 
@@ -529,7 +660,28 @@ export class GuestCheckoutService {
   // delivery against a converted row would attempt to create a second
   // Supabase user.
 
-  async handlePaymentSucceeded(paymentIntentId: string): Promise<void> {
+  // A276-P0-2 — chargeInfo carries the Stripe-hosted receipt URL (or the
+  // charge id we'd retrieve to look it up). Both are optional so legacy
+  // callers without the upgraded billing dispatcher still work; the
+  // receipt simply ends up null and gets filled in by a later replay or
+  // operator-driven backfill.
+  //
+  // A276-F2-P2-1 — `preResolveAttempted` is set by BillingService when it
+  // already ran the outside-tx receipt lookup (success OR failure). When
+  // true and `receiptUrl` is null, the inner resolveReceiptUrl MUST NOT
+  // attempt another Stripe HTTP call (otherwise we re-introduce the
+  // in-transaction HTTP anti-pattern P1-3 was supposed to eliminate, on
+  // the Stripe-blip degraded path). The welcome email simply ships
+  // without the receipt line and an outbox/backfill job can fill it in
+  // later.
+  async handlePaymentSucceeded(
+    paymentIntentId: string,
+    chargeInfo?: {
+      chargeId: string | null;
+      receiptUrl: string | null;
+      preResolveAttempted?: boolean;
+    },
+  ): Promise<void> {
     try {
       // Atomic pending→paid transition. updateMany with WHERE status =
       // 'pending' is the canonical "claim once" pattern: if count = 0,
@@ -565,6 +717,34 @@ export class GuestCheckoutService {
         return;
       }
 
+      // A276-P0-2 — resolve the Stripe-hosted receipt_url and persist it
+      // on the GuestCheckout row BEFORE convertGuestToUser, so the
+      // welcome-email path (which reads the row) ships the receipt link
+      // in the same outgoing email. resolveReceiptUrl is best-effort:
+      // failures (Stripe blip, missing charge id) leave receipt_url null
+      // and the welcome email omits the "View receipt" line.
+      const receiptUrl = await this.resolveReceiptUrl(
+        paymentIntentId,
+        chargeInfo,
+      );
+      if (receiptUrl) {
+        await this.prisma.guestCheckout
+          .updateMany({
+            where: {
+              stripe_payment_intent_id: paymentIntentId,
+              receipt_url: null,
+            },
+            data: { receipt_url: receiptUrl },
+          })
+          .catch((err) => {
+            // Receipt URL persistence is non-critical — log and continue
+            // so a DB blip here never blocks the conversion path.
+            this.logger.warn(
+              `receipt_url persist failed for ${paymentIntentId} (tag=${safeErrorTag(err)})`,
+            );
+          });
+      }
+
       // P1-4 — Guest conversion runs INLINE, before the webhook returns.
       // The previous setImmediate path acknowledged Stripe before account
       // creation finished; if the process exited (Fly redeploy, OOM, hard
@@ -575,12 +755,92 @@ export class GuestCheckoutService {
       //
       // Any unrecoverable error inside convertGuestToUser flips the row
       // to 'failed' so the reconciliation job has a clear signal.
-      await this.convertGuestToUser(checkout);
+      const checkoutWithReceipt = receiptUrl
+        ? { ...checkout, receipt_url: receiptUrl }
+        : checkout;
+      await this.convertGuestToUser(checkoutWithReceipt);
     } catch (err) {
       // Webhook MUST return 200 — log + swallow.
       this.logger.error(
         `handlePaymentSucceeded crashed (tag=${safeErrorTag(err)})`,
       );
+    }
+  }
+
+  // A276-P0-2 — Stripe Connect destination charges generate a hosted,
+  // signed, branded receipt URL on every Charge (pay.stripe.com/receipts/…).
+  // We prefer the URL handed in from the webhook payload (no extra Stripe
+  // round-trip); fall back to retrieving the Charge by id when the event
+  // only carried a charge id; final fallback is to retrieve the
+  // PaymentIntent and chase its latest_charge. Returns null when none of
+  // those paths produced a usable https URL.
+  //
+  // A276-P1-3 — made public so BillingService can pre-resolve the URL
+  // BEFORE opening its outer $transaction. Stripe API 2024-09-30.acacia
+  // event payloads carry latest_charge only as a string id, which means
+  // this method always falls through to a synchronous retrieveCharge HTTP
+  // call. Running that call inside a Prisma interactive transaction
+  // holds the Postgres connection for the full Stripe round-trip and
+  // saturates the pool under any Stripe latency — the canonical Prisma
+  // anti-pattern. BillingService now invokes this OUTSIDE its tx and
+  // hands the result back via the chargeInfo argument so the inner call
+  // (still made from handlePaymentSucceeded) short-circuits on the https
+  // guard at the top of the method.
+  //
+  // A276-F2-P2-1 — when `preResolveAttempted` is true, BillingService
+  // already issued the Stripe HTTP lookup OUTSIDE the transaction; the
+  // result (success or null on Stripe blip) is final. We MUST NOT retry
+  // a second Stripe HTTP call here, because this method is invoked from
+  // handlePaymentSucceeded WHICH RUNS INSIDE BillingService's outer
+  // `$transaction` await — holding the Postgres connection across a
+  // Stripe round-trip is exactly the anti-pattern P1-3 was supposed to
+  // eliminate. On the degraded path (Stripe blip during pre-resolve),
+  // the receipt URL stays null, the welcome email omits the receipt
+  // line, and a future reconciliation/backfill job can fill it in.
+  async resolveReceiptUrl(
+    paymentIntentId: string,
+    chargeInfo?: {
+      chargeId: string | null;
+      receiptUrl: string | null;
+      preResolveAttempted?: boolean;
+    },
+  ): Promise<string | null> {
+    const fromEvent = chargeInfo?.receiptUrl;
+    if (typeof fromEvent === 'string' && /^https:\/\//.test(fromEvent)) {
+      return fromEvent;
+    }
+    // A276-F2-P2-1 — pre-resolve was attempted outside-tx. Honour the
+    // null result; do not retry HTTP from inside the outer transaction.
+    if (chargeInfo?.preResolveAttempted === true) {
+      return null;
+    }
+    let chargeId = chargeInfo?.chargeId ?? null;
+    try {
+      if (!chargeId) {
+        const pi = await this.stripe.retrievePaymentIntent(paymentIntentId);
+        if (!pi || typeof pi !== 'object') return null;
+        const lc = (pi as { latest_charge?: string | null }).latest_charge;
+        if (typeof lc === 'string' && lc.length > 0) chargeId = lc;
+        else if (
+          pi.charges?.data &&
+          pi.charges.data.length > 0 &&
+          typeof pi.charges.data[0].id === 'string'
+        ) {
+          chargeId = pi.charges.data[0].id as string;
+        }
+      }
+      if (!chargeId) return null;
+      const charge = await this.stripe.retrieveCharge(chargeId);
+      const url = (charge as { receipt_url?: string | null }).receipt_url;
+      if (typeof url === 'string' && /^https:\/\//.test(url)) {
+        return url;
+      }
+      return null;
+    } catch (err) {
+      this.logger.warn(
+        `resolveReceiptUrl: Stripe lookup failed for pi=${paymentIntentId} (tag=${safeErrorTag(err)})`,
+      );
+      return null;
     }
   }
 
@@ -597,6 +857,272 @@ export class GuestCheckoutService {
       this.logger.error(
         `handlePaymentFailed crashed (tag=${safeErrorTag(err)})`,
       );
+    }
+  }
+
+  // r48 #13 + A276-P1-4 — refund handler.
+  //
+  // Called by BillingService on charge.refunded webhooks AFTER the
+  // existing CheckoutWebhookHandlerService has refused the event (no
+  // matching ClientPurchase via stripe_checkout_session_id).  We claim
+  // the event when the PaymentIntent maps either to a GuestCheckout row
+  // (legacy path) or to a ClientPurchase row whose entitlement we own
+  // (the storefront writes both for guest checkouts).
+  //
+  // Audit #5 P1-4 — a full refund MUST revoke the client's entitlement
+  // and notify the coach.  The previous implementation only stamped
+  // refunded_at on GuestCheckout, leaving the client with continued app
+  // access and giving the coach no signal that money came back.
+  //
+  // All writes run inside a single $transaction so partial state is
+  // never visible to a concurrent reader.  Idempotent: re-deliveries
+  // collapse via the WHERE refunded_at IS NULL guard on GuestCheckout
+  // and entitlement_active=true guard on ClientPurchase.
+  //
+  // Partial refunds DO NOT revoke entitlement — the client paid for
+  // something and Stripe's amount_refunded < amount means the coach is
+  // crediting back a portion, not unwinding the sale.  We still stamp
+  // refunded_at and notify the coach so they have a paper trail.
+  async handleChargeRefunded(
+    paymentIntentId: string,
+    chargeAmount: number,
+    amountRefunded: number,
+  ): Promise<{ claimed: boolean }> {
+    try {
+      const row = await this.prisma.guestCheckout.findUnique({
+        where: { stripe_payment_intent_id: paymentIntentId },
+        include: { package: { select: { coach_id: true } } },
+      });
+      // chargeAmount > 0 guards the $0-auth-capture edge case (the
+      // storefront does not use $0 auths today; the guard is
+      // defence-in-depth so a degenerate event payload can't claim
+      // a full refund of nothing).
+      const fullyRefunded = chargeAmount > 0 && amountRefunded >= chargeAmount;
+      // A276 P0-1: 'refunded' is admitted by GuestCheckout_status_check
+      // as of migration 20260921000000_add_refunded_disputed_to_guest_checkout_status.
+      // Partial refunds keep the existing row.status (typically 'paid' or
+      // 'converted'); only a fully-refunded charge transitions to 'refunded'.
+      // P2-4 cleanup: when row is null we never read newStatus (the
+      // updateMany is gated by `if (row)` below), so the previous
+      // `?? 'refunded'` tail was unreachable; we coerce undefined to a
+      // safe placeholder and rely on the gate.
+      const newStatus: GuestCheckoutStatus = fullyRefunded
+        ? 'refunded'
+        : ((row?.status ?? 'paid') as GuestCheckoutStatus);
+
+      // A276-P1-4 — even when there's no GuestCheckout row, an authed
+      // ClientPurchase may exist (post-converted guest, or future direct-
+      // checkout flows that route through this handler).  Both writes
+      // share a single $transaction so a partial failure rolls back.
+      //
+      // A276-P1-2 — Stripe's charge.refunded delivers CUMULATIVE
+      // amount_refunded. A partial-then-full sequence is two distinct
+      // events; the first stamps refunded_at, the second sees fully
+      // refunded but the original WHERE refunded_at:null guard would skip
+      // the GuestCheckout row, leaving status='paid' even though
+      // ClientPurchase has flipped to 'refunded' (P1-2 desync). To keep
+      // the two tables in lockstep we emit a second updateMany for the
+      // partial→full upgrade path: WHERE refunded_at IS NOT NULL AND
+      // status != 'refunded'. Both updateMany calls are guarded so a pure
+      // re-delivery (no state change) claims nothing in either branch.
+      const result = await this.prisma.$transaction(async (tx) => {
+        let guestClaimed = 0;
+        if (row) {
+          const firstClaim = await tx.guestCheckout.updateMany({
+            where: {
+              stripe_payment_intent_id: paymentIntentId,
+              refunded_at: null,
+            },
+            data: {
+              status: newStatus,
+              refunded_at: new Date(),
+            },
+          });
+          guestClaimed = firstClaim.count;
+
+          // Partial→full upgrade. Only runs on the delivery that closes
+          // out a charge that was previously partially refunded: status
+          // is still 'paid'/'converted' but refunded_at is already set.
+          // The status != 'refunded' guard keeps the write idempotent —
+          // a third re-delivery on an already-fully-refunded row claims
+          // zero. We deliberately do NOT re-stamp refunded_at (the audit
+          // trail keeps the original first-refund timestamp).
+          if (fullyRefunded && firstClaim.count === 0) {
+            const upgrade = await tx.guestCheckout.updateMany({
+              where: {
+                stripe_payment_intent_id: paymentIntentId,
+                status: { not: 'refunded' },
+              },
+              data: {
+                status: 'refunded',
+              },
+            });
+            guestClaimed = upgrade.count;
+          }
+        }
+
+        // Revoke entitlement on the matching ClientPurchase row(s) when
+        // the refund is full.  A partial refund leaves entitlement_active
+        // alone so the client keeps the access they paid net-of-credit
+        // for.  status:'refunded' is reserved for full refunds; partial
+        // refunds keep the existing status (paid/active) untouched.
+        let purchaseClaimed = 0;
+        if (fullyRefunded) {
+          const cp = await tx.clientPurchase.updateMany({
+            where: {
+              stripe_payment_intent_id: paymentIntentId,
+              entitlement_active: true,
+            },
+            data: {
+              entitlement_active: false,
+              status: 'refunded',
+            },
+          });
+          purchaseClaimed = cp.count;
+        }
+        return { guestClaimed, purchaseClaimed };
+      });
+
+      // Notify the coach.  Best-effort — a notification failure must
+      // not roll the refund write back (the money already moved on
+      // Stripe's side; we MUST persist the refunded_at stamp).
+      // Only fire when this delivery actually claimed something so
+      // duplicate webhook re-deliveries don't double-notify.
+      const coachUserId = row?.package?.coach_id ?? null;
+      const claimedSomething =
+        result.guestClaimed > 0 || result.purchaseClaimed > 0;
+      if (claimedSomething && coachUserId) {
+        const dollars = (amountRefunded / 100).toFixed(2);
+        const body = fullyRefunded
+          ? `Refund processed: $${dollars} returned to client.`
+          : `Partial refund: $${dollars} returned to client.`;
+        await this.notifications
+          .createNotification({
+            user_id: coachUserId,
+            kind: NotificationKind.COACH_ALERT,
+            body,
+            payload: {
+              event: 'refund_processed',
+              payment_intent_id: paymentIntentId,
+              amount_refunded_cents: amountRefunded,
+              amount_cents: chargeAmount,
+              fully_refunded: fullyRefunded,
+              entitlement_revoked: fullyRefunded,
+            },
+            deep_link: 'tgp://coach/billing/refunds',
+            channel: 'inapp',
+          })
+          .catch((err) => {
+            this.logger.warn(
+              `coach refund notification failed pi=${paymentIntentId} (tag=${safeErrorTag(err)})`,
+            );
+          });
+      }
+
+      if (!row && result.purchaseClaimed === 0) {
+        // Neither table held this PI — not our event.
+        return { claimed: false };
+      }
+      this.logger.log(
+        `guest checkout refunded: pi=${paymentIntentId} amount_refunded=${amountRefunded}/${chargeAmount} (full=${fullyRefunded}, entitlement_revoked=${result.purchaseClaimed})`,
+      );
+      return { claimed: true };
+    } catch (err) {
+      // A276-P1-5 — PROPAGATE.  BillingService.handleEvent wraps the
+      // webhook dispatch in a Prisma \$transaction whose final write is
+      // tx.stripeProcessedEvent.updateMany(handler_completed_at).  If we
+      // swallow here, that dedup row commits with no side-effect having
+      // run, Stripe ack's the delivery, and the refund row stays stuck
+      // in status:'paid' forever — the money came back but the buyer
+      // keeps app access.  Re-throwing rolls back the outer transaction
+      // (the StripeProcessedEvent insert AND the handler_completed_at
+      // stamp), Stripe sees a 5xx, and retries on its exponential backoff
+      // schedule (up to 3 days).
+      this.logger.error(
+        `handleChargeRefunded crashed (tag=${safeErrorTag(err)}) — propagating for Stripe retry`,
+      );
+      throw err;
+    }
+  }
+
+  // r48 #13 + A276-P1-4 — dispute opened handler.
+  //
+  // A dispute is NOT a refund — Stripe has only flagged the charge for
+  // chargeback review.  We MUST NOT revoke entitlement here: a dispute
+  // can be won, in which case the client keeps the package they paid
+  // for.  The coach IS notified at high priority so they can submit
+  // evidence inside Stripe's 7-day window.  Entitlement revocation
+  // happens later if/when charge.refunded fires (Stripe issues an
+  // automatic refund on a lost dispute).
+  async handleDisputeOpened(
+    paymentIntentId: string,
+    reason: string | null,
+  ): Promise<{ claimed: boolean }> {
+    try {
+      const safeReason = (reason ?? '').slice(0, 500) || null;
+
+      const result = await this.prisma.$transaction(async (tx) => {
+        const claim = await tx.guestCheckout.updateMany({
+          where: {
+            stripe_payment_intent_id: paymentIntentId,
+            disputed_at: null,
+          },
+          data: {
+            status: 'disputed',
+            disputed_at: new Date(),
+            dispute_reason: safeReason,
+          },
+        });
+        return { guestClaimed: claim.count };
+      });
+
+      // Look up the row for routing (coach_id) regardless of whether the
+      // updateMany flipped a fresh row — a re-delivery still needs to be
+      // declared claimed.
+      const row = await this.prisma.guestCheckout.findUnique({
+        where: { stripe_payment_intent_id: paymentIntentId },
+        include: { package: { select: { coach_id: true } } },
+      });
+      if (!row) return { claimed: false };
+
+      // Notify the coach (best-effort).  Only on the delivery that
+      // actually flipped the row so re-deliveries don't double-notify.
+      const coachUserId = row.package?.coach_id ?? null;
+      if (result.guestClaimed > 0 && coachUserId) {
+        await this.notifications
+          .createNotification({
+            user_id: coachUserId,
+            kind: NotificationKind.COACH_ALERT,
+            body: `Chargeback opened on a guest checkout. Submit evidence in Stripe within 7 days.`,
+            payload: {
+              event: 'dispute_opened',
+              payment_intent_id: paymentIntentId,
+              reason: safeReason,
+            },
+            deep_link: 'tgp://coach/billing/disputes',
+            channel: 'inapp',
+          })
+          .catch((err) => {
+            this.logger.warn(
+              `coach dispute notification failed pi=${paymentIntentId} (tag=${safeErrorTag(err)})`,
+            );
+          });
+      }
+
+      this.logger.warn(
+        `guest checkout disputed: pi=${paymentIntentId} reason=${reason ?? 'none'}`,
+      );
+      return { claimed: true };
+    } catch (err) {
+      // A276-P1-5 — PROPAGATE.  Same reasoning as handleChargeRefunded:
+      // swallowing leaves StripeProcessedEvent committed with no row
+      // update, and Stripe will never re-deliver the dispute notice.
+      // For chargebacks specifically, missing the 7-day evidence window
+      // because of a transient DB error is a direct money loss.
+      this.logger.error(
+        `handleDisputeOpened crashed (tag=${safeErrorTag(err)}) — propagating for Stripe retry`,
+      );
+      throw err;
     }
   }
 
@@ -677,27 +1203,34 @@ export class GuestCheckoutService {
 
     try {
       await this.prisma.$transaction(async (tx) => {
-        // Upsert the Prisma User row mirrored from Supabase. If a User
-        // already exists (existing customer paying with the same email),
-        // we keep their coach_id intact rather than re-routing them
-        // to a new coach.
-        let dbUser = await tx.user.findUnique({
+        // r48 #12 — atomic user upsert.  Two parallel webhook deliveries
+        // (Stripe retries the same event id, our outer dedup is bypassed
+        // by a clock-skew or replica-lag race) used to both pass the
+        // findUnique → create path and one would P2002 on supabase_id.
+        // Now we always go through Prisma's upsert which collapses the
+        // race to a single CREATE INSERT ... ON CONFLICT under the hood.
+        //
+        // The 'create' side initialises coach_id; the 'update' side
+        // ONLY attaches coach_id when the existing row has none (the
+        // orphan-account heal path), so an existing client paying for
+        // a second coach's package doesn't get silently re-routed.
+        let dbUser = await tx.user.upsert({
           where: { supabase_id: supabaseUserId },
+          create: {
+            supabase_id: supabaseUserId,
+            email: checkout.guest_email,
+            name: checkout.guest_name,
+            role: 'student',
+            coach_id: checkout.package.coach_id,
+          },
+          update: {},
         });
-        if (!dbUser) {
-          dbUser = await tx.user.create({
-            data: {
-              supabase_id: supabaseUserId,
-              email: checkout.guest_email,
-              name: checkout.guest_name,
-              role: 'student',
-              coach_id: checkout.package.coach_id,
-            },
-          });
-        } else if (dbUser.coach_id == null) {
+        if (dbUser.coach_id == null) {
           // User existed but had no coach (rare — orphaned account).
-          // Attach them to the package's coach.
-          await tx.user.update({
+          // Attach them to the package's coach.  Done as a separate
+          // update so the upsert's 'update' branch stays a strict no-op
+          // when the row already has a coach (no accidental re-routing).
+          dbUser = await tx.user.update({
             where: { id: dbUser.id },
             data: { coach_id: checkout.package.coach_id },
           });
@@ -1088,6 +1621,18 @@ export class GuestCheckoutService {
             packageName,
           )}</strong> to your existing Growth Project account — sign in with your usual credentials.</p>`;
 
+    // A276-P0-2 — Stripe-hosted receipt link. Only rendered when the
+    // upstream resolveReceiptUrl produced an https URL (rejects local://
+    // legacy values and any non-https schemes via escapeAttr).
+    const stripeReceiptUrl = (checkout as { receipt_url?: string | null }).receipt_url ?? null;
+    const receiptLine =
+      typeof stripeReceiptUrl === 'string' &&
+      /^https:\/\//.test(stripeReceiptUrl)
+        ? `<p style="margin-top:16px;"><a href="${escapeAttr(
+            stripeReceiptUrl,
+          )}" style="color:#1A1A1A;text-decoration:underline;">View your receipt</a></p>`
+        : '';
+
     const body = {
       from: fromAddress,
       to: checkout.guest_email,
@@ -1096,6 +1641,7 @@ export class GuestCheckoutService {
 <h1 style="font-family:Georgia,serif;color:#1A1A1A;">Welcome, ${escapeHtml(checkout.guest_name)}.</h1>
 <p>You're enrolled in <strong>${escapeHtml(packageName)}</strong> with ${escapeHtml(coachName)}.</p>
 ${credentials}
+${receiptLine}
 <p style="margin-top:24px;"><a href="${escapeAttr(appStoreUrl)}" style="background:#C9A84C;color:#1A1A1A;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Download for iOS</a> &nbsp;
 <a href="${escapeAttr(playStoreUrl)}" style="background:#C9A84C;color:#1A1A1A;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Download for Android</a></p>
 </body></html>`,
