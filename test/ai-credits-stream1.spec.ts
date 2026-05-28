@@ -368,19 +368,26 @@ describe('Stream 1 — T2: applyCreditPack is idempotent on session id', () => {
 // ---------------------------------------------------------------------------
 
 describe('Stream 1 — T3: 10 concurrent recordUsage at 95% — total never exceeds cap', () => {
-  it('T3: WHERE-clause guard rejects overshoot under concurrency', async () => {
+  // Round-1 fixer P1-1: the original Promise.all-of-10 test on a sync
+  // in-memory mock does NOT actually exercise concurrency — JS single
+  // event loop means each call resolves before the next runs, so the
+  // WHERE-clause guard's atomicity is untested. A correct test needs a
+  // real Postgres connection (testcontainers / docker-compose) and 10
+  // genuine parallel SQL UPDATEs. The repo has no integration rig yet;
+  // marked as `it.skip` until one is introduced. The LOGICAL
+  // sequential-overshoot behaviour is still covered below as T3b.
+  // eslint-disable-next-line jest/no-disabled-tests
+  it.skip('T3: 10 truly concurrent recordUsage at 95% — total <= cap [needs Postgres rig]', () => {
+    // TODO(round-2): port to testcontainers Postgres. Dispatch 10 real
+    // parallel `await prisma.$transaction` calls and assert
+    // count==0 happens at least once.
+  });
+
+  it('T3b: sequential recordUsage past the cap rejects via the WHERE-clause guard', async () => {
     const store = newStore();
     const prisma = makePrismaMock(store);
     const svc = new CoachAIBudgetService(prisma as any);
-    // Seed budget; set used to 3800 / 4000. Each call is 50c. 4 should
-    // stick, the rest should overshoot.
     await svc.getOrCreateCurrentPeriod('coach-r');
-    await prisma.coachAIBudget.updateMany({
-      where: { coach_user_id: 'coach-r' },
-      data: { actual_used_cents: 3800 },
-    });
-    // Manually set the field — the helper updateMany doesn't support
-    // direct-set in our mock for this column path; do it inline.
     const b = await prisma.coachAIBudget.findUnique({ where: { coach_user_id: 'coach-r' } });
     b.actual_used_cents = 3800;
 
@@ -568,18 +575,23 @@ describe('Stream 1 — T8: getBudgetDto returns the documented shape', () => {
 // only reachable AFTER the signature path).
 
 describe('Stream 1 — T9: pack webhook handler runs AFTER signature verification', () => {
-  it('T9: CoachAiCreditPackService does NOT implement its own signature verification', () => {
-    const src = fs.readFileSync(
-      path.join(__dirname, '..', 'src', 'ai-credits', 'coach-ai-credit-pack.service.ts'),
-      'utf8',
-    );
-    // The pack service should not import stripe-signature or implement
-    // HMAC verification; the existing StripeWebhookController owns that
-    // and BillingService forwards verified events to handleStripeEvent.
-    expect(src).not.toMatch(/stripe-signature/);
-    expect(src).not.toMatch(/createHmac|verifySignature/);
+  // Round-1 fixer P0-7: the original "grep src for absence of HMAC" test
+  // does not verify behaviour. The Stripe HMAC verification lives in the
+  // existing StripeWebhookController + stripe-signature.ts module (which
+  // has its own tests). The real integration check — "tampered payload
+  // → 400, never reaches handleStripeEvent" — requires booting the Nest
+  // controller pipeline with a mocked request body + signature header.
+  // Marked as `it.skip` until that rig is wired. The behavioural check
+  // we CAN do without that rig is below: confirm the handler ignores
+  // events whose metadata does not carry tgp_kind=coach_ai_credit_pack.
+  // eslint-disable-next-line jest/no-disabled-tests
+  it.skip('T9: tampered signature is rejected before handleStripeEvent runs [needs controller rig]', () => {
+    // TODO(round-2): supertest the /v1/webhooks/stripe endpoint with a
+    // body whose computed HMAC differs from the stripe-signature header.
+    // Assert 400 + handleStripeEvent spy NOT called.
   });
-  it('T9: handler ignores events without the coach_ai_credit_pack metadata kind', async () => {
+
+  it('T9b: handler ignores events without the coach_ai_credit_pack metadata kind', async () => {
     const store = newStore();
     const prisma = makePrismaMock(store);
     const svc = new CoachAiCreditPackService(prisma as any, {} as any, new CoachAIBudgetService(prisma as any));
@@ -602,6 +614,33 @@ describe('Stream 1 — T9: pack webhook handler runs AFTER signature verificatio
 // ---------------------------------------------------------------------------
 
 describe('Stream 1 — T10/T11: RLS policies present in the migration', () => {
+  // Round-1 fixer P0-7: the original tests only assert that the
+  // migration FILE contains the expected ALTER TABLE / CREATE POLICY
+  // statements. They DO NOT verify that Postgres actually enforces
+  // them — a missing `app.current_user_id()` helper, a typo in a
+  // policy condition, or a future migration that adds a too-broad
+  // GRANT could silently break enforcement and these tests would
+  // still pass. Real coverage needs testcontainers Postgres. Marked
+  // as `it.skip` until that rig is wired. The migration-file static
+  // checks remain below as T10s / T11s — useful as drift-detection
+  // ("did anyone delete a policy?") but explicitly NOT a behavioural
+  // RLS check.
+
+  // eslint-disable-next-line jest/no-disabled-tests
+  it.skip('T10: coach A SELECT on coach B\'s budget returns 0 rows [needs Postgres rig]', () => {
+    // TODO(round-2): testcontainers Postgres, run the round-1 migration,
+    // INSERT two budgets, SET app.current_user_id to coach A, SELECT
+    // coach B's row. Expect 0 rows.
+  });
+
+  // eslint-disable-next-line jest/no-disabled-tests
+  it.skip('T11: coach INSERT/UPDATE on CoachCreditPackPurchase is refused by RLS [needs Postgres rig]', () => {
+    // TODO(round-2): under the coach's app.current_user_id, attempt an
+    // INSERT into CoachCreditPackPurchase. Expect the FORCE RLS check
+    // to throw "new row violates row-level security policy".
+  });
+
+  // Static drift-detection checks kept for migration-text safety.
   const migration = fs.readFileSync(
     path.join(
       __dirname,
@@ -614,30 +653,26 @@ describe('Stream 1 — T10/T11: RLS policies present in the migration', () => {
     'utf8',
   );
 
-  it('T10: CoachAIBudget has ENABLE + FORCE RLS', () => {
+  it('T10s (static): CoachAIBudget has ENABLE + FORCE RLS', () => {
     expect(migration).toMatch(/ALTER TABLE "CoachAIBudget" ENABLE ROW LEVEL SECURITY/);
     expect(migration).toMatch(/ALTER TABLE "CoachAIBudget" FORCE ROW LEVEL SECURITY/);
   });
-  it('T10: CoachAIBudget self_select policy scopes to coach_user_id = current_user_id', () => {
+  it('T10s (static): self_select policy scopes to coach_user_id = current_user_id', () => {
     expect(migration).toMatch(/CoachAIBudget_self_select.*coach_user_id" = app\.current_user_id\(\)/s);
   });
-  it('T10: CoachAIBudget owner_all policy gates owners', () => {
+  it('T10s (static): owner_all policy gates owners', () => {
     expect(migration).toMatch(/CoachAIBudget_owner_all.*app\.is_owner\(\)/s);
   });
-  it('T11: CoachCreditPackPurchase has ENABLE + FORCE RLS', () => {
+  it('T11s (static): CCPP has ENABLE + FORCE RLS', () => {
     expect(migration).toMatch(/ALTER TABLE "CoachCreditPackPurchase" ENABLE ROW LEVEL SECURITY/);
     expect(migration).toMatch(/ALTER TABLE "CoachCreditPackPurchase" FORCE ROW LEVEL SECURITY/);
   });
-  it('T11: CCPP has NO coach-scoped INSERT/UPDATE policy (only SELECT)', () => {
-    // The migration intentionally exposes only the self_select policy + the
-    // owner_all policy on CCPP. A coach attempting an INSERT/UPDATE under
-    // their own JWT MUST fail the FORCE RLS check. Assert by inspection:
-    // no "FOR INSERT" or "FOR UPDATE" line on CCPP that uses current_user_id.
+  it('T11s (static): CCPP has NO coach-scoped INSERT/UPDATE policy', () => {
     const ccppSection = migration.split('CoachCreditPackPurchase ---')[1] ?? migration;
     expect(ccppSection).not.toMatch(/FOR INSERT.*current_user_id/);
     expect(ccppSection).not.toMatch(/FOR UPDATE.*current_user_id/);
   });
-  it('T11: stripe_checkout_session_id is the @unique idempotency key', () => {
+  it('T11s (static): stripe_checkout_session_id is the @unique idempotency key', () => {
     expect(migration).toMatch(/CREATE UNIQUE INDEX "CoachCreditPackPurchase_stripe_checkout_session_id_key"/);
   });
 });
@@ -674,19 +709,94 @@ describe('Stream 1 — T12: admin endpoints are owner-only by decoration', () =>
 // AbortSignal threaded into the fetch call OR that the underlying
 // fetchImpl is documented as the timeout boundary.
 
-describe('Stream 1 — T13: Stripe outbound respects fetchImpl timeout boundary', () => {
-  it('T13: createCreditPackCheckoutSession routes through the same post() path', () => {
-    const src = fs.readFileSync(
-      path.join(__dirname, '..', 'src', 'billing', 'stripe-api.service.ts'),
-      'utf8',
-    );
-    // Find the createCreditPackCheckoutSession method definition and assert
-    // it ends with a call to this.post — which is the single fetchImpl call
-    // path. That path is the test/mock boundary the existing tests already
-    // exploit to inject timeouts; tests can swap fetchImpl for an
-    // AbortController-driven implementation.
-    expect(src).toMatch(/createCreditPackCheckoutSession[\s\S]+?return this\.post</);
+describe('Stream 1 — T13: Stripe outbound has an explicit AbortSignal timeout', () => {
+  // Round-1 fixer P0-7/P1-2 — behavioural verification of the timeout.
+  // We swap STRIPE_API_TIMEOUT_MS to a small real-time value (50ms) so
+  // the test runs in well under a second, then inject a fetchImpl that
+  // never resolves on its own. The production AbortSignal.timeout()
+  // path SHOULD fire the abort, which our test fetchImpl forwards as
+  // a TimeoutError. The service must then translate to StripeApiError.
+  //
+  // We use real timers (not fake) because Node's AbortSignal.timeout
+  // is backed by the underlying libuv timer, NOT jest's fake-timer
+  // shim. Trying to use jest.useFakeTimers() leaves AbortSignal.timeout
+  // hanging forever — see the round-1 spec discussion.
+
+  const ORIGINAL_ENV = process.env;
+  beforeEach(() => {
+    process.env = {
+      ...ORIGINAL_ENV,
+      STRIPE_SECRET_KEY: 'sk_test_dummy',
+      // Min clamp in resolveStripeApiTimeoutMs is 1000ms; we override
+      // by passing a value at the floor. Tests should NOT under-set
+      // this in production, but for the failure-mode test 1s is fine.
+      STRIPE_API_TIMEOUT_MS: '1000',
+    };
   });
+  afterEach(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  it('T13: post() rejects with a request_timeout StripeApiError when the upstream hangs', async () => {
+    const { StripeApiService, StripeApiError } = await import('../src/billing/stripe-api.service');
+
+    class TestStripe extends StripeApiService {
+      // Override the protected fetchImpl. The cast to typeof fetch keeps
+      // the call site signature compatible with the production path.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      public override fetchImpl: typeof fetch = ((_input: any, init?: any) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal: AbortSignal | undefined = init?.signal;
+          if (!signal) {
+            reject(new Error('TEST FAILURE: fetch called without AbortSignal'));
+            return;
+          }
+          signal.addEventListener('abort', () => {
+            const err = new Error('The operation was aborted due to timeout');
+            err.name = 'TimeoutError';
+            reject(err);
+          });
+        })) as typeof fetch;
+
+      public testPost(path: string, form: Record<string, string>) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (this as any).post(path, form);
+      }
+    }
+
+    const svc = new TestStripe();
+    await expect(
+      svc.testPost('/customers', { email: 't@test.co' }),
+    ).rejects.toBeInstanceOf(StripeApiError);
+  }, 5_000);
+
+  it('T13b: post() surfaces the structured 504 envelope', async () => {
+    const { StripeApiService } = await import('../src/billing/stripe-api.service');
+    class TestStripe extends StripeApiService {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      public override fetchImpl: typeof fetch = ((_input: any, init?: any) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            const err = new Error('aborted');
+            err.name = 'TimeoutError';
+            reject(err);
+          });
+        })) as typeof fetch;
+      public testPost(path: string, form: Record<string, string>) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (this as any).post(path, form);
+      }
+    }
+    const svc = new TestStripe();
+    try {
+      await svc.testPost('/customers', { email: 't@test.co' });
+      throw new Error('TEST FAILURE: post() did not reject');
+    } catch (err: any) {
+      expect(err.stripeCode).toBe('request_timeout');
+      expect(err.stripeType).toBe('api_connection_error');
+      expect(err.httpStatus).toBe(504);
+    }
+  }, 5_000);
 });
 
 // ---------------------------------------------------------------------------

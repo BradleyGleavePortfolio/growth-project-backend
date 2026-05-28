@@ -8,6 +8,7 @@
  * tiers explicitly.
  */
 
+import fc from 'fast-check';
 import { bankersRound, bankersRoundPaidToActual } from '../src/ai-credits/bankers-round.util';
 
 describe('bankersRound — half-to-even tiebreaker', () => {
@@ -64,5 +65,85 @@ describe('bankersRoundPaidToActual — locked tier math (multiplier 3.125)', () 
       const exact = p / 3.125;
       expect(Math.abs(v - exact)).toBeLessThanOrEqual(0.5 + 1e-6);
     }
+  });
+});
+
+// ===========================================================================
+// Round-1 fixer P1-5 — generative property tests with fast-check.
+//
+// The example-based tests above pin specific values; these random-sample
+// the input space and assert structural invariants. A failure here
+// shrinks to a minimal counter-example, which is the documented way to
+// detect off-by-one bugs in financial rounding (50 Failures #41
+// "Vanilla Style" — the audit doc specifically called for these).
+// ===========================================================================
+
+describe('bankersRoundPaidToActual — fast-check property tests (P1-5)', () => {
+  it('|bankersRound(p/3.125) - p/3.125| <= 0.5 + EPS for all p in [0, 500_000]', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 500_000 }), (p) => {
+        const v = bankersRoundPaidToActual(p, 3.125);
+        const exact = p / 3.125;
+        return Math.abs(v - exact) <= 0.5 + 1e-9;
+      }),
+      { numRuns: 1_000 },
+    );
+  });
+
+  it('half-to-even invariant: bankersRound(2k + 0.5) === 2k for all integer k', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: -10_000, max: 10_000 }), (k) => {
+        const tie = 2 * k + 0.5;
+        const result = bankersRound(tie);
+        // Sign-neutral comparison so -0 vs 0 doesn't flip a passing test.
+        return result + 0 === 2 * k + 0;
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  it('half-to-even invariant: bankersRound(2k+1 + 0.5) === 2(k+1) for all integer k', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: -10_000, max: 10_000 }), (k) => {
+        const odd = 2 * k + 1;
+        const tie = odd + 0.5;
+        return bankersRound(tie) === odd + 1;
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  it('monotone non-decreasing under random pairs in [0, 500_000]', () => {
+    fc.assert(
+      fc.property(
+        fc.tuple(
+          fc.integer({ min: 0, max: 500_000 }),
+          fc.integer({ min: 0, max: 500_000 }),
+        ),
+        ([a, b]) => {
+          const lo = Math.min(a, b);
+          const hi = Math.max(a, b);
+          return bankersRoundPaidToActual(lo, 3.125) <=
+            bankersRoundPaidToActual(hi, 3.125);
+        },
+      ),
+      { numRuns: 1_000 },
+    );
+  });
+
+  it('multiplier > 0 sweep: result is always a non-negative integer for non-negative input', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 500_000 }),
+        // Avoid multipliers below 0.5 — they push the quotient outside
+        // sensible int32 ranges and aren't a production scenario.
+        fc.double({ min: 0.5, max: 100, noNaN: true }),
+        (p, m) => {
+          const v = bankersRoundPaidToActual(p, m);
+          return Number.isInteger(v) && v >= 0;
+        },
+      ),
+      { numRuns: 500 },
+    );
   });
 });
