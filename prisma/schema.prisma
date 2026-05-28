@@ -1101,6 +1101,14 @@ model CoachMessage {
   // Apple 1.2 safety — reverse relation for MessageReport.
   reports            MessageReport[] @relation("MessageReportTarget")
 
+  // Stream 2 — AI execution capabilities. Set by `CoachMessageMaterializer`
+  // when a `draft.coach_message` (or merged `draft.client_message`) is
+  // approved. NULL for human-written messages. `@unique` is the schema-
+  // level idempotency guard — two concurrent approve calls cannot
+  // produce two CoachMessage rows; the second INSERT trips P2002 and
+  // the materialiser falls through to its "already_materialised" branch.
+  ai_draft_id        String?         @unique
+
   @@index([coach_id])
   @@index([client_id])
   @@index([created_at])
@@ -1867,6 +1875,12 @@ model Notification {
   read_at    DateTime?
   created_at DateTime  @default(now())
 
+  // Stream 2 — AI execution. Set by `SendNotificationMaterializer` when a
+  // `draft.send_notification` is approved. NULL for system/automatic
+  // notifications. Same `@unique`-on-nullable pattern as the other
+  // Stream 2 ai_draft_id columns.
+  ai_draft_id String?  @unique
+
   @@index([user_id, created_at])
   @@index([user_id, read_at])
   @@index([kind, created_at])
@@ -2039,6 +2053,12 @@ model ClientWorkoutAssignment {
   // null while waiting on coach approval; set when coach taps approve.
   approved_by_coach_at       DateTime?
 
+  // Stream 2 — AI execution. Set by `AssignWorkoutMaterializer` when a
+  // `draft.assign_workout` is approved. NULL for human-assigned workouts.
+  // `@unique` enforces single-emit at the schema layer (see CoachMessage
+  // above for the same pattern + rationale).
+  ai_draft_id                String?     @unique
+
   @@index([client_id, scheduled_for])
   @@index([workout_plan_id, scheduled_for])
   @@index([assigned_by_coach_id])
@@ -2156,6 +2176,11 @@ model DailyMealPlanAssignment {
   starts_on            DateTime      @db.Date
   ends_on              DateTime?     @db.Date
   created_at           DateTime      @default(now())
+
+  // Stream 2 — AI execution. Set by `AssignMealPlanMaterializer` when a
+  // `draft.assign_meal_plan` is approved. Same `@unique`-on-nullable
+  // pattern as `ClientWorkoutAssignment.ai_draft_id`.
+  ai_draft_id          String?       @unique
 
   @@index([client_id, starts_on])
   @@index([daily_meal_plan_id])
