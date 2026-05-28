@@ -13,6 +13,8 @@
 import { Prisma } from '@prisma/client';
 import { CoachAIBudgetService } from '../src/ai-credits/coach-ai-budget.service';
 import { CoachAiCreditPackService } from '../src/ai-credits/coach-ai-credit-pack.service';
+import { DormancyGuardService } from '../src/ai-credits/dormancy-guard.service';
+import { CoachBriefService } from '../src/coach/brief/coach-brief.service';
 
 // ---------------------------------------------------------------------------
 // Shared mini-mock — fresh per describe to avoid cross-test bleed.
@@ -175,6 +177,30 @@ function makePrismaMock(store: MiniStore): any {
           .filter((b) => b.coach_id === where.coach_id)
           .sort((a, b) => (a.brief_date < b.brief_date ? 1 : -1));
         return matches.slice(0, take);
+      }),
+      // R2 NEW-P2-1: markBriefRead uses both findFirst (disambiguation
+      // path) and updateMany (atomic conditional write). The mock
+      // enforces the same WHERE clauses as production so a regression
+      // that drops the tenant scope (coach_id) or the read_at=null
+      // guard trips clearly.
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        let count = 0;
+        for (const b of store.briefs) {
+          if (where.id !== undefined && b.id !== where.id) continue;
+          if (where.coach_id !== undefined && b.coach_id !== where.coach_id) continue;
+          if (where.read_at === null && b.read_at !== null) continue;
+          if (data.read_at !== undefined) b.read_at = data.read_at;
+          count++;
+        }
+        return { count };
+      }),
+      findFirst: jest.fn(async ({ where }: any) => {
+        for (const b of store.briefs) {
+          if (where.id !== undefined && b.id !== where.id) continue;
+          if (where.coach_id !== undefined && b.coach_id !== where.coach_id) continue;
+          return b;
+        }
+        return null;
       }),
     },
     user: {
@@ -564,5 +590,113 @@ describe('Round1 P1-8 — total_pack_actual_cents tracks per-pack rounded credit
     // round-the-sum drift.
     const snap = await svc.getOrCreateCurrentPeriod('coach-agg');
     expect(snap.total_actual_available_cents).toBe(4000 + 2400);
+  });
+});
+
+// ===========================================================================
+// Round-2 NEW-P2-1 — mark-read → dormancy guard end-to-end chain.
+//
+// The round-1 fix split the work in two:
+//   - DormancyGuardService.shouldSkipCoach reads CoachBrief.read_at and
+//     returns TRUE when the most-recent N briefs are all unread (dormant
+//     -> skip cron) and FALSE when at least one is read (engaged ->
+//     process) OR there are fewer than N briefs total.
+//   - CoachBriefService.markBriefRead does an atomic conditional UPDATE
+//     setting read_at = now() when the brief belongs to the coach and
+//     read_at is currently null.
+//
+// Round-1 audit (T6 + new P0-1 test) covered each half in isolation but
+// not the CHAIN: "if I mark the most-recent unread brief read, does
+// shouldSkipCoach flip from true to false?" This describe block closes
+// that gap.
+//
+// Documented semantics (verified against
+// src/ai-credits/dormancy-guard.service.ts):
+//   shouldSkipCoach = true  <=> "all most-recent N briefs are unread"
+//   shouldSkipCoach = false <=> "at least one of the most-recent N is read"
+//                               OR "fewer than N briefs exist yet"
+// ===========================================================================
+
+describe('Round-2 NEW-P2-1 — markBriefRead flips dormancy state', () => {
+  function seedBriefs(
+    store: MiniStore,
+    coachId: string,
+    rows: Array<{ id: string; brief_date: string; read_at: Date | null }>,
+  ) {
+    for (const r of rows) {
+      store.briefs.push({ id: r.id, coach_id: coachId, brief_date: r.brief_date, read_at: r.read_at });
+    }
+  }
+
+  it('chain: 3 unread briefs -> shouldSkipCoach=true; mark most-recent read -> shouldSkipCoach=false', async () => {
+    const store = newStore();
+    const prisma = makePrismaMock(store);
+    const dormancy = new DormancyGuardService(prisma);
+    // CoachBriefService takes (prisma, config, ?anthropic). For the
+    // mark-read path it only touches prisma; the ConfigService stub
+    // is enough — no Anthropic calls are made.
+    const briefSvc = new CoachBriefService(prisma, { get: () => undefined } as any);
+
+    // Seed: three briefs, all unread, in date-descending order.
+    seedBriefs(store, 'coach-chain', [
+      { id: 'b-1', brief_date: '2026-05-26', read_at: null },
+      { id: 'b-2', brief_date: '2026-05-27', read_at: null },
+      { id: 'b-3', brief_date: '2026-05-28', read_at: null }, // most recent
+    ]);
+
+    // Before: all unread -> guard says SKIP (true).
+    expect(await dormancy.shouldSkipCoach('coach-chain')).toBe(true);
+
+    // Mark the most-recent brief read via the actual service method
+    // the controller calls. This is the chain link the audit was
+    // missing.
+    const markResult = await briefSvc.markBriefRead('coach-chain', 'b-3');
+    expect(markResult.already_read).toBe(false);
+    expect(markResult.id).toBe('b-3');
+
+    // After: one of the three most-recent is read -> guard says
+    // PROCESS (false).
+    expect(await dormancy.shouldSkipCoach('coach-chain')).toBe(false);
+  });
+
+  it('mark-read is idempotent: second call returns already_read=true and does NOT re-flip dormancy state', async () => {
+    const store = newStore();
+    const prisma = makePrismaMock(store);
+    const dormancy = new DormancyGuardService(prisma);
+    const briefSvc = new CoachBriefService(prisma, { get: () => undefined } as any);
+
+    seedBriefs(store, 'coach-idem', [
+      { id: 'b-1', brief_date: '2026-05-26', read_at: null },
+      { id: 'b-2', brief_date: '2026-05-27', read_at: null },
+      { id: 'b-3', brief_date: '2026-05-28', read_at: null },
+    ]);
+
+    const first = await briefSvc.markBriefRead('coach-idem', 'b-3');
+    expect(first.already_read).toBe(false);
+    expect(await dormancy.shouldSkipCoach('coach-idem')).toBe(false);
+
+    // Second call on the same brief should be a no-op write.
+    const second = await briefSvc.markBriefRead('coach-idem', 'b-3');
+    expect(second.already_read).toBe(true);
+    // State unchanged.
+    expect(await dormancy.shouldSkipCoach('coach-idem')).toBe(false);
+  });
+
+  it('tenant scope: markBriefRead on another coach\'s brief throws BriefNotFoundError', async () => {
+    const store = newStore();
+    const prisma = makePrismaMock(store);
+    const briefSvc = new CoachBriefService(prisma, { get: () => undefined } as any);
+
+    seedBriefs(store, 'coach-A', [
+      { id: 'b-A-1', brief_date: '2026-05-28', read_at: null },
+    ]);
+
+    await expect(
+      briefSvc.markBriefRead('coach-B', 'b-A-1'),
+    ).rejects.toThrow(/not found/i);
+
+    // Defence-in-depth: confirm the brief was NOT mutated by the
+    // tenant-mismatched call (read_at must still be null).
+    expect(store.briefs[0].read_at).toBeNull();
   });
 });
