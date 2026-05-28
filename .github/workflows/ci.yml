@@ -143,4 +143,13 @@ jobs:
           # 15-minute checkout recovery JWT AND the 7-day guest session cookie.
           # The simulated-prod env-validation gate must supply a ≥43-char value.
           CHECKOUT_RECOVERY_SECRET: ci-checkout-recovery-secret-43chars-base64url-pad
+          # Stream 1 (PR #298) promoted COACH_AI_MAX_ACTUAL_CENTS and
+          # COACH_AI_VALUE_MULTIPLIER to prod tier: assertEnv refuses prod
+          # boot without explicit values so a deploy-time typo cannot
+          # silently revert the hard $40 cap or the locked 3.125× display
+          # multiplier to a stale default. Supply CI stubs so this gate
+          # stays green once Stream 1 is on main. Refs:
+          # STREAM_1_AI_CREDITS_SPEC.md §0.
+          COACH_AI_MAX_ACTUAL_CENTS: '4000'
+          COACH_AI_VALUE_MULTIPLIER: '3.125'
         run: node -e "require('./dist/common/env-validation').assertEnv()"
