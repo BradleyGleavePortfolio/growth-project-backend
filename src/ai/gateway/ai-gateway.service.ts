@@ -1,9 +1,15 @@
-import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 import { PrismaService } from '../../prisma.service';
-import { AiGatewayConfig } from './ai-gateway.config';
+import { AiGatewayConfig, DRAFT_CAPABILITY_PREFIX } from './ai-gateway.config';
 import { AiRedactionService, RedactionSummary } from './ai-redaction.service';
 import { AiProviderRegistry } from './providers/provider-registry';
 import { AiChatTurn, AiProviderResponse } from './providers/ai-provider.types';
@@ -12,6 +18,19 @@ import {
   COACH_MESSAGE_CAPABILITY,
   assertCoachMessagePayload,
 } from './materialisers/coach-message.materialiser';
+import {
+  ASSIGN_WORKOUT_CAPABILITY,
+  assertAssignWorkoutPayload,
+} from './materialisers/assign-workout.materialiser';
+import {
+  ASSIGN_MEAL_PLAN_CAPABILITY,
+  assertAssignMealPlanPayload,
+} from './materialisers/assign-meal-plan.materialiser';
+import {
+  SEND_NOTIFICATION_CAPABILITY,
+  assertSendNotificationPayload,
+} from './materialisers/send-notification.materialiser';
+import { AuditService } from '../../audit/audit.service';
 import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
 import { CoachAiBudgetExhaustedException } from '../../ai-credits/budget-exhausted.exception';
 import {
@@ -85,6 +104,12 @@ export class AiGatewayService {
     // post-call. When absent (legacy boot), the gateway behaves as
     // before — no metering, no 402.
     @Optional() private budget?: CoachAIBudgetService,
+    // Stream 2 — AuditService is @Optional() so unit tests can construct
+    // the gateway without booting the audit module. When present, the
+    // gateway writes an audit row on every `draft.*` capability that is
+    // refused because the requester role is not coach/owner — primary
+    // defence for the spec §3 hard role boundary.
+    @Optional() private audit?: AuditService,
   ) {}
 
   async invoke(req: AiGatewayRequest): Promise<AiGatewayResult> {
@@ -94,6 +119,61 @@ export class AiGatewayService {
       // jobs and we want a hard failure rather than a logged anonymous row.
       throw new Error('AiGatewayService.invoke called without requester');
     }
+
+    // Stream 2 §3 — hard role boundary. Any `draft.*` capability is a
+    // coach/owner-only operation. The client AI surface (`/ai/chat` etc.)
+    // must NEVER be able to mint a `draft.coach_message`,
+    // `draft.assign_workout`, `draft.assign_meal_plan`, or
+    // `draft.send_notification`. This is the second of three enforcement
+    // layers (controller guard is the first; per-materialiser creator-
+    // role assertion is the third). Belt-and-braces: even if a future
+    // controller is added without the coach guard, the gateway refuses.
+    //
+    // The audit-log write is fire-and-forget at write time (AuditService
+    // swallows write errors internally and logs them), so a transient
+    // audit-table outage does not turn this 403 into a 500.
+    if (
+      req.capability.startsWith(DRAFT_CAPABILITY_PREFIX) &&
+      req.requester.role !== 'coach' &&
+      req.requester.role !== 'owner'
+    ) {
+      this.logger.warn(
+        {
+          event: 'AI_GATEWAY_DRAFT_ROLE_REJECTED',
+          capability: req.capability,
+          requesterId: req.requester.id,
+          requesterRole: req.requester.role,
+          subjectUserId: req.subjectUserId ?? null,
+          ip: req.ip ?? null,
+        },
+        `draft capability ${req.capability} refused for role=${req.requester.role}`,
+      );
+      if (this.audit) {
+        // Don't await — AuditService is fire-and-forget internally; we
+        // just want the row written without holding the 403 response
+        // on the audit-table round-trip. AuditService catches its own
+        // errors.
+        void this.audit.write({
+          action: 'AI_GATEWAY_DRAFT_ROLE_REJECTED',
+          actorId: req.requester.id,
+          actorRole: req.requester.role,
+          targetUserId: req.subjectUserId ?? null,
+          targetType: 'ai_capability',
+          targetId: req.capability,
+          tenantCoachId: req.tenantCoachId ?? null,
+          ip: req.ip ?? null,
+          userAgent: req.userAgent ?? null,
+          metadata: { reason: 'role_not_permitted' },
+        });
+      }
+      throw new ForbiddenException({
+        error: 'AI_DRAFT_ROLE_FORBIDDEN',
+        capability: req.capability,
+        message:
+          'Only coaches and owners can invoke draft capabilities. The client AI must not reach this gateway path.',
+      });
+    }
+
     const requestId = randomUUID();
     const resolved = this.config.resolve(req.capability);
     const adapter = this.providers.resolve(resolved.provider);
@@ -234,9 +314,21 @@ export class AiGatewayService {
       // to the legacy behaviour (any-shape payload accepted) so we don't
       // break paths that haven't migrated yet.
       const proposedPayload = req.proposedActionPayload ?? { reply: response.text };
-      if (req.capability === COACH_MESSAGE_CAPABILITY) {
+      // Stream 2 — capability-specific payload validation BEFORE the
+      // draft row is persisted. Mirrors PR AI-3's pattern for
+      // coach_message and adds the three Stream 2 capabilities. A
+      // malformed payload never lands in the database, so the coach
+      // never sees a broken draft card.
+      const PAYLOAD_VALIDATORS: Record<string, (raw: unknown) => unknown> = {
+        [COACH_MESSAGE_CAPABILITY]: assertCoachMessagePayload,
+        [ASSIGN_WORKOUT_CAPABILITY]: assertAssignWorkoutPayload,
+        [ASSIGN_MEAL_PLAN_CAPABILITY]: assertAssignMealPlanPayload,
+        [SEND_NOTIFICATION_CAPABILITY]: assertSendNotificationPayload,
+      };
+      const validator = PAYLOAD_VALIDATORS[req.capability];
+      if (validator) {
         try {
-          assertCoachMessagePayload(proposedPayload);
+          validator(proposedPayload);
         } catch (err) {
           if (err instanceof ZodError) {
             throw new BadRequestException({

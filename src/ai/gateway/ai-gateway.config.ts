@@ -119,9 +119,50 @@ export class AiGatewayConfig {
 
 // Capabilities that require human approval by default. Mirrors the
 // finance-app contract from PR #112 (see docs/AI_GATEWAY.md).
+//
+// Stream 2 additions (`draft.assign_workout`, `draft.assign_meal_plan`,
+// `draft.send_notification`) all require approval — they emit user-
+// visible side-effects on a client's roster and must never auto-fire.
+// `draft.client_message` is intentionally NOT listed: it was merged
+// into `draft.coach_message` during the Stream 2 build (same target
+// table, same payload, same materialiser).
 export const DEFAULT_APPROVAL_REQUIRED = new Set<string>([
   'draft.coach_message',
   'draft.meal_plan_change',
   'draft.client_facing_claim',
   'flag.escalation',
+  // Stream 2 — AI execution capabilities
+  'draft.assign_workout',
+  'draft.assign_meal_plan',
+  'draft.send_notification',
 ]);
+
+/**
+ * Stream 2 — Default capability allow-list for the AI gateway.
+ *
+ * The env var `AI_GATEWAY_CAPABILITIES` overrides this; when it is unset
+ * the gateway returns `capabilityAllowed=false` for everything (the
+ * historical fail-closed posture). For the dev / staging baseline we
+ * keep that posture — operators must explicitly opt-in to the
+ * capabilities they want live by setting the env var.
+ *
+ * This set is consumed only by tests + by ops tooling that needs to
+ * enumerate the Stream-2 capability strings without re-scraping the
+ * spec. The gateway resolver itself reads from process.env at call
+ * time so a fly-secrets flip is live without a redeploy.
+ */
+export const STREAM_2_AI_EXECUTION_CAPABILITIES = new Set<string>([
+  'draft.coach_message',
+  'draft.assign_workout',
+  'draft.assign_meal_plan',
+  'draft.send_notification',
+]);
+
+/**
+ * Stream 2 — Capabilities subject to the `draft.*` role gate. Any
+ * capability string starting with `draft.` is rejected at the gateway
+ * for non-coach / non-owner roles. The constant exists so a future
+ * refactor that moves the gate elsewhere has a single source of truth
+ * for the prefix (50-Failures #41 — never re-inline a magic string).
+ */
+export const DRAFT_CAPABILITY_PREFIX = 'draft.';

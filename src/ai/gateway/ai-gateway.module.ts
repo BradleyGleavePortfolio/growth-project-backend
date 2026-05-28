@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { AuthModule } from '../../auth/auth.module';
 import { MessagingModule } from '../../messaging/messaging.module';
+import { NotificationsModule } from '../../notifications/notifications.module';
 import { AiGatewayController } from './ai-gateway.controller';
 import { AiGatewayService } from './ai-gateway.service';
 import { AiGatewayConfig } from './ai-gateway.config';
@@ -15,6 +16,10 @@ import {
   CapabilityMaterializerRegistry,
 } from './materialisers/capability-materialiser.registry';
 import { CoachMessageMaterializer } from './materialisers/coach-message.materialiser';
+// Stream 2 — AI execution capability materialisers.
+import { AssignWorkoutMaterializer } from './materialisers/assign-workout.materialiser';
+import { AssignMealPlanMaterializer } from './materialisers/assign-meal-plan.materialiser';
+import { SendNotificationMaterializer } from './materialisers/send-notification.materialiser';
 
 // @Global so feature services (coach messaging, meal-plan AI suggestions,
 // finance proof drafts, …) can inject AiGatewayService without first
@@ -30,7 +35,11 @@ import { CoachMessageMaterializer } from './materialisers/coach-message.material
 // MessagingModule consumes.
 @Global()
 @Module({
-  imports: [AuthModule, MessagingModule],
+  // Stream 2 — NotificationsModule supplies NotificationsService for the
+  // new materialisers (assign_workout, assign_meal_plan dispatch pushes
+  // through it). send_notification writes Notification rows directly via
+  // Prisma so it does NOT need the service, but the others do.
+  imports: [AuthModule, MessagingModule, NotificationsModule],
   controllers: [AiGatewayController],
   providers: [
     AiGatewayConfig,
@@ -49,10 +58,27 @@ import { CoachMessageMaterializer } from './materialisers/coach-message.material
     // multi-injection array bound to CAPABILITY_MATERIALIZERS; the registry
     // pulls the array out and dispatches by capability string.
     CoachMessageMaterializer,
+    // Stream 2 — AI execution capabilities. Each is registered as a
+    // concrete provider AND added to CAPABILITY_MATERIALIZERS so the
+    // registry can resolve by capability string. Mirrors the round-1
+    // pattern used for CoachMessageMaterializer.
+    AssignWorkoutMaterializer,
+    AssignMealPlanMaterializer,
+    SendNotificationMaterializer,
     {
       provide: CAPABILITY_MATERIALIZERS,
-      useFactory: (coachMessage: CoachMessageMaterializer) => [coachMessage],
-      inject: [CoachMessageMaterializer],
+      useFactory: (
+        coachMessage: CoachMessageMaterializer,
+        assignWorkout: AssignWorkoutMaterializer,
+        assignMealPlan: AssignMealPlanMaterializer,
+        sendNotification: SendNotificationMaterializer,
+      ) => [coachMessage, assignWorkout, assignMealPlan, sendNotification],
+      inject: [
+        CoachMessageMaterializer,
+        AssignWorkoutMaterializer,
+        AssignMealPlanMaterializer,
+        SendNotificationMaterializer,
+      ],
     },
     CapabilityMaterializerRegistry,
   ],
