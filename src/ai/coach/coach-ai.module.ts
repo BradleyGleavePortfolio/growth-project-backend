@@ -10,6 +10,8 @@ import { AuthModule } from '../../auth/auth.module';
 import { BillingModule } from '../../billing/billing.module';
 import { MealPlansModule } from '../../meal-plans/meal-plans.module';
 import { WorkoutBuilderModule } from '../../workout-builder/workout-builder.module';
+// Stream 2 — coach-side gateway-backed AI execution endpoints.
+import { CoachAIExecutionController } from './coach-ai-execution.controller';
 
 // Coach AI v1 module.
 //
@@ -19,7 +21,7 @@ import { WorkoutBuilderModule } from '../../workout-builder/workout-builder.modu
 @Global()
 @Module({
   imports: [ConfigModule, AuthModule, BillingModule, MealPlansModule, WorkoutBuilderModule],
-  controllers: [CoachAIController],
+  controllers: [CoachAIController, CoachAIExecutionController],
   providers: [
     AnthropicAdapter,
     ClientContextService,
