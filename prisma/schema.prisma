@@ -412,6 +412,12 @@ model User {
   landing_pages    CoachLandingPage[]    @relation("CoachLandingPagesCoach")
   crm_integrations CoachCrmIntegration[] @relation("CoachCrmCoach")
 
+  // Stream 1 — AI credits. Combined coach+client per-period AI budget +
+  // Stripe-backed pack purchases. 1:1 on head coaches; sub-coaches share
+  // the head coach's row via CoachAIBudget.coach_user_id.
+  coach_ai_budget    CoachAIBudget?            @relation("CoachAIBudgetUser")
+  coach_credit_packs CoachCreditPackPurchase[] @relation("CoachCreditPackUser")
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -904,22 +910,22 @@ model NotificationPreferences {
   // existing _email / _push / _inapp matrix — see _kindToPrefsPrefix().
   // Default ON: a brand-new user opts INTO nudges by default; their first
   // experience surfaces the preferences screen so they can dial back.
-  nudge_missed_checkin_email          Boolean @default(false)
-  nudge_missed_checkin_push           Boolean @default(true)
-  nudge_missed_checkin_inapp          Boolean @default(true)
+  nudge_missed_checkin_email       Boolean @default(false)
+  nudge_missed_checkin_push        Boolean @default(true)
+  nudge_missed_checkin_inapp       Boolean @default(true)
   // Internally referenced by code as the 'streak_broken' trigger; column
   // names use 'practice_paused' to comply with the schema doctrine that
   // bans the literal token in DB definitions. See _kindToPrefsPrefix
   // and TRIGGER_TO_PREFS_PREFIX for the trigger↔column mapping.
-  nudge_practice_paused_email         Boolean @default(false)
-  nudge_practice_paused_push          Boolean @default(true)
-  nudge_practice_paused_inapp         Boolean @default(true)
-  nudge_onboarding_abandoned_email    Boolean @default(true)
-  nudge_onboarding_abandoned_push     Boolean @default(true)
-  nudge_onboarding_abandoned_inapp    Boolean @default(true)
-  nudge_inactive_email                Boolean @default(true)
-  nudge_inactive_push                 Boolean @default(true)
-  nudge_inactive_inapp                Boolean @default(true)
+  nudge_practice_paused_email      Boolean @default(false)
+  nudge_practice_paused_push       Boolean @default(true)
+  nudge_practice_paused_inapp      Boolean @default(true)
+  nudge_onboarding_abandoned_email Boolean @default(true)
+  nudge_onboarding_abandoned_push  Boolean @default(true)
+  nudge_onboarding_abandoned_inapp Boolean @default(true)
+  nudge_inactive_email             Boolean @default(true)
+  nudge_inactive_push              Boolean @default(true)
+  nudge_inactive_inapp             Boolean @default(true)
 }
 
 model Habit {
@@ -1926,21 +1932,21 @@ model NotificationDeliveryLog {
 //   failed                    — transport error on every channel attempted
 // ============================================================
 model NudgeLog {
-  id              String    @id @default(uuid())
-  user_id         String
-  user            User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id             String    @id @default(uuid())
+  user_id        String
+  user           User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
   // trigger_type: 'missed_checkin' | 'streak_broken' | 'onboarding_abandoned' | 'inactive'
-  trigger_type    String
+  trigger_type   String
   // Deterministic per-event id; collisions across retries are intentional dedupe.
   // e.g. 'missed_checkin:2026-05-08' or 'streak_broken:2026-05-07:14'.
-  signal_key      String
-  status          String
+  signal_key     String
+  status         String
   // Channels that accepted delivery (subset of {'inapp','email','push'}).
-  channels        String[]  @default([])
-  attempted_at    DateTime  @default(now())
-  sent_at         DateTime?
+  channels       String[]  @default([])
+  attempted_at   DateTime  @default(now())
+  sent_at        DateTime?
   // Set when status='deferred' — next scan after this UTC instant will retry.
-  deferred_until  DateTime?
+  deferred_until DateTime?
   // 48h frequency-cap bucket (spec §3). Computed as floor(send_time / 48h)
   // and set ONLY when the engine commits to deliver (i.e. before the
   // delivery fan-out). The @@unique([user_id, cap_bucket]) constraint
@@ -1949,8 +1955,8 @@ model NudgeLog {
   // P2002 → status='suppressed_cap'. NULL on every non-sent decision so
   // multiple deferred / suppressed rows for the same user coexist (PG
   // treats NULL as distinct in unique indexes).
-  cap_bucket      DateTime?
-  created_at      DateTime  @default(now())
+  cap_bucket     DateTime?
+  created_at     DateTime  @default(now())
 
   @@unique([user_id, trigger_type, signal_key])
   @@unique([user_id, cap_bucket])
@@ -2232,36 +2238,36 @@ model AiRequestAudit {
 // gateway-side redaction summary so reviewers can verify what the AI
 // actually saw.
 model AiActionDraft {
-  id              String          @id @default(uuid())
-  capability      String // e.g. "draft.coach_message"
-  status          String          @default("pending") // pending | approved | rejected | expired
-  requester_id    String?
-  requester       User?           @relation("AiDraftRequester", fields: [requester_id], references: [id], onDelete: SetNull)
-  subject_user_id String? // client whose data the draft concerns
-  tenant_coach_id String?
-  payload         Json // capability-specific proposed action
-  rationale       String? // model-emitted reasoning (kept short, redacted)
-  redacted_inputs Json? // { email: n, phone: n, ... } summary
-  provenance      Json? // [{ source, ref, hash }] retrieval references
-  decided_by_id   String?
-  decided_by      User?           @relation("AiDraftDecidedBy", fields: [decided_by_id], references: [id], onDelete: SetNull)
-  decided_at      DateTime?
-  decision_note   String?
-  audit_row       AiRequestAudit? @relation("AiAuditDraft")
-  expires_at      DateTime?
+  id               String          @id @default(uuid())
+  capability       String // e.g. "draft.coach_message"
+  status           String          @default("pending") // pending | approved | rejected | expired
+  requester_id     String?
+  requester        User?           @relation("AiDraftRequester", fields: [requester_id], references: [id], onDelete: SetNull)
+  subject_user_id  String? // client whose data the draft concerns
+  tenant_coach_id  String?
+  payload          Json // capability-specific proposed action
+  rationale        String? // model-emitted reasoning (kept short, redacted)
+  redacted_inputs  Json? // { email: n, phone: n, ... } summary
+  provenance       Json? // [{ source, ref, hash }] retrieval references
+  decided_by_id    String?
+  decided_by       User?           @relation("AiDraftDecidedBy", fields: [decided_by_id], references: [id], onDelete: SetNull)
+  decided_at       DateTime?
+  decision_note    String?
+  audit_row        AiRequestAudit? @relation("AiAuditDraft")
+  expires_at       DateTime?
   // PR AI-3 PRODUCT-1: when capability materialisation succeeds (e.g.
   // draft.coach_message → sendAsCoach), this timestamp is set. It is the
   // single source of truth that an approved draft was actually executed
   // — separate from `status='approved'` which only records the decision.
   // A non-null value also serves as the idempotency marker so concurrent
   // approvals cannot double-materialise.
-  materialised_at DateTime?
+  materialised_at  DateTime?
   // PR AI-3: identifier of the downstream row produced by materialisation
   // (e.g. CoachMessage.id when capability=draft.coach_message). Nullable
   // because not every capability emits a single addressable row.
   materialised_ref String?
-  created_at      DateTime        @default(now())
-  updated_at      DateTime        @default(now()) @updatedAt
+  created_at       DateTime        @default(now())
+  updated_at       DateTime        @default(now()) @updatedAt
 
   @@index([status, created_at])
   @@index([requester_id, created_at])
@@ -3405,7 +3411,7 @@ model DunningState {
   created_at               DateTime       @default(now())
   updated_at               DateTime       @updatedAt
 
-  attempts                 DunningAttempt[]
+  attempts DunningAttempt[]
 
   @@index([status])
   @@index([status, cancel_scheduled_at])
@@ -3420,15 +3426,15 @@ model DunningState {
 // re-running recordFailure is idempotent. Once sent, sent_at is stamped
 // and email_idempotency_key is the dedup key handed to EmailService.
 model DunningAttempt {
-  id                     String       @id @default(uuid())
-  dunning_state_id       String
-  dunning_state          DunningState @relation(fields: [dunning_state_id], references: [id], onDelete: Cascade)
+  id                    String       @id @default(uuid())
+  dunning_state_id      String
+  dunning_state         DunningState @relation(fields: [dunning_state_id], references: [id], onDelete: Cascade)
   // 0..N — position in the cadence. -1 reserved for ad-hoc "trigger now"
   // re-fires created by admin override.
-  step_index             Int
+  step_index            Int
   // soft | urgent | final | recovered | cancelled
-  kind                   String
-  scheduled_for          DateTime
+  kind                  String
+  scheduled_for         DateTime
   // pending | sending | sent | failed | failed_permanent | skipped | cancelled
   //
   // 'sending' is the in-flight CAS claim slot used by tick() to prevent the
@@ -3438,11 +3444,11 @@ model DunningAttempt {
   // rows to cancelled, leaving any in-flight 'sending' row alone — which means
   // the tick worker's subsequent 'sending' → 'sent' write is safe and a late
   // payment-success webhook cannot resurrect a cancelled row.
-  status                 String       @default("pending")
-  sent_at                DateTime?
-  email_idempotency_key  String?      @unique
-  provider_message_id    String?
-  failure_reason         String?
+  status                String       @default("pending")
+  sent_at               DateTime?
+  email_idempotency_key String?      @unique
+  provider_message_id   String?
+  failure_reason        String?
   // Send-retry bookkeeping (PR #281 P2-3). When email.send() throws or
   // returns a failed provider response, the row is flipped to status='failed'
   // and next_retry_at is set to now + exponential backoff. The tick loop
@@ -3450,15 +3456,15 @@ model DunningAttempt {
   // retry_count >= DUNNING_MAX_SEND_RETRIES, after which the row is marked
   // 'failed_permanent' and dropped (and a dunning_attempt_failed_permanent_total
   // counter increments so ops can alert).
-  retry_count            Int          @default(0)
-  next_retry_at          DateTime?
+  retry_count           Int          @default(0)
+  next_retry_at         DateTime?
   // Set when a concurrent recordResolution() raced ahead of a send the tick
   // worker had already claimed (status='sending'). Lets ops audit "customer
   // got a reminder after they paid" cases — these are expected and rare but
   // we want visibility. PR #281 P1-1.
-  superseded_at          DateTime?
-  created_at             DateTime     @default(now())
-  updated_at             DateTime     @updatedAt
+  superseded_at         DateTime?
+  created_at            DateTime     @default(now())
+  updated_at            DateTime     @updatedAt
 
   @@unique([dunning_state_id, step_index])
   @@index([status, scheduled_for])
@@ -4338,11 +4344,6 @@ model CoachLandingLead {
   // No FK — cross-table reference kept soft to survive user deletion.
   converted_user_id String?
   created_at        DateTime         @default(now())
-
-  // Coach lead inbox: list leads for a page, newest first.
-  @@index([page_id, created_at])
-  // Coach dashboard: all leads across pages for one coach, newest first.
-  @@index([coach_id, created_at])
   // R47 Phase 3 / Audit #6 P0-6 — persistent retry state. Survives
   // process restarts (the in-memory Map version reset attempts to 0 on
   // every boot, which let a poisoned lead retry indefinitely after a
@@ -4352,6 +4353,10 @@ model CoachLandingLead {
   attempts          Int              @default(0)
   next_eligible_at  DateTime?
 
+  // Coach lead inbox: list leads for a page, newest first.
+  @@index([page_id, created_at])
+  // Coach dashboard: all leads across pages for one coach, newest first.
+  @@index([coach_id, created_at])
   // CRM sync worker: claim all pending leads in one index scan.
   @@index([crm_sync_status])
   // Audit #6 P0-6 — worker claim filter "pending AND eligible-now"
@@ -4415,8 +4420,114 @@ model CoachCrmIntegration {
   // Back-relation: pages that use this integration.
   pages CoachLandingPage[]
 
-  // Fast "get all integrations for coach" query from the CRM settings screen.
-  @@index([coach_id])
   // Audit #6 P1-9 — prevents two rows for the same (coach, provider).
   @@unique([coach_id, provider])
+  // Fast "get all integrations for coach" query from the CRM settings screen.
+  @@index([coach_id])
+}
+
+// ============================================================
+// Stream 1 — Coach AI Credits (combined coach+client budget + pack upsell)
+// ============================================================
+//
+// One row per head coach, per period. Sub-coaches do NOT have their own
+// budget rows — their AI calls debit their head coach's row. The Stripe-
+// backed credit-pack upsell adds face-value displayed credit to the same
+// row (and stores the underlying actual_credit_cents = paid_cents / 3.125).
+//
+// Spec: canonical_docs/STREAM_1_AI_CREDITS_SPEC.md (operator override
+// 2026-05-28: multiplier 3.125×, displayed allowance $125, pack tiers
+// $10 / $25 / $99 / Custom min $10 max $500).
+
+model CoachAIBudget {
+  id            String @id @default(uuid())
+  // Head coach only (one row per head coach). Sub-coaches share via the
+  // SubCoachAssignment.head_coach_id lookup in CoachAIBudgetService.
+  coach_user_id String @unique
+  coach         User   @relation("CoachAIBudgetUser", fields: [coach_user_id], references: [id], onDelete: Cascade)
+
+  // Period bounds — usually a calendar month in the coach's timezone, but
+  // the row holds whatever bounds the rollover cron pinned at creation
+  // time. The cron uses period_end to detect rollover candidates.
+  period_start DateTime
+  period_end   DateTime
+
+  // Locked numbers (spec §0). Stored on the row rather than read from env
+  // every call so historical rows survive an env-var change without
+  // retroactively repricing past usage.
+  base_actual_cents    Int     @default(4000)
+  // Decimal(6,3) keeps three decimals of precision (3.125 round-trips
+  // exactly) and prevents Float drift. Banker's rounded in service code.
+  value_multiplier     Decimal @default(3.125) @db.Decimal(6, 3)
+  base_displayed_cents Int     @default(12500)
+
+  // Pack additions accumulated this period. paid_cents = the money the
+  // coach paid us (face value, the number shown in the UI). displayed
+  // is the same number because packs are 1:1 face-value display.
+  pack_paid_cents      Int @default(0)
+  pack_displayed_cents Int @default(0)
+
+  // Consumption — actual Anthropic spend, in cents. Displayed consumption
+  // is `actual_used_cents * value_multiplier`, computed on read.
+  actual_used_cents Int @default(0)
+
+  // Lifecycle bookkeeping. last_rollover_at is null until the first
+  // rollover stamps it; created_at marks initial row creation.
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+  last_rollover_at DateTime?
+
+  pack_purchases CoachCreditPackPurchase[] @relation("CoachCreditPackBudget")
+
+  // Rollover cron scans by period_end so the index keeps it cheap as the
+  // coach population grows. Single-column index is sufficient — there is
+  // exactly one row per coach so coach_user_id is unique enough on its own.
+  @@index([period_end])
+}
+
+// One row per Stripe checkout session that the coach completed for an AI
+// credit pack. Status is the small state machine: pending (session
+// created) -> paid (invoice.payment_succeeded applied) | failed (Stripe
+// reports a terminal failure) | refunded (owner-triggered refund).
+//
+// stripe_checkout_session_id is the natural idempotency key — the webhook
+// path looks it up to refuse double-credit on a retry. The unique
+// constraint enforces single-emit at the schema level so a service-layer
+// bug can never accidentally double-credit.
+
+model CoachCreditPackPurchase {
+  id            String        @id @default(uuid())
+  coach_user_id String
+  coach         User          @relation("CoachCreditPackUser", fields: [coach_user_id], references: [id])
+  budget_id     String
+  budget        CoachAIBudget @relation("CoachCreditPackBudget", fields: [budget_id], references: [id])
+
+  // Stripe. stripe_checkout_session_id is the @unique idempotency key — the
+  // webhook path uses it to refuse double-credit. stripe_invoice_id is
+  // also @unique (one invoice per session). stripe_payment_intent_id is
+  // captured for support but not constrained.
+  stripe_checkout_session_id String? @unique
+  stripe_invoice_id          String? @unique
+  stripe_payment_intent_id   String?
+
+  // Money. paid_cents = face value (what the coach paid).
+  // actual_credit_cents = paid_cents / 3.125 (banker's rounded; see §6 of
+  // STREAM_1_AI_CREDITS_SPEC.md). displayed_credit_cents = paid_cents
+  // because packs display face-value (mental model: "$25 buys $25 of AI").
+  paid_cents             Int
+  actual_credit_cents    Int
+  displayed_credit_cents Int
+
+  // 'pending' | 'paid' | 'refunded' | 'failed'. String not enum so adding
+  // new states doesn't require a migration (auditor: this is intentional
+  // — we expect 'chargeback' next).
+  status      String
+  applied_at  DateTime?
+  refunded_at DateTime?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([coach_user_id, created_at])
+  @@index([status])
 }
