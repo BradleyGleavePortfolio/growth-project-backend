@@ -4051,6 +4051,12 @@ model CoachBrief {
   brief_date            String
   status                String    @default("pending")
   generated_at          DateTime?
+  // Stream 1 dormancy guard — set by the brief-render path when the coach
+  // opens the brief in-app. Null = unread; the AI dormancy guard skips
+  // auto-generation when the most recent 3 briefs are all unread.
+  // Indexed below to keep the dormancy check cheap (~ms regardless of
+  // brief history depth).
+  read_at               DateTime?
   // Lease timestamp written when status flips to 'generating'. A
   // CoachBriefService caller may atomically reclaim rows where the lease
   // is older than the TTL (BRIEF_GENERATION_LEASE_MS) — this prevents a

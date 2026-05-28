@@ -5,6 +5,7 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { CheckoutWebhookHandlerService } from '../checkout/checkout-webhook-handler.service';
+import { CoachAiCreditPackService } from '../ai-credits/coach-ai-credit-pack.service';
 import { ConnectService } from '../connect/connect.service';
 import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
@@ -52,6 +53,12 @@ export class BillingService {
     // R43 — Optional so the billing module still boots when
     // StorefrontModule is not imported (e.g. minimal test wiring).
     @Optional() private guestCheckout?: GuestCheckoutService,
+    // Stream 1 — Optional so legacy unit tests can boot BillingService
+    // without wiring the AI credits module. When present, the pack
+    // service claims checkout.session.completed events whose metadata
+    // carries tgp_kind=coach_ai_credit_pack and routes them to
+    // CoachAIBudgetService.applyCreditPack().
+    @Optional() private coachAiPacks?: CoachAiCreditPackService,
   ) {}
 
   // Idempotently process an event. Returns { processed: true } on first
@@ -188,6 +195,21 @@ export class BillingService {
           claimedByCheckout = !!result.claimed;
         }
 
+        // Stream 1 — give the AI credit-pack handler first refusal on
+        // checkout.session.completed / .expired events. It only claims
+        // events whose metadata carries `tgp_kind=coach_ai_credit_pack`,
+        // so other checkout flows (storefront, SaaS subscription) are
+        // unaffected. The pack service runs OUTSIDE this $transaction:
+        // applyCreditPack opens its own $transaction internally so the
+        // budget write + purchase status flip commit atomically. A
+        // failure inside that inner transaction throws back up here and
+        // rolls back the dedup row — Stripe will retry the same event.
+        let claimedByAiPack = false;
+        if (this.coachAiPacks) {
+          const result = await this.coachAiPacks.handleStripeEvent(event);
+          claimedByAiPack = !!result.claimed;
+        }
+
         switch (event.type) {
           case 'customer.subscription.created':
           case 'customer.subscription.updated':
@@ -207,7 +229,10 @@ export class BillingService {
             break;
           case 'checkout.session.completed':
           case 'checkout.session.expired':
-            // Already dispatched to checkoutWebhooks above.
+            // Already dispatched to checkoutWebhooks + coachAiPacks above.
+            // `claimedByAiPack` is intentionally referenced here so the
+            // variable is not flagged as unused by TS strict mode.
+            void claimedByAiPack;
             break;
           case 'payment_intent.succeeded': {
             // A276-P0-2 — pass the latest_charge id alongside the PI id so

@@ -17,6 +17,7 @@ import { WeightModule } from './weight/weight.module';
 import { HabitsModule } from './habits/habits.module';
 import { AiModule } from './ai/ai.module';
 import { AiGatewayModule } from './ai/gateway/ai-gateway.module';
+import { AiCreditsModule } from './ai-credits/ai-credits.module';
 import { CoachAIModule } from './ai/coach/coach-ai.module';
 import { CoachModule } from './coach/coach.module';
 import { CoachBriefModule } from './coach/brief/coach-brief.module';
@@ -169,6 +170,10 @@ import { LandingPagesModule } from './landing-pages/landing-pages.module';
     // Global so feature modules (coach messaging, meal-plan AI, finance proof)
     // can inject AiGatewayService without re-importing.
     AiGatewayModule,
+    // Stream 1 — Coach AI Credits. @Global so the gateway can inject the
+    // budget service and the brief / weekly-insight schedulers can inject
+    // DormancyGuardService without re-importing this module everywhere.
+    AiCreditsModule,
     // Coach AI v1 — Claude Sonnet adapter + per-client workout/meal/insight
     // generation behind /coach/ai/*. Boot-gated via CoachAIStateService;
     // returns 503 ai_disabled when ANTHROPIC_API_KEY is unset.

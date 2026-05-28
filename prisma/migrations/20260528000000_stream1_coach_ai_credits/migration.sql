@@ -150,3 +150,19 @@ CREATE POLICY "CCPP_self_select" ON "CoachCreditPackPurchase"
 -- by the webhook path (service-role) and admin tooling (also service-role
 -- via the admin guard). A coach attempting a direct INSERT/UPDATE under
 -- their authenticated JWT will fail the FORCE RLS check.
+
+-- ---------------------------------------------------------------------------
+-- CoachBrief.read_at — dormancy guard input.
+-- ---------------------------------------------------------------------------
+-- The AI cost-protection cron uses the last 3 briefs' read_at to decide
+-- whether to auto-generate. NULL = unread. Index by (coach_id, brief_date)
+-- already exists; the new column is folded into the existing index plan
+-- via a partial unread-only index that keeps the dormancy check cheap.
+ALTER TABLE "CoachBrief" ADD COLUMN IF NOT EXISTS "read_at" TIMESTAMP(3);
+
+-- Partial index for the dormancy lookup: only rows where read_at IS NULL
+-- (the "unread" tail). Postgres only stores the matching rows, so the
+-- index stays small even at long brief histories.
+CREATE INDEX IF NOT EXISTS "CoachBrief_coach_unread_idx"
+  ON "CoachBrief" ("coach_id", "brief_date" DESC)
+  WHERE "read_at" IS NULL;

@@ -75,6 +75,35 @@ export interface StripePortalSession {
   [k: string]: unknown;
 }
 
+// Stream 1 — Coach AI Credits. The checkout session minting path uses
+// price_data so we don't have to provision N Stripe Prices ahead of
+// time (the three locked tiers + open-ended custom would be four
+// products * test+live = 8 product rows just to maintain). price_data
+// lets us inline the amount/currency and let Stripe mint the implicit
+// Product per-session — same approach the per-package storefront uses.
+export interface CreateCreditPackCheckoutArgs {
+  customer: string;
+  amountCents: number;
+  productName: string;
+  successUrl: string;
+  cancelUrl: string;
+  /** Stamped on the session for the webhook to read on payment_succeeded. */
+  metadata: Record<string, string>;
+  idempotencyKey: string;
+}
+
+export interface StripeCheckoutSession {
+  id: string;
+  url: string | null;
+  payment_status?: string;
+  amount_total?: number;
+  customer?: string | null;
+  metadata?: Record<string, string>;
+  payment_intent?: string | null;
+  invoice?: string | null;
+  [k: string]: unknown;
+}
+
 @Injectable()
 export class StripeApiService {
   private readonly logger = new Logger(StripeApiService.name);
@@ -117,6 +146,54 @@ export class StripeApiService {
     }
     return this.post<StripeSubscription>(
       '/subscriptions',
+      form,
+      args.idempotencyKey,
+    );
+  }
+
+  /**
+   * Stream 1 — mint a Checkout Session for an AI credit pack. Inline
+   * price_data avoids provisioning N Stripe Prices for the locked tiers
+   * + open-ended custom; the metadata bag carries the coach_user_id and
+   * our internal purchase_id so the webhook can resolve back to the
+   * CoachCreditPackPurchase row that was already created in 'pending'
+   * state by the controller.
+   *
+   * `mode: 'payment'` (one-time) — recurring packs are a follow-up.
+   */
+  async createCreditPackCheckoutSession(
+    args: CreateCreditPackCheckoutArgs,
+  ): Promise<StripeCheckoutSession> {
+    if (!Number.isInteger(args.amountCents) || args.amountCents <= 0) {
+      throw new StripeApiError(
+        `createCreditPackCheckoutSession: amountCents must be a positive integer, got ${args.amountCents}`,
+        400,
+        'invalid_amount',
+        'invalid_request_error',
+      );
+    }
+    const form: Record<string, string> = {
+      customer: args.customer,
+      mode: 'payment',
+      success_url: args.successUrl,
+      cancel_url: args.cancelUrl,
+      'payment_method_types[0]': 'card',
+      'line_items[0][quantity]': '1',
+      'line_items[0][price_data][currency]': 'usd',
+      'line_items[0][price_data][unit_amount]': String(args.amountCents),
+      'line_items[0][price_data][product_data][name]': args.productName,
+      // Stripe Tax behaviour matches the rest of our billing surface:
+      // automatic_tax computes on the customer's billing address.
+      'automatic_tax[enabled]': 'true',
+    };
+    for (const [k, v] of Object.entries(args.metadata)) {
+      form[`metadata[${k}]`] = v;
+      // Also stamp metadata on the resulting PaymentIntent so a refund
+      // flow (PaymentIntent-based) still has the linkage.
+      form[`payment_intent_data[metadata][${k}]`] = v;
+    }
+    return this.post<StripeCheckoutSession>(
+      '/checkout/sessions',
       form,
       args.idempotencyKey,
     );
