@@ -128,6 +128,96 @@ export class StripeApiService {
   // Overridable in tests via subclass to avoid monkey-patching globalThis.fetch.
   protected fetchImpl: typeof fetch = (input, init) => fetch(input, init);
 
+  /**
+   * R2 NEW-P2-2: Single chokepoint for every outbound Stripe call.
+   *
+   * Wraps `fetchImpl` with the AbortSignal-driven deadline from
+   * `resolveStripeApiTimeoutMs()` and translates the abort into a
+   * structured `StripeApiError(504, request_timeout, api_connection_error)`
+   * so every call site surfaces the same envelope as a Stripe-side
+   * failure. Composes any caller-supplied `init.signal` with the timeout
+   * signal via `AbortSignal.any` (Node 20+) so a caller that already
+   * threads its own request-cancellation signal does not lose either
+   * the timeout OR their cancellation.
+   *
+   * R6 root fix: BEFORE this helper, only `post()` had timeout
+   * discipline. `cancelSubscription` (DELETE + cancel-at-period-end
+   * POST) and `deleteSubscriptionItem` (DELETE) called `fetchImpl`
+   * directly. They now all flow through here, so a hung Stripe call
+   * on ANY method cannot tie up a request handler indefinitely.
+   *
+   * Behaviour preserved: this helper does NOT parse the body, set
+   * headers, encode form data, or build the URL — callers retain full
+   * control over those. The only change vs raw `fetchImpl` is the
+   * timeout signal + the typed timeout error.
+   *
+   * `path` is the human-readable identifier used in the timeout error
+   * message; pass either the full URL or a short label like
+   * `/subscriptions/{id}`. Stripe-side error envelopes are NOT
+   * affected — those still come from the `Response` body parsed by
+   * the caller.
+   */
+  protected async stripeFetch(
+    url: string,
+    init: RequestInit,
+    pathForError: string,
+  ): Promise<Response> {
+    const timeoutMs = resolveStripeApiTimeoutMs();
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    // Compose caller's signal with the timeout signal so both are
+    // honoured. `AbortSignal.any` is available since Node 20 — the
+    // backend already requires Node 22+ (see Dockerfile / engines).
+    const signal: AbortSignal = init.signal
+      ? AbortSignal.any([init.signal as AbortSignal, timeoutSignal])
+      : timeoutSignal;
+    try {
+      return await this.fetchImpl(url, { ...init, signal });
+    } catch (err) {
+      // AbortSignal.timeout() rejects the fetch with a DOMException
+      // whose name is 'TimeoutError'; a caller-cancelled abort fires
+      // 'AbortError'. We only translate the timeout case — letting a
+      // caller-driven abort propagate as-is keeps the contract clean
+      // (caller cancellation is not a Stripe failure).
+      if (err instanceof Error && err.name === 'TimeoutError') {
+        throw new StripeApiError(
+          `Stripe API request timed out after ${timeoutMs}ms on ${pathForError}`,
+          504,
+          'request_timeout',
+          'api_connection_error',
+        );
+      }
+      // If the caller's own signal aborted (not the timeout signal),
+      // surface as 499 client_closed_request to distinguish from the
+      // upstream-timeout case. Practical impact: dashboards can
+      // separate "Stripe slow" from "client gave up".
+      if (
+        err instanceof Error &&
+        err.name === 'AbortError' &&
+        !timeoutSignal.aborted
+      ) {
+        throw new StripeApiError(
+          `Stripe API request aborted by caller on ${pathForError}`,
+          499,
+          'client_closed_request',
+          'api_connection_error',
+        );
+      }
+      // Defensive: a `TimeoutError`-named error that wasn't from our
+      // timeout signal (vanishingly rare — e.g. a polyfill in tests
+      // emulating the abort path) still maps to a clean envelope so
+      // callers never see a raw DOMException.
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new StripeApiError(
+          `Stripe API request timed out after ${timeoutMs}ms on ${pathForError}`,
+          504,
+          'request_timeout',
+          'api_connection_error',
+        );
+      }
+      throw err;
+    }
+  }
+
   isConfigured(): boolean {
     return !!process.env.STRIPE_SECRET_KEY;
   }
@@ -298,22 +388,29 @@ export class StripeApiService {
       'Stripe-Version': STRIPE_API_VERSION,
       'Idempotency-Key': args.idempotencyKey,
     };
+    // R2 NEW-P2-2: route through stripeFetch so the timeout signal +
+    // structured 504 envelope apply uniformly. Path label is the
+    // Stripe-style /subscriptions/{id} suffix so timeout-error logs
+    // are greppable per coach.
+    const subscriptionPath = `/subscriptions/${args.subscriptionId}`;
     if (args.immediately) {
-      const res = await this.fetchImpl(
+      const res = await this.stripeFetch(
         `${STRIPE_API_BASE}/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
         { method: 'DELETE', headers },
+        subscriptionPath,
       );
       return this.parseSubscriptionResponse(res, args.subscriptionId);
     }
     // cancel-at-period-end: POST /subscriptions/{id} with the flag flipped.
     headers['Content-Type'] = 'application/x-www-form-urlencoded';
-    const res = await this.fetchImpl(
+    const res = await this.stripeFetch(
       `${STRIPE_API_BASE}/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
       {
         method: 'POST',
         headers,
         body: new URLSearchParams({ cancel_at_period_end: 'true' }).toString(),
       },
+      subscriptionPath,
     );
     return this.parseSubscriptionResponse(res, args.subscriptionId);
   }
@@ -362,9 +459,11 @@ export class StripeApiService {
       'Stripe-Version': STRIPE_API_VERSION,
       'Idempotency-Key': args.idempotencyKey,
     };
-    const res = await this.fetchImpl(
+    // R2 NEW-P2-2: route through stripeFetch — see helper docstring.
+    const res = await this.stripeFetch(
       `${STRIPE_API_BASE}/subscription_items/${encodeURIComponent(args.subscriptionItemId)}`,
       { method: 'DELETE', headers },
+      `/subscription_items/${args.subscriptionItemId}`,
     );
     const text = await res.text();
     let parsed: unknown = null;
@@ -410,31 +509,15 @@ export class StripeApiService {
     };
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
 
-    // Audit P0-7 / P1-2: explicit AbortSignal-driven timeout. Without
-    // it, a hung Stripe call holds the request handler open forever.
-    const signal = AbortSignal.timeout(resolveStripeApiTimeoutMs());
-    let res: Response;
-    try {
-      res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
-        method: 'POST',
-        headers,
-        body,
-        signal,
-      });
-    } catch (err) {
-      // AbortSignal.timeout() rejects the fetch with a DOMException
-      // whose name is 'TimeoutError'. Translate to StripeApiError so
-      // callers see the same error envelope as a Stripe-side failure.
-      if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
-        throw new StripeApiError(
-          `Stripe API request timed out after ${resolveStripeApiTimeoutMs()}ms on ${path}`,
-          504,
-          'request_timeout',
-          'api_connection_error',
-        );
-      }
-      throw err;
-    }
+    // R2 NEW-P2-2: route through stripeFetch (the shared chokepoint) so
+    // the timeout + structured 504 envelope semantics live in one
+    // place. Replaces the inline AbortSignal.timeout + try/catch that
+    // P1-2 added to this method; behaviour is preserved exactly.
+    const res = await this.stripeFetch(
+      `${STRIPE_API_BASE}${path}`,
+      { method: 'POST', headers, body },
+      path,
+    );
 
     const text = await res.text();
     let parsed: unknown = null;
