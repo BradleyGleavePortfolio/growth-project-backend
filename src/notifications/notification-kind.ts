@@ -55,6 +55,13 @@ export const NotificationKind = {
   NUDGE_STREAK_BROKEN: 'nudge_streak_broken',
   NUDGE_ONBOARDING_ABANDONED: 'nudge_onboarding_abandoned',
   NUDGE_INACTIVE: 'nudge_inactive',
+
+  // Stream 2 — AI execution capabilities. Fired by AssignWorkoutMaterializer
+  // / AssignMealPlanMaterializer after a coach approves the corresponding
+  // draft. The notification deep-links into the assigned row so the
+  // client can see what their coach just queued for them.
+  WORKOUT_ASSIGNED: 'workout_assigned',
+  MEAL_PLAN_ASSIGNED: 'meal_plan_assigned',
 } as const;
 
 export type NotificationKindValue = (typeof NotificationKind)[keyof typeof NotificationKind];
