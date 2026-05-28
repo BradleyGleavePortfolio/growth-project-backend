@@ -60,12 +60,74 @@ ALTER TABLE "CoachAIBudget"
 
 -- Backfill: for any rows that exist BEFORE this column existed, derive
 -- the value by rounding (pack_paid_cents / value_multiplier) — the same
--- formula the old toSnapshot used. This keeps existing budgets internally
--- consistent on first read after deploy. Banker's rounding is approximated
--- here by Postgres ROUND() which uses half-to-even by default for
--- NUMERIC. (Banker's rounding for NUMERIC in Postgres ≥9.x is the
--- documented behaviour.)
-UPDATE "CoachAIBudget"
-SET "total_pack_actual_cents" =
-  ROUND("pack_paid_cents"::numeric / "value_multiplier")::int
-WHERE "pack_paid_cents" > 0;
+-- formula the old toSnapshot used in
+-- src/ai-credits/coach-ai-budget.service.ts (now replaced by direct
+-- column reads, but still the formula we backfill from at migration
+-- deploy).
+--
+-- R2 NEW-P3-1 fix: MUST use HALF-TO-EVEN (banker's) rounding to match
+-- the runtime in src/ai-credits/bankers-round.util.ts. Postgres's
+-- `round(numeric)` is HALF-AWAY-FROM-ZERO, not half-to-even — see
+-- https://www.postgresql.org/docs/current/functions-math.html
+-- ("round(numeric) ... rounds halfway cases away from zero"). Only
+-- `round(double precision)` uses banker's rounding ("round to
+-- nearest, ties to even"). The earlier comment claiming
+-- ROUND-on-NUMERIC is half-to-even was factually wrong.
+--
+-- Two correct implementations exist:
+--   (a) cast to double precision and let Postgres do banker's:
+--       round((pack_paid_cents::numeric / value_multiplier)::double precision)::int
+--       — concise but introduces IEEE-754 conversion error on the
+--       float path, which matters for the rare tie input.
+--   (b) explicit NUMERIC half-to-even via CASE on the fractional
+--       part. Exact, no float conversion, no IEEE-754 drift.
+-- We pick (b) for the same reason bankers-round.util.ts handles ties
+-- explicitly: financial rounding must be deterministic across
+-- runtime environments (JS Number vs Postgres NUMERIC vs Postgres
+-- double), not "mostly the same most of the time".
+--
+-- Algorithm:
+--   q     = pack_paid_cents::numeric / value_multiplier   (exact NUMERIC)
+--   floor = floor(q)                                       (NUMERIC)
+--   diff  = q - floor                                      (NUMERIC in [0, 1))
+--   if diff > 0.5: floor + 1
+--   if diff < 0.5: floor
+--   if diff = 0.5: floor when floor is even, else floor + 1  (half-to-even)
+--
+-- All quantities are non-negative here (pack_paid_cents > 0 by the
+-- WHERE clause + value_multiplier > 0 by the CHECK constraint added
+-- in the round-0 migration), so we do not need the negative-sign
+-- branch the JS util carries.
+--
+-- Real-world impact: at first deploy, no rows have pack_paid_cents > 0
+-- (this migration ships together with the round-0 tables), so this
+-- UPDATE is a no-op. For any future replay against populated data
+-- the result now matches bankers-round.util.ts byte-for-byte on every
+-- input — including the tie cases the old SQL would have diverged on.
+UPDATE "CoachAIBudget" AS b
+SET "total_pack_actual_cents" = sub.banker_rounded
+FROM (
+  SELECT
+    "id",
+    (
+      CASE
+        WHEN diff > 0.5 THEN floor_q + 1
+        WHEN diff < 0.5 THEN floor_q
+        -- Tie: half-to-even. floor_q::bigint % 2 = 0 means floor is even.
+        WHEN (floor_q::bigint % 2) = 0 THEN floor_q
+        ELSE floor_q + 1
+      END
+    )::int AS banker_rounded
+  FROM (
+    SELECT
+      "id",
+      floor("pack_paid_cents"::numeric / "value_multiplier")::numeric AS floor_q,
+      (
+        ("pack_paid_cents"::numeric / "value_multiplier")
+          - floor("pack_paid_cents"::numeric / "value_multiplier")
+      )::numeric AS diff
+    FROM "CoachAIBudget"
+    WHERE "pack_paid_cents" > 0
+  ) parts
+) AS sub
+WHERE b."id" = sub."id";
