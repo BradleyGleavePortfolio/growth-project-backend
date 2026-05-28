@@ -42,6 +42,8 @@ type BudgetRow = {
   pack_paid_cents: number;
   pack_displayed_cents: number;
   actual_used_cents: number;
+  /** Round-1 fixer P1-8 — stored aggregate of per-pack actual_credit_cents. */
+  total_pack_actual_cents: number;
   created_at: Date;
   updated_at: Date;
   last_rollover_at: Date | null;
@@ -60,6 +62,8 @@ type PurchaseRow = {
   status: string;
   applied_at: Date | null;
   refunded_at: Date | null;
+  /** Round-1 fixer P0-1 — true when row is an owner free grant (paid_cents=0). */
+  is_free_grant: boolean;
   created_at: Date;
   updated_at: Date;
 };
@@ -117,6 +121,7 @@ function makePrismaMock(store: InMemoryStore) {
           pack_paid_cents: 0,
           pack_displayed_cents: 0,
           actual_used_cents: 0,
+          total_pack_actual_cents: 0,
           created_at: new Date(),
           updated_at: new Date(),
           last_rollover_at: null,
@@ -134,6 +139,10 @@ function makePrismaMock(store: InMemoryStore) {
           if (where.period_end?.lte !== undefined) {
             if (r.period_end > where.period_end.lte) continue;
           }
+          // Round-1 fixer P1-6 — recordUsage now pins period_end > now.
+          if (where.period_end?.gt !== undefined) {
+            if (r.period_end <= where.period_end.gt) continue;
+          }
           // Apply increments / direct sets in lock-step with the real Prisma.
           if (data.actual_used_cents !== undefined) {
             if (typeof data.actual_used_cents === 'object' && 'increment' in data.actual_used_cents) {
@@ -150,6 +159,11 @@ function makePrismaMock(store: InMemoryStore) {
           if (data.pack_displayed_cents !== undefined) {
             if (typeof data.pack_displayed_cents === 'object' && 'increment' in data.pack_displayed_cents) {
               r.pack_displayed_cents += data.pack_displayed_cents.increment;
+            }
+          }
+          if (data.total_pack_actual_cents !== undefined) {
+            if (typeof data.total_pack_actual_cents === 'object' && 'increment' in data.total_pack_actual_cents) {
+              r.total_pack_actual_cents += data.total_pack_actual_cents.increment;
             }
           }
           if (data.last_rollover_at !== undefined) r.last_rollover_at = data.last_rollover_at;
@@ -177,11 +191,26 @@ function makePrismaMock(store: InMemoryStore) {
         if (data.pack_paid_cents?.decrement !== undefined) r.pack_paid_cents -= data.pack_paid_cents.decrement;
         if (data.pack_displayed_cents?.increment !== undefined) r.pack_displayed_cents += data.pack_displayed_cents.increment;
         if (data.pack_displayed_cents?.decrement !== undefined) r.pack_displayed_cents -= data.pack_displayed_cents.decrement;
+        if (data.total_pack_actual_cents?.increment !== undefined) r.total_pack_actual_cents += data.total_pack_actual_cents.increment;
+        if (data.total_pack_actual_cents?.decrement !== undefined) r.total_pack_actual_cents -= data.total_pack_actual_cents.decrement;
         return r;
       }),
     },
     coachCreditPackPurchase: {
       create: jest.fn(async ({ data }: any) => {
+        // Round-1 fixer P0-1 — emulate the new CCPP CHECK constraints so
+        // tests catch the "free grant violates CHECK" failure that
+        // motivated the migration.
+        if (data.displayed_credit_cents < data.paid_cents) {
+          throw new Error(
+            `CHECK CCPP_displayed_credit_ge_paid violated: displayed=${data.displayed_credit_cents} paid=${data.paid_cents}`,
+          );
+        }
+        if (data.is_free_grant === true && data.paid_cents !== 0) {
+          throw new Error(
+            `CHECK CCPP_free_grant_paid_zero violated: is_free_grant=true requires paid_cents=0`,
+          );
+        }
         const row: PurchaseRow = {
           id: `p_${store.purchases.size + 1}`,
           coach_user_id: data.coach_user_id,
@@ -195,6 +224,7 @@ function makePrismaMock(store: InMemoryStore) {
           status: data.status,
           applied_at: data.applied_at ?? null,
           refunded_at: data.refunded_at ?? null,
+          is_free_grant: data.is_free_grant ?? false,
           created_at: new Date(),
           updated_at: new Date(),
         };
