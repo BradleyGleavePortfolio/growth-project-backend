@@ -41,10 +41,12 @@ export function bankersRound(n: number): number {
   // be exactly 0.5 but read back as 0.49999999999... The epsilon is small
   // enough (1e-9) that it cannot flip a genuine non-tie.
   const EPS = 1e-9;
-  if (diff > 0.5 + EPS) return sign * (floor + 1);
-  if (diff < 0.5 - EPS) return sign * floor;
+  // Add 0 to normalise any potential -0 result back to +0 (Number.NEGATIVE_ZERO
+  // confuses test equality even though the value is mathematically zero).
+  if (diff > 0.5 + EPS) return sign * (floor + 1) + 0;
+  if (diff < 0.5 - EPS) return sign * floor + 0;
   // Tie: round to even.
-  return sign * (floor % 2 === 0 ? floor : floor + 1);
+  return sign * (floor % 2 === 0 ? floor : floor + 1) + 0;
 }
 
 /**
