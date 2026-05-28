@@ -21,6 +21,23 @@ import { Injectable, Logger } from '@nestjs/common';
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 const STRIPE_API_VERSION = '2024-09-30.acacia';
 
+// Audit P0-7 / P1-2: every outbound Stripe call now carries an explicit
+// AbortSignal-driven deadline. Default 10s; tunable via STRIPE_API_TIMEOUT_MS
+// for staging/load-test runs. Clamped at 1s minimum so a misconfig can't
+// effectively disable Stripe.
+const STRIPE_API_TIMEOUT_MS_DEFAULT = 10_000;
+function resolveStripeApiTimeoutMs(): number {
+  const raw = process.env.STRIPE_API_TIMEOUT_MS;
+  if (!raw) return STRIPE_API_TIMEOUT_MS_DEFAULT;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1_000) return STRIPE_API_TIMEOUT_MS_DEFAULT;
+  return n;
+}
+/** Exposed for tests — see test/ai-credits-stripe-timeout.spec.ts. */
+export function _resolveStripeApiTimeoutMs(): number {
+  return resolveStripeApiTimeoutMs();
+}
+
 export class StripeApiError extends Error {
   constructor(
     message: string,
@@ -182,9 +199,19 @@ export class StripeApiService {
       'line_items[0][price_data][currency]': 'usd',
       'line_items[0][price_data][unit_amount]': String(args.amountCents),
       'line_items[0][price_data][product_data][name]': args.productName,
-      // Stripe Tax behaviour matches the rest of our billing surface:
-      // automatic_tax computes on the customer's billing address.
-      'automatic_tax[enabled]': 'true',
+      // Audit P0-2: automatic_tax is DISABLED for AI credit-pack sessions.
+      // Rationale: credit packs are a B2B carve-out per the mobile spec —
+      // a coach pre-purchasing service-credit, not a taxable end-user
+      // good in most US jurisdictions. With automatic_tax enabled,
+      // Stripe inflates `amount_total` for taxable jurisdictions, which
+      // would break the "$25 buys $25 of AI" face-value promise (the
+      // operator override's whole point). Leaving the flag explicit on
+      // the form keeps the deviation from the rest of the billing
+      // surface auditable. If a future legal review requires tax
+      // collection on packs, set this back to 'true' AND update
+      // CoachAiCreditPackService.handleStripeEvent's amount-divergence
+      // path to credit `amount_total` instead of CCPP.paid_cents.
+      'automatic_tax[enabled]': 'false',
     };
     for (const [k, v] of Object.entries(args.metadata)) {
       form[`metadata[${k}]`] = v;
@@ -383,11 +410,31 @@ export class StripeApiService {
     };
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
 
-    const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
-      method: 'POST',
-      headers,
-      body,
-    });
+    // Audit P0-7 / P1-2: explicit AbortSignal-driven timeout. Without
+    // it, a hung Stripe call holds the request handler open forever.
+    const signal = AbortSignal.timeout(resolveStripeApiTimeoutMs());
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
+        method: 'POST',
+        headers,
+        body,
+        signal,
+      });
+    } catch (err) {
+      // AbortSignal.timeout() rejects the fetch with a DOMException
+      // whose name is 'TimeoutError'. Translate to StripeApiError so
+      // callers see the same error envelope as a Stripe-side failure.
+      if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+        throw new StripeApiError(
+          `Stripe API request timed out after ${resolveStripeApiTimeoutMs()}ms on ${path}`,
+          504,
+          'request_timeout',
+          'api_connection_error',
+        );
+      }
+      throw err;
+    }
 
     const text = await res.text();
     let parsed: unknown = null;

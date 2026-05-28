@@ -11,36 +11,26 @@ import { bankersRoundPaidToActual } from './bankers-round.util';
 // CoachAIBudgetService — the single owner of the CoachAIBudget +
 // CoachCreditPackPurchase tables.
 //
-// Public surface:
-//   - getOrCreateCurrentPeriod(coachId)  — idempotent per-period init.
-//   - getOrCreateCurrentPeriodTx(tx, ..) — same, inside an existing tx
-//                                          (used by the Stripe webhook).
-//   - recordUsage(coachId, actualCents, ...) — atomic WHERE-clause-guarded
-//                                              UPDATE; returns whether the
-//                                              charge stuck. Caller decides
-//                                              whether to surface the
-//                                              overshoot (it does NOT throw
-//                                              — the Anthropic call already
-//                                              completed by the time we get
-//                                              here).
-//   - canCharge(coachId, actualCents)   — pre-call check; returns
-//                                         { allowed, budget } so the
-//                                         caller can throw a 402 with the
-//                                         current budget snapshot.
-//   - getBudgetDto(coachId)             — the DTO for GET /coach/ai/budget.
-//   - applyCreditPack(...)              — Stripe-webhook entrypoint.
-//   - resolveHeadCoachId(userId)        — sub-coach -> head-coach for budget
-//                                         scoping. Public so the gateway can
-//                                         scope correctly.
-//   - rolloverDueBudgets(now)           — used by the monthly cron.
-//   - grantCredits / refundPack         — admin tooling.
-//
-// All money is in cents (Int). Multiplier is Decimal(6,3) at the schema
-// layer; service code resolves it to Number for arithmetic and uses the
-// bankersRound utility for the rounding step that materially affects
-// the displayed credit.
-
-const PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
+// Round-1 fixer changes (post-audit):
+//   - P0-6: applyCreditPack / grantFreeCredits / refundPack now accept an
+//     optional Prisma.TransactionClient so callers (e.g. the Stripe
+//     webhook path inside BillingService.handleEvent) can thread their
+//     outer transaction in. The inner $transaction is only opened when
+//     no tx is supplied, matching the established
+//     `getOrCreateCurrentPeriodTx` pattern.
+//   - P0-1: grantFreeCredits sets is_free_grant=true. paid_cents stays 0;
+//     displayed_credit_cents is the granted amount. The relaxed CHECK
+//     (>= instead of =) accepts this.
+//   - P1-3: period_end is the start of the NEXT calendar month, not a
+//     30-day offset. See startOfNextMonth() at the bottom of the file.
+//   - P1-6: recordUsage adds period_end > now to its WHERE clause so a
+//     debit can never land in an already-rolled period.
+//   - P1-7: resolveHeadCoachId caches the last attribution per
+//     sub_coach_id and logs SUB_COACH_HEAD_REATTRIBUTED when it changes.
+//   - P1-8: budget ceiling and snapshot use the stored
+//     total_pack_actual_cents column instead of rounding the aggregate
+//     pack_paid_cents at read time. applyCreditPack increments the
+//     column by the per-pack already-rounded actual_credit_cents.
 
 export interface BudgetSnapshot {
   id: string;
@@ -53,6 +43,8 @@ export interface BudgetSnapshot {
   pack_paid_cents: number;
   pack_displayed_cents: number;
   actual_used_cents: number;
+  /** Per-pack already-rounded actual credit, summed. P1-8. */
+  total_pack_actual_cents: number;
   /** Sum of base actual + actual headroom purchased via packs. */
   total_actual_available_cents: number;
 }
@@ -74,9 +66,19 @@ export interface CoachAiBudgetDto {
   custom_pack_bounds_cents: { min: number; max: number };
 }
 
+/** Prisma client OR an active transaction — both share the model namespace. */
+type DbClient = Prisma.TransactionClient | PrismaService;
+
 @Injectable()
 export class CoachAIBudgetService {
   private readonly logger = new Logger(CoachAIBudgetService.name);
+
+  // P1-7 — track the last-resolved head coach per sub-coach so we can
+  // log when attribution swings. Process-local; on a Fly redeploy the
+  // map starts empty and the first call after deploy will (correctly)
+  // log nothing because there is no "previous" value to compare to.
+  // Bounded growth: one entry per distinct sub-coach the process serves.
+  private readonly headCoachAttributionCache = new Map<string, string>();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -85,24 +87,48 @@ export class CoachAIBudgetService {
    * Sub-coaches share their head coach's budget; if the user is not a
    * sub-coach the id is returned as-is. Head coaches with NO assignment
    * also pass through unchanged.
+   *
+   * P1-7: when a sub-coach's resolution lands on a DIFFERENT head coach
+   * than the last cached attribution for that sub-coach, emit a
+   * SUB_COACH_HEAD_REATTRIBUTED structured log. This surfaces silent
+   * swings (e.g. the old assignment was archived and a new one
+   * created) that would otherwise re-route the budget envelope without
+   * any audit trail.
    */
   async resolveHeadCoachId(userId: string): Promise<string> {
-    // If user is a sub-coach (i.e. appears on the sub side of a non-archived
-    // TeamSubCoachAssignment), resolve to their head coach. The cap allows
-    // a sub-coach under at most 2 head coaches; the budget envelope follows
-    // the FIRST assignment that has the lowest created_at (deterministic).
     const assignment = await this.prisma.teamSubCoachAssignment.findFirst({
       where: { sub_coach_id: userId, archived_at: null },
       orderBy: { created_at: 'asc' },
       select: { head_coach_id: true },
     });
-    return assignment?.head_coach_id ?? userId;
+    const resolved = assignment?.head_coach_id ?? userId;
+
+    // Cache + reattribution detection — only meaningful when the user IS
+    // a sub-coach (i.e. assignment was found). For head coaches the
+    // resolved id == userId every time; tracking it would just bloat
+    // the map.
+    if (assignment) {
+      const cached = this.headCoachAttributionCache.get(userId);
+      if (cached && cached !== resolved) {
+        this.logger.log(
+          {
+            event: 'SUB_COACH_HEAD_REATTRIBUTED',
+            subCoachId: userId,
+            oldHeadCoachId: cached,
+            newHeadCoachId: resolved,
+          },
+          'sub-coach head-coach attribution changed',
+        );
+      }
+      this.headCoachAttributionCache.set(userId, resolved);
+    }
+
+    return resolved;
   }
 
   /**
    * Idempotent: returns an existing budget row for the current period, or
-   * creates one with the locked defaults. Runs outside any user-supplied
-   * transaction so concurrent first-call coaches don't serialise.
+   * creates one with the locked defaults.
    */
   async getOrCreateCurrentPeriod(coachId: string): Promise<BudgetSnapshot> {
     return this.getOrCreateCurrentPeriodTx(this.prisma, coachId);
@@ -112,7 +138,7 @@ export class CoachAIBudgetService {
    * Transactional sibling — used inside the Stripe webhook's $transaction.
    */
   async getOrCreateCurrentPeriodTx(
-    tx: Prisma.TransactionClient | PrismaService,
+    tx: DbClient,
     coachId: string,
   ): Promise<BudgetSnapshot> {
     const existing = await tx.coachAIBudget.findUnique({
@@ -121,8 +147,8 @@ export class CoachAIBudgetService {
     if (existing) return this.toSnapshot(existing);
 
     const now = new Date();
-    const periodStart = startOfCurrentPeriod(now);
-    const periodEnd = new Date(periodStart.getTime() + PERIOD_MS);
+    const periodStart = startOfCurrentMonth(now);
+    const periodEnd = startOfNextMonth(periodStart);
 
     // Upsert handles the concurrent-first-call race: if two callers reach
     // findUnique → null → create within the same tick, the @unique on
@@ -165,6 +191,11 @@ export class CoachAIBudgetService {
    * still low enough to absorb the charge. `count === 0` means the race
    * was lost; we log the overshoot but do NOT throw to the caller (their
    * Anthropic call already returned).
+   *
+   * P1-6: the WHERE clause now also pins `period_end > now()` so a debit
+   * can never land in an already-rolled period (which would silently
+   * apply to the new period's base rather than the period the call was
+   * billed against).
    */
   async recordUsage(args: {
     coachId: string;
@@ -177,11 +208,12 @@ export class CoachAIBudgetService {
     }
     const budget = await this.getOrCreateCurrentPeriod(args.coachId);
     const ceilingCents = budget.total_actual_available_cents;
-    // Race-safe atomic update: only succeed if the current used + this
-    // charge stay within the ceiling. PR #293 pattern.
+    const now = new Date();
     const result = await this.prisma.coachAIBudget.updateMany({
       where: {
         id: budget.id,
+        // P1-6: refuse if the period rolled between read and write.
+        period_end: { gt: now },
         actual_used_cents: { lte: ceilingCents - args.actualCostCents },
       },
       data: {
@@ -198,9 +230,8 @@ export class CoachAIBudgetService {
           actualCostCents: args.actualCostCents,
           ceilingCents,
           actualUsedCents: budget.actual_used_cents,
+          periodEnd: budget.period_end.toISOString(),
         },
-        // structured-logging note: passing the object as the first arg is
-        // the Nest/Pino convention used elsewhere in this codebase.
         'budget race overshoot — charge could not be absorbed',
       );
       return { recorded: false, budgetId: budget.id };
@@ -219,7 +250,6 @@ export class CoachAIBudgetService {
     const totalDisplayed =
       budget.base_displayed_cents + budget.pack_displayed_cents;
     const remainingDisplayed = Math.max(0, totalDisplayed - usedDisplayed);
-    // pct_used is rendered to one decimal for UI thresholds (60 / 80 / 95 / 100).
     const pctUsed =
       totalDisplayed === 0
         ? 0
@@ -236,41 +266,52 @@ export class CoachAIBudgetService {
       base_actual_cents: budget.base_actual_cents,
       value_multiplier: budget.value_multiplier.toFixed(3),
       actual_used_cents: budget.actual_used_cents,
-      // Locked pack tiers. The mobile client renders three buttons + Custom.
       pack_options_cents: [1000, 2500, 9900],
       custom_pack_bounds_cents: { min: 1000, max: 50_000 },
     };
   }
 
   /**
-   * Apply a paid credit pack. Idempotent on stripe_checkout_session_id.
-   * Runs in a single $transaction so the budget update and the purchase
-   * row update commit or rollback together.
-   *
-   * Preconditions: the caller (StripeWebhookController) MUST have already
-   * created the CoachCreditPackPurchase row in 'pending' state when the
-   * checkout session was minted. If the row is missing we treat the event
-   * as a stray webhook and refuse to credit (safer than auto-creating —
-   * we'd have no audit trail of who minted the session).
+   * P2-1 — exposed publicly to match spec §1 item 5 verbatim.
+   * Equivalent to `getBudgetDto(coachId).remaining_displayed_cents`.
    */
-  async applyCreditPack(args: {
-    coachId: string;
-    paidCents: number;
-    stripeCheckoutSessionId: string;
-    stripeInvoiceId?: string | null;
-    stripePaymentIntentId?: string | null;
-  }): Promise<{
+  async getRemainingDisplayed(coachId: string): Promise<number> {
+    const dto = await this.getBudgetDto(coachId);
+    return dto.remaining_displayed_cents;
+  }
+
+  /**
+   * Apply a paid credit pack. Idempotent on stripe_checkout_session_id.
+   *
+   * P0-6: accepts an optional outer transaction client. When the caller
+   * (StripeWebhookController → BillingService.handleEvent →
+   * CoachAiCreditPackService.handleStripeEvent) wants the credit-apply
+   * write to commit atomically with the dedup row, it passes its tx.
+   * When called from any other path (admin tooling, recovery scripts)
+   * the method opens its own $transaction.
+   *
+   * Preconditions: the caller MUST have already created the CCPP row in
+   * 'pending' state when the checkout session was minted. If the row is
+   * missing we treat the event as a stray webhook and refuse to credit.
+   */
+  async applyCreditPack(
+    args: {
+      coachId: string;
+      paidCents: number;
+      stripeCheckoutSessionId: string;
+      stripeInvoiceId?: string | null;
+      stripePaymentIntentId?: string | null;
+    },
+    outerTx?: Prisma.TransactionClient,
+  ): Promise<{
     status: 'applied' | 'already_applied' | 'no_pending_purchase';
     purchaseId: string | null;
   }> {
-    return this.prisma.$transaction(async (tx) => {
+    const work = async (tx: DbClient) => {
       const existing = await tx.coachCreditPackPurchase.findUnique({
         where: { stripe_checkout_session_id: args.stripeCheckoutSessionId },
       });
       if (!existing) {
-        // A webhook arriving for a session we never minted is suspicious
-        // but not necessarily malicious (Stripe re-sends old events on
-        // endpoint reconfigure). Log and ignore rather than crediting.
         this.logger.warn(
           {
             event: 'COACH_AI_PACK_WEBHOOK_NO_PENDING_ROW',
@@ -282,8 +323,6 @@ export class CoachAIBudgetService {
         return { status: 'no_pending_purchase' as const, purchaseId: null };
       }
       if (existing.status === 'paid') {
-        // Already credited. Stripe retries the webhook until we 2xx; this
-        // path is the explicit idempotency guard.
         return {
           status: 'already_applied' as const,
           purchaseId: existing.id,
@@ -297,11 +336,15 @@ export class CoachAIBudgetService {
         multiplier,
       );
 
+      // P1-8: increment the stored aggregate by the per-pack rounded
+      // value so the ceiling read in toSnapshot matches the sum of
+      // CCPP receipts exactly.
       await tx.coachAIBudget.update({
         where: { id: budget.id },
         data: {
           pack_paid_cents: { increment: args.paidCents },
           pack_displayed_cents: { increment: args.paidCents },
+          total_pack_actual_cents: { increment: actualCreditCents },
         },
       });
 
@@ -311,7 +354,6 @@ export class CoachAIBudgetService {
           status: 'paid',
           applied_at: new Date(),
           actual_credit_cents: actualCreditCents,
-          // We may not have known these IDs at session-mint time — back-fill.
           stripe_invoice_id: args.stripeInvoiceId ?? existing.stripe_invoice_id,
           stripe_payment_intent_id:
             args.stripePaymentIntentId ?? existing.stripe_payment_intent_id,
@@ -319,48 +361,59 @@ export class CoachAIBudgetService {
       });
 
       return { status: 'applied' as const, purchaseId: purchase.id };
-    });
+    };
+
+    if (outerTx) return work(outerTx);
+    return this.prisma.$transaction(work);
   }
 
   /**
-   * Owner-tooling: grant free credits (e.g. customer-success goodwill).
-   * Goes through the same pack-purchase row machinery so the audit trail
-   * is uniform, but stripe_checkout_session_id is null (free grants are
-   * not Stripe-backed). paid_cents = 0; displayed_credit_cents = the
-   * displayed amount the owner is granting.
+   * Owner-tooling: grant free credits.
+   *
+   * P0-1 fix — the CCPP row now carries is_free_grant=true. paid_cents
+   * stays 0; displayed_credit_cents is the granted amount. The CHECK
+   * constraint was relaxed from `=` to `>=` in the round-1 migration so
+   * this insert no longer 500s in production.
    */
-  async grantFreeCredits(args: {
-    coachId: string;
-    displayedCents: number;
-    reason: string;
-    actorOwnerId: string;
-  }): Promise<{ purchaseId: string; budgetId: string }> {
+  async grantFreeCredits(
+    args: {
+      coachId: string;
+      displayedCents: number;
+      reason: string;
+      actorOwnerId: string;
+    },
+    outerTx?: Prisma.TransactionClient,
+  ): Promise<{ purchaseId: string; budgetId: string }> {
     if (args.displayedCents <= 0) {
       throw new Error('grantFreeCredits: displayedCents must be > 0');
     }
-    return this.prisma.$transaction(async (tx) => {
+    const work = async (tx: DbClient) => {
       const budget = await this.getOrCreateCurrentPeriodTx(tx, args.coachId);
+      const actualCreditCents = bankersRoundPaidToActual(
+        args.displayedCents,
+        Number(budget.value_multiplier),
+      );
       await tx.coachAIBudget.update({
         where: { id: budget.id },
         data: {
-          pack_paid_cents: { increment: args.displayedCents },
+          // A free grant does NOT increment pack_paid_cents (no money
+          // moved); it only adds displayed credit. The actual headroom
+          // is still tracked in total_pack_actual_cents so recordUsage's
+          // ceiling reflects the grant.
           pack_displayed_cents: { increment: args.displayedCents },
+          total_pack_actual_cents: { increment: actualCreditCents },
         },
       });
       const purchase = await tx.coachCreditPackPurchase.create({
         data: {
           coach_user_id: args.coachId,
           budget_id: budget.id,
-          // No Stripe session because this is a free grant. paid_cents = 0
-          // so the row is distinguishable from a real purchase in reports.
           paid_cents: 0,
           displayed_credit_cents: args.displayedCents,
-          actual_credit_cents: bankersRoundPaidToActual(
-            args.displayedCents,
-            Number(budget.value_multiplier),
-          ),
+          actual_credit_cents: actualCreditCents,
           status: 'paid',
           applied_at: new Date(),
+          is_free_grant: true,
         },
       });
       this.logger.log(
@@ -375,21 +428,26 @@ export class CoachAIBudgetService {
         'free credit grant',
       );
       return { purchaseId: purchase.id, budgetId: budget.id };
-    });
+    };
+    if (outerTx) return work(outerTx);
+    return this.prisma.$transaction(work);
   }
 
   /**
    * Owner-tooling: refund a pack purchase. Reverses the displayed/paid
-   * accumulators on the budget row and flips the purchase to 'refunded'.
-   * Refuses to refund a purchase that is not currently 'paid' so we don't
-   * double-reverse.
+   * accumulators on the budget row (including the actual-headroom
+   * column) and flips the purchase to 'refunded'. Refuses to refund a
+   * purchase that is not currently 'paid' so we don't double-reverse.
    */
-  async refundPack(args: {
-    purchaseId: string;
-    actorOwnerId: string;
-    reason: string;
-  }): Promise<{ refunded: boolean; reason?: string }> {
-    return this.prisma.$transaction(async (tx) => {
+  async refundPack(
+    args: {
+      purchaseId: string;
+      actorOwnerId: string;
+      reason: string;
+    },
+    outerTx?: Prisma.TransactionClient,
+  ): Promise<{ refunded: boolean; reason?: string }> {
+    const work = async (tx: DbClient) => {
       const purchase = await tx.coachCreditPackPurchase.findUnique({
         where: { id: args.purchaseId },
       });
@@ -402,6 +460,7 @@ export class CoachAIBudgetService {
         data: {
           pack_paid_cents: { decrement: purchase.paid_cents },
           pack_displayed_cents: { decrement: purchase.displayed_credit_cents },
+          total_pack_actual_cents: { decrement: purchase.actual_credit_cents },
         },
       });
       await tx.coachCreditPackPurchase.update({
@@ -420,25 +479,19 @@ export class CoachAIBudgetService {
         'pack refund',
       );
       return { refunded: true };
-    });
+    };
+    if (outerTx) return work(outerTx);
+    return this.prisma.$transaction(work);
   }
 
   /**
    * Monthly rollover: for each budget whose period_end <= now, expire the
    * base (reset actual_used_cents to 0, start a fresh period) but PRESERVE
    * pack credit accumulated this period — that's money the coach paid us;
-   * we don't get to take it back. Audit doc said "Expire" for base — i.e.
-   * unused base does not carry over.
+   * we don't get to take it back.
    *
-   * Wait — re-reading the spec: "Test T5: Monthly rollover expires base,
-   * preserves packs". The interpretation is:
-   *   - actual_used_cents → 0
-   *   - base_* stays at the standard locked values (4000 / 12500)
-   *   - pack_paid_cents / pack_displayed_cents survive the rollover
-   *
-   * This matches the operator's intent: a coach who bought $25 of credit
-   * on day 28 of last month should walk into next month with $25 of pack
-   * credit still available, on top of a fresh $125 base allowance.
+   * P1-3: period_end is the start of the next calendar month, not a
+   * 30-day offset. See startOfNextMonth().
    */
   async rolloverDueBudgets(now: Date = new Date()): Promise<{ rolled: number }> {
     const due = await this.prisma.coachAIBudget.findMany({
@@ -446,13 +499,10 @@ export class CoachAIBudgetService {
       select: { id: true },
     });
     if (due.length === 0) return { rolled: 0 };
-    const periodStart = startOfCurrentPeriod(now);
-    const periodEnd = new Date(periodStart.getTime() + PERIOD_MS);
+    const periodStart = startOfCurrentMonth(now);
+    const periodEnd = startOfNextMonth(periodStart);
     let rolled = 0;
     for (const row of due) {
-      // One UPDATE per row so a concurrent recordUsage on a still-running
-      // period (e.g. a budget whose end is in the past by minutes) gets
-      // ordered cleanly via Postgres row-level locking.
       const result = await this.prisma.coachAIBudget.updateMany({
         where: { id: row.id, period_end: { lte: now } },
         data: {
@@ -463,7 +513,8 @@ export class CoachAIBudgetService {
           base_actual_cents: resolveMaxActualCents(),
           value_multiplier: new Prisma.Decimal(resolveValueMultiplier()),
           base_displayed_cents: resolveBaseDisplayedCents(),
-          // pack_paid_cents / pack_displayed_cents intentionally left alone.
+          // pack_paid_cents / pack_displayed_cents / total_pack_actual_cents
+          // intentionally left alone — paid credit carries over.
         },
       });
       rolled += result.count;
@@ -472,8 +523,9 @@ export class CoachAIBudgetService {
   }
 
   /**
-   * Convert a Prisma row into the in-process snapshot, normalising the
-   * Decimal multiplier to Number and pre-computing the total available.
+   * Convert a Prisma row into the in-process snapshot. P1-8: uses the
+   * stored total_pack_actual_cents column instead of round-the-sum so
+   * the ceiling matches the per-pack receipts exactly.
    */
   private toSnapshot(row: {
     id: string;
@@ -486,11 +538,9 @@ export class CoachAIBudgetService {
     pack_paid_cents: number;
     pack_displayed_cents: number;
     actual_used_cents: number;
+    total_pack_actual_cents: number;
   }): BudgetSnapshot {
     const multiplier = Number(row.value_multiplier);
-    // Pack money buys actual headroom at the same multiplier as the base
-    // subsidy. paid_cents / multiplier == actual cents bought.
-    const packActualCents = bankersRoundPaidToActual(row.pack_paid_cents, multiplier);
     return {
       id: row.id,
       coach_user_id: row.coach_user_id,
@@ -502,15 +552,23 @@ export class CoachAIBudgetService {
       pack_paid_cents: row.pack_paid_cents,
       pack_displayed_cents: row.pack_displayed_cents,
       actual_used_cents: row.actual_used_cents,
-      total_actual_available_cents: row.base_actual_cents + packActualCents,
+      total_pack_actual_cents: row.total_pack_actual_cents,
+      total_actual_available_cents:
+        row.base_actual_cents + row.total_pack_actual_cents,
     };
   }
 }
 
-/**
- * Start-of-period helper. Calendar-month boundary in UTC. Kept module-
- * private so the service is the only owner of period bookkeeping.
- */
-function startOfCurrentPeriod(now: Date): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+/** First-of-month UTC at 00:00. */
+function startOfCurrentMonth(now: Date): Date {
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0),
+  );
+}
+
+/** First-of-next-month UTC at 00:00. P1-3 — handles year boundary via Date(). */
+function startOfNextMonth(d: Date): Date {
+  return new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1, 0, 0, 0, 0),
+  );
 }

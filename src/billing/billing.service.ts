@@ -199,14 +199,17 @@ export class BillingService {
         // checkout.session.completed / .expired events. It only claims
         // events whose metadata carries `tgp_kind=coach_ai_credit_pack`,
         // so other checkout flows (storefront, SaaS subscription) are
-        // unaffected. The pack service runs OUTSIDE this $transaction:
-        // applyCreditPack opens its own $transaction internally so the
-        // budget write + purchase status flip commit atomically. A
-        // failure inside that inner transaction throws back up here and
-        // rolls back the dedup row — Stripe will retry the same event.
+        // unaffected. Audit P0-6 fix: we now thread the outer `tx` into
+        // handleStripeEvent so applyCreditPack commits in the SAME
+        // transaction as the dedup row. If the outer tx rolls back, the
+        // credit-apply rolls back too — restoring proper atomic
+        // semantics. Stripe retries the same event id and the
+        // schema-level @unique on stripe_checkout_session_id + the
+        // `existing.status === 'paid'` early-return keep the retry path
+        // idempotent.
         let claimedByAiPack = false;
         if (this.coachAiPacks) {
-          const result = await this.coachAiPacks.handleStripeEvent(event);
+          const result = await this.coachAiPacks.handleStripeEvent(event, tx);
           claimedByAiPack = !!result.claimed;
         }
 

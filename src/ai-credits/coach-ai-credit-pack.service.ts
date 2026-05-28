@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { StripeApiService } from '../billing/stripe-api.service';
 import { CoachAIBudgetService } from './coach-ai-budget.service';
@@ -28,6 +29,10 @@ interface PackTierResolution {
   amountCents: number;
   productName: string;
 }
+
+/** Read surface shared by `PrismaService` and `Prisma.TransactionClient` for
+ *  the CCPP lookup before the credit-apply branch. */
+type DbReader = Pick<PrismaService, 'coachCreditPackPurchase'> | Prisma.TransactionClient;
 
 @Injectable()
 export class CoachAiCreditPackService {
@@ -163,12 +168,26 @@ export class CoachAiCreditPackService {
    * an AI credit pack (identified by metadata.tgp_kind === 'coach_ai_credit_pack').
    * Returns claimed=false otherwise so BillingService can route the event
    * to a downstream handler.
+   *
+   * P0-6: accepts an optional outer Prisma.TransactionClient so the
+   * credit-apply write commits atomically with the BillingService dedup
+   * row. When omitted, applyCreditPack opens its own $transaction.
+   *
+   * P0-2/3: uses the CCPP row's `paid_cents` (the tier amount recorded
+   * at session-mint) as the credit source rather than the Stripe event's
+   * `amount_total`. With `automatic_tax` disabled for credit-pack
+   * sessions this is the same number; with it ever re-enabled, this
+   * path still credits the face-value tier amount rather than the
+   * tax-inflated total — keeping the "$25 buys $25 of AI" promise true.
    */
-  async handleStripeEvent(event: {
-    id: string;
-    type: string;
-    data: { object: Record<string, unknown> };
-  }): Promise<{ claimed: boolean; status?: string }> {
+  async handleStripeEvent(
+    event: {
+      id: string;
+      type: string;
+      data: { object: Record<string, unknown> };
+    },
+    outerTx?: Prisma.TransactionClient,
+  ): Promise<{ claimed: boolean; status?: string }> {
     const obj = event.data.object as {
       id?: string;
       metadata?: Record<string, string>;
@@ -180,9 +199,6 @@ export class CoachAiCreditPackService {
       customer?: string | null;
     };
 
-    // Two entry points: checkout.session.completed (mode=payment fires this
-    // once Stripe finalises the session and the PaymentIntent succeeds) and
-    // checkout.session.expired (session timed out without payment).
     if (
       event.type !== 'checkout.session.completed' &&
       event.type !== 'checkout.session.expired'
@@ -200,35 +216,44 @@ export class CoachAiCreditPackService {
       return { claimed: true, status: 'no_session_id' };
     }
 
+    // The CCPP row was pre-created at session mint with the tier amount.
+    // We look it up BEFORE deciding how much to credit so the credit
+    // always matches the tier face value, not whatever Stripe summed.
+    // Use the outer tx if supplied so this read is consistent with the
+    // subsequent applyCreditPack write inside the same transaction.
+    const db: DbReader = outerTx ?? this.prisma;
+    const existing = await db.coachCreditPackPurchase.findUnique({
+      where: { stripe_checkout_session_id: obj.id },
+    });
+
     if (event.type === 'checkout.session.expired') {
-      // Mark the purchase row as failed so reports show the abandonment.
-      await this.prisma.coachCreditPackPurchase
-        .update({
-          where: { stripe_checkout_session_id: obj.id },
-          data: { status: 'failed' },
-        })
-        .catch(() => undefined);
+      if (existing && existing.status === 'pending') {
+        await (outerTx ?? this.prisma).coachCreditPackPurchase
+          .update({
+            where: { stripe_checkout_session_id: obj.id },
+            data: { status: 'failed' },
+          })
+          .catch(() => undefined);
+      }
       return { claimed: true, status: 'expired' };
     }
 
-    // checkout.session.completed for mode=payment fires after the
-    // PaymentIntent succeeds. We treat amount_total as the source of
-    // truth for the credit amount (it captures custom-pack values
-    // including any tax adjustment Stripe applied).
-    const amountTotal = obj.amount_total;
-    if (typeof amountTotal !== 'number' || amountTotal <= 0) {
+    if (!existing) {
+      // Stray webhook for a session we never minted. applyCreditPack
+      // would log the same condition; short-circuit here to avoid the
+      // extra call.
       this.logger.warn(
         {
-          event: 'COACH_AI_PACK_WEBHOOK_INVALID_AMOUNT',
+          event: 'COACH_AI_PACK_WEBHOOK_NO_PENDING_ROW',
           stripeEventId: event.id,
           stripeSessionId: obj.id,
-          amountTotal,
         },
-        'checkout session has invalid amount_total',
+        'pack webhook arrived without matching pending purchase row',
       );
-      return { claimed: true, status: 'invalid_amount' };
+      return { claimed: true, status: 'no_pending_purchase' };
     }
-    const coachUserId = obj.metadata.tgp_coach_user_id;
+
+    const coachUserId = obj.metadata.tgp_coach_user_id ?? existing.coach_user_id;
     if (!coachUserId) {
       this.logger.warn(
         {
@@ -236,19 +261,43 @@ export class CoachAiCreditPackService {
           stripeEventId: event.id,
           stripeSessionId: obj.id,
         },
-        'checkout session missing tgp_coach_user_id metadata',
+        'checkout session missing tgp_coach_user_id metadata and no CCPP fallback',
       );
       return { claimed: true, status: 'no_coach' };
     }
 
-    const result = await this.budget.applyCreditPack({
-      coachId: coachUserId,
-      paidCents: amountTotal,
-      stripeCheckoutSessionId: obj.id,
-      stripeInvoiceId: typeof obj.invoice === 'string' ? obj.invoice : null,
-      stripePaymentIntentId:
-        typeof obj.payment_intent === 'string' ? obj.payment_intent : null,
-    });
+    // Audit log if Stripe's amount_total disagrees with what we recorded.
+    // P0-2/3: this is the divergence indicator. With automatic_tax
+    // disabled they should always match; if they don't, surface the
+    // discrepancy on the structured log so support can reconcile.
+    if (
+      typeof obj.amount_total === 'number' &&
+      obj.amount_total !== existing.paid_cents
+    ) {
+      this.logger.warn(
+        {
+          event: 'COACH_AI_PACK_AMOUNT_TOTAL_DIVERGENCE',
+          stripeEventId: event.id,
+          stripeSessionId: obj.id,
+          ccppPaidCents: existing.paid_cents,
+          stripeAmountTotal: obj.amount_total,
+        },
+        'Stripe amount_total differs from pre-recorded paid_cents; crediting face-value tier amount',
+      );
+    }
+
+    const result = await this.budget.applyCreditPack(
+      {
+        coachId: coachUserId,
+        // P0-2/3: face-value tier amount, not tax-inclusive total.
+        paidCents: existing.paid_cents,
+        stripeCheckoutSessionId: obj.id,
+        stripeInvoiceId: typeof obj.invoice === 'string' ? obj.invoice : null,
+        stripePaymentIntentId:
+          typeof obj.payment_intent === 'string' ? obj.payment_intent : null,
+      },
+      outerTx,
+    );
     return { claimed: true, status: result.status };
   }
 

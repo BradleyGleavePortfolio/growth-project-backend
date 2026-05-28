@@ -29,6 +29,19 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../prisma.service';
+
+/**
+ * Sentinel error surfaced by `markBriefRead` when the briefId either does
+ * not exist or belongs to another coach. Mapped to 404 at the controller
+ * layer; kept service-local so the service does not import Nest HTTP
+ * exception classes directly.
+ */
+export class BriefNotFoundError extends Error {
+  constructor(public readonly briefId: string) {
+    super(`Brief ${briefId} not found`);
+    this.name = 'BriefNotFoundError';
+  }
+}
 import {
   ActionItem,
   BriefContext,
@@ -1764,6 +1777,60 @@ export class CoachBriefService {
     const timezone = await this.resolveCoachTimezone(coachId);
     const briefDate = bucketDateLocal(new Date(), timezone);
     return this.generateBrief(coachId, timezone, briefDate);
+  }
+
+  /**
+   * Audit P0-5 — mark a brief as read.
+   *
+   * Sets `read_at = now()` exactly once. Subsequent calls for the same
+   * (coachId, briefId) are no-ops (the WHERE refuses to update once
+   * read_at is non-null). Tenant scope: we require `coach_id = coachId`
+   * so a coach can never mark another coach's brief read — important
+   * because dormancy attribution relies on the per-coach read count.
+   *
+   * Returns `{ already_read: true }` when the brief was previously read
+   * so the mobile client can avoid an extra round-trip on idempotent
+   * retries.
+   *
+   * Wired into:
+   *   - `POST /coach/brief/:id/read` (the dedicated endpoint)
+   *   - Dormancy guard (`DormancyGuardService.shouldSkipCoach`) reads
+   *     this column to decide cost-protection skips.
+   */
+  async markBriefRead(
+    coachId: string,
+    briefId: string,
+  ): Promise<{ id: string; read_at: string; already_read: boolean }> {
+    const now = new Date();
+    // Atomic conditional UPDATE — only write if (a) the brief belongs
+    // to this coach, AND (b) read_at is currently null. result.count
+    // tells us which branch we landed in.
+    const result = await this.prisma.coachBrief.updateMany({
+      where: { id: briefId, coach_id: coachId, read_at: null },
+      data: { read_at: now },
+    });
+    if (result.count > 0) {
+      return { id: briefId, read_at: now.toISOString(), already_read: false };
+    }
+    // Either the brief doesn't belong to this coach, doesn't exist, or
+    // is already read. Read it back to disambiguate.
+    const existing = await this.prisma.coachBrief.findFirst({
+      where: { id: briefId, coach_id: coachId },
+      select: { id: true, read_at: true },
+    });
+    if (!existing) {
+      // Throw a 404-ish — let the caller decide on the HTTP shape.
+      // We use NotFoundException at the controller layer to keep the
+      // service framework-agnostic.
+      throw new BriefNotFoundError(briefId);
+    }
+    return {
+      id: existing.id,
+      // existing.read_at is guaranteed non-null here (count was 0 above
+      // and the brief exists for this coach → it was already read).
+      read_at: (existing.read_at ?? now).toISOString(),
+      already_read: true,
+    };
   }
 
   // ── History list. 30-day window, paginated.

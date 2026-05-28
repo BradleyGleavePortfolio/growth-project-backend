@@ -11,6 +11,9 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
   Post,
   Put,
   Query,
@@ -23,7 +26,7 @@ import { CoachGuard } from '../../auth/coach.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { CoachBriefEnabledGuard } from './coach-brief-enabled.guard';
-import { CoachBriefService } from './coach-brief.service';
+import { BriefNotFoundError, CoachBriefService } from './coach-brief.service';
 import { CoachDailyLogService } from './coach-daily-log.service';
 import { CoachBriefPreferencesService } from './coach-brief-preferences.service';
 import {
@@ -130,6 +133,45 @@ export class CoachBriefController {
     @Request() req: AuthedRequest,
   ): Promise<CoachBriefResponse> {
     return this.briefService.regenerateTodaysBrief(req.user.id);
+  }
+
+  /**
+   * Audit P0-5 — POST /coach/brief/:id/read
+   *
+   * Marks a brief as read by stamping `read_at = now()`. Idempotent: a
+   * second call for the same brief returns `already_read: true` and does
+   * NOT advance the timestamp. Tenant scope is enforced in
+   * CoachBriefService.markBriefRead (UPDATE ... WHERE coach_id = $coach).
+   *
+   * Why a dedicated endpoint rather than folding into GET /today: the
+   * brief-fetch surface is read-only by REST convention; a side-effectful
+   * write hidden behind a GET defies cache semantics. The mobile client
+   * will call this from the brief detail screen on first render.
+   *
+   * TODO(mobile): wire this into the coach-home brief tap. Until that
+   * lands, the AI-cost dormancy guard will (correctly) skip coaches
+   * whose briefs accumulate unread — that is the operator's intended
+   * behaviour, so leaving the endpoint live without a mobile caller
+   * is safe (just over-protective until mobile catches up).
+   */
+  @Post(':id/read')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Mark a brief as read (idempotent)' })
+  async markRead(
+    @Request() req: AuthedRequest,
+    @Param('id', new ParseUUIDPipe()) briefId: string,
+  ): Promise<{ id: string; read_at: string; already_read: boolean }> {
+    try {
+      return await this.briefService.markBriefRead(req.user.id, briefId);
+    } catch (err) {
+      if (err instanceof BriefNotFoundError) {
+        throw new NotFoundException({
+          error: 'COACH_BRIEF_NOT_FOUND',
+          message: `Brief ${briefId} not found for this coach.`,
+        });
+      }
+      throw err;
+    }
   }
 
   @Get('log/today')

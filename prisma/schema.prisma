@@ -4477,6 +4477,14 @@ model CoachAIBudget {
   // is `actual_used_cents * value_multiplier`, computed on read.
   actual_used_cents Int @default(0)
 
+  // P1-8 fix — sum of per-pack actual_credit_cents (banker's rounded at
+  // pack-purchase time). Tracking this as a stored column avoids the
+  // drift between "sum of rounded values" and "round of summed values"
+  // that crops up when many packs are credited in a single period.
+  // recordUsage uses `base_actual_cents + total_pack_actual_cents` as
+  // the ceiling, matching exactly what receipts (CCPP rows) show.
+  total_pack_actual_cents Int @default(0)
+
   // Lifecycle bookkeeping. last_rollover_at is null until the first
   // rollover stamps it; created_at marks initial row creation.
   created_at       DateTime  @default(now())
@@ -4530,6 +4538,14 @@ model CoachCreditPackPurchase {
   status      String
   applied_at  DateTime?
   refunded_at DateTime?
+
+  // P0-1 fix — explicit flag distinguishing owner-tooling free grants
+  // (paid_cents = 0, displayed_credit_cents > 0) from real Stripe-backed
+  // purchases (paid_cents = displayed_credit_cents > 0). Required because
+  // the relaxed CHECK constraint (displayed_credit_cents >= paid_cents)
+  // alone no longer pins the two columns together; reports need to count
+  // free-grant volume separately from gross-pack revenue.
+  is_free_grant Boolean @default(false)
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
