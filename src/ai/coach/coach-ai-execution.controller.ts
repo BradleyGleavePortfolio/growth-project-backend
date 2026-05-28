@@ -33,6 +33,95 @@ import {
   SEND_NOTIFICATION_CAPABILITY,
 } from '../gateway/materialisers/send-notification.materialiser';
 
+// ─── DTOs (declared BEFORE the controller — TS class hoisting only
+//     happens for type-positions, but decorators read the constructor
+//     at module-load time, so the DTO classes must be initialised
+//     before the controller class references them in parameter
+//     decorators) ─────────────────────────────────────────────────────────
+
+export class DraftAssignWorkoutDto {
+  @IsUUID()
+  workoutPlanId!: string;
+
+  @IsUUID()
+  clientId!: string;
+
+  // ISO 8601 string. Re-validated by the materialiser's Zod schema.
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  scheduledFor!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(4000)
+  prompt!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  notificationBody?: string;
+}
+
+export class DraftAssignMealPlanDto {
+  @IsUUID()
+  dailyMealPlanId!: string;
+
+  @IsUUID()
+  clientId!: string;
+
+  // `YYYY-MM-DD` enforced by the Zod schema at the materialiser; we
+  // accept any string up to 10 chars here so a malformed value still
+  // surfaces a structured 400 via the gateway's payload validator.
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  startsOn!: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  endsOn?: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(4000)
+  prompt!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  notificationBody?: string;
+}
+
+export class DraftSendNotificationDto {
+  @IsUUID()
+  clientId!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  kind!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  body!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(4000)
+  prompt!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  deepLink?: string;
+
+  @IsOptional()
+  @IsString()
+  channel?: 'push' | 'inapp';
+}
+
 /**
  * Stream 2 — Coach-side entrypoints for the four AI-execution
  * capabilities. The existing `POST /ai/gateway/invoke` already accepts
@@ -183,91 +272,6 @@ export class CoachAIExecutionController {
     });
     return draftResponse(result);
   }
-}
-
-// ─── DTOs ──────────────────────────────────────────────────────────────────
-
-export class DraftAssignWorkoutDto {
-  @IsUUID()
-  workoutPlanId!: string;
-
-  @IsUUID()
-  clientId!: string;
-
-  // ISO 8601 string. Re-validated by the materialiser's Zod schema.
-  @IsString()
-  @MinLength(8)
-  @MaxLength(64)
-  scheduledFor!: string;
-
-  @IsString()
-  @MinLength(1)
-  @MaxLength(4000)
-  prompt!: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(160)
-  notificationBody?: string;
-}
-
-export class DraftAssignMealPlanDto {
-  @IsUUID()
-  dailyMealPlanId!: string;
-
-  @IsUUID()
-  clientId!: string;
-
-  // `YYYY-MM-DD` enforced by the Zod schema at the materialiser; we
-  // accept any string up to 10 chars here so a malformed value still
-  // surfaces a structured 400 via the gateway's payload validator.
-  @IsString()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/)
-  startsOn!: string;
-
-  @IsOptional()
-  @IsString()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/)
-  endsOn?: string;
-
-  @IsString()
-  @MinLength(1)
-  @MaxLength(4000)
-  prompt!: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(160)
-  notificationBody?: string;
-}
-
-export class DraftSendNotificationDto {
-  @IsUUID()
-  clientId!: string;
-
-  @IsString()
-  @MinLength(1)
-  @MaxLength(64)
-  kind!: string;
-
-  @IsString()
-  @MinLength(1)
-  @MaxLength(160)
-  body!: string;
-
-  @IsString()
-  @MinLength(1)
-  @MaxLength(4000)
-  prompt!: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(512)
-  deepLink?: string;
-
-  @IsOptional()
-  @IsString()
-  channel?: 'push' | 'inapp';
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
