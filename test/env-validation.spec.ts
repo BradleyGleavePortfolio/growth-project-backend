@@ -122,6 +122,13 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     // refuses to boot without an explicit secret so the per-visitor daily
     // hash is not predictable.
     LANDING_VIEW_HASH_SECRET: 'test-landing-view-hash-secret-at-least-32-chars-long',
+    // Stream 1 — Coach AI Credits. Both env vars are prod-hardened in
+    // round-1 fixer so production refuses to boot without explicit
+    // values (otherwise a missing var silently falls back to dev
+    // defaults). fullProdEnv must include them so the clean-prod-env
+    // assertion stays green.
+    COACH_AI_MAX_ACTUAL_CENTS: '4000',
+    COACH_AI_VALUE_MULTIPLIER: '3.125',
   };
 }
 
@@ -275,6 +282,10 @@ describe('assertEnv', () => {
           LANDING_VIEW_HASH_SECRET: 'test-landing-view-hash-secret-at-least-32-chars-long',
           // Audit A276-P1-1 — prod-hardened with minLength=32.
           CHECKOUT_RECOVERY_SECRET: VALID_CHECKOUT_RECOVERY_SECRET,
+          // Stream 1 round-1 — prod-hardened so a missing env var can't
+          // silently revert to dev defaults.
+          COACH_AI_MAX_ACTUAL_CENTS: '4000',
+          COACH_AI_VALUE_MULTIPLIER: '3.125',
         },
         { logger: silentLogger as any },
       ),
@@ -313,6 +324,9 @@ describe('assertEnv', () => {
         LANDING_VIEW_HASH_SECRET: 'test-landing-view-hash-secret-at-least-32-chars-long',
         // Audit A276-P1-1 — prod-hardened with minLength=32.
         CHECKOUT_RECOVERY_SECRET: VALID_CHECKOUT_RECOVERY_SECRET,
+        // Stream 1 round-1 — prod-hardened.
+        COACH_AI_MAX_ACTUAL_CENTS: '4000',
+        COACH_AI_VALUE_MULTIPLIER: '3.125',
       },
       { logger: logger as any },
     );
@@ -404,6 +418,9 @@ describe('assertEnv', () => {
           LANDING_VIEW_HASH_SECRET: 'test-landing-view-hash-secret-at-least-32-chars-long',
           // Audit A276-P1-1 — prod-hardened with minLength=32.
           CHECKOUT_RECOVERY_SECRET: VALID_CHECKOUT_RECOVERY_SECRET,
+          // Stream 1 round-1 — prod-hardened.
+          COACH_AI_MAX_ACTUAL_CENTS: '4000',
+          COACH_AI_VALUE_MULTIPLIER: '3.125',
         },
         { enforceProd: false, logger: silentLogger as any },
       ),

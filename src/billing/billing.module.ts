@@ -4,6 +4,11 @@ import { ConnectModule } from '../connect/connect.module';
 import { EmailModule } from '../email/email.module';
 import { PrismaService } from '../prisma.service';
 import { StorefrontModule } from '../storefront/storefront.module';
+// Stream 1 — Note: BillingService injects CoachAiCreditPackService as
+// @Optional(). The provider is supplied by AiCreditsModule, which is
+// @Global, so we don't import the module here. The Optional injection
+// degrades to undefined in legacy test wiring that doesn't load
+// AiCreditsModule, which keeps the existing test suite green.
 import { BillingService } from './billing.service';
 import { CoachBillingController } from './coach-billing.controller';
 import { MobileCoachBillingController } from './mobile-coach-billing.controller';

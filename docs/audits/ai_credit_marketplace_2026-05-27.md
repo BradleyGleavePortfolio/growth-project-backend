@@ -1,9 +1,27 @@
 # AI Credit Marketplace — Per-Coach Cap + Paid Credit Packs
 
-**Date:** 2026-05-27
+**Date:** 2026-05-27 (operator override applied 2026-05-28)
 **Author:** Dynasia G
 **Status:** Specification — awaiting build PR
 **Sequencing:** Builds on PR AI-1 (per-coach budget envelope). Treat this doc as the "buy more credits" follow-up audit referenced by `ai_bugs_sweep_plan.md`.
+
+---
+
+## 2026-05-28 OPERATOR OVERRIDE (LOCKED — supersedes any older number in this doc)
+
+| Knob | Old (this doc, 2026-05-27) | **NEW — LOCKED 2026-05-28** |
+|---|---|---|
+| Value multiplier | 5.0× | **3.125×** |
+| Displayed allowance | $200 | **$125** |
+| Credit pack tiers | $25 / $50 / $99 / Custom | **$10 / $25 / $99 / Custom** |
+| TGP gross margin per pack | ~80% | **68%** (= 1 − 1/3.125) |
+| `COACH_AI_VALUE_MULTIPLIER` | 5.0 | **3.125** |
+
+Authoritative spec: `canonical_docs/STREAM_1_AI_CREDITS_SPEC.md`. The prose
+below that references "5×", "$200", "$50 pack", or "80% margin" is
+historical context — the override above is what we ship.
+
+---
 
 ---
 
@@ -32,11 +50,11 @@ With a fixed cap alone, engaged power coaches with chatty rosters get throttled 
 ## Default Cap (Built in PR AI-1)
 
 - **Hard cap actual Anthropic spend:** **$40 / coach / month** (combined coach + all his clients)
-- **VALUE_MULTIPLIER:** **5.0×**
-- **Displayed allowance to coach:** **$200 / month**
+- **VALUE_MULTIPLIER:** **3.125×** (operator override 2026-05-28; was 5.0×)
+- **Displayed allowance to coach:** **$125 / month** (operator override 2026-05-28; was $200)
 - **Env vars:**
   - `COACH_AI_MAX_ACTUAL_CENTS=4000`
-  - `COACH_AI_VALUE_MULTIPLIER=5.0`
+  - `COACH_AI_VALUE_MULTIPLIER=3.125`
 
 The cap is server-side. The displayed value is what the coach sees. The displayed value never exceeds the multiplied actual.
 
@@ -68,10 +86,10 @@ Stripe products defined as both one-shot and recurring options. Buyer = Coach (t
 
 | Pack | Coach pays | Displayed credit added | Actual headroom (TGP cost) | TGP margin | One-shot | Recurring |
 |---|---|---|---|---|---|---|
-| **Small** | $25 | +$25 displayed | +$5 actual | $20 / 80% | ✓ | ✓ |
-| **Medium** | $50 | +$50 displayed | +$10 actual | $40 / 80% | ✓ | ✓ |
-| **Large** | $99 | +$99 displayed | +$19.80 actual | $79.20 / 80% | ✓ | ✓ |
-| **Custom** | $X (min $10, max $500) | +$X displayed | +$X/5 actual | 80% | ✓ | One-shot only |
+| **Small** | $10 | +$10 displayed | +$3.20 actual | $6.80 / 68% | ✓ | ✓ |
+| **Medium** | $25 | +$25 displayed | +$8.00 actual | $17.00 / 68% | ✓ | ✓ |
+| **Large** | $99 | +$99 displayed | +$31.68 actual | $67.32 / 68% | ✓ | ✓ |
+| **Custom** | $X (min $10, max $500) | +$X displayed | +$X/3.125 actual | 68% | ✓ | One-shot only |
 
 **Mental model:** Coach sees "$50 buys $50 more AI" — no multiplier math exposed.
 

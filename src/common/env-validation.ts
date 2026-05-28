@@ -1037,6 +1037,20 @@ export function assertEnv(
         reason:
           'r48 / audit A276-P1-1 + A276-F3-P2-1 — signs the 15-minute checkout recovery JWT AND the 7-day guest session cookie. MUST be ≥43 chars (RFC 7518 §3.2: HS256 keys carry ≥256 bits of entropy = 32 random bytes = 43 base64url chars); boot refuses to start prod when missing or too short because the cookie path silently no-ops on weak/missing secret (failure #36).',
       },
+      // Stream 1 — Coach AI Credits. Production refuses to boot without
+      // these because a missing value would silently fall back to the
+      // dev defaults (4000 / 3.125) which we never want to ship under a
+      // typo or env-var rename in fly.toml.
+      {
+        name: 'COACH_AI_MAX_ACTUAL_CENTS',
+        reason:
+          'Stream 1 — hard ceiling on Anthropic spend per coach per period in cents. A missing value falls back to the locked 4000 ($40) default, which is correct but only by accident. We refuse to boot prod without an explicit value so a future change is visible in the deploy diff. Refs: STREAM_1_AI_CREDITS_SPEC.md §0.',
+      },
+      {
+        name: 'COACH_AI_VALUE_MULTIPLIER',
+        reason:
+          'Stream 1 — value multiplier (displayed = actual * multiplier). Locked at 3.125 per operator override 2026-05-28. Missing falls back to the dev constant; production requires an explicit value so an env-var typo doesn\'t silently revert to a stale number. Refs: STREAM_1_AI_CREDITS_SPEC.md §0.',
+      },
     ];
     // Audit A276-F3-P3-4 — distinguish "missing" (var unset / blank) from
     // "too short" (var IS set but fails the minLength entropy floor). An

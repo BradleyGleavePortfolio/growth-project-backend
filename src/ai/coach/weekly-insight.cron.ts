@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { CoachAIService } from './coach-ai.service';
 import { CoachAIStateService } from './coach-ai-state.service';
+import { DormancyGuardService } from '../../ai-credits/dormancy-guard.service';
 
 // Weekly insight digest cron.
 //
@@ -20,6 +21,11 @@ export class WeeklyInsightCron {
   constructor(
     private readonly svc: CoachAIService,
     private readonly state: CoachAIStateService,
+    // Audit P0-4 — dormancy guard. Injected from the @Global
+    // AiCreditsModule so we don't need a circular import. We use it
+    // to short-circuit per-coach iteration when the coach has 3+
+    // consecutive unread briefs (cost protection).
+    private readonly dormancy: DormancyGuardService,
   ) {}
 
   @Cron(CronExpression.EVERY_WEEK)
@@ -35,7 +41,19 @@ export class WeeklyInsightCron {
     const coachIds = await this.svc.listActiveCoachIds();
     this.logger.log(`weekly digest starting — coaches=${coachIds.length}`);
 
+    let skippedDormant = 0;
     for (const coachId of coachIds) {
+      // Audit P0-4 — skip dormant coaches (3 consecutive unread briefs).
+      // This is the operator's primary cost-protection knob; without it
+      // we burn Anthropic spend generating insights nobody reads.
+      if (await this.dormancy.shouldSkipCoach(coachId)) {
+        skippedDormant++;
+        this.logger.log(
+          { event: 'WEEKLY_INSIGHT_SKIPPED_DORMANT', coachId },
+          `coach=${coachId} skipped — 3+ unread briefs (dormancy guard)`,
+        );
+        continue;
+      }
       const clientIds = await this.svc.listActiveClientsForCoach(coachId);
       for (const clientId of clientIds) {
         try {
@@ -49,6 +67,9 @@ export class WeeklyInsightCron {
         }
       }
     }
-    this.logger.log('weekly digest complete');
+    this.logger.log(
+      { event: 'WEEKLY_INSIGHT_COMPLETE', total: coachIds.length, skippedDormant },
+      `weekly digest complete — total=${coachIds.length} skippedDormant=${skippedDormant}`,
+    );
   }
 }

@@ -59,6 +59,11 @@ export const THROTTLER_NAMES = {
   /** Per-hour cap on checkout session / payment-intent minting per user.
    *  Prevents a compromised client account from spam-minting Stripe sessions. */
   CHECKOUT_MINT: 'checkout-mint',
+  /** Stream 1 — per-minute cap on POST /coach/ai/credit-packs/checkout
+   *  per user. Every call hits Stripe + creates a row in
+   *  CoachCreditPackPurchase; tight bucket stops automated abuse without
+   *  interfering with a real coach retrying on flaky network. */
+  COACH_AI_CREDIT_PACK_CHECKOUT: 'coach-ai-credit-pack-checkout',
   /** Catch-all: every route that carries no explicit @Throttle decorator. */
   DEFAULT: 'default',
 } as const;
@@ -101,6 +106,17 @@ const DIAGNOSTIC_RATE_LIMIT_PER_HOUR = readIntEnv('DIAGNOSTIC_RATE_LIMIT_PER_HOU
 // compromised account spinning up Stripe sessions in a loop.
 const CHECKOUT_MINT_PER_HOUR = readIntEnv('CHECKOUT_MINT_PER_HOUR', 20, 1, 500);
 
+// Stream 1 — credit-pack checkout. Per-minute cap because the mobile UX
+// retries on Stripe failures and we don't want to lock a real coach out
+// for an hour. 5/min/user is plenty even for back-to-back custom amount
+// tweaks; the bucket exists to stop automation, not friction the user.
+const COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN = readIntEnv(
+  'COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN',
+  5,
+  1,
+  120,
+);
+
 // Export per-route constants so controllers can reference them for @Throttle
 // decorators without repeating magic numbers inline.
 export const THROTTLER_ROUTE_LIMITS = {
@@ -114,6 +130,7 @@ export const THROTTLER_ROUTE_LIMITS = {
   RATELIMIT_AUTHED_PER_MIN,
   RATELIMIT_ANON_PER_MIN,
   CHECKOUT_MINT_PER_HOUR,
+  COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN,
 } as const;
 
 export const THROTTLER_LIMITS = [
@@ -141,6 +158,8 @@ export const THROTTLER_LIMITS = [
   { name: THROTTLER_NAMES.DIAGNOSTIC_SUBMIT,   ttl: 3_600_000,    limit: DIAGNOSTIC_RATE_LIMIT_PER_HOUR },
   // Checkout minting: 20/hour/user
   { name: THROTTLER_NAMES.CHECKOUT_MINT,       ttl: 3_600_000,    limit: CHECKOUT_MINT_PER_HOUR },
+  // Coach AI credit-pack checkout: 5/min/user (Stream 1)
+  { name: THROTTLER_NAMES.COACH_AI_CREDIT_PACK_CHECKOUT, ttl: 60_000, limit: COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN },
   // Default catch-all: applies to every route that carries no explicit @Throttle decorator.
   // The guard in getTracker() buckets authed requests by user-id (300/min) and
   // unauthenticated requests by IP (100/min). Both share this one named throttler;

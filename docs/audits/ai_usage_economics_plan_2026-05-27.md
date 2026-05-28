@@ -1,9 +1,30 @@
 # AI Usage Economics — Canonical Plan
 
-**Date:** 2026-05-27
+**Date:** 2026-05-27 (operator override applied 2026-05-28)
 **Author:** Dynasia G
 **Status:** Locked — drives all upcoming AI-bug-sweep PRs (AI-1 through AI-5) and the Credits follow-up PRs (Credits-1, Credits-2-Mobile, Credits-3-Admin).
-**Supersedes:** Any earlier scratch numbers in chat. This is the single source of truth.
+**Supersedes:** Any earlier scratch numbers in chat. The locked numbers in `canonical_docs/STREAM_1_AI_CREDITS_SPEC.md` are authoritative.
+
+---
+
+## 2026-05-28 OPERATOR OVERRIDE (LOCKED — supersedes any older number in this doc)
+
+| Knob | Old (this doc, 2026-05-27) | **NEW — LOCKED 2026-05-28** |
+|---|---|---|
+| Hard actual ceiling | $40 / coach / month | **$40 / coach / month** (unchanged) |
+| Value multiplier | 5.0× | **3.125×** |
+| Displayed allowance | $200 | **$125** |
+| Credit pack tiers | $25 / $50 / $99 / Custom | **$10 / $25 / $99 / Custom** |
+| Custom pack bounds | min $10, max $500 | **min $10, max $500** (unchanged) |
+| TGP gross margin per pack | ~80% | **68%** (= 1 − 1/3.125) |
+| `COACH_AI_MAX_ACTUAL_CENTS` | 4000 | **4000** (unchanged) |
+| `COACH_AI_VALUE_MULTIPLIER` | 5.0 | **3.125** |
+
+The prose/margin math below uses the pre-override 5.0× / $200 numbers. Treat
+every appearance of "5×", "$200", "$50 pack", or "80% margin" in the body of
+this doc as historical context — the override above is what we ship.
+
+---
 
 This document consolidates every AI-cost / budget / credit-pack / dormancy decision made during the 2026-05-27 session. Companion docs:
 
@@ -19,11 +40,11 @@ This document consolidates every AI-cost / budget / credit-pack / dormancy decis
 | Lever | Value | Env var / file |
 |---|---|---|
 | **Base hard cap** | **$40 actual Anthropic spend / coach / month** (combined coach + ALL his clients) | `COACH_AI_MAX_ACTUAL_CENTS=4000` |
-| **Value multiplier** | **5.0×** | `COACH_AI_VALUE_MULTIPLIER=5.0` |
-| **Displayed allowance** | **$200 / coach / month** | (computed: actual × multiplier) |
-| **Credit-pack pricing** | **Face value — pay $X, get $X displayed credit** | (TGP cost = $X / 5) |
-| **Available packs** | **$25 / $50 / $99 / Custom** (min $10, max $500) | Stripe SKUs: `small` / `medium` / `large` / `custom` |
-| **TGP margin on packs** | **~80% gross** (~77% net after Stripe fees) | — |
+| **Value multiplier** | **3.125×** (was 5.0×) | `COACH_AI_VALUE_MULTIPLIER=3.125` |
+| **Displayed allowance** | **$125 / coach / month** (was $200) | (computed: actual × multiplier) |
+| **Credit-pack pricing** | **Face value — pay $X, get $X displayed credit** | (TGP cost = $X / 3.125) |
+| **Available packs** | **$10 / $25 / $99 / Custom** (was $25 / $50 / $99 / Custom; min $10, max $500) | Stripe SKUs: `small` / `medium` / `large` / `custom` |
+| **TGP margin on packs** | **68% gross** (was ~80%; = 1 − 1/3.125) | — |
 | **Brief dormancy guard** | **Skip auto-generation if last 3 daily briefs went unread** | `CoachBrief.read_at` |
 | **80% warn threshold** | Dynamic walkthrough → "Top up credits" CTA | `GET /coach/ai/budget` polled by mobile |
 | **100% block behavior** | Hard pause until period rollover OR coach buys credit pack | 402 `AI_BUDGET_EXHAUSTED` |
