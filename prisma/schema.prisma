@@ -4714,6 +4714,41 @@ model PurchaseFanout {
   created_at   DateTime       @default(now())
 }
 
+// PR-9 R1 audit-fix — durable, rollback-survivable idempotency marker
+// for resolver side-effects whose downstream commit lands OUTSIDE the
+// outer fan-out $transaction (today: auto_message via
+// MessagingService.sendAsCoach, which commits to CoachMessage on its
+// own connection). Workout uses the existing
+// WorkoutBuilderIdempotencyKey ledger with a stable key
+// (drip:workout:{purchase_id}:{content_id}) so it does not need a row
+// here. Media + meal_plan ride the outer tx and roll back cleanly so
+// they do not need a row here either.
+//
+// The marker is written in its OWN commit BEFORE the resolver fires
+// the side-effect, then UPDATED with the materialised reference after
+// the side-effect succeeds. The unique key is (purchase_id, content_id)
+// — both stable across outer-tx rollback + Stripe webhook retry, so a
+// retry observes the marker and short-circuits to the cached
+// materialised_ref (or re-attempts if the prior attempt died before
+// the UPDATE landed).
+//
+// purpose: the resolver namespace (today: 'auto_message') so a single
+// table can host markers for future resolver types without a schema
+// change; included in the unique key so independent resolvers cannot
+// collide on the same content row.
+model DripResolverMarker {
+  id               String   @id @default(uuid())
+  purpose          String // resolver namespace, e.g. 'auto_message'
+  purchase_id      String
+  content_id       String
+  materialised_ref String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@unique([purpose, purchase_id, content_id])
+  @@index([purchase_id])
+}
+
 // Coach-uploaded media library (PDFs/videos) attachable to packages
 // via CoachPackageContent.
 model CoachMediaAsset {

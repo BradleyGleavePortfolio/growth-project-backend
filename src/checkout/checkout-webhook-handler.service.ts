@@ -1,11 +1,23 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import type { ClientPurchase, CoachPackage } from '@prisma/client';
+import type { ClientPurchase, CoachPackage, Prisma } from '@prisma/client';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { PrismaService } from '../prisma.service';
 import { DunningService } from './dunning.service';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
+
+// PR-9: BillingService.handleEvent passes its outer `$transaction`'s tx
+// client through `handle(event, tx)` so the entitlement update +
+// PurchaseFanout drop seeding + immediate-cadence materialisation all
+// commit-or-rollback together with the StripeProcessedEvent dedup row.
+// Legacy callers (and the spec suite that hand-constructs the handler
+// outside a tx) may still call `handle(event)` with no tx; the handler
+// then falls back to the bare `this.prisma` client for the entitlement
+// write and skips the fan-out's tx-only steps (drop seed). The webhook
+// handler's own idempotency via StripeProcessedEvent + PurchaseFanout
+// @unique is unchanged.
+type WebhookTx = Prisma.TransactionClient;
 
 // Lifecycle:
 //
@@ -63,10 +75,13 @@ export class CheckoutWebhookHandlerService {
   // stripe_checkout_session_id / stripe_subscription_id on a ClientPurchase
   // row). The caller (BillingService) inspects claimed and skips the
   // SaaS-coach-subscription handler when this returns claimed=true.
-  async handle(event: StripeEvent): Promise<CheckoutWebhookResult> {
+  async handle(
+    event: StripeEvent,
+    tx?: WebhookTx,
+  ): Promise<CheckoutWebhookResult> {
     switch (event.type) {
       case 'checkout.session.completed':
-        return this.applyCheckoutCompleted(event);
+        return this.applyCheckoutCompleted(event, tx);
       case 'checkout.session.expired':
         return this.applyCheckoutExpired(event);
       case 'customer.subscription.updated':
@@ -75,7 +90,7 @@ export class CheckoutWebhookHandlerService {
       case 'customer.subscription.deleted':
         return this.applySubscriptionDeleted(event);
       case 'payment_intent.succeeded':
-        return this.applyPaymentIntentSucceeded(event);
+        return this.applyPaymentIntentSucceeded(event, tx);
       case 'payment_intent.payment_failed':
         return this.applyPaymentIntentFailed(event);
       // DUNNING-V1 — invoice.payment_succeeded mirrors invoice.paid in
@@ -107,8 +122,28 @@ export class CheckoutWebhookHandlerService {
     }
   }
 
+  /**
+   * PR-9 — fire-and-forget drop alerts captured during the most recent
+   * fan-out for the given purchase. Called by BillingService AFTER the
+   * outer $transaction commits. Failure-isolated by the fanout service
+   * (never throws). No-op when no alerts are pending.
+   */
+  flushDripAlerts(purchaseId: string): void {
+    this.fanout?.flushAlerts(purchaseId);
+  }
+
+  /**
+   * PR-9 — discard alerts staged for a purchase whose outer tx rolled
+   * back. Called by BillingService in the catch block so a Stripe
+   * retry doesn't double-alert when the next attempt commits.
+   */
+  discardPendingDripAlerts(purchaseId: string): void {
+    this.fanout?.discardPendingAlerts(purchaseId);
+  }
+
   private async applyCheckoutCompleted(
     event: StripeEvent,
+    tx?: WebhookTx,
   ): Promise<CheckoutWebhookResult> {
     const session = event.data.object as {
       id?: string;
@@ -121,7 +156,12 @@ export class CheckoutWebhookHandlerService {
     };
     if (!session?.id) return { claimed: false, reason: 'no_session_id' };
 
-    const purchase = await this.prisma.clientPurchase.findUnique({
+    // Use the outer tx for the read so we see uncommitted state from the
+    // same transaction (e.g. a row inserted by a prior handler step) and
+    // so any racing event delivery serialises on the row's tx lock.
+    const db: WebhookTx | PrismaService = tx ?? this.prisma;
+
+    const purchase = await db.clientPurchase.findUnique({
       where: { stripe_checkout_session_id: session.id },
     });
     if (!purchase) {
@@ -129,7 +169,7 @@ export class CheckoutWebhookHandlerService {
       return { claimed: false, reason: 'no_matching_purchase' };
     }
 
-    const pkg = await this.prisma.coachPackage.findUnique({
+    const pkg = await db.coachPackage.findUnique({
       where: { id: purchase.package_id },
     });
 
@@ -138,7 +178,7 @@ export class CheckoutWebhookHandlerService {
 
     const accessExpiresAt = this.computeAccessExpiry(pkg, purchase, isRecurring, null);
 
-    const updated = await this.prisma.clientPurchase.update({
+    const updated = await db.clientPurchase.update({
       where: { id: purchase.id },
       data: {
         status: newStatus,
@@ -153,6 +193,19 @@ export class CheckoutWebhookHandlerService {
 
     // Phase 4 — materialize ledger + queue head-coach transfer now that
     // the charge has actually succeeded.
+    //
+    // PR-9 boundary: splits intentionally runs against `this.prisma`
+    // (NOT the outer tx) because TransferOrchestratorService issues
+    // synchronous Stripe HTTP calls to mint the head-coach Transfer —
+    // exactly the A276-P1-3 anti-pattern that we explicitly keep out
+    // of the outer $transaction (holding the Postgres connection
+    // through a Stripe round-trip saturates the pool). The split
+    // ledger itself is idempotent via composite-unique upserts +
+    // sweep-on-retry, and its rows FK to the ClientPurchase row that
+    // ALREADY exists in `pending` state (this handler only flips
+    // `entitlement_active`, it doesn't create the purchase), so a
+    // rolled-back outer tx leaves ledger rows that collapse onto
+    // themselves on Stripe's retry rather than orphaning.
     if (this.splits) {
       try {
         await this.splits.onChargeSucceeded({ purchase: updated });
@@ -162,25 +215,43 @@ export class CheckoutWebhookHandlerService {
         );
       }
     }
-    // PR-4 — fan-out seam (no-op body this PR; PR-9 seeds ScheduledDrop).
-    // NOTE: the entitlement write above is NOT wrapped in a $transaction
-    // in this handler today, so we cannot pass a tx to the fanout. The
-    // fanout row is still idempotent via PurchaseFanout.purchase_id
-    // @unique, and the surrounding webhook handler is itself idempotent
-    // via StripeProcessedEvent — a redelivered checkout.completed event
-    // re-runs entitlement+fanout but never creates duplicate rows.
-    // Follow-up: atomic-ify the entitlement+split+fanout block in a
-    // dedicated PR so all three commit/roll-back together.
-    if (this.fanout) {
+
+    // PR-9 — fan-out (drop seed + immediate inline materialisation) INSIDE
+    // the outer tx so entitlement + content commit-or-rollback together.
+    // A resolver failure here re-throws and rolls the whole event back;
+    // Stripe retries; the StripeProcessedEvent dedup + PurchaseFanout
+    // @unique + ScheduledDrop @@unique + per-resolver uniques (PR-7)
+    // make the retry safe.
+    //
+    // Legacy callers (test wiring without a real $transaction) still
+    // get an idempotent PurchaseFanout row via the @unique guard but
+    // skip the drop seed.
+    if (this.fanout && tx) {
+      await this.fanout.onPurchaseEntitled(
+        updated,
+        {
+          entrypoint: 'in_app_hosted',
+          coachId: updated.coach_user_id,
+          clientId: updated.client_user_id,
+          purchaseTime: new Date(),
+        },
+        tx,
+      );
+    } else if (this.fanout) {
+      // No outer tx (legacy/test path) — record the idempotency row only.
       try {
         await this.fanout.onPurchaseEntitled(
           updated,
-          { entrypoint: 'in_app_hosted', coachId: updated.coach_user_id, clientId: updated.client_user_id },
-          this.prisma,
+          {
+            entrypoint: 'in_app_hosted',
+            coachId: updated.coach_user_id,
+            clientId: updated.client_user_id,
+          },
+          this.prisma as unknown as WebhookTx,
         );
       } catch (err) {
         this.logger.warn(
-          `Fanout seam failed for purchase=${updated.id}: ${(err as Error).message}`,
+          `Fanout seam failed for purchase=${updated.id} (no-tx legacy path): ${(err as Error).message}`,
         );
       }
     }
@@ -347,6 +418,7 @@ export class CheckoutWebhookHandlerService {
   // this case the matching ClientPurchase row stays in `pending` forever.
   private async applyPaymentIntentSucceeded(
     event: StripeEvent,
+    tx?: WebhookTx,
   ): Promise<CheckoutWebhookResult> {
     const pi = event.data.object as {
       id?: string;
@@ -354,15 +426,17 @@ export class CheckoutWebhookHandlerService {
     };
     if (!pi?.id) return { claimed: false, reason: 'no_pi_id' };
 
+    const db: WebhookTx | PrismaService = tx ?? this.prisma;
+
     // Only claim if a pending purchase row references this payment intent.
     // PaymentSheet flow creates a pending ClientPurchase with the PI id set
     // by checkout.service.ts createPaymentIntentForClient().
-    const purchase = await this.prisma.clientPurchase.findFirst({
+    const purchase = await db.clientPurchase.findFirst({
       where: { stripe_payment_intent_id: pi.id, status: 'pending' },
     });
     if (!purchase) return { claimed: false, reason: 'no_matching_purchase' };
 
-    const updated = await this.prisma.clientPurchase.update({
+    const updated = await db.clientPurchase.update({
       where: { id: purchase.id },
       data: {
         status: 'paid',
@@ -371,6 +445,7 @@ export class CheckoutWebhookHandlerService {
       },
     });
 
+    // See applyCheckoutCompleted for the splits boundary rationale.
     if (this.splits) {
       try {
         await this.splits.onChargeSucceeded({ purchase: updated });
@@ -381,18 +456,34 @@ export class CheckoutWebhookHandlerService {
       }
     }
 
-    // PR-4 — fan-out seam (no-op body this PR; PR-9 seeds ScheduledDrop).
-    // See note in applyCheckoutCompleted re: lack of surrounding tx.
-    if (this.fanout) {
+    // PR-9 — fan-out INSIDE the outer tx (when provided). Resolver
+    // failure on an immediate drop rethrows and rolls back entitlement
+    // + drops together; Stripe retries idempotently.
+    if (this.fanout && tx) {
+      await this.fanout.onPurchaseEntitled(
+        updated,
+        {
+          entrypoint: 'in_app_ps',
+          coachId: updated.coach_user_id,
+          clientId: updated.client_user_id,
+          purchaseTime: new Date(),
+        },
+        tx,
+      );
+    } else if (this.fanout) {
       try {
         await this.fanout.onPurchaseEntitled(
           updated,
-          { entrypoint: 'in_app_ps', coachId: updated.coach_user_id, clientId: updated.client_user_id },
-          this.prisma,
+          {
+            entrypoint: 'in_app_ps',
+            coachId: updated.coach_user_id,
+            clientId: updated.client_user_id,
+          },
+          this.prisma as unknown as WebhookTx,
         );
       } catch (err) {
         this.logger.warn(
-          `Fanout seam failed for purchase=${updated.id}: ${(err as Error).message}`,
+          `Fanout seam failed for purchase=${updated.id} (no-tx legacy path): ${(err as Error).message}`,
         );
       }
     }

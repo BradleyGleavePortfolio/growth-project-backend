@@ -1243,6 +1243,11 @@ export class GuestCheckoutService {
       return;
     }
 
+    // PR-9 — hoisted so the post-tx alert flush / discard sees the
+    // ClientPurchase id even though the row is created inside the
+    // $transaction callback below.
+    let entitledPurchaseId: string | null = null;
+
     try {
       await this.prisma.$transaction(async (tx) => {
         // r48 #12 — atomic user upsert.  Two parallel webhook deliveries
@@ -1337,15 +1342,25 @@ export class GuestCheckoutService {
           },
         });
 
-        // PR-4 — fan-out seam, inside the same $transaction as the
-        // entitlement write so the bookkeeping row commits/rolls back
-        // atomically. Idempotent across webhook replays via
-        // PurchaseFanout.purchase_id @unique. No-op body this PR; PR-9
-        // seeds ScheduledDrop + fires immediate-cadence drops here.
+        // PR-9 — fan-out is now non-empty (drop seed + immediate-cadence
+        // inline materialisation). Runs inside the same $transaction as
+        // the entitlement write so money + content commit-or-roll-back
+        // together. A resolver failure on an immediate drop re-throws
+        // here, the outer catch routes the checkout to retryable, and
+        // the reconciler retries the convert end-to-end. Replay safety:
+        // PurchaseFanout.purchase_id @unique + ScheduledDrop
+        // @@unique([client_purchase_id, content_id]) + per-resolver
+        // uniques (PR-7).
         if (this.fanout && purchaseRow) {
+          entitledPurchaseId = purchaseRow.id;
           await this.fanout.onPurchaseEntitled(
             purchaseRow,
-            { entrypoint: 'storefront_guest', coachId: checkout.package.coach_id, clientId: dbUser.id },
+            {
+              entrypoint: 'storefront_guest',
+              coachId: checkout.package.coach_id,
+              clientId: dbUser.id,
+              purchaseTime: new Date(),
+            },
             tx,
           );
         }
@@ -1358,8 +1373,31 @@ export class GuestCheckoutService {
       this.logger.error(
         `convertGuestToUser: transaction failed for ${checkout.id} (tag=${safeErrorTag(err)})`,
       );
+      // PR-9 — drop the in-memory alert bucket for the rolled-back
+      // purchase so the reconciler's retry doesn't double-alert when
+      // the next attempt commits.
+      if (this.fanout && entitledPurchaseId) {
+        try {
+          this.fanout.discardPendingAlerts(entitledPurchaseId);
+        } catch {
+          // best-effort
+        }
+      }
       await this.markRetryable(checkout.id, `db:${safeErrorTag(err)}`);
       return;
+    }
+
+    // PR-9 — outer tx COMMITTED. Fire-and-forget the drop alerts for
+    // any drops materialised inline at checkout. Must be outside the
+    // tx so push failures never roll back entitlement.
+    if (this.fanout && entitledPurchaseId) {
+      try {
+        this.fanout.flushAlerts(entitledPurchaseId);
+      } catch (err) {
+        this.logger.warn(
+          `drip alert flush failed purchase=${entitledPurchaseId}: ${(err as Error).message}`,
+        );
+      }
     }
 
     // Fire-and-forget welcome email. Resend failures must never roll

@@ -1,21 +1,92 @@
-import { Injectable, Logger } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import type { ClientPurchase, Prisma } from '@prisma/client';
+import { AssignableAssetResolverRegistry } from './asset-resolvers/assignable-asset-resolver.registry';
 
-// PR-4 (Packages & Drip-Feed) — fan-out seam.
+// PR-9 (Packages & Drip-Feed) — REAL fan-out body.
 //
-// onPurchaseEntitled() is invoked by every checkout path the moment a
-// ClientPurchase row flips to entitlement_active=true. This PR ships
-// only the seam + an idempotent bookkeeping row; the real materialisation
-// (ScheduledDrop seeding + immediate-cadence fire) lands in PR-9.
+// Replaces the PR-4 no-op seam. onPurchaseEntitled() now:
 //
-// Idempotency: keyed on PurchaseFanout.purchase_id @unique. A Stripe
-// webhook replay (or any double-invoke) must NOT create a second row or
-// throw a unique-violation that aborts the surrounding entitlement
-// write. upsert({where:{purchase_id}, create:{...}, update:{}}) is the
-// on-conflict-do-nothing primitive.
+//   1. Idempotently records the PurchaseFanout row (PR-4 contract preserved).
+//   2. Loads the package's non-removed CoachPackageContent rows (authored in
+//      PR-8) and SNAPSHOTS each into a ScheduledDrop row keyed on
+//      (client_purchase_id, content_id) — the @@unique guard makes the seed
+//      idempotent across Stripe webhook replays.
+//   3. Per snapshot computes `fire_at` from the cadence:
+//        - immediate                   → fire_at = now; MATERIALISE INLINE
+//        - relative_to_purchase        → fire_at = purchase.created_at + offset_days
+//        - fixed_calendar (future)     → fire_at = release_at
+//        - fixed_calendar (past)       → fire_at = now; MATERIALISE INLINE
+//        - on_completion / on_milestone → fire_at = null (PR-11 wires triggers)
+//   4. For drops that should fire NOW it calls the PR-7
+//      AssignableAssetResolverRegistry with the ambient `tx` so the
+//      resolver's writes commit-or-roll-back together with the entitlement.
+//      On success it stamps `materialised_ref` + `status='fired'` +
+//      `fired_at`.
 //
-// No synchronous Stripe HTTP call inside this method — DB only via the
-// passed client (A276-P1-3 anti-pattern guard).
+// IDEMPOTENCY (KEEPS PR-4 contract; PR-9 R1 closes the rollback-and-retry gap):
+//   - PurchaseFanout.purchase_id @unique + upsert({update:{}}) — webhook
+//     replay does not create a second row.
+//   - ScheduledDrop.@@unique([client_purchase_id, content_id]) + use of
+//     `skipDuplicates: true` on the bulk createMany — replay does not seed
+//     duplicate drops.
+//   - Immediate-materialisation guard (happy-path replay): after createMany
+//     we re-read the drops we just seeded; we materialise ONLY drops whose
+//     `materialised_ref IS NULL`. A happy-path replay finds the prior
+//     fire's ref already set and skips.
+//   - Rollback-and-retry replay (audit P1-1/P1-2 fix): the resolvers
+//     additionally use STABLE per-(purchaseId, contentId) keys instead of
+//     the regenerated scheduledDropId so a rolled-back+retried event
+//     cannot double-fire downstream side-effects:
+//       * workout → WorkoutBuilderIdempotencyKey value
+//         `drip:workout:p={purchaseId}:c={contentId}`. The ledger is
+//         written via `this.prisma` outside the outer tx, so it survives
+//         the rollback and a retry observes the cached completed claim.
+//       * auto_message → durable `DripResolverMarker(purpose=auto_message,
+//         purchase_id, content_id)` claimed BEFORE sendAsCoach and
+//         updated with the resulting CoachMessage id after. A retry
+//         observes the marker and replays the cached message id without
+//         a second send (see auto-message.resolver.ts for the
+//         marker.materialised_ref==null reclaim case).
+//       * meal_plan → `DailyMealPlanAssignment.drip_drop_id @unique`. The
+//         per-drop key still regenerates on rollback, but the write rides
+//         the outer tx so a rollback erases the row entirely — the retry
+//         starts from a clean slate.
+//       * pdf/video → `ClientAssetGrant @@unique[client_id, media_asset_id]`.
+//         Composite is stable across UUID churn; retry collapses cleanly.
+//     Net invariant: a rollback+retry of the same Stripe event id never
+//     produces a second ClientWorkoutAssignment, CoachMessage,
+//     DailyMealPlanAssignment, or ClientAssetGrant.
+//
+// ATOMICITY CONTRACT — IMMEDIATE RESOLVER FAILURE INSIDE THE TX:
+//   We DO NOT swallow a resolver failure. We rethrow it so the outer
+//   $transaction (opened by BillingService.handleEvent OR by
+//   GuestCheckoutService.convertGuestToUser) rolls back the entire
+//   purchase — the ClientPurchase.entitlement_active flip, the
+//   PurchaseFanout row, every ScheduledDrop seed — together. Stripe (or
+//   the guest reconciler) then retries the same event id and the
+//   StripeProcessedEvent dedup + PR-7 per-type uniques make the retry
+//   safe.
+//
+//   Rationale: PR-7's at-least-once contract is documented assuming a
+//   crash between successful materialisation and ref-persist (the
+//   per-drop @unique covers the loser). A resolver-internal failure
+//   that NEVER materialised the deliverable is a different beast — if
+//   we committed the money + entitlement and silently left the immediate
+//   drop pending, the buyer would see their purchase succeed in the UI
+//   but the promised content would not arrive until PR-10's cron fires
+//   (which today does not exist; even when it does, the buyer just paid
+//   $X for the content and expects it AT CHECKOUT — decision #8). Rolling
+//   back gives Stripe a normal retry path; the buyer's checkout UI shows
+//   "still processing" briefly rather than "succeeded but empty".
+//
+// ALERT SIDE-EFFECT BOUNDARY (decision #9):
+//   Push + in-app drop alerts are NOT in the money tx. Failing to send
+//   a push notification must NEVER roll back entitlement. PR-9 exposes
+//   the AlertDispatchHook below and a fire-and-forget queue; the actual
+//   push wire-up lands in PR-13. For now we record the drop IDs that
+//   need alerting on the service instance (or via Logger if no hook is
+//   injected) so an out-of-tx step can pick them up after the outer
+//   $transaction commits.
 
 export type FanoutEntrypoint = 'in_app_hosted' | 'in_app_ps' | 'storefront_guest';
 
@@ -23,26 +94,75 @@ export interface FanoutContext {
   entrypoint: FanoutEntrypoint;
   coachId?: string;
   clientId?: string;
+  /**
+   * Time the entitlement was granted ("purchase time" for cadence math).
+   * Falls back to the purchase row's created_at when omitted — callers
+   * SHOULD supply NOW() at the entitlement moment so the
+   * relative_to_purchase offset is anchored to the actual entitlement,
+   * not the original `pending` row creation. Provided for testability.
+   */
+  purchaseTime?: Date;
 }
 
-// Accepts either the live PrismaService or a Prisma.TransactionClient so
-// callers inside a $transaction can pass `tx` and have the fan-out row
-// commit/roll-back atomically with the entitlement write. Callers without
-// a surrounding tx pass the PrismaService directly — still idempotent via
-// the @unique constraint.
-type TxOrPrisma = Prisma.TransactionClient | {
+// Accepts either the live PrismaService or a Prisma.TransactionClient.
+// onPurchaseEntitled MUST be called with a real tx (post-PR-9 mandate)
+// so the entitlement + drop seeding + immediate materialisation
+// commit-or-rollback together. We still keep the type flexible so
+// legacy unit tests that hand-construct the service with a bare upsert
+// stub continue to work.
+type TxOrPrisma = Prisma.TransactionClient & {
+  coachPackageContent?: Prisma.TransactionClient['coachPackageContent'];
+  scheduledDrop?: Prisma.TransactionClient['scheduledDrop'];
+  clientPurchase?: Prisma.TransactionClient['clientPurchase'];
   purchaseFanout: Prisma.TransactionClient['purchaseFanout'];
 };
+
+type CadenceKind =
+  | 'immediate'
+  | 'relative_to_purchase'
+  | 'fixed_calendar'
+  | 'on_completion'
+  | 'on_milestone';
+
+interface AlertDescriptor {
+  scheduledDropId: string;
+  clientId: string;
+  coachId: string;
+  clientPurchaseId: string;
+  assetType: string;
+  displayTitle: string | null;
+  displayCaption: string | null;
+}
+
+/**
+ * Hook for the post-commit alert outbox. PR-13 wires the real
+ * push+in-app emitter behind this seam. PR-9 keeps the wiring
+ * structurally so the alert side-effect boundary is enforced today.
+ */
+export interface DripAlertDispatchHook {
+  enqueue(alert: AlertDescriptor): void;
+}
 
 @Injectable()
 export class PurchaseFanoutService {
   private readonly logger = new Logger(PurchaseFanoutService.name);
 
+  // Pending alerts captured in-tx; flushed (fire-and-forget) only when
+  // the outer tx caller indicates commit succeeded. Keyed by
+  // purchase_id so a rollback can discard the bucket cleanly.
+  private readonly pendingAlerts = new Map<string, AlertDescriptor[]>();
+
+  constructor(
+    @Optional() private readonly resolvers?: AssignableAssetResolverRegistry,
+    @Optional() private readonly alertHook?: DripAlertDispatchHook,
+  ) {}
+
   async onPurchaseEntitled(
-    purchase: { id: string },
+    purchase: ClientPurchase | { id: string },
     ctx: FanoutContext,
     tx: TxOrPrisma,
   ): Promise<void> {
+    // --- (1) PR-4 idempotency row ----------------------------------------
     await tx.purchaseFanout.upsert({
       where: { purchase_id: purchase.id },
       create: {
@@ -53,10 +173,257 @@ export class PurchaseFanoutService {
       update: {},
     });
 
-    this.logger.debug(
-      `fanout seam invoked (no-op) purchase=${purchase.id} entrypoint=${ctx.entrypoint}`,
+    // Defensive: legacy unit-test wiring may pass a minimal stub that
+    // doesn't expose the engine tables. Bail out (no-op fan-out) so
+    // PR-4-era tests continue to pass.
+    if (!tx.coachPackageContent || !tx.scheduledDrop || !tx.clientPurchase) {
+      this.logger.debug(
+        `fanout: skipping drop seed for purchase=${purchase.id} (no engine tables on tx)`,
+      );
+      return;
+    }
+
+    // --- (2) Load the purchase + the package's authoring rows -----------
+    const purchaseRow = await tx.clientPurchase.findUnique({
+      where: { id: purchase.id },
+    });
+    if (!purchaseRow) {
+      // Should never happen — entitlement just wrote it. Treat as a
+      // wiring bug.
+      throw new Error(
+        `PurchaseFanout: ClientPurchase ${purchase.id} not found inside tx`,
+      );
+    }
+    const purchaseTime = ctx.purchaseTime ?? purchaseRow.created_at ?? new Date();
+
+    const contents = await tx.coachPackageContent.findMany({
+      where: { package_id: purchaseRow.package_id, removed_at: null },
+      orderBy: { display_order: 'asc' },
+    });
+
+    // Empty package (paywall-only legacy package): nothing to seed.
+    if (contents.length === 0) {
+      this.logger.debug(
+        `fanout: package=${purchaseRow.package_id} has no contents — purchase=${purchase.id}`,
+      );
+      return;
+    }
+
+    // --- (3) Compute snapshots + per-cadence fire_at --------------------
+    const now = new Date();
+    const seedRows = contents.map((c) => {
+      const fireAt = this.computeFireAt(
+        c.cadence_kind as CadenceKind,
+        c.cadence_payload,
+        purchaseTime,
+        now,
+      );
+      return {
+        client_purchase_id: purchase.id,
+        content_id: c.id,
+        asset_type: c.asset_type,
+        asset_id: c.asset_id,
+        asset_revision_id: c.asset_revision_id,
+        cadence_kind: c.cadence_kind,
+        cadence_payload: c.cadence_payload as Prisma.InputJsonValue,
+        display_title: c.display_title,
+        display_caption: c.display_caption,
+        fire_at: fireAt,
+        status: 'pending',
+      };
+    });
+
+    // skipDuplicates so a webhook replay (which already seeded these
+    // drops on the prior delivery) is a true no-op rather than a
+    // unique-constraint abort.
+    await tx.scheduledDrop.createMany({
+      data: seedRows,
+      skipDuplicates: true,
+    });
+
+    // --- (4) Re-read what's on disk now and materialise the
+    //          due-immediately drops INLINE inside the tx. -----------------
+    const persisted = await tx.scheduledDrop.findMany({
+      where: { client_purchase_id: purchase.id },
+    });
+
+    const dueNow = persisted.filter(
+      (d) =>
+        d.materialised_ref == null &&
+        d.fire_at != null &&
+        d.fire_at.getTime() <= now.getTime() &&
+        d.status !== 'fired' &&
+        d.status !== 'failed' &&
+        d.status !== 'canceled',
     );
 
-    // PR-9 will seed ScheduledDrop + fire immediate here.
+    // Collect alerts in a local list so a tx rollback discards them
+    // (we only flush after the tx returns).
+    const localAlerts: AlertDescriptor[] = [];
+
+    for (const drop of dueNow) {
+      if (!this.resolvers) {
+        // No registry wired — bail with a hard error rather than
+        // silently committing money for content that never arrived.
+        throw new Error(
+          `PurchaseFanout: AssignableAssetResolverRegistry not wired; cannot materialise drop=${drop.id} type=${drop.asset_type}`,
+        );
+      }
+      const result = await this.resolvers.materialise(drop.asset_type, {
+        clientId: purchaseRow.client_user_id,
+        coachId: purchaseRow.coach_user_id,
+        assetId: drop.asset_id,
+        assetRevisionId: drop.asset_revision_id ?? null,
+        displayTitle: drop.display_title,
+        displayCaption: drop.display_caption,
+        scheduledDropId: drop.id,
+        // PR-9 R1 audit-fix — STABLE keys for cross-rollback idempotency.
+        // ScheduledDrop UUIDs regenerate when the outer tx rolls back; the
+        // (clientPurchaseId, contentId) pair does not. Resolvers whose
+        // side-effects commit OUTSIDE this tx (workout, auto_message)
+        // use this pair to gate their dedup so a rolled-back-then-retried
+        // event cannot create a second ClientWorkoutAssignment or a
+        // second CoachMessage. See P1-1/P1-2 in PR9_AUDIT.md.
+        clientPurchaseId: purchase.id,
+        contentId: drop.content_id,
+        tx: tx as Prisma.TransactionClient,
+      });
+
+      await tx.scheduledDrop.update({
+        where: { id: drop.id },
+        data: {
+          materialised_ref: result.materialisedRef,
+          status: 'fired',
+          fired_at: now,
+          attempt_count: { increment: 1 },
+          failure_reason: null,
+        },
+      });
+
+      localAlerts.push({
+        scheduledDropId: drop.id,
+        clientId: purchaseRow.client_user_id,
+        coachId: purchaseRow.coach_user_id,
+        clientPurchaseId: purchase.id,
+        assetType: drop.asset_type,
+        displayTitle: drop.display_title,
+        displayCaption: drop.display_caption,
+      });
+    }
+
+    // Stamp the fanout row as succeeded INSIDE the tx so a partial
+    // commit (entitlement+drops without fanout state) is impossible.
+    await tx.purchaseFanout.update({
+      where: { purchase_id: purchase.id },
+      data: { state: 'succeeded', finished_at: new Date() },
+    });
+
+    // Stash the alerts into the per-purchase bucket. The caller (the
+    // webhook handler / guest path) is expected to call
+    // flushAlerts(purchase.id) AFTER the outer tx commits. If they
+    // forget, we degrade to silent — never roll back entitlement on a
+    // push failure.
+    if (localAlerts.length > 0) {
+      this.pendingAlerts.set(purchase.id, localAlerts);
+    }
+  }
+
+  /**
+   * Fire-and-forget alert dispatch for drops materialised inline at
+   * checkout. MUST be called AFTER the outer $transaction commits;
+   * MUST NEVER be allowed to roll back entitlement (returns void,
+   * swallows errors). PR-13 wires the actual push+in-app emit behind
+   * `alertHook`.
+   */
+  flushAlerts(purchaseId: string): void {
+    const bucket = this.pendingAlerts.get(purchaseId);
+    if (!bucket || bucket.length === 0) return;
+    this.pendingAlerts.delete(purchaseId);
+    for (const alert of bucket) {
+      try {
+        if (this.alertHook) {
+          this.alertHook.enqueue(alert);
+        } else {
+          // PR-13 will replace this with push+in-app via NotificationsService.
+          this.logger.log(
+            `drip alert (no hook): drop=${alert.scheduledDropId} client=${alert.clientId} asset=${alert.assetType}`,
+          );
+        }
+      } catch (err) {
+        // Alert side-effect failure MUST NEVER bubble.
+        this.logger.warn(
+          `drip alert dispatch failed drop=${alert.scheduledDropId}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Discard alerts staged inside a rolled-back tx so a successful
+   * retry doesn't double-alert. Callers invoke from their tx catch
+   * block.
+   */
+  discardPendingAlerts(purchaseId: string): void {
+    this.pendingAlerts.delete(purchaseId);
+  }
+
+  // --- internal --------------------------------------------------------
+
+  private computeFireAt(
+    kind: CadenceKind,
+    payload: unknown,
+    purchaseTime: Date,
+    now: Date,
+  ): Date | null {
+    switch (kind) {
+      case 'immediate':
+        return now;
+      case 'relative_to_purchase': {
+        const offset = this.readOffsetDays(payload);
+        return new Date(purchaseTime.getTime() + offset * 24 * 3600 * 1000);
+      }
+      case 'fixed_calendar': {
+        const releaseAt = this.readReleaseAt(payload);
+        if (!releaseAt) return now; // malformed — treat as immediate so
+                                    // the drop fires rather than dangles.
+        // PR-8 documented rule: past fixed_calendar at purchase
+        // counts as immediate — fire now.
+        if (releaseAt.getTime() <= now.getTime()) return now;
+        return releaseAt;
+      }
+      case 'on_completion':
+      case 'on_milestone':
+        // PR-11 wires the trigger; PR-9 just seeds with fire_at null.
+        return null;
+      default:
+        // Unknown kind — leave the drop pending with no fire_at so an
+        // operator notices and PR-10's executor doesn't blindly fire.
+        return null;
+    }
+  }
+
+  private readOffsetDays(payload: unknown): number {
+    if (
+      payload &&
+      typeof payload === 'object' &&
+      typeof (payload as { offset_days?: unknown }).offset_days === 'number'
+    ) {
+      const v = (payload as { offset_days: number }).offset_days;
+      return Number.isFinite(v) && v >= 0 ? v : 0;
+    }
+    return 0;
+  }
+
+  private readReleaseAt(payload: unknown): Date | null {
+    if (
+      payload &&
+      typeof payload === 'object' &&
+      typeof (payload as { release_at?: unknown }).release_at === 'string'
+    ) {
+      const raw = (payload as { release_at: string }).release_at;
+      const ms = Date.parse(raw);
+      if (!Number.isNaN(ms)) return new Date(ms);
+    }
+    return null;
   }
 }
