@@ -26,6 +26,7 @@ function makePkg(overrides: Record<string, unknown> = {}) {
     interval_count: 1,
     is_active: true,
     archived_at: null,
+    published_at: new Date('2026-01-01'),
     share_token: 'tok1234567890abcDEFGH',
     share_link_enabled: true,
     // Audit #4 P2-4 — fixture defaults to non-expired and non-revoked.

@@ -3004,8 +3004,30 @@ model CoachPackage {
   is_sellable Boolean                @default(false)
   contents    CoachPackageContent[]
 
+  // PR-6 — draft/publish lifecycle. null = DRAFT (not purchasable); a
+  // non-null timestamp = PUBLISHED (purchasable, value is the most
+  // recent publish time). New packages start as DRAFT so an empty
+  // package isn't live the instant the coach saves it. The migration
+  // backfills published_at = NOW() for pre-existing rows so
+  // already-selling packages stay live with no behavior change.
+  published_at DateTime?
+
+  // PR-6 — operator decision #1 second-price config. A package can
+  // have a one-time price (the existing amount_cents/billing_type
+  // triple as the PRIMARY price), a recurring price, or BOTH
+  // (one-time charge today + an ongoing subscription). The recurring_*
+  // columns model the optional second Stripe Price; recurring cadence
+  // is week|month|year. recurring_stripe_price_id is the lazy cache
+  // mirroring stripe_price_id for the first price. All null on
+  // existing rows (single-price packages) so behaviour is unchanged.
+  recurring_amount_cents    Int?
+  recurring_interval        String? // week | month | year
+  recurring_interval_count  Int?
+  recurring_stripe_price_id String?
+
   @@index([coach_id, is_active])
   @@index([coach_id, archived_at])
+  @@index([coach_id, published_at])
   @@index([stripe_price_id])
 }
 

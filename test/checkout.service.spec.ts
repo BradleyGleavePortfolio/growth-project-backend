@@ -259,7 +259,9 @@ function makeService() {
     }),
   };
   const stripe = new StripeStub();
-  const packages = new PackagesService(prisma as any);
+  const packages = new PackagesService(prisma as any, {
+    getHeadCoachIdForSubCoach: async () => null,
+  } as any);
   const state = new ConnectModuleState();
   state.ready = true;
   const feePolicy = new FeePolicyService(prisma as any);
@@ -304,6 +306,7 @@ describe('CheckoutService', () => {
       duration_periods: null,
       is_active: true,
       archived_at: null,
+      published_at: new Date('2026-01-01'),
       stripe_price_id: null,
       stripe_product_id: null,
     });
@@ -333,6 +336,7 @@ describe('CheckoutService', () => {
       duration_periods: null,
       is_active: true,
       archived_at: null,
+      published_at: new Date('2026-01-01'),
       stripe_price_id: null,
       stripe_product_id: null,
     });
@@ -364,6 +368,7 @@ describe('CheckoutService', () => {
       duration_periods: 12,
       is_active: true,
       archived_at: null,
+      published_at: new Date('2026-01-01'),
       stripe_price_id: null,
       stripe_product_id: null,
     });
@@ -421,6 +426,7 @@ describe('CheckoutService', () => {
       duration_periods: null,
       is_active: true,
       archived_at: null,
+      published_at: new Date('2026-01-01'),
       stripe_price_id: null,
       stripe_product_id: null,
     });
@@ -458,6 +464,7 @@ describe('CheckoutService', () => {
       duration_periods: null,
       is_active: true,
       archived_at: null,
+      published_at: new Date('2026-01-01'),
       stripe_price_id: 'price_cached',
       stripe_product_id: 'prod_cached',
     });
@@ -492,6 +499,7 @@ describe('CheckoutService', () => {
       duration_periods: null,
       is_active: true,
       archived_at: null,
+      published_at: new Date('2026-01-01'),
       stripe_price_id: 'price_cached',
       stripe_product_id: 'prod_cached',
     });
@@ -610,6 +618,7 @@ function seedSoloCoachFixture(prisma: any) {
     duration_periods: null,
     is_active: true,
     archived_at: null,
+    published_at: new Date('2026-01-01'),
     stripe_price_id: null,
     stripe_product_id: null,
   });
@@ -794,6 +803,7 @@ describe('CheckoutService.createCheckoutForClient — IDOR hard-block', () => {
       duration_periods: null,
       is_active: true,
       archived_at: null,
+      published_at: new Date('2026-01-01'),
       stripe_price_id: null,
       stripe_product_id: null,
     });
@@ -836,6 +846,7 @@ describe('CheckoutService.createCheckoutForClient — IDOR hard-block', () => {
       duration_periods: null,
       is_active: true,
       archived_at: null,
+      published_at: new Date('2026-01-01'),
       stripe_price_id: null,
       stripe_product_id: null,
     });
@@ -929,6 +940,7 @@ describe('CheckoutService.createPaymentIntentForClient — sub-coach fee split',
       duration_periods: null,
       is_active: true,
       archived_at: null,
+      published_at: new Date('2026-01-01'),
       stripe_price_id: null,
       stripe_product_id: null,
     });

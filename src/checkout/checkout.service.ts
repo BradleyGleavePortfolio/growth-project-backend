@@ -79,7 +79,8 @@ export class CheckoutService {
     }
 
     const pkg = await this.packages.getById(input.package_id);
-    if (!pkg || !pkg.is_active || pkg.archived_at) {
+    if (!pkg || !pkg.is_active || pkg.archived_at || !pkg.published_at) {
+      // PR-6 — DRAFT packages (published_at IS NULL) are not purchasable.
       throw new NotFoundException({
         error: 'PACKAGE_NOT_FOUND',
         message: 'Package not available',
@@ -374,7 +375,8 @@ export class CheckoutService {
     }
 
     const pkg = await this.packages.getById(input.package_id);
-    if (!pkg || !pkg.is_active || pkg.archived_at) {
+    if (!pkg || !pkg.is_active || pkg.archived_at || !pkg.published_at) {
+      // PR-6 — DRAFT packages (published_at IS NULL) are not purchasable.
       throw new NotFoundException({
         error: 'PACKAGE_NOT_FOUND',
         message: 'Package not available',

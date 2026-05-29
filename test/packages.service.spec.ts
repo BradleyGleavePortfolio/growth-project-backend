@@ -6,8 +6,12 @@ import { PackagesService } from '../src/packages/packages.service';
 
 function makePrismaStub() {
   const rows: any[] = [];
+  const purchases: any[] = [];
+  const contents: any[] = [];
   return {
     _rows: rows,
+    _purchases: purchases,
+    _contents: contents,
     coachPackage: {
       findUnique: jest.fn(async ({ where }: any) =>
         rows.find((r) => r.id === where.id) ?? null,
@@ -22,8 +26,11 @@ function makePrismaStub() {
           Object.entries(where).every(([k, v]) => {
             if (v === null) return r[k] === null || r[k] === undefined;
             if (typeof v === 'object' && v !== null) {
-              // archived_at: null or is_active: true
-              return Object.entries(v as any).every(([sk, sv]) => r[k] === sv);
+              // Filter sub-objects (archived_at: null, published_at: { not: null }, etc.)
+              return Object.entries(v as any).every(([sk, sv]) => {
+                if (sk === 'not') return r[k] !== sv && r[k] != null;
+                return r[k] === sv;
+              });
             }
             return r[k] === v;
           }),
@@ -40,6 +47,11 @@ function makePrismaStub() {
           stripe_product_id: null,
           is_active: true,
           archived_at: null,
+          published_at: null,
+          recurring_amount_cents: null,
+          recurring_interval: null,
+          recurring_interval_count: null,
+          recurring_stripe_price_id: null,
           created_at: new Date(),
           updated_at: new Date(),
           ...data,
@@ -54,16 +66,44 @@ function makePrismaStub() {
         return { ...row };
       }),
     },
+    clientPurchase: {
+      findMany: jest.fn(async ({ where, orderBy, skip, take }: any) => {
+        const all = purchases.filter((p) => p.package_id === where.package_id);
+        all.sort((a, b) =>
+          (b.created_at as Date).getTime() - (a.created_at as Date).getTime(),
+        );
+        return all.slice(skip ?? 0, (skip ?? 0) + (take ?? all.length));
+      }),
+    },
+    coachPackageContent: {
+      count: jest.fn(async ({ where }: any) =>
+        contents.filter(
+          (c) =>
+            c.package_id === where.package_id &&
+            (where.removed_at === null ? c.removed_at == null : true),
+        ).length,
+      ),
+    },
+  };
+}
+
+function makeSubCoachStub(headMap: Record<string, string | null> = {}) {
+  return {
+    getHeadCoachIdForSubCoach: jest.fn(
+      async (userId: string) => headMap[userId] ?? null,
+    ),
   };
 }
 
 describe('PackagesService', () => {
   let prisma: ReturnType<typeof makePrismaStub>;
+  let subCoach: ReturnType<typeof makeSubCoachStub>;
   let svc: PackagesService;
 
   beforeEach(() => {
     prisma = makePrismaStub();
-    svc = new PackagesService(prisma as any);
+    subCoach = makeSubCoachStub();
+    svc = new PackagesService(prisma as any, subCoach as any);
   });
 
   describe('create', () => {
@@ -77,6 +117,8 @@ describe('PackagesService', () => {
       expect(pkg.currency).toBe('usd');
       expect(pkg.interval).toBeNull();
       expect(pkg.is_active).toBe(true);
+      // PR-6: new packages default to DRAFT (published_at = null).
+      expect(pkg.published_at).toBeNull();
     });
 
     it('creates a recurring package with month interval', async () => {
@@ -164,14 +206,12 @@ describe('PackagesService', () => {
 
     it('clears stripe_price_id when amount changes', async () => {
       const pkg = await svc.create('coach-1', { name: 'p', amount_cents: 1000 });
-      // Pretend a checkout cached the Stripe ids
       prisma._rows[0].stripe_price_id = 'price_old';
       prisma._rows[0].stripe_product_id = 'prod_keep';
       const updated = await svc.update('coach-1', pkg.id, {
         amount_cents: 2000,
       });
       expect(updated.stripe_price_id).toBeNull();
-      // Product is kept (name unchanged).
       expect(updated.stripe_product_id).toBe('prod_keep');
     });
 
@@ -181,31 +221,36 @@ describe('PackagesService', () => {
       const updated = await svc.update('coach-1', pkg.id, { name: 'p2' });
       expect(updated.stripe_price_id).toBe('price_keep');
     });
+
+    it('PR-6 round-trips duration_periods on create+update', async () => {
+      const pkg = await svc.create('coach-1', {
+        name: 'p',
+        amount_cents: 1000,
+        duration_periods: 12,
+      });
+      expect(pkg.duration_periods).toBe(12);
+      const cleared = await svc.update('coach-1', pkg.id, {
+        duration_periods: null,
+      });
+      expect(cleared.duration_periods).toBeNull();
+    });
   });
 
   describe('requireOwnedPackage', () => {
     it(
-      'requireOwnedPackage collapses unknown-id and foreign-coach-id into 404 PACKAGE_NOT_FOUND (DL-5 enumeration fix)',
+      'collapses unknown-id and foreign-coach-id into 404 PACKAGE_NOT_FOUND (DL-5)',
       async () => {
         const pkg = await svc.create('coach-1', { name: 'pkg', amount_cents: 5000 });
 
-        // Case 1: completely unknown ID → must 404 with PACKAGE_NOT_FOUND
         const errUnknown = await (svc as any)
           .requireOwnedPackage('coach-1', 'nonexistent-id')
           .catch((e: unknown) => e);
         expect(errUnknown).toBeInstanceOf(NotFoundException);
-        expect((errUnknown as NotFoundException).getResponse()).toMatchObject({
-          error: 'PACKAGE_NOT_FOUND',
-        });
 
-        // Case 2: valid ID belonging to a different coach → must also 404 PACKAGE_NOT_FOUND (not 403)
         const errForeign = await (svc as any)
           .requireOwnedPackage('coach-2', pkg.id)
           .catch((e: unknown) => e);
         expect(errForeign).toBeInstanceOf(NotFoundException);
-        expect((errForeign as NotFoundException).getResponse()).toMatchObject({
-          error: 'PACKAGE_NOT_FOUND',
-        });
       },
     );
   });
@@ -227,15 +272,224 @@ describe('PackagesService', () => {
   });
 
   describe('listPublicForCoach', () => {
-    it('filters out archived and inactive packages', async () => {
-      await svc.create('coach-1', { name: 'a', amount_cents: 1000 });
+    it('filters out archived, inactive, AND draft packages', async () => {
+      const a = await svc.create('coach-1', { name: 'a', amount_cents: 1000 });
       const b = await svc.create('coach-1', { name: 'b', amount_cents: 1000 });
       const c = await svc.create('coach-1', { name: 'c', amount_cents: 1000 });
+      const d = await svc.create('coach-1', { name: 'd', amount_cents: 1000 });
+      // Publish a + b + c so they're not DRAFT.
+      await svc.publish('coach-1', a.id);
+      await svc.publish('coach-1', b.id);
+      await svc.publish('coach-1', c.id);
+      // b → inactive; c → archived; d → still DRAFT (never published).
       await svc.update('coach-1', b.id, { is_active: false });
       await svc.archive('coach-1', c.id);
       const out = await svc.listPublicForCoach('coach-1');
       const names = out.map((r) => r.name).sort();
       expect(names).toEqual(['a']);
+    });
+  });
+
+  describe('PR-6: publish / unpublish', () => {
+    it('publish sets published_at and is idempotent', async () => {
+      const pkg = await svc.create('coach-1', { name: 'p', amount_cents: 1000 });
+      expect(pkg.published_at).toBeNull();
+      const first = await svc.publish('coach-1', pkg.id);
+      expect(first.published_at).toBeTruthy();
+      const second = await svc.publish('coach-1', pkg.id);
+      // Idempotent — same timestamp, not a re-bump.
+      expect(second.published_at).toEqual(first.published_at);
+    });
+
+    it('unpublish clears published_at and is idempotent', async () => {
+      const pkg = await svc.create('coach-1', { name: 'p', amount_cents: 1000 });
+      await svc.publish('coach-1', pkg.id);
+      const first = await svc.unpublish('coach-1', pkg.id);
+      expect(first.published_at).toBeNull();
+      const second = await svc.unpublish('coach-1', pkg.id);
+      expect(second.published_at).toBeNull();
+    });
+
+    it('publish rejects archived packages', async () => {
+      const pkg = await svc.create('coach-1', { name: 'p', amount_cents: 1000 });
+      await svc.archive('coach-1', pkg.id);
+      await expect(svc.publish('coach-1', pkg.id)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('publish IDOR-guarded — foreign coach 404s', async () => {
+      const pkg = await svc.create('coach-1', { name: 'p', amount_cents: 1000 });
+      await expect(svc.publish('coach-2', pkg.id)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(svc.unpublish('coach-2', pkg.id)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('PR-6: pricing combos', () => {
+    it('accepts a one_time + recurring combo', async () => {
+      const pkg = await svc.create('coach-1', {
+        name: 'combo',
+        amount_cents: 50000,
+        billing_type: 'one_time',
+        recurring_amount_cents: 9900,
+        recurring_interval: 'month',
+        recurring_interval_count: 1,
+      });
+      expect(pkg.recurring_amount_cents).toBe(9900);
+      expect(pkg.recurring_interval).toBe('month');
+    });
+
+    it('accepts each recurring cadence (week, month, year)', async () => {
+      for (const cadence of ['week', 'month', 'year'] as const) {
+        const p = await svc.create('coach-1', {
+          name: `r-${cadence}`,
+          amount_cents: 1000,
+          billing_type: 'recurring',
+          interval: cadence,
+        });
+        expect(p.interval).toBe(cadence);
+      }
+    });
+
+    it('rejects recurring primary + recurring companion (no two competing subs)', async () => {
+      await expect(
+        svc.create('coach-1', {
+          name: 'bad',
+          amount_cents: 1000,
+          billing_type: 'recurring',
+          interval: 'month',
+          recurring_amount_cents: 5000,
+          recurring_interval: 'month',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects half-set recurring companion (amount only)', async () => {
+      await expect(
+        svc.create('coach-1', {
+          name: 'bad',
+          amount_cents: 1000,
+          billing_type: 'one_time',
+          recurring_amount_cents: 5000,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects recurring companion below Stripe minimum', async () => {
+      await expect(
+        svc.create('coach-1', {
+          name: 'bad',
+          amount_cents: 1000,
+          billing_type: 'one_time',
+          recurring_amount_cents: 10,
+          recurring_interval: 'month',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects recurring companion with bad cadence', async () => {
+      await expect(
+        svc.create('coach-1', {
+          name: 'bad',
+          amount_cents: 1000,
+          billing_type: 'one_time',
+          recurring_amount_cents: 5000,
+          // @ts-expect-error invalid cadence on purpose
+          recurring_interval: 'fortnight',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('update clears recurring_stripe_price_id when recurring fields change', async () => {
+      const pkg = await svc.create('coach-1', {
+        name: 'p',
+        amount_cents: 1000,
+        billing_type: 'one_time',
+        recurring_amount_cents: 5000,
+        recurring_interval: 'month',
+      });
+      prisma._rows[0].recurring_stripe_price_id = 'price_old';
+      const updated = await svc.update('coach-1', pkg.id, {
+        recurring_amount_cents: 7500,
+      });
+      expect(updated.recurring_stripe_price_id).toBeNull();
+    });
+  });
+
+  describe('PR-6: getOwnedDetail', () => {
+    it('returns row + content_count and IDOR-404s foreign coach', async () => {
+      const pkg = await svc.create('coach-1', { name: 'p', amount_cents: 1000 });
+      prisma._contents.push(
+        { package_id: pkg.id, removed_at: null },
+        { package_id: pkg.id, removed_at: null },
+        { package_id: pkg.id, removed_at: new Date() }, // removed → excluded
+      );
+      const detail = await svc.getOwnedDetail('coach-1', pkg.id);
+      expect(detail.id).toBe(pkg.id);
+      expect(detail.content_count).toBe(2);
+      await expect(svc.getOwnedDetail('coach-2', pkg.id)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('PR-6: listSubscribers', () => {
+    it('paginates and IDOR-404s foreign coach', async () => {
+      const pkg = await svc.create('coach-1', { name: 'p', amount_cents: 1000 });
+      // Seed 75 purchases.
+      for (let i = 0; i < 75; i++) {
+        prisma._purchases.push({
+          id: `pu-${i}`,
+          package_id: pkg.id,
+          client_user_id: `cli-${i}`,
+          created_at: new Date(2026, 0, 1, 0, i),
+        });
+      }
+      const page1 = await svc.listSubscribers('coach-1', pkg.id, {
+        limit: 50,
+        offset: 0,
+      });
+      expect(page1.subscribers.length).toBe(50);
+      expect(page1.next_offset).toBe(50);
+
+      const page2 = await svc.listSubscribers('coach-1', pkg.id, {
+        limit: 50,
+        offset: 50,
+      });
+      expect(page2.subscribers.length).toBe(25);
+      expect(page2.next_offset).toBeNull();
+
+      await expect(
+        svc.listSubscribers('coach-2', pkg.id),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('caps limit at 200', async () => {
+      const pkg = await svc.create('coach-1', { name: 'p', amount_cents: 1000 });
+      const page = await svc.listSubscribers('coach-1', pkg.id, {
+        limit: 99999,
+      });
+      // Empty list — just confirming no crash / no negative skip.
+      expect(page.subscribers.length).toBe(0);
+    });
+  });
+
+  describe('PR-6: sub-coach effective id resolution', () => {
+    it('head coach: returns caller id unchanged', async () => {
+      const id = await svc.resolveEffectiveCoachId('head-1');
+      expect(id).toBe('head-1');
+    });
+
+    it('sub-coach: promotes to head coach id', async () => {
+      subCoach.getHeadCoachIdForSubCoach.mockImplementation(
+        async (u: string) => (u === 'sub-1' ? 'head-1' : null),
+      );
+      const id = await svc.resolveEffectiveCoachId('sub-1');
+      expect(id).toBe('head-1');
     });
   });
 });

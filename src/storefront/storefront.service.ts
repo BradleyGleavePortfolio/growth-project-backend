@@ -103,6 +103,8 @@ export class StorefrontService {
       !pkg.is_active ||
       pkg.archived_at !== null ||
       !pkg.share_link_enabled ||
+      // PR-6 — DRAFT packages (published_at IS NULL) are not purchasable.
+      !pkg.published_at ||
       pkg.share_link_revoked_at !== null ||
       (pkg.share_link_expires_at !== null &&
         pkg.share_link_expires_at.getTime() <= nowMs) ||
