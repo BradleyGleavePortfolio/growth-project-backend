@@ -2187,6 +2187,16 @@ model DailyMealPlanAssignment {
   // pattern as `ClientWorkoutAssignment.ai_draft_id`.
   ai_draft_id          String?       @unique
 
+  // PR-7 — Packages & Drip-Feed. Set by MealPlanAssetResolver when the
+  // assignment is materialised from a `ScheduledDrop` (drip cron or
+  // immediate-at-checkout fan-out). NULL for all pre-drip rows and for
+  // manual coach-assigned plans, so this is a purely additive column.
+  // The `@unique`-on-nullable lets us use the natural drip key as a
+  // race guard: two concurrent retries of the same drop race on this
+  // unique, the loser trips P2002, and the resolver re-reads the
+  // winner's id. Mirrors the existing `ai_draft_id @unique` pattern.
+  drip_drop_id         String?       @unique
+
   @@index([client_id, starts_on])
   @@index([daily_meal_plan_id])
   @@index([assigned_by_coach_id])

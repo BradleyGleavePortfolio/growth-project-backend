@@ -39,8 +39,12 @@ export interface AssignableAssetMaterialiseInput {
   /** Display caption snapshotted onto ScheduledDrop (e.g. auto_message body). */
   displayCaption?: string | null;
   /**
-   * Optional originating ScheduledDrop id. Currently only used by the
-   * pdf/video resolver for `ClientAssetGrant.granted_via_drop_id`.
+   * Originating ScheduledDrop id. Strongly recommended for the drip path —
+   * `MediaAssetResolver` records it on `ClientAssetGrant.granted_via_drop_id`,
+   * `MealPlanAssetResolver` records it on `DailyMealPlanAssignment.drip_drop_id`
+   * (the per-drop UNIQUE race guard added in migration 20261203000000), and
+   * downstream PRs may use it to gate retries. Optional only for back-compat
+   * with non-drip callers.
    */
   scheduledDropId?: string | null;
   /**
@@ -48,11 +52,13 @@ export interface AssignableAssetMaterialiseInput {
    * fan-out path), the resolver MUST use it for its own writes and MUST NOT
    * open a nested transaction. Cron path (PR-10) does not pass one.
    *
-   * Note: resolvers that delegate to a service which opens its own
-   * transaction (workout, meal_plan, auto_message) cannot push the tx into
-   * that service today — they rely on the service's own idempotency. Only
-   * pdf/video performs its own writes here and therefore honours `tx`
-   * directly.
+   * Honoured directly by `MediaAssetResolver` and `MealPlanAssetResolver`
+   * (both perform their own writes). `WorkoutAssetResolver` and
+   * `AutoMessageAssetResolver` delegate to services that own their internal
+   * transactions today; pushing `tx` into them would be an out-of-scope
+   * signature change. They rely on the underlying service's own
+   * concurrency model (workout: idempotency-key ledger; auto_message:
+   * see contract note below).
    */
   tx?: Prisma.TransactionClient;
 }
@@ -74,9 +80,31 @@ export interface AssignableAssetResolver {
   canHandle(assetType: string): boolean;
 
   /**
-   * Materialise the deliverable for one client. MUST be idempotent — the
-   * drip executor (PR-10) may retry on transient failure. Idempotency
-   * strategy is documented per implementation.
+   * Materialise the deliverable for one client.
+   *
+   * Idempotency contract — AT-LEAST-ONCE.
+   *
+   * Most resolvers are exactly-once thanks to a schema-enforced UNIQUE on
+   * the per-drop natural key (the loser of a concurrent retry catches
+   * P2002 and re-reads the winner's id):
+   *   - workout: deterministic idempotency key flows through
+   *     `WorkoutBuilderIdempotencyKey`.
+   *   - meal_plan: `DailyMealPlanAssignment.drip_drop_id @unique`
+   *     (migration 20261203000000_pr7_meal_plan_drip_drop_unique).
+   *   - pdf/video: `ClientAssetGrant @@unique(client_id, media_asset_id)`.
+   *
+   * `auto_message` is the exception — `MessagingService.sendAsCoach` does
+   * not today accept a caller-supplied idempotency key (TODO at
+   * src/ai/gateway/materialisers/coach-message.materialiser.ts:78-81), so a
+   * retry after a partial failure can produce a second CoachMessage row.
+   * PR-10's drip executor MUST therefore gate retries on
+   * `ScheduledDrop.materialised_ref IS NULL` so a fire that succeeded
+   * (even if the executor crashed before persisting the ref) is never
+   * replayed. The per-drop dispatch guard belongs in the executor, not in
+   * each resolver.
+   *
+   * Implementations document their per-type idempotency strategy in the
+   * file-level comment.
    */
   materialise(
     input: AssignableAssetMaterialiseInput,

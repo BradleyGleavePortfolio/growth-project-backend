@@ -36,6 +36,16 @@ export class MediaAssetNotFoundError extends Error {
   }
 }
 
+export class MealPlanNotFoundError extends Error {
+  readonly code = 'ASSIGNABLE_ASSET_RESOLVER_MEAL_PLAN_NOT_FOUND';
+  constructor(public readonly mealPlanId: string) {
+    super(
+      `DailyMealPlan ${mealPlanId} does not exist for the acting tenant (archived or cross-tenant)`,
+    );
+    this.name = 'MealPlanNotFoundError';
+  }
+}
+
 export class AutoMessageBodyMissingError extends Error {
   readonly code = 'ASSIGNABLE_ASSET_RESOLVER_AUTO_MESSAGE_EMPTY';
   constructor() {

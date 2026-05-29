@@ -1,7 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { MessagingModule } from '../../messaging/messaging.module';
 import { WorkoutBuilderModule } from '../../workout-builder/workout-builder.module';
-import { RealMealPlansModule } from '../../real-meal-plans/real-meal-plans.module';
 import {
   ASSIGNABLE_ASSET_RESOLVERS,
   AssignableAssetResolverRegistry,
@@ -24,7 +23,10 @@ import { MediaAssetResolver } from './media-asset.resolver';
 // Imports:
 //   - MessagingModule supplies MessagingService for auto_message.
 //   - WorkoutBuilderModule supplies WorkoutBuilderService for workout_*.
-//   - RealMealPlansModule supplies RealMealPlansService for meal_plan.
+//   - meal_plan writes DailyMealPlanAssignment directly via PrismaService
+//     (no RealMealPlansModule import) because the assignment row must
+//     carry `drip_drop_id` to participate in the per-drop UNIQUE race
+//     guard added in migration 20261203000000.
 //   - SubCoachScopeService comes via the @Global SubCoachModule, so no
 //     explicit import here.
 //   - PrismaService comes via the global PrismaModule.
@@ -42,7 +44,7 @@ import { MediaAssetResolver } from './media-asset.resolver';
 
 @Global()
 @Module({
-  imports: [MessagingModule, WorkoutBuilderModule, RealMealPlansModule],
+  imports: [MessagingModule, WorkoutBuilderModule],
   providers: [
     ResolverSubCoachScope,
     WorkoutAssetResolver,

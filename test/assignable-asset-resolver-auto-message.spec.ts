@@ -26,7 +26,12 @@ describe('AutoMessageAssetResolver', () => {
     expect(r.canHandle('pdf')).toBe(false);
   });
 
-  it('delegates to MessagingService.sendAsCoach with the head coach id, client, and trimmed body from displayCaption', async () => {
+  it('delegates to MessagingService.sendAsCoach with the ACTING (sub-)coach id so the sender is attributed correctly, plus client + trimmed body from displayCaption', async () => {
+    // P2(a) regression: an earlier revision of this resolver passed
+    // tenantCoachId (head coach) here, which bypassed sendAsCoach's own
+    // Phase-11 sub-coach split and attributed drip messages to the head
+    // coach. The fix is to pass the raw acting coachId so sendAsCoach
+    // resolves the split internally and writes sender_id correctly.
     const msg = makeMessaging();
     const resolver = new AutoMessageAssetResolver(
       msg,
@@ -41,9 +46,22 @@ describe('AutoMessageAssetResolver', () => {
     expect(res.materialisedRef).toBe('msg-001');
     expect((msg as unknown as { sendAsCoach: jest.Mock }).sendAsCoach).toHaveBeenCalledTimes(1);
     const call = (msg as unknown as { sendAsCoach: jest.Mock }).sendAsCoach.mock.calls[0];
-    expect(call[0]).toBe('head-1');
+    expect(call[0]).toBe('sub-1'); // acting (sub-)coach id, NOT 'head-1'
     expect(call[1]).toBe('c1');
     expect(call[2]).toEqual({ body: 'Welcome aboard!' });
+  });
+
+  it('head-coach path: passes the head coach id unchanged (resolve() returns actingCoachId === coachId)', async () => {
+    const msg = makeMessaging();
+    const resolver = new AutoMessageAssetResolver(msg, makeScope(true, false));
+    await resolver.materialise({
+      clientId: 'c1',
+      coachId: 'head-coach-7',
+      assetId: 'tmpl-x',
+      displayCaption: 'Hi',
+    });
+    const call = (msg as unknown as { sendAsCoach: jest.Mock }).sendAsCoach.mock.calls[0];
+    expect(call[0]).toBe('head-coach-7');
   });
 
   it('falls back to displayTitle when displayCaption is missing', async () => {
