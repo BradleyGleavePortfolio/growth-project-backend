@@ -32,10 +32,14 @@
  *     expiry. The OWNER can always sign a URL for their own asset (preview
  *     in the editor). BUYERS get a URL only via getBuyerSignedDownloadUrl
  *     which gates on an active ClientAssetGrant (PR-7).
- *   - Videos use Mux playback URLs minted by MuxService.mintPlaybackUrl.
- *     Default policy is 'public' for v1 (mirrors the workout-demo video
- *     policy); when a `signed` policy lands, the same code path mints a
- *     signed JWT URL.
+ *   - Videos use Mux playback URLs minted by MuxService.mintPlaybackUrl
+ *     with the `signed` policy — audit P2-2 fix. The Direct Upload is
+ *     created with playbackPolicy='signed', so the asset's playback id
+ *     only works with a per-request RS256-signed JWT minted at
+ *     URL-issuance time. This makes ClientAssetGrant revocation
+ *     meaningful (a revoked buyer cannot mint a new signed URL) and
+ *     ages out leaked URLs after the TTL window expires. Mirrors the
+ *     PDF signed-URL principle.
  *
  * Soft-delete:
  *   - We never hard-delete a row. archived_at is set; signed URLs and
@@ -73,11 +77,10 @@ import {
   ServiceUnavailableException,
   BadRequestException,
   ConflictException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { CoachMediaAsset, Prisma } from '@prisma/client';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma.service';
 import { MuxService } from '../video/mux.service';
 import { MuxDisabledError } from '../video/mux.errors';
@@ -267,7 +270,13 @@ export class CoachMediaService {
     let upload;
     try {
       upload = await this.mux.createDirectUpload({
-        playbackPolicy: 'public',
+        // Audit P2-2 fix: paid video deliverables MUST use signed playback.
+        // A 'public' Mux URL is permanent and un-revocable — anyone who
+        // ever obtains the URL can stream the video forever, defeating
+        // ClientAssetGrant revocation and mirroring the PDF signed-URL
+        // principle. Buyers receive a short-lived signed JWT minted at
+        // URL-issuance time (mintSignedUrl).
+        playbackPolicy: 'signed',
         corsOrigin: input.cors_origin ?? '*',
       });
     } catch (err) {
@@ -362,14 +371,23 @@ export class CoachMediaService {
     options?: SignedDownloadOptions,
   ): Promise<{ url: string; expires_in_seconds: number; kind: 'pdf' | 'video' }>
   {
+    // Audit P2-1 fix: collapse "row not found", "archived row", "no
+    // active grant", and "tenant mismatch" into a SINGLE 404 with the
+    // same shape. An attacker probing media_asset_id values must not
+    // be able to distinguish "this id exists" from "this id doesn't"
+    // (existence leak). Asset ids are uuid so enumeration is not
+    // practical, but defence-in-depth costs nothing here.
+    const notFound = (): NotFoundException =>
+      new NotFoundException({
+        error: 'ASSET_NOT_FOUND',
+        message: `No media asset with id ${mediaAssetId}`,
+      });
+
     const row = await this.prisma.coachMediaAsset.findUnique({
       where: { id: mediaAssetId },
     });
     if (!row || row.archived_at) {
-      throw new NotFoundException({
-        error: 'ASSET_NOT_FOUND',
-        message: `No media asset with id ${mediaAssetId}`,
-      });
+      throw notFound();
     }
     const grant = await this.prisma.clientAssetGrant.findUnique({
       where: {
@@ -380,10 +398,29 @@ export class CoachMediaService {
       },
     });
     if (!grant || grant.revoked_at) {
-      throw new ForbiddenException({
-        error: 'ASSET_NOT_GRANTED',
-        message: 'Caller has no active grant for this asset',
+      throw notFound();
+    }
+    // Audit P2-4 fix: tenant double-check at URL-ISSUANCE time. The
+    // grant lookup is keyed on (buyer, media_asset_id) and doesn't
+    // assert the asset belongs to the coach who SOLD this buyer access.
+    // If a buggy upstream ever wrote a ClientAssetGrant pointing at
+    // another coach's asset, this signed-URL endpoint would happily
+    // issue it. We guard by joining the grant -> drop -> client_purchase
+    // and assert client_purchase.coach_user_id === asset.coach_id.
+    // MediaAssetResolver already enforces tenant on grant CREATION; this
+    // is defence-in-depth on the read path.
+    if (grant.granted_via_drop_id) {
+      const drop = await this.prisma.scheduledDrop.findUnique({
+        where: { id: grant.granted_via_drop_id },
+        select: { client_purchase: { select: { coach_user_id: true } } },
       });
+      const purchaseCoachId = drop?.client_purchase?.coach_user_id ?? null;
+      if (purchaseCoachId && purchaseCoachId !== row.coach_id) {
+        this.logger.warn(
+          `Tenant mismatch on buyer signed-URL: grant ${grant.id} purchase.coach=${purchaseCoachId} asset.coach=${row.coach_id}`,
+        );
+        throw notFound();
+      }
     }
     return this.mintSignedUrl(row, options);
   }
@@ -428,6 +465,26 @@ export class CoachMediaService {
    *     block if referenced — document; pick the safer one'); we pick
    *     'block if referenced by an active content row'.
    *
+   * Audit P2-3 fix — race guard against concurrent grant creation:
+   *   - The grant-count read + the archive write run INSIDE a single
+   *     $transaction with an explicit row lock on the asset (Postgres
+   *     `SELECT ... FOR UPDATE`). Any concurrent ClientAssetGrant
+   *     resolver running in PR-9 fan-out also locks the asset row
+   *     (see MediaAssetResolver) before reading `status` / `archived_at`
+   *     and creating the grant, so the two transactions serialize:
+   *     either the archive lands first (the resolver then sees
+   *     `archived_at != null` and refuses to mint the grant) or the
+   *     grant lands first (this tx then sees grantCount >= 1 and skips
+   *     the storage-object delete, so the buyer's URL keeps working).
+   *     The previous implementation read grantCount OUTSIDE any
+   *     transaction, leaving a window where a grant could mint between
+   *     the count and the delete and orphan the buyer's URL on a
+   *     storage object that no longer existed.
+   *   - The storage `deleteObject` is invoked AFTER the row archive
+   *     commits (outside the tx) to avoid holding a Postgres
+   *     connection during the Supabase HTTP round-trip — the same
+   *     pattern billing.service.ts uses for preResolveReceiptUrl.
+   *
    * Idempotent: re-archiving an archived row returns the same row.
    */
   async softDelete(
@@ -443,30 +500,80 @@ export class CoachMediaService {
       };
     }
 
-    const [grantCount, contentCount] = await Promise.all([
-      this.prisma.clientAssetGrant.count({
-        where: { media_asset_id: mediaAssetId, revoked_at: null },
-      }),
-      this.prisma.coachPackageContent.count({
-        where: {
-          asset_id: mediaAssetId,
-          asset_type: { in: ['pdf', 'video'] },
-          removed_at: null,
-        },
-      }),
-    ]);
-
-    if (contentCount > 0) {
-      throw new ConflictException({
-        error: 'ASSET_REFERENCED',
-        message: `Asset is still attached to ${contentCount} package content row(s); detach before archiving`,
-        grant_count: grantCount,
-        content_count: contentCount,
+    // P2-3 race guard — lock the asset row + recount + archive atomically.
+    // If a concurrent ClientAssetGrant insert is in flight, the resolver's
+    // own SELECT FOR UPDATE (in MediaAssetResolver) blocks behind our
+    // lock; whichever tx wins, the loser's view is consistent (grantCount
+    // includes the newly-minted grant, or the grant insert sees the
+    // archive).
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Lock the asset row for the duration of the tx. Re-fetch under
+      // lock so we don't act on stale data (e.g. another archive
+      // committed between requireOwned() and here).
+      await tx.$queryRaw<
+        Array<{ id: string }>
+      >`SELECT id FROM "CoachMediaAsset" WHERE id = ${mediaAssetId} FOR UPDATE`;
+      const fresh = await tx.coachMediaAsset.findUnique({
+        where: { id: mediaAssetId },
       });
+      if (!fresh) {
+        // Should not happen — requireOwned just returned the row — but
+        // guard defensively.
+        throw new NotFoundException({
+          error: 'ASSET_NOT_FOUND',
+          message: `No media asset with id ${mediaAssetId}`,
+        });
+      }
+      if (fresh.archived_at) {
+        return {
+          fresh,
+          grantCount: 0,
+          contentCount: 0,
+          alreadyArchived: true as const,
+        };
+      }
+      const [grantCount, contentCount] = await Promise.all([
+        tx.clientAssetGrant.count({
+          where: { media_asset_id: mediaAssetId, revoked_at: null },
+        }),
+        tx.coachPackageContent.count({
+          where: {
+            asset_id: mediaAssetId,
+            asset_type: { in: ['pdf', 'video'] },
+            removed_at: null,
+          },
+        }),
+      ]);
+      if (contentCount > 0) {
+        throw new ConflictException({
+          error: 'ASSET_REFERENCED',
+          message: `Asset is still attached to ${contentCount} package content row(s); detach before archiving`,
+          grant_count: grantCount,
+          content_count: contentCount,
+        });
+      }
+      const archived = await tx.coachMediaAsset.update({
+        where: { id: mediaAssetId },
+        data: { archived_at: new Date() },
+      });
+      return {
+        fresh: archived,
+        grantCount,
+        contentCount,
+        alreadyArchived: false as const,
+      };
+    });
+
+    if (result.alreadyArchived) {
+      return {
+        id: result.fresh.id,
+        archived_at: result.fresh.archived_at!,
+        object_deleted: false,
+      };
     }
 
     let objectDeleted = false;
-    if (grantCount === 0 && row.kind === 'pdf') {
+    if (result.grantCount === 0 && row.kind === 'pdf') {
       // Only PDFs go through StorageProvider.delete; videos live in Mux.
       // For Mux we leave the asset in Mux on archive (the playback id is
       // already on the row and a granted buyer may still hold a URL); a
@@ -484,10 +591,7 @@ export class CoachMediaService {
       }
     }
 
-    const archived = await this.prisma.coachMediaAsset.update({
-      where: { id: mediaAssetId },
-      data: { archived_at: new Date() },
-    });
+    const archived = result.fresh;
     return {
       id: archived.id,
       archived_at: archived.archived_at!,
@@ -572,13 +676,15 @@ export class CoachMediaService {
           status: row.status,
         });
       }
-      // Default to public per master plan §1 decision #6 ('public Mux
-      // playback policy is acceptable for v1; signed playback is a
-      // follow-up'). MuxService.mintPlaybackUrl will pick the right
-      // shape if a future column flips the policy to 'signed'.
+      // Audit P2-2 fix: signed playback for paid video. MuxService
+      // mints a per-request RS256-signed JWT (TTL clamped via
+      // SIGNED_DOWNLOAD_TTL_SECONDS_DEFAULT) so a buyer URL ages out
+      // even if leaked, and ClientAssetGrant revocation is meaningful
+      // (a non-buyer cannot mint a new URL once their grant is
+      // revoked). Mirrors the PDF signed-URL principle.
       const url = this.mux.mintPlaybackUrl({
         playbackId: row.mux_playback_id,
-        policy: 'public',
+        policy: 'signed',
         ttlSeconds: options?.expiresInSeconds,
       });
       return {
@@ -606,11 +712,11 @@ export class CoachMediaService {
     // We let Postgres' uuid default handle row ids in the general case,
     // but for the upload flow we mint the id client-side so we can build
     // the storage key BEFORE we INSERT (storage key depends on id, and we
-    // want both committed in one row).
-    return randomBytes(16).toString('hex').replace(
-      /^(........)(....)(....)(....)(............)$/,
-      '$1-$2-$3-$4-$5',
-    );
+    // want both committed in one row). Audit P3 fix: use crypto.randomUUID
+    // so the id is a valid RFC 4122 v4 UUID (the previous manual hex
+    // formatter did not set the version/variant nibbles and would be
+    // rejected by strict UUID validators downstream).
+    return randomUUID();
   }
 
   private parse<T>(schema: { safeParse: (v: unknown) => { success: boolean; data?: T; error?: { issues: unknown[] } } }, raw: unknown): T {

@@ -55,6 +55,22 @@ export class MediaAssetResolver implements AssignableAssetResolver {
     const acting = await this.scope.resolve(input.coachId, input.clientId);
     const db = input.tx ?? this.prisma;
 
+    // PR-12 audit P2-3 fix — race guard against concurrent CoachMediaService
+    // softDelete. softDelete acquires a SELECT FOR UPDATE on this row
+    // before recounting grants + archiving. By taking the same row lock
+    // here (when inside a transaction), the two paths serialize: a
+    // softDelete in flight blocks our findUnique until it commits, after
+    // which we see archived_at != null and refuse the grant. The lock is
+    // released on tx commit/rollback. Outside a tx (cron path) we skip
+    // the lock — the cron path retries on conflict, and the resolver's
+    // archived_at + status checks still catch a stale row on the next
+    // attempt.
+    if (input.tx) {
+      await db.$queryRaw<
+        Array<{ id: string }>
+      >`SELECT id FROM "CoachMediaAsset" WHERE id = ${input.assetId} FOR UPDATE`;
+    }
+
     // PR-12 gate: assert the media asset exists AND belongs to the acting
     // tenant coach. Without the tenant check a malformed package could
     // grant access to another coach's asset.

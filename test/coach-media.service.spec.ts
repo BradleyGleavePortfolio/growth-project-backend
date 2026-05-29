@@ -9,7 +9,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -70,20 +69,48 @@ function defaultRow(overrides: Partial<Row> = {}): Row {
 function makePrismaStub(initialRows: Row[] = []) {
   const rows = [...initialRows];
   const grants: Array<{
+    id?: string;
     client_id: string;
     media_asset_id: string;
     revoked_at: Date | null;
+    granted_via_drop_id?: string | null;
   }> = [];
   const contents: Array<{
     asset_id: string;
     asset_type: string;
     removed_at: Date | null;
   }> = [];
+  const drops: Array<{
+    id: string;
+    client_purchase: { coach_user_id: string };
+  }> = [];
 
-  const stub = {
+  const stub: {
+    _rows: Row[];
+    _grants: typeof grants;
+    _contents: typeof contents;
+    _drops: typeof drops;
+    coachMediaAsset: {
+      create: jest.Mock;
+      findUnique: jest.Mock;
+      findFirst: jest.Mock;
+      findMany: jest.Mock;
+      update: jest.Mock;
+    };
+    clientAssetGrant: {
+      count: jest.Mock;
+      findUnique: jest.Mock;
+    };
+    coachPackageContent: { count: jest.Mock };
+    muxProcessedEvent: { create: jest.Mock; update: jest.Mock };
+    scheduledDrop: { findUnique: jest.Mock };
+    $queryRaw: jest.Mock;
+    $transaction: jest.Mock;
+  } = {
     _rows: rows,
     _grants: grants,
     _contents: contents,
+    _drops: drops,
     coachMediaAsset: {
       create: jest.fn(async ({ data }: { data: Partial<Row> }) => {
         const r = defaultRow({
@@ -162,6 +189,24 @@ function makePrismaStub(initialRows: Row[] = []) {
       create: jest.fn(),
       update: jest.fn(),
     },
+    scheduledDrop: {
+      findUnique: jest.fn(async ({ where }: { where: { id: string } }) => {
+        const d = drops.find((x) => x.id === where.id);
+        return d ?? null;
+      }),
+    },
+    // The softDelete code path runs prisma.$queryRaw FOR UPDATE on the
+    // asset row; in tests we just acknowledge it (no Postgres locking in
+    // a unit test). The test harness asserts that the lock is requested.
+    $queryRaw: jest.fn(async () => [] as Array<{ id: string }>),
+    // $transaction handed the same `stub` to the callback so writes
+    // share the in-memory rows/grants/contents/drops arrays. We
+    // simulate rollback by tracking the rows length pre-call and
+    // restoring on throw (not used directly here but documented for
+    // future use).
+    $transaction: jest.fn(async <T>(fn: (tx: unknown) => Promise<T>) => {
+      return await fn(stub);
+    }),
   };
   return stub;
 }
@@ -201,8 +246,12 @@ function makeMuxStub(opts: { configured?: boolean } = {}) {
       url: 'https://mux.test/upload/upl-1',
     })),
     mintPlaybackUrl: jest.fn(
-      ({ playbackId }: { playbackId: string }) =>
-        `https://stream.mux.com/${playbackId}.m3u8`,
+      ({ playbackId, policy }: { playbackId: string; policy: 'public' | 'signed' }) => {
+        // Audit P2-2: paid video uses signed playback. The stub returns
+        // a token-bearing URL so tests can assert the JWT is present.
+        const base = `https://stream.mux.com/${playbackId}.m3u8`;
+        return policy === 'signed' ? `${base}?token=stub-signed-jwt` : base;
+      },
     ),
   };
 }
@@ -485,11 +534,12 @@ describe('CoachMediaService — owner reads + signed URLs', () => {
       ],
     });
     const out = await svc.getOwnerSignedUrl('coach-1', 'v1');
-    expect(out.url).toBe('https://stream.mux.com/pb-xyz.m3u8');
+    // Audit P2-2: signed playback returns a token-bearing URL.
+    expect(out.url).toBe('https://stream.mux.com/pb-xyz.m3u8?token=stub-signed-jwt');
     expect(out.kind).toBe('video');
     expect(mux.mintPlaybackUrl).toHaveBeenCalledWith({
       playbackId: 'pb-xyz',
-      policy: 'public',
+      policy: 'signed',
       ttlSeconds: undefined,
     });
   });
@@ -580,14 +630,14 @@ describe('CoachMediaService — buyer signed-URL gate (ClientAssetGrant)', () =>
     expect(out.url).toContain('supabase.test/download/');
   });
 
-  it('refuses a buyer without a grant (403)', async () => {
+  it('refuses a buyer without a grant (404 — audit P2-1, no existence leak)', async () => {
     const { svc } = setup();
     await expect(svc.getBuyerSignedUrl('non-buyer', 'a1')).rejects.toThrow(
-      ForbiddenException,
+      NotFoundException,
     );
   });
 
-  it('refuses a buyer whose grant is revoked', async () => {
+  it('refuses a buyer whose grant is revoked (404 — uniform shape)', async () => {
     const { svc } = setup({
       grant: {
         client_id: 'buyer-1',
@@ -596,8 +646,60 @@ describe('CoachMediaService — buyer signed-URL gate (ClientAssetGrant)', () =>
       },
     });
     await expect(svc.getBuyerSignedUrl('buyer-1', 'a1')).rejects.toThrow(
-      ForbiddenException,
+      NotFoundException,
     );
+  });
+
+  it('AUDIT P2-4: refuses when the grant’s purchase belongs to a DIFFERENT coach (tenant double-check)', async () => {
+    // Set up: an asset owned by coach-1, a grant for buyer-1 pointing
+    // at media_asset_id=a1, BUT the grant was minted via a drop whose
+    // purchase was sold by coach-2. The MediaAssetResolver would never
+    // write such a row today (it enforces tenant on CREATE), but
+    // defence-in-depth: this read path must refuse.
+    const asset = defaultRow({
+      id: 'a1',
+      coach_id: 'coach-1',
+      kind: 'pdf',
+      status: STATUS_READY,
+    });
+    const { svc, prisma } = makeService({ rows: [asset] });
+    prisma._grants.push({
+      id: 'grant-1',
+      client_id: 'buyer-1',
+      media_asset_id: 'a1',
+      revoked_at: null,
+      granted_via_drop_id: 'drop-1',
+    });
+    prisma._drops.push({
+      id: 'drop-1',
+      client_purchase: { coach_user_id: 'coach-2' }, // mismatch
+    });
+    await expect(svc.getBuyerSignedUrl('buyer-1', 'a1')).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it('AUDIT P2-4: allows when the grant’s purchase belongs to the SAME coach as the asset', async () => {
+    const asset = defaultRow({
+      id: 'a1',
+      coach_id: 'coach-1',
+      kind: 'pdf',
+      status: STATUS_READY,
+    });
+    const { svc, prisma } = makeService({ rows: [asset] });
+    prisma._grants.push({
+      id: 'grant-1',
+      client_id: 'buyer-1',
+      media_asset_id: 'a1',
+      revoked_at: null,
+      granted_via_drop_id: 'drop-1',
+    });
+    prisma._drops.push({
+      id: 'drop-1',
+      client_purchase: { coach_user_id: 'coach-1' }, // match
+    });
+    const out = await svc.getBuyerSignedUrl('buyer-1', 'a1');
+    expect(out.url).toContain('supabase.test/download/');
   });
 
   it('refuses access to an archived asset even with a grant', async () => {

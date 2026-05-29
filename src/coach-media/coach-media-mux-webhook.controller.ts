@@ -26,19 +26,34 @@
  *      coach-media.service.ts.
  *
  * Signature verification reuses MuxService.verifyWebhookSignature — same
- * HMAC algorithm, same MUX_WEBHOOK_SECRET. A forged event returns 400
- * (matching the workout-demo controller's contract). Mux retries on 4xx
- * stop by design, which is what we want for an unsigned event.
+ * HMAC algorithm, same MUX_WEBHOOK_SECRET, applied to req.rawBody (the
+ * exact bytes Mux signed). A forged event returns 400 (matching the
+ * workout-demo controller's contract). Mux retries on 4xx stop by
+ * design, which is what we want for an unsigned event.
  *
- * Idempotency:
- *   - MuxProcessedEvent.PK = mux_event_id. We do an optimistic INSERT;
- *     a duplicate event id surfaces as P2002 and we 200 the redelivery
- *     without re-applying state.
- *   - processed_at is recorded immediately; handler_completed_at is
- *     stamped after the row update succeeds. The two-column pattern
- *     mirrors StripeProcessedEvent (P1-7 audit fix) so a future
- *     reconciliation worker can identify events whose row write died
- *     before handler_completed_at.
+ * Audit P1-2 fix: previously this controller verified HMAC over
+ * JSON.stringify(parsedBody). Since HMAC is byte-exact, any minor
+ * divergence between Mux's transmitted bytes and the re-serialised JS
+ * object (key order, whitespace, number formatting) silently rejected
+ * legit events. We now use req.rawBody, identical to
+ * stripe-webhook.controller.ts. If rawBody is missing (middleware
+ * misconfigured) we reject with 400.
+ *
+ * Idempotency (audit P1-1 fix):
+ *   - MuxProcessedEvent.PK = mux_event_id. We do an optimistic INSERT
+ *     INSIDE the same $transaction that runs the handler. If the
+ *     handler's coachMediaAsset.update throws transiently, the dedup
+ *     row rolls back too — Mux's retry re-runs the handler instead of
+ *     short-circuiting on a stale dedup. This mirrors the
+ *     StripeProcessedEvent discipline in billing.service.ts:191-200
+ *     (the previous implementation inserted OUTSIDE any transaction,
+ *     so a handler failure permanently lost the state transition).
+ *   - A P2002 on the insert means we have ALREADY processed this
+ *     event id in a prior committed transaction — that is the true
+ *     duplicate case, and we 200 the redelivery without re-running.
+ *   - handler_completed_at is stamped in a separate post-commit update
+ *     for observability only; bookkeeping failure does not affect
+ *     dedup correctness.
  *
  * State machine:
  *   - video.upload.asset_created → row found by mux_upload_id, set
@@ -65,10 +80,12 @@ import {
   HttpStatus,
   Logger,
   Post,
+  Req,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Prisma } from '@prisma/client';
+import type { Request } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma.service';
 import { MuxService } from '../video/mux.service';
@@ -78,6 +95,8 @@ import {
   STATUS_READY,
   STATUS_UPLOADING,
 } from './coach-media.service';
+
+type TxClient = Prisma.TransactionClient;
 
 type MuxEvent = {
   id?: string;
@@ -108,14 +127,23 @@ export class CoachMediaMuxWebhookController {
   @Post('mux')
   @HttpCode(HttpStatus.OK)
   async receive(
+    @Req() req: Request,
     @Body() body: MuxEvent,
     @Headers('mux-signature') signature: string,
   ) {
-    // Nest's default JSON body parser has already deserialised; we
-    // re-serialise for HMAC. JSON.stringify is deterministic over the
-    // shapes Mux ships and matches the pattern in
-    // src/billing/stripe-webhook.controller.ts.
-    const raw = JSON.stringify(body ?? {});
+    // Audit P1-2 fix: HMAC must verify against the EXACT bytes Mux sent,
+    // not a re-serialised JS object. main.ts wires `rawBody: true` so
+    // req.rawBody is a Buffer on every request. If middleware is
+    // misconfigured we fail loudly rather than fall back to JSON.stringify
+    // (that fallback is what would silently reject legit events).
+    const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+    if (!Buffer.isBuffer(rawBody)) {
+      this.logger.error(
+        'Mux webhook received without rawBody. Verify rawBody:true is wired in main.ts.',
+      );
+      throw new BadRequestException('Mux webhook raw body unavailable');
+    }
+    const raw = rawBody.toString('utf8');
     const ok = this.mux.verifyWebhookSignature({
       payload: raw,
       signatureHeader: signature,
@@ -124,67 +152,88 @@ export class CoachMediaMuxWebhookController {
       throw new BadRequestException('Invalid Mux signature');
     }
 
-    // Durable dedup: P2002 on insert means we've already processed this
-    // event id (possibly on another pod). The handler row is committed
-    // here as 'received'; we update handler_completed_at AFTER the state
-    // transition lands so a crashed handler leaves an audit trail.
+    const eventType = body.type ?? '';
     const eventId = body.id;
-    if (eventId) {
-      try {
-        await this.prisma.muxProcessedEvent.create({
-          data: { mux_event_id: eventId, type: body.type ?? 'unknown' },
-        });
-      } catch (err) {
-        if (
-          err instanceof Prisma.PrismaClientKnownRequestError &&
-          err.code === 'P2002'
-        ) {
-          // Duplicate — already processed. 200 the redelivery.
+
+    // Audit P1-1 fix: dedup row INSERT + handler.update run inside the
+    // SAME $transaction. If the handler throws transiently the dedup row
+    // rolls back too — Mux's retry then re-runs the handler. The previous
+    // implementation inserted the dedup row outside any tx, which meant a
+    // handler error left the dedup row committed and the next retry
+    // short-circuited as "deduped" without re-running. Mirrors
+    // billing.service.ts:191-200.
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        if (eventId) {
+          await tx.muxProcessedEvent.create({
+            data: { mux_event_id: eventId, type: body.type ?? 'unknown' },
+          });
+        }
+        await this.dispatch(tx, eventType, body);
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        // True duplicate: a prior tx ALREADY committed this event id, so
+        // the handler has already run successfully. 200 the redelivery.
+        // Note: a P2002 raised *here* could in principle also come from a
+        // unique-constraint inside the handler, but the only unique we
+        // touch in this transaction is MuxProcessedEvent.mux_event_id, so
+        // attributing the conflict to dedup is safe.
+        if (eventId) {
           return { received: true, deduped: eventId };
         }
-        throw err;
       }
+      throw err;
     }
 
-    const eventType = body.type ?? '';
-    try {
-      switch (eventType) {
-        case 'video.upload.asset_created':
-          await this.handleUploadAssetCreated(body);
-          break;
-        case 'video.asset.created':
-          // Tracker-only; if we have the row in upload state advance to
-          // processing. No-op for terminal states.
-          await this.handleAssetCreated(body);
-          break;
-        case 'video.asset.ready':
-          await this.handleAssetReady(body);
-          break;
-        case 'video.asset.errored':
-          await this.handleAssetErrored(body);
-          break;
-        default:
-          // Unknown event — acknowledge so Mux stops retrying.
-          break;
-      }
-    } finally {
-      if (eventId) {
-        await this.prisma.muxProcessedEvent
-          .update({
-            where: { mux_event_id: eventId },
-            data: { handler_completed_at: new Date() },
-          })
-          .catch(() => {
-            // The update is bookkeeping only — if it fails, the dedup
-            // still prevents replay. Avoid masking the original error.
-          });
-      }
+    // Post-commit bookkeeping (handler succeeded → stamp completion). A
+    // failure here does not affect dedup correctness — the row is already
+    // committed and the state transition has landed.
+    if (eventId) {
+      await this.prisma.muxProcessedEvent
+        .update({
+          where: { mux_event_id: eventId },
+          data: { handler_completed_at: new Date() },
+        })
+        .catch(() => {
+          // Best-effort — leave the row without handler_completed_at if
+          // the bookkeeping update flakes.
+        });
     }
 
     if (eventType.length === 0) {
       return { received: true, ignored: 'no_type' };
     }
     return { received: true };
+  }
+
+  private async dispatch(
+    tx: TxClient,
+    eventType: string,
+    body: MuxEvent,
+  ): Promise<void> {
+    switch (eventType) {
+      case 'video.upload.asset_created':
+        await this.handleUploadAssetCreated(tx, body);
+        return;
+      case 'video.asset.created':
+        // Tracker-only; if we have the row in upload state advance to
+        // processing. No-op for terminal states.
+        await this.handleAssetCreated(tx, body);
+        return;
+      case 'video.asset.ready':
+        await this.handleAssetReady(tx, body);
+        return;
+      case 'video.asset.errored':
+        await this.handleAssetErrored(tx, body);
+        return;
+      default:
+        // Unknown event — acknowledge so Mux stops retrying.
+        return;
+    }
   }
 
   /**
@@ -198,12 +247,15 @@ export class CoachMediaMuxWebhookController {
    * (the other webhook controller's path) — we no-op and the workout-
    * demo controller handles it.
    */
-  private async handleUploadAssetCreated(event: MuxEvent): Promise<void> {
+  private async handleUploadAssetCreated(
+    tx: TxClient,
+    event: MuxEvent,
+  ): Promise<void> {
     const uploadId = event.data?.id;
     const assetId = event.data?.asset_id;
     if (!uploadId || !assetId) return;
 
-    const row = await this.prisma.coachMediaAsset.findUnique({
+    const row = await tx.coachMediaAsset.findUnique({
       where: { mux_upload_id: uploadId },
     });
     if (!row) {
@@ -216,7 +268,7 @@ export class CoachMediaMuxWebhookController {
     if (row.status !== STATUS_UPLOADING && row.status !== STATUS_PROCESSING) {
       return;
     }
-    await this.prisma.coachMediaAsset.update({
+    await tx.coachMediaAsset.update({
       where: { id: row.id },
       data: {
         storage_key: assetId,
@@ -226,15 +278,16 @@ export class CoachMediaMuxWebhookController {
     });
   }
 
-  private async handleAssetCreated(event: MuxEvent): Promise<void> {
+  private async handleAssetCreated(
+    tx: TxClient,
+    event: MuxEvent,
+  ): Promise<void> {
     const assetId = event.data?.id;
     if (!assetId) return;
-    // Try to find by storage_key (set on upload_asset_created); fall back
-    // to mux_upload_id if the upload_asset_created hasn't landed first.
-    const row = await this.findRowByAssetOrUpload(assetId);
+    const row = await this.findRowByAssetOrUpload(tx, assetId);
     if (!row) return;
     if (row.status !== STATUS_UPLOADING) return;
-    await this.prisma.coachMediaAsset.update({
+    await tx.coachMediaAsset.update({
       where: { id: row.id },
       data: { status: STATUS_PROCESSING, storage_key: assetId },
     });
@@ -246,10 +299,13 @@ export class CoachMediaMuxWebhookController {
    * retry that drops playback_ids on the second push: never null out a
    * playback id we already have.
    */
-  private async handleAssetReady(event: MuxEvent): Promise<void> {
+  private async handleAssetReady(
+    tx: TxClient,
+    event: MuxEvent,
+  ): Promise<void> {
     const assetId = event.data?.id;
     if (!assetId) return;
-    const row = await this.findRowByAssetOrUpload(assetId);
+    const row = await this.findRowByAssetOrUpload(tx, assetId);
     if (!row) return;
 
     const playbackIds = event.data?.playback_ids ?? [];
@@ -266,7 +322,7 @@ export class CoachMediaMuxWebhookController {
     if (typeof event.data?.duration === 'number') {
       data.duration_sec = Math.round(event.data.duration);
     }
-    await this.prisma.coachMediaAsset.update({
+    await tx.coachMediaAsset.update({
       where: { id: row.id },
       data,
     });
@@ -279,10 +335,13 @@ export class CoachMediaMuxWebhookController {
    * status — Mux retries can deliver events out of order. We only apply
    * `errored` when the row is still in a pre-terminal state.
    */
-  private async handleAssetErrored(event: MuxEvent): Promise<void> {
+  private async handleAssetErrored(
+    tx: TxClient,
+    event: MuxEvent,
+  ): Promise<void> {
     const assetId = event.data?.id;
     if (!assetId) return;
-    const row = await this.findRowByAssetOrUpload(assetId);
+    const row = await this.findRowByAssetOrUpload(tx, assetId);
     if (!row) return;
 
     if (row.status === STATUS_READY || row.status === STATUS_ERRORED) {
@@ -295,7 +354,7 @@ export class CoachMediaMuxWebhookController {
       event.data?.errors?.messages?.join('; ') ??
       event.data?.errors?.type ??
       'Mux asset error';
-    await this.prisma.coachMediaAsset.update({
+    await tx.coachMediaAsset.update({
       where: { id: row.id },
       data: {
         status: STATUS_ERRORED,
@@ -305,18 +364,17 @@ export class CoachMediaMuxWebhookController {
     });
   }
 
-  private async findRowByAssetOrUpload(assetId: string) {
-    // First try storage_key (set on upload_asset_created -> the asset id).
-    const byAsset = await this.prisma.coachMediaAsset.findFirst({
+  private async findRowByAssetOrUpload(tx: TxClient, assetId: string) {
+    // Try storage_key (set on upload_asset_created -> the asset id) first,
+    // then mux_upload_id (covers the out-of-order case where
+    // video.asset.ready arrives before video.upload.asset_created).
+    const byAsset = await tx.coachMediaAsset.findFirst({
       where: { provider: 'mux', storage_key: assetId },
     });
     if (byAsset) return byAsset;
-    // Fall back to mux_upload_id — handles the out-of-order case where
-    // video.asset.ready arrives before video.upload.asset_created (Mux
-    // does sometimes deliver in unexpected order). Note: this only
-    // works for assets that still carry the upload id; once
-    // upload_asset_created lands, storage_key is reassigned to asset
-    // id and this fallback no longer matches — that's intentional.
-    return null;
+    const byUpload = await tx.coachMediaAsset.findFirst({
+      where: { provider: 'mux', mux_upload_id: assetId },
+    });
+    return byUpload;
   }
 }

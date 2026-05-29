@@ -45,6 +45,10 @@ function makePrismaStub(opts: PrismaStubOpts) {
       create,
       findUnique,
     },
+    // The resolver takes a SELECT ... FOR UPDATE row lock when inside a
+    // transaction (audit P2-3 fix). In unit tests we just acknowledge
+    // the call (no real Postgres lock).
+    $queryRaw: jest.fn(async () => [] as Array<{ id: string }>),
   };
 }
 
