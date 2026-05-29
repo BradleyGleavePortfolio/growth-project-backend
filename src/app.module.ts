@@ -49,6 +49,7 @@ import { BloodworkModule } from './bloodwork/bloodwork.module';
 import { BillingModule } from './billing/billing.module';
 import { ConnectModule } from './connect/connect.module';
 import { PackagesModule } from './packages/packages.module';
+import { AssignableAssetResolversModule } from './packages/asset-resolvers/asset-resolvers.module';
 import { CheckoutModule } from './checkout/checkout.module';
 import { PtmModule } from './ptm/ptm.module';
 import { DiagnosticModule } from './diagnostic/diagnostic.module';
@@ -233,6 +234,14 @@ import { LandingPagesModule } from './landing-pages/landing-pages.module';
     ConnectModule,
     // Phase 2 Connect — Coach offers / packages CRUD.
     PackagesModule,
+    // PR-7 — Packages & Drip-Feed: AssignableAssetResolver registry.
+    // Registered at the AppModule level (not under PackagesModule) so the
+    // resolver wiring's MessagingModule dependency cannot loop back through
+    // AuditModule → AuthModule → InviteCodesModule → BillingModule →
+    // CheckoutModule → PackagesModule (the same cycle the PackagesModule
+    // comment already documents). @Global on the module means PR-9/PR-10
+    // can inject the registry from the drip cron without re-importing.
+    AssignableAssetResolversModule,
     // Phase 3 Connect — Stripe Checkout session creation + ClientPurchase
     // lifecycle, driven by checkout/subscription/payment webhooks.
     CheckoutModule,
