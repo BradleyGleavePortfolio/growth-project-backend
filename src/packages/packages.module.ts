@@ -8,6 +8,8 @@ import { PackagesService } from './packages.service';
 import { PackageContentsService } from './package-contents.service';
 import { PurchaseFanoutService } from './purchase-fanout.service';
 import { DripDispatcherCron } from './drip-dispatcher.cron';
+import { DripTriggerService } from './drip-trigger.service';
+import { MilestoneService } from './milestone.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 // CoachPackage CRUD. Exports PackagesService so CheckoutModule (Phase 3)
@@ -46,12 +48,16 @@ import { NotificationsModule } from '../notifications/notifications.module';
     PackageContentsService,
     PurchaseFanoutService,
     DripDispatcherCron,
+    DripTriggerService,
+    MilestoneService,
   ],
   exports: [
     PackagesService,
     PackageContentsService,
     PurchaseFanoutService,
     DripDispatcherCron,
+    DripTriggerService,
+    MilestoneService,
   ],
 })
 export class PackagesModule {}
