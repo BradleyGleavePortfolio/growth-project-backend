@@ -12,7 +12,13 @@ import { EmailTemplateKey } from '../email/email.types';
 // R43 Storefront Phase 1 — guest checkout webhook routing. Optional so
 // the billing module still boots in environments that have not imported
 // StorefrontModule (legacy tests, half-built deploys).
+import { NotificationKind } from '../notifications/notification-kind';
+import { NotificationsService } from '../notifications/notifications.service';
 import { GUEST_CHECKOUT_METADATA_KEY, GuestCheckoutService } from '../storefront/guest-checkout.service';
+
+// PR-2 P0-c — deep link the coach taps from the COACH_ALERT inbox to
+// open the payment-ops surface where they can see the failed transfer.
+const COACH_TRANSFER_FAILED_DEEP_LINK = 'tgp://coach/billing/transfers';
 
 // BillingService is the system of record for the Stripe-mirror tables. The
 // webhook controller hands it parsed Stripe event objects; this service
@@ -59,6 +65,11 @@ export class BillingService {
     // carries tgp_kind=coach_ai_credit_pack and routes them to
     // CoachAIBudgetService.applyCreditPack().
     @Optional() private coachAiPacks?: CoachAiCreditPackService,
+    // PR-2 P0-c — Optional so legacy unit-test wiring that doesn't import
+    // NotificationsModule still constructs BillingService. When present,
+    // the transfer.failed handler alerts the affected coach via the
+    // standard COACH_ALERT inbox channel.
+    @Optional() private notifications?: NotificationsService,
   ) {}
 
   // Idempotently process an event. Returns { processed: true } on first
@@ -368,6 +379,15 @@ export class BillingService {
             break;
           case 'account.application.deauthorized':
             await this.applyConnectAccountDeauthorized(event, tx);
+            break;
+          // PR-2 P0-c — Stripe Connect head-coach split-transfer failure.
+          // Previously fell through to `default` and was silently dropped,
+          // so a failed payout to a head coach surfaced only by squinting
+          // at Stripe directly. Now we persist status='failed' on the
+          // ConnectTransfer row (and capture Stripe's failure_message in
+          // last_error) and alert the affected coach via COACH_ALERT.
+          case 'transfer.failed':
+            await this.applyTransferFailed(event, tx);
             break;
           default:
             this.logger.log(`Ignoring unhandled Stripe event type: ${event.type}`);
@@ -911,6 +931,134 @@ export class BillingService {
         stripe_account_id: accountId,
       },
     });
+  }
+
+  // PR-2 P0-c — `transfer.failed` webhook handler.
+  //
+  // The Stripe Connect head-coach split is delivered as a follow-on
+  // Transfer minted by TransferOrchestratorService (see
+  // src/connect/fees/transfer-orchestrator.service.ts). When that
+  // transfer fails on Stripe's side, we previously fell through to the
+  // `default` log line and the head coach learned about the missed
+  // payout only by checking Stripe directly. This handler:
+  //   1. Looks up the matching ConnectTransfer by stripe_transfer_id and
+  //      flips status='failed' + records Stripe's failure_message in
+  //      last_error.
+  //   2. Emits a COACH_ALERT inbox notification to the destination
+  //      coach (User on ConnectTransfer.destination_user_id) so they can
+  //      see the failure in-app and act on it.
+  //   3. Logs the failure at warn level with the structured fields the
+  //      rest of the webhook handler uses (event id, transfer id, coach
+  //      id, amount, stripe failure reason).
+  //
+  // Idempotency: the outer handleEvent() guards on stripe_event_id via
+  // StripeProcessedEvent so a Stripe replay of the SAME event id never
+  // re-enters this method. As belt-and-suspenders for a different-id
+  // replay of the same logical failure (e.g. transfer.failed re-fired
+  // after our schema state was reset), the ConnectTransfer.update uses
+  // updateMany with a WHERE-guard on status != 'failed' so the second
+  // write is a no-op and we only emit COACH_ALERT when the status flip
+  // actually happened (count > 0).
+  private async applyTransferFailed(
+    event: StripeEvent,
+    tx: Prisma.TransactionClient,
+  ) {
+    const transfer = event.data.object as {
+      id?: string;
+      amount?: number;
+      currency?: string;
+      destination?: string | null;
+      failure_message?: string | null;
+      failure_code?: string | null;
+    };
+    if (!transfer?.id) {
+      this.logger.warn(
+        `transfer.failed event ${event.id} missing transfer id — skipping`,
+      );
+      return;
+    }
+    const row = await tx.connectTransfer.findFirst({
+      where: { stripe_transfer_id: transfer.id },
+    });
+    if (!row) {
+      // Unknown transfer — could be a platform-level transfer not
+      // minted by TransferOrchestratorService, or it predates our
+      // ConnectTransfer mirror. Log and move on; never throw, or we'd
+      // cause Stripe to retry an event we cannot reconcile.
+      this.logger.warn(
+        `transfer.failed event=${event.id} transfer=${transfer.id}: no matching ConnectTransfer row`,
+      );
+      return;
+    }
+    // Compose the failure reason from Stripe's payload. failure_message
+    // is the human-readable string; failure_code is the machine code.
+    // Both are optional on the Stripe payload.
+    const failureReason =
+      [transfer.failure_code, transfer.failure_message]
+        .filter((s): s is string => typeof s === 'string' && s.length > 0)
+        .join(': ') || null;
+    // WHERE-guard on status keeps the write idempotent under a
+    // different-event-id replay of the same logical failure: re-running
+    // sees status='failed' already and the updateMany returns count=0
+    // so we skip the downstream COACH_ALERT. The outer stripe-event-id
+    // dedup row still covers the dominant Stripe-side replay case.
+    const updated = await tx.connectTransfer.updateMany({
+      where: { id: row.id, status: { not: 'failed' } },
+      data: {
+        status: 'failed',
+        last_error: failureReason ?? row.last_error,
+        last_attempt_at: new Date(),
+      },
+    });
+    const amountCents =
+      typeof transfer.amount === 'number' ? transfer.amount : row.amount_cents;
+    const coachId = row.destination_user_id ?? null;
+    this.logger.warn(
+      `transfer.failed event=${event.id} transfer=${transfer.id} coach=${coachId ?? 'unknown'} amount_cents=${amountCents} reason=${failureReason ?? 'unknown'}`,
+    );
+    // If updateMany reported count=0 we already flipped this row to
+    // 'failed' on a prior delivery — skip the alert so the coach isn't
+    // pinged twice for the same logical failure.
+    if (updated.count === 0) return;
+    if (!coachId) {
+      this.logger.warn(
+        `transfer.failed event=${event.id} transfer=${transfer.id}: ConnectTransfer.destination_user_id is null — cannot send COACH_ALERT`,
+      );
+      return;
+    }
+    if (!this.notifications) {
+      this.logger.warn(
+        `transfer.failed event=${event.id} transfer=${transfer.id}: NotificationsService is not wired — skipping COACH_ALERT`,
+      );
+      return;
+    }
+    try {
+      const dollars = (amountCents / 100).toFixed(2);
+      await this.notifications.createNotification({
+        user_id: coachId,
+        kind: NotificationKind.COACH_ALERT,
+        body: `Payout transfer failed: $${dollars} could not be delivered.${failureReason ? ` Reason: ${failureReason}.` : ''}`,
+        payload: {
+          event: 'transfer_failed',
+          stripe_transfer_id: transfer.id,
+          stripe_event_id: event.id,
+          purchase_id: row.purchase_id,
+          amount_cents: amountCents,
+          currency: row.currency,
+          failure_code: transfer.failure_code ?? null,
+          failure_message: transfer.failure_message ?? null,
+        },
+        deep_link: COACH_TRANSFER_FAILED_DEEP_LINK,
+        channel: 'inapp',
+      });
+    } catch (err) {
+      // The status flip has already committed in the outer transaction;
+      // a failed downstream signal must not roll it back. Match the
+      // pattern in RefundDisputeHandlerService.emitRefundCoachAlert.
+      this.logger.warn(
+        `coach transfer.failed notification failed transfer=${transfer.id} coach=${coachId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   // Read-only helpers used by /v1/coach/me/billing.

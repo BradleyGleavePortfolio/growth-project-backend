@@ -242,11 +242,42 @@ describe('BillingService', () => {
           return row;
         }),
       },
+      // PR-2 P0-c — ConnectTransfer mock used by the transfer.failed
+      // case branch in BillingService.handleEvent. Mirrors the schema's
+      // findFirst + updateMany surface; rows accumulate in _transfers
+      // so tests can pre-seed and assert post-conditions.
+      _transfers: [] as any[],
+      connectTransfer: {
+        findFirst: jest.fn(async function ({ where }: any) {
+          return (
+            this._transfers.find((t: any) =>
+              Object.entries(where).every(([k, v]) => (t as any)[k] === v),
+            ) ?? null
+          );
+        }),
+        updateMany: jest.fn(async function ({ where, data }: any) {
+          let count = 0;
+          for (const t of this._transfers) {
+            const idMatch = t.id === where.id;
+            const statusMatch =
+              !where.status?.not || t.status !== where.status.not;
+            if (idMatch && statusMatch) {
+              Object.assign(t, data);
+              count++;
+            }
+          }
+          return { count };
+        }),
+      },
     };
     // BillingService.handleEvent() wraps coachProfile.findFirst + coachSubscription.upsert
     // in this.prisma.$transaction(cb). The mock must invoke the callback with the same
     // prisma object so that upserts accumulate in _subscriptions.
     prisma.$transaction = jest.fn(async (cb: (tx: any) => Promise<any>) => cb(prisma));
+    // Bind the connectTransfer mocks to the prisma object so `this._transfers`
+    // resolves correctly when invoked as `prisma.connectTransfer.findFirst(...)`.
+    prisma.connectTransfer.findFirst = prisma.connectTransfer.findFirst.bind(prisma);
+    prisma.connectTransfer.updateMany = prisma.connectTransfer.updateMany.bind(prisma);
     const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
     svc = new BillingService(prisma, analyticsStub, { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any);
   });
@@ -392,5 +423,119 @@ describe('BillingService', () => {
     expect(prisma._subscriptions).toHaveLength(0);
     // Still records the event id so retries are idempotent
     expect(prisma._processed).toHaveLength(1);
+  });
+
+  // PR-2 P0-c — transfer.failed handler. Prior to this PR a
+  // `transfer.failed` Stripe Connect webhook fell through to the default
+  // log branch and the affected head-coach received no signal. The
+  // handler now persists status='failed' on the matching ConnectTransfer
+  // row, captures the Stripe failure reason, and emits a COACH_ALERT
+  // inbox notification to the destination coach.
+  describe('transfer.failed', () => {
+    let notifyStub: { createNotification: jest.Mock };
+
+    const seedTransfer = (overrides: Record<string, unknown> = {}) =>
+      prisma._transfers.push({
+        id: 'tr-row-1',
+        purchase_id: 'pur-1',
+        ledger_entry_id: 'led-1',
+        destination_stripe_account_id: 'acct_HC',
+        destination_user_id: 'coach-HC',
+        amount_cents: 5000,
+        currency: 'usd',
+        source_stripe_charge_id: 'ch_1',
+        stripe_transfer_id: 'tr_stripe_1',
+        status: 'pending',
+        last_error: null,
+        last_attempt_at: null,
+        ...overrides,
+      });
+
+    beforeEach(() => {
+      notifyStub = { createNotification: jest.fn(async () => undefined) };
+      const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
+      svc = new BillingService(
+        prisma,
+        analyticsStub,
+        { write: jest.fn(async () => {}), list: jest.fn(async () => []) } as any,
+        undefined, // connect
+        undefined, // checkoutWebhooks
+        undefined, // email
+        undefined, // guestCheckout
+        undefined, // coachAiPacks
+        notifyStub as any,
+      );
+    });
+
+    const failedEvent = (id: string) => ({
+      id,
+      type: 'transfer.failed',
+      data: {
+        object: {
+          id: 'tr_stripe_1',
+          amount: 5000,
+          currency: 'usd',
+          destination: 'acct_HC',
+          failure_code: 'account_closed',
+          failure_message: 'Destination account is closed',
+        },
+      },
+    });
+
+    it('persists status=failed + last_error and alerts the coach', async () => {
+      seedTransfer();
+      const result = await svc.handleEvent(failedEvent('evt_tf_1'));
+      expect(result.processed).toBe(true);
+      expect(prisma._transfers[0].status).toBe('failed');
+      expect(prisma._transfers[0].last_error).toBe(
+        'account_closed: Destination account is closed',
+      );
+      expect(prisma._transfers[0].last_attempt_at).toBeInstanceOf(Date);
+      expect(notifyStub.createNotification).toHaveBeenCalledTimes(1);
+      const arg = notifyStub.createNotification.mock.calls[0][0];
+      expect(arg.user_id).toBe('coach-HC');
+      expect(arg.kind).toBe('coach_alert');
+      expect(arg.body).toMatch(/Payout transfer failed/);
+      expect(arg.body).toMatch(/\$50\.00/);
+      expect(arg.payload).toMatchObject({
+        event: 'transfer_failed',
+        stripe_transfer_id: 'tr_stripe_1',
+        purchase_id: 'pur-1',
+        amount_cents: 5000,
+        failure_code: 'account_closed',
+      });
+    });
+
+    it('is idempotent on Stripe replay of the same event id (no double alert)', async () => {
+      seedTransfer();
+      const event = failedEvent('evt_tf_dup');
+      const first = await svc.handleEvent(event);
+      const second = await svc.handleEvent(event);
+      expect(first.processed).toBe(true);
+      expect(second.processed).toBe(false);
+      expect((second as any).alreadyProcessed).toBe(true);
+      expect(prisma._transfers[0].status).toBe('failed');
+      expect(notifyStub.createNotification).toHaveBeenCalledTimes(1);
+    });
+
+    it('is idempotent on a different-event-id replay of the same logical failure (status guard skips re-alert)', async () => {
+      // Simulate the case where StripeProcessedEvent dedup is bypassed
+      // (e.g. a manually re-fired event with a fresh id) but the
+      // ConnectTransfer row was already flipped to status='failed'.
+      seedTransfer({ status: 'failed', last_error: 'prior reason' });
+      const result = await svc.handleEvent(failedEvent('evt_tf_replay'));
+      expect(result.processed).toBe(true);
+      // last_error preserved, status unchanged
+      expect(prisma._transfers[0].last_error).toBe('prior reason');
+      // Crucially: no second coach alert.
+      expect(notifyStub.createNotification).not.toHaveBeenCalled();
+    });
+
+    it('logs a warning and skips alert when no ConnectTransfer row matches', async () => {
+      // No seedTransfer() — empty _transfers.
+      const result = await svc.handleEvent(failedEvent('evt_tf_orphan'));
+      expect(result.processed).toBe(true);
+      expect(notifyStub.createNotification).not.toHaveBeenCalled();
+    });
   });
 });
