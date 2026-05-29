@@ -34,6 +34,9 @@ import { ThrottlerModuleOptions } from '@nestjs/throttler';
 // POST /diagnostic/submit                   | diagnostic-submit       | DIAGNOSTIC_RATE_LIMIT_PER_HOUR / hour (IP)
 // POST /v1/checkout/sessions               | checkout-mint           | CHECKOUT_MINT_PER_HOUR / hour (user)
 // POST /v1/checkout/payment-intent         | checkout-mint           | shared
+// POST /coach/ai/workout-program           | coach-ai-generation     | 5 / hour (user)
+// POST /coach/ai/meal-plan                 | coach-ai-generation     | 5 / hour (user)
+// POST /coach/ai/client-insight            | coach-ai-generation     | 10 / hour (user)
 
 export const THROTTLER_NAMES = {
   /** Per-minute hard cap on login attempts per IP (credential stuffing brake). */
@@ -64,6 +67,14 @@ export const THROTTLER_NAMES = {
    *  CoachCreditPackPurchase; tight bucket stops automated abuse without
    *  interfering with a real coach retrying on flaky network. */
   COACH_AI_CREDIT_PACK_CHECKOUT: 'coach-ai-credit-pack-checkout',
+  /** Per-hour cap on coach AI generation endpoints (workout-program,
+   *  meal-plan, client-insight). Each call hits Anthropic and costs real
+   *  money, so we want this bucket to be independently observable and
+   *  tunable from the global `default` bucket. Per-route limits are set
+   *  inline on each handler's @Throttle decorator (workout/meal: 5/hr,
+   *  client-insight: 10/hr). The named bucket itself just declares the
+   *  baseline ttl/limit so the throttler module knows about it. */
+  COACH_AI_GENERATION: 'coach-ai-generation',
   /** Catch-all: every route that carries no explicit @Throttle decorator. */
   DEFAULT: 'default',
 } as const;
@@ -160,6 +171,12 @@ export const THROTTLER_LIMITS = [
   { name: THROTTLER_NAMES.CHECKOUT_MINT,       ttl: 3_600_000,    limit: CHECKOUT_MINT_PER_HOUR },
   // Coach AI credit-pack checkout: 5/min/user (Stream 1)
   { name: THROTTLER_NAMES.COACH_AI_CREDIT_PACK_CHECKOUT, ttl: 60_000, limit: COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN },
+  // Coach AI generation: baseline 10/hour/user. Per-route @Throttle
+  // decorators in coach-ai.controller.ts override this with tighter
+  // limits (5/hr for workout-program + meal-plan, 10/hr for
+  // client-insight). The named bucket exists so AI spend is
+  // independently observable + tunable from the default bucket.
+  { name: THROTTLER_NAMES.COACH_AI_GENERATION, ttl: 3_600_000, limit: 10 },
   // Default catch-all: applies to every route that carries no explicit @Throttle decorator.
   // The guard in getTracker() buckets authed requests by user-id (300/min) and
   // unauthenticated requests by IP (100/min). Both share this one named throttler;
