@@ -60,7 +60,12 @@ export class MediaAssetResolver implements AssignableAssetResolver {
     // grant access to another coach's asset.
     const asset = await db.coachMediaAsset.findUnique({
       where: { id: input.assetId },
-      select: { id: true, coach_id: true, archived_at: true },
+      select: {
+        id: true,
+        coach_id: true,
+        archived_at: true,
+        status: true,
+      },
     });
     if (!asset || asset.archived_at) {
       throw new MediaAssetNotFoundError(input.assetId);
@@ -71,6 +76,18 @@ export class MediaAssetResolver implements AssignableAssetResolver {
       // another coach's asset to a misconfigured package.
       this.logger.warn(
         `MediaAssetResolver: tenant mismatch — asset.coach_id=${asset.coach_id} acting.tenantCoachId=${acting.tenantCoachId}`,
+      );
+      throw new MediaAssetNotFoundError(input.assetId);
+    }
+    // PR-12 not-ready gate: refuse to mint a ClientAssetGrant for an asset
+    // whose upload hasn't finalised. A drop pointing at a still-processing
+    // video must FAIL (so PR-10's retry/backoff picks it up on the next
+    // tick) rather than silently grant a buyer access to a broken
+    // playback. Treat the row as not-found from the caller's perspective
+    // — we don't want to leak intermediate-state to the buyer either.
+    if (asset.status !== 'ready') {
+      this.logger.warn(
+        `MediaAssetResolver: asset ${asset.id} not ready (status=${asset.status}); refusing grant`,
       );
       throw new MediaAssetNotFoundError(input.assetId);
     }

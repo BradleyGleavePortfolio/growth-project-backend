@@ -14,7 +14,14 @@ function makeScope(allowed: boolean, isSub = false, headId: string | null = null
 }
 
 interface PrismaStubOpts {
-  asset?: { id: string; coach_id: string; archived_at: Date | null } | null;
+  asset?:
+    | {
+        id: string;
+        coach_id: string;
+        archived_at: Date | null;
+        status?: string;
+      }
+    | null;
   grantCreateResult?: { id: string };
   grantCreateError?: unknown;
   existingGrant?: { id: string } | null;
@@ -27,9 +34,12 @@ function makePrismaStub(opts: PrismaStubOpts) {
       })
     : jest.fn(async () => opts.grantCreateResult ?? { id: 'grant-new' });
   const findUnique = jest.fn(async () => opts.existingGrant ?? null);
+  const asset = opts.asset
+    ? { status: 'ready', ...opts.asset }
+    : null;
   return {
     coachMediaAsset: {
-      findUnique: jest.fn(async () => opts.asset ?? null),
+      findUnique: jest.fn(async () => asset),
     },
     clientAssetGrant: {
       create,
@@ -218,5 +228,63 @@ describe('MediaAssetResolver (pdf + video)', () => {
       }),
     ).rejects.toThrow(SubCoachOutOfScopeError);
     expect(stub.coachMediaAsset.findUnique).not.toHaveBeenCalled();
+  });
+
+  // PR-12 — not-ready video gate.
+  //
+  // The resolver MUST refuse to mint a ClientAssetGrant for an asset
+  // whose upload pipeline hasn't reached status='ready'. Documented
+  // decision: a drop pointing at a still-processing video fails (so
+  // PR-10's retry/backoff picks it up on the next tick) rather than
+  // silently grant a buyer access to a broken playback. The error
+  // surfaces as MediaAssetNotFoundError so we don't leak intermediate
+  // state to the buyer.
+  it.each(['uploading', 'processing', 'errored'])(
+    'refuses to materialise when asset.status=%s (PR-12 not-ready gate)',
+    async (status) => {
+      const stub = makePrismaStub({
+        asset: {
+          id: 'asset-1',
+          coach_id: 'coach-1',
+          archived_at: null,
+          status,
+        },
+      });
+      const resolver = new MediaAssetResolver(
+        stub as unknown as ConstructorParameters<typeof MediaAssetResolver>[0],
+        makeScope(true),
+      );
+      await expect(
+        resolver.materialise({
+          clientId: 'c1',
+          coachId: 'coach-1',
+          assetId: 'asset-1',
+        }),
+      ).rejects.toThrow(MediaAssetNotFoundError);
+      // Critical: NO grant should have been created on a not-ready row.
+      expect(stub.clientAssetGrant.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('materialises happily when asset.status=ready (control)', async () => {
+    const stub = makePrismaStub({
+      asset: {
+        id: 'asset-1',
+        coach_id: 'coach-1',
+        archived_at: null,
+        status: 'ready',
+      },
+      grantCreateResult: { id: 'grant-ready' },
+    });
+    const resolver = new MediaAssetResolver(
+      stub as unknown as ConstructorParameters<typeof MediaAssetResolver>[0],
+      makeScope(true),
+    );
+    const res = await resolver.materialise({
+      clientId: 'c1',
+      coachId: 'coach-1',
+      assetId: 'asset-1',
+    });
+    expect(res.materialisedRef).toBe('grant-ready');
   });
 });
