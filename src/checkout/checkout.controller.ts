@@ -246,6 +246,38 @@ export class CheckoutController {
     }
   }
 
+  // PR-15A — buyer-visible drops for one of THEIR purchases. Backs the
+  // mobile PurchaseUnpackScreen + Deliverables tab (the PR-13 frozen
+  // typed contract: clientPaymentsApi.getPurchaseDrops) and the SSR
+  // thank-you page (A3).
+  //
+  // Auth: JwtAuthGuard at the class level. Service-layer IDOR rule:
+  // `purchase.client_user_id === req.user.id`; cross-user → 404 (NOT
+  // 403; no existence leak — mirrors the requireOwned pattern in
+  // coach-media.service.ts). Unknown purchaseId also → 404.
+  //
+  // Response: `{ drops: BuyerDropView[] }` (envelope). The mobile unwrap
+  // helper accepts envelope OR bare array but we always ship the envelope.
+  //
+  // Filter applied at the SQL WHERE: status IN ('pending','due','fired').
+  // failed/canceled/skipped are master-plan §1 #10 "COACH_ALERT" rows;
+  // never shown to the buyer.
+  //
+  // Order: COALESCE(fired_at, fire_at, created_at) ASC.
+  //
+  // SkipClientEntitlement: the buyer must be able to see their drops
+  // even if the package's entitlement is expired/canceled — they still
+  // own the historical purchase.
+  @Roles('student', 'coach', 'owner')
+  @Get('purchases/:purchaseId/drops')
+  @SkipClientEntitlement()
+  async listPurchaseDrops(
+    @Request() req: AuthedRequest,
+    @Param('purchaseId') purchaseId: string,
+  ) {
+    return this.checkout.listDropsForBuyer(req.user.id, purchaseId);
+  }
+
   private mapStripeError(err: unknown): HttpException {
     if (err instanceof HttpException) return err;
     if (err instanceof StripeConnectApiError) {

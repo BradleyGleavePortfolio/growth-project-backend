@@ -76,6 +76,7 @@ function build(deps: {
       get: jest.fn().mockReturnValue('https://joingrowthproject.com'),
     } as { get: jest.Mock });
 
+  const thankYou = { buildViewModel: jest.fn() };
   const controller = new StorefrontPublicController(
     storefront as never,
     guestCheckout as never,
@@ -83,6 +84,7 @@ function build(deps: {
     config as never,
     ipLimiter as never,
     cookies as never,
+    thankYou as never,
   );
   return { controller, ipLimiter, recovery, config };
 }
@@ -826,6 +828,7 @@ describe('StorefrontPublicController — A276-F4-P3-K real-service cross-route i
       get: jest.fn().mockReturnValue('https://joingrowthproject.com'),
     };
 
+    const thankYou = { buildViewModel: jest.fn() };
     const controller = new StorefrontPublicController(
       storefront as never,
       guestCheckout as never,
@@ -833,6 +836,7 @@ describe('StorefrontPublicController — A276-F4-P3-K real-service cross-route i
       config as never,
       ipLimiter as never,
       cookies as never,
+      thankYou as never,
     );
 
     // Burn the send-recovery-link bucket: 3 allowed (limit=3), then 2
@@ -920,6 +924,7 @@ describe('StorefrontPublicController — A276-F4-P3-K real-service cross-route i
     const config = {
       get: jest.fn().mockReturnValue('https://joingrowthproject.com'),
     };
+    const thankYou = { buildViewModel: jest.fn() };
     const controller = new StorefrontPublicController(
       storefront as never,
       guestCheckout as never,
@@ -927,6 +932,7 @@ describe('StorefrontPublicController — A276-F4-P3-K real-service cross-route i
       config as never,
       ipLimiter as never,
       cookies as never,
+      thankYou as never,
     );
 
     for (let i = 0; i < 5; i += 1) {

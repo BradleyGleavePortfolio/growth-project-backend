@@ -69,6 +69,13 @@ export const NotificationKind = {
   // at the underlying assignment / message / asset grant so the buyer can
   // tap straight into the new content.
   DRIP_RELEASED: 'drip_released',
+
+  // PR-15A — Coach: a buyer just entitled a purchase against one of this
+  // coach's packages. Fired from PurchaseFanoutService.onPurchaseEntitled
+  // (same in-tx stage / post-commit flush pattern as DRIP_RELEASED, idempotent
+  // across Stripe webhook replay via DripResolverMarker(purpose=
+  // 'coach_new_purchase')). Default prefs ON for the selling coach.
+  COACH_NEW_PURCHASE: 'coach_new_purchase',
 } as const;
 
 export type NotificationKindValue = (typeof NotificationKind)[keyof typeof NotificationKind];

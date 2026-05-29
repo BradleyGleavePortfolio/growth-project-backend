@@ -18,6 +18,7 @@ import { GuestCheckoutService } from './guest-checkout.service';
 import { LostWebhookReconcileService } from './lost-webhook-reconcile.service';
 import { StorefrontPublicController } from './storefront-public.controller';
 import { StorefrontService } from './storefront.service';
+import { ThankYouService } from './thank-you.service';
 
 // R43 Storefront Phase 1 — public package + guest checkout surface.
 // Exports GuestCheckoutService so the Stripe webhook dispatcher in
@@ -81,6 +82,9 @@ import { StorefrontService } from './storefront.service';
     // r48 #14 — branded PDF receipt service + scheduler.
     CheckoutReceiptService,
     CheckoutReceiptScheduler,
+    // PR-15A — SSR thank-you page composer (reuses CheckoutService's
+    // listDropsForBuyer to mirror the in-app PurchaseUnpackScreen).
+    ThankYouService,
   ],
   exports: [GuestCheckoutService],
 })

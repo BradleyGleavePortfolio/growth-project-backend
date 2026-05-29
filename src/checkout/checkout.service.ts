@@ -53,6 +53,32 @@ export interface CheckoutCreatedView {
   package: CoachPackage;
 }
 
+// PR-15A — Buyer-visible drop row (matches the frozen typed contract PR-13
+// shipped in mobile clientPaymentsApi.ts). Keep field names EXACTLY
+// in sync with PR13_BUILD_REPORT.md §c so the mobile typed client can
+// consume the envelope without remapping.
+export interface BuyerDropView {
+  id: string;
+  asset_type: string;
+  asset_id: string;
+  asset_revision_id: string | null;
+  cadence_kind: string;
+  display_title: string | null;
+  display_caption: string | null;
+  fire_at: Date | null;
+  fired_at: Date | null;
+  // pending | due | fired. failed/canceled/skipped are filtered at the
+  // SQL WHERE in listDropsForBuyer().
+  status: string;
+  materialised_ref: string | null;
+}
+
+// Defensive cap so a runaway CoachPackageContent table cannot OOM the
+// drops endpoint. A single purchase's drop count is bounded by the
+// authoring rows (one ScheduledDrop per CoachPackageContent), expected
+// <50 in practice. 500 is well above any realistic package.
+const DROP_LIST_HARD_CAP = 500;
+
 @Injectable()
 export class CheckoutService {
   private readonly logger = new Logger(CheckoutService.name);
@@ -635,6 +661,99 @@ export class CheckoutService {
     });
     const hasMore = rows.length > take;
     return { items: hasMore ? rows.slice(0, take) : rows, hasMore };
+  }
+
+  // PR-15A — Buyer-visible drops feed.
+  //
+  // Returns the buyer's scheduled drops for a purchase they own. Powers
+  // the mobile PurchaseUnpackScreen + Deliverables tab (PR-13's frozen
+  // typed contract) and the SSR thank-you page (A3).
+  //
+  // Auth/IDOR contract (matches the requireOwned pattern in
+  // coach-media.service.ts:623): a cross-user purchaseId — or a purchase
+  // that does not exist — both return 404 (NEVER 403). We never confirm
+  // the existence of another buyer's purchase.
+  //
+  // Filter: status IN ('pending','due','fired'). failed/canceled/skipped
+  // rows are filtered AT THE SQL WHERE — master plan §1 #10 routes those
+  // to COACH_ALERT, never the buyer. Filtering server-side means a
+  // failed drop never even leaves the DB.
+  //
+  // Order: COALESCE(fired_at, fire_at, created_at) ASC. Because we cannot
+  // express COALESCE directly through Prisma's orderBy DSL, we hydrate
+  // the rows in one query (no N+1 — no per-row joins, just the columns
+  // we ship) and sort in JS by the same COALESCE expression. The take cap
+  // (DROP_LIST_HARD_CAP) is defensive — a single purchase's drop count is
+  // bounded by package_contents and we expect <50 in practice; the cap
+  // exists so a runaway content table cannot OOM this endpoint.
+  async listDropsForBuyer(
+    buyerUserId: string,
+    purchaseId: string,
+  ): Promise<{ drops: BuyerDropView[] }> {
+    // requireOwned pattern — cross-user purchase or non-existent purchase
+    // both return 404. We never leak which case it is.
+    const purchase = await this.prisma.clientPurchase.findFirst({
+      where: { id: purchaseId, client_user_id: buyerUserId },
+      select: { id: true },
+    });
+    if (!purchase) {
+      throw new NotFoundException({
+        error: 'PURCHASE_NOT_FOUND',
+        message: 'No purchase with that id for this account.',
+      });
+    }
+
+    // SQL WHERE filter — failed/canceled/skipped never leave the DB.
+    // Single query (no N+1); only the columns we ship.
+    const rows = await this.prisma.scheduledDrop.findMany({
+      where: {
+        client_purchase_id: purchaseId,
+        status: { in: ['pending', 'due', 'fired'] },
+      },
+      take: DROP_LIST_HARD_CAP,
+      select: {
+        id: true,
+        asset_type: true,
+        asset_id: true,
+        asset_revision_id: true,
+        cadence_kind: true,
+        display_title: true,
+        display_caption: true,
+        fire_at: true,
+        fired_at: true,
+        status: true,
+        materialised_ref: true,
+        created_at: true,
+      },
+    });
+
+    // COALESCE(fired_at, fire_at, created_at) ASC — in-memory because
+    // Prisma cannot express COALESCE in orderBy. Rows are already bounded
+    // by DROP_LIST_HARD_CAP so the sort is O(n log n) of a small n.
+    const sorted = rows.slice().sort((a, b) => {
+      const aTs = (a.fired_at ?? a.fire_at ?? a.created_at).getTime();
+      const bTs = (b.fired_at ?? b.fire_at ?? b.created_at).getTime();
+      return aTs - bTs;
+    });
+
+    return {
+      drops: sorted.map((d) => ({
+        id: d.id,
+        asset_type: d.asset_type,
+        asset_id: d.asset_id,
+        asset_revision_id: d.asset_revision_id,
+        cadence_kind: d.cadence_kind,
+        display_title: d.display_title,
+        display_caption: d.display_caption,
+        fire_at: d.fire_at,
+        fired_at: d.fired_at,
+        status: d.status,
+        // Rule 18: never fabricate. PR-9 only stamps materialised_ref
+        // after a successful inline materialisation, so pending/due rows
+        // carry null. Re-export the column as-is.
+        materialised_ref: d.materialised_ref,
+      })),
+    };
   }
 
   // List purchases on a coach's roster (for revenue / activity views).

@@ -1,6 +1,9 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { ClientPurchase, Prisma } from '@prisma/client';
 import { AssignableAssetResolverRegistry } from './asset-resolvers/assignable-asset-resolver.registry';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationKind } from '../notifications/notification-kind';
+import { PrismaService } from '../prisma.service';
 
 // PR-9 (Packages & Drip-Feed) — REAL fan-out body.
 //
@@ -115,6 +118,13 @@ type TxOrPrisma = Prisma.TransactionClient & {
   scheduledDrop?: Prisma.TransactionClient['scheduledDrop'];
   clientPurchase?: Prisma.TransactionClient['clientPurchase'];
   purchaseFanout: Prisma.TransactionClient['purchaseFanout'];
+  // PR-15A — DripResolverMarker is the idempotency surface for the
+  // COACH_NEW_PURCHASE alert: an in-tx upsert against
+  // (purpose='coach_new_purchase', purchase_id, content_id='-') gates
+  // a single flush per purchase across Stripe webhook replay. Optional
+  // because legacy PR-4 tests stub the tx without engine tables.
+  dripResolverMarker?: Prisma.TransactionClient['dripResolverMarker'];
+  coachPackage?: Prisma.TransactionClient['coachPackage'];
 };
 
 type CadenceKind =
@@ -143,6 +153,20 @@ export interface DripAlertDispatchHook {
   enqueue(alert: AlertDescriptor): void;
 }
 
+// PR-15A — COACH_NEW_PURCHASE alert descriptor. Captured inside the
+// entitlement tx; flushed via NotificationsService (push + in-app)
+// AFTER the outer tx commits, exactly like PR-9's drip-released
+// pendingAlerts pattern.
+interface CoachNewPurchaseAlertDescriptor {
+  coachId: string;
+  buyerId: string;
+  buyerDisplayName: string;
+  purchaseId: string;
+  packageName: string;
+  amountCents: number;
+  currency: string;
+}
+
 @Injectable()
 export class PurchaseFanoutService {
   private readonly logger = new Logger(PurchaseFanoutService.name);
@@ -152,9 +176,22 @@ export class PurchaseFanoutService {
   // purchase_id so a rollback can discard the bucket cleanly.
   private readonly pendingAlerts = new Map<string, AlertDescriptor[]>();
 
+  // PR-15A — pending coach-new-purchase alerts, same staging+flush
+  // model as pendingAlerts. Capped at one per purchase via the
+  // DripResolverMarker(purpose='coach_new_purchase') in-tx claim, so a
+  // Stripe webhook replay (which re-enters onPurchaseEntitled) cannot
+  // produce a second alert: the second tx's marker upsert is a no-op
+  // and the staging block is skipped.
+  private readonly pendingCoachNewPurchaseAlerts = new Map<
+    string,
+    CoachNewPurchaseAlertDescriptor
+  >();
+
   constructor(
     @Optional() private readonly resolvers?: AssignableAssetResolverRegistry,
     @Optional() private readonly alertHook?: DripAlertDispatchHook,
+    @Optional() private readonly notifications?: NotificationsService,
+    @Optional() private readonly prisma?: PrismaService,
   ) {}
 
   async onPurchaseEntitled(
@@ -202,10 +239,15 @@ export class PurchaseFanoutService {
     });
 
     // Empty package (paywall-only legacy package): nothing to seed.
+    // PR-15A — even an empty package still fires COACH_NEW_PURCHASE; a
+    // legacy paywall-only purchase is still a sale the coach should
+    // hear about. Stage the alert and return; the bucket flushes via
+    // the normal flushAlerts() post-commit hook.
     if (contents.length === 0) {
       this.logger.debug(
         `fanout: package=${purchaseRow.package_id} has no contents — purchase=${purchase.id}`,
       );
+      await this.stageCoachNewPurchaseAlert(tx, purchase.id, purchaseRow);
       return;
     }
 
@@ -326,6 +368,101 @@ export class PurchaseFanoutService {
     if (localAlerts.length > 0) {
       this.pendingAlerts.set(purchase.id, localAlerts);
     }
+
+    // --- (5) PR-15A — COACH_NEW_PURCHASE staging ----------------------
+    await this.stageCoachNewPurchaseAlert(tx, purchase.id, purchaseRow);
+  }
+
+  // PR-15A — claim the per-purchase idempotency marker IN-TX and stage
+  // the alert into the post-commit bucket. Called from the empty-contents
+  // early-return path AND the normal fan-out path so paywall-only
+  // packages still notify the coach.
+  //
+  // Idempotency: DripResolverMarker (purpose='coach_new_purchase',
+  // purchase_id, content_id='-') is unique per purchase. The first
+  // commit wins; every Stripe webhook replay's create() raises a P2002
+  // unique-constraint violation which we swallow → the staging is
+  // skipped → exactly one COACH_NEW_PURCHASE per purchase.
+  //
+  // Rollback semantics: marker INSERT rides the outer tx; a rollback
+  // erases it, and discardPendingAlerts() wipes the in-memory bucket.
+  // A successful retry re-claims the marker on the next attempt.
+  private async stageCoachNewPurchaseAlert(
+    tx: TxOrPrisma,
+    purchaseId: string,
+    purchaseRow: {
+      coach_user_id: string;
+      client_user_id: string;
+      package_id: string;
+      amount_cents?: number;
+      currency?: string;
+    },
+  ): Promise<void> {
+    if (!tx.dripResolverMarker) return;
+
+    let claimedFirst = false;
+    try {
+      await tx.dripResolverMarker.create({
+        data: {
+          purpose: 'coach_new_purchase',
+          purchase_id: purchaseId,
+          content_id: '-',
+        },
+      });
+      claimedFirst = true;
+    } catch (err) {
+      const msg = (err as Error).message ?? '';
+      const code = (err as { code?: string }).code ?? '';
+      if (!/unique|UNIQUE|P2002/i.test(msg) && code !== 'P2002') {
+        throw err;
+      }
+      this.logger.debug(
+        `coach_new_purchase: marker already claimed for purchase=${purchaseId} (webhook replay)`,
+      );
+    }
+    if (!claimedFirst) return;
+
+    const coachId = purchaseRow.coach_user_id;
+    const amountCents = purchaseRow.amount_cents ?? 0;
+    const currency = purchaseRow.currency ?? 'usd';
+
+    let buyerDisplayName = 'A new client';
+    try {
+      const buyer = await (tx as Prisma.TransactionClient).user.findUnique({
+        where: { id: purchaseRow.client_user_id },
+        select: { id: true, name: true, email: true },
+      });
+      if (buyer) {
+        const trimmed = (buyer.name ?? '').trim();
+        if (trimmed) buyerDisplayName = trimmed;
+        else if (buyer.email) buyerDisplayName = buyer.email;
+      }
+    } catch {
+      // Best-effort.
+    }
+
+    let packageName = 'your package';
+    if (tx.coachPackage) {
+      try {
+        const pkg = await tx.coachPackage.findUnique({
+          where: { id: purchaseRow.package_id },
+          select: { name: true },
+        });
+        if (pkg?.name) packageName = pkg.name;
+      } catch {
+        // Best-effort.
+      }
+    }
+
+    this.pendingCoachNewPurchaseAlerts.set(purchaseId, {
+      coachId,
+      buyerId: purchaseRow.client_user_id,
+      buyerDisplayName,
+      purchaseId,
+      packageName,
+      amountCents,
+      currency,
+    });
   }
 
   /**
@@ -337,25 +474,31 @@ export class PurchaseFanoutService {
    */
   flushAlerts(purchaseId: string): void {
     const bucket = this.pendingAlerts.get(purchaseId);
-    if (!bucket || bucket.length === 0) return;
-    this.pendingAlerts.delete(purchaseId);
-    for (const alert of bucket) {
-      try {
-        if (this.alertHook) {
-          this.alertHook.enqueue(alert);
-        } else {
-          // PR-13 will replace this with push+in-app via NotificationsService.
-          this.logger.log(
-            `drip alert (no hook): drop=${alert.scheduledDropId} client=${alert.clientId} asset=${alert.assetType}`,
+    if (bucket && bucket.length > 0) {
+      this.pendingAlerts.delete(purchaseId);
+      for (const alert of bucket) {
+        try {
+          if (this.alertHook) {
+            this.alertHook.enqueue(alert);
+          } else {
+            // PR-13 will replace this with push+in-app via NotificationsService.
+            this.logger.log(
+              `drip alert (no hook): drop=${alert.scheduledDropId} client=${alert.clientId} asset=${alert.assetType}`,
+            );
+          }
+        } catch (err) {
+          // Alert side-effect failure MUST NEVER bubble.
+          this.logger.warn(
+            `drip alert dispatch failed drop=${alert.scheduledDropId}: ${(err as Error).message}`,
           );
         }
-      } catch (err) {
-        // Alert side-effect failure MUST NEVER bubble.
-        this.logger.warn(
-          `drip alert dispatch failed drop=${alert.scheduledDropId}: ${(err as Error).message}`,
-        );
       }
     }
+    // PR-15A — also flush the COACH_NEW_PURCHASE alert on the same hook
+    // so the webhook/guest path's existing flushAlerts(purchaseId) call
+    // post-commit lights up both buyer (drip-released, PR-10) and coach
+    // (coach-new-purchase, PR-15A) sides without a new call site.
+    this.flushCoachNewPurchaseAlert(purchaseId);
   }
 
   /**
@@ -365,6 +508,93 @@ export class PurchaseFanoutService {
    */
   discardPendingAlerts(purchaseId: string): void {
     this.pendingAlerts.delete(purchaseId);
+    // PR-15A — discard the coach-new-purchase bucket together with the
+    // drip-released bucket so a rolled-back+retried Stripe event does
+    // not double-alert. The DripResolverMarker row in the rolled-back
+    // tx is gone too, so the retry's marker insert claims the alert
+    // anew (correct).
+    this.pendingCoachNewPurchaseAlerts.delete(purchaseId);
+  }
+
+  /**
+   * PR-15A — fire-and-forget COACH_NEW_PURCHASE dispatch. Sends push +
+   * in-app to the selling coach via NotificationsService. Failure-
+   * isolated like flushAlerts above: a hostile push provider or
+   * prisma blip MUST NEVER reach back into entitlement.
+   *
+   * Called from flushAlerts() so the existing post-commit hook lights
+   * up both pillars without a new wiring site. Idempotency rides the
+   * DripResolverMarker upsert inside the entitlement tx — by the time
+   * we reach this method we are guaranteed at most one staged alert
+   * per purchase, and a missing bucket is the expected no-op when the
+   * marker upsert lost the race to a prior commit.
+   */
+  flushCoachNewPurchaseAlert(purchaseId: string): void {
+    const alert = this.pendingCoachNewPurchaseAlerts.get(purchaseId);
+    if (!alert) return;
+    this.pendingCoachNewPurchaseAlerts.delete(purchaseId);
+
+    if (!this.notifications) {
+      this.logger.log(
+        `coach_new_purchase alert (no NotificationsService wired): coach=${alert.coachId} purchase=${alert.purchaseId}`,
+      );
+      return;
+    }
+
+    const amountStr = formatAmount(alert.amountCents, alert.currency);
+    const title = 'New purchase';
+    const body =
+      `${alert.buyerDisplayName} just bought ${alert.packageName}` +
+      (amountStr ? ` (${amountStr})` : '');
+    const payload = {
+      purchase_id: alert.purchaseId,
+      buyer_id: alert.buyerId,
+      package_name: alert.packageName,
+      amount_cents: alert.amountCents,
+      currency: alert.currency,
+    };
+    const deep_link = `tgp://coach/purchases/${alert.purchaseId}`;
+
+    void (async () => {
+      try {
+        await this.notifications!.createNotification({
+          user_id: alert.coachId,
+          kind: NotificationKind.COACH_NEW_PURCHASE,
+          body: body.slice(0, 160),
+          payload,
+          deep_link,
+          channel: 'inapp',
+        });
+      } catch (err) {
+        this.logger.warn(
+          `coach_new_purchase in-app row failed coach=${alert.coachId} purchase=${alert.purchaseId}: ${(err as Error).message}`,
+        );
+      }
+      try {
+        await this.notifications!.pushToUser(alert.coachId, title, body.slice(0, 160), {
+          kind: NotificationKind.COACH_NEW_PURCHASE,
+          purchase_id: alert.purchaseId,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `coach_new_purchase push failed coach=${alert.coachId} purchase=${alert.purchaseId}: ${(err as Error).message}`,
+        );
+      }
+      try {
+        await this.notifications!.createNotification({
+          user_id: alert.coachId,
+          kind: NotificationKind.COACH_NEW_PURCHASE,
+          body: body.slice(0, 160),
+          payload,
+          deep_link,
+          channel: 'push',
+        });
+      } catch (err) {
+        this.logger.warn(
+          `coach_new_purchase push-row failed coach=${alert.coachId} purchase=${alert.purchaseId}: ${(err as Error).message}`,
+        );
+      }
+    })();
   }
 
   // --- internal --------------------------------------------------------
@@ -425,5 +655,21 @@ export class PurchaseFanoutService {
       if (!Number.isNaN(ms)) return new Date(ms);
     }
     return null;
+  }
+}
+
+// PR-15A helper — format integer minor-unit amounts as a human string
+// for the coach alert body. Currency is the lowercase ISO code stored on
+// ClientPurchase.currency. Falls back to a bare-number representation if
+// the locale/currency combo throws (rare for ISO codes Stripe accepts).
+function formatAmount(amountCents: number, currency: string): string {
+  if (!Number.isFinite(amountCents) || amountCents <= 0) return '';
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: (currency || 'usd').toUpperCase(),
+    }).format(amountCents / 100);
+  } catch {
+    return `${(amountCents / 100).toFixed(2)} ${(currency || 'usd').toUpperCase()}`;
   }
 }
