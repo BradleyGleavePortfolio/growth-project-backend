@@ -907,6 +907,14 @@ model NotificationPreferences {
   drip_released_email     Boolean @default(false)
   drip_released_push      Boolean @default(true)
   drip_released_inapp     Boolean @default(true)
+  // PR-15A — COACH_NEW_PURCHASE (selling coach learns of a new buyer at
+  // entitlement). Default ON for push + in-app per decision #9 mirror —
+  // a coach who is SELLING packages wants to know. email default OFF
+  // (no transactional channel today; mirrors DRIP_RELEASED + booking).
+  // _kindToPrefsPrefix maps kind='coach_new_purchase' to this prefix.
+  coach_new_purchase_email Boolean @default(false)
+  coach_new_purchase_push  Boolean @default(true)
+  coach_new_purchase_inapp Boolean @default(true)
   // Concierge booking notifications — cluster prefs covering all
   // booking.* kinds (requested, confirmed, declined, cancelled,
   // rescheduled, reminder.24h, reminder.1h). Email default-off

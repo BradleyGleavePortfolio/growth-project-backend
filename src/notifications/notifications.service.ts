@@ -119,6 +119,12 @@ export class NotificationsService {
         drip_released_email: false,
         drip_released_push: true,
         drip_released_inapp: true,
+        // PR-15A — COACH_NEW_PURCHASE defaults match the migration:
+        // selling coach gets push + in-app on every new entitlement,
+        // email off (no transactional channel today).
+        coach_new_purchase_email: false,
+        coach_new_purchase_push: true,
+        coach_new_purchase_inapp: true,
         // Concierge booking defaults — email off (no transactional
         // email transport for booking events in Phase 1); push + inapp
         // on so a Concierge client/coach is reachable for lifecycle
@@ -194,6 +200,10 @@ export class NotificationsService {
       booking_email: data.booking_email,
       booking_push: data.booking_push,
       booking_inapp: data.booking_inapp,
+      // PR-15A — COACH_NEW_PURCHASE (selling coach alerted on entitlement).
+      coach_new_purchase_email: data.coach_new_purchase_email,
+      coach_new_purchase_push: data.coach_new_purchase_push,
+      coach_new_purchase_inapp: data.coach_new_purchase_inapp,
       // NUDGE-V1 — explicit per-trigger × per-channel mapping. Each maps
       // 1:1 to a column added in the same schema migration; missing values
       // are stripped below so a partial PATCH only flips the supplied flags.
@@ -687,6 +697,14 @@ export class NotificationsService {
     // defaults are FALSE, silently short-circuiting every in-app row
     // write — the PR-10 R1 P2 fix.
     if (kind.startsWith('drip_released')) return 'drip_released';
+    // PR-15A — COACH_NEW_PURCHASE routes to the dedicated
+    // coach_new_purchase_* prefs columns (migration
+    // 20261208000000_pr15_coach_new_purchase_prefs); defaults push+inapp
+    // ON, email OFF. Without this branch the kind falls through to the
+    // 'digest' safe-default (push+inapp default FALSE), silently
+    // short-circuiting every COACH_NEW_PURCHASE row write — the exact
+    // PR-10 R1 P2 bug the brief calls out.
+    if (kind.startsWith('coach_new_purchase')) return 'coach_new_purchase';
     if (kind.startsWith('fasting')) return 'fasting';
     if (kind.includes('digest')) return 'digest';
     return 'digest'; // safe default — falls back to digest prefs

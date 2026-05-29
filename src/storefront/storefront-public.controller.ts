@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpException,
   HttpStatus,
@@ -27,6 +28,8 @@ import {
 import { GuestCheckoutService } from './guest-checkout.service';
 import { StorefrontService } from './storefront.service';
 import { CheckoutRecoveryService } from './checkout-recovery.service';
+import { ThankYouService } from './thank-you.service';
+import { renderThankYouPage } from './thank-you.html';
 import {
   CheckoutIpRateLimiterService,
   RATE_LIMIT_SCOPES,
@@ -66,6 +69,7 @@ export class StorefrontPublicController {
     private readonly config: ConfigService,
     private readonly ipLimiter: CheckoutIpRateLimiterService,
     private readonly cookies: CheckoutCookieService,
+    private readonly thankYou: ThankYouService,
   ) {}
 
   // Extract a client IP from the request, honoring Fly's
@@ -369,5 +373,29 @@ export class StorefrontPublicController {
     // 15-min recovery JWT to the storefront origin.
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.redirect(HttpStatus.FOUND, url);
+  }
+
+  // PR-15A — SSR thank-you / return page. Stripe's hosted checkout
+  // success_url redirects buyers here with `?session_id={CHECKOUT_SESSION_ID}`
+  // (the standard storefront return template). The page reaches parity
+  // with the in-app PurchaseUnpackScreen: receipt summary + "unlocked
+  // now" + "coming up" + recurring next-charge.
+  //
+  // Auth model: the Stripe checkout session id is the entry credential.
+  // ThankYouService 404s on (a) unknown session, (b) not-yet-entitled
+  // purchase. No JWT required (this IS the post-purchase return for
+  // guest buyers who don't have an account yet). Page is
+  // `noindex,nofollow` and references the just-converted buyer's drops
+  // ONLY — never any other purchase's data.
+  @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
+  @Get('thank-you')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  @Header('Cache-Control', 'private, no-store')
+  async thankYouPage(@Query('session_id') sessionId: string): Promise<string> {
+    // Empty/missing session_id surfaces as a 404 from the service
+    // rather than rendering a blank page.
+    const vm = await this.thankYou.buildViewModel(sessionId ?? '');
+    return renderThankYouPage(vm);
   }
 }

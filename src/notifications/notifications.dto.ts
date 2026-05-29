@@ -200,6 +200,20 @@ export class UpdateNotificationPreferencesDto {
   @IsBoolean()
   booking_inapp?: boolean;
 
+  // ── PR-15A: COACH_NEW_PURCHASE — selling coach alerted on entitlement ─
+
+  @IsOptional()
+  @IsBoolean()
+  coach_new_purchase_email?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  coach_new_purchase_push?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  coach_new_purchase_inapp?: boolean;
+
   // ── NUDGE-V1: behavioral nudge per-trigger opt-out (spec §6) ──────────
   // Surfaced in user notification preferences so each trigger type can
   // be muted independently in one tap. Schema columns added in the same
