@@ -23,6 +23,13 @@ function makePrismaStub() {
   const workoutPlans: any[] = [];
   const mealPlans: any[] = [];
   const mediaAssets: any[] = [];
+  const lockLog: Array<{ packageId: string }> = [];
+  // Per-packageId mutex chain. Each lock acquisition appends to the
+  // queue; the next caller awaits the head before resolving. Lock is
+  // "released" (chain head pops) when the surrounding $transaction
+  // callback finishes — see the $transaction stub below.
+  const lockChains = new Map<string, Promise<void>>();
+  const lockReleasers = new Map<Promise<void>, () => void>();
 
   function filterMatch(row: any, where: any): boolean {
     return Object.entries(where).every(([k, v]) => {
@@ -37,12 +44,13 @@ function makePrismaStub() {
     });
   }
 
-  return {
+  const stub: any = {
     _packages: packages,
     _contents: contents,
     _workoutPlans: workoutPlans,
     _mealPlans: mealPlans,
     _mediaAssets: mediaAssets,
+    _lockLog: lockLog,
     coachPackage: {
       findFirst: jest.fn(async ({ where }: any) =>
         packages.find((p) => filterMatch(p, where)) ?? null,
@@ -117,18 +125,73 @@ function makePrismaStub() {
         mediaAssets.find((p) => filterMatch(p, where)) ?? null,
       ),
     },
-    $transaction: jest.fn(async (ops: any) => {
-      if (Array.isArray(ops)) {
-        // Each op is already a thenable returned by prisma calls in the
-        // service. Our stub methods return real promises so awaiting them
-        // here is the right semantic.
+    $executeRaw: jest.fn(async function (
+      this: any,
+      strings: TemplateStringsArray,
+      ...values: any[]
+    ) {
+      const sql = Array.isArray(strings)
+        ? (strings as any).join('?')
+        : String(strings);
+      if (sql.includes('pg_advisory_xact_lock')) {
+        const packageId = values[1] as string;
+        lockLog.push({ packageId });
+        // Block on the prior holder (if any) of this packageId's lock.
+        const prior = lockChains.get(packageId);
+        // Create our own promise that the surrounding tx will resolve to
+        // release the next caller. Stored on the tx handle (`this`) so
+        // the $transaction wrapper can find it on completion.
+        let release!: () => void;
+        const held = new Promise<void>((res) => {
+          release = res;
+        });
+        lockChains.set(packageId, held);
+        lockReleasers.set(held, release);
+        // Record on the tx handle (`this`) so $transaction can release.
+        const holds: Array<{ packageId: string; held: Promise<void> }> =
+          this._heldLocks ?? (this._heldLocks = []);
+        holds.push({ packageId, held });
+        if (prior) await prior;
+      }
+      return 1;
+    }),
+    $transaction: jest.fn(async (arg: any) => {
+      if (Array.isArray(arg)) {
         const out: any[] = [];
-        for (const op of ops) out.push(await op);
+        for (const op of arg) out.push(await op);
         return out;
       }
-      throw new Error('callback transactions not used by this service');
+      if (typeof arg === 'function') {
+        // Interactive tx: hand the same stub back as the tx-client. The
+        // service only reaches for table-clients + $executeRaw on the
+        // tx handle, which our stub satisfies. We attach a per-call
+        // _heldLocks array so $executeRaw can register lock holders;
+        // when the callback resolves, we release them in order so the
+        // next caller can proceed. xact-scoped lock semantics.
+        const txHandle: any = Object.create(stub);
+        txHandle._heldLocks = [];
+        try {
+          return await arg(txHandle);
+        } finally {
+          // Release every lock this tx acquired, in LIFO order. xact
+          // commit/rollback releases everything in one shot.
+          for (const { packageId, held } of [...txHandle._heldLocks].reverse()) {
+            const release = lockReleasers.get(held);
+            if (release) release();
+            lockReleasers.delete(held);
+            // Only clear the chain head if it still points at our held
+            // promise — otherwise a later attacher has already chained
+            // behind us and owns the chain now.
+            if (lockChains.get(packageId) === held) {
+              lockChains.delete(packageId);
+            }
+          }
+        }
+      }
+      throw new Error('unexpected $transaction arg type');
     }),
   };
+  return stub;
 }
 
 function makeSubCoachStub(headMap: Record<string, string | null> = {}) {
@@ -673,6 +736,140 @@ describe('PackageContentsService', () => {
         cadence_payload: {},
       });
       expect(row.package_id).toBe('pkg-1');
+    });
+  });
+
+  // ── concurrency / advisory-lock fix (P2-a, P2-b) ─────────────────────
+  describe('display_order race fixes (per-package pg_advisory_xact_lock)', () => {
+    it('attach acquires the per-package lock inside a transaction', async () => {
+      await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      expect((prisma as any).$transaction).toHaveBeenCalled();
+      expect((prisma as any).$executeRaw).toHaveBeenCalled();
+      // The advisory-lock helper was given THIS packageId.
+      expect((prisma as any)._lockLog).toEqual([{ packageId: 'pkg-1' }]);
+    });
+
+    it('reorder acquires the per-package lock inside a transaction', async () => {
+      const a = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      const b = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'meal_plan',
+        asset_id: 'mp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      (prisma as any)._lockLog.length = 0;
+      await svc.reorder('coach-1', 'pkg-1', { content_ids: [b.id, a.id] });
+      expect((prisma as any)._lockLog).toEqual([{ packageId: 'pkg-1' }]);
+    });
+
+    it('concurrent attaches on the same package serialise into distinct display_order values (no duplicates)', async () => {
+      // Three concurrent attaches: kicked off via Promise.all so the
+      // jest-promise scheduler interleaves them. The advisory lock means
+      // each one enters its read+write window with the previous attach
+      // already committed, so display_order increments to 0, 1, 2 with
+      // no collision.
+      const inputs = ['wp-1', 'mp-1', 'pdf-1'].map((id, idx) => ({
+        asset_type: ['workout_plan', 'meal_plan', 'pdf'][idx] as
+          | 'workout_plan'
+          | 'meal_plan'
+          | 'pdf',
+        asset_id: id,
+        cadence_kind: 'immediate' as const,
+        cadence_payload: {},
+      }));
+      const rows = await Promise.all(
+        inputs.map((b) => svc.attach('coach-1', 'pkg-1', b)),
+      );
+      const orders = rows.map((r) => r.display_order).sort((a, b) => a - b);
+      expect(orders).toEqual([0, 1, 2]);
+      // Lock acquired once per attach.
+      expect((prisma as any)._lockLog).toHaveLength(3);
+      for (const e of (prisma as any)._lockLog) {
+        expect(e.packageId).toBe('pkg-1');
+      }
+    });
+
+    it('reorder-vs-attach interleaving (P2-b): parity read inside the tx sees the consistent set', async () => {
+      const a = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      const b = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'meal_plan',
+        asset_id: 'mp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      // Run reorder + a third attach concurrently. Both grab the same
+      // per-package lock; one runs first, the other runs after. Either
+      // ordering must end in a coherent state (no duplicate display_order;
+      // every row in [0..N-1]).
+      const reorderP = svc.reorder('coach-1', 'pkg-1', {
+        content_ids: [b.id, a.id],
+      });
+      const attachP = svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'pdf',
+        asset_id: 'pdf-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      const [reordered] = await Promise.all([reorderP, attachP]);
+      // After both: 3 non-removed rows, distinct contiguous display_order.
+      const all = await svc.listForPackage('coach-1', 'pkg-1');
+      expect(all).toHaveLength(3);
+      const orders = all.map((r) => r.display_order).sort((a, b) => a - b);
+      expect(new Set(orders).size).toBe(3);
+      // The reorder result itself never includes duplicates.
+      expect(new Set(reordered.map((r) => r.display_order)).size).toBe(
+        reordered.length,
+      );
+    });
+  });
+
+  // ── soft-delete + patch interaction (P3-a fix) ───────────────────────
+  describe('patch on a soft-deleted content row (P3-a)', () => {
+    it('patch on a soft-deleted row returns 404 — cannot mutate a removed row', async () => {
+      const a = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      await svc.softDelete('coach-1', 'pkg-1', a.id);
+      await expect(
+        svc.patch('coach-1', 'pkg-1', a.id, { display_title: 'edit attempt' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        svc.patch('coach-1', 'pkg-1', a.id, {
+          cadence_kind: 'relative_to_purchase',
+          cadence_payload: { offset_days: 1 },
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('softDelete remains idempotent after the requireOwnedContent fix', async () => {
+      const a = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      const first = await svc.softDelete('coach-1', 'pkg-1', a.id);
+      const second = await svc.softDelete('coach-1', 'pkg-1', a.id);
+      expect(first.removed_at).not.toBeNull();
+      expect(second.removed_at).toEqual(first.removed_at);
     });
   });
 });

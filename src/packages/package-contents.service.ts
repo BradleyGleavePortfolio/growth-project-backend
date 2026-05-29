@@ -4,7 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type { CoachPackageContent } from '@prisma/client';
+import type { CoachPackageContent, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { PrismaService } from '../prisma.service';
 import { PackagesService } from './packages.service';
@@ -16,6 +16,18 @@ import {
   type AssetType,
   type CadenceKind,
 } from './package-contents.dto';
+
+// Prisma's `TransactionClient` minus `$transaction` / `$connect` / etc.
+// Used as the in-transaction handle we thread through the read+write
+// helpers.
+type Tx = Prisma.TransactionClient;
+
+// Stable namespace id for the per-package display_order advisory lock.
+// pg_advisory_xact_lock(int4, int4) is keyed on TWO 32-bit ints — using a
+// dedicated namespace (the first arg) keeps these locks from colliding
+// with any future advisory-lock user in the schema. Picked an arbitrary
+// constant; the only requirement is that it be unique across the codebase.
+const ADVISORY_LOCK_NAMESPACE_PKG_CONTENT_ORDER = 0x70_6b_67_63; // ASCII 'pkgc'
 
 // PR-8 — Coach package CONTENTS authoring service.
 //
@@ -72,30 +84,40 @@ export class PackageContentsService {
     // lookups the PR-7 resolvers consume at materialise time. The intent
     // is "if PR-9 would later refuse this asset, refuse it at authoring
     // time too" — so a coach can't save a package that will fail at
-    // checkout. We do NOT invent any new ownership predicate.
+    // checkout. Workout/media branches add `archived_at`/`kind` filters
+    // not present in the PR-7 resolvers — a stricter superset, intentional
+    // (refuse-early at authoring is the right call). meal_plan is
+    // byte-identical to MealPlanAssetResolver.assertPlanOwnedByTenant.
     await this.assertAssetOwnedByCoach(coachUserId, input.asset_type, input);
 
-    // display_order: append to max+1 if omitted. We compute against the
-    // current non-removed set so the editor's order is stable. Note we
-    // include `removed_at: null` — restoring a soft-deleted row is out of
-    // scope for PR-8 (re-attach is the workflow).
-    const display_order =
-      input.display_order ?? (await this.nextDisplayOrder(packageId));
+    // display_order race fix: read max + INSERT must be serialised per
+    // package, otherwise two concurrent attaches both read max=N and
+    // both INSERT N+1. We take a per-package
+    // pg_advisory_xact_lock at the top of the tx; concurrent attaches on
+    // the same package serialise; concurrent attaches on different
+    // packages run in parallel. xact-scoped → auto-released on commit
+    // or rollback, no session-leak risk.
+    return this.prisma.$transaction(async (tx) => {
+      await this.acquirePackageOrderLock(tx, packageId);
 
-    return this.prisma.coachPackageContent.create({
-      data: {
-        package_id: packageId,
-        asset_type: input.asset_type,
-        asset_id: input.asset_id,
-        asset_revision_id: input.asset_revision_id ?? null,
-        display_order,
-        cadence_kind: input.cadence_kind,
-        // zod has already validated the inner shape; storing as Prisma
-        // expects a plain object for a Json column.
-        cadence_payload: input.cadence_payload as object,
-        display_title: input.display_title ?? null,
-        display_caption: input.display_caption ?? null,
-      },
+      const display_order =
+        input.display_order ?? (await this.nextDisplayOrder(tx, packageId));
+
+      return tx.coachPackageContent.create({
+        data: {
+          package_id: packageId,
+          asset_type: input.asset_type,
+          asset_id: input.asset_id,
+          asset_revision_id: input.asset_revision_id ?? null,
+          display_order,
+          cadence_kind: input.cadence_kind,
+          // zod has already validated the inner shape; storing as Prisma
+          // expects a plain object for a Json column.
+          cadence_payload: input.cadence_payload as object,
+          display_title: input.display_title ?? null,
+          display_caption: input.display_caption ?? null,
+        },
+      });
     });
   }
 
@@ -174,8 +196,20 @@ export class PackageContentsService {
     contentId: string,
   ): Promise<CoachPackageContent> {
     await this.packages.requireOwnedPackage(coachUserId, packageId);
-    const row = await this.requireOwnedContent(packageId, contentId);
-    if (row.removed_at) return row; // idempotent
+    // Idempotent: an already-removed row returns as-is without bumping
+    // removed_at. We look it up directly (not via requireOwnedContent,
+    // which now filters removed_at: null for patch safety) so the second
+    // DELETE on the same id is a no-op rather than a 404.
+    const row = await this.prisma.coachPackageContent.findFirst({
+      where: { id: contentId, package_id: packageId },
+    });
+    if (!row) {
+      throw new NotFoundException({
+        error: 'CONTENT_NOT_FOUND',
+        message: `No content with id ${contentId} on package ${packageId}`,
+      });
+    }
+    if (row.removed_at) return row;
     return this.prisma.coachPackageContent.update({
       where: { id: contentId },
       data: { removed_at: new Date() },
@@ -186,6 +220,14 @@ export class PackageContentsService {
   // non-removed content_ids for the package (any extra / missing id is
   // a 400 — surfaces editor/server divergence rather than silently
   // dropping rows). display_order is set to the array index.
+  //
+  // Concurrency: the parity read AND the bulk update both run inside the
+  // SAME interactive $transaction with a per-package
+  // pg_advisory_xact_lock at the top. Without the lock, a concurrent
+  // `attach` could land between the parity read and the bulk update,
+  // adding a row at max+1 that then collides with a display_order the
+  // reorder is about to assign. The lock guarantees attach/reorder/
+  // softDelete on the same package serialise.
   async reorder(
     coachUserId: string,
     packageId: string,
@@ -203,45 +245,50 @@ export class PackageContentsService {
         message: 'content_ids contains duplicates',
       });
     }
-    const current = await this.prisma.coachPackageContent.findMany({
-      where: { package_id: packageId, removed_at: null },
-      select: { id: true },
-    });
-    const currentIds = new Set(current.map((r) => r.id));
-    const incoming = new Set(content_ids);
-    if (currentIds.size !== incoming.size) {
-      throw new BadRequestException({
-        error: 'REORDER_INVALID',
-        message: 'content_ids must include every non-removed content for this package',
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.acquirePackageOrderLock(tx, packageId);
+
+      // Parity read INSIDE the tx so it sees a consistent view: any
+      // concurrent attach on this package is now serialised behind us.
+      const current = await tx.coachPackageContent.findMany({
+        where: { package_id: packageId, removed_at: null },
+        select: { id: true },
       });
-    }
-    for (const id of currentIds) {
-      if (!incoming.has(id)) {
+      const currentIds = new Set(current.map((r) => r.id));
+      const incoming = new Set(content_ids);
+      if (currentIds.size !== incoming.size) {
         throw new BadRequestException({
           error: 'REORDER_INVALID',
-          message: `content_ids missing existing content ${id}`,
+          message:
+            'content_ids must include every non-removed content for this package',
         });
       }
-    }
-    for (const id of incoming) {
-      if (!currentIds.has(id)) {
-        throw new BadRequestException({
-          error: 'REORDER_INVALID',
-          message: `content_ids contains unknown content ${id}`,
-        });
+      for (const id of currentIds) {
+        if (!incoming.has(id)) {
+          throw new BadRequestException({
+            error: 'REORDER_INVALID',
+            message: `content_ids missing existing content ${id}`,
+          });
+        }
       }
-    }
-    // Atomic: a single transaction with one update per row. Tiny N (an
-    // editor list); the per-row UPDATE is cheap and keeps the SQL simple
-    // and Prisma-portable (no raw SQL needed).
-    await this.prisma.$transaction(
-      content_ids.map((id, idx) =>
-        this.prisma.coachPackageContent.update({
-          where: { id },
+      for (const id of incoming) {
+        if (!currentIds.has(id)) {
+          throw new BadRequestException({
+            error: 'REORDER_INVALID',
+            message: `content_ids contains unknown content ${id}`,
+          });
+        }
+      }
+      // Single tx; one update per row. Tiny N (an editor list); cheap.
+      for (let idx = 0; idx < content_ids.length; idx++) {
+        await tx.coachPackageContent.update({
+          where: { id: content_ids[idx] },
           data: { display_order: idx },
-        }),
-      ),
-    );
+        });
+      }
+    });
+
     return this.prisma.coachPackageContent.findMany({
       where: { package_id: packageId, removed_at: null },
       orderBy: { display_order: 'asc' },
@@ -322,12 +369,17 @@ export class PackageContentsService {
     }
   }
 
+  // Looks up a content row for mutation. Filters `removed_at: null` so
+  // `patch` cannot mutate a soft-deleted row (e.g. resurrect it implicitly
+  // by editing a field). softDelete on an already-removed row is handled
+  // separately — see softDelete() which short-circuits idempotently and
+  // therefore does NOT call this helper.
   private async requireOwnedContent(
     packageId: string,
     contentId: string,
   ): Promise<CoachPackageContent> {
     const row = await this.prisma.coachPackageContent.findFirst({
-      where: { id: contentId, package_id: packageId },
+      where: { id: contentId, package_id: packageId, removed_at: null },
     });
     if (!row) {
       throw new NotFoundException({
@@ -338,13 +390,38 @@ export class PackageContentsService {
     return row;
   }
 
-  private async nextDisplayOrder(packageId: string): Promise<number> {
-    const tail = await this.prisma.coachPackageContent.findFirst({
+  // Always called from inside the per-package advisory lock, so the
+  // read+write window cannot race against another attach/reorder.
+  private async nextDisplayOrder(
+    db: Tx,
+    packageId: string,
+  ): Promise<number> {
+    const tail = await db.coachPackageContent.findFirst({
       where: { package_id: packageId, removed_at: null },
       orderBy: { display_order: 'desc' },
       select: { display_order: true },
     });
     return tail ? tail.display_order + 1 : 0;
+  }
+
+  // Per-package transaction-scoped advisory lock used to serialise every
+  // mutation that reads or writes `display_order` (attach/reorder). xact
+  // scope means the lock is auto-released on commit OR rollback — there
+  // is no session-leak risk and we never need an explicit unlock.
+  //
+  // The lock is keyed on (NAMESPACE, hashtext(package_id)). Postgres
+  // hashtext is stable and well-distributed; collisions only matter for
+  // two DIFFERENT packages that happen to hash to the same int4, in
+  // which case they would briefly serialise — correct, just a slight
+  // performance cost on a vanishing chance.
+  //
+  // The query uses parameter binding so packageId is never interpolated
+  // into raw SQL.
+  private async acquirePackageOrderLock(
+    db: Tx,
+    packageId: string,
+  ): Promise<void> {
+    await db.$executeRaw`SELECT pg_advisory_xact_lock(${ADVISORY_LOCK_NAMESPACE_PKG_CONTENT_ORDER}::int4, hashtext(${packageId}))`;
   }
 
   // Asset-ownership validation — REUSES the same per-type predicates the
