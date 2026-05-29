@@ -181,6 +181,13 @@ export class BillingService {
     // email simply omits the "View receipt" line (degraded, not broken).
     const preResolved = await this.preResolveReceiptUrl(event);
 
+    // PR-9 — purchase ids whose immediate drops were materialised inside
+    // the outer tx and whose drip alerts (push + in-app, decision #9)
+    // need to be flushed AFTER commit. Failing to send an alert MUST
+    // NEVER roll back entitlement, so the alert dispatch is moved
+    // outside the $transaction.
+    let dripAlertPurchaseId: string | null = null;
+
     try {
       await this.prisma.$transaction(async (tx) => {
         // Insert the dedup row INSIDE the transaction. A concurrent
@@ -200,10 +207,21 @@ export class BillingService {
         // TransactionClient those writes are not inside this tx, but
         // any failure still surfaces here so we never ack a failed
         // side effect.
+        // PR-9 — plumb the outer tx through to the checkout webhook
+        // handler so applyCheckoutCompleted / applyPaymentIntentSucceeded
+        // can run entitlement+fanout (drop seed + immediate-cadence
+        // inline materialisation) inside this $transaction. A resolver
+        // failure on an immediate drop now rolls back this whole tx
+        // (including the StripeProcessedEvent dedup row), Stripe
+        // retries the event id, and the per-row uniques make the
+        // retry safe. See PR9_BUILD_REPORT for the atomicity contract.
         let claimedByCheckout = false;
         if (this.checkoutWebhooks) {
-          const result = await this.checkoutWebhooks.handle(event);
+          const result = await this.checkoutWebhooks.handle(event, tx);
           claimedByCheckout = !!result.claimed;
+          if (result.claimed && result.purchase_id) {
+            dripAlertPurchaseId = result.purchase_id;
+          }
         }
 
         // Stream 1 — give the AI credit-pack handler first refusal on
@@ -418,7 +436,41 @@ export class BillingService {
           (err as Error)?.message ?? String(err)
         }`,
       );
+      // PR-9 — drop the in-memory alert bucket for the rolled-back
+      // purchase so the inevitable Stripe retry doesn't double-alert
+      // alongside the new bucket the retry produces.
+      if (
+        dripAlertPurchaseId &&
+        this.checkoutWebhooks &&
+        typeof this.checkoutWebhooks.discardPendingDripAlerts === 'function'
+      ) {
+        try {
+          this.checkoutWebhooks.discardPendingDripAlerts(dripAlertPurchaseId);
+        } catch {
+          // best-effort
+        }
+      }
       throw err;
+    }
+
+    // PR-9 — outer tx COMMITTED. Now fire-and-forget the drop alerts
+    // for any drops materialised inline at checkout. This MUST be
+    // outside the tx so a push provider blip cannot roll back money;
+    // the hook itself swallows errors internally. Feature-detected so
+    // legacy test wiring that stubs CheckoutWebhookHandlerService
+    // without the new methods still works.
+    if (
+      dripAlertPurchaseId &&
+      this.checkoutWebhooks &&
+      typeof this.checkoutWebhooks.flushDripAlerts === 'function'
+    ) {
+      try {
+        this.checkoutWebhooks.flushDripAlerts(dripAlertPurchaseId);
+      } catch (err) {
+        this.logger.warn(
+          `drip alert flush failed purchase=${dripAlertPurchaseId}: ${(err as Error).message}`,
+        );
+      }
     }
     return { processed: true };
   }
