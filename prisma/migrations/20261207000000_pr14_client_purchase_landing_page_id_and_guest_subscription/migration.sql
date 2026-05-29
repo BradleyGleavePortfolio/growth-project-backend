@@ -40,7 +40,30 @@ ALTER TABLE "GuestCheckout"
 CREATE UNIQUE INDEX "GuestCheckout_stripe_subscription_id_key"
   ON "GuestCheckout" ("stripe_subscription_id");
 
--- Index on landing_page_id for per-page LTV analytics joins
--- (mirrors GuestCheckout_landing_page_id_status_idx semantics).
-CREATE INDEX "ClientPurchase_landing_page_id_idx"
+-- PR-14 R2 P3 — CREATE INDEX CONCURRENTLY for the ClientPurchase
+-- landing_page_id index. ClientPurchase is a hot, populated production
+-- table (it backs every paid purchase across in-app + storefront +
+-- guest). A standard CREATE INDEX takes ACCESS EXCLUSIVE for the build
+-- duration, blocking every INSERT/UPDATE/DELETE on the table — observable
+-- as request timeouts in the checkout flow. CREATE INDEX CONCURRENTLY
+-- builds without blocking writes (takes a ShareUpdateExclusive lock
+-- that does not conflict with normal DML).
+--
+-- COMMIT / BEGIN bookend: Prisma migrate deploy wraps each migration
+-- file in a single transaction. CREATE INDEX CONCURRENTLY cannot run
+-- inside a transaction block. The accepted Prisma 5 workaround is to
+-- break out of the implicit transaction with COMMIT, run the concurrent
+-- index build at the top level, and then start a fresh transaction so
+-- Prisma's wrapping COMMIT still has something to close. Mirrors the
+-- pattern at prisma/migrations/20260704000001_coach_brief_cwa_index_concurrent.
+--
+-- IF NOT EXISTS makes it safe to re-run if a previous CONCURRENTLY build
+-- failed mid-way (Postgres leaves an INVALID index; operators should
+-- check pg_index.indisvalid and DROP any invalid leftovers before
+-- re-running, per Postgres docs).
+COMMIT;
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "ClientPurchase_landing_page_id_idx"
   ON "ClientPurchase" ("landing_page_id");
+
+BEGIN;

@@ -94,7 +94,11 @@ export class LostWebhookReconcileService {
     let stateChanges = 0;
     for (const row of rows) {
       try {
-        const changed = await this.reconcileOne(row.id, row.stripe_payment_intent_id);
+        const changed = await this.reconcileOne(
+          row.id,
+          row.stripe_payment_intent_id,
+          row.stripe_subscription_id,
+        );
         if (changed) stateChanges += 1;
       } catch (err) {
         this.logger.error(
@@ -108,6 +112,7 @@ export class LostWebhookReconcileService {
   private async reconcileOne(
     checkoutId: string,
     paymentIntentId: string,
+    subscriptionId: string | null,
   ): Promise<boolean> {
     // Atomic increment + read-back so two parallel workers don't double-poll.
     const claimed = await this.prisma.guestCheckout.update({
@@ -172,12 +177,66 @@ export class LostWebhookReconcileService {
       return true;
     }
     if (piStatus === 'canceled' || piStatus === 'requires_payment_method') {
+      // PR-14 R2 P1-2 — for recurring guests, the first-invoice PI can
+      // transition to requires_payment_method *after* a successful
+      // initial charge in some edge flows (e.g. 3DS challenge declined
+      // and the buyer re-attempted; Stripe sometimes leaves the older PI
+      // in requires_payment_method while a new one took the payment). If
+      // a subscription id is present, ask Stripe whether the subscription
+      // is `active` — if so, the guest really did pay and we should
+      // convert against the subscription's current paying PI rather than
+      // declaring failure on a stale PI.
+      if (subscriptionId) {
+        try {
+          const sub = await this.stripe.retrieveSubscription(subscriptionId);
+          const subStatus = (sub as { status?: string }).status;
+          if (subStatus === 'active' || subStatus === 'trialing') {
+            // The subscription is paying. Run the conversion against the
+            // sentinel's persisted PI id — handlePaymentSucceeded is
+            // idempotent on pending→paid so a duplicate fire is a no-op.
+            await this.guestCheckout.handlePaymentSucceeded(paymentIntentId);
+            return true;
+          }
+        } catch (err) {
+          this.logger.warn(
+            `lost-webhook-reconcile: subscription status check failed for sub=${subscriptionId} on row ${checkoutId}: ${
+              err instanceof Error ? err.message : 'unknown'
+            }`,
+          );
+          // Fall through to the default "PI dead" path; the next tick
+          // will re-poll. We do NOT flip to 'failed' on a Stripe lookup
+          // error — that's a transient signal.
+          return false;
+        }
+      }
       // PI is dead on Stripe's side — flip the row so we stop polling.
       await this.prisma.guestCheckout.updateMany({
         where: { id: checkoutId, status: 'pending' },
         data: { status: 'failed' },
       });
       return true;
+    }
+    // PR-14 R2 P1-2 — even when PI status is "requires_action" /
+    // "requires_confirmation" / "processing", the subscription may have
+    // ALREADY transitioned to `active` (Stripe's bookkeeping can lag the
+    // PI relative to the subscription on certain card networks). Check
+    // the subscription on every recurring tick so we don't keep a
+    // genuinely-paying guest stuck in pending until MAX_RECONCILE_ATTEMPTS.
+    if (subscriptionId) {
+      try {
+        const sub = await this.stripe.retrieveSubscription(subscriptionId);
+        const subStatus = (sub as { status?: string }).status;
+        if (subStatus === 'active' || subStatus === 'trialing') {
+          await this.guestCheckout.handlePaymentSucceeded(paymentIntentId);
+          return true;
+        }
+      } catch (err) {
+        this.logger.warn(
+          `lost-webhook-reconcile: subscription status check failed for sub=${subscriptionId} on row ${checkoutId}: ${
+            err instanceof Error ? err.message : 'unknown'
+          }`,
+        );
+      }
     }
     // requires_action / requires_confirmation / processing — leave it
     // alone, the guest is mid-flow.  Counter increments on every poll;

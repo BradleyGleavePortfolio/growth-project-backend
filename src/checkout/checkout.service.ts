@@ -863,17 +863,25 @@ export class CheckoutService {
       productId = product.id;
     }
 
+    // PR-14 R2 P2-2 — runtime guard before the cast. `CoachPackage.interval`
+    // is a free-form `String?` in Prisma; a corrupt row (e.g. 'daily' from
+    // a future migration) would propagate to Stripe and surface an opaque
+    // 400. Fail loudly here with a typed error instead.
+    const intervalForStripe =
+      pkg.billing_type === 'recurring' && pkg.interval
+        ? CheckoutService.assertStripeInterval(pkg.interval, pkg.id)
+        : undefined;
+
     const price = await this.stripeConnect.createPrice({
       product: productId,
       unit_amount: pkg.amount_cents,
       currency: pkg.currency,
-      recurring:
-        pkg.billing_type === 'recurring' && pkg.interval
-          ? {
-              interval: pkg.interval as 'week' | 'month' | 'year',
-              interval_count: pkg.interval_count,
-            }
-          : undefined,
+      recurring: intervalForStripe
+        ? {
+            interval: intervalForStripe,
+            interval_count: pkg.interval_count,
+          }
+        : undefined,
       metadata: { tgp_package_id: pkg.id },
       // Vary the idempotency key by amount so a re-price after a clear
       // does not collapse onto the old Price.
@@ -925,12 +933,18 @@ export class CheckoutService {
       await this.packages.setStripeProductId(pkg.id, productId);
     }
 
+    // PR-14 R2 P2-2 — same runtime interval guard the primary helper uses.
+    const recurringIntervalForStripe = CheckoutService.assertStripeInterval(
+      pkg.recurring_interval,
+      pkg.id,
+    );
+
     const price = await this.stripeConnect.createPrice({
       product: productId,
       unit_amount: pkg.recurring_amount_cents,
       currency: pkg.currency,
       recurring: {
-        interval: pkg.recurring_interval as 'week' | 'month' | 'year',
+        interval: recurringIntervalForStripe,
         interval_count: pkg.recurring_interval_count ?? 1,
       },
       metadata: { tgp_package_id: pkg.id, tgp_companion: 'true' },
@@ -949,6 +963,26 @@ export class CheckoutService {
       return true;
     }
     return false;
+  }
+
+  // PR-14 R2 P2-2 — runtime guard for the Stripe interval enum. Prisma
+  // stores `CoachPackage.interval` as a free-form `String?`, but Stripe's
+  // /v1/prices endpoint accepts only week|month|year. Without this guard
+  // a corrupt row (typo, future migration drift) would round-trip to
+  // Stripe and surface an opaque 400 to the buyer. Fail loudly with a
+  // typed error here so the failure mode is server-side and operators
+  // see exactly which package row is bad.
+  static assertStripeInterval(
+    interval: string | null | undefined,
+    packageId: string,
+  ): 'week' | 'month' | 'year' {
+    if (interval === 'week' || interval === 'month' || interval === 'year') {
+      return interval;
+    }
+    throw new BadRequestException({
+      error: 'PACKAGE_INTERVAL_INVALID',
+      message: `Package ${packageId} has an invalid recurring interval (${interval ?? 'null'}); expected one of week|month|year`,
+    });
   }
 
   /**

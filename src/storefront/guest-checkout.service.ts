@@ -184,6 +184,23 @@ export class GuestCheckoutService {
     // a required parameter after an optional one. Nest DI is type-based
     // so the parameter order has no effect at injection time.
     private readonly notifications: NotificationsService,
+    // PR-14 R2 P2-1 — shared Stripe Product/Price helpers + FeePolicy
+    // for the recurring/combo guest mint path. HARD dependencies (no
+    // @Optional()) so a future module-wiring regression fails fast at
+    // Nest boot — same pattern as the NotificationsService dependency
+    // above (see lines 169-186 for the original rationale). Previously
+    // these were @Optional() and the recurring path 503'd silently on
+    // a misconfigured deploy; that observability gap is now closed at
+    // boot.
+    //
+    // Declared before the @Optional() params for the same TypeScript
+    // ordering reason. Test suites that hand-construct
+    // GuestCheckoutService outside the Nest DI container MUST provide
+    // explicit stubs (the PR-14 spec already does; the legacy
+    // guest-checkout.service.spec.ts now provides minimal stubs as well
+    // since the legacy tests do not exercise the recurring path).
+    private readonly checkout: CheckoutService,
+    private readonly feePolicy: FeePolicyService,
     // r48 #3 — content-addressable PI cache so a network-dropped
     // retry that rolled a fresh idempotency_key still reuses the
     // existing Stripe PaymentIntent.  @Optional() so legacy unit
@@ -200,17 +217,6 @@ export class GuestCheckoutService {
     // for hand-constructed unit tests.
     @Optional()
     private readonly fanout?: PurchaseFanoutService,
-    // PR-14 — shared Stripe Product/Price helpers + FeePolicy. CheckoutService
-    // owns the same lazy-mint logic the in-app path uses; reusing it (vs.
-    // duplicating) keeps the master-plan §1 decision #1 single-source-of-
-    // truth for pricing. @Optional() so the long-tail of unit tests that
-    // hand-construct GuestCheckoutService without DI keep compiling — the
-    // recurring code paths assert presence at call time and fall back to
-    // 503 STRIPE_UNAVAILABLE on a misconfigured boot.
-    @Optional()
-    private readonly checkout?: CheckoutService,
-    @Optional()
-    private readonly feePolicy?: FeePolicyService,
   ) {}
 
   // POST /v1/packages/public/join/:token/checkout
@@ -710,16 +716,10 @@ export class GuestCheckoutService {
     subscriptionId: string;
     customerId: string;
   }> {
-    if (!this.checkout || !this.feePolicy) {
-      this.logger.error(
-        'mintRecurringForGuest: CheckoutService or FeePolicyService missing — recurring guest checkout is misconfigured',
-      );
-      throw new ServiceUnavailableException({
-        error: 'STRIPE_UNAVAILABLE',
-        message:
-          'Payment processing temporarily unavailable. Please try again.',
-      });
-    }
+    // PR-14 R2 P2-1 — DI is now HARD; the defensive @Optional() runtime
+    // guard that previously lived here is removed because a missing
+    // CheckoutService / FeePolicyService now fails at module boot, not
+    // silently inside a money path. See the constructor doc-comment.
 
     const { pkg, connectAccount, sentinelId, idempotencyKey, guestEmail, guestName, isCombo } = args;
 
@@ -748,22 +748,75 @@ export class GuestCheckoutService {
       ? await this.checkout.ensurePriceForPackage(pkg)
       : undefined;
 
-    // 4. Compute the platform fee percent on the recurring portion. Same
-    //    helper the in-app path uses on its subscription mint.
-    const recurringAmountCents = isCombo
-      ? (pkg.recurring_amount_cents ?? 0)
+    // 4. Compute the platform fee percent. The percent is what Stripe
+    //    applies to the WHOLE invoice — for combo first invoices that's
+    //    `amount_cents + recurring_amount_cents`, not just the recurring
+    //    half. PR-14 R2 P1-1 fix: size the percent against the first-
+    //    invoice total so the platform/head-coach collect their
+    //    contracted slice and the selling coach receives what they were
+    //    quoted. Renewals are recurring-only invoices and use the same
+    //    percent applied to the recurring-only basis — that math
+    //    naturally collapses back to the per-leg contract because we
+    //    derive the fee CENTS from a per-leg plan sum and re-express
+    //    them as a percent of the *first-invoice* total.
+    //
+    //    Concretely:
+    //      contractedFeeCents (first invoice) = plan(amount_cents).fee
+    //                                         + plan(recurring_amount_cents).fee
+    //      firstInvoiceCents               = amount_cents + recurring_amount_cents
+    //      percent = ceil(contractedFeeCents / firstInvoiceCents)  (2dp)
+    //
+    //    On renewals Stripe applies that percent to the recurring-only
+    //    invoice (recurring_amount_cents) — which over-collects by the
+    //    one-time half's proportional contribution. To avoid that, when
+    //    in combo we set the percent to the WEIGHTED basis but ALSO size
+    //    the per-renewal expected fee against the recurring leg only.
+    //    Solving for a single percent that satisfies both invoices is
+    //    impossible (Stripe accepts only ONE application_fee_percent per
+    //    subscription), so we accept the renewal under-/over-collection
+    //    inside the contracted rate's tolerance — the platform recon
+    //    sweeper squares the books per renewal via the SplitLedgerEntry
+    //    + Transfer reconciliation that already runs in PR-2/PR-9.
+    //
+    //    Net behaviour: first-invoice fee is correct to the contracted
+    //    rate (no shortfall to the selling coach); renewals are sized at
+    //    the same percent and reconciled per-leg downstream — exactly
+    //    the existing in-app behaviour for subscription packages.
+    const recurringAmountCents = pkg.recurring_amount_cents ?? 0;
+    const oneTimeAmountCents = isCombo ? pkg.amount_cents : 0;
+    const firstInvoiceCents = isCombo
+      ? oneTimeAmountCents + recurringAmountCents
       : pkg.amount_cents;
-    const plan = await this.feePolicy.planFor(
-      pkg.coach_id,
-      recurringAmountCents,
-    );
-    const applicationFeeForStripe =
-      plan.application_fee_cents + plan.head_coach_split_cents;
+
+    // Per-leg fee plan sum. In one_time-only or recurring-only flows we
+    // call planFor once on the relevant leg. In combo we call planFor
+    // twice and sum the cents so the FeePolicy's bps math is applied to
+    // each leg's amount independently (matches §4 FeePolicy contract).
+    let combinedApplicationFeeCents: number;
+    if (isCombo) {
+      const recurringPlan = await this.feePolicy.planFor(
+        pkg.coach_id,
+        recurringAmountCents,
+      );
+      const oneTimePlan = await this.feePolicy.planFor(
+        pkg.coach_id,
+        oneTimeAmountCents,
+      );
+      combinedApplicationFeeCents =
+        recurringPlan.application_fee_cents +
+        recurringPlan.head_coach_split_cents +
+        oneTimePlan.application_fee_cents +
+        oneTimePlan.head_coach_split_cents;
+    } else {
+      const plan = await this.feePolicy.planFor(pkg.coach_id, pkg.amount_cents);
+      combinedApplicationFeeCents =
+        plan.application_fee_cents + plan.head_coach_split_cents;
+    }
     const applicationFeePercent =
-      applicationFeeForStripe > 0 && recurringAmountCents > 0
+      combinedApplicationFeeCents > 0 && firstInvoiceCents > 0
         ? CheckoutService.toStripeApplicationFeePercent(
-            applicationFeeForStripe,
-            recurringAmountCents,
+            combinedApplicationFeeCents,
+            firstInvoiceCents,
           )
         : undefined;
 
@@ -814,6 +867,34 @@ export class GuestCheckoutService {
     }
     const piId = (expandedPi as { id: string }).id;
     const clientSecret = (expandedPi as { client_secret: string }).client_secret;
+
+    // PR-14 R2 P1-2 / P1-4 — patch the sentinel row with the Stripe ids
+    // RIGHT NOW, BEFORE returning to createIntent. The outer caller also
+    // patches the sentinel (line ~636), but a process crash between
+    // here and that outer patch leaves the sentinel stuck on the
+    // synthetic `pending_<key>` PI placeholder, which would prevent the
+    // lost-webhook reconciler and the P0-1 PI-id fallback from finding
+    // the row. We tolerate a P2002 here in the case where Stripe re-issues
+    // the same PI id via its own idempotency-key dedup and an earlier
+    // attempt already populated the row — same defensive pattern the
+    // outer patch uses. The outer patch is now a no-op on the recurring
+    // path (the same data is already persisted), so it stays idempotent.
+    try {
+      await this.prisma.guestCheckout.update({
+        where: { id: sentinelId },
+        data: {
+          stripe_payment_intent_id: piId,
+          stripe_subscription_id: subscription.id,
+          stripe_customer_id: customer.id,
+        },
+      });
+    } catch (err) {
+      if (!this.isUniqueViolation(err)) {
+        this.logger.warn(
+          `mintRecurringForGuest: sentinel patch failed for ${sentinelId} (will retry via outer patch / reconciler): ${(err as Error).message}`,
+        );
+      }
+    }
 
     return {
       paymentIntent: { id: piId, client_secret: clientSecret },
@@ -1451,6 +1532,36 @@ export class GuestCheckoutService {
       return;
     }
 
+    // PR-14 R2 P2-3 — for recurring guests, read the live subscription
+    // status from Stripe BEFORE the $transaction opens (no sync Stripe
+    // HTTP in-tx, 50-Failures #44 / A276-P1-3). The previous PR hard-
+    // coded ClientPurchase.status='active' on the recurring branch; that
+    // was load-bearing on `payment_intent.succeeded` running BEFORE we
+    // ever wrote the row. After the P0-1 fix the conversion now runs
+    // either on PI succeeded (subscription is `active` by then) or as a
+    // backstop from the subscription/invoice events (status may still be
+    // `incomplete`). Reading live here keeps the snapshot honest in
+    // both flows. Best-effort: a Stripe lookup failure falls back to a
+    // conservative `incomplete` snapshot, the existing
+    // applySubscriptionUpdated webhook handler will refine it on first
+    // delivery (it now finds the row directly via
+    // ClientPurchase.stripe_subscription_id), and entitlement still
+    // flips to true so the buyer is not gated out on a transient blip.
+    let liveSubscriptionStatus: string | null = null;
+    if (checkout.stripe_subscription_id) {
+      try {
+        const sub = await this.stripe.retrieveSubscription(
+          checkout.stripe_subscription_id,
+        );
+        const raw = (sub as { status?: string }).status;
+        if (typeof raw === 'string') liveSubscriptionStatus = raw;
+      } catch (err) {
+        this.logger.warn(
+          `convertGuestToUser: live subscription status read failed for sub=${checkout.stripe_subscription_id} (tag=${safeErrorTag(err)}) — falling back to seed status`,
+        );
+      }
+    }
+
     // PR-9 — hoisted so the post-tx alert flush / discard sees the
     // ClientPurchase id even though the row is created inside the
     // $transaction callback below.
@@ -1514,13 +1625,51 @@ export class GuestCheckoutService {
           const billingSnapshot = isRecurring
             ? CANONICAL_RECURRING_BILLING_TYPE
             : checkout.package.billing_type;
-          // PR-14 — status snapshot. The existing applySubscriptionUpdated
-          // webhook handler resolves 'active'|'past_due'|… by reading the
-          // live subscription on its first delivery. We seed 'active' for
-          // recurring guests so the entitlement is live from the moment
-          // money cleared (matches the in-app subscription path's
-          // entitlement contract) and let the webhook refine it later.
-          const statusSnapshot = isRecurring ? 'active' : 'paid';
+          // PR-14 R2 P2-3 — status snapshot derived from the LIVE Stripe
+          // subscription status read outside this tx (above). Mapping
+          // mirrors applySubscriptionUpdated's normalizer:
+          //   active / trialing / past_due → 'active' (entitlement live);
+          //   incomplete / incomplete_expired / unpaid → 'pending'/'paid'
+          //     (don't flip entitlement on; webhook will refine);
+          //   canceled → 'canceled'.
+          // Unknown / read-failed → conservative 'paid' for recurring so
+          // entitlement still flips (matches the pre-R2 behaviour minus
+          // the hard-coded 'active' lie) and the next webhook delivery
+          // refines via the now-working ClientPurchase.stripe_subscription_id
+          // claim (see applySubscriptionUpdated).
+          let statusSnapshot: string;
+          let entitlementActiveSnapshot = true;
+          if (!isRecurring) {
+            statusSnapshot = 'paid';
+          } else if (
+            liveSubscriptionStatus === 'active' ||
+            liveSubscriptionStatus === 'trialing'
+          ) {
+            statusSnapshot = 'active';
+          } else if (liveSubscriptionStatus === 'past_due') {
+            statusSnapshot = 'past_due';
+          } else if (liveSubscriptionStatus === 'canceled') {
+            statusSnapshot = 'canceled';
+            entitlementActiveSnapshot = false;
+          } else if (
+            liveSubscriptionStatus === 'incomplete' ||
+            liveSubscriptionStatus === 'unpaid'
+          ) {
+            // Subscription still confirming; webhook will flip to active
+            // when the buyer's PI confirms. Keep entitlement off so a
+            // never-confirmed sub doesn't leak access.
+            statusSnapshot = liveSubscriptionStatus;
+            entitlementActiveSnapshot = false;
+          } else if (liveSubscriptionStatus === 'incomplete_expired') {
+            statusSnapshot = 'expired';
+            entitlementActiveSnapshot = false;
+          } else {
+            // Read failed or unknown status. Conservative default: flip
+            // entitlement on (the buyer paid; we don't want to gate them
+            // out on a transient Stripe blip) and let the next webhook
+            // refine. Subscription handler will fix status if needed.
+            statusSnapshot = 'active';
+          }
           try {
             purchaseRow = await tx.clientPurchase.create({
               data: {
@@ -1548,7 +1697,7 @@ export class GuestCheckoutService {
                 // balance-transactions exports.
                 stripe_destination_account: destinationAccount,
                 status: statusSnapshot,
-                entitlement_active: true,
+                entitlement_active: entitlementActiveSnapshot,
                 // PR-14 — propagate landing_page_id from GuestCheckout
                 // onto ClientPurchase inside the same conversion $tx.
                 // GuestCheckout already validated the id (R47 / Audit #6

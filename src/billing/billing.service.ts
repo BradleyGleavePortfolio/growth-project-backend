@@ -188,6 +188,16 @@ export class BillingService {
     // outside the $transaction.
     let dripAlertPurchaseId: string | null = null;
 
+    // PR-14 R2 P0-1 — recurring/combo guest subscription backstop. The
+    // PI-succeeded route is the primary trigger for converting a guest
+    // recurring purchase. This is the secondary trigger when Stripe
+    // delivers the subscription/invoice event first (or the PI event is
+    // lost). Computed inside the try block once we know the event id,
+    // captured here so the post-commit fire-and-forget can see it.
+    const guestSubFallbackRef: { value: { guest_checkout_id: string; payment_intent_id: string } | null } = {
+      value: null,
+    };
+
     try {
       await this.prisma.$transaction(async (tx) => {
         // Insert the dedup row INSIDE the transaction. A concurrent
@@ -242,6 +252,21 @@ export class BillingService {
           claimedByAiPack = !!result.claimed;
         }
 
+        // PR-14 R2 P0-1 — pre-compute the GuestCheckout-by-subscription
+        // claim signal for subscription/invoice events. The recurring
+        // guest path stores stripe_subscription_id on the GuestCheckout
+        // sentinel at mint time; if we see a subscription/invoice event
+        // whose subscription id matches a sentinel AND no ClientPurchase
+        // exists yet, the PI-succeeded path is the primary trigger (see
+        // above). This branch is a BACKSTOP for the case where Stripe
+        // delivers the subscription event before the PI event (rare but
+        // observed in practice on the customer.subscription.created edge
+        // and on lost-PI-webhook recoveries). We pull the sentinel's PI
+        // id and route to handlePaymentSucceeded; that path is fully
+        // idempotent vs the PI-succeeded primary route via the
+        // pending→paid updateMany claim in handlePaymentSucceeded.
+        guestSubFallbackRef.value = await this.maybeResolveGuestBySubscriptionEvent(event);
+
         switch (event.type) {
           case 'customer.subscription.created':
           case 'customer.subscription.updated':
@@ -277,11 +302,35 @@ export class BillingService {
               latest_charge?: string | { id?: string; receipt_url?: string } | null;
               charges?: { data?: Array<{ id?: string; receipt_url?: string }> };
             };
-            if (
-              this.guestCheckout &&
-              pi?.id &&
-              pi.metadata?.[GUEST_CHECKOUT_METADATA_KEY]
-            ) {
+            // PR-14 R2 P0-1 — the recurring/combo guest path mints a Stripe
+            // Subscription whose first-invoice PaymentIntent does NOT carry
+            // GUEST_CHECKOUT_METADATA_KEY (Stripe does not copy Subscription
+            // metadata onto its child PaymentIntents). We therefore route
+            // through metadata when present, and FALL BACK to a direct
+            // GuestCheckout lookup by stripe_payment_intent_id when not —
+            // that's the same key handlePaymentSucceeded itself uses to
+            // claim pending→paid. Without this fallback the recurring
+            // guest leg silently never converts: Stripe takes the money,
+            // GuestCheckout stays pending, ClientPurchase is never created,
+            // entitlement never flips, fan-out never fires.
+            let guestRouteHit =
+              !!this.guestCheckout &&
+              !!pi?.id &&
+              !!pi.metadata?.[GUEST_CHECKOUT_METADATA_KEY];
+            if (!guestRouteHit && this.guestCheckout && pi?.id) {
+              try {
+                const sentinel = await this.prisma.guestCheckout.findUnique({
+                  where: { stripe_payment_intent_id: pi.id },
+                  select: { id: true },
+                });
+                if (sentinel) guestRouteHit = true;
+              } catch (err) {
+                this.logger.warn(
+                  `payment_intent.succeeded GuestCheckout fallback lookup failed for ${pi.id}: ${(err as Error).message}`,
+                );
+              }
+            }
+            if (this.guestCheckout && pi?.id && guestRouteHit) {
               // Prefer the expanded latest_charge (object form) so a
               // single webhook delivery never has to hit Stripe again for
               // the receipt URL. Fall back to charges.data[0] for older
@@ -333,11 +382,27 @@ export class BillingService {
               id?: string;
               metadata?: Record<string, string>;
             };
-            if (
-              this.guestCheckout &&
-              pi?.id &&
-              pi.metadata?.[GUEST_CHECKOUT_METADATA_KEY]
-            ) {
+            // PR-14 R2 P0-1 — same metadata-or-by-PI-id fallback the
+            // succeeded branch uses, so recurring guest failures route to
+            // handlePaymentFailed instead of silently leaking pending rows.
+            let guestRouteHit =
+              !!this.guestCheckout &&
+              !!pi?.id &&
+              !!pi.metadata?.[GUEST_CHECKOUT_METADATA_KEY];
+            if (!guestRouteHit && this.guestCheckout && pi?.id) {
+              try {
+                const sentinel = await this.prisma.guestCheckout.findUnique({
+                  where: { stripe_payment_intent_id: pi.id },
+                  select: { id: true },
+                });
+                if (sentinel) guestRouteHit = true;
+              } catch (err) {
+                this.logger.warn(
+                  `payment_intent.payment_failed GuestCheckout fallback lookup failed for ${pi.id}: ${(err as Error).message}`,
+                );
+              }
+            }
+            if (this.guestCheckout && pi?.id && guestRouteHit) {
               await this.guestCheckout.handlePaymentFailed(pi.id);
             }
             break;
@@ -498,7 +563,110 @@ export class BillingService {
         );
       }
     }
+
+    // PR-14 R2 P0-1 — BACKSTOP for recurring guest checkouts. The PI
+    // event is the PRIMARY trigger (see payment_intent.succeeded above),
+    // but Stripe sometimes delivers the customer.subscription.created /
+    // updated / invoice.paid event first. When a subscription/invoice
+    // event lands and no ClientPurchase claim was made by the checkout
+    // handler, look up the matching GuestCheckout sentinel by
+    // stripe_subscription_id and drive `handlePaymentSucceeded` against
+    // its persisted first-invoice PI id. That call is idempotent vs the
+    // primary PI route — it claims pending→paid via updateMany, and a
+    // double-fire is collapsed by the next claim returning count:0.
+    const subFallback = guestSubFallbackRef.value;
+    if (subFallback !== null && this.guestCheckout) {
+      const piId = subFallback.payment_intent_id;
+      if (piId) {
+        try {
+          await this.guestCheckout.handlePaymentSucceeded(piId);
+        } catch (err) {
+          this.logger.warn(
+            `guest subscription fallback handlePaymentSucceeded failed pi=${piId}: ${(err as Error).message}`,
+          );
+        }
+      }
+    }
     return { processed: true };
+  }
+
+  // PR-14 R2 P0-1 — given a subscription/invoice event, returns the
+  // GuestCheckout sentinel's first-invoice PaymentIntent id if a sentinel
+  // exists with `stripe_subscription_id` matching the event's subscription
+  // id. We use this only as a BACKSTOP — the primary trigger for
+  // converting a recurring guest is `payment_intent.succeeded` (which we
+  // already route via the by-PI-id fallback). The subscription/invoice
+  // route lets us recover from the event-order edge cases where Stripe
+  // delivers the subscription event before the PI event, or where the PI
+  // event was lost.
+  //
+  // Returns null when:
+  //   - the event has no subscription id;
+  //   - no GuestCheckout sentinel matches;
+  //   - the sentinel has no real PI id (still on `pending_<key>` stub);
+  //   - the sentinel is already in a terminal state (don't re-trigger).
+  private async maybeResolveGuestBySubscriptionEvent(
+    event: StripeEvent,
+  ): Promise<{ guest_checkout_id: string; payment_intent_id: string } | null> {
+    if (!this.guestCheckout) return null;
+    let subId: string | undefined;
+    if (
+      event.type === 'customer.subscription.created' ||
+      event.type === 'customer.subscription.updated' ||
+      event.type === 'customer.subscription.deleted'
+    ) {
+      const sub = event.data.object as { id?: string };
+      subId = sub?.id;
+    } else if (event.type === 'invoice.paid' || event.type === 'invoice.payment_failed') {
+      const inv = event.data.object as {
+        subscription?: string | { id?: string } | null;
+      };
+      if (typeof inv?.subscription === 'string') {
+        subId = inv.subscription;
+      } else if (inv?.subscription && typeof inv.subscription === 'object') {
+        subId = inv.subscription.id ?? undefined;
+      }
+    }
+    if (!subId) return null;
+    try {
+      const sentinel = await this.prisma.guestCheckout.findUnique({
+        where: { stripe_subscription_id: subId },
+        select: {
+          id: true,
+          stripe_payment_intent_id: true,
+          status: true,
+        },
+      });
+      if (!sentinel) return null;
+      if (sentinel.stripe_payment_intent_id.startsWith('pending_')) {
+        // Sentinel never made it past the synthetic placeholder — no PI
+        // to resume against. The mint path patches the row with the real
+        // PI id before returning; arriving here means the mint crashed
+        // mid-flight. The lost-webhook reconciler's new
+        // subscription-aware branch (`reconcileRecurringStuckSentinel`)
+        // handles this case.
+        return null;
+      }
+      // Only re-trigger if the row is in a state that hasn't yet been
+      // converted. paid / converted / refunded / disputed are already
+      // post-conversion; pending/conversion_failed_retryable are the
+      // states where running handlePaymentSucceeded is meaningful.
+      if (
+        sentinel.status !== 'pending' &&
+        sentinel.status !== 'conversion_failed_retryable'
+      ) {
+        return null;
+      }
+      return {
+        guest_checkout_id: sentinel.id,
+        payment_intent_id: sentinel.stripe_payment_intent_id,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `maybeResolveGuestBySubscriptionEvent lookup failed sub=${subId}: ${(err as Error).message}`,
+      );
+      return null;
+    }
   }
 
   // Detects Prisma's unique-constraint violation (P2002). Falls back to a
