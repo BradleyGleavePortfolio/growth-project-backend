@@ -7,6 +7,8 @@ import { CoachPackageContentsController } from './package-contents.controller';
 import { PackagesService } from './packages.service';
 import { PackageContentsService } from './package-contents.service';
 import { PurchaseFanoutService } from './purchase-fanout.service';
+import { DripDispatcherCron } from './drip-dispatcher.cron';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 // CoachPackage CRUD. Exports PackagesService so CheckoutModule (Phase 3)
 // can read packages and cache Stripe Price ids back onto rows after lazy
@@ -24,14 +26,32 @@ import { PurchaseFanoutService } from './purchase-fanout.service';
 // PackagesModule therefore no longer needs to import BillingModule (the
 // original cycle source: PackagesModule → BillingModule → CheckoutModule
 // → PackagesModule) nor to locally register guards (the hotfix workaround).
+// PR-10 — DripDispatcherCron is registered as a provider on this module.
+// AssignableAssetResolverRegistry is supplied via the @Global
+// AssignableAssetResolversModule (registered at the AppModule level), so
+// no extra import is needed here. NotificationsModule IS imported because
+// the cron sends buyer push/in-app + coach COACH_ALERT directly through
+// NotificationsService (mirrors PR-2's transfer.failed pattern in
+// billing.service.ts:1115). NotificationsModule has no inbound edge to
+// PackagesModule, so this does not create a cycle.
 @Module({
-  imports: [],
+  imports: [NotificationsModule],
   controllers: [
     CoachPackagesController,
     ClientPackagesController,
     CoachPackageContentsController,
   ],
-  providers: [PackagesService, PackageContentsService, PurchaseFanoutService],
-  exports: [PackagesService, PackageContentsService, PurchaseFanoutService],
+  providers: [
+    PackagesService,
+    PackageContentsService,
+    PurchaseFanoutService,
+    DripDispatcherCron,
+  ],
+  exports: [
+    PackagesService,
+    PackageContentsService,
+    PurchaseFanoutService,
+    DripDispatcherCron,
+  ],
 })
 export class PackagesModule {}

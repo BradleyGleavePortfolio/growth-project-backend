@@ -4691,12 +4691,18 @@ model ScheduledDrop {
   attempt_count      Int            @default(0)
   materialised_ref   String?
   failure_reason     String?
+  // PR-10 — DripDispatcherCron retry/backoff + claim columns. All nullable
+  // and additive (see migration 20261205000000_pr10_scheduled_drop_retry_lock).
+  locked_at           DateTime?
+  next_retry_at       DateTime?
+  alert_dispatched_at DateTime?
   created_at         DateTime       @default(now())
   updated_at         DateTime       @updatedAt
 
   @@unique([client_purchase_id, content_id])
   @@index([status, fire_at])
   @@index([client_purchase_id, status])
+  @@index([status, next_retry_at, fire_at])
 }
 
 // Runtime bookkeeping: one row per ClientPurchase tracking the package→
