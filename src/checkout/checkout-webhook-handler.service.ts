@@ -88,11 +88,11 @@ export class CheckoutWebhookHandlerService {
       case 'customer.subscription.created':
         return this.applySubscriptionUpdated(event);
       case 'customer.subscription.deleted':
-        return this.applySubscriptionDeleted(event);
+        return this.applySubscriptionDeleted(event, tx);
       case 'payment_intent.succeeded':
         return this.applyPaymentIntentSucceeded(event, tx);
       case 'payment_intent.payment_failed':
-        return this.applyPaymentIntentFailed(event);
+        return this.applyPaymentIntentFailed(event, tx);
       // DUNNING-V1 — invoice.payment_succeeded mirrors invoice.paid in
       // Stripe's docs for the subscription-renewal path; some accounts
       // emit one, some the other. We route both to the same handler so
@@ -115,7 +115,10 @@ export class CheckoutWebhookHandlerService {
       case 'payout.paid':
       case 'payout.failed':
       case 'payout.canceled':
-        if (this.refundDispute) return this.refundDispute.handle(event);
+        // PR-16 — pass the outer tx so cancelPendingForPurchase can run
+        // INSIDE the refund / dispute revocation $transaction (entitlement
+        // revoke + drop cancel commit-or-rollback together).
+        if (this.refundDispute) return this.refundDispute.handle(event, tx);
         return { claimed: false };
       default:
         return { claimed: false };
@@ -382,14 +385,22 @@ export class CheckoutWebhookHandlerService {
 
   private async applySubscriptionDeleted(
     event: StripeEvent,
+    tx?: WebhookTx,
   ): Promise<CheckoutWebhookResult> {
     const sub = event.data.object as { id?: string; canceled_at?: number | null };
     if (!sub?.id) return { claimed: false, reason: 'no_sub_id' };
-    const purchase = await this.prisma.clientPurchase.findUnique({
+    const db: WebhookTx | PrismaService = tx ?? this.prisma;
+    const purchase = await db.clientPurchase.findUnique({
       where: { stripe_subscription_id: sub.id },
     });
     if (!purchase) return { claimed: false };
-    await this.prisma.clientPurchase.update({
+    // Capture pre-revocation entitlement so we know whether this purchase
+    // was actually serving content — only entitled purchases have drops
+    // worth canceling (cancelPendingForPurchase is still safe for
+    // never-entitled purchases — its WHERE clause returns count=0 — but
+    // skipping the call avoids noise in the logs).
+    const wasEntitled = !!purchase.entitlement_active;
+    await db.clientPurchase.update({
       where: { id: purchase.id },
       data: {
         status: 'canceled',
@@ -397,6 +408,16 @@ export class CheckoutWebhookHandlerService {
         canceled_at: this.toDate(sub.canceled_at) ?? new Date(),
       },
     });
+    // PR-16 — cancel any not-yet-fired drops for this purchase. Runs in
+    // the SAME outer $transaction as the entitlement flip (when caller
+    // provides a tx) so revoke + cancel commit-or-rollback together.
+    if (this.fanout && wasEntitled) {
+      await this.fanout.cancelPendingForPurchase(
+        purchase.id,
+        'subscription_canceled',
+        (tx ?? (this.prisma as unknown as WebhookTx)),
+      );
+    }
     // DUNNING-V1 — explicitly terminate the dunning window so no further
     // cadence reminders fire after Stripe (or the customer) cancels.
     if (this.dunning) {
@@ -493,6 +514,7 @@ export class CheckoutWebhookHandlerService {
 
   private async applyPaymentIntentFailed(
     event: StripeEvent,
+    tx?: WebhookTx,
   ): Promise<CheckoutWebhookResult> {
     const pi = event.data.object as {
       id?: string;
@@ -500,7 +522,8 @@ export class CheckoutWebhookHandlerService {
       metadata?: Record<string, string>;
     };
     if (!pi?.id) return { claimed: false };
-    const purchase = await this.prisma.clientPurchase.findFirst({
+    const db: WebhookTx | PrismaService = tx ?? this.prisma;
+    const purchase = await db.clientPurchase.findFirst({
       where: { stripe_payment_intent_id: pi.id },
     });
     if (!purchase) {
@@ -509,7 +532,7 @@ export class CheckoutWebhookHandlerService {
       const pkgId = pi.metadata?.tgp_package_id;
       const clientId = pi.metadata?.tgp_client_user_id;
       if (!pkgId || !clientId) return { claimed: false };
-      const pending = await this.prisma.clientPurchase.findFirst({
+      const pending = await db.clientPurchase.findFirst({
         where: {
           package_id: pkgId,
           client_user_id: clientId,
@@ -518,7 +541,11 @@ export class CheckoutWebhookHandlerService {
         orderBy: { created_at: 'desc' },
       });
       if (!pending) return { claimed: false };
-      await this.prisma.clientPurchase.update({
+      // Never-entitled pending purchase — flip to payment_failed only.
+      // Per PR-16 brief: PI-failed for a never-entitled purchase must NOT
+      // cancel drops (none exist anyway; fanout was never run). Skip the
+      // cancel call to keep the log line out of the never-entitled path.
+      await db.clientPurchase.update({
         where: { id: pending.id },
         data: {
           status: 'payment_failed',
@@ -529,7 +556,15 @@ export class CheckoutWebhookHandlerService {
       });
       return { claimed: true, purchase_id: pending.id };
     }
-    await this.prisma.clientPurchase.update({
+    // Capture pre-flip entitlement: only entitled purchases have drops
+    // worth canceling. A first-attempt PaymentSheet failure on a still-
+    // pending purchase never minted drops; a later recurring-charge
+    // failure on an already-entitled purchase did. Either way the cancel
+    // call is idempotent — but skipping when wasEntitled=false matches
+    // the brief's "PI-failed-never-entitled does not cancel" semantic
+    // and keeps the log clean.
+    const wasEntitled = !!purchase.entitlement_active;
+    await db.clientPurchase.update({
       where: { id: purchase.id },
       data: {
         status: 'payment_failed',
@@ -537,6 +572,13 @@ export class CheckoutWebhookHandlerService {
         last_error: pi.last_payment_error?.message ?? 'payment_failed',
       },
     });
+    if (this.fanout && wasEntitled) {
+      await this.fanout.cancelPendingForPurchase(
+        purchase.id,
+        'payment_failed',
+        (tx ?? (this.prisma as unknown as WebhookTx)),
+      );
+    }
     return { claimed: true, purchase_id: purchase.id };
   }
 

@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import type {
   ChargeDispute,
   ChargeRefund,
   ClientPurchase,
+  Prisma,
 } from '@prisma/client';
 import { PayoutReadinessService } from '../connect/fees/payout-readiness.service';
 import { SplitLedgerService } from '../connect/fees/split-ledger.service';
@@ -13,7 +14,14 @@ import {
 } from '../connect/stripe-connect-api.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
+import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { PrismaService } from '../prisma.service';
+
+// PR-16 — outer tx forwarded by BillingService.handleEvent through
+// CheckoutWebhookHandlerService.handle. Used to keep cancelPendingForPurchase
+// inside the same $transaction as the entitlement flip on the refund /
+// dispute paths.
+type WebhookTx = Prisma.TransactionClient;
 
 // A276 P0-2 + P1-1 (refix) — deep-link routes for coach in-app alerts.
 // Mirrors the guest-checkout path; mobile deep-link routing config owns
@@ -67,18 +75,31 @@ export class RefundDisputeHandlerService {
     private transfers: TransferOrchestratorService,
     private payoutReadiness: PayoutReadinessService,
     private notifications: NotificationsService,
+    // PR-16 — drip-drop cancellation seam. @Optional() so legacy
+    // unit-test wiring that hand-constructs this service without the
+    // packages module still compiles; production wiring (CheckoutModule
+    // imports PackagesModule) always provides it.
+    @Optional() private fanout?: PurchaseFanoutService,
   ) {}
 
   // Webhook entry point — returns claimed=true iff we matched to a
   // ClientPurchase.
+  //
+  // PR-16: `tx` is the outer Prisma $transaction client opened by
+  // BillingService.handleEvent. Routed handlers that revoke entitlement
+  // (charge.refunded full-refund branch, charge.dispute.closed lost branch)
+  // pass it through to cancelPendingForPurchase so the cancel commits
+  // atomically with the entitlement flip. Side-effect handlers that do
+  // NOT revoke entitlement (refund.updated, dispute.created/updated,
+  // transfer.reversed, payout.*) ignore it.
   async handle(event: {
     id: string;
     type: string;
     data: { object: Record<string, unknown> };
-  }): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+  }, tx?: WebhookTx): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
     switch (event.type) {
       case 'charge.refunded':
-        return this.onChargeRefunded(event);
+        return this.onChargeRefunded(event, tx);
       case 'charge.refund.updated':
         return this.onRefundUpdated(event);
       case 'charge.dispute.created':
@@ -86,7 +107,7 @@ export class RefundDisputeHandlerService {
       case 'charge.dispute.updated':
         return this.onDisputeUpdated(event);
       case 'charge.dispute.closed':
-        return this.onDisputeClosed(event);
+        return this.onDisputeClosed(event, tx);
       case 'transfer.reversed':
         return this.onTransferReversed(event);
       case 'payout.paid':
@@ -102,7 +123,15 @@ export class RefundDisputeHandlerService {
 
   private async onChargeRefunded(event: {
     data: { object: Record<string, unknown> };
-  }): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+  }, _outerTx?: WebhookTx): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+    // PR-16: _outerTx is accepted for interface symmetry but the refund
+    // path opens its OWN inner $transaction for the entitlement flip
+    // (see fullyRefunded branch below). cancelPendingForPurchase rides
+    // THAT inner tx so the cancel + status='refunded' flip + guestCheckout
+    // mirror commit-or-rollback together. The Stripe HTTP / ledger
+    // reversal writes deliberately stay on this.prisma (P1-3 anti-pattern
+    // avoidance — see existing code comments) so the outer billing tx
+    // would not be the right boundary for them either.
     const charge = event.data.object as {
       id?: string;
       amount?: number;
@@ -200,6 +229,29 @@ export class RefundDisputeHandlerService {
             },
             data: { status: 'refunded' },
           });
+        }
+
+        // PR-16 — full-refund branch: cancel every not-yet-fired drop
+        // for this purchase. Runs in the SAME inner $transaction as the
+        // ClientPurchase.status='refunded' / entitlement_active=false
+        // flip so revoke + drop-cancel commit-or-rollback together. The
+        // WHERE clause inside cancelPendingForPurchase filters
+        // status IN ('pending','due') so a Stripe redelivery (which hits
+        // count=0 on the WHERE-guarded updateMany above) is a true
+        // no-op for drops too.
+        //
+        // Partial refunds: the brief mandates we match the entitlement
+        // rule. Per existing code (lines ~152-156), partial refund keeps
+        // entitlement_active=true (`fullyRefunded` gate is total>=cents).
+        // So drops are ONLY canceled when the refund is full. Partial
+        // refund = client keeps the access they paid net-of-credit for,
+        // and continues receiving dripped content. Documented.
+        if (this.fanout) {
+          await this.fanout.cancelPendingForPurchase(
+            purchase.id,
+            'refund',
+            tx,
+          );
         }
       });
     }
@@ -452,7 +504,13 @@ export class RefundDisputeHandlerService {
 
   private async onDisputeClosed(event: {
     data: { object: Record<string, unknown> };
-  }): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+  }, _outerTx?: WebhookTx): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+    // PR-16: see onChargeRefunded — _outerTx is accepted for symmetry
+    // but the dispute path's entitlement flip already executes on
+    // this.prisma directly (not through the outer billing tx, because
+    // applyHeadCoachReversal issues Stripe HTTP). We open a small inner
+    // tx for the entitlement-flip + cancel pair so the two writes
+    // commit-or-rollback together.
     const dispute = event.data.object as {
       id?: string;
       charge?: string | null;
@@ -483,13 +541,28 @@ export class RefundDisputeHandlerService {
       if (purchase) {
         await this.applyLedgerReversal(purchase.id, updated.amount_cents);
         await this.applyHeadCoachReversal(purchase.id, updated.amount_cents);
-        await this.prisma.chargeDispute.update({
-          where: { id: updated.id },
-          data: { ledger_reversed: true },
-        });
-        await this.prisma.clientPurchase.update({
-          where: { id: purchase.id },
-          data: { status: 'chargeback_lost', entitlement_active: false },
+        // PR-16 — entitlement flip + drop-cancel commit atomically.
+        // The Stripe-HTTP-ridden ledger / transfer reversals above
+        // intentionally run outside this tx (P1-3 anti-pattern). The
+        // ChargeDispute.ledger_reversed flag is the idempotency gate
+        // for the WHOLE block, so a redelivery short-circuits before
+        // re-entering this branch.
+        await this.prisma.$transaction(async (tx) => {
+          await tx.chargeDispute.update({
+            where: { id: updated.id },
+            data: { ledger_reversed: true },
+          });
+          await tx.clientPurchase.update({
+            where: { id: purchase.id },
+            data: { status: 'chargeback_lost', entitlement_active: false },
+          });
+          if (this.fanout) {
+            await this.fanout.cancelPendingForPurchase(
+              purchase.id,
+              'dispute',
+              tx,
+            );
+          }
         });
       }
     } else if (dispute.status === 'won') {

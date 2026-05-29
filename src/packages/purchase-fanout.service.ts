@@ -501,6 +501,90 @@ export class PurchaseFanoutService {
     this.flushCoachNewPurchaseAlert(purchaseId);
   }
 
+  // PR-16 — Refund / dispute / subscription-deleted → cancel pending drops.
+  //
+  // CONTRACT
+  // --------
+  // Single set-based UPDATE flips every NOT-YET-FIRED ScheduledDrop for the
+  // given purchase to status='canceled'. The WHERE clause filters
+  // status IN ('pending','due') so the call is naturally idempotent: a
+  // Stripe webhook replay (or duplicate revocation path) sees zero
+  // matching rows on the second pass and is a true no-op.
+  //
+  // We deliberately leave the following statuses ALONE:
+  //   - 'fired' / 'delivered' — already shipped; can't un-deliver.
+  //   - 'failed' — terminal, owned by PR-10's MAX_ATTEMPTS + COACH_ALERT path.
+  //   - 'skipped' — terminal, set by future authoring tooling.
+  //   - 'canceled' — already canceled (replay-safety).
+  //   - 'dispatching' — a worker has already CLAIMED this row and may be
+  //     mid-resolver-call. PR-10's claim is exactly-once and the resolver
+  //     side-effects ride STABLE (clientPurchaseId, contentId) keys, so
+  //     allowing an already-claimed dispatching row to finish does not
+  //     double-deliver. We do NOT flip it — flipping would race with the
+  //     dispatcher's own post-success UPDATE (which asserts
+  //     status='dispatching') and could either strand the row or, worse,
+  //     drop the materialised_ref stamp. Rule: cancel pending+due now,
+  //     let an already-claimed dispatching row finish on its own.
+  //     (See PR16_BUILD_REPORT.md.)
+  //
+  // TRANSACTION
+  // -----------
+  // Accepts an optional tx so callers (the three revocation handlers) can
+  // run this INSIDE their existing $transaction — entitlement-revoke +
+  // drop-cancel commit-or-rollback together. With no tx we fall back to
+  // this.prisma and the cancel runs in its own implicit single-statement tx.
+  //
+  // CRON INTERACTION (PR-10)
+  // ------------------------
+  // DripDispatcherCron.findDue gates on `status IN ('pending','dispatching')`
+  // (see drip-dispatcher.cron.ts:185-218); a canceled drop is excluded
+  // from candidate selection AND the claim re-checks status, so a
+  // mid-tick race after a cancel cannot flip a canceled row back to
+  // dispatching.
+  //
+  // Returns the number of rows transitioned. Callers may log it; a return
+  // of 0 is a valid replay no-op, not an error.
+  async cancelPendingForPurchase(
+    clientPurchaseId: string,
+    reason: 'refund' | 'dispute' | 'subscription_canceled' | 'payment_failed',
+    tx?: TxOrPrisma | Prisma.TransactionClient,
+  ): Promise<number> {
+    const db: { scheduledDrop: Prisma.TransactionClient['scheduledDrop'] } | undefined =
+      (tx as TxOrPrisma | undefined)?.scheduledDrop
+        ? (tx as TxOrPrisma)
+        : this.prisma
+          ? (this.prisma as unknown as TxOrPrisma)
+          : undefined;
+    if (!db || !db.scheduledDrop) {
+      this.logger.warn(
+        `cancelPendingForPurchase: no scheduledDrop client available (purchase=${clientPurchaseId}, reason=${reason}) — skipping`,
+      );
+      return 0;
+    }
+    const result = await db.scheduledDrop.updateMany({
+      where: {
+        client_purchase_id: clientPurchaseId,
+        status: { in: ['pending', 'due'] },
+      },
+      data: {
+        status: 'canceled',
+        failure_reason: `canceled:${reason}`,
+        next_retry_at: null,
+        locked_at: null,
+      },
+    });
+    if (result.count > 0) {
+      this.logger.log(
+        `cancelPendingForPurchase: canceled ${result.count} drop(s) for purchase=${clientPurchaseId} reason=${reason}`,
+      );
+    } else {
+      this.logger.debug(
+        `cancelPendingForPurchase: no pending/due drops for purchase=${clientPurchaseId} (replay or never-entitled) reason=${reason}`,
+      );
+    }
+    return result.count;
+  }
+
   /**
    * Discard alerts staged inside a rolled-back tx so a successful
    * retry doesn't double-alert. Callers invoke from their tx catch
