@@ -3,7 +3,9 @@ import {
   ClientPackagesController,
   CoachPackagesController,
 } from './packages.controller';
+import { CoachPackageContentsController } from './package-contents.controller';
 import { PackagesService } from './packages.service';
+import { PackageContentsService } from './package-contents.service';
 import { PurchaseFanoutService } from './purchase-fanout.service';
 
 // CoachPackage CRUD. Exports PackagesService so CheckoutModule (Phase 3)
@@ -24,8 +26,12 @@ import { PurchaseFanoutService } from './purchase-fanout.service';
 // → PackagesModule) nor to locally register guards (the hotfix workaround).
 @Module({
   imports: [],
-  controllers: [CoachPackagesController, ClientPackagesController],
-  providers: [PackagesService, PurchaseFanoutService],
-  exports: [PackagesService, PurchaseFanoutService],
+  controllers: [
+    CoachPackagesController,
+    ClientPackagesController,
+    CoachPackageContentsController,
+  ],
+  providers: [PackagesService, PackageContentsService, PurchaseFanoutService],
+  exports: [PackagesService, PackageContentsService, PurchaseFanoutService],
 })
 export class PackagesModule {}
