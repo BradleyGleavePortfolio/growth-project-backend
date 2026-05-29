@@ -16,6 +16,7 @@ import { CoachGuard } from '../../auth/coach.guard';
 import { RequiresTier } from '../../billing/requires-tier.decorator';
 import { SubscriptionGuard } from '../../billing/subscription.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { THROTTLER_NAMES } from '../../throttler/throttler.config';
 import { CoachAIService } from './coach-ai.service';
 import { CoachAIStateService } from './coach-ai-state.service';
 import {
@@ -65,7 +66,7 @@ export class CoachAIController {
   // prevents cross-tenant generation; students never invoke generation.
   @Roles('coach', 'owner')
   @Post('workout-program')
-  @Throttle({ default: { ttl: 3600000, limit: 5 } })
+  @Throttle({ [THROTTLER_NAMES.COACH_AI_GENERATION]: { ttl: 3_600_000, limit: 5 } })
   async generateWorkoutProgram(
     @Request() req: AuthedRequest,
     @Body() body: GenerateWorkoutProgramDto,
@@ -78,7 +79,7 @@ export class CoachAIController {
   // themselves or anyone else through this path.
   @Roles('coach', 'owner')
   @Post('meal-plan')
-  @Throttle({ default: { ttl: 3600000, limit: 5 } })
+  @Throttle({ [THROTTLER_NAMES.COACH_AI_GENERATION]: { ttl: 3_600_000, limit: 5 } })
   async generateMealPlan(
     @Request() req: AuthedRequest,
     @Body() body: GenerateMealPlanDto,
@@ -91,7 +92,7 @@ export class CoachAIController {
   // client check applies before any Anthropic spend.
   @Roles('coach', 'owner')
   @Post('client-insight')
-  @Throttle({ default: { ttl: 3600000, limit: 10 } })
+  @Throttle({ [THROTTLER_NAMES.COACH_AI_GENERATION]: { ttl: 3_600_000, limit: 10 } })
   async generateClientInsight(
     @Request() req: AuthedRequest,
     @Body() body: GenerateClientInsightDto,
