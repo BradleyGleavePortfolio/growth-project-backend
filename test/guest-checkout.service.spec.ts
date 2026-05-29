@@ -32,6 +32,7 @@ function makePkg(overrides: Record<string, unknown> = {}) {
     billing_type: 'one_time',
     is_active: true,
     archived_at: null,
+    published_at: new Date('2026-01-01'),
     share_token: 'tok123',
     share_link_enabled: true,
     coach: {

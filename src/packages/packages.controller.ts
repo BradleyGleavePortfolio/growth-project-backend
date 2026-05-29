@@ -21,11 +21,7 @@ import { SubscriptionGuard } from '../billing/subscription.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { SkipClientEntitlement } from '../common/decorators/skip-client-entitlement.decorator';
 import { PrismaService } from '../prisma.service';
-import {
-  CreatePackageInput,
-  PackagesService,
-  UpdatePackageInput,
-} from './packages.service';
+import { PackagesService } from './packages.service';
 import { CreatePackageDto, UpdatePackageDto } from './packages.dto';
 
 // Coach-facing CRUD for offers / packages. Coach owns their catalog and
@@ -36,6 +32,9 @@ import { CreatePackageDto, UpdatePackageDto } from './packages.dto';
 // Public client-facing reads live in PublicPackagesController below — a
 // client can list a coach's active offers without being authed as that
 // coach.
+//
+// PR-6 adds: GET :id (owner detail incl. content_count), GET
+// :id/subscribers (paginated), POST :id/publish + :id/unpublish.
 
 @ApiTags('packages')
 @Controller('v1/coach/packages')
@@ -52,10 +51,42 @@ export class CoachPackagesController {
     @Request() req: AuthedRequest,
     @Query('include_archived') includeArchived?: string,
   ) {
-    const rows = await this.packages.listForCoach(req.user.id, {
+    // Sub-coaches act on the head-coach's catalog (the package model
+    // lives on the head coach id). Resolve before query.
+    const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
+    const rows = await this.packages.listForCoach(coachId, {
       includeArchived: includeArchived === 'true' || includeArchived === '1',
     });
     return { packages: rows };
+  }
+
+  // PR-6 — owner detail read. Returns the package row + a content
+  // count so the editor can render "N pieces of content attached".
+  // Sub-coach-scoped via resolveEffectiveCoachId; IDOR-guarded by the
+  // service's requireOwnedPackage (404 on cross-coach / unknown id).
+  @Roles('coach', 'owner')
+  @Get(':id')
+  async detail(@Request() req: AuthedRequest, @Param('id') id: string) {
+    const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
+    return this.packages.getOwnedDetail(coachId, id);
+  }
+
+  // PR-6 — paginated subscribers list (buyers / active purchases on
+  // this package). Powers the "who's on this" view in the editor.
+  // Hard 200/page cap (gate #23). IDOR + sub-coach-scoped: ownership
+  // re-checked in the service against the effective coach id.
+  @Roles('coach', 'owner')
+  @Get(':id/subscribers')
+  async subscribers(
+    @Request() req: AuthedRequest,
+    @Param('id') id: string,
+    @Query('limit') limitRaw?: string,
+    @Query('offset') offsetRaw?: string,
+  ) {
+    const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
+    const limit = Math.min(parseInt(limitRaw ?? '50', 10) || 50, 200);
+    const offset = Math.max(parseInt(offsetRaw ?? '0', 10) || 0, 0);
+    return this.packages.listSubscribers(coachId, id, { limit, offset });
   }
 
   // Coach mints a new offer on their own catalog; mutation scoped to req.user.id.
@@ -63,14 +94,29 @@ export class CoachPackagesController {
   @Roles('coach', 'owner')
   @Post()
   async create(@Request() req: AuthedRequest, @Body() body: CreatePackageDto) {
-    return this.packages.create(req.user.id, {
+    const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
+    return this.packages.create(coachId, {
       name: body.name,
       description: body.description,
       amount_cents: body.amount_cents,
       currency: body.currency,
       billing_type: body.billing_type as 'one_time' | 'recurring',
-      interval: body.billing_interval as 'month' | 'year' | null | undefined,
+      interval: body.billing_interval as
+        | 'week'
+        | 'month'
+        | 'year'
+        | null
+        | undefined,
       interval_count: body.billing_interval_count,
+      duration_periods: body.duration_periods,
+      recurring_amount_cents: body.recurring_amount_cents,
+      recurring_interval: body.recurring_interval as
+        | 'week'
+        | 'month'
+        | 'year'
+        | null
+        | undefined,
+      recurring_interval_count: body.recurring_interval_count,
     });
   }
 
@@ -83,13 +129,51 @@ export class CoachPackagesController {
     @Param('id') id: string,
     @Body() body: UpdatePackageDto,
   ) {
-    return this.packages.update(req.user.id, id, {
+    const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
+    return this.packages.update(coachId, id, {
       name: body.name,
       description: body.description,
       amount_cents: body.amount_cents,
       currency: body.currency,
+      billing_type: body.billing_type as 'one_time' | 'recurring' | undefined,
+      interval: body.billing_interval as
+        | 'week'
+        | 'month'
+        | 'year'
+        | null
+        | undefined,
+      interval_count: body.billing_interval_count,
+      duration_periods: body.duration_periods,
+      recurring_amount_cents: body.recurring_amount_cents,
+      recurring_interval: body.recurring_interval as
+        | 'week'
+        | 'month'
+        | 'year'
+        | null
+        | undefined,
+      recurring_interval_count: body.recurring_interval_count,
       is_active: body.is_active,
     });
+  }
+
+  // PR-6 — publish/unpublish lifecycle. Idempotent: calling either
+  // twice is a no-op (returns the current row). 200 on both. Publish
+  // re-validates pricing; unpublish takes the package off purchasable
+  // surfaces WITHOUT affecting existing buyers' entitlements.
+  @Roles('coach', 'owner')
+  @Post(':id/publish')
+  @HttpCode(HttpStatus.OK)
+  async publish(@Request() req: AuthedRequest, @Param('id') id: string) {
+    const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
+    return this.packages.publish(coachId, id);
+  }
+
+  @Roles('coach', 'owner')
+  @Post(':id/unpublish')
+  @HttpCode(HttpStatus.OK)
+  async unpublish(@Request() req: AuthedRequest, @Param('id') id: string) {
+    const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
+    return this.packages.unpublish(coachId, id);
   }
 
   // Coach archives an offer on their own catalog; service re-checks ownership by
@@ -98,7 +182,8 @@ export class CoachPackagesController {
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   async archive(@Request() req: AuthedRequest, @Param('id') id: string) {
-    return this.packages.archive(req.user.id, id);
+    const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
+    return this.packages.archive(coachId, id);
   }
 }
 
@@ -172,15 +257,23 @@ export class ClientPackagesController {
   }
 
   // Student fetches one of their assigned coach's offers for the purchase
-  // sheet. The handler re-validates coach_id match + is_active + !archived
-  // before returning. Owner kept for support; coaches do not consume this.
+  // sheet. The handler re-validates coach_id match + is_active + !archived +
+  // published_at before returning. Owner kept for support; coaches do not
+  // consume this.
   @Roles('student', 'owner')
   @Get('packages/:id')
   @SkipClientEntitlement()
   async detail(@Request() req: AuthedRequest, @Param('id') id: string) {
     const coachId = req.user.coach_id;
     const row = await this.packages.getById(id);
-    if (!row || row.coach_id !== coachId || !row.is_active || row.archived_at) {
+    if (
+      !row ||
+      row.coach_id !== coachId ||
+      !row.is_active ||
+      row.archived_at ||
+      // PR-6 — DRAFT packages must not appear on the buy-side.
+      !row.published_at
+    ) {
       throw new NotFoundException({
         error: 'PACKAGE_NOT_FOUND',
         message: 'Package not available',
