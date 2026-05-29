@@ -124,14 +124,28 @@ export class DripDispatcherCron {
     let retried = 0;
     let failedPermanently = 0;
     let claimed = 0;
+    let reclaimed = 0;
     for (const candidate of candidates) {
-      const claim = await this.claim(candidate.id, now);
+      const priorStatus =
+        candidate.status === 'dispatching' ? 'dispatching' : 'pending';
+      const claim = await this.claim(candidate.id, priorStatus, now);
       if (!claim) continue; // lost the race to another worker (or no longer eligible)
       claimed += 1;
+      if (priorStatus === 'dispatching') {
+        reclaimed += 1;
+        this.logger.warn(
+          `drip-dispatcher reclaiming stranded drop=${claim.id} (worker crash recovery); prior locked_at was stale`,
+        );
+      }
       const outcome = await this.dispatch(claim, now);
       if (outcome === 'delivered') delivered += 1;
       else if (outcome === 'retried') retried += 1;
       else if (outcome === 'failed_permanently') failedPermanently += 1;
+    }
+    if (reclaimed > 0) {
+      this.logger.log(
+        `drip-dispatcher reclaimed ${reclaimed} stranded dispatching drop(s)`,
+      );
     }
     return { claimed, delivered, retried, failed_permanently: failedPermanently };
   }
@@ -141,16 +155,28 @@ export class DripDispatcherCron {
   /**
    * Find candidate due drops. The SQL gate enforces every invariant the
    * brief calls out:
-   *   - status='pending' — never a delivered, failed, or canceled drop
-   *   - fire_at <= now AND fire_at IS NOT NULL — naturally excludes
-   *     on_completion / on_milestone drops (PR-11's job)
+   *   - status IN ('pending', 'dispatching') — 'pending' is the normal
+   *     case; 'dispatching' WITH a stale locked_at is a stranded drop
+   *     left behind by a worker that crashed between claim() and the
+   *     follow-up success/failure update (SIGKILL / OOM / k8s eviction /
+   *     deploy roll). Without this branch a crashed worker permanently
+   *     loses delivery for that drop — the buyer paid but never gets
+   *     content. The 'dispatching' branch is gated on locked_at <
+   *     staleBefore so we never steal a healthy in-flight claim.
    *   - materialised_ref IS NULL — PR-7's at-least-once gate; we never
-   *     re-materialise a drop that already shipped
-   *   - attempt_count < MAX_ATTEMPTS — exhausted retries don't get picked
+   *     re-materialise a drop that already shipped (the resolver-side
+   *     stable-key dedup still catches a half-finished crash on retry).
+   *   - fire_at <= now AND fire_at IS NOT NULL — naturally excludes
+   *     on_completion / on_milestone drops (PR-11's job).
+   *   - attempt_count < MAX_ATTEMPTS — exhausted retries don't get
+   *     picked again. A reclaimed stranded drop respects this same gate
+   *     so a poison drop eventually goes status='failed' + COACH_ALERT
+   *     and never loops forever (the post-claim dispatch path
+   *     increments attempt_count on every failure).
    *   - (next_retry_at IS NULL OR next_retry_at <= now) — honours the
-   *     exponential-backoff schedule set on prior failures
-   *   - (locked_at IS NULL OR locked_at <= stale cutoff) — a crashed
-   *     worker's stale claim is recovered after STALE_CLAIM_MS
+   *     exponential-backoff schedule set on prior failures (only
+   *     applies to pending rows; a stranded dispatching row has
+   *     locked_at as its "next try" timer).
    * Ordered by fire_at ASC so the oldest-due drop drains first and a
    * backlog is processed FIFO.
    */
@@ -158,16 +184,35 @@ export class DripDispatcherCron {
     const staleBefore = new Date(now.getTime() - STALE_CLAIM_MS);
     return this.prisma.scheduledDrop.findMany({
       where: {
-        status: 'pending',
         materialised_ref: null,
         fire_at: { lte: now, not: null },
         attempt_count: { lt: MAX_ATTEMPTS },
-        AND: [
+        OR: [
           {
-            OR: [{ next_retry_at: null }, { next_retry_at: { lte: now } }],
+            // Normal claim path.
+            status: 'pending',
+            AND: [
+              {
+                OR: [
+                  { next_retry_at: null },
+                  { next_retry_at: { lte: now } },
+                ],
+              },
+              {
+                OR: [
+                  { locked_at: null },
+                  { locked_at: { lte: staleBefore } },
+                ],
+              },
+            ],
           },
           {
-            OR: [{ locked_at: null }, { locked_at: { lte: staleBefore } }],
+            // Stranded-dispatching reclaim path. A 'dispatching' row
+            // whose claim is older than STALE_CLAIM_MS belongs to a
+            // worker that crashed and never finished the dispatch — we
+            // take it back so the buyer gets their content.
+            status: 'dispatching',
+            locked_at: { lte: staleBefore },
           },
         ],
       },
@@ -177,26 +222,45 @@ export class DripDispatcherCron {
   }
 
   /**
-   * Atomic claim. Tries to flip status='pending' -> 'dispatching' and
-   * stamp locked_at. The composite WHERE on (id, status, locked_at) is
-   * the mutex: a sibling worker that already claimed the row will see
-   * count===0 and move on. Returns the freshly-claimed row or null on
-   * contention. We also re-validate the materialised_ref IS NULL gate
-   * inside the WHERE so a TOCTOU race between findDue and claim still
-   * can't double-materialise a row that was just delivered.
+   * Atomic claim. Two variants share one SQL UPDATE: a fresh claim flips
+   * status='pending' -> 'dispatching' and stamps locked_at; a reclaim
+   * flips status='dispatching' -> 'dispatching' and re-stamps locked_at
+   * IF the prior claim is stale. The composite WHERE on (id, prior-state,
+   * locked_at) is the mutex: a sibling worker that already (re)claimed
+   * the row sees count===0 and moves on. Reclaim semantics: the row's
+   * STABLE (clientPurchaseId, contentId) idempotency keys are reused
+   * on the retry, so the resolver-side dedup (PR-9 R1) collapses any
+   * partial work the crashed worker did — workout via
+   * WorkoutBuilderIdempotencyKey 'drip:workout:p={p}:c={c}', auto_message
+   * via DripResolverMarker(purpose,purchase,content). Returns the
+   * freshly-claimed row or null on contention. We also re-validate the
+   * materialised_ref IS NULL gate inside the WHERE so a TOCTOU race
+   * between findDue and claim still can't double-materialise a row that
+   * was just delivered.
    */
   private async claim(
     id: string,
+    priorStatus: 'pending' | 'dispatching',
     now: Date,
   ): Promise<ScheduledDrop | null> {
     const staleBefore = new Date(now.getTime() - STALE_CLAIM_MS);
+    const where: Record<string, unknown> = {
+      id,
+      status: priorStatus,
+      materialised_ref: null,
+    };
+    if (priorStatus === 'pending') {
+      // Pending row must be unlocked OR stale-locked.
+      where.OR = [
+        { locked_at: null },
+        { locked_at: { lte: staleBefore } },
+      ];
+    } else {
+      // Reclaim path: row is dispatching AND locked_at is stale.
+      where.locked_at = { lte: staleBefore };
+    }
     const updated = await this.prisma.scheduledDrop.updateMany({
-      where: {
-        id,
-        status: 'pending',
-        materialised_ref: null,
-        OR: [{ locked_at: null }, { locked_at: { lte: staleBefore } }],
-      },
+      where,
       data: {
         status: 'dispatching',
         locked_at: now,
@@ -309,65 +373,74 @@ export class DripDispatcherCron {
     const body = drop.display_title
       ? `New content unlocked: ${drop.display_title}`.slice(0, 160)
       : 'New content unlocked';
-    try {
-      if (this.notifications) {
+    const payload = {
+      scheduled_drop_id: drop.id,
+      client_purchase_id: drop.client_purchase_id,
+      asset_type: drop.asset_type,
+      asset_id: drop.asset_id,
+      content_id: drop.content_id,
+    };
+    if (!this.notifications) {
+      this.logger.log(
+        `drip-dispatcher alert (no NotificationsService wired): drop=${drop.id} client=${clientUserId} asset=${drop.asset_type}`,
+      );
+    } else {
+      // Each call is independently wrapped. A failure in the first
+      // call must not cascade and skip the other two — a transient
+      // prisma.notification.create blip would otherwise silently drop
+      // the push send + the second DB row write.
+      try {
         await this.notifications.createNotification({
           user_id: clientUserId,
           kind: NotificationKind.DRIP_RELEASED,
           body,
-          payload: {
-            scheduled_drop_id: drop.id,
-            client_purchase_id: drop.client_purchase_id,
-            asset_type: drop.asset_type,
-            asset_id: drop.asset_id,
-            content_id: drop.content_id,
-          },
+          payload,
           deep_link: 'tgp://client/library',
           channel: 'inapp',
         });
+      } catch (err) {
+        this.logger.warn(
+          `drip-dispatcher in-app notification failed drop=${drop.id} client=${clientUserId}: ${(err as Error).message}`,
+        );
+      }
+      try {
         await this.notifications.pushToUser(clientUserId, title, body, {
           kind: NotificationKind.DRIP_RELEASED,
           scheduled_drop_id: drop.id,
           asset_type: drop.asset_type,
         });
+      } catch (err) {
+        this.logger.warn(
+          `drip-dispatcher push notification failed drop=${drop.id} client=${clientUserId}: ${(err as Error).message}`,
+        );
+      }
+      try {
         await this.notifications.createNotification({
           user_id: clientUserId,
           kind: NotificationKind.DRIP_RELEASED,
           body,
-          payload: {
-            scheduled_drop_id: drop.id,
-            client_purchase_id: drop.client_purchase_id,
-            asset_type: drop.asset_type,
-            asset_id: drop.asset_id,
-            content_id: drop.content_id,
-          },
+          payload,
           deep_link: 'tgp://client/library',
           channel: 'push',
         });
-      } else {
-        this.logger.log(
-          `drip-dispatcher alert (no NotificationsService wired): drop=${drop.id} client=${clientUserId} asset=${drop.asset_type}`,
-        );
-      }
-    } catch (err) {
-      // Alerts are a side effect. Content is delivered.
-      this.logger.warn(
-        `drip-dispatcher alert dispatch failed drop=${drop.id} client=${clientUserId}: ${(err as Error).message}`,
-      );
-    } finally {
-      // Stamp regardless of success/failure so a future tick never
-      // re-pushes for the same drop. Per decision #9 a failed push must
-      // not roll back delivery.
-      try {
-        await this.prisma.scheduledDrop.update({
-          where: { id: drop.id },
-          data: { alert_dispatched_at: new Date() },
-        });
       } catch (err) {
         this.logger.warn(
-          `drip-dispatcher could not stamp alert_dispatched_at for drop=${drop.id}: ${(err as Error).message}`,
+          `drip-dispatcher push-channel notification row failed drop=${drop.id} client=${clientUserId}: ${(err as Error).message}`,
         );
       }
+    }
+    // Stamp regardless of success/failure so a future tick never
+    // re-pushes for the same drop. Per decision #9 a failed push must
+    // not roll back delivery.
+    try {
+      await this.prisma.scheduledDrop.update({
+        where: { id: drop.id },
+        data: { alert_dispatched_at: new Date() },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `drip-dispatcher could not stamp alert_dispatched_at for drop=${drop.id}: ${(err as Error).message}`,
+      );
     }
   }
 

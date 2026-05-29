@@ -36,3 +36,26 @@ ALTER TABLE "ScheduledDrop" ADD COLUMN "alert_dispatched_at" TIMESTAMP(3);
 
 CREATE INDEX "ScheduledDrop_status_next_retry_at_fire_at_idx"
   ON "ScheduledDrop"("status", "next_retry_at", "fire_at");
+
+-- PR-10 R1 audit-fix (P2) — DRIP_RELEASED preference columns.
+--
+-- The new NotificationKind.DRIP_RELEASED needs its own preference prefix
+-- so NotificationsService.createNotification can route it correctly.
+-- Without these columns the kind falls through _kindToPrefsPrefix to the
+-- 'digest' safe-default whose _inapp + _push defaults are FALSE, silently
+-- short-circuiting every drip-release in-app row write. The README
+-- comment block on NotificationKind requires per-kind default columns be
+-- added alongside any new kind — this fixes the missing follow-up.
+--
+-- Defaults match the brief: buyers should get content-unlocked alerts by
+-- default (push + in-app ON, email OFF — there is no transactional drip-
+-- release email channel today, mirroring the booking cluster's pattern).
+-- All three columns are NOT NULL with a static default, so the ALTER is
+-- metadata-only + a per-row default-fill on existing rows; no backfill
+-- script required.
+ALTER TABLE "NotificationPreferences"
+  ADD COLUMN "drip_released_email" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "NotificationPreferences"
+  ADD COLUMN "drip_released_push" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "NotificationPreferences"
+  ADD COLUMN "drip_released_inapp" BOOLEAN NOT NULL DEFAULT true;

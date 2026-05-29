@@ -113,6 +113,12 @@ export class NotificationsService {
         digest_email: true,
         digest_push: false,
         digest_inapp: false,
+        // PR-10 — DRIP_RELEASED defaults match the migration: buyers get
+        // content-unlocked push + in-app by default; no transactional
+        // email channel for drip releases (matches booking cluster).
+        drip_released_email: false,
+        drip_released_push: true,
+        drip_released_inapp: true,
         // Concierge booking defaults — email off (no transactional
         // email transport for booking events in Phase 1); push + inapp
         // on so a Concierge client/coach is reachable for lifecycle
@@ -673,6 +679,14 @@ export class NotificationsService {
     if (kind.startsWith('build_week')) return 'build_week';
     if (kind.startsWith('coach_alert')) return 'coach_alert';
     if (kind.startsWith('booking')) return 'booking';
+    // PR-10 — DRIP_RELEASED (buyer content-unlocked alert). Routes to
+    // the `drip_released_*` prefs columns (migration
+    // 20261205000000_pr10_scheduled_drop_retry_lock); defaults are
+    // push+inapp ON, email OFF. Without this branch the kind fell
+    // through to the 'digest' safe-default whose _inapp + _push
+    // defaults are FALSE, silently short-circuiting every in-app row
+    // write — the PR-10 R1 P2 fix.
+    if (kind.startsWith('drip_released')) return 'drip_released';
     if (kind.startsWith('fasting')) return 'fasting';
     if (kind.includes('digest')) return 'digest';
     return 'digest'; // safe default — falls back to digest prefs

@@ -2,6 +2,8 @@ import {
   DripDispatcherCron,
   __dripDispatcherConsts,
 } from '../src/packages/drip-dispatcher.cron';
+import { NotificationsService } from '../src/notifications/notifications.service';
+import { NotificationKind } from '../src/notifications/notification-kind';
 
 // PR-10 — DripDispatcherCron tests.
 //
@@ -615,18 +617,78 @@ describe('DripDispatcherCron', () => {
     expect(materialise).not.toHaveBeenCalled();
   });
 
-  it('stale lock recovery: a drop locked > STALE_CLAIM_MS ago IS reclaimable', async () => {
-    const staleLockedAt = new Date(
-      NOW.getTime() - __dripDispatcherConsts.STALE_CLAIM_MS - 1000,
+  // PR-10 R1 audit-fix (P1) — stranded-dispatching reclaim.
+  //
+  // Simulates the real worker-crash scenario: a previous tick called
+  // claim() (flipping the row to status='dispatching' + stamping
+  // locked_at = T0) and then the worker process was SIGKILLed / OOMed /
+  // k8s-evicted before the success or failure update landed. The drop
+  // is permanently stuck in 'dispatching' until a later tick reclaims
+  // it. STALE_CLAIM_MS later the next tick MUST pick the drop back up,
+  // re-stamp locked_at, run the resolver (whose stable
+  // (clientPurchaseId, contentId) keys collapse any partial work), and
+  // ship the buyer their content.
+  //
+  // Before this fix the cron exclusively filtered on status='pending',
+  // so a stranded 'dispatching' row was silently dropped — lost
+  // delivery the buyer paid for. The test must FAIL if the reclaim
+  // branch is removed from findDue/claim.
+  it('stranded-dispatching reclaim: a worker-crash drop (status=dispatching + stale locked_at) IS materialised on a later tick', async () => {
+    const crashedAt = new Date(
+      NOW.getTime() - __dripDispatcherConsts.STALE_CLAIM_MS - 60_000,
     );
     const state: MockPrismaState = {
-      drops: [makeDrop({ locked_at: staleLockedAt, status: 'pending' })],
+      drops: [
+        makeDrop({
+          status: 'dispatching', // <-- the crashed-worker fingerprint
+          locked_at: crashedAt,
+        }),
+      ],
       purchases: [makePurchase()],
     };
     const prisma = makeMockPrisma(state);
     const materialise = jest
       .fn()
-      .mockResolvedValue({ materialisedRef: 'mp-stale-recover' });
+      .mockResolvedValue({ materialisedRef: 'mp-reclaimed' });
+    const notifications = makeNotifications();
+    const cron = new DripDispatcherCron(
+      prisma as any,
+      makeRegistry(materialise),
+      notifications,
+    );
+
+    const stats = await cron.runOnce(NOW);
+
+    expect(stats.claimed).toBe(1);
+    expect(stats.delivered).toBe(1);
+    expect(materialise).toHaveBeenCalledTimes(1);
+    // The reclaim path MUST pass the same stable (clientPurchaseId,
+    // contentId) keys so the resolver's per-type dedup ledger
+    // (WorkoutBuilderIdempotencyKey for workout, DripResolverMarker for
+    // auto_message) collapses any partial work the crashed worker did.
+    const input = materialise.mock.calls[0][1];
+    expect(input.clientPurchaseId).toBe('purchase-1');
+    expect(input.contentId).toBe('content-1');
+    expect(state.drops[0].status).toBe('delivered');
+    expect(state.drops[0].materialised_ref).toBe('mp-reclaimed');
+  });
+
+  it('stranded-dispatching reclaim: a FRESHLY claimed dispatching row (locked_at NOT stale) is NOT stolen', async () => {
+    // Sanity check the other direction — a healthy in-flight claim
+    // from another worker must NOT be reclaimed. locked_at is recent
+    // (only 30s old) so the stale cutoff (5 min) excludes it.
+    const recentLockedAt = new Date(NOW.getTime() - 30 * 1000);
+    const state: MockPrismaState = {
+      drops: [
+        makeDrop({
+          status: 'dispatching',
+          locked_at: recentLockedAt,
+        }),
+      ],
+      purchases: [makePurchase()],
+    };
+    const prisma = makeMockPrisma(state);
+    const materialise = jest.fn();
     const cron = new DripDispatcherCron(
       prisma as any,
       makeRegistry(materialise),
@@ -635,8 +697,39 @@ describe('DripDispatcherCron', () => {
 
     const stats = await cron.runOnce(NOW);
 
-    expect(stats.delivered).toBe(1);
-    expect(state.drops[0].status).toBe('delivered');
+    expect(stats.claimed).toBe(0);
+    expect(materialise).not.toHaveBeenCalled();
+    // Drop still owned by the original worker.
+    expect(state.drops[0].status).toBe('dispatching');
+    expect(state.drops[0].locked_at).toEqual(recentLockedAt);
+  });
+
+  it('stranded-dispatching reclaim: respects MAX_ATTEMPTS — a poison drop that has already failed MAX times is NOT reclaimed', async () => {
+    const crashedAt = new Date(
+      NOW.getTime() - __dripDispatcherConsts.STALE_CLAIM_MS - 60_000,
+    );
+    const state: MockPrismaState = {
+      drops: [
+        makeDrop({
+          status: 'dispatching',
+          locked_at: crashedAt,
+          attempt_count: __dripDispatcherConsts.MAX_ATTEMPTS,
+        }),
+      ],
+      purchases: [makePurchase()],
+    };
+    const prisma = makeMockPrisma(state);
+    const materialise = jest.fn();
+    const cron = new DripDispatcherCron(
+      prisma as any,
+      makeRegistry(materialise),
+      makeNotifications(),
+    );
+
+    const stats = await cron.runOnce(NOW);
+
+    expect(stats.claimed).toBe(0);
+    expect(materialise).not.toHaveBeenCalled();
   });
 
   it('missing registry → no-op + structured log (defensive)', async () => {
@@ -679,6 +772,143 @@ describe('DripDispatcherCron', () => {
 
     expect(materialise.mock.calls[0][1].scheduledDropId).toBe('d-old');
     expect(materialise.mock.calls[1][1].scheduledDropId).toBe('d-new');
+  });
+
+  // PR-10 R1 audit-fix (P2) — DRIP_RELEASED routes to the real
+  // `drip_released_*` prefs columns, not the 'digest' safe-default.
+  //
+  // Before the fix the new NotificationKind fell through every
+  // `startsWith` branch in `_kindToPrefsPrefix` and hit `return 'digest'`
+  // whose _inapp + _push defaults are FALSE. createNotification then
+  // returned null and silently skipped the in-app inbox row — the
+  // buyer's library badge never updated when content unlocked.
+  //
+  // This test builds a REAL NotificationsService (not a jest.fn mock)
+  // so it exercises the actual preference gate. If `_kindToPrefsPrefix`
+  // is reverted to dropping `drip_released` into 'digest', the
+  // expectations below would fail because the prefs gate would return
+  // null and `notificationStore.length` would stay 0.
+  it('DRIP_RELEASED writes the in-app inbox row through the REAL NotificationsService prefs gate (defaults: drip_released_inapp=true)', async () => {
+    const notificationStore: any[] = [];
+    const realPrisma: any = {
+      notificationPreferences: {
+        findUnique: jest.fn(async () => null), // <-- falls through to in-memory defaults
+      },
+      notification: {
+        create: jest.fn(async ({ data }: any) => {
+          const row = { id: `n-${notificationStore.length + 1}`, ...data };
+          notificationStore.push(row);
+          return row;
+        }),
+      },
+      user: {
+        findUnique: jest.fn(async () => ({ expo_push_token: null })),
+      },
+      scheduledDrop: { update: jest.fn(async () => ({})) },
+      clientPurchase: {
+        findUnique: jest.fn(async () => makePurchase()),
+      },
+    };
+    // The cron itself needs more prisma surface — build a wrapper that
+    // delegates the cron's queries to the in-memory mock and exposes
+    // the realPrisma's notification + user + notificationPreferences
+    // tables to the real NotificationsService.
+    const state: MockPrismaState = {
+      drops: [makeDrop({ display_title: 'Week 1 Strength' })],
+      purchases: [makePurchase()],
+    };
+    const cronMock = makeMockPrisma(state);
+    const sharedPrisma: any = {
+      ...cronMock,
+      notificationPreferences: realPrisma.notificationPreferences,
+      notification: realPrisma.notification,
+      user: realPrisma.user,
+    };
+
+    const realNotifications = new NotificationsService(sharedPrisma);
+    const materialise = jest
+      .fn()
+      .mockResolvedValue({ materialisedRef: 'mp-ok' });
+    const cron = new DripDispatcherCron(
+      sharedPrisma,
+      makeRegistry(materialise),
+      realNotifications,
+    );
+
+    const stats = await cron.runOnce(NOW);
+
+    expect(stats.delivered).toBe(1);
+    expect(state.drops[0].status).toBe('delivered');
+
+    // The fix: the real prefs gate now routes DRIP_RELEASED to
+    // `drip_released_inapp` (default TRUE) so the in-app row IS
+    // written. Without the prefs branch this length would be 0.
+    const inappRows = notificationStore.filter(
+      (n) => n.channel === 'inapp' && n.kind === NotificationKind.DRIP_RELEASED,
+    );
+    expect(inappRows.length).toBe(1);
+    expect(inappRows[0].body).toContain('New content unlocked: Week 1 Strength');
+    expect((inappRows[0].payload as any).asset_type).toBe('meal_plan');
+    expect((inappRows[0].payload as any).scheduled_drop_id).toBe('drop-1');
+
+    // Push-channel row also written (drip_released_push default TRUE).
+    const pushRows = notificationStore.filter(
+      (n) => n.channel === 'push' && n.kind === NotificationKind.DRIP_RELEASED,
+    );
+    expect(pushRows.length).toBe(1);
+  });
+
+  it('DRIP_RELEASED in-app write is GATED by drip_released_inapp pref (false → no row)', async () => {
+    const notificationStore: any[] = [];
+    const realPrisma: any = {
+      notificationPreferences: {
+        findUnique: jest.fn(async () => ({
+          user_id: 'client-1',
+          muted: false,
+          drip_released_inapp: false, // <-- buyer opted out
+          drip_released_push: false,
+          drip_released_email: false,
+        })),
+      },
+      notification: {
+        create: jest.fn(async ({ data }: any) => {
+          const row = { id: `n-${notificationStore.length + 1}`, ...data };
+          notificationStore.push(row);
+          return row;
+        }),
+      },
+      user: {
+        findUnique: jest.fn(async () => ({ expo_push_token: null })),
+      },
+    };
+    const state: MockPrismaState = {
+      drops: [makeDrop()],
+      purchases: [makePurchase()],
+    };
+    const cronMock = makeMockPrisma(state);
+    const sharedPrisma: any = {
+      ...cronMock,
+      notificationPreferences: realPrisma.notificationPreferences,
+      notification: realPrisma.notification,
+      user: realPrisma.user,
+    };
+    const realNotifications = new NotificationsService(sharedPrisma);
+    const materialise = jest
+      .fn()
+      .mockResolvedValue({ materialisedRef: 'mp-ok' });
+    const cron = new DripDispatcherCron(
+      sharedPrisma,
+      makeRegistry(materialise),
+      realNotifications,
+    );
+
+    const stats = await cron.runOnce(NOW);
+
+    // Content still delivered — opt-out doesn't un-deliver.
+    expect(stats.delivered).toBe(1);
+    expect(state.drops[0].status).toBe('delivered');
+    // But zero notification rows because every channel is opted out.
+    expect(notificationStore.length).toBe(0);
   });
 
   it('parent ClientPurchase missing → drop canceled defensively, never re-tried', async () => {
