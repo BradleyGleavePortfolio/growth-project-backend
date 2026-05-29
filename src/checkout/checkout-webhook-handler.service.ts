@@ -1,6 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { ClientPurchase, CoachPackage } from '@prisma/client';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
+import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { PrismaService } from '../prisma.service';
 import { DunningService } from './dunning.service';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
@@ -50,6 +51,11 @@ export class CheckoutWebhookHandlerService {
     // Phase 6 — refund / dispute / payout event handling. Optional so the
     // legacy unit-test wiring still constructs the handler without these.
     @Optional() private refundDispute?: RefundDisputeHandlerService,
+    // PR-4 — fan-out seam fired when entitlement_active flips true.
+    // @Optional() so legacy unit tests that hand-construct this service
+    // without the full Nest container still work; in production wiring
+    // (CheckoutModule imports PackagesModule) it is always present.
+    @Optional() private fanout?: PurchaseFanoutService,
   ) {}
 
   // Returns claimed=true iff the event was for a Connect package purchase
@@ -153,6 +159,28 @@ export class CheckoutWebhookHandlerService {
       } catch (err) {
         this.logger.warn(
           `Split posting failed for purchase=${updated.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    // PR-4 — fan-out seam (no-op body this PR; PR-9 seeds ScheduledDrop).
+    // NOTE: the entitlement write above is NOT wrapped in a $transaction
+    // in this handler today, so we cannot pass a tx to the fanout. The
+    // fanout row is still idempotent via PurchaseFanout.purchase_id
+    // @unique, and the surrounding webhook handler is itself idempotent
+    // via StripeProcessedEvent — a redelivered checkout.completed event
+    // re-runs entitlement+fanout but never creates duplicate rows.
+    // Follow-up: atomic-ify the entitlement+split+fanout block in a
+    // dedicated PR so all three commit/roll-back together.
+    if (this.fanout) {
+      try {
+        await this.fanout.onPurchaseEntitled(
+          updated,
+          { entrypoint: 'in_app_hosted', coachId: updated.coach_user_id, clientId: updated.client_user_id },
+          this.prisma,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Fanout seam failed for purchase=${updated.id}: ${(err as Error).message}`,
         );
       }
     }
@@ -349,6 +377,22 @@ export class CheckoutWebhookHandlerService {
       } catch (err) {
         this.logger.warn(
           `Split posting failed for purchase=${updated.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    // PR-4 — fan-out seam (no-op body this PR; PR-9 seeds ScheduledDrop).
+    // See note in applyCheckoutCompleted re: lack of surrounding tx.
+    if (this.fanout) {
+      try {
+        await this.fanout.onPurchaseEntitled(
+          updated,
+          { entrypoint: 'in_app_ps', coachId: updated.coach_user_id, clientId: updated.client_user_id },
+          this.prisma,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Fanout seam failed for purchase=${updated.id}: ${(err as Error).message}`,
         );
       }
     }

@@ -32,6 +32,7 @@ import { CheckoutIdempotencyService } from './checkout-idempotency.service';
 import { ConnectPreflightService } from './connect-preflight.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
+import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { type GuestCheckoutStatus } from './guest-checkout-status';
 
 // Platform cut on every guest checkout. Stripe's minimum application_fee
@@ -192,6 +193,11 @@ export class GuestCheckoutService {
     // optional wiring as above.
     @Optional()
     private readonly preflight?: ConnectPreflightService,
+    // PR-4 — fan-out seam fired inside convertGuestToUser's $transaction
+    // the moment ClientPurchase.entitlement_active flips true. @Optional()
+    // for hand-constructed unit tests.
+    @Optional()
+    private readonly fanout?: PurchaseFanoutService,
   ) {}
 
   // POST /v1/packages/public/join/:token/checkout
@@ -1275,16 +1281,16 @@ export class GuestCheckoutService {
         // checkout uses raw UUIDs), and is itself @unique so a second
         // delivery would P2002 instead of double-charging.
         const purchaseIdemKey = `guest-purchase-${checkout.idempotency_key}`;
-        const existingPurchase = await tx.clientPurchase.findFirst({
+        let purchaseRow = await tx.clientPurchase.findFirst({
           where: {
             client_user_id: dbUser.id,
             package_id: checkout.package_id,
             stripe_payment_intent_id: checkout.stripe_payment_intent_id,
           },
         });
-        if (!existingPurchase) {
+        if (!purchaseRow) {
           try {
-            await tx.clientPurchase.create({
+            purchaseRow = await tx.clientPurchase.create({
               data: {
                 client_user_id: dbUser.id,
                 coach_user_id: checkout.package.coach_id,
@@ -1309,6 +1315,15 @@ export class GuestCheckoutService {
           } catch (err) {
             // Concurrent delivery raced us. Treat as already-created.
             if (!this.isUniqueViolation(err)) throw err;
+            // Re-read the row the racer wrote so downstream tx steps
+            // (e.g. PR-4 fanout) can reference it.
+            purchaseRow = await tx.clientPurchase.findFirst({
+              where: {
+                client_user_id: dbUser.id,
+                package_id: checkout.package_id,
+                stripe_payment_intent_id: checkout.stripe_payment_intent_id,
+              },
+            });
           }
         }
 
@@ -1319,6 +1334,19 @@ export class GuestCheckoutService {
             created_user_id: dbUser.id,
           },
         });
+
+        // PR-4 — fan-out seam, inside the same $transaction as the
+        // entitlement write so the bookkeeping row commits/rolls back
+        // atomically. Idempotent across webhook replays via
+        // PurchaseFanout.purchase_id @unique. No-op body this PR; PR-9
+        // seeds ScheduledDrop + fires immediate-cadence drops here.
+        if (this.fanout && purchaseRow) {
+          await this.fanout.onPurchaseEntitled(
+            purchaseRow,
+            { entrypoint: 'storefront_guest', coachId: checkout.package.coach_id, clientId: dbUser.id },
+            tx,
+          );
+        }
       });
     } catch (err) {
       // Audit #3 P1-6 — DB transaction failures (deadlocks, unique

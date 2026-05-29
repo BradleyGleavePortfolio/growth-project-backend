@@ -2,6 +2,7 @@ import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/c
 import { ConnectModule } from '../connect/connect.module';
 import { EmailModule } from '../email/email.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { PackagesModule } from '../packages/packages.module';
 import { CheckoutCookieService } from './checkout-cookie.service';
 import { CheckoutIdempotencyService } from './checkout-idempotency.service';
 import { CheckoutIpRateLimiterService } from './checkout-rate-limiter.service';
@@ -41,6 +42,10 @@ import { StorefrontService } from './storefront.service';
     // boot fails fast so the operator notices before any refund silently
     // strands the coach without a signal.
     NotificationsModule,
+    // PR-4 (Packages & Drip-Feed) — PackagesModule re-exports
+    // PurchaseFanoutService so GuestCheckoutService can fire the seam
+    // inside its convertGuestToUser $transaction.
+    PackagesModule,
   ],
   controllers: [StorefrontPublicController],
   providers: [
