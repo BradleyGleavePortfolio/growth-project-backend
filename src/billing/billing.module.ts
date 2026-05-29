@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { CheckoutModule } from '../checkout/checkout.module';
 import { ConnectModule } from '../connect/connect.module';
 import { EmailModule } from '../email/email.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { PrismaService } from '../prisma.service';
 import { StorefrontModule } from '../storefront/storefront.module';
 // Stream 1 — Note: BillingService injects CoachAiCreditPackService as
@@ -37,6 +38,10 @@ import { StripeWebhookController } from './stripe-webhook.controller';
     // Stripe webhook dispatcher can route payment_intent.* events for
     // guest checkouts to it.
     StorefrontModule,
+    // PR-2 P0-c — NotificationsModule exports NotificationsService so the
+    // transfer.failed handler can alert the affected coach when a
+    // head-coach Connect transfer fails.
+    NotificationsModule,
   ],
   controllers: [
     StripeWebhookController,
