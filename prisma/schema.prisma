@@ -4778,10 +4778,37 @@ model CoachMediaAsset {
   duration_sec    Int?
   page_count      Int?
   mux_playback_id String?
+  // PR-12 — async upload lifecycle. uploading -> ready (pdf, synchronous
+  // confirm) OR uploading -> processing -> ready|errored (video, via Mux
+  // webhook). MediaAssetResolver gates on status='ready' so a not-yet-ready
+  // asset can never silently materialise into a buyer's grant.
+  status          String    @default("ready") // uploading | processing | ready | errored
+  // Mux Direct Upload id we minted when the coach started a video upload.
+  // Unique so the Mux webhook can resolve a single CoachMediaAsset row by
+  // upload id (mirrors the ExerciseCatalogItem.mux_upload_id pattern).
+  mux_upload_id     String?  @unique
+  mux_error_message String?
   created_at      DateTime  @default(now())
   archived_at     DateTime?
 
   @@index([coach_id, archived_at, kind])
+  @@index([coach_id, archived_at, kind, status])
+}
+
+// PR-12 — durable Mux webhook idempotency for the coach-media pipeline.
+// Same shape as StripeProcessedEvent: event id is the PK so a replay is a
+// no-op at the INSERT layer regardless of which pod handles the redelivery.
+// Used by CoachMediaMuxWebhookController; the existing
+// src/video/mux-webhook.controller.ts (workout-demo path) keeps its
+// in-memory dedup unchanged in this PR.
+model MuxProcessedEvent {
+  mux_event_id         String    @id
+  type                 String
+  processed_at         DateTime  @default(now())
+  handler_completed_at DateTime?
+
+  @@index([processed_at])
+  @@index([handler_completed_at])
 }
 
 // Per-(client, media_asset) entitlement for PDFs/videos. Minted when a

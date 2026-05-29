@@ -67,6 +67,10 @@ import { ExerciseLibraryModule } from './exercise-library/exercise-library.modul
 // VideoModule (Mux adapter + webhook) is @Global so workout-builder can
 // inject MuxService when it enriches assignment reads with playback URLs.
 import { VideoModule } from './video/video.module';
+// PR-12 — coach-media upload pipeline (Supabase PDF + Mux video) behind
+// StorageProvider (decision #5). @Global so PR-13 buyer-side delivery
+// endpoints can inject CoachMediaService without importing the module.
+import { CoachMediaModule } from './coach-media/coach-media.module';
 import { ExerciseCatalogModule } from './exercise-catalog/exercise-catalog.module';
 import { WorkoutBuilderModule } from './workout-builder/workout-builder.module';
 import { MacrosModule } from './macros/macros.module';
@@ -279,6 +283,11 @@ import { LandingPagesModule } from './landing-pages/landing-pages.module';
     // not load-bearing; grouped here for discoverability.
     ExerciseLibraryModule,
     VideoModule,
+    // PR-12 — coach-media. Sits next to VideoModule because it composes
+    // MuxService for the video pipeline. CoachMediaModule is @Global so
+    // a future buyer-side delivery surface can inject the service for
+    // signed-URL minting from anywhere.
+    CoachMediaModule,
     ExerciseCatalogModule,
     WorkoutBuilderModule,
     MacrosModule,
