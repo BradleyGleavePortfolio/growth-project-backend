@@ -418,6 +418,11 @@ model User {
   coach_ai_budget    CoachAIBudget?            @relation("CoachAIBudgetUser")
   coach_credit_packs CoachCreditPackPurchase[] @relation("CoachCreditPackUser")
 
+  // PR-3 Packages & Drip-Feed foundation. Coach-uploaded media library
+  // (PDFs, videos) that gets attached to sellable packages via
+  // CoachPackageContent. Only meaningful for users with role='coach'.
+  media_assets CoachMediaAsset[] @relation("CoachMediaAssetCoach")
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -2983,6 +2988,12 @@ model CoachPackage {
   // distinct idempotency_key).
   guest_checkouts GuestCheckout[]
 
+  // PR-3 Packages & Drip-Feed foundation. Coaches mark a package as
+  // sellable once it has attachable content; until then every package
+  // behaves exactly as today (paywall-only, zero content rows).
+  is_sellable Boolean                @default(false)
+  contents    CoachPackageContent[]
+
   @@index([coach_id, is_active])
   @@index([coach_id, archived_at])
   @@index([stripe_price_id])
@@ -3230,6 +3241,12 @@ model ClientPurchase {
   refunds        ChargeRefund[]
   disputes       ChargeDispute[]
   reconciliation ReconciliationSnapshot?
+
+  // PR-3 Packages & Drip-Feed foundation. scheduled_drops is the
+  // per-buyer schedule snapshotted at purchase; fanout is the 1:1
+  // bookkeeping row tracking the package→schedule materialisation job.
+  scheduled_drops ScheduledDrop[]
+  fanout          PurchaseFanout?
 
   @@index([client_user_id, status])
   @@index([coach_user_id, status])
@@ -4577,4 +4594,126 @@ model CoachCreditPackPurchase {
 
   @@index([coach_user_id, created_at])
   @@index([status])
+}
+
+// ============================================================
+// PR-3 — Packages & Drip-Feed foundation (additive schema only)
+// ============================================================
+//
+// Six new models behind one CoachPackage flag (`is_sellable`). Until a
+// later PR attaches content to packages, every existing package keeps
+// behaving exactly as today (paywall-only, zero content rows).
+//
+// Authoring side: CoachPackageContent (what the coach attaches to a
+// sellable package) and CoachMediaAsset (the coach-owned PDF/video
+// library that content rows can point at).
+//
+// Runtime side: PurchaseFanout (one row per ClientPurchase tracking the
+// package→schedule materialisation job) and ScheduledDrop (the per-buyer
+// schedule, snapshotted at purchase so later edits to the authoring side
+// never retroactively shift a buyer's timeline). Entitlement for media
+// assets is tracked in ClientAssetGrant.
+//
+// cadence_kind / cadence_payload stay as plain String / Json here — zod
+// validation lives in a later PR.
+
+// Authoring: items a coach attaches to a sellable CoachPackage.
+model CoachPackageContent {
+  id                String       @id @default(uuid())
+  package_id        String
+  package           CoachPackage @relation(fields: [package_id], references: [id], onDelete: Cascade)
+  asset_type        String // workout_program | workout_plan | meal_plan | pdf | video | auto_message
+  asset_id          String
+  asset_revision_id String?
+  display_order     Int          @default(0)
+  cadence_kind      String       @default("immediate") // immediate | relative_to_purchase | fixed_calendar | on_completion | on_milestone
+  cadence_payload   Json
+  display_title     String?
+  display_caption   String?
+  created_at        DateTime     @default(now())
+  updated_at        DateTime     @updatedAt
+  removed_at        DateTime?
+
+  @@index([package_id, removed_at, display_order])
+  @@index([asset_type, asset_id])
+}
+
+// Runtime: per-buyer schedule, snapshotted at purchase. content_id is a
+// snapshot ref (NOT an FK) — the authoring row can be soft-removed
+// without invalidating already-scheduled drops.
+model ScheduledDrop {
+  id                 String         @id @default(uuid())
+  client_purchase_id String
+  client_purchase    ClientPurchase @relation(fields: [client_purchase_id], references: [id], onDelete: Cascade)
+  content_id         String // snapshot ref, NOT an FK (content can be soft-removed)
+  asset_type         String
+  asset_id           String
+  asset_revision_id  String?
+  cadence_kind       String
+  cadence_payload    Json
+  display_title      String?
+  display_caption    String?
+  fire_at            DateTime?
+  fired_at           DateTime?
+  status             String         @default("pending") // pending|due|fired|skipped|failed|canceled
+  attempt_count      Int            @default(0)
+  materialised_ref   String?
+  failure_reason     String?
+  created_at         DateTime       @default(now())
+  updated_at         DateTime       @updatedAt
+
+  @@unique([client_purchase_id, content_id])
+  @@index([status, fire_at])
+  @@index([client_purchase_id, status])
+}
+
+// Runtime bookkeeping: one row per ClientPurchase tracking the package→
+// schedule fan-out job.
+model PurchaseFanout {
+  id           String         @id @default(uuid())
+  purchase_id  String         @unique
+  purchase     ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  state        String         @default("pending") // pending|in_progress|succeeded|failed
+  entrypoint   String // in_app_hosted | in_app_ps | storefront_guest
+  started_at   DateTime?
+  finished_at  DateTime?
+  retry_count  Int            @default(0)
+  last_error   String?
+  created_at   DateTime       @default(now())
+}
+
+// Coach-uploaded media library (PDFs/videos) attachable to packages
+// via CoachPackageContent.
+model CoachMediaAsset {
+  id              String    @id @default(uuid())
+  coach_id        String
+  coach           User      @relation("CoachMediaAssetCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  kind            String // pdf | video
+  title           String
+  description     String?
+  storage_key     String
+  provider        String // supabase | mux
+  byte_size       BigInt?
+  content_type    String?
+  duration_sec    Int?
+  page_count      Int?
+  mux_playback_id String?
+  created_at      DateTime  @default(now())
+  archived_at     DateTime?
+
+  @@index([coach_id, archived_at, kind])
+}
+
+// Per-(client, media_asset) entitlement for PDFs/videos. Minted when a
+// drop fires; revoked when entitlement lapses.
+model ClientAssetGrant {
+  id                  String    @id @default(uuid())
+  client_id           String
+  media_asset_id      String
+  granted_via_drop_id String?
+  granted_at          DateTime  @default(now())
+  revoked_at          DateTime?
+
+  @@unique([client_id, media_asset_id])
+  @@index([client_id, revoked_at])
 }
