@@ -214,19 +214,21 @@ describe('StorefrontService', () => {
     expect(oneTime.billing_cycle).toBe('one_time');
   });
 
-  // Audit #4 P2-5 — public GET MUST 404 recurring packages so we do
-  // not leak their existence on a share-token enumeration scan.
-  it.each(['recurring'])(
-    'P2-5: 404s on billing_type=%s',
-    async (billing_type) => {
-      findUnique.mockResolvedValueOnce(
-        makePkg({ billing_type, interval: 'month' }),
-      );
-      await expect(
-        service.getPublicPackageByToken('tok1234567890abcDEFGH'),
-      ).rejects.toThrow(NotFoundException);
-    },
-  );
+  // PR-14 — master-plan §1 decision #1 puts recurring back on the web
+  // storefront. The OLD A4-P2-5 guard 404'd recurring outright; the new
+  // contract is to EXPOSE recurring packages on the GET surface and
+  // route the buyer through createIntent's subscription mint. Non-USD
+  // stays 404'd (kept in the next it.each below).
+  it('PR-14: exposes recurring packages on the public GET surface (no longer 404)', async () => {
+    findUnique.mockResolvedValueOnce(
+      makePkg({ billing_type: 'recurring', interval: 'month' }),
+    );
+    const recurring = await service.getPublicPackageByToken(
+      'tok1234567890abcDEFGH',
+    );
+    expect(recurring.billing_cycle).toBe('monthly');
+    expect(recurring.package_id).toBeDefined();
+  });
 
   // Audit #4 P2-5 — public GET MUST 404 non-USD packages.
   it.each(['eur', 'gbp', 'jpy'])(

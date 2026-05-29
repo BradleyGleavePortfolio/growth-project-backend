@@ -377,6 +377,23 @@ export class PackagesService {
     });
   }
 
+  // PR-14 — cache the Stripe Product id alone. When the recurring
+  // companion is minted FIRST (combo packages where the storefront only
+  // exercises the recurring path), the Product is brand new but the
+  // one-time Price is still uncached; `setStripeIds` would force-write
+  // an empty string into stripe_price_id and break the next one-time
+  // checkout. This writer lets the companion-mint path persist the
+  // Product without touching stripe_price_id.
+  async setStripeProductId(
+    packageId: string,
+    stripeProductId: string,
+  ): Promise<void> {
+    await this.prisma.coachPackage.update({
+      where: { id: packageId },
+      data: { stripe_product_id: stripeProductId },
+    });
+  }
+
   private assertValidPricing(input: {
     name: string;
     amount_cents: number;

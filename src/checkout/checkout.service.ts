@@ -837,7 +837,16 @@ export class CheckoutService {
     }
   }
 
-  private async ensurePriceForPackage(pkg: CoachPackage): Promise<string> {
+  // PR-14 — promoted from private to public so the guest storefront can
+  // share the SAME price-resolution logic (master-plan §1 decision #1
+  // requires recurring on web; the brief explicitly forbids duplicating
+  // price-creation logic). Stripe calls live here so they STAY out of
+  // any caller's Prisma $transaction (50-Failures #44 / A276-P1-3).
+  //
+  // Returns the primary `stripe_price_id`. For one-time+recurring combo
+  // packages, use `ensureRecurringPriceForPackage` separately to lazily
+  // mint the companion Price.
+  async ensurePriceForPackage(pkg: CoachPackage): Promise<string> {
     if (pkg.stripe_price_id) return pkg.stripe_price_id;
 
     // Need a Product first. Reuse the cached product if we have one (e.g.
@@ -854,17 +863,25 @@ export class CheckoutService {
       productId = product.id;
     }
 
+    // PR-14 R2 P2-2 — runtime guard before the cast. `CoachPackage.interval`
+    // is a free-form `String?` in Prisma; a corrupt row (e.g. 'daily' from
+    // a future migration) would propagate to Stripe and surface an opaque
+    // 400. Fail loudly here with a typed error instead.
+    const intervalForStripe =
+      pkg.billing_type === 'recurring' && pkg.interval
+        ? CheckoutService.assertStripeInterval(pkg.interval, pkg.id)
+        : undefined;
+
     const price = await this.stripeConnect.createPrice({
       product: productId,
       unit_amount: pkg.amount_cents,
       currency: pkg.currency,
-      recurring:
-        pkg.billing_type === 'recurring' && pkg.interval
-          ? {
-              interval: pkg.interval as 'month' | 'year',
-              interval_count: pkg.interval_count,
-            }
-          : undefined,
+      recurring: intervalForStripe
+        ? {
+            interval: intervalForStripe,
+            interval_count: pkg.interval_count,
+          }
+        : undefined,
       metadata: { tgp_package_id: pkg.id },
       // Vary the idempotency key by amount so a re-price after a clear
       // does not collapse onto the old Price.
@@ -878,6 +895,66 @@ export class CheckoutService {
     return price.id;
   }
 
+  // PR-14 — companion recurring Price for one-time+recurring combo
+  // packages (PR-6 decision #1). The PRIMARY price is one-time; the
+  // companion is the subscription that begins after first invoice. We
+  // reuse the same Stripe Product so the Stripe Dashboard groups both
+  // prices under one product. Idempotency-key varies by amount/interval
+  // so a coach editing recurring_amount_cents mid-flight gets a fresh
+  // Price on the next purchase (the cached id is cleared by
+  // PackagesService.update() when recurring_* fields change).
+  //
+  // Throws if the package has no recurring companion configured — caller
+  // is responsible for the guard.
+  async ensureRecurringPriceForPackage(pkg: CoachPackage): Promise<string> {
+    if (pkg.recurring_stripe_price_id) return pkg.recurring_stripe_price_id;
+    if (
+      pkg.recurring_amount_cents == null ||
+      !pkg.recurring_interval
+    ) {
+      throw new Error(
+        `ensureRecurringPriceForPackage called on package ${pkg.id} without recurring companion`,
+      );
+    }
+
+    let productId = pkg.stripe_product_id;
+    if (!productId) {
+      const product = await this.stripeConnect.createProduct({
+        name: pkg.name,
+        description: pkg.description ?? undefined,
+        metadata: { tgp_package_id: pkg.id, tgp_coach_user_id: pkg.coach_id },
+        idempotencyKey: `product-${pkg.id}`,
+      });
+      productId = product.id;
+      // Cache the product id alone so a subsequent one-time-price mint
+      // reuses it. We deliberately DO NOT touch stripe_price_id — the
+      // one-time price is created lazily by ensurePriceForPackage when
+      // first needed.
+      await this.packages.setStripeProductId(pkg.id, productId);
+    }
+
+    // PR-14 R2 P2-2 — same runtime interval guard the primary helper uses.
+    const recurringIntervalForStripe = CheckoutService.assertStripeInterval(
+      pkg.recurring_interval,
+      pkg.id,
+    );
+
+    const price = await this.stripeConnect.createPrice({
+      product: productId,
+      unit_amount: pkg.recurring_amount_cents,
+      currency: pkg.currency,
+      recurring: {
+        interval: recurringIntervalForStripe,
+        interval_count: pkg.recurring_interval_count ?? 1,
+      },
+      metadata: { tgp_package_id: pkg.id, tgp_companion: 'true' },
+      idempotencyKey: `price-recurring-${pkg.id}-${pkg.recurring_amount_cents}-${pkg.currency}-${pkg.recurring_interval}-${pkg.recurring_interval_count ?? 1}`,
+    });
+
+    await this.packages.setRecurringStripePriceId(pkg.id, price.id);
+    return price.id;
+  }
+
   private isUniqueViolation(err: unknown): boolean {
     if (!err || typeof err !== 'object') return false;
     const e = err as { code?: string; message?: string };
@@ -886,6 +963,26 @@ export class CheckoutService {
       return true;
     }
     return false;
+  }
+
+  // PR-14 R2 P2-2 — runtime guard for the Stripe interval enum. Prisma
+  // stores `CoachPackage.interval` as a free-form `String?`, but Stripe's
+  // /v1/prices endpoint accepts only week|month|year. Without this guard
+  // a corrupt row (typo, future migration drift) would round-trip to
+  // Stripe and surface an opaque 400 to the buyer. Fail loudly with a
+  // typed error here so the failure mode is server-side and operators
+  // see exactly which package row is bad.
+  static assertStripeInterval(
+    interval: string | null | undefined,
+    packageId: string,
+  ): 'week' | 'month' | 'year' {
+    if (interval === 'week' || interval === 'month' || interval === 'year') {
+      return interval;
+    }
+    throw new BadRequestException({
+      error: 'PACKAGE_INTERVAL_INVALID',
+      message: `Package ${packageId} has an invalid recurring interval (${interval ?? 'null'}); expected one of week|month|year`,
+    });
   }
 
   /**

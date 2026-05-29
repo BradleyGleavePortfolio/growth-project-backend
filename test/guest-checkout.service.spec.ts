@@ -13,6 +13,8 @@ import {
 import { SupabaseService } from '../src/supabase/supabase.service';
 import { GuestCheckoutService } from '../src/storefront/guest-checkout.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
+import { CheckoutService } from '../src/checkout/checkout.service';
+import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
 
 // R43 — GuestCheckoutService tests. Prisma, Stripe, and Supabase are all
 // mocked. We test: package resolution, idempotency (replay path), Stripe
@@ -192,6 +194,24 @@ describe('GuestCheckoutService', () => {
         // assert on coach alerts. @Optional() in the service keeps
         // legacy hand-built test modules valid.
         { provide: NotificationsService, useValue: notifications },
+        // PR-14 R2 P2-1 — CheckoutService + FeePolicyService are now HARD
+        // deps on GuestCheckoutService so a wiring regression fails at
+        // boot. The legacy non-recurring tests below never exercise the
+        // recurring code path, so the stubs only need to be present, not
+        // functional.
+        {
+          provide: CheckoutService,
+          useValue: {
+            ensurePriceForPackage: jest.fn(),
+            ensureRecurringPriceForPackage: jest.fn(),
+          },
+        },
+        {
+          provide: FeePolicyService,
+          useValue: {
+            planFor: jest.fn(),
+          },
+        },
       ],
     }).compile();
     service = module.get(GuestCheckoutService);
@@ -205,22 +225,30 @@ describe('GuestCheckoutService', () => {
       );
     });
 
-    // Audit #3 P1-5 — recurring packages are displayed on the public
-    // storefront but Phase 1 cannot honour subscription billing. The
-    // guard MUST use the canonical schema value `recurring` (which is
-    // what coach console writes), not display labels like
-    // `monthly`/`quarterly`/`annual` (which live in the interval
-    // columns). A previous build used the display labels and silently
-    // let canonical-recurring packages through as one-off PIs.
-    it('rejects recurring packages with 422 RECURRING_NOT_SUPPORTED using the canonical billing_type', async () => {
+    // PR-14 — master-plan §1 decision #1 puts recurring back on the
+    // storefront. The previous A3-P1-5 422 RECURRING_NOT_SUPPORTED guard
+    // is gone. The dedicated PR-14 spec block in
+    // test/pr14-guest-recurring-lp-attribution.spec.ts wires the full
+    // CheckoutService + FeePolicyService stubs and exercises the
+    // happy-path mint, idempotent replay, combo, etc.
+    // Here we just assert the legacy 422 no longer fires AND the
+    // one-time PI path is NOT taken (the recurring branch is followed
+    // instead — it'll fail downstream because the legacy CheckoutService
+    // stub returns undefined from ensurePriceForPackage, but that's the
+    // point: the guard isn't blocking anymore).
+    it('does NOT reject recurring packages on the OLD A3-P1-5 422 path (PR-14 lifted the guard)', async () => {
       prisma.coachPackage.findUnique.mockResolvedValueOnce(
         makePkg({ billing_type: 'recurring', interval: 'month', interval_count: 1 }),
       );
       prisma.guestCheckout.findUnique.mockResolvedValue(null);
-      await expect(service.createIntent('tok123', baseDto)).rejects.toThrow(
+      prisma.guestCheckout.create.mockResolvedValueOnce({ id: 'gc-rec-old' });
+      // The recurring branch is now taken (no UnprocessableEntityException
+      // for billing_type=recurring); the legacy stub-thin CheckoutService
+      // surfaces a downstream error rather than the 422 it used to.
+      await expect(service.createIntent('tok123', baseDto)).rejects.not.toThrow(
         UnprocessableEntityException,
       );
-      // Never burns a Stripe API call for a recurring package.
+      // The one-time PaymentIntent path is NOT taken for recurring.
       expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
     });
 

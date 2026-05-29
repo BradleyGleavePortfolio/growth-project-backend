@@ -3062,6 +3062,16 @@ model GuestCheckout {
   stripe_payment_intent_id String  @unique
   stripe_customer_id       String?
 
+  /// PR-14 — storefront recurring (and one-time+recurring combo) support.
+  /// When the package has a recurring component the storefront mints a
+  /// Stripe Subscription whose first invoice's PaymentIntent the guest
+  /// confirms client-side. We persist the subscription id here so the
+  /// convert-to-user $transaction can copy it onto ClientPurchase, where
+  /// the existing applySubscriptionUpdated webhook already keys lifecycle
+  /// claims by stripe_subscription_id. Null on one-time-only checkouts
+  /// and on all pre-PR-14 rows.
+  stripe_subscription_id   String?  @unique
+
   guest_email String
   guest_name  String
 
@@ -3281,6 +3291,13 @@ model ClientPurchase {
   disputes       ChargeDispute[]
   reconciliation ReconciliationSnapshot?
 
+  /// PR-14 — landing page attribution. GuestCheckout already captures the
+  /// referring landing page (R47); convertGuestToUser now copies the id
+  /// onto this column inside its conversion $transaction so per-page
+  /// revenue / LTV joins read directly off ClientPurchase. Nullable: in-app
+  /// purchases and direct-storefront guest checkouts leave it null.
+  landing_page_id            String?
+
   // PR-3 Packages & Drip-Feed foundation. scheduled_drops is the
   // per-buyer schedule snapshotted at purchase; fanout is the 1:1
   // bookkeeping row tracking the package→schedule materialisation job.
@@ -3292,6 +3309,7 @@ model ClientPurchase {
   @@index([package_id])
   @@index([stripe_subscription_id])
   @@index([entitlement_active, access_expires_at])
+  @@index([landing_page_id])
 }
 
 // Phase 4 Connect — Per-coach fee policy override.

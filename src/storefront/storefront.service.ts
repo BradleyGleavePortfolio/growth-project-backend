@@ -108,12 +108,13 @@ export class StorefrontService {
       pkg.share_link_revoked_at !== null ||
       (pkg.share_link_expires_at !== null &&
         pkg.share_link_expires_at.getTime() <= nowMs) ||
-      // Audit #4 P2-5 — Phase 1 only supports one-time USD packages on
-      // the public storefront. A recurring or non-USD package would not
-      // pass the createIntent gate anyway, but exposing it on GET would
-      // leak its existence and let an attacker correlate share-token
-      // → product internals. 404 the same way an unknown token does.
-      pkg.billing_type !== 'one_time' ||
+      // PR-14 — master-plan §1 decision #1 puts recurring (and combo) on
+      // the web/guest storefront. We previously hard-gated to one_time
+      // here so the GET surface lined up with the (then-restrictive)
+      // createIntent guard. createIntent now mints subscriptions for
+      // recurring + combo packages, so the GET surface gates ONLY on the
+      // non-USD restriction we still keep until per-currency floors ship
+      // (the "(phase) non-USD" master-plan deferral).
       (pkg.currency ?? '').toLowerCase() !== 'usd'
     ) {
       throw new NotFoundException({

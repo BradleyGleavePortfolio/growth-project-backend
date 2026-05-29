@@ -30,6 +30,13 @@ export interface GuestCheckoutResult {
   client_secret: string;
   payment_intent_id: string;
   guest_checkout_id: string;
+  // PR-14 — storefront recurring + one-time+recurring combo support.
+  // When the package has a recurring component the storefront mints a
+  // Stripe Subscription whose first invoice's PaymentIntent the guest
+  // confirms; the subscription id is surfaced here so the Next.js layer
+  // can wire its server-side state to the same id Stripe webhooks use.
+  // Null for pure one-time checkouts.
+  subscription_id?: string | null;
   // r48 #8 — wallet capability flags returned alongside the PaymentIntent
   // so the storefront can render Apple Pay / Google Pay buttons only when
   // the coach's connected account actually supports them. Defaults to
