@@ -1,4 +1,5 @@
 import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
+import { CheckoutModule } from '../checkout/checkout.module';
 import { ConnectModule } from '../connect/connect.module';
 import { EmailModule } from '../email/email.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -46,6 +47,12 @@ import { StorefrontService } from './storefront.service';
     // PurchaseFanoutService so GuestCheckoutService can fire the seam
     // inside its convertGuestToUser $transaction.
     PackagesModule,
+    // PR-14 — CheckoutModule re-exports CheckoutService which owns the
+    // shared Stripe Product/Price resolution helpers
+    // (ensurePriceForPackage / ensureRecurringPriceForPackage). The
+    // storefront calls them so the guest recurring path uses the SAME
+    // price-creation logic the in-app path does — never duplicated.
+    CheckoutModule,
   ],
   controllers: [StorefrontPublicController],
   providers: [

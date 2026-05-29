@@ -336,7 +336,12 @@ export class StripeConnectApiService {
     product: string;
     unit_amount: number;
     currency: string;
-    recurring?: { interval: 'month' | 'year'; interval_count?: number };
+    // PR-14 — widen interval to include 'week'. CoachPackage already
+    // accepts week|month|year per PR-6's pricing config; the Stripe API
+    // supports all three. Narrower typing here forced PR-6 weekly
+    // packages to be unsellable through any path that calls into this
+    // helper.
+    recurring?: { interval: 'week' | 'month' | 'year'; interval_count?: number };
     metadata?: Record<string, string>;
     idempotencyKey: string;
   }): Promise<StripePriceObject> {
@@ -357,6 +362,77 @@ export class StripeConnectApiService {
       }
     }
     return this.post<StripePriceObject>('/prices', form, args.idempotencyKey);
+  }
+
+  // PR-14 — guest storefront recurring support. Mints a Subscription
+  // with `payment_behavior=default_incomplete` so the first invoice's
+  // PaymentIntent is created (but unconfirmed) and Stripe returns a
+  // client_secret the guest confirms client-side via Stripe Elements.
+  // After confirmation the subscription transitions active and the
+  // existing `customer.subscription.updated` / `invoice.paid` webhooks
+  // claim the ClientPurchase row by stripe_subscription_id — no
+  // divergent guest-only subscription claim path.
+  //
+  // `add_invoice_items` carries the one-time price for one-time+recurring
+  // combo packages. Stripe attaches the line to the first invoice so the
+  // guest is charged the one-off + the first subscription period in a
+  // single PaymentIntent. Skipping `add_invoice_items` (pure recurring)
+  // produces a regular first-period charge.
+  //
+  // Connect destination charges: `transfer_data[destination]` routes
+  // every invoice (initial + renewals) to the coach's connected account.
+  // `application_fee_percent` is the platform's slice (decimal %,
+  // 2dp ceiling per CheckoutService.toStripeApplicationFeePercent).
+  //
+  // Idempotency-key is REQUIRED — Stripe collapses retries on the same
+  // idempotency_key to the same Subscription, so a network-dropped retry
+  // never double-mints.
+  async createSubscription(args: {
+    customer: string;
+    recurringPriceId: string;
+    // One-time-price added to the first invoice (combo packages). Omit
+    // for pure-recurring.
+    oneTimePriceId?: string;
+    transferDestination: string;
+    onBehalfOf: string;
+    applicationFeePercent?: number;
+    metadata?: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<StripeSubscriptionObject & {
+    latest_invoice?: {
+      id?: string;
+      payment_intent?: {
+        id?: string;
+        client_secret?: string;
+        status?: string;
+      } | string | null;
+    } | null;
+  }> {
+    const form: Record<string, string> = {
+      customer: args.customer,
+      'items[0][price]': args.recurringPriceId,
+      payment_behavior: 'default_incomplete',
+      'transfer_data[destination]': args.transferDestination,
+      on_behalf_of: args.onBehalfOf,
+      // Expand the first invoice + its PaymentIntent so the caller can
+      // pull the client_secret without a follow-up Stripe round trip.
+      'expand[0]': 'latest_invoice.payment_intent',
+      // 3DS / SCA — let Stripe pick the right confirmation flow on the
+      // first invoice's PI just like createPaymentIntent above.
+      'payment_settings[save_default_payment_method]': 'on_subscription',
+    };
+    if (args.oneTimePriceId) {
+      form['add_invoice_items[0][price]'] = args.oneTimePriceId;
+    }
+    if (typeof args.applicationFeePercent === 'number' && args.applicationFeePercent > 0) {
+      form.application_fee_percent = String(args.applicationFeePercent);
+    }
+    if (args.metadata) {
+      for (const [k, v] of Object.entries(args.metadata)) {
+        form[`metadata[${k}]`] = v;
+      }
+    }
+    return this.post('/subscriptions', form, args.idempotencyKey);
   }
 
   // Checkout Session — the hosted page the client opens to pay. Two

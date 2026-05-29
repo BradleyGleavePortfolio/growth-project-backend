@@ -32,6 +32,8 @@ import { CheckoutIdempotencyService } from './checkout-idempotency.service';
 import { ConnectPreflightService } from './connect-preflight.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
+import { CheckoutService } from '../checkout/checkout.service';
+import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { type GuestCheckoutStatus } from './guest-checkout-status';
 
@@ -198,6 +200,17 @@ export class GuestCheckoutService {
     // for hand-constructed unit tests.
     @Optional()
     private readonly fanout?: PurchaseFanoutService,
+    // PR-14 — shared Stripe Product/Price helpers + FeePolicy. CheckoutService
+    // owns the same lazy-mint logic the in-app path uses; reusing it (vs.
+    // duplicating) keeps the master-plan §1 decision #1 single-source-of-
+    // truth for pricing. @Optional() so the long-tail of unit tests that
+    // hand-construct GuestCheckoutService without DI keep compiling — the
+    // recurring code paths assert presence at call time and fall back to
+    // 503 STRIPE_UNAVAILABLE on a misconfigured boot.
+    @Optional()
+    private readonly checkout?: CheckoutService,
+    @Optional()
+    private readonly feePolicy?: FeePolicyService,
   ) {}
 
   // POST /v1/packages/public/join/:token/checkout
@@ -285,25 +298,27 @@ export class GuestCheckoutService {
       };
     }
 
-    // Audit #3 P1-5 — recurring packages cannot be sold through Phase 1
-    // guest checkout. The previous guard checked the display labels
-    // (`monthly`/`quarterly`/`annual`) which live in the interval
-    // columns, not the canonical schema value, and let any package whose
-    // billing_type was the canonical 'recurring' slip through and get
-    // charged as a one-off PI with no subscription lifecycle. The check
-    // now uses the canonical schema value directly.
-    if (pkg.billing_type === CANONICAL_RECURRING_BILLING_TYPE) {
-      throw new UnprocessableEntityException({
-        error: 'RECURRING_NOT_SUPPORTED',
-        message:
-          'Recurring packages are not yet supported via share links. Please contact your coach to join.',
-      });
-    }
-
-    // Audit #3 P2-6 — Phase 1 storefront accepts USD only. CoachPackage
-    // can persist any Stripe-supported currency, but the platform-fee
-    // floor and the storefront UX are tuned for US cents. Reject early
-    // with a deterministic code; per-currency floors are Phase 2.
+    // PR-14 — master-plan §1 decision #1 puts recurring + one-time+recurring
+    // combo packages back on the web/guest storefront. The OLD guard
+    // refused ALL recurring + non-USD checkouts. We split the two
+    // restrictions cleanly:
+    //
+    //   - Non-USD stays REJECTED. The platform-fee floor is denominated
+    //     in US cents and zero-decimal currencies (JPY, KRW, …) would
+    //     treat the 50¢ floor as 50 yen. Master-plan defers multi-currency
+    //     to a later phase ("(phase) non-USD on storefront"); building a
+    //     per-currency floor + FX path is out of scope for this PR.
+    //   - Recurring (and one-time+recurring combo) are NOW SUPPORTED:
+    //     we mint a Stripe Subscription (default_incomplete) and return
+    //     the latest_invoice.payment_intent.client_secret so the guest
+    //     confirms client-side just like the one-time PI flow. Combo
+    //     packages add an invoice item for the one-off price on the
+    //     first invoice so the guest is charged one + first period in
+    //     a single confirmation.
+    //
+    // Canonical billing_type values: 'one_time' | 'recurring'. The
+    // separate `recurring_amount_cents` etc. columns model the optional
+    // companion price (PR-6 decision #1).
     if ((pkg.currency ?? '').toLowerCase() !== SUPPORTED_CURRENCY) {
       throw new UnprocessableEntityException({
         error: 'CURRENCY_NOT_SUPPORTED',
@@ -311,6 +326,14 @@ export class GuestCheckoutService {
           'This package is priced in a currency we cannot yet accept on the storefront. Please contact your coach to join.',
       });
     }
+
+    const hasRecurringComponent =
+      pkg.billing_type === CANONICAL_RECURRING_BILLING_TYPE ||
+      (pkg.recurring_amount_cents != null && pkg.recurring_interval != null);
+    const isCombo =
+      pkg.billing_type === 'one_time' &&
+      pkg.recurring_amount_cents != null &&
+      pkg.recurring_interval != null;
 
     // Audit #4 P1-5 — Stripe's hard floor for a USD PaymentIntent is 50¢;
     // anything below produces an opaque 400 from the Stripe SDK. Reject
@@ -522,43 +545,65 @@ export class GuestCheckoutService {
       throw err;
     }
 
-    // Mint Stripe PaymentIntent. AbortController(10s) is wired inside
-    // StripeConnectApiService — see src/connect/stripe-connect-api.service.ts
-    // `fetchImpl`.
+    // PR-14 — branch on recurring vs one-time. Pure one-time keeps the
+    // existing direct PaymentIntent path (no behaviour change). Recurring
+    // and one-time+recurring combo mint a Stripe Subscription whose first
+    // invoice's PaymentIntent the guest confirms client-side. Stripe
+    // calls (and any helper that issues them) MUST stay outside any
+    // Prisma $transaction — sentinel writes above already committed, the
+    // mint below is plain async, and we patch the sentinel with the
+    // Stripe ids OUTSIDE any tx (50-Failures #44 / A276-P1-3).
     let paymentIntent: { id: string; client_secret: string };
+    let mintedSubscriptionId: string | null = null;
+    let mintedCustomerId: string | null = null;
     try {
-      const created = await this.stripe.createPaymentIntent({
-        amount: pkg.amount_cents,
-        currency: pkg.currency,
-        // Guest checkout never reuses cards — omit `customer` entirely
-        // rather than passing an empty string (P2-3).
-        applicationFeeAmount: platformFeeCents,
-        transferDestination: connectAccount.stripe_account_id,
-        // Audit #3 P1-10 — connected coach is the merchant of record
-        // for the destination charge.
-        onBehalfOf: connectAccount.stripe_account_id,
-        // Audit #3 P2-4 — only non-PII correlation identifiers go in
-        // Stripe metadata. guest_email / guest_name used to be sent
-        // here so Stripe Dashboard could match charges to buyers, but
-        // Stripe metadata is visible in dashboards, exports, and
-        // downstream integrations. We keep the join in our own
-        // database via guest_checkout_id instead.
-        metadata: {
-          [GUEST_CHECKOUT_METADATA_KEY]: dto.idempotency_key,
-          package_id: pkg.id,
-          guest_checkout_id: sentinel.id,
-        },
-        idempotencyKey: `guest-checkout-pi-${dto.idempotency_key}`,
-      });
-      paymentIntent = {
-        id: created.id,
-        client_secret: created.client_secret,
-      };
+      if (hasRecurringComponent) {
+        const minted = await this.mintRecurringForGuest({
+          pkg,
+          connectAccount,
+          sentinelId: sentinel.id,
+          idempotencyKey: dto.idempotency_key,
+          guestEmail: normalisedEmail,
+          guestName: normalisedName,
+          isCombo,
+        });
+        paymentIntent = minted.paymentIntent;
+        mintedSubscriptionId = minted.subscriptionId;
+        mintedCustomerId = minted.customerId;
+      } else {
+        const created = await this.stripe.createPaymentIntent({
+          amount: pkg.amount_cents,
+          currency: pkg.currency,
+          // Guest checkout never reuses cards — omit `customer` entirely
+          // rather than passing an empty string (P2-3).
+          applicationFeeAmount: platformFeeCents,
+          transferDestination: connectAccount.stripe_account_id,
+          // Audit #3 P1-10 — connected coach is the merchant of record
+          // for the destination charge.
+          onBehalfOf: connectAccount.stripe_account_id,
+          // Audit #3 P2-4 — only non-PII correlation identifiers go in
+          // Stripe metadata. guest_email / guest_name used to be sent
+          // here so Stripe Dashboard could match charges to buyers, but
+          // Stripe metadata is visible in dashboards, exports, and
+          // downstream integrations. We keep the join in our own
+          // database via guest_checkout_id instead.
+          metadata: {
+            [GUEST_CHECKOUT_METADATA_KEY]: dto.idempotency_key,
+            package_id: pkg.id,
+            guest_checkout_id: sentinel.id,
+          },
+          idempotencyKey: `guest-checkout-pi-${dto.idempotency_key}`,
+        });
+        paymentIntent = {
+          id: created.id,
+          client_secret: created.client_secret,
+        };
+      }
     } catch (err) {
-      // Stripe rejected the PI. Mark the sentinel as failed so future
-      // requests with the same key don't re-attempt an obviously-broken
-      // configuration (e.g. unsupported currency); the storefront must
-      // generate a fresh key to retry.
+      // Stripe rejected the PI / Subscription. Mark the sentinel as
+      // failed so future requests with the same key don't re-attempt an
+      // obviously-broken configuration (e.g. unsupported currency); the
+      // storefront must generate a fresh key to retry.
       await this.prisma.guestCheckout.updateMany({
         where: { id: sentinel.id, status: 'pending' },
         data: { status: 'failed' },
@@ -575,16 +620,30 @@ export class GuestCheckoutService {
             'Payment processing temporarily unavailable. Please try again.',
         });
       }
+      // PR-14 — a missing CheckoutService / FeePolicyService dependency on
+      // a recurring mint surfaces as a configuration error from
+      // mintRecurringForGuest; map to 503 just like Stripe errors so the
+      // storefront retries instead of leaking the trace.
+      if (err instanceof ServiceUnavailableException) throw err;
       throw err;
     }
 
-    // Patch the sentinel with the real PaymentIntent id. We tolerate a
-    // P2002 here in the case where Stripe re-issues the same PI id via
-    // its own idempotency-key dedup — unlikely but defended against.
+    // Patch the sentinel with the real PaymentIntent id (and subscription
+    // / customer ids when minted). We tolerate a P2002 here in the case
+    // where Stripe re-issues the same PI id via its own idempotency-key
+    // dedup — unlikely but defended against.
     try {
       await this.prisma.guestCheckout.update({
         where: { id: sentinel.id },
-        data: { stripe_payment_intent_id: paymentIntent.id },
+        data: {
+          stripe_payment_intent_id: paymentIntent.id,
+          ...(mintedSubscriptionId
+            ? { stripe_subscription_id: mintedSubscriptionId }
+            : {}),
+          ...(mintedCustomerId
+            ? { stripe_customer_id: mintedCustomerId }
+            : {}),
+        },
       });
     } catch (err) {
       if (!this.isUniqueViolation(err)) throw err;
@@ -609,8 +668,157 @@ export class GuestCheckoutService {
       client_secret: paymentIntent.client_secret,
       payment_intent_id: paymentIntent.id,
       guest_checkout_id: sentinel.id,
+      subscription_id: mintedSubscriptionId,
       supports_apple_pay: walletSupports.apple,
       supports_google_pay: walletSupports.google,
+    };
+  }
+
+  // PR-14 — recurring (and one-time+recurring combo) Stripe mint path
+  // for the guest storefront. Mirrors the in-app subscription contract:
+  //
+  //   1. ensure a Stripe Customer for the guest (no DB ConnectCustomer
+  //      row — that's reserved for authenticated clients);
+  //   2. resolve the recurring Stripe Price via the SHARED CheckoutService
+  //      helper (master-plan #1 forbids duplicating price-creation logic);
+  //   3. for combo, additionally resolve the one-time Stripe Price;
+  //   4. mint a Subscription with payment_behavior=default_incomplete so
+  //      the first invoice's PaymentIntent is created but unconfirmed —
+  //      the guest confirms client-side exactly like the one-time flow;
+  //   5. return the PI client_secret + subscription id + customer id so
+  //      the caller can patch the sentinel and return them to the SSR
+  //      storefront layer.
+  //
+  // Every Stripe call uses an idempotency_key derived from
+  // dto.idempotency_key so a webhook-driven replay collapses to the same
+  // Customer / Subscription / PaymentIntent. The convertGuestToUser
+  // $transaction will later copy stripe_subscription_id from the
+  // GuestCheckout row onto ClientPurchase; the existing
+  // applySubscriptionUpdated / invoice.paid webhook handlers then claim
+  // renewals and cancellations off stripe_subscription_id with no
+  // divergent guest-only path.
+  private async mintRecurringForGuest(args: {
+    pkg: CoachPackage;
+    connectAccount: { stripe_account_id: string };
+    sentinelId: string;
+    idempotencyKey: string;
+    guestEmail: string;
+    guestName: string;
+    isCombo: boolean;
+  }): Promise<{
+    paymentIntent: { id: string; client_secret: string };
+    subscriptionId: string;
+    customerId: string;
+  }> {
+    if (!this.checkout || !this.feePolicy) {
+      this.logger.error(
+        'mintRecurringForGuest: CheckoutService or FeePolicyService missing — recurring guest checkout is misconfigured',
+      );
+      throw new ServiceUnavailableException({
+        error: 'STRIPE_UNAVAILABLE',
+        message:
+          'Payment processing temporarily unavailable. Please try again.',
+      });
+    }
+
+    const { pkg, connectAccount, sentinelId, idempotencyKey, guestEmail, guestName, isCombo } = args;
+
+    // 1. Customer. Stripe Customer is required for subscriptions; guest
+    //    has no client_user_id so we don't write a ConnectCustomer row.
+    const customer = await this.stripe.createCustomer({
+      email: guestEmail,
+      name: guestName,
+      metadata: {
+        tgp_guest_checkout_id: sentinelId,
+        tgp_package_id: pkg.id,
+        tgp_coach_user_id: pkg.coach_id,
+      },
+      idempotencyKey: `guest-customer-${idempotencyKey}`,
+    });
+
+    // 2. Recurring price. Combo packages put the recurring half in the
+    //    companion fields; pure-recurring puts it in the primary fields.
+    //    The shared helper handles BOTH lazily-mint and cache-hit paths.
+    const recurringPriceId = isCombo
+      ? await this.checkout.ensureRecurringPriceForPackage(pkg)
+      : await this.checkout.ensurePriceForPackage(pkg);
+
+    // 3. Combo: also resolve the one-time price as a first-invoice add-on.
+    const oneTimePriceId = isCombo
+      ? await this.checkout.ensurePriceForPackage(pkg)
+      : undefined;
+
+    // 4. Compute the platform fee percent on the recurring portion. Same
+    //    helper the in-app path uses on its subscription mint.
+    const recurringAmountCents = isCombo
+      ? (pkg.recurring_amount_cents ?? 0)
+      : pkg.amount_cents;
+    const plan = await this.feePolicy.planFor(
+      pkg.coach_id,
+      recurringAmountCents,
+    );
+    const applicationFeeForStripe =
+      plan.application_fee_cents + plan.head_coach_split_cents;
+    const applicationFeePercent =
+      applicationFeeForStripe > 0 && recurringAmountCents > 0
+        ? CheckoutService.toStripeApplicationFeePercent(
+            applicationFeeForStripe,
+            recurringAmountCents,
+          )
+        : undefined;
+
+    // 5. Mint subscription. payment_behavior=default_incomplete returns
+    //    a latest_invoice.payment_intent with a client_secret the guest
+    //    confirms client-side — same shape the storefront already drives
+    //    for the one-time path. Idempotency-key derives from
+    //    dto.idempotency_key so a Stripe webhook replay never double-mints.
+    const subscription = await this.stripe.createSubscription({
+      customer: customer.id,
+      recurringPriceId,
+      oneTimePriceId,
+      transferDestination: connectAccount.stripe_account_id,
+      onBehalfOf: connectAccount.stripe_account_id,
+      applicationFeePercent,
+      metadata: {
+        [GUEST_CHECKOUT_METADATA_KEY]: idempotencyKey,
+        tgp_package_id: pkg.id,
+        tgp_coach_user_id: pkg.coach_id,
+        tgp_guest_checkout_id: sentinelId,
+        // tgp_client_user_id is filled in at convertGuestToUser time —
+        // intentionally absent here.
+      },
+      idempotencyKey: `guest-subscription-${idempotencyKey}`,
+    });
+
+    // Extract the PaymentIntent client_secret from the expanded invoice.
+    const inv = (subscription as { latest_invoice?: unknown }).latest_invoice;
+    const expandedPi =
+      inv && typeof inv === 'object'
+        ? (inv as { payment_intent?: unknown }).payment_intent
+        : null;
+    if (
+      !expandedPi ||
+      typeof expandedPi !== 'object' ||
+      typeof (expandedPi as { client_secret?: unknown }).client_secret !==
+        'string' ||
+      typeof (expandedPi as { id?: unknown }).id !== 'string'
+    ) {
+      this.logger.error(
+        `mintRecurringForGuest: subscription ${subscription.id} returned without expanded payment_intent — refusing to surface broken client_secret`,
+      );
+      throw new ServiceUnavailableException({
+        error: 'STRIPE_UNAVAILABLE',
+        message:
+          'Payment processing temporarily unavailable. Please try again.',
+      });
+    }
+    const piId = (expandedPi as { id: string }).id;
+    const clientSecret = (expandedPi as { client_secret: string }).client_secret;
+
+    return {
+      paymentIntent: { id: piId, client_secret: clientSecret },
+      subscriptionId: subscription.id,
+      customerId: customer.id,
     };
   }
 
@@ -1296,6 +1504,23 @@ export class GuestCheckoutService {
           },
         });
         if (!purchaseRow) {
+          // PR-14 — billing_type snapshot follows the package's effective
+          // billing semantics for the guest: pure recurring or combo both
+          // mean the guest now holds a subscription, so the snapshot
+          // reflects that. One-time-only continues to be 'one_time'.
+          const isRecurring =
+            checkout.package.billing_type === CANONICAL_RECURRING_BILLING_TYPE ||
+            !!checkout.stripe_subscription_id;
+          const billingSnapshot = isRecurring
+            ? CANONICAL_RECURRING_BILLING_TYPE
+            : checkout.package.billing_type;
+          // PR-14 — status snapshot. The existing applySubscriptionUpdated
+          // webhook handler resolves 'active'|'past_due'|… by reading the
+          // live subscription on its first delivery. We seed 'active' for
+          // recurring guests so the entitlement is live from the moment
+          // money cleared (matches the in-app subscription path's
+          // entitlement contract) and let the webhook refine it later.
+          const statusSnapshot = isRecurring ? 'active' : 'paid';
           try {
             purchaseRow = await tx.clientPurchase.create({
               data: {
@@ -1304,18 +1529,32 @@ export class GuestCheckoutService {
                 package_id: checkout.package_id,
                 amount_cents: checkout.package.amount_cents,
                 currency: checkout.package.currency,
-                billing_type: checkout.package.billing_type,
+                billing_type: billingSnapshot,
                 // No Checkout Session for guest flow — synthesise a
                 // sentinel id so the @unique column stays unique.
                 stripe_checkout_session_id: `guest_pi_${checkout.stripe_payment_intent_id}`,
                 stripe_payment_intent_id: checkout.stripe_payment_intent_id,
+                // PR-14 — propagate the Stripe subscription id captured
+                // at sentinel-patch time so the existing
+                // applySubscriptionUpdated webhook handler claims this
+                // ClientPurchase row directly off stripe_subscription_id
+                // (no metadata-fallback round-trip). Null on one-time
+                // guests.
+                stripe_subscription_id:
+                  checkout.stripe_subscription_id ?? null,
                 stripe_customer_id: checkout.stripe_customer_id,
                 // P2-5 — write the destination Connect account so guest
                 // rows reconcile alongside in-app purchases in Stripe
                 // balance-transactions exports.
                 stripe_destination_account: destinationAccount,
-                status: 'paid',
+                status: statusSnapshot,
                 entitlement_active: true,
+                // PR-14 — propagate landing_page_id from GuestCheckout
+                // onto ClientPurchase inside the same conversion $tx.
+                // GuestCheckout already validated the id (R47 / Audit #6
+                // P0-5); we just copy. NULL-safe — null on direct-storefront
+                // and pre-PR-14 rows.
+                landing_page_id: checkout.landing_page_id ?? null,
                 idempotency_key: purchaseIdemKey,
               },
             });

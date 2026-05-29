@@ -205,22 +205,26 @@ describe('GuestCheckoutService', () => {
       );
     });
 
-    // Audit #3 P1-5 — recurring packages are displayed on the public
-    // storefront but Phase 1 cannot honour subscription billing. The
-    // guard MUST use the canonical schema value `recurring` (which is
-    // what coach console writes), not display labels like
-    // `monthly`/`quarterly`/`annual` (which live in the interval
-    // columns). A previous build used the display labels and silently
-    // let canonical-recurring packages through as one-off PIs.
-    it('rejects recurring packages with 422 RECURRING_NOT_SUPPORTED using the canonical billing_type', async () => {
+    // PR-14 — master-plan §1 decision #1 puts recurring back on the
+    // storefront. The previous A3-P1-5 guard refused recurring outright;
+    // the dedicated PR-14 spec block (further down) exercises the
+    // happy path (subscription mint + idempotency). Here we assert that
+    // the OLD recurring-rejection no longer fires when no
+    // CheckoutService is injected — the legacy lean-mock test wiring
+    // surfaces a 503 STRIPE_UNAVAILABLE instead of 422, which is the
+    // correct misconfigured-boot response.
+    it('does NOT reject recurring packages on the OLD A3-P1-5 422 path (PR-14 lifted the guard)', async () => {
       prisma.coachPackage.findUnique.mockResolvedValueOnce(
         makePkg({ billing_type: 'recurring', interval: 'month', interval_count: 1 }),
       );
       prisma.guestCheckout.findUnique.mockResolvedValue(null);
+      prisma.guestCheckout.create.mockResolvedValueOnce({ id: 'gc-rec-old' });
       await expect(service.createIntent('tok123', baseDto)).rejects.toThrow(
-        UnprocessableEntityException,
+        ServiceUnavailableException,
       );
-      // Never burns a Stripe API call for a recurring package.
+      // The one-time PaymentIntent path is NOT taken for recurring —
+      // the (missing) CheckoutService dependency surfaces 503 before
+      // any one-time PI mint.
       expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
     });
 
