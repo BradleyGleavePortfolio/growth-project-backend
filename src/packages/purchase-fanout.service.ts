@@ -23,22 +23,39 @@ import { AssignableAssetResolverRegistry } from './asset-resolvers/assignable-as
 //      On success it stamps `materialised_ref` + `status='fired'` +
 //      `fired_at`.
 //
-// IDEMPOTENCY (KEEPS PR-4 contract):
+// IDEMPOTENCY (KEEPS PR-4 contract; PR-9 R1 closes the rollback-and-retry gap):
 //   - PurchaseFanout.purchase_id @unique + upsert({update:{}}) — webhook
 //     replay does not create a second row.
 //   - ScheduledDrop.@@unique([client_purchase_id, content_id]) + use of
 //     `skipDuplicates: true` on the bulk createMany — replay does not seed
 //     duplicate drops.
-//   - Immediate-materialisation guard: after createMany we re-read the
-//     drops we just seeded; we materialise ONLY drops whose
-//     `materialised_ref IS NULL`. A replayed event finds the prior fire's
-//     ref already set and skips. This is the contract PR-7 documents on
-//     `AssignableAssetResolver.materialise` (per-drop dispatch guard lives
-//     in the executor — here, that executor is us).
-//   - PR-7 resolver-level uniques (workout ledger key,
-//     DailyMealPlanAssignment.drip_drop_id @unique,
-//     ClientAssetGrant @@unique[client_id, media_asset_id]) provide a
-//     final exactly-once guarantee even under a true TOCTOU race.
+//   - Immediate-materialisation guard (happy-path replay): after createMany
+//     we re-read the drops we just seeded; we materialise ONLY drops whose
+//     `materialised_ref IS NULL`. A happy-path replay finds the prior
+//     fire's ref already set and skips.
+//   - Rollback-and-retry replay (audit P1-1/P1-2 fix): the resolvers
+//     additionally use STABLE per-(purchaseId, contentId) keys instead of
+//     the regenerated scheduledDropId so a rolled-back+retried event
+//     cannot double-fire downstream side-effects:
+//       * workout → WorkoutBuilderIdempotencyKey value
+//         `drip:workout:p={purchaseId}:c={contentId}`. The ledger is
+//         written via `this.prisma` outside the outer tx, so it survives
+//         the rollback and a retry observes the cached completed claim.
+//       * auto_message → durable `DripResolverMarker(purpose=auto_message,
+//         purchase_id, content_id)` claimed BEFORE sendAsCoach and
+//         updated with the resulting CoachMessage id after. A retry
+//         observes the marker and replays the cached message id without
+//         a second send (see auto-message.resolver.ts for the
+//         marker.materialised_ref==null reclaim case).
+//       * meal_plan → `DailyMealPlanAssignment.drip_drop_id @unique`. The
+//         per-drop key still regenerates on rollback, but the write rides
+//         the outer tx so a rollback erases the row entirely — the retry
+//         starts from a clean slate.
+//       * pdf/video → `ClientAssetGrant @@unique[client_id, media_asset_id]`.
+//         Composite is stable across UUID churn; retry collapses cleanly.
+//     Net invariant: a rollback+retry of the same Stripe event id never
+//     produces a second ClientWorkoutAssignment, CoachMessage,
+//     DailyMealPlanAssignment, or ClientAssetGrant.
 //
 // ATOMICITY CONTRACT — IMMEDIATE RESOLVER FAILURE INSIDE THE TX:
 //   We DO NOT swallow a resolver failure. We rethrow it so the outer
@@ -260,6 +277,15 @@ export class PurchaseFanoutService {
         displayTitle: drop.display_title,
         displayCaption: drop.display_caption,
         scheduledDropId: drop.id,
+        // PR-9 R1 audit-fix — STABLE keys for cross-rollback idempotency.
+        // ScheduledDrop UUIDs regenerate when the outer tx rolls back; the
+        // (clientPurchaseId, contentId) pair does not. Resolvers whose
+        // side-effects commit OUTSIDE this tx (workout, auto_message)
+        // use this pair to gate their dedup so a rolled-back-then-retried
+        // event cannot create a second ClientWorkoutAssignment or a
+        // second CoachMessage. See P1-1/P1-2 in PR9_AUDIT.md.
+        clientPurchaseId: purchase.id,
+        contentId: drop.content_id,
         tx: tx as Prisma.TransactionClient,
       });
 

@@ -18,9 +18,23 @@ function makeMessaging() {
   } as unknown as ConstructorParameters<typeof AutoMessageAssetResolver>[0];
 }
 
+// PR-9 R1 — AutoMessageAssetResolver now depends on PrismaService for the
+// DripResolverMarker dedup. Pre-PR-9 unit-test surface only exercises the
+// non-drip path (no clientPurchaseId/contentId), so the marker branch is
+// never taken — a do-nothing stub is sufficient.
+function makePrisma() {
+  return {
+    dripResolverMarker: {
+      create: jest.fn(),
+      update: jest.fn(),
+      findUnique: jest.fn(),
+    },
+  } as unknown as ConstructorParameters<typeof AutoMessageAssetResolver>[2];
+}
+
 describe('AutoMessageAssetResolver', () => {
   it('canHandle only auto_message', () => {
-    const r = new AutoMessageAssetResolver(makeMessaging(), makeScope(true));
+    const r = new AutoMessageAssetResolver(makeMessaging(), makeScope(true), makePrisma());
     expect(r.canHandle('auto_message')).toBe(true);
     expect(r.canHandle('workout_plan')).toBe(false);
     expect(r.canHandle('pdf')).toBe(false);
@@ -36,6 +50,7 @@ describe('AutoMessageAssetResolver', () => {
     const resolver = new AutoMessageAssetResolver(
       msg,
       makeScope(true, true, 'head-1'),
+      makePrisma(),
     );
     const res = await resolver.materialise({
       clientId: 'c1',
@@ -53,7 +68,7 @@ describe('AutoMessageAssetResolver', () => {
 
   it('head-coach path: passes the head coach id unchanged (resolve() returns actingCoachId === coachId)', async () => {
     const msg = makeMessaging();
-    const resolver = new AutoMessageAssetResolver(msg, makeScope(true, false));
+    const resolver = new AutoMessageAssetResolver(msg, makeScope(true, false), makePrisma());
     await resolver.materialise({
       clientId: 'c1',
       coachId: 'head-coach-7',
@@ -66,7 +81,7 @@ describe('AutoMessageAssetResolver', () => {
 
   it('falls back to displayTitle when displayCaption is missing', async () => {
     const msg = makeMessaging();
-    const resolver = new AutoMessageAssetResolver(msg, makeScope(true));
+    const resolver = new AutoMessageAssetResolver(msg, makeScope(true), makePrisma());
     await resolver.materialise({
       clientId: 'c1',
       coachId: 'coach1',
@@ -80,7 +95,7 @@ describe('AutoMessageAssetResolver', () => {
 
   it('throws AutoMessageBodyMissingError when both displayCaption and displayTitle are blank', async () => {
     const msg = makeMessaging();
-    const resolver = new AutoMessageAssetResolver(msg, makeScope(true));
+    const resolver = new AutoMessageAssetResolver(msg, makeScope(true), makePrisma());
     await expect(
       resolver.materialise({
         clientId: 'c1',
@@ -95,7 +110,7 @@ describe('AutoMessageAssetResolver', () => {
 
   it('refuses out-of-scope sub-coaches before sending', async () => {
     const msg = makeMessaging();
-    const resolver = new AutoMessageAssetResolver(msg, makeScope(false));
+    const resolver = new AutoMessageAssetResolver(msg, makeScope(false), makePrisma());
     await expect(
       resolver.materialise({
         clientId: 'c1',

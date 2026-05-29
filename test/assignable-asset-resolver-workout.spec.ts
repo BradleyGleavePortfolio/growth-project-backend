@@ -117,6 +117,51 @@ describe('WorkoutAssetResolver', () => {
     expect((wb as unknown as { assignPlan: jest.Mock }).assignPlan).not.toHaveBeenCalled();
   });
 
+  // PR-9 R1 audit-fix (P1-1): when the inline-checkout caller supplies
+  // (clientPurchaseId, contentId) the resolver MUST use them as the
+  // idempotency key — those are stable across an outer-tx rollback +
+  // Stripe retry, unlike scheduledDropId which regenerates on retry.
+  it('uses the (purchaseId, contentId) stable key when both are supplied (drip inline-checkout path)', async () => {
+    const wb = makeWorkoutBuilder();
+    const resolver = new WorkoutAssetResolver(
+      wb,
+      new ResolverSubCoachScope(
+        makeSubCoachScope({ allowed: true, isSub: false }),
+      ),
+    );
+    await resolver.materialise({
+      clientId: 'c-abc',
+      coachId: 'coach-1',
+      assetId: 'plan-z',
+      scheduledDropId: 'drop-EPHEMERAL-uuid', // will regenerate on retry
+      clientPurchaseId: 'pur-stable',
+      contentId: 'content-stable',
+    });
+    const key = (wb as unknown as { assignPlan: jest.Mock }).assignPlan.mock.calls[0][3];
+    expect(key).toBe('drip:workout:p=pur-stable:c=content-stable');
+    // explicitly NOT the scheduledDropId form — that would be unsafe on
+    // a rollback+retry because the UUID regenerates.
+    expect(key).not.toContain('drop-EPHEMERAL-uuid');
+  });
+
+  it('falls back to the scheduledDropId-keyed form when no (purchaseId, contentId) is supplied (PR-10 cron path)', async () => {
+    const wb = makeWorkoutBuilder();
+    const resolver = new WorkoutAssetResolver(
+      wb,
+      new ResolverSubCoachScope(
+        makeSubCoachScope({ allowed: true, isSub: false }),
+      ),
+    );
+    await resolver.materialise({
+      clientId: 'c1',
+      coachId: 'coach1',
+      assetId: 'plan-a',
+      scheduledDropId: 'drop-committed-7',
+    });
+    const key = (wb as unknown as { assignPlan: jest.Mock }).assignPlan.mock.calls[0][3];
+    expect(key).toBe('drip:workout:c1:plan-a:drop-committed-7');
+  });
+
   it('drops without a scheduledDropId still get a stable idempotency key (no-drop segment)', async () => {
     const wb = makeWorkoutBuilder();
     const resolver = new WorkoutAssetResolver(

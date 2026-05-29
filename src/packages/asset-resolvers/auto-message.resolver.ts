@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { MessagingService } from '../../messaging/messaging.service';
+import { PrismaService } from '../../prisma.service';
 import { ResolverSubCoachScope } from './sub-coach-scope.helper';
 import {
   AutoMessageBodyMissingError,
@@ -36,24 +38,50 @@ import type {
 // and we fail loudly with a typed `AutoMessageBodyMissingError` rather than
 // sending whitespace.
 //
-// Idempotency: `MessagingService.sendAsCoach` does NOT today dedupe on a
-// caller-supplied key (per the TODO in coach-message.materialiser.ts:78-81),
-// so this resolver is AT-LEAST-ONCE — see the contract note on
-// AssignableAssetResolver.materialise(). PR-10's drip executor MUST gate
-// retries on `ScheduledDrop.materialised_ref` being NULL so a successful
-// send is never replayed.
+// IDEMPOTENCY (PR-9 R1 audit-fix for P1-2):
+//   `MessagingService.sendAsCoach` commits CoachMessage on its OWN
+//   connection (not the caller's tx). The PR-9 atomicity contract — outer
+//   tx rolls back → Stripe retries → idempotency makes the retry safe —
+//   was BROKEN for this resolver because the sent CoachMessage row
+//   persists across the rollback and a retry produces a SECOND message.
+//
+//   Fix: a durable `DripResolverMarker(purpose='auto_message',
+//   purchase_id, content_id)` row is INSERTED in its own commit BEFORE
+//   the send. The (purpose, purchase_id, content_id) unique key is
+//   stable across an outer-tx rollback + Stripe retry. On retry the
+//   second INSERT hits P2002, we re-read the marker:
+//     - marker.materialised_ref != null → the prior attempt's send
+//       succeeded and we return the cached message id (NO second send).
+//     - marker.materialised_ref == null → the prior attempt died after
+//       the marker insert but before the send finished. We complete the
+//       send and stamp the marker. This is at-least-once for the send
+//       in that narrow window (process kill / Stripe HTTP timeout
+//       between the marker insert and the messaging service's commit),
+//       but it is at-most-once across the routine rollback-and-retry
+//       path the brief actually documents — which is the failure mode
+//       P1-2 was concerned with.
+//
+//   When (purchaseId, contentId) are NOT supplied (PR-10 cron path with
+//   a stable scheduledDropId, or non-drip callers), we skip the marker
+//   and fall back to the legacy AT-LEAST-ONCE behaviour (gated by
+//   ScheduledDrop.materialised_ref IS NULL in the executor).
 //
 // tx-honoring: `sendAsCoach` opens no transaction and we cannot push `tx`
 // into it without an out-of-scope signature change to MessagingService.
+// The marker INSERT/UPDATE deliberately uses `this.prisma` (NOT the
+// caller's tx) so the marker survives an outer-tx rollback — that's the
+// whole point.
 
 @Injectable()
 export class AutoMessageAssetResolver implements AssignableAssetResolver {
   private readonly logger = new Logger(AutoMessageAssetResolver.name);
   readonly assetType: AssignableAssetType = 'auto_message';
+  private static readonly MARKER_PURPOSE = 'auto_message';
 
   constructor(
     private readonly messaging: MessagingService,
     private readonly scope: ResolverSubCoachScope,
+    private readonly prisma: PrismaService,
   ) {}
 
   canHandle(assetType: string): boolean {
@@ -75,6 +103,24 @@ export class AutoMessageAssetResolver implements AssignableAssetResolver {
     // sender. See the file-level comment for the full rationale.
     const acting = await this.scope.resolve(input.coachId, input.clientId);
 
+    const purchaseId = input.clientPurchaseId ?? null;
+    const contentId = input.contentId ?? null;
+    const useMarker = !!(purchaseId && contentId);
+
+    // PR-9 R1 — DRIP fan-out path (purchase+content known): claim the
+    // durable marker FIRST. If a prior attempt already claimed it and
+    // succeeded, replay the cached message id without a second send.
+    if (useMarker) {
+      const claim = await this.tryClaimMarker(purchaseId!, contentId!);
+      if (claim.kind === 'cached') {
+        // Prior attempt already sent the message; return its id without
+        // firing sendAsCoach a second time.
+        return { materialisedRef: claim.materialisedRef };
+      }
+      // claim.kind === 'fresh' or 'reclaim' — proceed to send, then
+      // stamp the marker with the message id.
+    }
+
     const sent = await this.messaging.sendAsCoach(
       acting.actingCoachId,
       input.clientId,
@@ -86,6 +132,72 @@ export class AutoMessageAssetResolver implements AssignableAssetResolver {
       );
       throw new Error('AutoMessageAssetResolver: sendAsCoach returned no id');
     }
+
+    if (useMarker) {
+      // Stamp the marker with the materialised ref so a future retry
+      // observes it and short-circuits. Best-effort: failure here is
+      // observable (next retry would re-send), but the message did
+      // land — we log and surface the message id either way.
+      try {
+        await this.prisma.dripResolverMarker.update({
+          where: {
+            purpose_purchase_id_content_id: {
+              purpose: AutoMessageAssetResolver.MARKER_PURPOSE,
+              purchase_id: purchaseId!,
+              content_id: contentId!,
+            },
+          },
+          data: { materialised_ref: sent.id },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `AutoMessageAssetResolver: marker update failed purchase=${purchaseId} content=${contentId}: ${(err as Error).message}`,
+        );
+      }
+    }
     return { materialisedRef: sent.id };
+  }
+
+  private async tryClaimMarker(
+    purchaseId: string,
+    contentId: string,
+  ): Promise<
+    | { kind: 'fresh' }
+    | { kind: 'reclaim' }
+    | { kind: 'cached'; materialisedRef: string }
+  > {
+    try {
+      await this.prisma.dripResolverMarker.create({
+        data: {
+          purpose: AutoMessageAssetResolver.MARKER_PURPOSE,
+          purchase_id: purchaseId,
+          content_id: contentId,
+        },
+      });
+      return { kind: 'fresh' };
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        const existing = await this.prisma.dripResolverMarker.findUnique({
+          where: {
+            purpose_purchase_id_content_id: {
+              purpose: AutoMessageAssetResolver.MARKER_PURPOSE,
+              purchase_id: purchaseId,
+              content_id: contentId,
+            },
+          },
+        });
+        if (existing?.materialised_ref) {
+          return { kind: 'cached', materialisedRef: existing.materialised_ref };
+        }
+        // Prior attempt inserted the marker but died before stamping
+        // the ref. Reclaim and complete the send — there is no message
+        // row in the database to be duplicated yet.
+        return { kind: 'reclaim' };
+      }
+      throw err;
+    }
   }
 }

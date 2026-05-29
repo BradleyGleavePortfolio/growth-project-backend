@@ -45,8 +45,34 @@ export interface AssignableAssetMaterialiseInput {
    * (the per-drop UNIQUE race guard added in migration 20261203000000), and
    * downstream PRs may use it to gate retries. Optional only for back-compat
    * with non-drip callers.
+   *
+   * IMPORTANT: ScheduledDrop UUIDs are regenerated when the outer fan-out
+   * `$transaction` rolls back (the row is gone; the retry's `createMany`
+   * mints a fresh UUID). Resolvers MUST NOT use this id as their
+   * cross-retry idempotency key — see `clientPurchaseId` + `contentId`
+   * below, both of which ARE stable across rollback+retry.
    */
   scheduledDropId?: string | null;
+  /**
+   * PR-9 R1 — STABLE keys for cross-rollback idempotency. The
+   * (clientPurchaseId, contentId) pair is the only key that survives an
+   * outer-tx rollback + Stripe webhook retry:
+   *   - `clientPurchaseId` is the existing pre-flip ClientPurchase row;
+   *     the webhook only mutates `entitlement_active`, never the id.
+   *   - `contentId` is the CoachPackageContent authoring id, owned by the
+   *     coach, immutable across buyer-side webhook activity.
+   *
+   * Resolvers whose downstream side-effect commits OUTSIDE the outer tx
+   * (today: `WorkoutAssetResolver` via WorkoutBuilderService's internal
+   * ledger; `AutoMessageAssetResolver` via DripResolverMarker) MUST key
+   * their dedup on this pair when both are present.
+   *
+   * Optional only because PR-10's cron path can pass `scheduledDropId`
+   * alone (drop already committed; its UUID is stable from that point
+   * forward); the inline-checkout path always passes both.
+   */
+  clientPurchaseId?: string | null;
+  contentId?: string | null;
   /**
    * Ambient Prisma transaction. When provided (immediate-at-checkout inline
    * fan-out path), the resolver MUST use it for its own writes and MUST NOT
@@ -84,24 +110,31 @@ export interface AssignableAssetResolver {
    *
    * Idempotency contract — AT-LEAST-ONCE.
    *
-   * Most resolvers are exactly-once thanks to a schema-enforced UNIQUE on
-   * the per-drop natural key (the loser of a concurrent retry catches
-   * P2002 and re-reads the winner's id):
-   *   - workout: deterministic idempotency key flows through
-   *     `WorkoutBuilderIdempotencyKey`.
-   *   - meal_plan: `DailyMealPlanAssignment.drip_drop_id @unique`
-   *     (migration 20261203000000_pr7_meal_plan_drip_drop_unique).
-   *   - pdf/video: `ClientAssetGrant @@unique(client_id, media_asset_id)`.
+   * Resolvers are exactly-once across the inline-checkout rollback+retry
+   * path when keyed on the STABLE `(clientPurchaseId, contentId)` pair —
+   * scheduledDropId is regenerated when the outer tx rolls back, so
+   * resolvers whose side-effects commit outside the outer tx MUST NOT
+   * key dedup on it:
+   *   - workout: WorkoutBuilderIdempotencyKey value
+   *     `drip:workout:p={purchaseId}:c={contentId}` (stable across
+   *     rollback+retry); ledger writes via this.prisma persist outside
+   *     the outer tx and the retry replays the cached row.
+   *   - auto_message: durable `DripResolverMarker(purpose='auto_message',
+   *     purchase_id, content_id)` claimed BEFORE sendAsCoach;
+   *     `materialised_ref` updated after. A retry observes the marker
+   *     and returns the cached CoachMessage id — see PR-9 R1 audit-fix.
+   *   - meal_plan: `DailyMealPlanAssignment.drip_drop_id @unique` —
+   *     the per-drop key DOES regenerate on rollback, but the write
+   *     rides the outer tx so a rollback erases the row entirely; the
+   *     retry starts from a clean slate.
+   *   - pdf/video: `ClientAssetGrant @@unique(client_id, media_asset_id)`
+   *     — composite is stable regardless of drop-UUID churn.
    *
-   * `auto_message` is the exception — `MessagingService.sendAsCoach` does
-   * not today accept a caller-supplied idempotency key (TODO at
-   * src/ai/gateway/materialisers/coach-message.materialiser.ts:78-81), so a
-   * retry after a partial failure can produce a second CoachMessage row.
-   * PR-10's drip executor MUST therefore gate retries on
-   * `ScheduledDrop.materialised_ref IS NULL` so a fire that succeeded
-   * (even if the executor crashed before persisting the ref) is never
-   * replayed. The per-drop dispatch guard belongs in the executor, not in
-   * each resolver.
+   * PR-10's cron path (drop already committed; UUID stable from that
+   * point forward) may pass only `scheduledDropId` — each resolver's
+   * fallback path keys on that. The executor (PR-10) still gates
+   * retries on `ScheduledDrop.materialised_ref IS NULL` for defense in
+   * depth.
    *
    * Implementations document their per-type idempotency strategy in the
    * file-level comment.

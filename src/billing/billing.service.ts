@@ -436,6 +436,32 @@ export class BillingService {
           (err as Error)?.message ?? String(err)
         }`,
       );
+      // PR-9 R1 audit-fix (P2-1) — operator-observability runbook hint
+      // for rollback-and-retry. The outer $transaction rolled back, but
+      // three classes of side-effect may have ALREADY committed on
+      // `this.prisma` outside this tx and will outlive the rollback
+      // until Stripe redelivers the event:
+      //   1. Splits ledger (`SplitLedgerEntry`, `ConnectTransfer`) —
+      //      idempotent via composite-unique upserts + Stripe
+      //      idempotency-key + the sweeper. Safe across retry; the
+      //      ledger row remains visible against a purchase whose
+      //      entitlement_active is back to false until the retry
+      //      commits.
+      //   2. Workout assignments — gated by the
+      //      `WorkoutBuilderIdempotencyKey` ledger keyed on
+      //      `drip:workout:p={purchase}:c={content}` (stable across
+      //      retry); a retry collapses onto the cached row.
+      //   3. Auto-messages — gated by `DripResolverMarker(purpose=
+      //      'auto_message', purchase_id, content_id)`; a retry
+      //      collapses onto the cached message id.
+      // If you are an oncall investigator hitting a rollback storm:
+      // check these three tables for orphan rows tied to the failing
+      // purchase id (when known) before manually retrying anything.
+      if (dripAlertPurchaseId) {
+        this.logger.warn(
+          `tx-rollback observability: event=${event.id} type=${event.type} purchase=${dripAlertPurchaseId} — splits/workout-ledger/auto-message-markers committed outside the outer tx will be reconciled by Stripe retry + per-resolver stable-key idempotency; check SplitLedgerEntry, WorkoutBuilderIdempotencyKey (key=drip:workout:p=${dripAlertPurchaseId}:c=*), DripResolverMarker(purpose=auto_message, purchase_id=${dripAlertPurchaseId}) on persistent failure`,
+        );
+      }
       // PR-9 — drop the in-memory alert bucket for the rolled-back
       // purchase so the inevitable Stripe retry doesn't double-alert
       // alongside the new bucket the retry produces.
