@@ -4,11 +4,13 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { PtmService } from '../ptm/ptm.service';
+import { MilestoneService } from '../packages/milestone.service';
 import type {
   BuildWeekActionItemDto,
   BuildWeekDayCompletionDto,
@@ -55,7 +57,18 @@ export class BuildWeekService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly ptm: PtmService,
+    // PR-11 — optional injection so pre-existing build-week unit tests
+    // (test/build-week.service.spec.ts) that pass three constructor
+    // arguments continue to work. In production wiring (BuildWeekModule
+    // imports PackagesModule), MilestoneService is always present.
+    @Optional() private readonly milestones?: MilestoneService,
   ) {}
+
+  // PR-11 — live milestone keys emitted from this module. The string
+  // value is what coaches put in cadence_payload.milestone_key when
+  // attaching an on_milestone CoachPackageContent. Stable: never rename
+  // without coordinating with already-purchased ScheduledDrop snapshots.
+  public static readonly BUILD_WEEK_COMPLETE_KEY = 'build_week_complete';
 
   // ---- catalog reads --------------------------------------------------
 
@@ -249,6 +262,20 @@ export class BuildWeekService {
         day_number: dayNumber,
         total_days: TOTAL_DAYS,
       });
+      // PR-11 — also emit the 'build_week_complete' named milestone so
+      // any matching on_milestone drip drops the buyer has waiting in
+      // a purchased package fire on the next DripDispatcherCron tick.
+      // MilestoneService.emit is fire-and-forget and never throws; we
+      // explicitly do NOT await its result in a way that would gate
+      // the completion response, but we do await it inside this branch
+      // because a failure path in the trigger still must not surface
+      // to the caller (the service swallows it).
+      if (this.milestones) {
+        await this.milestones.emit(
+          userId,
+          BuildWeekService.BUILD_WEEK_COMPLETE_KEY,
+        );
+      }
     }
 
     return this.toEnrollmentDto(updated);

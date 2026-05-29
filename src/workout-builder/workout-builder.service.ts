@@ -32,11 +32,16 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { DripTriggerService } from '../packages/drip-trigger.service';
 import {
   CompleteAssignmentDto,
   CreateAssignmentDto,
@@ -60,7 +65,21 @@ export interface Paginated<T> {
 
 @Injectable()
 export class WorkoutBuilderService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(WorkoutBuilderService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    // PR-11 — optional injection for the on_completion drip trigger. Marked
+    // @Optional so legacy unit-tests that construct WorkoutBuilderService
+    // with a single PrismaService keep working (the dozens of pre-existing
+    // tests under test/workout-builder.service.spec.ts and the materialiser
+    // suite construct the service directly). forwardRef breaks the
+    // module-load cycle PackagesModule <-> WorkoutBuilderModule that would
+    // otherwise form via AssignableAssetResolversModule's transitive imports.
+    @Optional()
+    @Inject(forwardRef(() => DripTriggerService))
+    private readonly dripTrigger?: DripTriggerService,
+  ) {}
 
   // ─── RBAC guard ───────────────────────────────────────────────────────────
 
@@ -734,9 +753,47 @@ export class WorkoutBuilderService {
     });
 
     if (updated.count === 1) {
-      return this.prisma.clientWorkoutAssignment.findUnique({
+      const completed = await this.prisma.clientWorkoutAssignment.findUnique({
         where: { id: assignmentId },
       });
+      // PR-11 — fire on_completion drip trigger. Only on the real
+      // completion path (updated.count===1), NEVER on the idempotent
+      // replay branch above (which short-circuits before this update).
+      // Best-effort: DripTriggerService.onContentCompleted never throws,
+      // but we wrap defensively so even a future regression in the
+      // trigger pipeline cannot break a legitimate workout completion.
+      // The asset_type passed matches the snapshot side
+      // (workout.resolver.ts handles both 'workout_plan' and
+      // 'workout_program' and they reference the same WorkoutPlan id);
+      // we pass 'workout_plan' since the DripTriggerService matches
+      // ScheduledDrop.asset_type+asset_id verbatim against the snapshot
+      // — see drip-trigger.service.ts for why both kinds resolve here.
+      if (this.dripTrigger && completed) {
+        try {
+          await this.dripTrigger.onContentCompleted({
+            buyerUserId: completed.client_id,
+            assetType: 'workout_plan',
+            assetId: completed.workout_plan_id,
+          });
+          // Also fire for the workout_program alias: a coach may have
+          // attached the same plan as cadence_kind=workout_program
+          // (the snapshot's asset_type would then be 'workout_program').
+          // Both forms resolve to the same underlying WorkoutPlan id —
+          // the trigger query filters by asset_type+asset_id so the
+          // two emits each scope to their own snapshot type and do not
+          // double-fire.
+          await this.dripTrigger.onContentCompleted({
+            buyerUserId: completed.client_id,
+            assetType: 'workout_program',
+            assetId: completed.workout_plan_id,
+          });
+        } catch (err) {
+          this.logger.warn(
+            `WorkoutBuilderService: DripTrigger emit failed (completion still recorded) assignment=${assignmentId}: ${(err as Error).message}`,
+          );
+        }
+      }
+      return completed;
     }
 
     // Update didn't take effect: the row is already completed (by us
