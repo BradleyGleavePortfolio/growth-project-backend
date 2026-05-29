@@ -900,6 +900,13 @@ model NotificationPreferences {
   digest_email            Boolean @default(true)
   digest_push             Boolean @default(false)
   digest_inapp            Boolean @default(false)
+  // PR-10 — DRIP_RELEASED (buyer content-unlocked alerts). Default ON for
+  // push + in-app (the brief mandates push + in-app on every unlock);
+  // email default OFF because no transactional drip-release email
+  // channel exists today (mirrors the booking cluster's defaults).
+  drip_released_email     Boolean @default(false)
+  drip_released_push      Boolean @default(true)
+  drip_released_inapp     Boolean @default(true)
   // Concierge booking notifications — cluster prefs covering all
   // booking.* kinds (requested, confirmed, declined, cancelled,
   // rescheduled, reminder.24h, reminder.1h). Email default-off
@@ -4691,12 +4698,18 @@ model ScheduledDrop {
   attempt_count      Int            @default(0)
   materialised_ref   String?
   failure_reason     String?
+  // PR-10 — DripDispatcherCron retry/backoff + claim columns. All nullable
+  // and additive (see migration 20261205000000_pr10_scheduled_drop_retry_lock).
+  locked_at           DateTime?
+  next_retry_at       DateTime?
+  alert_dispatched_at DateTime?
   created_at         DateTime       @default(now())
   updated_at         DateTime       @updatedAt
 
   @@unique([client_purchase_id, content_id])
   @@index([status, fire_at])
   @@index([client_purchase_id, status])
+  @@index([status, next_retry_at, fire_at])
 }
 
 // Runtime bookkeeping: one row per ClientPurchase tracking the package→

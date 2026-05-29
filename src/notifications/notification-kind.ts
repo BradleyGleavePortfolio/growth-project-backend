@@ -62,6 +62,13 @@ export const NotificationKind = {
   // client can see what their coach just queued for them.
   WORKOUT_ASSIGNED: 'workout_assigned',
   MEAL_PLAN_ASSIGNED: 'meal_plan_assigned',
+
+  // PR-10 — Buyer: a scheduled package drop just unlocked. Decision #9
+  // ("push + in-app every time content unlocks") emits this kind from the
+  // DripDispatcherCron after a successful materialise. The deep-link points
+  // at the underlying assignment / message / asset grant so the buyer can
+  // tap straight into the new content.
+  DRIP_RELEASED: 'drip_released',
 } as const;
 
 export type NotificationKindValue = (typeof NotificationKind)[keyof typeof NotificationKind];
