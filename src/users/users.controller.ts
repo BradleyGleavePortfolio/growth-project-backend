@@ -3,8 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  GoneException,
-  HttpCode,
   Param,
   Patch,
   Post,
@@ -66,24 +64,6 @@ export class UsersController {
     @Body() body: Partial<UserPreferencesDto>,
   ) {
     return this.preferencesService.patchPreferences(req.user.id, body);
-  }
-
-  /**
-   * GET /users/me/badges — REMOVED (doctrine cleanup).
-   * Returns 410 Gone for one mobile release window before being deleted.
-   */
-  // TODO: remove route entirely after one mobile release window.
-  @ApiOperation({
-    summary: 'Removed — returns 410 Gone',
-    description: 'Badges are no longer part of the product surface.',
-  })
-  @ApiResponse({ status: 410, description: 'Endpoint removed.' })
-  @Get('me/badges')
-  @HttpCode(410)
-  async getBadges() {
-    throw new GoneException(
-      'This endpoint has been removed. Badges are no longer part of the product surface.',
-    );
   }
 
   @ApiOperation({
