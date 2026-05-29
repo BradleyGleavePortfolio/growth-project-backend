@@ -128,7 +128,6 @@ export class PackageContentsService {
     body: unknown,
   ): Promise<CoachPackageContent> {
     await this.packages.requireOwnedPackage(coachUserId, packageId);
-    const row = await this.requireOwnedContent(packageId, contentId);
     const input = this.parsePatch(body);
 
     // Cadence is all-or-nothing on patch. If either side is touched, the
@@ -155,38 +154,99 @@ export class PackageContentsService {
       };
     }
 
-    // auto_message body contract — if patching titles/captions for an
-    // auto_message row, ensure the row STILL has a non-empty body after
-    // the patch. (PR-7's AutoMessageAssetResolver reads body from
-    // displayCaption/displayTitle and throws if both are empty.)
-    if (row.asset_type === 'auto_message') {
-      const nextTitle =
-        input.display_title !== undefined ? input.display_title : row.display_title;
-      const nextCaption =
-        input.display_caption !== undefined
-          ? input.display_caption
-          : row.display_caption;
-      this.assertAutoMessageBody({
-        display_title: nextTitle,
-        display_caption: nextCaption,
+    const buildData = (row: CoachPackageContent): Record<string, unknown> => {
+      // auto_message body contract — if patching titles/captions for an
+      // auto_message row, ensure the row STILL has a non-empty body after
+      // the patch. (PR-7's AutoMessageAssetResolver reads body from
+      // displayCaption/displayTitle and throws if both are empty.) Computed
+      // against the row we just read INSIDE the lock so a concurrent patch
+      // that already cleared the body can't slip through.
+      if (row.asset_type === 'auto_message') {
+        const nextTitle =
+          input.display_title !== undefined
+            ? input.display_title
+            : row.display_title;
+        const nextCaption =
+          input.display_caption !== undefined
+            ? input.display_caption
+            : row.display_caption;
+        this.assertAutoMessageBody({
+          display_title: nextTitle,
+          display_caption: nextCaption,
+        });
+      }
+      const data: Record<string, unknown> = {};
+      if (input.display_order !== undefined)
+        data.display_order = input.display_order;
+      if (input.display_title !== undefined)
+        data.display_title = input.display_title;
+      if (input.display_caption !== undefined)
+        data.display_caption = input.display_caption;
+      if (input.asset_revision_id !== undefined)
+        data.asset_revision_id = input.asset_revision_id;
+      if (cadence) {
+        data.cadence_kind = cadence.cadence_kind;
+        data.cadence_payload = cadence.cadence_payload;
+      }
+      return data;
+    };
+
+    // Display_order race fix (P2-c, R2 audit): when the patch body changes
+    // `display_order`, the read+write window MUST be serialised against
+    // every other display_order mutator (attach / reorder / other patch)
+    // on the same package — otherwise the same TOCTOU class as P2-a/P2-b
+    // is back. We take the per-package pg_advisory_xact_lock and validate
+    // duplicate-rejection INSIDE the tx. Cheap title/cadence-only patches
+    // skip the tx so we don't pay the lock cost when there's no risk.
+    if (input.display_order === undefined) {
+      const row = await this.requireOwnedContent(packageId, contentId);
+      return this.prisma.coachPackageContent.update({
+        where: { id: contentId },
+        data: buildData(row),
       });
     }
 
-    const data: Record<string, unknown> = {};
-    if (input.display_order !== undefined) data.display_order = input.display_order;
-    if (input.display_title !== undefined) data.display_title = input.display_title;
-    if (input.display_caption !== undefined)
-      data.display_caption = input.display_caption;
-    if (input.asset_revision_id !== undefined)
-      data.asset_revision_id = input.asset_revision_id;
-    if (cadence) {
-      data.cadence_kind = cadence.cadence_kind;
-      data.cadence_payload = cadence.cadence_payload;
-    }
+    return this.prisma.$transaction(async (tx) => {
+      await this.acquirePackageOrderLock(tx, packageId);
 
-    return this.prisma.coachPackageContent.update({
-      where: { id: contentId },
-      data,
+      // Re-fetch under the lock so we see a consistent view of the
+      // package: same filter as requireOwnedContent (removed_at IS NULL)
+      // so patch still 404s on a soft-deleted row.
+      const row = await tx.coachPackageContent.findFirst({
+        where: { id: contentId, package_id: packageId, removed_at: null },
+      });
+      if (!row) {
+        throw new NotFoundException({
+          error: 'CONTENT_NOT_FOUND',
+          message: `No content with id ${contentId} on package ${packageId}`,
+        });
+      }
+
+      // Reject targeting a display_order another non-removed row already
+      // holds. The brief: "do NOT allow [patch] to create a duplicate."
+      // No-op when the patch sets the row to its current display_order.
+      if (input.display_order !== row.display_order) {
+        const collide = await tx.coachPackageContent.findFirst({
+          where: {
+            package_id: packageId,
+            removed_at: null,
+            display_order: input.display_order,
+            id: { not: contentId },
+          },
+          select: { id: true },
+        });
+        if (collide) {
+          throw new BadRequestException({
+            error: 'DISPLAY_ORDER_TAKEN',
+            message: `display_order ${input.display_order} is already held by another content row on this package; use the /reorder endpoint to move multiple rows atomically`,
+          });
+        }
+      }
+
+      return tx.coachPackageContent.update({
+        where: { id: contentId },
+        data: buildData(row),
+      });
     });
   }
 

@@ -838,6 +838,202 @@ describe('PackageContentsService', () => {
     });
   });
 
+  // ── P2-c (R2 audit): patch+display_order race / duplicate rejection ──
+  describe('patch with display_order is locked + reject duplicates (P2-c)', () => {
+    it('patch that does NOT include display_order skips the lock (cheap path)', async () => {
+      const a = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      (prisma as any)._lockLog.length = 0;
+      await svc.patch('coach-1', 'pkg-1', a.id, {
+        display_title: 'edit',
+      });
+      // No lock acquired for title-only patches — kept cheap.
+      expect((prisma as any)._lockLog).toEqual([]);
+    });
+
+    it('patch that includes display_order acquires the per-package lock inside a transaction', async () => {
+      const a = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      const b = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'meal_plan',
+        asset_id: 'mp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      (prisma as any)._lockLog.length = 0;
+      // a is at 0, b is at 1; move a to 2 (free slot).
+      await svc.patch('coach-1', 'pkg-1', a.id, { display_order: 2 });
+      expect((prisma as any)._lockLog).toEqual([{ packageId: 'pkg-1' }]);
+    });
+
+    it('patch rejects display_order already held by another non-removed row (DISPLAY_ORDER_TAKEN)', async () => {
+      const a = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      const b = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'meal_plan',
+        asset_id: 'mp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      // b holds order=1; trying to set a to 1 must reject.
+      await expect(
+        svc.patch('coach-1', 'pkg-1', a.id, { display_order: b.display_order }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('patch allows setting display_order to the row’s own current value (no-op)', async () => {
+      const a = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      const updated = await svc.patch('coach-1', 'pkg-1', a.id, {
+        display_order: a.display_order,
+      });
+      expect(updated.display_order).toBe(a.display_order);
+    });
+
+    it('patch ignores soft-deleted rows when checking for collisions (and 404s on soft-deleted target)', async () => {
+      const a = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      const b = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'meal_plan',
+        asset_id: 'mp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      // soft-delete b; its order=1 should now be reusable.
+      await svc.softDelete('coach-1', 'pkg-1', b.id);
+      const moved = await svc.patch('coach-1', 'pkg-1', a.id, {
+        display_order: 1,
+      });
+      expect(moved.display_order).toBe(1);
+
+      // Patch on the soft-deleted row STILL 404s, even on the locked path.
+      await expect(
+        svc.patch('coach-1', 'pkg-1', b.id, { display_order: 5 }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('patch-vs-attach interleaving: serialised; never produces duplicate display_order', async () => {
+      const a = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      // Concurrent: move `a` to display_order=5; attach a new row (which
+      // should append). Both grab the per-package lock; whichever runs
+      // first commits before the other reads.
+      const patchP = svc.patch('coach-1', 'pkg-1', a.id, { display_order: 5 });
+      const attachP = svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'meal_plan',
+        asset_id: 'mp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      await Promise.all([patchP, attachP]);
+      const list = await svc.listForPackage('coach-1', 'pkg-1');
+      const orders = list.map((r) => r.display_order);
+      expect(new Set(orders).size).toBe(orders.length); // no duplicates
+    });
+
+    it('patch-vs-reorder interleaving: serialised; never produces duplicate display_order', async () => {
+      const a = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      const b = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'meal_plan',
+        asset_id: 'mp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      const c = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'pdf',
+        asset_id: 'pdf-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      // Run reorder + a patch concurrently. Either ordering must end with
+      // a coherent state (no duplicate display_order). If reorder wins
+      // first, the patch sees orders [0,1,2] of [c,a,b] and may collide
+      // → our lock + duplicate check guarantees the collision is rejected,
+      // not silently written. Either rejection or success — never a dup.
+      const reorderP = svc.reorder('coach-1', 'pkg-1', {
+        content_ids: [c.id, a.id, b.id],
+      });
+      const patchP = svc
+        .patch('coach-1', 'pkg-1', a.id, { display_order: 7 })
+        .catch((e) => e); // tolerate either outcome (locked sequencing)
+
+      await Promise.all([reorderP, patchP]);
+      const list = await svc.listForPackage('coach-1', 'pkg-1');
+      const orders = list.map((r) => r.display_order);
+      expect(new Set(orders).size).toBe(orders.length); // no duplicates
+    });
+
+    it('two concurrent patches targeting the SAME display_order on the same package: at most one wins', async () => {
+      const a = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      const b = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'meal_plan',
+        asset_id: 'mp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      const c = await svc.attach('coach-1', 'pkg-1', {
+        asset_type: 'pdf',
+        asset_id: 'pdf-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      // Both patches target display_order=10. Lock serialises; second
+      // sees the first's write and must EITHER succeed (if the second
+      // patch is the row that already holds 10 — our no-op case) OR
+      // reject as DISPLAY_ORDER_TAKEN. Either way: no duplicate.
+      const p1 = svc.patch('coach-1', 'pkg-1', a.id, { display_order: 10 });
+      const p2 = svc
+        .patch('coach-1', 'pkg-1', b.id, { display_order: 10 })
+        .catch((e) => e);
+      const [r1, r2] = await Promise.all([p1, p2]);
+      // Only one wrote 10.
+      const list = await svc.listForPackage('coach-1', 'pkg-1');
+      const tens = list.filter((r) => r.display_order === 10);
+      expect(tens.length).toBe(1);
+      // The other call must have been rejected.
+      const successCount = [r1, r2].filter(
+        (r) => r && typeof (r as any).id === 'string',
+      ).length;
+      expect(successCount).toBe(1);
+      // Unused-var hush: third row exists.
+      expect(c.id).toBeTruthy();
+    });
+  });
+
   // ── soft-delete + patch interaction (P3-a fix) ───────────────────────
   describe('patch on a soft-deleted content row (P3-a)', () => {
     it('patch on a soft-deleted row returns 404 — cannot mutate a removed row', async () => {
