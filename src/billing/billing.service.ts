@@ -472,6 +472,19 @@ export class BillingService {
           case 'transfer.failed':
             await this.applyTransferFailed(event, tx);
             break;
+          // B7 — Stripe Connect PAYOUT failure (coach's Stripe balance →
+          // their bank). Distinct from transfer.failed (platform → coach
+          // balance): a payout.failed/canceled means money the coach
+          // believed was on its way to their bank did NOT arrive. These
+          // previously fell through to `default` and were dedup-swallowed,
+          // so a coach saw no signal that their bank deposit bounced. We
+          // now persist status='failed'/'canceled' onto the cached
+          // PayoutSnapshot row and alert the coach via the existing
+          // COACH_ALERT kind. (No money math; no new notification kind.)
+          case 'payout.failed':
+          case 'payout.canceled':
+            await this.applyPayoutFailed(event, tx);
+            break;
           default:
             this.logger.log(`Ignoring unhandled Stripe event type: ${event.type}`);
         }
@@ -1303,6 +1316,144 @@ export class BillingService {
       // pattern in RefundDisputeHandlerService.emitRefundCoachAlert.
       this.logger.warn(
         `coach transfer.failed notification failed transfer=${transfer.id} coach=${coachId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  // B7 — `payout.failed` / `payout.canceled` webhook handler.
+  //
+  // A Stripe Connect PAYOUT is the leg that moves funds OUT of the
+  // coach's Stripe balance to their external bank account. When it
+  // fails or is canceled, the coach's expected bank deposit does not
+  // arrive. Previously these events fell through to the `default`
+  // "ignoring unhandled" log line and were swallowed behind the
+  // StripeProcessedEvent dedup — so the coach had no in-app signal.
+  //
+  // This handler mirrors applyTransferFailed:
+  //   1. Resolves the connected account id (payout events arrive with
+  //      the account on the event envelope; we also accept it on the
+  //      object for safety) and finds the cached PayoutSnapshot row,
+  //      which is keyed by stripe_account_id.
+  //   2. Records the failure on the snapshot: last_payout_status =
+  //      'failed'/'canceled', last_payout_failure_message, and mirrors
+  //      the payout id/amount so the coach/admin UI reads the failure
+  //      without a Stripe round-trip. NO money math — this is a cached
+  //      status mirror, not a ledger write.
+  //   3. Emits a COACH_ALERT to the coach (existing notification kind).
+  //
+  // Idempotency: the outer handleEvent() StripeProcessedEvent dedup
+  // makes a SAME-event-id replay never re-enter this method. As
+  // belt-and-suspenders for a different-id replay of the same logical
+  // payout failure, the snapshot updateMany is WHERE-guarded on
+  // (last_payout_stripe_id != this payout OR last_payout_status not
+  // already this terminal status); a second write returns count=0 and
+  // we skip the COACH_ALERT so the coach is not pinged twice.
+  private async applyPayoutFailed(
+    event: StripeEvent,
+    tx: Prisma.TransactionClient,
+  ) {
+    const payout = event.data.object as {
+      id?: string;
+      amount?: number;
+      currency?: string;
+      status?: string;
+      failure_message?: string | null;
+      failure_code?: string | null;
+      account?: string | null;
+    };
+    // Connect events carry the connected account on the envelope; some
+    // shapes also place it on the object. Accept either.
+    const accountId =
+      (typeof (event as { account?: unknown }).account === 'string'
+        ? (event as { account?: string }).account
+        : null) ??
+      (typeof payout?.account === 'string' ? payout.account : null);
+    if (!payout?.id) {
+      this.logger.warn(
+        `${event.type} event ${event.id} missing payout id — skipping`,
+      );
+      return;
+    }
+    if (!accountId) {
+      this.logger.warn(
+        `${event.type} event=${event.id} payout=${payout.id}: missing connected account id — cannot map to a coach`,
+      );
+      return;
+    }
+    const row = await tx.payoutSnapshot.findFirst({
+      where: { stripe_account_id: accountId },
+    });
+    if (!row) {
+      // No cached snapshot for this account — could predate the snapshot
+      // mirror or belong to an account we don't track. Log and move on;
+      // never throw, or Stripe retries an event we cannot reconcile.
+      this.logger.warn(
+        `${event.type} event=${event.id} payout=${payout.id} account=${accountId}: no matching PayoutSnapshot row`,
+      );
+      return;
+    }
+    const terminalStatus = event.type === 'payout.canceled' ? 'canceled' : 'failed';
+    const failureReason =
+      [payout.failure_code, payout.failure_message]
+        .filter((s): s is string => typeof s === 'string' && s.length > 0)
+        .join(': ') || null;
+    const amountCents =
+      typeof payout.amount === 'number'
+        ? payout.amount
+        : row.last_payout_amount_cents ?? 0;
+    // WHERE-guard for different-event-id replay idempotency: skip when
+    // this exact payout is already recorded at this terminal status.
+    const updated = await tx.payoutSnapshot.updateMany({
+      where: {
+        id: row.id,
+        NOT: {
+          last_payout_stripe_id: payout.id,
+          last_payout_status: terminalStatus,
+        },
+      },
+      data: {
+        last_payout_stripe_id: payout.id,
+        last_payout_status: terminalStatus,
+        last_payout_amount_cents: amountCents,
+        last_payout_failure_message: failureReason,
+      },
+    });
+    const coachId = row.coach_user_id;
+    this.logger.warn(
+      `${event.type} event=${event.id} payout=${payout.id} account=${accountId} coach=${coachId} amount_cents=${amountCents} reason=${failureReason ?? 'unknown'}`,
+    );
+    if (updated.count === 0) return;
+    if (!this.notifications) {
+      this.logger.warn(
+        `${event.type} event=${event.id} payout=${payout.id}: NotificationsService is not wired — skipping COACH_ALERT`,
+      );
+      return;
+    }
+    try {
+      const dollars = (amountCents / 100).toFixed(2);
+      const verb = terminalStatus === 'canceled' ? 'was canceled' : 'failed';
+      await this.notifications.createNotification({
+        user_id: coachId,
+        kind: NotificationKind.COACH_ALERT,
+        body: `Bank payout ${verb}: $${dollars} did not reach your bank.${failureReason ? ` Reason: ${failureReason}.` : ''}`,
+        payload: {
+          event: event.type === 'payout.canceled' ? 'payout_canceled' : 'payout_failed',
+          stripe_payout_id: payout.id,
+          stripe_event_id: event.id,
+          stripe_account_id: accountId,
+          amount_cents: amountCents,
+          currency: payout.currency ?? row.currency,
+          failure_code: payout.failure_code ?? null,
+          failure_message: payout.failure_message ?? null,
+        },
+        deep_link: COACH_TRANSFER_FAILED_DEEP_LINK,
+        channel: 'inapp',
+      });
+    } catch (err) {
+      // The status mirror has already committed; a failed downstream
+      // signal must not roll it back. Matches applyTransferFailed.
+      this.logger.warn(
+        `coach ${event.type} notification failed payout=${payout.id} coach=${coachId}: ${(err as Error).message}`,
       );
     }
   }
