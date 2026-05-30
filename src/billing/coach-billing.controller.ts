@@ -1,20 +1,17 @@
 import {
-  BadRequestException,
   Controller,
   Get,
-  HttpException,
   Post,
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
 import { NoActiveSubCoachGuard } from '../common/guards/no-active-sub-coach.guard';
-import { PrismaService } from '../prisma.service';
 import { BillingService } from './billing.service';
-import { StripeApiError, StripeApiService } from './stripe-api.service';
 
 // Coach-facing billing endpoints. Reads from the local Stripe-mirror tables;
 // writes (subscription start, plan changes) go through the OWNER endpoints
@@ -24,11 +21,7 @@ import { StripeApiError, StripeApiService } from './stripe-api.service';
 @Controller('v1/coach/me')
 @UseGuards(JwtAuthGuard, CoachOrOwnerGuard, NoActiveSubCoachGuard)
 export class CoachBillingController {
-  constructor(
-    private billing: BillingService,
-    private prisma: PrismaService,
-    private stripeApi: StripeApiService,
-  ) {}
+  constructor(private billing: BillingService) {}
 
   @Get('billing')
   async getBilling(@Request() req: AuthedRequest) {
@@ -51,68 +44,15 @@ export class CoachBillingController {
   //      without server-side Stripe credentials. Returns { url, fallback: true, coachId }.
   //   3. Neither set → STRIPE_NOT_CONFIGURED so the console renders the
   //      empty state.
+  //
+  // B2 — single-use Stripe portal sessions are a Stripe-write; throttle to
+  // 10/min/coach (mirrors the Connect link-minting routes) so the endpoint
+  // can't be hammered into Stripe rate limits.
   @Post('billing/portal-session')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   async portalSession(@Request() req: AuthedRequest) {
-    if (!this.stripeApi.isConfigured()) {
-      const fallbackUrl = process.env.STRIPE_CUSTOMER_PORTAL_LOGIN_URL?.trim();
-      if (fallbackUrl && /^https:\/\/billing\.stripe\.com\/p\/login\//.test(fallbackUrl)) {
-        return { url: fallbackUrl, fallback: true, coachId: req.user.id };
-      }
-      throw new BadRequestException({
-        error: 'STRIPE_NOT_CONFIGURED',
-        message:
-          'Stripe is not configured for this environment. Set STRIPE_SECRET_KEY and STRIPE_PRICE_ID_FITNESS to mint per-coach portal sessions, or set STRIPE_CUSTOMER_PORTAL_LOGIN_URL to a hosted Customer Portal login link as a fallback.',
-      });
-    }
-
-    const coachId = req.user.id;
-
-    // Resolve stripe_customer_id from CoachSubscription first (mirror is the
-    // primary source of truth post-onboarding) and fall back to CoachProfile
-    // (where OWNER provisioning writes the customer id immediately, before
-    // the customer.subscription.created webhook lands).
-    const subscription = await this.prisma.coachSubscription.findUnique({
-      where: { coach_id: coachId },
-    });
-    let customerId = subscription?.stripe_customer_id ?? null;
-    if (!customerId) {
-      const profile = await this.prisma.coachProfile.findUnique({
-        where: { user_id: coachId },
-      });
-      customerId = profile?.stripe_customer_id ?? null;
-    }
-    if (!customerId) {
-      throw new BadRequestException({
-        error: 'BILLING_NOT_PROVISIONED',
-        message:
-          'No Stripe customer is provisioned for this coach yet. An OWNER must call start-subscription first.',
-      });
-    }
-
-    const returnUrl =
-      process.env.STRIPE_BILLING_PORTAL_RETURN_URL ??
-      'https://console.thegrowthproject.app/billing';
-
-    try {
-      const session = await this.stripeApi.createBillingPortalSession({
-        customer: customerId,
-        returnUrl,
-      });
-      return { url: session.url };
-    } catch (err) {
-      if (err instanceof StripeApiError) {
-        // Surface Stripe's own status (4xx for client errors, 5xx for
-        // upstream issues) rather than wrapping every error as 400.
-        throw new HttpException(
-          {
-            error: 'STRIPE_PORTAL_ERROR',
-            message: err.message,
-            stripeCode: err.stripeCode,
-          },
-          err.httpStatus >= 400 && err.httpStatus < 600 ? err.httpStatus : 502,
-        );
-      }
-      throw err;
-    }
+    // B1 — delegate to the shared BillingService method so the v1 and
+    // mobile surfaces cannot drift.
+    return this.billing.createCoachPortalSession(req.user.id);
   }
 }
