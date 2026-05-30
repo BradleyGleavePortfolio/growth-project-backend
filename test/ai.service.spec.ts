@@ -10,7 +10,13 @@ jest.mock('openai', () => {
   return { __esModule: true, default: ctor };
 });
 
-import { AiService } from '../src/ai/ai.service';
+import {
+  AiService,
+  DAILY_TOKEN_QUOTA,
+  MAX_TOKENS_PER_CALL,
+  AI_DAILY_QUOTA_EXCEEDED,
+} from '../src/ai/ai.service';
+import { HttpException, HttpStatus } from '@nestjs/common';
 import { ClientAIContextService } from '../src/ai/client-ai-context.service';
 import { AIGuardrailsService } from '../src/ai/ai-guardrails.service';
 import { ClientAIContext } from '../src/ai/client-ai-context.types';
@@ -80,7 +86,49 @@ function makeContext(): ClientAIContext {
   };
 }
 
-function makeService() {
+// In-memory UserAIQuota ledger keyed by `${user_id}|${quota_date ISO}` so the
+// quota tests can exercise reserve/reconcile + day rollover without a DB. The
+// updateMany honours the atomic guard (where tokens_used <= threshold) and the
+// increment/decrement ops, mirroring Prisma's semantics closely enough to test
+// the race-safe reservation path.
+function makeQuotaStub() {
+  const rows = new Map<string, { user_id: string; quota_date: string; tokens_used: number; request_count: number }>();
+  const keyOf = (user_id: string, quota_date: Date | string) =>
+    `${user_id}|${quota_date instanceof Date ? quota_date.toISOString() : quota_date}`;
+  const userAIQuota = {
+    upsert: jest.fn(async ({ where, create }: any) => {
+      const { user_id, quota_date } = where.UserAIQuota_user_id_quota_date_key;
+      const k = keyOf(user_id, quota_date);
+      if (!rows.has(k)) {
+        rows.set(k, {
+          user_id,
+          quota_date: quota_date instanceof Date ? quota_date.toISOString() : quota_date,
+          tokens_used: create.tokens_used ?? 0,
+          request_count: create.request_count ?? 0,
+        });
+      }
+      return rows.get(k);
+    }),
+    updateMany: jest.fn(async ({ where, data }: any) => {
+      const k = keyOf(where.user_id, where.quota_date);
+      const row = rows.get(k);
+      if (!row) return { count: 0 };
+      // Apply the atomic guard on tokens_used (lte / gte) if present.
+      const guard = where.tokens_used;
+      if (guard) {
+        if (guard.lte !== undefined && !(row.tokens_used <= guard.lte)) return { count: 0 };
+        if (guard.gte !== undefined && !(row.tokens_used >= guard.gte)) return { count: 0 };
+      }
+      if (data.tokens_used?.increment !== undefined) row.tokens_used += data.tokens_used.increment;
+      if (data.tokens_used?.decrement !== undefined) row.tokens_used -= data.tokens_used.decrement;
+      if (data.request_count?.increment !== undefined) row.request_count += data.request_count.increment;
+      return { count: 1 };
+    }),
+  };
+  return { rows, keyOf, userAIQuota, aiRequestAudit: { create: jest.fn().mockResolvedValue({}) } };
+}
+
+function makeService(prismaOverride?: any) {
   // Build the ai.service with a context service stub returning a known
   // context. We don't go through PrismaService here because we want the
   // tests to focus on chat orchestration (prompt assembly, fallback,
@@ -97,9 +145,10 @@ function makeService() {
   ctxSvc.renderForPrompt = (c: ClientAIContext) =>
     new ClientAIContextService({} as any).renderForPrompt(c);
   const guardrails = new AIGuardrailsService();
-  const prisma = {} as any;
+  const quota = makeQuotaStub();
+  const prisma = (prismaOverride ?? quota) as any;
   const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
-  return { svc: new AiService(prisma, ctxSvc as any, guardrails, analyticsStub), ctxSvc };
+  return { svc: new AiService(prisma, ctxSvc as any, guardrails, analyticsStub), ctxSvc, quota: prisma };
 }
 
 describe('AiService.chat', () => {
@@ -183,5 +232,95 @@ describe('AiService.chat', () => {
     const args = mockCreate.mock.calls[0][0];
     // 1 system + 10 history + 1 final = 12
     expect(args.messages.length).toBe(12);
+  });
+});
+
+describe('AiService.chat daily token quota (A1)', () => {
+  beforeEach(() => {
+    mockCreate.mockReset();
+    process.env.PERPLEXITY_API_KEY = 'test-key';
+  });
+
+  it('under cap: the call proceeds and the daily counter increments', async () => {
+    // Provider reports actual usage so we reconcile the reservation down.
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: 'On track. Hit your 200g protein.' } }],
+      usage: { total_tokens: 250 },
+    });
+    const { svc, quota } = makeService();
+    const result = await svc.chat('u1', 'how am I doing today', []);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(result.model_used).toBe('perplexity');
+    // One ledger row, reconciled to the provider's actual 250 tokens, 1 request.
+    const rows = [...quota.rows.values()];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].tokens_used).toBe(250);
+    expect(rows[0].request_count).toBe(1);
+  });
+
+  it('at cap: rejects with 429 AI_DAILY_QUOTA_EXCEEDED and never calls the model', async () => {
+    const { svc, quota } = makeService();
+    // Seed today's row at the cap so any new reservation must be rejected.
+    const today = (svc as any).getQuotaDate() as Date;
+    quota.rows.set(quota.keyOf('u1', today), {
+      user_id: 'u1',
+      quota_date: today.toISOString(),
+      tokens_used: DAILY_TOKEN_QUOTA,
+      request_count: 99,
+    });
+    await expect(svc.chat('u1', 'how am I doing today', [])).rejects.toMatchObject({
+      response: { error: AI_DAILY_QUOTA_EXCEEDED },
+    });
+    // Confirm it is a 429 HttpException and the model was never invoked.
+    let status: number | undefined;
+    try {
+      await svc.chat('u1', 'again', []);
+    } catch (e) {
+      if (e instanceof HttpException) status = e.getStatus();
+    }
+    expect(status).toBe(HttpStatus.TOO_MANY_REQUESTS);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('day rollover: a new quota_date gets a fresh budget row', async () => {
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { total_tokens: 300 },
+    });
+    const { svc, quota } = makeService();
+    const day1 = new Date(Date.UTC(2026, 3, 27));
+    const day2 = new Date(Date.UTC(2026, 3, 28));
+    const spy = jest.spyOn(svc as any, 'getQuotaDate');
+    spy.mockReturnValue(day1);
+    await svc.chat('u1', 'day one', []);
+    spy.mockReturnValue(day2);
+    await svc.chat('u1', 'day two', []);
+    // Two distinct rows — the rollover started a fresh budget.
+    expect(quota.rows.size).toBe(2);
+    expect(quota.rows.get(quota.keyOf('u1', day1))!.tokens_used).toBe(300);
+    expect(quota.rows.get(quota.keyOf('u1', day2))!.tokens_used).toBe(300);
+  });
+
+  it('concurrent same-user requests never exceed the cap', async () => {
+    // No usage in the response => each call holds its full MAX_TOKENS_PER_CALL
+    // reservation, so the cap is the limiting factor on how many can proceed.
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: 'ok' } }],
+    });
+    const { svc, quota } = makeService();
+    const capacity = DAILY_TOKEN_QUOTA / MAX_TOKENS_PER_CALL; // 20
+    const attempts = capacity + 10; // oversubscribe
+    const results = await Promise.allSettled(
+      Array.from({ length: attempts }, () => svc.chat('u1', 'concurrent', [])),
+    );
+    const ok = results.filter((r) => r.status === 'fulfilled').length;
+    const rejected = results.filter((r) => r.status === 'rejected').length;
+    expect(ok).toBe(capacity);
+    expect(rejected).toBe(attempts - capacity);
+    // Final ledger never exceeds the cap, and the model ran exactly `ok` times.
+    const row = [...quota.rows.values()][0];
+    expect(row.tokens_used).toBeLessThanOrEqual(DAILY_TOKEN_QUOTA);
+    expect(row.tokens_used).toBe(capacity * MAX_TOKENS_PER_CALL);
+    expect(mockCreate).toHaveBeenCalledTimes(capacity);
   });
 });
