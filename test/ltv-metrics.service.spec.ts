@@ -44,16 +44,39 @@ function makePurchase(overrides: Partial<{
 
 // ─── Mock PrismaService ───────────────────────────────────────────────────────
 
-const mockPrisma = {
+// P1 fix: persistence is now a single atomic `INSERT ... ON CONFLICT DO UPDATE`
+// with DB-side `GREATEST(...)`, executed through Prisma's `$queryRaw`. The mock
+// below faithfully simulates that monotonic behaviour so the unit tests can
+// assert the lost-update race is impossible:
+//   - it reads the "persisted" row from the same source the service reads
+//     (coachLtvPeak.findUnique's resolved value) to model the pre-write state,
+//   - applies GREATEST(persisted, incoming) for BOTH columns,
+//   - records each call's incoming values for assertions, and
+//   - returns the post-write maxima (the RETURNING clause).
+// `__rawCalls` captures the incoming (peak, streak) of every atomic upsert.
+const mockPrisma: any = {
   clientPurchase: {
     findMany: jest.fn(),
   },
   // LTV-3: persisted peak/streak store (coach_ltv_peak).
   coachLtvPeak: {
     findUnique: jest.fn(),
-    upsert: jest.fn(),
   },
+  __rawCalls: [] as Array<{ peak: number; streak: number }>,
+  // Simulated persisted store, keyed by the GREATEST semantics. Seeded from
+  // findUnique so a test that stubs an existing row also primes this state.
+  __store: null as null | { peak: number; streak: number },
+  $queryRaw: jest.fn(),
 };
+
+// Extract the bound parameter values out of a Prisma.sql tagged-template object.
+// Prisma.sql exposes `.values` (the interpolated params, in order). Our query
+// binds: [coach_id, incomingPeakCents, incomingStreak].
+function parseRawValues(sql: any): { peak: number; streak: number } {
+  const values: any[] = sql?.values ?? [];
+  // values[0] = coach_id, values[1] = peak cents, values[2] = streak
+  return { peak: Number(values[1]), streak: Number(values[2]) };
+}
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -65,7 +88,37 @@ describe('LtvMetricsService', () => {
     // Default: no persisted peak row yet (first-run behaviour). Individual
     // tests override findUnique to simulate an existing persisted peak/streak.
     mockPrisma.coachLtvPeak.findUnique.mockResolvedValue(null);
-    mockPrisma.coachLtvPeak.upsert.mockResolvedValue({});
+    mockPrisma.__rawCalls = [];
+    mockPrisma.__store = null;
+
+    // Simulate the atomic GREATEST upsert. The "persisted" baseline is taken
+    // from whatever findUnique was stubbed to return for this test (the
+    // pre-write row), then GREATEST is applied per column. The result is the
+    // post-write state (mirrors the RETURNING clause).
+    mockPrisma.$queryRaw.mockImplementation(async (sql: any) => {
+      const incoming = parseRawValues(sql);
+      mockPrisma.__rawCalls.push(incoming);
+      const existing = mockPrisma.coachLtvPeak.findUnique.mock.results.length
+        ? await mockPrisma.coachLtvPeak.findUnique.mock.results[
+            mockPrisma.coachLtvPeak.findUnique.mock.results.length - 1
+          ].value
+        : null;
+      const baseline = mockPrisma.__store ?? {
+        peak: existing ? Number(existing.all_time_peak_rpcm) : 0,
+        streak: existing ? Number(existing.zero_churn_streak) : 0,
+      };
+      const after = {
+        peak: Math.max(baseline.peak, incoming.peak),
+        streak: Math.max(baseline.streak, incoming.streak),
+      };
+      mockPrisma.__store = after;
+      return [
+        {
+          all_time_peak_rpcm: after.peak,
+          zero_churn_streak: after.streak,
+        },
+      ];
+    });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LtvMetricsService,
@@ -387,8 +440,8 @@ describe('LtvMetricsService', () => {
       expect(result.all_time_peak_rpcm_cents).toBe(30000);
       expect(result.is_new_rpcm_record).toBe(false);
       expect(result.peak_rpcm_is_estimate).toBe(false);
-      // Neither peak nor streak advanced → no upsert.
-      expect(mockPrisma.coachLtvPeak.upsert).not.toHaveBeenCalled();
+      // Neither peak nor streak advanced → no atomic upsert performed.
+      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
     });
 
     it('upserts a new peak and sets isNewRpcmRecord=true when current > persisted', async () => {
@@ -403,12 +456,12 @@ describe('LtvMetricsService', () => {
       const result = await service.getMetrics('coach-1');
 
       expect(result.revenue_per_client_month_cents).toBe(20000);
-      expect(result.all_time_peak_rpcm_cents).toBe(20000); // max(10000, 20000)
+      expect(result.all_time_peak_rpcm_cents).toBe(20000); // GREATEST(10000, 20000)
       expect(result.is_new_rpcm_record).toBe(true);
-      expect(mockPrisma.coachLtvPeak.upsert).toHaveBeenCalledTimes(1);
-      const upsertArg = mockPrisma.coachLtvPeak.upsert.mock.calls[0][0];
-      expect(upsertArg.where).toEqual({ coach_id: 'coach-1' });
-      expect(upsertArg.update.all_time_peak_rpcm).toBe(20000);
+      // One atomic GREATEST upsert; the incoming peak we hand the DB is the
+      // current RPCM (the DB itself takes the max against the stored value).
+      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.__rawCalls[0].peak).toBe(20000);
     });
 
     it('does NOT flag a new record when current ties the persisted peak', async () => {
@@ -433,7 +486,108 @@ describe('LtvMetricsService', () => {
       const result = await service.getMetrics('coach-1');
       expect(result.all_time_peak_rpcm_cents).toBe(20000);
       expect(result.is_new_rpcm_record).toBe(true); // 20000 > 0
-      expect(mockPrisma.coachLtvPeak.upsert).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('LTV-3 P1: monotonic peak/streak under concurrent stale reads', () => {
+    // These tests reproduce the lost-update race the P1 fix closes. The fix
+    // performs the max DB-side via GREATEST(...) inside a single atomic
+    // INSERT ... ON CONFLICT DO UPDATE, so a request that read a STALE (lower)
+    // peak can never overwrite/regress a higher value another request already
+    // persisted. The mock's $queryRaw applies the same GREATEST semantics
+    // against a shared simulated store, modelling true concurrent ordering.
+
+    it('a stale low write does NOT regress a peak a concurrent higher write already persisted', async () => {
+      // Both requests observe the same stale starting row (peak=$100). This is
+      // the race window: each read happened before either wrote.
+      mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
+        coach_id: 'coach-1',
+        all_time_peak_rpcm: 10000, // $100 — the stale value both requests read
+        zero_churn_streak: 0,
+      });
+
+      // Request A computes a high RPCM ($300) and persists it first.
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', amount_cents: 30000, status: 'active' }),
+      ]);
+      const resultHigh = await service.getMetrics('coach-1');
+      expect(resultHigh.all_time_peak_rpcm_cents).toBe(30000); // store now $300
+
+      // Request B — which had read the stale $100 — now lands with a LOWER RPCM
+      // ($250). With the old read-then-absolute-write, B would have written
+      // max($100, $250)=$250 and clobbered A's $300. With the atomic GREATEST
+      // upsert, the DB compares against the CURRENT stored $300, so the result
+      // stays $300.
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', amount_cents: 25000, status: 'active' }),
+      ]);
+      const resultStaleLow = await service.getMetrics('coach-1');
+
+      // The persisted peak is NEVER regressed by the racing stale-low writer.
+      expect(resultStaleLow.all_time_peak_rpcm_cents).toBe(30000);
+      // And the simulated store confirms monotonicity end-to-end.
+      expect(mockPrisma.__store?.peak).toBe(30000);
+      // The lower writer still hands the DB its own (lower) candidate — the
+      // monotonic guarantee is enforced by GREATEST, not by the app skipping it.
+      const lastCall = mockPrisma.__rawCalls[mockPrisma.__rawCalls.length - 1];
+      expect(lastCall.peak).toBe(25000);
+    });
+
+    it('applies the same monotonic guarantee to zero_churn_streak under a stale read', async () => {
+      // Stale starting row: streak=2. Two requests race off this read.
+      mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
+        coach_id: 'coach-1',
+        all_time_peak_rpcm: 0,
+        zero_churn_streak: 2,
+      });
+
+      // Request A: long-tenured client with no churn → large computed streak,
+      // persisted first, advancing the stored streak well beyond 2.
+      const longAgo = new Date('2020-01-01');
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', status: 'active', created_at: longAgo, canceled_at: null }),
+      ]);
+      const resultHigh = await service.getMetrics('coach-1');
+      const highStreak = resultHigh.zero_churn_streak_months;
+      expect(highStreak).toBeGreaterThan(2);
+
+      // Request B (read stale streak=2): a roster whose recompute yields a small
+      // streak. Old logic would write max(2, small) and regress the stored
+      // high streak. Atomic GREATEST against the CURRENT store prevents it.
+      const now = new Date();
+      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c2', status: 'active', created_at: lastMonth, canceled_at: null }),
+      ]);
+      const resultStaleLow = await service.getMetrics('coach-1');
+
+      // Streak never regresses below the higher value already persisted.
+      expect(resultStaleLow.zero_churn_streak_months).toBe(highStreak);
+      expect(mockPrisma.__store?.streak).toBe(highStreak);
+    });
+
+    it('the persistence write uses an atomic GREATEST upsert (DB-side max), not a JS absolute write', async () => {
+      // Guard test: assert the service drives persistence through the raw
+      // GREATEST upsert path (the concurrency-safe mechanism) rather than a
+      // plain read-modify-write upsert.
+      mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
+        coach_id: 'coach-1',
+        all_time_peak_rpcm: 5000,
+        zero_churn_streak: 0,
+      });
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active' }),
+      ]);
+      await service.getMetrics('coach-1');
+      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+      // The SQL must use GREATEST for both monotonic columns.
+      const sqlArg = mockPrisma.$queryRaw.mock.calls[0][0];
+      const sqlText: string = (sqlArg?.strings ?? []).join(' ');
+      expect(sqlText).toMatch(/GREATEST/i);
+      expect(sqlText).toMatch(/all_time_peak_rpcm/);
+      expect(sqlText).toMatch(/zero_churn_streak/);
+      expect(sqlText).toMatch(/ON CONFLICT/i);
     });
   });
 
@@ -471,10 +625,10 @@ describe('LtvMetricsService', () => {
       ]);
       const result = await service.getMetrics('coach-1');
       expect(result.zero_churn_streak_months).toBeGreaterThan(1);
-      // Upsert called to persist the advanced streak.
-      expect(mockPrisma.coachLtvPeak.upsert).toHaveBeenCalled();
-      const upsertArg = mockPrisma.coachLtvPeak.upsert.mock.calls[0][0];
-      expect(upsertArg.update.zero_churn_streak).toBe(result.zero_churn_streak_months);
+      // Atomic upsert called to persist the advanced streak; the incoming
+      // streak equals the recomputed value (the DB takes GREATEST vs stored).
+      expect(mockPrisma.$queryRaw).toHaveBeenCalled();
+      expect(mockPrisma.__rawCalls[0].streak).toBe(result.zero_churn_streak_months);
     });
   });
 

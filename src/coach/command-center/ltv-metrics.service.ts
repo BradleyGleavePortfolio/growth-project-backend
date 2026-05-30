@@ -15,6 +15,7 @@
 //   - mrr_30d_ago                 → computed from purchases active 30 days ago (real)
 
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { LtvMetricsResponseDto, NextMilestoneDto } from './ltv-metrics.dto';
 
@@ -285,17 +286,24 @@ export class LtvMetricsService {
     // Wave-1 LTV-3: persist both values in the coach_ltv_peak table so they
     // survive the monthly boundary and never regress on a transient recompute.
     //
-    // Read the coach's single CoachLtvPeak row (one per coach_id). The PERSISTED
-    // values are the source of truth:
-    //   - all_time_peak_rpcm: newPeak = max(persistedPeak, currentRpcm).
-    //     isNewRpcmRecord is true only when currentRpcm STRICTLY exceeds the
-    //     persisted peak (a genuinely new record), in which case we upsert.
-    //   - zero_churn_streak: persist as a floor — the recomputed streak can
-    //     extend the persisted value but never drop a real historical peak
-    //     (e.g. across a month boundary where the in-memory recompute window
-    //     would otherwise shrink it).
+    // CONCURRENCY (P1 fix): the previous implementation read the persisted row,
+    // computed max(persisted, current) in JS, and wrote that absolute value
+    // back. Under concurrent requests this is a classic lost-update race: two
+    // requests both read peak=$200, request A advances it to $300 and persists,
+    // then request B (which read the stale $200) persists max($200, $250)=$250,
+    // REGRESSING the stored peak from $300 back to $250. Same hazard for the
+    // streak. The fix performs the monotonic max DB-side and atomically via
+    // `GREATEST(...)` inside a single `INSERT ... ON CONFLICT DO UPDATE`, so a
+    // concurrent writer can never lower a value another writer already raised.
+    // The RETURNING clause hands back the authoritative post-write values, which
+    // are the true source of truth for the response.
     const computedStreak = this.computeZeroChurnStreak(allPurchases, now);
 
+    // Snapshot the row as it stood BEFORE our write. Used only to decide whether
+    // the CURRENT recompute set a genuinely new record (is_new_rpcm_record) and
+    // to keep the existing first-run/advance semantics. It is NOT used to derive
+    // the persisted values returned to the client — those come from the atomic
+    // upsert's RETURNING below, so a stale read here can never regress the store.
     const peakRow = await this.prisma.coachLtvPeak.findUnique({
       where: { coach_id: coachUserId },
     });
@@ -303,28 +311,32 @@ export class LtvMetricsService {
     const persistedPeakCents = peakRow ? Number(peakRow.all_time_peak_rpcm) : 0;
     const persistedStreak = peakRow?.zero_churn_streak ?? 0;
 
-    const allTimePeakRpcmCents = Math.max(persistedPeakCents, rpcmCents);
+    // is_new_rpcm_record reflects whether THIS recompute's RPCM strictly exceeds
+    // the peak as last seen — the "New Record" badge trigger.
     const isNewRpcmRecord = rpcmCents > persistedPeakCents;
-    // Streak never regresses below the persisted floor.
-    const zeroChurnStreakMonths = Math.max(persistedStreak, computedStreak);
 
-    // Persist when either value advanced (or no row exists yet). Upsert by
-    // coach_id so there is exactly one row per coach.
-    const peakAdvanced = allTimePeakRpcmCents > persistedPeakCents;
-    const streakAdvanced = zeroChurnStreakMonths > persistedStreak;
-    if (!peakRow || peakAdvanced || streakAdvanced) {
-      await this.prisma.coachLtvPeak.upsert({
-        where: { coach_id: coachUserId },
-        create: {
-          coach_id: coachUserId,
-          all_time_peak_rpcm: allTimePeakRpcmCents,
-          zero_churn_streak: zeroChurnStreakMonths,
-        },
-        update: {
-          all_time_peak_rpcm: allTimePeakRpcmCents,
-          zero_churn_streak: zeroChurnStreakMonths,
-        },
-      });
+    // Atomic, concurrency-safe monotonic upsert. We only touch the store when
+    // this recompute could advance a value (or the row may not exist yet) to
+    // avoid needless writes; the GREATEST guard makes even a redundant write
+    // safe. The values returned to the client are always the persisted maxima.
+    const peakCouldAdvance = rpcmCents > persistedPeakCents;
+    const streakCouldAdvance = computedStreak > persistedStreak;
+
+    let allTimePeakRpcmCents: number;
+    let zeroChurnStreakMonths: number;
+
+    if (!peakRow || peakCouldAdvance || streakCouldAdvance) {
+      const persisted = await this.atomicMonotonicUpsert(
+        coachUserId,
+        rpcmCents,
+        computedStreak,
+      );
+      allTimePeakRpcmCents = persisted.allTimePeakRpcmCents;
+      zeroChurnStreakMonths = persisted.zeroChurnStreakMonths;
+    } else {
+      // Nothing to advance — the persisted row already dominates both values.
+      allTimePeakRpcmCents = persistedPeakCents;
+      zeroChurnStreakMonths = persistedStreak;
     }
 
     // ── Next Milestone ────────────────────────────────────────────────────────
@@ -380,6 +392,65 @@ export class LtvMetricsService {
   }
 
   // ─── Private helpers ────────────────────────────────────────────────────────
+
+  /**
+   * P1 fix — concurrency-safe monotonic persistence of the peak RPCM and the
+   * zero-churn streak.
+   *
+   * Performs a single atomic `INSERT ... ON CONFLICT (coach_id) DO UPDATE`
+   * where each column is updated to `GREATEST(existing, incoming)`. Because the
+   * comparison happens DB-side within one statement, there is no read-modify-
+   * write window for a concurrent request to slip into: two racing writers can
+   * only ever RAISE a value, never lower it. This eliminates the lost-update
+   * race where a stale read followed by an absolute write could regress a peak
+   * another request had already advanced.
+   *
+   * The `RETURNING` clause yields the authoritative post-write values, which the
+   * caller uses for the response — so the numbers the client sees always equal
+   * the true persisted maxima, even under contention.
+   *
+   * All inputs are passed as bound parameters via Prisma's tagged-template raw
+   * API (no string interpolation), keeping the query injection-safe and inside
+   * the existing Prisma client/connection pool.
+   */
+  private async atomicMonotonicUpsert(
+    coachUserId: string,
+    incomingPeakCents: number,
+    incomingStreak: number,
+  ): Promise<{ allTimePeakRpcmCents: number; zeroChurnStreakMonths: number }> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ all_time_peak_rpcm: Prisma.Decimal; zero_churn_streak: number }>
+    >(Prisma.sql`
+      INSERT INTO "coach_ltv_peak" (
+        "id", "coach_id", "all_time_peak_rpcm", "zero_churn_streak", "updated_at"
+      )
+      VALUES (
+        gen_random_uuid(),
+        ${coachUserId},
+        ${incomingPeakCents}::numeric,
+        ${incomingStreak}::int,
+        now()
+      )
+      ON CONFLICT ("coach_id") DO UPDATE SET
+        "all_time_peak_rpcm" = GREATEST(
+          "coach_ltv_peak"."all_time_peak_rpcm",
+          EXCLUDED."all_time_peak_rpcm"
+        ),
+        "zero_churn_streak" = GREATEST(
+          "coach_ltv_peak"."zero_churn_streak",
+          EXCLUDED."zero_churn_streak"
+        ),
+        "updated_at" = now()
+      RETURNING "all_time_peak_rpcm", "zero_churn_streak"
+    `);
+
+    const row = rows[0];
+    return {
+      // Decimal → number; the value is monetary cents and well within range.
+      allTimePeakRpcmCents: Number(row.all_time_peak_rpcm),
+      zeroChurnStreakMonths: Number(row.zero_churn_streak),
+    };
+  }
 
   private resolveCurrency(
     purchases: Array<{ currency: string | null }>,
