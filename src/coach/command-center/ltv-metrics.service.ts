@@ -10,8 +10,8 @@
 // Stubs (clearly marked with TODO):
 //   - avg_client_lifespan_months  → real value requires ≥3 cancellations; falls back to 6 months
 //   - net_revenue_retention_pct   → upgrade/downgrade tracking not yet modeled; approximated
-//   - all_time_peak_rpcm          → LTV-3: persisted in coach_ltv_peak (source of truth)
-//   - zero_churn_streak           → LTV-3: persisted in coach_ltv_peak (floored, never regresses)
+//   - all_time_peak_rpcm          → LTV-3: persisted in coach_ltv_peak (monotonic high-water mark)
+//   - zero_churn_streak           → LTV-3: persisted in coach_ltv_peak (current recomputed value; resets on churn)
 //   - mrr_30d_ago                 → computed from purchases active 30 days ago (real)
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -284,19 +284,32 @@ export class LtvMetricsService {
 
     // ── Zero-Churn Streak + All-Time Peak RPCM (LTV-3: persisted) ─────────────
     // Wave-1 LTV-3: persist both values in the coach_ltv_peak table so they
-    // survive the monthly boundary and never regress on a transient recompute.
+    // survive the monthly boundary. The two columns have DIFFERENT semantics:
     //
-    // CONCURRENCY (P1 fix): the previous implementation read the persisted row,
-    // computed max(persisted, current) in JS, and wrote that absolute value
-    // back. Under concurrent requests this is a classic lost-update race: two
-    // requests both read peak=$200, request A advances it to $300 and persists,
-    // then request B (which read the stale $200) persists max($200, $250)=$250,
-    // REGRESSING the stored peak from $300 back to $250. Same hazard for the
-    // streak. The fix performs the monotonic max DB-side and atomically via
-    // `GREATEST(...)` inside a single `INSERT ... ON CONFLICT DO UPDATE`, so a
-    // concurrent writer can never lower a value another writer already raised.
-    // The RETURNING clause hands back the authoritative post-write values, which
-    // are the true source of truth for the response.
+    //   - all_time_peak_rpcm is a monotonic HIGH-WATER MARK — it must never
+    //     regress.
+    //   - zero_churn_streak is the CURRENT consecutive zero-churn run — it MUST
+    //     be able to reset to 0 (or drop) when a client churns (see DTO
+    //     zero_churn_streak_months: "Resets to 0 the month any recurring client
+    //     cancels"). It is recomputed in full from source data every request.
+    //
+    // CONCURRENCY: the previous implementation read the persisted row, computed
+    // max(persisted, current) in JS, and wrote that absolute value back. For the
+    // PEAK this is a classic lost-update race: two requests both read peak=$200,
+    // request A advances it to $300 and persists, then request B (which read the
+    // stale $200) persists max($200, $250)=$250, REGRESSING the stored peak. The
+    // fix performs the monotonic max DB-side via `GREATEST(...)` inside a single
+    // `INSERT ... ON CONFLICT DO UPDATE`, so a concurrent writer can never lower
+    // a peak another writer already raised.
+    //
+    // P2 fix: the STREAK is NOT a monotonic accumulator and must not use
+    // GREATEST — doing so permanently pinned it to an old high and prevented a
+    // legitimate reset from ever persisting. Because the streak is a freshly
+    // recomputed CURRENT value (no read-modify-write of the stored streak feeds
+    // the write), writing the computed value directly in the same atomic upsert
+    // is race-safe: the last authoritative recompute simply wins (correct
+    // last-write-wins for a value fully derived from source data). The RETURNING
+    // clause hands back the authoritative post-write values for the response.
     const computedStreak = this.computeZeroChurnStreak(allPurchases, now);
 
     // Snapshot the row as it stood BEFORE our write. Used only to decide whether
@@ -315,18 +328,23 @@ export class LtvMetricsService {
     // the peak as last seen — the "New Record" badge trigger.
     const isNewRpcmRecord = rpcmCents > persistedPeakCents;
 
-    // Atomic, concurrency-safe monotonic upsert. We only touch the store when
-    // this recompute could advance a value (or the row may not exist yet) to
-    // avoid needless writes; the GREATEST guard makes even a redundant write
-    // safe. The values returned to the client are always the persisted maxima.
+    // Decide whether to touch the store, avoiding needless writes:
+    //   - the peak can only advance (monotonic), so it warrants a write when the
+    //     current RPCM exceeds the persisted peak;
+    //   - the streak is the current recomputed value and must be re-persisted
+    //     whenever it DIFFERS from the stored value — including a DECREASE/reset,
+    //     not just an increase — so the store reflects the authoritative current
+    //     streak.
+    // The DB enforces peak monotonicity via GREATEST and writes the streak as-is
+    // (EXCLUDED), so even a redundant write is safe.
     const peakCouldAdvance = rpcmCents > persistedPeakCents;
-    const streakCouldAdvance = computedStreak > persistedStreak;
+    const streakChanged = computedStreak !== persistedStreak;
 
     let allTimePeakRpcmCents: number;
     let zeroChurnStreakMonths: number;
 
-    if (!peakRow || peakCouldAdvance || streakCouldAdvance) {
-      const persisted = await this.atomicMonotonicUpsert(
+    if (!peakRow || peakCouldAdvance || streakChanged) {
+      const persisted = await this.atomicPeakStreakUpsert(
         coachUserId,
         rpcmCents,
         computedStreak,
@@ -334,9 +352,11 @@ export class LtvMetricsService {
       allTimePeakRpcmCents = persisted.allTimePeakRpcmCents;
       zeroChurnStreakMonths = persisted.zeroChurnStreakMonths;
     } else {
-      // Nothing to advance — the persisted row already dominates both values.
+      // No write needed — the persisted peak already dominates the current RPCM
+      // and the recomputed streak equals the stored streak. The peak is the
+      // persisted maximum; the streak is the (equal) current recomputed value.
       allTimePeakRpcmCents = persistedPeakCents;
-      zeroChurnStreakMonths = persistedStreak;
+      zeroChurnStreakMonths = computedStreak;
     }
 
     // ── Next Milestone ────────────────────────────────────────────────────────
@@ -394,26 +414,40 @@ export class LtvMetricsService {
   // ─── Private helpers ────────────────────────────────────────────────────────
 
   /**
-   * P1 fix — concurrency-safe monotonic persistence of the peak RPCM and the
-   * zero-churn streak.
+   * Concurrency-safe persistence of the peak RPCM (monotonic high-water mark)
+   * and the zero-churn streak (current recomputed value).
    *
-   * Performs a single atomic `INSERT ... ON CONFLICT (coach_id) DO UPDATE`
-   * where each column is updated to `GREATEST(existing, incoming)`. Because the
-   * comparison happens DB-side within one statement, there is no read-modify-
-   * write window for a concurrent request to slip into: two racing writers can
-   * only ever RAISE a value, never lower it. This eliminates the lost-update
-   * race where a stale read followed by an absolute write could regress a peak
-   * another request had already advanced.
+   * Performs a single atomic `INSERT ... ON CONFLICT (coach_id) DO UPDATE`.
+   * The two columns intentionally use DIFFERENT semantics:
+   *
+   *   - `all_time_peak_rpcm` → `GREATEST(existing, incoming)`. This is a
+   *     monotonic high-water mark: it must never regress. Doing the max DB-side
+   *     within one statement closes the lost-update race (P1) — two racing
+   *     writers can only ever RAISE the peak, never lower it.
+   *
+   *   - `zero_churn_streak` → `EXCLUDED."zero_churn_streak"` (the incoming
+   *     value, written as-is). The streak is the CURRENT consecutive zero-churn
+   *     run, fully RECOMPUTED from source data on every request (see
+   *     computeZeroChurnStreak). It is therefore authoritative and MUST be able
+   *     to RESET to 0 (or drop) when a client churns — see ltv-metrics.dto.ts
+   *     (zero_churn_streak_months: "Resets to 0 the month any recurring client
+   *     cancels"). Using GREATEST here (P2 bug) would permanently pin the streak
+   *     to its old high so a legitimate reset could never persist. Because the
+   *     streak is a recomputed current value — not a read-modify-write
+   *     accumulator — writing it directly in the same atomic upsert is still
+   *     race-safe: there is no stale read feeding the write, so the last
+   *     authoritative recompute simply wins (last-write-wins is correct for a
+   *     value that is fully derived from source data each call).
    *
    * The `RETURNING` clause yields the authoritative post-write values, which the
-   * caller uses for the response — so the numbers the client sees always equal
-   * the true persisted maxima, even under contention.
+   * caller uses for the response — so the peak the client sees always equals the
+   * true persisted maximum and the streak reflects the current recompute.
    *
    * All inputs are passed as bound parameters via Prisma's tagged-template raw
    * API (no string interpolation), keeping the query injection-safe and inside
    * the existing Prisma client/connection pool.
    */
-  private async atomicMonotonicUpsert(
+  private async atomicPeakStreakUpsert(
     coachUserId: string,
     incomingPeakCents: number,
     incomingStreak: number,
@@ -436,10 +470,7 @@ export class LtvMetricsService {
           "coach_ltv_peak"."all_time_peak_rpcm",
           EXCLUDED."all_time_peak_rpcm"
         ),
-        "zero_churn_streak" = GREATEST(
-          "coach_ltv_peak"."zero_churn_streak",
-          EXCLUDED."zero_churn_streak"
-        ),
+        "zero_churn_streak" = EXCLUDED."zero_churn_streak",
         "updated_at" = now()
       RETURNING "all_time_peak_rpcm", "zero_churn_streak"
     `);
