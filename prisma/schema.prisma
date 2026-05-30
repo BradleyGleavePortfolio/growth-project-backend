@@ -423,6 +423,14 @@ model User {
   // CoachPackageContent. Only meaningful for users with role='coach'.
   media_assets CoachMediaAsset[] @relation("CoachMediaAssetCoach")
 
+  // Wave-0 (A1) — per-user DAILY AI token quota rows. One row per
+  // (user, quota_date). Optional back-ref; rows cascade on user hard-delete.
+  ai_quotas UserAIQuota[] @relation("UserAIQuotaUser")
+
+  // Wave-0 (LTV-3) — 1:1 persisted LTV peak (zero-churn streak + all-time
+  // peak RPCM) for coaches. Null for students/owners until first computed.
+  ltv_peak CoachLtvPeak? @relation("CoachLtvPeakCoach")
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -4859,4 +4867,68 @@ model ClientAssetGrant {
 
   @@unique([client_id, media_asset_id])
   @@index([client_id, revoked_at])
+}
+
+// =============================================================================
+// Wave-0 schema (issues A1 + LTV-3). Pure data-layer additions landed in one
+// migration so the downstream logic agents (A1-logic, LTV-3-logic) can run in
+// parallel without colliding on schema.prisma. NO application logic here.
+// =============================================================================
+
+// Wave-0 (A1) — per-user DAILY AI token quota.
+//
+// Today only a 20/hr per-IP throttle exists on the AI gateway; A1 needs a
+// persisted DAILY token counter per user so spend can be capped and observed
+// across requests/instances. This table is the persistence layer only — the
+// A1-logic agent owns the read/increment (atomic upsert keyed by the
+// (user_id, quota_date) unique) and any enforcement policy.
+//
+// quota_date is the UTC day bucket (DateTime @db.Date) so each user has at
+// most one row per calendar day. tokens_used / request_count are monotonic
+// within a day and reset implicitly by a new day's row. onDelete: Cascade so
+// a user's quota rows vanish on account hard-delete (consistent with other
+// User-owned per-user ledgers like WorkoutBuilderIdempotencyKey).
+model UserAIQuota {
+  id            String   @id @default(uuid())
+  user_id       String
+  user          User     @relation("UserAIQuotaUser", fields: [user_id], references: [id], onDelete: Cascade)
+  quota_date    DateTime @db.Date
+  tokens_used   Int      @default(0)
+  request_count Int      @default(0)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  @@unique([user_id, quota_date], name: "UserAIQuota_user_id_quota_date_key")
+  @@index([user_id])
+  @@index([quota_date])
+}
+
+// Wave-0 (LTV-3) — persisted per-coach LTV peak.
+//
+// Persists zero_churn_streak and all_time_peak_rpcm per coach so they do not
+// regress month-over-month (currently recomputed-not-persisted in
+// LtvMetricsService.getMetrics, see ltv-metrics.service.ts:279-294 where the
+// inline TODOs call for exactly this table). The LTV-3-logic agent owns the
+// read/write — this is the data layer only.
+//
+// Coach scoping matches CoachEffectivenessScore exactly: coach_id is a
+// User.id FK (the LTV service identifies a coach by coachUserId / a User row
+// with role=coach), with onDelete: Cascade. One row per coach: coach_id is
+// @unique (1:1 with the coach User), mirroring the CoachBriefPreferences /
+// CoachOnboardingProgress 1:1 metric-table pattern.
+//
+// all_time_peak_rpcm is Decimal (matching the repo's Decimal @db.Decimal(20,6)
+// convention) and stores RPCM (revenue per client month) in CENTS — the same
+// integer-cents unit the LTV service computes (rpcmCents /
+// all_time_peak_rpcm_cents). Decimal holds the cent value losslessly and
+// leaves headroom for future sub-cent precision.
+model CoachLtvPeak {
+  id                 String   @id @default(uuid())
+  coach_id           String   @unique
+  coach              User     @relation("CoachLtvPeakCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  zero_churn_streak  Int      @default(0)
+  all_time_peak_rpcm Decimal  @default(0) @db.Decimal(20, 6)
+  updated_at         DateTime @updatedAt
+
+  @@map("coach_ltv_peak")
 }
