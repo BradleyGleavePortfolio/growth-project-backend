@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { MobileCoachBillingController } from '../src/billing/mobile-coach-billing.controller';
+import { BillingService } from '../src/billing/billing.service';
 import { StripeApiService } from '../src/billing/stripe-api.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
 
@@ -28,6 +29,33 @@ class TestStripeApi extends StripeApiService {
   override async createBillingPortalSession(args: any) {
     return this.createBillingPortalSessionImpl(args);
   }
+}
+
+// B1 — portal-session logic now lives in BillingService.createCoachPortalSession;
+// the controller delegates. Build a real BillingService over the stub prisma +
+// TestStripeApi so the portal-session tests exercise the full path. `billing`
+// lets a test inject a custom BillingService (used by the getStatus tests,
+// which stub getCoachBilling directly).
+function makeController(
+  prisma: any,
+  stripe: StripeApiService,
+  billingOverride?: any,
+) {
+  const billing =
+    billingOverride ??
+    new BillingService(
+      prisma,
+      { capture: jest.fn(), identify: jest.fn() } as any,
+      { write: jest.fn(), list: jest.fn() } as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      stripe,
+    );
+  return new MobileCoachBillingController(billing);
 }
 
 const STRIPE_VARS = [
@@ -65,11 +93,7 @@ describe('MobileCoachBillingController', () => {
       const billing = {
         getCoachBilling: jest.fn().mockResolvedValue({ subscription: null, invoices: [] }),
       } as any;
-      const controller = new MobileCoachBillingController(
-        billing,
-        makePrisma({}) as any,
-        new TestStripeApi(),
-      );
+      const controller = makeController(makePrisma({}) as any, new TestStripeApi(), billing);
       const out = await controller.getStatus({ user: { id: 'c-1' } } as any);
       expect(out).toEqual({
         status: 'unprovisioned',
@@ -93,11 +117,7 @@ describe('MobileCoachBillingController', () => {
           invoices: [],
         }),
       } as any;
-      const controller = new MobileCoachBillingController(
-        billing,
-        makePrisma({}) as any,
-        new TestStripeApi(),
-      );
+      const controller = makeController(makePrisma({}) as any, new TestStripeApi(), billing);
       const out = await controller.getStatus({ user: { id: 'c-1' } } as any);
       expect(out.status).toBe('active');
       expect(out.plan_tier).toBe('price_pro');
@@ -111,11 +131,7 @@ describe('MobileCoachBillingController', () => {
 
     it('400 STRIPE_NOT_CONFIGURED when STRIPE_SECRET_KEY is unset and no login-link fallback', async () => {
       delete process.env.STRIPE_SECRET_KEY;
-      const controller = new MobileCoachBillingController(
-        { getCoachBilling: jest.fn() } as any,
-        makePrisma({}) as any,
-        new TestStripeApi(),
-      );
+      const controller = makeController(makePrisma({}) as any, new TestStripeApi());
       await expect(
         controller.portalSession({ user: { id: 'c-1' } } as any),
       ).rejects.toMatchObject({
@@ -127,11 +143,7 @@ describe('MobileCoachBillingController', () => {
       delete process.env.STRIPE_SECRET_KEY;
       process.env.STRIPE_CUSTOMER_PORTAL_LOGIN_URL =
         'https://billing.stripe.com/p/login/test_abc123';
-      const controller = new MobileCoachBillingController(
-        { getCoachBilling: jest.fn() } as any,
-        makePrisma({}) as any,
-        new TestStripeApi(),
-      );
+      const controller = makeController(makePrisma({}) as any, new TestStripeApi());
       const result = await controller.portalSession(fakeReq);
       expect(result).toEqual({
         url: 'https://billing.stripe.com/p/login/test_abc123',
@@ -144,11 +156,7 @@ describe('MobileCoachBillingController', () => {
       delete process.env.STRIPE_SECRET_KEY;
       process.env.STRIPE_CUSTOMER_PORTAL_LOGIN_URL =
         'https://evil.example.com/login';
-      const controller = new MobileCoachBillingController(
-        { getCoachBilling: jest.fn() } as any,
-        makePrisma({}) as any,
-        new TestStripeApi(),
-      );
+      const controller = makeController(makePrisma({}) as any, new TestStripeApi());
       await expect(controller.portalSession(fakeReq)).rejects.toMatchObject({
         response: expect.objectContaining({ error: 'STRIPE_NOT_CONFIGURED' }),
       });
@@ -157,11 +165,7 @@ describe('MobileCoachBillingController', () => {
     it('treats a whitespace-only STRIPE_CUSTOMER_PORTAL_LOGIN_URL as unset', async () => {
       delete process.env.STRIPE_SECRET_KEY;
       process.env.STRIPE_CUSTOMER_PORTAL_LOGIN_URL = '   ';
-      const controller = new MobileCoachBillingController(
-        { getCoachBilling: jest.fn() } as any,
-        makePrisma({}) as any,
-        new TestStripeApi(),
-      );
+      const controller = makeController(makePrisma({}) as any, new TestStripeApi());
       await expect(controller.portalSession(fakeReq)).rejects.toBeInstanceOf(
         BadRequestException,
       );
@@ -174,22 +178,14 @@ describe('MobileCoachBillingController', () => {
       stripe.createBillingPortalSessionImpl.mockResolvedValue({
         url: 'https://sdk-session.example.com',
       });
-      const controller = new MobileCoachBillingController(
-        { getCoachBilling: jest.fn() } as any,
-        makePrisma({ subscription: { stripe_customer_id: 'cus_S' } }) as any,
-        stripe,
-      );
+      const controller = makeController(makePrisma({ subscription: { stripe_customer_id: 'cus_S' } }) as any, stripe);
       const out = await controller.portalSession(fakeReq);
       expect(out).toEqual({ url: 'https://sdk-session.example.com' });
       expect(stripe.createBillingPortalSessionImpl).toHaveBeenCalled();
     });
 
     it('400 BILLING_NOT_PROVISIONED when no customer id is on subscription or profile', async () => {
-      const controller = new MobileCoachBillingController(
-        { getCoachBilling: jest.fn() } as any,
-        makePrisma({ subscription: null, profile: null }) as any,
-        new TestStripeApi(),
-      );
+      const controller = makeController(makePrisma({ subscription: null, profile: null }) as any, new TestStripeApi());
       await expect(
         controller.portalSession({ user: { id: 'c-1' } } as any),
       ).rejects.toBeInstanceOf(BadRequestException);
@@ -198,11 +194,7 @@ describe('MobileCoachBillingController', () => {
     it('uses stripe_customer_id from CoachSubscription when present', async () => {
       const stripe = new TestStripeApi();
       stripe.createBillingPortalSessionImpl.mockResolvedValue({ url: 'https://x' });
-      const controller = new MobileCoachBillingController(
-        { getCoachBilling: jest.fn() } as any,
-        makePrisma({ subscription: { stripe_customer_id: 'cus_S' } }) as any,
-        stripe,
-      );
+      const controller = makeController(makePrisma({ subscription: { stripe_customer_id: 'cus_S' } }) as any, stripe);
       const out = await controller.portalSession({ user: { id: 'c-1' } } as any);
       expect(out).toEqual({ url: 'https://x' });
       expect(stripe.createBillingPortalSessionImpl).toHaveBeenCalledWith(
@@ -213,14 +205,10 @@ describe('MobileCoachBillingController', () => {
     it('falls back to CoachProfile.stripe_customer_id when subscription row lacks it', async () => {
       const stripe = new TestStripeApi();
       stripe.createBillingPortalSessionImpl.mockResolvedValue({ url: 'https://y' });
-      const controller = new MobileCoachBillingController(
-        { getCoachBilling: jest.fn() } as any,
-        makePrisma({
+      const controller = makeController(makePrisma({
           subscription: { stripe_customer_id: null },
           profile: { stripe_customer_id: 'cus_P' },
-        }) as any,
-        stripe,
-      );
+        }) as any, stripe);
       const out = await controller.portalSession({ user: { id: 'c-1' } } as any);
       expect(out).toEqual({ url: 'https://y' });
       expect(stripe.createBillingPortalSessionImpl).toHaveBeenCalledWith(
