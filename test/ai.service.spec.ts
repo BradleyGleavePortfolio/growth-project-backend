@@ -440,4 +440,121 @@ describe('AiService.chat daily token quota (A1)', () => {
     expect(day1Row!.tokens_used).toBe(250);
     expect(quota.rows.get(quota.keyOf('u1', day2))).toBeUndefined();
   });
+
+  // P1 (R2) — HARD cap: once the consumed daily total has reached the cap, the
+  // NEXT call is rejected 429 even though that call would individually be tiny.
+  // The pre-call check rejects on the already-consumed total, before the model.
+  it('hard cap: a tiny call is rejected once consumed has reached the cap', async () => {
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { total_tokens: 50 },
+    });
+    const { svc, quota } = makeService();
+    // Seed today's row already AT the cap.
+    const today = (svc as any).getQuotaDate() as Date;
+    quota.rows.set(quota.keyOf('u1', today), {
+      user_id: 'u1',
+      quota_date: today.toISOString(),
+      tokens_used: DAILY_TOKEN_QUOTA,
+      request_count: 20,
+    });
+    // Even though this call would only cost ~50 tokens, it is rejected pre-spend.
+    await expect(svc.chat('u1', 'tiny', [])).rejects.toMatchObject({
+      response: { error: AI_DAILY_QUOTA_EXCEEDED },
+    });
+    expect(mockCreate).not.toHaveBeenCalled();
+    // Ledger is unchanged (no reservation slipped through).
+    expect(quota.rows.get(quota.keyOf('u1', today))!.tokens_used).toBe(DAILY_TOKEN_QUOTA);
+  });
+
+  // P1 (R2) — a call whose estimated INPUT alone would push the total over the
+  // cap is rejected PRE-SPEND (the model is never invoked), bounding any single
+  // call from overshooting the hard cap.
+  it('hard cap: a call that would push total over cap is rejected pre-spend', async () => {
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { total_tokens: 50 },
+    });
+    const { svc, quota } = makeService();
+    const today = (svc as any).getQuotaDate() as Date;
+    // Seed the row just under the cap, leaving less headroom than even the
+    // smallest possible input floor (MIN_INPUT_TOKEN_ESTIMATE = 200) requires.
+    quota.rows.set(quota.keyOf('u1', today), {
+      user_id: 'u1',
+      quota_date: today.toISOString(),
+      tokens_used: DAILY_TOKEN_QUOTA - 10, // only 10 tokens of headroom
+      request_count: 19,
+    });
+    await expect(svc.chat('u1', 'how am I doing today', [])).rejects.toMatchObject({
+      response: { error: AI_DAILY_QUOTA_EXCEEDED },
+    });
+    // Pre-spend rejection: the model never ran and no reservation was charged.
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(quota.rows.get(quota.keyOf('u1', today))!.tokens_used).toBe(DAILY_TOKEN_QUOTA - 10);
+  });
+
+  // P1 (R2) — under-reservation overshoot: even if a single call's TRUE total
+  // exceeds its up-front reservation (the heuristic under-reserved), the
+  // post-call reconcile writes the real total back, so the NEXT call is
+  // correctly blocked because consumed now reflects reality.
+  it('under-reservation overshoot: consumed reflects true total and blocks the next call', async () => {
+    // One call whose reported TOTAL (11900) is far larger than the heuristic
+    // reservation, pushing consumed within a hair of the 12000 cap.
+    mockCreate.mockResolvedValueOnce({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { total_tokens: 11900 },
+    });
+    const { svc, quota } = makeService();
+    await svc.chat('u1', 'first call', []);
+    const row = [...quota.rows.values()][0];
+    // Ledger reflects the TRUE total usage, not the under-estimated reservation.
+    expect(row.tokens_used).toBe(11900);
+    // The next call is blocked pre-spend: only 100 tokens of headroom remain,
+    // far below the minimum input floor, so the pre-call check rejects it.
+    mockCreate.mockClear();
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { total_tokens: 50 },
+    });
+    await expect(svc.chat('u1', 'second call', [])).rejects.toMatchObject({
+      response: { error: AI_DAILY_QUOTA_EXCEEDED },
+    });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  // P2 (R2) — a provider response with NO text but WITH reported usage must
+  // RECONCILE the real usage into the daily ledger (charge it), NOT refund the
+  // reservation as if the call were free. The user gets the deterministic
+  // fallback text, but the tokens the provider actually billed are charged.
+  it('empty-text-but-has-usage: reconciles real usage instead of full refund', async () => {
+    mockCreate.mockResolvedValue({
+      // Empty completion content, but the provider still billed 420 total tokens.
+      choices: [{ message: { content: '' } }],
+      usage: { total_tokens: 420 },
+    });
+    const { svc, quota } = makeService();
+    const result = await svc.chat('u1', 'how am I doing today', []);
+    // No text => deterministic fallback is served to the user.
+    expect(result.model_used).toBe('fallback');
+    expect(result.reply.length).toBeGreaterThan(0);
+    // But the ledger is reconciled to the TRUE billed usage (420), NOT refunded
+    // to zero. This is the P2 fix: usage-but-no-text is charged, not refunded.
+    const row = [...quota.rows.values()][0];
+    expect(row.tokens_used).toBe(420);
+    expect(row.request_count).toBe(1);
+  });
+
+  // P2 (R2) — control: a response with NO text AND no usage reported is a
+  // genuinely free call and IS fully refunded (so we don't over-charge).
+  it('empty-text-and-no-usage: fully refunds the reservation (genuinely free)', async () => {
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: '' } }],
+      // no usage field at all
+    });
+    const { svc, quota } = makeService();
+    const result = await svc.chat('u1', 'how am I doing today', []);
+    expect(result.model_used).toBe('fallback');
+    const row = [...quota.rows.values()][0];
+    expect(row.tokens_used).toBe(0);
+  });
 });

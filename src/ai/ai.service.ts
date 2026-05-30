@@ -340,18 +340,26 @@ Now answer the user's next message using the rules above. Keep the answer under 
     const estimatedInput = estimateInputTokens(promptText);
     const reservation = estimatedInput + MAX_TOKENS_PER_CALL;
 
-    // A1 — enforce the per-user DAILY token quota BEFORE we call any model, so
-    // an at-cap user never burns provider tokens. We use a RESERVE-then-
-    // RECONCILE strategy: reserve the worst-case TOTAL per-call budget
-    // (estimated input + max output) up front via an atomic, race-safe
-    // increment, then reconcile to the provider's actual TOTAL usage after the
-    // call. This is the safe choice against token-amplification: concurrent
-    // in-flight requests are each charged the full estimated max before they
-    // run, so they cannot collectively race past the cap. The reservation
-    // captures the day-bucket key (P2) ONCE here so the post-call
-    // reconcile/refund always hits the SAME row even across a midnight
-    // rollover.
-    const quotaDate = await this.reserveDailyTokens(userId, reservation);
+    // A1 (P1) — enforce the per-user DAILY token quota as a HARD total-token
+    // bound BEFORE we call any model, so an at-cap user never burns provider
+    // tokens. RESERVE-then-RECONCILE: reserve the worst-case TOTAL per-call
+    // budget (estimated input + max output) up front via an atomic, race-safe
+    // guarded increment, then reconcile to the provider's actual TOTAL usage
+    // after the call. reserveDailyTokens enforces three things:
+    //  (a) PRE-CALL reject if the already-consumed daily total is at/over cap;
+    //  (b) PRE-CALL reject if the estimated INPUT alone would blow the
+    //      remaining budget (bounds single-call overshoot: with output capped
+    //      at MAX_TOKENS_PER_CALL, no single call can run unless input fits);
+    //  (c) the atomic guarded updateMany (tokens_used + reservation <= cap)
+    //      which is the hard race-safe gate so concurrent calls cannot both
+    //      pass. The reservation captures the day-bucket key (P2) ONCE here so
+    //      the post-call reconcile/refund always hits the SAME row even across
+    //      a midnight rollover.
+    const quotaDate = await this.reserveDailyTokens(
+      userId,
+      reservation,
+      estimatedInput,
+    );
 
     // A1 (P1-a) — actual provider TOTAL token usage (prompt+completion) when
     // the provider reports it, for the post-call reconcile against the up-front
@@ -394,11 +402,23 @@ Now answer the user's next message using the rules above. Keep the answer under 
             clientId: userId,
           },
         );
+        // P2 — the provider may report billable usage even when it returns no
+        // text (e.g. a truncated/empty completion that still consumed prompt +
+        // some output tokens). Capture the reported usage REGARDLESS of whether
+        // there was text so the reconcile charges the TRUE usage instead of
+        // refunding a call that genuinely spent tokens. Only a response with no
+        // usage at all leaves actualTokens null (full refund in the finally).
+        const reportedUsage = (result.tokensIn ?? 0) + (result.tokensOut ?? 0);
+        if (reportedUsage > 0) {
+          actualTokens = reportedUsage;
+        }
         if (result.text) {
           rawReply = result.text;
           modelUsed = 'anthropic';
-          actualTokens = (result.tokensIn ?? 0) + (result.tokensOut ?? 0);
         } else {
+          // No text to return to the user — serve the deterministic fallback,
+          // but the daily ledger is reconciled to the real usage above (P2),
+          // NOT refunded, because the provider still billed those tokens.
           const fb = this.generateFallbackResponse(userMessage, ctx);
           rawReply = fb.text;
           modelUsed = 'fallback';
@@ -436,12 +456,19 @@ Now answer the user's next message using the rules above. Keep the answer under 
           temperature: 0.7,
           max_tokens: MAX_TOKENS_PER_CALL,
         });
+        // P2 — capture the reported TOTAL usage REGARDLESS of whether the
+        // provider returned text. A response with empty content but a real
+        // usage figure still billed those tokens, so we reconcile to the true
+        // usage rather than refunding the reservation in full. Only a response
+        // with no usage figure leaves actualTokens null (full refund).
+        if (typeof response.usage?.total_tokens === 'number') {
+          actualTokens = response.usage.total_tokens;
+        }
         if (response.choices[0]?.message?.content) {
           rawReply = response.choices[0].message.content;
-          if (typeof response.usage?.total_tokens === 'number') {
-            actualTokens = response.usage.total_tokens;
-          }
         } else {
+          // No text — serve the deterministic fallback, but keep the real usage
+          // (captured above) charged to the daily ledger (P2), not refunded.
           const fb = this.generateFallbackResponse(userMessage, ctx);
           rawReply = fb.text;
           modelUsed = 'fallback';
@@ -457,16 +484,20 @@ Now answer the user's next message using the rules above. Keep the answer under 
     }
 
     } finally {
-      // A1 (P1-a + P1-b + P2) — settle the reservation against reality on the
-      // SAME day-bucket row we reserved (P2). Three cases:
-      //  1. Provider ran and reported a real TOTAL usage => reconcile the
-      //     reservation to that exact total (refund the over-reserved
-      //     difference, or charge the remainder in the rare actual>reservation
-      //     case) so the daily ledger bounds TRUE total tokens (P1-a).
+      // A1 (P1 + P2) — settle the reservation against reality on the SAME
+      // day-bucket row we reserved (P2). Three cases:
+      //  1. Provider reported a real TOTAL usage => reconcile the reservation to
+      //     that exact total (refund the over-reserved difference, or charge
+      //     the remainder in the actual>reservation case) so the daily ledger
+      //     bounds TRUE total tokens (P1). This branch fires whenever usage was
+      //     reported, INCLUDING the P2 case of a usage-but-no-text response:
+      //     we charge the real usage rather than refunding it, and because the
+      //     ledger now reflects that real spend the NEXT call is correctly
+      //     gated by the pre-call cap check.
       //  2. The call produced NO billable provider tokens — a thrown provider
-      //     error or empty completion that fell back to the deterministic
-      //     responder => refund the ENTIRE reservation (P1-b) so a failed call
-      //     never permanently leaks quota.
+      //     error, or an empty completion with NO usage reported, that fell
+      //     back to the deterministic responder => refund the ENTIRE
+      //     reservation (P1) so a genuinely free call never leaks quota.
       //  3. Provider ran successfully but did NOT report usage => keep the
       //     conservative reservation in place (we cannot know the true cost, so
       //     we must not refund a call that really did spend tokens).
@@ -522,41 +553,79 @@ Now answer the user's next message using the rules above. Keep the answer under 
     );
   }
 
-  // A1 — atomically reserve `cost` tokens against the user's daily budget.
+  // A1 (P1) — atomically reserve `cost` tokens against the user's daily budget,
+  // enforcing the DAILY_TOKEN_QUOTA as a HARD total-token bound.
   //
-  // Race-safety: we first upsert the (user_id, quota_date) row so it exists
-  // (the @@unique makes the upsert idempotent under concurrency), then issue a
-  // single conditional `updateMany` that increments tokens_used ONLY while the
-  // post-increment total would stay within DAILY_TOKEN_QUOTA
-  // (where tokens_used <= cap - cost). The increment and the guard are
-  // evaluated atomically by the database, so N concurrent requests can never
-  // collectively push tokens_used past the cap: each one either wins the
-  // guarded update (count === 1) or is rejected (count === 0) without a
-  // read-modify-write race. A rejected reservation throws 429 BEFORE any model
-  // call, so an at/over-cap user never burns provider tokens.
+  // The cap is a HARD pre-call gate enforced in three layers:
+  //  (a) PRE-CALL reject if the already-consumed daily total is at/over the
+  //      cap — an at/over-cap user is blocked even for an individually tiny
+  //      call, before any model is touched.
+  //  (b) PRE-CALL reject if the estimated INPUT alone (`inputFloor`) would not
+  //      fit in the remaining budget. Because the output side is hard-capped at
+  //      MAX_TOKENS_PER_CALL, refusing a call whose input alone overflows the
+  //      remaining budget bounds any single-call overshoot: no call can run
+  //      unless at minimum its input fits, so the heuristic reservation can
+  //      never let a wildly oversized prompt slip through and blow the cap.
+  //  (c) the atomic guarded `updateMany` (tokens_used + cost <= cap, i.e.
+  //      tokens_used <= cap - cost) which is the race-safe hard gate: N
+  //      concurrent requests each either win the guarded update (count === 1)
+  //      or are rejected (count === 0) with no read-modify-write race, so they
+  //      can never collectively push tokens_used past the cap.
   //
-  // P2 — returns the captured quota_date so the caller can pass the SAME
-  // day-bucket key to the post-call reconcile/refund. Recomputing the bucket
-  // at reconcile time would mis-target the row for a request that crosses
-  // midnight; reusing the reservation's key keeps reserve and reconcile on the
-  // same ledger row.
-  private async reserveDailyTokens(userId: string, cost: number): Promise<Date> {
+  // Any rejection throws 429 BEFORE a model call, so an at/over-cap user never
+  // burns provider tokens. The post-call reconcile then writes the TRUE total
+  // usage back (even if it slightly exceeds the reservation), so the NEXT call
+  // is correctly blocked by layer (a) once real consumption reaches the cap —
+  // a user cannot keep issuing calls once they have hit it.
+  //
+  // P2 (day key) — returns the captured quota_date so the caller passes the
+  // SAME day-bucket key to the post-call reconcile/refund. Recomputing the
+  // bucket at reconcile time would mis-target the row for a request that
+  // crosses midnight; reusing the reservation's key keeps reserve and reconcile
+  // on the same ledger row.
+  private async reserveDailyTokens(
+    userId: string,
+    cost: number,
+    inputFloor: number,
+  ): Promise<Date> {
     const quotaDate = this.getQuotaDate();
 
-    await this.prisma.userAIQuota.upsert({
+    // Upsert returns the current row so we can run the explicit pre-call checks
+    // below. The @@unique makes the upsert idempotent under concurrency; we
+    // create the day's row at zero so the guarded increment is the single
+    // source of truth for the reservation (avoids a create that races a
+    // concurrent reserve into double-charging).
+    const row = await this.prisma.userAIQuota.upsert({
       where: { UserAIQuota_user_id_quota_date_key: { user_id: userId, quota_date: quotaDate } },
-      // Create the day's row at zero so the guarded increment below is the
-      // single source of truth for the reservation (avoids a create that
-      // races a concurrent reserve into double-charging).
       create: { user_id: userId, quota_date: quotaDate, tokens_used: 0, request_count: 0 },
       update: {},
     });
 
+    // (a) + (b) — explicit HARD pre-call checks. Reject when already at/over the
+    // cap, or when the estimated input alone would not fit in the remaining
+    // budget. These bound any single-call overshoot before the model runs.
+    const consumed = row?.tokens_used ?? 0;
+    if (
+      consumed >= DAILY_TOKEN_QUOTA ||
+      consumed + inputFloor > DAILY_TOKEN_QUOTA
+    ) {
+      throw new HttpException(
+        {
+          error: AI_DAILY_QUOTA_EXCEEDED,
+          message:
+            'You have reached your daily AI coaching limit. It refreshes tomorrow.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS, // 429
+      );
+    }
+
+    // (c) — the atomic race-safe hard gate. Only reserve the full cost if there
+    // is room for it (tokens_used + cost <= cap). At/over the remaining budget
+    // this matches 0 rows and we reject below.
     const guarded = await this.prisma.userAIQuota.updateMany({
       where: {
         user_id: userId,
         quota_date: quotaDate,
-        // Only reserve if there is room for the full cost. At/over cap => 0 rows.
         tokens_used: { lte: DAILY_TOKEN_QUOTA - cost },
       },
       data: {
