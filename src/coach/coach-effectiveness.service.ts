@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { CoachEffectivenessScore, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 
 // Phase 6A — Coach Effectiveness Score (per-coach scalar in [0, 100]).
 //
@@ -84,7 +85,13 @@ export interface CoachEffectivenessFactorsBlob {
 export class CoachEffectivenessService {
   private readonly logger = new Logger(CoachEffectivenessService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // EFF-3: single source of truth for "which clients can THIS coach see?".
+    // Head coach → full owned roster; sub-coach → assigned clients only.
+    // Read-only dependency — we IMPORT/CALL but never mutate it.
+    private readonly subCoachScope: SubCoachScopeService,
+  ) {}
 
   /** Compute + persist a fresh effectiveness score for one coach. */
   async score(coachId: string, now: Date = new Date()): Promise<CoachEffectivenessScore> {
@@ -204,18 +211,27 @@ export class CoachEffectivenessService {
     coachId: string,
     now: Date,
   ): Promise<CoachEffectivenessFactorsBlob> {
-    const allClients = await this.prisma.user.findMany({
-      where: {
-        coach_id: coachId,
-        role: 'student',
-        deleted_at: null,
-      },
-      select: {
-        id: true,
-        created_at: true,
-        archived_at: true,
-      },
-    });
+    // EFF-3: resolve the AUTHORIZED roster for this coach instead of the
+    // naive `coach_id = coachId` filter. For a head coach this returns the
+    // full owned roster (identical to the old behaviour); for a sub-coach
+    // it returns only the clients they are assigned via SubCoachAssignment,
+    // so sub-coaches now score against THEIR roster rather than scoring 0.
+    const clientIds = await this.subCoachScope.getAuthorizedClientIds(coachId);
+
+    const allClients = clientIds.length
+      ? await this.prisma.user.findMany({
+          where: {
+            id: { in: clientIds },
+            role: 'student',
+            deleted_at: null,
+          },
+          select: {
+            id: true,
+            created_at: true,
+            archived_at: true,
+          },
+        })
+      : [];
 
     if (allClients.length === 0) {
       return {
@@ -235,10 +251,11 @@ export class CoachEffectivenessService {
       };
     }
 
-    const completion = await this.completionComponent(coachId, now);
+    const rosterIds = allClients.map((c) => c.id);
+    const completion = await this.completionComponent(rosterIds, now);
     const riskDelta = await this.riskDeltaComponent(allClients, now);
     const retention = this.retentionComponent(allClients, now);
-    const engagement = await this.engagementComponent(coachId, allClients, now);
+    const engagement = await this.engagementComponent(rosterIds, now);
 
     return {
       components: [completion, riskDelta, retention, engagement],
@@ -250,17 +267,22 @@ export class CoachEffectivenessService {
   }
 
   private async completionComponent(
-    coachId: string,
+    clientIds: string[],
     now: Date,
   ): Promise<CoachEffectivenessFactor> {
     const since = new Date(now.getTime() - COMPLETION_WINDOW_DAYS * DAY_MS);
-    const enrolled = await this.prisma.user.count({
-      where: {
-        coach_id: coachId,
-        role: 'student',
-        created_at: { gte: since },
-      },
-    });
+    // EFF-3: scope by the resolved authorized roster (id IN clientIds)
+    // rather than `coach_id = coachId`, so a sub-coach's completion rate is
+    // measured against the clients they are actually assigned.
+    const enrolled = clientIds.length
+      ? await this.prisma.user.count({
+          where: {
+            id: { in: clientIds },
+            role: 'student',
+            created_at: { gte: since },
+          },
+        })
+      : 0;
     if (enrolled === 0) {
       return {
         key: 'completion',
@@ -274,7 +296,7 @@ export class CoachEffectivenessService {
       where: {
         outcome_type: 'completed_90day',
         labelled_at: { gte: since },
-        user: { coach_id: coachId },
+        user_id: { in: clientIds },
       },
     });
     const ratio = clamp(completed / enrolled, 0, 1);
@@ -303,26 +325,64 @@ export class CoachEffectivenessService {
       };
     }
 
+    // EFF-1 (N+1 fix, 50-Failures #21): the old code ran 2 sequential
+    // `ptmPrediction.findFirst` per eligible client (2N round-trips inside
+    // a loop). We now pull EVERY relevant prediction for the whole eligible
+    // roster in ONE `findMany`, then reproduce the exact per-client choices
+    // in memory:
+    //   * earliest      = first row with computed_at >= client.created_at
+    //                     (ascending order on computed_at)
+    //   * latestInWindow= last row with created_at <= computed_at <= windowEnd
+    //                     (descending order on computed_at)
+    // The DB filter is the union over clients (computed_at >= earliest
+    // created_at among eligible); the precise per-client lower/upper bounds
+    // are re-applied in memory so the selection semantics are identical.
+    const eligibleIds = eligible.map((c) => c.id);
+    const earliestCreatedAt = eligible.reduce(
+      (min, c) => (c.created_at < min ? c.created_at : min),
+      eligible[0].created_at,
+    );
+    const predictions = await this.prisma.ptmPrediction.findMany({
+      where: {
+        user_id: { in: eligibleIds },
+        computed_at: { gte: earliestCreatedAt },
+      },
+      select: { user_id: true, risk_score: true, computed_at: true },
+      // Ascending so that, per user, the FIRST in-bound row is the earliest
+      // and the LAST in-window row is the latest — matching the two
+      // findFirst orderBy directions in a single pass.
+      orderBy: { computed_at: 'asc' },
+    });
+
+    const byUser = new Map<
+      string,
+      Array<{ risk_score: number; computed_at: Date }>
+    >();
+    for (const p of predictions) {
+      const arr = byUser.get(p.user_id);
+      if (arr) arr.push({ risk_score: p.risk_score, computed_at: p.computed_at });
+      else byUser.set(p.user_id, [{ risk_score: p.risk_score, computed_at: p.computed_at }]);
+    }
+
     const deltas: number[] = [];
     for (const client of eligible) {
       const windowEnd = new Date(
         client.created_at.getTime() + FIRST_60_DAYS * DAY_MS,
       );
-      const earliest = await this.prisma.ptmPrediction.findFirst({
-        where: {
-          user_id: client.id,
-          computed_at: { gte: client.created_at },
-        },
-        orderBy: { computed_at: 'asc' },
-      });
+      const rows = byUser.get(client.id);
+      if (!rows || rows.length === 0) continue;
+      // rows are ascending by computed_at. earliest = first row with
+      // computed_at >= client.created_at (lower bound only, asc).
+      const earliest = rows.find((r) => r.computed_at >= client.created_at);
       if (!earliest) continue;
-      const latestInWindow = await this.prisma.ptmPrediction.findFirst({
-        where: {
-          user_id: client.id,
-          computed_at: { gte: client.created_at, lte: windowEnd },
-        },
-        orderBy: { computed_at: 'desc' },
-      });
+      // latestInWindow = last row within [created_at, windowEnd] (desc).
+      // Since rows are ascending, the last matching row is the latest.
+      let latestInWindow: { risk_score: number; computed_at: Date } | undefined;
+      for (const r of rows) {
+        if (r.computed_at >= client.created_at && r.computed_at <= windowEnd) {
+          latestInWindow = r;
+        }
+      }
       if (!latestInWindow) continue;
       // delta > 0 means the client got LESS risky → coach gets credit
       const delta = earliest.risk_score - latestInWindow.risk_score;
@@ -390,11 +450,10 @@ export class CoachEffectivenessService {
   }
 
   private async engagementComponent(
-    coachId: string,
-    clients: Array<{ id: string }>,
+    clientIds: string[],
     now: Date,
   ): Promise<CoachEffectivenessFactor> {
-    if (clients.length === 0) {
+    if (clientIds.length === 0) {
       return {
         key: 'engagement',
         label: 'Capped messages per client per week',
@@ -404,10 +463,15 @@ export class CoachEffectivenessService {
       };
     }
     const since = new Date(now.getTime() - 28 * DAY_MS); // 4 weeks
+    // EFF-3: scope by client_id IN the authorized roster rather than
+    // coach_id. CoachMessage.coach_id holds the HEAD coach's id even for
+    // messages a sub-coach sent (sender_id captures the actual sender), so
+    // filtering on coach_id would mis-attribute a sub-coach's engagement.
+    // Filtering on the resolved client roster scopes correctly for both.
     const messagesByClient = await this.prisma.coachMessage.groupBy({
       by: ['client_id'],
       where: {
-        coach_id: coachId,
+        client_id: { in: clientIds },
         created_at: { gte: since },
       },
       _count: { _all: true },
@@ -419,18 +483,18 @@ export class CoachEffectivenessService {
       }
     }
     let cappedSum = 0;
-    for (const c of clients) {
-      const perWeek = (totals.get(c.id) ?? 0) / 4;
+    for (const id of clientIds) {
+      const perWeek = (totals.get(id) ?? 0) / 4;
       cappedSum += Math.min(perWeek, ENGAGEMENT_CAP_PER_WEEK);
     }
-    const avg = cappedSum / clients.length;
+    const avg = cappedSum / clientIds.length;
     const normalized = clamp(avg / ENGAGEMENT_CAP_PER_WEEK, 0, 1);
     return {
       key: 'engagement',
       label: 'Capped messages per client per week',
       observed: roundTo3(avg),
       contribution: roundTo3(normalized * WEIGHT_ENGAGEMENT),
-      sample_size: clients.length,
+      sample_size: clientIds.length,
     };
   }
 }
