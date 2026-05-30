@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger, Optional } from '@nestjs/common';
 import OpenAI from 'openai';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
@@ -45,6 +45,21 @@ export interface UserContextPayload {
   recent_fasting: Prisma.FastingWindowGetPayload<Record<string, never>>[];
   todays_logs: Prisma.LoggedFoodEntryGetPayload<{ include: { food_item: true } }>[];
 }
+
+// A1 — per-user DAILY AI token quota.
+//
+// Rationale for the cap value: /ai/chat already has a 20-requests-per-hour
+// per-user throttle (defense-in-depth burst limit). The model call is bounded
+// to max_tokens=600 per turn (MAX_TOKENS_PER_CALL below). We pick the daily
+// token budget as 20 full-budget calls/day — i.e. one hour's worth of the
+// burst limit spread across a day — which is generous for a legitimate client
+// but caps a token-amplification attacker who slow-drips under the hourly
+// throttle. 20 * 600 = 12000 tokens/day. Documented in the build report.
+export const MAX_TOKENS_PER_CALL = 600;
+export const DAILY_TOKEN_QUOTA = 20 * MAX_TOKENS_PER_CALL; // 12000
+
+// Machine code returned (HTTP 429) when a user is at/over their daily budget.
+export const AI_DAILY_QUOTA_EXCEEDED = 'AI_DAILY_QUOTA_EXCEEDED';
 
 export interface ChatResult {
   reply: string;
@@ -283,9 +298,24 @@ Now answer the user's next message using the rules above. Keep the answer under 
     // entry can never be folded into the prompt WITH a system role.
     conversationHistory: Array<{ role: ChatRole; content: string }>,
   ): Promise<ChatResult> {
+    // A1 — enforce the per-user DAILY token quota BEFORE we build context or
+    // call any model, so an at-cap user never burns provider tokens. We use a
+    // RESERVE-then-RECONCILE strategy: reserve the worst-case per-call budget
+    // (MAX_TOKENS_PER_CALL) up front via an atomic, race-safe increment, then
+    // reconcile down to the provider's actual usage after the call. This is
+    // the safe choice against token-amplification: concurrent in-flight
+    // requests are each charged the full max before they run, so they cannot
+    // collectively race past the cap. If the model returns real usage we
+    // refund the difference; if it never ran (e.g. would have exceeded) the
+    // reservation is what stands.
+    await this.reserveDailyTokens(userId, MAX_TOKENS_PER_CALL);
+
     const ctx = await this.contextSvc.build(userId);
     let modelUsed: 'perplexity' | 'anthropic' | 'fallback' = 'perplexity';
 
+    // Actual provider token usage, when the provider reports it, for the
+    // post-call reconcile against the up-front MAX_TOKENS_PER_CALL reservation.
+    let actualTokens: number | null = null;
     let rawReply: string;
     const perplexityKey = process.env.PERPLEXITY_API_KEY?.trim();
     const anthropicReady =
@@ -318,6 +348,7 @@ Now answer the user's next message using the rules above. Keep the answer under 
         if (result.text) {
           rawReply = result.text;
           modelUsed = 'anthropic';
+          actualTokens = (result.tokensIn ?? 0) + (result.tokensOut ?? 0);
         } else {
           const fb = this.generateFallbackResponse(userMessage, ctx);
           rawReply = fb.text;
@@ -354,10 +385,13 @@ Now answer the user's next message using the rules above. Keep the answer under 
           model: 'sonar-pro',
           messages,
           temperature: 0.7,
-          max_tokens: 600,
+          max_tokens: MAX_TOKENS_PER_CALL,
         });
         if (response.choices[0]?.message?.content) {
           rawReply = response.choices[0].message.content;
+          if (typeof response.usage?.total_tokens === 'number') {
+            actualTokens = response.usage.total_tokens;
+          }
         } else {
           const fb = this.generateFallbackResponse(userMessage, ctx);
           rawReply = fb.text;
@@ -371,6 +405,15 @@ Now answer the user's next message using the rules above. Keep the answer under 
         rawReply = fb.text;
         modelUsed = 'fallback';
       }
+    }
+
+    // A1 — reconcile the up-front reservation to actual provider usage when
+    // available. We reserved MAX_TOKENS_PER_CALL; if the provider reported a
+    // smaller (or larger) total_tokens, adjust tokens_used by the delta so the
+    // daily ledger reflects reality. Non-fatal: a failed reconcile leaves the
+    // conservative reservation in place.
+    if (actualTokens != null) {
+      await this.reconcileDailyTokens(userId, MAX_TOKENS_PER_CALL, actualTokens);
     }
 
     const isFallback = modelUsed === 'fallback';
@@ -405,5 +448,99 @@ Now answer the user's next message using the rules above. Keep the answer under 
       model_used: modelUsed,
       degraded: isFallback,
     };
+  }
+
+  // A1 — "today" as a UTC date bucket (midnight UTC), matching the
+  // UserAIQuota.quota_date @db.Date column. Pulled out as a protected method
+  // so tests can stub the day boundary without coupling to the wall clock
+  // (e.g. to exercise the day-rollover path deterministically).
+  protected getQuotaDate(): Date {
+    const now = new Date();
+    return new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+  }
+
+  // A1 — atomically reserve `cost` tokens against the user's daily budget.
+  //
+  // Race-safety: we first upsert the (user_id, quota_date) row so it exists
+  // (the @@unique makes the upsert idempotent under concurrency), then issue a
+  // single conditional `updateMany` that increments tokens_used ONLY while the
+  // post-increment total would stay within DAILY_TOKEN_QUOTA
+  // (where tokens_used <= cap - cost). The increment and the guard are
+  // evaluated atomically by the database, so N concurrent requests can never
+  // collectively push tokens_used past the cap: each one either wins the
+  // guarded update (count === 1) or is rejected (count === 0) without a
+  // read-modify-write race. A rejected reservation throws 429 BEFORE any model
+  // call, so an at/over-cap user never burns provider tokens.
+  private async reserveDailyTokens(userId: string, cost: number): Promise<void> {
+    const quotaDate = this.getQuotaDate();
+
+    await this.prisma.userAIQuota.upsert({
+      where: { UserAIQuota_user_id_quota_date_key: { user_id: userId, quota_date: quotaDate } },
+      // Create the day's row at zero so the guarded increment below is the
+      // single source of truth for the reservation (avoids a create that
+      // races a concurrent reserve into double-charging).
+      create: { user_id: userId, quota_date: quotaDate, tokens_used: 0, request_count: 0 },
+      update: {},
+    });
+
+    const guarded = await this.prisma.userAIQuota.updateMany({
+      where: {
+        user_id: userId,
+        quota_date: quotaDate,
+        // Only reserve if there is room for the full cost. At/over cap => 0 rows.
+        tokens_used: { lte: DAILY_TOKEN_QUOTA - cost },
+      },
+      data: {
+        tokens_used: { increment: cost },
+        request_count: { increment: 1 },
+      },
+    });
+
+    if (guarded.count === 0) {
+      throw new HttpException(
+        {
+          error: AI_DAILY_QUOTA_EXCEEDED,
+          message:
+            'You have reached your daily AI coaching limit. It refreshes tomorrow.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS, // 429
+      );
+    }
+  }
+
+  // A1 — reconcile the up-front reservation to the provider's actual usage.
+  // We reserved `reserved` tokens; the real cost was `actual`. Adjust
+  // tokens_used by (actual - reserved) so the ledger reflects reality. We
+  // clamp the floor of tokens_used at 0 in the over-refund edge case by never
+  // decrementing below the row's value via a guarded updateMany. Non-fatal.
+  private async reconcileDailyTokens(
+    userId: string,
+    reserved: number,
+    actual: number,
+  ): Promise<void> {
+    const delta = actual - reserved;
+    if (delta === 0) return;
+    const quotaDate = this.getQuotaDate();
+    try {
+      if (delta > 0) {
+        await this.prisma.userAIQuota.updateMany({
+          where: { user_id: userId, quota_date: quotaDate },
+          data: { tokens_used: { increment: delta } },
+        });
+      } else {
+        // Refund the unused reservation, never below 0.
+        const refund = -delta;
+        await this.prisma.userAIQuota.updateMany({
+          where: { user_id: userId, quota_date: quotaDate, tokens_used: { gte: refund } },
+          data: { tokens_used: { decrement: refund } },
+        });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Daily token reconcile failed (non-fatal): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }

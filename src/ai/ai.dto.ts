@@ -18,7 +18,9 @@ import {
 // 'user'|'assistant' union — a client-supplied 'system' (or any other) role
 // is rejected at the HTTP boundary so it can never be folded into the prompt
 // with a privileged role. The daily-token-quota (UserAIQuota) persistence is
-// intentionally deferred (needs a Prisma migration) — see build report.
+// now enforced in AiService.chat() via a reserve-then-reconcile atomic
+// increment against the Wave-0 UserAIQuota table — see ai.service.ts and the
+// build report.
 
 // Conservative caps. A single chat turn and the live message share the same
 // ceiling; the history is bounded so a request can't smuggle an unbounded
