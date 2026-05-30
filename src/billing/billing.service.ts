@@ -1413,16 +1413,21 @@ export class BillingService {
       typeof payout.amount === 'number'
         ? payout.amount
         : row.last_payout_amount_cents ?? 0;
-    // WHERE-guard for different-event-id replay idempotency: skip when
-    // this exact payout is already recorded at this terminal status.
-    const updated = await tx.payoutSnapshot.updateMany({
-      where: {
-        id: row.id,
-        NOT: {
-          last_payout_stripe_id: payout.id,
-          last_payout_status: terminalStatus,
-        },
-      },
+    // Idempotency is decided in TypeScript, NOT via a nullable Prisma `NOT`
+    // predicate. The guarded columns last_payout_stripe_id and
+    // last_payout_status are nullable; a SQL `NOT (col = ? AND col2 = ?)`
+    // evaluates to UNKNOWN (not TRUE) when those columns are NULL, so a
+    // first-ever / no-prior-value snapshot would match 0 rows and the failed
+    // payout would be silently swallowed (no record, no COACH_ALERT) while
+    // the webhook is still marked complete. Compare here instead so a genuine
+    // same-payout same-terminal-status replay is a true no-op, while a
+    // different payout or a first-ever NULL-snapshot failure records + alerts.
+    const alreadyTerminal =
+      row.last_payout_stripe_id === payout.id &&
+      row.last_payout_status === terminalStatus;
+    if (alreadyTerminal) return;
+    await tx.payoutSnapshot.updateMany({
+      where: { id: row.id },
       data: {
         last_payout_stripe_id: payout.id,
         last_payout_status: terminalStatus,
@@ -1434,7 +1439,6 @@ export class BillingService {
     this.logger.warn(
       `${event.type} event=${event.id} payout=${payout.id} account=${accountId} coach=${coachId} amount_cents=${amountCents} reason=${failureReason ?? 'unknown'}`,
     );
-    if (updated.count === 0) return;
     if (!this.notifications) {
       this.logger.warn(
         `${event.type} event=${event.id} payout=${payout.id}: NotificationsService is not wired — skipping COACH_ALERT`,
