@@ -48,6 +48,11 @@ const mockPrisma = {
   clientPurchase: {
     findMany: jest.fn(),
   },
+  // LTV-3: persisted peak/streak store (coach_ltv_peak).
+  coachLtvPeak: {
+    findUnique: jest.fn(),
+    upsert: jest.fn(),
+  },
 };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -57,6 +62,10 @@ describe('LtvMetricsService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Default: no persisted peak row yet (first-run behaviour). Individual
+    // tests override findUnique to simulate an existing persisted peak/streak.
+    mockPrisma.coachLtvPeak.findUnique.mockResolvedValue(null);
+    mockPrisma.coachLtvPeak.upsert.mockResolvedValue({});
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LtvMetricsService,
@@ -356,6 +365,157 @@ describe('LtvMetricsService', () => {
       expect(result.net_revenue_retention_pct).toBe(
         parseFloat((100 - result.churn_rate_pct).toFixed(1)),
       );
+    });
+  });
+
+  describe('LTV-3: all_time_peak_rpcm persistence (coach_ltv_peak)', () => {
+    it('returns the persisted peak (not current) and isNewRpcmRecord=false when persisted > current', async () => {
+      // Persisted peak is higher than current RPCM ($300 > $200).
+      // Persisted peak ($300) and a high streak so neither value advances.
+      mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
+        coach_id: 'coach-1',
+        all_time_peak_rpcm: 30000, // $300 in cents (Decimal coerces to number)
+        zero_churn_streak: 99,
+      });
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active' }),
+      ]);
+      const result = await service.getMetrics('coach-1');
+
+      expect(result.revenue_per_client_month_cents).toBe(20000);
+      // Persisted peak is the source of truth.
+      expect(result.all_time_peak_rpcm_cents).toBe(30000);
+      expect(result.is_new_rpcm_record).toBe(false);
+      expect(result.peak_rpcm_is_estimate).toBe(false);
+      // Neither peak nor streak advanced → no upsert.
+      expect(mockPrisma.coachLtvPeak.upsert).not.toHaveBeenCalled();
+    });
+
+    it('upserts a new peak and sets isNewRpcmRecord=true when current > persisted', async () => {
+      mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
+        coach_id: 'coach-1',
+        all_time_peak_rpcm: 10000, // $100 persisted
+        zero_churn_streak: 0,
+      });
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active' }),
+      ]);
+      const result = await service.getMetrics('coach-1');
+
+      expect(result.revenue_per_client_month_cents).toBe(20000);
+      expect(result.all_time_peak_rpcm_cents).toBe(20000); // max(10000, 20000)
+      expect(result.is_new_rpcm_record).toBe(true);
+      expect(mockPrisma.coachLtvPeak.upsert).toHaveBeenCalledTimes(1);
+      const upsertArg = mockPrisma.coachLtvPeak.upsert.mock.calls[0][0];
+      expect(upsertArg.where).toEqual({ coach_id: 'coach-1' });
+      expect(upsertArg.update.all_time_peak_rpcm).toBe(20000);
+    });
+
+    it('does NOT flag a new record when current ties the persisted peak', async () => {
+      mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
+        coach_id: 'coach-1',
+        all_time_peak_rpcm: 20000,
+        zero_churn_streak: 0,
+      });
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active' }),
+      ]);
+      const result = await service.getMetrics('coach-1');
+      expect(result.is_new_rpcm_record).toBe(false);
+      expect(result.all_time_peak_rpcm_cents).toBe(20000);
+    });
+
+    it('creates the row on first run (no persisted peak) and records the current RPCM', async () => {
+      mockPrisma.coachLtvPeak.findUnique.mockResolvedValue(null);
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active' }),
+      ]);
+      const result = await service.getMetrics('coach-1');
+      expect(result.all_time_peak_rpcm_cents).toBe(20000);
+      expect(result.is_new_rpcm_record).toBe(true); // 20000 > 0
+      expect(mockPrisma.coachLtvPeak.upsert).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('LTV-3: zero_churn_streak persistence across month boundary', () => {
+    it('does not regress below the persisted streak when the recompute window shrinks', async () => {
+      // Simulate a month boundary: the in-memory recompute would yield a small
+      // streak, but a larger streak was previously persisted. The response must
+      // not drop below the persisted floor.
+      mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
+        coach_id: 'coach-1',
+        all_time_peak_rpcm: 0,
+        zero_churn_streak: 5, // historically earned 5 months
+      });
+      // A roster with a recent client → computed streak would be small.
+      const now = new Date();
+      const recent = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', status: 'active', created_at: recent, canceled_at: null }),
+      ]);
+      const result = await service.getMetrics('coach-1');
+      // Persisted floor of 5 is preserved (never regresses).
+      expect(result.zero_churn_streak_months).toBeGreaterThanOrEqual(5);
+    });
+
+    it('persists an extended streak when the recompute exceeds the stored value', async () => {
+      mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
+        coach_id: 'coach-1',
+        all_time_peak_rpcm: 0,
+        zero_churn_streak: 1,
+      });
+      // Old client, no cancellations → computed streak grows large.
+      const longAgo = new Date('2020-01-01');
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', status: 'active', created_at: longAgo, canceled_at: null }),
+      ]);
+      const result = await service.getMetrics('coach-1');
+      expect(result.zero_churn_streak_months).toBeGreaterThan(1);
+      // Upsert called to persist the advanced streak.
+      expect(mockPrisma.coachLtvPeak.upsert).toHaveBeenCalled();
+      const upsertArg = mockPrisma.coachLtvPeak.upsert.mock.calls[0][0];
+      expect(upsertArg.update.zero_churn_streak).toBe(result.zero_churn_streak_months);
+    });
+  });
+
+  describe('LTV-1: estimated_ltv is-estimate flag', () => {
+    it('flags estimated_ltv as an estimate when fewer than 3 cancellations', async () => {
+      const ninetyTwoDaysAgo = new Date(Date.now() - 92 * 24 * 3600 * 1000);
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', status: 'active' }),
+        makePurchase({ client_user_id: 'c2', status: 'canceled', billing_type: 'recurring',
+          created_at: ninetyTwoDaysAgo, canceled_at: new Date(), entitlement_active: false }),
+      ]);
+      const result = await service.getMetrics('coach-1');
+      expect(result.lifespan_is_estimate).toBe(true);
+      expect(result.estimated_ltv_is_estimate).toBe(true);
+      expect(result.estimated_ltv_estimate_note).toEqual(expect.any(String));
+      expect(result.estimated_ltv_estimate_note).toContain('Estimated LTV');
+    });
+
+    it('does NOT flag estimated_ltv when there are >=3 real cancellations', async () => {
+      const ninetyTwoDaysAgo = new Date(Date.now() - 92 * 24 * 3600 * 1000);
+      const cancel = () => makePurchase({
+        client_user_id: Math.random().toString(36).slice(2),
+        status: 'canceled', billing_type: 'recurring',
+        created_at: ninetyTwoDaysAgo, canceled_at: new Date(), entitlement_active: false,
+      });
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([cancel(), cancel(), cancel()]);
+      const result = await service.getMetrics('coach-1');
+      expect(result.lifespan_is_estimate).toBe(false);
+      expect(result.estimated_ltv_is_estimate).toBe(false);
+      expect(result.estimated_ltv_estimate_note).toBeNull();
+    });
+  });
+
+  describe('LTV-2: nrr_is_stub honesty flag', () => {
+    it('is present and true on the response', async () => {
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', status: 'active' }),
+      ]);
+      const result = await service.getMetrics('coach-1');
+      expect(result).toHaveProperty('nrr_is_stub');
+      expect(result.nrr_is_stub).toBe(true);
     });
   });
 

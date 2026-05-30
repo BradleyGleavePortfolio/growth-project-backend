@@ -10,8 +10,8 @@
 // Stubs (clearly marked with TODO):
 //   - avg_client_lifespan_months  → real value requires ≥3 cancellations; falls back to 6 months
 //   - net_revenue_retention_pct   → upgrade/downgrade tracking not yet modeled; approximated
-//   - all_time_peak_rpcm          → requires coach_ltv_peak table (migration pending)
-//   - zero_churn_streak           → computed in-memory from cancellation history; persisted stub
+//   - all_time_peak_rpcm          → LTV-3: persisted in coach_ltv_peak (source of truth)
+//   - zero_churn_streak           → LTV-3: persisted in coach_ltv_peak (floored, never regresses)
 //   - mrr_30d_ago                 → computed from purchases active 30 days ago (real)
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -207,7 +207,15 @@ export class LtvMetricsService {
     }
 
     // ── Estimated LTV ────────────────────────────────────────────────────────
+    // LTV-1: estimated_ltv = rpcm × avg_lifespan. When the lifespan is a stub
+    // (fewer than 3 cancellations), the LTV figure is itself an estimate, not a
+    // hard dollar number. Surface that honestly via estimated_ltv_is_estimate so
+    // the frontend can label it as an estimate rather than a real figure.
     const estimatedLtvCents = Math.round(rpcmCents * avgLifespanMonths);
+    const estimatedLtvIsEstimate = lifespanIsEstimate;
+    const estimatedLtvEstimateNote = lifespanIsEstimate
+      ? `Estimated LTV — derived from an estimated client lifespan. ${lifespanEstimateNote ?? ''}`.trim()
+      : null;
 
     // ── Churn Rate (this calendar month) ─────────────────────────────────────
     // Issue 2 fix: group by client_user_id before counting so a client with
@@ -273,26 +281,51 @@ export class LtvMetricsService {
     // ── Projected Annual Revenue ──────────────────────────────────────────────
     const projectedAnnualCents = mrrCents * 12;
 
-    // ── Zero-Churn Streak ─────────────────────────────────────────────────────
-    // Count consecutive months (going backwards from last month) with zero
-    // cancellations. Current month is excluded (it may not be complete).
-    // TODO: Persist this streak in a coach_ltv_peak table so it survives
-    // the monthly boundary without re-computation overhead.
-    const zeroChurnStreakMonths = this.computeZeroChurnStreak(
-      allPurchases,
-      now,
-    );
+    // ── Zero-Churn Streak + All-Time Peak RPCM (LTV-3: persisted) ─────────────
+    // Wave-1 LTV-3: persist both values in the coach_ltv_peak table so they
+    // survive the monthly boundary and never regress on a transient recompute.
+    //
+    // Read the coach's single CoachLtvPeak row (one per coach_id). The PERSISTED
+    // values are the source of truth:
+    //   - all_time_peak_rpcm: newPeak = max(persistedPeak, currentRpcm).
+    //     isNewRpcmRecord is true only when currentRpcm STRICTLY exceeds the
+    //     persisted peak (a genuinely new record), in which case we upsert.
+    //   - zero_churn_streak: persist as a floor — the recomputed streak can
+    //     extend the persisted value but never drop a real historical peak
+    //     (e.g. across a month boundary where the in-memory recompute window
+    //     would otherwise shrink it).
+    const computedStreak = this.computeZeroChurnStreak(allPurchases, now);
 
-    // ── All-Time Peak RPCM ────────────────────────────────────────────────────
-    // TODO: Persist all-time peak in coach_ltv_peak table. Currently returns
-    // the higher of current RPCM vs. what we can infer from historical data.
-    // Once the persistence table ships, read from it instead.
-    const allTimePeakRpcmCents = await this.estimatePeakRpcm(
-      coachUserId,
-      rpcmCents,
-      allPurchases,
-    );
-    const isNewRpcmRecord = rpcmCents > 0 && rpcmCents >= allTimePeakRpcmCents;
+    const peakRow = await this.prisma.coachLtvPeak.findUnique({
+      where: { coach_id: coachUserId },
+    });
+    // Stored as RPCM in cents (Decimal). Coerce to a JS number for comparison.
+    const persistedPeakCents = peakRow ? Number(peakRow.all_time_peak_rpcm) : 0;
+    const persistedStreak = peakRow?.zero_churn_streak ?? 0;
+
+    const allTimePeakRpcmCents = Math.max(persistedPeakCents, rpcmCents);
+    const isNewRpcmRecord = rpcmCents > persistedPeakCents;
+    // Streak never regresses below the persisted floor.
+    const zeroChurnStreakMonths = Math.max(persistedStreak, computedStreak);
+
+    // Persist when either value advanced (or no row exists yet). Upsert by
+    // coach_id so there is exactly one row per coach.
+    const peakAdvanced = allTimePeakRpcmCents > persistedPeakCents;
+    const streakAdvanced = zeroChurnStreakMonths > persistedStreak;
+    if (!peakRow || peakAdvanced || streakAdvanced) {
+      await this.prisma.coachLtvPeak.upsert({
+        where: { coach_id: coachUserId },
+        create: {
+          coach_id: coachUserId,
+          all_time_peak_rpcm: allTimePeakRpcmCents,
+          zero_churn_streak: zeroChurnStreakMonths,
+        },
+        update: {
+          all_time_peak_rpcm: allTimePeakRpcmCents,
+          zero_churn_streak: zeroChurnStreakMonths,
+        },
+      });
+    }
 
     // ── Next Milestone ────────────────────────────────────────────────────────
     const nextMilestone = this.computeNextMilestone(mrrCents, rpcmCents, currency);
@@ -312,6 +345,10 @@ export class LtvMetricsService {
     dto.lifespan_estimate_note = lifespanEstimateNote;
     dto.estimated_ltv_cents = estimatedLtvCents;
     dto.estimated_ltv_label = formatMoney(estimatedLtvCents, currency);
+    // LTV-1: explicitly flag the LTV dollar figure as an estimate (stub) so the
+    // frontend labels it rather than presenting a hardcoded-lifespan number as real.
+    dto.estimated_ltv_is_estimate = estimatedLtvIsEstimate;
+    dto.estimated_ltv_estimate_note = estimatedLtvEstimateNote;
 
     dto.churn_rate_pct = churnRatePct;
     // Issue 4: field name kept for API compat; gross retention approximation
@@ -328,10 +365,9 @@ export class LtvMetricsService {
     dto.zero_churn_streak_months = zeroChurnStreakMonths;
     dto.all_time_peak_rpcm_cents = allTimePeakRpcmCents;
     dto.all_time_peak_rpcm_label = formatMoney(allTimePeakRpcmCents, currency);
-    // peak_rpcm_is_estimate: true until the coach_ltv_peak persistence table ships.
-    // The estimatePeakRpcm heuristic returns currentRpcmCents, so the value is
-    // always approximate until real historical data is available.
-    dto.peak_rpcm_is_estimate = true;
+    // LTV-3: peak is now persisted in coach_ltv_peak (source of truth), so the
+    // value is no longer a best-effort estimate.
+    dto.peak_rpcm_is_estimate = false;
     dto.is_new_rpcm_record = isNewRpcmRecord;
 
     dto.ltv_cac_ratio = null; // CAC requires manual input — not yet modeled
@@ -414,36 +450,6 @@ export class LtvMetricsService {
       streak++;
     }
     return streak;
-  }
-
-  /**
-   * Estimate all-time peak RPCM.
-   *
-   * TODO: When coach_ltv_peak table ships, replace with:
-   *   const row = await this.prisma.coachLtvPeak.findUnique({ where: { coach_user_id } });
-   *   return Math.max(row?.peak_rpcm_cents ?? 0, currentRpcmCents);
-   *
-   * For now, take the maximum possible RPCM from any single active month in the
-   * past, by computing the "peak active MRR" across all purchases.
-   */
-  private async estimatePeakRpcm(
-    coachUserId: string,
-    currentRpcmCents: number,
-    purchases: Array<{
-      billing_type: string;
-      amount_cents: number;
-      package: { interval: string | null; interval_count: number };
-      status: string;
-      entitlement_active: boolean;
-      client_user_id: string;
-    }>,
-  ): Promise<number> {
-    // TODO: Replace with persistent peak table lookup.
-    // Heuristic: peak RPCM = peak monthly revenue per unique active client.
-    // We can't perfectly reconstruct historical peaks without time-series data,
-    // so we return current RPCM (conservative — the UI will show "New Record"
-    // on first use, which is acceptable for the initial launch).
-    return currentRpcmCents;
   }
 
   private computeNextMilestone(
