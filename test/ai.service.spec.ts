@@ -14,6 +14,11 @@ import {
   AiService,
   DAILY_TOKEN_QUOTA,
   MAX_TOKENS_PER_CALL,
+  MAX_INPUT_TOKENS,
+  MAX_INPUT_CHARS,
+  PER_CALL_TOKEN_RESERVATION,
+  CONSERVATIVE_CHARS_PER_TOKEN,
+  clampPromptParts,
   AI_DAILY_QUOTA_EXCEEDED,
 } from '../src/ai/ai.service';
 import { HttpException, HttpStatus } from '@nestjs/common';
@@ -364,25 +369,35 @@ describe('AiService.chat daily token quota (A1)', () => {
     expect(row.tokens_used).toBeGreaterThan(MAX_TOKENS_PER_CALL);
   });
 
-  // P1-a — a large reported TOTAL is bounded by the daily cap: once the ledger
-  // reflects true total usage, a subsequent call that would push past the cap
-  // is rejected with 429. This prevents the 12000 cap from being overshot by
-  // many high-total calls.
-  it('total-token accounting: high-total calls are gated by the daily cap', async () => {
+  // P1 — high-total calls are gated by the daily cap as a HARD PRE-SPEND bound.
+  // Each call reserves the proven worst case (PER_CALL_TOKEN_RESERVATION); the
+  // pre-call gate rejects the moment the next worst-case reservation would not
+  // fit in the remaining budget, BEFORE the provider is touched. The ledger
+  // reconciles down to the real per-call usage, but the gate is on the
+  // worst-case reservation, not the after-the-fact real spend.
+  it('total-token accounting: high-total calls are gated pre-spend by the daily cap', async () => {
     mockCreate.mockResolvedValue({
       choices: [{ message: { content: 'ok' } }],
       usage: { total_tokens: 4000 },
     });
     const { svc, quota } = makeService();
-    // Three 4000-total calls = 12000 exactly => at cap. The 4th must be 429.
+    // Each call reconciles to 4000 real tokens. With a 6600 worst-case
+    // reservation, call 1 (0 -> reserve 6600 -> reconcile 4000) and call 2
+    // (4000 -> reserve 6600 fits since 4000+6600<=12000 -> reconcile 8000)
+    // succeed; call 3 is rejected pre-spend because 8000 + 6600 > 12000.
     await svc.chat('u1', 'one', []);
     await svc.chat('u1', 'two', []);
-    await svc.chat('u1', 'three', []);
     const row = [...quota.rows.values()][0];
-    expect(row.tokens_used).toBe(DAILY_TOKEN_QUOTA); // 12000, bounded
-    await expect(svc.chat('u1', 'four', [])).rejects.toMatchObject({
+    expect(row.tokens_used).toBe(8000); // reconciled to true usage, under cap
+    expect(row.tokens_used).toBeLessThanOrEqual(DAILY_TOKEN_QUOTA);
+    mockCreate.mockClear();
+    await expect(svc.chat('u1', 'three', [])).rejects.toMatchObject({
       response: { error: AI_DAILY_QUOTA_EXCEEDED },
     });
+    // HARD pre-spend: the over-cap call never reached the provider, and the
+    // ledger was never pushed above the cap by an after-the-fact increment.
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect([...quota.rows.values()][0].tokens_used).toBe(8000);
   });
 
   // P1-b — when the provider call FAILS after the reservation, the reserved
@@ -467,9 +482,10 @@ describe('AiService.chat daily token quota (A1)', () => {
     expect(quota.rows.get(quota.keyOf('u1', today))!.tokens_used).toBe(DAILY_TOKEN_QUOTA);
   });
 
-  // P1 (R2) — a call whose estimated INPUT alone would push the total over the
-  // cap is rejected PRE-SPEND (the model is never invoked), bounding any single
-  // call from overshooting the hard cap.
+  // P1 (R4) — a call whose WORST-CASE reservation would push the total over the
+  // cap is rejected PRE-SPEND (the model is never invoked). Because the
+  // reservation is a proven UPPER bound on the real total, rejecting it pre-call
+  // guarantees no call that could exceed the cap ever reaches the provider.
   it('hard cap: a call that would push total over cap is rejected pre-spend', async () => {
     mockCreate.mockResolvedValue({
       choices: [{ message: { content: 'ok' } }],
@@ -477,8 +493,8 @@ describe('AiService.chat daily token quota (A1)', () => {
     });
     const { svc, quota } = makeService();
     const today = (svc as any).getQuotaDate() as Date;
-    // Seed the row just under the cap, leaving less headroom than even the
-    // smallest possible input floor (MIN_INPUT_TOKEN_ESTIMATE = 200) requires.
+    // Seed the row just under the cap, leaving far less headroom than the
+    // worst-case reservation (PER_CALL_TOKEN_RESERVATION = 6600) requires.
     quota.rows.set(quota.keyOf('u1', today), {
       user_id: 'u1',
       quota_date: today.toISOString(),
@@ -493,33 +509,27 @@ describe('AiService.chat daily token quota (A1)', () => {
     expect(quota.rows.get(quota.keyOf('u1', today))!.tokens_used).toBe(DAILY_TOKEN_QUOTA - 10);
   });
 
-  // P1 (R2) — under-reservation overshoot: even if a single call's TRUE total
-  // exceeds its up-front reservation (the heuristic under-reserved), the
-  // post-call reconcile writes the real total back, so the NEXT call is
-  // correctly blocked because consumed now reflects reality.
-  it('under-reservation overshoot: consumed reflects true total and blocks the next call', async () => {
-    // One call whose reported TOTAL (11900) is far larger than the heuristic
-    // reservation, pushing consumed within a hair of the 12000 cap.
+  // P1 (R4) — the reservation is a PROVEN UPPER bound, so reconciliation NEVER
+  // increments the ledger above what was reserved. Even if a misbehaving
+  // provider reports a TOTAL larger than the worst-case reservation, the
+  // reconcile clamps at the reservation (no post-spend increment), so the
+  // ledger can never represent more than the reservation already gated on —
+  // and never exceeds the daily cap from an after-the-fact charge.
+  it('reconcile never increments above the reservation (provider over-report is clamped)', async () => {
+    // Provider reports a TOTAL (50000) far larger than the worst-case
+    // reservation (PER_CALL_TOKEN_RESERVATION = 6600). This cannot happen given
+    // the enforced input ceiling + output cap, but we defend against it.
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { content: 'ok' } }],
-      usage: { total_tokens: 11900 },
+      usage: { total_tokens: 50000 },
     });
     const { svc, quota } = makeService();
     await svc.chat('u1', 'first call', []);
     const row = [...quota.rows.values()][0];
-    // Ledger reflects the TRUE total usage, not the under-estimated reservation.
-    expect(row.tokens_used).toBe(11900);
-    // The next call is blocked pre-spend: only 100 tokens of headroom remain,
-    // far below the minimum input floor, so the pre-call check rejects it.
-    mockCreate.mockClear();
-    mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'ok' } }],
-      usage: { total_tokens: 50 },
-    });
-    await expect(svc.chat('u1', 'second call', [])).rejects.toMatchObject({
-      response: { error: AI_DAILY_QUOTA_EXCEEDED },
-    });
-    expect(mockCreate).not.toHaveBeenCalled();
+    // Ledger is clamped to the reservation (6600), NOT the bogus 50000, and
+    // stays at/under the cap. No unguarded post-spend increment occurred.
+    expect(row.tokens_used).toBe(PER_CALL_TOKEN_RESERVATION);
+    expect(row.tokens_used).toBeLessThanOrEqual(DAILY_TOKEN_QUOTA);
   });
 
   // P2 (R2) — a provider response with NO text but WITH reported usage must
@@ -556,5 +566,141 @@ describe('AiService.chat daily token quota (A1)', () => {
     expect(result.model_used).toBe('fallback');
     const row = [...quota.rows.values()][0];
     expect(row.tokens_used).toBe(0);
+  });
+
+  // P1 (R4) — explicit HARD PRE-SPEND gate: a request whose worst-case
+  // reservation would exceed the remaining budget is rejected 429 BEFORE the
+  // provider is called. We assert the provider mock was NOT invoked, proving the
+  // cap blocks the spend up front rather than discovering it after the fact.
+  it('over-budget request is rejected 429 PRE-spend (provider mock not invoked)', async () => {
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { total_tokens: 50 },
+    });
+    const { svc, quota } = makeService();
+    const today = (svc as any).getQuotaDate() as Date;
+    // Leave a sliver of headroom — far below the worst-case reservation
+    // (PER_CALL_TOKEN_RESERVATION). The pre-call gate must reject before any
+    // provider call, so no tokens are spent.
+    quota.rows.set(quota.keyOf('u1', today), {
+      user_id: 'u1',
+      quota_date: today.toISOString(),
+      tokens_used: DAILY_TOKEN_QUOTA - 100,
+      request_count: 5,
+    });
+    let status: number | undefined;
+    try {
+      await svc.chat('u1', 'one more please', []);
+    } catch (e) {
+      if (e instanceof HttpException) status = e.getStatus();
+    }
+    expect(status).toBe(HttpStatus.TOO_MANY_REQUESTS);
+    // The decisive assertion: the provider was NEVER called for the over-budget
+    // request. The cap is a hard pre-spend bound, not after-the-fact accounting.
+    expect(mockCreate).not.toHaveBeenCalled();
+    // Ledger untouched — no reservation slipped through.
+    expect(quota.rows.get(quota.keyOf('u1', today))!.tokens_used).toBe(DAILY_TOKEN_QUOTA - 100);
+  });
+
+  // P1 (R4) — reconciliation DECREMENTS (refunds the over-reservation) and never
+  // pushes tokens_used over the cap. We reserve the worst case (6600) and the
+  // provider reports a small real total; the ledger settles DOWN to that real
+  // total, never up.
+  it('reconcile decrements: real usage below the worst-case reservation refunds the difference', async () => {
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { total_tokens: 300 },
+    });
+    const { svc, quota } = makeService();
+    await svc.chat('u1', 'how am I doing today', []);
+    const row = [...quota.rows.values()][0];
+    // Reserved 6600 up front, reconciled DOWN to the real 300 (refund of 6300).
+    // The ledger never exceeded the reservation, let alone the cap.
+    expect(row.tokens_used).toBe(300);
+    expect(row.tokens_used).toBeLessThan(PER_CALL_TOKEN_RESERVATION);
+    expect(row.tokens_used).toBeLessThanOrEqual(DAILY_TOKEN_QUOTA);
+  });
+});
+
+// P1 (R4) — unit-test the prompt clamp directly: the assembled prompt the
+// provider receives is provably bounded, which is what lets the worst-case
+// reservation act as a true upper bound on real input tokens.
+describe('clampPromptParts (A1 hard input ceiling)', () => {
+  it('clamps an oversized prompt so total assembled chars <= MAX_INPUT_CHARS', () => {
+    const systemPrompt = 'S'.repeat(2000);
+    // A wildly oversized user message and history (far beyond the ceiling).
+    const userMessage = 'U'.repeat(MAX_INPUT_CHARS * 5);
+    const history = Array.from({ length: 20 }, () => ({
+      role: 'user' as const,
+      content: 'H'.repeat(MAX_INPUT_CHARS),
+    }));
+    const out = clampPromptParts(systemPrompt, history, userMessage);
+    const totalChars =
+      systemPrompt.length +
+      out.userMessage.length +
+      out.history.reduce((n, m) => n + m.content.length, 0);
+    // The bounded assembled text never exceeds the hard input-char ceiling.
+    expect(totalChars).toBeLessThanOrEqual(MAX_INPUT_CHARS);
+    // And that ceiling maps to <= MAX_INPUT_TOKENS under the CONSERVATIVE ratio,
+    // which is an UPPER bound on what any real tokenizer would charge.
+    expect(Math.ceil(totalChars / CONSERVATIVE_CHARS_PER_TOKEN)).toBeLessThanOrEqual(
+      MAX_INPUT_TOKENS,
+    );
+  });
+
+  it('leaves a small prompt untouched', () => {
+    const systemPrompt = 'system';
+    const userMessage = 'hello';
+    const history = [{ role: 'assistant' as const, content: 'hi there' }];
+    const out = clampPromptParts(systemPrompt, history, userMessage);
+    expect(out.userMessage).toBe('hello');
+    expect(out.history).toEqual(history);
+  });
+});
+
+// P3 (R4) — the Anthropic branch must use MAX_TOKENS_PER_CALL for its output
+// cap, not a hardcoded literal, so the provider output cap and the reservation
+// can never desynchronize.
+describe('AiService.chat Anthropic output cap (A1 P3)', () => {
+  const ORIGINAL_KEY = process.env.PERPLEXITY_API_KEY;
+  afterEach(() => {
+    if (ORIGINAL_KEY === undefined) delete process.env.PERPLEXITY_API_KEY;
+    else process.env.PERPLEXITY_API_KEY = ORIGINAL_KEY;
+  });
+
+  it('passes maxTokens: MAX_TOKENS_PER_CALL to the Anthropic adapter', async () => {
+    // Force the Anthropic branch: no Perplexity key, adapter present + ready.
+    delete process.env.PERPLEXITY_API_KEY;
+    const complete = jest.fn().mockResolvedValue({
+      text: 'On track. Hit your 200g protein.',
+      tokensIn: 100,
+      tokensOut: 50,
+    });
+    const anthropic = { complete } as any;
+    const coachAIState = { isReady: () => true } as any;
+
+    const ctx = makeContext();
+    const ctxSvc: any = {
+      build: jest.fn().mockResolvedValue(ctx),
+      buildFresh: jest.fn().mockResolvedValue(ctx),
+    };
+    ctxSvc.renderForPrompt = (c: ClientAIContext) =>
+      new ClientAIContextService({} as any).renderForPrompt(c);
+    const guardrails = new AIGuardrailsService();
+    const quota = makeQuotaStub();
+    const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
+    const svc = new AiService(
+      quota as any,
+      ctxSvc,
+      guardrails,
+      analyticsStub,
+      anthropic,
+      coachAIState,
+    );
+
+    await svc.chat('u1', 'how am I doing today', []);
+    expect(complete).toHaveBeenCalledTimes(1);
+    const opts = complete.mock.calls[0][1];
+    expect(opts.maxTokens).toBe(MAX_TOKENS_PER_CALL);
   });
 });
