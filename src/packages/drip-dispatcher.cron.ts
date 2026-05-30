@@ -314,6 +314,34 @@ export class DripDispatcherCron {
     }
 
     try {
+      // PR-17 B1 — resolver-key bypass for re-send drops (decision #5).
+      //
+      // The resolver idempotency keys ride the STABLE (clientPurchaseId,
+      // contentId) pair: auto-message.resolver claims a DripResolverMarker
+      // keyed on (purpose, purchase_id, content_id) and returns the CACHED
+      // CoachMessage on a repeat; workout.resolver keys the
+      // WorkoutBuilderIdempotencyKey ledger on drip:workout:p={p}:c={c} and
+      // collapses to the cached assignment. For an ORIGINAL drop
+      // (push_seq === 0) that is exactly what we want — it preserves the
+      // PR-9 R1 rollback-retry idempotency so a race between the inline
+      // retry and this cron path can never double-deliver.
+      //
+      // But a coach "re-send updated version" of an already-FIRED drop is a
+      // NEW ScheduledDrop row sharing the same (purchase, content) pair with
+      // push_seq > 0. If we passed the pair, the resolvers would short-
+      // circuit to the cached delivery and the buyer would get NOTHING new —
+      // the opposite of a re-send. So for push_seq > 0 we pass ONLY the
+      // per-drop scheduledDropId and OMIT the pair; both resolvers fall back
+      // to a per-drop key (auto-message: marker skipped; workout:
+      // drip:workout:{client}:{asset}:{scheduledDropId}) and produce a
+      // GENUINELY FRESH delivery. (meal_plan rides
+      // DailyMealPlanAssignment.drip_drop_id @unique — already fresh per
+      // row; media rides ClientAssetGrant @@unique[client,media] — a re-send
+      // of identical media collapses to the existing grant, which is
+      // expected and acceptable: the buyer already has access and the
+      // re-send's value is the new fire_at / notification, not a duplicate
+      // grant.) See PR17_EXPANSION_PLAN.md §1.3 / §2.4.
+      const isResend = drop.push_seq > 0;
       const result = await this.resolvers!.materialise(drop.asset_type, {
         clientId: purchase.client_user_id,
         coachId: purchase.coach_user_id,
@@ -324,9 +352,12 @@ export class DripDispatcherCron {
         scheduledDropId: drop.id,
         // PR-9 R1 stable keys — same pair PR-9 inline used so a hypothetical
         // race between the inline retry and this cron path cannot create a
-        // second ClientWorkoutAssignment / CoachMessage / etc.
-        clientPurchaseId: purchase.id,
-        contentId: drop.content_id,
+        // second ClientWorkoutAssignment / CoachMessage / etc. ONLY for
+        // original (push_seq === 0) drops; a re-send (push_seq > 0)
+        // deliberately omits the pair so it does not collapse to the cached
+        // delivery (see comment above).
+        clientPurchaseId: isResend ? null : purchase.id,
+        contentId: isResend ? null : drop.content_id,
         // Cron path: no ambient outer $transaction — the resolver writes
         // commit on this.prisma directly.
       });
@@ -364,11 +395,29 @@ export class DripDispatcherCron {
    * notification provider must never reach back into the content
    * pipeline. After the dispatch attempt we stamp alert_dispatched_at
    * so a safety sweep can never double-push the buyer.
+   *
+   * PR-17 B1 — notify-suppression guard (decision #9 prep for B2). If
+   * alert_dispatched_at is ALREADY set when we reach this method, the
+   * buyer alert has already been handled (or was deliberately suppressed)
+   * and we SKIP the send — no double-alert. B2's push service sets
+   * alert_dispatched_at at SEED time when the coach toggles "notify" OFF
+   * for a push, so a forward-dated push that the coach asked NOT to
+   * announce delivers silently: the cron materialises the content but this
+   * guard short-circuits the DRIP_RELEASED push + in-app. The gate is
+   * strictly on the column being pre-set; a NORMAL drip drop is never
+   * pre-stamped at seed (fan-out + PR-10 leave it NULL until after the
+   * first dispatch), so its behaviour is unchanged.
    */
   private async dispatchBuyerAlert(
     drop: ScheduledDrop,
     clientUserId: string,
   ): Promise<void> {
+    if (drop.alert_dispatched_at != null) {
+      this.logger.debug(
+        `drip-dispatcher alert suppressed for drop=${drop.id} client=${clientUserId}: alert_dispatched_at already set (notify off or already alerted)`,
+      );
+      return;
+    }
     const title = drop.display_title?.slice(0, 80) || 'New content unlocked';
     const body = drop.display_title
       ? `New content unlocked: ${drop.display_title}`.slice(0, 160)
