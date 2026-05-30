@@ -525,3 +525,227 @@ describe('CommandCenterService.getWinStreaks', () => {
     expect(out.items[0].streak_type).toBe('check_in');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Wave-1 issue-specific coverage (CC-1..5, SC-2). Each test isolates the
+// behaviour the corresponding fix introduced.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('CC-1: pending_actions is a distinct source from open_alerts', () => {
+  it('pending_actions (unreviewed check-ins) differs from open_alerts', async () => {
+    const now = new Date(PINNED_NOW);
+    const recent = new Date(PINNED_NOW - 1000);
+    const users = [
+      { id: 'u1', name: 'Alice', coach_id: 'c1', role: 'student', deleted_at: null },
+      { id: 'u2', name: 'Bob', coach_id: 'c1', role: 'student', deleted_at: null },
+    ];
+    const prisma = buildPrisma({
+      users,
+      // 3 check-ins; only u1's morning one is reviewed → 2 unreviewed pending.
+      checkIns: [
+        { user_id: 'u1', logged_at: recent, reviewed_by_coach: true },
+        { user_id: 'u1', logged_at: recent, reviewed_by_coach: false },
+        { user_id: 'u2', logged_at: recent, reviewed_by_coach: false },
+      ],
+      // exactly 1 open alert
+      alerts: [
+        { id: 'a1', coach_id: 'c1', client_id: 'u1', acknowledged_at: null, created_at: now },
+      ],
+    });
+    const svc = new CommandCenterService(prisma, buildAdminPtm(), buildAlertsService());
+    const out = await svc.getOverview('c1');
+    expect(out.open_alerts).toBe(1);
+    expect(out.pending_actions).toBe(2);
+    expect(out.pending_actions).not.toBe(out.open_alerts);
+  });
+});
+
+describe('CC-2: active_today counts CheckIns, not ClientSignal rows', () => {
+  it('signals do not inflate active_today; only real check-ins count', async () => {
+    const recent = new Date(PINNED_NOW - 1000);
+    const users = [
+      { id: 'u1', name: 'Alice', coach_id: 'c1', role: 'student', deleted_at: null },
+      { id: 'u2', name: 'Bob', coach_id: 'c1', role: 'student', deleted_at: null },
+      { id: 'u3', name: 'Carol', coach_id: 'c1', role: 'student', deleted_at: null },
+    ];
+    const prisma = buildPrisma({
+      users,
+      // All three have system signals today (PTM recalcs / streak updates)…
+      signals: [
+        { user_id: 'u1', signal_type: 'app_open', value: 1, recorded_at: recent },
+        { user_id: 'u2', signal_type: 'app_open', value: 1, recorded_at: recent },
+        { user_id: 'u3', signal_type: 'checkin_streak', value: 4, recorded_at: recent },
+      ],
+      // …but only u1 actually checked in today.
+      checkIns: [{ user_id: 'u1', logged_at: recent }],
+    });
+    const svc = new CommandCenterService(prisma, buildAdminPtm(), buildAlertsService());
+    const out = await svc.getOverview('c1');
+    expect(out.active_today).toBe(1); // would have been 3 under the old signal-based logic
+  });
+});
+
+describe('CC-3: top_factor reflects PtmPrediction.factors', () => {
+  it('surfaces the highest-contribution factor label from the latest prediction', async () => {
+    const board = [
+      { user_id: 'u1', name: 'Alice', bucket: 'red', last_signal_at: '2026-05-31T00:00:00Z', email: 'a@a', role: 'student', risk_score: null, success_score: null, computed_at: new Date(), factors_count: 3, outcome_label: null },
+    ];
+    const prisma = buildPrisma({
+      users: [
+        { id: 'u1', name: 'Alice', coach_id: 'c1', role: 'student', deleted_at: null },
+      ],
+      predictions: [
+        {
+          user_id: 'u1',
+          risk_score: 0.8,
+          computed_at: new Date(PINNED_NOW - 1000),
+          factors: [
+            { key: 'missed_checkins', label: 'Missed 4 of last 7 check-ins', contribution: 0.42 },
+            { key: 'msg_silence', label: 'No messages in 10 days', contribution: 0.21 },
+            { key: 'weight_gap', label: 'No weight logged in 8 days', contribution: 0.05 },
+          ],
+        },
+      ],
+    });
+    const svc = new CommandCenterService(prisma, buildAdminPtm(board), buildAlertsService());
+    const out = await svc.getAtRisk('c1', {});
+    expect(out.items.length).toBe(1);
+    // Highest-contribution factor wins, regardless of array order.
+    expect(out.items[0].top_factor).toBe('Missed 4 of last 7 check-ins');
+    // NOT the old hard-coded generic string.
+    expect(out.items[0].top_factor).not.toBe('High churn risk — multiple signals fired');
+  });
+});
+
+describe('CC-4: inbox/unread agree even beyond the old 1000-row slice', () => {
+  it('a thread whose latest message is "old" still appears, and total_unread matches displayed threads', async () => {
+    const users = [
+      { id: 'u1', name: 'Alice', coach_id: 'c1', role: 'student', deleted_at: null },
+      { id: 'u2', name: 'Bob', coach_id: 'c1', role: 'student', deleted_at: null },
+    ];
+    // u2's only (and latest) message is much older than u1's flood — under the
+    // old take:1000 global slice u2's thread could fall off entirely while its
+    // unread still counted. distinct-per-client keeps u2 present.
+    const old = new Date(PINNED_NOW - 100 * 86_400_000);
+    const recent = new Date(PINNED_NOW - 1000);
+    const messages: any[] = [
+      { id: 'mu2', coach_id: 'c1', client_id: 'u2', sender_id: 'u2', body: 'old unread', read_at: null, created_at: old },
+    ];
+    // Flood u1 with many recent messages.
+    for (let i = 0; i < 50; i++) {
+      messages.push({
+        id: `mu1-${i}`,
+        coach_id: 'c1',
+        client_id: 'u1',
+        sender_id: 'u1',
+        body: `msg ${i}`,
+        read_at: i === 0 ? null : new Date(recent.getTime()),
+        created_at: new Date(recent.getTime() - i * 1000),
+      });
+    }
+    const prisma = buildPrisma({ users, messages });
+    const svc = new CommandCenterService(prisma, buildAdminPtm(), buildAlertsService());
+    const out = await svc.getInbox('c1', {});
+    // Both threads represented.
+    const clientIds = out.threads.map((t) => t.client_id).sort();
+    expect(clientIds).toEqual(['u1', 'u2']);
+    // total_unread equals the sum of the displayed threads' unread counts.
+    const sum = out.threads.reduce((s, t) => s + t.unread_count, 0);
+    expect(out.total_unread).toBe(sum);
+    // u2's old unread is included (1) plus u1's single unread (1) = 2.
+    expect(out.total_unread).toBe(2);
+  });
+});
+
+describe('CC-5: check_in_rate_7day is a frequency, not binary participation', () => {
+  it('10 clients each with 1 check-in is NOT 100%', async () => {
+    const recent = new Date(PINNED_NOW - 1000);
+    const users: any[] = [];
+    const checkIns: any[] = [];
+    for (let i = 0; i < 10; i++) {
+      users.push({ id: `u${i}`, name: `U${i}`, coach_id: 'c1', role: 'student', deleted_at: null });
+      checkIns.push({ user_id: `u${i}`, logged_at: recent }); // exactly one each
+    }
+    const prisma = buildPrisma({ users, checkIns });
+    const svc = new CommandCenterService(prisma, buildAdminPtm(), buildAlertsService());
+    const out = await svc.getOverview('c1');
+    // Old binary logic: 10 distinct clients / 10 roster = 1.0 (100%).
+    // New frequency logic: 10 check-ins / (10 * 7 expected) = 0.142… → 0.14.
+    expect(out.check_in_rate_7day).toBeCloseTo(0.14, 2);
+    expect(out.check_in_rate_7day).toBeLessThan(1);
+  });
+
+  it('a fully adherent roster (1 check-in/client/day) reaches ~100%', async () => {
+    const users = [
+      { id: 'u1', name: 'A', coach_id: 'c1', role: 'student', deleted_at: null },
+    ];
+    const checkIns: any[] = [];
+    for (let d = 0; d < 7; d++) {
+      checkIns.push({ user_id: 'u1', logged_at: new Date(PINNED_NOW - d * 86_400_000 - 1000) });
+    }
+    const prisma = buildPrisma({ users, checkIns });
+    const svc = new CommandCenterService(prisma, buildAdminPtm(), buildAlertsService());
+    const out = await svc.getOverview('c1');
+    expect(out.check_in_rate_7day).toBe(1);
+  });
+});
+
+describe('SC-2: roster scoping differs for head coach vs sub-coach', () => {
+  // Head coach `head` owns u1,u2,u3. Sub-coach `sub` (role coach, coach_id=head)
+  // is assigned only u2 via SubCoachAssignment.
+  function scopedPrisma() {
+    const now = new Date(PINNED_NOW);
+    const recent = new Date(PINNED_NOW - 1000);
+    return buildPrisma({
+      users: [
+        { id: 'head', name: 'Head', coach_id: null, role: 'coach', deleted_at: null },
+        { id: 'sub', name: 'Sub', coach_id: 'head', role: 'coach', deleted_at: null },
+        { id: 'u1', name: 'Alice', coach_id: 'head', role: 'student', deleted_at: null },
+        { id: 'u2', name: 'Bob', coach_id: 'head', role: 'student', deleted_at: null },
+        { id: 'u3', name: 'Carol', coach_id: 'head', role: 'student', deleted_at: null },
+      ],
+      assignments: [
+        { sub_coach_id: 'sub', client_id: 'u2', unassigned_at: null },
+      ],
+      checkIns: [
+        { user_id: 'u1', logged_at: recent },
+        { user_id: 'u2', logged_at: recent },
+        { user_id: 'u3', logged_at: recent },
+      ],
+      alerts: [
+        { id: 'a1', coach_id: 'head', client_id: 'u1', alert_type: 'consecutive_misses', message: 'm', acknowledged_at: null, created_at: now },
+        { id: 'a2', coach_id: 'head', client_id: 'u2', alert_type: 'consecutive_misses', message: 'm', acknowledged_at: null, created_at: now },
+        { id: 'a3', coach_id: 'head', client_id: 'u3', alert_type: 'consecutive_misses', message: 'm', acknowledged_at: null, created_at: now },
+      ],
+    });
+  }
+
+  it('overview: head sees full roster (3); sub sees only assigned (1)', async () => {
+    const prisma = scopedPrisma();
+    const scope = buildSubCoachScope(prisma);
+    const svc = new CommandCenterService(prisma, buildAdminPtm(), buildAlertsService(), scope);
+
+    const head = await svc.getOverview('head');
+    expect(head.roster_size).toBe(3);
+    expect(head.active_today).toBe(3);
+    expect(head.open_alerts).toBe(3);
+
+    const sub = await svc.getOverview('sub');
+    expect(sub.roster_size).toBe(1);
+    expect(sub.active_today).toBe(1);
+    expect(sub.open_alerts).toBe(1); // only u2's alert, still owned by head coach_id
+  });
+
+  it('action-queue: sub-coach only sees alerts for assigned clients', async () => {
+    const prisma = scopedPrisma();
+    const scope = buildSubCoachScope(prisma);
+    const svc = new CommandCenterService(prisma, buildAdminPtm(), buildAlertsService(), scope);
+
+    const head = await svc.getActionQueue('head', {});
+    expect(head.total_pending).toBe(3);
+
+    const sub = await svc.getActionQueue('sub', {});
+    expect(sub.total_pending).toBe(1);
+    expect(sub.items.map((i) => i.client_id)).toEqual(['u2']);
+  });
+});

@@ -99,7 +99,7 @@ describe('CommandCenterController — guard stack metadata (SC-1)', () => {
     // fix, the class stack must be exactly [JwtAuthGuard, CoachGuard] and
     // must NOT contain NoActiveSubCoachGuard, so a sub-coach regains the
     // operational surfaces.
-    const guards: Function[] =
+    const guards: Array<new (...args: any[]) => unknown> =
       Reflect.getMetadata('__guards__', CommandCenterController) ?? [];
     expect(guards).toEqual([JwtAuthGuard, CoachGuard]);
     expect(guards).not.toContain(NoActiveSubCoachGuard);
