@@ -1,14 +1,17 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
   Patch,
   Post,
   Put,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -20,6 +23,11 @@ import { SubscriptionGuard } from '../billing/subscription.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PackagesService } from './packages.service';
 import { PackageContentsService } from './package-contents.service';
+import { PackagePushService } from './package-push.service';
+import {
+  PushPreviewQuerySchema,
+  PushRequestSchema,
+} from './package-contents.dto';
 
 // PR-8 — Coach package CONTENTS authoring endpoints.
 //
@@ -45,6 +53,7 @@ export class CoachPackageContentsController {
   constructor(
     private packages: PackagesService,
     private contents: PackageContentsService,
+    private push: PackagePushService,
   ) {}
 
   @Roles('coach', 'owner')
@@ -106,5 +115,86 @@ export class CoachPackageContentsController {
   ) {
     const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
     return this.contents.softDelete(coachId, packageId, contentId);
+  }
+
+  // ── PR-17 B2 — push / backfill endpoints (FROZEN contract, §2.1) ──────
+  //
+  // Both reuse this controller's guards + roles + the resolveEffectiveCoachId
+  // + requireOwnedPackage IDOR pattern (the requireOwnedPackage check lives
+  // inside PackagePushService, mirroring the authoring service above). Body
+  // / query are parsed with zod in-controller so an invalid shape is a clean
+  // 400 (the global ValidationPipe would otherwise strip unknown keys).
+
+  // GET .../:contentId/push/preview?audience=&mode= — pure read, confirm
+  // modal buyer count (#10). Returns { count, audience, already_delivered }.
+  @Roles('coach', 'owner')
+  @Get(':contentId/push/preview')
+  async pushPreview(
+    @Request() req: AuthedRequest,
+    @Param('id') packageId: string,
+    @Param('contentId') contentId: string,
+    @Query() query: unknown,
+  ) {
+    const parsed = PushPreviewQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        error: 'INVALID_PUSH_PREVIEW_QUERY',
+        message: parsed.error.issues.map((i) => i.message).join('; '),
+      });
+    }
+    const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
+    const res = await this.push.previewPush(coachId, packageId, contentId, {
+      audience: parsed.data.audience,
+      mode: parsed.data.mode,
+      cohortPurchaseIds: parsed.data.cohort_purchase_ids,
+    });
+    return {
+      count: res.count,
+      audience: parsed.data.audience,
+      already_delivered: res.already_delivered,
+    };
+  }
+
+  // POST .../:contentId/push — schedule the push/backfill. Reads the
+  // Idempotency-Key header (#8). Returns
+  // { scheduled, skipped, fire_at, audience, notify }.
+  @Roles('coach', 'owner')
+  @Post(':contentId/push')
+  async pushToExisting(
+    @Request() req: AuthedRequest,
+    @Param('id') packageId: string,
+    @Param('contentId') contentId: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    const parsed = PushRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        error: 'INVALID_PUSH_REQUEST',
+        message: parsed.error.issues.map((i) => i.message).join('; '),
+      });
+    }
+    const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
+    const fireAt = new Date(parsed.data.fire_at);
+    const res = await this.push.pushContentToExistingBuyers(
+      coachId,
+      packageId,
+      contentId,
+      {
+        audience: parsed.data.audience,
+        cohortPurchaseIds: parsed.data.cohort_purchase_ids,
+        fireAt,
+        mode: parsed.data.mode,
+        notify: parsed.data.notify,
+      },
+      idempotencyKey,
+    );
+    return {
+      scheduled: res.scheduled,
+      skipped: res.skipped,
+      fire_at: parsed.data.fire_at,
+      audience: parsed.data.audience,
+      notify: parsed.data.notify,
+    };
   }
 }

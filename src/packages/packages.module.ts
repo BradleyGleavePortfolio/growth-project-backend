@@ -6,6 +6,7 @@ import {
 import { CoachPackageContentsController } from './package-contents.controller';
 import { PackagesService } from './packages.service';
 import { PackageContentsService } from './package-contents.service';
+import { PackagePushService } from './package-push.service';
 import { PurchaseFanoutService } from './purchase-fanout.service';
 import { DripDispatcherCron } from './drip-dispatcher.cron';
 import { DripTriggerService } from './drip-trigger.service';
@@ -46,6 +47,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
   providers: [
     PackagesService,
     PackageContentsService,
+    PackagePushService,
     PurchaseFanoutService,
     DripDispatcherCron,
     DripTriggerService,
@@ -54,6 +56,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
   exports: [
     PackagesService,
     PackageContentsService,
+    PackagePushService,
     PurchaseFanoutService,
     DripDispatcherCron,
     DripTriggerService,
