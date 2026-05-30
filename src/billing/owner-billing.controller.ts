@@ -11,12 +11,14 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { SubscriptionStatus } from '@prisma/client';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { OwnerGuard } from '../common/guards/owner.guard';
 import { PrismaService } from '../prisma.service';
+import { StartSubscriptionDto } from './start-subscription.dto';
 import { StripeApiError, StripeApiService } from './stripe-api.service';
 
 // OWNER-only billing actions. These are write paths that mutate a coach's
@@ -66,11 +68,18 @@ export class OwnerBillingController {
   // the same row on arrival).
   //
   // Body: { plan?: 'flat_300', trialDays?: 0..90 }
+  //
+  // B3 — createCustomer + createSubscription are Stripe-writes; throttle to
+  // 10/min (mirrors the other Stripe-write routes) so the provisioning path
+  // can't be hammered into Stripe rate limits.
+  // B4 — StartSubscriptionDto enforces plan/trialDays at the boundary via
+  // the global ValidationPipe before any Stripe call.
   @Post('coaches/:id/start-subscription')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   async startSubscription(
     @Request() req: AuthedRequest,
     @Param('id') coachId: string,
-    @Body() body: { plan?: 'flat_300'; trialDays?: number } = {},
+    @Body() body: StartSubscriptionDto = {},
   ) {
     const coach = await this.prisma.user.findUnique({
       where: { id: coachId },

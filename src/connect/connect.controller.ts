@@ -8,6 +8,7 @@ import {
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -58,8 +59,12 @@ export class ConnectController {
   // Returns a Stripe-hosted onboarding URL for the requesting coach.
   // Coach-only (owners may impersonate for support); students have
   // nothing to onboard.
+  // B8 — single-use Stripe onboarding links can be burned or push the
+  // account into Stripe rate limits if hammered. Throttle to 10/min/coach,
+  // matching the Connect link-minting convention elsewhere in the codebase.
   @Roles('coach', 'owner')
   @Post('onboarding-link')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   async onboardingLink(@Request() req: AuthedRequest) {
     this.assertReady();
     try {
@@ -72,8 +77,10 @@ export class ConnectController {
   // Returns a Stripe Express dashboard login link for the coach's own
   // Connect account — reveals balances/payouts and must never be reachable
   // by students or by another coach.
+  // B8 — same Stripe-write throttle as onboarding-link.
   @Roles('coach', 'owner')
   @Post('dashboard-link')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   async dashboardLink(@Request() req: AuthedRequest) {
     this.assertReady();
     try {

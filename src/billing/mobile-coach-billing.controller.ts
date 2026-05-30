@@ -1,20 +1,17 @@
 import {
-  BadRequestException,
   Controller,
   Get,
-  HttpException,
   Post,
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
 import { NoActiveSubCoachGuard } from '../common/guards/no-active-sub-coach.guard';
-import { PrismaService } from '../prisma.service';
 import { BillingService } from './billing.service';
-import { StripeApiError, StripeApiService } from './stripe-api.service';
 
 // Mobile-app coach billing surface. Mobile PR #66 calls these short
 // paths instead of the v1 BFF the admin console uses; they return the
@@ -36,11 +33,7 @@ import { StripeApiError, StripeApiService } from './stripe-api.service';
 @Controller('coach/billing')
 @UseGuards(JwtAuthGuard, CoachOrOwnerGuard, NoActiveSubCoachGuard)
 export class MobileCoachBillingController {
-  constructor(
-    private billing: BillingService,
-    private prisma: PrismaService,
-    private stripeApi: StripeApiService,
-  ) {}
+  constructor(private billing: BillingService) {}
 
   // GET /coach/billing/status — returns a compact billing summary for
   // the authenticated coach. The shape is intentionally the smallest set
@@ -85,58 +78,13 @@ export class MobileCoachBillingController {
   //      Returns { url, fallback: true, coachId }.
   //   3. Neither set → STRIPE_NOT_CONFIGURED so the mobile client renders
   //      the empty state.
+  //
+  // B2 — same Stripe-write throttle as the v1 portal-session route.
   @Post('portal-session')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   async portalSession(@Request() req: AuthedRequest) {
-    if (!this.stripeApi.isConfigured()) {
-      const fallbackUrl = process.env.STRIPE_CUSTOMER_PORTAL_LOGIN_URL?.trim();
-      if (fallbackUrl && /^https:\/\/billing\.stripe\.com\/p\/login\//.test(fallbackUrl)) {
-        return { url: fallbackUrl, fallback: true, coachId: req.user.id };
-      }
-      throw new BadRequestException({
-        error: 'STRIPE_NOT_CONFIGURED',
-        message:
-          'Stripe is not configured for this environment. Set STRIPE_SECRET_KEY and STRIPE_PRICE_ID_FITNESS to mint per-coach portal sessions, or set STRIPE_CUSTOMER_PORTAL_LOGIN_URL to a hosted Customer Portal login link as a fallback.',
-      });
-    }
-    const coachId = req.user.id;
-    const subscription = await this.prisma.coachSubscription.findUnique({
-      where: { coach_id: coachId },
-    });
-    let customerId = subscription?.stripe_customer_id ?? null;
-    if (!customerId) {
-      const profile = await this.prisma.coachProfile.findUnique({
-        where: { user_id: coachId },
-      });
-      customerId = profile?.stripe_customer_id ?? null;
-    }
-    if (!customerId) {
-      throw new BadRequestException({
-        error: 'BILLING_NOT_PROVISIONED',
-        message:
-          'No Stripe customer is provisioned for this coach yet. An OWNER must call start-subscription first.',
-      });
-    }
-    const returnUrl =
-      process.env.STRIPE_BILLING_PORTAL_RETURN_URL ??
-      'https://console.thegrowthproject.app/billing';
-    try {
-      const session = await this.stripeApi.createBillingPortalSession({
-        customer: customerId,
-        returnUrl,
-      });
-      return { url: session.url };
-    } catch (err) {
-      if (err instanceof StripeApiError) {
-        throw new HttpException(
-          {
-            error: 'STRIPE_PORTAL_ERROR',
-            message: err.message,
-            stripeCode: err.stripeCode,
-          },
-          err.httpStatus >= 400 && err.httpStatus < 600 ? err.httpStatus : 502,
-        );
-      }
-      throw err;
-    }
+    // B1 — delegate to the shared BillingService method (same code path as
+    // POST /v1/coach/me/billing/portal-session) so the contract cannot drift.
+    return this.billing.createCoachPortalSession(req.user.id);
   }
 }
