@@ -17,6 +17,13 @@ import { PracticeTypeService } from './practice-type/practice-type.service';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AdminModule } from '../admin/admin.module';
+// EFF-3: SubCoachScopeService resolves the authorized client roster for a
+// coach (head → full roster; sub → assigned). SubCoachModule is @Global so
+// the provider is reachable, but we import it explicitly here so the
+// CoachEffectivenessService dependency is declared at the module we own.
+import { SubCoachModule } from '../sub-coach/sub-coach.module';
+// EFF-2: coach-facing self-service effectiveness route.
+import { CoachEffectivenessController } from './coach-effectiveness.controller';
 // LTV metrics suite — Coach Command Center revenue dashboard
 import { LtvMetricsController } from './command-center/ltv-metrics.controller';
 import { LtvMetricsService } from './command-center/ltv-metrics.service';
@@ -57,11 +64,18 @@ import { ChurnInterventionService } from './command-center/churn-intervention.se
 //   * LtvMetricsService — computes the LTV metrics suite from ClientPurchase data
 //   * LtvMetricsController — exposes GET /coach/command-center/ltv-metrics
 @Module({
-  imports: [AuthModule, NotificationsModule, forwardRef(() => AdminModule)],
+  imports: [
+    AuthModule,
+    NotificationsModule,
+    forwardRef(() => AdminModule),
+    SubCoachModule,
+  ],
   controllers: [
     CoachController,
     CoachAlertsController,
     CoachOnboardingController,
+    // EFF-2 — GET /coach/my-effectiveness (coach-role-guarded)
+    CoachEffectivenessController,
     // Stage 3
     CrossPillarController,
     PracticeTypeController,
