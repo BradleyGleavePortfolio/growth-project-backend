@@ -9,6 +9,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -746,13 +747,33 @@ export class MessagingService {
         clientFilter = { in: ids };
       }
     }
+    // CC+SC P1c: a message is UNREAD-FOR-COACH only when it was sent by the
+    // CLIENT, i.e. sender_id === the thread's client_id. The previous filter
+    // `NOT: { sender_id: coachId }` excluded only the caller's own sends, so
+    // a message sent by ANOTHER coach-side party (the head coach, or a
+    // different sub-coach — sender_id = subCoachId) was mis-counted as
+    // unread / client-side. Because a client only ever sends inside their
+    // own thread, "client-authored" is exactly `sender_id IN <client set>`.
+    // We resolve that client set via SubCoachScope for BOTH head coaches
+    // (full roster) and sub-coaches (assigned clients); when the scope dep
+    // is absent (legacy unit-test DI) we fall back to the prior
+    // `NOT: { sender_id: coachId }` behaviour so those tests are unchanged.
+    let senderFilter: Prisma.CoachMessageWhereInput;
+    if (this.subCoachScope) {
+      const clientIds =
+        clientFilter?.in ??
+        (await this.subCoachScope.getAuthorizedClientIds(coachId));
+      senderFilter = { sender_id: { in: clientIds } };
+    } else {
+      senderFilter = { NOT: { sender_id: coachId } };
+    }
     const groups = await this.prisma.coachMessage.groupBy({
       by: ['client_id'],
       where: {
         coach_id: threadCoachId,
         read_at: null,
         ...(clientFilter ? { client_id: clientFilter } : {}),
-        NOT: { sender_id: coachId },
+        ...senderFilter,
       },
       _count: { _all: true },
     });

@@ -407,6 +407,16 @@ export class AdminPtmService {
       bucket?: PtmRiskBucket;
       cursor?: string;
       limit?: number;
+      // P1a (CC+SC): when the caller has already resolved the authorized
+      // client-id set (e.g. CommandCenterService routes head AND sub-coach
+      // scope through SubCoachScopeService), it passes that set here so the
+      // board is built against the RESOLVED clients rather than re-deriving
+      // the roster from `User.coach_id = coachId`. A sub-coach does NOT own
+      // students via coach_id (their students belong to the head coach), so
+      // the legacy roster query returns nothing for them and the at-risk
+      // list came back EMPTY. When omitted, behaviour is identical to before
+      // (head-coach roster query) so existing callers are unchanged.
+      clientIds?: string[];
     },
   ): Promise<CoachRiskBoardResponse> {
     const limit = clampPageSize(
@@ -418,24 +428,29 @@ export class AdminPtmService {
 
     const cursorDate = parseIsoCursor(opts.cursor);
 
-    // Resolve the set of client user_ids assigned to this coach before
-    // querying predictions. This two-step avoids a cross-table groupBy
-    // that Prisma does not support natively and keeps the index path on
-    // (user_id, computed_at) hot.
-    const rosterRows = await this.prisma.user.findMany({
-      where: {
-        coach_id: coachId,
-        role: 'student',
-        deleted_at: null,
-      },
-      select: { id: true },
-    });
-
-    if (rosterRows.length === 0) {
-      return { data: [], next_cursor: null, generated_at: new Date().toISOString() };
+    // Resolve the set of client user_ids to score. If the caller supplied an
+    // explicit authorized set (P1a), use it verbatim; otherwise derive the
+    // head-coach roster from `User.coach_id = coachId`. This two-step avoids
+    // a cross-table groupBy that Prisma does not support natively and keeps
+    // the index path on (user_id, computed_at) hot.
+    let rosterIds: string[];
+    if (opts.clientIds !== undefined) {
+      rosterIds = opts.clientIds;
+    } else {
+      const rosterRows = await this.prisma.user.findMany({
+        where: {
+          coach_id: coachId,
+          role: 'student',
+          deleted_at: null,
+        },
+        select: { id: true },
+      });
+      rosterIds = rosterRows.map((u) => u.id);
     }
 
-    const rosterIds = rosterRows.map((u) => u.id);
+    if (rosterIds.length === 0) {
+      return { data: [], next_cursor: null, generated_at: new Date().toISOString() };
+    }
 
     // Per-user latest computed_at, scoped to this coach's roster.
     const groups = await this.prisma.ptmPrediction.groupBy({

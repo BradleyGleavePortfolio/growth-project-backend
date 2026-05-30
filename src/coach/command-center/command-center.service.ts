@@ -329,12 +329,21 @@ export class CommandCenterService {
         },
         _max: { value: true },
       }),
+      // CC+SC P1c: unread-for-coach counts only messages SENT BY THE CLIENT
+      // (sender_id IN the scoped client set). The previous filter
+      // `NOT: { sender_id: ownerCoachId }` excluded only the HEAD coach's
+      // own sends, so a message sent by a SUB-coach (sender_id = subCoachId,
+      // which is neither ownerCoachId nor a client) was mis-counted as
+      // unread / client-side. A client only ever sends in their own thread,
+      // so `sender_id IN clientIds` is exactly "sent by a client"; every
+      // coach-side send (head OR sub) is excluded because their ids are not
+      // in the client set. Head-coach semantics are unchanged.
       this.prisma.coachMessage.count({
         where: {
           coach_id: ownerCoachId,
           client_id: { in: clientIds },
           read_at: null,
-          NOT: { sender_id: ownerCoachId },
+          sender_id: { in: clientIds },
         },
       }),
     ]);
@@ -390,16 +399,30 @@ export class CommandCenterService {
     opts: { bucket?: 'red' | 'amber'; limit?: number },
   ): Promise<AtRiskResponse> {
     const limit = clamp(opts.limit, 50, 100);
+
+    // P1a (CC+SC): resolve the authorized client-id set FIRST and build the
+    // risk board against THAT set. Previously the board was built with the
+    // raw `coachId`, which makes getRiskBoardForCoach derive the roster from
+    // `User.coach_id = coachId`. For a sub-coach that yields NOTHING (their
+    // assigned clients belong to the head coach, not to the sub-coach via
+    // coach_id), so the at-risk list came back EMPTY before we even reached
+    // the intersection below. Passing `clientIds` makes the board score
+    // exactly the clients the caller may see. For a head coach `clientIds`
+    // is their full roster, so the board is identical to before — behaviour
+    // unchanged.
+    const { clientIds } = await this.resolveScope(coachId);
+    if (clientIds.length === 0) {
+      return { items: [], total_at_risk: 0 };
+    }
     const board = await this.adminPtm.getRiskBoardForCoach(coachId, {
       bucket: opts.bucket as PtmRiskBucket | undefined,
       limit,
+      clientIds,
     });
 
-    // SC-2: the admin risk board resolves the roster by coachId (= the head
-    // coach's full roster). A sub-coach must only see their assigned slice,
-    // so intersect the board with the SubCoachScope-resolved client ids.
-    // (For a head coach this is a no-op superset.)
-    const { clientIds } = await this.resolveScope(coachId);
+    // Defence-in-depth: the board is already scoped to `clientIds`, but we
+    // still intersect so any future change to the board path cannot widen
+    // the visible set. (For both head and sub coach this is now a no-op.)
     const allowed = new Set(clientIds);
     const scoped = board.data.filter((row) => allowed.has(row.user_id));
 
@@ -640,13 +663,20 @@ export class CommandCenterService {
       }
     }
 
+    // CC+SC P1c: per-thread unread = messages SENT BY THE CLIENT and not yet
+    // read. As in getOverview, `sender_id IN clientIds` selects exactly the
+    // client-authored messages — a SUB-coach's outgoing message
+    // (sender_id = subCoachId) is correctly treated as coach-side sent, so
+    // it neither bumps the unread badge nor flips the thread to "client's
+    // turn". The old `NOT: { sender_id: ownerCoachId }` only excluded the
+    // head coach's own sends and therefore mis-counted sub-coach sends.
     const unreadCounts = await this.prisma.coachMessage.groupBy({
       by: ['client_id'],
       where: {
         coach_id: ownerCoachId,
         client_id: { in: clientIds },
         read_at: null,
-        NOT: { sender_id: ownerCoachId },
+        sender_id: { in: clientIds },
       },
       _count: { _all: true },
     });
@@ -661,7 +691,14 @@ export class CommandCenterService {
       const unreadCount = unreadMap.get(clientId) ?? 0;
       if (opts.unreadOnly && unreadCount === 0) continue;
       const preview = (latestMsg.body ?? '').slice(0, 120);
-      const isCoachTurn = latestMsg.sender_id !== ownerCoachId;
+      // CC+SC P1c: it is the coach's turn to reply iff the latest message was
+      // sent BY THE CLIENT (sender_id === this thread's client_id). The old
+      // check `sender_id !== ownerCoachId` treated a sub-coach's outgoing
+      // message as "client's turn / coach turn pending" because a sub-coach's
+      // sender_id is not the head coach's id. Comparing against the thread's
+      // own client_id is robust for head and sub coaches alike: any
+      // coach-side send (head OR sub) yields is_coach_turn = false.
+      const isCoachTurn = latestMsg.sender_id === clientId;
       threads.push({
         thread_id: buildThreadId(ownerCoachId, clientId),
         client_id: clientId,
@@ -747,10 +784,29 @@ export class CommandCenterService {
     alertId: string,
     coachId: string,
   ): Promise<{ ok: true }> {
-    // CoachAlertsService.acknowledge() is already idempotent and IDOR-safe:
-    //   * findFirst({ where: { id, coach_id } }) → NotFoundException for foreign alerts
+    // P1b (CC+SC): route the dismiss authorization through the SAME
+    // SubCoachScope resolution used by the list path. CoachAlert rows are
+    // owned by the HEAD coach (coach_id = ownerCoachId); a sub-coach could
+    // LIST their assigned clients' alerts (action-queue is scoped by
+    // ownerCoachId + client_id IN assigned) but could NOT dismiss them,
+    // because the old dismiss path scoped by the raw sub-coach id
+    // (acknowledge(alertId, subCoachId)) — which matched no rows and 404'd.
+    // We now authorize the ack on (coach_id = ownerCoachId, client_id IN
+    // assigned). For a head coach ownerCoachId is their own id and clientIds
+    // is their full roster, so this is equivalent to the legacy ownership
+    // check — head-coach behaviour unchanged. A sub-coach dismissing an
+    // alert for a client NOT assigned to them still 404s (no IDOR).
+    const { clientIds, ownerCoachId } = await this.resolveScope(coachId);
+    // CoachAlertsService.acknowledgeForScope is idempotent and IDOR-safe:
+    //   * updateMany/findFirst scoped to (coach_id, client_id IN allowed)
+    //   * NotFoundException for alerts outside the allowed client set (an
+    //     empty allow-set therefore matches nothing → NotFoundException)
     //   * returns existing row if already acknowledged (no double-write)
-    await this.alertsService.acknowledge(alertId, coachId);
+    await this.alertsService.acknowledgeForScope(
+      alertId,
+      ownerCoachId,
+      clientIds,
+    );
     return { ok: true };
   }
 }

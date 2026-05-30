@@ -195,6 +195,8 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
           if (where.client_id?.in && !where.client_id.in.includes(m.client_id)) return false;
           if (where.read_at === null && m.read_at != null) return false;
           if (where.NOT?.sender_id && m.sender_id === where.NOT.sender_id) return false;
+          // P1c: client-authored filter is `sender_id IN clientIds`.
+          if (where.sender_id?.in && !where.sender_id.in.includes(m.sender_id)) return false;
           return true;
         }).length;
       }),
@@ -224,6 +226,8 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
           if (where.client_id?.in && !where.client_id.in.includes(m.client_id)) return false;
           if (where.read_at === null && m.read_at != null) return false;
           if (where.NOT?.sender_id && m.sender_id === where.NOT.sender_id) return false;
+          // P1c: client-authored filter is `sender_id IN clientIds`.
+          if (where.sender_id?.in && !where.sender_id.in.includes(m.sender_id)) return false;
           return true;
         });
         const byClient = new Map<string, number>();
@@ -252,6 +256,13 @@ function buildAdminPtm(boardData: any[] = []): any {
 function buildAlertsService(): any {
   return {
     acknowledge: jest.fn(async (_id: string, _coach: string) => ({ acknowledged_at: new Date() })),
+    // P1b: CommandCenterService.dismissAlert now routes through the scoped
+    // ack so a sub-coach may dismiss alerts for their assigned clients.
+    acknowledgeForScope: jest.fn(
+      async (_id: string, _owner: string, _allowed: string[]) => ({
+        acknowledged_at: new Date(),
+      }),
+    ),
   };
 }
 
@@ -444,13 +455,19 @@ describe('CommandCenterService.getActionQueue', () => {
 });
 
 describe('CommandCenterService.dismissAlert', () => {
-  it('delegates to alertsService.acknowledge — idempotent end-to-end', async () => {
-    const prisma = buildPrisma();
+  it('delegates to alertsService.acknowledgeForScope — idempotent end-to-end', async () => {
+    // Head coach c1 owns u1; the dismiss is authorized on
+    // (coach_id = c1, client_id IN [u1]).
+    const prisma = buildPrisma({
+      users: [
+        { id: 'u1', name: 'Alice', coach_id: 'c1', role: 'student', deleted_at: null },
+      ],
+    });
     const alerts = buildAlertsService();
     const svc = new CommandCenterService(prisma, buildAdminPtm(), alerts);
     const out = await svc.dismissAlert('a1', 'c1');
     expect(out).toEqual({ ok: true });
-    expect(alerts.acknowledge).toHaveBeenCalledWith('a1', 'c1');
+    expect(alerts.acknowledgeForScope).toHaveBeenCalledWith('a1', 'c1', ['u1']);
     const out2 = await svc.dismissAlert('a1', 'c1');
     expect(out2).toEqual({ ok: true });
   });
@@ -747,5 +764,214 @@ describe('SC-2: roster scoping differs for head coach vs sub-coach', () => {
     const sub = await svc.getActionQueue('sub', {});
     expect(sub.total_pending).toBe(1);
     expect(sub.items.map((i) => i.client_id)).toEqual(['u2']);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Wave-1 CC+SC re-audit fixes (P1a at-risk, P1b dismiss, P1c msg semantics).
+// Head coach `head` owns u1,u2,u3. Sub-coach `sub` (role coach,
+// coach_id=head) is assigned only u2 via SubCoachAssignment. Alerts and
+// messages are owned by the HEAD coach's coach_id; sub-coach sends carry
+// sender_id = 'sub'.
+// ─────────────────────────────────────────────────────────────────────────
+
+// A risk-board fake that HONOURS opts.clientIds (the P1a contract). Every
+// student row is at amber/red; the board returns only the rows whose
+// user_id is in the resolved clientIds set, mirroring the real
+// getRiskBoardForCoach now that it scores the resolved authorized set.
+function buildScopedAdminPtm(allBoardRows: any[]): any {
+  return {
+    getRiskBoardForCoach: jest.fn(async (_coachId: string, opts: any) => {
+      const ids: string[] | undefined = opts?.clientIds;
+      const data =
+        ids === undefined
+          ? allBoardRows
+          : allBoardRows.filter((r) => ids.includes(r.user_id));
+      return {
+        data,
+        next_cursor: null,
+        generated_at: new Date(PINNED_NOW).toISOString(),
+      };
+    }),
+  };
+}
+
+// An alerts-service fake whose acknowledgeForScope enforces the scoped
+// ownership exactly like CoachAlertsService.acknowledgeForScope does:
+// the alert must exist with coach_id = ownerCoachId AND client_id IN allowed.
+function buildScopedAlertsService(alerts: any[]): any {
+  return {
+    acknowledge: jest.fn(),
+    acknowledgeForScope: jest.fn(
+      async (alertId: string, ownerCoachId: string, allowed: string[]) => {
+        const row = alerts.find(
+          (a) =>
+            a.id === alertId &&
+            a.coach_id === ownerCoachId &&
+            allowed.includes(a.client_id),
+        );
+        if (!row) throw new Error('Alert not found');
+        row.acknowledged_at = new Date();
+        return row;
+      },
+    ),
+  };
+}
+
+function ccscScopedRows() {
+  const now = new Date(PINNED_NOW);
+  return {
+    users: [
+      { id: 'head', name: 'Head', coach_id: null, role: 'coach', deleted_at: null },
+      { id: 'sub', name: 'Sub', coach_id: 'head', role: 'coach', deleted_at: null },
+      { id: 'u1', name: 'Alice', coach_id: 'head', role: 'student', deleted_at: null },
+      { id: 'u2', name: 'Bob', coach_id: 'head', role: 'student', deleted_at: null },
+      { id: 'u3', name: 'Carol', coach_id: 'head', role: 'student', deleted_at: null },
+    ],
+    assignments: [{ sub_coach_id: 'sub', client_id: 'u2', unassigned_at: null }],
+    now,
+  };
+}
+
+describe('CC+SC P1a: sub-coach at-risk list returns assigned clients', () => {
+  const board = [
+    { user_id: 'u1', name: 'Alice', bucket: 'red', last_signal_at: '2026-05-20T00:00:00Z', email: 'a@a', role: 'student', risk_score: null, success_score: null, computed_at: new Date(PINNED_NOW), factors_count: 1, outcome_label: null },
+    { user_id: 'u2', name: 'Bob', bucket: 'amber', last_signal_at: '2026-05-30T00:00:00Z', email: 'b@b', role: 'student', risk_score: null, success_score: null, computed_at: new Date(PINNED_NOW), factors_count: 1, outcome_label: null },
+    { user_id: 'u3', name: 'Carol', bucket: 'red', last_signal_at: '2026-05-21T00:00:00Z', email: 'c@c', role: 'student', risk_score: null, success_score: null, computed_at: new Date(PINNED_NOW), factors_count: 1, outcome_label: null },
+  ];
+
+  it('sub-coach sees ONLY their assigned client (u2), not an empty list', async () => {
+    const { users, assignments } = ccscScopedRows();
+    const prisma = buildPrisma({ users, assignments });
+    const scope = buildSubCoachScope(prisma);
+    const adminPtm = buildScopedAdminPtm(board);
+    const svc = new CommandCenterService(prisma, adminPtm, buildAlertsService(), scope);
+
+    const sub = await svc.getAtRisk('sub', {});
+    // Before the fix the board was built with the raw sub-coach id, which
+    // resolves NO roster (sub-coaches don't own students via coach_id), so
+    // the list came back EMPTY. Now it is built against the resolved
+    // authorized set [u2].
+    expect(sub.items.map((i) => i.user_id)).toEqual(['u2']);
+    expect(sub.total_at_risk).toBe(1);
+    // The board was asked for exactly the sub-coach's authorized clients.
+    expect(adminPtm.getRiskBoardForCoach).toHaveBeenCalledWith(
+      'sub',
+      expect.objectContaining({ clientIds: ['u2'] }),
+    );
+  });
+
+  it('head coach behaviour unchanged: full roster at-risk (u1, u2, u3)', async () => {
+    const { users, assignments } = ccscScopedRows();
+    const prisma = buildPrisma({ users, assignments });
+    const scope = buildSubCoachScope(prisma);
+    const adminPtm = buildScopedAdminPtm(board);
+    const svc = new CommandCenterService(prisma, adminPtm, buildAlertsService(), scope);
+
+    const head = await svc.getAtRisk('head', {});
+    expect(head.items.map((i) => i.user_id).sort()).toEqual(['u1', 'u2', 'u3']);
+    expect(head.total_at_risk).toBe(3);
+    expect(adminPtm.getRiskBoardForCoach).toHaveBeenCalledWith(
+      'head',
+      expect.objectContaining({ clientIds: ['u1', 'u2', 'u3'] }),
+    );
+  });
+});
+
+describe('CC+SC P1b: sub-coach can dismiss an assigned client\'s alert', () => {
+  it('sub-coach dismisses u2\'s alert (owned by head coach_id); u1\'s is denied', async () => {
+    const { users, assignments, now } = ccscScopedRows();
+    const alerts = [
+      { id: 'a-u1', coach_id: 'head', client_id: 'u1', acknowledged_at: null, created_at: now },
+      { id: 'a-u2', coach_id: 'head', client_id: 'u2', acknowledged_at: null, created_at: now },
+    ];
+    const prisma = buildPrisma({ users, assignments, alerts });
+    const scope = buildSubCoachScope(prisma);
+    const alertsSvc = buildScopedAlertsService(alerts);
+    const svc = new CommandCenterService(prisma, buildAdminPtm(), alertsSvc, scope);
+
+    // u2 is assigned to the sub-coach -> dismiss succeeds, authorized on
+    // (coach_id = head, client_id IN ['u2']).
+    const ok = await svc.dismissAlert('a-u2', 'sub');
+    expect(ok).toEqual({ ok: true });
+    expect(alertsSvc.acknowledgeForScope).toHaveBeenCalledWith('a-u2', 'head', ['u2']);
+    expect(alerts.find((a) => a.id === 'a-u2')!.acknowledged_at).not.toBeNull();
+
+    // u1 is NOT assigned to the sub-coach -> still denied (NotFound), no IDOR.
+    await expect(svc.dismissAlert('a-u1', 'sub')).rejects.toThrow();
+    expect(alerts.find((a) => a.id === 'a-u1')!.acknowledged_at).toBeNull();
+  });
+
+  it('head coach can still dismiss any of their own alerts', async () => {
+    const { users, assignments, now } = ccscScopedRows();
+    const alerts = [
+      { id: 'a-u1', coach_id: 'head', client_id: 'u1', acknowledged_at: null, created_at: now },
+    ];
+    const prisma = buildPrisma({ users, assignments, alerts });
+    const scope = buildSubCoachScope(prisma);
+    const alertsSvc = buildScopedAlertsService(alerts);
+    const svc = new CommandCenterService(prisma, buildAdminPtm(), alertsSvc, scope);
+
+    const ok = await svc.dismissAlert('a-u1', 'head');
+    expect(ok).toEqual({ ok: true });
+    expect(alertsSvc.acknowledgeForScope).toHaveBeenCalledWith(
+      'a-u1',
+      'head',
+      expect.arrayContaining(['u1', 'u2', 'u3']),
+    );
+  });
+});
+
+describe('CC+SC P1c: sub-coach outgoing message not unread / not coach-turn', () => {
+  it('a sub-coach send (sender_id=sub) is coach-side: no unread, not coach turn', async () => {
+    const { users, assignments } = ccscScopedRows();
+    const t0 = new Date(PINNED_NOW - 2000);
+    const t1 = new Date(PINNED_NOW - 1000);
+    // Thread for u2 (assigned to sub): client sent first, then the SUB-coach
+    // replied (sender_id='sub') under the head coach's coach_id namespace.
+    const messages = [
+      { id: 'm1', coach_id: 'head', client_id: 'u2', sender_id: 'u2', body: 'client msg', read_at: t1, created_at: t0 },
+      { id: 'm2', coach_id: 'head', client_id: 'u2', sender_id: 'sub', body: 'sub reply', read_at: null, created_at: t1 },
+    ];
+    const prisma = buildPrisma({ users, assignments, messages });
+    const scope = buildSubCoachScope(prisma);
+    const svc = new CommandCenterService(prisma, buildAdminPtm(), buildAlertsService(), scope);
+
+    const sub = await svc.getInbox('sub', {});
+    expect(sub.threads.length).toBe(1);
+    const thread = sub.threads[0];
+    // The sub-coach's own reply is the latest message -> NOT the coach's
+    // turn (the coach already responded) and it must NOT count as unread,
+    // even though its read_at is null (a coach-side send is never "unread
+    // for the coach").
+    expect(thread.is_coach_turn).toBe(false);
+    expect(thread.unread_count).toBe(0);
+    expect(sub.total_unread).toBe(0);
+
+    // Overview unread for the sub-coach is likewise 0 (the only unread row
+    // is the sub-coach's OWN send, which is coach-side).
+    const overview = await svc.getOverview('sub');
+    expect(overview.unread_messages).toBe(0);
+  });
+
+  it('a client send remains unread and flips the thread to coach-turn', async () => {
+    const { users, assignments } = ccscScopedRows();
+    const t0 = new Date(PINNED_NOW - 2000);
+    const t1 = new Date(PINNED_NOW - 1000);
+    const messages = [
+      { id: 'm1', coach_id: 'head', client_id: 'u2', sender_id: 'sub', body: 'sub msg', read_at: t0, created_at: t0 },
+      { id: 'm2', coach_id: 'head', client_id: 'u2', sender_id: 'u2', body: 'client reply', read_at: null, created_at: t1 },
+    ];
+    const prisma = buildPrisma({ users, assignments, messages });
+    const scope = buildSubCoachScope(prisma);
+    const svc = new CommandCenterService(prisma, buildAdminPtm(), buildAlertsService(), scope);
+
+    const sub = await svc.getInbox('sub', {});
+    expect(sub.threads[0].is_coach_turn).toBe(true);
+    expect(sub.threads[0].unread_count).toBe(1);
+    expect(sub.total_unread).toBe(1);
+
+    const overview = await svc.getOverview('sub');
+    expect(overview.unread_messages).toBe(1);
   });
 });

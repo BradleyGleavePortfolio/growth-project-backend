@@ -146,19 +146,56 @@ export class CoachAlertsService {
    * acknowledged; we re-read to disambiguate.
    */
   async acknowledge(alertId: string, coachId: string): Promise<CoachAlert> {
+    return this.acknowledgeWhere(alertId, { coach_id: coachId });
+  }
+
+  /**
+   * P1b (CC+SC): scoped ack for sub-coaches. CoachAlert rows are owned by
+   * the HEAD coach (coach_id = head coach id), so a sub-coach dismissing an
+   * alert for one of their assigned clients cannot be authorized by their
+   * OWN id (the legacy `acknowledge(alertId, subCoachId)` path matched no
+   * rows and 404'd). The caller (CommandCenterService) resolves the
+   * SubCoachScope and passes the owner coach_id plus the set of client_ids
+   * the sub-coach is assigned to; we authorize on
+   * (coach_id = ownerCoachId AND client_id IN allowedClientIds). A head
+   * coach passes its own id as ownerCoachId and its full roster as the
+   * allowed set, so this is equivalent to the legacy ownership check for
+   * head coaches — behaviour unchanged. An alert outside the allowed client
+   * set still resolves to NotFoundException (no existence leak, no IDOR).
+   */
+  async acknowledgeForScope(
+    alertId: string,
+    ownerCoachId: string,
+    allowedClientIds: string[],
+  ): Promise<CoachAlert> {
+    return this.acknowledgeWhere(alertId, {
+      coach_id: ownerCoachId,
+      client_id: { in: allowedClientIds },
+    });
+  }
+
+  // Shared idempotent + race-safe ack core. `ownership` is the WHERE
+  // fragment that decides which alerts the caller may touch; callers above
+  // build it from either a raw coach_id (head/owner) or an
+  // (owner coach_id + client_id IN allowed) scope (sub-coach). Foreign
+  // alerts fall through to NotFoundException so we never leak existence.
+  private async acknowledgeWhere(
+    alertId: string,
+    ownership: Prisma.CoachAlertWhereInput,
+  ): Promise<CoachAlert> {
     const result = await this.prisma.coachAlert.updateMany({
-      where: { id: alertId, coach_id: coachId, acknowledged_at: null },
+      where: { ...ownership, id: alertId, acknowledged_at: null },
       data: { acknowledged_at: new Date() },
     });
     if (result.count === 0) {
       const existing = await this.prisma.coachAlert.findFirst({
-        where: { id: alertId, coach_id: coachId },
+        where: { ...ownership, id: alertId },
       });
       if (!existing) throw new NotFoundException('Alert not found');
       return existing;
     }
     const updated = await this.prisma.coachAlert.findFirst({
-      where: { id: alertId, coach_id: coachId },
+      where: { ...ownership, id: alertId },
     });
     if (!updated) throw new NotFoundException('Alert not found');
     return updated;

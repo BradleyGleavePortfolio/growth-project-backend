@@ -23,7 +23,7 @@ function nowMs() {
 }
 
 function buildPrisma(initial: any[] = []) {
-  let rows = [...initial];
+  const rows = [...initial];
   let counter = 0;
   return {
     rows: () => rows,
@@ -32,7 +32,10 @@ function buildPrisma(initial: any[] = []) {
         const candidates = rows.filter((r) => {
           if (where.id && r.id !== where.id) return false;
           if (where.coach_id && r.coach_id !== where.coach_id) return false;
-          if (where.client_id && r.client_id !== where.client_id) return false;
+          // P1b: support the scoped `client_id: { in: [...] }` ownership form
+          // as well as the legacy exact-match form.
+          if (where.client_id?.in && !where.client_id.in.includes(r.client_id)) return false;
+          if (where.client_id && !where.client_id.in && r.client_id !== where.client_id) return false;
           if (where.alert_type && r.alert_type !== where.alert_type) return false;
           if (where.acknowledged_at === null && r.acknowledged_at !== null) return false;
           if (where.created_at?.gte && r.created_at < where.created_at.gte) return false;
@@ -42,7 +45,7 @@ function buildPrisma(initial: any[] = []) {
         return candidates[0] ?? null;
       }),
       findMany: jest.fn(async ({ where, take }: any) => {
-        let items = rows.filter((r) => {
+        const items = rows.filter((r) => {
           if (where.coach_id && r.coach_id !== where.coach_id) return false;
           if (where.acknowledged_at === null && r.acknowledged_at !== null) return false;
           if (where.acknowledged_at?.not === null && r.acknowledged_at === null) return false;
@@ -76,6 +79,9 @@ function buildPrisma(initial: any[] = []) {
           const r = rows[i];
           if (where.id && r.id !== where.id) continue;
           if (where.coach_id && r.coach_id !== where.coach_id) continue;
+          // P1b: scoped `client_id: { in: [...] }` form + legacy exact match.
+          if (where.client_id?.in && !where.client_id.in.includes(r.client_id)) continue;
+          if (where.client_id && !where.client_id.in && r.client_id !== where.client_id) continue;
           if (where.acknowledged_at === null && r.acknowledged_at !== null) continue;
           rows[i] = { ...r, ...data };
           count++;
@@ -199,6 +205,73 @@ describe('CoachAlertsService', () => {
     ]);
     const svc = new CoachAlertsService(prisma as any);
     await expect(svc.acknowledge('a-1', 'other-coach')).rejects.toThrow(/not found/i);
+  });
+
+  // ── P1b (CC+SC): scoped ack for sub-coaches ──────────────────────────
+  // CoachAlert rows are owned by the HEAD coach (coach_id = head id). A
+  // sub-coach dismisses via acknowledgeForScope(alertId, ownerCoachId,
+  // allowedClientIds): the alert must match coach_id = ownerCoachId AND
+  // client_id IN allowed. This is the path CommandCenterService.dismissAlert
+  // now uses for both head and sub coaches.
+  it('acknowledgeForScope dismisses an alert for an allowed client', async () => {
+    const prisma = buildPrisma([
+      {
+        id: 'a-1',
+        coach_id: 'head',
+        client_id: 'u2',
+        alert_type: 'consecutive_misses',
+        severity: 'warning',
+        message: 'm',
+        payload: null,
+        created_at: new Date(nowMs() - 1 * HOUR),
+        acknowledged_at: null,
+      },
+    ]);
+    const svc = new CoachAlertsService(prisma as any);
+    const row = await svc.acknowledgeForScope('a-1', 'head', ['u2']);
+    expect(row.id).toBe('a-1');
+    expect(row.acknowledged_at).not.toBeNull();
+    expect(prisma.coachAlert.updateMany).toHaveBeenCalled();
+  });
+
+  it('acknowledgeForScope throws NotFoundException for a client outside the allowed set', async () => {
+    const prisma = buildPrisma([
+      {
+        id: 'a-1',
+        coach_id: 'head',
+        client_id: 'u1', // NOT in the sub-coach's allowed set
+        alert_type: 'consecutive_misses',
+        severity: 'warning',
+        message: 'm',
+        payload: null,
+        created_at: new Date(nowMs() - 1 * HOUR),
+        acknowledged_at: null,
+      },
+    ]);
+    const svc = new CoachAlertsService(prisma as any);
+    await expect(svc.acknowledgeForScope('a-1', 'head', ['u2'])).rejects.toThrow(
+      /not found/i,
+    );
+  });
+
+  it('acknowledgeForScope is idempotent for an already-acked allowed alert', async () => {
+    const acked = new Date(nowMs() - 5 * HOUR);
+    const prisma = buildPrisma([
+      {
+        id: 'a-1',
+        coach_id: 'head',
+        client_id: 'u2',
+        alert_type: 'consecutive_misses',
+        severity: 'warning',
+        message: 'm',
+        payload: null,
+        created_at: new Date(nowMs() - 6 * HOUR),
+        acknowledged_at: acked,
+      },
+    ]);
+    const svc = new CoachAlertsService(prisma as any);
+    const row = await svc.acknowledgeForScope('a-1', 'head', ['u2']);
+    expect(row.acknowledged_at).toEqual(acked);
   });
 
   it('listForCoach respects the acknowledged filter', async () => {
