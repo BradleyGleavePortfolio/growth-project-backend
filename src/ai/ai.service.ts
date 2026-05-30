@@ -58,6 +58,30 @@ export interface UserContextPayload {
 export const MAX_TOKENS_PER_CALL = 600;
 export const DAILY_TOKEN_QUOTA = 20 * MAX_TOKENS_PER_CALL; // 12000
 
+// A1 (P1-a) — the daily cap must bound TOTAL tokens (prompt + completion), not
+// just the 600-token output ceiling. Before any model call we cannot know the
+// exact prompt-token count the provider will bill, so we estimate the input
+// side from the assembled prompt + history and reserve
+//   estimatedInputTokens + MAX_TOKENS_PER_CALL
+// up front, then reconcile to the provider's reported TOTAL usage after the
+// call. The estimate uses the common ~4-chars-per-token heuristic with a small
+// safety multiplier so we err on over-reserving (which the post-call reconcile
+// refunds) rather than under-reserving (which would let total usage overshoot
+// the cap). A floor keeps tiny prompts from under-reserving.
+export const CHARS_PER_TOKEN = 4;
+export const INPUT_TOKEN_SAFETY = 1.15;
+export const MIN_INPUT_TOKEN_ESTIMATE = 200;
+
+// Estimate the prompt-side token count from the total character length of the
+// text we will send to the provider (system prompt + history + user message).
+// Deliberately conservative: rounds up and applies a safety multiplier so the
+// up-front reservation is an upper bound on real input usage.
+export function estimateInputTokens(text: string): number {
+  const chars = text.length;
+  const raw = Math.ceil((chars / CHARS_PER_TOKEN) * INPUT_TOKEN_SAFETY);
+  return Math.max(MIN_INPUT_TOKEN_ESTIMATE, raw);
+}
+
 // Machine code returned (HTTP 429) when a user is at/over their daily budget.
 export const AI_DAILY_QUOTA_EXCEEDED = 'AI_DAILY_QUOTA_EXCEEDED';
 
@@ -298,29 +322,54 @@ Now answer the user's next message using the rules above. Keep the answer under 
     // entry can never be folded into the prompt WITH a system role.
     conversationHistory: Array<{ role: ChatRole; content: string }>,
   ): Promise<ChatResult> {
-    // A1 — enforce the per-user DAILY token quota BEFORE we build context or
-    // call any model, so an at-cap user never burns provider tokens. We use a
-    // RESERVE-then-RECONCILE strategy: reserve the worst-case per-call budget
-    // (MAX_TOKENS_PER_CALL) up front via an atomic, race-safe increment, then
-    // reconcile down to the provider's actual usage after the call. This is
-    // the safe choice against token-amplification: concurrent in-flight
-    // requests are each charged the full max before they run, so they cannot
-    // collectively race past the cap. If the model returns real usage we
-    // refund the difference; if it never ran (e.g. would have exceeded) the
-    // reservation is what stands.
-    await this.reserveDailyTokens(userId, MAX_TOKENS_PER_CALL);
-
+    // A1 — build context first (this performs NO provider calls and burns no
+    // billable tokens) so we can estimate the prompt-side token count and
+    // reserve a realistic TOTAL-token upper bound before any model call.
     const ctx = await this.contextSvc.build(userId);
     let modelUsed: 'perplexity' | 'anthropic' | 'fallback' = 'perplexity';
 
-    // Actual provider token usage, when the provider reports it, for the
-    // post-call reconcile against the up-front MAX_TOKENS_PER_CALL reservation.
+    // A1 (P1-a) — estimate the input (prompt) tokens from the exact text we
+    // will send so the reservation bounds TOTAL tokens, not just output. The
+    // system prompt + the last 10 history turns + the user message are what the
+    // provider bills as input, so we size the estimate off that same text.
+    const promptText = [
+      this.buildSystemPrompt(ctx, userMessage),
+      ...conversationHistory.slice(-10).map((m) => m.content),
+      userMessage,
+    ].join('\n');
+    const estimatedInput = estimateInputTokens(promptText);
+    const reservation = estimatedInput + MAX_TOKENS_PER_CALL;
+
+    // A1 — enforce the per-user DAILY token quota BEFORE we call any model, so
+    // an at-cap user never burns provider tokens. We use a RESERVE-then-
+    // RECONCILE strategy: reserve the worst-case TOTAL per-call budget
+    // (estimated input + max output) up front via an atomic, race-safe
+    // increment, then reconcile to the provider's actual TOTAL usage after the
+    // call. This is the safe choice against token-amplification: concurrent
+    // in-flight requests are each charged the full estimated max before they
+    // run, so they cannot collectively race past the cap. The reservation
+    // captures the day-bucket key (P2) ONCE here so the post-call
+    // reconcile/refund always hits the SAME row even across a midnight
+    // rollover.
+    const quotaDate = await this.reserveDailyTokens(userId, reservation);
+
+    // A1 (P1-a) — actual provider TOTAL token usage (prompt+completion) when
+    // the provider reports it, for the post-call reconcile against the up-front
+    // reservation. Null means the provider never ran or did not report usage
+    // (e.g. the deterministic fallback), in which case the reservation is
+    // refunded in full (P1-b) since no billable tokens were spent.
     let actualTokens: number | null = null;
-    let rawReply: string;
+    let rawReply = '';
     const perplexityKey = process.env.PERPLEXITY_API_KEY?.trim();
     const anthropicReady =
       this.anthropic && this.coachAIState && this.coachAIState.isReady();
 
+    // A1 (P1-b) — reconcile/refund the reservation in a finally path so a
+    // failed or fallback call never permanently leaks reserved quota. When the
+    // provider reported real usage we reconcile the reservation to that TOTAL;
+    // otherwise (exception, empty completion, or fallback) we refund the entire
+    // reservation because no billable provider tokens were consumed.
+    try {
     if (!perplexityKey && anthropicReady && this.anthropic) {
       // Coach AI v1 — Claude Sonnet fallback for the client chat surface.
       // We hand it the same system prompt the Perplexity branch would
@@ -407,13 +456,25 @@ Now answer the user's next message using the rules above. Keep the answer under 
       }
     }
 
-    // A1 — reconcile the up-front reservation to actual provider usage when
-    // available. We reserved MAX_TOKENS_PER_CALL; if the provider reported a
-    // smaller (or larger) total_tokens, adjust tokens_used by the delta so the
-    // daily ledger reflects reality. Non-fatal: a failed reconcile leaves the
-    // conservative reservation in place.
-    if (actualTokens != null) {
-      await this.reconcileDailyTokens(userId, MAX_TOKENS_PER_CALL, actualTokens);
+    } finally {
+      // A1 (P1-a + P1-b + P2) — settle the reservation against reality on the
+      // SAME day-bucket row we reserved (P2). Three cases:
+      //  1. Provider ran and reported a real TOTAL usage => reconcile the
+      //     reservation to that exact total (refund the over-reserved
+      //     difference, or charge the remainder in the rare actual>reservation
+      //     case) so the daily ledger bounds TRUE total tokens (P1-a).
+      //  2. The call produced NO billable provider tokens — a thrown provider
+      //     error or empty completion that fell back to the deterministic
+      //     responder => refund the ENTIRE reservation (P1-b) so a failed call
+      //     never permanently leaks quota.
+      //  3. Provider ran successfully but did NOT report usage => keep the
+      //     conservative reservation in place (we cannot know the true cost, so
+      //     we must not refund a call that really did spend tokens).
+      if (actualTokens != null) {
+        await this.reconcileDailyTokens(userId, quotaDate, reservation, actualTokens);
+      } else if (modelUsed === 'fallback') {
+        await this.reconcileDailyTokens(userId, quotaDate, reservation, 0);
+      }
     }
 
     const isFallback = modelUsed === 'fallback';
@@ -473,7 +534,13 @@ Now answer the user's next message using the rules above. Keep the answer under 
   // guarded update (count === 1) or is rejected (count === 0) without a
   // read-modify-write race. A rejected reservation throws 429 BEFORE any model
   // call, so an at/over-cap user never burns provider tokens.
-  private async reserveDailyTokens(userId: string, cost: number): Promise<void> {
+  //
+  // P2 — returns the captured quota_date so the caller can pass the SAME
+  // day-bucket key to the post-call reconcile/refund. Recomputing the bucket
+  // at reconcile time would mis-target the row for a request that crosses
+  // midnight; reusing the reservation's key keeps reserve and reconcile on the
+  // same ledger row.
+  private async reserveDailyTokens(userId: string, cost: number): Promise<Date> {
     const quotaDate = this.getQuotaDate();
 
     await this.prisma.userAIQuota.upsert({
@@ -508,21 +575,38 @@ Now answer the user's next message using the rules above. Keep the answer under 
         HttpStatus.TOO_MANY_REQUESTS, // 429
       );
     }
+
+    return quotaDate;
   }
 
-  // A1 — reconcile the up-front reservation to the provider's actual usage.
-  // We reserved `reserved` tokens; the real cost was `actual`. Adjust
-  // tokens_used by (actual - reserved) so the ledger reflects reality. We
-  // clamp the floor of tokens_used at 0 in the over-refund edge case by never
-  // decrementing below the row's value via a guarded updateMany. Non-fatal.
+  // A1 — reconcile the up-front reservation to the provider's actual TOTAL
+  // usage (prompt + completion). We reserved `reserved` tokens; the real cost
+  // was `actual`. Adjust tokens_used by (actual - reserved) so the daily ledger
+  // reflects TRUE total tokens (P1-a) and subsequent calls are gated on the
+  // real consumption.
+  //
+  // P1-b — when the call spent no billable tokens (provider failure, empty
+  // completion, or deterministic fallback) the caller passes actual=0, which
+  // refunds the ENTIRE reservation so a failed call never permanently consumes
+  // quota.
+  //
+  // P2 — the day-bucket key is the one CAPTURED AT RESERVATION TIME and passed
+  // in here, so reserve and reconcile always hit the same row even across a
+  // midnight rollover.
+  //
+  // Safety: the refund is a DB-side decrement guarded by tokens_used >= refund
+  // so it can never underflow below zero, and it is atomic (single guarded
+  // updateMany). A charge in the rare actual>reserved case is a DB-side
+  // increment. Non-fatal: a failed reconcile leaves the conservative
+  // reservation in place rather than throwing.
   private async reconcileDailyTokens(
     userId: string,
+    quotaDate: Date,
     reserved: number,
     actual: number,
   ): Promise<void> {
     const delta = actual - reserved;
     if (delta === 0) return;
-    const quotaDate = this.getQuotaDate();
     try {
       if (delta > 0) {
         await this.prisma.userAIQuota.updateMany({
@@ -530,7 +614,8 @@ Now answer the user's next message using the rules above. Keep the answer under 
           data: { tokens_used: { increment: delta } },
         });
       } else {
-        // Refund the unused reservation, never below 0.
+        // Refund the over-reserved (or, when actual=0, the full) reservation,
+        // never below 0. The guard makes the decrement atomic and underflow-safe.
         const refund = -delta;
         await this.prisma.userAIQuota.updateMany({
           where: { user_id: userId, quota_date: quotaDate, tokens_used: { gte: refund } },

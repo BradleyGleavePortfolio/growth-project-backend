@@ -302,13 +302,32 @@ describe('AiService.chat daily token quota (A1)', () => {
   });
 
   it('concurrent same-user requests never exceed the cap', async () => {
-    // No usage in the response => each call holds its full MAX_TOKENS_PER_CALL
-    // reservation, so the cap is the limiting factor on how many can proceed.
+    // A successful provider reply with NO usage reported => each call holds its
+    // full conservative reservation (estimated input + MAX_TOKENS_PER_CALL), so
+    // the cap is the limiting factor on how many can proceed. The per-call
+    // reservation now accounts for TOTAL tokens (P1-a), so we derive the
+    // expected capacity from the observed reservation size rather than the old
+    // output-only MAX_TOKENS_PER_CALL.
     mockCreate.mockResolvedValue({
       choices: [{ message: { content: 'ok' } }],
     });
+
+    // Measure the per-call reservation empirically: one isolated call on a
+    // fresh service leaves exactly one reservation on the ledger (no usage =>
+    // no reconcile/refund).
+    const probe = makeService();
+    await probe.svc.chat('u1', 'concurrent', []);
+    const perCallReservation = [...probe.quota.rows.values()][0].tokens_used;
+    expect(perCallReservation).toBeGreaterThan(MAX_TOKENS_PER_CALL); // total > output-only
+    const capacity = Math.floor(DAILY_TOKEN_QUOTA / perCallReservation);
+    // Reset the shared module-level mock so the probe's call does not count
+    // toward the concurrent-run invocation assertion below.
+    mockCreate.mockClear();
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: 'ok' } }],
+    });
+
     const { svc, quota } = makeService();
-    const capacity = DAILY_TOKEN_QUOTA / MAX_TOKENS_PER_CALL; // 20
     const attempts = capacity + 10; // oversubscribe
     const results = await Promise.allSettled(
       Array.from({ length: attempts }, () => svc.chat('u1', 'concurrent', [])),
@@ -320,7 +339,105 @@ describe('AiService.chat daily token quota (A1)', () => {
     // Final ledger never exceeds the cap, and the model ran exactly `ok` times.
     const row = [...quota.rows.values()][0];
     expect(row.tokens_used).toBeLessThanOrEqual(DAILY_TOKEN_QUOTA);
-    expect(row.tokens_used).toBe(capacity * MAX_TOKENS_PER_CALL);
+    expect(row.tokens_used).toBe(capacity * perCallReservation);
     expect(mockCreate).toHaveBeenCalledTimes(capacity);
+  });
+
+  // P1-a — the daily cap must bound TOTAL tokens (prompt + completion), not
+  // just the 600-token output ceiling. A provider that reports a large TOTAL
+  // usage (input + output) must be charged that full total against the daily
+  // ledger so subsequent calls are correctly gated and the cap cannot be
+  // overshot by under-counting input tokens.
+  it('total-token accounting: charges the full provider TOTAL (input+output), not just output', async () => {
+    // Provider reports a total far larger than MAX_TOKENS_PER_CALL (600) — i.e.
+    // the input side dominated. The ledger must reflect the true 1500 total.
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { total_tokens: 1500 },
+    });
+    const { svc, quota } = makeService();
+    await svc.chat('u1', 'how am I doing today', []);
+    const row = [...quota.rows.values()][0];
+    // The persisted daily usage equals the true TOTAL tokens, which exceeds the
+    // old output-only MAX_TOKENS_PER_CALL — proving total-token accounting.
+    expect(row.tokens_used).toBe(1500);
+    expect(row.tokens_used).toBeGreaterThan(MAX_TOKENS_PER_CALL);
+  });
+
+  // P1-a — a large reported TOTAL is bounded by the daily cap: once the ledger
+  // reflects true total usage, a subsequent call that would push past the cap
+  // is rejected with 429. This prevents the 12000 cap from being overshot by
+  // many high-total calls.
+  it('total-token accounting: high-total calls are gated by the daily cap', async () => {
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { total_tokens: 4000 },
+    });
+    const { svc, quota } = makeService();
+    // Three 4000-total calls = 12000 exactly => at cap. The 4th must be 429.
+    await svc.chat('u1', 'one', []);
+    await svc.chat('u1', 'two', []);
+    await svc.chat('u1', 'three', []);
+    const row = [...quota.rows.values()][0];
+    expect(row.tokens_used).toBe(DAILY_TOKEN_QUOTA); // 12000, bounded
+    await expect(svc.chat('u1', 'four', [])).rejects.toMatchObject({
+      response: { error: AI_DAILY_QUOTA_EXCEEDED },
+    });
+  });
+
+  // P1-b — when the provider call FAILS after the reservation, the reserved
+  // quota must be released (refunded) so a failed call does not permanently
+  // consume budget. The provider throws, the service falls back to the
+  // deterministic responder (no billable tokens), and the finally path refunds
+  // the entire reservation back to zero.
+  it('failed provider call refunds the full reservation (no quota leak)', async () => {
+    mockCreate.mockRejectedValue(new Error('upstream 500'));
+    const { svc, quota } = makeService();
+    const result = await svc.chat('u1', 'how am I doing today', []);
+    // Fell back, but the daily ledger is fully refunded — nothing leaked.
+    expect(result.model_used).toBe('fallback');
+    const row = [...quota.rows.values()][0];
+    expect(row.tokens_used).toBe(0);
+    // request_count is intentionally NOT decremented (it counts attempts);
+    // only the reserved TOKENS are refunded.
+    expect(row.request_count).toBe(1);
+  });
+
+  // P1-b — repeated failures never erode the daily budget: after many failed
+  // calls the ledger is still zero, so a legitimate (successful) call still has
+  // its full budget available.
+  it('repeated failed calls never erode the daily budget', async () => {
+    mockCreate.mockRejectedValue(new Error('upstream 500'));
+    const { svc, quota } = makeService();
+    for (let i = 0; i < 5; i++) {
+      await svc.chat('u1', 'fail please', []);
+    }
+    const row = [...quota.rows.values()][0];
+    expect(row.tokens_used).toBe(0);
+  });
+
+  // P2 — a request that crosses midnight must reconcile against the SAME day
+  // bucket it reserved against. We make getQuotaDate return day1 at reservation
+  // time and day2 at the (would-be) reconcile time. The reconcile must still
+  // land on day1 (the captured key), so day1's row reflects the reconciled
+  // actual and day2 is never touched.
+  it('midnight cross: reconciles against the reservation day, not the reconcile-time day', async () => {
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { total_tokens: 250 },
+    });
+    const { svc, quota } = makeService();
+    const day1 = new Date(Date.UTC(2026, 3, 27));
+    const day2 = new Date(Date.UTC(2026, 3, 28));
+    const spy = jest.spyOn(svc as any, 'getQuotaDate');
+    // First call (reservation) sees day1; any later getQuotaDate would see day2.
+    spy.mockReturnValueOnce(day1).mockReturnValue(day2);
+    await svc.chat('u1', 'crosses midnight', []);
+    // The reconcile used the CAPTURED day1 key, so day1 holds the reconciled
+    // actual (250) and day2 was never created/charged.
+    const day1Row = quota.rows.get(quota.keyOf('u1', day1));
+    expect(day1Row).toBeDefined();
+    expect(day1Row!.tokens_used).toBe(250);
+    expect(quota.rows.get(quota.keyOf('u1', day2))).toBeUndefined();
   });
 });
