@@ -23,7 +23,10 @@ import { SubscriptionGuard } from '../billing/subscription.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PackagesService } from './packages.service';
 import { PackageContentsService } from './package-contents.service';
-import { PackagePushService } from './package-push.service';
+import {
+  IDEMPOTENCY_KEY_UUID_RE,
+  PackagePushService,
+} from './package-push.service';
 import {
   PushPreviewQuerySchema,
   PushRequestSchema,
@@ -155,8 +158,10 @@ export class CoachPackageContentsController {
     };
   }
 
-  // POST .../:contentId/push — schedule the push/backfill. Reads the
-  // Idempotency-Key header (#8). Returns
+  // POST .../:contentId/push — schedule the push/backfill. REQUIRES a valid
+  // UUID Idempotency-Key header (#8, R19): this is a mutation that can mint a
+  // fresh delivery, so the key is enforced (validated + deduped) here and in
+  // PackagePushService.claimAndRun. A missing/invalid key is a 400. Returns
   // { scheduled, skipped, fire_at, audience, notify }.
   @Roles('coach', 'owner')
   @Post(':contentId/push')
@@ -167,6 +172,16 @@ export class CoachPackageContentsController {
     @Body() body: unknown,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
+    // (R2 P0) Require + validate the Idempotency-Key before doing any work.
+    // A push is a mutation (R19) — reject a missing or non-UUID key with 400
+    // so a client bug can't bypass request-level dedup.
+    if (!idempotencyKey || !IDEMPOTENCY_KEY_UUID_RE.test(idempotencyKey)) {
+      throw new BadRequestException({
+        error: 'INVALID_IDEMPOTENCY_KEY',
+        message:
+          'A valid UUID Idempotency-Key header is required for the push endpoint',
+      });
+    }
     const parsed = PushRequestSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException({

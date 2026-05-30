@@ -1,6 +1,12 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { PackagesService } from '../src/packages/packages.service';
 import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
+import { PackagesService } from '../src/packages/packages.service';
+import { CoachPackageContentsController } from '../src/packages/package-contents.controller';
+import {
+  MAX_PUSH_AUDIENCE,
   PackagePushService,
   SHIPPED_STATUSES,
 } from '../src/packages/package-push.service';
@@ -23,11 +29,21 @@ import {
 // ─────────────────────────────────────────────────────────────────────────
 // Stubs
 // ─────────────────────────────────────────────────────────────────────────
+// Minimal Prisma P2002 error shape the service's claimAndRun matches on
+// (err instanceof Prisma.PrismaClientKnownRequestError && err.code==='P2002').
+// We import the REAL class so the instanceof check passes.
+import { Prisma } from '@prisma/client';
+
 function makePrismaStub() {
   const packages: any[] = [];
   const contents: any[] = [];
   const purchases: any[] = [];
   const drops: any[] = [];
+  // Generic idempotency ledger rows (WorkoutBuilderIdempotencyKey) keyed by
+  // (user_id, route_key, idempotency_key). The push request-level claim
+  // (claimAndRun) reuses this existing table (R2 P0).
+  const idemRows: any[] = [];
+  let idemSeq = 0;
   const createManyCalls: Array<{ count: number; chunkSize: number }> = [];
   // Set when ANY code path reaches for a Stripe/billing client on the stub —
   // the NO-Stripe test asserts this stays false.
@@ -149,6 +165,55 @@ function makePrismaStub() {
       ),
     },
     scheduledDrop: dropClient,
+    _idemRows: idemRows,
+    workoutBuilderIdempotencyKey: {
+      create: jest.fn(async ({ data }: any) => {
+        const dup = idemRows.find(
+          (r) =>
+            r.user_id === data.user_id &&
+            r.route_key === data.route_key &&
+            r.idempotency_key === data.idempotency_key,
+        );
+        if (dup) {
+          // Mimic the Postgres unique-violation Prisma surfaces as P2002.
+          throw new Prisma.PrismaClientKnownRequestError('Unique constraint', {
+            code: 'P2002',
+            clientVersion: 'test',
+          } as any);
+        }
+        idemSeq += 1;
+        const row = {
+          id: `idem-${idemSeq}`,
+          status: 'in_progress',
+          response_json: null,
+          status_code: null,
+          ...data,
+        };
+        idemRows.push(row);
+        return { ...row };
+      }),
+      findUnique: jest.fn(async ({ where }: any) => {
+        const k = where.WorkoutBuilderIdempotencyKey_user_route_key_key;
+        const row = idemRows.find(
+          (r) =>
+            r.user_id === k.user_id &&
+            r.route_key === k.route_key &&
+            r.idempotency_key === k.idempotency_key,
+        );
+        return row ? { ...row } : null;
+      }),
+      update: jest.fn(async ({ where, data }: any) => {
+        const row = idemRows.find((r) => r.id === where.id);
+        if (!row) throw new Error('idem row not found');
+        Object.assign(row, data);
+        return { ...row };
+      }),
+      delete: jest.fn(async ({ where }: any) => {
+        const idx = idemRows.findIndex((r) => r.id === where.id);
+        if (idx >= 0) idemRows.splice(idx, 1);
+        return {};
+      }),
+    },
     // A getter that flags any attempt to use a Stripe/billing client. The
     // push path must NEVER reach for one.
     get billing() {
@@ -508,8 +573,8 @@ describe('PackagePushService', () => {
     expect(chunkSizes).toEqual([500, 500, 201]);
   });
 
-  // ── idempotent replay no-op (#8) ─────────────────────────────────────
-  it('a replayed identical push is a true no-op via deterministic push_seq + skipDuplicates', async () => {
+  // ── idempotent replay no-op (#8 / R2 P0) ─────────────────────────────
+  it('a replayed push_existing with the SAME idempotency key returns the CACHED result and inserts no new rows', async () => {
     seedPurchase(prisma, { id: 'p1', package_id: 'pkg-1' });
     seedPurchase(prisma, { id: 'p2', package_id: 'pkg-1' });
     const first = await svc.pushContentToExistingBuyers(
@@ -529,12 +594,152 @@ describe('PackagePushService', () => {
       { audience: 'all', fireAt: FUTURE, mode: 'push_existing', notify: true },
       'idem-key-1',
     );
-    // No NEW rows inserted; the replay re-derives seq 0 and skipDuplicates
-    // makes it a no-op. scheduled reflects existing rows at the target seq.
+    // The request-level claim is 'completed' → the replay returns the CACHED
+    // { scheduled: 2, skipped: 0 } WITHOUT re-running the mutation. No new
+    // rows are inserted and the audience is never even re-resolved.
     expect(prisma._drops.length).toBe(dropCountAfterFirst);
-    // push_existing now sees an existing drop for each buyer → all skipped.
-    expect(replay.scheduled).toBe(0);
-    expect(replay.skipped).toBe(2);
+    expect(replay.scheduled).toBe(2);
+    expect(replay.skipped).toBe(0);
+    expect((prisma as any).clientPurchase.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  // ── R2 P0: resend replay after seq-1 fired is a TRUE no-op (no seq-2) ─
+  it('a due-now resend replayed with the SAME key after seq-1 fired mints NO seq-2 and re-materialises NOTHING (cached result)', async () => {
+    seedPurchase(prisma, {
+      id: 'p1',
+      package_id: 'pkg-1',
+      client_user_id: 'cl1',
+      coach_user_id: 'coach-1',
+    });
+    // Buyer already has a shipped (delivered) original at seq 0 → resend.
+    seedDrop(prisma, {
+      client_purchase_id: 'p1',
+      content_id: 'content-1',
+      status: 'delivered',
+      push_seq: 0,
+    });
+
+    // First resend, due NOW → seeds seq 1 and materialises it inline (fired).
+    const first = await svc.pushContentToExistingBuyers(
+      'coach-1',
+      'pkg-1',
+      'content-1',
+      { audience: 'all', fireAt: new Date(), mode: 'resend', notify: true },
+      'resend-key-1',
+    );
+    expect(first.scheduled).toBe(1);
+    const seq1 = prisma._drops.find(
+      (d: any) => d.client_purchase_id === 'p1' && d.push_seq === 1,
+    );
+    expect(seq1).toBeTruthy();
+    expect(seq1.status).toBe('fired');
+    expect(resolvers.materialise).toHaveBeenCalledTimes(1);
+    const dropCountAfterFirst = prisma._drops.length;
+
+    // Replay the SAME request/key AFTER seq-1 fired. The OLD bug minted a
+    // fresh seq-2 (maxSeq+1 off the just-shipped seq-1). With the request-
+    // level claim, the replay returns the CACHED result and never runs the
+    // body → NO seq-2 row, NO second materialise.
+    const replay = await svc.pushContentToExistingBuyers(
+      'coach-1',
+      'pkg-1',
+      'content-1',
+      { audience: 'all', fireAt: new Date(), mode: 'resend', notify: true },
+      'resend-key-1',
+    );
+    expect(replay).toEqual(first);
+    expect(prisma._drops.length).toBe(dropCountAfterFirst);
+    const seq2 = prisma._drops.find(
+      (d: any) => d.client_purchase_id === 'p1' && d.push_seq === 2,
+    );
+    expect(seq2).toBeUndefined();
+    // No SECOND materialise call (still exactly the one from the first push).
+    expect(resolvers.materialise).toHaveBeenCalledTimes(1);
+  });
+
+  // ── R2 P0: concurrent same-key (in_progress) → 409 ───────────────────
+  it('a concurrent same-key push whose claim is still in_progress is rejected with a 409', async () => {
+    seedPurchase(prisma, { id: 'p1', package_id: 'pkg-1' });
+    // Pre-seed an in_progress claim for the same (user, route, key) to model
+    // a request that is mid-flight.
+    (prisma as any)._idemRows.push({
+      id: 'idem-pre',
+      user_id: 'coach-1',
+      route_key: 'package-push:pkg-1:content-1',
+      idempotency_key: 'concurrent-key',
+      status: 'in_progress',
+      response_json: null,
+      status_code: null,
+    });
+    await expect(
+      svc.pushContentToExistingBuyers(
+        'coach-1',
+        'pkg-1',
+        'content-1',
+        { audience: 'all', fireAt: FUTURE, mode: 'push_existing', notify: true },
+        'concurrent-key',
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    // The mutation never ran → no drops were seeded.
+    expect(prisma._drops.length).toBe(0);
+  });
+
+  // ── R2 P0: a different content with the SAME key is independent ───────
+  it('the same idempotency key for a DIFFERENT content is independent (distinct routeKey)', async () => {
+    seedContent(prisma, { id: 'content-2', package_id: 'pkg-1' });
+    seedPurchase(prisma, { id: 'p1', package_id: 'pkg-1' });
+    const a = await svc.pushContentToExistingBuyers(
+      'coach-1',
+      'pkg-1',
+      'content-1',
+      { audience: 'all', fireAt: FUTURE, mode: 'push_existing', notify: true },
+      'shared-key',
+    );
+    const b = await svc.pushContentToExistingBuyers(
+      'coach-1',
+      'pkg-1',
+      'content-2',
+      { audience: 'all', fireAt: FUTURE, mode: 'push_existing', notify: true },
+      'shared-key',
+    );
+    // Both run (different routeKey) → a drop seeded for each content.
+    expect(a.scheduled).toBe(1);
+    expect(b.scheduled).toBe(1);
+    expect(prisma._drops.length).toBe(2);
+  });
+
+  // ── R2 P2: audience cap ──────────────────────────────────────────────
+  it('rejects a push whose resolved audience exceeds MAX_PUSH_AUDIENCE with a 400 (AUDIENCE_TOO_LARGE)', async () => {
+    for (let i = 0; i < MAX_PUSH_AUDIENCE + 1; i++) {
+      seedPurchase(prisma, { id: `big${i}`, package_id: 'pkg-1' });
+    }
+    await expect(
+      svc.pushContentToExistingBuyers(
+        'coach-1',
+        'pkg-1',
+        'content-1',
+        { audience: 'all', fireAt: FUTURE, mode: 'push_existing', notify: true },
+        'cap-key-over',
+      ),
+    ).rejects.toMatchObject({
+      response: { error: 'AUDIENCE_TOO_LARGE' },
+    });
+    // No drops seeded; the cap fires before the seed tx.
+    expect(prisma._drops.length).toBe(0);
+  });
+
+  it('an audience exactly AT the cap proceeds', async () => {
+    for (let i = 0; i < MAX_PUSH_AUDIENCE; i++) {
+      seedPurchase(prisma, { id: `atcap${i}`, package_id: 'pkg-1' });
+    }
+    const res = await svc.pushContentToExistingBuyers(
+      'coach-1',
+      'pkg-1',
+      'content-1',
+      { audience: 'all', fireAt: FUTURE, mode: 'push_existing', notify: true },
+      'cap-key-at',
+    );
+    expect(res.scheduled).toBe(MAX_PUSH_AUDIENCE);
   });
 
   // ── notify suppression stamps alert_dispatched_at (#9) ───────────────
@@ -687,6 +892,65 @@ describe('PackagePushService', () => {
           mode: 'push_existing',
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  // ── R2 P0: controller Idempotency-Key validation (#8, R19) ──────────
+  // The POST push route REQUIRES a valid UUID Idempotency-Key. A missing or
+  // non-UUID key is a 400 BEFORE any service work. We exercise the real
+  // controller method directly with a stubbed PackagesService
+  // (resolveEffectiveCoachId) + the real push service.
+  describe('POST push Idempotency-Key validation', () => {
+    let controller: CoachPackageContentsController;
+    const VALID_KEY = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+    const req = { user: { id: 'coach-1' } } as any;
+    const body = {
+      audience: 'all',
+      fire_at: FUTURE.toISOString(),
+      mode: 'push_existing',
+      notify: true,
+    };
+
+    beforeEach(() => {
+      jest
+        .spyOn(packages, 'resolveEffectiveCoachId')
+        .mockResolvedValue('coach-1');
+      controller = new CoachPackageContentsController(
+        packages,
+        {} as any,
+        svc,
+      );
+      seedPurchase(prisma, { id: 'p1', package_id: 'pkg-1' });
+    });
+
+    it('rejects a MISSING Idempotency-Key with a 400', async () => {
+      await expect(
+        controller.pushToExisting(req, 'pkg-1', 'content-1', body, undefined),
+      ).rejects.toMatchObject({
+        response: { error: 'INVALID_IDEMPOTENCY_KEY' },
+      });
+      expect(prisma._drops.length).toBe(0);
+    });
+
+    it('rejects a NON-UUID Idempotency-Key with a 400', async () => {
+      await expect(
+        controller.pushToExisting(req, 'pkg-1', 'content-1', body, 'not-a-uuid'),
+      ).rejects.toMatchObject({
+        response: { error: 'INVALID_IDEMPOTENCY_KEY' },
+      });
+      expect(prisma._drops.length).toBe(0);
+    });
+
+    it('accepts a valid UUID Idempotency-Key and schedules the push', async () => {
+      const res = await controller.pushToExisting(
+        req,
+        'pkg-1',
+        'content-1',
+        body,
+        VALID_KEY,
+      );
+      expect(res.scheduled).toBe(1);
+      expect(res.audience).toBe('all');
     });
   });
 });

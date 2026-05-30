@@ -1,5 +1,12 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { AssignableAssetResolverRegistry } from './asset-resolvers/assignable-asset-resolver.registry';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
@@ -29,17 +36,41 @@ import type { PushAudience, PushMode } from './package-contents.dto';
 // CHUNK_SIZE via createMany({ skipDuplicates: true }).
 //
 // ─────────────────────────────────────────────────────────────────────────
-// IDEMPOTENCY (decision #8, watchpoint §6.1)
+// IDEMPOTENCY (decision #8, watchpoint §6.1) — R2 audit remediation (P0)
 // ─────────────────────────────────────────────────────────────────────────
 // Two layers survive (PR17_EXPANSION_PLAN.md §1.4):
-//   (a) the mutation-level UUID Idempotency-Key header (mobile dedup of the
-//       request itself — logged here; the controller reads it);
+//   (a) the mutation-level UUID Idempotency-Key header. This is now ENFORCED
+//       (not merely logged): the ENTIRE push mutation body is wrapped in a
+//       request-level idempotency claim keyed by
+//       (coachUserId, `package-push:${packageId}:${contentId}`, idempotencyKey)
+//       persisted in the GENERIC ledger table WorkoutBuilderIdempotencyKey
+//       (prisma/schema.prisma — "Generic idempotency ledger", unique on
+//       (user_id, route_key, idempotency_key)). We REUSE that existing table
+//       and replicate the audited WorkoutBuilderService.withIdempotency claim/
+//       cache/release semantics inline (claimAndRun, below) because injecting
+//       WorkoutBuilderService here would form a module cycle
+//       (AssignableAssetResolversModule → WorkoutBuilderModule → PackagesModule
+//       → … → PackagePushService). NO schema change, NO new table/column.
+//       Net effect: a replayed POST with the SAME key returns the CACHED
+//       { scheduled, skipped } and NEVER re-runs the seq computation, so a
+//       resend can never mint a second push_seq → no double delivery. A
+//       concurrent same-key retry gets a 409.
 //   (b) the DB unique key (client_purchase_id, content_id, push_seq) plus
 //       createMany({ skipDuplicates: true }). We compute the target push_seq
 //       DETERMINISTICALLY per (purchase, content) from the current max INSIDE
-//       the tx, so a replayed identical request re-derives the SAME push_seq
-//       and the createMany is a true no-op (0 newly inserted → scheduled is
-//       reported from the rows actually created, not the candidate count).
+//       the tx, so even a key-less replay of a push_existing re-derives the
+//       SAME push_seq and the createMany is a true no-op (0 newly inserted →
+//       scheduled is reported from the rows actually created).
+//
+// ─────────────────────────────────────────────────────────────────────────
+// AUDIENCE CAP (watchpoint §6.2) — R2 audit remediation (P2)
+// ─────────────────────────────────────────────────────────────────────────
+// All seed creation + re-read + due-now materialise run in ONE interactive
+// $transaction. To keep that transaction within Postgres statement-timeout
+// headroom we BOUND the synchronous audience: after resolving the audience,
+// a push whose resolved buyer count exceeds MAX_PUSH_AUDIENCE is rejected
+// with a 400 (error 'AUDIENCE_TOO_LARGE'). Very large pushes must go through
+// an operator / async path rather than blocking a single interactive tx.
 //
 // ─────────────────────────────────────────────────────────────────────────
 // RESOLVER-KEY BYPASS (decision #5, the single most fragile rule, §1.3/§2.4)
@@ -66,6 +97,23 @@ function isShipped(status: string): boolean {
 // each statement well under Postgres parameter limits while bounding the
 // number of round-trips for a large `all` audience.
 const CHUNK_SIZE = 500;
+
+// R2 (P2) — maximum audience size for the SYNCHRONOUS push endpoint. The push
+// seeds + re-reads + materialises every drop inside ONE interactive
+// $transaction; an unbounded `all`/`active` audience (the plan §6.2 watchpoint
+// flagged 10k+ buyers) risks blowing the Postgres statement/transaction
+// timeout. 2000 buyers × (createMany chunked at CHUNK_SIZE + a bounded inline
+// materialise) stays comfortably within statement-timeout headroom for a
+// single interactive tx; anything larger must go through an operator/async
+// path rather than block the request. Resolved-audience counts above this are
+// rejected with a 400 ('AUDIENCE_TOO_LARGE').
+export const MAX_PUSH_AUDIENCE = 2000;
+
+// R2 (P0) — UUID v1-v5 shape for the mutation Idempotency-Key. The controller
+// rejects a missing/invalid key with a 400 before reaching the service; this
+// constant is exported so the controller and tests share one source of truth.
+export const IDEMPOTENCY_KEY_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export interface PushOptions {
   audience: PushAudience;
@@ -184,12 +232,43 @@ export class PackagePushService {
       });
     }
 
-    if (idempotencyKey) {
-      this.logger.debug(
-        `push: idempotency-key=${idempotencyKey} package=${packageId} content=${contentId} audience=${opts.audience} mode=${opts.mode}`,
-      );
-    }
+    // (R2 P0) Enforce the mutation Idempotency-Key at the REQUEST layer by
+    // reusing the generic ledger. The ENTIRE mutation below runs inside the
+    // claim, so a replayed same-key request returns the CACHED result and
+    // NEVER re-runs audience resolution / seq computation (no second
+    // push_seq, no double delivery). routeKey is scoped per (package,
+    // content) so the same key for a DIFFERENT content stays independent.
+    // A key-less call (e.g. internal/test) simply runs the op once.
+    const routeKey = `package-push:${packageId}:${contentId}`;
+    return this.claimAndRun<PushResult>(
+      coachUserId,
+      routeKey,
+      idempotencyKey,
+      () => this.runPush(coachUserId, packageId, contentId, content, opts, now),
+    );
+  }
 
+  // The actual push mutation body (steps 3–9), extracted so the public method
+  // can wrap it in the idempotency claim (R2 P0). Runs EXACTLY ONCE per
+  // claimed key.
+  private async runPush(
+    coachUserId: string,
+    packageId: string,
+    contentId: string,
+    content: {
+      id: string;
+      asset_type: string;
+      asset_id: string;
+      asset_revision_id: string | null;
+      cadence_kind: string;
+      cadence_payload: unknown;
+      display_title: string | null;
+      display_caption: string | null;
+    },
+    opts: PushOptions,
+    now: Date,
+  ): Promise<PushResult> {
+    void coachUserId;
     // (3) Resolve audience → ClientPurchase rows.
     const purchases = await this.resolveAudience(
       packageId,
@@ -198,6 +277,15 @@ export class PackagePushService {
     );
     if (purchases.length === 0) {
       return { scheduled: 0, skipped: 0 };
+    }
+    // (R2 P2) Bound the synchronous audience so the single interactive tx
+    // below cannot exceed statement-timeout headroom. Above the cap the push
+    // must go through an operator/async path.
+    if (purchases.length > MAX_PUSH_AUDIENCE) {
+      throw new BadRequestException({
+        error: 'AUDIENCE_TOO_LARGE',
+        message: `This push resolves ${purchases.length} buyers, above the synchronous limit of ${MAX_PUSH_AUDIENCE}. Narrow the audience (e.g. a cohort) or use an operator/async path for very large pushes.`,
+      });
     }
     const purchaseIds = purchases.map((p) => p.id);
 
@@ -357,12 +445,113 @@ export class PackagePushService {
       await this.dispatchInlineAlerts(seededDropIds, purchaseById, contentId, now);
     }
 
-    // (9) Idempotent return: `scheduled` = rows that exist at our target seq
-    // (a replay re-derives the same seq → createMany no-op → same count).
+    // (9) Idempotent return: `scheduled` = rows that exist at our target seq.
+    // The request-level claim (claimAndRun) caches THIS result, so a replay
+    // never reaches here again.
     return { scheduled: seededDropIds.length, skipped };
   }
 
   // ── internal ─────────────────────────────────────────────────────────
+
+  /**
+   * Request-level idempotency for the push mutation (R2 P0).
+   *
+   * REUSES the existing generic ledger table WorkoutBuilderIdempotencyKey
+   * (prisma/schema.prisma — "Generic idempotency ledger", unique on
+   * (user_id, route_key, idempotency_key)) and replicates the audited
+   * WorkoutBuilderService.withIdempotency() claim/cache/release semantics.
+   * We do NOT inject WorkoutBuilderService directly: it would create a
+   * module cycle (AssignableAssetResolversModule → WorkoutBuilderModule →
+   * PackagesModule → … → PackagePushService). NO schema change.
+   *
+   * Flow (race-safe — the key is CLAIMED atomically BEFORE op() runs):
+   *   1. Insert a ledger row status='in_progress'. P2002 (duplicate) →
+   *      another request holds the key:
+   *        - existing.status==='completed' → return the CACHED response.
+   *        - existing.status==='in_progress' → 409 (concurrent retry); op()
+   *          is NOT run a second time.
+   *   2. Run op() exactly once under the claim.
+   *   3. Persist the response + flip to 'completed'.
+   *   4. If op() throws, delete the claim so the caller can retry the key.
+   */
+  private async claimAndRun<T>(
+    userId: string,
+    routeKey: string,
+    idempotencyKey: string | null | undefined,
+    op: () => Promise<T>,
+  ): Promise<T> {
+    if (!idempotencyKey) return op();
+
+    // Step 1: atomically claim the key.
+    let claimId: string | null = null;
+    try {
+      const claim = await this.prisma.workoutBuilderIdempotencyKey.create({
+        data: {
+          user_id: userId,
+          route_key: routeKey,
+          idempotency_key: idempotencyKey,
+          status: 'in_progress',
+        },
+      });
+      claimId = claim.id;
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        const existing =
+          await this.prisma.workoutBuilderIdempotencyKey.findUnique({
+            where: {
+              WorkoutBuilderIdempotencyKey_user_route_key_key: {
+                user_id: userId,
+                route_key: routeKey,
+                idempotency_key: idempotencyKey,
+              },
+            },
+          });
+        if (existing && existing.status === 'completed') {
+          // Replay of a finished push → return the cached {scheduled,skipped}
+          // WITHOUT re-running the mutation (no second push_seq).
+          return existing.response_json as unknown as T;
+        }
+        // in_progress (or a row just deleted by a failed op) → concurrent
+        // same-key retry. Surface 409; do NOT run the mutation again.
+        throw new ConflictException({
+          error: 'PUSH_IN_PROGRESS',
+          message: 'A push with this Idempotency-Key is already in progress — retry in a moment',
+        });
+      }
+      throw err;
+    }
+
+    // Step 2: run the protected mutation under the claim.
+    let result: T;
+    try {
+      result = await op();
+    } catch (err) {
+      // Release the claim (best-effort) so the client can retry the same key.
+      try {
+        await this.prisma.workoutBuilderIdempotencyKey.delete({
+          where: { id: claimId },
+        });
+      } catch {
+        /* swallow — the original error wins */
+      }
+      throw err;
+    }
+
+    // Step 3: cache the response + flip to 'completed'.
+    await this.prisma.workoutBuilderIdempotencyKey.update({
+      where: { id: claimId },
+      data: {
+        status: 'completed',
+        response_json: result as unknown as Prisma.InputJsonValue,
+        status_code: 200,
+      },
+    });
+
+    return result;
+  }
 
   private async requireContent(packageId: string, contentId: string) {
     const content = await this.prisma.coachPackageContent.findFirst({
