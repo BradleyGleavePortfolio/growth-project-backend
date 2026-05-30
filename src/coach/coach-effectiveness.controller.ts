@@ -1,8 +1,8 @@
 import { Controller, Get, Request, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
-import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { CoachEffectivenessService } from './coach-effectiveness.service';
 
 // EFF-2 — coach-facing self-service effectiveness surface.
@@ -13,8 +13,10 @@ import { CoachEffectivenessService } from './coach-effectiveness.service';
 // can read THEIR OWN score without owner access.
 //
 // Scoping / no-leak guarantees:
-//   * Mounted under /coach and gated by JwtAuthGuard + CoachGuard (coach OR
-//     owner — owner bypasses, identical to the other /coach surfaces).
+//   * Mounted under /coach and gated by @Roles('coach') (coach OR owner)
+//     plus CoachGuard. JwtAuthGuard + RolesGuard are global APP_GUARDs, so
+//     @Roles('coach') is the role gate and CoachGuard narrows identically to
+//     the other /coach surfaces (owner bypasses).
 //   * The handler always resolves the score for `req.user.id` — there is NO
 //     path parameter or query that lets a caller name another coach, so a
 //     coach can never read a peer's score (no cross-coach leak).
@@ -22,7 +24,8 @@ import { CoachEffectivenessService } from './coach-effectiveness.service';
 //     no algorithm is duplicated here.
 @ApiTags('coach')
 @Controller('coach')
-@UseGuards(JwtAuthGuard, CoachGuard)
+@UseGuards(CoachGuard)
+@Roles('coach')
 export class CoachEffectivenessController {
   constructor(
     private readonly effectiveness: CoachEffectivenessService,
