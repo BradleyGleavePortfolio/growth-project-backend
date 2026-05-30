@@ -3,10 +3,26 @@
 // Mounts the 5 P0 endpoints (overview, at-risk, win-streaks, inbox,
 // action-queue) plus the dismiss action under /coach/command-center/.
 //
-// All routes share the same guard stack — JwtAuthGuard authenticates the
-// caller, CoachGuard restricts to coach + owner roles (sub-coaches and
-// students are rejected). Scope is always `req.user.id`; nothing here
-// trusts a client-supplied coach_id.
+// Guard stack — JwtAuthGuard authenticates the caller and CoachGuard
+// restricts to coach + owner roles (students are rejected).
+//
+// SC-1: NoActiveSubCoachGuard was previously applied at CLASS level, which
+// blocked active sub-coaches from the ENTIRE Command Center — overview,
+// at-risk, win-streaks, inbox, and action-queue — even though every route
+// on THIS controller is an operational (non-financial) surface. The guard
+// is meant to fence off financial/owner-only surfaces (earnings, payouts,
+// revenue) only. None of those live here: the revenue dashboard is the
+// separate LtvMetricsController (GET /coach/command-center/ltv-metrics),
+// which is owned by the LTV unit and is where the financial guard belongs.
+//
+// Therefore the class-level NoActiveSubCoachGuard is removed here so a sub-
+// coach regains the operational surfaces. There are no financial route
+// handlers on this controller to re-apply it to; if one is ever added,
+// decorate that single handler with @UseGuards(NoActiveSubCoachGuard).
+//
+// Roster scoping for sub-coaches (head sees full roster, sub sees only
+// assigned clients) is enforced in CommandCenterService via
+// SubCoachScopeService (SC-2), not by this guard.
 
 import {
   Body,
@@ -26,7 +42,6 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { CoachGuard } from '../../auth/coach.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { NoActiveSubCoachGuard } from '../../common/guards/no-active-sub-coach.guard';
 import type { AuthedRequest } from '../../auth/auth-request';
 import {
   CommandCenterService,
@@ -59,7 +74,7 @@ function parseBool(s: string | undefined): boolean {
 
 @ApiTags('coach')
 @Controller('coach/command-center')
-@UseGuards(JwtAuthGuard, CoachGuard, NoActiveSubCoachGuard)
+@UseGuards(JwtAuthGuard, CoachGuard)
 export class CommandCenterController {
   constructor(
     private readonly commandCenter: CommandCenterService,
