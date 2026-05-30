@@ -45,19 +45,26 @@ function makePurchase(overrides: Partial<{
 // ─── Mock PrismaService ───────────────────────────────────────────────────────
 
 // Persistence is a single atomic `INSERT ... ON CONFLICT DO UPDATE` executed
-// through Prisma's `$queryRaw`. The two columns use DIFFERENT DB-side
-// semantics, which the mock faithfully simulates:
+// through Prisma's `$queryRaw`. After the P2 fix ONLY the peak is updated on
+// conflict; the streak is NOT persisted on the read path and is returned live
+// from the in-memory recompute. The mock faithfully simulates the DB-side
+// semantics:
 //   - all_time_peak_rpcm  → GREATEST(persisted, incoming) — monotonic
 //     high-water mark; the P1 race fix relies on this never regressing.
-//   - zero_churn_streak    → EXCLUDED (incoming written as-is) — the current
-//     recomputed value, which MUST be able to RESET/drop on churn (P2 fix).
+//   - zero_churn_streak    → seeded ONLY on the initial INSERT; LEFT UNTOUCHED
+//     on conflict (DO UPDATE does not set it). The returned streak comes from
+//     the service's live recompute, so an out-of-order persist can never
+//     corrupt it (P2 fix).
 // The mock:
 //   - reads the "persisted" row from the same source the service reads
 //     (coachLtvPeak.findUnique's resolved value) to model the pre-write state,
-//   - applies GREATEST for the peak and last-write-wins for the streak,
+//   - applies GREATEST for the peak; on INSERT (no baseline) it seeds the
+//     streak, and on conflict it KEEPS the existing stored streak untouched,
 //   - records each call's incoming values for assertions, and
-//   - returns the post-write values (the RETURNING clause).
+//   - returns the post-write peak (the RETURNING clause).
 // `__rawCalls` captures the incoming (peak, streak) of every atomic upsert.
+// Note: incoming.streak is the seed value handed to the INSERT branch; it is
+// NOT what the service returns (the service returns the live recompute).
 const mockPrisma: any = {
   clientPurchase: {
     findMany: jest.fn(),
@@ -107,6 +114,8 @@ describe('LtvMetricsService', () => {
             mockPrisma.coachLtvPeak.findUnique.mock.results.length - 1
           ].value
         : null;
+      const hasBaseline =
+        mockPrisma.__store !== null || existing !== null;
       const baseline = mockPrisma.__store ?? {
         peak: existing ? Number(existing.all_time_peak_rpcm) : 0,
         streak: existing ? Number(existing.zero_churn_streak) : 0,
@@ -114,15 +123,16 @@ describe('LtvMetricsService', () => {
       const after = {
         // Peak: monotonic high-water mark (DB-side GREATEST).
         peak: Math.max(baseline.peak, incoming.peak),
-        // Streak: current recomputed value written as-is (DB-side EXCLUDED).
-        // Reset-capable — a lower incoming streak overwrites the stored value.
-        streak: incoming.streak,
+        // Streak: seeded on the INITIAL INSERT only; on conflict the DO UPDATE
+        // does NOT touch it, so the previously stored value is preserved
+        // unchanged. The service returns the live recompute, not this value.
+        streak: hasBaseline ? baseline.streak : incoming.streak,
       };
       mockPrisma.__store = after;
+      // The real query RETURNs only the peak now (streak dropped from RETURNING).
       return [
         {
           all_time_peak_rpcm: after.peak,
-          zero_churn_streak: after.streak,
         },
       ];
     });
@@ -449,26 +459,16 @@ describe('LtvMetricsService', () => {
       expect(result.peak_rpcm_is_estimate).toBe(false);
     });
 
-    it('does NOT write when peak cannot advance AND the recomputed streak equals the stored streak', async () => {
-      // The streak is now a reset-capable current value, so a write is skipped
-      // only when the peak cannot advance AND the recomputed streak already
-      // equals what is stored. Seed the stored streak to exactly the value the
-      // recompute will produce for this roster so no write is needed.
-      mockPrisma.clientPurchase.findMany.mockResolvedValue([
-        makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active' }),
-      ]);
-      // First call (no persisted row) computes & persists the current streak.
-      const first = await service.getMetrics('coach-1');
-      const computedStreak = first.zero_churn_streak_months;
-
-      // Now seed a persisted row whose streak already equals the recompute and
-      // whose peak dominates the current RPCM — nothing to advance or change.
-      jest.clearAllMocks();
-      mockPrisma.__store = null;
+    it('does NOT write when the peak cannot advance (streak is no longer persisted)', async () => {
+      // P2 fix: the streak is no longer persisted on the read path, so the only
+      // reason to write is the monotonic peak advancing. When a persisted peak
+      // already dominates the current RPCM, NO atomic upsert is performed —
+      // regardless of the streak (which is always returned live from the
+      // recompute).
       mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
         coach_id: 'coach-1',
         all_time_peak_rpcm: 30000, // $300 > current $200 → peak won't advance
-        zero_churn_streak: computedStreak, // equals the recompute → no change
+        zero_churn_streak: 99, // stale stored streak — irrelevant to the response
       });
       mockPrisma.clientPurchase.findMany.mockResolvedValue([
         makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active' }),
@@ -476,8 +476,14 @@ describe('LtvMetricsService', () => {
       const result = await service.getMetrics('coach-1');
 
       expect(result.all_time_peak_rpcm_cents).toBe(30000);
-      expect(result.zero_churn_streak_months).toBe(computedStreak);
-      // Neither peak advanced nor streak changed → no atomic upsert performed.
+      // The returned streak is the LIVE recompute, NOT the stale stored 99.
+      const expectedStreak = (service as any).computeZeroChurnStreak(
+        [makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active' })],
+        new Date(),
+      );
+      expect(result.zero_churn_streak_months).toBe(expectedStreak);
+      expect(result.zero_churn_streak_months).not.toBe(99);
+      // Peak did not advance → no atomic upsert performed.
       expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
     });
 
@@ -573,11 +579,14 @@ describe('LtvMetricsService', () => {
       expect(lastCall.peak).toBe(25000);
     });
 
-    it('the persistence write uses an atomic upsert: GREATEST for the peak, EXCLUDED (as-is) for the streak', async () => {
+    it('the persistence write uses an atomic upsert: GREATEST for the peak, and the DO UPDATE does NOT set the streak from EXCLUDED (P2)', async () => {
       // Guard test: assert the service drives persistence through the raw
       // atomic upsert path (the concurrency-safe mechanism). The peak column
-      // must use GREATEST (monotonic); the streak column must write the
-      // incoming value as-is (EXCLUDED) so it can reset — NOT GREATEST.
+      // must use GREATEST (monotonic). The streak column must NOT be updated on
+      // conflict — the previous `zero_churn_streak = EXCLUDED."zero_churn_streak"`
+      // line is the stale-source race (P2) and must be gone. The column may
+      // still appear in the INSERT VALUES list (it is NOT NULL, seeded on first
+      // insert), but it must not be assigned in the DO UPDATE set.
       mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
         coach_id: 'coach-1',
         all_time_peak_rpcm: 5000,
@@ -590,31 +599,35 @@ describe('LtvMetricsService', () => {
       expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
       const sqlArg = mockPrisma.$queryRaw.mock.calls[0][0];
       const sqlText: string = (sqlArg?.strings ?? []).join(' ');
-      // Single ON CONFLICT upsert touching both columns.
+      // Single ON CONFLICT upsert.
       expect(sqlText).toMatch(/ON CONFLICT/i);
+      // Peak is monotonic via GREATEST and is the only column carried through
+      // RETURNING.
       expect(sqlText).toMatch(/all_time_peak_rpcm/);
-      expect(sqlText).toMatch(/zero_churn_streak/);
-      // Peak is monotonic via GREATEST.
       expect(sqlText).toMatch(/GREATEST/i);
-      // Streak is written as-is from EXCLUDED (reset-capable), and is NOT
-      // wrapped in a GREATEST(... zero_churn_streak ...) expression.
-      expect(sqlText).toMatch(/EXCLUDED/i);
+      // The streak column is still named (seeded on INSERT) but the DO UPDATE
+      // must NOT assign it from EXCLUDED — this is the core P2 assertion.
+      const doUpdate = sqlText.slice(sqlText.search(/DO UPDATE/i));
+      expect(doUpdate).not.toMatch(/zero_churn_streak/i);
+      expect(sqlText).not.toMatch(
+        /"?zero_churn_streak"?\s*=\s*EXCLUDED\."?zero_churn_streak"?/i,
+      );
+      // And the streak is never wrapped in GREATEST either.
       expect(sqlText).not.toMatch(/GREATEST\s*\([^)]*zero_churn_streak/i);
     });
   });
 
-  describe('LTV-3 P2: zero_churn_streak stores the CURRENT recomputed value (reset-capable)', () => {
-    it('RESETS the persisted/returned streak to the LOWER current value when churn happened (no GREATEST pin)', async () => {
-      // P2 regression: the prior fix used GREATEST for the streak, which
-      // permanently PINNED it to its old high — a legitimate reset (a client
-      // churned) could never persist. Here a high streak (8) was previously
-      // stored, but a recent churn means the CURRENT recomputed streak is 0.
-      // The persisted/returned streak must drop to the current value, not stay
-      // pinned at 8.
+  describe('LTV-3 P2: zero_churn_streak is returned LIVE (not persisted) — stale-source race eliminated', () => {
+    it('RESETS the RETURNED streak to the current value when churn happened (returned live, never read from persistence)', async () => {
+      // P2 regression: the prior implementation persisted the streak and could
+      // be corrupted by a stale read. Now the streak is RECOMPUTED and returned
+      // live every request, so a stored high streak (8) is irrelevant: a recent
+      // churn means the current recomputed streak is 0, and that is what the
+      // response returns — regardless of what the stored row says.
       mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
         coach_id: 'coach-1',
         all_time_peak_rpcm: 0,
-        zero_churn_streak: 8, // historically high streak
+        zero_churn_streak: 8, // stale historically-high stored streak — ignored
       });
 
       // Roster: a client created long ago that CANCELED last month — so the
@@ -634,22 +647,19 @@ describe('LtvMetricsService', () => {
       ]);
       const result = await service.getMetrics('coach-1');
 
-      // The current recomputed streak is 0 (churn last month) and must be
-      // written/returned as-is — GREATEST would have pinned it at 8.
+      // The current recomputed streak is 0 (churn last month) and is returned
+      // live — NOT the stale stored 8.
       expect(result.zero_churn_streak_months).toBe(0);
-      // The atomic upsert ran (streak changed from 8 → 0) and handed the DB the
-      // current value, NOT a max against the stored 8.
-      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
-      expect(mockPrisma.__rawCalls[0].streak).toBe(0);
-      // The simulated store reflects the reset (last-write-wins, not GREATEST).
-      expect(mockPrisma.__store?.streak).toBe(0);
+      // Peak cannot advance (current RPCM 0, stored 0) and the streak is no
+      // longer persisted, so no atomic upsert is performed at all.
+      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
     });
 
-    it('persists the current streak when the recompute exceeds the stored value', async () => {
+    it('returns a high current streak live when there are no recent cancellations (no persisted dependency)', async () => {
       mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
         coach_id: 'coach-1',
         all_time_peak_rpcm: 0,
-        zero_churn_streak: 1,
+        zero_churn_streak: 1, // stored low value — must not cap the live result
       });
       // Old client, no cancellations → computed streak grows large.
       const longAgo = new Date('2020-01-01');
@@ -657,11 +667,76 @@ describe('LtvMetricsService', () => {
         makePurchase({ client_user_id: 'c1', status: 'active', created_at: longAgo, canceled_at: null }),
       ]);
       const result = await service.getMetrics('coach-1');
+      // Returned streak is the live recompute, independent of the stored 1.
       expect(result.zero_churn_streak_months).toBeGreaterThan(1);
-      // Atomic upsert called to persist the current streak; the incoming streak
-      // equals the recomputed value (written as-is via EXCLUDED).
-      expect(mockPrisma.$queryRaw).toHaveBeenCalled();
-      expect(mockPrisma.__rawCalls[0].streak).toBe(result.zero_churn_streak_months);
+      const expected = (service as any).computeZeroChurnStreak(
+        [makePurchase({ client_user_id: 'c1', status: 'active', created_at: longAgo, canceled_at: null })],
+        new Date(),
+      );
+      expect(result.zero_churn_streak_months).toBe(expected);
+    });
+
+    it('the stale-source out-of-order persist can no longer corrupt the RETURNED streak', async () => {
+      // This is the exact P2 scenario. Request A reads purchases pre-cancellation
+      // (streak 8). A cancellation commits. Request B reads the new state
+      // (streak 0). Request A's persist lands LATER (out of order). With the old
+      // code, A's stale 8 overwrote the stored 0 and corrupted later reads. Now
+      // the streak is NOT persisted on the read path, so the value each request
+      // RETURNS is always its own current-request recompute and an out-of-order
+      // persist cannot change it.
+      const now = new Date();
+      const longAgo = new Date('2020-01-01');
+      const lastMonthMid = new Date(now.getFullYear(), now.getMonth() - 1, 15);
+
+      // Pre-cancellation roster (what request A reads): active client, no churn
+      // → high streak.
+      const rosterPreCancel = [
+        makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active', created_at: longAgo, canceled_at: null }),
+      ];
+      // Post-cancellation roster (what request B reads): client churned last
+      // month → streak 0.
+      const rosterPostCancel = [
+        makePurchase({
+          client_user_id: 'c1', amount_cents: 20000,
+          billing_type: 'recurring', status: 'canceled', entitlement_active: false,
+          created_at: longAgo, canceled_at: lastMonthMid,
+        }),
+      ];
+
+      // Shared persisted row; peak already dominates so neither request advances
+      // it (isolating the streak behaviour).
+      mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
+        coach_id: 'coach-1',
+        all_time_peak_rpcm: 50000, // dominates both requests' RPCM
+        zero_churn_streak: 3, // arbitrary stored value — must never leak out
+      });
+
+      // Request A (reads pre-cancellation snapshot) returns the high streak.
+      mockPrisma.clientPurchase.findMany.mockResolvedValue(rosterPreCancel);
+      const resultA = await service.getMetrics('coach-1');
+      const streakA = (service as any).computeZeroChurnStreak(rosterPreCancel, new Date());
+      expect(resultA.zero_churn_streak_months).toBe(streakA);
+      expect(streakA).toBeGreaterThan(0);
+
+      // Cancellation commits; request B reads the post-cancellation snapshot and
+      // returns 0 — its own current recompute.
+      mockPrisma.clientPurchase.findMany.mockResolvedValue(rosterPostCancel);
+      const resultB = await service.getMetrics('coach-1');
+      expect(resultB.zero_churn_streak_months).toBe(0);
+
+      // Now simulate request A's persist landing LATE (out of order). Even if A
+      // were to write, it can only touch the peak (GREATEST) — the streak is
+      // never written on the read path — so a re-read still returns the current
+      // recompute, NOT a corrupted stale value.
+      mockPrisma.clientPurchase.findMany.mockResolvedValue(rosterPostCancel);
+      const resultBAfterLatePersist = await service.getMetrics('coach-1');
+      expect(resultBAfterLatePersist.zero_churn_streak_months).toBe(0);
+      // The stored streak (3) never leaked into any returned value.
+      expect(resultA.zero_churn_streak_months).not.toBe(3);
+      expect(resultB.zero_churn_streak_months).not.toBe(3);
+      // No write ever touched zero_churn_streak: every $queryRaw (if any) is a
+      // peak-only upsert. Here peak never advances, so none were issued.
+      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
     });
 
     it('a stale-low concurrent write does NOT regress the PEAK while the streak still tracks the current value', async () => {
@@ -706,10 +781,13 @@ describe('LtvMetricsService', () => {
       // Sanity: current RPCM is $250 (single active client), below the $300 peak.
       expect(resultStaleLow.revenue_per_client_month_cents).toBe(25000);
 
-      // Peak stays monotonic at $300; streak reflects the current reset to 0.
+      // Peak stays monotonic at $300. The RETURNED streak is the live recompute
+      // (reset to 0 on churn) — it is never read from persistence.
       expect(resultStaleLow.all_time_peak_rpcm_cents).toBe(30000);
       expect(mockPrisma.__store?.peak).toBe(30000);
       expect(resultStaleLow.zero_churn_streak_months).toBe(0);
+      // The persisted streak was only ever seeded (request A's insert) and is
+      // never touched again on conflict — it does not feed the returned value.
       expect(mockPrisma.__store?.streak).toBe(0);
     });
   });
