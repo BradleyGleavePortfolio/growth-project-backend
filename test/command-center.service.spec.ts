@@ -5,6 +5,7 @@
 // every CI without provisioning Postgres.
 
 import { CommandCenterService } from '../src/coach/command-center/command-center.service';
+import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 
 const PINNED_NOW = new Date('2026-06-01T12:00:00Z').getTime();
 
@@ -22,6 +23,7 @@ interface FakeRows {
   predictions: any[];
   alerts: any[];
   messages: any[];
+  assignments: any[];
 }
 
 function buildPrisma(initial: Partial<FakeRows> = {}): any {
@@ -32,6 +34,7 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
     predictions: initial.predictions ?? [],
     alerts: initial.alerts ?? [],
     messages: initial.messages ?? [],
+    assignments: initial.assignments ?? [],
   };
 
   return {
@@ -40,8 +43,23 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
       findMany: jest.fn(async ({ where, select: _ }: any) => {
         return rows.users.filter((u) => {
           if (where.coach_id && u.coach_id !== where.coach_id) return false;
+          if (where.id?.in && !where.id.in.includes(u.id)) return false;
           if (where.role && u.role !== where.role) return false;
           if (where.deleted_at === null && u.deleted_at !== null) return false;
+          return true;
+        });
+      }),
+      findUnique: jest.fn(async ({ where }: any) => {
+        return rows.users.find((u) => u.id === where.id) ?? null;
+      }),
+    },
+    subCoachAssignment: {
+      findMany: jest.fn(async ({ where }: any) => {
+        return rows.assignments.filter((a) => {
+          if (where.sub_coach_id && a.sub_coach_id !== where.sub_coach_id)
+            return false;
+          if (where.unassigned_at === null && a.unassigned_at != null)
+            return false;
           return true;
         });
       }),
@@ -108,11 +126,24 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
           _count: { _all: arr.length },
         }));
       }),
+      count: jest.fn(async ({ where }: any) => {
+        return rows.checkIns.filter((c) => {
+          if (where.user_id?.in && !where.user_id.in.includes(c.user_id)) return false;
+          if (where.logged_at?.gte && c.logged_at < where.logged_at.gte) return false;
+          if (
+            where.reviewed_by_coach !== undefined &&
+            (c.reviewed_by_coach ?? false) !== where.reviewed_by_coach
+          )
+            return false;
+          return true;
+        }).length;
+      }),
     },
     coachAlert: {
       count: jest.fn(async ({ where }: any) => {
         return rows.alerts.filter((a) => {
           if (where.coach_id && a.coach_id !== where.coach_id) return false;
+          if (where.client_id?.in && !where.client_id.in.includes(a.client_id)) return false;
           if (where.acknowledged_at === null && a.acknowledged_at !== null) return false;
           return true;
         }).length;
@@ -120,6 +151,7 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
       findMany: jest.fn(async ({ where, take }: any) => {
         const filtered = rows.alerts.filter((a) => {
           if (where.coach_id && a.coach_id !== where.coach_id) return false;
+          if (where.client_id?.in && !where.client_id.in.includes(a.client_id)) return false;
           if (where.acknowledged_at === null && a.acknowledged_at !== null) return false;
           if (where.created_at?.lt && a.created_at >= where.created_at.lt) return false;
           return true;
@@ -166,14 +198,25 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
           return true;
         }).length;
       }),
-      findMany: jest.fn(async ({ where, take }: any) => {
+      findMany: jest.fn(async ({ where, take, distinct }: any) => {
         const filtered = rows.messages.filter((m) => {
           if (where.coach_id && m.coach_id !== where.coach_id) return false;
           if (where.client_id?.in && !where.client_id.in.includes(m.client_id)) return false;
           return true;
         });
         filtered.sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
-        return take ? filtered.slice(0, take) : filtered;
+        let out = filtered;
+        // Emulate Prisma `distinct: ['client_id']` over an ordered result:
+        // keep the FIRST row per client_id (i.e. newest, given the sort).
+        if (distinct && distinct.includes('client_id')) {
+          const seen = new Set<string>();
+          out = filtered.filter((m) => {
+            if (seen.has(m.client_id)) return false;
+            seen.add(m.client_id);
+            return true;
+          });
+        }
+        return take ? out.slice(0, take) : out;
       }),
       groupBy: jest.fn(async ({ where }: any) => {
         const filtered = rows.messages.filter((m) => {
@@ -212,6 +255,13 @@ function buildAlertsService(): any {
   };
 }
 
+// SC-2: a real SubCoachScopeService instance backed by the same in-memory
+// Prisma fake. Head coach (coach_id IS NULL) -> own roster; sub-coach
+// (role='coach' AND coach_id set) -> assigned clients via SubCoachAssignment.
+function buildSubCoachScope(prisma: any): SubCoachScopeService {
+  return new SubCoachScopeService(prisma);
+}
+
 describe('CommandCenterService.getOverview', () => {
   it('returns all zeros for a coach with no clients', async () => {
     const prisma = buildPrisma({ users: [] });
@@ -243,9 +293,9 @@ describe('CommandCenterService.getOverview', () => {
         { user_id: 'u3', logged_at: recent },
       ],
       alerts: [
-        { id: 'a1', coach_id: 'c1', acknowledged_at: null, created_at: now },
-        { id: 'a2', coach_id: 'c1', acknowledged_at: null, created_at: now },
-        { id: 'a3', coach_id: 'c1', acknowledged_at: new Date(PINNED_NOW - 86_400_000), created_at: now },
+        { id: 'a1', coach_id: 'c1', client_id: 'u1', acknowledged_at: null, created_at: now },
+        { id: 'a2', coach_id: 'c1', client_id: 'u2', acknowledged_at: null, created_at: now },
+        { id: 'a3', coach_id: 'c1', client_id: 'u3', acknowledged_at: new Date(PINNED_NOW - 86_400_000), created_at: now },
       ],
       predictions: [
         { user_id: 'u1', risk_score: 0.7, computed_at: now },
@@ -260,8 +310,12 @@ describe('CommandCenterService.getOverview', () => {
     const svc = new CommandCenterService(prisma, buildAdminPtm(), buildAlertsService());
     const out = await svc.getOverview('c1');
     expect(out.roster_size).toBe(3);
-    expect(out.active_today).toBe(2); // u1, u2 had signals
+    // CC-2: active_today now counts real CheckIns in the last 24h (u1, u3),
+    // NOT ClientSignal rows. u2 had a signal but no check-in, so is excluded.
+    expect(out.active_today).toBe(2);
     expect(out.open_alerts).toBe(2);
+    // CC-1: pending_actions is a DISTINCT source (unreviewed check-ins).
+    // Both check-ins above have reviewed_by_coach defaulting to false, so 2.
     expect(out.pending_actions).toBe(2);
     expect(out.at_risk_count).toBe(2); // u1 (0.7) and u3 (0.4) > 0.3
     expect(out.win_streak_count).toBe(1); // u2 checkin_streak >= 3
@@ -276,7 +330,15 @@ describe('CommandCenterService.getAtRisk', () => {
       { user_id: 'u2', name: 'Bob', bucket: 'amber', last_signal_at: '2026-05-30T12:00:00Z', email: 'b@b', role: 'student', risk_score: null, success_score: null, computed_at: new Date(), factors_count: 2, outcome_label: null },
       { user_id: 'u3', name: 'Carol', bucket: 'green', last_signal_at: '2026-06-01T11:00:00Z', email: 'c@c', role: 'student', risk_score: null, success_score: null, computed_at: new Date(), factors_count: 0, outcome_label: null },
     ];
-    const prisma = buildPrisma();
+    // SC-2: getAtRisk now intersects the board with the SubCoachScope-resolved
+    // roster, so the users must exist on coach c1's roster.
+    const prisma = buildPrisma({
+      users: [
+        { id: 'u1', name: 'Alice', coach_id: 'c1', role: 'student', deleted_at: null },
+        { id: 'u2', name: 'Bob', coach_id: 'c1', role: 'student', deleted_at: null },
+        { id: 'u3', name: 'Carol', coach_id: 'c1', role: 'student', deleted_at: null },
+      ],
+    });
     const svc = new CommandCenterService(prisma, buildAdminPtm(board), buildAlertsService());
     const out = await svc.getAtRisk('c1', {});
     expect(out.items.length).toBe(2);
@@ -289,10 +351,16 @@ describe('CommandCenterService.getAtRisk', () => {
     const board = [
       { user_id: 'u1', name: 'Alice', bucket: 'amber', last_signal_at: null, email: 'a@a', role: 'student', risk_score: null, success_score: null, computed_at: new Date(), factors_count: 0, outcome_label: null },
     ];
-    const prisma = buildPrisma();
+    const prisma = buildPrisma({
+      users: [
+        { id: 'u1', name: 'Alice', coach_id: 'c1', role: 'student', deleted_at: null },
+      ],
+    });
     const svc = new CommandCenterService(prisma, buildAdminPtm(board), buildAlertsService());
     const out = await svc.getAtRisk('c1', {});
     expect(out.items[0].days_since_checkin).toBe(0);
+    // CC-3: no PtmPrediction.factors recorded for this user -> falls back to
+    // the activity-based label (no recent signal).
     expect(out.items[0].top_factor).toBe('No recent activity');
   });
 });

@@ -89,43 +89,43 @@ describe('CommandCenterController — NoActiveSubCoachGuard wiring', () => {
   });
 });
 
-describe('CommandCenterController — guard stack metadata', () => {
-  it('CommandCenterController has the full guard stack in the required order', () => {
-    // The full stack must be [JwtAuthGuard, CoachGuard, NoActiveSubCoachGuard]
-    // in that order — auth before role check before sub-coach gating. Order
-    // matters: NoActiveSubCoachGuard reads req.user, which is only populated
-    // after JwtAuthGuard runs, and role checking before sub-coach gating
-    // means non-coaches get a clean 403 from CoachGuard rather than tripping
-    // an unrelated check.
+describe('CommandCenterController — guard stack metadata (SC-1)', () => {
+  it('class-level guard stack is [JwtAuthGuard, CoachGuard] — NoActiveSubCoachGuard removed', () => {
+    // SC-1: NoActiveSubCoachGuard was previously applied at CLASS level,
+    // which blocked active sub-coaches from EVERY Command Center surface
+    // (overview/at-risk/win-streaks/inbox/action-queue), all of which are
+    // operational (non-financial). The guard belongs only on financial/
+    // owner-only surfaces (the separate LtvMetricsController). After the
+    // fix, the class stack must be exactly [JwtAuthGuard, CoachGuard] and
+    // must NOT contain NoActiveSubCoachGuard, so a sub-coach regains the
+    // operational surfaces.
     const guards: Function[] =
       Reflect.getMetadata('__guards__', CommandCenterController) ?? [];
-    expect(guards).toEqual([JwtAuthGuard, CoachGuard, NoActiveSubCoachGuard]);
+    expect(guards).toEqual([JwtAuthGuard, CoachGuard]);
+    expect(guards).not.toContain(NoActiveSubCoachGuard);
   });
 
-  it('routing the guard against the controller blocks an active sub-coach calling getOverview', async () => {
-    // Verifies the guard + controller wiring together: an active sub-coach
-    // hitting any CommandCenter route is rejected before the service runs.
-    const prisma = buildPrisma([
-      { sub_coach_id: 'coach-1', archived_at: null },
-    ]);
-    const guard = new NoActiveSubCoachGuard(prisma);
-
-    const commandCenterSvc = {
-      getOverview: jest.fn(),
-    } as any;
+  it('SC-1: an active sub-coach reaches an operational route (no class-level block)', async () => {
+    // With the class-level guard removed, an active sub-coach hitting an
+    // operational route is NOT short-circuited: the handler runs and
+    // delegates to the service (which applies roster scoping via SC-2).
+    const overview = {
+      roster_size: 3,
+      active_today: 1,
+      check_in_rate_7day: 0.1,
+      open_alerts: 0,
+      at_risk_count: 0,
+      win_streak_count: 0,
+      unread_messages: 0,
+      pending_actions: 0,
+    };
+    const commandCenterSvc = { getOverview: jest.fn(async () => overview) } as any;
     const churnSvc = {} as any;
     const controller = new CommandCenterController(commandCenterSvc, churnSvc);
 
-    // Simulate the request lifecycle: guard runs first; only if it
-    // resolves to true does Nest invoke the handler. Here the guard
-    // throws, so the handler should never be touched.
-    const ctx = makeContext({ id: 'coach-1', role: 'coach' });
-    await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
-    expect(commandCenterSvc.getOverview).not.toHaveBeenCalled();
-    // Sanity: controller construction itself is fine — the guard, not the
-    // handler, is what enforces the 403.
-    expect(controller).toBeInstanceOf(CommandCenterController);
+    const req: any = { user: { id: 'sub-1', role: 'coach' } };
+    const out = await controller.getOverview(req);
+    expect(commandCenterSvc.getOverview).toHaveBeenCalledWith('sub-1');
+    expect(out).toBe(overview);
   });
 });
