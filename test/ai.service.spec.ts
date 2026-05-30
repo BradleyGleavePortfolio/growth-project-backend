@@ -178,7 +178,7 @@ describe('AiService.chat', () => {
       choices: [{ message: { content: 'ok' } }],
     });
     const { svc } = makeService();
-    const big = Array.from({ length: 25 }, (_, i) => ({ role: 'user', content: `msg ${i}` }));
+    const big = Array.from({ length: 25 }, (_, i) => ({ role: 'user' as const, content: `msg ${i}` }));
     await svc.chat('u1', 'final', big);
     const args = mockCreate.mock.calls[0][0];
     // 1 system + 10 history + 1 final = 12

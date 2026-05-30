@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma.service';
 import { ClientAIContextService } from './client-ai-context.service';
 import { AIGuardrailsService } from './ai-guardrails.service';
 import { ClientAIContext } from './client-ai-context.types';
+import { ChatRole } from './ai.dto';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AnthropicAdapter } from './adapters/anthropic.adapter';
@@ -274,7 +275,13 @@ Now answer the user's next message using the rules above. Keep the answer under 
   async chat(
     userId: string,
     userMessage: string,
-    conversationHistory: Array<{ role: string; content: string }>,
+    // A9 — the wire role is validated to the 'user'|'assistant' union by
+    // ChatRequestDto at the controller (the global ValidationPipe rejects a
+    // forged 'system' role before it reaches here). We keep the param typed
+    // to that strict union — and the two provider branches below still defend
+    // in depth by narrowing any non-'assistant' role to 'user' so a 'system'
+    // entry can never be folded into the prompt WITH a system role.
+    conversationHistory: Array<{ role: ChatRole; content: string }>,
   ): Promise<ChatResult> {
     const ctx = await this.contextSvc.build(userId);
     let modelUsed: 'perplexity' | 'anthropic' | 'fallback' = 'perplexity';
@@ -333,9 +340,10 @@ Now answer the user's next message using the rules above. Keep the answer under 
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         { role: 'system', content: systemPrompt },
         ...conversationHistory.slice(-10).map((m) => {
-          // The wire role on incoming history is a free string; narrow to the
-          // assistant/user pair that Perplexity accepts. Anything else falls
-          // back to 'user' so an unknown role can't crash the request.
+          // A9 defense-in-depth: the role is already validated to
+          // 'user'|'assistant' by ChatRequestDto, but we still narrow here so
+          // any non-'assistant' value collapses to 'user' — a 'system' role
+          // can never reach Perplexity even if this method is called directly.
           const role: 'assistant' | 'user' = m.role === 'assistant' ? 'assistant' : 'user';
           return { role, content: m.content };
         }),
