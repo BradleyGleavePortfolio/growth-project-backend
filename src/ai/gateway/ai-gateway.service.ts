@@ -218,10 +218,20 @@ export class AiGatewayService {
 
     // 1. Redact free-text inputs before they touch any provider client.
     const redacted = this.redaction.redact(req.userMessage ?? '');
-    const redactedHistory = (req.conversationHistory ?? []).map((t) => ({
-      role: t.role,
-      content: this.redaction.redact(t.content).text,
-    }));
+    // A3 — role whitelist. Client-supplied conversation history can carry a
+    // forged 'system' (or any other) role; passing it through verbatim is a
+    // prompt-injection vector — a client could smuggle privileged
+    // instructions to the provider. We narrow every history turn to the
+    // 'user'/'assistant' pair: anything that is not 'assistant' is demoted
+    // to 'user' so its CONTENT is preserved (no silent drop) but it can
+    // never reach a provider with a privileged role. The trusted system
+    // prompt is supplied separately by the gateway (req.systemPrompt).
+    const redactedHistory: AiChatTurn[] = (req.conversationHistory ?? []).map(
+      (t) => ({
+        role: t.role === 'assistant' ? 'assistant' : 'user',
+        content: this.redaction.redact(t.content).text,
+      }),
+    );
 
     // 2. Build provider request. The system prompt is provided by the
     //    caller (already permission-scoped) and is NOT redacted — the
