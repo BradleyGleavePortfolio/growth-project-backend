@@ -4729,10 +4729,20 @@ model ScheduledDrop {
   locked_at           DateTime?
   next_retry_at       DateTime?
   alert_dispatched_at DateTime?
+  // PR-17 B1 — re-send sequence. Original fan-out + first-delivery pushes
+  // use the default 0; a coach "re-send updated version" of an already-FIRED
+  // drop (decision #5) inserts a NEW row at push_seq = prior max + 1 so the
+  // immutable fired row is never mutated. Folded into the unique key below so
+  // (client_purchase_id, content_id) can host multiple deliveries. The cron's
+  // resolver-key bypass keys re-send (push_seq > 0) drops on scheduledDropId
+  // only, so they materialise a fresh delivery instead of collapsing to the
+  // cached marker/ledger result. See migration
+  // 20261209000000_pr17_scheduled_drop_push_seq.
+  push_seq           Int            @default(0)
   created_at         DateTime       @default(now())
   updated_at         DateTime       @updatedAt
 
-  @@unique([client_purchase_id, content_id])
+  @@unique([client_purchase_id, content_id, push_seq])
   @@index([status, fire_at])
   @@index([client_purchase_id, status])
   @@index([status, next_retry_at, fire_at])
