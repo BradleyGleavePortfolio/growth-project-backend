@@ -911,6 +911,169 @@ describe('DripDispatcherCron', () => {
     expect(notificationStore.length).toBe(0);
   });
 
+  // PR-17 B1 — push_seq re-send: resolver-key bypass + notify suppression.
+  //
+  // Decision #5: an already-FIRED drop is IMMUTABLE; a coach "re-send
+  // updated version" creates a FRESH ScheduledDrop row sharing the same
+  // (client_purchase_id, content_id) pair but with push_seq > 0. Because
+  // the resolver idempotency keys ride that STABLE pair, the cron must
+  // pass ONLY the per-drop scheduledDropId (omitting the pair) for a
+  // push_seq > 0 drop so the resolver produces a genuinely fresh delivery
+  // instead of collapsing onto the cached original.
+  it('push_seq === 0 (original) drop is materialised WITH the stable (clientPurchaseId, contentId) pair', async () => {
+    const state: MockPrismaState = {
+      drops: [makeDrop({ push_seq: 0 })],
+      purchases: [makePurchase()],
+    };
+    const prisma = makeMockPrisma(state);
+    const materialise = jest
+      .fn()
+      .mockResolvedValue({ materialisedRef: 'mp-original' });
+    const cron = new DripDispatcherCron(
+      prisma as any,
+      makeRegistry(materialise),
+      makeNotifications(),
+    );
+
+    const stats = await cron.runOnce(NOW);
+
+    expect(stats.delivered).toBe(1);
+    expect(materialise).toHaveBeenCalledTimes(1);
+    const input = materialise.mock.calls[0][1];
+    // Original drop: pair preserved so the resolver's PR-9 idempotency
+    // ledger collapses any inline/cron race onto a single delivery.
+    expect(input.clientPurchaseId).toBe('purchase-1');
+    expect(input.contentId).toBe('content-1');
+    expect(input.scheduledDropId).toBe('drop-1');
+  });
+
+  it('push_seq > 0 (re-send) drop is materialised WITHOUT the pair — only scheduledDropId — so it produces a FRESH delivery', async () => {
+    const state: MockPrismaState = {
+      drops: [
+        makeDrop({
+          id: 'drop-resend',
+          push_seq: 1,
+        }),
+      ],
+      purchases: [makePurchase()],
+    };
+    const prisma = makeMockPrisma(state);
+    const materialise = jest
+      .fn()
+      .mockResolvedValue({ materialisedRef: 'mp-resend-fresh' });
+    const cron = new DripDispatcherCron(
+      prisma as any,
+      makeRegistry(materialise),
+      makeNotifications(),
+    );
+
+    const stats = await cron.runOnce(NOW);
+
+    expect(stats.delivered).toBe(1);
+    expect(materialise).toHaveBeenCalledTimes(1);
+    const input = materialise.mock.calls[0][1];
+    // Re-send: pair deliberately OMITTED (null) so the resolver does NOT
+    // short-circuit to the cached original — the buyer gets the new
+    // version. The per-drop scheduledDropId is still passed so the
+    // resolver's per-drop fallback key keeps the re-send itself idempotent.
+    expect(input.clientPurchaseId).toBeNull();
+    expect(input.contentId).toBeNull();
+    expect(input.scheduledDropId).toBe('drop-resend');
+    expect(state.drops[0].materialised_ref).toBe('mp-resend-fresh');
+    expect(state.drops[0].status).toBe('delivered');
+  });
+
+  it('notify suppression: a drop pre-stamped with alert_dispatched_at is delivered SILENTLY (no push / in-app send)', async () => {
+    // B2 pre-stamps alert_dispatched_at at SEED time when the coach
+    // toggles "notify" OFF. The cron must still materialise the content
+    // but the dispatchBuyerAlert guard short-circuits the DRIP_RELEASED
+    // push + in-app so the buyer is not announced.
+    const preStamped = new Date(NOW.getTime() - 10 * 60 * 1000);
+    const state: MockPrismaState = {
+      drops: [makeDrop({ alert_dispatched_at: preStamped })],
+      purchases: [makePurchase()],
+    };
+    const prisma = makeMockPrisma(state);
+    const materialise = jest
+      .fn()
+      .mockResolvedValue({ materialisedRef: 'mp-silent' });
+    const notifications = makeNotifications();
+    const cron = new DripDispatcherCron(
+      prisma as any,
+      makeRegistry(materialise),
+      notifications,
+    );
+
+    const stats = await cron.runOnce(NOW);
+
+    // Content delivered.
+    expect(stats.delivered).toBe(1);
+    expect(state.drops[0].status).toBe('delivered');
+    expect(state.drops[0].materialised_ref).toBe('mp-silent');
+    // But NO alert sent — guard short-circuited on the pre-set column.
+    expect(notifications.createNotification).not.toHaveBeenCalled();
+    expect(notifications.pushToUser).not.toHaveBeenCalled();
+    // Guard returns before the re-stamp, so the original timestamp is
+    // preserved untouched.
+    expect(state.drops[0].alert_dispatched_at).toEqual(preStamped);
+  });
+
+  it('notify suppression: a normal drop (alert_dispatched_at NULL) SENDS the alert and stamps the column', async () => {
+    const state: MockPrismaState = {
+      drops: [makeDrop({ alert_dispatched_at: null })],
+      purchases: [makePurchase()],
+    };
+    const prisma = makeMockPrisma(state);
+    const materialise = jest
+      .fn()
+      .mockResolvedValue({ materialisedRef: 'mp-loud' });
+    const notifications = makeNotifications();
+    const cron = new DripDispatcherCron(
+      prisma as any,
+      makeRegistry(materialise),
+      notifications,
+    );
+
+    const stats = await cron.runOnce(NOW);
+
+    expect(stats.delivered).toBe(1);
+    // Alert fully sent: push + 2 in-app/push channel rows.
+    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+    expect(notifications.createNotification).toHaveBeenCalledTimes(2);
+    // And the column is now stamped so a later tick never re-pushes.
+    expect(state.drops[0].alert_dispatched_at).toBeInstanceOf(Date);
+  });
+
+  it('seq-0 dedup intact: a forward-dated re-send drop is NOT picked up until due', async () => {
+    // The widened unique key includes push_seq; the dispatcher gating is
+    // unchanged, so a re-send seeded with a future fire_at must wait its
+    // turn exactly like any other pending drop.
+    const future = new Date(NOW.getTime() + 60 * 60 * 1000);
+    const state: MockPrismaState = {
+      drops: [
+        makeDrop({
+          id: 'drop-resend-future',
+          push_seq: 2,
+          fire_at: future,
+        }),
+      ],
+      purchases: [makePurchase()],
+    };
+    const prisma = makeMockPrisma(state);
+    const materialise = jest.fn();
+    const cron = new DripDispatcherCron(
+      prisma as any,
+      makeRegistry(materialise),
+      makeNotifications(),
+    );
+
+    const stats = await cron.runOnce(NOW);
+
+    expect(stats.claimed).toBe(0);
+    expect(materialise).not.toHaveBeenCalled();
+    expect(state.drops[0].status).toBe('pending');
+  });
+
   it('parent ClientPurchase missing → drop canceled defensively, never re-tried', async () => {
     const state: MockPrismaState = {
       drops: [makeDrop()],
