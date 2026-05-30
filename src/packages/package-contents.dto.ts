@@ -179,3 +179,83 @@ export const ReorderContentSchema = z
   .strict();
 
 export type ReorderContentInput = z.infer<typeof ReorderContentSchema>;
+
+// ── PR-17 B2 — push / backfill schemas ───────────────────────────────────
+//
+// These describe the two FROZEN endpoints the mobile M1 client already
+// targets (PR17_EXPANSION_PLAN.md §2.1):
+//   POST   v1/coach/packages/:id/contents/:contentId/push
+//   GET    v1/coach/packages/:id/contents/:contentId/push/preview
+//
+// The service feeds the raw HTTP body through PushRequestSchema and the
+// query string through PushPreviewQuerySchema, exactly like the PR-8
+// authoring schemas above (zod in the service, raw `unknown` in the
+// controller). `.strict()` rejects unknown keys with a clean 400.
+
+// Audience scoping (#1). 'active' is the SAFE DEFAULT (Hick's Law) — the
+// mobile confirm modal preselects it. 'cohort' requires an explicit
+// purchase-id list (re-filtered by package_id in the service for IDOR).
+export const PUSH_AUDIENCES = ['all', 'active', 'cohort'] as const;
+export type PushAudience = (typeof PUSH_AUDIENCES)[number];
+
+// Mode (#5). 'push_existing' backfills the missing first delivery for a
+// pair (push_seq=0); 'resend' issues a FRESH delivery of an already-
+// shipped pair (push_seq=max+1, resolver-key bypass).
+export const PUSH_MODES = ['push_existing', 'resend'] as const;
+export type PushMode = (typeof PUSH_MODES)[number];
+
+// POST body. `cohort_purchase_ids` is required iff audience==='cohort'
+// (enforced via superRefine so the discriminant stays a flat object the
+// way the mobile client serialises it). `fire_at` is validated to parse
+// as ISO 8601 here; the today-or-later guard is re-checked server-side in
+// the service (#2/#6 defense-in-depth). `notify` defaults to true (#9).
+export const PushRequestSchema = z
+  .object({
+    audience: z.enum(PUSH_AUDIENCES),
+    cohort_purchase_ids: z.array(z.string().min(1)).optional(),
+    fire_at: z
+      .string()
+      .refine(
+        (v) => !Number.isNaN(Date.parse(v)),
+        'fire_at must be an ISO 8601 datetime',
+      ),
+    mode: z.enum(PUSH_MODES),
+    notify: z.boolean().optional().default(true),
+  })
+  .strict()
+  .superRefine((val, ctx) => {
+    if (val.audience === 'cohort') {
+      if (!val.cohort_purchase_ids || val.cohort_purchase_ids.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['cohort_purchase_ids'],
+          message:
+            'cohort_purchase_ids is required and non-empty when audience is cohort',
+        });
+      }
+    } else if (val.cohort_purchase_ids != null) {
+      // Reject a stray cohort list on a non-cohort push so a client bug
+      // can't silently narrow the audience.
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['cohort_purchase_ids'],
+        message: 'cohort_purchase_ids is only valid when audience is cohort',
+      });
+    }
+  });
+
+export type PushRequestInput = z.infer<typeof PushRequestSchema>;
+
+// GET .../push/preview?audience=&mode= — pure read. Only the discriminant
+// fields are needed to compute the buyer count for the confirm modal.
+export const PushPreviewQuerySchema = z
+  .object({
+    audience: z.enum(PUSH_AUDIENCES),
+    mode: z.enum(PUSH_MODES),
+    // Optional cohort list so the preview count matches the eventual push
+    // for a cohort audience. Same IDOR re-filter applies in the service.
+    cohort_purchase_ids: z.array(z.string().min(1)).optional(),
+  })
+  .strict();
+
+export type PushPreviewQueryInput = z.infer<typeof PushPreviewQuerySchema>;
