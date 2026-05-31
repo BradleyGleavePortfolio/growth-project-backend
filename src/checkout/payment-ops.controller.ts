@@ -14,7 +14,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { once } from 'events';
 import type { Response } from 'express';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -59,13 +58,47 @@ import {
 // the buffer (and process memory) grows unbounded with ledger size and the
 // O(batchSize) request-memory bound is a lie. Awaiting 'drain' caps in-flight
 // memory to roughly one batch + the kernel socket buffer.
+//
+// ABORT-AWARE: a 'drain' event is NOT guaranteed to ever fire. If the client
+// disconnects ('close') or the stream errors while we are parked waiting for
+// 'drain', that event never arrives and the request would otherwise hang
+// forever, retaining the request/response context and memory. To avoid that,
+// we race 'drain' against 'close'/'error': whichever fires first unblocks the
+// helper. The caller passes an `isClientGone` guard so we can (a) skip the
+// write entirely if the client already left and (b) report back whether the
+// client is gone after the wait so the export loop can short-circuit instead
+// of issuing more DB fetches / writes / res.end() for a consumer that is no
+// longer connected. Returns true if it is safe to keep writing, false if the
+// client is gone and the caller should stop.
 async function writeWithBackpressure(
   res: Response,
   chunk: string,
-): Promise<void> {
-  if (!res.write(chunk)) {
-    await once(res, 'drain');
-  }
+  isClientGone: () => boolean,
+): Promise<boolean> {
+  if (isClientGone()) return false;
+  const ok = res.write(chunk);
+  if (ok) return true;
+  // Race drain against close/error so we exit immediately if the client
+  // aborts mid-backpressure rather than awaiting an event that may never come.
+  await new Promise<void>((resolve) => {
+    const cleanup = () => {
+      res.off('drain', onDrain);
+      res.off('close', onClose);
+      res.off('error', onClose);
+    };
+    const onDrain = () => {
+      cleanup();
+      resolve();
+    };
+    const onClose = () => {
+      cleanup();
+      resolve();
+    };
+    res.once('drain', onDrain);
+    res.once('close', onClose);
+    res.once('error', onClose);
+  });
+  return !isClientGone();
 }
 
 @ApiTags('admin-payments')
@@ -760,7 +793,8 @@ export class CoachPaymentOpsController {
     };
     res.once('error', stop);
     res.once('close', stop);
-    await writeWithBackpressure(res, csvHeaderLine(columns) + '\r\n');
+    const isClientGone = () => clientGone;
+    if (!(await writeWithBackpressure(res, csvHeaderLine(columns) + '\r\n', isClientGone))) return;
     const batchSize = 500;
     let cursorId: string | undefined;
     for (;;) {
@@ -780,7 +814,7 @@ export class CoachPaymentOpsController {
         chunk += '\r\n';
       }
       if (clientGone) return;
-      await writeWithBackpressure(res, chunk);
+      if (!(await writeWithBackpressure(res, chunk, isClientGone))) return;
       if (batch.length < batchSize) break;
       cursorId = batch[batch.length - 1].id;
     }

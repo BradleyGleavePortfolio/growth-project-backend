@@ -874,6 +874,68 @@ describe('CoachPaymentOpsController', () => {
       .length;
     expect(calls).toBeLessThan(4);
   });
+
+  // P1 (R4): the close-during-drain edge. If the client disconnects while the
+  // export is PARKED awaiting 'drain' (because a prior write() returned false),
+  // the 'drain' event may never fire. writeWithBackpressure must race 'drain'
+  // against 'close'/'error' so it unblocks immediately on disconnect rather
+  // than hanging forever and retaining the request context/memory. We make a
+  // write return false, never emit 'drain', emit 'close' instead, and assert
+  // the export promise resolves quickly, res.end() is NOT called, and no
+  // further DB fetches happen after the parked write.
+  it('B6: export.csv exits cleanly when client closes while parked on drain', async () => {
+    const { ctrl, prisma } = makeCoachController();
+    const n = 2_000; // 4 full batches if it were to run to completion
+    seedLedger(prisma, 'me', n);
+
+    const headers: Record<string, string> = {};
+    let ended = false;
+    const res: any = new EventEmitter();
+    res.setHeader = (k: string, v: string) => (headers[k] = v);
+    res.end = () => {
+      ended = true;
+    };
+    // The FIRST write (the header) returns false -> the export parks awaiting
+    // 'drain'. We deliberately never emit 'drain'; instead we emit 'close' to
+    // simulate the client aborting WHILE the helper is suspended. Track how
+    // many DB fetches happen so we can assert none occur after the park.
+    let writeCount = 0;
+    let fetchesAtPark = -1;
+    res.write = (_chunk: string) => {
+      writeCount += 1;
+      if (writeCount === 1) {
+        // We're about to park awaiting 'drain'. Record the DB-fetch count and
+        // schedule a 'close' (not a 'drain') on a later tick to unblock us.
+        fetchesAtPark = (prisma.splitLedgerEntry.findMany as jest.Mock).mock
+          .calls.length;
+        setImmediate(() => res.emit('close'));
+        return false; // signal backpressure -> helper awaits drain/close
+      }
+      return true;
+    };
+
+    const done = ctrl.exportEarningsCsv(makeReq('me'), res);
+
+    // Race the export promise against a timeout. If the helper were NOT
+    // close-aware it would hang forever waiting on a 'drain' that never comes;
+    // here it must settle promptly once 'close' fires.
+    const timeout = new Promise<'timeout'>((resolve) =>
+      setTimeout(() => resolve('timeout'), 1_000),
+    );
+    const result = await Promise.race([done.then(() => 'done' as const), timeout]);
+    expect(result).toBe('done');
+
+    // Disconnected while parked: the export must NOT have ended the response.
+    expect(ended).toBe(false);
+    // No further DB fetches occurred after the parked write: the loop
+    // short-circuited on the helper's false return instead of fetching the
+    // next batch. (At most the single fetch that produced no write, or fewer.)
+    const fetchesAtEnd = (prisma.splitLedgerEntry.findMany as jest.Mock).mock
+      .calls.length;
+    expect(fetchesAtEnd).toBe(fetchesAtPark);
+    // And it certainly did not drain the whole 4-batch ledger.
+    expect(fetchesAtEnd).toBeLessThan(4);
+  });
 });
 
 // --- DTO strict-validation: CursorPageQueryDto.limit must reject malformed
