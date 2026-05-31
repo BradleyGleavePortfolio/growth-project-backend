@@ -415,8 +415,8 @@ The script checks (in order):
 
 1. `GET /health` — 200 `{ ok: true }`.
 2. `GET /api/admin/metrics` — 200, numeric `total_users`.
-3. `GET /api/admin/users?limit=5` — 200, JSON array.
-4. `GET /api/admin/coaches` — 200, JSON array.
+3. `GET /api/admin/users?limit=5` — 200, `{ users: [...], next_cursor }` envelope.
+4. `GET /api/admin/coaches` — 200, `{ coaches: [...], next_cursor }` envelope.
 5. `GET /api/admin/search?q=` — 200, federation block shape.
 6. `GET /api/admin/coaches/:id/overview` — 200, `user_id` set.
 7. `GET /api/admin/clients/:id/unified` — 200, `user_id` set.

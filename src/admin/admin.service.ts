@@ -16,6 +16,38 @@ const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const CODE_LENGTH = 6;
 const CODE_PREFIX = 'GP-';
 
+// Keyset pagination cursor for the coach/user rosters. Ordering by
+// `created_at` alone is NOT stable: when multiple rows share the same
+// `created_at` instant, a timestamp-only `gt`/`lt` cursor either skips or
+// re-yields the rows at the boundary. We therefore order by the composite
+// key `(created_at, id)` and serialize BOTH halves into the cursor so the
+// next page resumes from an exact, unique position. Format is
+// `<ISO8601 created_at>|<row id>` — debuggable and round-trips cleanly.
+export interface KeysetCursor {
+  createdAt: Date;
+  id: string;
+}
+
+export function encodeKeysetCursor(row: { created_at: Date; id: string }): string {
+  return `${row.created_at.toISOString()}|${row.id}`;
+}
+
+export function decodeKeysetCursor(raw: string): KeysetCursor {
+  const sep = raw.indexOf('|');
+  // Reject malformed cursors loudly rather than silently paginating from the
+  // start of the roster (which would leak rows the caller never saw).
+  if (sep <= 0 || sep === raw.length - 1) {
+    throw new BadRequestException('Invalid pagination cursor');
+  }
+  const iso = raw.slice(0, sep);
+  const id = raw.slice(sep + 1);
+  const createdAt = new Date(iso);
+  if (Number.isNaN(createdAt.getTime())) {
+    throw new BadRequestException('Invalid pagination cursor');
+  }
+  return { createdAt, id };
+}
+
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
@@ -190,17 +222,42 @@ export class AdminService {
     };
   }
 
-  async listCoaches() {
-    const coaches = await this.prisma.user.findMany({
-      where: { role: 'coach' },
-      orderBy: { created_at: 'asc' },
+  // OWNER-only coach list. Cursor-paginated (#2): the page bound is pushed
+  // into the DB query via `take` + a keyset cursor so a large coach roster
+  // never loads unbounded into memory. Coaches are ordered by the composite
+  // key `(created_at ASC, id ASC)`; the cursor carries BOTH the created_at
+  // and id of the previous page's last row so rows sharing a created_at
+  // instant are never skipped at the boundary. We over-fetch `limit + 1`
+  // rows and only emit a `next_cursor` when that probe row actually exists,
+  // so an exact final page does not advertise a phantom next page.
+  async listCoaches(params?: { limit?: number; cursor?: KeysetCursor }) {
+    const limit = Math.min(Math.max(params?.limit ?? 50, 1), 100);
+    const where: Prisma.UserWhereInput = { role: 'coach' };
+    if (params?.cursor) {
+      // Keyset comparator for ASC order: (created_at, id) > (cursor.createdAt,
+      // cursor.id). Expressed as a strict tuple comparison so ties on
+      // created_at fall through to the id tie-breaker.
+      where.OR = [
+        { created_at: { gt: params.cursor.createdAt } },
+        {
+          created_at: params.cursor.createdAt,
+          id: { gt: params.cursor.id },
+        },
+      ];
+    }
+    const rows = await this.prisma.user.findMany({
+      where,
+      orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+      take: limit + 1,
       include: {
         coach_profile: true,
         students: { select: { id: true, archived_at: true } },
       },
     });
+    const hasMore = rows.length > limit;
+    const coaches = hasMore ? rows.slice(0, limit) : rows;
 
-    return coaches.map((c) => ({
+    const items = coaches.map((c) => ({
       id: c.id,
       email: c.email,
       name: c.name,
@@ -223,6 +280,13 @@ export class AdminService {
       client_count: c.students.length,
       active_client_count: c.students.filter((s) => !s.archived_at).length,
     }));
+
+    return {
+      coaches: items,
+      next_cursor: hasMore
+        ? encodeKeysetCursor(coaches[coaches.length - 1])
+        : null,
+    };
   }
 
   async getCoachDetail(coachId: string) {
@@ -296,20 +360,50 @@ export class AdminService {
     });
   }
 
-  async listUsers(params: { role?: 'owner' | 'coach' | 'student'; q?: string; limit?: number }) {
-    const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
-    const where: Prisma.UserWhereInput = {};
-    if (params.role) where.role = params.role;
+  // OWNER-only user list with role/search filters. Cursor-paginated (#2):
+  // users are ordered by the composite key `(created_at DESC, id DESC)`. The
+  // cursor carries BOTH created_at and id of the previous page's last row so
+  // rows sharing a created_at instant are never skipped at the boundary. The
+  // bound is enforced in the DB query (`take`), not by slicing in memory, and
+  // we over-fetch `limit + 1` to derive an honest `next_cursor` (only emitted
+  // when a real extra row exists, never on an exact final page).
+  async listUsers(params: {
+    role?: 'owner' | 'coach' | 'student';
+    q?: string;
+    limit?: number;
+    cursor?: KeysetCursor;
+  }) {
+    const limit = Math.min(Math.max(params.limit ?? 50, 1), 100);
+    const filters: Prisma.UserWhereInput[] = [];
+    if (params.role) filters.push({ role: params.role });
     if (params.q) {
-      where.OR = [
-        { email: { contains: params.q, mode: 'insensitive' } },
-        { name: { contains: params.q, mode: 'insensitive' } },
-      ];
+      filters.push({
+        OR: [
+          { email: { contains: params.q, mode: 'insensitive' } },
+          { name: { contains: params.q, mode: 'insensitive' } },
+        ],
+      });
     }
-    const users = await this.prisma.user.findMany({
+    if (params.cursor) {
+      // Keyset comparator for DESC order: (created_at, id) < (cursor.createdAt,
+      // cursor.id). AND-combined with the other filters so search/role and
+      // the cursor both constrain the page.
+      filters.push({
+        OR: [
+          { created_at: { lt: params.cursor.createdAt } },
+          {
+            created_at: params.cursor.createdAt,
+            id: { lt: params.cursor.id },
+          },
+        ],
+      });
+    }
+    const where: Prisma.UserWhereInput =
+      filters.length > 0 ? { AND: filters } : {};
+    const rows = await this.prisma.user.findMany({
       where,
-      orderBy: { created_at: 'desc' },
-      take: limit,
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
       select: {
         id: true,
         email: true,
@@ -320,6 +414,13 @@ export class AdminService {
         archived_at: true,
       },
     });
-    return users;
+    const hasMore = rows.length > limit;
+    const users = hasMore ? rows.slice(0, limit) : rows;
+    return {
+      users,
+      next_cursor: hasMore
+        ? encodeKeysetCursor(users[users.length - 1])
+        : null,
+    };
   }
 }
