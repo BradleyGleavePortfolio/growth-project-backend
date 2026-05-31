@@ -190,17 +190,26 @@ export class AdminService {
     };
   }
 
-  async listCoaches() {
+  // OWNER-only coach list. Cursor-paginated (#2): the page bound is pushed
+  // into the DB query via `take` + a keyset `created_at` cursor so a large
+  // coach roster never loads unbounded into memory. Coaches are ordered
+  // created_at ASC, so the cursor is the created_at of the previous page's
+  // last row and the next page returns rows with created_at > cursor.
+  async listCoaches(params?: { limit?: number; cursor?: Date }) {
+    const limit = Math.min(Math.max(params?.limit ?? 50, 1), 100);
+    const where: Prisma.UserWhereInput = { role: 'coach' };
+    if (params?.cursor) where.created_at = { gt: params.cursor };
     const coaches = await this.prisma.user.findMany({
-      where: { role: 'coach' },
+      where,
       orderBy: { created_at: 'asc' },
+      take: limit,
       include: {
         coach_profile: true,
         students: { select: { id: true, archived_at: true } },
       },
     });
 
-    return coaches.map((c) => ({
+    const items = coaches.map((c) => ({
       id: c.id,
       email: c.email,
       name: c.name,
@@ -223,6 +232,14 @@ export class AdminService {
       client_count: c.students.length,
       active_client_count: c.students.filter((s) => !s.archived_at).length,
     }));
+
+    return {
+      coaches: items,
+      next_cursor:
+        coaches.length === limit
+          ? coaches[coaches.length - 1].created_at.toISOString()
+          : null,
+    };
   }
 
   async getCoachDetail(coachId: string) {
@@ -296,10 +313,21 @@ export class AdminService {
     });
   }
 
-  async listUsers(params: { role?: 'owner' | 'coach' | 'student'; q?: string; limit?: number }) {
-    const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
+  // OWNER-only user list with role/search filters. Cursor-paginated (#2):
+  // users are ordered created_at DESC, so the cursor is the created_at of
+  // the previous page's last row and the next page returns rows with
+  // created_at < cursor. The bound is enforced in the DB query (`take`),
+  // not by slicing in memory.
+  async listUsers(params: {
+    role?: 'owner' | 'coach' | 'student';
+    q?: string;
+    limit?: number;
+    cursor?: Date;
+  }) {
+    const limit = Math.min(Math.max(params.limit ?? 50, 1), 100);
     const where: Prisma.UserWhereInput = {};
     if (params.role) where.role = params.role;
+    if (params.cursor) where.created_at = { lt: params.cursor };
     if (params.q) {
       where.OR = [
         { email: { contains: params.q, mode: 'insensitive' } },
@@ -320,6 +348,12 @@ export class AdminService {
         archived_at: true,
       },
     });
-    return users;
+    return {
+      users,
+      next_cursor:
+        users.length === limit
+          ? users[users.length - 1].created_at.toISOString()
+          : null,
+    };
   }
 }
