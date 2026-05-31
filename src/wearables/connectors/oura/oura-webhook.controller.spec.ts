@@ -38,15 +38,6 @@ const EVENT = {
   user_id: 'oura-user-1',
 };
 
-interface Mocks {
-  prisma: jest.Mocked<
-    Pick<
-      PrismaService['wearableProcessedEvent'],
-      'findUnique' | 'create' | 'update'
-    >
-  > & { conn: jest.Mock };
-}
-
 function setup(opts: {
   verify?: boolean;
   existingEvent?: boolean;
