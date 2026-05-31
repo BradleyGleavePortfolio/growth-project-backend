@@ -1074,6 +1074,188 @@ describe('DripDispatcherCron', () => {
     expect(state.drops[0].status).toBe('pending');
   });
 
+  // PR-18 B4 — ATOMIC duplicate-alert dedup.
+  //
+  // The pre-B4 guard read the in-memory `drop.alert_dispatched_at`
+  // snapshot and only stamped the column AFTER the notification
+  // attempts. A slow worker could send, then BEFORE stamping a
+  // stale-claim reclaim worker (STALE_CLAIM_MS) loaded its OWN snapshot
+  // (alert_dispatched_at still NULL) and sent the SAME push + in-app a
+  // second time. B4 replaces that with an atomic conditional UPDATE
+  // claim taken BEFORE any send:
+  //   updateMany({ where:{ id, alert_dispatched_at: null }, data:{ alert_dispatched_at: now } })
+  // Exactly one worker's UPDATE matches the NULL row (count===1) and
+  // sends; every contender (sibling reclaim, safety sweep, or a
+  // notify-off pre-stamped row) sees count===0 and skips.
+  //
+  // ---------------------------------------------------------------
+  // TODO (future, OUT OF SCOPE here): DB-backed alert-race harness.
+  // These unit tests assert the count-branch LOGIC against the
+  // in-memory prisma mock, which serialises updateMany calls and
+  // therefore proves the branch contract but NOT true concurrent
+  // contention. A faithful race test requires a real transactional
+  // store: spin up a throwaway Postgres, seed one ScheduledDrop with
+  // alert_dispatched_at=NULL, open TWO real prisma connections, and
+  // fire dispatchBuyerAlert() in parallel — exactly one connection's
+  // conditional UPDATE must win (count===1) and the other must observe
+  // count===0 and send nothing, with exactly one push + one in-app row
+  // landing. That harness (test container / pg-mem with row locking)
+  // is deliberately not built in this unit per the B4 brief; tracked
+  // as a follow-up integration test.
+  // ---------------------------------------------------------------
+  it('alert dedup: first worker claims the alert (count===1) and sends; a second worker over the SAME drop sees count===0 and sends nothing', async () => {
+    // One shared drop + shared prisma state — the second runOnce models
+    // a stale-claim reclaim worker hitting the same row after the first
+    // already claimed + stamped alert_dispatched_at.
+    const state: MockPrismaState = {
+      drops: [makeDrop({ alert_dispatched_at: null })],
+      purchases: [makePurchase()],
+    };
+    const prisma = makeMockPrisma(state);
+    const materialise = jest
+      .fn()
+      .mockResolvedValue({ materialisedRef: 'mp-dedup' });
+    const notifications = makeNotifications();
+    const cron = new DripDispatcherCron(
+      prisma as any,
+      makeRegistry(materialise),
+      notifications,
+    );
+
+    // First worker: delivers + wins the alert claim.
+    const first = await cron.runOnce(NOW);
+    expect(first.delivered).toBe(1);
+    expect(state.drops[0].alert_dispatched_at).toBeInstanceOf(Date);
+    const stampedAt = state.drops[0].alert_dispatched_at as Date;
+    // Exactly one push + the in-app/push channel rows from the first send.
+    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+    expect(notifications.createNotification).toHaveBeenCalledTimes(2);
+
+    // Second worker over the SAME (now-stamped) row: the alert claim
+    // updateMany matches zero rows (alert_dispatched_at is no longer
+    // NULL) so NO further notifications fire — the buyer is alerted ONCE.
+    await (cron as any).dispatchBuyerAlert(
+      { ...state.drops[0] },
+      'client-1',
+      new Date(NOW.getTime() + 6 * 60 * 1000),
+    );
+    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+    expect(notifications.createNotification).toHaveBeenCalledTimes(2);
+    // The original stamp is untouched (we never re-write on a count===0).
+    expect(state.drops[0].alert_dispatched_at).toEqual(stampedAt);
+  });
+
+  it('alert dedup: the claim updateMany targets the row by id WHERE alert_dispatched_at IS NULL and stamps it BEFORE the send', async () => {
+    // Verifies the atomic-claim shape itself: the gate is the DB write,
+    // not the JS snapshot. The updateMany must run against the NULL
+    // column, and the stamp must use the deterministic tick `now`.
+    const state: MockPrismaState = {
+      drops: [makeDrop({ alert_dispatched_at: null })],
+      purchases: [makePurchase()],
+    };
+    const prisma = makeMockPrisma(state);
+    const materialise = jest
+      .fn()
+      .mockResolvedValue({ materialisedRef: 'mp-claim' });
+    const notifications = makeNotifications();
+    const cron = new DripDispatcherCron(
+      prisma as any,
+      makeRegistry(materialise),
+      notifications,
+    );
+
+    await cron.runOnce(NOW);
+
+    // Find the alert-claim updateMany call: where filters on the drop id
+    // AND alert_dispatched_at === null, and stamps the column to NOW.
+    const claimCall = prisma.scheduledDrop.updateMany.mock.calls.find(
+      (c: any[]) =>
+        c[0]?.where?.id === 'drop-1' &&
+        'alert_dispatched_at' in (c[0]?.where ?? {}) &&
+        c[0].where.alert_dispatched_at === null,
+    );
+    expect(claimCall).toBeDefined();
+    expect(claimCall![0].data.alert_dispatched_at).toEqual(NOW);
+    expect(state.drops[0].alert_dispatched_at).toEqual(NOW);
+  });
+
+  it('alert dedup: a notify-off PRE-STAMPED drop yields claim count===0 — content materialises but NO alert is sent and the seed stamp is preserved', async () => {
+    // B2 pre-stamps alert_dispatched_at at SEED time when the coach
+    // toggles "notify" OFF. The atomic claim's WHERE alert_dispatched_at
+    // IS NULL matches zero rows, so the send is skipped and the original
+    // seed timestamp is never overwritten.
+    const preStamped = new Date(NOW.getTime() - 10 * 60 * 1000);
+    const state: MockPrismaState = {
+      drops: [makeDrop({ alert_dispatched_at: preStamped })],
+      purchases: [makePurchase()],
+    };
+    const prisma = makeMockPrisma(state);
+    const materialise = jest
+      .fn()
+      .mockResolvedValue({ materialisedRef: 'mp-notify-off' });
+    const notifications = makeNotifications();
+    const cron = new DripDispatcherCron(
+      prisma as any,
+      makeRegistry(materialise),
+      notifications,
+    );
+
+    const stats = await cron.runOnce(NOW);
+
+    // Content delivered.
+    expect(stats.delivered).toBe(1);
+    expect(state.drops[0].status).toBe('delivered');
+    expect(state.drops[0].materialised_ref).toBe('mp-notify-off');
+    // NO alert: claim count was 0 because the column was non-NULL.
+    expect(notifications.createNotification).not.toHaveBeenCalled();
+    expect(notifications.pushToUser).not.toHaveBeenCalled();
+    // Seed stamp untouched (we never write on count===0).
+    expect(state.drops[0].alert_dispatched_at).toEqual(preStamped);
+  });
+
+  it('alert dedup: a provider failure does NOT clear the stamp — the alert is never re-attempted as a duplicate', async () => {
+    // The stamp is claimed BEFORE the send. If the notification provider
+    // throws, delivery stays committed (decision #9) and the stamp is
+    // NOT rolled back, so a later tick / reclaim sees count===0 and
+    // never duplicates the alert.
+    const state: MockPrismaState = {
+      drops: [makeDrop({ alert_dispatched_at: null })],
+      purchases: [makePurchase()],
+    };
+    const prisma = makeMockPrisma(state);
+    const materialise = jest
+      .fn()
+      .mockResolvedValue({ materialisedRef: 'mp-fail-alert' });
+    const notifications = {
+      createNotification: jest
+        .fn()
+        .mockRejectedValue(new Error('expo blew up')),
+      pushToUser: jest.fn().mockRejectedValue(new Error('expo blew up')),
+    } as any;
+    const cron = new DripDispatcherCron(
+      prisma as any,
+      makeRegistry(materialise),
+      notifications,
+    );
+
+    const stats = await cron.runOnce(NOW);
+
+    // Delivery committed despite the provider failure.
+    expect(stats.delivered).toBe(1);
+    expect(state.drops[0].status).toBe('delivered');
+    // Stamp set (claimed up-front) and NOT cleared on failure.
+    expect(state.drops[0].alert_dispatched_at).toEqual(NOW);
+
+    // A second worker now sees count===0 and sends nothing more.
+    const callsBefore = notifications.pushToUser.mock.calls.length;
+    await (cron as any).dispatchBuyerAlert(
+      { ...state.drops[0] },
+      'client-1',
+      new Date(NOW.getTime() + 6 * 60 * 1000),
+    );
+    expect(notifications.pushToUser.mock.calls.length).toBe(callsBefore);
+  });
+
   it('parent ClientPurchase missing → drop canceled defensively, never re-tried', async () => {
     const state: MockPrismaState = {
       drops: [makeDrop()],
