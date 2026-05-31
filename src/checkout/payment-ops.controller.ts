@@ -34,7 +34,8 @@ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 import {
   CursorPageQueryDto,
   PAYMENT_OPS_DEFAULT_LIMIT,
-  rowsToCsv,
+  csvHeaderLine,
+  csvRowLine,
 } from './payment-ops.dto';
 
 // /v1/admin/payments — OWNER-only payment-ops inspection.
@@ -697,8 +698,8 @@ export class CoachPaymentOpsController {
   @Header('Cache-Control', 'no-store')
   async exportEarningsCsv(
     @Request() req: AuthedRequest,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<string> {
+    @Res() res: Response,
+  ): Promise<void> {
     const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     res.setHeader(
       'Content-Disposition',
@@ -718,13 +719,14 @@ export class CoachPaymentOpsController {
       'reversed_at',
       'created_at',
     ] as const;
-    const rows: Array<Record<string, unknown>> = [];
-    // Bounded batch loop — pull `batchSize` rows at a time using the
-    // id-stable cursor and continue until the payee ledger is fully drained.
-    // Each query is capped (so memory/DB pressure stays bounded per
-    // round-trip), but there is NO total-row cap: the export genuinely
-    // covers the coach's entire ledger rather than silently truncating at a
-    // fixed ceiling and returning a partial file as if it were complete.
+    // P1: TRUE streaming export. We write the header and then each bounded
+    // DB batch DIRECTLY to the response stream and immediately discard it —
+    // no `rows` accumulator and no full-CSV string is ever materialized, so
+    // total request memory stays O(batchSize) regardless of ledger size
+    // (millions of rows will not OOM the process). Each query is still
+    // capped via the id-stable cursor, and there is NO total-row cap: the
+    // loop drains the entire payee-scoped ledger.
+    res.write(csvHeaderLine(columns) + '\r\n');
     const batchSize = 500;
     let cursorId: string | undefined;
     for (;;) {
@@ -735,11 +737,18 @@ export class CoachPaymentOpsController {
         ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
       });
       if (batch.length === 0) break;
-      for (const e of batch) rows.push(e as unknown as Record<string, unknown>);
+      // Serialize this batch into a single chunk and flush it, then drop the
+      // reference so the GC can reclaim it before the next round-trip.
+      let chunk = '';
+      for (const e of batch) {
+        chunk += csvRowLine(columns, e as unknown as Record<string, unknown>);
+        chunk += '\r\n';
+      }
+      res.write(chunk);
       if (batch.length < batchSize) break;
       cursorId = batch[batch.length - 1].id;
     }
-    return rowsToCsv(columns, rows);
+    res.end();
   }
 
   // Roll up the coach's gross earnings by status over the FULL ledger
