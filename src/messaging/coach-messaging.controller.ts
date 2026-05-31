@@ -13,6 +13,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import {
   CreateMessageDto,
   ListThreadQueryDto,
@@ -29,6 +30,7 @@ import { THROTTLER_NAMES } from '../throttler/throttler.config';
 // isolates throttle rules to writes only.
 @ApiTags('messaging')
 @Controller('coach')
+@Roles('coach')
 @UseGuards(JwtAuthGuard, CoachGuard)
 export class CoachMessagingController {
   constructor(private messaging: MessagingService) {}

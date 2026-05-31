@@ -33,6 +33,7 @@
 import 'reflect-metadata';
 import { Test, TestingModule } from '@nestjs/testing';
 import { APP_GUARD, DiscoveryModule, DiscoveryService, MetadataScanner } from '@nestjs/core';
+import { Type } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { AppModule } from '../src/app.module';
 import { IS_PUBLIC_KEY } from '../src/common/decorators/public.decorator';
@@ -71,12 +72,9 @@ const LEGACY_GUARD_ALLOWLIST: Array<{
   { controller: 'CoachController', method: 'getAlerts', reason: 'CoachGuard at class level' },
   // ── CoachCheckInsController ──
   { controller: 'CoachCheckInsController', method: 'list', reason: 'CoachGuard at class level' },
-  // ── CoachMessagingController ──
-  { controller: 'CoachMessagingController', method: 'listThread', reason: 'CoachGuard at class level' },
-  { controller: 'CoachMessagingController', method: 'send', reason: 'CoachGuard at class level' },
-  { controller: 'CoachMessagingController', method: 'voiceUpload', reason: 'CoachGuard at class level' },
-  { controller: 'CoachMessagingController', method: 'markRead', reason: 'CoachGuard at class level' },
-  { controller: 'CoachMessagingController', method: 'unreadCount', reason: 'CoachGuard at class level' },
+  // CoachMessagingController removed from this allowlist: it now carries an
+  // explicit class-level @Roles('coach') (defence-in-depth), so every route
+  // is gated by the global RolesGuard and no longer needs a legacy exemption.
   // ── CoachNudgesController ──
   { controller: 'CoachNudgesController', method: 'create', reason: 'CoachGuard at class level' },
   // ── CoachMealPlansController ──
@@ -207,7 +205,7 @@ describe('RolesEnforced — every route has @Roles or @Public', () => {
       const instance = wrapper.instance;
       if (!instance || typeof instance !== 'object') continue;
 
-      const controllerClass = instance.constructor as Function;
+      const controllerClass = instance.constructor as Type<unknown>;
       const controllerName = controllerClass.name;
 
       // Class-level decoration covers every handler in the controller.

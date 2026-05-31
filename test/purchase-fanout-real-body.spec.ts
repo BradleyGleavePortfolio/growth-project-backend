@@ -321,11 +321,19 @@ describe('PurchaseFanoutService.onPurchaseEntitled — real body (PR-9)', () => 
       ];
       const tx = makeTx({ contents, purchase: basePurchase() });
 
+      // Anchor purchaseTime to "now" so the offset_days:30
+      // relative_to_purchase drop lands genuinely in the future and
+      // stays pending — the immediate cutoff is computed against the
+      // wall clock at call time, so a fixed past purchase fixture
+      // would non-deterministically materialise this drop once the
+      // wall clock passes created_at + 30d (mirrors line ~187).
+      const purchaseTime = new Date();
+
       let counter = 0;
       const registry = new StubRegistry(async () => ({ materialisedRef: `ref-${++counter}` }));
       const svc = new PurchaseFanoutService(registry);
 
-      await svc.onPurchaseEntitled({ id: PURCHASE_ID }, { entrypoint: 'in_app_hosted' }, tx);
+      await svc.onPurchaseEntitled({ id: PURCHASE_ID }, { entrypoint: 'in_app_hosted', purchaseTime }, tx);
       // First delivery: 2 drops seeded, 1 immediate materialised.
       expect(tx._drops).toHaveLength(2);
       expect(registry.getCalls()).toHaveLength(1);
@@ -333,7 +341,7 @@ describe('PurchaseFanoutService.onPurchaseEntitled — real body (PR-9)', () => 
       // Stripe redelivers — same purchase id. Idempotent at the
       // PurchaseFanout @unique level + ScheduledDrop @@unique level
       // + materialised_ref IS NULL guard for immediate.
-      await svc.onPurchaseEntitled({ id: PURCHASE_ID }, { entrypoint: 'in_app_hosted' }, tx);
+      await svc.onPurchaseEntitled({ id: PURCHASE_ID }, { entrypoint: 'in_app_hosted', purchaseTime }, tx);
       expect(tx._drops).toHaveLength(2); // no double-seed
       expect(registry.getCalls()).toHaveLength(1); // no second materialise
       expect(tx._fanouts).toHaveLength(1); // single fanout row
