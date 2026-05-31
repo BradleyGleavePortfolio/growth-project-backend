@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { WearableProvider } from '@prisma/client';
 import { ConnectionsService } from './connections.service';
 import { WearableConnectionStatus } from './types';
@@ -239,6 +239,60 @@ describe('ConnectionsService', () => {
       await expect(
         svc.handleCallback({ code: 'auth-code-1', state: 'state-123' }),
       ).rejects.toThrow(/OAuth code exchange failed/);
+    });
+
+    it('NEVER logs the raw connector error message/token material on exchange failure (R1 P1 leak repro)', async () => {
+      // Reproduces the R1 auditor's leak class: a connector error whose message
+      // embeds token/secret material. The redacted log MUST NOT contain any of
+      // those substrings. We spy on EVERY Logger method so a regression that
+      // logs the raw message via any level is caught.
+      const logSpies = (['error', 'warn', 'log', 'debug', 'verbose'] as const).map(
+        (level) => jest.spyOn(Logger.prototype, level).mockImplementation(() => undefined),
+      );
+      try {
+        registry.get.mockReturnValue(
+          ouraConnector({
+            exchangeCode: jest.fn(async () => {
+              throw new Error(
+                'provider 500: token=leak123 refresh_token=secret_xyz client_secret=cs_999 code=auth_abc',
+              );
+            }),
+          }),
+        );
+
+        await expect(
+          svc.handleCallback({ code: 'auth-code-1', state: 'state-123' }),
+        ).rejects.toThrow(/OAuth code exchange failed/);
+
+        // Collect every argument passed to every logger call.
+        const allCalls = logSpies.flatMap((spy) => spy.mock.calls);
+        const serialized = JSON.stringify(allCalls);
+
+        // The crux of the R1 finding: none of the leaked substrings survive.
+        expect(serialized.includes('leak123')).toBe(false);
+        expect(serialized.includes('secret_xyz')).toBe(false);
+        expect(serialized.includes('cs_999')).toBe(false);
+        expect(serialized.includes('auth_abc')).toBe(false);
+        // Defensive: the raw message must not appear in any form.
+        expect(serialized).not.toContain('provider 500: token=leak123');
+
+        // Positive assertion: the sanitized event WAS logged with safe context.
+        const errorSpy = logSpies[0];
+        expect(errorSpy).toHaveBeenCalledTimes(1);
+        const payload = errorSpy.mock.calls[0][0] as Record<string, unknown>;
+        expect(payload).toMatchObject({
+          msg: 'wearables.oauth.exchange_failure',
+          provider: WearableProvider.OURA,
+          user_id: USER,
+          error_code: 'unknown',
+          error_class: 'Error',
+        });
+        // And the payload itself carries no leaked material.
+        expect(JSON.stringify(payload).includes('leak123')).toBe(false);
+        expect(JSON.stringify(payload).includes('secret_xyz')).toBe(false);
+      } finally {
+        logSpies.forEach((spy) => spy.mockRestore());
+      }
     });
 
     it('rejects when the provider returns no refresh token', async () => {
