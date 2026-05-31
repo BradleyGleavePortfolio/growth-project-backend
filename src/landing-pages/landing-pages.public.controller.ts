@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Param,
   Post,
   Query,
@@ -94,6 +95,16 @@ function isCanonicalHost(host: string): boolean {
   );
 }
 
+// Low-cardinality routing-decision labels for the Host dispatcher. These are
+// the ONLY values emitted to telemetry so the metric/log series stays bounded
+// (no raw, attacker-controllable Host string is ever logged at the decision
+// site — see `logDispatch` below).
+type DispatchOutcome =
+  | 'custom_domain_match'
+  | 'canonical_host_skip'
+  | 'invalid_host_reject'
+  | 'unknown_host_404';
+
 /**
  * Public landing page routes — mounted OUTSIDE the /api global prefix.
  * See main.ts: app.setGlobalPrefix('api', { exclude: [...] }) excludes both
@@ -113,7 +124,41 @@ function isCanonicalHost(host: string): boolean {
 @ApiTags('landing-pages-public')
 @Controller()
 export class LandingPagePublicController {
+  // Decacorn-quality observability: a security-sensitive per-request Host
+  // dispatcher must emit a sampled, structured decision signal so we can
+  // alert on a spike in `invalid_host_reject` (probing) or a drop in
+  // `custom_domain_match` (a verification / DNS regression). Logged at debug
+  // with a bounded label set; see `logDispatch`.
+  private readonly logger = new Logger(LandingPagePublicController.name);
+
   constructor(private readonly publicService: LandingPagePublicService) {}
+
+  /**
+   * Emit one bounded, structured routing-decision log for the Host
+   * dispatcher. The `outcome` is one of four fixed labels (low cardinality),
+   * and we deliberately do NOT log the raw Host header — only a coarse,
+   * non-reflective descriptor:
+   *  - `custom_domain_match` logs the normalized host (already a verified,
+   *    DB-backed domain at this point, so it is not attacker-injected free
+   *    text and is safe/useful for ops);
+   *  - all other outcomes log only the host length, so a flood of garbage
+   *    Host values cannot blow up log cardinality or smuggle log-injection
+   *    payloads.
+   */
+  private logDispatch(
+    outcome: DispatchOutcome,
+    host: string | null,
+  ): void {
+    if (outcome === 'custom_domain_match') {
+      this.logger.debug(
+        `host-dispatch outcome=${outcome} host=${host ?? ''}`,
+      );
+      return;
+    }
+    this.logger.debug(
+      `host-dispatch outcome=${outcome} host_len=${host ? host.length : 0}`,
+    );
+  }
 
   // ─── Custom-domain routes (B3) ────────────────────────────────────────────
   //
@@ -347,14 +392,27 @@ export class LandingPagePublicController {
     const rawHostHeader = req.headers['host'];
     const rawHost = Array.isArray(rawHostHeader) ? rawHostHeader[0] : rawHostHeader;
     const host = normalizeHost(rawHost);
-    if (!host || isCanonicalHost(host)) {
+    if (!host) {
+      // Absent / malformed / rejected Host (comma chain, scheme, path,
+      // userinfo, over-length, etc.). A spike here is a probing signal.
+      this.logDispatch('invalid_host_reject', rawHost ?? null);
+      return { coachSlug: '', pageSlug: '', source: 'path' };
+    }
+    if (isCanonicalHost(host)) {
+      // First-party host — short-circuit before any DB lookup so normal
+      // `/p/...` traffic is never routed through the custom-domain branch.
+      this.logDispatch('canonical_host_skip', host);
       return { coachSlug: '', pageSlug: '', source: 'path' };
     }
 
     const addr = await this.publicService.resolveCustomDomainAddress(host);
     if (!addr) {
+      // Well-formed, non-canonical host that matched no verified/published
+      // custom domain → the bare HTML routes turn this into a no-store 404.
+      this.logDispatch('unknown_host_404', host);
       return { coachSlug: '', pageSlug: '', source: 'path' };
     }
+    this.logDispatch('custom_domain_match', host);
     return { coachSlug: addr.coachSlug, pageSlug: addr.pageSlug, source: 'customDomain' };
   }
 

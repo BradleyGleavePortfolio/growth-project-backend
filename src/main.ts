@@ -4,7 +4,7 @@ import 'reflect-metadata';
 // reorder these lines.
 import './instrument';
 import { NestFactory } from '@nestjs/core';
-import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import * as Sentry from '@sentry/node';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -15,6 +15,7 @@ import { BootstrapValidationError } from './common/errors/bootstrap-validation.e
 import { setupSwagger } from './common/openapi';
 import { CacheControlInterceptor } from './common/cache-control.interceptor';
 import { MetricsService } from './observability/metrics.service';
+import { LANDING_PUBLIC_PREFIX_EXCLUDE } from './landing-pages/public-route-prefix';
 
 async function bootstrap() {
   // Fail fast at boot if required env vars are missing. See
@@ -200,34 +201,16 @@ async function bootstrap() {
       'help/faq',
       'help/support',
       'help/contact',
-      // R46 — Public coach landing pages. Mounted outside /api so the URL is
-      // app.trygrowthproject.com/p/<coachSlug>/<pageSlug> — no /api prefix.
-      // The :coachSlug/:pageSlug and sub-paths (checkout, leads, view) are all
-      // served by LandingPagePublicController with @Public() + throttle guards.
-      'p/:coachSlug/:pageSlug',
-      'p/:coachSlug/:pageSlug/checkout',
-      'p/:coachSlug/:pageSlug/leads',
-      'p/:coachSlug/:pageSlug/view',
-      // B3 (PR-18) — custom-domain apex routing. A VERIFIED custom domain
-      // (e.g. coaching.example.com) must serve its published page at the
-      // bare host root, NOT under /api. LandingPagePublicController declares
-      // these at the controller root (@Get() '/', @Get('checkout'),
-      // @Post('leads'), @Post('view')); without these exclusions the global
-      // prefix would mount them at /api, /api/checkout, /api/leads, /api/view
-      // and a custom domain hitting `/` would 404. We exclude them by exact
-      // path + HTTP method so they resolve at the apex.
-      //
-      // No shadowing: no other controller declares a bare `/`, `checkout`,
-      // `leads`, or `view` route (checkout lives at v1/checkout; leads/view
-      // otherwise only exist under p/:coachSlug/:pageSlug/...), and the
-      // explicit `/p/:coachSlug/:pageSlug[...]` routes above are unaffected
-      // because they are distinct paths. Canonical-host traffic to these
-      // bare paths resolves to no verified custom domain and returns the
-      // shared no-store 404, so `/p/...` is never hijacked.
-      { path: '', method: RequestMethod.GET },
-      { path: 'checkout', method: RequestMethod.GET },
-      { path: 'leads', method: RequestMethod.POST },
-      { path: 'view', method: RequestMethod.POST },
+      // R46 — Public coach landing pages (canonical `/p/...` slug routes) AND
+      // B3 (PR-18) — verified custom-domain apex routes (`GET /`,
+      // `GET /checkout`, `POST /leads`, `POST /view`). Both shapes are pinned
+      // in LANDING_PUBLIC_PREFIX_EXCLUDE so the route-registration spec boots
+      // against the EXACT same exclude list — a future edit that drops an
+      // exclusion fails the test rather than silently regressing routing
+      // (the prior P0 was a bare custom-domain route mounted under /api).
+      // The custom-domain entries are method-scoped, so no `/api/...` route
+      // is shadowed and `/p/...` is never hijacked.
+      ...LANDING_PUBLIC_PREFIX_EXCLUDE,
     ],
   });
 

@@ -17,10 +17,11 @@
  * stubbed here so the routing logic is tested in isolation.
  */
 
-import { INestApplication, RequestMethod } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { LandingPagePublicController } from '../src/landing-pages/landing-pages.public.controller';
 import { LandingPagePublicService } from '../src/landing-pages/landing-pages.public.service';
+import { LANDING_PUBLIC_PREFIX_EXCLUDE } from '../src/landing-pages/public-route-prefix';
 
 // ─── Fake Express req/res ─────────────────────────────────────────────────────
 
@@ -114,18 +115,10 @@ function build(overrides: Record<string, jest.Mock> = {}) {
 // If main.ts ever drops the bare-path exclusions, the `/` / `/checkout` /
 // `/leads` / `/view` expectations below flip to `/api/...` and this fails.
 
-// Mirror of src/main.ts setGlobalPrefix exclude entries that are relevant to
-// the landing-pages public controller. Keep in sync with main.ts.
-const PUBLIC_PREFIX_EXCLUDE = [
-  'p/:coachSlug/:pageSlug',
-  'p/:coachSlug/:pageSlug/checkout',
-  'p/:coachSlug/:pageSlug/leads',
-  'p/:coachSlug/:pageSlug/view',
-  { path: '', method: RequestMethod.GET },
-  { path: 'checkout', method: RequestMethod.GET },
-  { path: 'leads', method: RequestMethod.POST },
-  { path: 'view', method: RequestMethod.POST },
-] as const;
+// The route-registration suite boots with the SAME exclude list production
+// uses (imported from src/landing-pages/public-route-prefix.ts), not a
+// hand-copied mirror. If main.ts ever drops a custom-domain exclusion, the
+// shared constant changes and these expectations fail closed.
 
 type RegisteredRoute = { method: string; path: string };
 
@@ -159,7 +152,7 @@ describe('LandingPagePublicController — route registration (B3, custom-domain 
 
     app = moduleRef.createNestApplication();
     // EXACT same global-prefix shape as src/main.ts.
-    app.setGlobalPrefix('api', { exclude: PUBLIC_PREFIX_EXCLUDE as any });
+    app.setGlobalPrefix('api', { exclude: LANDING_PUBLIC_PREFIX_EXCLUDE as any });
     await app.init();
     routes = collectRoutes(app);
   });
@@ -425,7 +418,7 @@ describe('LandingPagePublicController — custom-domain Host routing (B3)', () =
     });
 
     it('preserves the 429 throttle behavior from the service', async () => {
-      const { ctrl, svc } = build({
+      const { ctrl } = build({
         submitLead: jest.fn(async () => {
           const e: any = new Error('TOO_MANY_LEADS');
           e.status = 429;
