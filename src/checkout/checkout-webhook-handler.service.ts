@@ -1,6 +1,9 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { ClientPurchase, CoachPackage, Prisma } from '@prisma/client';
-import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
+import {
+  StripeConnectApiService,
+  type StripeSubscriptionObject,
+} from '../connect/stripe-connect-api.service';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { PrismaService } from '../prisma.service';
 import { DunningService } from './dunning.service';
@@ -49,6 +52,19 @@ export interface CheckoutWebhookResult {
   purchase_id?: string;
 }
 
+// PR-18 B1 — state that the checkout handler needs from Stripe HTTP but that
+// must be resolved BEFORE BillingService opens its outer $transaction, so no
+// Stripe round-trip is ever held while a DB transaction (and the CoachPackage
+// FOR UPDATE lock) is open. BillingService calls `prefetchForOuterTx(event)`
+// before the tx and threads the result through `handle(event, tx, prefetched)`.
+export interface CheckoutWebhookPrefetch {
+  // The renewed Stripe subscription for an invoice.paid/payment_succeeded
+  // event, resolved out-of-tx. null when not applicable or the lookup failed
+  // (the handler then falls back to its own out-of-tx retrieve only when no
+  // outer tx is held).
+  invoiceSubscription?: StripeSubscriptionObject | null;
+}
+
 @Injectable()
 export class CheckoutWebhookHandlerService {
   private readonly logger = new Logger(CheckoutWebhookHandlerService.name);
@@ -78,6 +94,7 @@ export class CheckoutWebhookHandlerService {
   async handle(
     event: StripeEvent,
     tx?: WebhookTx,
+    prefetched?: CheckoutWebhookPrefetch,
   ): Promise<CheckoutWebhookResult> {
     switch (event.type) {
       case 'checkout.session.completed':
@@ -86,7 +103,7 @@ export class CheckoutWebhookHandlerService {
         return this.applyCheckoutExpired(event);
       case 'customer.subscription.updated':
       case 'customer.subscription.created':
-        return this.applySubscriptionUpdated(event);
+        return this.applySubscriptionUpdated(event, tx);
       case 'customer.subscription.deleted':
         return this.applySubscriptionDeleted(event, tx);
       case 'payment_intent.succeeded':
@@ -99,7 +116,7 @@ export class CheckoutWebhookHandlerService {
       // the dunning window resolution is robust either way.
       case 'invoice.paid':
       case 'invoice.payment_succeeded':
-        return this.applyInvoicePaid(event);
+        return this.applyInvoicePaid(event, tx, prefetched);
       case 'invoice.payment_failed':
         return this.applyInvoicePaymentFailed(event);
       case 'customer.updated':
@@ -142,6 +159,54 @@ export class CheckoutWebhookHandlerService {
    */
   discardPendingDripAlerts(purchaseId: string): void {
     this.fanout?.discardPendingAlerts(purchaseId);
+  }
+
+  /**
+   * PR-18 B1 — resolve any Stripe HTTP state the handler will need INSIDE
+   * BillingService's outer $transaction, run BEFORE that transaction opens.
+   *
+   * The invoice-renewal path (`invoice.paid` / `invoice.payment_succeeded`)
+   * resyncs the subscription via `stripeConnect.retrieveSubscription`. Doing
+   * that inside the outer tx would hold the Postgres connection across a
+   * Stripe round-trip (the A276-P1-3 anti-pattern) AND across the
+   * CoachPackage FOR UPDATE lock the activation takes. BillingService calls
+   * this before opening its tx and threads the result through
+   * `handle(event, tx, prefetched)`, mirroring `preResolveReceiptUrl`.
+   *
+   * Best-effort: a Stripe blip returns `invoiceSubscription: null` and the
+   * handler degrades cleanly (the renewal simply isn't resynced on this
+   * delivery). Never throws — a failure here must not roll back the dedup row.
+   */
+  async prefetchForOuterTx(
+    event: StripeEvent,
+  ): Promise<CheckoutWebhookPrefetch> {
+    if (
+      event.type !== 'invoice.paid' &&
+      event.type !== 'invoice.payment_succeeded'
+    ) {
+      return {};
+    }
+    const inv = event.data.object as { subscription?: string | null };
+    if (!inv?.subscription) return {};
+    // Only pre-resolve when this invoice maps to a package purchase we own;
+    // otherwise the SaaS-coach-subscription path (BillingService) handles it
+    // and we avoid a needless Stripe call.
+    const purchase = await this.prisma.clientPurchase.findUnique({
+      where: { stripe_subscription_id: inv.subscription },
+      select: { id: true },
+    });
+    if (!purchase) return {};
+    try {
+      const invoiceSubscription = await this.stripeConnect.retrieveSubscription(
+        inv.subscription,
+      );
+      return { invoiceSubscription };
+    } catch (err) {
+      this.logger.warn(
+        `prefetchForOuterTx: retrieveSubscription failed for sub=${inv.subscription}: ${(err as Error).message}`,
+      );
+      return { invoiceSubscription: null };
+    }
   }
 
   private async applyCheckoutCompleted(
@@ -301,6 +366,7 @@ export class CheckoutWebhookHandlerService {
 
   private async applySubscriptionUpdated(
     event: StripeEvent,
+    tx?: WebhookTx,
   ): Promise<CheckoutWebhookResult> {
     const sub = event.data.object as {
       id?: string;
@@ -313,10 +379,16 @@ export class CheckoutWebhookHandlerService {
     };
     if (!sub?.id) return { claimed: false, reason: 'no_sub_id' };
 
+    // PR-18 B1 — use the caller's outer tx for reads/writes when provided so
+    // the entitlement activation (and its CoachPackage row lock) commit-or-
+    // rollback together with the StripeProcessedEvent dedup row instead of
+    // committing independently via a nested $transaction.
+    const db: WebhookTx | PrismaService = tx ?? this.prisma;
+
     // Claim only if this subscription corresponds to a known package
     // purchase. SaaS coach subscriptions are tracked in CoachSubscription
     // via BillingService; this handler stays out of those.
-    const purchase = await this.prisma.clientPurchase.findUnique({
+    const purchase = await db.clientPurchase.findUnique({
       where: { stripe_subscription_id: sub.id },
     });
     if (!purchase) {
@@ -339,7 +411,7 @@ export class CheckoutWebhookHandlerService {
         return { claimed: false, reason: 'missing_binding_metadata' };
       }
 
-      const pending = await this.prisma.clientPurchase.findFirst({
+      const pending = await db.clientPurchase.findFirst({
         where: {
           package_id: pkgIdFromMeta,
           client_user_id: clientIdFromMeta,
@@ -354,7 +426,7 @@ export class CheckoutWebhookHandlerService {
 
       // Use updateMany with the same where clause to guard against races —
       // only one concurrent call can win the stripe_subscription_id: null check.
-      const bound = await this.prisma.clientPurchase.updateMany({
+      const bound = await db.clientPurchase.updateMany({
         where: {
           id: pending.id,
           stripe_subscription_id: null,
@@ -368,10 +440,10 @@ export class CheckoutWebhookHandlerService {
         );
         return { claimed: false, reason: 'race_lost' };
       }
-      return this.applySubscriptionUpdated(event);
+      return this.applySubscriptionUpdated(event, tx);
     }
 
-    const pkg = await this.prisma.coachPackage.findUnique({
+    const pkg = await db.coachPackage.findUnique({
       where: { id: purchase.package_id },
     });
 
@@ -392,8 +464,10 @@ export class CheckoutWebhookHandlerService {
     // past_due), so it must serialize against PackagesService.update()'s
     // CoachPackage row lock. We take the same `SELECT id ... FOR UPDATE`
     // before the update. See applyCheckoutCompleted for the full argument.
-    // This handler has no outer tx, so we open our own $transaction.
-    await this.activateUnderPackageLock(undefined, purchase.package_id, (client) =>
+    // When BillingService threads its outer tx through handle(event, tx) the
+    // lock + activation run on that tx (no nested $transaction); otherwise
+    // the helper opens its own short $transaction.
+    await this.activateUnderPackageLock(tx, purchase.package_id, (client) =>
       client.clientPurchase.update({
         where: { id: purchase.id },
         data: {
@@ -610,6 +684,8 @@ export class CheckoutWebhookHandlerService {
 
   private async applyInvoicePaid(
     event: StripeEvent,
+    tx?: WebhookTx,
+    prefetched?: CheckoutWebhookPrefetch,
   ): Promise<CheckoutWebhookResult> {
     const inv = event.data.object as {
       id?: string;
@@ -619,7 +695,12 @@ export class CheckoutWebhookHandlerService {
       status_transitions?: { paid_at?: number };
     };
     if (!inv?.subscription) return { claimed: false };
-    const purchase = await this.prisma.clientPurchase.findUnique({
+    // PR-18 B1 — read/write on the caller's outer tx when provided so the
+    // renewal entitlement activation (and its CoachPackage row lock) commit
+    // with the StripeProcessedEvent dedup row instead of via a nested
+    // $transaction.
+    const db: WebhookTx | PrismaService = tx ?? this.prisma;
+    const purchase = await db.clientPurchase.findUnique({
       where: { stripe_subscription_id: inv.subscription },
     });
     if (!purchase) return { claimed: false };
@@ -627,19 +708,33 @@ export class CheckoutWebhookHandlerService {
     // entitlement window are fresh after a renewal.
     let updated = purchase;
     try {
-      const sub = await this.stripeConnect.retrieveSubscription(inv.subscription);
-      const pkg = await this.prisma.coachPackage.findUnique({
+      // PR-18 B1 — NEVER perform Stripe HTTP while a DB transaction is held.
+      // When BillingService threads its outer tx, it ALSO pre-resolves the
+      // subscription via `prefetchForOuterTx(event)` BEFORE opening the tx
+      // and passes it here, so the round-trip already happened out-of-tx.
+      // When there is no outer tx (legacy/test resync path), it is safe to
+      // retrieve here because activateUnderPackageLock opens its own short
+      // tx AFTER this call. If an outer tx is held but no prefetch was
+      // supplied, we must not block the connection on Stripe — skip the
+      // resync (degraded but correct: entitlement/window simply isn't
+      // refreshed on this delivery; a later event or the reconciler will).
+      let sub = prefetched?.invoiceSubscription ?? null;
+      if (!sub) {
+        if (tx) {
+          this.logger.warn(
+            `invoice.paid resync skipped for sub=${inv.subscription}: outer tx held without a prefetched subscription (no Stripe HTTP in tx)`,
+          );
+          return { claimed: true, purchase_id: purchase.id };
+        }
+        sub = await this.stripeConnect.retrieveSubscription(inv.subscription);
+      }
+      const pkg = await db.coachPackage.findUnique({
         where: { id: purchase.package_id },
       });
       const status = this.normalizeSubscriptionStatus(sub.status);
       const currentPeriodEnd = this.toDate(sub.current_period_end);
-      // B1 pricing-lock serialization (PR-18). A renewal resync can flip
-      // entitlement_active=true for a recurring purchase, so it serializes
-      // against PackagesService.update()'s CoachPackage row lock via the
-      // same `SELECT id ... FOR UPDATE`. No outer tx here, so we open our
-      // own $transaction. See applyCheckoutCompleted for the full argument.
       updated = await this.activateUnderPackageLock(
-        undefined,
+        tx,
         purchase.package_id,
         (client) =>
           client.clientPurchase.update({

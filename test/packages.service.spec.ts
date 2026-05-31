@@ -29,7 +29,7 @@ function makePrismaStub() {
           Object.entries(where).every(([k, v]) => r[k] === v),
         ) ?? null,
       ),
-      findMany: jest.fn(async ({ where, orderBy }: any) => {
+      findMany: jest.fn(async ({ where }: any) => {
         const out = rows.filter((r) =>
           Object.entries(where).every(([k, v]) => {
             if (v === null) return r[k] === null || r[k] === undefined;
@@ -75,7 +75,7 @@ function makePrismaStub() {
       }),
     },
     clientPurchase: {
-      findMany: jest.fn(async ({ where, orderBy, skip, take }: any) => {
+      findMany: jest.fn(async ({ where, skip, take }: any) => {
         const all = purchases.filter((p) => p.package_id === where.package_id);
         all.sort((a, b) =>
           (b.created_at as Date).getTime() - (a.created_at as Date).getTime(),
@@ -316,7 +316,9 @@ describe('PackagesService', () => {
       const a = await svc.create('coach-1', { name: 'a', amount_cents: 1000 });
       const b = await svc.create('coach-1', { name: 'b', amount_cents: 1000 });
       const c = await svc.create('coach-1', { name: 'c', amount_cents: 1000 });
-      const d = await svc.create('coach-1', { name: 'd', amount_cents: 1000 });
+      // d → created and left DRAFT (never published) to assert drafts are
+      // filtered out; the returned row is not needed by the assertions.
+      await svc.create('coach-1', { name: 'd', amount_cents: 1000 });
       // Publish a + b + c so they're not DRAFT.
       await svc.publish('coach-1', a.id);
       await svc.publish('coach-1', b.id);

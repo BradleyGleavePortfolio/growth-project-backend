@@ -585,6 +585,143 @@ describe('CheckoutWebhookHandlerService', () => {
       expect(prisma._purchases[0].entitlement_active).toBe(true);
     });
 
+    it('customer.subscription.updated locks on the OUTER tx (no nested $transaction) when one is provided', async () => {
+      // PR-18 B1 R2 P1 — the dispatcher must thread the outer tx into
+      // applySubscriptionUpdated so the lock + entitlement flip commit with
+      // the StripeProcessedEvent dedup row, NOT via a nested $transaction.
+      const { svc, prisma } = makeHandler();
+      prisma._packages.push({ id: 'pkg-5', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp-5',
+        package_id: 'pkg-5',
+        stripe_subscription_id: 'sub_up_tx',
+        status: 'pending',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      await svc.handle(
+        {
+          id: 'evt_sub_tx',
+          type: 'customer.subscription.updated',
+          data: { object: { id: 'sub_up_tx', status: 'active' } },
+        },
+        prisma as any,
+      );
+      expect(prisma._lockedPackageIds).toContain('pkg-5');
+      // Lock + write ran on the supplied outer tx; no nested tx opened.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+
+    it('invoice.paid locks on the OUTER tx (no nested $transaction, no in-tx Stripe HTTP) when prefetched', async () => {
+      // PR-18 B1 R2 P1 — when BillingService threads its outer tx it ALSO
+      // pre-resolves the subscription via prefetchForOuterTx (out-of-tx) and
+      // passes it here, so the lock + activation run on the outer tx with NO
+      // Stripe round-trip held inside the transaction.
+      const { svc, prisma, stripe } = makeHandler();
+      prisma._packages.push({ id: 'pkg-6', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp-6',
+        package_id: 'pkg-6',
+        stripe_subscription_id: 'sub_inv_tx',
+        status: 'past_due',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      const prefetchedSub = {
+        id: 'sub_inv_tx',
+        status: 'active',
+        current_period_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+      };
+      await svc.handle(
+        {
+          id: 'evt_inv_tx',
+          type: 'invoice.paid',
+          data: { object: { subscription: 'sub_inv_tx' } },
+        },
+        prisma as any,
+        { invoiceSubscription: prefetchedSub as any },
+      );
+      expect(prisma._lockedPackageIds).toContain('pkg-6');
+      // Lock + write ran on the supplied outer tx; no nested tx opened.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      // No Stripe HTTP inside the tx — the subscription came from prefetch.
+      expect(stripe.retrieveSubscription).not.toHaveBeenCalled();
+      expect(prisma._purchases[0].status).toBe('active');
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+
+    it('invoice.paid skips the resync (no in-tx Stripe HTTP) when an outer tx is held without a prefetch', async () => {
+      // PR-18 B1 R2 P1 — defensive: if an outer tx is somehow held but no
+      // prefetch was supplied, the handler must NOT perform Stripe HTTP
+      // inside the transaction. It degrades by skipping the resync.
+      const { svc, prisma, stripe } = makeHandler();
+      prisma._packages.push({ id: 'pkg-8', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp-8',
+        package_id: 'pkg-8',
+        stripe_subscription_id: 'sub_inv_skip',
+        status: 'past_due',
+        entitlement_active: true,
+        created_at: new Date(),
+      });
+      const result = await svc.handle(
+        {
+          id: 'evt_inv_skip',
+          type: 'invoice.paid',
+          data: { object: { subscription: 'sub_inv_skip' } },
+        },
+        prisma as any,
+      );
+      expect(result.claimed).toBe(true);
+      // No Stripe HTTP and no nested tx while the outer tx is held.
+      expect(stripe.retrieveSubscription).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('prefetchForOuterTx resolves the subscription out-of-tx for invoice.paid', async () => {
+      // PR-18 B1 R2 P1 — the prefetch hook (called by BillingService BEFORE
+      // opening its tx) returns the subscription so the in-tx path never
+      // touches Stripe.
+      const { svc, prisma, stripe } = makeHandler();
+      prisma._purchases.push({
+        id: 'cp-pf',
+        package_id: 'pkg-pf',
+        stripe_subscription_id: 'sub_pf',
+        status: 'past_due',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      const sub = { id: 'sub_pf', status: 'active', current_period_end: 123 };
+      stripe.retrieveSubscription.mockResolvedValueOnce(sub);
+      const pre = await svc.prefetchForOuterTx({
+        id: 'evt_pf',
+        type: 'invoice.paid',
+        data: { object: { subscription: 'sub_pf' } },
+      });
+      expect(stripe.retrieveSubscription).toHaveBeenCalledWith('sub_pf');
+      expect(pre.invoiceSubscription).toEqual(sub);
+      // No DB transaction opened by the prefetch.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('prefetchForOuterTx is a no-op for non-invoice events and unknown subs', async () => {
+      const { svc, stripe } = makeHandler();
+      const a = await svc.prefetchForOuterTx({
+        id: 'evt_a',
+        type: 'customer.subscription.updated',
+        data: { object: { id: 'sub_x' } },
+      });
+      expect(a).toEqual({});
+      const b = await svc.prefetchForOuterTx({
+        id: 'evt_b',
+        type: 'invoice.paid',
+        data: { object: { subscription: 'sub_unknown' } },
+      });
+      expect(b).toEqual({});
+      expect(stripe.retrieveSubscription).not.toHaveBeenCalled();
+    });
+
     it('invoice.paid locks the package row on renewal re-activation', async () => {
       const { svc, prisma, stripe } = makeHandler();
       prisma._packages.push({ id: 'pkg-4', billing_type: 'recurring' });

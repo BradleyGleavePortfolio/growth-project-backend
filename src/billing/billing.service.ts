@@ -193,6 +193,22 @@ export class BillingService {
     // email simply omits the "View receipt" line (degraded, not broken).
     const preResolved = await this.preResolveReceiptUrl(event);
 
+    // PR-18 B1 — pre-resolve any Stripe HTTP state the checkout webhook
+    // handler needs INSIDE the outer $transaction (currently the
+    // invoice-renewal subscription resync) BEFORE the transaction opens.
+    // The handler takes a CoachPackage `FOR UPDATE` lock on the recurring
+    // activation path; performing Stripe HTTP after that lock is acquired —
+    // or anywhere inside the outer tx — would hold the Postgres connection
+    // across a Stripe round-trip (A276-P1-3). Mirrors preResolveReceiptUrl.
+    // Best-effort and never throws.
+    // Guard the method reference: legacy/unit-test wiring may stub
+    // checkoutWebhooks with only a `handle` fn and no prefetch method.
+    const checkoutPrefetch =
+      this.checkoutWebhooks &&
+      typeof this.checkoutWebhooks.prefetchForOuterTx === 'function'
+        ? await this.checkoutWebhooks.prefetchForOuterTx(event)
+        : undefined;
+
     // PR-9 — purchase ids whose immediate drops were materialised inside
     // the outer tx and whose drip alerts (push + in-app, decision #9)
     // need to be flushed AFTER commit. Failing to send an alert MUST
@@ -239,7 +255,11 @@ export class BillingService {
         // retry safe. See PR9_BUILD_REPORT for the atomicity contract.
         let claimedByCheckout = false;
         if (this.checkoutWebhooks) {
-          const result = await this.checkoutWebhooks.handle(event, tx);
+          const result = await this.checkoutWebhooks.handle(
+            event,
+            tx,
+            checkoutPrefetch,
+          );
           claimedByCheckout = !!result.claimed;
           if (result.claimed && result.purchase_id) {
             dripAlertPurchaseId = result.purchase_id;
