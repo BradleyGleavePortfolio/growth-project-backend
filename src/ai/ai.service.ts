@@ -393,19 +393,23 @@ Now answer the user's next message using the rules above. Keep the answer under 
   ): Promise<ChatResult> {
     // A1 — build context first (this performs NO provider calls and burns no
     // billable tokens) so we can assemble + clamp the prompt and reserve the
-    // proven worst-case TOTAL-token upper bound before any model call.
+    // best-effort worst-case TOTAL-token estimate before any model call.
     const ctx = await this.contextSvc.build(userId);
     let modelUsed: 'perplexity' | 'anthropic' | 'fallback' = 'perplexity';
 
     // A1 (P1) — ENFORCE the hard input ceiling. Build the system prompt once,
     // take the last 10 history turns, then CLAMP the user-controllable prompt
     // (history + user message) so the TOTAL assembled text the provider receives
-    // can never exceed MAX_INPUT_CHARS. Because MAX_INPUT_CHARS maps to
-    // MAX_INPUT_TOKENS via a CONSERVATIVE upper-bound ratio, the provider's real
-    // input tokens are provably <= MAX_INPUT_TOKENS. The clamped values below
-    // are what BOTH provider branches send, so the bound is enforced on the wire,
-    // not merely estimated. Oversized history/messages are truncated (lossy only
-    // on extreme inputs; the system prompt with all guardrails is preserved).
+    // can never exceed MAX_INPUT_CHARS. MAX_INPUT_CHARS maps to MAX_INPUT_TOKENS
+    // via APPROX_CHARS_PER_TOKEN, which is a BEST-EFFORT heuristic, not a provable
+    // upper bound on real input tokens (see the ACCEPTED-LIMITATION note above):
+    // CJK / emoji / base64 can tokenize to more, and the system-prompt tokens are
+    // not counted. The clamped values below are what BOTH provider branches send,
+    // so the assembled CHARACTER length is bounded on the wire; the token estimate
+    // built from it remains best-effort. Oversized history/messages are truncated
+    // (lossy only on extreme inputs; the system prompt with all guardrails is
+    // preserved). The EXACT post-call reconcile is authoritative for the daily
+    // total.
     const systemPrompt = this.buildSystemPrompt(ctx, userMessage);
     const clamped = clampPromptParts(
       systemPrompt,
@@ -439,18 +443,19 @@ Now answer the user's next message using the rules above. Keep the answer under 
     // product owner has accepted this bounded best-effort behavior for merge.
     const reservation = PER_CALL_TOKEN_RESERVATION;
 
-    // A1 (P1) — enforce the per-user DAILY token quota as a HARD pre-spend
-    // total-token bound BEFORE we call any model. reserveDailyTokens enforces:
+    // A1 (P1) — apply the per-user DAILY token quota as a bounded best-effort
+    // pre-spend gate BEFORE we call any model. reserveDailyTokens enforces:
     //  (a) PRE-CALL reject if the already-consumed daily total is at/over cap;
-    //  (b) PRE-CALL reject if the full worst-case reservation would not fit in
-    //      the remaining budget — since reservation is a proven UPPER bound on
-    //      real total, fitting it proves the real call also fits, so no call
-    //      that could exceed the cap ever reaches the provider;
+    //  (b) PRE-CALL reject if the full worst-case reservation estimate would not
+    //      fit in the remaining budget — a best-effort guard that blocks calls
+    //      whose estimated cost cannot fit, keeping the pre-gate from running
+    //      over the cap on the estimate;
     //  (c) the atomic guarded updateMany (tokens_used + reservation <= cap)
-    //      which is the hard race-safe gate so concurrent calls cannot both
-    //      pass. The reservation captures the day-bucket key (P2) ONCE here so
-    //      the post-call reconcile/refund always hits the SAME row even across
-    //      a midnight rollover.
+    //      which is the race-safe gate so concurrent calls cannot both pass. The
+    //      reservation captures the day-bucket key (P2) ONCE here so the
+    //      post-call reconcile/refund always hits the SAME row even across a
+    //      midnight rollover. The EXACT post-call reconcile is what makes the
+    //      running daily total authoritative.
     const quotaDate = await this.reserveDailyTokens(
       userId,
       reservation,
@@ -584,10 +589,13 @@ Now answer the user's next message using the rules above. Keep the answer under 
 
     } finally {
       // A1 (P1) — settle the reservation against reality on the SAME day-bucket
-      // row we reserved (P2). Because the reservation is a PROVEN UPPER bound on
-      // the provider's real total (enforced input ceiling + hard output cap),
-      // reconciliation only ever DECREMENTS — it refunds the over-reservation and
-      // can never push tokens_used above the cap. Three cases:
+      // row we reserved (P2). In the designed path the reservation estimate is
+      // at/above the provider's real total (enforced input-char clamp + hard
+      // output cap), so reconciliation only ever DECREMENTS — it refunds the
+      // over-reservation. A clamp (see reconcileDailyTokens) defends the rare
+      // case where a best-effort under-estimate is exceeded so the post-call step
+      // never increments above the reservation. The EXACT reconcile is what makes
+      // the daily total authoritative. Three cases:
       //  1. Provider reported a real TOTAL usage => reconcile DOWN to that exact
       //     total (refund reserved - actual). Since actual <= reserved, this is
       //     always a refund; the daily ledger then reflects TRUE total tokens.
@@ -655,31 +663,31 @@ Now answer the user's next message using the rules above. Keep the answer under 
   }
 
   // A1 (P1) — atomically reserve `cost` tokens against the user's daily budget,
-  // enforcing the DAILY_TOKEN_QUOTA as a TRUE HARD PRE-SPEND total-token bound.
+  // applying the DAILY_TOKEN_QUOTA as a bounded best-effort PRE-SPEND gate.
   //
-  // `cost` is the PROVEN WORST-CASE total for the call (enforced input ceiling +
-  // hard output cap), so reserving it guarantees the real provider total can
-  // never exceed what was reserved. The cap is a HARD pre-call gate in three
-  // layers:
+  // `cost` is the BEST-EFFORT worst-case estimate for the call (enforced
+  // input-char clamp + hard output cap). It is a heuristic estimate, not a
+  // provable upper bound on the real provider total (see the ACCEPTED-LIMITATION
+  // note above: CJK / emoji / base64 and the uncounted system-prompt tokens can
+  // exceed it). Reserving it up front gates the spend in three layers:
   //  (a) PRE-CALL reject if the already-consumed daily total is at/over the
   //      cap — an at/over-cap user is blocked even for an individually tiny
   //      call, before any model is touched.
-  //  (b) PRE-CALL reject if the worst-case reservation (`minRequired`, equal to
-  //      `cost`) would not fit in the remaining budget. Because the reservation
-  //      is a proven UPPER bound on the real total, fitting it proves the real
-  //      call also fits — so no call that could exceed the cap ever reaches the
-  //      provider.
+  //  (b) PRE-CALL reject if the worst-case reservation estimate (`minRequired`,
+  //      equal to `cost`) would not fit in the remaining budget — a best-effort
+  //      guard that blocks calls whose estimated cost cannot fit.
   //  (c) the atomic guarded `updateMany` (tokens_used + cost <= cap, i.e.
-  //      tokens_used <= cap - cost) which is the race-safe hard gate: N
-  //      concurrent requests each either win the guarded update (count === 1)
-  //      or are rejected (count === 0) with no read-modify-write race, so they
-  //      can never collectively push tokens_used past the cap.
+  //      tokens_used <= cap - cost) which is the race-safe gate: N concurrent
+  //      requests each either win the guarded update (count === 1) or are
+  //      rejected (count === 0) with no read-modify-write race, so they can
+  //      never collectively push the RESERVED total past the cap.
   //
   // Any rejection throws 429 BEFORE a model call, so an at/over-cap user never
-  // burns provider tokens. Because the reservation is an upper bound, the
-  // post-call reconcile only ever refunds the over-reservation DOWN — it can
-  // never push the ledger above the cap after the fact. This is what makes the
-  // cap a hard pre-spend bound rather than after-the-fact accounting.
+  // burns provider tokens. In the designed path the estimate is at/above the
+  // real total, so the post-call reconcile only ever refunds the
+  // over-reservation DOWN. The EXACT post-call reconcile — not this pre-gate — is
+  // what makes the running daily total authoritative; the pre-gate is bounded
+  // best-effort.
   //
   // P2 (day key) — returns the captured quota_date so the caller passes the
   // SAME day-bucket key to the post-call reconcile/refund. Recomputing the
@@ -704,10 +712,10 @@ Now answer the user's next message using the rules above. Keep the answer under 
       update: {},
     });
 
-    // (a) + (b) — explicit HARD pre-call checks. Reject when already at/over the
-    // cap, or when the worst-case reservation would not fit in the remaining
-    // budget. Since the reservation is a proven UPPER bound on the real total,
-    // these reject pre-spend any call that could exceed the cap.
+    // (a) + (b) — explicit pre-call checks. Reject when already at/over the cap,
+    // or when the worst-case reservation estimate would not fit in the remaining
+    // budget. These are best-effort pre-spend guards on the estimate; the EXACT
+    // post-call reconcile is what makes the daily total authoritative.
     const consumed = row?.tokens_used ?? 0;
     if (
       consumed >= DAILY_TOKEN_QUOTA ||
@@ -753,12 +761,13 @@ Now answer the user's next message using the rules above. Keep the answer under 
   }
 
   // A1 (P1) — reconcile the up-front reservation DOWN to the provider's actual
-  // TOTAL usage (prompt + completion). We reserved `reserved` tokens (a proven
-  // UPPER bound on the real total); the real cost was `actual`. Because
-  // `reserved` is an upper bound, `actual <= reserved` in the designed path, so
-  // reconciliation is ALWAYS a refund (decrement) of `reserved - actual`. This
-  // is why the cap is a hard pre-spend bound: the ledger never grows after the
-  // provider call, so a single call can never push tokens_used past the cap.
+  // TOTAL usage (prompt + completion). We reserved `reserved` tokens (a
+  // best-effort worst-case estimate); the real cost was `actual`. In the
+  // designed path the estimate is at/above the real total, so `actual <=
+  // reserved` and reconciliation is a refund (decrement) of `reserved - actual`.
+  // This EXACT reconcile is what makes the daily total authoritative: after it
+  // runs the ledger reflects the provider's ACTUAL reported usage, regardless of
+  // whether the best-effort pre-estimate over- or under-counted.
   //
   // P1-b — when the call spent no billable tokens (provider failure, empty
   // completion, or deterministic fallback) the caller passes actual=0, which
@@ -769,13 +778,12 @@ Now answer the user's next message using the rules above. Keep the answer under 
   // in here, so reserve and reconcile always hit the same row even across a
   // midnight rollover.
   //
-  // Defensive only: if a provider ever reported actual > reserved (which the
-  // enforced input ceiling + output cap make impossible), we DO NOT apply an
-  // unguarded post-spend increment that could push past the cap. Instead we
-  // clamp the reconcile to charge at most up to the cap (treat the call as
-  // having consumed its full reservation — i.e. no refund), so the ledger can
-  // never represent more than the reservation was meant to bound. This keeps
-  // the cap a hard bound even under a misbehaving provider.
+  // Defensive: if a provider ever reports actual > reserved (possible since the
+  // pre-estimate is best-effort, not a provable bound — e.g. heavy tokenization
+  // the heuristic could not foresee), we DO NOT apply an unguarded post-spend
+  // increment. Instead we clamp the reconcile to charge at most the reservation
+  // (treat the call as having consumed its full reservation — i.e. no refund),
+  // so the post-call step never increments the ledger above what was reserved.
   //
   // Safety: the refund is a DB-side decrement guarded by tokens_used >= refund
   // so it can never underflow below zero, and it is atomic (single guarded
@@ -787,10 +795,11 @@ Now answer the user's next message using the rules above. Keep the answer under 
     reserved: number,
     actual: number,
   ): Promise<void> {
-    // Clamp actual at the reservation: reserved is a proven upper bound, so
-    // actual should never exceed it. If a misbehaving provider ever reports
-    // more, we charge at most the reservation (no post-spend increment), so the
-    // ledger never represents more than the reservation already gated on.
+    // Clamp actual at the reservation: in the designed path the best-effort
+    // estimate is at/above the real total, so actual should not exceed it. If a
+    // provider ever reports more, we charge at most the reservation (no
+    // post-spend increment), so the post-call step never grows the ledger above
+    // what was reserved.
     const effectiveActual = Math.min(actual, reserved);
     const refund = reserved - effectiveActual; // always >= 0 (decrement-only)
     if (refund === 0) return;

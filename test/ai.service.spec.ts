@@ -369,12 +369,13 @@ describe('AiService.chat daily token quota (A1)', () => {
     expect(row.tokens_used).toBeGreaterThan(MAX_TOKENS_PER_CALL);
   });
 
-  // P1 — high-total calls are gated by the daily cap as a HARD PRE-SPEND bound.
-  // Each call reserves the proven worst case (PER_CALL_TOKEN_RESERVATION); the
-  // pre-call gate rejects the moment the next worst-case reservation would not
-  // fit in the remaining budget, BEFORE the provider is touched. The ledger
-  // reconciles down to the real per-call usage, but the gate is on the
-  // worst-case reservation, not the after-the-fact real spend.
+  // P1 — high-total calls are gated pre-spend by the daily cap. Each call
+  // reserves the best-effort worst-case estimate (PER_CALL_TOKEN_RESERVATION);
+  // the pre-call gate rejects the moment the next worst-case reservation would
+  // not fit in the remaining budget, BEFORE the provider is touched. The ledger
+  // reconciles down to the real per-call usage, and that EXACT reconcile is what
+  // makes the daily total authoritative; the gate itself is on the best-effort
+  // reservation estimate.
   it('total-token accounting: high-total calls are gated pre-spend by the daily cap', async () => {
     mockCreate.mockResolvedValue({
       choices: [{ message: { content: 'ok' } }],
@@ -482,10 +483,11 @@ describe('AiService.chat daily token quota (A1)', () => {
     expect(quota.rows.get(quota.keyOf('u1', today))!.tokens_used).toBe(DAILY_TOKEN_QUOTA);
   });
 
-  // P1 (R4) — a call whose WORST-CASE reservation would push the total over the
-  // cap is rejected PRE-SPEND (the model is never invoked). Because the
-  // reservation is a proven UPPER bound on the real total, rejecting it pre-call
-  // guarantees no call that could exceed the cap ever reaches the provider.
+  // P1 (R4) — a call whose WORST-CASE reservation estimate would push the total
+  // over the cap is rejected PRE-SPEND (the model is never invoked). This is the
+  // best-effort pre-gate at work: a call whose estimated cost cannot fit is
+  // blocked before reaching the provider. The EXACT post-call reconcile remains
+  // authoritative for the daily total.
   it('hard cap: a call that would push total over cap is rejected pre-spend', async () => {
     mockCreate.mockResolvedValue({
       choices: [{ message: { content: 'ok' } }],
@@ -509,16 +511,16 @@ describe('AiService.chat daily token quota (A1)', () => {
     expect(quota.rows.get(quota.keyOf('u1', today))!.tokens_used).toBe(DAILY_TOKEN_QUOTA - 10);
   });
 
-  // P1 (R4) — the reservation is a PROVEN UPPER bound, so reconciliation NEVER
-  // increments the ledger above what was reserved. Even if a misbehaving
-  // provider reports a TOTAL larger than the worst-case reservation, the
-  // reconcile clamps at the reservation (no post-spend increment), so the
-  // ledger can never represent more than the reservation already gated on —
-  // and never exceeds the daily cap from an after-the-fact charge.
+  // P1 (R4) — reconciliation NEVER increments the ledger above what was
+  // reserved. Even if a provider reports a TOTAL larger than the worst-case
+  // reservation estimate (possible because the pre-estimate is best-effort, not
+  // a provable bound), the reconcile clamps at the reservation (no post-spend
+  // increment), so the post-call step never grows the ledger above what was
+  // reserved.
   it('reconcile never increments above the reservation (provider over-report is clamped)', async () => {
     // Provider reports a TOTAL (50000) far larger than the worst-case
-    // reservation (PER_CALL_TOKEN_RESERVATION = 6600). This cannot happen given
-    // the enforced input ceiling + output cap, but we defend against it.
+    // reservation estimate (PER_CALL_TOKEN_RESERVATION = 6600). The best-effort
+    // pre-estimate does not provably rule this out, so we defend against it.
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { content: 'ok' } }],
       usage: { total_tokens: 50000 },
@@ -664,9 +666,11 @@ describe('AiService.chat daily token quota (A1)', () => {
 });
 
 // P1 (R4) — unit-test the prompt clamp directly: the assembled prompt the
-// provider receives is provably bounded, which is what lets the worst-case
-// reservation act as a true upper bound on real input tokens.
-describe('clampPromptParts (A1 hard input ceiling)', () => {
+// provider receives is bounded in CHARACTERS, which is what the worst-case
+// reservation's best-effort token estimate (chars/APPROX_CHARS_PER_TOKEN) is
+// built from. The char clamp is hard; the token estimate derived from it is
+// best-effort, not a provable bound on real input tokens.
+describe('clampPromptParts (A1 input char ceiling)', () => {
   it('clamps an oversized prompt so total assembled chars <= MAX_INPUT_CHARS', () => {
     const systemPrompt = 'S'.repeat(2000);
     // A wildly oversized user message and history (far beyond the ceiling).
@@ -682,8 +686,10 @@ describe('clampPromptParts (A1 hard input ceiling)', () => {
       out.history.reduce((n, m) => n + m.content.length, 0);
     // The bounded assembled text never exceeds the hard input-char ceiling.
     expect(totalChars).toBeLessThanOrEqual(MAX_INPUT_CHARS);
-    // And that ceiling maps to <= MAX_INPUT_TOKENS under the CONSERVATIVE ratio,
-    // which is an UPPER bound on what any real tokenizer would charge.
+    // That char ceiling maps to <= MAX_INPUT_TOKENS under the heuristic ratio.
+    // This is the best-effort token ESTIMATE the reservation is built from, NOT
+    // a provable bound on what a real tokenizer would charge (see the
+    // ACCEPTED-LIMITATION note in ai.service.ts).
     expect(Math.ceil(totalChars / CONSERVATIVE_CHARS_PER_TOKEN)).toBeLessThanOrEqual(
       MAX_INPUT_TOKENS,
     );
