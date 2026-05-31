@@ -380,7 +380,7 @@ export class DripDispatcherCron {
       // Fire push + in-app alert (decision #9). Wrapped so any failure
       // here NEVER un-delivers the content — we already committed
       // materialised_ref above.
-      await this.dispatchBuyerAlert(drop, purchase.client_user_id);
+      await this.dispatchBuyerAlert(drop, purchase.client_user_id, now);
       return 'delivered';
     } catch (err) {
       return this.handleDispatchFailure(drop, purchase, err as Error, now);
@@ -393,28 +393,64 @@ export class DripDispatcherCron {
    * uses for transfer.failed COACH_ALERTs at billing.service.ts:1115)
    * and pushToUser. Both are wrapped in try/catch and logged: a hostile
    * notification provider must never reach back into the content
-   * pipeline. After the dispatch attempt we stamp alert_dispatched_at
-   * so a safety sweep can never double-push the buyer.
+   * pipeline.
    *
-   * PR-17 B1 — notify-suppression guard (decision #9 prep for B2). If
-   * alert_dispatched_at is ALREADY set when we reach this method, the
-   * buyer alert has already been handled (or was deliberately suppressed)
-   * and we SKIP the send — no double-alert. B2's push service sets
-   * alert_dispatched_at at SEED time when the coach toggles "notify" OFF
-   * for a push, so a forward-dated push that the coach asked NOT to
-   * announce delivers silently: the cron materialises the content but this
-   * guard short-circuits the DRIP_RELEASED push + in-app. The gate is
-   * strictly on the column being pre-set; a NORMAL drip drop is never
-   * pre-stamped at seed (fan-out + PR-10 leave it NULL until after the
-   * first dispatch), so its behaviour is unchanged.
+   * PR-18 B4 — ATOMIC duplicate-alert dedup. The previous guard read
+   * the in-memory `drop.alert_dispatched_at` snapshot and only stamped
+   * the column AFTER the notification attempts. That left a race: a
+   * slow worker could send, and BEFORE it stamped, a stale-claim
+   * reclaim worker (STALE_CLAIM_MS, see findDue/claim) loads its OWN
+   * snapshot with alert_dispatched_at still NULL and sends the SAME
+   * push + in-app a second time — a duplicate buyer alert. The JS
+   * snapshot is not a mutex.
+   *
+   * Fix: claim the right to alert with a single atomic conditional
+   * UPDATE BEFORE any send —
+   *   updateMany({ where:{ id, alert_dispatched_at: null }, data:{ alert_dispatched_at: now } })
+   * Exactly one worker's UPDATE matches the NULL row and returns
+   * count===1; every contender (a sibling reclaim, a future safety
+   * sweep, OR a row PRE-STAMPED at seed for notify-off) matches zero
+   * rows and returns count===0. We send ONLY when we won the claim.
+   *
+   * count===0 → log + skip. This single branch covers BOTH cases the
+   * brief calls out: (a) the notify-off pre-stamped row (B2 stamps
+   * alert_dispatched_at at SEED time when the coach toggles "notify"
+   * OFF — the content still materialises but no announcement fires),
+   * and (b) an already-claimed row (a sibling reclaim got here first).
+   *
+   * count===1 → send in-app + push. We do NOT clear the stamp on a
+   * notification-provider failure: per decision #9 a failed push must
+   * never un-deliver content and must never be re-attempted as a
+   * duplicate. "Delivery committed; alert best-effort and never
+   * duplicated" — this matches the prior stamp-regardless policy but
+   * now the stamp lands BEFORE the send instead of after, closing the
+   * window.
+   *
+   * NOTE (future work): a true multi-worker race can only be exercised
+   * against a real transactional store (two concurrent UPDATEs
+   * contending on the same NULL row). The deterministic unit tests
+   * here assert the count-branch logic against the in-memory prisma
+   * mock; a DB-backed race harness (e.g. a throwaway Postgres + two
+   * real connections firing the claim in parallel) is intentionally
+   * OUT OF SCOPE for this unit and tracked as a follow-up — see the
+   * matching TODO in test/drip-dispatcher.cron.spec.ts.
    */
   private async dispatchBuyerAlert(
     drop: ScheduledDrop,
     clientUserId: string,
+    now: Date = new Date(),
   ): Promise<void> {
-    if (drop.alert_dispatched_at != null) {
+    // ATOMIC alert claim — the dedup gate is the DB, not the JS
+    // snapshot. Only the worker whose UPDATE flips the NULL column wins
+    // the right to send; everyone else (sibling reclaim or notify-off
+    // pre-stamped row) sees count===0 and skips.
+    const claim = await this.prisma.scheduledDrop.updateMany({
+      where: { id: drop.id, alert_dispatched_at: null },
+      data: { alert_dispatched_at: now },
+    });
+    if (claim.count === 0) {
       this.logger.debug(
-        `drip-dispatcher alert suppressed for drop=${drop.id} client=${clientUserId}: alert_dispatched_at already set (notify off or already alerted)`,
+        `drip-dispatcher alert skipped for drop=${drop.id} client=${clientUserId}: alert claim count=0 (notify off pre-stamp or already alerted by another worker)`,
       );
       return;
     }
@@ -478,19 +514,13 @@ export class DripDispatcherCron {
         );
       }
     }
-    // Stamp regardless of success/failure so a future tick never
-    // re-pushes for the same drop. Per decision #9 a failed push must
-    // not roll back delivery.
-    try {
-      await this.prisma.scheduledDrop.update({
-        where: { id: drop.id },
-        data: { alert_dispatched_at: new Date() },
-      });
-    } catch (err) {
-      this.logger.warn(
-        `drip-dispatcher could not stamp alert_dispatched_at for drop=${drop.id}: ${(err as Error).message}`,
-      );
-    }
+    // No post-send stamp: the alert_dispatched_at column was already
+    // claimed atomically at the TOP of this method, BEFORE any send.
+    // We deliberately do NOT clear it on a notification-provider
+    // failure — per decision #9 a failed push must not un-deliver
+    // content, and re-clearing would re-open the duplicate-alert
+    // window this PR closes. Delivery is committed; the alert is
+    // best-effort and never duplicated.
   }
 
   /**
