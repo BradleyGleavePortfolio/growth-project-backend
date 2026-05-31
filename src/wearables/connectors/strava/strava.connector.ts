@@ -10,7 +10,6 @@ import {
   ProviderHttpError,
 } from '../../http/provider-http-client';
 import { WearableAuthModel, WearableConnector } from '../connector.interface';
-import { normalizeStravaActivities } from './strava.normalizer';
 import {
   STRAVA_SCOPES,
   StravaActivity,

@@ -35,14 +35,25 @@ import { StravaActivity } from './strava.types';
  * than fabricated as 0 (which would corrupt averages).
  */
 
+/**
+ * The five canonical metrics Strava maps to (all HEALTH_FITNESS). Narrowing
+ * the union lets `UNIT[metric]` index safely without `any`.
+ */
+type StravaMetric =
+  | typeof WearableMetricType.WORKOUT_DURATION_MIN
+  | typeof WearableMetricType.WORKOUT_DISTANCE_M
+  | typeof WearableMetricType.ACTIVE_ENERGY_KCAL
+  | typeof WearableMetricType.TRAINING_LOAD
+  | typeof WearableMetricType.HEART_RATE_BPM;
+
 /** Canonical unit strings — must match WearableMetricDef.unit seeds. */
-const UNIT = {
+const UNIT: Record<StravaMetric, string> = {
   [WearableMetricType.WORKOUT_DURATION_MIN]: 'min',
   [WearableMetricType.WORKOUT_DISTANCE_M]: 'm',
   [WearableMetricType.ACTIVE_ENERGY_KCAL]: 'kcal',
   [WearableMetricType.TRAINING_LOAD]: 'score',
   [WearableMetricType.HEART_RATE_BPM]: 'bpm',
-} as const;
+};
 
 /**
  * Compute the Strava-native sample dedup key per the PR-HK-2.f spec:
@@ -123,7 +134,7 @@ export function normalizeStravaActivities(
     const sourceRecordId =
       a.id !== undefined && a.id !== null ? String(a.id) : null;
 
-    const push = (metric: WearableMetricType, value: number): void => {
+    const push = (metric: StravaMetric, value: number): void => {
       out.push({
         userId,
         connectionId,
