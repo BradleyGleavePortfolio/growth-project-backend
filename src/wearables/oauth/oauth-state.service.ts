@@ -185,8 +185,15 @@ export class OauthStateService implements OnModuleDestroy {
       logger.log('OAuth state store: Redis (shared across machines).');
       return new RedisOauthStateStore(client as MinimalRedis);
     } catch (err) {
+      // Do NOT log the raw error message: an ioredis construction failure can
+      // echo back the connection string (REDIS_URL), which carries the Redis
+      // password/credentials. Log only the error CLASS (#12).
       logger.error(
-        `Failed to construct Redis OAuth state store (${(err as Error).message}); falling back to in-memory.`,
+        `Failed to construct Redis OAuth state store (error_class=${
+          err && typeof err === 'object' && err.constructor
+            ? err.constructor.name
+            : typeof err
+        }); falling back to in-memory.`,
       );
       return new InMemoryOauthStateStore();
     }

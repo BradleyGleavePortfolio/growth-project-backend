@@ -119,11 +119,14 @@ export class ConnectionsService {
     try {
       tokens = await connector.exchangeCode(input.code, pkceVerifier);
     } catch (err) {
-      // Log WITHOUT the code or any token material (#12). Surface a generic
-      // error to the caller.
-      this.logger.error(
-        `OAuth code exchange failed for provider=${provider} user=${userId}: ${(err as Error).message}`,
-      );
+      // Log WITHOUT the code or any token material (#12). Connector/provider
+      // error messages are UNTRUSTED — they can embed the OAuth `code`,
+      // `access_token`, `refresh_token`, `client_secret`, or a raw provider
+      // response body. We therefore log ONLY a sanitized context object
+      // (provider/user + the error's CODE and CLASS) and NEVER `err.message`,
+      // `err.response.data`, request bodies, headers, or query strings. Surface
+      // a generic error to the caller.
+      this.logger.error(this.sanitizeExchangeError(err, provider, userId));
       throw new BadRequestException('OAuth code exchange failed.');
     }
 
@@ -239,6 +242,43 @@ export class ConnectionsService {
     });
 
     return { success: true, provider };
+  }
+
+  /**
+   * Build the redacted log payload for an OAuth code-exchange failure.
+   *
+   * Connector exception messages/response bodies are untrusted and may contain
+   * token/secret material (#12), so this deliberately captures ONLY:
+   *  - a fixed event `msg`,
+   *  - the `provider` + `user_id` (non-secret routing context),
+   *  - the error's `error_code` (e.g. an HTTP-ish code, when the connector sets
+   *    one) — falling back to `'unknown'`, and
+   *  - the error's `error_class` (constructor name).
+   *
+   * It NEVER includes `err.message`, `err.response.data`, request bodies,
+   * headers, or query strings — any of which can carry `code`/`access_token`/
+   * `refresh_token`/`client_secret`.
+   */
+  private sanitizeExchangeError(
+    err: unknown,
+    provider: WearableProvider,
+    userId: string,
+  ): Record<string, string> {
+    const errorCode =
+      err && typeof err === 'object' && 'code' in err
+        ? String((err as { code?: unknown }).code ?? 'unknown')
+        : 'unknown';
+    const errorClass =
+      err && typeof err === 'object' && err.constructor
+        ? err.constructor.name
+        : typeof err;
+    return {
+      msg: 'wearables.oauth.exchange_failure',
+      provider,
+      user_id: userId,
+      error_code: errorCode,
+      error_class: errorClass,
+    };
   }
 
   /**
