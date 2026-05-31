@@ -33,6 +33,7 @@
 import 'reflect-metadata';
 import { Test, TestingModule } from '@nestjs/testing';
 import { APP_GUARD, DiscoveryModule, DiscoveryService, MetadataScanner } from '@nestjs/core';
+import { Type } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { AppModule } from '../src/app.module';
 import { IS_PUBLIC_KEY } from '../src/common/decorators/public.decorator';
@@ -204,7 +205,7 @@ describe('RolesEnforced — every route has @Roles or @Public', () => {
       const instance = wrapper.instance;
       if (!instance || typeof instance !== 'object') continue;
 
-      const controllerClass = instance.constructor as Function;
+      const controllerClass = instance.constructor as Type<unknown>;
       const controllerName = controllerClass.name;
 
       // Class-level decoration covers every handler in the controller.

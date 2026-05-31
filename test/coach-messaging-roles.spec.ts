@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, Type } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { CoachMessagingController } from '../src/messaging/coach-messaging.controller';
 import { RolesGuard } from '../src/auth/roles.guard';
@@ -12,7 +12,7 @@ import { ROLES_KEY, AppRole } from '../src/common/decorators/roles.decorator';
 // PRESENT (metadata) and ENFORCED (RolesGuard actually reads it and rejects a
 // non-coach) — so the defence-in-depth is real, not cosmetic.
 
-function ctxFor(controllerClass: Function, role?: AppRole) {
+function ctxFor(controllerClass: Type<unknown>, role?: AppRole) {
   // Mirrors how RolesGuard reads metadata via Reflector.getAllAndOverride
   // over [handler, class]; the class-level @Roles must apply to every handler.
   return {
