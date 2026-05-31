@@ -23,10 +23,11 @@ interface PrismaMock {
   wearableConnection: { updateMany: jest.Mock };
   wearableInsightCache: { deleteMany: jest.Mock };
   wearableUserMetricPreference: { findUnique: jest.Mock };
+  $transaction: jest.Mock;
 }
 
 function makePrismaMock(): PrismaMock {
-  return {
+  const mock: PrismaMock = {
     wearableSample: {
       createMany: jest.fn(),
       findUnique: jest.fn(),
@@ -36,7 +37,17 @@ function makePrismaMock(): PrismaMock {
     wearableConnection: { updateMany: jest.fn() },
     wearableInsightCache: { deleteMany: jest.fn() },
     wearableUserMetricPreference: { findUnique: jest.fn() },
+    // Default interactive-transaction mock: invoke the callback with the same
+    // mock as the `tx` client so the in-transaction delegate calls hit the
+    // same jest.fn() spies the existing assertions inspect. Real Prisma would
+    // roll back on a thrown callback; the per-test failure cases assert that
+    // the rejection propagates (fail-loud) rather than simulating rollback.
+    $transaction: jest.fn(),
   };
+  mock.$transaction.mockImplementation(
+    async (cb: (tx: PrismaMock) => unknown) => cb(mock),
+  );
+  return mock;
 }
 
 const USER_A = '11111111-1111-1111-1111-111111111111';
@@ -245,6 +256,154 @@ describe('IngestionService', () => {
       expect(order).toEqual(['createMany', 'updateMany', 'deleteMany']);
     });
 
+    describe('transactional atomicity (P1-#2)', () => {
+      it('wraps the three side effects in a SINGLE prisma.$transaction', async () => {
+        prisma.wearableSample.createMany.mockResolvedValue({ count: 1 });
+
+        await service.ingest([sample()]);
+
+        expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+        // The transaction is interactive (callback form) with the documented
+        // ReadCommitted isolation + 10s timeout options.
+        const [cb, opts] = prisma.$transaction.mock.calls[0];
+        expect(typeof cb).toBe('function');
+        expect(opts).toMatchObject({
+          timeout: 10_000,
+          isolationLevel: 'ReadCommitted',
+        });
+      });
+
+      it('runs insert, connection-bump, and cache-invalidation INSIDE the transaction', async () => {
+        const order: string[] = [];
+        prisma.$transaction.mockImplementation(async (cb: (tx: typeof prisma) => unknown) => {
+          order.push('tx:start');
+          const out = await cb(prisma);
+          order.push('tx:end');
+          return out;
+        });
+        prisma.wearableSample.createMany.mockImplementation(async () => {
+          order.push('createMany');
+          return { count: 1 };
+        });
+        prisma.wearableConnection.updateMany.mockImplementation(async () => {
+          order.push('updateMany');
+          return { count: 1 };
+        });
+        prisma.wearableInsightCache.deleteMany.mockImplementation(async () => {
+          order.push('deleteMany');
+          return { count: 0 };
+        });
+
+        await service.ingest([sample()]);
+
+        // All three writes are bracketed by the transaction boundaries.
+        expect(order).toEqual([
+          'tx:start',
+          'createMany',
+          'updateMany',
+          'deleteMany',
+          'tx:end',
+        ]);
+      });
+
+      it('propagates a failure from inside the transaction (no leaked partial state)', async () => {
+        // Samples insert succeeds but the connection bump throws inside the tx;
+        // the rejection must propagate so the (real) transaction rolls back.
+        prisma.wearableSample.createMany.mockResolvedValue({ count: 2 });
+        const dbErr = Object.assign(new Error('connection bump failed'), {
+          code: 'P2002',
+        });
+        prisma.wearableConnection.updateMany.mockRejectedValue(dbErr);
+
+        await expect(service.ingest([sample()])).rejects.toBe(dbErr);
+        // Cache invalidation must never run once the bump throws.
+        expect(prisma.wearableInsightCache.deleteMany).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('error-path logging (P1-#3)', () => {
+      it('logs a redacted success record on success', async () => {
+        prisma.wearableSample.createMany.mockResolvedValue({ count: 2 });
+        const logSpy = jest
+          .spyOn(service['logger'], 'log')
+          .mockImplementation(() => undefined as never);
+
+        await service.ingest([sample(), sample({ sourceRecordId: 'rec-2' })]);
+
+        expect(logSpy).toHaveBeenCalledTimes(1);
+        const payload = logSpy.mock.calls[0][0] as Record<string, unknown>;
+        expect(payload.msg).toBe('wearables.ingest.success');
+        expect(payload.inserted_count).toBe(2);
+        expect(payload.submitted_count).toBe(2);
+        expect(payload.provider).toBe(WearableProvider.OURA);
+        expect(payload.user_id).toBe(USER_A);
+      });
+
+      it('logs a redacted failure record THEN rethrows on a DB failure', async () => {
+        const dbErr = Object.assign(new Error('createMany exploded'), {
+          code: 'P2010',
+        });
+        prisma.wearableSample.createMany.mockRejectedValue(dbErr);
+        const errSpy = jest
+          .spyOn(service['logger'], 'error')
+          .mockImplementation(() => undefined as never);
+
+        await expect(service.ingest([sample()])).rejects.toBe(dbErr);
+
+        expect(errSpy).toHaveBeenCalledTimes(1);
+        const payload = errSpy.mock.calls[0][0] as Record<string, unknown>;
+        expect(payload.msg).toBe('wearables.ingest.failure');
+        expect(payload.error_code).toBe('P2010');
+        expect(payload.error_message).toBe('createMany exploded');
+        expect(payload.submitted_count).toBe(1);
+      });
+
+      it('logs a redacted validation_failure record THEN rethrows on bad input', async () => {
+        const errSpy = jest
+          .spyOn(service['logger'], 'error')
+          .mockImplementation(() => undefined as never);
+
+        await expect(
+          service.ingest([sample({ value: Number.NaN })]),
+        ).rejects.toThrow(/invalid sample at index 0/);
+
+        expect(errSpy).toHaveBeenCalledTimes(1);
+        const payload = errSpy.mock.calls[0][0] as Record<string, unknown>;
+        expect(payload.msg).toBe('wearables.ingest.validation_failure');
+        expect(payload.submitted_count).toBe(1);
+        // Validation must reject BEFORE any DB write / transaction.
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(prisma.wearableSample.createMany).not.toHaveBeenCalled();
+      });
+
+      it('NEVER logs raw sample payloads (PII redaction)', async () => {
+        prisma.wearableSample.createMany.mockResolvedValue({ count: 1 });
+        const logSpy = jest
+          .spyOn(service['logger'], 'log')
+          .mockImplementation(() => undefined as never);
+
+        await service.ingest([sample()]);
+
+        const payload = logSpy.mock.calls[0][0] as Record<string, unknown>;
+        // The log object exposes ONLY the redacted summary keys — no raw
+        // sample fields (value/unit/start_at/raw_ref/dedup_key/etc.).
+        expect(Object.keys(payload).sort()).toEqual(
+          [
+            'connection_count',
+            'inserted_count',
+            'msg',
+            'provider',
+            'skipped_count',
+            'submitted_count',
+            'user_id',
+          ].sort(),
+        );
+        const serialized = JSON.stringify(payload);
+        expect(serialized).not.toContain('462'); // sample value
+        expect(serialized).not.toContain('oura-rec-1'); // source_record_id
+      });
+    });
+
     it('throws TypeError when samples is not an array', async () => {
       await expect(
         service.ingest(undefined as unknown as NormalizedSample[]),
@@ -385,6 +544,37 @@ describe('IngestionService', () => {
       await expect(
         service.resolveBest(USER_A, WearableMetricType.HRV_MS, END, START),
       ).rejects.toBeInstanceOf(RangeError);
+    });
+
+    it('throws TypeError on an invalid startAt Date (matches ingest() validation)', async () => {
+      await expect(
+        service.resolveBest(
+          USER_A,
+          WearableMetricType.HRV_MS,
+          new Date('not-a-date'),
+          END,
+        ),
+      ).rejects.toBeInstanceOf(TypeError);
+      // Fail-loud BEFORE building any Prisma filter / issuing a query.
+      expect(
+        prisma.wearableUserMetricPreference.findUnique,
+      ).not.toHaveBeenCalled();
+      expect(prisma.wearableSample.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('throws TypeError on an invalid endAt Date (matches ingest() validation)', async () => {
+      await expect(
+        service.resolveBest(
+          USER_A,
+          WearableMetricType.HRV_MS,
+          START,
+          new Date('not-a-date'),
+        ),
+      ).rejects.toBeInstanceOf(TypeError);
+      expect(
+        prisma.wearableUserMetricPreference.findUnique,
+      ).not.toHaveBeenCalled();
+      expect(prisma.wearableSample.findFirst).not.toHaveBeenCalled();
     });
   });
 });

@@ -31,7 +31,11 @@ import { computeDedupKey } from './dedup.util';
  *    affected (user, bucket) — never a per-row loop.
  *  - #28/#29 dedup — createMany(skipDuplicates) keyed on the UNIQUE
  *    dedup_key makes re-ingestion idempotent.
- *  - #36 no silent catch — failures propagate.
+ *  - #36 no silent catch — failures are LOGGED (redacted) then re-thrown;
+ *    they never propagate unobserved.
+ *  - atomicity — the insert + connection bump + cache invalidation run in a
+ *    SINGLE Prisma transaction, so a mid-sequence failure can never leave
+ *    partial state (samples inserted but connection/cache not updated).
  */
 @Injectable()
 export class IngestionService {
@@ -43,12 +47,17 @@ export class IngestionService {
    * Batch-ingest normalized samples.
    *
    * Steps (all batched — no per-row queries):
-   *  1. Validate the batch (#8). Throws on the first invalid sample.
+   *  1. Validate the batch (#8). Logs a redacted validation_failure then
+   *     throws on the first invalid sample.
    *  2. Compute dedup_key for each sample (shared util).
-   *  3. SINGLE createMany(skipDuplicates) on dedup_key (idempotent, #21/#28).
-   *  4. SINGLE updateMany bumping each touched connection's last_synced_at.
-   *  5. SINGLE deleteMany per affected (user, bucket) to invalidate stale
-   *     WearableInsightCache rows so the next read regenerates insights.
+   *  3-5. Inside a SINGLE Prisma transaction (ReadCommitted, 10s timeout):
+   *     3. SINGLE createMany(skipDuplicates) on dedup_key (idempotent,
+   *        #21/#28).
+   *     4. SINGLE updateMany bumping each touched connection's last_synced_at.
+   *     5. SINGLE deleteMany per affected (user, bucket) to invalidate stale
+   *        WearableInsightCache rows so the next read regenerates insights.
+   *  On success: redacted success log. On failure: redacted error log then
+   *  re-throw (fail-loud, #36).
    *
    * @returns counts of newly inserted vs skipped (already-present) rows.
    */
@@ -62,7 +71,21 @@ export class IngestionService {
       return { inserted: 0, skipped: 0 };
     }
 
-    samples.forEach((s, i) => this.validateSample(s, i));
+    // (1) Validate the batch (#8). Log a redacted validation_failure (counts
+    // + provider + user, NEVER raw payloads) before rethrowing so an invalid
+    // batch is observable, not just uncaught.
+    try {
+      samples.forEach((s, i) => this.validateSample(s, i));
+    } catch (err) {
+      this.logger.error({
+        msg: 'wearables.ingest.validation_failure',
+        user_id: samples[0]?.userId,
+        provider: samples[0]?.provider,
+        submitted_count: samples.length,
+        error_message: (err as Error)?.message ?? String(err),
+      });
+      throw err;
+    }
 
     const rows: Prisma.WearableSampleCreateManyInput[] = samples.map((s) => ({
       user_id: s.userId,
@@ -86,32 +109,72 @@ export class IngestionService {
       raw_ref: s.rawRef ?? null,
     }));
 
-    // (3) Single batch insert; skipDuplicates makes re-ingestion idempotent.
-    const { count: inserted } = await this.prisma.wearableSample.createMany({
-      data: rows,
-      skipDuplicates: true,
-    });
-    const skipped = rows.length - inserted;
-
-    // (4) Bump last_synced_at on every connection these samples arrived
-    // through — a SINGLE updateMany over the distinct connection ids.
     const connectionIds = [...new Set(samples.map((s) => s.connectionId))];
     const now = new Date();
-    await this.prisma.wearableConnection.updateMany({
-      where: { id: { in: connectionIds } },
-      data: { last_synced_at: now, status: 'connected', last_error: null },
-    });
 
-    // (5) Invalidate cached insights for each affected (user, bucket). One
-    // deleteMany per distinct pair — bounded by the (≤2 buckets × #users)
-    // pairs in the batch, not by row count.
-    await this.invalidateInsightCache(samples);
+    // (3)+(4)+(5) Atomic post-validation side effects. All three batched
+    // writes — sample insert, connection bump, and cache invalidation — run
+    // inside a SINGLE Prisma transaction so a failure between them can never
+    // leave partial state (e.g. inserted samples with a stale connection /
+    // un-invalidated cache). Wrapped in try/catch so DB failures are logged
+    // (redacted) BEFORE the fail-loud rethrow (#36).
+    try {
+      const { inserted, skipped } = await this.prisma.$transaction(
+        async (tx) => {
+          // (3) Single batch insert; skipDuplicates makes re-ingestion
+          // idempotent.
+          const { count } = await tx.wearableSample.createMany({
+            data: rows,
+            skipDuplicates: true,
+          });
 
-    this.logger.log(
-      `ingest: ${inserted} inserted, ${skipped} skipped across ${connectionIds.length} connection(s)`,
-    );
+          // (4) Bump last_synced_at on every connection these samples arrived
+          // through — a SINGLE updateMany over the distinct connection ids.
+          await tx.wearableConnection.updateMany({
+            where: { id: { in: connectionIds } },
+            data: {
+              last_synced_at: now,
+              status: 'connected',
+              last_error: null,
+            },
+          });
 
-    return { inserted, skipped };
+          // (5) Invalidate cached insights for each affected (user, bucket).
+          // One deleteMany per distinct pair — bounded by the
+          // (≤2 buckets × #users) pairs in the batch, not by row count.
+          await this.invalidateInsightCache(samples, tx);
+
+          return { inserted: count, skipped: rows.length - count };
+        },
+        {
+          timeout: 10_000, // 10s — generous for batch upserts
+          isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+        },
+      );
+
+      this.logger.log({
+        msg: 'wearables.ingest.success',
+        user_id: samples[0]?.userId,
+        provider: samples[0]?.provider,
+        inserted_count: inserted,
+        skipped_count: skipped,
+        submitted_count: samples.length,
+        connection_count: connectionIds.length,
+      });
+
+      return { inserted, skipped };
+    } catch (err) {
+      this.logger.error({
+        msg: 'wearables.ingest.failure',
+        user_id: samples[0]?.userId,
+        provider: samples[0]?.provider,
+        submitted_count: samples.length,
+        connection_count: connectionIds.length,
+        error_code: (err as { code?: string })?.code ?? 'unknown',
+        error_message: (err as Error)?.message ?? String(err),
+      });
+      throw err;
+    }
   }
 
   /**
@@ -136,6 +199,12 @@ export class IngestionService {
   ): Promise<WearableSample[]> {
     if (!userId) {
       throw new TypeError('resolveBest: userId is required');
+    }
+    if (!(startAt instanceof Date) || Number.isNaN(startAt.getTime())) {
+      throw new TypeError('resolveBest: startAt must be a valid Date');
+    }
+    if (!(endAt instanceof Date) || Number.isNaN(endAt.getTime())) {
+      throw new TypeError('resolveBest: endAt must be a valid Date');
     }
     if (startAt.getTime() > endAt.getTime()) {
       throw new RangeError('resolveBest: startAt must be <= endAt');
@@ -184,6 +253,7 @@ export class IngestionService {
    */
   private async invalidateInsightCache(
     samples: NormalizedSample[],
+    tx: Prisma.TransactionClient = this.prisma,
   ): Promise<void> {
     const pairs = new Map<string, { userId: string; bucket: NormalizedSample['bucket'] }>();
     for (const s of samples) {
@@ -195,7 +265,7 @@ export class IngestionService {
 
     await Promise.all(
       [...pairs.values()].map(({ userId, bucket }) =>
-        this.prisma.wearableInsightCache.deleteMany({
+        tx.wearableInsightCache.deleteMany({
           where: { user_id: userId, bucket },
         }),
       ),
