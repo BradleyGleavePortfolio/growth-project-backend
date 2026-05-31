@@ -131,7 +131,8 @@ describe('WahooWebhookController.handle', () => {
     expect(ingestion.ingest).toHaveBeenCalledTimes(1);
     // Commit AFTER ingest (audit pattern #1).
     expect(processedEvent.create).toHaveBeenCalledTimes(1);
-    const arg = processedEvent.create.mock.calls[0][0] as {
+    const createMock = processedEvent.create as jest.Mock;
+    const arg = createMock.mock.calls[0][0] as {
       data: { provider: string; provider_event_id: string };
     };
     expect(arg.data.provider).toBe(WearableProvider.WAHOO);
