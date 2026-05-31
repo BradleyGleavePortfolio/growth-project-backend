@@ -1,4 +1,5 @@
 import { WearableConnection, WearableProvider } from '@prisma/client';
+import { KmsService } from '../../../common/kms/kms.service';
 import { ProviderHttpClient } from '../../http/provider-http-client';
 import { WhoopConnector, signWhoopWebhook } from './whoop.connector';
 import { WHOOP_SIGNATURE_HEADER, WHOOP_SIGNATURE_TIMESTAMP_HEADER } from './whoop.types';
@@ -11,6 +12,34 @@ function makeClient(fetchFn: jest.Mock): ProviderHttpClient {
     sleep: () => Promise.resolve(),
     random: () => 1,
   });
+}
+
+/**
+ * KMS test double. `decrypt` strips an `enc:` prefix (so a wrapped value
+ * round-trips to its plaintext) and `encrypt` adds it — letting specs assert
+ * BOTH that the connector unwraps stored tokens before WHOOP calls AND wraps
+ * rotated tokens before returning them. Both are jest.fn() so call counts /
+ * arguments can be asserted.
+ */
+function makeKms(): KmsService & {
+  decrypt: jest.Mock;
+  encrypt: jest.Mock;
+} {
+  const decrypt = jest.fn((ct: string) =>
+    ct.startsWith('enc:') ? ct.slice(4) : ct,
+  );
+  const encrypt = jest.fn((pt: string) => `enc:${pt}`);
+  return { decrypt, encrypt } as unknown as KmsService & {
+    decrypt: jest.Mock;
+    encrypt: jest.Mock;
+  };
+}
+
+/** Build a connector with both deps mocked; returns the kms mock too. */
+function makeConnector(fetchFn: jest.Mock) {
+  const kms = makeKms();
+  const connector = new WhoopConnector(makeClient(fetchFn), kms);
+  return { connector, kms };
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -38,7 +67,7 @@ describe('WhoopConnector', () => {
 
   describe('buildAuthUrl', () => {
     it('builds the WHOOP v2 auth URL with offline scope + all required scopes', () => {
-      const connector = new WhoopConnector(makeClient(jest.fn()));
+      const connector = makeConnector(jest.fn()).connector;
       const url = connector.buildAuthUrl('user-1', 'state-xyz');
       expect(url).not.toBeNull();
       const u = url as string;
@@ -58,7 +87,7 @@ describe('WhoopConnector', () => {
     });
 
     it('exposes provider=WHOOP and authModel=oauth2', () => {
-      const connector = new WhoopConnector(makeClient(jest.fn()));
+      const connector = makeConnector(jest.fn()).connector;
       expect(connector.provider).toBe(WearableProvider.WHOOP);
       expect(connector.authModel).toBe('oauth2');
     });
@@ -75,7 +104,7 @@ describe('WhoopConnector', () => {
           user_id: 42,
         }),
       );
-      const connector = new WhoopConnector(makeClient(fetchFn));
+      const connector = makeConnector(fetchFn).connector;
       const tokens = await connector.exchangeCode('auth-code');
       expect(fetchFn).toHaveBeenCalledTimes(1);
       const [calledUrl, init] = fetchFn.mock.calls[0];
@@ -99,8 +128,10 @@ describe('WhoopConnector', () => {
           scope: 'offline',
         }),
       );
-      const connector = new WhoopConnector(makeClient(fetchFn));
+      const connector = makeConnector(fetchFn).connector;
       const tokens = await connector.refreshAccessToken('rt-1-old');
+      // refreshAccessToken is the low-level raw path: it returns the rotated
+      // token in PLAINTEXT (KMS-wrapping happens in refresh()).
       expect(tokens.refreshToken).toBe('rt-2-rotated');
       const [, init] = fetchFn.mock.calls[0];
       const sentBody = (init as RequestInit).body as string;
@@ -113,10 +144,53 @@ describe('WhoopConnector', () => {
       const fetchFn = jest
         .fn()
         .mockResolvedValue(jsonResponse({ access_token: 'at-only' }));
-      const connector = new WhoopConnector(makeClient(fetchFn));
+      const connector = makeConnector(fetchFn).connector;
       await expect(connector.refreshAccessToken('rt')).rejects.toThrow(
         /missing refresh_token/,
       );
+    });
+
+    it('refresh(conn) KMS-unwraps the stored refresh token, rotates, then KMS-wraps the rotated tokens', async () => {
+      const fetchFn = jest.fn().mockResolvedValue(
+        jsonResponse({
+          access_token: 'at-2',
+          refresh_token: 'rt-2-rotated',
+          expires_in: 3600,
+          scope: 'offline',
+        }),
+      );
+      const { connector, kms } = makeConnector(fetchFn);
+      const conn = {
+        id: 'conn-1',
+        user_id: 'user-1',
+        provider: WearableProvider.WHOOP,
+        encrypted_refresh_token: 'enc:rt-1-old',
+      } as unknown as WearableConnection;
+
+      const tokens = await connector.refresh(conn);
+
+      // (1) the stored refresh token was DECRYPTED before the WHOOP call.
+      expect(kms.decrypt).toHaveBeenCalledWith('enc:rt-1-old');
+      // (2) the WHOOP refresh used the PLAINTEXT token.
+      const [, init] = fetchFn.mock.calls[0];
+      const sentBody = (init as RequestInit).body as string;
+      expect(sentBody).toContain('refresh_token=rt-1-old');
+      // (3) rotated tokens are returned KMS-WRAPPED (encrypt called on both).
+      expect(kms.encrypt).toHaveBeenCalledWith('rt-2-rotated');
+      expect(kms.encrypt).toHaveBeenCalledWith('at-2');
+      expect(tokens.refreshToken).toBe('enc:rt-2-rotated');
+      expect(tokens.accessToken).toBe('enc:at-2');
+    });
+
+    it('refresh(conn) throws (re-consent) when there is no stored refresh token', async () => {
+      const { connector } = makeConnector(jest.fn());
+      await expect(
+        connector.refresh({
+          id: 'c',
+          user_id: 'u',
+          provider: WearableProvider.WHOOP,
+        } as unknown as WearableConnection),
+      ).rejects.toThrow(/no refresh token/);
     });
   });
 
@@ -126,7 +200,10 @@ describe('WhoopConnector', () => {
         id: 'conn-1',
         user_id: 'user-1',
         provider: WearableProvider.WHOOP,
-        accessToken: 'at-live',
+        // Real WearableConnection shape: KMS-wrapped access token cache that
+        // is still fresh (expiry in the future).
+        encrypted_access_token: 'enc:at-live',
+        access_token_expires_at: new Date(Date.now() + 60 * 60 * 1000),
       } as unknown as WearableConnection;
     }
 
@@ -167,9 +244,12 @@ describe('WhoopConnector', () => {
         return Promise.resolve(jsonResponse({ records: [] }));
       });
 
-      const connector = new WhoopConnector(makeClient(fetchFn));
+      const { connector, kms } = makeConnector(fetchFn);
       const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       const records = await connector.backfill(conn(), since);
+
+      // The cached access token was KMS-UNWRAPPED before the WHOOP calls.
+      expect(kms.decrypt).toHaveBeenCalledWith('enc:at-live');
 
       // 2 recovery + 1 cycle + 1 sleep + 1 workout = 5 records.
       expect(records).toHaveLength(5);
@@ -193,11 +273,92 @@ describe('WhoopConnector', () => {
       ).toBe(true);
     });
 
-    it('throws if the connection has no access token', async () => {
-      const connector = new WhoopConnector(makeClient(jest.fn()));
+    it('throws if the connection has neither an access nor a refresh token', async () => {
+      const connector = makeConnector(jest.fn()).connector;
       await expect(
         connector.backfill({ id: 'c', user_id: 'u' } as unknown as WearableConnection, new Date()),
-      ).rejects.toThrow(/no access token/);
+      ).rejects.toThrow(/no access or refresh token/);
+    });
+
+    it('falls back to a refresh (KMS-unwrapping the refresh token) when no cached access token exists', async () => {
+      const fetchFn = jest.fn().mockImplementation((url: string) => {
+        if (url.includes('/oauth/oauth2/token')) {
+          return Promise.resolve(
+            jsonResponse({
+              access_token: 'at-fresh',
+              refresh_token: 'rt-rotated',
+              expires_in: 3600,
+              scope: 'offline',
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ records: [], next_token: null }));
+      });
+      const { connector, kms } = makeConnector(fetchFn);
+      const conn = {
+        id: 'conn-2',
+        user_id: 'user-2',
+        provider: WearableProvider.WHOOP,
+        encrypted_refresh_token: 'enc:rt-stored',
+      } as unknown as WearableConnection;
+
+      await connector.backfill(conn, new Date(Date.now() - 1000));
+
+      // The stored refresh token was decrypted to mint a fresh access token.
+      expect(kms.decrypt).toHaveBeenCalledWith('enc:rt-stored');
+      // Backfill GETs used the freshly-minted (plaintext) access token.
+      const getCalls = fetchFn.mock.calls.filter(
+        (c) => !String(c[0]).includes('/oauth/oauth2/token'),
+      );
+      expect(getCalls.length).toBeGreaterThan(0);
+      for (const call of getCalls) {
+        const init = call[1] as RequestInit;
+        expect((init.headers as Record<string, string>).Authorization).toBe(
+          'Bearer at-fresh',
+        );
+      }
+    });
+
+    it('re-mints the access token when the cached one is expired', async () => {
+      const fetchFn = jest.fn().mockImplementation((url: string) => {
+        if (url.includes('/oauth/oauth2/token')) {
+          return Promise.resolve(
+            jsonResponse({
+              access_token: 'at-refreshed',
+              refresh_token: 'rt-rotated',
+              expires_in: 3600,
+              scope: 'offline',
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ records: [], next_token: null }));
+      });
+      const { connector } = makeConnector(fetchFn);
+      const conn = {
+        id: 'conn-3',
+        user_id: 'user-3',
+        provider: WearableProvider.WHOOP,
+        encrypted_access_token: 'enc:at-stale',
+        access_token_expires_at: new Date(Date.now() - 60 * 1000), // expired
+        encrypted_refresh_token: 'enc:rt-stored',
+      } as unknown as WearableConnection;
+
+      await connector.backfill(conn, new Date(Date.now() - 1000));
+
+      // It did NOT use the stale cached token; it refreshed.
+      const tokenCall = fetchFn.mock.calls.some((c) =>
+        String(c[0]).includes('/oauth/oauth2/token'),
+      );
+      expect(tokenCall).toBe(true);
+      const getCalls = fetchFn.mock.calls.filter(
+        (c) => !String(c[0]).includes('/oauth/oauth2/token'),
+      );
+      for (const call of getCalls) {
+        const init = call[1] as RequestInit;
+        expect((init.headers as Record<string, string>).Authorization).toBe(
+          'Bearer at-refreshed',
+        );
+      }
     });
   });
 
@@ -212,7 +373,7 @@ describe('WhoopConnector', () => {
     }
 
     it('accepts a correctly signed, fresh webhook', () => {
-      const connector = new WhoopConnector(makeClient(jest.fn()));
+      const connector = makeConnector(jest.fn()).connector;
       const rawBody = Buffer.from(
         JSON.stringify({ id: 'evt-1', type: 'recovery.updated', user_id: 1 }),
       );
@@ -224,7 +385,7 @@ describe('WhoopConnector', () => {
     });
 
     it('rejects a bad signature (401 path)', () => {
-      const connector = new WhoopConnector(makeClient(jest.fn()));
+      const connector = makeConnector(jest.fn()).connector;
       const rawBody = Buffer.from(JSON.stringify({ id: 'evt-1' }));
       const headers = freshHeaders(rawBody);
       headers[WHOOP_SIGNATURE_HEADER] = 'AAAAtampered-signature-value-AAAA';
@@ -232,7 +393,7 @@ describe('WhoopConnector', () => {
     });
 
     it('rejects when the signature is computed with the wrong secret', () => {
-      const connector = new WhoopConnector(makeClient(jest.fn()));
+      const connector = makeConnector(jest.fn()).connector;
       const rawBody = Buffer.from(JSON.stringify({ id: 'evt-1' }));
       expect(
         connector.verifyWebhook({
@@ -243,7 +404,7 @@ describe('WhoopConnector', () => {
     });
 
     it('rejects a stale (replayed) timestamp beyond tolerance', () => {
-      const connector = new WhoopConnector(makeClient(jest.fn()));
+      const connector = makeConnector(jest.fn()).connector;
       const rawBody = Buffer.from(JSON.stringify({ id: 'evt-1' }));
       const staleTs = String(Date.now() - 10 * 60 * 1000); // 10 min old
       const sig = signWhoopWebhook({ rawBody, timestamp: staleTs, secret: SECRET });
@@ -259,7 +420,7 @@ describe('WhoopConnector', () => {
     });
 
     it('rejects when signature or timestamp header is missing', () => {
-      const connector = new WhoopConnector(makeClient(jest.fn()));
+      const connector = makeConnector(jest.fn()).connector;
       const rawBody = Buffer.from('{}');
       expect(connector.verifyWebhook({ rawBody, headers: {} })).toBe(false);
     });
@@ -267,7 +428,7 @@ describe('WhoopConnector', () => {
 
   describe('parseWebhook + revocation helpers', () => {
     it('parses a verified body into a ProviderEvent keyed by the UUID id', () => {
-      const connector = new WhoopConnector(makeClient(jest.fn()));
+      const connector = makeConnector(jest.fn()).connector;
       const rawBody = Buffer.from(
         JSON.stringify({
           id: 'evt-uuid-1',
@@ -283,7 +444,7 @@ describe('WhoopConnector', () => {
     });
 
     it('returns [] for malformed JSON', () => {
-      const connector = new WhoopConnector(makeClient(jest.fn()));
+      const connector = makeConnector(jest.fn()).connector;
       const events = connector.parseWebhook({
         rawBody: Buffer.from('not json'),
         headers: {},
@@ -292,13 +453,13 @@ describe('WhoopConnector', () => {
     });
 
     it('recognises user.deauthorized as a revocation event', () => {
-      const connector = new WhoopConnector(makeClient(jest.fn()));
+      const connector = makeConnector(jest.fn()).connector;
       expect(connector.isRevocationEvent('user.deauthorized')).toBe(true);
       expect(connector.isRevocationEvent('recovery.updated')).toBe(false);
     });
 
     it('resolves the fetch descriptor for each data event type', () => {
-      const connector = new WhoopConnector(makeClient(jest.fn()));
+      const connector = makeConnector(jest.fn()).connector;
       expect(connector.fetchDescriptorFor('recovery.updated')?.kind).toBe(
         'recovery',
       );

@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { WearableConnection, WearableProvider } from '@prisma/client';
+import { KmsService } from '../../../common/kms/kms.service';
 import {
   NormalizedSample,
   RawRecord,
@@ -102,7 +103,10 @@ export class WhoopConnector implements WearableConnector {
   readonly provider: WearableProvider = WearableProvider.WHOOP;
   readonly authModel: WearableAuthModel = 'oauth2';
 
-  constructor(private readonly http: ProviderHttpClient) {}
+  constructor(
+    private readonly http: ProviderHttpClient,
+    private readonly kms: KmsService,
+  ) {}
 
   // ── Config (env) ──────────────────────────────────────────────────────
 
@@ -155,20 +159,57 @@ export class WhoopConnector implements WearableConnector {
    * refresh token that ROTATES — the response carries a new refresh token
    * which the connection layer must persist (the old one is invalidated).
    * `scope=offline` is re-requested so the rotated token keeps refresh power.
+   *
+   * Token handoff contract (symmetric with PR-HK-1 connection persistence):
+   *  - The real {@link WearableConnection} stores `encrypted_refresh_token`
+   *    (KMS-wrapped via {@link KmsService}, base64(JSON({v,iv,tag,ct}))). We
+   *    UNWRAP it here before calling WHOOP — the connector NEVER sees a
+   *    plaintext token on the row (#1/#12, schema service-role-only columns).
+   *  - WHOOP rotates the refresh token; we RE-WRAP the new refresh + access
+   *    tokens via `KmsService.encrypt` BEFORE returning, so the caller can
+   *    persist the returned {@link TokenSet} fields straight into the
+   *    `encrypted_*` columns without re-encrypting (TokenSet.refreshToken is
+   *    documented "KMS-wrapped at rest"). Plaintext rotated tokens never
+   *    leave this method.
    */
   async refresh(conn: WearableConnection): Promise<TokenSet> {
-    const refreshToken = (conn as { refreshToken?: string }).refreshToken;
-    if (!refreshToken) {
+    if (!conn.encrypted_refresh_token) {
       throw new Error(
         'whoop.refresh: connection has no refresh token (re-consent required)',
       );
     }
-    return this.refreshAccessToken(refreshToken);
+    // Unwrap the KMS-wrapped refresh token (symmetric with the connection
+    // layer's encrypt-on-persist).
+    const refreshToken = await this.kms.decrypt(conn.encrypted_refresh_token);
+    const rotated = await this.refreshAccessToken(refreshToken);
+    // Re-wrap the rotated tokens before handing them back to the caller.
+    return this.encryptTokenSet(rotated);
   }
 
   /**
-   * Low-level refresh by raw refresh token (also used directly in tests).
-   * Rotates: the returned {@link TokenSet.refreshToken} is the NEW token.
+   * KMS-wrap the token-bearing fields of a {@link TokenSet} so the returned
+   * shape can be persisted directly into the connection's `encrypted_*`
+   * columns. `KmsService.encrypt` is synchronous; we await defensively in
+   * case a future async provider (AWS/GCP KMS) is swapped in behind the same
+   * interface.
+   */
+  private async encryptTokenSet(tokens: TokenSet): Promise<TokenSet> {
+    return {
+      ...tokens,
+      refreshToken: await this.kms.encrypt(tokens.refreshToken),
+      accessToken:
+        tokens.accessToken != null
+          ? await this.kms.encrypt(tokens.accessToken)
+          : tokens.accessToken,
+    };
+  }
+
+  /**
+   * Low-level refresh by raw (plaintext) refresh token (also used directly in
+   * tests and by {@link backfill} when the cached access token is
+   * stale/absent). Rotates: the returned {@link TokenSet.refreshToken} is the
+   * NEW plaintext token — callers that persist it MUST KMS-wrap it first
+   * (see {@link refresh}).
    */
   async refreshAccessToken(refreshToken: string): Promise<TokenSet> {
     const body = new URLSearchParams({
@@ -231,12 +272,7 @@ export class WhoopConnector implements WearableConnector {
    * re-resolving the connection.
    */
   async backfill(conn: WearableConnection, since: Date): Promise<RawRecord[]> {
-    const accessToken = (conn as { accessToken?: string }).accessToken;
-    if (!accessToken) {
-      throw new Error(
-        'whoop.backfill: connection has no access token (refresh first)',
-      );
-    }
+    const accessToken = await this.resolveAccessToken(conn);
     // Clamp the window: never reach further back than DEFAULT_SINCE_DAYS, even
     // if a caller passes an older `since` (TOS-bounded backfill).
     const floor = new Date(
@@ -257,6 +293,45 @@ export class WhoopConnector implements WearableConnector {
     ]);
 
     return [...recovery, ...cycle, ...sleep, ...workout];
+  }
+
+  /**
+   * Resolve a usable PLAINTEXT access token for a backfill call from the real
+   * {@link WearableConnection} shape:
+   *  - If `encrypted_access_token` is present and not past
+   *    `access_token_expires_at`, KMS-unwrap and use it (cache hit).
+   *  - Otherwise fall back to the refresh token: KMS-unwrap
+   *    `encrypted_refresh_token` and run a (rotating) refresh to mint a fresh
+   *    access token. The rotated tokens are NOT persisted here — the
+   *    connection layer persists via `refresh()`; backfill only needs a live
+   *    access token for the duration of the pull.
+   *  - If neither column is present, re-consent is required — fail loud.
+   *
+   * The plaintext token lives only on the stack for the request; it is never
+   * logged (#1/#12).
+   */
+  private async resolveAccessToken(conn: WearableConnection): Promise<string> {
+    const expired =
+      conn.access_token_expires_at != null &&
+      conn.access_token_expires_at.getTime() <= Date.now();
+    if (conn.encrypted_access_token && !expired) {
+      return this.kms.decrypt(conn.encrypted_access_token);
+    }
+    if (conn.encrypted_refresh_token) {
+      const refreshToken = await this.kms.decrypt(
+        conn.encrypted_refresh_token,
+      );
+      const rotated = await this.refreshAccessToken(refreshToken);
+      if (!rotated.accessToken) {
+        throw new Error(
+          'whoop.backfill: refresh returned no access token',
+        );
+      }
+      return rotated.accessToken;
+    }
+    throw new Error(
+      'whoop.backfill: connection has no access or refresh token (re-consent required)',
+    );
   }
 
   /**

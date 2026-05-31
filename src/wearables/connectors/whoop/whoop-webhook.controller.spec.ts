@@ -1,5 +1,6 @@
 import { UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
+import { KmsService } from '../../../common/kms/kms.service';
 import { ProviderHttpClient } from '../../http/provider-http-client';
 import { WhoopConnector, signWhoopWebhook } from './whoop.connector';
 import { WhoopWebhookController } from './whoop-webhook.controller';
@@ -60,6 +61,11 @@ describe('WhoopWebhookController', () => {
         sleep: () => Promise.resolve(),
         random: () => 1,
       }),
+      // The webhook path never touches tokens; a no-op KMS double suffices.
+      {
+        decrypt: jest.fn((s: string) => s),
+        encrypt: jest.fn((s: string) => s),
+      } as unknown as KmsService,
     );
     prisma = makePrisma();
     controller = new WhoopWebhookController(
