@@ -695,19 +695,32 @@ describe('CoachPaymentOpsController', () => {
     seedLedger(prisma, 'me', 3);
     seedLedger(prisma, 'other', 2);
     const headers: Record<string, string> = {};
+    // P1: the export now STREAMS — it writes header + each batch directly to
+    // the response and never returns a string. The mock res captures every
+    // written chunk so we can reassemble the body.
+    let body = '';
+    let ended = false;
     const res: any = {
       setHeader: (k: string, v: string) => {
         headers[k] = v;
       },
+      write: (chunk: string) => {
+        body += chunk;
+        return true;
+      },
+      end: () => {
+        ended = true;
+      },
     };
-    const csv = await ctrl.exportEarningsCsv(makeReq('me'), res);
+    await ctrl.exportEarningsCsv(makeReq('me'), res);
+    expect(ended).toBe(true);
     expect(headers['Content-Disposition']).toMatch(/attachment; filename=/);
-    const lines = csv.trim().split('\r\n');
+    const lines = body.trim().split('\r\n');
     // 1 header + 3 of MY rows (the 2 'other' rows must NOT appear).
     expect(lines).toHaveLength(4);
     expect(lines[0]).toContain('amount_cents');
-    expect(csv).toContain('me-le0');
-    expect(csv).not.toContain('other-le0');
+    expect(body).toContain('me-le0');
+    expect(body).not.toContain('other-le0');
   });
 
   it('B6: export.csv drains MULTIPLE cursor batches and does NOT truncate the full ledger', async () => {
@@ -719,8 +732,27 @@ describe('CoachPaymentOpsController', () => {
     const n = 1_250; // > 2 full batches of 500
     seedLedger(prisma, 'me', n);
     const headers: Record<string, string> = {};
-    const res: any = { setHeader: (k: string, v: string) => (headers[k] = v) };
-    const csv = await ctrl.exportEarningsCsv(makeReq('me'), res);
+    // Capture streamed chunks. Also assert the body was flushed across
+    // MULTIPLE write() calls (one per batch) rather than a single buffered
+    // string — proving the export streams instead of materializing the whole
+    // CSV in memory (P1).
+    const chunks: string[] = [];
+    let ended = false;
+    const res: any = {
+      setHeader: (k: string, v: string) => (headers[k] = v),
+      write: (chunk: string) => {
+        chunks.push(chunk);
+        return true;
+      },
+      end: () => {
+        ended = true;
+      },
+    };
+    await ctrl.exportEarningsCsv(makeReq('me'), res);
+    expect(ended).toBe(true);
+    // Header chunk + at least one chunk per 500-row batch (1250 -> 3 batches).
+    expect(chunks.length).toBeGreaterThan(1);
+    const csv = chunks.join('');
     const lines = csv.trim().split('\r\n');
     // 1 header + every one of the n payee rows (no silent cap).
     expect(lines).toHaveLength(n + 1);
@@ -789,6 +821,29 @@ describe('CursorPageQueryDto.limit strict validation', () => {
     const errors = await validate(dto);
     expect(errors).toHaveLength(0);
     expect(dto.limit).toBeUndefined();
+  });
+
+  // P2 (R2): an explicitly supplied empty / null / blank limit is NOT the
+  // same as an omitted param — it is malformed input and MUST 400 rather
+  // than slipping past @IsOptional with zero validation errors.
+  it('rejects an explicit empty-string limit (?limit=)', async () => {
+    const { dto, errors } = await runLimit('');
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0].property).toBe('limit');
+    expect(dto.limit).not.toBe(undefined);
+  });
+
+  it('rejects an explicit null limit', async () => {
+    const { dto, errors } = await runLimit(null);
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0].property).toBe('limit');
+    expect(dto.limit).not.toBe(undefined);
+  });
+
+  it('rejects a whitespace-only limit', async () => {
+    const { errors } = await runLimit('   ');
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0].property).toBe('limit');
   });
 
   it('rejects a malformed (non-UUID) cursor', async () => {

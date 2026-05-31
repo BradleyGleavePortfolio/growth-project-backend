@@ -15,13 +15,25 @@ import { IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
 // trailing suffix) is converted to a number. Anything else is returned
 // unchanged so @IsInt rejects it with a clean 400 instead of being coerced
 // (e.g. "50abc" -> "50abc" -> 400, not 50; "1.5", "1e2", "0x10" likewise).
+//
+// IMPORTANT (P2): only a TRULY OMITTED param (value === undefined) is treated
+// as optional. An explicitly supplied `null`, empty string `''`, or
+// whitespace-only value is NOT a valid integer and MUST 400 — so we coerce
+// those to NaN (a number, never null/undefined) which @IsInt rejects and
+// @IsOptional does NOT skip (it only skips null/undefined). This prevents
+// `?limit=` (empty) or a JSON null from silently bypassing validation.
 const STRICT_INT_RE = /^[+-]?\d+$/;
 const coerceInt = ({ value }: { value: unknown }) => {
-  if (value === undefined || value === null || value === '') return undefined;
+  // Genuinely omitted query param -> optional, no validation error.
+  if (value === undefined) return undefined;
+  // Explicit null / empty / blank -> NOT optional: force a rejected value.
+  if (value === null) return NaN;
   // A value that is already a real JS number: keep integers, let @IsInt
   // reject non-integers (e.g. 1.5) rather than truncating them.
   if (typeof value === 'number') return value;
   const s = String(value).trim();
+  // Empty or whitespace-only string is an explicit malformed value -> 400.
+  if (s === '') return NaN;
   if (!STRICT_INT_RE.test(s)) return value;
   const n = Number(s);
   // Guard against values past Number's safe-integer range (which @IsInt /
@@ -78,15 +90,29 @@ export function csvEscape(value: unknown): string {
   return s;
 }
 
+// Serialize the CSV header line (no trailing terminator) for streaming.
+export function csvHeaderLine(columns: ReadonlyArray<string>): string {
+  return columns.map((c) => csvEscape(c)).join(',');
+}
+
+// Serialize a SINGLE data row (no trailing terminator) for streaming. This is
+// the streaming counterpart to rowsToCsv: callers write one row at a time
+// directly to the response stream so the whole CSV body is never held in
+// application memory at once (P1 — full-ledger export must stream).
+export function csvRowLine<T>(
+  columns: ReadonlyArray<string>,
+  row: T,
+): string {
+  return columns
+    .map((c) => csvEscape((row as Record<string, unknown>)[c]))
+    .join(',');
+}
+
 export function rowsToCsv<T>(
   columns: ReadonlyArray<string>,
   rows: ReadonlyArray<T>,
 ): string {
-  const header = columns.map((c) => csvEscape(c)).join(',');
-  const body = rows.map((row) =>
-    columns
-      .map((c) => csvEscape((row as Record<string, unknown>)[c]))
-      .join(','),
-  );
+  const header = csvHeaderLine(columns);
+  const body = rows.map((row) => csvRowLine(columns, row));
   return [header, ...body].join('\r\n') + '\r\n';
 }
