@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
@@ -6,6 +7,7 @@ import {
   CheckoutIpRateLimiterService,
   RATE_LIMIT_SCOPES,
 } from '../src/storefront/checkout-rate-limiter.service';
+import { UserThrottlerGuard } from '../src/throttler/user-throttler.guard';
 
 // A276-P1-2 / A276-P1-3 — controller-scoped tests for the rate-limiter
 // hardening and the Referrer-Policy header on the magic-link redirect.
@@ -527,6 +529,96 @@ describe('StorefrontPublicController — A276-F4-P2-G XFF array-header handling'
       makeRes() as never,
     );
     expect(calls).toEqual(['203.0.113.7', '198.51.100.42']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #7 (token enumeration) — composite (token, IP) throttle on GET join/:token.
+//
+// The Nest @Throttle bucket on `/v1/packages/public/join/*` routes is keyed
+// by UserThrottlerGuard.getTracker(), which composes the share token with the
+// client IP (`storefront-join:<token>:<ip>`). The GET previously carried a
+// looser per-(token,IP) ceiling (60/min) than the companion POST checkout
+// (20/min); with the composite key that meant one IP could spin up a fresh
+// 60/min bucket per probed token and sweep the token space cheaply. The fix
+// aligns the GET to the POST's bucket exactly. These tests pin both halves:
+//   1. the GET @Throttle metadata equals the POST's `{ ttl: 60_000, limit: 20 }`
+//      (so the two routes cannot drift on a future refactor);
+//   2. getTracker() yields the SAME composite (token, IP) key shape for the
+//      GET route as for the POST route, and a different token => a different
+//      bucket (so a legitimate single-token reload is not collateral-throttled
+//      by traffic to other tokens).
+// ---------------------------------------------------------------------------
+
+describe('StorefrontPublicController — #7 composite (token,IP) throttle on GET join/:token', () => {
+  // @nestjs/throttler v6 stores the unnamed `default` throttler at
+  // `THROTTLER:TTLdefault` / `THROTTLER:LIMITdefault` on the handler.
+  const readDefaultThrottle = (
+    handler: object,
+  ): { ttl: number | undefined; limit: number | undefined } => ({
+    ttl: Reflect.getMetadata('THROTTLER:TTLdefault', handler) as
+      | number
+      | undefined,
+    limit: Reflect.getMetadata('THROTTLER:LIMITdefault', handler) as
+      | number
+      | undefined,
+  });
+
+  it('GET join/:token carries the same default @Throttle bucket as POST checkout (ttl 60s, limit 20)', () => {
+    const getMeta = readDefaultThrottle(
+      StorefrontPublicController.prototype.getPublicPackage,
+    );
+    const postMeta = readDefaultThrottle(
+      StorefrontPublicController.prototype.createGuestCheckout,
+    );
+    expect(getMeta).toEqual({ ttl: 60_000, limit: 20 });
+    // Consistency with the companion POST handler — the issue requires the
+    // GET to reuse the POST's throttle strategy, not a divergent one.
+    expect(getMeta).toEqual(postMeta);
+  });
+
+  it('GET join/:token is tightened from the old IP-only 60/min ceiling', () => {
+    const getMeta = readDefaultThrottle(
+      StorefrontPublicController.prototype.getPublicPackage,
+    );
+    // Must be strictly tighter than the pre-fix 60/min so enumeration
+    // sweeps are bounded harder than before.
+    expect(getMeta.limit).toBeLessThan(60);
+  });
+
+  describe('UserThrottlerGuard.getTracker — composite (token,IP) key for the join route', () => {
+    const buildGuard = (): UserThrottlerGuard =>
+      Object.create(UserThrottlerGuard.prototype) as UserThrottlerGuard;
+    const tracker = (req: object): Promise<string> =>
+      (buildGuard() as unknown as { getTracker(r: object): Promise<string> })
+        .getTracker(req);
+
+    const joinReq = (token: string, ip: string) => ({
+      route: { path: '/v1/packages/public/join/:token' },
+      url: `/v1/packages/public/join/${token}`,
+      params: { token },
+      headers: { 'fly-client-ip': ip },
+    });
+
+    it('keys the GET join route by (token, IP), not IP alone', async () => {
+      const key = await tracker(joinReq('tok_abc', '203.0.113.7'));
+      expect(key).toBe('storefront-join:tok_abc:203.0.113.7');
+      // Crucially NOT the bare per-IP bucket that allowed enumeration.
+      expect(key).not.toBe('ip:203.0.113.7');
+    });
+
+    it('same IP + different token => different bucket (single-token loads are isolated)', async () => {
+      const ip = '203.0.113.7';
+      const a = await tracker(joinReq('tok_a', ip));
+      const b = await tracker(joinReq('tok_b', ip));
+      expect(a).not.toBe(b);
+    });
+
+    it('same token + same IP => same bucket (legitimate repeated loads share one bucket)', async () => {
+      const a = await tracker(joinReq('tok_same', '203.0.113.7'));
+      const b = await tracker(joinReq('tok_same', '203.0.113.7'));
+      expect(a).toBe(b);
+    });
   });
 });
 
