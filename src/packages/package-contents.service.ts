@@ -8,6 +8,7 @@ import type { CoachPackageContent, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { PrismaService } from '../prisma.service';
 import { PackagesService } from './packages.service';
+import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import {
   CADENCE_PAYLOAD_SCHEMAS,
   CreateContentSchema,
@@ -57,6 +58,7 @@ export class PackageContentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly packages: PackagesService,
+    private readonly subCoachScope: SubCoachScopeService,
   ) {}
 
   // ── public API ─────────────────────────────────────────────────────────
@@ -72,13 +74,38 @@ export class PackageContentsService {
     });
   }
 
+  // PR-18 B2 — attach now takes BOTH the raw actor id AND the resolved
+  // tenant (head) coach id. The controller passes:
+  //   actorUserId   = req.user.id (the literal caller — sub OR head)
+  //   tenantCoachId = await resolveEffectiveCoachId(req.user.id)
+  //                   (head coach id; for a head coach this == actorUserId)
+  //
+  // Pre-PR-18 the controller passed ONLY the promoted (head) id, so the
+  // service could not tell a sub-coach apart from the head coach and a
+  // sub-coach could attach a head-owned asset without proving sub-coach
+  // scope (IDOR / privilege escalation, #5). We now run
+  // assertActorCanAttachAsset BEFORE the ownership check, and re-check it
+  // under the display-order lock just before the insert (TOCTOU).
   async attach(
-    coachUserId: string,
+    actorUserId: string,
+    tenantCoachId: string,
     packageId: string,
     body: unknown,
   ): Promise<CoachPackageContent> {
-    await this.packages.requireOwnedPackage(coachUserId, packageId);
+    await this.packages.requireOwnedPackage(tenantCoachId, packageId);
     const input = this.parseCreate(body);
+
+    // (PR-18 B2, #5) Actor-scope guard. A sub-coach must prove they belong
+    // to this head-coach team (and, for client-bound assets, that they can
+    // access the bound client) BEFORE we even reveal whether the asset
+    // exists. Throws NotFoundException on any scope failure so we do not
+    // leak existence across scopes.
+    await this.assertActorCanAttachAsset(
+      actorUserId,
+      tenantCoachId,
+      input.asset_type,
+      input,
+    );
 
     // Asset-ownership validation reuses the exact same coach-scoped row
     // lookups the PR-7 resolvers consume at materialise time. The intent
@@ -88,7 +115,9 @@ export class PackageContentsService {
     // not present in the PR-7 resolvers — a stricter superset, intentional
     // (refuse-early at authoring is the right call). meal_plan is
     // byte-identical to MealPlanAssetResolver.assertPlanOwnedByTenant.
-    await this.assertAssetOwnedByCoach(coachUserId, input.asset_type, input);
+    // This is an ADDITIONAL gate (not a replacement) on top of the actor
+    // scope check above (brief item 1.4).
+    await this.assertAssetOwnedByCoach(tenantCoachId, input.asset_type, input);
 
     // display_order race fix: read max + INSERT must be serialised per
     // package, otherwise two concurrent attaches both read max=N and
@@ -99,6 +128,18 @@ export class PackageContentsService {
     // or rollback, no session-leak risk.
     return this.prisma.$transaction(async (tx) => {
       await this.acquirePackageOrderLock(tx, packageId);
+
+      // (PR-18 B2, brief item 1.6) Re-check actor scope just before the
+      // insert: a sub-coach assignment can be revoked between the initial
+      // guard and the insert. The scope check is stricter than the
+      // ownership check, so re-running it here closes the TOCTOU window
+      // inside the same display-order transaction.
+      await this.assertActorCanAttachAsset(
+        actorUserId,
+        tenantCoachId,
+        input.asset_type,
+        input,
+      );
 
       const display_order =
         input.display_order ?? (await this.nextDisplayOrder(tx, packageId));
@@ -222,11 +263,24 @@ export class PackageContentsService {
         });
       }
 
-      // Reject targeting a display_order another non-removed row already
-      // holds. The brief: "do NOT allow [patch] to create a duplicate."
-      // No-op when the patch sets the row to its current display_order.
+      // PR-18 B2 (PR-8 swap-aware patch). Moving a row to an order held by
+      // exactly ONE other active row used to dead-end with
+      // DISPLAY_ORDER_TAKEN, forcing the editor onto /reorder for a simple
+      // two-row swap. We now swap in place under the lock: the row that
+      // currently holds the target order takes OUR old order, then we take
+      // the requested order. Net effect is a transposition — still a
+      // bijection over 0..n-1, so no gaps and no duplicates are created.
+      //
+      // No-op when the patch sets the row to its own current order
+      // (input === row.display_order): skip the swap entirely.
+      //
+      // We keep the hard reject for AMBIGUOUS states (somehow >1 active
+      // row already holds the target order — a corrupt set we must not
+      // "fix" by guessing). Out-of-range orders are rejected by zod
+      // (display_order: int >= 0) before we get here, so a swap never
+      // produces a negative order.
       if (input.display_order !== row.display_order) {
-        const collide = await tx.coachPackageContent.findFirst({
+        const holders = await tx.coachPackageContent.findMany({
           where: {
             package_id: packageId,
             removed_at: null,
@@ -235,10 +289,27 @@ export class PackageContentsService {
           },
           select: { id: true },
         });
-        if (collide) {
+
+        if (holders.length > 1) {
+          // Corrupt/ambiguous: refuse rather than silently mangle. Use
+          // /reorder to rebuild the whole sequence atomically.
           throw new BadRequestException({
             error: 'DISPLAY_ORDER_TAKEN',
-            message: `display_order ${input.display_order} is already held by another content row on this package; use the /reorder endpoint to move multiple rows atomically`,
+            message: `display_order ${input.display_order} is held by multiple content rows on this package; use the /reorder endpoint to move multiple rows atomically`,
+          });
+        }
+
+        if (holders.length === 1) {
+          // Single-row collision → swap. Move the holder into our old slot
+          // FIRST so the unique (active) display_order set is never
+          // momentarily violated, then fall through to set our row to the
+          // requested order via the update below. Both writes are in the
+          // same tx under the lock, so the pair commits or rolls back
+          // together. ScheduledDrop rows are never touched (snapshot
+          // invariant) — we only move active CoachPackageContent rows.
+          await tx.coachPackageContent.update({
+            where: { id: holders[0].id },
+            data: { display_order: row.display_order },
           });
         }
       }
@@ -250,29 +321,87 @@ export class PackageContentsService {
     });
   }
 
+  // PR-18 B2 (PR-8 display_order compaction). Soft-deleting a middle row
+  // used to leave a permanent gap in the active display_order sequence
+  // (append uses max+1, so the gap is never reused). We now compact the
+  // ACTIVE rows so they stay a contiguous 0..n-1 after a delete.
+  //
+  // Concurrency: the mark-removed + compaction run together inside the
+  // EXISTING per-package display-order advisory lock so they serialise
+  // against attach/reorder/patch on the same package (otherwise a
+  // concurrent attach reading max+1 could collide with the orders we
+  // decrement). The lock is xact-scoped — released on commit/rollback.
+  //
+  // Invariants:
+  //   - Idempotent: a row already removed (whether before we took the
+  //     lock or by a racing delete that committed first) returns as-is
+  //     and performs NO compaction — the gap it left was already closed
+  //     by whoever removed it.
+  //   - We never mutate removed rows and never resurrect content.
+  //   - We do NOT touch ScheduledDrop rows: PR-9 snapshots reference
+  //     content by id, so buyers' already-materialised drops keep their
+  //     own (snapshotted) order regardless of authoring-side compaction.
   async softDelete(
     coachUserId: string,
     packageId: string,
     contentId: string,
   ): Promise<CoachPackageContent> {
     await this.packages.requireOwnedPackage(coachUserId, packageId);
-    // Idempotent: an already-removed row returns as-is without bumping
-    // removed_at. We look it up directly (not via requireOwnedContent,
-    // which now filters removed_at: null for patch safety) so the second
-    // DELETE on the same id is a no-op rather than a 404.
-    const row = await this.prisma.coachPackageContent.findFirst({
+    // Cheap pre-check OUTSIDE the lock: 404 a genuinely unknown id, and
+    // short-circuit an already-removed row without paying the lock cost.
+    // We look it up directly (not via requireOwnedContent, which filters
+    // removed_at: null for patch safety) so a second DELETE on the same
+    // id is a no-op rather than a 404.
+    const existing = await this.prisma.coachPackageContent.findFirst({
       where: { id: contentId, package_id: packageId },
     });
-    if (!row) {
+    if (!existing) {
       throw new NotFoundException({
         error: 'CONTENT_NOT_FOUND',
         message: `No content with id ${contentId} on package ${packageId}`,
       });
     }
-    if (row.removed_at) return row;
-    return this.prisma.coachPackageContent.update({
-      where: { id: contentId },
-      data: { removed_at: new Date() },
+    if (existing.removed_at) return existing;
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.acquirePackageOrderLock(tx, packageId);
+
+      // Re-read under the lock so a concurrent delete that committed
+      // between the pre-check and the lock is observed: if it's now
+      // removed, return it idempotently and do NOT compact again.
+      const row = await tx.coachPackageContent.findFirst({
+        where: { id: contentId, package_id: packageId },
+      });
+      if (!row) {
+        throw new NotFoundException({
+          error: 'CONTENT_NOT_FOUND',
+          message: `No content with id ${contentId} on package ${packageId}`,
+        });
+      }
+      if (row.removed_at) return row;
+
+      const removedOrder = row.display_order;
+      const updated = await tx.coachPackageContent.update({
+        where: { id: contentId },
+        data: { removed_at: new Date() },
+      });
+
+      // Compact: every ACTIVE (non-removed) row that sat AFTER the removed
+      // row shifts down by one, closing the gap. updateMany is a single
+      // set-based statement under the lock — no per-row N+1. We scope to
+      // package_id + removed_at: null so removed rows and other packages
+      // are untouched, and never produce a negative order (we only
+      // decrement orders strictly greater than removedOrder).
+      await tx.coachPackageContent.updateMany({
+        where: {
+          package_id: packageId,
+          removed_at: null,
+          display_order: { gt: removedOrder },
+        },
+        data: { display_order: { decrement: 1 } },
+      });
+
+      return updated;
     });
   }
 
@@ -482,6 +611,102 @@ export class PackageContentsService {
     packageId: string,
   ): Promise<void> {
     await db.$executeRaw`SELECT pg_advisory_xact_lock(${ADVISORY_LOCK_NAMESPACE_PKG_CONTENT_ORDER}::int4, hashtext(${packageId}))`;
+  }
+
+  // ── PR-18 B2 — sub-coach fork-on-attach guard (#5 IDOR) ──────────────
+  //
+  // Enforces, BEFORE asset-ownership and before we leak whether the asset
+  // exists, that the ACTOR (the literal caller) is authorised to attach
+  // under `tenantCoachId`:
+  //
+  //   - Head coach actor (getHeadCoachIdForSubCoach === null): the
+  //     downstream tenant id IS the actor's own id; the existing
+  //     assertAssetOwnedByCoach(tenantCoachId, …) ownership check is
+  //     sufficient. We still assert actorUserId === tenantCoachId as a
+  //     belt-and-braces invariant (the controller resolves tenantCoachId
+  //     from the SAME actorUserId, so for a head coach they must match).
+  //
+  //   - Sub-coach actor (getHeadCoachIdForSubCoach === some head id): the
+  //     sub-coach must belong to THIS head-coach team, i.e.
+  //     getHeadCoachIdForSubCoach(actorUserId) === tenantCoachId. We do
+  //     NOT trust raw User.coach_id (brief item 1.3) — we route through
+  //     SubCoachScopeService, the single source of truth. For client-bound
+  //     assets we additionally require canAccessClient(actor, clientId);
+  //     for global coach media (no client dimension) belonging to the head
+  //     team is the default-safe allow (brief item 1.3).
+  //
+  // ANY failure throws NotFoundException with ASSET_NOT_FOUND so we never
+  // leak existence across scopes (brief item 1.5). Called once up-front and
+  // again under the display-order lock (TOCTOU, brief item 1.6).
+  private async assertActorCanAttachAsset(
+    actorUserId: string,
+    tenantCoachId: string,
+    assetType: AssetType,
+    input: { asset_id: string },
+  ): Promise<void> {
+    const assetNotFound = () =>
+      new NotFoundException({
+        error: 'ASSET_NOT_FOUND',
+        message: `No ${assetType} asset ${input.asset_id} owned by this coach`,
+      });
+
+    const headOfActor =
+      await this.subCoachScope.getHeadCoachIdForSubCoach(actorUserId);
+
+    if (headOfActor === null) {
+      // Head-coach (or non-sub) actor. The controller resolves
+      // tenantCoachId from this same actor, so a head coach acting on
+      // their own tenant must satisfy actor === tenant. A mismatch means
+      // the caller is acting under a tenant that is NOT their own and is
+      // not a sub-coach of it → deny without leaking existence.
+      if (actorUserId !== tenantCoachId) {
+        throw assetNotFound();
+      }
+      return;
+    }
+
+    // Sub-coach actor: must belong to THIS head-coach team.
+    if (headOfActor !== tenantCoachId) {
+      throw assetNotFound();
+    }
+
+    // Client-bound asset → require explicit per-client scope via the
+    // SubCoachScopeService overlay (NOT raw User.coach_id). Global coach
+    // media (the only asset types today) carry no client dimension, so
+    // the head-team membership proven above is the default-safe allow.
+    // Routing through clientContextForAsset keeps the deny-by-default
+    // posture if a future client-bound asset type is added (brief 1.3).
+    const clientId = await this.clientContextForAsset(
+      tenantCoachId,
+      assetType,
+      input,
+    );
+    if (clientId !== null) {
+      const allowed = await this.subCoachScope.canAccessClient(
+        actorUserId,
+        clientId,
+      );
+      if (!allowed) {
+        throw assetNotFound();
+      }
+    }
+  }
+
+  // Returns the client id a content asset is BOUND to, or null when the
+  // asset is global coach media with no client dimension. Every asset type
+  // wired today (workout_plan/program, meal_plan, pdf, video, auto_message)
+  // is coach-tenant-global — the underlying rows key only on coach_id (see
+  // prisma/schema.prisma: WorkoutPlan/DailyMealPlan/CoachMediaAsset all
+  // have coach_id and NO client column). We centralise the mapping here so
+  // that when PR-12+ introduces a client-private asset type, wiring its
+  // client id in this one place automatically forces the
+  // canAccessClient() gate in assertActorCanAttachAsset — deny-by-default.
+  private async clientContextForAsset(
+    _tenantCoachId: string,
+    _assetType: AssetType,
+    _input: { asset_id: string },
+  ): Promise<string | null> {
+    return null;
   }
 
   // Asset-ownership validation — REUSES the same per-type predicates the

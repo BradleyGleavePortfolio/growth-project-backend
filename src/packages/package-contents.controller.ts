@@ -67,6 +67,13 @@ export class CoachPackageContentsController {
     return { contents: rows };
   }
 
+  // PR-18 B2 (#5) — pass BOTH the raw actor id AND the resolved tenant
+  // (head) coach id into attach. resolveEffectiveCoachId promotes a
+  // sub-coach → head; passing ONLY that promoted id (the pre-PR-18
+  // behaviour) let a sub-coach attach a head-owned asset without proving
+  // sub-coach scope. The service re-derives the actor's scope from
+  // actorUserId via SubCoachScopeService and 404s on an out-of-scope
+  // attach (no existence leak).
   @Roles('coach', 'owner')
   @Post()
   async attach(
@@ -74,8 +81,11 @@ export class CoachPackageContentsController {
     @Param('id') packageId: string,
     @Body() body: unknown,
   ) {
-    const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
-    return this.contents.attach(coachId, packageId, body);
+    const actorUserId = req.user.id;
+    const tenantCoachId = await this.packages.resolveEffectiveCoachId(
+      actorUserId,
+    );
+    return this.contents.attach(actorUserId, tenantCoachId, packageId, body);
   }
 
   // Bulk reorder — set display_order = index for each id in the payload.
