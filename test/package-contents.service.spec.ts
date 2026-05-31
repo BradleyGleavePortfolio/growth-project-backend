@@ -1016,8 +1016,8 @@ describe('PackageContentsService', () => {
       });
       expect(_b.id).toBeTruthy();
       (prisma as any)._lockLog.length = 0;
-      // a is at 0, b is at 1; move a to 2 (free slot).
-      await svc.patch('coach-1', 'pkg-1', a.id, { display_order: 2 });
+      // a is at 0, b is at 1; move a to 1 (held by b) -> swap under lock.
+      await svc.patch('coach-1', 'pkg-1', a.id, { display_order: 1 });
       expect((prisma as any)._lockLog).toEqual([{ packageId: 'pkg-1' }]);
     });
 
@@ -1073,16 +1073,32 @@ describe('PackageContentsService', () => {
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      // soft-delete b; its order=1 should now be reusable.
+      const c = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
+        asset_type: 'pdf',
+        asset_id: 'pdf-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      // a@0, b@1, c@2. Soft-delete b (middle): compaction pulls c down to
+      // order 1, so the active set is a@0, c@1 (contiguous, no gap). The
+      // removed b must NOT be counted as a holder of any order.
       await svc.softDelete('coach-1', 'pkg-1', b.id);
+      // Patch a onto order 1 (now held by the active row c) -> swap with c,
+      // proving the soft-deleted b is ignored when resolving the holder.
       const moved = await svc.patch('coach-1', 'pkg-1', a.id, {
         display_order: 1,
       });
       expect(moved.display_order).toBe(1);
+      const after = await svc.listForPackage('coach-1', 'pkg-1');
+      const byId = new Map(after.map((r) => [r.id, r.display_order]));
+      expect(byId.get(a.id)).toBe(1);
+      expect(byId.get(c.id)).toBe(0); // c took a's old slot
+      const orders = after.map((r) => r.display_order).sort((x, y) => x - y);
+      expect(orders).toEqual([0, 1]); // unique + contiguous, no gap
 
       // Patch on the soft-deleted row STILL 404s, even on the locked path.
       await expect(
-        svc.patch('coach-1', 'pkg-1', b.id, { display_order: 5 }),
+        svc.patch('coach-1', 'pkg-1', b.id, { display_order: 0 }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
@@ -1093,13 +1109,21 @@ describe('PackageContentsService', () => {
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      // Concurrent: move `a` to display_order=5; attach a new row (which
-      // should append). Both grab the per-package lock; whichever runs
-      // first commits before the other reads.
-      const patchP = svc.patch('coach-1', 'pkg-1', a.id, { display_order: 5 });
-      const attachP = svc.attach('coach-1', 'coach-1', 'pkg-1', {
+      const b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'meal_plan',
         asset_id: 'mp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      expect(b.id).toBeTruthy();
+      // Concurrent: swap `a` onto b's slot (order 1, a valid one-holder
+      // target); attach a new row (which should append at max+1). Both
+      // grab the per-package lock; whichever runs first commits before the
+      // other reads. The serialised lock must keep orders duplicate-free.
+      const patchP = svc.patch('coach-1', 'pkg-1', a.id, { display_order: 1 });
+      const attachP = svc.attach('coach-1', 'coach-1', 'pkg-1', {
+        asset_type: 'pdf',
+        asset_id: 'pdf-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
@@ -1165,22 +1189,23 @@ describe('PackageContentsService', () => {
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      // Both patches target display_order=10. The lock serialises them.
-      // PR-18 B2 made patch swap-aware, so the SECOND patch no longer
-      // dead-ends: it sees the first row already at 10 (one holder) and
-      // SWAPS that holder into its own old slot. The post-conditions that
-      // matter regardless of interleaving: EXACTLY ONE row holds 10, and
-      // the active display_order set has NO duplicates.
-      const p1 = svc.patch('coach-1', 'pkg-1', a.id, { display_order: 10 });
+      // a@0, b@1, c@2. Both patches target display_order=2 (held by the
+      // active row c). The lock serialises them. PR-18 B2 made patch
+      // swap-aware, so each patch that sees a one-holder target SWAPS
+      // rather than dead-ending. The post-conditions that matter
+      // regardless of interleaving: EXACTLY ONE row holds 2, and the
+      // active display_order set has NO duplicates and NO gaps.
+      const p1 = svc.patch('coach-1', 'pkg-1', a.id, { display_order: 2 });
       const p2 = svc
-        .patch('coach-1', 'pkg-1', b.id, { display_order: 10 })
+        .patch('coach-1', 'pkg-1', b.id, { display_order: 2 })
         .catch((e) => e);
       await Promise.all([p1, p2]);
       const list = await svc.listForPackage('coach-1', 'pkg-1');
-      const tens = list.filter((r) => r.display_order === 10);
-      expect(tens.length).toBe(1); // exactly one row at 10
-      const orders = list.map((r) => r.display_order);
+      const twos = list.filter((r) => r.display_order === 2);
+      expect(twos.length).toBe(1); // exactly one row at 2
+      const orders = list.map((r) => r.display_order).sort((x, y) => x - y);
       expect(new Set(orders).size).toBe(orders.length); // no duplicates
+      expect(orders).toEqual([0, 1, 2]); // contiguous, no gaps
       // Unused-var hush: third row exists.
       expect(c.id).toBeTruthy();
     });
@@ -1404,19 +1429,22 @@ describe('PackageContentsService', () => {
       expect(byId.get(c.id)).toBe(2);
     });
 
-    it('patch to a FREE slot still works (no holder → plain move, no gap created)', async () => {
-      const { a, b } = await attach3(); // 0,1,2
-      // Move a to order 5 (free). This is the legacy free-slot path; it
-      // leaves a gap but that is the pre-existing reorder-via-patch
-      // behaviour preserved for out-of-band moves.
-      const moved = await svc.patch('coach-1', 'pkg-1', a.id, {
-        display_order: 5,
-      });
-      expect(moved.display_order).toBe(5);
-      // b and c unchanged.
+    it('patch to an EMPTY slot (no active holder) is rejected — no gap created', async () => {
+      const { a, b, c } = await attach3(); // 0,1,2
+      // Move a to order 5: no active row holds order 5, so a plain move
+      // would tear a hole in the 0..n-1 sequence (1,2,5). PR-18 B2 item 3
+      // requires rejecting this; multi-row moves belong on /reorder.
+      await expect(
+        svc.patch('coach-1', 'pkg-1', a.id, { display_order: 5 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      // Nothing moved: the active set stays a contiguous bijection 0..n-1.
       const list = await svc.listForPackage('coach-1', 'pkg-1');
       const byId = new Map(list.map((r) => [r.id, r.display_order]));
+      expect(byId.get(a.id)).toBe(0);
       expect(byId.get(b.id)).toBe(1);
+      expect(byId.get(c.id)).toBe(2);
+      const orders = list.map((r) => r.display_order).sort((x, y) => x - y);
+      expect(orders).toEqual([0, 1, 2]); // unique + contiguous, no gap
     });
 
     it('patch to a NEGATIVE display_order is rejected by validation (no gaps/negatives)', async () => {

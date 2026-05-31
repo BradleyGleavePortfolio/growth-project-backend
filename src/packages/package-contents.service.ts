@@ -279,6 +279,15 @@ export class PackageContentsService {
       // "fix" by guessing). Out-of-range orders are rejected by zod
       // (display_order: int >= 0) before we get here, so a swap never
       // produces a negative order.
+      //
+      // EMPTY-target reject (PR-18 B2, item 3): the active display_order
+      // set is a bijection over 0..n-1. A single-row patch can only ever
+      // be a transposition (swap) that keeps that bijection intact. If
+      // the requested order is held by NO active row, moving there would
+      // tear a hole in the sequence (e.g. 0,1,2 -> 1,2,5), which the brief
+      // forbids. Such multi-row moves belong on /reorder, which rebuilds
+      // the whole sequence atomically. So we reject empty targets here
+      // rather than creating a gap.
       if (input.display_order !== row.display_order) {
         const holders = await tx.coachPackageContent.findMany({
           where: {
@@ -296,6 +305,17 @@ export class PackageContentsService {
           throw new BadRequestException({
             error: 'DISPLAY_ORDER_TAKEN',
             message: `display_order ${input.display_order} is held by multiple content rows on this package; use the /reorder endpoint to move multiple rows atomically`,
+          });
+        }
+
+        if (holders.length === 0) {
+          // No active row holds the target order -> a plain move here
+          // would leave a gap (and likely an out-of-range order),
+          // breaking the 0..n-1 bijection. Reject; the caller should use
+          // the /reorder endpoint for multi-row moves.
+          throw new BadRequestException({
+            error: 'DISPLAY_ORDER_OUT_OF_RANGE',
+            message: `display_order ${input.display_order} is not held by any active content row on this package; single-row patch only swaps with an existing row — use the /reorder endpoint to move multiple rows atomically`,
           });
         }
 
