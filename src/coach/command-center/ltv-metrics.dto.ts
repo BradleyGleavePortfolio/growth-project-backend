@@ -112,6 +112,28 @@ export class LtvMetricsResponseDto {
   @ApiProperty({ description: 'LTV formatted as a currency string.', example: '$1,500' })
   estimated_ltv_label!: string;
 
+  @ApiProperty({
+    description:
+      'LTV-1: True when estimated_ltv_cents is itself an estimate — i.e. it was ' +
+      'derived from a stubbed/industry-average client lifespan (fewer than 3 ' +
+      'cancellations), not from real churn data. The frontend MUST label the LTV ' +
+      'as an estimate (not a hard dollar figure) when this is true. Mirrors ' +
+      'lifespan_is_estimate today, but is exposed separately so the LTV card can ' +
+      'carry its own honesty label.',
+    example: true,
+  })
+  estimated_ltv_is_estimate!: boolean;
+
+  @ApiProperty({
+    description:
+      'Human-readable note explaining why estimated_ltv_cents is an estimate. ' +
+      'Only present (non-null) when estimated_ltv_is_estimate is true.',
+    example:
+      'Estimated LTV — derived from an estimated client lifespan. Based on industry average (only 1 cancellation recorded — need ≥3 for a real average)',
+    nullable: true,
+  })
+  estimated_ltv_estimate_note!: string | null;
+
   // ─── Churn ─────────────────────────────────────────────────────────────────
 
   @ApiProperty({
@@ -194,9 +216,9 @@ export class LtvMetricsResponseDto {
   @ApiProperty({
     description:
       'All-time highest RPCM ever recorded for this coach (in cents). ' +
-      'STUB: Stored in coach_ltv_peak table (not yet migrated — returns current RPCM ' +
-      'until the peak tracking migration ships). See TODO in LtvMetricsService. ' +
-      'peak_rpcm_is_estimate signals this to the frontend.',
+      'LTV-3: persisted in the coach_ltv_peak table (source of truth). ' +
+      'newPeak = max(persisted_peak, current_rpcm); the persisted value never ' +
+      'regresses across the month boundary.',
     example: 22000,
   })
   all_time_peak_rpcm_cents!: number;
@@ -207,15 +229,17 @@ export class LtvMetricsResponseDto {
   @ApiProperty({
     description:
       'True when all_time_peak_rpcm_cents is a best-effort estimate rather than a ' +
-      'persisted historical maximum (i.e. the coach_ltv_peak migration has not shipped). ' +
-      'Frontend should suppress the “All-time peak” row or mark it estimated when true.',
-    example: true,
+      'persisted historical maximum. LTV-3: now always false — the value is ' +
+      'persisted in coach_ltv_peak. Retained for API compatibility.',
+    example: false,
   })
   peak_rpcm_is_estimate!: boolean;
 
   @ApiProperty({
     description:
-      'True if current RPCM equals the all-time peak — triggers a "New Record" badge in the UI.',
+      'True if current RPCM STRICTLY exceeds the persisted all-time peak (a ' +
+      'genuinely new record) — triggers a "New Record" badge in the UI. ' +
+      'False when current RPCM only ties or is below the persisted peak.',
     example: false,
   })
   is_new_rpcm_record!: boolean;
