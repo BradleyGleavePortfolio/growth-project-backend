@@ -70,6 +70,56 @@ export interface OuraDailySleep {
   bedtime_end?: string | null;
 }
 
+/**
+ * `GET /v2/usercollection/sleep` — the LONG-FORM sleep-period document
+ * (one per sleep session, distinct from the daily `daily_sleep` score doc).
+ * This is where Oura actually puts the per-stage durations and the HRV/heart
+ * rate time series (verified against https://cloud.ouraring.com/v2/docs).
+ * Durations are SECONDS; `efficiency` is a percent; `average_hrv` is the
+ * nightly mean HRV in MILLISECONDS; `hrv.items` is the 5-minute HRV series.
+ */
+export interface OuraSleepTimeSeries {
+  /** Sampling interval in seconds (e.g. 300 for 5-minute). */
+  interval?: number | null;
+  /** ISO-8601 instant of the first item. */
+  timestamp?: string | null;
+  /** Per-interval values; `null` entries are gaps (device off-wrist). */
+  items?: Array<number | null> | null;
+}
+
+export interface OuraSleep {
+  id: string;
+  /** Calendar day the sleep is attributed to, `YYYY-MM-DD`. */
+  day: string;
+  /** Sleep-period type (e.g. "long_sleep", "late_nap", "deleted"). */
+  type?: string | null;
+  /** Total time asleep, SECONDS. */
+  total_sleep_duration?: number | null;
+  /** REM sleep, SECONDS. */
+  rem_sleep_duration?: number | null;
+  /** Deep (slow-wave) sleep, SECONDS. */
+  deep_sleep_duration?: number | null;
+  /** Light sleep, SECONDS. */
+  light_sleep_duration?: number | null;
+  /** Time awake during the sleep window, SECONDS. */
+  awake_time?: number | null;
+  /** Total time in bed, SECONDS (not currently mapped). */
+  time_in_bed?: number | null;
+  /** Sleep efficiency, PERCENT (0–100). */
+  efficiency?: number | null;
+  /** Nightly mean heart-rate variability, MILLISECONDS. */
+  average_hrv?: number | null;
+  /** 5-minute HRV time series; used to derive a nightly mean if `average_hrv`
+   *  is absent. */
+  hrv?: OuraSleepTimeSeries | null;
+  /** 5-minute heart-rate time series (not currently mapped). */
+  heart_rate?: OuraSleepTimeSeries | null;
+  /** ISO-8601 instant the sleep window began (UTC offset preserved). */
+  bedtime_start?: string | null;
+  /** ISO-8601 instant the sleep window ended. */
+  bedtime_end?: string | null;
+}
+
 /** `GET /v2/usercollection/daily_readiness`. */
 export interface OuraDailyReadiness {
   id: string;

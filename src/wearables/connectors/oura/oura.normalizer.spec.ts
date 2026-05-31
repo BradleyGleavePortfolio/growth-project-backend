@@ -262,8 +262,108 @@ describe('oura.normalizer — daily_spo2', () => {
   });
 });
 
+describe('oura.normalizer — sleep (long-form period endpoint, R2 Finding 2)', () => {
+  // Realistic Oura v2 GET /usercollection/sleep document: stage durations in
+  // SECONDS, efficiency percent, a nightly average_hrv in ms, and a 5-minute
+  // hrv.items series. This is the shape live backfill actually fetches.
+  const SLEEP = {
+    id: 'sleep_period_abc123',
+    day: '2026-05-31',
+    type: 'long_sleep',
+    bedtime_start: '2026-05-30T23:10:00.000Z',
+    bedtime_end: '2026-05-31T06:55:00.000Z',
+    total_sleep_duration: 25200, // 420 min
+    rem_sleep_duration: 6000, // 100 min
+    deep_sleep_duration: 4200, // 70 min
+    light_sleep_duration: 15000, // 250 min
+    awake_time: 900, // 15 min
+    efficiency: 89, // percent
+    average_hrv: 58, // ms (nightly mean)
+    hrv: {
+      interval: 300,
+      timestamp: '2026-05-30T23:10:00.000Z',
+      items: [55, 60, null, 59],
+    },
+  };
+
+  it('maps every stage + efficiency + nightly HRV from a live sleep document', () => {
+    const out = normalizeOuraRecord(
+      wrap('sleep', SLEEP).payload as OuraRawPayload,
+    );
+    expect(out).toHaveLength(7);
+    const byMetric = Object.fromEntries(out.map((s) => [s.metric, s]));
+
+    expect(byMetric.SLEEP_TOTAL_MIN).toMatchObject({
+      value: 420,
+      unit: 'min',
+      bucket: 'SLEEP_RECOVERY',
+      provider: 'OURA',
+      userId: USER,
+      connectionId: CONN,
+      sourceRecordId: 'sleep_period_abc123',
+    });
+    expect(byMetric.SLEEP_REM_MIN.value).toBe(100);
+    expect(byMetric.SLEEP_DEEP_MIN.value).toBe(70);
+    expect(byMetric.SLEEP_LIGHT_MIN.value).toBe(250);
+    expect(byMetric.SLEEP_AWAKE_MIN.value).toBe(15);
+    expect(byMetric.SLEEP_EFFICIENCY_PCT).toMatchObject({ value: 89, unit: '%' });
+    // average_hrv takes precedence over the items series.
+    expect(byMetric.HRV_MS).toMatchObject({ value: 58, unit: 'ms' });
+
+    // Window is the explicit bedtime span (not the calendar day).
+    expect(byMetric.SLEEP_TOTAL_MIN.startAt.toISOString()).toBe(
+      '2026-05-30T23:10:00.000Z',
+    );
+    expect(byMetric.SLEEP_TOTAL_MIN.endAt.toISOString()).toBe(
+      '2026-05-31T06:55:00.000Z',
+    );
+  });
+
+  it('derives nightly HRV from the hrv.items mean when average_hrv is absent', () => {
+    const { average_hrv, ...noAvg } = SLEEP;
+    void average_hrv;
+    const out = normalizeOuraRecord(
+      wrap('sleep', noAvg).payload as OuraRawPayload,
+    );
+    const hrv = out.find((s) => s.metric === 'HRV_MS')!;
+    // mean of [55, 60, 59] (null skipped) = 58 (rounded).
+    expect(hrv.value).toBe(58);
+    expect(hrv.unit).toBe('ms');
+  });
+
+  it('emits no HRV sample when neither average_hrv nor a usable series exists', () => {
+    const { average_hrv, hrv, ...bare } = SLEEP;
+    void average_hrv;
+    void hrv;
+    const out = normalizeOuraRecord(
+      wrap('sleep', { ...bare, hrv: { items: [null, null] } })
+        .payload as OuraRawPayload,
+    );
+    expect(out.find((s) => s.metric === 'HRV_MS')).toBeUndefined();
+    // Stage metrics still come through.
+    expect(out.find((s) => s.metric === 'SLEEP_TOTAL_MIN')!.value).toBe(420);
+  });
+
+  it('produces the canonical anchored dedup_key for SLEEP_TOTAL_MIN', () => {
+    const out = normalizeOuraRecord(
+      wrap('sleep', SLEEP).payload as OuraRawPayload,
+    );
+    const total = out.find((s) => s.metric === 'SLEEP_TOTAL_MIN')!;
+    // Re-derive via the shared ingestion-lane util (no hardcoded magic hash).
+    expect(dedup(total)).toBe(
+      computeDedupKey({
+        userId: USER,
+        provider: WearableProvider.OURA,
+        metric: 'SLEEP_TOTAL_MIN',
+        startAt: new Date('2026-05-30T23:10:00.000Z'),
+        endAt: new Date('2026-05-31T06:55:00.000Z'),
+      }),
+    );
+  });
+});
+
 describe('oura.normalizer — unmapped collections + batch', () => {
-  it('produces no samples for sleep/workout/session long-form collections', () => {
+  it('produces no samples for workout/session long-form collections', () => {
     expect(
       normalizeOuraRecord(
         wrap('workout', { id: 'w1', day: '2026-05-31' })

@@ -9,6 +9,7 @@ import {
   OuraDailyReadiness,
   OuraDailySleep,
   OuraHeartRate,
+  OuraSleep,
   OuraSpO2,
 } from './oura.types';
 
@@ -26,6 +27,12 @@ import {
  *   daily_sleep  → SLEEP_TOTAL_MIN, SLEEP_REM_MIN, SLEEP_DEEP_MIN,
  *                  SLEEP_LIGHT_MIN, SLEEP_AWAKE_MIN, SLEEP_EFFICIENCY_PCT (S&R)
  *   daily_sleep.average_hrv      → HRV_MS (S&R)
+ *   sleep (long-form period)     → SLEEP_TOTAL_MIN, SLEEP_REM_MIN,
+ *                  SLEEP_DEEP_MIN, SLEEP_LIGHT_MIN, SLEEP_AWAKE_MIN,
+ *                  SLEEP_EFFICIENCY_PCT (S&R) + HRV_MS (nightly mean from
+ *                  `average_hrv`, else the mean of the `hrv.items` series)
+ *                  — the live Oura `sleep` endpoint is where stage durations
+ *                  and HRV actually live (R2 fix — Finding 2).
  *   daily_readiness.score        → READINESS_SCORE (S&R)
  *   daily_readiness.temperature_deviation → BODY_TEMP_DEVIATION_C (S&R)
  *   daily_activity.steps         → STEPS (H&F)
@@ -124,17 +131,27 @@ function build(
   };
 }
 
-function normalizeDailySleep(ctx: OuraRawPayload): NormalizedSample[] {
-  const rec = ctx.record as OuraDailySleep;
-  // Prefer the explicit bedtime window when present; else the calendar day.
-  const start = parseInstant(rec.bedtime_start);
-  const end = parseInstant(rec.bedtime_end);
-  const window =
-    start && end ? { startAt: start, endAt: end } : dayWindow(rec.day);
-  if (!window) return [];
-  const id = rec.id ?? null;
-
-  const seeds: SampleSeed[] = [
+/**
+ * Shared stage/efficiency mapping used by BOTH the daily `daily_sleep` score
+ * document and the long-form `sleep` period document — their stage/efficiency
+ * field names are identical (Oura v2). `hrvMs` is resolved per source: the
+ * daily doc carries `average_hrv` directly; the long-form doc may carry it or
+ * a 5-minute `hrv.items` series we average. Returns the seed list (HRV last so
+ * golden ordering is stable).
+ */
+function sleepSeeds(
+  rec: {
+    total_sleep_duration?: number | null;
+    rem_sleep_duration?: number | null;
+    deep_sleep_duration?: number | null;
+    light_sleep_duration?: number | null;
+    awake_time?: number | null;
+    efficiency?: number | null;
+  },
+  hrvMs: number | null,
+  window: { startAt: Date; endAt: Date },
+): SampleSeed[] {
+  return [
     {
       metric: 'SLEEP_TOTAL_MIN',
       bucket: 'SLEEP_RECOVERY',
@@ -192,11 +209,69 @@ function normalizeDailySleep(ctx: OuraRawPayload): NormalizedSample[] {
     {
       metric: 'HRV_MS',
       bucket: 'SLEEP_RECOVERY',
-      value: rec.average_hrv ?? null,
+      value: hrvMs,
       unit: UNIT.MS,
       ...window,
     },
   ];
+}
+
+/**
+ * Mean of the finite numeric entries of an Oura HRV time series. `null`
+ * entries are off-wrist gaps and are excluded. Returns null if the series is
+ * absent/empty so no speculative HRV sample is emitted (#42). Rounded to the
+ * nearest whole millisecond to match the canonical `ms` unit granularity.
+ */
+function averageSeries(items: Array<number | null> | null | undefined): number | null {
+  if (!Array.isArray(items)) return null;
+  let sum = 0;
+  let n = 0;
+  for (const v of items) {
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      sum += v;
+      n += 1;
+    }
+  }
+  return n > 0 ? Math.round(sum / n) : null;
+}
+
+function normalizeDailySleep(ctx: OuraRawPayload): NormalizedSample[] {
+  const rec = ctx.record as OuraDailySleep;
+  // Prefer the explicit bedtime window when present; else the calendar day.
+  const start = parseInstant(rec.bedtime_start);
+  const end = parseInstant(rec.bedtime_end);
+  const window =
+    start && end ? { startAt: start, endAt: end } : dayWindow(rec.day);
+  if (!window) return [];
+  const id = rec.id ?? null;
+
+  const seeds: SampleSeed[] = sleepSeeds(rec, rec.average_hrv ?? null, window);
+
+  return seeds
+    .map((s) => build(ctx, id, s))
+    .filter((s): s is NormalizedSample => s !== null);
+}
+
+/**
+ * Normalize a long-form `sleep` (sleep-period) document. Identical stage +
+ * efficiency mapping to {@link normalizeDailySleep}, but HRV is resolved from
+ * `average_hrv` when present, falling back to the mean of the 5-minute
+ * `hrv.items` series (R2 fix — Finding 2). Window is the explicit bedtime span
+ * when present, else the calendar day.
+ */
+function normalizeSleep(ctx: OuraRawPayload): NormalizedSample[] {
+  const rec = ctx.record as OuraSleep;
+  const start = parseInstant(rec.bedtime_start);
+  const end = parseInstant(rec.bedtime_end);
+  const window =
+    start && end ? { startAt: start, endAt: end } : dayWindow(rec.day);
+  if (!window) return [];
+  const id = rec.id ?? null;
+
+  const hrvMs =
+    rec.average_hrv != null ? rec.average_hrv : averageSeries(rec.hrv?.items);
+
+  const seeds: SampleSeed[] = sleepSeeds(rec, hrvMs, window);
 
   return seeds
     .map((s) => build(ctx, id, s))
@@ -288,10 +363,11 @@ function normalizeSpO2(ctx: OuraRawPayload): NormalizedSample[] {
 }
 
 /**
- * Normalize one wrapped Oura record. Collections without a §3.1 mapping
- * (`sleep` long-form, `workout`, `session`) currently produce no canonical
- * samples — they are fetched for completeness/future mapping but yield no
- * rows today (no speculative ingestion, #42).
+ * Normalize one wrapped Oura record. The long-form `sleep` period document is
+ * the real source of sleep-stage durations + HRV and IS mapped (R2 fix —
+ * Finding 2). `workout`/`session` remain unmapped today — fetched for
+ * completeness/future mapping but yielding no rows (no speculative ingestion,
+ * #42).
  */
 export function normalizeOuraRecord(
   payload: OuraRawPayload,
@@ -299,6 +375,8 @@ export function normalizeOuraRecord(
   switch (payload.collection) {
     case 'daily_sleep':
       return normalizeDailySleep(payload);
+    case 'sleep':
+      return normalizeSleep(payload);
     case 'daily_readiness':
       return normalizeDailyReadiness(payload);
     case 'daily_activity':
@@ -307,7 +385,6 @@ export function normalizeOuraRecord(
       return normalizeHeartRate(payload);
     case 'daily_spo2':
       return normalizeSpO2(payload);
-    case 'sleep':
     case 'workout':
     case 'session':
       return [];
