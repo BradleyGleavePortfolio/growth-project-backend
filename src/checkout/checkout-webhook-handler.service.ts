@@ -181,18 +181,36 @@ export class CheckoutWebhookHandlerService {
 
     const accessExpiresAt = this.computeAccessExpiry(pkg, purchase, isRecurring, null);
 
-    const updated = await db.clientPurchase.update({
-      where: { id: purchase.id },
-      data: {
-        status: newStatus,
-        entitlement_active: true,
-        stripe_payment_intent_id: session.payment_intent ?? null,
-        stripe_subscription_id: session.subscription ?? null,
-        stripe_customer_id: session.customer ?? purchase.stripe_customer_id,
-        access_expires_at: accessExpiresAt,
-        last_error: null,
-      },
-    });
+    // B1 pricing-lock serialization (PR-18). Before flipping this purchase
+    // to entitlement_active=true, take the SAME CoachPackage row lock that
+    // PackagesService.update() takes (`SELECT id ... FOR UPDATE`). The
+    // pricing-lock transaction counts active recurring buyers under that
+    // row lock; if a recurring activation could commit WITHOUT touching the
+    // package row, the count could miss it and a price edit could slip past
+    // the guard. Taking the package-row lock here forces the two operations
+    // to serialize on the package row: whichever transaction acquires the
+    // lock first runs to completion, and the other blocks until commit and
+    // then observes the committed state (the activation sees the price
+    // edit, or the price edit's count sees the now-active buyer and locks).
+    // No deadlock: every path acquires the SAME single row lock and never a
+    // second one, so there is no lock-ordering cycle.
+    const updated = await this.activateUnderPackageLock(
+      tx,
+      purchase.package_id,
+      (client) =>
+        client.clientPurchase.update({
+          where: { id: purchase.id },
+          data: {
+            status: newStatus,
+            entitlement_active: true,
+            stripe_payment_intent_id: session.payment_intent ?? null,
+            stripe_subscription_id: session.subscription ?? null,
+            stripe_customer_id: session.customer ?? purchase.stripe_customer_id,
+            access_expires_at: accessExpiresAt,
+            last_error: null,
+          },
+        }),
+    );
 
     // Phase 4 — materialize ledger + queue head-coach transfer now that
     // the charge has actually succeeded.
@@ -369,17 +387,25 @@ export class CheckoutWebhookHandlerService {
       currentPeriodEnd,
     );
 
-    await this.prisma.clientPurchase.update({
-      where: { id: purchase.id },
-      data: {
-        status,
-        entitlement_active: entitlementActive,
-        cancel_at_period_end: !!sub.cancel_at_period_end,
-        current_period_end: currentPeriodEnd,
-        canceled_at: canceledAt,
-        access_expires_at: accessExpiresAt,
-      },
-    });
+    // B1 pricing-lock serialization (PR-18). This path can flip
+    // entitlement_active=true for a recurring purchase (active/trialing/
+    // past_due), so it must serialize against PackagesService.update()'s
+    // CoachPackage row lock. We take the same `SELECT id ... FOR UPDATE`
+    // before the update. See applyCheckoutCompleted for the full argument.
+    // This handler has no outer tx, so we open our own $transaction.
+    await this.activateUnderPackageLock(undefined, purchase.package_id, (client) =>
+      client.clientPurchase.update({
+        where: { id: purchase.id },
+        data: {
+          status,
+          entitlement_active: entitlementActive,
+          cancel_at_period_end: !!sub.cancel_at_period_end,
+          current_period_end: currentPeriodEnd,
+          canceled_at: canceledAt,
+          access_expires_at: accessExpiresAt,
+        },
+      }),
+    );
     return { claimed: true, purchase_id: purchase.id };
   }
 
@@ -607,21 +633,33 @@ export class CheckoutWebhookHandlerService {
       });
       const status = this.normalizeSubscriptionStatus(sub.status);
       const currentPeriodEnd = this.toDate(sub.current_period_end);
-      updated = await this.prisma.clientPurchase.update({
-        where: { id: purchase.id },
-        data: {
-          status,
-          entitlement_active: ['active', 'trialing', 'past_due'].includes(status),
-          current_period_end: currentPeriodEnd,
-          access_expires_at: this.computeAccessExpiry(
-            pkg,
-            purchase,
-            true,
-            currentPeriodEnd,
-          ),
-          last_error: null,
-        },
-      });
+      // B1 pricing-lock serialization (PR-18). A renewal resync can flip
+      // entitlement_active=true for a recurring purchase, so it serializes
+      // against PackagesService.update()'s CoachPackage row lock via the
+      // same `SELECT id ... FOR UPDATE`. No outer tx here, so we open our
+      // own $transaction. See applyCheckoutCompleted for the full argument.
+      updated = await this.activateUnderPackageLock(
+        undefined,
+        purchase.package_id,
+        (client) =>
+          client.clientPurchase.update({
+            where: { id: purchase.id },
+            data: {
+              status,
+              entitlement_active: ['active', 'trialing', 'past_due'].includes(
+                status,
+              ),
+              current_period_end: currentPeriodEnd,
+              access_expires_at: this.computeAccessExpiry(
+                pkg,
+                purchase,
+                true,
+                currentPeriodEnd,
+              ),
+              last_error: null,
+            },
+          }),
+      );
     } catch (err) {
       this.logger.warn(
         `invoice.paid resync failed for sub=${inv.subscription}: ${(err as Error).message}`,
@@ -757,6 +795,61 @@ export class CheckoutWebhookHandlerService {
       },
     });
     return { claimed: true };
+  }
+
+  /**
+   * B1 pricing-lock serialization (PR-18).
+   *
+   * Runs `activate` (a ClientPurchase entitlement-activation write) AFTER
+   * taking a `SELECT id FROM "CoachPackage" WHERE id = ${packageId} FOR
+   * UPDATE` row lock on the package, inside the SAME transaction that
+   * performs the activation. This is the exact lock that
+   * PackagesService.update() takes before it counts active recurring
+   * buyers and writes a price edit.
+   *
+   * Serialization argument (what locks what, in what order, no deadlock):
+   *   - Both the pricing-edit tx and the activation tx acquire ONE lock:
+   *     the `CoachPackage` row identified by `packageId`. Neither acquires
+   *     a second lock while holding the first, so there is no
+   *     lock-ordering cycle and therefore no deadlock.
+   *   - Whichever tx acquires the row lock first runs to completion; the
+   *     other blocks on the row lock until the first commits, then proceeds
+   *     against the now-committed state:
+   *       * If the activation commits first, the pricing edit's count
+   *         (taken under the same row lock) sees the newly active recurring
+   *         buyer and throws PACKAGE_PRICING_LOCKED.
+   *       * If the pricing edit commits first, this activation observes the
+   *         already-edited package row when it proceeds (the price change
+   *         is fully committed before the buyer becomes active).
+   *   - The guard can therefore NEVER miss an entitlement activation that
+   *     commits before the price update commits.
+   *
+   * When the caller already holds an outer `$transaction` (BillingService
+   * threads its tx through `handle(event, tx)`), the lock + activation run
+   * on that same tx. When there is no outer tx (the subscription/invoice
+   * resync paths call `this.prisma` directly), we open our own short
+   * `$transaction` so the FOR UPDATE lock is held across the activating
+   * write. No Stripe HTTP is performed inside this transaction.
+   */
+  private async activateUnderPackageLock<T>(
+    tx: WebhookTx | undefined,
+    packageId: string,
+    activate: (client: WebhookTx) => Promise<T>,
+  ): Promise<T> {
+    const runLocked = async (client: WebhookTx): Promise<T> => {
+      await client.$queryRaw<
+        Array<{ id: string }>
+      >`SELECT id FROM "CoachPackage" WHERE id = ${packageId} FOR UPDATE`;
+      return activate(client);
+    };
+    if (tx) {
+      // Already inside the caller's outer $transaction — lock on it.
+      return runLocked(tx);
+    }
+    // No outer tx — open our own so the row lock is held across the write.
+    return this.prisma.$transaction((innerTx) =>
+      runLocked(innerTx as unknown as WebhookTx),
+    );
   }
 
   // Compute access_expires_at given the package + purchase context.
