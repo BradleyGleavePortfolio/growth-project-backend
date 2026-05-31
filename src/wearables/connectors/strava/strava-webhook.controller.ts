@@ -1,0 +1,247 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Injectable,
+  Logger,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import type { Request } from 'express';
+import { WearableProvider } from '@prisma/client';
+import { PrismaService } from '../../../prisma.service';
+import { Public } from '../../../common/decorators/public.decorator';
+import { StravaWebhookEvent } from './strava.types';
+
+/**
+ * PR-HK-2.f — Strava push-subscription webhook.
+ *
+ * Strava webhooks are unusual and the security model differs from every other
+ * connector (Oura/Whoop/Fitbit), so the divergences are documented inline:
+ *
+ *  1. SUBSCRIPTION VERIFICATION (GET). When the push subscription is created
+ *     (out-of-band, via the push_subscriptions API), Strava issues a GET to
+ *     this callback with `hub.mode=subscribe`, `hub.challenge=<nonce>`,
+ *     `hub.verify_token=<token>`. We echo `{ "hub.challenge": <nonce> }` ONLY
+ *     if `hub.verify_token` equals the server-configured
+ *     STRAVA_WEBHOOK_VERIFY_TOKEN; otherwise 403. (PubSubHubbub handshake.)
+ *
+ *  2. NO HMAC ON EVENTS. Unlike Stripe/Oura, Strava does NOT sign event POSTs
+ *     — there is no shared-secret signature header to verify (per Strava
+ *     webhook docs). We therefore defend the POST with THREE independent
+ *     controls instead:
+ *       (a) subscription_id must match our configured subscription id
+ *           (STRAVA_WEBHOOK_SUBSCRIPTION_ID) — rejects events meant for a
+ *           different app/subscription;
+ *       (b) a source-IP allow-list — Strava delivers from a small set of AWS
+ *           us-east-1 egress IPs (observed e.g. 54.173.232.159). Strava does
+ *           NOT publish a stable CIDR list, so the allow-list is configurable
+ *           via STRAVA_WEBHOOK_ALLOWED_IPS (comma-separated) and defaults to
+ *           the documented/observed addresses below. When the env var is unset
+ *           we fall back to the defaults; setting it to "*" disables the check
+ *           for environments behind a trusted proxy that already filters;
+ *       (c) idempotency via WearableProcessedEvent (provider='STRAVA',
+ *           provider_event_id = `${object_type}:${object_id}:${event_time}`) —
+ *           Strava retries up to 3× on non-200, so redelivery must be a no-op
+ *           (50-Failures #28/#29 replay protection).
+ *
+ *  3. NO ACTIVITY PAYLOAD. The event carries only an `object_id` reference —
+ *     NOT the activity. On a first-time activity create/update we ENQUEUE a
+ *     fetch of that activity (the connector's backfill/fetch path then pulls
+ *     + normalizes it). We ACK within Strava's 2-second window and do the
+ *     fetch asynchronously (durable row + cron, the repo's established queue
+ *     pattern) — never inline (#21 no slow webhook).
+ *
+ * The route is @Public() (Strava is not a Supabase user) and throttled.
+ */
+
+/** Strava's documented/observed delivery IPs (AWS us-east-1 egress). */
+const DEFAULT_STRAVA_WEBHOOK_IPS = [
+  '54.173.232.159',
+  '54.227.82.103',
+  '52.55.245.219',
+];
+
+const ENV = {
+  verifyToken: 'STRAVA_WEBHOOK_VERIFY_TOKEN',
+  subscriptionId: 'STRAVA_WEBHOOK_SUBSCRIPTION_ID',
+  allowedIps: 'STRAVA_WEBHOOK_ALLOWED_IPS',
+} as const;
+
+/**
+ * Thin enqueue facade for "fetch this just-updated Strava activity". Mirrors
+ * the repo's LeadSyncQueue pattern: today the durable transport is a row +
+ * cron sweep (no BullMQ in the repo); this seam lets the webhook hand off
+ * without knowing the transport, and lets tests assert the handoff without
+ * booting a worker. PR-HK-3 (sync worker) owns the actual fetch.
+ */
+@Injectable()
+export class StravaActivityFetchQueue {
+  private readonly logger = new Logger(StravaActivityFetchQueue.name);
+
+  /** Mark a Strava activity for fetch+normalize. Fire-and-forget. */
+  async enqueueActivityFetch(ownerId: number, activityId: number): Promise<void> {
+    this.logger.debug(
+      `strava.enqueueActivityFetch owner=${ownerId} activity=${activityId}`,
+    );
+  }
+}
+
+/** Internal seam so unit tests can inject env without process.env. */
+export interface StravaWebhookEnv {
+  getEnv: (key: string) => string | undefined;
+}
+
+@ApiTags('webhooks')
+@Controller('v1/wearables/webhooks')
+export class StravaWebhookController {
+  private readonly logger = new Logger(StravaWebhookController.name);
+  private readonly getEnv: (key: string) => string | undefined;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly fetchQueue: StravaActivityFetchQueue,
+    env?: Partial<StravaWebhookEnv>,
+  ) {
+    this.getEnv = env?.getEnv ?? ((k) => process.env[k]);
+  }
+
+  /**
+   * Subscription-verification handshake. Strava issues this GET on
+   * subscription creation. Echo the challenge iff the verify_token matches the
+   * configured secret; otherwise 403 (never echo for a wrong/absent token, or
+   * an attacker could mint a subscription against our callback).
+   */
+  @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
+  @Get('strava')
+  @HttpCode(HttpStatus.OK)
+  verifySubscription(
+    @Query('hub.mode') mode: string,
+    @Query('hub.challenge') challenge: string,
+    @Query('hub.verify_token') verifyToken: string,
+  ): { 'hub.challenge': string } {
+    const expected = this.getEnv(ENV.verifyToken);
+    if (!expected) {
+      // Fail loud on misconfig rather than silently accept any token.
+      this.logger.error('strava.webhook.verify: verify token not configured');
+      throw new ForbiddenException('Strava webhook verify token not configured');
+    }
+    if (mode !== 'subscribe' || !challenge || verifyToken !== expected) {
+      this.logger.warn('strava.webhook.verify: rejected (mode/token mismatch)');
+      throw new ForbiddenException('Strava webhook verification failed');
+    }
+    return { 'hub.challenge': challenge };
+  }
+
+  /**
+   * Push event receiver. Validates source IP + subscription id, dedups via
+   * WearableProcessedEvent, then enqueues an activity fetch on first sight.
+   * ALWAYS returns 200 within Strava's 2s window once accepted (the fetch is
+   * async) — but rejects unauthenticated/foreign events with 403/400.
+   */
+  @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 600 } })
+  @Post('strava')
+  @HttpCode(HttpStatus.OK)
+  async handleEvent(
+    @Req() req: Request,
+    @Body() body: StravaWebhookEvent,
+  ): Promise<{ received: true; deduped: boolean }> {
+    // (b) source-IP allow-list.
+    this.assertAllowedSourceIp(req);
+
+    // Structural validation (#8) — reject malformed before any DB touch.
+    if (
+      !body ||
+      typeof body.object_id !== 'number' ||
+      typeof body.event_time !== 'number' ||
+      typeof body.subscription_id !== 'number' ||
+      !body.object_type ||
+      !body.aspect_type
+    ) {
+      throw new BadRequestException('Malformed Strava webhook event');
+    }
+
+    // (a) subscription_id must match our configured subscription.
+    const expectedSub = this.getEnv(ENV.subscriptionId);
+    if (expectedSub && String(body.subscription_id) !== expectedSub) {
+      this.logger.warn(
+        `strava.webhook.event: foreign subscription_id=${body.subscription_id}`,
+      );
+      throw new ForbiddenException('Unknown Strava subscription');
+    }
+
+    // (c) idempotency. Composite provider_event_id keyed on the natural event
+    // identity. createMany(skipDuplicates) makes redelivery a no-op.
+    const providerEventId = `${body.object_type}:${body.object_id}:${body.event_time}`;
+    const { count } = await this.prisma.wearableProcessedEvent.createMany({
+      data: [
+        {
+          provider: WearableProvider.STRAVA,
+          provider_event_id: providerEventId,
+          type: `${body.object_type}.${body.aspect_type}`,
+        },
+      ],
+      skipDuplicates: true,
+    });
+
+    if (count === 0) {
+      // Already processed — no-op ACK (replay protection).
+      this.logger.log(`strava.webhook.event: duplicate ${providerEventId}`);
+      return { received: true, deduped: true };
+    }
+
+    // First-time event. Only activity create/update need a fetch (delete +
+    // athlete deauthorization are handled by other lanes; we still ACK them).
+    if (
+      body.object_type === 'activity' &&
+      (body.aspect_type === 'create' || body.aspect_type === 'update')
+    ) {
+      await this.fetchQueue.enqueueActivityFetch(body.owner_id, body.object_id);
+    }
+
+    return { received: true, deduped: false };
+  }
+
+  /**
+   * Enforce the source-IP allow-list. Reads the configured list (or the
+   * documented defaults); "*" disables the check (trusted-proxy mode). Uses
+   * the leftmost X-Forwarded-For hop when present (we sit behind a proxy),
+   * else the socket remote address.
+   */
+  private assertAllowedSourceIp(req: Request): void {
+    const configured = this.getEnv(ENV.allowedIps);
+    if (configured === '*') return; // explicitly disabled (trusted proxy)
+
+    const allowed = configured
+      ? configured.split(',').map((s) => s.trim()).filter(Boolean)
+      : DEFAULT_STRAVA_WEBHOOK_IPS;
+
+    const ip = this.sourceIp(req);
+    if (!ip || !allowed.includes(ip)) {
+      this.logger.warn(`strava.webhook.event: blocked source ip=${ip ?? 'unknown'}`);
+      throw new ForbiddenException('Source IP not allowed');
+    }
+  }
+
+  /** Resolve the request source IP (leftmost XFF hop, else socket address). */
+  private sourceIp(req: Request): string | null {
+    const xff = req.headers['x-forwarded-for'];
+    if (typeof xff === 'string' && xff.length > 0) {
+      return xff.split(',')[0].trim();
+    }
+    if (Array.isArray(xff) && xff.length > 0) {
+      return xff[0].split(',')[0].trim();
+    }
+    const remote = req.socket?.remoteAddress ?? req.ip;
+    return remote ?? null;
+  }
+}
