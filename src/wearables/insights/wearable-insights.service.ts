@@ -9,13 +9,15 @@ import {
   ClientInsight,
   CoachInsightSchema,
   ClientInsightSchema,
+  CoachInsightResponse,
+  ClientInsightResponse,
+  EmptyInsight,
   InsightAudience,
   InsightSample,
   InsightUserContext,
   BuildPromptInput,
   BuildPromptResult,
-  emptyCoachInsight,
-  emptyClientInsight,
+  emptyInsight,
 } from './insight-output.schema';
 import { applyGuardrails, calibrateConfidence } from './guardrails';
 import buildCoachHfPrompt, {
@@ -101,8 +103,8 @@ export class WearableInsightsService {
     coachId: string,
     clientId: string,
     bucket: WearableMetricBucket,
-  ): Promise<CoachInsight> {
-    return this.generate({
+  ): Promise<CoachInsightResponse> {
+    return this.generate<CoachInsight>({
       audience: 'coach',
       subjectUserId: clientId,
       requesterId: coachId,
@@ -111,18 +113,17 @@ export class WearableInsightsService {
       bucket,
       schema: CoachInsightSchema,
       capability: COACH_INSIGHT_CAPABILITY,
-      empty: emptyCoachInsight,
       builder: bucket === WearableMetricBucket.HEALTH_FITNESS ? buildCoachHfPrompt : buildCoachSrPrompt,
       promptVersion:
         bucket === WearableMetricBucket.HEALTH_FITNESS ? COACH_HF_VERSION : COACH_SR_VERSION,
-    }) as Promise<CoachInsight>;
+    });
   }
 
   async generateForClient(
     userId: string,
     bucket: WearableMetricBucket,
-  ): Promise<ClientInsight> {
-    return this.generate({
+  ): Promise<ClientInsightResponse> {
+    return this.generate<ClientInsight>({
       audience: 'client',
       subjectUserId: userId,
       requesterId: userId,
@@ -131,12 +132,11 @@ export class WearableInsightsService {
       bucket,
       schema: ClientInsightSchema,
       capability: CLIENT_INSIGHT_CAPABILITY,
-      empty: emptyClientInsight,
       builder:
         bucket === WearableMetricBucket.HEALTH_FITNESS ? buildClientHfPrompt : buildClientSrPrompt,
       promptVersion:
         bucket === WearableMetricBucket.HEALTH_FITNESS ? CLIENT_HF_VERSION : CLIENT_SR_VERSION,
-    }) as Promise<ClientInsight>;
+    });
   }
 
   // ── Core flow ───────────────────────────────────────────────────────
@@ -149,10 +149,9 @@ export class WearableInsightsService {
     bucket: WearableMetricBucket;
     schema: ZodSchema<T>;
     capability: string;
-    empty: () => T;
     builder: PromptBuilderFn;
     promptVersion: string;
-  }): Promise<T> {
+  }): Promise<T | EmptyInsight> {
     const { audience, subjectUserId, bucket } = opts;
 
     // 1. Cache check — a fresh (non-expired, non-invalidated) row short-
@@ -185,7 +184,7 @@ export class WearableInsightsService {
       );
       const stale = (await this.cache.getEvenIfStale(audience, subjectUserId, bucket)) as T | null;
       if (stale) return stale;
-      return opts.empty();
+      return emptyInsight();
     }
 
     // 5. Validate the model JSON against the audience schema. On failure,
@@ -201,7 +200,7 @@ export class WearableInsightsService {
           `insight repair call failed audience=${audience}: ${(err as Error).message}`,
         );
         const stale = (await this.cache.getEvenIfStale(audience, subjectUserId, bucket)) as T | null;
-        return stale ?? opts.empty();
+        return stale ?? emptyInsight();
       }
       parsed = this.tryParse(opts.schema, repaired);
       if (!parsed) {
@@ -209,7 +208,7 @@ export class WearableInsightsService {
           `insight output invalid after repair audience=${audience} user=${subjectUserId} — failing explicit`,
         );
         const stale = (await this.cache.getEvenIfStale(audience, subjectUserId, bucket)) as T | null;
-        return stale ?? opts.empty();
+        return stale ?? emptyInsight();
       }
     }
 
@@ -223,7 +222,7 @@ export class WearableInsightsService {
         `insight guardrail REJECT audience=${audience} user=${subjectUserId} reason=${guarded.reason}`,
       );
       const stale = (await this.cache.getEvenIfStale(audience, subjectUserId, bucket)) as T | null;
-      return stale ?? opts.empty();
+      return stale ?? emptyInsight();
     }
     const safe = guarded.value as T;
 

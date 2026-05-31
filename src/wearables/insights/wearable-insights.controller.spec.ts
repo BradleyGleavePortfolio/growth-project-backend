@@ -5,7 +5,12 @@ import { WearableMetricBucket } from '@prisma/client';
 import { WearableInsightsController } from './wearable-insights.controller';
 import type { WearableInsightsService } from './wearable-insights.service';
 import type { AuthedRequest } from '../../auth/auth-request';
-import { CoachInsight, ClientInsight } from './insight-output.schema';
+import {
+  CoachInsight,
+  ClientInsight,
+  emptyInsight,
+  isEmptyInsight,
+} from './insight-output.schema';
 
 // PR-HK-4 controller contract tests: route registration, guard wiring,
 // query validation, coach-owns-client authorization, and the dual-role
@@ -116,9 +121,10 @@ describe('WearableInsightsController', () => {
         CLIENT,
         WearableMetricBucket.SLEEP_RECOVERY,
       );
-      // Coach schema fields present.
-      expect(out.hypothesis).toBe('hyp');
-      expect(out.suggested_message_draft).toBe('draft');
+      // Coach schema fields present (full-insight branch of the union).
+      expect(isEmptyInsight(out)).toBe(false);
+      expect((out as CoachInsight).hypothesis).toBe('hyp');
+      expect((out as CoachInsight).suggested_message_draft).toBe('draft');
     });
 
     it('rejects an invalid clientId with 400', async () => {
@@ -157,11 +163,26 @@ describe('WearableInsightsController', () => {
         WearableMetricBucket.HEALTH_FITNESS,
       );
       // Client schema — coach-only fields absent.
-      expect(out.norm_comparison).toBe('norm');
+      expect(isEmptyInsight(out)).toBe(false);
+      expect((out as ClientInsight).norm_comparison).toBe('norm');
       expect((out as unknown as Record<string, unknown>).hypothesis).toBeUndefined();
       expect(
         (out as unknown as Record<string, unknown>).suggested_message_draft,
       ).toBeUndefined();
+    });
+
+    it('returns the strict empty state when the service degrades', async () => {
+      const svc = makeSvc();
+      svc.generateForClient.mockResolvedValue(emptyInsight() as never);
+      const ctrl = new WearableInsightsController(svc as never);
+      const out = await ctrl.getClientInsight(reqFor('student', CLIENT), {
+        bucket: WearableMetricBucket.HEALTH_FITNESS,
+      });
+      // The controller .parse() must accept the empty branch of the union
+      // and pass it through unchanged.
+      expect(isEmptyInsight(out)).toBe(true);
+      expect((out as Record<string, unknown>).is_empty).toBe(true);
+      expect((out as Record<string, unknown>).source_metrics).toEqual([]);
     });
 
     it('rejects a missing bucket with 400', async () => {

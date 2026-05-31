@@ -16,7 +16,12 @@ import { CoachGuard } from '../../auth/coach.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { THROTTLER_NAMES } from '../../throttler/throttler.config';
 import { WearableInsightsService } from './wearable-insights.service';
-import { CoachInsight, ClientInsight } from './insight-output.schema';
+import {
+  CoachInsightResponse,
+  ClientInsightResponse,
+  CoachInsightResponseSchema,
+  ClientInsightResponseSchema,
+} from './insight-output.schema';
 
 // PR-HK-4 — read-only insight endpoints (no UI; the panels land in 5a/5b).
 //
@@ -62,10 +67,14 @@ export class WearableInsightsController {
   async getCoachInsight(
     @Request() req: AuthedRequest,
     @Query() rawQuery: unknown,
-  ): Promise<CoachInsight> {
+  ): Promise<CoachInsightResponse> {
     const { clientId, bucket } = parseOrThrow(CoachQuerySchema, rawQuery);
     await this.svc.assertCoachOwnsClient(req.user.id, clientId, req.user.role);
-    return this.svc.generateForCoach(req.user.id, clientId, bucket);
+    const payload = await this.svc.generateForCoach(req.user.id, clientId, bucket);
+    // Validate the wire response against the locked union contract (full
+    // coach insight OR the strict empty state). Both branches are exact-
+    // field; an empty fallback can never leak a contract-violating shape.
+    return CoachInsightResponseSchema.parse(payload);
   }
 
   // Client-side self-coaching insight for the authenticated user + bucket.
@@ -78,9 +87,11 @@ export class WearableInsightsController {
   async getClientInsight(
     @Request() req: AuthedRequest,
     @Query() rawQuery: unknown,
-  ): Promise<ClientInsight> {
+  ): Promise<ClientInsightResponse> {
     const { bucket } = parseOrThrow(ClientQuerySchema, rawQuery);
-    return this.svc.generateForClient(req.user.id, bucket);
+    const payload = await this.svc.generateForClient(req.user.id, bucket);
+    // Same locked-union validation as the coach path.
+    return ClientInsightResponseSchema.parse(payload);
   }
 }
 

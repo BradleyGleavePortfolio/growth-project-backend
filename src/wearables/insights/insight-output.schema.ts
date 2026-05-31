@@ -133,32 +133,57 @@ export interface BuildPromptResult {
 
 export type PromptBuilder = (input: BuildPromptInput) => BuildPromptResult;
 
-// Empty / "not enough data" fallback payloads. Returned when the LLM call
-// times out and there is no cache to fall back to (graceful degradation,
-// audit criteria #35/#50). Deliberately low-confidence and metric-empty so
-// the renderer shows a neutral "keep syncing" state, never a fabricated
-// observation.
+// ── Empty / "not enough data" state ────────────────────────────────────
+// Returned when the LLM call times out / fails and there is no cache to
+// fall back to (graceful degradation, audit criteria #35/#50). R1 #3:
+// the old fallback cast `source_metrics: []` onto the full insight types,
+// which violates the `.min(1)` contract and hid the breach from
+// TypeScript. Instead we model the empty state as its OWN strict schema
+// with an explicit `is_empty: true` discriminator and a `source_metrics`
+// array pinned to length 0 — honest provenance (we cite nothing because
+// we computed nothing) and a clean render hook for the "keep syncing"
+// empty state in PR-HK-5a/b.
 export const EMPTY_OBSERVATION = 'Not enough data yet — keep syncing.';
 
-export function emptyCoachInsight(): CoachInsight {
-  return {
-    observation: EMPTY_OBSERVATION,
-    hypothesis: EMPTY_OBSERVATION,
-    suggested_action: 'Encourage another few days of syncing before acting.',
-    suggested_message_draft:
-      'Keep your wearable synced for a few more days and we will have a clearer picture.',
-    confidence_level: 'i_think',
-    source_metrics: [],
-  } as CoachInsight; // source_metrics intentionally empty for the fallback path
+export const EmptyInsightSchema = z
+  .object({
+    observation: z.literal(EMPTY_OBSERVATION),
+    confidence_level: z.literal('i_think'),
+    source_metrics: z.array(SourceMetricSchema).length(0),
+    is_empty: z.literal(true),
+  })
+  .strict();
+export type EmptyInsight = z.infer<typeof EmptyInsightSchema>;
+
+// Public response contracts: a controller/service may return EITHER a full
+// audience insight OR the empty state. Both branches are schema-validated
+// (no casts), so a controller can `.parse(payload)` and be certain the
+// wire response honours the locked contract on every path.
+export const CoachInsightResponseSchema = z.union([
+  CoachInsightSchema,
+  EmptyInsightSchema,
+]);
+export type CoachInsightResponse = z.infer<typeof CoachInsightResponseSchema>;
+
+export const ClientInsightResponseSchema = z.union([
+  ClientInsightSchema,
+  EmptyInsightSchema,
+]);
+export type ClientInsightResponse = z.infer<typeof ClientInsightResponseSchema>;
+
+// Type guard so callers can branch on the empty state without reaching for
+// the `is_empty` literal directly.
+export function isEmptyInsight(
+  value: CoachInsightResponse | ClientInsightResponse,
+): value is EmptyInsight {
+  return (value as Partial<EmptyInsight>).is_empty === true;
 }
 
-export function emptyClientInsight(): ClientInsight {
+export function emptyInsight(): EmptyInsight {
   return {
     observation: EMPTY_OBSERVATION,
-    norm_comparison: 'No comparison available yet.',
-    intervention: 'Keep syncing for a few more days to unlock your insight.',
-    optional_cta: null,
     confidence_level: 'i_think',
     source_metrics: [],
-  } as ClientInsight; // source_metrics intentionally empty for the fallback path
+    is_empty: true,
+  };
 }

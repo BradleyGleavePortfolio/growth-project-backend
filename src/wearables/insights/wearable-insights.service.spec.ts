@@ -7,7 +7,13 @@ import {
 import type { PrismaService } from '../../prisma.service';
 import type { AiGatewayService } from '../../ai/gateway/ai-gateway.service';
 import type { InsightCacheService } from './insight-cache.service';
-import { CoachInsight, ClientInsight, EMPTY_OBSERVATION } from './insight-output.schema';
+import {
+  CoachInsight,
+  ClientInsight,
+  EMPTY_OBSERVATION,
+  EmptyInsightSchema,
+  isEmptyInsight,
+} from './insight-output.schema';
 
 // PR-HK-4 service contract tests. The gateway, cache, and prisma are all
 // mocked so we exercise the orchestration: cache short-circuit, LLM
@@ -146,7 +152,10 @@ describe('WearableInsightsService', () => {
       const out = await svc.generateForCoach(COACH, CLIENT, BUCKET);
 
       expect(out.observation).toContain('HRV trended down');
-      expect(out.hypothesis).toBeDefined();
+      expect(isEmptyInsight(out)).toBe(false);
+      expect((out as CoachInsight).hypothesis).toBe(
+        'Accumulated training load alongside shorter sleep windows.',
+      );
       // Gateway called once with the coach capability — the gateway writes
       // the AiRequestAudit row internally (audit criteria #34).
       expect(mocks.gateway.invoke).toHaveBeenCalledTimes(1);
@@ -171,7 +180,10 @@ describe('WearableInsightsService', () => {
 
       const out = await svc.generateForClient(CLIENT, BUCKET);
 
-      expect(out.norm_comparison).toBeDefined();
+      expect(isEmptyInsight(out)).toBe(false);
+      expect((out as ClientInsight).norm_comparison).toBe(
+        'Your 6h average is below the typical adult 7-9h range.',
+      );
       // Client schema must NOT carry coach-only fields.
       expect((out as unknown as Record<string, unknown>).hypothesis).toBeUndefined();
       expect((out as unknown as Record<string, unknown>).suggested_message_draft).toBeUndefined();
@@ -217,8 +229,14 @@ describe('WearableInsightsService', () => {
 
       const out = await svc.generateForCoach(COACH, CLIENT, BUCKET);
 
+      // Empty fallback is now its OWN strict schema, not a cast full insight.
+      expect(isEmptyInsight(out)).toBe(true);
+      expect(EmptyInsightSchema.safeParse(out).success).toBe(true);
       expect(out.observation).toBe(EMPTY_OBSERVATION);
       expect(out.confidence_level).toBe('i_think');
+      expect(out.source_metrics).toEqual([]);
+      // No fabricated coach fields leak onto the empty state.
+      expect((out as unknown as Record<string, unknown>).hypothesis).toBeUndefined();
       expect(mocks.gateway.invoke).toHaveBeenCalledTimes(2);
       expect(mocks.cache.set).not.toHaveBeenCalled();
     });
@@ -248,8 +266,11 @@ describe('WearableInsightsService', () => {
       const out = await svc.generateForCoach(COACH, CLIENT, BUCKET);
 
       // Rejected → safe empty fallback, NEVER the medicalizing text.
+      expect(isEmptyInsight(out)).toBe(true);
       expect(out.observation).toBe(EMPTY_OBSERVATION);
-      expect(out.hypothesis).not.toContain('apnea');
+      // The empty state has no hypothesis field at all (cannot echo apnea).
+      expect((out as unknown as Record<string, unknown>).hypothesis).toBeUndefined();
+      expect(JSON.stringify(out)).not.toContain('apnea');
       expect(mocks.cache.set).not.toHaveBeenCalled();
     });
 
@@ -283,8 +304,12 @@ describe('WearableInsightsService', () => {
       mocks.gateway.invoke.mockRejectedValue(new Error('boom'));
       const svc = build(mocks);
       const out = await svc.generateForClient(CLIENT, BUCKET);
+      expect(isEmptyInsight(out)).toBe(true);
+      expect(EmptyInsightSchema.safeParse(out).success).toBe(true);
       expect(out.observation).toBe(EMPTY_OBSERVATION);
-      expect(out.optional_cta).toBeNull();
+      expect(out.source_metrics).toEqual([]);
+      // Empty state has no optional_cta field (it's the empty schema, not client).
+      expect((out as unknown as Record<string, unknown>).optional_cta).toBeUndefined();
     });
   });
 
