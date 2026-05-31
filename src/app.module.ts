@@ -113,6 +113,9 @@ import { StorefrontModule } from './storefront/storefront.module';
 // + storefront routing. Public routes at /p/:coachSlug/:pageSlug mounted
 // outside the /api prefix (see main.ts exclude list).
 import { LandingPagesModule } from './landing-pages/landing-pages.module';
+// PR-HK-0 — wearables/HealthKit foundation (schema + RLS gate). Provides the
+// canonical IngestionService + ProviderHttpClient that later wearables PRs build on.
+import { WearablesModule } from './wearables/wearables.module';
 
 @Module({
   imports: [
@@ -329,6 +332,8 @@ import { LandingPagesModule } from './landing-pages/landing-pages.module';
     // R46 — Landing Pages Phase 2. Coach CRUD at /api/v1/coach/landing-pages/*;
     // public SSR at /p/:coachSlug/:pageSlug (excluded from /api prefix, see main.ts).
     LandingPagesModule,
+    // PR-HK-0 — wearables/HealthKit foundation.
+    WearablesModule,
   ],
   providers: [
     // SECURITY: global JWT auth guard — every route is private by default.
