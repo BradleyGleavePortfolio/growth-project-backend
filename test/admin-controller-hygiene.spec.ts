@@ -275,16 +275,20 @@ describe('AdminController — #2 cursor pagination forwarding', () => {
 // ---------------------------------------------------------------------------
 describe('AdminService — #2 bounded DB-level pagination', () => {
   function makeService(rows: any[]) {
-    const findMany = jest.fn(async () => rows);
+    const findMany = jest.fn(async (_args: any) => rows);
     const prisma = { user: { findMany } } as any;
     const svc = new AdminService(prisma, {} as any, {} as any);
     return { svc, findMany };
   }
 
+  function firstArg(findMany: jest.Mock): any {
+    return findMany.mock.calls[0]![0];
+  }
+
   it('listUsers caps take at the hard max (100) and orders created_at desc', async () => {
     const { svc, findMany } = makeService([]);
     await svc.listUsers({ limit: 1000 });
-    const arg = findMany.mock.calls[0][0];
+    const arg = firstArg(findMany);
     expect(arg.take).toBe(100);
     expect(arg.orderBy).toEqual({ created_at: 'desc' });
   });
@@ -293,7 +297,7 @@ describe('AdminService — #2 bounded DB-level pagination', () => {
     const { svc, findMany } = makeService([]);
     const cursor = new Date('2026-03-03T00:00:00.000Z');
     await svc.listUsers({ cursor });
-    const arg = findMany.mock.calls[0][0];
+    const arg = firstArg(findMany);
     expect(arg.where.created_at).toEqual({ lt: cursor });
   });
 
@@ -315,7 +319,7 @@ describe('AdminService — #2 bounded DB-level pagination', () => {
     const { svc, findMany } = makeService([]);
     const cursor = new Date('2026-05-05T00:00:00.000Z');
     await svc.listCoaches({ limit: 999, cursor });
-    const arg = findMany.mock.calls[0][0];
+    const arg = firstArg(findMany);
     expect(arg.take).toBe(100);
     expect(arg.where.role).toBe('coach');
     expect(arg.where.created_at).toEqual({ gt: cursor });
