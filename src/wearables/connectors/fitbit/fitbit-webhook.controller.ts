@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import {
   BadRequestException,
   Controller,
@@ -5,7 +6,6 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
-  NotFoundException,
   Post,
   Query,
   Req,
@@ -297,9 +297,6 @@ export class FitbitWebhookController {
    * a single user's deliveries without storing the identity in log sinks.
    */
   private userHash(ownerId: string): string {
-    // Lazy import keeps the crypto dependency local to the log path.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { createHash } = require('crypto') as typeof import('crypto');
     return createHash('sha256').update(ownerId).digest('hex').slice(0, 16);
   }
 
