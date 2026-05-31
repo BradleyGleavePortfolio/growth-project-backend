@@ -15,7 +15,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import {
   THROTTLER_NAMES,
@@ -74,6 +74,40 @@ class ShareTokenPipe implements PipeTransform<unknown, string> {
 // IP-wide bucket resolves the same client identity the rest of the throttler
 // stack uses. Defensive against array-valued / missing proxy headers — never
 // throws, never returns empty.
+// H4 #7 (R2 P1) — throttler ISOLATION map for the GET join/:token route.
+//
+// NestJS Throttler evaluates EVERY globally-registered named throttler
+// (`THROTTLER_LIMITS`) against EVERY request. For a route that does not opt
+// out, an unrelated throttler falls back to (a) its GLOBAL baseline limit and
+// (b) the guard's default `getTracker`. On this route the guard's default
+// tracker is the COMPOSITE `storefront-join:<token>:<ip>` key — so unrelated
+// low-ceiling named throttlers (e.g. `auth-password-reset` at 3/hour,
+// `auth-signup` at 5/hour, `auth-recent-auth` at 5/min) were ALSO bucketing
+// this route by (token, IP) and rejecting the 4th same-token load long before
+// the intended 20/min composite ceiling could bite (R2 audit P1).
+//
+// This route is governed by EXACTLY two throttlers — the composite `default`
+// (Layer 1) and `storefront-join-ip` (Layer 2). Every OTHER named throttler
+// must be explicitly skipped so no unrelated bucket can govern legitimate
+// join traffic. We derive the skip map from THROTTLER_NAMES (minus the two
+// active layers) so it stays correct as new named throttlers are added —
+// any future throttler is skipped here by default rather than silently
+// lowering this public landing route's effective ceiling.
+const STOREFRONT_JOIN_ACTIVE_THROTTLERS: ReadonlySet<string> = new Set([
+  THROTTLER_NAMES.DEFAULT,
+  THROTTLER_NAMES.STOREFRONT_JOIN_IP,
+]);
+
+export const STOREFRONT_JOIN_SKIP_THROTTLERS: Record<string, boolean> =
+  Object.freeze(
+    Object.values(THROTTLER_NAMES)
+      .filter((name) => !STOREFRONT_JOIN_ACTIVE_THROTTLERS.has(name))
+      .reduce<Record<string, boolean>>((acc, name) => {
+        acc[name] = true;
+        return acc;
+      }, {}),
+  );
+
 export function storefrontJoinIpTracker(
   req: Record<string, unknown>,
 ): string {
@@ -198,7 +232,18 @@ export class StorefrontPublicController {
   // from per-(token, IP) hammering; Layer 2 caps the aggregate distinct-token
   // attempts per source IP. Valid single-token traffic is unaffected by
   // either; only the abuse paths are tightened.
+  //
+  // R2 P1 (throttler ISOLATION) — @SkipThrottle disables every OTHER named
+  // throttler on this route. Without it, NestJS would also run unrelated
+  // low-ceiling throttlers (auth-password-reset 3/hr, auth-signup 5/hr,
+  // auth-recent-auth 5/min, …) here; because the guard's default tracker on
+  // this route is the composite `storefront-join:<token>:<ip>` key, those
+  // unrelated buckets would key by (token, IP) and reject the 4th same-token
+  // load — far below the intended 20/min composite ceiling. Skipping them
+  // guarantees this route is governed by EXACTLY the two layers above (no
+  // shared bucket exhaustion from another module's named throttler).
   @Public()
+  @SkipThrottle(STOREFRONT_JOIN_SKIP_THROTTLERS)
   @Throttle({
     [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: 20 },
     [THROTTLER_NAMES.STOREFRONT_JOIN_IP]: {
