@@ -75,6 +75,25 @@ export const THROTTLER_NAMES = {
    *  client-insight: 10/hr). The named bucket itself just declares the
    *  baseline ttl/limit so the throttler module knows about it. */
   COACH_AI_GENERATION: 'coach-ai-generation',
+  /** H4 #7 (token enumeration) — IP-WIDE second layer for the public
+   *  storefront GET join/:token route. The `default` throttler on that
+   *  route is keyed by the COMPOSITE (token, IP) tracker
+   *  (`storefront-join:<token>:<ip>`), which gives every probed token its
+   *  OWN 20/min bucket — so a single IP can still enumerate many distinct
+   *  tokens cheaply (20 attempts EACH). This named throttler is applied on
+   *  the GET join route with a custom IP-ONLY getTracker
+   *  (`storefront-join-ip:<ip>`) so ALL distinct-token probes from one IP
+   *  share a single budget, bounding enumeration across the whole token
+   *  space while the composite layer keeps per-(token,IP) fairness.
+   *
+   *  IMPORTANT: the GLOBAL baseline limit below is intentionally very high
+   *  (effectively non-biting). NestJS throttler evaluates every named
+   *  throttler in this array against EVERY route, so a low baseline here
+   *  would throttle unrelated routes. Only the GET join route opts into a
+   *  tight ceiling via its route-level @Throttle override; all other
+   *  routes fall through to this non-biting baseline AND use the guard's
+   *  default tracker, so they are unaffected. */
+  STOREFRONT_JOIN_IP: 'storefront-join-ip',
   /** Catch-all: every route that carries no explicit @Throttle decorator. */
   DEFAULT: 'default',
 } as const;
@@ -128,6 +147,17 @@ const COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN = readIntEnv(
   120,
 );
 
+// H4 #7 — IP-WIDE ceiling for the public storefront GET join/:token route
+// (the actual ceiling applied to that route via its route-level @Throttle).
+// This bounds the TOTAL number of distinct-token join GETs a single source
+// IP can make per minute, on top of the per-(token,IP) composite layer
+// (20/min). 120/min is deliberately generous for legitimate shared-NAT
+// traffic: up to ~6 distinct real buyers behind one CGNAT/office IP can each
+// hit their own token's 20/min composite ceiling before the IP-wide layer
+// bites, while an enumeration sweep is bounded to 120 distinct-token probes/
+// min/IP instead of the previously-unbounded (one fresh bucket per token).
+const STOREFRONT_JOIN_IP_PER_MIN = readIntEnv('STOREFRONT_JOIN_IP_PER_MIN', 120, 1, 5_000);
+
 // Export per-route constants so controllers can reference them for @Throttle
 // decorators without repeating magic numbers inline.
 export const THROTTLER_ROUTE_LIMITS = {
@@ -142,6 +172,7 @@ export const THROTTLER_ROUTE_LIMITS = {
   RATELIMIT_ANON_PER_MIN,
   CHECKOUT_MINT_PER_HOUR,
   COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN,
+  STOREFRONT_JOIN_IP_PER_MIN,
 } as const;
 
 export const THROTTLER_LIMITS = [
@@ -177,6 +208,15 @@ export const THROTTLER_LIMITS = [
   // client-insight). The named bucket exists so AI spend is
   // independently observable + tunable from the default bucket.
   { name: THROTTLER_NAMES.COACH_AI_GENERATION, ttl: 3_600_000, limit: 10 },
+  // H4 #7 — IP-WIDE storefront join layer. The GLOBAL baseline limit here is
+  // intentionally non-biting (10_000/min) because the NestJS throttler
+  // evaluates EVERY named throttler against EVERY route; only the GET
+  // join/:token route opts into the real tight ceiling
+  // (STOREFRONT_JOIN_IP_PER_MIN) AND the IP-only tracker via its route-level
+  // @Throttle override. All other routes fall through to this non-biting
+  // baseline (and the guard's default composite/IP tracker), so they are
+  // unaffected by this throttler.
+  { name: THROTTLER_NAMES.STOREFRONT_JOIN_IP, ttl: 60_000, limit: 10_000 },
   // Default catch-all: applies to every route that carries no explicit @Throttle decorator.
   // The guard in getTracker() buckets authed requests by user-id (300/min) and
   // unauthenticated requests by IP (100/min). Both share this one named throttler;
