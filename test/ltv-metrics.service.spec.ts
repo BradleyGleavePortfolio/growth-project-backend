@@ -44,27 +44,31 @@ function makePurchase(overrides: Partial<{
 
 // ─── Mock PrismaService ───────────────────────────────────────────────────────
 
-// Persistence is a single atomic `INSERT ... ON CONFLICT DO UPDATE` executed
-// through Prisma's `$queryRaw`. After the P2 fix ONLY the peak is updated on
-// conflict; the streak is NOT persisted on the read path and is returned live
-// from the in-memory recompute. The mock faithfully simulates the DB-side
-// semantics:
-//   - all_time_peak_rpcm  → GREATEST(persisted, incoming) — monotonic
-//     high-water mark; the P1 race fix relies on this never regressing.
-//   - zero_churn_streak    → seeded ONLY on the initial INSERT; LEFT UNTOUCHED
-//     on conflict (DO UPDATE does not set it). The returned streak comes from
-//     the service's live recompute, so an out-of-order persist can never
-//     corrupt it (P2 fix).
-// The mock:
-//   - reads the "persisted" row from the same source the service reads
-//     (coachLtvPeak.findUnique's resolved value) to model the pre-write state,
-//   - applies GREATEST for the peak; on INSERT (no baseline) it seeds the
-//     streak, and on conflict it KEEPS the existing stored streak untouched,
-//   - records each call's incoming values for assertions, and
-//   - returns the post-write peak (the RETURNING clause).
-// `__rawCalls` captures the incoming (peak, streak) of every atomic upsert.
-// Note: incoming.streak is the seed value handed to the INSERT branch; it is
-// NOT what the service returns (the service returns the live recompute).
+// Persistence is now a ROW-LOCKED TRANSACTION (lockedPeakUpsert). The service
+// runs `prisma.$transaction(async (tx) => ...)` and inside it:
+//   1. `SELECT "all_time_peak_rpcm" ... FOR UPDATE` — reads the LIVE LOCKED
+//      current row (NOT a statement-start snapshot). This is the P0 fix: the
+//      prior peak used to decide is_new_rpcm_record is the live locked value.
+//   2. If no row → INSERT the incoming peak + seed streak (first run).
+//   3. Else compute newPeak = GREATEST(livePeak, incoming) and UPDATE the row
+//      (the streak is NEVER written on this path — P2 fix preserved).
+//
+// The mock faithfully models LIVE LOCKED semantics against a single shared
+// simulated store (`__store`):
+//   - SELECT ... FOR UPDATE returns the CURRENT __store row (the live value a
+//     concurrent writer would have just committed) — NOT a frozen snapshot.
+//     This is what distinguishes the fix from the old snapshot-CTE bug: in a
+//     two-request sequence the second request's locked read sees the value the
+//     first request already raised.
+//   - all_time_peak_rpcm → GREATEST(live, incoming) — monotonic high-water mark.
+//   - zero_churn_streak  → seeded ONLY on the initial INSERT; LEFT UNTOUCHED on
+//     the UPDATE path. The returned streak comes from the service's live
+//     recompute, so an out-of-order persist can never corrupt it (P2 fix).
+// The store is seeded from coachLtvPeak.findUnique's stubbed value the first
+// time a transaction runs, so a test that stubs an existing row also primes the
+// live store. `__rawCalls` captures the incoming (peak, streak) of every locked
+// upsert. Note: incoming.streak is the seed value handed to the INSERT branch;
+// it is NOT what the service returns (the service returns the live recompute).
 const mockPrisma: any = {
   clientPurchase: {
     findMany: jest.fn(),
@@ -74,25 +78,28 @@ const mockPrisma: any = {
     findUnique: jest.fn(),
   },
   __rawCalls: [] as Array<{ peak: number; streak: number }>,
-  // Simulated persisted store, keyed by the GREATEST semantics. Seeded from
-  // findUnique so a test that stubs an existing row also primes this state.
+  // Simulated LIVE persisted store. Seeded from findUnique so a test that stubs
+  // an existing row also primes this state. The SELECT ... FOR UPDATE reads
+  // THIS live value (not a snapshot), modelling the row lock.
   __store: null as null | { peak: number; streak: number },
+  // Tracks whether __store was already seeded from findUnique in this test, so
+  // a later transaction in the SAME test reuses the live (possibly mutated)
+  // store rather than re-seeding from the stale findUnique stub.
+  __seeded: false,
+  $transaction: jest.fn(),
   $queryRaw: jest.fn(),
+  $executeRaw: jest.fn(),
 };
 
 // Extract the bound parameter values out of a Prisma.sql tagged-template object.
-// Prisma.sql exposes `.values` (the interpolated params, in order). After the
-// P2 fix the query is a CTE wrapper that binds the coach_id TWICE (once in the
-// leading `prev` CTE's WHERE, once in the INSERT VALUES), so the order is now:
-//   [coach_id (prev CTE), coach_id (INSERT), incomingPeakCents, incomingStreak]
-// The numeric peak/streak params are therefore the LAST two bound values.
-function parseRawValues(sql: any): { peak: number; streak: number } {
-  const values: any[] = sql?.values ?? [];
-  // The two trailing params are always [peak cents, streak], regardless of how
-  // many coach_id bindings precede them.
-  const peak = Number(values[values.length - 2]);
-  const streak = Number(values[values.length - 1]);
-  return { peak, streak };
+// Prisma.sql exposes `.values` (the interpolated params, in order).
+//   - SELECT ... FOR UPDATE binds only [coach_id].
+//   - INSERT binds [coach_id, incomingPeakCents, incomingStreak].
+//   - UPDATE binds [newPeakCents, coach_id].
+// For the upsert-call assertions we only care about the incoming peak/streak,
+// which we capture in the $queryRaw/$executeRaw handlers below.
+function sqlText(sql: any): string {
+  return (sql?.strings ?? []).join(' ');
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -107,49 +114,92 @@ describe('LtvMetricsService', () => {
     mockPrisma.coachLtvPeak.findUnique.mockResolvedValue(null);
     mockPrisma.__rawCalls = [];
     mockPrisma.__store = null;
+    mockPrisma.__seeded = false;
 
-    // Simulate the atomic GREATEST upsert. The "persisted" baseline is taken
-    // from whatever findUnique was stubbed to return for this test (the
-    // pre-write row), then GREATEST is applied per column. The result is the
-    // post-write state (mirrors the RETURNING clause).
-    mockPrisma.$queryRaw.mockImplementation(async (sql: any) => {
-      const incoming = parseRawValues(sql);
-      mockPrisma.__rawCalls.push(incoming);
-      const existing = mockPrisma.coachLtvPeak.findUnique.mock.results.length
+    // Lazily seed the LIVE store from the findUnique stub the first time a
+    // transaction runs in this test. Subsequent transactions in the same test
+    // reuse the (possibly mutated) live store — modelling that a prior request
+    // already committed its write to the live row.
+    const ensureStoreSeeded = async () => {
+      if (mockPrisma.__seeded) return;
+      mockPrisma.__seeded = true;
+      const stub = mockPrisma.coachLtvPeak.findUnique.mock.results.length
         ? await mockPrisma.coachLtvPeak.findUnique.mock.results[
             mockPrisma.coachLtvPeak.findUnique.mock.results.length - 1
           ].value
         : null;
-      const hasBaseline =
-        mockPrisma.__store !== null || existing !== null;
-      const baseline = mockPrisma.__store ?? {
-        peak: existing ? Number(existing.all_time_peak_rpcm) : 0,
-        streak: existing ? Number(existing.zero_churn_streak) : 0,
-      };
-      const after = {
-        // Peak: monotonic high-water mark (DB-side GREATEST).
-        peak: Math.max(baseline.peak, incoming.peak),
-        // Streak: seeded on the INITIAL INSERT only; on conflict the DO UPDATE
-        // does NOT touch it, so the previously stored value is preserved
-        // unchanged. The service returns the live recompute, not this value.
-        streak: hasBaseline ? baseline.streak : incoming.streak,
-      };
-      mockPrisma.__store = after;
-      // P2 fix: the real query is now a CTE wrapper that RETURNS both the
-      // post-write peak (new_peak, the GREATEST result) AND the peak as it was
-      // ATOMICALLY observed BEFORE this write (old_peak, from the leading `prev`
-      // CTE). On the initial INSERT no prior row exists, so the `prev` CTE is
-      // empty and old_peak is NULL; otherwise old_peak is the baseline peak the
-      // upsert observed. The service derives is_new_rpcm_record from old_peak,
-      // NOT from the pre-write findUnique — which is what kills the
-      // concurrent-peak false-positive race.
-      return [
-        {
-          new_peak: after.peak,
-          old_peak: hasBaseline ? baseline.peak : null,
-        },
-      ];
+      mockPrisma.__store =
+        mockPrisma.__store ??
+        (stub
+          ? {
+              peak: Number(stub.all_time_peak_rpcm),
+              streak: Number(stub.zero_churn_streak),
+            }
+          : null);
+    };
+
+    // The transactional `tx` handle. Inside lockedPeakUpsert the service issues
+    // (a) a SELECT ... FOR UPDATE via tx.$queryRaw, then either
+    // (b) an INSERT ... RETURNING via tx.$queryRaw (no row), or
+    // (c) an UPDATE via tx.$executeRaw (row exists).
+    const tx = {
+      $queryRaw: jest.fn(async (sql: any) => {
+        const text = sqlText(sql);
+        const values: any[] = sql?.values ?? [];
+        if (/FOR UPDATE/i.test(text)) {
+          // SELECT ... FOR UPDATE: return the LIVE LOCKED row (current __store).
+          // This is the crux of the P0 fix — a snapshot would have returned a
+          // frozen pre-concurrent-write value; the row lock returns the current
+          // committed value instead.
+          if (mockPrisma.__store === null) return [];
+          return [{ all_time_peak_rpcm: mockPrisma.__store.peak }];
+        }
+        if (/INSERT/i.test(text)) {
+          // First-run INSERT: [coach_id, incomingPeak, incomingStreak].
+          const incomingPeak = Number(values[values.length - 2]);
+          const incomingStreak = Number(values[values.length - 1]);
+          mockPrisma.__rawCalls.push({ peak: incomingPeak, streak: incomingStreak });
+          mockPrisma.__store = { peak: incomingPeak, streak: incomingStreak };
+          return [{ new_peak: incomingPeak }];
+        }
+        throw new Error('Unexpected tx.$queryRaw call: ' + text);
+      }),
+      $executeRaw: jest.fn(async (sql: any) => {
+        const text = sqlText(sql);
+        const values: any[] = sql?.values ?? [];
+        if (/UPDATE/i.test(text)) {
+          // UPDATE path: [newPeakCents, coach_id]. The new peak is already the
+          // GREATEST(live, incoming) computed by the service against the locked
+          // value, so just record + persist it. The streak is NOT touched here.
+          const newPeak = Number(values[0]);
+          // For assertions, record the incoming candidate as the new peak (the
+          // service hands the DB the GREATEST result; the candidate it computed
+          // from is captured implicitly). We push the persisted peak so
+          // __rawCalls reflects the write that occurred.
+          mockPrisma.__rawCalls.push({
+            peak: newPeak,
+            streak: mockPrisma.__store ? mockPrisma.__store.streak : 0,
+          });
+          mockPrisma.__store = {
+            peak: newPeak,
+            // Streak left UNTOUCHED on the update path (P2 fix).
+            streak: mockPrisma.__store ? mockPrisma.__store.streak : 0,
+          };
+          return 1;
+        }
+        throw new Error('Unexpected tx.$executeRaw call: ' + text);
+      }),
+    };
+
+    // $transaction runs the interactive callback with the tx handle, after
+    // seeding the live store from the findUnique stub.
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+      await ensureStoreSeeded();
+      return cb(tx);
     });
+    // Expose tx handles for assertions about which raw statements ran.
+    mockPrisma.__tx = tx;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LtvMetricsService,
@@ -498,7 +548,7 @@ describe('LtvMetricsService', () => {
       expect(result.zero_churn_streak_months).toBe(expectedStreak);
       expect(result.zero_churn_streak_months).not.toBe(99);
       // Peak did not advance → no atomic upsert performed.
-      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('upserts a new peak and sets isNewRpcmRecord=true when current > persisted', async () => {
@@ -517,7 +567,7 @@ describe('LtvMetricsService', () => {
       expect(result.is_new_rpcm_record).toBe(true);
       // One atomic GREATEST upsert; the incoming peak we hand the DB is the
       // current RPCM (the DB itself takes the max against the stored value).
-      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
       expect(mockPrisma.__rawCalls[0].peak).toBe(20000);
     });
 
@@ -543,7 +593,7 @@ describe('LtvMetricsService', () => {
       const result = await service.getMetrics('coach-1');
       expect(result.all_time_peak_rpcm_cents).toBe(20000);
       expect(result.is_new_rpcm_record).toBe(true); // 20000 > 0
-      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -575,9 +625,9 @@ describe('LtvMetricsService', () => {
 
       // Request B — which had read the stale $100 — now lands with a LOWER RPCM
       // ($250). With the old read-then-absolute-write, B would have written
-      // max($100, $250)=$250 and clobbered A's $300. With the atomic GREATEST
-      // upsert, the DB compares against the CURRENT stored $300, so the result
-      // stays $300.
+      // $250 and clobbered A's $300. With the row-locked upsert, B's
+      // SELECT ... FOR UPDATE reads the LIVE $300 A already committed, computes
+      // GREATEST($300, $250)=$300, and the result stays $300.
       mockPrisma.clientPurchase.findMany.mockResolvedValue([
         makePurchase({ client_user_id: 'c1', amount_cents: 25000, status: 'active' }),
       ]);
@@ -587,20 +637,21 @@ describe('LtvMetricsService', () => {
       expect(resultStaleLow.all_time_peak_rpcm_cents).toBe(30000);
       // And the simulated store confirms monotonicity end-to-end.
       expect(mockPrisma.__store?.peak).toBe(30000);
-      // The lower writer still hands the DB its own (lower) candidate — the
-      // monotonic guarantee is enforced by GREATEST, not by the app skipping it.
+      // The lower writer's UPDATE persists the GREATEST result ($300), NOT its
+      // own lower candidate — the monotonic guarantee is enforced by reading the
+      // LIVE LOCKED value and taking GREATEST against it.
       const lastCall = mockPrisma.__rawCalls[mockPrisma.__rawCalls.length - 1];
-      expect(lastCall.peak).toBe(25000);
+      expect(lastCall.peak).toBe(30000);
     });
 
-    it('the persistence write uses an atomic upsert: GREATEST for the peak, and the DO UPDATE does NOT set the streak from EXCLUDED (P2)', async () => {
-      // Guard test: assert the service drives persistence through the raw
-      // atomic upsert path (the concurrency-safe mechanism). The peak column
-      // must use GREATEST (monotonic). The streak column must NOT be updated on
-      // conflict — the previous `zero_churn_streak = EXCLUDED."zero_churn_streak"`
-      // line is the stale-source race (P2) and must be gone. The column may
-      // still appear in the INSERT VALUES list (it is NOT NULL, seeded on first
-      // insert), but it must not be assigned in the DO UPDATE set.
+    it('the persistence write is a row-locked transaction: SELECT ... FOR UPDATE then a peak-only UPDATE that never writes the streak (P0 + P2)', async () => {
+      // Guard test: assert the service drives persistence through the row-locked
+      // transactional path (the concurrency-safe mechanism). It must:
+      //   - run inside prisma.$transaction,
+      //   - lock the row with SELECT ... FOR UPDATE (the P0 fix: the prior peak
+      //     is read from the LIVE LOCKED row, not a statement-start snapshot),
+      //   - persist the peak via an UPDATE that does NOT touch zero_churn_streak
+      //     (P2 fix preserved).
       mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
         coach_id: 'coach-1',
         all_time_peak_rpcm: 5000,
@@ -610,24 +661,29 @@ describe('LtvMetricsService', () => {
         makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active' }),
       ]);
       await service.getMetrics('coach-1');
-      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
-      const sqlArg = mockPrisma.$queryRaw.mock.calls[0][0];
-      const sqlText: string = (sqlArg?.strings ?? []).join(' ');
-      // Single ON CONFLICT upsert.
-      expect(sqlText).toMatch(/ON CONFLICT/i);
-      // Peak is monotonic via GREATEST and is the only column carried through
-      // RETURNING.
-      expect(sqlText).toMatch(/all_time_peak_rpcm/);
-      expect(sqlText).toMatch(/GREATEST/i);
-      // The streak column is still named (seeded on INSERT) but the DO UPDATE
-      // must NOT assign it from EXCLUDED — this is the core P2 assertion.
-      const doUpdate = sqlText.slice(sqlText.search(/DO UPDATE/i));
-      expect(doUpdate).not.toMatch(/zero_churn_streak/i);
-      expect(sqlText).not.toMatch(
-        /"?zero_churn_streak"?\s*=\s*EXCLUDED\."?zero_churn_streak"?/i,
-      );
-      // And the streak is never wrapped in GREATEST either.
-      expect(sqlText).not.toMatch(/GREATEST\s*\([^)]*zero_churn_streak/i);
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+
+      // The locking read happened (FOR UPDATE), via tx.$queryRaw.
+      const selectSql: string = mockPrisma.__tx.$queryRaw.mock.calls
+        .map((c: any[]) => (c[0]?.strings ?? []).join(' '))
+        .join('\n');
+      expect(selectSql).toMatch(/SELECT/i);
+      expect(selectSql).toMatch(/FOR UPDATE/i);
+      expect(selectSql).toMatch(/all_time_peak_rpcm/);
+      // The locking read MUST NOT be an ON CONFLICT upsert (the racy snapshot
+      // pattern is gone).
+      expect(selectSql).not.toMatch(/ON CONFLICT/i);
+
+      // The peak was persisted via an UPDATE (existing row), via tx.$executeRaw.
+      const updateSql: string = mockPrisma.__tx.$executeRaw.mock.calls
+        .map((c: any[]) => (c[0]?.strings ?? []).join(' '))
+        .join('\n');
+      expect(updateSql).toMatch(/UPDATE/i);
+      expect(updateSql).toMatch(/all_time_peak_rpcm/);
+      // The UPDATE must NOT write the streak — this is the core P2 assertion.
+      expect(updateSql).not.toMatch(/zero_churn_streak/i);
+      // No legacy ON CONFLICT / EXCLUDED streak write anywhere.
+      expect(updateSql).not.toMatch(/EXCLUDED/i);
     });
   });
 
@@ -666,7 +722,7 @@ describe('LtvMetricsService', () => {
       expect(result.zero_churn_streak_months).toBe(0);
       // Peak cannot advance (current RPCM 0, stored 0) and the streak is no
       // longer persisted, so no atomic upsert is performed at all.
-      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('returns a high current streak live when there are no recent cancellations (no persisted dependency)', async () => {
@@ -750,7 +806,7 @@ describe('LtvMetricsService', () => {
       expect(resultB.zero_churn_streak_months).not.toBe(3);
       // No write ever touched zero_churn_streak: every $queryRaw (if any) is a
       // peak-only upsert. Here peak never advances, so none were issued.
-      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('a stale-low concurrent write does NOT regress the PEAK while the streak still tracks the current value', async () => {
@@ -806,16 +862,20 @@ describe('LtvMetricsService', () => {
     });
   });
 
-  describe('LTV-3 P2: is_new_rpcm_record derived from the ATOMIC prior peak (no false positive under a concurrent-peak race)', () => {
-    // The previous implementation computed is_new_rpcm_record from the STALE
-    // pre-write findUnique snapshot (persistedPeakCents read BEFORE the atomic
-    // upsert). Under a concurrent-peak race two requests could both read the
-    // same old peak and BOTH report is_new_rpcm_record=true. The fix derives the
-    // flag from the peak the atomic upsert observed BEFORE its write (the
-    // CTE-returned old_peak), so the GREATEST upsert serialises racing writers
-    // and only the request that genuinely moved the high-water mark reports a
-    // new record. The mock returns { new_peak, old_peak } and advances a shared
-    // __store, faithfully modelling the serialised concurrent ordering.
+  describe('LTV-3 P0: is_new_rpcm_record derived from the LIVE LOCKED prior peak (no false positive under a concurrent-peak race)', () => {
+    // The original implementation computed is_new_rpcm_record from a STALE
+    // pre-write findUnique snapshot; a later iteration used a leading read-only
+    // `prev` CTE inside an INSERT ... ON CONFLICT statement. BOTH read a
+    // STATEMENT SNAPSHOT, not the live row the GREATEST update applied to — so
+    // under PostgreSQL READ COMMITTED two requests could observe the same stale
+    // old_peak and BOTH report is_new_rpcm_record=true even though only one
+    // actually advanced the high-water mark. The P0 fix reads the prior peak
+    // under `SELECT ... FOR UPDATE` in the SAME transaction as the write, so
+    // the prior value is the LIVE LOCKED current row. A concurrent writer that
+    // already raised the peak commits BEFORE this locked read returns, so the
+    // racing request observes the raised value and correctly reports false. The
+    // mock's SELECT ... FOR UPDATE returns the CURRENT shared __store (the live
+    // value), faithfully modelling the serialised locked read+write ordering.
 
     it('is_new_rpcm_record is TRUE only for the request that actually raises the peak; the racing stale request reports FALSE', async () => {
       // Both requests start from the SAME stale snapshot (peak=$100) — the race
@@ -898,38 +958,41 @@ describe('LtvMetricsService', () => {
       expect(result.is_new_rpcm_record).toBe(false);
       expect(result.all_time_peak_rpcm_cents).toBe(30000);
       // No write on the dominated branch.
-      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
     });
 
-    it('derives is_new_rpcm_record from the atomic upsert old_peak, NOT the pre-write findUnique snapshot', async () => {
+    it('derives is_new_rpcm_record from the LIVE LOCKED prior peak, NOT the pre-write findUnique snapshot', async () => {
       // Guard test: even if the pre-write findUnique snapshot is STALE-LOW (it
-      // reports $100), the flag must be driven by the peak the atomic upsert
-      // observed. We make the upsert observe a HIGHER prior peak ($500) than the
-      // findUnique snapshot ($100); with the old (buggy) code is_new would be
-      // $200 > $100 = true, but the authoritative prior is $500, so the correct
-      // answer is $200 > $500 = false.
+      // reports $100), the flag must be driven by the LIVE LOCKED prior peak the
+      // transaction reads under FOR UPDATE. We make the locked read observe a
+      // HIGHER prior peak ($500) than the findUnique snapshot ($100); with the
+      // old (buggy) snapshot logic is_new would be $200 > $100 = true, but the
+      // authoritative live-locked prior is $500, so the correct answer is
+      // $200 > $500 = false.
       mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
         coach_id: 'coach-1',
         all_time_peak_rpcm: 10000, // stale-low snapshot ($100)
         zero_churn_streak: 0,
       });
-      // Prime the shared store so the upsert observes the AUTHORITATIVE prior
-      // ($500) — i.e. another writer already raised it after our findUnique read.
+      // Prime the shared LIVE store so the locked SELECT ... FOR UPDATE observes
+      // the AUTHORITATIVE prior ($500) — i.e. another writer already raised it
+      // after our findUnique read but before our locked read.
       mockPrisma.__store = { peak: 50000, streak: 0 };
       mockPrisma.clientPurchase.findMany.mockResolvedValue([
         makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active' }),
       ]);
       const result = await service.getMetrics('coach-1');
       // Because rpcm ($200) > stale findUnique ($100), the write path IS taken
-      // (peakCouldAdvance true on the stale read), so the upsert runs and the
-      // flag is derived from its old_peak ($500): $200 > $500 = false.
-      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+      // (peakCouldAdvance true on the stale read), so the locked transaction
+      // runs and the flag is derived from the live locked prior ($500):
+      // $200 > $500 = false.
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
       expect(result.is_new_rpcm_record).toBe(false);
       // Peak never regresses below the authoritative $500.
       expect(result.all_time_peak_rpcm_cents).toBe(50000);
     });
 
-    it('the atomic upsert is a CTE that RETURNS both new_peak and old_peak (prior value captured in-statement)', async () => {
+    it('the persistence reads the prior peak with SELECT ... FOR UPDATE inside a transaction (live locked value, not a snapshot CTE)', async () => {
       mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
         coach_id: 'coach-1',
         all_time_peak_rpcm: 5000,
@@ -939,18 +1002,21 @@ describe('LtvMetricsService', () => {
         makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active' }),
       ]);
       await service.getMetrics('coach-1');
-      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
-      const sqlArg = mockPrisma.$queryRaw.mock.calls[0][0];
-      const sqlText: string = (sqlArg?.strings ?? []).join(' ');
-      // A leading CTE captures the prior value atomically in the same statement.
-      expect(sqlText).toMatch(/WITH\s+prev\s+AS/i);
-      // RETURNING exposes BOTH the post-write peak and the prior peak.
-      expect(sqlText).toMatch(/RETURNING/i);
-      expect(sqlText).toMatch(/new_peak/i);
-      expect(sqlText).toMatch(/old_peak/i);
-      // Still a single ON CONFLICT GREATEST upsert (monotonic peak preserved).
-      expect(sqlText).toMatch(/ON CONFLICT/i);
-      expect(sqlText).toMatch(/GREATEST/i);
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+      const selectSql: string = mockPrisma.__tx.$queryRaw.mock.calls
+        .map((c: any[]) => (c[0]?.strings ?? []).join(' '))
+        .join('\n');
+      // The prior peak is read under a pessimistic ROW LOCK, in the same
+      // transaction as the write — this is what makes old_peak the live current
+      // value rather than a statement-start snapshot.
+      expect(selectSql).toMatch(/SELECT/i);
+      expect(selectSql).toMatch(/FOR UPDATE/i);
+      expect(selectSql).toMatch(/all_time_peak_rpcm/);
+      // The racy snapshot patterns are GONE: no leading read-only CTE, no
+      // ON CONFLICT upsert whose GREATEST re-evaluates against a different row
+      // version than the snapshot read.
+      expect(selectSql).not.toMatch(/WITH\s+prev\s+AS/i);
+      expect(selectSql).not.toMatch(/ON CONFLICT/i);
     });
   });
 
