@@ -13,6 +13,7 @@ import {
   WearableConnector,
 } from '../connector.interface';
 import { ProviderHttpClient } from '../../http/provider-http-client';
+import { PrismaService } from '../../../prisma.service';
 import { normalizeOura, OuraRawPayload } from './oura.normalizer';
 import {
   OuraCollection,
@@ -59,6 +60,58 @@ const OURA_SCOPES = [
 /** Provider TOS backfill ceiling — Oura ≤ 30 days (Agent 2 §3.1). */
 const OURA_MAX_BACKFILL_DAYS = 30;
 
+/**
+ * Strip token-like secrets from an error message before it is persisted to
+ * `WearableConnection.last_error` or logged (R2 fix — Finding 3 / #1/#12).
+ * Defined and exported INSIDE the oura module only (kept connector-scoped — no
+ * cross-file changes); exported solely so the connector spec can unit-test the
+ * redaction directly. Redacts common credential patterns that can leak into
+ * upstream HTTP error strings
+ * (`token=`, `code=`, `client_secret=`, `refresh_token=`, `access_token=`,
+ * `Authorization: Bearer ...`, and bare `Bearer <token>`), then caps length.
+ */
+export function redactErrorMessage(err: unknown): string {
+  const raw =
+    err instanceof Error
+      ? err.message
+      : typeof err === 'string'
+        ? err
+        : (() => {
+            try {
+              return JSON.stringify(err);
+            } catch {
+              return String(err);
+            }
+          })();
+
+  const redacted = (raw ?? '')
+    // key=value secrets (query string or form body), value runs to a
+    // delimiter (&, whitespace, quote, comma, end).
+    .replace(
+      /\b(access_token|refresh_token|client_secret|client_id|token|code)=[^&\s"',]+/gi,
+      '$1=[REDACTED]',
+    )
+    // `Authorization: <scheme> <token>` header — redact the credential while
+    // keeping the scheme word so the message stays diagnostic. Run BEFORE the
+    // bare-scheme rule so the two never double-process the same span.
+    .replace(
+      /(authorization\s*[:=]\s*)(Bearer|Basic)\s+[^\s"',]+/gi,
+      '$1$2 [REDACTED]',
+    )
+    // Bare `Bearer <token>` / `Basic <token>` not preceded by a header label.
+    .replace(/\bBearer\s+[A-Za-z0-9._-]+/g, 'Bearer [REDACTED]')
+    .replace(/\bBasic\s+[A-Za-z0-9+/=]+/g, 'Basic [REDACTED]')
+    // Any remaining `authorization: <value>` credential that is NOT a scheme
+    // word already handled above (negative lookahead keeps "Bearer [REDACTED]"
+    // intact instead of re-redacting the scheme).
+    .replace(
+      /\b(authorization)(\s*[:=]\s*)(?!Bearer\b|Basic\b|\[REDACTED\])[^\s"',]+/gi,
+      '$1$2[REDACTED]',
+    );
+
+  return redacted.slice(0, 500) || 'unknown';
+}
+
 /** Daily collections use `start_date`/`end_date` (YYYY-MM-DD). */
 const DAILY_COLLECTIONS: OuraCollection[] = [
   'daily_sleep',
@@ -84,7 +137,18 @@ export class OuraConnector implements WearableConnector {
 
   private readonly logger = new Logger(OuraConnector.name);
 
-  constructor(private readonly http: ProviderHttpClient) {}
+  /**
+   * `prisma` is optional so the pure OAuth/normalize/verify unit tests can
+   * construct the connector with just an HTTP client. When present (the DI
+   * path under {@link OuraModule}), backfill/refresh provider outages mark the
+   * connection `status='error'` with a REDACTED `last_error` before rethrowing
+   * (fail-loud + fail-explicit, R2 fix — Finding 3). When absent, the failure
+   * still rethrows — we simply skip the status write.
+   */
+  constructor(
+    private readonly http: ProviderHttpClient,
+    private readonly prisma?: PrismaService,
+  ) {}
 
   // ── OAuth ────────────────────────────────────────────────────────────────
 
@@ -127,6 +191,19 @@ export class OuraConnector implements WearableConnector {
 
   /** Refresh an expiring access token using the connection's refresh token. */
   async refresh(conn: WearableConnection): Promise<TokenSet> {
+    try {
+      return await this.refreshInner(conn);
+    } catch (err) {
+      // Fail-explicit: a provider outage (or invalid_grant) during refresh
+      // marks the connection in error with a redacted message, then rethrows
+      // so PR-HK-1's token lane can react (re-consent / disable). R2 —
+      // Finding 3.
+      await this.markConnectionError(conn, err, 'oura.refresh');
+      throw err;
+    }
+  }
+
+  private async refreshInner(conn: WearableConnection): Promise<TokenSet> {
     const refreshToken = (conn as { refresh_token?: string }).refresh_token;
     // PR-HK-1 KMS-unwraps the stored token before calling refresh; the
     // connection object carries the plaintext refresh token transiently. We
@@ -163,6 +240,21 @@ export class OuraConnector implements WearableConnector {
    * lane (#21): the caller batch-ingests the returned array once.
    */
   async backfill(conn: WearableConnection, since: Date): Promise<RawRecord[]> {
+    try {
+      return await this.backfillInner(conn, since);
+    } catch (err) {
+      // Fail-explicit: a provider outage during backfill marks the connection
+      // in error with a redacted message, then rethrows so the caller (sync
+      // job) sees the failure (no silent swallow, #36/#50). R2 — Finding 3.
+      await this.markConnectionError(conn, err, 'oura.backfill');
+      throw err;
+    }
+  }
+
+  private async backfillInner(
+    conn: WearableConnection,
+    since: Date,
+  ): Promise<RawRecord[]> {
     const accessToken = (conn as unknown as { decryptedAccessToken?: string })
       .decryptedAccessToken;
     if (!accessToken) {
@@ -440,6 +532,33 @@ export class OuraConnector implements WearableConnector {
     return d.toISOString().slice(0, 10);
   }
 
+  /**
+   * Mark a connection `status='error'` with a redacted error message on a
+   * provider-side failure, best-effort (never masks the original error). No-op
+   * when `prisma` was not injected or the connection has no id.
+   */
+  private async markConnectionError(
+    conn: WearableConnection,
+    err: unknown,
+    op: string,
+  ): Promise<void> {
+    const message = redactErrorMessage(err);
+    this.logger.error({
+      msg: 'wearables.oura.connection_error',
+      op,
+      provider: 'OURA',
+      // Already redacted — safe to log.
+      error_message: message,
+    });
+    if (!this.prisma || !conn?.id) return;
+    await this.prisma.wearableConnection
+      .update({
+        where: { id: conn.id },
+        data: { status: 'error', last_error: message },
+      })
+      .catch(() => undefined);
+  }
+
   private requireEnv(name: string): string {
     const v = process.env[name];
     if (!v) {
@@ -450,6 +569,9 @@ export class OuraConnector implements WearableConnector {
 }
 
 /** Singleton-friendly factory used by the connector definition export. */
-export function createOuraConnector(http: ProviderHttpClient): OuraConnector {
-  return new OuraConnector(http);
+export function createOuraConnector(
+  http: ProviderHttpClient,
+  prisma?: PrismaService,
+): OuraConnector {
+  return new OuraConnector(http, prisma);
 }

@@ -4,9 +4,22 @@ import {
   ProviderHttpClient,
   ProviderHttpError,
 } from '../../http/provider-http-client';
-import { OuraConnector } from './oura.connector';
+import { OuraConnector, redactErrorMessage } from './oura.connector';
 import { OuraRawPayload } from './oura.normalizer';
 import { OuraWebhookEvent } from './oura.types';
+import { PrismaService } from '../../../prisma.service';
+
+/** Minimal Prisma stub exposing only the connection.update path. */
+function makePrisma(): {
+  prisma: PrismaService;
+  update: jest.Mock;
+} {
+  const update = jest.fn(async () => ({}));
+  const prisma = {
+    wearableConnection: { update },
+  } as unknown as PrismaService;
+  return { prisma, update };
+}
 
 /**
  * PR-HK-2.k connector tests — real-value assertions.
@@ -323,6 +336,112 @@ describe('OuraConnector — backfill + fetchChangedRecord', () => {
       user_id: 'u',
     });
     expect(out).toEqual([]);
+  });
+});
+
+describe('OuraConnector — outage marking (R2 Finding 3)', () => {
+  beforeEach(() => Object.assign(process.env, ENV));
+
+  const conn = {
+    id: 'conn-err-1',
+    user_id: 'user-1',
+    decryptedAccessToken: 'at-live',
+    decryptedRefreshToken: 'rt-live',
+  } as unknown as WearableConnection;
+
+  it('marks the connection error with a REDACTED last_error when backfill fails, then rethrows', async () => {
+    const { client, enqueue } = makeHttp();
+    const { prisma, update } = makePrisma();
+    // First collection fetch throws a provider error whose message leaks a
+    // bearer token + secret in the URL — must be redacted before persisting.
+    enqueue(
+      new Error(
+        'oura.backfill.daily_sleep: HTTP 502 for Authorization: Bearer at-live-SECRET and client_secret=secret-xyz',
+      ),
+    );
+    const c = new OuraConnector(client, prisma);
+    await expect(c.backfill(conn, new Date())).rejects.toThrow(/HTTP 502/);
+
+    expect(update).toHaveBeenCalledTimes(1);
+    const arg = update.mock.calls[0][0];
+    expect(arg.where).toEqual({ id: 'conn-err-1' });
+    expect(arg.data.status).toBe('error');
+    // Secrets are gone; structure preserved.
+    expect(arg.data.last_error).toContain('HTTP 502');
+    expect(arg.data.last_error).toContain('Bearer [REDACTED]');
+    expect(arg.data.last_error).toContain('client_secret=[REDACTED]');
+    expect(arg.data.last_error).not.toContain('at-live-SECRET');
+    expect(arg.data.last_error).not.toContain('secret-xyz');
+  });
+
+  it('marks the connection error when refresh fails, then rethrows', async () => {
+    const { client, enqueue } = makeHttp();
+    const { prisma, update } = makePrisma();
+    enqueue(
+      new ProviderHttpError(
+        'oura.refresh: HTTP 400 invalid_grant refresh_token=rt-live-LEAK',
+        1,
+        400,
+      ),
+    );
+    const c = new OuraConnector(client, prisma);
+    await expect(c.refresh(conn)).rejects.toBeInstanceOf(ProviderHttpError);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'conn-err-1' },
+      data: {
+        status: 'error',
+        last_error: expect.stringContaining('refresh_token=[REDACTED]'),
+      },
+    });
+    expect(update.mock.calls[0][0].data.last_error).not.toContain(
+      'rt-live-LEAK',
+    );
+  });
+
+  it('still rethrows (and does not crash) when no PrismaService is wired', async () => {
+    const { client, enqueue } = makeHttp();
+    enqueue(new Error('oura.backfill.daily_sleep: HTTP 500'));
+    // No prisma — pure-unit construction.
+    const c = new OuraConnector(client);
+    await expect(c.backfill(conn, new Date())).rejects.toThrow(/HTTP 500/);
+  });
+});
+
+describe('redactErrorMessage (R2 Finding 3)', () => {
+  it('strips token=, code=, client_secret=, access_token=, refresh_token= values', () => {
+    const out = redactErrorMessage(
+      new Error(
+        'fail token=abc123 code=xyz client_secret=shh access_token=AT refresh_token=RT keep=ok',
+      ),
+    );
+    expect(out).toContain('token=[REDACTED]');
+    expect(out).toContain('code=[REDACTED]');
+    expect(out).toContain('client_secret=[REDACTED]');
+    expect(out).toContain('access_token=[REDACTED]');
+    expect(out).toContain('refresh_token=[REDACTED]');
+    // Non-secret params are preserved.
+    expect(out).toContain('keep=ok');
+    expect(out).not.toContain('abc123');
+    expect(out).not.toContain('shh');
+  });
+
+  it('strips bearer tokens and Authorization headers', () => {
+    const out = redactErrorMessage(
+      'Authorization: Bearer eyJhbGciOi.Jh.signature failed',
+    );
+    expect(out).toContain('Bearer [REDACTED]');
+    expect(out).not.toContain('eyJhbGciOi');
+  });
+
+  it('handles non-Error inputs and empty messages', () => {
+    expect(redactErrorMessage('plain string')).toBe('plain string');
+    expect(redactErrorMessage({ foo: 'bar' })).toContain('foo');
+    expect(redactErrorMessage(new Error(''))).toBe('unknown');
+  });
+
+  it('caps the message at 500 characters', () => {
+    const long = 'x'.repeat(900);
+    expect(redactErrorMessage(new Error(long)).length).toBe(500);
   });
 });
 
