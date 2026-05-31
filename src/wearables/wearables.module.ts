@@ -4,6 +4,7 @@ import { ProviderHttpClient } from './http/provider-http-client';
 import { ConnectionsModule } from './connections/connections.module';
 import { OauthModule } from './oauth/oauth.module';
 import { ConnectorRegistry } from './connector-registry';
+import { InsightsModule } from './insights/insights.module';
 
 /**
  * PR-HK-0 — wearables foundation module.
@@ -37,9 +38,15 @@ import { ConnectorRegistry } from './connector-registry';
  * themselves by binding `WEARABLE_CONNECTORS` in their own module (see
  * connector-registry.ts). Nothing in PR-HK-0's surface changed — this block is
  * strictly additive.
+ *
+ * ── PR-HK-4 (pure-additive wiring) ──
+ * Mount {@link InsightsModule} — embedded AI insights (backend-only). The
+ * coach + client insight endpoints mount under the wearables feature without
+ * touching the PR-HK-0 ingestion seam or the PR-HK-1 connections seam.
+ * Disjoint folder (src/wearables/insights/), no shared providers.
  */
 @Module({
-  imports: [ConnectionsModule, OauthModule],
+  imports: [ConnectionsModule, OauthModule, InsightsModule],
   providers: [IngestionService, ProviderHttpClient],
   exports: [
     IngestionService,
@@ -47,6 +54,7 @@ import { ConnectorRegistry } from './connector-registry';
     ConnectionsModule,
     OauthModule,
     ConnectorRegistry,
+    InsightsModule,
   ],
 })
 export class WearablesModule {}
