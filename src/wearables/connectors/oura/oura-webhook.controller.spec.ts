@@ -123,12 +123,18 @@ describe('OuraWebhookController — idempotency / replay', () => {
     expect(ingestion.ingest).not.toHaveBeenCalled();
   });
 
-  it('treats a concurrent unique-violation (P2002) on create as a 200 no-op', async () => {
-    const { controller, processedEvent, ingestion } = setup({});
+  it('treats a concurrent unique-violation (P2002) on the post-ingest commit as a 200 no-op', async () => {
+    // Two concurrent deliveries of the same event both fetch+ingest; the
+    // loser's processed-event create hits the composite-PK unique violation.
+    // The sample dedup_key UNIQUE constraint already prevented double-counting,
+    // so we absorb P2002 as a benign no-op rather than a 500.
+    const { controller, processedEvent, ingestion, connector } = setup({});
     processedEvent.create.mockRejectedValueOnce({ code: 'P2002' });
     const res = await controller.handle(makeReq(EVENT));
     expect(res).toEqual({ ok: true });
-    expect(ingestion.ingest).not.toHaveBeenCalled();
+    // Fetch+ingest ran BEFORE the dedup row write (ordering invariant).
+    expect(connector.fetchChangedRecord).toHaveBeenCalledTimes(1);
+    expect(ingestion.ingest).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -139,17 +145,24 @@ describe('OuraWebhookController — first delivery', () => {
     const res = await controller.handle(makeReq(EVENT));
 
     expect(res).toEqual({ ok: true });
+    // R2 ordering: the dedup row is written ONLY AFTER a successful ingest,
+    // with handler_completed_at set in the same write (no separate update).
     expect(processedEvent.create).toHaveBeenCalledWith({
       data: {
         provider: WearableProvider.OURA,
         provider_event_id: 'daily_sleep:sleep-9:update:2026-05-31T08:00:00Z',
         type: 'daily_sleep.update',
+        handler_completed_at: expect.any(Date),
       },
     });
     expect(connector.fetchChangedRecord).toHaveBeenCalledTimes(1);
     expect(ingestion.ingest).toHaveBeenCalledTimes(1);
-    // Handler completion is marked.
-    expect(processedEvent.update).toHaveBeenCalled();
+    // Ordering invariant: ingest happened BEFORE the dedup row was committed.
+    const ingestOrder = (ingestion.ingest as jest.Mock).mock.invocationCallOrder[0];
+    const createOrder = (processedEvent.create as jest.Mock).mock.invocationCallOrder[0];
+    expect(ingestOrder).toBeLessThan(createOrder);
+    // No separate completion update is used any more.
+    expect(processedEvent.update).not.toHaveBeenCalled();
     expect(wearableConnection.findFirst).toHaveBeenCalledWith({
       where: {
         provider: WearableProvider.OURA,
@@ -164,11 +177,44 @@ describe('OuraWebhookController — first delivery', () => {
     await controller.handle(makeReq({ ...EVENT, event_type: 'delete' }));
     expect(connector.fetchChangedRecord).not.toHaveBeenCalled();
     expect(ingestion.ingest).not.toHaveBeenCalled();
-    expect(processedEvent.create).toHaveBeenCalled();
+    expect(processedEvent.create).toHaveBeenCalledWith({
+      data: {
+        provider: WearableProvider.OURA,
+        provider_event_id: 'daily_sleep:sleep-9:delete:2026-05-31T08:00:00Z',
+        type: 'daily_sleep.delete',
+        handler_completed_at: expect.any(Date),
+      },
+    });
+  });
+
+  it('does NOT write a processed-event row when fetch/ingest fails, then ingests + records on retry (Finding 1)', async () => {
+    // First delivery: transient fetch failure. Assert NO processed-event row
+    // is written (so the event is NOT marked handled) and the failure rethrows.
+    const first = setup({});
+    (first.connector.fetchChangedRecord as jest.Mock).mockRejectedValueOnce(
+      new Error('transient upstream 503'),
+    );
+    await expect(first.controller.handle(makeReq(EVENT))).rejects.toThrow(
+      'transient upstream 503',
+    );
+    expect(first.ingestion.ingest).not.toHaveBeenCalled();
+    // CRITICAL: no dedup row exists after the failed attempt — data was NOT
+    // silently dropped, and a retry will reprocess.
+    expect(first.processedEvent.create).not.toHaveBeenCalled();
+
+    // Retry (Oura redelivers the SAME event): findUnique still returns null
+    // because no row was written, so we reprocess. This time fetch+ingest
+    // succeed and the dedup row is finally committed.
+    const retry = setup({});
+    const res = await retry.controller.handle(makeReq(EVENT));
+    expect(res).toEqual({ ok: true });
+    expect(retry.connector.fetchChangedRecord).toHaveBeenCalledTimes(1);
+    expect(retry.ingestion.ingest).toHaveBeenCalledTimes(1);
+    expect(retry.processedEvent.create).toHaveBeenCalledTimes(1);
   });
 
   it('marks the connection in error and rethrows when ingest fails', async () => {
-    const { controller, connector, wearableConnection } = setup({});
+    const { controller, connector, wearableConnection, processedEvent } = setup({});
     (connector.fetchChangedRecord as jest.Mock).mockRejectedValueOnce(
       new Error('upstream 500'),
     );
@@ -179,6 +225,8 @@ describe('OuraWebhookController — first delivery', () => {
       where: { id: 'conn-1' },
       data: { status: 'error', last_error: 'upstream 500' },
     });
+    // And the dedup row is NOT written on failure (event remains reprocessable).
+    expect(processedEvent.create).not.toHaveBeenCalled();
   });
 
   it('no-ops gracefully when no matching connection exists', async () => {

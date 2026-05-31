@@ -34,8 +34,21 @@ import { OuraWebhookEvent } from './oura.types';
  *     provider_event_id) — a duplicate is a 200 no-op (#28/#29).
  *  5. Resolve the connection (by Oura user_id), fetch ONLY the just-changed
  *     record, normalize, and batch-ingest via IngestionService (#21 no N+1).
- *  6. Mark the event handled.
+ *  6. ONLY AFTER a successful fetch+ingest, persist the
+ *     {@link WearableProcessedEvent} dedup row ("check → process → commit").
  * Throttled (#6). Never logs raw payloads — only redacted metadata (#12/#36).
+ *
+ * Idempotency ordering (R2 fix — Finding 1): the dedup row is written AFTER
+ * fetch+normalize+ingest succeed, not before. If fetch/ingest throws, NO
+ * processed-event row exists, so Oura's redelivery is reprocessed (not
+ * silently no-op'd) and no data is permanently lost. A small race window
+ * exists — two concurrent deliveries of the SAME event_id may both fetch and
+ * ingest — but the PR-HK-0 sample `dedup_key` UNIQUE constraint absorbs it:
+ * IngestionService uses `createMany({ skipDuplicates: true })`, so the
+ * second writer's identical samples are skipped and nothing is double-counted.
+ * The processed-event `create` itself is `ON CONFLICT DO NOTHING`-equivalent:
+ * a concurrent P2002 unique violation on the composite PK is treated as a
+ * benign no-op rather than a 500.
  *
  * Oura also performs a one-time GET verification handshake when a subscription
  * is created (`?verification_token=&challenge=`): we echo the challenge.
@@ -102,7 +115,10 @@ export class OuraWebhookController {
     const providerEventId = this.connector.eventId(event);
 
     // (4) Replay protection. A prior row for (OURA, providerEventId) means we
-    // already handled this delivery → 200 no-op.
+    // already FULLY processed (fetched + ingested + committed) this delivery →
+    // 200 no-op. Because the row is written only AFTER successful ingest
+    // (step 6), a present row proves completion — there is no half-processed
+    // state to re-drive.
     const existing = await this.prisma.wearableProcessedEvent.findUnique({
       where: {
         provider_provider_event_id: {
@@ -121,33 +137,11 @@ export class OuraWebhookController {
       return { ok: true };
     }
 
-    // Record the event up-front so concurrent redeliveries collapse to a
-    // single handling (composite PK makes the insert idempotent).
-    try {
-      await this.prisma.wearableProcessedEvent.create({
-        data: {
-          provider: WearableProvider.OURA,
-          provider_event_id: providerEventId,
-          type: `${event.data_type}.${event.event_type}`,
-        },
-      });
-    } catch (err) {
-      // Unique-violation → a concurrent delivery beat us to it: treat as
-      // replay no-op rather than 500.
-      if ((err as { code?: string })?.code === 'P2002') {
-        this.logger.log({
-          msg: 'wearables.oura.webhook.concurrent_replay_noop',
-          provider: 'OURA',
-          data_type: event.data_type,
-        });
-        return { ok: true };
-      }
-      throw err;
-    }
-
     // (5) Resolve the connection by Oura user id, fetch the just-changed
-    // record, normalize, and batch-ingest. A delete event has nothing to
-    // fetch — we record it and stop.
+    // record, normalize, and batch-ingest — BEFORE any dedup row is written.
+    // A delete event has nothing to fetch. If fetch/ingest throws here, we
+    // never reach the dedup-row write (step 6), so Oura's retry reprocesses
+    // the event instead of being silently dropped (R2 fix — Finding 1).
     if (event.event_type !== 'delete') {
       const connection = await this.prisma.wearableConnection.findFirst({
         where: {
@@ -170,6 +164,7 @@ export class OuraWebhookController {
         } catch (err) {
           // Fail-explicit: mark the connection in error, log redacted, and
           // rethrow so the delivery is retried (no silent swallow, #36/#50).
+          // No processed-event row was written, so the retry reprocesses.
           await this.prisma.wearableConnection
             .update({
               where: { id: connection.id },
@@ -196,18 +191,32 @@ export class OuraWebhookController {
       }
     }
 
-    // (6) Mark handled.
-    await this.prisma.wearableProcessedEvent
-      .update({
-        where: {
-          provider_provider_event_id: {
-            provider: WearableProvider.OURA,
-            provider_event_id: providerEventId,
-          },
+    // (6) COMMIT: only now that fetch+ingest have succeeded do we persist the
+    // dedup row. `handler_completed_at` is set in the same write so the row is
+    // never observed in a half-done state. A concurrent delivery that already
+    // wrote the row produces a P2002 on the composite PK — we absorb it as a
+    // benign no-op (ON CONFLICT DO NOTHING semantics); the sample dedup_key
+    // UNIQUE constraint already prevented any double-counted samples.
+    try {
+      await this.prisma.wearableProcessedEvent.create({
+        data: {
+          provider: WearableProvider.OURA,
+          provider_event_id: providerEventId,
+          type: `${event.data_type}.${event.event_type}`,
+          handler_completed_at: new Date(),
         },
-        data: { handler_completed_at: new Date() },
-      })
-      .catch(() => undefined);
+      });
+    } catch (err) {
+      if ((err as { code?: string })?.code === 'P2002') {
+        this.logger.log({
+          msg: 'wearables.oura.webhook.concurrent_commit_noop',
+          provider: 'OURA',
+          data_type: event.data_type,
+        });
+        return { ok: true };
+      }
+      throw err;
+    }
 
     this.logger.log({
       msg: 'wearables.oura.webhook.handled',
