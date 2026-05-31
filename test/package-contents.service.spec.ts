@@ -37,11 +37,36 @@ function makePrismaStub() {
       if (typeof v === 'object' && v !== null) {
         return Object.entries(v as any).every(([sk, sv]) => {
           if (sk === 'not') return row[k] !== sv && row[k] != null;
+          if (sk === 'gt') return row[k] > (sv as number);
+          if (sk === 'gte') return row[k] >= (sv as number);
+          if (sk === 'lt') return row[k] < (sv as number);
+          if (sk === 'lte') return row[k] <= (sv as number);
+          if (sk === 'in') return (sv as any[]).includes(row[k]);
           return row[k] === sv;
         });
       }
       return row[k] === v;
     });
+  }
+
+  // Apply a Prisma `data` patch supporting scalar sets AND atomic numeric
+  // ops ({ decrement: n } / { increment: n }) the way the service uses
+  // them for display_order compaction.
+  function applyData(row: any, data: any): void {
+    for (const [k, v] of Object.entries(data)) {
+      if (v && typeof v === 'object' && !(v instanceof Date)) {
+        if ('decrement' in (v as any)) {
+          row[k] = row[k] - (v as any).decrement;
+          continue;
+        }
+        if ('increment' in (v as any)) {
+          row[k] = row[k] + (v as any).increment;
+          continue;
+        }
+      }
+      row[k] = v;
+    }
+    row.updated_at = new Date();
   }
 
   const stub: any = {
@@ -106,8 +131,13 @@ function makePrismaStub() {
       update: jest.fn(async ({ where, data }: any) => {
         const row = contents.find((c) => c.id === where.id);
         if (!row) throw new Error('not found');
-        Object.assign(row, data, { updated_at: new Date() });
+        applyData(row, data);
         return { ...row };
+      }),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const matches = contents.filter((c) => filterMatch(c, where));
+        for (const row of matches) applyData(row, data);
+        return { count: matches.length };
       }),
     },
     workoutPlan: {
@@ -194,10 +224,18 @@ function makePrismaStub() {
   return stub;
 }
 
-function makeSubCoachStub(headMap: Record<string, string | null> = {}) {
+function makeSubCoachStub(
+  headMap: Record<string, string | null> = {},
+  // Map of `${userId}:${clientId}` the actor may access. Default: deny.
+  accessSet: Set<string> = new Set(),
+) {
   return {
     getHeadCoachIdForSubCoach: jest.fn(
       async (userId: string) => headMap[userId] ?? null,
+    ),
+    canAccessClient: jest.fn(
+      async (userId: string, clientId: string) =>
+        accessSet.has(`${userId}:${clientId}`),
     ),
   };
 }
@@ -251,7 +289,7 @@ describe('PackageContentsService', () => {
     prisma = makePrismaStub();
     subCoach = makeSubCoachStub();
     packages = new PackagesService(prisma as any, subCoach as any);
-    svc = new PackageContentsService(prisma as any, packages);
+    svc = new PackageContentsService(prisma as any, packages, subCoach as any);
     seedPackage(prisma, { id: 'pkg-1', coach_id: 'coach-1' });
     seedWorkoutPlan(prisma, { id: 'wp-1', coach_id: 'coach-1' });
     seedMealPlan(prisma, { id: 'mp-1', coach_id: 'coach-1' });
@@ -262,7 +300,7 @@ describe('PackageContentsService', () => {
   // ── cadence validation ───────────────────────────────────────────────
   describe('cadence validation (zod discriminated union)', () => {
     it('accepts immediate with empty payload', async () => {
-      const row = await svc.attach('coach-1', 'pkg-1', {
+      const row = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
@@ -274,7 +312,7 @@ describe('PackageContentsService', () => {
 
     it('rejects immediate with extra keys (strict)', async () => {
       await expect(
-        svc.attach('coach-1', 'pkg-1', {
+        svc.attach('coach-1', 'coach-1', 'pkg-1', {
           asset_type: 'workout_plan',
           asset_id: 'wp-1',
           cadence_kind: 'immediate',
@@ -284,7 +322,7 @@ describe('PackageContentsService', () => {
     });
 
     it('accepts relative_to_purchase with offset_days', async () => {
-      const row = await svc.attach('coach-1', 'pkg-1', {
+      const row = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'relative_to_purchase',
@@ -295,7 +333,7 @@ describe('PackageContentsService', () => {
 
     it('rejects relative_to_purchase with negative offset_days', async () => {
       await expect(
-        svc.attach('coach-1', 'pkg-1', {
+        svc.attach('coach-1', 'coach-1', 'pkg-1', {
           asset_type: 'workout_plan',
           asset_id: 'wp-1',
           cadence_kind: 'relative_to_purchase',
@@ -306,7 +344,7 @@ describe('PackageContentsService', () => {
 
     it('rejects relative_to_purchase with wrong payload shape', async () => {
       await expect(
-        svc.attach('coach-1', 'pkg-1', {
+        svc.attach('coach-1', 'coach-1', 'pkg-1', {
           asset_type: 'workout_plan',
           asset_id: 'wp-1',
           cadence_kind: 'relative_to_purchase',
@@ -316,7 +354,7 @@ describe('PackageContentsService', () => {
     });
 
     it('accepts fixed_calendar with ISO release_at', async () => {
-      const row = await svc.attach('coach-1', 'pkg-1', {
+      const row = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'fixed_calendar',
@@ -327,7 +365,7 @@ describe('PackageContentsService', () => {
 
     it('rejects fixed_calendar with non-ISO release_at', async () => {
       await expect(
-        svc.attach('coach-1', 'pkg-1', {
+        svc.attach('coach-1', 'coach-1', 'pkg-1', {
           asset_type: 'workout_plan',
           asset_id: 'wp-1',
           cadence_kind: 'fixed_calendar',
@@ -337,7 +375,7 @@ describe('PackageContentsService', () => {
     });
 
     it('accepts on_completion with empty payload', async () => {
-      const row = await svc.attach('coach-1', 'pkg-1', {
+      const row = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'on_completion',
@@ -347,7 +385,7 @@ describe('PackageContentsService', () => {
     });
 
     it('accepts on_completion with depends_on_content_id', async () => {
-      const row = await svc.attach('coach-1', 'pkg-1', {
+      const row = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'on_completion',
@@ -357,7 +395,7 @@ describe('PackageContentsService', () => {
     });
 
     it('accepts on_milestone with milestone_key', async () => {
-      const row = await svc.attach('coach-1', 'pkg-1', {
+      const row = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'on_milestone',
@@ -368,7 +406,7 @@ describe('PackageContentsService', () => {
 
     it('rejects on_milestone without milestone_key', async () => {
       await expect(
-        svc.attach('coach-1', 'pkg-1', {
+        svc.attach('coach-1', 'coach-1', 'pkg-1', {
           asset_type: 'workout_plan',
           asset_id: 'wp-1',
           cadence_kind: 'on_milestone',
@@ -379,7 +417,7 @@ describe('PackageContentsService', () => {
 
     it('rejects unknown cadence_kind', async () => {
       await expect(
-        svc.attach('coach-1', 'pkg-1', {
+        svc.attach('coach-1', 'coach-1', 'pkg-1', {
           asset_type: 'workout_plan',
           asset_id: 'wp-1',
           cadence_kind: 'martian',
@@ -390,7 +428,7 @@ describe('PackageContentsService', () => {
 
     it('rejects unknown top-level keys (strict)', async () => {
       await expect(
-        svc.attach('coach-1', 'pkg-1', {
+        svc.attach('coach-1', 'coach-1', 'pkg-1', {
           asset_type: 'workout_plan',
           asset_id: 'wp-1',
           cadence_kind: 'immediate',
@@ -402,7 +440,7 @@ describe('PackageContentsService', () => {
 
     it('rejects unknown payload keys for relative_to_purchase', async () => {
       await expect(
-        svc.attach('coach-1', 'pkg-1', {
+        svc.attach('coach-1', 'coach-1', 'pkg-1', {
           asset_type: 'workout_plan',
           asset_id: 'wp-1',
           cadence_kind: 'relative_to_purchase',
@@ -415,13 +453,13 @@ describe('PackageContentsService', () => {
   // ── round-trip CRUD ──────────────────────────────────────────────────
   describe('attach/list/patch/soft-delete round-trip', () => {
     it('list returns rows ordered by display_order, excludes removed', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const b = await svc.attach('coach-1', 'pkg-1', {
+      const b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'meal_plan',
         asset_id: 'mp-1',
         cadence_kind: 'immediate',
@@ -438,7 +476,7 @@ describe('PackageContentsService', () => {
     });
 
     it('patch updates cadence as a pair and rejects partial', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
@@ -465,7 +503,7 @@ describe('PackageContentsService', () => {
     });
 
     it('patch rejects unknown keys (strict)', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
@@ -477,7 +515,7 @@ describe('PackageContentsService', () => {
     });
 
     it('softDelete is idempotent', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
@@ -506,7 +544,7 @@ describe('PackageContentsService', () => {
 
     it("coach-1 cannot attach to coach-2's package", async () => {
       await expect(
-        svc.attach('coach-1', 'pkg-2', {
+        svc.attach('coach-1', 'coach-1', 'pkg-2', {
           asset_type: 'workout_plan',
           asset_id: 'wp-1',
           cadence_kind: 'immediate',
@@ -523,7 +561,7 @@ describe('PackageContentsService', () => {
 
     it("coach-1 cannot attach coach-2's workout asset to their own package", async () => {
       await expect(
-        svc.attach('coach-1', 'pkg-1', {
+        svc.attach('coach-1', 'coach-1', 'pkg-1', {
           asset_type: 'workout_plan',
           asset_id: 'wp-2',
           cadence_kind: 'immediate',
@@ -535,7 +573,7 @@ describe('PackageContentsService', () => {
     it("coach-1 cannot attach a meal_plan owned by another coach", async () => {
       seedMealPlan(prisma, { id: 'mp-2', coach_id: 'coach-2' });
       await expect(
-        svc.attach('coach-1', 'pkg-1', {
+        svc.attach('coach-1', 'coach-1', 'pkg-1', {
           asset_type: 'meal_plan',
           asset_id: 'mp-2',
           cadence_kind: 'immediate',
@@ -547,7 +585,7 @@ describe('PackageContentsService', () => {
     it("coach-1 cannot attach a pdf media_asset owned by another coach", async () => {
       seedMediaAsset(prisma, { id: 'pdf-2', coach_id: 'coach-2', kind: 'pdf' });
       await expect(
-        svc.attach('coach-1', 'pkg-1', {
+        svc.attach('coach-1', 'coach-1', 'pkg-1', {
           asset_type: 'pdf',
           asset_id: 'pdf-2',
           cadence_kind: 'immediate',
@@ -558,7 +596,7 @@ describe('PackageContentsService', () => {
 
     it('refuses pdf attach when CoachMediaAsset row missing (PR-12 not shipped)', async () => {
       await expect(
-        svc.attach('coach-1', 'pkg-1', {
+        svc.attach('coach-1', 'coach-1', 'pkg-1', {
           asset_type: 'pdf',
           asset_id: 'missing-pdf',
           cadence_kind: 'immediate',
@@ -571,19 +609,19 @@ describe('PackageContentsService', () => {
   // ── display_order append + reorder ───────────────────────────────────
   describe('display_order append + reorder', () => {
     it('appends new rows to max+1', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const b = await svc.attach('coach-1', 'pkg-1', {
+      const b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'meal_plan',
         asset_id: 'mp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const c = await svc.attach('coach-1', 'pkg-1', {
+      const c = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'pdf',
         asset_id: 'pdf-1',
         cadence_kind: 'immediate',
@@ -595,19 +633,19 @@ describe('PackageContentsService', () => {
     });
 
     it('reorders atomically and rejects mismatched id sets', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const b = await svc.attach('coach-1', 'pkg-1', {
+      const b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'meal_plan',
         asset_id: 'mp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const c = await svc.attach('coach-1', 'pkg-1', {
+      const c = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'pdf',
         asset_id: 'pdf-1',
         cadence_kind: 'immediate',
@@ -638,13 +676,13 @@ describe('PackageContentsService', () => {
     });
 
     it('reorder excludes soft-deleted rows from the expected set', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const b = await svc.attach('coach-1', 'pkg-1', {
+      const b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'meal_plan',
         asset_id: 'mp-1',
         cadence_kind: 'immediate',
@@ -663,7 +701,7 @@ describe('PackageContentsService', () => {
   describe('auto_message body contract (PR-7 alignment)', () => {
     it('rejects attach without display_caption AND display_title', async () => {
       await expect(
-        svc.attach('coach-1', 'pkg-1', {
+        svc.attach('coach-1', 'coach-1', 'pkg-1', {
           asset_type: 'auto_message',
           asset_id: 'template-or-sentinel',
           cadence_kind: 'immediate',
@@ -674,7 +712,7 @@ describe('PackageContentsService', () => {
 
     it('rejects attach with only whitespace in title/caption', async () => {
       await expect(
-        svc.attach('coach-1', 'pkg-1', {
+        svc.attach('coach-1', 'coach-1', 'pkg-1', {
           asset_type: 'auto_message',
           asset_id: 'template-or-sentinel',
           display_caption: '   ',
@@ -686,7 +724,7 @@ describe('PackageContentsService', () => {
     });
 
     it('accepts attach with display_caption (preferred body source)', async () => {
-      const row = await svc.attach('coach-1', 'pkg-1', {
+      const row = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'auto_message',
         asset_id: 'template-or-sentinel',
         display_caption: 'Welcome to week 1!',
@@ -697,7 +735,7 @@ describe('PackageContentsService', () => {
     });
 
     it('accepts attach with only display_title (fallback body source)', async () => {
-      const row = await svc.attach('coach-1', 'pkg-1', {
+      const row = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'auto_message',
         asset_id: 'template-or-sentinel',
         display_title: 'Day 1 check-in',
@@ -708,7 +746,7 @@ describe('PackageContentsService', () => {
     });
 
     it('rejects patch that would clear the auto_message body to empty', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'auto_message',
         asset_id: 'template-or-sentinel',
         display_caption: 'hello',
@@ -724,12 +762,13 @@ describe('PackageContentsService', () => {
     });
   });
 
-  // ── sub-coach scope ──────────────────────────────────────────────────
+  // ── sub-coach scope (resolveEffectiveCoachId) ─────────────────────────
   describe('sub-coach scope (resolveEffectiveCoachId)', () => {
     it('promotes sub-coach to head coach when attaching', async () => {
       subCoach.getHeadCoachIdForSubCoach.mockResolvedValue('coach-1');
       const effective = await packages.resolveEffectiveCoachId('sub-1');
-      const row = await svc.attach(effective, 'pkg-1', {
+      // New signature: actor = sub-1, tenant = head coach (coach-1).
+      const row = await svc.attach('sub-1', effective, 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
@@ -739,10 +778,117 @@ describe('PackageContentsService', () => {
     });
   });
 
+  // ── PR-18 B2: sub-coach fork-on-attach guard (#5 IDOR) ────────────────
+  describe('PR-18 B2 — sub-coach fork-on-attach guard', () => {
+    it('head coach attaches own asset (actor === tenant) — unchanged path', async () => {
+      // Head coach: getHeadCoachIdForSubCoach returns null.
+      subCoach.getHeadCoachIdForSubCoach.mockResolvedValue(null);
+      const row = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      expect(row.asset_id).toBe('wp-1');
+      expect(row.display_order).toBe(0);
+    });
+
+    it('sub-coach on the head team can attach a head-owned (global) asset', async () => {
+      // sub-1 is a sub-coach of head coach-1.
+      subCoach.getHeadCoachIdForSubCoach.mockImplementation(async (u: string) =>
+        u === 'sub-1' ? 'coach-1' : null,
+      );
+      const row = await svc.attach('sub-1', 'coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      expect(row.asset_id).toBe('wp-1');
+    });
+
+    it('sub-coach belonging to a DIFFERENT head team is refused with 404 (no existence leak)', async () => {
+      // sub-x is a sub-coach of some OTHER head coach, not coach-1.
+      subCoach.getHeadCoachIdForSubCoach.mockImplementation(async (u: string) =>
+        u === 'sub-x' ? 'coach-other' : null,
+      );
+      await expect(
+        svc.attach('sub-x', 'coach-1', 'pkg-1', {
+          asset_type: 'workout_plan',
+          asset_id: 'wp-1',
+          cadence_kind: 'immediate',
+          cadence_payload: {},
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('client-bound asset: sub-coach NOT assigned to the client → 404 ASSET_NOT_FOUND', async () => {
+      // Simulate a (future) client-bound asset by stubbing
+      // clientContextForAsset to return a clientId, and DENYING the
+      // sub-coach access to that client via canAccessClient.
+      subCoach.getHeadCoachIdForSubCoach.mockImplementation(async (u: string) =>
+        u === 'sub-1' ? 'coach-1' : null,
+      );
+      subCoach.canAccessClient.mockResolvedValue(false);
+      const spy = jest
+        .spyOn(svc as any, 'clientContextForAsset')
+        .mockResolvedValue('client-7');
+      try {
+        await expect(
+          svc.attach('sub-1', 'coach-1', 'pkg-1', {
+            asset_type: 'workout_plan',
+            asset_id: 'wp-1',
+            cadence_kind: 'immediate',
+            cadence_payload: {},
+          }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(subCoach.canAccessClient).toHaveBeenCalledWith('sub-1', 'client-7');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('client-bound asset: sub-coach assigned to the client CAN attach', async () => {
+      subCoach.getHeadCoachIdForSubCoach.mockImplementation(async (u: string) =>
+        u === 'sub-1' ? 'coach-1' : null,
+      );
+      subCoach.canAccessClient.mockResolvedValue(true);
+      const spy = jest
+        .spyOn(svc as any, 'clientContextForAsset')
+        .mockResolvedValue('client-7');
+      try {
+        const row = await svc.attach('sub-1', 'coach-1', 'pkg-1', {
+          asset_type: 'workout_plan',
+          asset_id: 'wp-1',
+          cadence_kind: 'immediate',
+          cadence_payload: {},
+        });
+        expect(row.asset_id).toBe('wp-1');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('head-coach actor whose tenant id is NOT their own is refused (privilege escalation guard)', async () => {
+      // A non-sub actor (head/null) MUST act under their own tenant. If
+      // some caller hands a tenantCoachId that is not the actor's id and
+      // the actor is not a sub-coach of it, deny without leaking.
+      subCoach.getHeadCoachIdForSubCoach.mockResolvedValue(null);
+      await expect(
+        svc.attach('coach-1', 'coach-other', 'pkg-1', {
+          asset_type: 'workout_plan',
+          asset_id: 'wp-1',
+          cadence_kind: 'immediate',
+          cadence_payload: {},
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
   // ── concurrency / advisory-lock fix (P2-a, P2-b) ─────────────────────
   describe('display_order race fixes (per-package pg_advisory_xact_lock)', () => {
     it('attach acquires the per-package lock inside a transaction', async () => {
-      await svc.attach('coach-1', 'pkg-1', {
+      await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
@@ -755,13 +901,13 @@ describe('PackageContentsService', () => {
     });
 
     it('reorder acquires the per-package lock inside a transaction', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const b = await svc.attach('coach-1', 'pkg-1', {
+      const b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'meal_plan',
         asset_id: 'mp-1',
         cadence_kind: 'immediate',
@@ -788,7 +934,7 @@ describe('PackageContentsService', () => {
         cadence_payload: {},
       }));
       const rows = await Promise.all(
-        inputs.map((b) => svc.attach('coach-1', 'pkg-1', b)),
+        inputs.map((b) => svc.attach('coach-1', 'coach-1', 'pkg-1', b)),
       );
       const orders = rows.map((r) => r.display_order).sort((a, b) => a - b);
       expect(orders).toEqual([0, 1, 2]);
@@ -800,13 +946,13 @@ describe('PackageContentsService', () => {
     });
 
     it('reorder-vs-attach interleaving (P2-b): parity read inside the tx sees the consistent set', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const b = await svc.attach('coach-1', 'pkg-1', {
+      const b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'meal_plan',
         asset_id: 'mp-1',
         cadence_kind: 'immediate',
@@ -819,7 +965,7 @@ describe('PackageContentsService', () => {
       const reorderP = svc.reorder('coach-1', 'pkg-1', {
         content_ids: [b.id, a.id],
       });
-      const attachP = svc.attach('coach-1', 'pkg-1', {
+      const attachP = svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'pdf',
         asset_id: 'pdf-1',
         cadence_kind: 'immediate',
@@ -841,7 +987,7 @@ describe('PackageContentsService', () => {
   // ── P2-c (R2 audit): patch+display_order race / duplicate rejection ──
   describe('patch with display_order is locked + reject duplicates (P2-c)', () => {
     it('patch that does NOT include display_order skips the lock (cheap path)', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
@@ -856,45 +1002,53 @@ describe('PackageContentsService', () => {
     });
 
     it('patch that includes display_order acquires the per-package lock inside a transaction', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const b = await svc.attach('coach-1', 'pkg-1', {
+      const _b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'meal_plan',
         asset_id: 'mp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
+      expect(_b.id).toBeTruthy();
       (prisma as any)._lockLog.length = 0;
-      // a is at 0, b is at 1; move a to 2 (free slot).
-      await svc.patch('coach-1', 'pkg-1', a.id, { display_order: 2 });
+      // a is at 0, b is at 1; move a to 1 (held by b) -> swap under lock.
+      await svc.patch('coach-1', 'pkg-1', a.id, { display_order: 1 });
       expect((prisma as any)._lockLog).toEqual([{ packageId: 'pkg-1' }]);
     });
 
-    it('patch rejects display_order already held by another non-removed row (DISPLAY_ORDER_TAKEN)', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+    it('PR-18 B2: patch onto a slot held by ONE active row now SWAPS (was DISPLAY_ORDER_TAKEN)', async () => {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const b = await svc.attach('coach-1', 'pkg-1', {
+      const b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'meal_plan',
         asset_id: 'mp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      // b holds order=1; trying to set a to 1 must reject.
-      await expect(
-        svc.patch('coach-1', 'pkg-1', a.id, { display_order: b.display_order }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      // b holds order=1; setting a to 1 now swaps: a@1, b@0. No duplicate,
+      // no dead-end. (Pre-PR-18 this threw DISPLAY_ORDER_TAKEN.)
+      const moved = await svc.patch('coach-1', 'pkg-1', a.id, {
+        display_order: b.display_order,
+      });
+      expect(moved.display_order).toBe(1);
+      const list = await svc.listForPackage('coach-1', 'pkg-1');
+      const byId = new Map(list.map((r) => [r.id, r.display_order]));
+      expect(byId.get(a.id)).toBe(1);
+      expect(byId.get(b.id)).toBe(0);
+      expect(new Set(list.map((r) => r.display_order)).size).toBe(list.length);
     });
 
     it('patch allows setting display_order to the row’s own current value (no-op)', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
@@ -907,45 +1061,69 @@ describe('PackageContentsService', () => {
     });
 
     it('patch ignores soft-deleted rows when checking for collisions (and 404s on soft-deleted target)', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const b = await svc.attach('coach-1', 'pkg-1', {
+      const b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'meal_plan',
         asset_id: 'mp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      // soft-delete b; its order=1 should now be reusable.
+      const c = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
+        asset_type: 'pdf',
+        asset_id: 'pdf-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      // a@0, b@1, c@2. Soft-delete b (middle): compaction pulls c down to
+      // order 1, so the active set is a@0, c@1 (contiguous, no gap). The
+      // removed b must NOT be counted as a holder of any order.
       await svc.softDelete('coach-1', 'pkg-1', b.id);
+      // Patch a onto order 1 (now held by the active row c) -> swap with c,
+      // proving the soft-deleted b is ignored when resolving the holder.
       const moved = await svc.patch('coach-1', 'pkg-1', a.id, {
         display_order: 1,
       });
       expect(moved.display_order).toBe(1);
+      const after = await svc.listForPackage('coach-1', 'pkg-1');
+      const byId = new Map(after.map((r) => [r.id, r.display_order]));
+      expect(byId.get(a.id)).toBe(1);
+      expect(byId.get(c.id)).toBe(0); // c took a's old slot
+      const orders = after.map((r) => r.display_order).sort((x, y) => x - y);
+      expect(orders).toEqual([0, 1]); // unique + contiguous, no gap
 
       // Patch on the soft-deleted row STILL 404s, even on the locked path.
       await expect(
-        svc.patch('coach-1', 'pkg-1', b.id, { display_order: 5 }),
+        svc.patch('coach-1', 'pkg-1', b.id, { display_order: 0 }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('patch-vs-attach interleaving: serialised; never produces duplicate display_order', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      // Concurrent: move `a` to display_order=5; attach a new row (which
-      // should append). Both grab the per-package lock; whichever runs
-      // first commits before the other reads.
-      const patchP = svc.patch('coach-1', 'pkg-1', a.id, { display_order: 5 });
-      const attachP = svc.attach('coach-1', 'pkg-1', {
+      const b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'meal_plan',
         asset_id: 'mp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      expect(b.id).toBeTruthy();
+      // Concurrent: swap `a` onto b's slot (order 1, a valid one-holder
+      // target); attach a new row (which should append at max+1). Both
+      // grab the per-package lock; whichever runs first commits before the
+      // other reads. The serialised lock must keep orders duplicate-free.
+      const patchP = svc.patch('coach-1', 'pkg-1', a.id, { display_order: 1 });
+      const attachP = svc.attach('coach-1', 'coach-1', 'pkg-1', {
+        asset_type: 'pdf',
+        asset_id: 'pdf-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
@@ -956,19 +1134,19 @@ describe('PackageContentsService', () => {
     });
 
     it('patch-vs-reorder interleaving: serialised; never produces duplicate display_order', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const b = await svc.attach('coach-1', 'pkg-1', {
+      const b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'meal_plan',
         asset_id: 'mp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const c = await svc.attach('coach-1', 'pkg-1', {
+      const c = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'pdf',
         asset_id: 'pdf-1',
         cadence_kind: 'immediate',
@@ -993,42 +1171,41 @@ describe('PackageContentsService', () => {
     });
 
     it('two concurrent patches targeting the SAME display_order on the same package: at most one wins', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const b = await svc.attach('coach-1', 'pkg-1', {
+      const b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'meal_plan',
         asset_id: 'mp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const c = await svc.attach('coach-1', 'pkg-1', {
+      const c = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'pdf',
         asset_id: 'pdf-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      // Both patches target display_order=10. Lock serialises; second
-      // sees the first's write and must EITHER succeed (if the second
-      // patch is the row that already holds 10 — our no-op case) OR
-      // reject as DISPLAY_ORDER_TAKEN. Either way: no duplicate.
-      const p1 = svc.patch('coach-1', 'pkg-1', a.id, { display_order: 10 });
+      // a@0, b@1, c@2. Both patches target display_order=2 (held by the
+      // active row c). The lock serialises them. PR-18 B2 made patch
+      // swap-aware, so each patch that sees a one-holder target SWAPS
+      // rather than dead-ending. The post-conditions that matter
+      // regardless of interleaving: EXACTLY ONE row holds 2, and the
+      // active display_order set has NO duplicates and NO gaps.
+      const p1 = svc.patch('coach-1', 'pkg-1', a.id, { display_order: 2 });
       const p2 = svc
-        .patch('coach-1', 'pkg-1', b.id, { display_order: 10 })
+        .patch('coach-1', 'pkg-1', b.id, { display_order: 2 })
         .catch((e) => e);
-      const [r1, r2] = await Promise.all([p1, p2]);
-      // Only one wrote 10.
+      await Promise.all([p1, p2]);
       const list = await svc.listForPackage('coach-1', 'pkg-1');
-      const tens = list.filter((r) => r.display_order === 10);
-      expect(tens.length).toBe(1);
-      // The other call must have been rejected.
-      const successCount = [r1, r2].filter(
-        (r) => r && typeof (r as any).id === 'string',
-      ).length;
-      expect(successCount).toBe(1);
+      const twos = list.filter((r) => r.display_order === 2);
+      expect(twos.length).toBe(1); // exactly one row at 2
+      const orders = list.map((r) => r.display_order).sort((x, y) => x - y);
+      expect(new Set(orders).size).toBe(orders.length); // no duplicates
+      expect(orders).toEqual([0, 1, 2]); // contiguous, no gaps
       // Unused-var hush: third row exists.
       expect(c.id).toBeTruthy();
     });
@@ -1037,7 +1214,7 @@ describe('PackageContentsService', () => {
   // ── soft-delete + patch interaction (P3-a fix) ───────────────────────
   describe('patch on a soft-deleted content row (P3-a)', () => {
     it('patch on a soft-deleted row returns 404 — cannot mutate a removed row', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
@@ -1056,7 +1233,7 @@ describe('PackageContentsService', () => {
     });
 
     it('softDelete remains idempotent after the requireOwnedContent fix', async () => {
-      const a = await svc.attach('coach-1', 'pkg-1', {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'workout_plan',
         asset_id: 'wp-1',
         cadence_kind: 'immediate',
@@ -1066,6 +1243,230 @@ describe('PackageContentsService', () => {
       const second = await svc.softDelete('coach-1', 'pkg-1', a.id);
       expect(first.removed_at).not.toBeNull();
       expect(second.removed_at).toEqual(first.removed_at);
+    });
+  });
+
+  // ── PR-18 B2 (PR-8): display_order compaction on soft delete ──────────
+  describe('PR-18 B2 — display_order compaction on soft delete', () => {
+    async function attachN(n: number) {
+      const assets: Array<['workout_plan' | 'meal_plan' | 'pdf' | 'video', string]> = [
+        ['workout_plan', 'wp-1'],
+        ['meal_plan', 'mp-1'],
+        ['pdf', 'pdf-1'],
+        ['video', 'vid-1'],
+      ];
+      const rows = [] as any[];
+      for (let i = 0; i < n; i++) {
+        rows.push(
+          await svc.attach('coach-1', 'coach-1', 'pkg-1', {
+            asset_type: assets[i][0],
+            asset_id: assets[i][1],
+            cadence_kind: 'immediate',
+            cadence_payload: {},
+          }),
+        );
+      }
+      return rows;
+    }
+
+    it('deleting a MIDDLE row compacts active orders to contiguous 0..n-1', async () => {
+      const [a, b, c] = await attachN(3); // orders 0,1,2
+      await svc.softDelete('coach-1', 'pkg-1', b.id); // remove the middle
+      const list = await svc.listForPackage('coach-1', 'pkg-1');
+      expect(list.map((r) => r.id)).toEqual([a.id, c.id]);
+      expect(list.map((r) => r.display_order)).toEqual([0, 1]);
+    });
+
+    it('deleting the FIRST row shifts the rest down (no gap, no negative)', async () => {
+      const [a, b, c] = await attachN(3); // 0,1,2
+      await svc.softDelete('coach-1', 'pkg-1', a.id);
+      const list = await svc.listForPackage('coach-1', 'pkg-1');
+      expect(list.map((r) => r.id)).toEqual([b.id, c.id]);
+      expect(list.map((r) => r.display_order)).toEqual([0, 1]);
+      expect(list.every((r) => r.display_order >= 0)).toBe(true);
+    });
+
+    it('deleting the LAST row leaves the rest untouched (still contiguous)', async () => {
+      const [a, b, c] = await attachN(3); // 0,1,2
+      await svc.softDelete('coach-1', 'pkg-1', c.id);
+      const list = await svc.listForPackage('coach-1', 'pkg-1');
+      expect(list.map((r) => r.id)).toEqual([a.id, b.id]);
+      expect(list.map((r) => r.display_order)).toEqual([0, 1]);
+    });
+
+    it('subsequent append reuses the freed tail slot (no permanent gap)', async () => {
+      const [a, b] = await attachN(2); // 0,1
+      await svc.softDelete('coach-1', 'pkg-1', b.id); // now only a@0
+      const d = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
+        asset_type: 'pdf',
+        asset_id: 'pdf-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      expect(d.display_order).toBe(1); // max(0)+1, not 2
+      const list = await svc.listForPackage('coach-1', 'pkg-1');
+      expect(list.map((r) => r.id)).toEqual([a.id, d.id]);
+      expect(list.map((r) => r.display_order)).toEqual([0, 1]);
+    });
+
+    it('deleting an ALREADY-removed row stays idempotent and does NOT re-compact', async () => {
+      const [a, b, c] = await attachN(3); // 0,1,2
+      await svc.softDelete('coach-1', 'pkg-1', b.id); // a@0, c@1
+      const beforeSecond = await svc.listForPackage('coach-1', 'pkg-1');
+      const ra = (prisma as any).coachPackageContent.updateMany.mock.calls.length;
+      const again = await svc.softDelete('coach-1', 'pkg-1', b.id);
+      // returns the already-removed row, no new removed_at, no extra compaction
+      expect(again.removed_at).toEqual(
+        (prisma as any)._contents.find((r: any) => r.id === b.id).removed_at,
+      );
+      const rb = (prisma as any).coachPackageContent.updateMany.mock.calls.length;
+      expect(rb).toBe(ra); // no second compaction
+      const after = await svc.listForPackage('coach-1', 'pkg-1');
+      expect(after.map((r) => r.display_order)).toEqual(
+        beforeSecond.map((r) => r.display_order),
+      );
+      expect(a.id && c.id).toBeTruthy();
+    });
+
+    it('softDelete acquires the per-package advisory lock', async () => {
+      const [, b] = await attachN(2);
+      (prisma as any)._lockLog.length = 0;
+      await svc.softDelete('coach-1', 'pkg-1', b.id);
+      expect((prisma as any)._lockLog).toEqual([{ packageId: 'pkg-1' }]);
+    });
+
+    it('delete-vs-attach interleaving preserves distinct contiguous orders', async () => {
+      const [a, b] = await attachN(2); // 0,1
+      const delP = svc.softDelete('coach-1', 'pkg-1', a.id);
+      const attachP = svc.attach('coach-1', 'coach-1', 'pkg-1', {
+        asset_type: 'pdf',
+        asset_id: 'pdf-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      await Promise.all([delP, attachP]);
+      const list = await svc.listForPackage('coach-1', 'pkg-1');
+      const orders = list.map((r) => r.display_order);
+      expect(new Set(orders).size).toBe(orders.length); // distinct
+      expect([...orders].sort((x, y) => x - y)).toEqual(
+        orders.map((_, i) => i), // contiguous 0..n-1
+      );
+      expect(b.id).toBeTruthy();
+    });
+  });
+
+  // ── PR-18 B2 (PR-8): swap-aware patch (single-row collision) ──────────
+  describe('PR-18 B2 — swap-aware patch on display_order collision', () => {
+    async function attach3() {
+      const a = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
+        asset_type: 'workout_plan',
+        asset_id: 'wp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      const b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
+        asset_type: 'meal_plan',
+        asset_id: 'mp-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      const c = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
+        asset_type: 'pdf',
+        asset_id: 'pdf-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      return { a, b, c };
+    }
+
+    it('adjacent swap succeeds and keeps unique contiguous orders', async () => {
+      const { a, b } = await attach3(); // a@0, b@1, c@2
+      // Move a (0) onto b's slot (1): expect a@1, b@0.
+      const moved = await svc.patch('coach-1', 'pkg-1', a.id, {
+        display_order: 1,
+      });
+      expect(moved.display_order).toBe(1);
+      const list = await svc.listForPackage('coach-1', 'pkg-1');
+      const byId = new Map(list.map((r) => [r.id, r.display_order]));
+      expect(byId.get(a.id)).toBe(1);
+      expect(byId.get(b.id)).toBe(0);
+      const orders = list.map((r) => r.display_order).sort((x, y) => x - y);
+      expect(orders).toEqual([0, 1, 2]); // unique + contiguous
+    });
+
+    it('non-adjacent swap succeeds if the target slot is held by one row', async () => {
+      const { a, c } = await attach3(); // a@0, b@1, c@2
+      // Move a (0) onto c's slot (2): expect a@2, c@0.
+      const moved = await svc.patch('coach-1', 'pkg-1', a.id, {
+        display_order: 2,
+      });
+      expect(moved.display_order).toBe(2);
+      const list = await svc.listForPackage('coach-1', 'pkg-1');
+      const byId = new Map(list.map((r) => [r.id, r.display_order]));
+      expect(byId.get(a.id)).toBe(2);
+      expect(byId.get(c.id)).toBe(0);
+      const orders = list.map((r) => r.display_order).sort((x, y) => x - y);
+      expect(orders).toEqual([0, 1, 2]);
+    });
+
+    it('swap acquires the per-package advisory lock', async () => {
+      const { a } = await attach3();
+      (prisma as any)._lockLog.length = 0;
+      await svc.patch('coach-1', 'pkg-1', a.id, { display_order: 1 });
+      expect((prisma as any)._lockLog).toEqual([{ packageId: 'pkg-1' }]);
+    });
+
+    it('patch to the row’s own current order is a no-op (no swap)', async () => {
+      const { a, b, c } = await attach3();
+      const updated = await svc.patch('coach-1', 'pkg-1', a.id, {
+        display_order: 0,
+      });
+      expect(updated.display_order).toBe(0);
+      const list = await svc.listForPackage('coach-1', 'pkg-1');
+      const byId = new Map(list.map((r) => [r.id, r.display_order]));
+      expect(byId.get(a.id)).toBe(0);
+      expect(byId.get(b.id)).toBe(1);
+      expect(byId.get(c.id)).toBe(2);
+    });
+
+    it('patch to an EMPTY slot (no active holder) is rejected — no gap created', async () => {
+      const { a, b, c } = await attach3(); // 0,1,2
+      // Move a to order 5: no active row holds order 5, so a plain move
+      // would tear a hole in the 0..n-1 sequence (1,2,5). PR-18 B2 item 3
+      // requires rejecting this; multi-row moves belong on /reorder.
+      await expect(
+        svc.patch('coach-1', 'pkg-1', a.id, { display_order: 5 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      // Nothing moved: the active set stays a contiguous bijection 0..n-1.
+      const list = await svc.listForPackage('coach-1', 'pkg-1');
+      const byId = new Map(list.map((r) => [r.id, r.display_order]));
+      expect(byId.get(a.id)).toBe(0);
+      expect(byId.get(b.id)).toBe(1);
+      expect(byId.get(c.id)).toBe(2);
+      const orders = list.map((r) => r.display_order).sort((x, y) => x - y);
+      expect(orders).toEqual([0, 1, 2]); // unique + contiguous, no gap
+    });
+
+    it('patch to a NEGATIVE display_order is rejected by validation (no gaps/negatives)', async () => {
+      const { a } = await attach3();
+      await expect(
+        svc.patch('coach-1', 'pkg-1', a.id, { display_order: -1 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects swap into an ambiguous slot held by >1 active row (corrupt set)', async () => {
+      const { a, b, c } = await attach3();
+      // Force a corrupt state: make b and c both hold order 1 directly in
+      // the store (bypassing the service) so the target slot is ambiguous.
+      const store = (prisma as any)._contents;
+      store.find((r: any) => r.id === c.id).display_order = 1;
+      await expect(
+        svc.patch('coach-1', 'pkg-1', a.id, { display_order: 1 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      // a was not moved.
+      const list = await svc.listForPackage('coach-1', 'pkg-1');
+      expect(list.find((r) => r.id === a.id)!.display_order).toBe(0);
+      expect(b.id).toBeTruthy();
     });
   });
 });
