@@ -1,4 +1,8 @@
-import { ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { WearableProvider } from '@prisma/client';
 import type { Request } from 'express';
 import {
@@ -148,15 +152,48 @@ describe('StravaWebhookController POST events', () => {
     expect(out.received).toBe(true);
   });
 
-  it('403s on a foreign subscription_id', async () => {
+  it('403s on a foreign subscription_id (configured but mismatched)', async () => {
     const { controller, createMany } = makeController();
     await expect(
       controller.handleEvent(goodReq(), {
         ...baseEvent,
         subscription_id: 99999,
       }),
-    ).rejects.toThrow(/Unknown Strava subscription/);
+    ).rejects.toThrow(ForbiddenException);
     expect(createMany).not.toHaveBeenCalled();
+  });
+
+  // Finding 1 (fail-closed): subscription id env var UNSET → 503, no DB touch.
+  it('503s and does NOT process when STRAVA_WEBHOOK_SUBSCRIPTION_ID is unset', async () => {
+    const env = { ...ENV };
+    delete env.STRAVA_WEBHOOK_SUBSCRIPTION_ID;
+    const { controller, createMany, enqueueActivityFetch } = makeController({
+      env,
+    });
+    await expect(controller.handleEvent(goodReq(), baseEvent)).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+    expect(createMany).not.toHaveBeenCalled();
+    expect(enqueueActivityFetch).not.toHaveBeenCalled();
+  });
+
+  // Finding 1: a startup warning is logged when the subscription id is unset.
+  it('logs a startup warning (onModuleInit) when subscription id is unset', () => {
+    const env = { ...ENV };
+    delete env.STRAVA_WEBHOOK_SUBSCRIPTION_ID;
+    const { controller } = makeController({ env });
+    const warn = jest
+      .spyOn(
+        (controller as unknown as { logger: { warn: (m: string) => void } })
+          .logger,
+        'warn',
+      )
+      .mockImplementation(() => undefined);
+    controller.onModuleInit();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('STRAVA_WEBHOOK_SUBSCRIPTION_ID is unset'),
+    );
+    warn.mockRestore();
   });
 
   it('400s on a malformed event', async () => {

@@ -8,9 +8,11 @@ import {
   HttpStatus,
   Injectable,
   Logger,
+  OnModuleInit,
   Post,
   Query,
   Req,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
@@ -39,7 +41,10 @@ import { StravaWebhookEvent } from './strava.types';
  *     controls instead:
  *       (a) subscription_id must match our configured subscription id
  *           (STRAVA_WEBHOOK_SUBSCRIPTION_ID) — rejects events meant for a
- *           different app/subscription;
+ *           different app/subscription. This FAILS CLOSED: if the env var is
+ *           unset the POST handler returns 503 (never processes events under
+ *           misconfiguration) and a startup warning is logged; a configured
+ *           mismatch returns 403;
  *       (b) a source-IP allow-list — Strava delivers from a small set of AWS
  *           us-east-1 egress IPs (observed e.g. 54.173.232.159). Strava does
  *           NOT publish a stable CIDR list, so the allow-list is configurable
@@ -101,7 +106,7 @@ export interface StravaWebhookEnv {
 
 @ApiTags('webhooks')
 @Controller('v1/wearables/webhooks')
-export class StravaWebhookController {
+export class StravaWebhookController implements OnModuleInit {
   private readonly logger = new Logger(StravaWebhookController.name);
   private readonly getEnv: (key: string) => string | undefined;
 
@@ -111,6 +116,22 @@ export class StravaWebhookController {
     env?: Partial<StravaWebhookEnv>,
   ) {
     this.getEnv = env?.getEnv ?? ((k) => process.env[k]);
+  }
+
+  /**
+   * Startup misconfiguration warning (Finding 1). Strava POSTs carry NO HMAC,
+   * so `STRAVA_WEBHOOK_SUBSCRIPTION_ID` is a core compensating control. If it is
+   * unset at boot, log loudly so ops sees it on deploy — the POST handler will
+   * additionally fail closed (503) until it is configured.
+   */
+  onModuleInit(): void {
+    if (!this.getEnv(ENV.subscriptionId)) {
+      this.logger.warn(
+        'strava.webhook.startup: STRAVA_WEBHOOK_SUBSCRIPTION_ID is unset — ' +
+          'Strava POST webhooks will FAIL CLOSED (503) until it is configured. ' +
+          'No events will be processed.',
+      );
+    }
   }
 
   /**
@@ -170,13 +191,25 @@ export class StravaWebhookController {
       throw new BadRequestException('Malformed Strava webhook event');
     }
 
-    // (a) subscription_id must match our configured subscription.
-    const expectedSub = this.getEnv(ENV.subscriptionId);
-    if (expectedSub && String(body.subscription_id) !== expectedSub) {
+    // (a) subscription_id must match our configured subscription — FAIL CLOSED
+    // (Finding 1). Strava POSTs have no HMAC, so an unconfigured subscription
+    // id is a misconfiguration we must NOT process through: 503 when unset,
+    // 403 on mismatch, continue only on an exact match.
+    const configuredSubscriptionId = this.getEnv(ENV.subscriptionId);
+    if (!configuredSubscriptionId) {
+      this.logger.error(
+        JSON.stringify({
+          msg: 'wearables.strava.webhook_misconfigured',
+          reason: 'STRAVA_WEBHOOK_SUBSCRIPTION_ID unset',
+        }),
+      );
+      throw new ServiceUnavailableException('strava_webhook_not_configured');
+    }
+    if (String(body.subscription_id) !== configuredSubscriptionId) {
       this.logger.warn(
         `strava.webhook.event: foreign subscription_id=${body.subscription_id}`,
       );
-      throw new ForbiddenException('Unknown Strava subscription');
+      throw new ForbiddenException('subscription_id_mismatch');
     }
 
     // (c) idempotency. Composite provider_event_id keyed on the natural event
