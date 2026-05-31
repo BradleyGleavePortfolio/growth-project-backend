@@ -61,11 +61,13 @@ import {
  *           (50-Failures #28/#29 replay protection).
  *
  *  3. NO ACTIVITY PAYLOAD. The event carries only an `object_id` reference —
- *     NOT the activity. On a first-time activity create/update we ENQUEUE a
- *     fetch of that activity (the connector's backfill/fetch path then pulls
- *     + normalizes it). We ACK within Strava's 2-second window and do the
- *     fetch asynchronously (durable row + cron, the repo's established queue
- *     pattern) — never inline (#21 no slow webhook).
+ *     NOT the activity. On a first-time activity create/update we DURABLY
+ *     ENQUEUE a fetch of that activity by writing a claimable work row into
+ *     WearableProcessedEvent (see StravaActivityFetchQueue) — so the reference
+ *     survives a crash/restart. We ACK within Strava's 2-second window and do
+ *     the actual fetch asynchronously (durable row + cron, the repo's
+ *     established queue pattern; PR-HK-3 owns the worker) — never inline
+ *     (#21 no slow webhook).
  *
  * The route is @Public() (Strava is not a Supabase user) and throttled.
  */
@@ -84,20 +86,69 @@ const ENV = {
 } as const;
 
 /**
- * Thin enqueue facade for "fetch this just-updated Strava activity". Mirrors
- * the repo's LeadSyncQueue pattern: today the durable transport is a row +
- * cron sweep (no BullMQ in the repo); this seam lets the webhook hand off
- * without knowing the transport, and lets tests assert the handoff without
- * booting a worker. PR-HK-3 (sync worker) owns the actual fetch.
+ * Durable enqueue for "fetch this just-updated Strava activity" (Finding 3,
+ * PR-HK-2.f R1 audit).
+ *
+ * The repo ships NO BullMQ; the established transport is "durable row + cron
+ * sweep" (cf. `LeadSyncQueue`, where the pending lead row IS the queue). The
+ * Strava webhook, however, receives ONLY an activity reference — there is no
+ * pre-existing row for the cron to claim. R1 (correctly) flagged that the
+ * previous facade only logged and dropped the reference, so a restart lost the
+ * work entirely.
+ *
+ * PR-HK-2.f is connector-scoped (file-disjoint mutex under `connectors/strava/`)
+ * so we cannot add a new Prisma model/migration without colliding with the
+ * schema mutex. Instead we persist a durable, claimable WORK ROW into the
+ * existing `WearableProcessedEvent` model (shipped by PR-HK-0), reusing its
+ * indexed `handler_completed_at` column as the claim seam:
+ *
+ *   provider           = STRAVA
+ *   provider_event_id  = `strava:fetch:activity:<activityId>:<ownerId>`  (namespaced
+ *                        so it never collides with a dedup row, which is keyed
+ *                        `<object_type>:<object_id>:<event_time>`)
+ *   type               = 'strava.activity.fetch'
+ *   handler_completed_at = NULL                                          (PENDING)
+ *
+ * A future fetch worker (PR-HK-3, out of this write-set) claims pending work
+ * with `WHERE provider = STRAVA AND type = 'strava.activity.fetch' AND
+ * handler_completed_at IS NULL` (covered by the model's `@@index([handler_completed_at])`),
+ * fetches/normalizes the activity, then stamps `handler_completed_at`. Because
+ * the row is written inside the webhook's synchronous ACK path and `createMany`
+ * `skipDuplicates` makes a re-enqueue idempotent, the work survives a crash or
+ * process restart — satisfying the durability requirement without a migration.
  */
 @Injectable()
 export class StravaActivityFetchQueue {
   private readonly logger = new Logger(StravaActivityFetchQueue.name);
 
-  /** Mark a Strava activity for fetch+normalize. Fire-and-forget. */
+  /** Stable `type` discriminator for Strava activity-fetch work rows. */
+  static readonly FETCH_WORK_TYPE = 'strava.activity.fetch';
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Durably mark a Strava activity for fetch+normalize. Writes a PENDING
+   * (`handler_completed_at = NULL`) work row a PR-HK-3 worker will claim.
+   * Idempotent: a duplicate (owner, activity) enqueue is a no-op via
+   * `skipDuplicates`. Awaited by the webhook BEFORE it ACKs so the work is
+   * persisted before the 200 — a restart never loses the activity reference.
+   */
   async enqueueActivityFetch(ownerId: number, activityId: number): Promise<void> {
-    this.logger.debug(
-      `strava.enqueueActivityFetch owner=${ownerId} activity=${activityId}`,
+    const workId = `strava:fetch:activity:${activityId}:${ownerId}`;
+    const { count } = await this.prisma.wearableProcessedEvent.createMany({
+      data: [
+        {
+          provider: WearableProvider.STRAVA,
+          provider_event_id: workId,
+          type: StravaActivityFetchQueue.FETCH_WORK_TYPE,
+          // handler_completed_at left NULL → PENDING; the worker stamps it.
+        },
+      ],
+      skipDuplicates: true,
+    });
+    this.logger.log(
+      `strava.enqueueActivityFetch owner=${ownerId} activity=${activityId} ` +
+        `persisted=${count === 1 ? 'new' : 'duplicate'} work_id=${workId}`,
     );
   }
 }
@@ -168,9 +219,9 @@ export class StravaWebhookController implements OnModuleInit {
   /**
    * Push event receiver. Validates source IP, Zod-parses the payload (400 on
    * malformed), fail-closes on subscription config (503 unset / 403 mismatch),
-   * dedups via WearableProcessedEvent, then enqueues an activity fetch on first
-   * sight. ALWAYS returns 200 within Strava's 2s window once accepted (the
-   * fetch is async) — but rejects malformed/unauthenticated/foreign or
+   * dedups via WearableProcessedEvent, then DURABLY enqueues an activity fetch
+   * on first sight. ALWAYS returns 200 within Strava's 2s window once accepted
+   * (the fetch is async) — but rejects malformed/unauthenticated/foreign or
    * misconfigured events with 400/403/503.
    */
   @Public()

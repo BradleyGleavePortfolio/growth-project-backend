@@ -15,8 +15,9 @@ import { StravaWebhookEvent } from './strava.types';
  * PR-HK-2.f — Strava webhook controller tests.
  *
  *  - GET subscription challenge: echoes when verify_token matches; 403 else.
- *  - POST events: IP allow-list (mockable), subscription_id match, dedup via
- *    WearableProcessedEvent, enqueue fetch on first-time activity event.
+ *  - POST events: IP allow-list (mockable), Zod payload validation (400),
+ *    fail-closed subscription_id (503 unset / 403 mismatch), dedup via
+ *    WearableProcessedEvent, durable enqueue on first-time activity event.
  */
 
 const ENV: Record<string, string> = {
@@ -295,9 +296,37 @@ describe('StravaWebhookController POST events', () => {
   });
 });
 
-describe('StravaActivityFetchQueue', () => {
-  it('enqueue resolves without throwing (fire-and-forget facade)', async () => {
-    const q = new StravaActivityFetchQueue();
-    await expect(q.enqueueActivityFetch(1, 2)).resolves.toBeUndefined();
+describe('StravaActivityFetchQueue (durable enqueue — Finding 3)', () => {
+  function makeQueue(createManyCount = 1) {
+    const createMany = jest
+      .fn()
+      .mockResolvedValue({ count: createManyCount });
+    const prisma = {
+      wearableProcessedEvent: { createMany },
+    } as unknown as import('../../../prisma.service').PrismaService;
+    return { queue: new StravaActivityFetchQueue(prisma), createMany };
+  }
+
+  it('persists a durable, claimable PENDING work row (owner+activity)', async () => {
+    const { queue, createMany } = makeQueue(1);
+    await queue.enqueueActivityFetch(42, 999);
+
+    expect(createMany).toHaveBeenCalledTimes(1);
+    const arg = createMany.mock.calls[0][0];
+    expect(arg.skipDuplicates).toBe(true);
+    const row = arg.data[0];
+    expect(row.provider).toBe(WearableProvider.STRAVA);
+    // Namespaced so it never collides with a dedup row.
+    expect(row.provider_event_id).toBe('strava:fetch:activity:999:42');
+    expect(row.type).toBe(StravaActivityFetchQueue.FETCH_WORK_TYPE);
+    expect(row.type).toBe('strava.activity.fetch');
+    // PENDING: handler_completed_at NOT set → a worker claims it.
+    expect(row.handler_completed_at).toBeUndefined();
+  });
+
+  it('is idempotent on a duplicate enqueue (skipDuplicates no-op)', async () => {
+    const { queue, createMany } = makeQueue(0);
+    await expect(queue.enqueueActivityFetch(42, 999)).resolves.toBeUndefined();
+    expect(createMany).toHaveBeenCalledTimes(1);
   });
 });
