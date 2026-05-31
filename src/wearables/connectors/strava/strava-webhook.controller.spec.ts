@@ -196,11 +196,76 @@ describe('StravaWebhookController POST events', () => {
     warn.mockRestore();
   });
 
-  it('400s on a malformed event', async () => {
+  // Finding 2 (Zod): malformed payloads → 400 BEFORE any DB write.
+  it('400s on a non-numeric object_id', async () => {
+    const { controller, createMany } = makeController();
+    await expect(
+      controller.handleEvent(goodReq(), {
+        ...baseEvent,
+        object_id: 'nope',
+      } as unknown as StravaWebhookEvent),
+    ).rejects.toThrow(BadRequestException);
+    expect(createMany).not.toHaveBeenCalled();
+  });
+
+  it('400s on a non-numeric owner_id (R1 §2 — owner_id must be numeric)', async () => {
+    const { controller, createMany, enqueueActivityFetch } = makeController();
+    await expect(
+      controller.handleEvent(goodReq(), {
+        ...baseEvent,
+        owner_id: 'attacker',
+      } as unknown as StravaWebhookEvent),
+    ).rejects.toThrow(BadRequestException);
+    expect(createMany).not.toHaveBeenCalled();
+    expect(enqueueActivityFetch).not.toHaveBeenCalled();
+  });
+
+  it('400s on an invalid aspect_type enum value', async () => {
+    const { controller, createMany } = makeController();
+    await expect(
+      controller.handleEvent(goodReq(), {
+        ...baseEvent,
+        aspect_type: 'archive',
+      } as unknown as StravaWebhookEvent),
+    ).rejects.toThrow(BadRequestException);
+    expect(createMany).not.toHaveBeenCalled();
+  });
+
+  it('400s on an invalid object_type enum value', async () => {
     const { controller } = makeController();
     await expect(
       controller.handleEvent(goodReq(), {
-        object_id: 'nope',
+        ...baseEvent,
+        object_type: 'segment',
+      } as unknown as StravaWebhookEvent),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('400s on a missing required field (subscription_id absent)', async () => {
+    const { controller } = makeController();
+    const { subscription_id: _omit, ...partial } = baseEvent;
+    void _omit;
+    await expect(
+      controller.handleEvent(
+        goodReq(),
+        partial as unknown as StravaWebhookEvent,
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('400s on a negative object_id (must be positive)', async () => {
+    const { controller } = makeController();
+    await expect(
+      controller.handleEvent(goodReq(), { ...baseEvent, object_id: -5 }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('400s on unknown extra top-level keys (.strict)', async () => {
+    const { controller } = makeController();
+    await expect(
+      controller.handleEvent(goodReq(), {
+        ...baseEvent,
+        injected: 'x',
       } as unknown as StravaWebhookEvent),
     ).rejects.toThrow(BadRequestException);
   });

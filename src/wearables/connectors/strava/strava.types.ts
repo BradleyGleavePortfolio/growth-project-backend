@@ -16,6 +16,8 @@
  *  - Webhooks: `https://developers.strava.com/docs/webhooks/`
  */
 
+import { z } from 'zod';
+
 /**
  * A Strava "summary activity" as returned by the athlete activities list
  * endpoint. Only the fields the normalizer consumes are typed; the real
@@ -97,6 +99,45 @@ export interface StravaWebhookEvent {
   subscription_id: number;
   updates?: Record<string, string>;
 }
+
+/**
+ * Runtime validation schema for the Strava webhook POST body (Finding 2,
+ * PR-HK-2.f R1 audit). Strava events carry NO HMAC, so the parsed shape is one
+ * of the core compensating controls: the controller MUST reject anything that
+ * does not match this schema with a 400 BEFORE any DB write, IP/subscription
+ * side effect, dedup, or enqueue.
+ *
+ * Constraints (per Strava webhook docs):
+ *  - `aspect_type` ∈ {create, update, delete}.
+ *  - `object_type` ∈ {activity, athlete}.
+ *  - `object_id`, `owner_id`, `subscription_id` are positive integers — Strava
+ *    ids are positive int64. `owner_id` MUST be numeric before it reaches the
+ *    fetch enqueue (R1 §2: a non-numeric owner_id previously could).
+ *  - `event_time` is a positive integer (UNIX seconds).
+ *  - `updates` is an optional string-keyed record of arbitrary values
+ *    (e.g. {title}, or {authorized:"false"} on athlete deauthorization).
+ *  - `.strict()` — reject unknown top-level keys so a malformed-but-truthy
+ *    payload cannot be acknowledged as a valid event.
+ *
+ * The inferred type is structurally compatible with {@link StravaWebhookEvent}
+ * (the `updates` value type is widened to `unknown` here because Strava sends
+ * non-string values in some variants; the controller only reads the typed
+ * scalar fields).
+ */
+export const StravaWebhookEventSchema = z
+  .object({
+    aspect_type: z.enum(['create', 'update', 'delete']),
+    event_time: z.number().int().positive(),
+    object_id: z.number().int().positive(),
+    object_type: z.enum(['activity', 'athlete']),
+    owner_id: z.number().int().positive(),
+    subscription_id: z.number().int().positive(),
+    updates: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
+
+/** The validated Strava webhook event shape (Zod-inferred). */
+export type StravaWebhookEventParsed = z.infer<typeof StravaWebhookEventSchema>;
 
 /**
  * Strava webhook subscription-verification GET query. Strava issues a GET to

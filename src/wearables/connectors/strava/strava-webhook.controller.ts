@@ -20,7 +20,10 @@ import type { Request } from 'express';
 import { WearableProvider } from '@prisma/client';
 import { PrismaService } from '../../../prisma.service';
 import { Public } from '../../../common/decorators/public.decorator';
-import { StravaWebhookEvent } from './strava.types';
+import {
+  StravaWebhookEventSchema,
+  type StravaWebhookEventParsed,
+} from './strava.types';
 
 /**
  * PR-HK-2.f — Strava push-subscription webhook.
@@ -163,10 +166,12 @@ export class StravaWebhookController implements OnModuleInit {
   }
 
   /**
-   * Push event receiver. Validates source IP + subscription id, dedups via
-   * WearableProcessedEvent, then enqueues an activity fetch on first sight.
-   * ALWAYS returns 200 within Strava's 2s window once accepted (the fetch is
-   * async) — but rejects unauthenticated/foreign events with 403/400.
+   * Push event receiver. Validates source IP, Zod-parses the payload (400 on
+   * malformed), fail-closes on subscription config (503 unset / 403 mismatch),
+   * dedups via WearableProcessedEvent, then enqueues an activity fetch on first
+   * sight. ALWAYS returns 200 within Strava's 2s window once accepted (the
+   * fetch is async) — but rejects malformed/unauthenticated/foreign or
+   * misconfigured events with 400/403/503.
    */
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 600 } })
@@ -174,22 +179,17 @@ export class StravaWebhookController implements OnModuleInit {
   @HttpCode(HttpStatus.OK)
   async handleEvent(
     @Req() req: Request,
-    @Body() body: StravaWebhookEvent,
+    @Body() rawBody: unknown,
   ): Promise<{ received: true; deduped: boolean }> {
     // (b) source-IP allow-list.
     this.assertAllowedSourceIp(req);
 
-    // Structural validation (#8) — reject malformed before any DB touch.
-    if (
-      !body ||
-      typeof body.object_id !== 'number' ||
-      typeof body.event_time !== 'number' ||
-      typeof body.subscription_id !== 'number' ||
-      !body.object_type ||
-      !body.aspect_type
-    ) {
-      throw new BadRequestException('Malformed Strava webhook event');
-    }
+    // Schema validation (Finding 2) — Zod parse rejects malformed-but-truthy
+    // payloads (wrong enum, non-numeric/negative ids, missing fields, unknown
+    // keys) with a 400 BEFORE any DB touch, subscription check, dedup, or
+    // enqueue. Never let a parse failure surface as a 500.
+    const parsed = this.parseEvent(rawBody);
+    const body: StravaWebhookEventParsed = parsed;
 
     // (a) subscription_id must match our configured subscription — FAIL CLOSED
     // (Finding 1). Strava POSTs have no HMAC, so an unconfigured subscription
@@ -242,6 +242,24 @@ export class StravaWebhookController implements OnModuleInit {
     }
 
     return { received: true, deduped: false };
+  }
+
+  /**
+   * Validate + parse the webhook body against the Zod schema (Finding 2).
+   * Returns the typed event on success; throws `BadRequestException` (400) on
+   * any schema violation — NEVER a 500. The strict schema also rejects unknown
+   * top-level keys, so a malformed-but-truthy payload cannot be acknowledged.
+   */
+  private parseEvent(rawBody: unknown): StravaWebhookEventParsed {
+    const result = StravaWebhookEventSchema.safeParse(rawBody);
+    if (!result.success) {
+      const issues = result.error.issues
+        .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+        .join('; ');
+      this.logger.warn(`strava.webhook.event: malformed payload — ${issues}`);
+      throw new BadRequestException('Malformed Strava webhook event');
+    }
+    return result.data;
   }
 
   /**
