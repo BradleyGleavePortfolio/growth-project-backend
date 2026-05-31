@@ -21,6 +21,15 @@ import {
 // now enforced in AiService.chat() via a reserve-then-reconcile atomic
 // increment against the Wave-0 UserAIQuota table — see ai.service.ts and the
 // build report.
+//
+// ACCEPTED-LIMITATION (A1, owner-accepted): these character caps and the
+// service-side reservation estimate (chars/APPROX_CHARS_PER_TOKEN) bound the
+// pre-spend gate only on a BEST-EFFORT basis — char-based estimates are not a
+// provable token upper bound (CJK / emoji / base64 can exceed them) and do not
+// count the system-prompt tokens. The EXACT post-call reconcile in
+// AiService.reconcileDailyTokens() is what makes the daily total authoritative;
+// the pre-gate is bounded best-effort. See the ACCEPTED-LIMITATION note in
+// ai.service.ts.
 
 // Conservative caps. A single chat turn and the live message share the same
 // ceiling; the history is bounded so a request can't smuggle an unbounded

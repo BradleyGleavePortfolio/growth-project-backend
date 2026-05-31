@@ -58,44 +58,53 @@ export interface UserContextPayload {
 export const MAX_TOKENS_PER_CALL = 600;
 export const DAILY_TOKEN_QUOTA = 20 * MAX_TOKENS_PER_CALL; // 12000
 
-// A1 (P1) — the daily cap must be a TRUE HARD PRE-SPEND bound on provider TOTAL
-// tokens (prompt + completion), not after-the-fact accounting. We achieve this
-// by making the up-front reservation a PROVEN WORST-CASE UPPER BOUND on the
-// real provider total, so the atomic guarded reservation IS the hard gate:
+// A1 — the daily cap bounds provider TOTAL tokens (prompt + completion). It is
+// enforced as a two-part mechanism: a BOUNDED BEST-EFFORT pre-spend reservation
+// gate, trued up by an EXACT post-call reconcile. The pre-gate works as:
 //
-//   1. ENFORCE a hard input ceiling. We clamp the assembled prompt (system
-//      prompt + history + user message) to MAX_INPUT_CHARS characters BEFORE
-//      sending it, and that clamped text is what every provider branch sends.
-//      Because MAX_INPUT_CHARS maps to MAX_INPUT_TOKENS via a CONSERVATIVE
-//      upper-bound ratio (we assume FEWER chars per token than any real
-//      tokenizer ever produces — i.e. MORE tokens per char), the provider's
-//      real input token count is provably <= MAX_INPUT_TOKENS. Oversized
-//      context/history is truncated (documented, lossy on extreme inputs only).
-//   2. RESERVE the proven worst case = MAX_INPUT_TOKENS + MAX_TOKENS_PER_CALL.
-//      Output is hard-capped at MAX_TOKENS_PER_CALL at the provider, and input
-//      is now hard-capped at MAX_INPUT_TOKENS, so reservation >= real total.
-//   3. RECONCILE DOWN. Since reserved is an upper bound, real total <= reserved
-//      always, so reconciliation only ever DECREMENTS (refunds the
-//      over-reservation). It can never push tokens_used above the cap.
+//   1. CLAMP the assembled prompt's user-controllable tail. We clamp
+//      (history + user message) so the assembled prompt fits MAX_INPUT_CHARS
+//      characters BEFORE sending it, and that clamped text is what every
+//      provider branch sends. Oversized context/history is truncated
+//      (documented, lossy on extreme inputs only).
+//   2. RESERVE an estimated worst case = MAX_INPUT_TOKENS + MAX_TOKENS_PER_CALL,
+//      where MAX_INPUT_TOKENS = MAX_INPUT_CHARS / APPROX_CHARS_PER_TOKEN. Output
+//      is hard-capped at MAX_TOKENS_PER_CALL at the provider.
+//   3. RECONCILE to the provider's ACTUAL reported usage after the call
+//      (decrement-only, underflow-guarded). This post-reconcile is what makes
+//      the running DAILY TOTAL exact and authoritative.
 //
-// CONSERVATIVE_CHARS_PER_TOKEN is deliberately LOW (3, vs the common ~4 average)
-// so chars/3 OVER-estimates token count: the resulting MAX_INPUT_TOKENS is an
-// UPPER bound on what any real tokenizer would charge for MAX_INPUT_CHARS of
-// text. Do NOT raise this toward 4 — that would make the bound a lower estimate
-// and reopen the overshoot hole.
-export const CONSERVATIVE_CHARS_PER_TOKEN = 3;
+// ACCEPTED-LIMITATION (A1, owner-accepted P2/P3 — documented, NOT a defect to
+// fix): the chars/APPROX_CHARS_PER_TOKEN estimate is a HEURISTIC, not a provable
+// token upper bound. CJK text, emoji, and base64 can tokenize to MORE tokens
+// than chars/3 predicts, and the system-prompt / role-framing tokens are not
+// included in the pre-gate clamp. So the pre-gate is BEST-EFFORT and a single
+// over-budget call can transiently overshoot the cap until the EXACT post-call
+// reconcile trues the daily total up. The cap is therefore enforced as a
+// bounded best-effort pre-gate plus an exact, authoritative post-reconcile.
+export const APPROX_CHARS_PER_TOKEN = 3;
 
-// Hard ceiling on the provider INPUT tokens any single call may consume. Half
-// the daily quota, so a single worst-case call (input ceiling + max output)
-// always fits within the daily budget at least once. The assembled prompt is
-// clamped to MAX_INPUT_CHARS = MAX_INPUT_TOKENS * CONSERVATIVE_CHARS_PER_TOKEN
-// so real provider input tokens are provably <= MAX_INPUT_TOKENS.
+// Backward-compatible alias. Older call sites / tests reference
+// CONSERVATIVE_CHARS_PER_TOKEN; it now points at the clearly-named heuristic
+// constant above. NOTE: the name "conservative" overstated the guarantee — the
+// ratio is a best-effort heuristic, not a conservative provable bound (see the
+// ACCEPTED-LIMITATION note above). Value and behavior are unchanged.
+export const CONSERVATIVE_CHARS_PER_TOKEN = APPROX_CHARS_PER_TOKEN;
+
+// Estimated ceiling on the provider INPUT tokens any single call is sized for.
+// Half the daily quota, so a single estimated-worst-case call (input ceiling +
+// max output) always fits within the daily budget at least once. The assembled
+// prompt's user-controllable tail is clamped to MAX_INPUT_CHARS = MAX_INPUT_TOKENS
+// * APPROX_CHARS_PER_TOKEN. Per the ACCEPTED-LIMITATION note above this maps to
+// MAX_INPUT_TOKENS only as a BEST-EFFORT heuristic (not a provable bound); the
+// exact post-call reconcile is what makes the daily total authoritative.
 export const MAX_INPUT_TOKENS = DAILY_TOKEN_QUOTA / 2; // 6000
 export const MAX_INPUT_CHARS = MAX_INPUT_TOKENS * CONSERVATIVE_CHARS_PER_TOKEN; // 18000
 
-// The proven worst-case TOTAL tokens a single call can bill: the enforced input
-// ceiling plus the hard provider output cap. Reserving this up front makes the
-// atomic guarded reservation a TRUE hard pre-spend gate.
+// The estimated worst-case TOTAL tokens a single call is reserved for: the
+// estimated input ceiling plus the hard provider output cap. Reserving this up
+// front is the BOUNDED BEST-EFFORT pre-spend gate (see the ACCEPTED-LIMITATION
+// note above); the exact post-call reconcile trues the daily total up.
 export const PER_CALL_TOKEN_RESERVATION = MAX_INPUT_TOKENS + MAX_TOKENS_PER_CALL; // 6600
 
 // Clamp the user-controllable prompt so the TOTAL assembled text the provider
@@ -103,8 +112,12 @@ export const PER_CALL_TOKEN_RESERVATION = MAX_INPUT_TOKENS + MAX_TOKENS_PER_CALL
 // and is preserved intact (it is app-controlled and bounded by the finite
 // CLIENT_CONTEXT fields, comfortably under the ceiling); only the
 // user-controllable tail (conversation history + the user message) is truncated
-// to fit. This guarantees the assembled input is a provable upper bound, which
-// is what lets the reservation act as a hard pre-spend cap.
+// to fit. NOTE (ACCEPTED-LIMITATION): clamping CHARACTERS bounds the assembled
+// text length, but char count maps to token count only as a best-effort
+// heuristic (chars/APPROX_CHARS_PER_TOKEN), and the system prompt's own tokens
+// are not part of this clamp. The reservation built from it is therefore a
+// best-effort pre-gate, not a provable hard cap; the exact post-call reconcile
+// is authoritative for the daily total.
 //
 // Returns the clamped history (oldest-trimmed, each entry length-bounded) and
 // the clamped user message. The combined length of systemPrompt + the returned
@@ -402,12 +415,28 @@ Now answer the user's next message using the rules above. Keep the answer under 
     const clampedHistory = clamped.history;
     const clampedUserMessage = clamped.userMessage;
 
-    // A1 (P1) — reserve the PROVEN WORST-CASE total: the enforced input ceiling
-    // plus the hard provider output cap. Because the assembled input is clamped
-    // to <= MAX_INPUT_TOKENS and output is capped at MAX_TOKENS_PER_CALL, this
-    // reservation is a true UPPER bound on the provider's real total. That makes
-    // the atomic guarded reservation a HARD PRE-SPEND gate: a call that would
-    // exceed the cap is rejected BEFORE any provider call.
+    // A1 — reserve the worst-case total estimate for this call: the enforced
+    // input-char ceiling (mapped to tokens via APPROX_CHARS_PER_TOKEN) plus the
+    // hard provider output cap (MAX_TOKENS_PER_CALL). The assembled input is
+    // clamped to MAX_INPUT_CHARS and output is hard-capped at the provider, so
+    // this reservation is the up-front PRE-GATE the daily cap is enforced with.
+    //
+    // ACCEPTED-LIMITATION (A1, owner-accepted P2/P3 — documented, NOT fixed):
+    // The pre-gate is BOUNDED BEST-EFFORT, not a provable hard upper bound.
+    //  (a) chars/APPROX_CHARS_PER_TOKEN (chars/3) is a HEURISTIC estimate of
+    //      token count, NOT a provable upper bound. Inputs such as CJK text,
+    //      emoji, or base64 blobs can tokenize to MORE tokens than chars/3
+    //      predicts, so the real provider input can exceed the estimate.
+    //  (b) the input clamp bounds only the user-controllable tail (history +
+    //      user message); the SYSTEM PROMPT / role-framing tokens are NOT
+    //      counted in the pre-gate clamp, so the estimate omits them.
+    // Consequently a single over-budget call can TRANSIENTLY overshoot the daily
+    // cap before reconcile runs. Correctness of the DAILY TOTAL is guaranteed
+    // NOT by this pre-gate but by the EXACT post-call reconcile below, which
+    // DECREMENTS the ledger by the provider's ACTUAL reported usage. So the cap
+    // is enforced as: bounded best-effort pre-gate + exact post-reconcile, and
+    // the post-reconcile is the authoritative source of the running total. The
+    // product owner has accepted this bounded best-effort behavior for merge.
     const reservation = PER_CALL_TOKEN_RESERVATION;
 
     // A1 (P1) — enforce the per-user DAILY token quota as a HARD pre-spend

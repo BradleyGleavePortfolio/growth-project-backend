@@ -620,6 +620,47 @@ describe('AiService.chat daily token quota (A1)', () => {
     expect(row.tokens_used).toBeLessThan(PER_CALL_TOKEN_RESERVATION);
     expect(row.tokens_used).toBeLessThanOrEqual(DAILY_TOKEN_QUOTA);
   });
+
+  // ACCEPTED-LIMITATION CONTRACT (A1, owner-accepted P2/P3) — the pre-spend
+  // reservation is only a BOUNDED BEST-EFFORT estimate (chars/APPROX_CHARS_PER_TOKEN
+  // is a heuristic, not a provable token upper bound, and it omits the system
+  // prompt). What makes the DAILY TOTAL correct is the EXACT post-call reconcile:
+  // after reconcile the ledger equals the provider's ACTUAL reported usage,
+  // regardless of whether the pre-estimate over- or under-counted. This test
+  // documents that the reconcile is AUTHORITATIVE. It deliberately does NOT
+  // assert the pre-gate is a hard upper bound on real tokens (it is not).
+  it('reconcile is authoritative: daily total equals ACTUAL usage even when the pre-estimate mis-counts', async () => {
+    // Case 1 — pre-estimate OVER-counts. The worst-case reservation (6600) is
+    // far above the tiny real usage; after reconcile the ledger equals the real
+    // 42 tokens, not the reservation.
+    mockCreate.mockResolvedValueOnce({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { total_tokens: 42 },
+    });
+    const over = makeService();
+    await over.svc.chat('u1', 'short question', []);
+    const overRow = [...over.quota.rows.values()][0];
+    expect(overRow.tokens_used).toBe(42); // == actual, the reconcile is authoritative
+    expect(overRow.tokens_used).not.toBe(PER_CALL_TOKEN_RESERVATION);
+
+    // Case 2 — pre-estimate UNDER-counts the input. A short ASCII message would
+    // be estimated cheaply by chars/3, but the provider reports a much larger
+    // real TOTAL (e.g. heavy tokenization the heuristic cannot foresee — CJK /
+    // emoji / base64, plus the uncounted system-prompt tokens). The reconcile
+    // still sets the ledger to the TRUE reported usage; we do NOT assert the
+    // pre-gate bounded it, because the pre-gate is best-effort, not a hard cap.
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValueOnce({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { total_tokens: 5200 },
+    });
+    const under = makeService();
+    await under.svc.chat('u1', 'hi', []); // tiny input, large real usage
+    const underRow = [...under.quota.rows.values()][0];
+    // The daily total reflects the provider's ACTUAL usage, not the cheap
+    // char-based pre-estimate of this short message.
+    expect(underRow.tokens_used).toBe(5200);
+  });
 });
 
 // P1 (R4) — unit-test the prompt clamp directly: the assembled prompt the
