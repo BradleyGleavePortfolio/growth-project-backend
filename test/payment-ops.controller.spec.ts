@@ -1,8 +1,11 @@
 import { NotFoundException } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import {
   AdminPaymentOpsController,
   CoachPaymentOpsController,
 } from '../src/checkout/payment-ops.controller';
+import { CursorPageQueryDto } from '../src/checkout/payment-ops.dto';
 import { DunningService } from '../src/checkout/dunning.service';
 import { PurchaseSplitHandlerService } from '../src/checkout/purchase-split-handler.service';
 import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
@@ -705,5 +708,93 @@ describe('CoachPaymentOpsController', () => {
     expect(lines[0]).toContain('amount_cents');
     expect(csv).toContain('me-le0');
     expect(csv).not.toContain('other-le0');
+  });
+
+  it('B6: export.csv drains MULTIPLE cursor batches and does NOT truncate the full ledger', async () => {
+    // Regression for the silent maxRows=100_000 truncation: the batch loop
+    // must keep paging via the id-stable cursor until the ledger is fully
+    // exhausted. Seed well past the 500-row batch size to force several
+    // round-trips and assert EVERY row is present.
+    const { ctrl, prisma } = makeCoachController();
+    const n = 1_250; // > 2 full batches of 500
+    seedLedger(prisma, 'me', n);
+    const headers: Record<string, string> = {};
+    const res: any = { setHeader: (k: string, v: string) => (headers[k] = v) };
+    const csv = await ctrl.exportEarningsCsv(makeReq('me'), res);
+    const lines = csv.trim().split('\r\n');
+    // 1 header + every one of the n payee rows (no silent cap).
+    expect(lines).toHaveLength(n + 1);
+    // The first and last seeded rows must both be present (nothing dropped
+    // off the front or the tail of the export).
+    expect(csv).toContain('me-le0');
+    expect(csv).toContain(`me-le${n - 1}`);
+    // The findMany mock must have been invoked more than once -> proves the
+    // export issued multiple bounded cursor batches rather than one query.
+    expect(
+      (prisma.splitLedgerEntry.findMany as jest.Mock).mock.calls.length,
+    ).toBeGreaterThan(1);
+  });
+});
+
+// --- DTO strict-validation: CursorPageQueryDto.limit must reject malformed
+// partially-numeric values instead of silently coercing them (P2 fix). These
+// run the value through class-transformer + class-validator exactly as the
+// global ValidationPipe (transform:true) does in production.
+describe('CursorPageQueryDto.limit strict validation', () => {
+  async function runLimit(raw: unknown) {
+    const dto = plainToInstance(
+      CursorPageQueryDto,
+      { limit: raw },
+      { enableImplicitConversion: false },
+    );
+    const errors = await validate(dto);
+    return { dto, errors };
+  }
+
+  it('accepts a clean integer string and converts it to a number', async () => {
+    const { dto, errors } = await runLimit('50');
+    expect(errors).toHaveLength(0);
+    expect(dto.limit).toBe(50);
+    expect(typeof dto.limit).toBe('number');
+  });
+
+  it.each(['50abc', '99x', '100foo', '1.5', '1e2', '0x10', 'abc', ' 50 0'])(
+    'rejects malformed limit %p with a validation error (no silent coercion)',
+    async (raw) => {
+      const { errors } = await runLimit(raw);
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors[0].property).toBe('limit');
+    },
+  );
+
+  it('does NOT coerce "50abc" to 50 (parseInt regression guard)', async () => {
+    const { dto, errors } = await runLimit('50abc');
+    expect(errors.length).toBeGreaterThan(0);
+    expect(dto.limit).not.toBe(50);
+  });
+
+  it('rejects an out-of-range integer (over max)', async () => {
+    const { errors } = await runLimit('101');
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0].property).toBe('limit');
+  });
+
+  it('rejects a below-min integer', async () => {
+    const { errors } = await runLimit('0');
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it('treats an omitted limit as optional (no error)', async () => {
+    const dto = plainToInstance(CursorPageQueryDto, {});
+    const errors = await validate(dto);
+    expect(errors).toHaveLength(0);
+    expect(dto.limit).toBeUndefined();
+  });
+
+  it('rejects a malformed (non-UUID) cursor', async () => {
+    const dto = plainToInstance(CursorPageQueryDto, { cursor: 'not-a-uuid' });
+    const errors = await validate(dto);
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0].property).toBe('cursor');
   });
 });
