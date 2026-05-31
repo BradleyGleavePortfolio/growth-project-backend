@@ -8,14 +8,25 @@ import { IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
 // the pagination + CSV idiom here is self-contained and does not couple
 // payment-ops to another module's internals.
 
-// Coerce a query-string scalar into an int. Mirrors the repo idiom in
-// bloodwork.dto.ts so the global ValidationPipe (transform:true) hands the
-// handler a real number, and a non-numeric value falls through to @IsInt
-// for a clean 400 rather than being silently dropped.
+// Strictly coerce a query-string scalar into an int for the global
+// ValidationPipe (transform:true). Unlike parseInt, this does NOT silently
+// accept partially-numeric garbage: only a string that is EXACTLY a base-10
+// integer (optional sign, all digits, no decimal point, no exponent, no
+// trailing suffix) is converted to a number. Anything else is returned
+// unchanged so @IsInt rejects it with a clean 400 instead of being coerced
+// (e.g. "50abc" -> "50abc" -> 400, not 50; "1.5", "1e2", "0x10" likewise).
+const STRICT_INT_RE = /^[+-]?\d+$/;
 const coerceInt = ({ value }: { value: unknown }) => {
   if (value === undefined || value === null || value === '') return undefined;
-  const n = parseInt(String(value), 10);
-  return Number.isNaN(n) ? value : n;
+  // A value that is already a real JS number: keep integers, let @IsInt
+  // reject non-integers (e.g. 1.5) rather than truncating them.
+  if (typeof value === 'number') return value;
+  const s = String(value).trim();
+  if (!STRICT_INT_RE.test(s)) return value;
+  const n = Number(s);
+  // Guard against values past Number's safe-integer range (which @IsInt /
+  // @Max would otherwise mishandle); preserve the raw string so it 400s.
+  return Number.isSafeInteger(n) ? n : value;
 };
 
 // Default page size and hard cap for the coach-facing cursor lists. The

@@ -719,16 +719,15 @@ export class CoachPaymentOpsController {
       'created_at',
     ] as const;
     const rows: Array<Record<string, unknown>> = [];
-    // Bounded batch loop — pull EARNINGS_EXPORT_BATCH rows at a time using
-    // the id-stable cursor until the ledger is drained. Each query is
-    // capped, so memory/DB pressure stays bounded per round-trip while the
-    // export still covers the full payee history.
+    // Bounded batch loop — pull `batchSize` rows at a time using the
+    // id-stable cursor and continue until the payee ledger is fully drained.
+    // Each query is capped (so memory/DB pressure stays bounded per
+    // round-trip), but there is NO total-row cap: the export genuinely
+    // covers the coach's entire ledger rather than silently truncating at a
+    // fixed ceiling and returning a partial file as if it were complete.
     const batchSize = 500;
     let cursorId: string | undefined;
-    // Hard ceiling on total rows so a pathological ledger can't OOM the
-    // process; in practice no coach approaches this.
-    const maxRows = 100_000;
-    while (rows.length < maxRows) {
+    for (;;) {
       const batch = await this.prisma.splitLedgerEntry.findMany({
         where: { payee_user_id: req.user.id },
         orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
