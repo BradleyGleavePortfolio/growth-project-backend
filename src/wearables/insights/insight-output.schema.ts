@@ -45,14 +45,21 @@ export const ALL_SOURCE_METRICS: readonly WearableMetricType[] = METRIC_VALUES;
 // ── Coach payload ──────────────────────────────────────────────────────
 // observation → hypothesis → suggested_action + a ready-to-edit message
 // draft. The draft is NEVER auto-sent (PR-HK-6 owns the approval loop).
-export const CoachInsightSchema = z.object({
-  observation: z.string().min(1).max(280),
-  hypothesis: z.string().min(1).max(280),
-  suggested_action: z.string().min(1).max(280),
-  suggested_message_draft: z.string().min(1).max(1000),
-  confidence_level: ConfidenceLevelSchema,
-  source_metrics: SourceMetricsSchema,
-});
+// .strict() — exact-field validation. The model is contractually bound to
+// the coach field set; any extra key (e.g. a client-only field, or a
+// prompt-injection attempt that smuggles in an unexpected key) is a hard
+// validation failure rather than being silently stripped (audit R1 #2,
+// schema-isolation #5).
+export const CoachInsightSchema = z
+  .object({
+    observation: z.string().min(1).max(280),
+    hypothesis: z.string().min(1).max(280),
+    suggested_action: z.string().min(1).max(280),
+    suggested_message_draft: z.string().min(1).max(1000),
+    confidence_level: ConfidenceLevelSchema,
+    source_metrics: SourceMetricsSchema,
+  })
+  .strict();
 export type CoachInsight = z.infer<typeof CoachInsightSchema>;
 
 // ── Client payload ─────────────────────────────────────────────────────
@@ -60,19 +67,24 @@ export type CoachInsight = z.infer<typeof CoachInsightSchema>;
 // deep-links into the app. The deep-link is constrained to the `tgp://`
 // scheme so a model can never smuggle an http(s)/javascript link into a
 // tappable affordance (defence-in-depth alongside the renderer).
-export const ClientInsightSchema = z.object({
-  observation: z.string().min(1).max(280),
-  norm_comparison: z.string().min(1).max(280),
-  intervention: z.string().min(1).max(280),
-  optional_cta: z
-    .object({
-      label: z.string().min(1).max(40),
-      deep_link: z.string().regex(/^tgp:\/\//),
-    })
-    .nullable(),
-  confidence_level: ConfidenceLevelSchema,
-  source_metrics: SourceMetricsSchema,
-});
+// .strict() — exact-field validation, same rationale as the coach schema.
+// A model response containing coach-only fields (hypothesis, etc.) on a
+// client payload is rejected, never accepted-and-stripped.
+export const ClientInsightSchema = z
+  .object({
+    observation: z.string().min(1).max(280),
+    norm_comparison: z.string().min(1).max(280),
+    intervention: z.string().min(1).max(280),
+    optional_cta: z
+      .object({
+        label: z.string().min(1).max(40),
+        deep_link: z.string().regex(/^tgp:\/\//),
+      })
+      .nullable(),
+    confidence_level: ConfidenceLevelSchema,
+    source_metrics: SourceMetricsSchema,
+  })
+  .strict();
 export type ClientInsight = z.infer<typeof ClientInsightSchema>;
 
 // Audience discriminator used as the cache-key prefix and the controller
