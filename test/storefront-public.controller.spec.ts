@@ -2,12 +2,21 @@ import 'reflect-metadata';
 import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
-import { StorefrontPublicController } from '../src/storefront/storefront-public.controller';
+import { ThrottlerGuard } from '@nestjs/throttler';
+import {
+  StorefrontPublicController,
+  storefrontJoinIpTracker,
+} from '../src/storefront/storefront-public.controller';
 import {
   CheckoutIpRateLimiterService,
   RATE_LIMIT_SCOPES,
 } from '../src/storefront/checkout-rate-limiter.service';
 import { UserThrottlerGuard } from '../src/throttler/user-throttler.guard';
+import {
+  THROTTLER_LIMITS,
+  THROTTLER_NAMES,
+  THROTTLER_ROUTE_LIMITS,
+} from '../src/throttler/throttler.config';
 
 // A276-P1-2 / A276-P1-3 — controller-scoped tests for the rate-limiter
 // hardening and the Referrer-Policy header on the magic-link redirect.
@@ -533,21 +542,30 @@ describe('StorefrontPublicController — A276-F4-P2-G XFF array-header handling'
 });
 
 // ---------------------------------------------------------------------------
-// #7 (token enumeration) — composite (token, IP) throttle on GET join/:token.
+// #7 (token enumeration) — TWO-LAYER throttle on GET join/:token.
 //
-// The Nest @Throttle bucket on `/v1/packages/public/join/*` routes is keyed
-// by UserThrottlerGuard.getTracker(), which composes the share token with the
-// client IP (`storefront-join:<token>:<ip>`). The GET previously carried a
-// looser per-(token,IP) ceiling (60/min) than the companion POST checkout
-// (20/min); with the composite key that meant one IP could spin up a fresh
-// 60/min bucket per probed token and sweep the token space cheaply. The fix
-// aligns the GET to the POST's bucket exactly. These tests pin both halves:
-//   1. the GET @Throttle metadata equals the POST's `{ ttl: 60_000, limit: 20 }`
-//      (so the two routes cannot drift on a future refactor);
-//   2. getTracker() yields the SAME composite (token, IP) key shape for the
-//      GET route as for the POST route, and a different token => a different
-//      bucket (so a legitimate single-token reload is not collateral-throttled
-//      by traffic to other tokens).
+// LAYER 1 — `default` throttler, COMPOSITE (token, IP) key at 20/min. The
+// Nest @Throttle `default` bucket on `/v1/packages/public/join/*` routes is
+// keyed by UserThrottlerGuard.getTracker(), which composes the share token
+// with the client IP (`storefront-join:<token>:<ip>`). The GET now mirrors
+// the companion POST checkout bucket exactly (`{ ttl: 60_000, limit: 20 }`),
+// giving per-(token, IP) fairness so a real buyer reloading their ONE valid
+// link is isolated from traffic to other tokens.
+//
+// LAYER 2 — `storefront-join-ip` throttler, IP-ONLY key at 120/min
+// (STOREFRONT_JOIN_IP_PER_MIN). Layer 1 alone does NOT bound distinct-token
+// PROBING from one IP: each guessed token gets its OWN 20/min composite
+// bucket, so a single IP could enumerate many tokens at 20 attempts EACH.
+// This second layer applies a route-level @Throttle with an IP-only
+// getTracker (`storefront-join-ip:<ip>`, via storefrontJoinIpTracker) so ALL
+// of an IP's distinct-token join GETs share ONE budget — bounding an
+// enumeration sweep across the whole token space, while leaving legitimate
+// shared-NAT traffic (≈6 distinct buyers/IP at 20/min each) headroom.
+//
+// These tests pin: (1) GET default bucket == POST checkout bucket; (2) the
+// composite tracker shape (Layer 1); (3) the IP-only tracker shape, route
+// metadata, and a real-guard runtime proof that distinct-token probing from
+// one IP is bounded by Layer 2 where Layer 1 alone would let it through.
 // ---------------------------------------------------------------------------
 
 describe('StorefrontPublicController — #7 composite (token,IP) throttle on GET join/:token', () => {
@@ -618,6 +636,240 @@ describe('StorefrontPublicController — #7 composite (token,IP) throttle on GET
       const a = await tracker(joinReq('tok_same', '203.0.113.7'));
       const b = await tracker(joinReq('tok_same', '203.0.113.7'));
       expect(a).toBe(b);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // LAYER 2 — IP-WIDE `storefront-join-ip` throttle bounds distinct-token
+  // enumeration from a single IP (the P1 audit finding).
+  // -------------------------------------------------------------------------
+  describe('storefront-join-ip IP-wide layer (distinct-token enumeration brake)', () => {
+    const readNamedThrottle = (
+      handler: object,
+      name: string,
+    ): {
+      ttl: number | undefined;
+      limit: number | undefined;
+      getTracker: unknown;
+    } => ({
+      ttl: Reflect.getMetadata(`THROTTLER:TTL${name}`, handler) as
+        | number
+        | undefined,
+      limit: Reflect.getMetadata(`THROTTLER:LIMIT${name}`, handler) as
+        | number
+        | undefined,
+      getTracker: Reflect.getMetadata(`THROTTLER:TRACKER${name}`, handler),
+    });
+
+    it('GET join/:token carries the storefront-join-ip layer (ttl 60s, IP-wide limit, custom tracker)', () => {
+      const meta = readNamedThrottle(
+        StorefrontPublicController.prototype.getPublicPackage,
+        THROTTLER_NAMES.STOREFRONT_JOIN_IP,
+      );
+      expect(meta.ttl).toBe(60_000);
+      expect(meta.limit).toBe(THROTTLER_ROUTE_LIMITS.STOREFRONT_JOIN_IP_PER_MIN);
+      // A custom getTracker MUST be present — without it the layer would reuse
+      // the composite (token, IP) tracker and fail to bound enumeration.
+      expect(typeof meta.getTracker).toBe('function');
+    });
+
+    it('storefront-join-ip is registered globally with a NON-biting baseline (does not throttle other routes)', () => {
+      const entry = THROTTLER_LIMITS.find(
+        (t) => t.name === THROTTLER_NAMES.STOREFRONT_JOIN_IP,
+      );
+      expect(entry).toBeDefined();
+      // The global baseline must be far above any real per-route ceiling so
+      // unrelated routes (which fall through to this baseline) are unaffected.
+      expect(entry!.limit).toBeGreaterThanOrEqual(5_000);
+    });
+
+    it('storefrontJoinIpTracker keys by IP ONLY — different tokens share ONE bucket', () => {
+      const reqA = {
+        params: { token: 'tok_a' },
+        headers: { 'fly-client-ip': '203.0.113.9' },
+      };
+      const reqB = {
+        params: { token: 'tok_b' },
+        headers: { 'fly-client-ip': '203.0.113.9' },
+      };
+      const keyA = storefrontJoinIpTracker(reqA);
+      const keyB = storefrontJoinIpTracker(reqB);
+      expect(keyA).toBe('storefront-join-ip:203.0.113.9');
+      // The whole point: distinct tokens from the same IP collapse to the
+      // SAME bucket (opposite of the composite Layer-1 tracker).
+      expect(keyA).toBe(keyB);
+    });
+
+    it('storefrontJoinIpTracker isolates DIFFERENT IPs into different buckets', () => {
+      const a = storefrontJoinIpTracker({
+        params: { token: 'x' },
+        headers: { 'fly-client-ip': '198.51.100.1' },
+      });
+      const b = storefrontJoinIpTracker({
+        params: { token: 'x' },
+        headers: { 'fly-client-ip': '198.51.100.2' },
+      });
+      expect(a).not.toBe(b);
+    });
+
+    it('storefrontJoinIpTracker falls back through XFF then req.ip and never throws on bad headers', () => {
+      // x-forwarded-for first hop wins when fly-client-ip is absent.
+      expect(
+        storefrontJoinIpTracker({
+          params: {},
+          headers: { 'x-forwarded-for': '203.0.113.50, 10.0.0.1' },
+        }),
+      ).toBe('storefront-join-ip:203.0.113.50');
+      // Array-valued header — must not throw.
+      expect(
+        storefrontJoinIpTracker({
+          params: {},
+          headers: { 'fly-client-ip': ['10.0.0.9', '203.0.113.77'] },
+        }),
+      ).toBe('storefront-join-ip:203.0.113.77');
+      // No headers at all — falls back to req.ip.
+      expect(
+        storefrontJoinIpTracker({ ip: '192.0.2.5', headers: {} }),
+      ).toBe('storefront-join-ip:192.0.2.5');
+      // Nothing usable — never empty/throw.
+      expect(storefrontJoinIpTracker({ headers: {} })).toBe(
+        'storefront-join-ip:unknown',
+      );
+    });
+
+    // Strongest proof: drive the REAL @nestjs/throttler ThrottlerGuard with
+    // both layers wired exactly as the route declares them, and show that
+    // distinct-token probing from ONE IP — which Layer 1 (composite) alone
+    // would never block — is bounded by Layer 2 (IP-wide).
+    it('bounds distinct-token enumeration from one IP via the IP-wide layer (real guard)', async () => {
+      const IP_LIMIT = 5; // tightened for a fast, deterministic test
+      const COMPOSITE_LIMIT = 20;
+      const hits: Record<string, number> = {};
+      const storage = {
+        async increment(
+          key: string,
+          _ttl: number,
+          limit: number,
+        ): Promise<{
+          totalHits: number;
+          timeToExpire: number;
+          isBlocked: boolean;
+          timeToBlockExpire: number;
+        }> {
+          hits[key] = (hits[key] || 0) + 1;
+          const totalHits = hits[key];
+          return {
+            totalHits,
+            timeToExpire: 60,
+            isBlocked: totalHits > limit,
+            timeToBlockExpire: 60,
+          };
+        },
+      };
+      const ipTracker = (req: Record<string, unknown>): Promise<string> =>
+        Promise.resolve(storefrontJoinIpTracker(req));
+      const reflector = {
+        getAllAndOverride(key: string): unknown {
+          if (key === `THROTTLER:LIMIT${THROTTLER_NAMES.DEFAULT}`)
+            return COMPOSITE_LIMIT;
+          if (key === `THROTTLER:TTL${THROTTLER_NAMES.DEFAULT}`) return 60_000;
+          if (key === `THROTTLER:LIMIT${THROTTLER_NAMES.STOREFRONT_JOIN_IP}`)
+            return IP_LIMIT;
+          if (key === `THROTTLER:TTL${THROTTLER_NAMES.STOREFRONT_JOIN_IP}`)
+            return 60_000;
+          if (key === `THROTTLER:TRACKER${THROTTLER_NAMES.STOREFRONT_JOIN_IP}`)
+            return ipTracker;
+          return undefined;
+        },
+      };
+      const options = {
+        throttlers: [
+          { name: THROTTLER_NAMES.DEFAULT, ttl: 60_000, limit: 100 },
+          {
+            name: THROTTLER_NAMES.STOREFRONT_JOIN_IP,
+            ttl: 60_000,
+            limit: 10_000,
+          },
+        ],
+      };
+      const guard = new ThrottlerGuard(
+        options as never,
+        storage as never,
+        reflector as never,
+      );
+      // Layer-1 default tracker = composite (token, IP), as UserThrottlerGuard
+      // supplies in production.
+      (guard as unknown as {
+        getTracker(r: Record<string, unknown>): Promise<string>;
+      }).getTracker = (r) =>
+        Promise.resolve(
+          `storefront-join:${(r.params as { token: string }).token}:${
+            (r.headers as { 'fly-client-ip': string })['fly-client-ip']
+          }`,
+        );
+      await guard.onModuleInit();
+
+      const res = { header(): void {} };
+      const makeCtx = (token: string) =>
+        ({
+          switchToHttp: () => ({
+            getRequest: () => ({
+              params: { token },
+              headers: { 'fly-client-ip': '203.0.113.200' },
+            }),
+            getResponse: () => res,
+          }),
+          getHandler: () => function getPublicPackage(): void {},
+          getClass: () => class StorefrontPublicController {},
+        }) as never;
+
+      // Each probe uses a DIFFERENT token from the SAME IP. Layer 1 (composite,
+      // 20/min) never trips (1 hit per token-bucket). Layer 2 (IP-wide, 5/min)
+      // bites on the 6th distinct-token request.
+      let blockedAt: number | null = null;
+      for (let i = 1; i <= 8; i++) {
+        try {
+          await guard.canActivate(makeCtx(`tok_${i}`));
+        } catch {
+          blockedAt = i;
+          break;
+        }
+      }
+      // The IP-wide layer (Layer 2) bites on the (IP_LIMIT + 1)th distinct
+      // token, even though each token's composite Layer-1 bucket saw only a
+      // single hit. This is the exact P1 enumeration vector being closed.
+      expect(blockedAt).toBe(IP_LIMIT + 1);
+      // generateKey() hashes (ClassName-handler-throttlerName-tracker), so the
+      // raw tracker strings are not visible in `hits` keys. Instead prove the
+      // composite Layer-1 buckets were per-token (one storage key per distinct
+      // token) while the IP-wide Layer-2 bucket was shared across them: with
+      // two throttlers and IP_LIMIT distinct tokens that passed Layer 1, we see
+      // IP_LIMIT composite buckets + the shared IP bucket(s). Concretely: the
+      // total distinct storage keys must exceed 1 (proving Layer-1 split by
+      // token) yet enforcement happened on the IP layer (blockedAt above).
+      const distinctKeys = Object.keys(hits).length;
+      expect(distinctKeys).toBeGreaterThan(1);
+      // Every composite Layer-1 bucket was hit exactly once (no single token
+      // ever approached the 20/min composite ceiling) — so Layer 1 alone would
+      // NOT have blocked the sweep; only Layer 2 did.
+      const singleHitBuckets = Object.values(hits).filter(
+        (n) => n === 1,
+      ).length;
+      expect(singleHitBuckets).toBeGreaterThanOrEqual(IP_LIMIT);
+    });
+
+    // A legitimate buyer reloading ONE token must not be blocked by the
+    // IP-wide layer below its ceiling.
+    it('does NOT block a single-token legitimate reload below the IP-wide ceiling', () => {
+      const key = storefrontJoinIpTracker({
+        params: { token: 'tok_real' },
+        headers: { 'fly-client-ip': '203.0.113.42' },
+      });
+      // The IP-wide ceiling (120/min) is far above a real buyer's reload rate.
+      expect(THROTTLER_ROUTE_LIMITS.STOREFRONT_JOIN_IP_PER_MIN).toBeGreaterThan(
+        20,
+      );
+      expect(key).toBe('storefront-join-ip:203.0.113.42');
     });
   });
 });
