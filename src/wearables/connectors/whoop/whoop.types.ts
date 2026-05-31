@@ -21,6 +21,8 @@
  *   https://developer.whoop.com/api/  (UUID ids, offline scope, v2 webhooks).
  */
 
+import { z } from 'zod';
+
 /**
  * Common scoring envelope on WHOOP v2 records. `score_state` is `SCORED`
  * once WHOOP has finished computing the record; `PENDING_SCORE` /
@@ -238,6 +240,47 @@ export interface WhoopWebhookPayload {
   /** WHOOP trace id for cross-system correlation (best-effort). */
   trace_id?: string;
 }
+
+/** All WHOOP v2 webhook event types we accept (drives the Zod enum below). */
+export const WHOOP_WEBHOOK_TYPES = [
+  'recovery.updated',
+  'recovery.deleted',
+  'cycle.updated',
+  'cycle.deleted',
+  'sleep.updated',
+  'sleep.deleted',
+  'workout.updated',
+  'workout.deleted',
+  'user.updated',
+  'user.deauthorized',
+] as const satisfies readonly WhoopWebhookType[];
+
+/**
+ * Runtime validation schema for an inbound (already HMAC-verified) WHOOP v2
+ * webhook event. The controller parses the verified body through this BEFORE
+ * any dedup / revocation / logging so a correctly-signed-but-malformed event
+ * (bad UUID, unknown type, non-positive user_id, extra fields) is rejected
+ * with a 400 rather than flowing into business logic (R1 Finding 2 — HIGH).
+ *
+ *  - `id`       — must be a UUID (the v2 event id + dedup key segment).
+ *  - `type`     — must be one of the known WHOOP v2 event types.
+ *  - `user_id`  — must be a positive integer (WHOOP account id).
+ *  - `trace_id` — optional correlation id.
+ *
+ * `.strict()` rejects unknown keys so a drifted/forged payload cannot smuggle
+ * extra fields past validation (50-Failures #42 — no speculative fields).
+ */
+export const WhoopWebhookEventSchema = z
+  .object({
+    id: z.string().uuid(),
+    type: z.enum(WHOOP_WEBHOOK_TYPES),
+    user_id: z.number().int().positive(),
+    trace_id: z.string().optional(),
+  })
+  .strict();
+
+/** The validated, parsed webhook event (mirrors {@link WhoopWebhookPayload}). */
+export type WhoopWebhookEvent = z.infer<typeof WhoopWebhookEventSchema>;
 
 /** Lower-cased WHOOP webhook header names (Stripe-pattern raw-body HMAC). */
 export const WHOOP_SIGNATURE_HEADER = 'x-whoop-signature';

@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
 import { KmsService } from '../../../common/kms/kms.service';
 import { ProviderHttpClient } from '../../http/provider-http-client';
@@ -10,6 +10,10 @@ import {
 } from './whoop.types';
 
 const SECRET = 'whoop-test-secret';
+// Valid v2 event ids are UUIDs (the schema enforces this).
+const EVT_UUID = '11111111-1111-4111-8111-111111111111';
+const EVT_UUID_2 = '22222222-2222-4222-8222-222222222222';
+const EVT_UUID_3 = '33333333-3333-4333-8333-333333333333';
 
 interface PrismaMock {
   wearableProcessedEvent: {
@@ -77,7 +81,7 @@ describe('WhoopWebhookController', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('accepts a valid, signed data event and records it for dedup', async () => {
-    const body = { id: 'evt-1', type: 'recovery.updated', user_id: 7 };
+    const body = { id: EVT_UUID, type: 'recovery.updated', user_id: 7 };
     const rawBody = Buffer.from(JSON.stringify(body));
     const headers = signedHeaders(rawBody);
 
@@ -93,7 +97,7 @@ describe('WhoopWebhookController', () => {
     expect(arg.skipDuplicates).toBe(true);
     expect(arg.data[0]).toMatchObject({
       provider: 'WHOOP',
-      provider_event_id: 'evt-1',
+      provider_event_id: EVT_UUID,
       type: 'recovery.updated',
     });
     // handler_completed_at stamped.
@@ -101,7 +105,7 @@ describe('WhoopWebhookController', () => {
   });
 
   it('rejects a bad signature with 401 and never records the event', async () => {
-    const rawBody = Buffer.from(JSON.stringify({ id: 'evt-1', type: 'sleep.updated' }));
+    const rawBody = Buffer.from(JSON.stringify({ id: EVT_UUID, type: 'sleep.updated', user_id: 7 }));
     const headers = signedHeaders(rawBody);
     headers[WHOOP_SIGNATURE_HEADER] = 'tampered';
 
@@ -124,7 +128,7 @@ describe('WhoopWebhookController', () => {
 
   it('treats a redelivered event as a replay no-op (duplicate:true)', async () => {
     prisma.wearableProcessedEvent.createMany.mockResolvedValueOnce({ count: 0 });
-    const body = { id: 'evt-dup', type: 'workout.updated', user_id: 7 };
+    const body = { id: EVT_UUID_2, type: 'workout.updated', user_id: 7 };
     const rawBody = Buffer.from(JSON.stringify(body));
     const headers = signedHeaders(rawBody);
 
@@ -141,7 +145,7 @@ describe('WhoopWebhookController', () => {
   });
 
   it('on user.deauthorized, soft-disconnects the matching connection(s)', async () => {
-    const body = { id: 'evt-revoke', type: 'user.deauthorized', user_id: 7 };
+    const body = { id: EVT_UUID_3, type: 'user.deauthorized', user_id: 7 };
     const rawBody = Buffer.from(JSON.stringify(body));
     const headers = signedHeaders(rawBody);
 
@@ -162,15 +166,58 @@ describe('WhoopWebhookController', () => {
     expect(arg.data.disconnected_at).toBeInstanceOf(Date);
   });
 
-  it('returns 200 (no retry) for a verified but non-JSON body', async () => {
+  it('rejects a verified but non-JSON body with 400 and never records it', async () => {
     const rawBody = Buffer.from('not-json');
     const headers = signedHeaders(rawBody);
-    const res = await controller.handle(
-      makeReq(rawBody, headers),
-      headers[WHOOP_SIGNATURE_HEADER],
-      headers[WHOOP_SIGNATURE_TIMESTAMP_HEADER],
-    );
-    expect(res).toEqual({ ok: true, duplicate: false });
+    await expect(
+      controller.handle(
+        makeReq(rawBody, headers),
+        headers[WHOOP_SIGNATURE_HEADER],
+        headers[WHOOP_SIGNATURE_TIMESTAMP_HEADER],
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.wearableProcessedEvent.createMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a verified body that fails schema validation (non-UUID id) with 400', async () => {
+    const body = { id: 'not-a-uuid', type: 'recovery.updated', user_id: 7 };
+    const rawBody = Buffer.from(JSON.stringify(body));
+    const headers = signedHeaders(rawBody);
+    await expect(
+      controller.handle(
+        makeReq(rawBody, headers),
+        headers[WHOOP_SIGNATURE_HEADER],
+        headers[WHOOP_SIGNATURE_TIMESTAMP_HEADER],
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.wearableProcessedEvent.createMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a verified body with an unknown event type with 400', async () => {
+    const body = { id: EVT_UUID, type: 'totally.bogus', user_id: 7 };
+    const rawBody = Buffer.from(JSON.stringify(body));
+    const headers = signedHeaders(rawBody);
+    await expect(
+      controller.handle(
+        makeReq(rawBody, headers),
+        headers[WHOOP_SIGNATURE_HEADER],
+        headers[WHOOP_SIGNATURE_TIMESTAMP_HEADER],
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.wearableProcessedEvent.createMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a verified body with a non-positive user_id with 400', async () => {
+    const body = { id: EVT_UUID, type: 'recovery.updated', user_id: 0 };
+    const rawBody = Buffer.from(JSON.stringify(body));
+    const headers = signedHeaders(rawBody);
+    await expect(
+      controller.handle(
+        makeReq(rawBody, headers),
+        headers[WHOOP_SIGNATURE_HEADER],
+        headers[WHOOP_SIGNATURE_TIMESTAMP_HEADER],
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.wearableProcessedEvent.createMany).not.toHaveBeenCalled();
   });
 });

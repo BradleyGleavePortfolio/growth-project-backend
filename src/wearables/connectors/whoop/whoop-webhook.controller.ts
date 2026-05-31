@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Headers,
   HttpCode,
@@ -8,6 +9,7 @@ import {
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ZodError } from 'zod';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
@@ -18,7 +20,8 @@ import { WhoopConnector } from './whoop.connector';
 import {
   WHOOP_SIGNATURE_HEADER,
   WHOOP_SIGNATURE_TIMESTAMP_HEADER,
-  WhoopWebhookPayload,
+  WhoopWebhookEvent,
+  WhoopWebhookEventSchema,
 } from './whoop.types';
 
 /**
@@ -86,18 +89,25 @@ export class WhoopWebhookController {
       throw new UnauthorizedException('Invalid WHOOP webhook signature');
     }
 
-    // Parse only AFTER verification. Bad JSON on a verified body is a WHOOP
-    // contract change — log and 200 (do not make WHOOP retry a poison body).
-    let payload: WhoopWebhookPayload | null = null;
+    // Parse + RUNTIME-VALIDATE only AFTER verification. A correctly-signed but
+    // MALFORMED body (bad JSON, non-UUID id, unknown type, non-positive
+    // user_id, or extra fields) is a contract violation — reject it with a
+    // 400 so it never reaches dedup / revocation / logging (R1 Finding 2).
+    // 400 (not 500) signals a client/contract error without masking it as a
+    // server fault; WHOOP does not retry a 4xx.
+    let payload: WhoopWebhookEvent;
     try {
-      payload = JSON.parse(rawBody.toString('utf8')) as WhoopWebhookPayload;
-    } catch {
-      this.logger.warn('WHOOP webhook: verified body was not valid JSON');
-      return { ok: true, duplicate: false };
-    }
-    if (!payload || !payload.id || !payload.type) {
-      this.logger.warn('WHOOP webhook: verified body missing id/type');
-      return { ok: true, duplicate: false };
+      const json: unknown = JSON.parse(rawBody.toString('utf8'));
+      payload = WhoopWebhookEventSchema.parse(json);
+    } catch (err) {
+      // Do not echo the (verified) body or per-field user data back; log only
+      // the structural reason for observability.
+      const reason =
+        err instanceof ZodError
+          ? 'schema validation failed'
+          : 'body was not valid JSON';
+      this.logger.warn(`WHOOP webhook: rejected malformed payload — ${reason}`);
+      throw new BadRequestException('Malformed WHOOP webhook payload');
     }
 
     // (3) Dedup / replay protection on the event UUID. createMany with the
@@ -150,7 +160,7 @@ export class WhoopWebhookController {
    * the WHOOP external_account_id (the WHOOP user id as text).
    */
   private async handleRevocation(
-    payload: WhoopWebhookPayload,
+    payload: WhoopWebhookEvent,
   ): Promise<boolean> {
     const externalId = String(payload.user_id);
     const { count } = await this.prisma.wearableConnection.updateMany({
