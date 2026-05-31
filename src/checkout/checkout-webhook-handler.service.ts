@@ -46,10 +46,36 @@ type StripeEvent = {
   data: { object: Record<string, unknown> };
 };
 
+// PR-18 B1 R3 P1 — a split-posting task the handler deferred because an
+// outer $transaction (and the CoachPackage FOR UPDATE lock) was held when
+// the charge succeeded. PurchaseSplitHandlerService.onChargeSucceeded() can
+// synchronously call Stripe (retrievePaymentIntent to resolve the charge id
+// AND transfers.attempt() which POSTs a Stripe Transfer); running it inside
+// the outer tx holds the Postgres connection — and the package row lock —
+// across a Stripe round-trip (the A276-P1-3 anti-pattern, made worse by B1's
+// lock). When BillingService threads an outer tx, the handler resolves the
+// charge id out-of-tx via prefetchForOuterTx and returns this descriptor so
+// BillingService runs the split posting AFTER the outer tx commits. The
+// split ledger is idempotent (composite-unique upserts) and the transfer is
+// idempotency-keyed + sweeper-backed, so a rolled-back outer tx simply skips
+// the post-commit run and Stripe's redelivery (or the sweeper) reconciles.
+export interface DeferredSplitTask {
+  purchase: ClientPurchase;
+  // Charge id pre-resolved out-of-tx (null when not yet known — the split
+  // handler then no-ops the transfer and the sweeper retries).
+  charge_id: string | null;
+  // Recurring-renewal extras (invoice.paid path).
+  invoice_amount_cents?: number;
+}
+
 export interface CheckoutWebhookResult {
   claimed: boolean;
   reason?: string;
   purchase_id?: string;
+  // PR-18 B1 R3 P1 — present iff split posting was deferred to post-commit
+  // because the caller held an outer $transaction. BillingService runs these
+  // after the outer tx commits (see runDeferredSplit below).
+  deferredSplit?: DeferredSplitTask;
 }
 
 // PR-18 B1 — state that the checkout handler needs from Stripe HTTP but that
@@ -63,6 +89,15 @@ export interface CheckoutWebhookPrefetch {
   // (the handler then falls back to its own out-of-tx retrieve only when no
   // outer tx is held).
   invoiceSubscription?: StripeSubscriptionObject | null;
+  // PR-18 B1 R3 P1 — Stripe charge id for the purchase a checkout.session.
+  // completed / payment_intent.succeeded event activates, resolved out-of-tx
+  // BEFORE BillingService opens its outer $transaction. Keyed by
+  // ClientPurchase.id. The deferred split posting (run post-commit) uses this
+  // so PurchaseSplitHandlerService never has to call retrievePaymentIntent
+  // while the outer tx / package row lock is held. null = not yet known
+  // (rare settling race); the split handler no-ops the transfer and the
+  // sweeper picks it up. undefined entry = no pre-resolution attempted.
+  chargeIdByPurchaseId?: Record<string, string | null>;
 }
 
 @Injectable()
@@ -98,7 +133,7 @@ export class CheckoutWebhookHandlerService {
   ): Promise<CheckoutWebhookResult> {
     switch (event.type) {
       case 'checkout.session.completed':
-        return this.applyCheckoutCompleted(event, tx);
+        return this.applyCheckoutCompleted(event, tx, prefetched);
       case 'checkout.session.expired':
         return this.applyCheckoutExpired(event);
       case 'customer.subscription.updated':
@@ -107,7 +142,7 @@ export class CheckoutWebhookHandlerService {
       case 'customer.subscription.deleted':
         return this.applySubscriptionDeleted(event, tx);
       case 'payment_intent.succeeded':
-        return this.applyPaymentIntentSucceeded(event, tx);
+        return this.applyPaymentIntentSucceeded(event, tx, prefetched);
       case 'payment_intent.payment_failed':
         return this.applyPaymentIntentFailed(event, tx);
       // DUNNING-V1 — invoice.payment_succeeded mirrors invoice.paid in
@@ -180,6 +215,22 @@ export class CheckoutWebhookHandlerService {
   async prefetchForOuterTx(
     event: StripeEvent,
   ): Promise<CheckoutWebhookPrefetch> {
+    // PR-18 B1 R3 P1 — checkout.session.completed / payment_intent.succeeded
+    // activate a one-time (or first-invoice) purchase and then post the
+    // head-coach split. That split posting resolves the parent Stripe charge
+    // id via stripe.retrievePaymentIntent and may immediately attempt the
+    // transfer (stripe.createTransfer) — both Stripe HTTP. To keep those out
+    // of BillingService's outer $transaction (and out from under the
+    // CoachPackage FOR UPDATE lock the activation takes), we resolve the
+    // charge id HERE, before the tx opens. The handler then defers the whole
+    // split posting to post-commit using this pre-resolved id, so the in-tx
+    // path performs zero Stripe HTTP.
+    if (
+      event.type === 'checkout.session.completed' ||
+      event.type === 'payment_intent.succeeded'
+    ) {
+      return this.prefetchChargeIdForActivation(event);
+    }
     if (
       event.type !== 'invoice.paid' &&
       event.type !== 'invoice.payment_succeeded'
@@ -209,9 +260,82 @@ export class CheckoutWebhookHandlerService {
     }
   }
 
+  /**
+   * PR-18 B1 R3 P1 — resolve, out-of-tx, the Stripe charge id for the pending
+   * purchase that a checkout.session.completed / payment_intent.succeeded
+   * event will activate, so the post-commit split posting needs no Stripe HTTP
+   * inside the outer $transaction. Best-effort and never throws — a null entry
+   * means the split handler will no-op the transfer and the sweeper retries.
+   */
+  private async prefetchChargeIdForActivation(
+    event: StripeEvent,
+  ): Promise<CheckoutWebhookPrefetch> {
+    const obj = event.data.object as {
+      id?: string;
+      payment_intent?: string | null;
+      latest_charge?: string | { id?: string } | null;
+      charges?: { data?: Array<{ id?: string }> };
+    };
+    try {
+      let purchaseId: string | null = null;
+      let paymentIntentId: string | null = null;
+      // Charge id may already be on the event payload (PI events carry
+      // latest_charge); prefer it to avoid a needless Stripe round-trip.
+      let chargeId: string | null =
+        (typeof obj.latest_charge === 'string' ? obj.latest_charge : null) ??
+        (obj.latest_charge && typeof obj.latest_charge === 'object'
+          ? obj.latest_charge.id ?? null
+          : null) ??
+        obj.charges?.data?.[0]?.id ??
+        null;
+
+      if (event.type === 'checkout.session.completed') {
+        if (!obj.id) return {};
+        const purchase = await this.prisma.clientPurchase.findUnique({
+          where: { stripe_checkout_session_id: obj.id },
+          select: { id: true, stripe_payment_intent_id: true },
+        });
+        if (!purchase) return {};
+        purchaseId = purchase.id;
+        paymentIntentId =
+          obj.payment_intent ?? purchase.stripe_payment_intent_id ?? null;
+      } else {
+        // payment_intent.succeeded
+        if (!obj.id) return {};
+        const purchase = await this.prisma.clientPurchase.findFirst({
+          where: { stripe_payment_intent_id: obj.id, status: 'pending' },
+          select: { id: true },
+        });
+        if (!purchase) return {};
+        purchaseId = purchase.id;
+        paymentIntentId = obj.id;
+      }
+
+      // Resolve the charge id from the PaymentIntent when the event payload
+      // didn't already carry it. This is the ONLY Stripe HTTP in the path and
+      // it runs BEFORE the outer tx opens.
+      if (!chargeId && paymentIntentId) {
+        const pi = await this.stripeConnect.retrievePaymentIntent(
+          paymentIntentId,
+        );
+        chargeId =
+          (typeof pi.latest_charge === 'string' ? pi.latest_charge : null) ??
+          pi.charges?.data?.[0]?.id ??
+          null;
+      }
+      return { chargeIdByPurchaseId: { [purchaseId]: chargeId } };
+    } catch (err) {
+      this.logger.warn(
+        `prefetchForOuterTx: charge-id pre-resolution failed for ${event.type} ${obj.id ?? 'unknown'}: ${(err as Error).message}`,
+      );
+      return {};
+    }
+  }
+
   private async applyCheckoutCompleted(
     event: StripeEvent,
     tx?: WebhookTx,
+    prefetched?: CheckoutWebhookPrefetch,
   ): Promise<CheckoutWebhookResult> {
     const session = event.data.object as {
       id?: string;
@@ -277,30 +401,23 @@ export class CheckoutWebhookHandlerService {
         }),
     );
 
-    // Phase 4 — materialize ledger + queue head-coach transfer now that
+    // Phase 4 — materialize ledger + post head-coach transfer now that
     // the charge has actually succeeded.
     //
-    // PR-9 boundary: splits intentionally runs against `this.prisma`
-    // (NOT the outer tx) because TransferOrchestratorService issues
-    // synchronous Stripe HTTP calls to mint the head-coach Transfer —
-    // exactly the A276-P1-3 anti-pattern that we explicitly keep out
-    // of the outer $transaction (holding the Postgres connection
-    // through a Stripe round-trip saturates the pool). The split
-    // ledger itself is idempotent via composite-unique upserts +
-    // sweep-on-retry, and its rows FK to the ClientPurchase row that
-    // ALREADY exists in `pending` state (this handler only flips
-    // `entitlement_active`, it doesn't create the purchase), so a
-    // rolled-back outer tx leaves ledger rows that collapse onto
-    // themselves on Stripe's retry rather than orphaning.
-    if (this.splits) {
-      try {
-        await this.splits.onChargeSucceeded({ purchase: updated });
-      } catch (err) {
-        this.logger.warn(
-          `Split posting failed for purchase=${updated.id}: ${(err as Error).message}`,
-        );
-      }
-    }
+    // PR-18 B1 R3 P1: PurchaseSplitHandlerService.onChargeSucceeded() can
+    // synchronously call Stripe (retrievePaymentIntent to resolve the charge
+    // id AND transfers.attempt() which POSTs a Transfer). When BillingService
+    // holds an outer $transaction (it took the CoachPackage FOR UPDATE lock
+    // via activateUnderPackageLock above), running that Stripe HTTP inline
+    // would hold the Postgres connection — and the package row lock — across
+    // the round-trip (the A276-P1-3 anti-pattern, made worse by B1's lock).
+    // So when a tx is held we DEFER the split posting to post-commit and
+    // return a descriptor; BillingService runs it after the tx commits, using
+    // the charge id we pre-resolved out-of-tx in prefetchForOuterTx. When no
+    // outer tx is held (legacy/test path) we run it inline against
+    // `this.prisma` exactly as before — that path never holds a tx so it is
+    // already free of the in-tx-HTTP hazard.
+    const deferredSplit = await this.runOrDeferSplit(updated, tx, prefetched);
 
     // PR-9 — fan-out (drop seed + immediate inline materialisation) INSIDE
     // the outer tx so entitlement + content commit-or-rollback together.
@@ -341,7 +458,83 @@ export class CheckoutWebhookHandlerService {
         );
       }
     }
-    return { claimed: true, purchase_id: purchase.id };
+    return { claimed: true, purchase_id: purchase.id, deferredSplit };
+  }
+
+  /**
+   * PR-18 B1 R3 P1 — run the head-coach split posting for a just-activated
+   * purchase, or DEFER it to post-commit when an outer $transaction is held.
+   *
+   * onChargeSucceeded resolves the parent Stripe charge id (retrievePaymentIntent)
+   * and may immediately post the head-coach Transfer (createTransfer) — both
+   * Stripe HTTP. Doing that while the caller's outer tx (and the CoachPackage
+   * FOR UPDATE lock) is open holds the Postgres connection across a Stripe
+   * round-trip. So:
+   *   - tx held  → return a DeferredSplitTask carrying the pre-resolved charge
+   *     id; BillingService.runDeferredSplit runs the posting AFTER commit.
+   *   - no tx    → run inline against this.prisma exactly as before (legacy /
+   *     sweeper / unit-test path; no lock held, so safe).
+   * Returns the descriptor when deferred, otherwise undefined.
+   */
+  private async runOrDeferSplit(
+    purchase: ClientPurchase,
+    tx: WebhookTx | undefined,
+    prefetched: CheckoutWebhookPrefetch | undefined,
+    extra?: { invoice_amount_cents?: number; invoice_charge_id?: string | null },
+  ): Promise<DeferredSplitTask | undefined> {
+    if (!this.splits) return undefined;
+    // Pre-resolved (out-of-tx) charge id for this purchase, when available.
+    const preChargeId =
+      extra?.invoice_charge_id ??
+      prefetched?.chargeIdByPurchaseId?.[purchase.id] ??
+      null;
+    if (tx) {
+      // Defer: do NOT touch Stripe while the outer tx / package lock is held.
+      return {
+        purchase,
+        charge_id: preChargeId,
+        invoice_amount_cents: extra?.invoice_amount_cents,
+      };
+    }
+    // No outer tx — safe to post inline (legacy/sweeper/test path).
+    try {
+      await this.splits.onChargeSucceeded({
+        purchase,
+        invoice_amount_cents: extra?.invoice_amount_cents,
+        invoice_charge_id: preChargeId ?? undefined,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Split posting failed for purchase=${purchase.id}: ${(err as Error).message}`,
+      );
+    }
+    return undefined;
+  }
+
+  /**
+   * PR-18 B1 R3 P1 — execute a split posting that applyCheckoutCompleted /
+   * applyPaymentIntentSucceeded / applyInvoicePaid deferred because the caller
+   * held an outer $transaction. Called by BillingService AFTER that tx commits
+   * (so the package row lock is released and no DB tx is open across the Stripe
+   * round-trip). The pre-resolved charge id is threaded as invoice_charge_id so
+   * onChargeSucceeded does NOT re-issue retrievePaymentIntent. Failure-isolated:
+   * the split ledger is idempotent and the transfer is idempotency-keyed +
+   * sweeper-backed, so a thrown error here is logged, not propagated (money
+   * must never depend on a post-commit best-effort hook).
+   */
+  async runDeferredSplit(task: DeferredSplitTask): Promise<void> {
+    if (!this.splits) return;
+    try {
+      await this.splits.onChargeSucceeded({
+        purchase: task.purchase,
+        invoice_amount_cents: task.invoice_amount_cents,
+        invoice_charge_id: task.charge_id ?? undefined,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Deferred split posting failed for purchase=${task.purchase.id}: ${(err as Error).message}`,
+      );
+    }
   }
 
   private async applyCheckoutExpired(
@@ -540,6 +733,7 @@ export class CheckoutWebhookHandlerService {
   private async applyPaymentIntentSucceeded(
     event: StripeEvent,
     tx?: WebhookTx,
+    prefetched?: CheckoutWebhookPrefetch,
   ): Promise<CheckoutWebhookResult> {
     const pi = event.data.object as {
       id?: string;
@@ -566,16 +760,10 @@ export class CheckoutWebhookHandlerService {
       },
     });
 
-    // See applyCheckoutCompleted for the splits boundary rationale.
-    if (this.splits) {
-      try {
-        await this.splits.onChargeSucceeded({ purchase: updated });
-      } catch (err) {
-        this.logger.warn(
-          `Split posting failed for purchase=${updated.id}: ${(err as Error).message}`,
-        );
-      }
-    }
+    // PR-18 B1 R3 P1 — defer the split posting to post-commit when an outer
+    // tx is held (see runOrDeferSplit / runDeferredSplit + applyCheckoutCompleted
+    // for the boundary rationale); run inline only on the no-tx legacy path.
+    const deferredSplit = await this.runOrDeferSplit(updated, tx, prefetched);
 
     // PR-9 — fan-out INSIDE the outer tx (when provided). Resolver
     // failure on an immediate drop rethrows and rolls back entitlement
@@ -609,7 +797,7 @@ export class CheckoutWebhookHandlerService {
       }
     }
 
-    return { claimed: true, purchase_id: purchase.id };
+    return { claimed: true, purchase_id: purchase.id, deferredSplit };
   }
 
   private async applyPaymentIntentFailed(
@@ -762,19 +950,17 @@ export class CheckoutWebhookHandlerService {
     }
     // Phase 4 — per-renewal split: each invoice.paid mints (or
     // re-collapses-onto) the head-coach Transfer for that invoice.
-    if (this.splits) {
-      try {
-        await this.splits.onChargeSucceeded({
-          purchase: updated,
-          invoice_amount_cents: inv.amount_paid ?? undefined,
-          invoice_charge_id: inv.charge ?? null,
-        });
-      } catch (err) {
-        this.logger.warn(
-          `Split posting on renewal failed for purchase=${updated.id}: ${(err as Error).message}`,
-        );
-      }
-    }
+    //
+    // PR-18 B1 R3 P1: the invoice event already carries the charge id
+    // (`inv.charge`) so no retrievePaymentIntent is needed, but
+    // onChargeSucceeded still calls transfers.attempt() (createTransfer =
+    // Stripe HTTP). When an outer tx is held we defer the posting to
+    // post-commit, threading inv.charge as the pre-resolved charge id; with
+    // no outer tx we run it inline as before.
+    const deferredSplit = await this.runOrDeferSplit(updated, tx, prefetched, {
+      invoice_amount_cents: inv.amount_paid ?? undefined,
+      invoice_charge_id: inv.charge ?? null,
+    });
     // Phase 5 — clear any active dunning window.
     if (this.dunning) {
       try {
@@ -785,7 +971,7 @@ export class CheckoutWebhookHandlerService {
         );
       }
     }
-    return { claimed: true, purchase_id: purchase.id };
+    return { claimed: true, purchase_id: purchase.id, deferredSplit };
   }
 
   private async applyInvoicePaymentFailed(
@@ -932,9 +1118,18 @@ export class CheckoutWebhookHandlerService {
     activate: (client: WebhookTx) => Promise<T>,
   ): Promise<T> {
     const runLocked = async (client: WebhookTx): Promise<T> => {
-      await client.$queryRaw<
-        Array<{ id: string }>
-      >`SELECT id FROM "CoachPackage" WHERE id = ${packageId} FOR UPDATE`;
+      // Legacy/test wiring may pass a minimal client stub without $queryRaw.
+      // Production prisma always provides it, so the FOR UPDATE row lock is
+      // unchanged there; in the stub case we skip the raw lock and just run
+      // the activation write (same defensive pattern as the no-$transaction
+      // fallback below).
+      if (
+        typeof (client as { $queryRaw?: unknown }).$queryRaw === 'function'
+      ) {
+        await client.$queryRaw<
+          Array<{ id: string }>
+        >`SELECT id FROM "CoachPackage" WHERE id = ${packageId} FOR UPDATE`;
+      }
       return activate(client);
     };
     if (tx) {
@@ -942,9 +1137,20 @@ export class CheckoutWebhookHandlerService {
       return runLocked(tx);
     }
     // No outer tx — open our own so the row lock is held across the write.
-    return this.prisma.$transaction((innerTx) =>
-      runLocked(innerTx as unknown as WebhookTx),
-    );
+    // Legacy/test wiring may hand-construct this service with a minimal
+    // prisma stub that lacks `$transaction` (the same defensive pattern the
+    // fanout no-tx path uses). In that case run the lock + activate directly
+    // on `this.prisma`: production always provides `$transaction`, so the
+    // FOR UPDATE serialization is unchanged there.
+    if (
+      typeof (this.prisma as { $transaction?: unknown }).$transaction ===
+      'function'
+    ) {
+      return this.prisma.$transaction((innerTx) =>
+        runLocked(innerTx as unknown as WebhookTx),
+      );
+    }
+    return runLocked(this.prisma as unknown as WebhookTx);
   }
 
   // Compute access_expires_at given the package + purchase context.

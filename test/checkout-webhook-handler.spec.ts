@@ -4,6 +4,21 @@ import { StripeConnectApiService } from '../src/connect/stripe-connect-api.servi
 class StripeStub extends StripeConnectApiService {
   retrieveSubscription = jest.fn();
   retrievePaymentMethod = jest.fn();
+  retrievePaymentIntent = jest.fn();
+}
+
+// PR-18 B1 R3 P1 — minimal PurchaseSplitHandlerService stub that records
+// every onChargeSucceeded invocation so tests can assert the split posting
+// is DEFERRED to post-commit (never called inline while an outer tx / the
+// CoachPackage FOR UPDATE lock is held).
+function makeSplitsStub() {
+  return {
+    onChargeSucceeded: jest.fn(async () => ({
+      charge_id: null,
+      ledger_entries: 0,
+      transfer_enqueued: false,
+    })),
+  };
 }
 
 function makePrisma() {
@@ -80,6 +95,19 @@ function makeHandler() {
   const stripe = new StripeStub();
   const svc = new CheckoutWebhookHandlerService(prisma as any, stripe as any);
   return { svc, prisma, stripe };
+}
+
+// Variant that wires a splits stub so we can assert deferral behavior.
+function makeHandlerWithSplits() {
+  const prisma = makePrisma();
+  const stripe = new StripeStub();
+  const splits = makeSplitsStub();
+  const svc = new CheckoutWebhookHandlerService(
+    prisma as any,
+    stripe as any,
+    splits as any,
+  );
+  return { svc, prisma, stripe, splits };
 }
 
 describe('CheckoutWebhookHandlerService', () => {
@@ -745,6 +773,151 @@ describe('CheckoutWebhookHandlerService', () => {
       });
       expect(prisma._lockedPackageIds).toContain('pkg-4');
       expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+  });
+
+  // PR-18 B1 R3 P1 — head-coach split posting must never run inline while an
+  // outer $transaction (and the CoachPackage FOR UPDATE lock) is held, because
+  // onChargeSucceeded can synchronously call Stripe (retrievePaymentIntent +
+  // transfers.attempt → createTransfer). When an outer tx is threaded the
+  // handler DEFERS the posting to post-commit and returns a descriptor; when
+  // no tx is held it runs inline as before.
+  describe('B1 R3 P1 — split posting deferred outside the outer tx', () => {
+    it('checkout.session.completed DEFERS split posting (no inline onChargeSucceeded) when an outer tx is held', async () => {
+      const { svc, prisma, splits } = makeHandlerWithSplits();
+      prisma._packages.push({ id: 'pkg-d1', billing_type: 'one_time' });
+      prisma._purchases.push({
+        id: 'cp-d1',
+        package_id: 'pkg-d1',
+        stripe_checkout_session_id: 'cs_d1',
+        status: 'pending',
+        entitlement_active: false,
+        billing_type: 'one_time',
+        created_at: new Date(),
+      });
+      const result = await svc.handle(
+        {
+          id: 'evt_d1',
+          type: 'checkout.session.completed',
+          data: { object: { id: 'cs_d1', mode: 'payment', payment_intent: 'pi_d1' } },
+        },
+        prisma as any,
+        { chargeIdByPurchaseId: { 'cp-d1': 'ch_d1' } },
+      );
+      // Entitlement still activated inside the tx.
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+      // Split posting was NOT run inline (no Stripe HTTP inside the tx).
+      expect(splits.onChargeSucceeded).not.toHaveBeenCalled();
+      // Instead a deferred descriptor carrying the pre-resolved charge id.
+      expect(result.deferredSplit).toBeDefined();
+      expect(result.deferredSplit!.charge_id).toBe('ch_d1');
+      expect(result.deferredSplit!.purchase.id).toBe('cp-d1');
+    });
+
+    it('checkout.session.completed runs split posting INLINE when no outer tx is held (legacy path)', async () => {
+      const { svc, prisma, splits } = makeHandlerWithSplits();
+      prisma._packages.push({ id: 'pkg-d2', billing_type: 'one_time' });
+      prisma._purchases.push({
+        id: 'cp-d2',
+        package_id: 'pkg-d2',
+        stripe_checkout_session_id: 'cs_d2',
+        status: 'pending',
+        entitlement_active: false,
+        billing_type: 'one_time',
+        created_at: new Date(),
+      });
+      const result = await svc.handle({
+        id: 'evt_d2',
+        type: 'checkout.session.completed',
+        data: { object: { id: 'cs_d2', mode: 'payment', payment_intent: 'pi_d2' } },
+      });
+      // No outer tx → inline posting preserved (legacy/sweeper/test path).
+      expect(splits.onChargeSucceeded).toHaveBeenCalledTimes(1);
+      expect(result.deferredSplit).toBeUndefined();
+    });
+
+    it('payment_intent.succeeded DEFERS split posting under an outer tx', async () => {
+      const { svc, prisma, splits } = makeHandlerWithSplits();
+      prisma._packages.push({ id: 'pkg-d3', billing_type: 'one_time' });
+      prisma._purchases.push({
+        id: 'cp-d3',
+        package_id: 'pkg-d3',
+        stripe_payment_intent_id: 'pi_d3',
+        status: 'pending',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      const result = await svc.handle(
+        {
+          id: 'evt_d3',
+          type: 'payment_intent.succeeded',
+          data: { object: { id: 'pi_d3' } },
+        },
+        prisma as any,
+        { chargeIdByPurchaseId: { 'cp-d3': 'ch_d3' } },
+      );
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+      expect(splits.onChargeSucceeded).not.toHaveBeenCalled();
+      expect(result.deferredSplit!.charge_id).toBe('ch_d3');
+    });
+
+    it('runDeferredSplit posts the split with the pre-resolved charge id', async () => {
+      const { svc, splits } = makeHandlerWithSplits();
+      await svc.runDeferredSplit({
+        purchase: { id: 'cp-d4' } as any,
+        charge_id: 'ch_d4',
+        invoice_amount_cents: 4200,
+      });
+      expect(splits.onChargeSucceeded).toHaveBeenCalledWith({
+        purchase: { id: 'cp-d4' },
+        invoice_amount_cents: 4200,
+        invoice_charge_id: 'ch_d4',
+      });
+    });
+
+    it('prefetchForOuterTx resolves the charge id out-of-tx for checkout.session.completed', async () => {
+      const { svc, prisma, stripe } = makeHandlerWithSplits();
+      prisma._purchases.push({
+        id: 'cp-d5',
+        package_id: 'pkg-d5',
+        stripe_checkout_session_id: 'cs_d5',
+        stripe_payment_intent_id: 'pi_d5',
+        status: 'pending',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      stripe.retrievePaymentIntent.mockResolvedValueOnce({
+        id: 'pi_d5',
+        latest_charge: 'ch_d5',
+      });
+      const pre = await svc.prefetchForOuterTx({
+        id: 'evt_d5',
+        type: 'checkout.session.completed',
+        data: { object: { id: 'cs_d5', payment_intent: 'pi_d5' } },
+      });
+      expect(stripe.retrievePaymentIntent).toHaveBeenCalledWith('pi_d5');
+      expect(pre.chargeIdByPurchaseId).toEqual({ 'cp-d5': 'ch_d5' });
+      // The pre-resolution itself opens no DB transaction.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('prefetchForOuterTx prefers latest_charge from the PI event payload (no Stripe HTTP)', async () => {
+      const { svc, prisma, stripe } = makeHandlerWithSplits();
+      prisma._purchases.push({
+        id: 'cp-d6',
+        package_id: 'pkg-d6',
+        stripe_payment_intent_id: 'pi_d6',
+        status: 'pending',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      const pre = await svc.prefetchForOuterTx({
+        id: 'evt_d6',
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_d6', latest_charge: 'ch_d6' } },
+      });
+      expect(stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+      expect(pre.chargeIdByPurchaseId).toEqual({ 'cp-d6': 'ch_d6' });
     });
   });
 
