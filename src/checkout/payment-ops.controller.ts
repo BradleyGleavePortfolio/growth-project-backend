@@ -3,15 +3,18 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   NotFoundException,
   Param,
   Patch,
   Post,
   Query,
   Request,
+  Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { ServiceTokenGuard } from '../auth/service-token.guard';
@@ -28,6 +31,11 @@ import { AdminAnalyticsService, type RollupGroupBy } from './admin-analytics.ser
 import { DunningService } from './dunning.service';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
+import {
+  CursorPageQueryDto,
+  PAYMENT_OPS_DEFAULT_LIMIT,
+  rowsToCsv,
+} from './payment-ops.dto';
 
 // /v1/admin/payments — OWNER-only payment-ops inspection.
 //
@@ -67,6 +75,9 @@ export class AdminPaymentOpsController {
   // Owner-side global view — useful for finding the offending row when
   // support asks "where's my payment".
   @Get('purchases')
+  @ApiOperation({
+    summary: 'List purchases (owner global view, filter by status/coach/client)',
+  })
   async listPurchases(
     @Query('status') status?: string,
     @Query('coach_user_id') coachUserId?: string,
@@ -89,6 +100,10 @@ export class AdminPaymentOpsController {
   // Drill-down: full picture for one purchase. Includes ledger, all
   // outgoing transfers, dunning state, and the most recent reminders.
   @Get('purchases/:id')
+  @ApiOperation({
+    summary: 'Inspect one purchase: ledger, transfers, dunning, reminders',
+  })
+  @ApiResponse({ status: 404, description: 'PURCHASE_NOT_FOUND' })
   async getPurchase(@Param('id') purchaseId: string) {
     const purchase = await this.prisma.clientPurchase.findUnique({
       where: { id: purchaseId },
@@ -130,6 +145,7 @@ export class AdminPaymentOpsController {
   // Failed payments feed (the dunning queue). Active dunning rows +
   // their last failure metadata. The on-call dashboard reads this.
   @Get('failed')
+  @ApiOperation({ summary: 'List active dunning rows (the failed-payments feed)' })
   async listFailedPayments(@Query('limit') limitRaw?: string) {
     const limit = Math.min(parseInt(limitRaw ?? '50', 10) || 50, 200);
     const rows = await this.prisma.dunningState.findMany({
@@ -143,6 +159,7 @@ export class AdminPaymentOpsController {
   // Pending / failed transfers across the platform (operationally the
   // same view but two filters).
   @Get('transfers')
+  @ApiOperation({ summary: 'List Connect transfers, optionally filtered by status' })
   async listTransfers(
     @Query('status') status?: string,
     @Query('limit') limitRaw?: string,
@@ -160,6 +177,9 @@ export class AdminPaymentOpsController {
   // Global split-ledger view: filterable by kind / status, useful for a
   // payout reconciliation report.
   @Get('ledger')
+  @ApiOperation({
+    summary: 'Global split-ledger view (filter by kind/status/payee)',
+  })
   async listLedger(
     @Query('kind') kind?: string,
     @Query('status') status?: string,
@@ -183,6 +203,7 @@ export class AdminPaymentOpsController {
   // Manually trigger the transfer sweeper (retry all due-pending transfers).
   // Used when an operator wants to clear the backlog after a Stripe outage.
   @Post('transfers/run-sweeper')
+  @ApiOperation({ summary: 'Manually run the transfer retry sweeper' })
   async runTransferSweeper() {
     return this.splits.runTransferSweeper();
   }
@@ -190,6 +211,7 @@ export class AdminPaymentOpsController {
   // Manually trigger the dunning sweeper — cancels any purchase whose
   // grace period has elapsed.
   @Post('dunning/run-sweeper')
+  @ApiOperation({ summary: 'Manually run the dunning sweeper' })
   async runDunningSweeper() {
     return this.dunning.runSweeper();
   }
@@ -198,6 +220,8 @@ export class AdminPaymentOpsController {
   // trigger-immediate for one purchase. The Linear / Stripe-style payment-
   // ops dashboard binds buttons directly to these.
   @Get('dunning/:purchaseId')
+  @ApiOperation({ summary: 'Get dunning admin view for a purchase' })
+  @ApiResponse({ status: 404, description: 'DUNNING_NOT_FOUND' })
   async getDunningState(@Param('purchaseId') purchaseId: string) {
     const view = await this.dunning.getAdminView(purchaseId);
     if (!view.state && !view.purchase) {
@@ -210,6 +234,7 @@ export class AdminPaymentOpsController {
   }
 
   @Post('dunning/:purchaseId/advance')
+  @ApiOperation({ summary: 'Advance the dunning state for a purchase' })
   async advanceDunning(@Param('purchaseId') purchaseId: string) {
     try {
       return await this.dunning.adminAdvance(purchaseId);
@@ -222,6 +247,7 @@ export class AdminPaymentOpsController {
   }
 
   @Post('dunning/:purchaseId/reset')
+  @ApiOperation({ summary: 'Reset the dunning state for a purchase' })
   async resetDunning(@Param('purchaseId') purchaseId: string) {
     try {
       return await this.dunning.adminReset(purchaseId);
@@ -234,11 +260,13 @@ export class AdminPaymentOpsController {
   }
 
   @Post('dunning/:purchaseId/cancel')
+  @ApiOperation({ summary: 'Cancel dunning for a purchase' })
   async cancelDunning(@Param('purchaseId') purchaseId: string) {
     return this.dunning.adminCancel(purchaseId);
   }
 
   @Post('dunning/:purchaseId/trigger')
+  @ApiOperation({ summary: 'Trigger an immediate dunning reminder' })
   async triggerDunningReminder(@Param('purchaseId') purchaseId: string) {
     try {
       return await this.dunning.adminTriggerImmediate(purchaseId);
@@ -254,12 +282,14 @@ export class AdminPaymentOpsController {
   // and Prometheus scrape for the entered/recovered/escalated/cancelled
   // funnel.
   @Get('dunning/metrics/snapshot')
+  @ApiOperation({ summary: 'Read the in-process dunning metrics counter' })
   async getDunningMetrics() {
     return { metrics: this.dunning.metrics.snapshot() };
   }
 
   // Inspect a coach's effective fee policy (default + override).
   @Get('coaches/:id/fee-policy')
+  @ApiOperation({ summary: "Inspect a coach's effective fee policy" })
   async getCoachFeePolicy(@Param('id') coachId: string) {
     const [policy, override] = await Promise.all([
       this.feePolicy.resolvePolicy(coachId),
@@ -271,6 +301,7 @@ export class AdminPaymentOpsController {
   // Update a coach's fee-policy override. Pass null on either field to
   // fall back to the global default.
   @Patch('coaches/:id/fee-policy')
+  @ApiOperation({ summary: "Update a coach's fee-policy override" })
   async updateCoachFeePolicy(
     @Param('id') coachId: string,
     @Body()
@@ -286,6 +317,7 @@ export class AdminPaymentOpsController {
   // Inspect a coach's Connect readiness — for "why can't this coach
   // accept payments" debugging.
   @Get('coaches/:id/connect')
+  @ApiOperation({ summary: "Inspect a coach's Connect readiness" })
   async getCoachConnect(@Param('id') coachId: string) {
     const [account, packages, purchasesCount] = await Promise.all([
       this.prisma.connectAccount.findUnique({
@@ -314,6 +346,7 @@ export class AdminPaymentOpsController {
   // a coach detail page. Pass ?refresh=true to force a fresh Stripe
   // poll (used by the "refresh" button next to the widget).
   @Get('coaches/:id/payout-readiness')
+  @ApiOperation({ summary: "Get a coach's cached payout readiness" })
   async getCoachPayoutReadiness(
     @Param('id') coachId: string,
     @Query('refresh') refresh?: string,
@@ -326,6 +359,8 @@ export class AdminPaymentOpsController {
   // Live balance + most-recent payouts straight from Stripe. Reserved for
   // the "deep dive" admin view since each call hits the Stripe API.
   @Get('coaches/:id/balance')
+  @ApiOperation({ summary: "Live Stripe balance + recent payouts for a coach" })
+  @ApiResponse({ status: 404, description: 'CONNECT_ACCOUNT_NOT_FOUND' })
   async getCoachBalance(@Param('id') coachId: string) {
     const account = await this.prisma.connectAccount.findUnique({
       where: { coach_user_id: coachId },
@@ -354,6 +389,8 @@ export class AdminPaymentOpsController {
   // the per-charge Stripe processing fee that admins want to see next to
   // platform/seller splits.
   @Get('coaches/:id/balance-transactions')
+  @ApiOperation({ summary: "Recent Stripe balance transactions for a coach" })
+  @ApiResponse({ status: 404, description: 'CONNECT_ACCOUNT_NOT_FOUND' })
   async getCoachBalanceTransactions(
     @Param('id') coachId: string,
     @Query('limit') limitRaw?: string,
@@ -380,6 +417,7 @@ export class AdminPaymentOpsController {
   // Manually refresh the payout-snapshot sweeper. Used after a Stripe
   // outage or onboarding-flow change.
   @Post('payout-readiness/run-sweeper')
+  @ApiOperation({ summary: 'Manually run the payout-readiness stale sweeper' })
   async runPayoutReadinessSweeper(@Query('limit') limitRaw?: string) {
     const limit = Math.min(parseInt(limitRaw ?? '25', 10) || 25, 100);
     return this.payoutReadiness.runStaleSweep(limit);
@@ -390,12 +428,14 @@ export class AdminPaymentOpsController {
   // Reconcile one purchase against Stripe's books (live). Hits Stripe
   // for charge + refund detail; persists a ReconciliationSnapshot.
   @Get('reconciliation/:purchaseId')
+  @ApiOperation({ summary: 'Reconcile one purchase against Stripe (live)' })
   async getReconciliation(@Param('purchaseId') purchaseId: string) {
     return this.reconciliation.reconcilePurchase(purchaseId);
   }
 
   // List purchases currently in `drift` — the "needs review" tab.
   @Get('reconciliation/drift/list')
+  @ApiOperation({ summary: 'List purchases currently in reconciliation drift' })
   async listReconciliationDrift(@Query('limit') limitRaw?: string) {
     const limit = Math.min(parseInt(limitRaw ?? '100', 10) || 100, 500);
     return { drift: await this.reconciliation.listDrift(limit) };
@@ -403,6 +443,7 @@ export class AdminPaymentOpsController {
 
   // Manually trigger the reconciliation sweeper.
   @Post('reconciliation/run-sweeper')
+  @ApiOperation({ summary: 'Manually run the reconciliation sweeper' })
   async runReconciliationSweeper(@Query('limit') limitRaw?: string) {
     const limit = Math.min(parseInt(limitRaw ?? '50', 10) || 50, 200);
     return this.reconciliation.runSweep(limit);
@@ -411,6 +452,7 @@ export class AdminPaymentOpsController {
   // --- Phase 6 — Refunds / Disputes ---
 
   @Get('refunds')
+  @ApiOperation({ summary: 'List refunds, optionally filtered by status/purchase' })
   async listRefunds(
     @Query('status') status?: string,
     @Query('purchase_id') purchaseId?: string,
@@ -427,6 +469,7 @@ export class AdminPaymentOpsController {
   }
 
   @Get('disputes')
+  @ApiOperation({ summary: 'List disputes, optionally filtered by status/purchase' })
   async listDisputes(
     @Query('status') status?: string,
     @Query('purchase_id') purchaseId?: string,
@@ -444,6 +487,8 @@ export class AdminPaymentOpsController {
 
   // Admin-issued refund. amount_cents omitted = full refund.
   @Post('purchases/:id/refund')
+  @ApiOperation({ summary: 'Issue an admin refund (full or partial)' })
+  @ApiResponse({ status: 400, description: 'AMOUNT_INVALID' })
   async refundPurchase(
     @Request() req: AuthedRequest,
     @Param('id') purchaseId: string,
@@ -477,6 +522,8 @@ export class AdminPaymentOpsController {
   // Big enterprise rollup. Accepts ?from=ISO&to=ISO&groupBy=day|month|coach.
   // Defaults to last 30 days, group by day.
   @Get('rollup')
+  @ApiOperation({ summary: 'Enterprise revenue rollup (from/to/groupBy)' })
+  @ApiResponse({ status: 400, description: 'GROUP_BY_INVALID' })
   async getEnterpriseRollup(
     @Query('from') fromRaw?: string,
     @Query('to') toRaw?: string,
@@ -494,6 +541,7 @@ export class AdminPaymentOpsController {
   }
 
   @Get('rollup/coaches/:id')
+  @ApiOperation({ summary: "Per-coach earnings rollup (from/to)" })
   async getCoachRollup(
     @Param('id') coachId: string,
     @Query('from') fromRaw?: string,
@@ -530,12 +578,30 @@ export class CoachPaymentOpsController {
   // identifiers, amounts, and statuses.
   @Roles('coach', 'owner')
   @Get('purchases')
-  async listOwn(@Request() req: AuthedRequest) {
+  @ApiOperation({
+    summary: "List the calling coach's own purchases (cursor-paginated)",
+  })
+  async listOwn(
+    @Request() req: AuthedRequest,
+    @Query() query: CursorPageQueryDto,
+  ) {
+    // Bounded cursor pagination (B5): cap `take` so the query can never be
+    // unbounded, and keep the coach_user_id scope intact so a coach only
+    // ever sees their own purchases (RLS/IDOR). Fetch limit+1 to decide
+    // whether there's a next page without a second count query.
+    const limit = query.limit ?? PAYMENT_OPS_DEFAULT_LIMIT;
     const rows = await this.prisma.clientPurchase.findMany({
       where: { coach_user_id: req.user.id },
-      orderBy: { created_at: 'desc' },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      ...(query.cursor
+        ? { cursor: { id: query.cursor }, skip: 1 }
+        : {}),
     });
-    return { purchases: rows };
+    const hasMore = rows.length > limit;
+    const purchases = hasMore ? rows.slice(0, limit) : rows;
+    const next_cursor = hasMore ? purchases[purchases.length - 1].id : null;
+    return { purchases, next_cursor };
   }
 
   // Coach drill-down on one purchase. Lookup is scoped by
@@ -545,6 +611,8 @@ export class CoachPaymentOpsController {
   // purchase IDs). Students must never reach this surface.
   @Roles('coach', 'owner')
   @Get('purchases/:id')
+  @ApiOperation({ summary: "Inspect one of the coach's own purchases" })
+  @ApiResponse({ status: 404, description: 'PURCHASE_NOT_FOUND' })
   async getOwn(
     @Request() req: AuthedRequest,
     @Param('id') purchaseId: string,
@@ -586,19 +654,120 @@ export class CoachPaymentOpsController {
   // see this.
   @Roles('coach', 'owner')
   @Get('earnings')
-  async earnings(@Request() req: AuthedRequest) {
-    const entries = await this.ledger.findByPayee(req.user.id, { limit: 200 });
-    // Roll up gross earnings by status.
-    const summary = entries.reduce(
-      (acc, e) => {
-        if (e.status === 'posted') acc.posted_cents += e.amount_cents - e.reversed_cents;
-        else if (e.status === 'pending') acc.pending_cents += e.amount_cents;
-        else if (e.status === 'reversed') acc.reversed_cents += e.amount_cents;
-        return acc;
-      },
-      { posted_cents: 0, pending_cents: 0, reversed_cents: 0 },
+  @ApiOperation({
+    summary:
+      "List the coach's earnings ledger (cursor-paginated) with a full-ledger summary",
+  })
+  async earnings(
+    @Request() req: AuthedRequest,
+    @Query() query: CursorPageQueryDto,
+  ) {
+    // B6: the page of entries is now bounded + cursor-paginated, and the
+    // `summary` is computed over the FULL payee ledger via an aggregate
+    // (groupBy) — NOT just the returned page — so the money totals are
+    // correct even past the old hardcoded 200-row truncation.
+    const limit = query.limit ?? PAYMENT_OPS_DEFAULT_LIMIT;
+    const [summary, rows] = await Promise.all([
+      this.computeEarningsSummary(req.user.id),
+      this.prisma.splitLedgerEntry.findMany({
+        where: { payee_user_id: req.user.id },
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        take: limit + 1,
+        ...(query.cursor
+          ? { cursor: { id: query.cursor }, skip: 1 }
+          : {}),
+      }),
+    ]);
+    const hasMore = rows.length > limit;
+    const entries = hasMore ? rows.slice(0, limit) : rows;
+    const next_cursor = hasMore ? entries[entries.length - 1].id : null;
+    return { summary, entries, next_cursor };
+  }
+
+  // CSV export of the coach's FULL earnings ledger, scoped strictly to
+  // req.user.id as payee. Streamed in id-stable cursor batches so the route
+  // never issues an unbounded single query yet still returns every row.
+  @Roles('coach', 'owner')
+  @Get('earnings/export.csv')
+  @ApiOperation({
+    summary: "Export the coach's full earnings ledger as CSV (payee-scoped)",
+  })
+  @ApiResponse({ status: 200, description: 'text/csv attachment' })
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Cache-Control', 'no-store')
+  async exportEarningsCsv(
+    @Request() req: AuthedRequest,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<string> {
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="earnings-${stamp}.csv"`,
     );
-    return { summary, entries };
+    const columns = [
+      'id',
+      'purchase_id',
+      'kind',
+      'status',
+      'amount_cents',
+      'reversed_cents',
+      'currency',
+      'stripe_charge_id',
+      'stripe_transfer_id',
+      'posted_at',
+      'reversed_at',
+      'created_at',
+    ] as const;
+    const rows: Array<Record<string, unknown>> = [];
+    // Bounded batch loop — pull EARNINGS_EXPORT_BATCH rows at a time using
+    // the id-stable cursor until the ledger is drained. Each query is
+    // capped, so memory/DB pressure stays bounded per round-trip while the
+    // export still covers the full payee history.
+    const batchSize = 500;
+    let cursorId: string | undefined;
+    // Hard ceiling on total rows so a pathological ledger can't OOM the
+    // process; in practice no coach approaches this.
+    const maxRows = 100_000;
+    while (rows.length < maxRows) {
+      const batch = await this.prisma.splitLedgerEntry.findMany({
+        where: { payee_user_id: req.user.id },
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        take: batchSize,
+        ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+      });
+      if (batch.length === 0) break;
+      for (const e of batch) rows.push(e as unknown as Record<string, unknown>);
+      if (batch.length < batchSize) break;
+      cursorId = batch[batch.length - 1].id;
+    }
+    return rowsToCsv(columns, rows);
+  }
+
+  // Roll up the coach's gross earnings by status over the FULL ledger
+  // using a single grouped aggregate (no per-row scan / N+1). The math
+  // mirrors the original inline rollup:
+  //   posted   = sum(amount) - sum(reversed)  on posted rows
+  //   pending  = sum(amount)                  on pending rows
+  //   reversed = sum(amount)                  on reversed rows
+  private async computeEarningsSummary(payeeUserId: string): Promise<{
+    posted_cents: number;
+    pending_cents: number;
+    reversed_cents: number;
+  }> {
+    const grouped = await this.prisma.splitLedgerEntry.groupBy({
+      by: ['status'],
+      where: { payee_user_id: payeeUserId },
+      _sum: { amount_cents: true, reversed_cents: true },
+    });
+    const summary = { posted_cents: 0, pending_cents: 0, reversed_cents: 0 };
+    for (const g of grouped) {
+      const amount = g._sum.amount_cents ?? 0;
+      const reversed = g._sum.reversed_cents ?? 0;
+      if (g.status === 'posted') summary.posted_cents += amount - reversed;
+      else if (g.status === 'pending') summary.pending_cents += amount;
+      else if (g.status === 'reversed') summary.reversed_cents += amount;
+    }
+    return summary;
   }
 
   // Coach's failed / past-due payments and active dunning windows for
@@ -610,6 +779,7 @@ export class CoachPaymentOpsController {
   // PII; must never be reachable by students.
   @Roles('coach', 'owner')
   @Get('failed')
+  @ApiOperation({ summary: "List failed/past-due purchases on the coach's roster" })
   async failedOnRoster(@Request() req: AuthedRequest) {
     const purchases = await this.prisma.clientPurchase.findMany({
       where: {
@@ -630,6 +800,7 @@ export class CoachPaymentOpsController {
   // req.user.id. Students have no fee-policy semantics; OWNER for support.
   @Roles('coach', 'owner')
   @Get('fee-policy')
+  @ApiOperation({ summary: "Get the calling coach's effective fee policy" })
   async getOwnFeePolicy(@Request() req: AuthedRequest) {
     const [policy, override] = await Promise.all([
       this.feePolicy.resolvePolicy(req.user.id),
@@ -647,6 +818,7 @@ export class CoachPaymentOpsController {
   // students have no Connect surface.
   @Roles('coach', 'owner')
   @Get('payout-readiness')
+  @ApiOperation({ summary: "Get the calling coach's payout readiness" })
   async getOwnPayoutReadiness(
     @Request() req: AuthedRequest,
     @Query('refresh') refresh?: string,
@@ -664,6 +836,7 @@ export class CoachPaymentOpsController {
   // see revenue numbers.
   @Roles('coach', 'owner')
   @Get('summary')
+  @ApiOperation({ summary: "Get the calling coach's earnings summary (from/to)" })
   async getOwnEarningsSummary(
     @Request() req: AuthedRequest,
     @Query('from') fromRaw?: string,

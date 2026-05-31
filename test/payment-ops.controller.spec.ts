@@ -27,8 +27,8 @@ function makePrismaStub() {
     _packages: packages,
     _feePolicies: feePolicies,
     clientPurchase: {
-      findMany: jest.fn(async ({ where = {} }: any) =>
-        purchases.filter((p) =>
+      findMany: jest.fn(async ({ where = {}, take, cursor, skip }: any) => {
+        let matched = purchases.filter((p) =>
           Object.entries(where).every(([k, v]: any) => {
             if (k === 'OR' && Array.isArray(v)) {
               return v.some((clause: any) =>
@@ -37,8 +37,14 @@ function makePrismaStub() {
             }
             return p[k] === v;
           }),
-        ),
-      ),
+        );
+        if (cursor && cursor.id) {
+          const idx = matched.findIndex((p) => p.id === cursor.id);
+          if (idx >= 0) matched = matched.slice(idx + (skip ?? 0));
+        }
+        if (typeof take === 'number') matched = matched.slice(0, take);
+        return matched;
+      }),
       findUnique: jest.fn(async ({ where }: any) =>
         purchases.find((p) => p.id === where.id) ?? null,
       ),
@@ -54,11 +60,36 @@ function makePrismaStub() {
       ),
     },
     splitLedgerEntry: {
-      findMany: jest.fn(async ({ where = {} }: any) =>
-        splits.filter((s) =>
+      findMany: jest.fn(async ({ where = {}, take, cursor, skip }: any) => {
+        let matched = splits.filter((s) =>
           Object.entries(where).every(([k, v]) => s[k] === v),
-        ),
-      ),
+        );
+        // Honor cursor pagination so the bounds tests exercise the real
+        // take+cursor path: drop everything up to and including the cursor
+        // row, then slice to `take`.
+        if (cursor && cursor.id) {
+          const idx = matched.findIndex((s) => s.id === cursor.id);
+          if (idx >= 0) matched = matched.slice(idx + (skip ?? 0));
+        }
+        if (typeof take === 'number') matched = matched.slice(0, take);
+        return matched;
+      }),
+      groupBy: jest.fn(async ({ where = {} }: any) => {
+        const matched = splits.filter((s) =>
+          Object.entries(where).every(([k, v]) => s[k] === v),
+        );
+        const byStatus = new Map<string, { amount: number; reversed: number }>();
+        for (const s of matched) {
+          const acc = byStatus.get(s.status) ?? { amount: 0, reversed: 0 };
+          acc.amount += s.amount_cents ?? 0;
+          acc.reversed += s.reversed_cents ?? 0;
+          byStatus.set(s.status, acc);
+        }
+        return Array.from(byStatus.entries()).map(([status, sums]) => ({
+          status,
+          _sum: { amount_cents: sums.amount, reversed_cents: sums.reversed },
+        }));
+      }),
     },
     connectTransfer: {
       findMany: jest.fn(async ({ where = {} }: any) =>
@@ -425,9 +456,10 @@ describe('CoachPaymentOpsController', () => {
       { id: 'p1', coach_user_id: 'me', created_at: new Date() },
       { id: 'p2', coach_user_id: 'other', created_at: new Date() },
     );
-    const out = await ctrl.listOwn(makeReq('me'));
+    const out = await ctrl.listOwn(makeReq('me'), {});
     expect(out.purchases).toHaveLength(1);
     expect(out.purchases[0].id).toBe('p1');
+    expect(out.next_cursor).toBeNull();
   });
 
   // Security-fix update (A1-P0-2): handler now scopes the WHERE by
@@ -492,11 +524,12 @@ describe('CoachPaymentOpsController', () => {
         created_at: new Date(),
       },
     );
-    const out = await ctrl.earnings(makeReq('me'));
+    const out = await ctrl.earnings(makeReq('me'), {});
     expect(out.summary.posted_cents).toBe(9_800);
     expect(out.summary.pending_cents).toBe(9_300);
     expect(out.summary.reversed_cents).toBe(500);
     expect(out.entries).toHaveLength(3);
+    expect(out.next_cursor).toBeNull();
   });
 
   it('returns failed/past_due purchases on the coach roster', async () => {
@@ -542,5 +575,135 @@ describe('CoachPaymentOpsController', () => {
       'me',
       expect.objectContaining({ from: expect.any(Date), to: expect.any(Date) }),
     );
+  });
+
+  // --- B5: listOwn bounded cursor pagination ---
+
+  it('B5: listOwn caps the page at the requested limit and returns a next_cursor', async () => {
+    const { ctrl, prisma } = makeCoachController();
+    for (let i = 0; i < 5; i++) {
+      prisma._purchases.push({
+        id: `p${i}`,
+        coach_user_id: 'me',
+        created_at: new Date(2026, 0, 10 - i),
+      });
+    }
+    const page = await ctrl.listOwn(makeReq('me'), { limit: 2 });
+    expect(page.purchases).toHaveLength(2);
+    expect(page.purchases[0].id).toBe('p0');
+    expect(page.purchases[1].id).toBe('p1');
+    // 5 rows, page of 2 -> there IS a next page, cursor is the last row id.
+    expect(page.next_cursor).toBe('p1');
+  });
+
+  it('B5: listOwn cursor returns the following page', async () => {
+    const { ctrl, prisma } = makeCoachController();
+    for (let i = 0; i < 5; i++) {
+      prisma._purchases.push({
+        id: `p${i}`,
+        coach_user_id: 'me',
+        created_at: new Date(2026, 0, 10 - i),
+      });
+    }
+    const next = await ctrl.listOwn(makeReq('me'), { limit: 2, cursor: 'p1' });
+    expect(next.purchases.map((p: any) => p.id)).toEqual(['p2', 'p3']);
+    expect(next.next_cursor).toBe('p3');
+  });
+
+  it('B5: listOwn last page reports next_cursor=null', async () => {
+    const { ctrl, prisma } = makeCoachController();
+    for (let i = 0; i < 4; i++) {
+      prisma._purchases.push({
+        id: `p${i}`,
+        coach_user_id: 'me',
+        created_at: new Date(2026, 0, 10 - i),
+      });
+    }
+    const last = await ctrl.listOwn(makeReq('me'), { limit: 2, cursor: 'p1' });
+    expect(last.purchases.map((p: any) => p.id)).toEqual(['p2', 'p3']);
+    expect(last.next_cursor).toBeNull();
+  });
+
+  it('B5: listOwn scope still filters by coach_user_id (a different coach sees none)', async () => {
+    const { ctrl, prisma } = makeCoachController();
+    prisma._purchases.push(
+      { id: 'p1', coach_user_id: 'me', created_at: new Date() },
+      { id: 'p2', coach_user_id: 'other', created_at: new Date() },
+    );
+    const mine = await ctrl.listOwn(makeReq('me'), {});
+    expect(mine.purchases).toHaveLength(1);
+    const theirs = await ctrl.listOwn(makeReq('stranger'), {});
+    expect(theirs.purchases).toHaveLength(0);
+  });
+
+  // --- B6: earnings cursor pagination + full-ledger summary + export ---
+
+  function seedLedger(prisma: any, payee: string, n: number) {
+    for (let i = 0; i < n; i++) {
+      prisma._splits.push({
+        id: `${payee}-le${i}`,
+        payee_user_id: payee,
+        purchase_id: `pur${i}`,
+        kind: 'destination',
+        amount_cents: 100,
+        reversed_cents: 0,
+        status: 'posted',
+        currency: 'usd',
+        created_at: new Date(2026, 0, 1, 0, 0, n - i),
+      });
+    }
+  }
+
+  it('B6: summary aggregates the FULL ledger even when the page is truncated past 200', async () => {
+    const { ctrl, prisma } = makeCoachController();
+    // 250 posted entries of 100c each -> full posted total must be 25_000c,
+    // NOT the 20_000c the old hardcoded limit:200 would have produced.
+    seedLedger(prisma, 'me', 250);
+    const out = await ctrl.earnings(makeReq('me'), { limit: 50 });
+    expect(out.entries).toHaveLength(50);
+    expect(out.next_cursor).not.toBeNull();
+    expect(out.summary.posted_cents).toBe(25_000);
+  });
+
+  it('B6: earnings page is bounded and cursor advances', async () => {
+    const { ctrl, prisma } = makeCoachController();
+    seedLedger(prisma, 'me', 5);
+    const first = await ctrl.earnings(makeReq('me'), { limit: 2 });
+    expect(first.entries).toHaveLength(2);
+    expect(first.entries[0].id).toBe('me-le0');
+    expect(first.next_cursor).toBe('me-le1');
+    const second = await ctrl.earnings(makeReq('me'), {
+      limit: 2,
+      cursor: 'me-le1',
+    });
+    expect(second.entries.map((e: any) => e.id)).toEqual(['me-le2', 'me-le3']);
+  });
+
+  it('B6: summary is scoped to payee (another coach ledger does not leak in)', async () => {
+    const { ctrl, prisma } = makeCoachController();
+    seedLedger(prisma, 'me', 3); // 300c posted
+    seedLedger(prisma, 'other', 10); // 1000c posted, must be excluded
+    const out = await ctrl.earnings(makeReq('me'), {});
+    expect(out.summary.posted_cents).toBe(300);
+  });
+
+  it('B6: export.csv returns the full payee ledger, scoped, as CSV', async () => {
+    const { ctrl, prisma } = makeCoachController();
+    seedLedger(prisma, 'me', 3);
+    seedLedger(prisma, 'other', 2);
+    const headers: Record<string, string> = {};
+    const res: any = {
+      setHeader: (k: string, v: string) => {
+        headers[k] = v;
+      },
+    };
+    const csv = await ctrl.exportEarningsCsv(makeReq('me'), res);
+    expect(headers['Content-Disposition']).toMatch(/attachment; filename=/);
+    const lines = csv.trim().split('\r\n');
+    // 1 header + 3 of MY rows (the 2 'other' rows must NOT appear).
+    expect(lines).toHaveLength(4);
+    expect(lines[0]).toContain('amount_cents');
+    expect(csv).toContain('me-le0');
+    expect(csv).not.toContain('other-le0');
   });
 });
