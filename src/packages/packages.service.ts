@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -27,6 +28,20 @@ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 //       (1) one_time-only          (2) recurring-only
 //       (3) one_time + recurring   (4) recurring (with no companion)
 //     and rejects any half-set second-price config.
+
+// B1 — active-ish recurring subscription statuses. A buyer counts as an
+// "active recurring subscriber" (which locks the package's pricing) when
+// their ClientPurchase has a non-null stripe_subscription_id AND a status
+// in this set. These mirror the provider-normalized lifecycle values the
+// checkout webhook writes onto ClientPurchase.status:
+//   active     — subscription billing normally
+//   trialing   — in a free trial; the sub is live and will bill
+//   past_due   — a payment failed but Stripe has NOT canceled yet; the
+//                entitlement is still active during dunning, so a pricing
+//                swap here would still hit a live subscriber
+// Terminal/benign states (canceled, payment_failed, expired, pending,
+// paid one-time) are intentionally excluded — they do not lock pricing.
+const ACTIVE_RECURRING_STATUSES: string[] = ['active', 'trialing', 'past_due'];
 
 export interface CreatePackageInput {
   name: string;
@@ -159,6 +174,13 @@ export class PackagesService {
     // If price-shaping fields changed, clear the cached Stripe Price id so
     // the next checkout mints a fresh one. The Stripe Product is kept (the
     // name maps to the Product, the Price maps to the dollar amount).
+    //
+    // B1 — `duration_periods` is included as a price-shaping signal: it
+    // changes the buyer entitlement economics (how long access lasts for
+    // the same amount), so an edit to it must lock once active recurring
+    // buyers exist. It does NOT clear a cached Stripe Price id (the Price
+    // is amount/currency/interval only), so it is tracked separately from
+    // the stripe-id-clearing `priceChanged` flag below.
     const priceChanged =
       ('amount_cents' in data && data.amount_cents !== row.amount_cents) ||
       ('currency' in data && data.currency !== row.currency) ||
@@ -179,9 +201,68 @@ export class PackagesService {
       ('currency' in data && data.currency !== row.currency);
     if (recurringChanged) data.recurring_stripe_price_id = null;
 
-    return this.prisma.coachPackage.update({
-      where: { id: packageId },
-      data,
+    const durationChanged =
+      'duration_periods' in data &&
+      data.duration_periods !== row.duration_periods;
+
+    // B1 — pricing lock. If ANY price-shaping field changed (primary price,
+    // recurring companion, OR duration_periods), the edit may not proceed
+    // while the package has at least one active recurring subscriber. The
+    // lock protects existing subscribers from a price/economics swap under
+    // them; coaches must create a NEW package for new pricing.
+    //
+    // Pure name/description/status/availability edits (priceChanged ==
+    // recurringChanged == durationChanged == false) are ALWAYS allowed and
+    // skip the lock + transaction entirely.
+    const priceShapingChanged =
+      priceChanged || recurringChanged || durationChanged;
+
+    if (!priceShapingChanged) {
+      return this.prisma.coachPackage.update({
+        where: { id: packageId },
+        data,
+      });
+    }
+
+    // Race guard — lock the package row, recount active recurring buyers,
+    // and update atomically. A concurrent checkout that flips a purchase to
+    // entitlement_active=true blocks behind our FOR UPDATE lock (or we block
+    // behind theirs); whichever tx wins, the loser's count is consistent.
+    // `requireOwnedPackage()` (the IDOR guard) already ran above, BEFORE any
+    // subscriber count — re-confirmed here under lock for freshness.
+    //
+    // No Stripe HTTP is performed inside this transaction (the Price id is
+    // merely cleared to null; the lazy mint happens later at checkout),
+    // so the Postgres connection is never held across a network call.
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw<
+        Array<{ id: string }>
+      >`SELECT id FROM "CoachPackage" WHERE id = ${packageId} FOR UPDATE`;
+
+      // One count query (no N+1). Active recurring buyer fingerprint: a
+      // non-null Stripe subscription id AND an active-ish subscription
+      // status, AND the entitlement still live.
+      const activeRecurringCount = await tx.clientPurchase.count({
+        where: {
+          package_id: packageId,
+          entitlement_active: true,
+          stripe_subscription_id: { not: null },
+          status: { in: ACTIVE_RECURRING_STATUSES },
+        },
+      });
+
+      if (activeRecurringCount > 0) {
+        throw new ConflictException({
+          error: 'PACKAGE_PRICING_LOCKED',
+          message:
+            'Pricing is locked because this package has active subscribers. Create a new package for new pricing.',
+        });
+      }
+
+      return tx.coachPackage.update({
+        where: { id: packageId },
+        data,
+      });
     });
   }
 
@@ -412,11 +493,23 @@ export class PackagesService {
         message: 'name is required',
       });
     }
+    // PR-14 / B1 — a recurring companion makes this a combo (one-time
+    // primary + recurring companion). When a companion is present we
+    // disambiguate the min/max error copy so the coach knows WHICH leg of
+    // the combo is below the Stripe minimum (the one-time primary vs the
+    // recurring companion). Presence is ANY recurring_* field being set,
+    // matching the half-set detection below.
+    const hasRecurringCompanion =
+      input.recurring_amount_cents != null ||
+      input.recurring_interval != null ||
+      input.recurring_interval_count != null;
     if (!Number.isInteger(input.amount_cents) || input.amount_cents < 50) {
       // Stripe minimum charge for USD is 50 cents; under that the API rejects.
       throw new BadRequestException({
         error: 'PACKAGE_INVALID',
-        message: 'amount_cents must be an integer ≥ 50 (Stripe minimum)',
+        message: hasRecurringCompanion
+          ? 'one-time amount_cents must be an integer ≥ 50 (Stripe minimum)'
+          : 'amount_cents must be an integer ≥ 50 (Stripe minimum)',
       });
     }
     if (input.currency && !/^[a-z]{3}$/i.test(input.currency)) {
@@ -497,7 +590,8 @@ export class PackagesService {
       if (!Number.isInteger(r.amt!) || (r.amt as number) < 50) {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
-          message: 'recurring_amount_cents must be an integer ≥ 50',
+          message:
+            'recurring_amount_cents must be an integer ≥ 50 (Stripe minimum for the recurring companion)',
         });
       }
       if (r.interval !== 'week' && r.interval !== 'month' && r.interval !== 'year') {

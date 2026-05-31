@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   NotFoundException,
 } from '@nestjs/common';
 import { PackagesService } from '../src/packages/packages.service';
@@ -8,10 +9,17 @@ function makePrismaStub() {
   const rows: any[] = [];
   const purchases: any[] = [];
   const contents: any[] = [];
-  return {
+  const stub: any = {
     _rows: rows,
     _purchases: purchases,
     _contents: contents,
+    // B1 — the pricing-lock path runs inside prisma.$transaction(cb). The
+    // stub executes the callback synchronously with itself as the `tx`
+    // client so tx.$queryRaw / tx.clientPurchase / tx.coachPackage all
+    // resolve against the same in-memory rows.
+    $transaction: jest.fn(async (cb: any) => cb(stub)),
+    // FOR UPDATE row lock — no-op in the stub; just returns the locked id.
+    $queryRaw: jest.fn(async () => []),
     coachPackage: {
       findUnique: jest.fn(async ({ where }: any) =>
         rows.find((r) => r.id === where.id) ?? null,
@@ -74,6 +82,37 @@ function makePrismaStub() {
         );
         return all.slice(skip ?? 0, (skip ?? 0) + (take ?? all.length));
       }),
+      // B1 — the active-recurring-buyer count used by the pricing lock.
+      // Mirrors the Prisma `where` the service passes: package_id +
+      // entitlement_active + stripe_subscription_id { not: null } +
+      // status { in: [...] }.
+      count: jest.fn(async ({ where }: any) =>
+        purchases.filter((p) => {
+          if (where.package_id !== undefined && p.package_id !== where.package_id)
+            return false;
+          if (
+            where.entitlement_active !== undefined &&
+            p.entitlement_active !== where.entitlement_active
+          )
+            return false;
+          if (
+            where.stripe_subscription_id &&
+            typeof where.stripe_subscription_id === 'object' &&
+            'not' in where.stripe_subscription_id
+          ) {
+            // { not: null } → require a non-null subscription id.
+            if (p.stripe_subscription_id == null) return false;
+          }
+          if (
+            where.status &&
+            typeof where.status === 'object' &&
+            Array.isArray(where.status.in)
+          ) {
+            if (!where.status.in.includes(p.status)) return false;
+          }
+          return true;
+        }).length,
+      ),
     },
     coachPackageContent: {
       count: jest.fn(async ({ where }: any) =>
@@ -85,6 +124,7 @@ function makePrismaStub() {
       ),
     },
   };
+  return stub;
 }
 
 function makeSubCoachStub(headMap: Record<string, string | null> = {}) {
@@ -417,6 +457,277 @@ describe('PackagesService', () => {
         recurring_amount_cents: 7500,
       });
       expect(updated.recurring_stripe_price_id).toBeNull();
+    });
+  });
+
+  describe('B1: pricing lock after active recurring subscriber', () => {
+    // Seed a recurring package + a single buyer with a given lifecycle.
+    async function seedWithSubscriber(
+      purchase: Partial<{
+        entitlement_active: boolean;
+        stripe_subscription_id: string | null;
+        status: string;
+      }> = {},
+    ) {
+      const pkg = await svc.create('coach-1', {
+        name: 'Monthly Coaching',
+        amount_cents: 19900,
+        billing_type: 'recurring',
+        interval: 'month',
+      });
+      prisma._purchases.push({
+        id: 'pu-1',
+        package_id: pkg.id,
+        client_user_id: 'cli-1',
+        entitlement_active: purchase.entitlement_active ?? true,
+        stripe_subscription_id:
+          purchase.stripe_subscription_id === undefined
+            ? 'sub_123'
+            : purchase.stripe_subscription_id,
+        status: purchase.status ?? 'active',
+        created_at: new Date(2026, 0, 1),
+      });
+      return pkg;
+    }
+
+    it('ALLOWS name/description/status update with active recurring subscribers', async () => {
+      const pkg = await seedWithSubscriber();
+      const updated = await svc.update('coach-1', pkg.id, {
+        name: 'Renamed',
+        description: 'new copy',
+        is_active: false,
+      });
+      expect(updated.name).toBe('Renamed');
+      expect(updated.description).toBe('new copy');
+      expect(updated.is_active).toBe(false);
+      // Pure non-price edit must NOT open a transaction / lock.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('BLOCKS amount_cents change with active recurring subscriber', async () => {
+      const pkg = await seedWithSubscriber();
+      const err = await svc
+        .update('coach-1', pkg.id, { amount_cents: 29900 })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect((err as ConflictException).getResponse()).toMatchObject({
+        error: 'PACKAGE_PRICING_LOCKED',
+      });
+      // Lock acquired before counting.
+      expect(prisma.$queryRaw).toHaveBeenCalled();
+    });
+
+    it('BLOCKS currency change with active recurring subscriber', async () => {
+      const pkg = await seedWithSubscriber();
+      await expect(
+        svc.update('coach-1', pkg.id, { currency: 'eur' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('BLOCKS billing_type change with active recurring subscriber', async () => {
+      // Seed a one_time package that nonetheless has a live recurring buyer
+      // row (e.g. a legacy/combo purchase carrying a subscription id). The
+      // coach tries to flip the primary to recurring — a valid shape that
+      // must still be blocked by the lock.
+      const pkg = await svc.create('coach-1', {
+        name: 'OneTime',
+        amount_cents: 19900,
+        billing_type: 'one_time',
+      });
+      prisma._purchases.push({
+        id: 'pu-bt',
+        package_id: pkg.id,
+        client_user_id: 'cli-1',
+        entitlement_active: true,
+        stripe_subscription_id: 'sub_bt',
+        status: 'active',
+        created_at: new Date(2026, 0, 1),
+      });
+      await expect(
+        svc.update('coach-1', pkg.id, {
+          billing_type: 'recurring',
+          interval: 'month',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('BLOCKS interval change with active recurring subscriber', async () => {
+      const pkg = await seedWithSubscriber();
+      await expect(
+        svc.update('coach-1', pkg.id, { interval: 'year' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('BLOCKS interval_count change with active recurring subscriber', async () => {
+      const pkg = await seedWithSubscriber();
+      await expect(
+        svc.update('coach-1', pkg.id, { interval_count: 3 }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('BLOCKS duration_periods change with active recurring subscriber', async () => {
+      const pkg = await seedWithSubscriber();
+      await expect(
+        svc.update('coach-1', pkg.id, { duration_periods: 12 }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('BLOCKS recurring companion change with active recurring subscriber (combo locks both legs)', async () => {
+      // One-time primary + recurring companion combo with an active
+      // recurring buyer. Editing EITHER the companion or the one-time
+      // primary must lock.
+      const pkg = await svc.create('coach-1', {
+        name: 'combo',
+        amount_cents: 50000,
+        billing_type: 'one_time',
+        recurring_amount_cents: 9900,
+        recurring_interval: 'month',
+        recurring_interval_count: 1,
+      });
+      prisma._purchases.push({
+        id: 'pu-combo',
+        package_id: pkg.id,
+        client_user_id: 'cli-1',
+        entitlement_active: true,
+        stripe_subscription_id: 'sub_combo',
+        status: 'active',
+        created_at: new Date(2026, 0, 1),
+      });
+      // Companion leg locked.
+      await expect(
+        svc.update('coach-1', pkg.id, { recurring_amount_cents: 12900 }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      // One-time primary leg locked too.
+      await expect(
+        svc.update('coach-1', pkg.id, { amount_cents: 60000 }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('locks on a trialing subscriber', async () => {
+      const pkg = await seedWithSubscriber({ status: 'trialing' });
+      await expect(
+        svc.update('coach-1', pkg.id, { amount_cents: 29900 }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('locks on a past_due subscriber (still in dunning, entitlement live)', async () => {
+      const pkg = await seedWithSubscriber({ status: 'past_due' });
+      await expect(
+        svc.update('coach-1', pkg.id, { amount_cents: 29900 }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('ALLOWS pricing edit when the subscriber is canceled', async () => {
+      const pkg = await seedWithSubscriber({
+        status: 'canceled',
+        entitlement_active: false,
+      });
+      const updated = await svc.update('coach-1', pkg.id, {
+        amount_cents: 29900,
+      });
+      expect(updated.amount_cents).toBe(29900);
+    });
+
+    it('ALLOWS pricing edit when entitlement is inactive (even if status active)', async () => {
+      const pkg = await seedWithSubscriber({ entitlement_active: false });
+      const updated = await svc.update('coach-1', pkg.id, {
+        amount_cents: 29900,
+      });
+      expect(updated.amount_cents).toBe(29900);
+    });
+
+    it('ALLOWS pricing edit when buyer has no Stripe subscription (one-time buyer)', async () => {
+      const pkg = await seedWithSubscriber({ stripe_subscription_id: null });
+      const updated = await svc.update('coach-1', pkg.id, {
+        amount_cents: 29900,
+      });
+      expect(updated.amount_cents).toBe(29900);
+    });
+
+    it('ALLOWS pricing edit when there are no buyers at all', async () => {
+      const pkg = await svc.create('coach-1', {
+        name: 'Monthly',
+        amount_cents: 19900,
+        billing_type: 'recurring',
+        interval: 'month',
+      });
+      const updated = await svc.update('coach-1', pkg.id, {
+        amount_cents: 29900,
+      });
+      expect(updated.amount_cents).toBe(29900);
+    });
+
+    it('IDOR guard runs BEFORE the subscriber count (foreign coach 404s, never counts)', async () => {
+      const pkg = await seedWithSubscriber();
+      const countSpy = prisma.clientPurchase.count as jest.Mock;
+      const err = await svc
+        .update('coach-2', pkg.id, { amount_cents: 29900 })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(NotFoundException);
+      expect((err as NotFoundException).getResponse()).toMatchObject({
+        error: 'PACKAGE_NOT_FOUND',
+      });
+      // Never reached the lock/count path for a non-owned package.
+      expect(countSpy).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('uses exactly ONE count query on the lock path (no N+1)', async () => {
+      const pkg = await seedWithSubscriber();
+      const countSpy = prisma.clientPurchase.count as jest.Mock;
+      await svc
+        .update('coach-1', pkg.id, { amount_cents: 29900 })
+        .catch(() => undefined);
+      expect(countSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('B1: combo min/max error copy', () => {
+    it('primary minimum copy is GENERIC when there is no recurring companion', async () => {
+      const err = await svc
+        .create('coach-1', { name: 'p', amount_cents: 10 })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as BadRequestException).getResponse()).toEqual({
+        error: 'PACKAGE_INVALID',
+        message: 'amount_cents must be an integer ≥ 50 (Stripe minimum)',
+      });
+    });
+
+    it('primary minimum copy DISAMBIGUATES the one-time leg when a recurring companion is present', async () => {
+      const err = await svc
+        .create('coach-1', {
+          name: 'combo',
+          amount_cents: 10,
+          billing_type: 'one_time',
+          recurring_amount_cents: 9900,
+          recurring_interval: 'month',
+        })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as BadRequestException).getResponse()).toEqual({
+        error: 'PACKAGE_INVALID',
+        message:
+          'one-time amount_cents must be an integer ≥ 50 (Stripe minimum)',
+      });
+    });
+
+    it('recurring companion minimum copy names the recurring companion', async () => {
+      const err = await svc
+        .create('coach-1', {
+          name: 'combo',
+          amount_cents: 5000,
+          billing_type: 'one_time',
+          recurring_amount_cents: 10,
+          recurring_interval: 'month',
+        })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as BadRequestException).getResponse()).toEqual({
+        error: 'PACKAGE_INVALID',
+        message:
+          'recurring_amount_cents must be an integer ≥ 50 (Stripe minimum for the recurring companion)',
+      });
     });
   });
 
