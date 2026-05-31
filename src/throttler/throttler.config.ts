@@ -1,5 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { ThrottlerModuleOptions } from '@nestjs/throttler';
+import type { ThrottlerStorage } from '@nestjs/throttler';
+import type { ThrottlerStorageRecord } from '@nestjs/throttler/dist/throttler-storage-record.interface';
 
 // Named throttler limits applied across the API.
 //
@@ -243,9 +245,119 @@ export const THROTTLER_LIMITS = [
  * RATELIMIT_ENABLED=off completely disables all throttling (useful for
  * load-test runs against staging). Defaults to on.
  */
+// ---------------------------------------------------------------------------
+// R2 P1 — Redis-down GRACEFUL DEGRADATION (fail-open).
+//
+// The throttler's Redis client is constructed with `enableOfflineQueue:false`
+// and `maxRetriesPerRequest:1`, so when Redis is configured but UNAVAILABLE a
+// storage `increment()` rejects (e.g. "Stream isn't writeable and
+// enableOfflineQueue options is false"). With no guard around that call, the
+// rejection propagates out of the ThrottlerGuard and turns EVERY globally
+// throttled route — including the public storefront join route — into a 5xx.
+//
+// Decacorn policy: a transient infra hiccup must NEVER break the user flow.
+// We therefore FAIL OPEN — on a storage error we allow the request through,
+// emit a high-severity structured warning, and bump a low-cardinality metric
+// so the outage is loud in observability without converting it into a wall of
+// user-facing 500s. Fail-open is the correct trade here: the throttler is a
+// defense-in-depth abuse brake, not the only control on these routes (the
+// public surface also has opaque tokens, DTO validation, and a separate
+// long-window IP limiter on the money paths), and the failure window is the
+// brief period Redis is down. We log + meter so on-call sees it immediately.
+//
+// `recordThrottlerStorageFailures` is exported so the global throttler-storage
+// failure count can be read (e.g. by the /metrics surface or tests) without
+// this module taking a DI dependency on MetricsService — keeping the fix
+// inside the H4 write-set.
+// ---------------------------------------------------------------------------
+
+export interface ThrottlerStorageDegradeHooks {
+  /** Structured warn-level logger. Defaults to a `ThrottlerConfig` Logger. */
+  logger?: Pick<Logger, 'warn'>;
+  /** Metric sink, e.g. `MetricsService.increment.bind(metrics)`. Optional. */
+  onFailure?: (metric: string, labels: Record<string, string>) => void;
+}
+
+// Process-local fail-open counter. Mirrors the metric so the degraded state is
+// observable even when no external metric sink is wired. Keyed by throttler
+// name (low cardinality — bounded by THROTTLER_LIMITS).
+const throttlerStorageFailureCounts = new Map<string, number>();
+
+/** Read (and reset, when `reset`) the per-throttler fail-open counter. */
+export function recordThrottlerStorageFailures(
+  reset = false,
+): Record<string, number> {
+  const snapshot: Record<string, number> = {};
+  for (const [name, n] of throttlerStorageFailureCounts) snapshot[name] = n;
+  if (reset) throttlerStorageFailureCounts.clear();
+  return snapshot;
+}
+
+/**
+ * Wrap a ThrottlerStorage so a backend (Redis) failure FAILS OPEN instead of
+ * propagating a 5xx. On error we log a high-severity warning, bump a metric +
+ * a process-local counter, and return a non-blocking record (0 hits, not
+ * blocked) so the request is allowed and the user flow is never broken by a
+ * transient infra hiccup.
+ */
+export function withFailOpenStorage(
+  storage: ThrottlerStorage,
+  hooks: ThrottlerStorageDegradeHooks = {},
+): ThrottlerStorage {
+  const logger = hooks.logger ?? new Logger('ThrottlerConfig');
+  return {
+    async increment(
+      key: string,
+      ttl: number,
+      limit: number,
+      blockDuration: number,
+      throttlerName: string,
+    ): Promise<ThrottlerStorageRecord> {
+      try {
+        return await storage.increment(
+          key,
+          ttl,
+          limit,
+          blockDuration,
+          throttlerName,
+        );
+      } catch (err) {
+        const name = throttlerName || 'unknown';
+        throttlerStorageFailureCounts.set(
+          name,
+          (throttlerStorageFailureCounts.get(name) ?? 0) + 1,
+        );
+        // High-severity structured warning. No PII / no raw key (keys embed a
+        // hashed tracker) — only the throttler name and the error message.
+        logger.warn({
+          message: 'throttler.storage_unavailable.fail_open',
+          throttler: name,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        // Low-cardinality metric (labelled by throttler name only).
+        try {
+          hooks.onFailure?.('throttler_storage_failures_total', {
+            throttler: name,
+          });
+        } catch {
+          // A broken metric sink must never break the fail-open path.
+        }
+        // FAIL OPEN — allow the request through. 0 hits, not blocked.
+        return {
+          totalHits: 0,
+          timeToExpire: Math.ceil(ttl / 1000),
+          isBlocked: false,
+          timeToBlockExpire: 0,
+        };
+      }
+    },
+  };
+}
+
 export async function buildThrottlerOptions(
   redisUrl: string | undefined,
   logger: Logger = new Logger('ThrottlerConfig'),
+  degradeHooks: ThrottlerStorageDegradeHooks = {},
 ): Promise<ThrottlerModuleOptions> {
   const throttlers = THROTTLER_LIMITS.map((t) => ({ ...t }));
 
@@ -304,8 +416,20 @@ export async function buildThrottlerOptions(
   })();
   logger.log(`Throttler using Redis store at ${redisHost}`);
 
+  // R2 P1 — wrap the Redis storage so a backend outage FAILS OPEN (logged
+  // warning + metric) rather than turning every throttled route into a 5xx.
+  // The hooks default the logger to this module's logger; `degradeHooks.
+  // onFailure` (if the caller wires a MetricsService sink) emits a
+  // low-cardinality `throttler_storage_failures_total` counter.
+  const redisStorage = new (ThrottlerStorageRedisService as any)(
+    client,
+  ) as ThrottlerStorage;
+
   return {
     throttlers,
-    storage: new (ThrottlerStorageRedisService as any)(client),
+    storage: withFailOpenStorage(redisStorage, {
+      logger,
+      ...degradeHooks,
+    }),
   };
 }
