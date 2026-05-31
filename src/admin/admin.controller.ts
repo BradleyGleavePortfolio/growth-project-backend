@@ -14,7 +14,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { ServiceTokenGuard } from '../auth/service-token.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { AdminService } from './admin.service';
+import { AdminService, decodeKeysetCursor } from './admin.service';
 import { MetricsService } from './metrics.service';
 import {
   AdminMetricsQueryDto,
@@ -84,7 +84,7 @@ export class AdminController {
   async listCoaches(@Query() query: ListCoachesQueryDto) {
     return this.admin.listCoaches({
       limit: query.limit,
-      cursor: query.cursor ? new Date(query.cursor) : undefined,
+      cursor: query.cursor ? decodeKeysetCursor(query.cursor) : undefined,
     });
   }
 
@@ -106,7 +106,7 @@ export class AdminController {
       role: query.role,
       q: query.q,
       limit: query.limit,
-      cursor: query.cursor ? new Date(query.cursor) : undefined,
+      cursor: query.cursor ? decodeKeysetCursor(query.cursor) : undefined,
     });
   }
 

@@ -4,6 +4,7 @@ import {
   IsISO8601,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -13,6 +14,15 @@ import { Type } from 'class-transformer';
 
 // Phase 1A/1B: OWNER-only admin DTOs. These endpoints are gated by
 // JwtAuthGuard + RolesGuard with @Roles('owner').
+
+// Composite keyset cursor for the coach/user roster lists:
+// `<ISO8601 created_at>|<row id>`. Both halves are required so pagination is
+// deterministic across rows that share a created_at instant. The ISO half is
+// validated structurally here; the service re-parses and rejects (400) any
+// cursor whose timestamp is unparseable, so a malformed cursor never silently
+// resets paging to the top of the roster.
+export const KEYSET_CURSOR_REGEX =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})\|.+$/;
 
 export class PromoteUserDto {
   // Target role to set on the user. Owners may promote/demote between
@@ -80,11 +90,11 @@ export class ListCoachesQueryDto {
   @Max(LIST_LIMIT_MAX)
   limit?: number;
 
-  // Cursor is the `created_at` ISO timestamp of the last row from the
-  // previous page; coaches are ordered created_at ASC so the next page
-  // returns rows with created_at > cursor.
+  // Composite keyset cursor `<created_at ISO>|<id>` of the last row from the
+  // previous page; coaches are ordered (created_at, id) ASC so the next page
+  // resumes strictly after that exact (created_at, id) tuple.
   @IsOptional()
-  @IsISO8601()
+  @Matches(KEYSET_CURSOR_REGEX, { message: 'cursor must be `<ISO8601>|<id>`' })
   cursor?: string;
 }
 
@@ -106,11 +116,11 @@ export class ListUsersQueryDto {
   @Max(LIST_LIMIT_MAX)
   limit?: number;
 
-  // Cursor is the `created_at` ISO timestamp of the last row from the
-  // previous page; users are ordered created_at DESC so the next page
-  // returns rows with created_at < cursor.
+  // Composite keyset cursor `<created_at ISO>|<id>` of the last row from the
+  // previous page; users are ordered (created_at, id) DESC so the next page
+  // resumes strictly before that exact (created_at, id) tuple.
   @IsOptional()
-  @IsISO8601()
+  @Matches(KEYSET_CURSOR_REGEX, { message: 'cursor must be `<ISO8601>|<id>`' })
   cursor?: string;
 }
 
