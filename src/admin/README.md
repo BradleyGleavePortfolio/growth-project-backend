@@ -28,9 +28,9 @@ invite link.
 
 | Method | Path | Behavior |
 |---|---|---|
-| `GET` | `/admin/coaches` | Every coach with their profile and active client count |
+| `GET` | `/admin/coaches?limit=&cursor=` | Cursor-paginated coach roster. Returns `{ coaches, next_cursor }`. `limit` clamped `[1, 100]`, default 50. Keyset-ordered by `(created_at, id)` ASC; `cursor` is the `<ISO8601 created_at>\|<id>` of the previous page's last row. `next_cursor` is non-null only when more rows exist. |
 | `GET` | `/admin/coaches/:id` | One coach plus students and 7-day activity (logs, workouts, messages) |
-| `GET` | `/admin/users?role=&q=&limit=` | Filterable user search; max 200 |
+| `GET` | `/admin/users?role=&q=&limit=&cursor=` | Filterable, cursor-paginated user search. Returns `{ users, next_cursor }`. `limit` clamped `[1, 100]`, default 50. Keyset-ordered by `(created_at, id)` DESC; `cursor` is the `<ISO8601 created_at>\|<id>` of the previous page's last row. `next_cursor` is non-null only when more rows exist. |
 | `POST` | `/admin/users/:id/promote` | Promote/demote `role` and, on `coach`, ensure a `CoachProfile` |
 | `GET` | `/admin/metrics?since_days=` | Authoritative platform counters from Postgres. `since_days` clamped to `(0, 365]`, defaults to 30. Stripe-sourced figures come from the webhook mirror, never synthesized. Documented in [`../../docs/metrics.md`](../../docs/metrics.md). |
 | `GET` | `/admin/audit-log` | Cursor-paginated read over `AuditLog`. Filters: `action`, `target_user_id`, `tenant_coach_id`, `before`, `limit` (clamped `[1, 200]`, default 50). Documented in [`../../docs/audit-and-gdpr.md`](../../docs/audit-and-gdpr.md). |
