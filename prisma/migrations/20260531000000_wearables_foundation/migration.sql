@@ -417,4 +417,45 @@ INSERT INTO "WearableMetricDef" ("metric", "bucket", "unit", "display_name", "ag
   ('BODY_BATTERY',           'SLEEP_RECOVERY', 'score',  'Body battery',          'last', NULL,                          330),
   ('STRAIN_SCORE',           'SLEEP_RECOVERY', 'score',  'Strain',                'max',  NULL,                          340);
 
+-- =====================================================================
+-- 7. TOKEN-COLUMN HARDENING — prevent non-service roles from SELECTing
+--    the encrypted token / secret-pointer columns of WearableConnection.
+--
+--    RLS filters ROWS, not COLUMNS. The wc_client_all / wc_coach_select
+--    policies above admit row access, so without column-level privileges a
+--    coach/client could still SELECT encrypted_refresh_token /
+--    encrypted_access_token through PostgREST/table access. We close that
+--    gap with column-level GRANTs + a SECURITY INVOKER safe-projection view.
+--    The four sensitive columns (encrypted_refresh_token,
+--    encrypted_access_token, credentials_secret_ref, webhook_secret_ref)
+--    are reachable ONLY by service_role (BYPASSRLS), never by the web roles.
+-- =====================================================================
+
+-- 1. Drop table-wide SELECT, then GRANT SELECT on the SAFE column subset only.
+--    anon never had a legitimate need, so it is left with no SELECT.
+REVOKE SELECT ON public."WearableConnection" FROM authenticated, anon;
+GRANT SELECT (
+  id, user_id, provider, external_account_id,
+  access_token_expires_at, scopes, webhook_subscription_id,
+  channel_expires_at, status, last_error, last_synced_at,
+  backfilled_until, disconnected_at, created_at, updated_at
+) ON public."WearableConnection" TO authenticated;
+
+-- 2. SECURITY INVOKER view that further constrains the projection. Coaches
+--    and clients query this view, never the base table. security_invoker =
+--    true (Postgres 15+) means the underlying-table RLS still applies, so
+--    row scoping (own rows / coached clients) is preserved.
+CREATE OR REPLACE VIEW public."WearableConnectionSafe"
+WITH (security_invoker = true) AS
+SELECT
+  id, user_id, provider, external_account_id,
+  access_token_expires_at, scopes, webhook_subscription_id,
+  channel_expires_at, status, last_error, last_synced_at,
+  backfilled_until, disconnected_at, created_at, updated_at
+FROM public."WearableConnection";
+
+-- 3. Grant SELECT on the safe view to authenticated; underlying-table RLS
+--    still applies because security_invoker = true.
+GRANT SELECT ON public."WearableConnectionSafe" TO authenticated;
+
 COMMIT;

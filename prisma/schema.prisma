@@ -5046,6 +5046,12 @@ model WearableConnection {
   // KMS-wrapped OAuth refresh token (AES-256-GCM envelope via KmsService:
   // base64(JSON({v,iv,tag,ct}))). Never plaintext. On-device providers
   // leave this null — they push samples, no server token.
+  //
+  // SECURITY: the encrypted_* token columns (and the *_secret_ref pointers)
+  // are REVOKED from non-service-role SELECT at the migration level
+  // (20260531000000_wearables_foundation) — service_role only. Coach/client
+  // reads go through the WearableConnectionSafe projection view, which omits
+  // these columns. Do not expose them via any PostgREST/table-level grant.
   encrypted_refresh_token String?
   // KMS-wrapped short-lived access token (optional cache; refresh is the
   // source of truth).
