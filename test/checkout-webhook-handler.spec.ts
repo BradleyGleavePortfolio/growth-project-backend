@@ -10,10 +10,23 @@ function makePrisma() {
   const packages: any[] = [];
   const purchases: any[] = [];
   const customers: any[] = [];
-  return {
+  const prisma: any = {
     _packages: packages,
     _purchases: purchases,
     _customers: customers,
+    // B1 (PR-18) — package-row lock taken before an entitlement activation.
+    // The stub records every locked package id so tests can assert the
+    // activation paths serialize on the CoachPackage row.
+    _lockedPackageIds: [] as string[],
+    $queryRaw: jest.fn(async (strings: TemplateStringsArray, ...vals: any[]) => {
+      // Mirror Prisma's tagged-template signature; capture the locked id.
+      if (vals.length) prisma._lockedPackageIds.push(vals[0]);
+      return [];
+    }),
+    // Interactive $transaction — invoke the callback with the stub itself
+    // acting as the transaction client (all reads/writes already operate on
+    // the shared in-memory arrays).
+    $transaction: jest.fn(async (cb: any) => cb(prisma)),
     coachPackage: {
       findUnique: jest.fn(async ({ where }: any) =>
         packages.find((p) => p.id === where.id) ?? null,
@@ -59,6 +72,7 @@ function makePrisma() {
       }),
     },
   };
+  return prisma;
 }
 
 function makeHandler() {
@@ -470,6 +484,129 @@ describe('CheckoutWebhookHandlerService', () => {
       expect(prisma._purchases[0].status).toBe('past_due');
       expect(prisma._purchases[0].last_error).toBe('card_declined');
       // Entitlement is retained during past_due until Stripe deletes the sub.
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+  });
+
+  // B1 (PR-18) — pricing-lock serialization. Every webhook path that flips
+  // a recurring ClientPurchase to entitlement_active=true must take the
+  // SAME `CoachPackage ... FOR UPDATE` row lock that PackagesService.update()
+  // takes before it counts active recurring buyers. Otherwise an activation
+  // could commit without touching the package row and the pricing guard's
+  // count would miss it, letting a price edit slip past during a race.
+  describe('B1 pricing-lock serialization on activation', () => {
+    it('checkout.session.completed (recurring) locks the package row BEFORE activating', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._packages.push({ id: 'pkg-2', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp-2',
+        package_id: 'pkg-2',
+        stripe_checkout_session_id: 'cs_sub',
+        status: 'pending',
+        entitlement_active: false,
+        billing_type: 'recurring',
+        created_at: new Date(),
+      });
+      await svc.handle({
+        id: 'evt_lock_1',
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_sub',
+            mode: 'subscription',
+            subscription: 'sub_lock',
+            customer: 'cus_x',
+          },
+        },
+      });
+      // The package row was locked for this activation.
+      expect(prisma._lockedPackageIds).toContain('pkg-2');
+      // The lock was taken BEFORE the entitlement flip committed: the
+      // FOR UPDATE $queryRaw fired at least once before the purchase
+      // update set entitlement_active=true.
+      const lockCall = prisma.$queryRaw.mock.invocationCallOrder[0];
+      const updateCall = prisma.clientPurchase.update.mock.invocationCallOrder[0];
+      expect(lockCall).toBeLessThan(updateCall);
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+
+    it('checkout.session.completed (recurring) locks on the OUTER tx when one is provided', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._packages.push({ id: 'pkg-7', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp-7',
+        package_id: 'pkg-7',
+        stripe_checkout_session_id: 'cs_tx',
+        status: 'pending',
+        entitlement_active: false,
+        billing_type: 'recurring',
+        created_at: new Date(),
+      });
+      // Outer tx = the same stub (mirrors BillingService threading its tx).
+      await svc.handle(
+        {
+          id: 'evt_lock_tx',
+          type: 'checkout.session.completed',
+          data: {
+            object: {
+              id: 'cs_tx',
+              mode: 'subscription',
+              subscription: 'sub_tx',
+              customer: 'cus_y',
+            },
+          },
+        },
+        prisma as any,
+      );
+      expect(prisma._lockedPackageIds).toContain('pkg-7');
+      // With an outer tx supplied we lock on it directly and do NOT open a
+      // nested $transaction for the activation.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+
+    it('customer.subscription.updated locks the package row before flipping entitlement', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._packages.push({ id: 'pkg-3', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp-3',
+        package_id: 'pkg-3',
+        stripe_subscription_id: 'sub_up',
+        status: 'pending',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      await svc.handle({
+        id: 'evt_lock_2',
+        type: 'customer.subscription.updated',
+        data: { object: { id: 'sub_up', status: 'active' } },
+      });
+      expect(prisma._lockedPackageIds).toContain('pkg-3');
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+
+    it('invoice.paid locks the package row on renewal re-activation', async () => {
+      const { svc, prisma, stripe } = makeHandler();
+      prisma._packages.push({ id: 'pkg-4', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp-4',
+        package_id: 'pkg-4',
+        stripe_subscription_id: 'sub_rn',
+        status: 'past_due',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      stripe.retrieveSubscription.mockResolvedValueOnce({
+        id: 'sub_rn',
+        status: 'active',
+        current_period_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+      });
+      await svc.handle({
+        id: 'evt_lock_3',
+        type: 'invoice.paid',
+        data: { object: { subscription: 'sub_rn' } },
+      });
+      expect(prisma._lockedPackageIds).toContain('pkg-4');
       expect(prisma._purchases[0].entitlement_active).toBe(true);
     });
   });
