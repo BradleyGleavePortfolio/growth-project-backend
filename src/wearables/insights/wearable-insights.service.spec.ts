@@ -7,6 +7,7 @@ import {
 import type { PrismaService } from '../../prisma.service';
 import type { AiGatewayService } from '../../ai/gateway/ai-gateway.service';
 import type { InsightCacheService } from './insight-cache.service';
+import { COACH_AI_METERED_CAPABILITIES } from '../../ai-credits/ai-credits.constants';
 import {
   CoachInsight,
   ClientInsight,
@@ -310,6 +311,27 @@ describe('WearableInsightsService', () => {
       expect(out.source_metrics).toEqual([]);
       // Empty state has no optional_cta field (it's the empty schema, not client).
       expect((out as unknown as Record<string, unknown>).optional_cta).toBeUndefined();
+    });
+  });
+
+  describe('budget metering (audit R1 #1)', () => {
+    // The gateway gates its pre-call budget check and post-call atomic
+    // recordUsage on COACH_AI_METERED_CAPABILITIES.has(req.capability)
+    // (src/ai/gateway/ai-gateway.service.ts). The R1 finding was that the
+    // wearable capabilities were absent from that set, so real provider
+    // calls bypassed the budget gate. These assertions lock the capability
+    // strings the service hands the gateway into the metered set.
+    it('meters the coach insight capability', () => {
+      expect(COACH_AI_METERED_CAPABILITIES.has(COACH_INSIGHT_CAPABILITY)).toBe(true);
+    });
+
+    it('meters the client insight capability', () => {
+      expect(COACH_AI_METERED_CAPABILITIES.has(CLIENT_INSIGHT_CAPABILITY)).toBe(true);
+    });
+
+    it('uses the exact capability strings the gateway will meter', () => {
+      expect(COACH_INSIGHT_CAPABILITY).toBe('wearable_insight.coach');
+      expect(CLIENT_INSIGHT_CAPABILITY).toBe('wearable_insight.client');
     });
   });
 

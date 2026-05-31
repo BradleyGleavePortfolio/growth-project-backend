@@ -46,6 +46,15 @@ export const COACH_AI_METERED_CAPABILITIES: ReadonlySet<string> = new Set([
   'meal_plan',
   'weekly_insight',
   'client_chat',
+  // PR-HK-4 — wearable AI insight capabilities. Additive declarations so
+  // the gateway's existing pre-call budget gate + atomic post-call
+  // recordUsage path meters them like every other real LLM call. The
+  // client-side insight resolves to the subject's coach budget via
+  // AiGatewayService.resolveBudgetCoachId (student.coach_id), and the
+  // coach-side resolves to the head-coach budget via tenantCoachId. No
+  // behavioural change to any existing capability.
+  'wearable_insight.coach',
+  'wearable_insight.client',
 ]);
 
 /** Resolve the actual ceiling at call time so test env mutations stick. */
