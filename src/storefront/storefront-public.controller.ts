@@ -119,8 +119,24 @@ export class StorefrontPublicController {
   // GET /api/v1/packages/public/join/:token
   // Returns coach + package metadata for the storefront SSR layer.
   // Hot path — keep cheap.
+  //
+  // #7 (token enumeration) — this route was previously throttled by a
+  // plain per-IP bucket at 60/min. Because the Nest @Throttle bucket on
+  // every `/v1/packages/public/join/*` route is keyed by the COMPOSITE
+  // `(token, IP)` tracker that `UserThrottlerGuard.getTracker()` derives
+  // (`storefront-join:<token>:<ip>` — see src/throttler/user-throttler.
+  // guard.ts), the per-IP 60 ceiling let one IP cheaply probe many
+  // distinct `:token` values: each token got its own fresh 60/min
+  // bucket, so the cap never bit on an enumeration sweep. We now mirror
+  // the companion POST `join/:token/checkout` exactly — the SAME
+  // composite-(token, IP) tracker AND the SAME `{ ttl: 60_000, limit: 20 }`
+  // bucket — so GET and POST are consistent and a single (token, IP)
+  // pair is bounded to 20/min. A legitimate buyer loading their one
+  // valid join link stays far under 20 reloads/min, so valid traffic is
+  // unaffected; only the abuse path (high-rate distinct-token probing)
+  // is tightened.
   @Public()
-  @Throttle({ default: { ttl: 60_000, limit: 60 } })
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @Get('join/:token')
   async getPublicPackage(@Param('token', new ShareTokenPipe()) token: string) {
     return this.storefront.getPublicPackageByToken(token);
