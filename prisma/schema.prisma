@@ -431,6 +431,15 @@ model User {
   // peak RPCM) for coaches. Null for students/owners until first computed.
   ltv_peak CoachLtvPeak? @relation("CoachLtvPeakCoach")
 
+  // PR-HK-0 — Wearables / HealthKit foundation. Back-relations ONLY (no
+  // column changes to User). All wearable rows belong to a client (the
+  // subject user) and cascade on user hard-delete. Coaches read a client's
+  // rows via RLS (`app.is_current_coach_of`), not via a relation field.
+  wearable_connections        WearableConnection[]           @relation("WearableConnectionUser")
+  wearable_samples            WearableSample[]               @relation("WearableSampleUser")
+  wearable_insights           WearableInsightCache[]         @relation("WearableInsightUser")
+  wearable_metric_preferences WearableUserMetricPreference[] @relation("WearablePrefUser")
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -4931,4 +4940,247 @@ model CoachLtvPeak {
   updated_at         DateTime @updatedAt
 
   @@map("coach_ltv_peak")
+}
+
+// ============================================================
+// PR-HK-0 — WEARABLES / HEALTHKIT FOUNDATION
+// ============================================================
+//
+// Additive only. Schema mutex: PR-HK-0 is the ONLY PR that edits
+// schema.prisma for the wearables expansion (see UNIFIED_BUILD_PLAN §7).
+// Connector/insight PRs add NO models — every wearable model exists here.
+//
+// Doctrine baked in (50-Failures defenses):
+//   #2  RLS — every table below ships ENABLE + FORCE RLS + explicit
+//       policies in the SAME migration as table creation. No table is
+//       ever born without RLS (the CPO "50-table RLS hole" lesson).
+//   #1  Tokens — OAuth refresh/access tokens stored ONLY as KMS-wrapped
+//       ciphertext via KmsService. Never plaintext, never in logs, never
+//       in coach-readable projections (the encrypted_* columns are never
+//       serialized by the read controllers — defense in depth).
+//   #28/#29 dedup/replay — WearableSample.dedup_key is UNIQUE;
+//       WearableProcessedEvent uses a composite (provider, event_id) PK.
+//   #22 indexes — every FK is indexed; the documented composite read
+//       indexes live on WearableSample.
+//   #45/#47 additive — no destructive ALTER; provenance preserved
+//       (two providers reporting the same window → distinct rows, resolved
+//       at read time, never overwritten).
+
+// External wearable / health data providers. Bucket is a property of the
+// METRIC (WearableMetricDef.bucket), never of the provider — a single
+// device can feed both buckets (an Apple Watch logs workouts AND sleep).
+enum WearableProvider {
+  APPLE_HEALTHKIT // iOS native, on-device push
+  HEALTH_CONNECT // Android (Health Connect / Google Fit), on-device push
+  GARMIN // Garmin Health API (cloud OAuth + webhook)
+  FITBIT // Fitbit Web API (cloud OAuth + subscription webhook)
+  STRAVA // Strava API v3 (cloud OAuth + push subscription) — H&F
+  POLAR // Polar AccessLink (cloud OAuth + webhook)
+  SAMSUNG_HEALTH // Samsung Health SDK, on-device (Android)
+  WAHOO // Wahoo Cloud API (cloud OAuth + webhook)
+  WITHINGS // Withings API (cloud OAuth + notify subscription)
+  PELOTON // Peloton (partner/unofficial) — v2 / feature-flagged
+  MYFITNESSPAL // MyFitnessPal nutrition — optional v2 / feature-flagged
+  OURA // Oura Cloud API v2 (cloud OAuth + x-oura-signature webhook)
+  WHOOP // WHOOP API v2 (cloud OAuth, offline scope, UUID webhooks)
+  EIGHT_SLEEP // Eight Sleep API (unofficial) — v2 / feature-flagged
+  BEDDIT // via HealthKit (sub-source)
+}
+
+// The two UX buckets. A metric belongs to exactly one PRIMARY bucket
+// (resting HR is dual-relevant but its primary home is SLEEP_RECOVERY,
+// surfaced as a read-only reference chip in HEALTH_FITNESS).
+enum WearableMetricBucket {
+  HEALTH_FITNESS // Bucket A — warm, "capable"
+  SLEEP_RECOVERY // Bucket B — cool, "reassured" (CALM treatment)
+}
+
+// Canonical metric taxonomy. Provider-native fields are normalized into
+// exactly these by each connector's normalizer; anything unlisted is
+// dropped (no speculative ingestion, #42).
+enum WearableMetricType {
+  // ── Health & Fitness ──
+  STEPS
+  ACTIVE_ENERGY_KCAL
+  RESTING_HEART_RATE_BPM
+  HEART_RATE_BPM
+  VO2_MAX
+  WORKOUT_DURATION_MIN
+  WORKOUT_DISTANCE_M
+  TRAINING_LOAD
+  BODY_WEIGHT_KG
+  BODY_FAT_PCT
+  BLOOD_PRESSURE_SYS
+  BLOOD_PRESSURE_DIA
+  // ── Sleep & Recovery ──
+  SLEEP_TOTAL_MIN
+  SLEEP_REM_MIN
+  SLEEP_DEEP_MIN
+  SLEEP_LIGHT_MIN
+  SLEEP_AWAKE_MIN
+  SLEEP_EFFICIENCY_PCT
+  HRV_MS
+  RECOVERY_SCORE
+  READINESS_SCORE
+  STRAIN_SCORE
+  BODY_BATTERY
+  BODY_TEMP_DEVIATION_C
+  RESPIRATORY_RATE_BRPM
+  SPO2_PCT
+}
+
+// Per-user external wearable connection. Modeled on CalendarConnection:
+// KMS-wrapped tokens, external account id, webhook channel tracking,
+// last-sync, soft-disconnect, fail-explicit status. On-device providers
+// (HealthKit / Samsung) leave the token columns null — they push samples.
+model WearableConnection {
+  id                      String           @id @default(uuid())
+  user_id                 String
+  user                    User             @relation("WearableConnectionUser", fields: [user_id], references: [id], onDelete: Cascade)
+  provider                WearableProvider
+  // External provider account id (e.g. Oura/Whoop user id). Deliberately
+  // NOT the raw token.
+  external_account_id     String?
+  // Pointer to secret-store entry for app-level provider secrets (optional).
+  credentials_secret_ref  String?
+  // KMS-wrapped OAuth refresh token (AES-256-GCM envelope via KmsService:
+  // base64(JSON({v,iv,tag,ct}))). Never plaintext. On-device providers
+  // leave this null — they push samples, no server token.
+  encrypted_refresh_token String?
+  // KMS-wrapped short-lived access token (optional cache; refresh is the
+  // source of truth).
+  encrypted_access_token  String?
+  access_token_expires_at DateTime?
+  // Granted OAuth scopes (provider-native strings) for audit + re-consent.
+  scopes                  String[]         @default([])
+  // Webhook subscription tracking (Oura/Whoop/Strava/Fitbit/Withings/Garmin).
+  webhook_subscription_id String?
+  webhook_secret_ref      String?
+  channel_expires_at      DateTime?
+  // Connection lifecycle: connected | expired | error | disconnected.
+  // Fail-explicit: a provider outage sets status='error' + last_error,
+  // surfaced to the coach — NEVER silently degraded to 'connected'.
+  status                  String           @default("connected")
+  last_error              String?
+  last_synced_at          DateTime?
+  // Backfill bookkeeping — earliest data we have pulled.
+  backfilled_until        DateTime?
+  disconnected_at         DateTime? // soft-disconnect; audit survives re-link
+  created_at              DateTime         @default(now())
+  updated_at              DateTime         @default(now()) @updatedAt
+  samples                 WearableSample[]
+
+  @@unique([user_id, provider, external_account_id], name: "WearableConnection_user_provider_account_key")
+  @@index([user_id])
+  @@index([status])
+  @@index([channel_expires_at])
+}
+
+// Seeded reference table: canonical metric → bucket/unit/display/aggregation/
+// norm-band. Single source of truth so the UI bucket filter and the AI
+// norm-comparison both read identical metadata without a code deploy
+// (#40 single source of truth). Seeded in the PR-HK-0 migration.
+model WearableMetricDef {
+  metric       WearableMetricType   @id
+  bucket       WearableMetricBucket
+  unit         String // "min", "bpm", "ms", "kg", "%", "kcal", "score", "m", "br/min", "°C"
+  display_name String // PLAIN-LANGUAGE (e.g. "Light sleep", never "N1/N2")
+  // Time-bucketing aggregation semantics: "sum" | "avg" | "last" | "max".
+  aggregation  String
+  // Scientific norm band as JSON for AI norm comparison, e.g.
+  // { "min": 20, "max": 25 }. Nullable.
+  norm_band    Json?
+  sort_order   Int                  @default(0)
+}
+
+// Canonical normalized fact table. Provider-native payloads map into rows
+// here via each connector's normalizer. Two providers reporting the same
+// metric for the same window → DISTINCT rows (provenance preserved);
+// overlap resolution is a READ-time policy (resolveBest), never a
+// write-time overwrite.
+model WearableSample {
+  id               String               @id @default(uuid())
+  user_id          String
+  user             User                 @relation("WearableSampleUser", fields: [user_id], references: [id], onDelete: Cascade)
+  connection_id    String
+  connection       WearableConnection   @relation(fields: [connection_id], references: [id], onDelete: Cascade)
+  provider         WearableProvider
+  metric           WearableMetricType
+  bucket           WearableMetricBucket // denormalized from metric def for fast bucket-filtered reads
+  value            Float
+  unit             String
+  // Observation window. start==end for instantaneous; sleep spans a night.
+  start_at         DateTime
+  end_at           DateTime
+  // IANA timezone the provider reported the sample in. Stored to avoid
+  // off-by-one-day bucketing across DST / travel.
+  source_tz        String?
+  // Deterministic dedup key: sha256(user_id|provider|metric|start_iso|end_iso).
+  // Guarantees idempotent re-ingestion; cross-provider overlap is distinct
+  // rows (different provider segment) resolved at read time.
+  dedup_key        String               @unique
+  // Provider-native id for the source record (backfill reconciliation).
+  source_record_id String?
+  recorded_at      DateTime             @default(now()) // when WE ingested it
+  raw_ref          String? // optional pointer to raw payload archive
+
+  @@index([user_id, bucket, start_at])
+  @@index([user_id, metric, start_at])
+  @@index([connection_id, start_at])
+  @@index([provider, source_record_id])
+}
+
+// Webhook idempotency — modeled on StripeProcessedEvent. Composite natural
+// key (provider, provider_event_id). A scheduled prune keeps rows ≥ the
+// longest provider redelivery window (≥14d). No end-user access:
+// service_role only (deny-all for public via RLS with no public policies).
+model WearableProcessedEvent {
+  provider             WearableProvider
+  provider_event_id    String
+  type                 String
+  processed_at         DateTime         @default(now())
+  handler_completed_at DateTime?
+
+  @@id([provider, provider_event_id])
+  @@index([processed_at])
+  @@index([handler_completed_at])
+}
+
+// Per-(user, side, bucket, window) cached AI insight payload. Modeled on
+// HolisticInsightCache. side='client' rows are readable by the client and
+// their coach; side='coach' rows (hypotheses + draft messages) are NEVER
+// readable by the client (enforced by RLS policies).
+model WearableInsightCache {
+  id             String               @id @default(uuid())
+  user_id        String // subject client
+  user           User                 @relation("WearableInsightUser", fields: [user_id], references: [id], onDelete: Cascade)
+  side           String // "coach" | "client" — different prompt, different output schema
+  bucket         WearableMetricBucket
+  window_days    Int
+  payload        Json // { observation, hypothesis?, suggested_action, suggested_message_draft?, confidence_level, source_metrics[] }
+  model_used     String
+  prompt_version String
+  generated_at   DateTime             @default(now())
+  expires_at     DateTime // generated_at + 6h unless a new sync arrives
+
+  @@unique([user_id, side, bucket, window_days], name: "WearableInsight_subject_side_bucket_window_key")
+  @@index([user_id])
+  @@index([expires_at])
+}
+
+// Read-time precedence override (UNIFIED_BUILD_PLAN §3.1). When a client
+// connects two providers that both report a metric, resolveBest() returns
+// the preferred provider's samples if a row exists here, else falls back
+// to the most-recently-recorded provider.
+model WearableUserMetricPreference {
+  id                 String             @id @default(uuid())
+  user_id            String
+  user               User               @relation("WearablePrefUser", fields: [user_id], references: [id], onDelete: Cascade)
+  metric             WearableMetricType
+  preferred_provider WearableProvider
+  updated_at         DateTime           @default(now()) @updatedAt
+  created_at         DateTime           @default(now())
+
+  @@unique([user_id, metric], name: "WearablePref_user_metric_key")
+  @@index([user_id])
 }
