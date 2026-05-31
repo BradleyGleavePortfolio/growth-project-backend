@@ -4,7 +4,7 @@ import 'reflect-metadata';
 // reorder these lines.
 import './instrument';
 import { NestFactory } from '@nestjs/core';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
 import * as Sentry from '@sentry/node';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -208,6 +208,26 @@ async function bootstrap() {
       'p/:coachSlug/:pageSlug/checkout',
       'p/:coachSlug/:pageSlug/leads',
       'p/:coachSlug/:pageSlug/view',
+      // B3 (PR-18) — custom-domain apex routing. A VERIFIED custom domain
+      // (e.g. coaching.example.com) must serve its published page at the
+      // bare host root, NOT under /api. LandingPagePublicController declares
+      // these at the controller root (@Get() '/', @Get('checkout'),
+      // @Post('leads'), @Post('view')); without these exclusions the global
+      // prefix would mount them at /api, /api/checkout, /api/leads, /api/view
+      // and a custom domain hitting `/` would 404. We exclude them by exact
+      // path + HTTP method so they resolve at the apex.
+      //
+      // No shadowing: no other controller declares a bare `/`, `checkout`,
+      // `leads`, or `view` route (checkout lives at v1/checkout; leads/view
+      // otherwise only exist under p/:coachSlug/:pageSlug/...), and the
+      // explicit `/p/:coachSlug/:pageSlug[...]` routes above are unaffected
+      // because they are distinct paths. Canonical-host traffic to these
+      // bare paths resolves to no verified custom domain and returns the
+      // shared no-store 404, so `/p/...` is never hijacked.
+      { path: '', method: RequestMethod.GET },
+      { path: 'checkout', method: RequestMethod.GET },
+      { path: 'leads', method: RequestMethod.POST },
+      { path: 'view', method: RequestMethod.POST },
     ],
   });
 

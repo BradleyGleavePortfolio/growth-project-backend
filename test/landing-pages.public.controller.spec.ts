@@ -17,7 +17,10 @@
  * stubbed here so the routing logic is tested in isolation.
  */
 
+import { INestApplication, RequestMethod } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
 import { LandingPagePublicController } from '../src/landing-pages/landing-pages.public.controller';
+import { LandingPagePublicService } from '../src/landing-pages/landing-pages.public.service';
 
 // ─── Fake Express req/res ─────────────────────────────────────────────────────
 
@@ -96,6 +99,117 @@ function build(overrides: Record<string, jest.Mock> = {}) {
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
+
+// ─── Route-registration test (B3 P0/P2) ──────────────────────────────────────
+//
+// The unit tests above instantiate the controller directly and therefore
+// cannot catch a global-prefix MOUNTING failure (the original P0: the bare
+// custom-domain routes were registered under /api). This boots a real Nest
+// application with the controller, applies the EXACT same
+// `setGlobalPrefix('api', { exclude: [...] })` shape used in src/main.ts, and
+// inspects the live Express router stack to PROVE the four custom-domain
+// routes resolve at the bare apex (NOT under /api) while the /p/... slug
+// routes are likewise excluded and any other path would keep the /api prefix.
+//
+// If main.ts ever drops the bare-path exclusions, the `/` / `/checkout` /
+// `/leads` / `/view` expectations below flip to `/api/...` and this fails.
+
+// Mirror of src/main.ts setGlobalPrefix exclude entries that are relevant to
+// the landing-pages public controller. Keep in sync with main.ts.
+const PUBLIC_PREFIX_EXCLUDE = [
+  'p/:coachSlug/:pageSlug',
+  'p/:coachSlug/:pageSlug/checkout',
+  'p/:coachSlug/:pageSlug/leads',
+  'p/:coachSlug/:pageSlug/view',
+  { path: '', method: RequestMethod.GET },
+  { path: 'checkout', method: RequestMethod.GET },
+  { path: 'leads', method: RequestMethod.POST },
+  { path: 'view', method: RequestMethod.POST },
+] as const;
+
+type RegisteredRoute = { method: string; path: string };
+
+function collectRoutes(app: INestApplication): RegisteredRoute[] {
+  const server: any = app.getHttpAdapter().getInstance();
+  const routes: RegisteredRoute[] = [];
+  // Express 4 (router.stack) and Express 5 fallbacks.
+  const stack: any[] = server?._router?.stack ?? server?.router?.stack ?? [];
+  for (const layer of stack) {
+    const route = layer?.route;
+    if (!route?.path) continue;
+    const methods = route.methods ?? {};
+    for (const m of Object.keys(methods)) {
+      if (methods[m]) routes.push({ method: m.toUpperCase(), path: route.path });
+    }
+  }
+  return routes;
+}
+
+describe('LandingPagePublicController — route registration (B3, custom-domain apex)', () => {
+  let app: INestApplication;
+  let routes: RegisteredRoute[];
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [LandingPagePublicController],
+      providers: [
+        { provide: LandingPagePublicService, useValue: makeService() },
+      ],
+    }).compile();
+
+    app = moduleRef.createNestApplication();
+    // EXACT same global-prefix shape as src/main.ts.
+    app.setGlobalPrefix('api', { exclude: PUBLIC_PREFIX_EXCLUDE as any });
+    await app.init();
+    routes = collectRoutes(app);
+  });
+
+  afterAll(async () => {
+    if (app) await app.close();
+  });
+
+  function has(method: string, path: string): boolean {
+    return routes.some((r) => r.method === method && r.path === path);
+  }
+
+  it('registers the custom-domain root GET / at the apex (NOT /api)', () => {
+    expect(has('GET', '/')).toBe(true);
+    expect(has('GET', '/api')).toBe(false);
+  });
+
+  it('registers GET /checkout at the apex (NOT /api/checkout)', () => {
+    expect(has('GET', '/checkout')).toBe(true);
+    expect(has('GET', '/api/checkout')).toBe(false);
+  });
+
+  it('registers POST /leads at the apex (NOT /api/leads)', () => {
+    expect(has('POST', '/leads')).toBe(true);
+    expect(has('POST', '/api/leads')).toBe(false);
+  });
+
+  it('registers POST /view at the apex (NOT /api/view)', () => {
+    expect(has('POST', '/view')).toBe(true);
+    expect(has('POST', '/api/view')).toBe(false);
+  });
+
+  it('keeps the canonical /p/:coachSlug/:pageSlug slug routes at the apex (no /api prefix), unshadowed', () => {
+    // Express normalizes :params; assert by the static prefix segment.
+    const slugGets = routes.filter(
+      (r) => r.method === 'GET' && r.path.startsWith('/p/') && !r.path.startsWith('/api/'),
+    );
+    // root render + checkout slug GET routes
+    expect(slugGets.length).toBeGreaterThanOrEqual(2);
+    // None of the slug routes leaked under /api.
+    expect(routes.some((r) => r.path.startsWith('/api/p/'))).toBe(false);
+  });
+
+  it('does NOT register a method-mismatched apex path (POST /checkout stays unmounted under /api only)', () => {
+    // checkout is GET-only at apex; the controller declares no POST /checkout,
+    // so neither /checkout nor /api/checkout should answer POST.
+    expect(has('POST', '/checkout')).toBe(false);
+    expect(has('POST', '/api/checkout')).toBe(false);
+  });
+});
 
 describe('LandingPagePublicController — custom-domain Host routing (B3)', () => {
   describe('GET / (custom-domain root)', () => {

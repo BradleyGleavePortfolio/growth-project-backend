@@ -96,7 +96,9 @@ function isCanonicalHost(host: string): boolean {
 
 /**
  * Public landing page routes — mounted OUTSIDE the /api global prefix.
- * See main.ts: app.setGlobalPrefix('api', { exclude: ['p/*'] }).
+ * See main.ts: app.setGlobalPrefix('api', { exclude: [...] }) excludes both
+ * the `p/:coachSlug/:pageSlug[...]` slug routes and the bare custom-domain
+ * apex routes (GET '', GET 'checkout', POST 'leads', POST 'view').
  *
  * All routes are @Public() — no JWT required.
  *
@@ -121,10 +123,14 @@ export class LandingPagePublicController {
   // not (canonical host, unknown/unverified domain, malformed Host) they
   // 404 with `no-store` and do NOT fall through to `/p/...`.
   //
-  // NOTE: when deployed behind the `/api` global prefix these bare paths
-  // are reached on the custom domain's apex (the proxy forwards them);
-  // canonical-host traffic on these same paths resolves to no custom
-  // domain and returns the no-store 404, leaving `/p/...` untouched.
+  // ROUTING: these four paths are EXCLUDED from the global `/api` prefix in
+  // main.ts (setGlobalPrefix exclude list: GET '', GET 'checkout',
+  // POST 'leads', POST 'view') so they resolve at the bare host apex
+  // (`/`, `/checkout`, `/leads`, `/view`) — exactly the URL shape a verified
+  // custom domain hits. Canonical-host traffic on these same bare paths
+  // resolves to no verified custom domain and returns the no-store 404,
+  // leaving `/p/...` untouched. No `/api/...` route is shadowed because no
+  // other controller declares a bare `/`, `checkout`, `leads`, or `view`.
 
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 120 } })
