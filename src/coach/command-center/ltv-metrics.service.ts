@@ -370,12 +370,18 @@ export class LtvMetricsService {
 
     if (!peakRow || peakCouldAdvance) {
       // Row-locked transactional upsert: advances/seeds the monotonic peak under
-      // a `SELECT ... FOR UPDATE` row lock. On the initial INSERT it also seeds
-      // zero_churn_streak with the computed value (the column is NOT NULL with
-      // default 0); on the UPDATE path it leaves zero_churn_streak UNTOUCHED.
-      // The returned peak is the authoritative monotonic maximum, and
-      // priorPeakRpcmCents is the LIVE LOCKED current value observed in the same
-      // serialised read+write.
+      // a single ENSURE-ROW-THEN-LOCK path. lockedPeakUpsert first runs an
+      // `INSERT ... ON CONFLICT (coach_id) DO NOTHING` that seeds a 0/0 row only
+      // when absent (seeding zero_churn_streak when the column is first
+      // created), THEN always takes the `SELECT ... FOR UPDATE` + peak-only
+      // UPDATE path (zero_churn_streak left UNTOUCHED on update). Because the
+      // row is guaranteed to exist before the lock, two concurrent FIRST-RUN
+      // requests serialise on the SAME locked row instead of racing two bare
+      // INSERTs (P1 fix): no unique-constraint violation can escape and no
+      // first-run peak is lost (GREATEST against the live locked prior). The
+      // returned peak is the authoritative monotonic maximum, and
+      // priorPeakRpcmCents is the LIVE LOCKED current value (the seeded 0 on the
+      // very first request) observed in the same serialised read+write.
       const persisted = await this.lockedPeakUpsert(
         coachUserId,
         rpcmCents,
@@ -491,11 +497,14 @@ export class LtvMetricsService {
    *      CURRENT committed row — not a snapshot taken at statement start. The
    *      row stays locked for the rest of this transaction, so no other writer
    *      can change the peak between our read and our write.
-   *   2. old_peak = the locked current peak (0 if no row yet).
+   *   2. old_peak = the locked current peak (the seeded 0 on first run — see
+   *      the P1 ensure-row note below, which guarantees the row exists before
+   *      this lock so there is no no-row branch).
    *   3. new_peak = GREATEST(old_peak, incoming) — the monotonic high-water
    *      mark is preserved exactly as before; it can only ever rise.
-   *   4. Persist: UPDATE the locked row to new_peak (no row → INSERT with the
-   *      incoming peak and the seed streak).
+   *   4. Persist: UPDATE the locked row to new_peak (single path; the row is
+   *      always present because of the preceding ensure-row INSERT ... ON
+   *      CONFLICT DO NOTHING).
    *   5. The caller sets is_new_rpcm_record = incoming > old_peak. Because
    *      old_peak is the LIVE locked value (post-A in the scenario above, B
    *      reads $300, so $250 > $300 = false), the flag is true iff this request
@@ -513,17 +522,69 @@ export class LtvMetricsService {
    * MOST the one request that actually moved the high-water mark.
    *
    * The `zero_churn_streak` column is INTENTIONALLY only seeded on the initial
-   * INSERT and NEVER written on the UPDATE/conflict path. The streak is the
+   * (ensure-row) INSERT and NEVER written on the UPDATE path. The streak is the
    * CURRENT consecutive zero-churn run, fully RECOMPUTED from source data on
    * every request (see computeZeroChurnStreak) and returned live, so persisting
    * it on the read path adds nothing but the stale-source race (P2). Leaving it
    * untouched on the update path keeps the persisted streak irrelevant to the
    * returned value (P2 fix preserved).
    *
+   * P1 FIX (first-run conflict + lost peak) — ENSURE-ROW-THEN-LOCK (single
+   * path). The previous implementation branched on whether the locked SELECT
+   * returned a row: with no row it took a bare INSERT. That branch was NOT
+   * concurrency-safe for a brand-new coach:
+   *
+   *   - `SELECT ... FOR UPDATE` only locks rows that ALREADY EXIST; it cannot
+   *     lock a not-yet-existing row, so two concurrent first-run requests both
+   *     saw zero rows and both took the INSERT branch.
+   *   - One INSERT wins; the other violates the `coach_id` unique constraint
+   *     and THROWS — so one request errors out (bug a).
+   *   - The loser's (possibly higher) first-run RPCM is never merged, so the
+   *     high-water mark can be LOST until a later retry (bug b).
+   *
+   * The fix removes the first-run branch entirely by GUARANTEEING the row
+   * exists BEFORE the lock, collapsing first-run into the ordinary existing-row
+   * case so there is only ONE code path and the row lock always engages:
+   *
+   *   1. `INSERT INTO coach_ltv_peak (coach_id, all_time_peak_rpcm=0,
+   *      zero_churn_streak=0) ON CONFLICT (coach_id) DO NOTHING`. This seeds a
+   *      0/0 row ONLY when none exists. Under a concurrent first-run race,
+   *      exactly one INSERT materialises the row and the other is a no-op
+   *      (DO NOTHING) — NO unique-constraint error can escape (fixes bug a). It
+   *      NEVER overwrites an existing row's peak or streak (DO NOTHING), so the
+   *      monotonic peak and the seeded streak of an established coach are
+   *      untouched.
+   *   2. `SELECT "all_time_peak_rpcm" ... FOR UPDATE`. The row now provably
+   *      EXISTS, so FOR UPDATE always locks it. Two racing first-run requests
+   *      serialise here: one acquires the lock, reads prior=0, updates; the
+   *      other BLOCKS, then reads the CURRENT committed peak (the first
+   *      request's value) under the lock.
+   *   3. new_peak = GREATEST(live_locked_prior, incoming). Because each request
+   *      reads the live locked prior and takes the max, NO first-run RPCM is
+   *      ever lost — the high-water mark is the max of all concurrent first-run
+   *      values (fixes bug b).
+   *   4. UPDATE the locked row's peak + updated_at only (streak untouched; P2
+   *      preserved).
+   *   5. is_new_rpcm_record = incoming > live_locked_prior. On the very first
+   *      request the locked prior is the seeded 0, so any positive RPCM is
+   *      correctly a new record; the racing second request reads the first's
+   *      committed value as its prior, so it reports a new record ONLY if it
+   *      advanced the peak further. At most one request advances from a given
+   *      value, exactly as on the established-row path.
+   *
+   * Why this does NOT reintroduce the snapshot-CTE race on the existing-row
+   * path: the prior peak is STILL read under `SELECT ... FOR UPDATE` in the
+   * SAME transaction as the write (not a statement-start snapshot / CTE). The
+   * ensure-row INSERT runs FIRST and only ever seeds an absent row to 0/0; it
+   * is a no-op for an existing coach, so the established-row read+write is
+   * byte-for-byte the previously-verified locked path. There is now a single
+   * locked path for both cases.
+   *
    * All inputs are passed as bound parameters via Prisma's tagged-template raw
    * API (no string interpolation), keeping the queries injection-safe. The
-   * read+write run inside a single `prisma.$transaction` (interactive, default
-   * READ COMMITTED) so the row lock is held across both statements.
+   * ensure-row INSERT, the locked read and the write all run inside a single
+   * `prisma.$transaction` (interactive, default READ COMMITTED) so the row lock
+   * is held across the read and the write.
    */
   private async lockedPeakUpsert(
     coachUserId: string,
@@ -531,11 +592,31 @@ export class LtvMetricsService {
     seedStreak: number,
   ): Promise<{ allTimePeakRpcmCents: number; priorPeakRpcmCents: number }> {
     return this.prisma.$transaction(async (tx) => {
-      // Step 1+2: lock the coach's row (if any) and read its LIVE current peak.
-      // FOR UPDATE blocks on any concurrent writer and then returns the CURRENT
-      // committed row version — NOT a statement-start snapshot. This is the
-      // crux of the fix: old_peak is the live locked value, evaluated in the
-      // same serialised read+write as the subsequent persist.
+      // Step 1 — ENSURE the row exists. Seed a 0/0 row ONLY when absent. Under a
+      // concurrent first-run race, exactly one INSERT materialises the row and
+      // every other is a no-op (ON CONFLICT DO NOTHING) — no unique-constraint
+      // violation can escape. DO NOTHING means an established coach's persisted
+      // peak and streak are NEVER overwritten by this seed.
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO "coach_ltv_peak" (
+          "id", "coach_id", "all_time_peak_rpcm", "zero_churn_streak", "updated_at"
+        )
+        VALUES (
+          gen_random_uuid(),
+          ${coachUserId},
+          0::numeric,
+          ${seedStreak}::int,
+          now()
+        )
+        ON CONFLICT ("coach_id") DO NOTHING
+      `);
+
+      // Step 2 — lock the (now guaranteed-to-exist) coach row and read its LIVE
+      // current peak. FOR UPDATE blocks on any concurrent writer and then
+      // returns the CURRENT committed row version — NOT a statement-start
+      // snapshot. Because step 1 ensured the row exists, this always locks a
+      // real row (the first-run no-row branch is gone), so two concurrent
+      // first-run requests serialise on the SAME locked row.
       const locked = await tx.$queryRaw<
         Array<{ all_time_peak_rpcm: Prisma.Decimal }>
       >(Prisma.sql`
@@ -545,43 +626,15 @@ export class LtvMetricsService {
         FOR UPDATE
       `);
 
-      if (locked.length === 0) {
-        // No row yet → first run. INSERT the incoming peak and seed the streak.
-        // There is no prior high-water mark, so priorPeak is 0 (any positive
-        // RPCM is a new record, matching the existing first-run semantics).
-        // The unique constraint on coach_id makes a racing duplicate INSERT
-        // fail rather than silently double-insert; that surfaces as an error to
-        // retry, never a corrupt peak.
-        const inserted = await tx.$queryRaw<
-          Array<{ new_peak: Prisma.Decimal }>
-        >(Prisma.sql`
-          INSERT INTO "coach_ltv_peak" (
-            "id", "coach_id", "all_time_peak_rpcm", "zero_churn_streak", "updated_at"
-          )
-          VALUES (
-            gen_random_uuid(),
-            ${coachUserId},
-            ${incomingPeakCents}::numeric,
-            ${seedStreak}::int,
-            now()
-          )
-          RETURNING "all_time_peak_rpcm" AS new_peak
-        `);
-        return {
-          allTimePeakRpcmCents: Number(inserted[0].new_peak),
-          // No prior record → prior peak is 0.
-          priorPeakRpcmCents: 0,
-        };
-      }
-
-      // Step 3: the live locked prior peak. The row is now locked for the rest
-      // of this transaction, so no concurrent writer can move it between here
-      // and our UPDATE below.
+      // Step 3 — the live locked prior peak. The row is locked for the rest of
+      // this transaction, so no concurrent writer can move it between here and
+      // our UPDATE below. On the very first request this is the seeded 0.
       const priorPeakRpcmCents = Number(locked[0].all_time_peak_rpcm);
-      // Monotonic high-water mark — never regresses.
+      // Monotonic high-water mark — never regresses; merges concurrent
+      // first-run values losslessly via GREATEST against the live locked prior.
       const newPeakCents = Math.max(priorPeakRpcmCents, incomingPeakCents);
 
-      // Step 4: persist the (possibly unchanged) peak on the locked row. The
+      // Step 4 — persist the (possibly unchanged) peak on the locked row. The
       // streak is NEVER written on this path (P2 fix preserved); only the peak
       // and updated_at change.
       await tx.$executeRaw(Prisma.sql`
@@ -595,8 +648,9 @@ export class LtvMetricsService {
         allTimePeakRpcmCents: newPeakCents,
         // The LIVE locked prior peak — used by the caller to decide
         // is_new_rpcm_record = incoming > priorPeak. Because it is the locked
-        // current value (not a snapshot), the flag is true iff this request
-        // actually advanced the high-water mark.
+        // current value (the seeded 0 on the very first request, or a concurrent
+        // writer's committed value), the flag is true iff this request actually
+        // advanced the high-water mark.
         priorPeakRpcmCents,
       };
     });
