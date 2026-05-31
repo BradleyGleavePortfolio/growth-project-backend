@@ -8,8 +8,8 @@
  *
  *   1. GET /health                              (unauthenticated 200)
  *   2. GET /api/admin/metrics                   (200, counter shape)
- *   3. GET /api/admin/users                     (200, array)
- *   4. GET /api/admin/coaches                   (200, array)
+ *   3. GET /api/admin/users                     (200, { users, next_cursor })
+ *   4. GET /api/admin/coaches                   (200, { coaches, next_cursor })
  *   5. GET /api/admin/search?q=                 (200, fitness/finance blocks)
  *   6. GET /api/admin/coaches/:id/overview      (200)
  *   7. GET /api/admin/clients/:id/unified       (200)
@@ -167,18 +167,41 @@ async function checkAdminUsers(): Promise<CheckResult> {
   const name = 'GET /api/admin/users';
   const r = await timedFetch('/api/admin/users?limit=5', { headers: authHeaders() });
   if (r.status !== 200) return fail(name, `status ${r.status}`);
-  const body = await readJson(r);
-  if (!Array.isArray(body)) return fail(name, 'body not array');
-  return ok(name, `200 (n=${body.length})`);
+  // The list endpoint is cursor-paginated: it returns an envelope
+  // `{ users: [...], next_cursor: string | null }`, not a bare array.
+  const body = (await readJson(r)) as
+    | { users?: unknown; next_cursor?: unknown }
+    | null;
+  if (!body || typeof body !== 'object') return fail(name, 'body not object');
+  if (!Array.isArray(body.users)) return fail(name, 'body.users not array');
+  if (
+    body.next_cursor !== null &&
+    body.next_cursor !== undefined &&
+    typeof body.next_cursor !== 'string'
+  ) {
+    return fail(name, 'next_cursor not string|null');
+  }
+  return ok(name, `200 (n=${body.users.length})`);
 }
 
 async function checkAdminCoaches(): Promise<CheckResult> {
   const name = 'GET /api/admin/coaches';
   const r = await timedFetch('/api/admin/coaches', { headers: authHeaders() });
   if (r.status !== 200) return fail(name, `status ${r.status}`);
-  const body = await readJson(r);
-  if (!Array.isArray(body)) return fail(name, 'body not array');
-  return ok(name, `200 (n=${body.length})`);
+  // Cursor-paginated envelope: `{ coaches: [...], next_cursor: string | null }`.
+  const body = (await readJson(r)) as
+    | { coaches?: unknown; next_cursor?: unknown }
+    | null;
+  if (!body || typeof body !== 'object') return fail(name, 'body not object');
+  if (!Array.isArray(body.coaches)) return fail(name, 'body.coaches not array');
+  if (
+    body.next_cursor !== null &&
+    body.next_cursor !== undefined &&
+    typeof body.next_cursor !== 'string'
+  ) {
+    return fail(name, 'next_cursor not string|null');
+  }
+  return ok(name, `200 (n=${body.coaches.length})`);
 }
 
 async function checkAdminSearch(): Promise<CheckResult> {
