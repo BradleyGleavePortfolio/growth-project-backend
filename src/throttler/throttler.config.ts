@@ -1,5 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { ThrottlerModuleOptions } from '@nestjs/throttler';
+import type { ThrottlerStorage } from '@nestjs/throttler';
+import type { ThrottlerStorageRecord } from '@nestjs/throttler/dist/throttler-storage-record.interface';
 
 // Named throttler limits applied across the API.
 //
@@ -75,6 +77,25 @@ export const THROTTLER_NAMES = {
    *  client-insight: 10/hr). The named bucket itself just declares the
    *  baseline ttl/limit so the throttler module knows about it. */
   COACH_AI_GENERATION: 'coach-ai-generation',
+  /** H4 #7 (token enumeration) — IP-WIDE second layer for the public
+   *  storefront GET join/:token route. The `default` throttler on that
+   *  route is keyed by the COMPOSITE (token, IP) tracker
+   *  (`storefront-join:<token>:<ip>`), which gives every probed token its
+   *  OWN 20/min bucket — so a single IP can still enumerate many distinct
+   *  tokens cheaply (20 attempts EACH). This named throttler is applied on
+   *  the GET join route with a custom IP-ONLY getTracker
+   *  (`storefront-join-ip:<ip>`) so ALL distinct-token probes from one IP
+   *  share a single budget, bounding enumeration across the whole token
+   *  space while the composite layer keeps per-(token,IP) fairness.
+   *
+   *  IMPORTANT: the GLOBAL baseline limit below is intentionally very high
+   *  (effectively non-biting). NestJS throttler evaluates every named
+   *  throttler in this array against EVERY route, so a low baseline here
+   *  would throttle unrelated routes. Only the GET join route opts into a
+   *  tight ceiling via its route-level @Throttle override; all other
+   *  routes fall through to this non-biting baseline AND use the guard's
+   *  default tracker, so they are unaffected. */
+  STOREFRONT_JOIN_IP: 'storefront-join-ip',
   /** Catch-all: every route that carries no explicit @Throttle decorator. */
   DEFAULT: 'default',
 } as const;
@@ -128,6 +149,17 @@ const COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN = readIntEnv(
   120,
 );
 
+// H4 #7 — IP-WIDE ceiling for the public storefront GET join/:token route
+// (the actual ceiling applied to that route via its route-level @Throttle).
+// This bounds the TOTAL number of distinct-token join GETs a single source
+// IP can make per minute, on top of the per-(token,IP) composite layer
+// (20/min). 120/min is deliberately generous for legitimate shared-NAT
+// traffic: up to ~6 distinct real buyers behind one CGNAT/office IP can each
+// hit their own token's 20/min composite ceiling before the IP-wide layer
+// bites, while an enumeration sweep is bounded to 120 distinct-token probes/
+// min/IP instead of the previously-unbounded (one fresh bucket per token).
+const STOREFRONT_JOIN_IP_PER_MIN = readIntEnv('STOREFRONT_JOIN_IP_PER_MIN', 120, 1, 5_000);
+
 // Export per-route constants so controllers can reference them for @Throttle
 // decorators without repeating magic numbers inline.
 export const THROTTLER_ROUTE_LIMITS = {
@@ -142,6 +174,7 @@ export const THROTTLER_ROUTE_LIMITS = {
   RATELIMIT_ANON_PER_MIN,
   CHECKOUT_MINT_PER_HOUR,
   COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN,
+  STOREFRONT_JOIN_IP_PER_MIN,
 } as const;
 
 export const THROTTLER_LIMITS = [
@@ -177,6 +210,15 @@ export const THROTTLER_LIMITS = [
   // client-insight). The named bucket exists so AI spend is
   // independently observable + tunable from the default bucket.
   { name: THROTTLER_NAMES.COACH_AI_GENERATION, ttl: 3_600_000, limit: 10 },
+  // H4 #7 — IP-WIDE storefront join layer. The GLOBAL baseline limit here is
+  // intentionally non-biting (10_000/min) because the NestJS throttler
+  // evaluates EVERY named throttler against EVERY route; only the GET
+  // join/:token route opts into the real tight ceiling
+  // (STOREFRONT_JOIN_IP_PER_MIN) AND the IP-only tracker via its route-level
+  // @Throttle override. All other routes fall through to this non-biting
+  // baseline (and the guard's default composite/IP tracker), so they are
+  // unaffected by this throttler.
+  { name: THROTTLER_NAMES.STOREFRONT_JOIN_IP, ttl: 60_000, limit: 10_000 },
   // Default catch-all: applies to every route that carries no explicit @Throttle decorator.
   // The guard in getTracker() buckets authed requests by user-id (300/min) and
   // unauthenticated requests by IP (100/min). Both share this one named throttler;
@@ -203,9 +245,119 @@ export const THROTTLER_LIMITS = [
  * RATELIMIT_ENABLED=off completely disables all throttling (useful for
  * load-test runs against staging). Defaults to on.
  */
+// ---------------------------------------------------------------------------
+// R2 P1 — Redis-down GRACEFUL DEGRADATION (fail-open).
+//
+// The throttler's Redis client is constructed with `enableOfflineQueue:false`
+// and `maxRetriesPerRequest:1`, so when Redis is configured but UNAVAILABLE a
+// storage `increment()` rejects (e.g. "Stream isn't writeable and
+// enableOfflineQueue options is false"). With no guard around that call, the
+// rejection propagates out of the ThrottlerGuard and turns EVERY globally
+// throttled route — including the public storefront join route — into a 5xx.
+//
+// Decacorn policy: a transient infra hiccup must NEVER break the user flow.
+// We therefore FAIL OPEN — on a storage error we allow the request through,
+// emit a high-severity structured warning, and bump a low-cardinality metric
+// so the outage is loud in observability without converting it into a wall of
+// user-facing 500s. Fail-open is the correct trade here: the throttler is a
+// defense-in-depth abuse brake, not the only control on these routes (the
+// public surface also has opaque tokens, DTO validation, and a separate
+// long-window IP limiter on the money paths), and the failure window is the
+// brief period Redis is down. We log + meter so on-call sees it immediately.
+//
+// `recordThrottlerStorageFailures` is exported so the global throttler-storage
+// failure count can be read (e.g. by the /metrics surface or tests) without
+// this module taking a DI dependency on MetricsService — keeping the fix
+// inside the H4 write-set.
+// ---------------------------------------------------------------------------
+
+export interface ThrottlerStorageDegradeHooks {
+  /** Structured warn-level logger. Defaults to a `ThrottlerConfig` Logger. */
+  logger?: Pick<Logger, 'warn'>;
+  /** Metric sink, e.g. `MetricsService.increment.bind(metrics)`. Optional. */
+  onFailure?: (metric: string, labels: Record<string, string>) => void;
+}
+
+// Process-local fail-open counter. Mirrors the metric so the degraded state is
+// observable even when no external metric sink is wired. Keyed by throttler
+// name (low cardinality — bounded by THROTTLER_LIMITS).
+const throttlerStorageFailureCounts = new Map<string, number>();
+
+/** Read (and reset, when `reset`) the per-throttler fail-open counter. */
+export function recordThrottlerStorageFailures(
+  reset = false,
+): Record<string, number> {
+  const snapshot: Record<string, number> = {};
+  for (const [name, n] of throttlerStorageFailureCounts) snapshot[name] = n;
+  if (reset) throttlerStorageFailureCounts.clear();
+  return snapshot;
+}
+
+/**
+ * Wrap a ThrottlerStorage so a backend (Redis) failure FAILS OPEN instead of
+ * propagating a 5xx. On error we log a high-severity warning, bump a metric +
+ * a process-local counter, and return a non-blocking record (0 hits, not
+ * blocked) so the request is allowed and the user flow is never broken by a
+ * transient infra hiccup.
+ */
+export function withFailOpenStorage(
+  storage: ThrottlerStorage,
+  hooks: ThrottlerStorageDegradeHooks = {},
+): ThrottlerStorage {
+  const logger = hooks.logger ?? new Logger('ThrottlerConfig');
+  return {
+    async increment(
+      key: string,
+      ttl: number,
+      limit: number,
+      blockDuration: number,
+      throttlerName: string,
+    ): Promise<ThrottlerStorageRecord> {
+      try {
+        return await storage.increment(
+          key,
+          ttl,
+          limit,
+          blockDuration,
+          throttlerName,
+        );
+      } catch (err) {
+        const name = throttlerName || 'unknown';
+        throttlerStorageFailureCounts.set(
+          name,
+          (throttlerStorageFailureCounts.get(name) ?? 0) + 1,
+        );
+        // High-severity structured warning. No PII / no raw key (keys embed a
+        // hashed tracker) — only the throttler name and the error message.
+        logger.warn({
+          message: 'throttler.storage_unavailable.fail_open',
+          throttler: name,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        // Low-cardinality metric (labelled by throttler name only).
+        try {
+          hooks.onFailure?.('throttler_storage_failures_total', {
+            throttler: name,
+          });
+        } catch {
+          // A broken metric sink must never break the fail-open path.
+        }
+        // FAIL OPEN — allow the request through. 0 hits, not blocked.
+        return {
+          totalHits: 0,
+          timeToExpire: Math.ceil(ttl / 1000),
+          isBlocked: false,
+          timeToBlockExpire: 0,
+        };
+      }
+    },
+  };
+}
+
 export async function buildThrottlerOptions(
   redisUrl: string | undefined,
   logger: Logger = new Logger('ThrottlerConfig'),
+  degradeHooks: ThrottlerStorageDegradeHooks = {},
 ): Promise<ThrottlerModuleOptions> {
   const throttlers = THROTTLER_LIMITS.map((t) => ({ ...t }));
 
@@ -264,8 +416,20 @@ export async function buildThrottlerOptions(
   })();
   logger.log(`Throttler using Redis store at ${redisHost}`);
 
+  // R2 P1 — wrap the Redis storage so a backend outage FAILS OPEN (logged
+  // warning + metric) rather than turning every throttled route into a 5xx.
+  // The hooks default the logger to this module's logger; `degradeHooks.
+  // onFailure` (if the caller wires a MetricsService sink) emits a
+  // low-cardinality `throttler_storage_failures_total` counter.
+  const redisStorage = new (ThrottlerStorageRedisService as any)(
+    client,
+  ) as ThrottlerStorage;
+
   return {
     throttlers,
-    storage: new (ThrottlerStorageRedisService as any)(client),
+    storage: withFailOpenStorage(redisStorage, {
+      logger,
+      ...degradeHooks,
+    }),
   };
 }
