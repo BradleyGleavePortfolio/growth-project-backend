@@ -9,6 +9,7 @@ import {
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { ZodError } from 'zod';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
@@ -143,11 +144,17 @@ export class WhoopWebhookController {
     // Data events: record acceptance. The full record fetch + normalize +
     // ingest is performed by the async sync worker keyed off this event
     // (kept out of the request path so WHOOP gets a fast 200 — #21/#35).
+    //
+    // NO PII IN LOGS (R1 Finding 3): the raw WHOOP `user_id` is a
+    // user-identifying external account id and is NEVER logged. Ops
+    // correlation uses a one-way salted hash (`user_hash`) plus the
+    // non-PII event id / type / trace id.
     this.logger.log({
       msg: 'wearables.whoop.webhook.accepted',
       provider_event_id: payload.id,
       type: payload.type,
-      whoop_user_id: payload.user_id,
+      trace_id: payload.trace_id,
+      user_hash: hashWhoopUserId(payload.user_id),
     });
     await this.markHandled(payload.id);
     return { ok: true, duplicate: false };
@@ -175,9 +182,14 @@ export class WhoopWebhookController {
         last_error: 'WHOOP authorization revoked by user',
       },
     });
+    // No raw WHOOP user_id in logs (R1 Finding 3) — salted-hash correlation
+    // only, alongside the (non-PII) disconnect count + event id / type.
     this.logger.log({
       msg: 'wearables.whoop.webhook.revoked',
-      whoop_user_id: payload.user_id,
+      provider_event_id: payload.id,
+      type: payload.type,
+      trace_id: payload.trace_id,
+      user_hash: hashWhoopUserId(payload.user_id),
       connections_disconnected: count,
     });
     return count > 0;
@@ -193,4 +205,25 @@ export class WhoopWebhookController {
       data: { handler_completed_at: new Date() },
     });
   }
+}
+
+/**
+ * Derive a NON-reversible, event-scoped correlation id from a WHOOP user id
+ * for logs (R1 Finding 3 — no PII in logs). We SHA-256 a salted
+ * `whoop:<user_id>:<salt>` and keep the first 16 hex chars: enough to group
+ * an operator's log lines for a single account without storing the
+ * reversible provider-native id. The salt comes from `WHOOP_WEBHOOK_SALT`
+ * (falls back to the webhook/client secret) so the hash is not trivially
+ * rainbow-tableable across a small integer id space.
+ */
+function hashWhoopUserId(userId: number): string {
+  const salt =
+    process.env.WHOOP_WEBHOOK_SALT ??
+    process.env.WHOOP_WEBHOOK_SECRET ??
+    process.env.WHOOP_CLIENT_SECRET ??
+    '';
+  return createHash('sha256')
+    .update(`whoop:${userId}:${salt}`)
+    .digest('hex')
+    .slice(0, 16);
 }

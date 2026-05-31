@@ -207,6 +207,61 @@ describe('WhoopWebhookController', () => {
     expect(prisma.wearableProcessedEvent.createMany).not.toHaveBeenCalled();
   });
 
+  it('NEVER logs the raw WHOOP user_id (no PII) on an accepted data event', async () => {
+    const RAW_USER_ID = 12345;
+    // Capture every structured log call this request makes.
+    const logged: unknown[] = [];
+    jest
+      .spyOn((controller as unknown as { logger: { log: jest.Mock } }).logger, 'log')
+      .mockImplementation((arg: unknown) => {
+        logged.push(arg);
+      });
+
+    const body = { id: EVT_UUID, type: 'recovery.updated', user_id: RAW_USER_ID };
+    const rawBody = Buffer.from(JSON.stringify(body));
+    const headers = signedHeaders(rawBody);
+
+    await controller.handle(
+      makeReq(rawBody, headers),
+      headers[WHOOP_SIGNATURE_HEADER],
+      headers[WHOOP_SIGNATURE_TIMESTAMP_HEADER],
+    );
+
+    expect(logged.length).toBeGreaterThan(0);
+    const dump = JSON.stringify(logged);
+    // The raw numeric id must not appear anywhere in the log payloads, and
+    // no `whoop_user_id` key should be present.
+    expect(dump).not.toContain(String(RAW_USER_ID));
+    expect(dump).not.toContain('whoop_user_id');
+    // A salted-hash correlation id is logged instead.
+    expect(dump).toContain('user_hash');
+  });
+
+  it('NEVER logs the raw WHOOP user_id (no PII) on a revocation event', async () => {
+    const RAW_USER_ID = 67890;
+    const logged: unknown[] = [];
+    jest
+      .spyOn((controller as unknown as { logger: { log: jest.Mock } }).logger, 'log')
+      .mockImplementation((arg: unknown) => {
+        logged.push(arg);
+      });
+
+    const body = { id: EVT_UUID_3, type: 'user.deauthorized', user_id: RAW_USER_ID };
+    const rawBody = Buffer.from(JSON.stringify(body));
+    const headers = signedHeaders(rawBody);
+
+    await controller.handle(
+      makeReq(rawBody, headers),
+      headers[WHOOP_SIGNATURE_HEADER],
+      headers[WHOOP_SIGNATURE_TIMESTAMP_HEADER],
+    );
+
+    const dump = JSON.stringify(logged);
+    expect(dump).not.toContain(String(RAW_USER_ID));
+    expect(dump).not.toContain('whoop_user_id');
+    expect(dump).toContain('user_hash');
+  });
+
   it('rejects a verified body with a non-positive user_id with 400', async () => {
     const body = { id: EVT_UUID, type: 'recovery.updated', user_id: 0 };
     const rawBody = Buffer.from(JSON.stringify(body));
