@@ -14,6 +14,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { once } from 'events';
 import type { Response } from 'express';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -51,6 +52,22 @@ import {
 // All routes are OWNER-gated. There is also a separate /v1/coach/payments
 // surface where a coach can read their OWN purchases / failed payments /
 // dunning state (no cross-coach data leakage).
+// P1: Write a chunk to a streaming response while honoring writable
+// backpressure. `res.write()` returns false once Node's internal socket
+// buffer fills up (e.g. a slow/stalled client). When that happens we MUST
+// stop producing and await the 'drain' event before writing more, otherwise
+// the buffer (and process memory) grows unbounded with ledger size and the
+// O(batchSize) request-memory bound is a lie. Awaiting 'drain' caps in-flight
+// memory to roughly one batch + the kernel socket buffer.
+async function writeWithBackpressure(
+  res: Response,
+  chunk: string,
+): Promise<void> {
+  if (!res.write(chunk)) {
+    await once(res, 'drain');
+  }
+}
+
 @ApiTags('admin-payments')
 @Controller('v1/admin/payments')
 @UseGuards(JwtAuthGuard, ServiceTokenGuard, RolesGuard)
@@ -726,10 +743,28 @@ export class CoachPaymentOpsController {
     // (millions of rows will not OOM the process). Each query is still
     // capped via the id-stable cursor, and there is NO total-row cap: the
     // loop drains the entire payee-scoped ledger.
-    res.write(csvHeaderLine(columns) + '\r\n');
+    //
+    // Two robustness properties are enforced below:
+    //   1. BACKPRESSURE: every write goes through writeWithBackpressure(),
+    //      so when the client is slow and the socket buffer fills we await
+    //      'drain' before fetching/writing the next batch. This bounds
+    //      in-flight memory to ~one batch instead of letting Node buffer the
+    //      whole ledger.
+    //   2. EARLY EXIT ON DISCONNECT: if the client aborts ('close') or the
+    //      stream errors, we stop the DB loop immediately instead of paging
+    //      through (potentially millions of) rows for a consumer that is no
+    //      longer there.
+    let clientGone = false;
+    const stop = () => {
+      clientGone = true;
+    };
+    res.once('error', stop);
+    res.once('close', stop);
+    await writeWithBackpressure(res, csvHeaderLine(columns) + '\r\n');
     const batchSize = 500;
     let cursorId: string | undefined;
     for (;;) {
+      if (clientGone) return;
       const batch = await this.prisma.splitLedgerEntry.findMany({
         where: { payee_user_id: req.user.id },
         orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
@@ -744,10 +779,12 @@ export class CoachPaymentOpsController {
         chunk += csvRowLine(columns, e as unknown as Record<string, unknown>);
         chunk += '\r\n';
       }
-      res.write(chunk);
+      if (clientGone) return;
+      await writeWithBackpressure(res, chunk);
       if (batch.length < batchSize) break;
       cursorId = batch[batch.length - 1].id;
     }
+    if (clientGone) return;
     res.end();
   }
 

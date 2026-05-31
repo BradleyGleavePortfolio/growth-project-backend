@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { EventEmitter } from 'events';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import {
@@ -704,6 +705,7 @@ describe('CoachPaymentOpsController', () => {
       setHeader: (k: string, v: string) => {
         headers[k] = v;
       },
+      once: () => res,
       write: (chunk: string) => {
         body += chunk;
         return true;
@@ -740,6 +742,7 @@ describe('CoachPaymentOpsController', () => {
     let ended = false;
     const res: any = {
       setHeader: (k: string, v: string) => (headers[k] = v),
+      once: () => res,
       write: (chunk: string) => {
         chunks.push(chunk);
         return true;
@@ -765,6 +768,111 @@ describe('CoachPaymentOpsController', () => {
     expect(
       (prisma.splitLedgerEntry.findMany as jest.Mock).mock.calls.length,
     ).toBeGreaterThan(1);
+  });
+
+  // P1 (R3): the export MUST honor writable-stream backpressure. When
+  // res.write() returns false (socket buffer full / slow client), the export
+  // has to PAUSE and await the 'drain' event before producing the next chunk;
+  // otherwise Node buffers the whole ledger and the O(batchSize) memory claim
+  // is false. We model a back-pressured stream as an EventEmitter whose
+  // write() returns false until a synthetic 'drain' is emitted, and assert the
+  // export actually parked (its promise stayed unresolved) until we drained.
+  it('B6: export.csv WAITS for the drain event when write() signals backpressure', async () => {
+    const { ctrl, prisma } = makeCoachController();
+    // Two full batches so the loop writes header + batch and must page again.
+    const n = 600; // > one 500-row batch -> at least 2 body writes
+    seedLedger(prisma, 'me', n);
+
+    const headers: Record<string, string> = {};
+    let ended = false;
+    const writes: string[] = [];
+    // EventEmitter gives us a real once('drain', ...) so the controller's
+    // `await once(res, 'drain')` genuinely suspends until we emit.
+    const res: any = new EventEmitter();
+    res.setHeader = (k: string, v: string) => (headers[k] = v);
+    res.end = () => {
+      ended = true;
+    };
+    // First write() (the header) returns false -> the export must await
+    // 'drain' before it ever issues the first DB batch / second write.
+    let writeCount = 0;
+    res.write = (chunk: string) => {
+      writes.push(chunk);
+      writeCount += 1;
+      // Apply backpressure on the very first write (the header).
+      return writeCount > 1;
+    };
+
+    const done = ctrl.exportEarningsCsv(makeReq('me'), res);
+
+    // Let any synchronous + first microtasks run. Because the header write
+    // returned false, the export must be parked awaiting 'drain': it has NOT
+    // ended and has NOT written a second (body) chunk yet.
+    await new Promise((r) => setImmediate(r));
+    expect(ended).toBe(false);
+    expect(writes).toHaveLength(1); // only the header so far
+    expect(writes[0]).toContain('amount_cents');
+
+    // Race guard: assert the returned promise has NOT resolved while parked.
+    let settled = false;
+    void done.then(() => {
+      settled = true;
+    });
+    await new Promise((r) => setImmediate(r));
+    expect(settled).toBe(false);
+
+    // Now release backpressure. The export should resume, drain the rest of
+    // the ledger, write the body, and finally end.
+    res.emit('drain');
+    await done;
+    expect(settled).toBe(true);
+    expect(ended).toBe(true);
+    const csv = writes.join('');
+    const lines = csv.trim().split('\r\n');
+    expect(lines).toHaveLength(n + 1); // header + every payee row
+    expect(csv).toContain('me-le0');
+    expect(csv).toContain(`me-le${n - 1}`);
+  });
+
+  // P1 (R3): if the client disconnects mid-export, the DB loop must STOP
+  // early instead of paging the entire (potentially huge) ledger for a
+  // consumer that is gone. We emit 'close' after the first batch and assert
+  // the export bails out: it does NOT call res.end() and stops issuing
+  // further findMany() queries.
+  it('B6: export.csv stops the DB loop early when the client disconnects', async () => {
+    const { ctrl, prisma } = makeCoachController();
+    const n = 2_000; // 4 full batches if it were to run to completion
+    seedLedger(prisma, 'me', n);
+
+    const headers: Record<string, string> = {};
+    let ended = false;
+    const res: any = new EventEmitter();
+    res.setHeader = (k: string, v: string) => (headers[k] = v);
+    res.end = () => {
+      ended = true;
+    };
+    // Every write succeeds (no backpressure here) but we fire 'close' on the
+    // FIRST body write to simulate the client aborting mid-stream.
+    let writeCount = 0;
+    res.write = (chunk: string) => {
+      writeCount += 1;
+      // writeCount === 1 is the header; on the first body chunk, disconnect.
+      if (writeCount === 2) {
+        res.emit('close');
+      }
+      return true;
+    };
+
+    await ctrl.exportEarningsCsv(makeReq('me'), res);
+
+    // Disconnected mid-stream: the export must NOT have completed normally.
+    expect(ended).toBe(false);
+    // It must have stopped paging early: far fewer than the 4 batches a full
+    // 2,000-row drain would require. (Header + first batch fetched, then we
+    // disconnected, so the loop exits well before exhausting the ledger.)
+    const calls = (prisma.splitLedgerEntry.findMany as jest.Mock).mock.calls
+      .length;
+    expect(calls).toBeLessThan(4);
   });
 });
 
