@@ -81,12 +81,18 @@ const mockPrisma: any = {
 };
 
 // Extract the bound parameter values out of a Prisma.sql tagged-template object.
-// Prisma.sql exposes `.values` (the interpolated params, in order). Our query
-// binds: [coach_id, incomingPeakCents, incomingStreak].
+// Prisma.sql exposes `.values` (the interpolated params, in order). After the
+// P2 fix the query is a CTE wrapper that binds the coach_id TWICE (once in the
+// leading `prev` CTE's WHERE, once in the INSERT VALUES), so the order is now:
+//   [coach_id (prev CTE), coach_id (INSERT), incomingPeakCents, incomingStreak]
+// The numeric peak/streak params are therefore the LAST two bound values.
 function parseRawValues(sql: any): { peak: number; streak: number } {
   const values: any[] = sql?.values ?? [];
-  // values[0] = coach_id, values[1] = peak cents, values[2] = streak
-  return { peak: Number(values[1]), streak: Number(values[2]) };
+  // The two trailing params are always [peak cents, streak], regardless of how
+  // many coach_id bindings precede them.
+  const peak = Number(values[values.length - 2]);
+  const streak = Number(values[values.length - 1]);
+  return { peak, streak };
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -129,10 +135,18 @@ describe('LtvMetricsService', () => {
         streak: hasBaseline ? baseline.streak : incoming.streak,
       };
       mockPrisma.__store = after;
-      // The real query RETURNs only the peak now (streak dropped from RETURNING).
+      // P2 fix: the real query is now a CTE wrapper that RETURNS both the
+      // post-write peak (new_peak, the GREATEST result) AND the peak as it was
+      // ATOMICALLY observed BEFORE this write (old_peak, from the leading `prev`
+      // CTE). On the initial INSERT no prior row exists, so the `prev` CTE is
+      // empty and old_peak is NULL; otherwise old_peak is the baseline peak the
+      // upsert observed. The service derives is_new_rpcm_record from old_peak,
+      // NOT from the pre-write findUnique — which is what kills the
+      // concurrent-peak false-positive race.
       return [
         {
-          all_time_peak_rpcm: after.peak,
+          new_peak: after.peak,
+          old_peak: hasBaseline ? baseline.peak : null,
         },
       ];
     });
@@ -789,6 +803,154 @@ describe('LtvMetricsService', () => {
       // The persisted streak was only ever seeded (request A's insert) and is
       // never touched again on conflict — it does not feed the returned value.
       expect(mockPrisma.__store?.streak).toBe(0);
+    });
+  });
+
+  describe('LTV-3 P2: is_new_rpcm_record derived from the ATOMIC prior peak (no false positive under a concurrent-peak race)', () => {
+    // The previous implementation computed is_new_rpcm_record from the STALE
+    // pre-write findUnique snapshot (persistedPeakCents read BEFORE the atomic
+    // upsert). Under a concurrent-peak race two requests could both read the
+    // same old peak and BOTH report is_new_rpcm_record=true. The fix derives the
+    // flag from the peak the atomic upsert observed BEFORE its write (the
+    // CTE-returned old_peak), so the GREATEST upsert serialises racing writers
+    // and only the request that genuinely moved the high-water mark reports a
+    // new record. The mock returns { new_peak, old_peak } and advances a shared
+    // __store, faithfully modelling the serialised concurrent ordering.
+
+    it('is_new_rpcm_record is TRUE only for the request that actually raises the peak; the racing stale request reports FALSE', async () => {
+      // Both requests start from the SAME stale snapshot (peak=$100) — the race
+      // window where each read happened before either wrote.
+      mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
+        coach_id: 'coach-1',
+        all_time_peak_rpcm: 10000, // $100 — the stale value BOTH requests read
+        zero_churn_streak: 0,
+      });
+
+      // Request A genuinely raises the peak to $300 and lands first.
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', amount_cents: 30000, status: 'active' }),
+      ]);
+      const resultA = await service.getMetrics('coach-1');
+      expect(resultA.all_time_peak_rpcm_cents).toBe(30000);
+      // A's RPCM ($300) exceeded the atomically-observed prior peak ($100) → new record.
+      expect(resultA.is_new_rpcm_record).toBe(true);
+
+      // Request B read the SAME stale $100 but lands LATER with a higher-than-
+      // stale-read but still-below-current RPCM ($250). With the old stale
+      // pre-read it would have seen $250 > $100 and FALSELY claimed a new
+      // record. Now it derives the flag from the peak the upsert observed
+      // atomically ($300, since A already raised it), so $250 > $300 is false.
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', amount_cents: 25000, status: 'active' }),
+      ]);
+      const resultB = await service.getMetrics('coach-1');
+      // Peak stays monotonic at $300 (GREATEST).
+      expect(resultB.all_time_peak_rpcm_cents).toBe(30000);
+      // The racing stale request did NOT move the high-water mark → no new record.
+      expect(resultB.is_new_rpcm_record).toBe(false);
+    });
+
+    it('two concurrent writers reading the same stale peak do NOT both claim a new record', async () => {
+      // The exact false-positive scenario. Two writers both read the stale
+      // $100; both have an RPCM above the stale read ($200 and $250). At most
+      // ONE — the writer that actually raised the high-water mark — may report
+      // is_new_rpcm_record=true.
+      mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
+        coach_id: 'coach-1',
+        all_time_peak_rpcm: 10000, // $100 stale read shared by both
+        zero_churn_streak: 0,
+      });
+
+      // Writer 1 lands first at $250 — raises the peak from $100 → $250.
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', amount_cents: 25000, status: 'active' }),
+      ]);
+      const r1 = await service.getMetrics('coach-1');
+
+      // Writer 2 lands second at $200 — below the now-current $250, so it does
+      // NOT raise the peak.
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active' }),
+      ]);
+      const r2 = await service.getMetrics('coach-1');
+
+      const claims = [r1.is_new_rpcm_record, r2.is_new_rpcm_record].filter(Boolean);
+      // At most one request reports a new record — never both.
+      expect(claims.length).toBeLessThanOrEqual(1);
+      // And concretely: the raiser (writer 1) claims it; the stale racer does not.
+      expect(r1.is_new_rpcm_record).toBe(true);
+      expect(r2.is_new_rpcm_record).toBe(false);
+    });
+
+    it('a stale request whose RPCM is below the already-persisted higher peak reports is_new_rpcm_record=FALSE (and performs no write)', async () => {
+      // The persisted peak ($300) already dominates the current RPCM ($200): the
+      // request cannot set a record regardless of ordering. is_new must be
+      // false, and no atomic upsert is performed.
+      mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
+        coach_id: 'coach-1',
+        all_time_peak_rpcm: 30000, // $300 already persisted
+        zero_churn_streak: 0,
+      });
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active' }),
+      ]);
+      const result = await service.getMetrics('coach-1');
+      expect(result.is_new_rpcm_record).toBe(false);
+      expect(result.all_time_peak_rpcm_cents).toBe(30000);
+      // No write on the dominated branch.
+      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('derives is_new_rpcm_record from the atomic upsert old_peak, NOT the pre-write findUnique snapshot', async () => {
+      // Guard test: even if the pre-write findUnique snapshot is STALE-LOW (it
+      // reports $100), the flag must be driven by the peak the atomic upsert
+      // observed. We make the upsert observe a HIGHER prior peak ($500) than the
+      // findUnique snapshot ($100); with the old (buggy) code is_new would be
+      // $200 > $100 = true, but the authoritative prior is $500, so the correct
+      // answer is $200 > $500 = false.
+      mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
+        coach_id: 'coach-1',
+        all_time_peak_rpcm: 10000, // stale-low snapshot ($100)
+        zero_churn_streak: 0,
+      });
+      // Prime the shared store so the upsert observes the AUTHORITATIVE prior
+      // ($500) — i.e. another writer already raised it after our findUnique read.
+      mockPrisma.__store = { peak: 50000, streak: 0 };
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active' }),
+      ]);
+      const result = await service.getMetrics('coach-1');
+      // Because rpcm ($200) > stale findUnique ($100), the write path IS taken
+      // (peakCouldAdvance true on the stale read), so the upsert runs and the
+      // flag is derived from its old_peak ($500): $200 > $500 = false.
+      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(result.is_new_rpcm_record).toBe(false);
+      // Peak never regresses below the authoritative $500.
+      expect(result.all_time_peak_rpcm_cents).toBe(50000);
+    });
+
+    it('the atomic upsert is a CTE that RETURNS both new_peak and old_peak (prior value captured in-statement)', async () => {
+      mockPrisma.coachLtvPeak.findUnique.mockResolvedValue({
+        coach_id: 'coach-1',
+        all_time_peak_rpcm: 5000,
+        zero_churn_streak: 0,
+      });
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'c1', amount_cents: 20000, status: 'active' }),
+      ]);
+      await service.getMetrics('coach-1');
+      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+      const sqlArg = mockPrisma.$queryRaw.mock.calls[0][0];
+      const sqlText: string = (sqlArg?.strings ?? []).join(' ');
+      // A leading CTE captures the prior value atomically in the same statement.
+      expect(sqlText).toMatch(/WITH\s+prev\s+AS/i);
+      // RETURNING exposes BOTH the post-write peak and the prior peak.
+      expect(sqlText).toMatch(/RETURNING/i);
+      expect(sqlText).toMatch(/new_peak/i);
+      expect(sqlText).toMatch(/old_peak/i);
+      // Still a single ON CONFLICT GREATEST upsert (monotonic peak preserved).
+      expect(sqlText).toMatch(/ON CONFLICT/i);
+      expect(sqlText).toMatch(/GREATEST/i);
     });
   });
 

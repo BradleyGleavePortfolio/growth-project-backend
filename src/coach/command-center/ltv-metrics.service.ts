@@ -319,22 +319,20 @@ export class LtvMetricsService {
     // entirely.
     const computedStreak = this.computeZeroChurnStreak(allPurchases, now);
 
-    // Snapshot the row as it stood BEFORE our write. Used only to decide whether
-    // the CURRENT recompute set a genuinely new RPCM record (is_new_rpcm_record)
-    // and to keep the existing first-run/advance semantics. It is NOT used to
-    // derive the returned values — the peak comes from the atomic upsert's
-    // GREATEST RETURNING (so a stale read can never regress the store) and the
-    // streak comes from the in-memory recompute (so it is never read from
-    // persistence).
+    // Snapshot the row as it stood BEFORE our write. This pre-read is used ONLY
+    // as a write-avoidance hint (skip the upsert when the stored peak already
+    // dominates the current RPCM). It is NEVER used to derive a returned value:
+    //   - the peak comes from the atomic upsert's GREATEST RETURNING (so a stale
+    //     read can never regress the store),
+    //   - the streak comes from the in-memory recompute (never read from
+    //     persistence), and
+    //   - is_new_rpcm_record is derived from the AUTHORITATIVE prior peak the
+    //     atomic upsert observed (see below) — NOT from this stale snapshot.
     const peakRow = await this.prisma.coachLtvPeak.findUnique({
       where: { coach_id: coachUserId },
     });
     // Stored as RPCM in cents (Decimal). Coerce to a JS number for comparison.
     const persistedPeakCents = peakRow ? Number(peakRow.all_time_peak_rpcm) : 0;
-
-    // is_new_rpcm_record reflects whether THIS recompute's RPCM strictly exceeds
-    // the peak as last seen — the "New Record" badge trigger.
-    const isNewRpcmRecord = rpcmCents > persistedPeakCents;
 
     // The streak returned to the client is ALWAYS the current recompute — it is
     // never read from, nor written back to, persistence. This is what eliminates
@@ -353,21 +351,40 @@ export class LtvMetricsService {
     const peakCouldAdvance = rpcmCents > persistedPeakCents;
 
     let allTimePeakRpcmCents: number;
+    // is_new_rpcm_record (the "New Record" badge trigger) must be true for AT
+    // MOST the single request that actually moved the high-water mark upward.
+    let isNewRpcmRecord: boolean;
 
     if (!peakRow || peakCouldAdvance) {
       // Atomic upsert: advances/seeds the monotonic peak. On the initial INSERT
       // it also seeds zero_churn_streak with the computed value (the column is
       // NOT NULL with default 0); on conflict it leaves zero_churn_streak
-      // UNTOUCHED. The RETURNING peak is the authoritative monotonic maximum.
+      // UNTOUCHED. The RETURNING peak is the authoritative monotonic maximum,
+      // and the CTE also returns the peak as ATOMICALLY observed before this
+      // write.
       const persisted = await this.atomicPeakUpsert(
         coachUserId,
         rpcmCents,
         computedStreak,
       );
       allTimePeakRpcmCents = persisted.allTimePeakRpcmCents;
+      // P2 FIX: derive is_new_rpcm_record from the AUTHORITATIVE prior peak the
+      // atomic upsert observed (priorPeakRpcmCents), NOT from the stale
+      // pre-write findUnique snapshot. Under a concurrent-peak race two requests
+      // could both read the same stale peak via findUnique and both wrongly
+      // report a new record. Because priorPeakRpcmCents reflects the value the
+      // upsert saw atomically (and the GREATEST update serialises racing
+      // writers), only the request whose RPCM genuinely exceeded the
+      // atomically-observed prior peak reports true; a racing stale request
+      // observes the already-raised peak and correctly reports false.
+      isNewRpcmRecord = rpcmCents > persisted.priorPeakRpcmCents;
     } else {
-      // No write needed — the persisted peak already dominates the current RPCM.
+      // No write performed — the persisted peak already dominates the current
+      // RPCM (rpcmCents <= persistedPeakCents). Such a request can never set a
+      // new record regardless of ordering, so is_new is unambiguously false and
+      // there is no race to guard against on this branch.
       allTimePeakRpcmCents = persistedPeakCents;
+      isNewRpcmRecord = false;
     }
 
     // ── Next Milestone ────────────────────────────────────────────────────────
@@ -448,10 +465,19 @@ export class LtvMetricsService {
    * race is eliminated. The column is still NOT NULL (default 0), so the
    * incoming computed value is only seeded on the INITIAL INSERT.
    *
-   * The `RETURNING` clause yields the authoritative post-write PEAK, which the
-   * caller uses for the response — so the peak the client sees always equals the
-   * true persisted (monotonic) maximum. The returned streak is taken from the
-   * in-memory recompute by the caller, NOT from this RETURNING row.
+   * The `RETURNING` clause yields the authoritative post-write PEAK (new_peak),
+   * which the caller uses for the response — so the peak the client sees always
+   * equals the true persisted (monotonic) maximum. The returned streak is taken
+   * from the in-memory recompute by the caller, NOT from this RETURNING row.
+   *
+   * It ALSO returns the peak as ATOMICALLY observed BEFORE this write (old_peak),
+   * captured via a leading `prev` CTE that reads the row in the same statement.
+   * The caller derives is_new_rpcm_record from this prior value rather than from
+   * a separate pre-write findUnique, which removes the false-positive race (P2):
+   * two concurrent writers can no longer both read the same stale peak and both
+   * claim a new record — only the writer whose incoming RPCM exceeds the
+   * atomically-observed prior peak reports a new record. On the initial INSERT
+   * the `prev` CTE is empty and old_peak is NULL (treated as 0 by the caller).
    *
    * All inputs are passed as bound parameters via Prisma's tagged-template raw
    * API (no string interpolation), keeping the query injection-safe and inside
@@ -461,10 +487,18 @@ export class LtvMetricsService {
     coachUserId: string,
     incomingPeakCents: number,
     seedStreak: number,
-  ): Promise<{ allTimePeakRpcmCents: number }> {
+  ): Promise<{ allTimePeakRpcmCents: number; priorPeakRpcmCents: number }> {
     const rows = await this.prisma.$queryRaw<
-      Array<{ all_time_peak_rpcm: Prisma.Decimal }>
+      Array<{
+        new_peak: Prisma.Decimal;
+        old_peak: Prisma.Decimal | null;
+      }>
     >(Prisma.sql`
+      WITH prev AS (
+        SELECT "all_time_peak_rpcm" AS old_peak
+        FROM "coach_ltv_peak"
+        WHERE "coach_id" = ${coachUserId}
+      )
       INSERT INTO "coach_ltv_peak" (
         "id", "coach_id", "all_time_peak_rpcm", "zero_churn_streak", "updated_at"
       )
@@ -481,13 +515,23 @@ export class LtvMetricsService {
           EXCLUDED."all_time_peak_rpcm"
         ),
         "updated_at" = now()
-      RETURNING "all_time_peak_rpcm"
+      RETURNING
+        "coach_ltv_peak"."all_time_peak_rpcm" AS new_peak,
+        (SELECT old_peak FROM prev) AS old_peak
     `);
 
     const row = rows[0];
     return {
       // Decimal → number; the value is monetary cents and well within range.
-      allTimePeakRpcmCents: Number(row.all_time_peak_rpcm),
+      allTimePeakRpcmCents: Number(row.new_peak),
+      // The peak as the upsert atomically observed it BEFORE this write. On the
+      // initial INSERT no prior row exists, so the `prev` CTE is empty and
+      // old_peak is NULL — coerce that to 0 (no prior record). This is the
+      // authoritative prior value used to decide is_new_rpcm_record; deriving it
+      // here (rather than from a separate pre-write findUnique) removes the
+      // false-positive race where two concurrent writers both read the same
+      // stale peak and both claim a new record.
+      priorPeakRpcmCents: row.old_peak == null ? 0 : Number(row.old_peak),
     };
   }
 
