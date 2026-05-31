@@ -4,16 +4,44 @@ import { StripeConnectApiService } from '../src/connect/stripe-connect-api.servi
 class StripeStub extends StripeConnectApiService {
   retrieveSubscription = jest.fn();
   retrievePaymentMethod = jest.fn();
+  retrievePaymentIntent = jest.fn();
+}
+
+// PR-18 B1 R3 P1 — minimal PurchaseSplitHandlerService stub that records
+// every onChargeSucceeded invocation so tests can assert the split posting
+// is DEFERRED to post-commit (never called inline while an outer tx / the
+// CoachPackage FOR UPDATE lock is held).
+function makeSplitsStub() {
+  return {
+    onChargeSucceeded: jest.fn(async () => ({
+      charge_id: null,
+      ledger_entries: 0,
+      transfer_enqueued: false,
+    })),
+  };
 }
 
 function makePrisma() {
   const packages: any[] = [];
   const purchases: any[] = [];
   const customers: any[] = [];
-  return {
+  const prisma: any = {
     _packages: packages,
     _purchases: purchases,
     _customers: customers,
+    // B1 (PR-18) — package-row lock taken before an entitlement activation.
+    // The stub records every locked package id so tests can assert the
+    // activation paths serialize on the CoachPackage row.
+    _lockedPackageIds: [] as string[],
+    $queryRaw: jest.fn(async (strings: TemplateStringsArray, ...vals: any[]) => {
+      // Mirror Prisma's tagged-template signature; capture the locked id.
+      if (vals.length) prisma._lockedPackageIds.push(vals[0]);
+      return [];
+    }),
+    // Interactive $transaction — invoke the callback with the stub itself
+    // acting as the transaction client (all reads/writes already operate on
+    // the shared in-memory arrays).
+    $transaction: jest.fn(async (cb: any) => cb(prisma)),
     coachPackage: {
       findUnique: jest.fn(async ({ where }: any) =>
         packages.find((p) => p.id === where.id) ?? null,
@@ -59,6 +87,7 @@ function makePrisma() {
       }),
     },
   };
+  return prisma;
 }
 
 function makeHandler() {
@@ -66,6 +95,19 @@ function makeHandler() {
   const stripe = new StripeStub();
   const svc = new CheckoutWebhookHandlerService(prisma as any, stripe as any);
   return { svc, prisma, stripe };
+}
+
+// Variant that wires a splits stub so we can assert deferral behavior.
+function makeHandlerWithSplits() {
+  const prisma = makePrisma();
+  const stripe = new StripeStub();
+  const splits = makeSplitsStub();
+  const svc = new CheckoutWebhookHandlerService(
+    prisma as any,
+    stripe as any,
+    splits as any,
+  );
+  return { svc, prisma, stripe, splits };
 }
 
 describe('CheckoutWebhookHandlerService', () => {
@@ -471,6 +513,411 @@ describe('CheckoutWebhookHandlerService', () => {
       expect(prisma._purchases[0].last_error).toBe('card_declined');
       // Entitlement is retained during past_due until Stripe deletes the sub.
       expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+  });
+
+  // B1 (PR-18) — pricing-lock serialization. Every webhook path that flips
+  // a recurring ClientPurchase to entitlement_active=true must take the
+  // SAME `CoachPackage ... FOR UPDATE` row lock that PackagesService.update()
+  // takes before it counts active recurring buyers. Otherwise an activation
+  // could commit without touching the package row and the pricing guard's
+  // count would miss it, letting a price edit slip past during a race.
+  describe('B1 pricing-lock serialization on activation', () => {
+    it('checkout.session.completed (recurring) locks the package row BEFORE activating', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._packages.push({ id: 'pkg-2', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp-2',
+        package_id: 'pkg-2',
+        stripe_checkout_session_id: 'cs_sub',
+        status: 'pending',
+        entitlement_active: false,
+        billing_type: 'recurring',
+        created_at: new Date(),
+      });
+      await svc.handle({
+        id: 'evt_lock_1',
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_sub',
+            mode: 'subscription',
+            subscription: 'sub_lock',
+            customer: 'cus_x',
+          },
+        },
+      });
+      // The package row was locked for this activation.
+      expect(prisma._lockedPackageIds).toContain('pkg-2');
+      // The lock was taken BEFORE the entitlement flip committed: the
+      // FOR UPDATE $queryRaw fired at least once before the purchase
+      // update set entitlement_active=true.
+      const lockCall = prisma.$queryRaw.mock.invocationCallOrder[0];
+      const updateCall = prisma.clientPurchase.update.mock.invocationCallOrder[0];
+      expect(lockCall).toBeLessThan(updateCall);
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+
+    it('checkout.session.completed (recurring) locks on the OUTER tx when one is provided', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._packages.push({ id: 'pkg-7', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp-7',
+        package_id: 'pkg-7',
+        stripe_checkout_session_id: 'cs_tx',
+        status: 'pending',
+        entitlement_active: false,
+        billing_type: 'recurring',
+        created_at: new Date(),
+      });
+      // Outer tx = the same stub (mirrors BillingService threading its tx).
+      await svc.handle(
+        {
+          id: 'evt_lock_tx',
+          type: 'checkout.session.completed',
+          data: {
+            object: {
+              id: 'cs_tx',
+              mode: 'subscription',
+              subscription: 'sub_tx',
+              customer: 'cus_y',
+            },
+          },
+        },
+        prisma as any,
+      );
+      expect(prisma._lockedPackageIds).toContain('pkg-7');
+      // With an outer tx supplied we lock on it directly and do NOT open a
+      // nested $transaction for the activation.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+
+    it('customer.subscription.updated locks the package row before flipping entitlement', async () => {
+      const { svc, prisma } = makeHandler();
+      prisma._packages.push({ id: 'pkg-3', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp-3',
+        package_id: 'pkg-3',
+        stripe_subscription_id: 'sub_up',
+        status: 'pending',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      await svc.handle({
+        id: 'evt_lock_2',
+        type: 'customer.subscription.updated',
+        data: { object: { id: 'sub_up', status: 'active' } },
+      });
+      expect(prisma._lockedPackageIds).toContain('pkg-3');
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+
+    it('customer.subscription.updated locks on the OUTER tx (no nested $transaction) when one is provided', async () => {
+      // PR-18 B1 R2 P1 — the dispatcher must thread the outer tx into
+      // applySubscriptionUpdated so the lock + entitlement flip commit with
+      // the StripeProcessedEvent dedup row, NOT via a nested $transaction.
+      const { svc, prisma } = makeHandler();
+      prisma._packages.push({ id: 'pkg-5', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp-5',
+        package_id: 'pkg-5',
+        stripe_subscription_id: 'sub_up_tx',
+        status: 'pending',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      await svc.handle(
+        {
+          id: 'evt_sub_tx',
+          type: 'customer.subscription.updated',
+          data: { object: { id: 'sub_up_tx', status: 'active' } },
+        },
+        prisma as any,
+      );
+      expect(prisma._lockedPackageIds).toContain('pkg-5');
+      // Lock + write ran on the supplied outer tx; no nested tx opened.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+
+    it('invoice.paid locks on the OUTER tx (no nested $transaction, no in-tx Stripe HTTP) when prefetched', async () => {
+      // PR-18 B1 R2 P1 — when BillingService threads its outer tx it ALSO
+      // pre-resolves the subscription via prefetchForOuterTx (out-of-tx) and
+      // passes it here, so the lock + activation run on the outer tx with NO
+      // Stripe round-trip held inside the transaction.
+      const { svc, prisma, stripe } = makeHandler();
+      prisma._packages.push({ id: 'pkg-6', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp-6',
+        package_id: 'pkg-6',
+        stripe_subscription_id: 'sub_inv_tx',
+        status: 'past_due',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      const prefetchedSub = {
+        id: 'sub_inv_tx',
+        status: 'active',
+        current_period_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+      };
+      await svc.handle(
+        {
+          id: 'evt_inv_tx',
+          type: 'invoice.paid',
+          data: { object: { subscription: 'sub_inv_tx' } },
+        },
+        prisma as any,
+        { invoiceSubscription: prefetchedSub as any },
+      );
+      expect(prisma._lockedPackageIds).toContain('pkg-6');
+      // Lock + write ran on the supplied outer tx; no nested tx opened.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      // No Stripe HTTP inside the tx — the subscription came from prefetch.
+      expect(stripe.retrieveSubscription).not.toHaveBeenCalled();
+      expect(prisma._purchases[0].status).toBe('active');
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+
+    it('invoice.paid skips the resync (no in-tx Stripe HTTP) when an outer tx is held without a prefetch', async () => {
+      // PR-18 B1 R2 P1 — defensive: if an outer tx is somehow held but no
+      // prefetch was supplied, the handler must NOT perform Stripe HTTP
+      // inside the transaction. It degrades by skipping the resync.
+      const { svc, prisma, stripe } = makeHandler();
+      prisma._packages.push({ id: 'pkg-8', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp-8',
+        package_id: 'pkg-8',
+        stripe_subscription_id: 'sub_inv_skip',
+        status: 'past_due',
+        entitlement_active: true,
+        created_at: new Date(),
+      });
+      const result = await svc.handle(
+        {
+          id: 'evt_inv_skip',
+          type: 'invoice.paid',
+          data: { object: { subscription: 'sub_inv_skip' } },
+        },
+        prisma as any,
+      );
+      expect(result.claimed).toBe(true);
+      // No Stripe HTTP and no nested tx while the outer tx is held.
+      expect(stripe.retrieveSubscription).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('prefetchForOuterTx resolves the subscription out-of-tx for invoice.paid', async () => {
+      // PR-18 B1 R2 P1 — the prefetch hook (called by BillingService BEFORE
+      // opening its tx) returns the subscription so the in-tx path never
+      // touches Stripe.
+      const { svc, prisma, stripe } = makeHandler();
+      prisma._purchases.push({
+        id: 'cp-pf',
+        package_id: 'pkg-pf',
+        stripe_subscription_id: 'sub_pf',
+        status: 'past_due',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      const sub = { id: 'sub_pf', status: 'active', current_period_end: 123 };
+      stripe.retrieveSubscription.mockResolvedValueOnce(sub);
+      const pre = await svc.prefetchForOuterTx({
+        id: 'evt_pf',
+        type: 'invoice.paid',
+        data: { object: { subscription: 'sub_pf' } },
+      });
+      expect(stripe.retrieveSubscription).toHaveBeenCalledWith('sub_pf');
+      expect(pre.invoiceSubscription).toEqual(sub);
+      // No DB transaction opened by the prefetch.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('prefetchForOuterTx is a no-op for non-invoice events and unknown subs', async () => {
+      const { svc, stripe } = makeHandler();
+      const a = await svc.prefetchForOuterTx({
+        id: 'evt_a',
+        type: 'customer.subscription.updated',
+        data: { object: { id: 'sub_x' } },
+      });
+      expect(a).toEqual({});
+      const b = await svc.prefetchForOuterTx({
+        id: 'evt_b',
+        type: 'invoice.paid',
+        data: { object: { subscription: 'sub_unknown' } },
+      });
+      expect(b).toEqual({});
+      expect(stripe.retrieveSubscription).not.toHaveBeenCalled();
+    });
+
+    it('invoice.paid locks the package row on renewal re-activation', async () => {
+      const { svc, prisma, stripe } = makeHandler();
+      prisma._packages.push({ id: 'pkg-4', billing_type: 'recurring' });
+      prisma._purchases.push({
+        id: 'cp-4',
+        package_id: 'pkg-4',
+        stripe_subscription_id: 'sub_rn',
+        status: 'past_due',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      stripe.retrieveSubscription.mockResolvedValueOnce({
+        id: 'sub_rn',
+        status: 'active',
+        current_period_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+      });
+      await svc.handle({
+        id: 'evt_lock_3',
+        type: 'invoice.paid',
+        data: { object: { subscription: 'sub_rn' } },
+      });
+      expect(prisma._lockedPackageIds).toContain('pkg-4');
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+    });
+  });
+
+  // PR-18 B1 R3 P1 — head-coach split posting must never run inline while an
+  // outer $transaction (and the CoachPackage FOR UPDATE lock) is held, because
+  // onChargeSucceeded can synchronously call Stripe (retrievePaymentIntent +
+  // transfers.attempt → createTransfer). When an outer tx is threaded the
+  // handler DEFERS the posting to post-commit and returns a descriptor; when
+  // no tx is held it runs inline as before.
+  describe('B1 R3 P1 — split posting deferred outside the outer tx', () => {
+    it('checkout.session.completed DEFERS split posting (no inline onChargeSucceeded) when an outer tx is held', async () => {
+      const { svc, prisma, splits } = makeHandlerWithSplits();
+      prisma._packages.push({ id: 'pkg-d1', billing_type: 'one_time' });
+      prisma._purchases.push({
+        id: 'cp-d1',
+        package_id: 'pkg-d1',
+        stripe_checkout_session_id: 'cs_d1',
+        status: 'pending',
+        entitlement_active: false,
+        billing_type: 'one_time',
+        created_at: new Date(),
+      });
+      const result = await svc.handle(
+        {
+          id: 'evt_d1',
+          type: 'checkout.session.completed',
+          data: { object: { id: 'cs_d1', mode: 'payment', payment_intent: 'pi_d1' } },
+        },
+        prisma as any,
+        { chargeIdByPurchaseId: { 'cp-d1': 'ch_d1' } },
+      );
+      // Entitlement still activated inside the tx.
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+      // Split posting was NOT run inline (no Stripe HTTP inside the tx).
+      expect(splits.onChargeSucceeded).not.toHaveBeenCalled();
+      // Instead a deferred descriptor carrying the pre-resolved charge id.
+      expect(result.deferredSplit).toBeDefined();
+      expect(result.deferredSplit!.charge_id).toBe('ch_d1');
+      expect(result.deferredSplit!.purchase.id).toBe('cp-d1');
+    });
+
+    it('checkout.session.completed runs split posting INLINE when no outer tx is held (legacy path)', async () => {
+      const { svc, prisma, splits } = makeHandlerWithSplits();
+      prisma._packages.push({ id: 'pkg-d2', billing_type: 'one_time' });
+      prisma._purchases.push({
+        id: 'cp-d2',
+        package_id: 'pkg-d2',
+        stripe_checkout_session_id: 'cs_d2',
+        status: 'pending',
+        entitlement_active: false,
+        billing_type: 'one_time',
+        created_at: new Date(),
+      });
+      const result = await svc.handle({
+        id: 'evt_d2',
+        type: 'checkout.session.completed',
+        data: { object: { id: 'cs_d2', mode: 'payment', payment_intent: 'pi_d2' } },
+      });
+      // No outer tx → inline posting preserved (legacy/sweeper/test path).
+      expect(splits.onChargeSucceeded).toHaveBeenCalledTimes(1);
+      expect(result.deferredSplit).toBeUndefined();
+    });
+
+    it('payment_intent.succeeded DEFERS split posting under an outer tx', async () => {
+      const { svc, prisma, splits } = makeHandlerWithSplits();
+      prisma._packages.push({ id: 'pkg-d3', billing_type: 'one_time' });
+      prisma._purchases.push({
+        id: 'cp-d3',
+        package_id: 'pkg-d3',
+        stripe_payment_intent_id: 'pi_d3',
+        status: 'pending',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      const result = await svc.handle(
+        {
+          id: 'evt_d3',
+          type: 'payment_intent.succeeded',
+          data: { object: { id: 'pi_d3' } },
+        },
+        prisma as any,
+        { chargeIdByPurchaseId: { 'cp-d3': 'ch_d3' } },
+      );
+      expect(prisma._purchases[0].entitlement_active).toBe(true);
+      expect(splits.onChargeSucceeded).not.toHaveBeenCalled();
+      expect(result.deferredSplit!.charge_id).toBe('ch_d3');
+    });
+
+    it('runDeferredSplit posts the split with the pre-resolved charge id', async () => {
+      const { svc, splits } = makeHandlerWithSplits();
+      await svc.runDeferredSplit({
+        purchase: { id: 'cp-d4' } as any,
+        charge_id: 'ch_d4',
+        invoice_amount_cents: 4200,
+      });
+      expect(splits.onChargeSucceeded).toHaveBeenCalledWith({
+        purchase: { id: 'cp-d4' },
+        invoice_amount_cents: 4200,
+        invoice_charge_id: 'ch_d4',
+      });
+    });
+
+    it('prefetchForOuterTx resolves the charge id out-of-tx for checkout.session.completed', async () => {
+      const { svc, prisma, stripe } = makeHandlerWithSplits();
+      prisma._purchases.push({
+        id: 'cp-d5',
+        package_id: 'pkg-d5',
+        stripe_checkout_session_id: 'cs_d5',
+        stripe_payment_intent_id: 'pi_d5',
+        status: 'pending',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      stripe.retrievePaymentIntent.mockResolvedValueOnce({
+        id: 'pi_d5',
+        latest_charge: 'ch_d5',
+      });
+      const pre = await svc.prefetchForOuterTx({
+        id: 'evt_d5',
+        type: 'checkout.session.completed',
+        data: { object: { id: 'cs_d5', payment_intent: 'pi_d5' } },
+      });
+      expect(stripe.retrievePaymentIntent).toHaveBeenCalledWith('pi_d5');
+      expect(pre.chargeIdByPurchaseId).toEqual({ 'cp-d5': 'ch_d5' });
+      // The pre-resolution itself opens no DB transaction.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('prefetchForOuterTx prefers latest_charge from the PI event payload (no Stripe HTTP)', async () => {
+      const { svc, prisma, stripe } = makeHandlerWithSplits();
+      prisma._purchases.push({
+        id: 'cp-d6',
+        package_id: 'pkg-d6',
+        stripe_payment_intent_id: 'pi_d6',
+        status: 'pending',
+        entitlement_active: false,
+        created_at: new Date(),
+      });
+      const pre = await svc.prefetchForOuterTx({
+        id: 'evt_d6',
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_d6', latest_charge: 'ch_d6' } },
+      });
+      expect(stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+      expect(pre.chargeIdByPurchaseId).toEqual({ 'cp-d6': 'ch_d6' });
     });
   });
 

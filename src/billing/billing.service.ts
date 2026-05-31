@@ -11,7 +11,10 @@ import { StripeApiError, StripeApiService } from './stripe-api.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AuditAction, AuditService } from '../audit/audit.service';
-import { CheckoutWebhookHandlerService } from '../checkout/checkout-webhook-handler.service';
+import {
+  CheckoutWebhookHandlerService,
+  type DeferredSplitTask,
+} from '../checkout/checkout-webhook-handler.service';
 import { CoachAiCreditPackService } from '../ai-credits/coach-ai-credit-pack.service';
 import { ConnectService } from '../connect/connect.service';
 import { EmailService } from '../email/email.service';
@@ -193,12 +196,43 @@ export class BillingService {
     // email simply omits the "View receipt" line (degraded, not broken).
     const preResolved = await this.preResolveReceiptUrl(event);
 
+    // PR-18 B1 — pre-resolve any Stripe HTTP state the checkout webhook
+    // handler needs INSIDE the outer $transaction (currently the
+    // invoice-renewal subscription resync) BEFORE the transaction opens.
+    // The handler takes a CoachPackage `FOR UPDATE` lock on the recurring
+    // activation path; performing Stripe HTTP after that lock is acquired —
+    // or anywhere inside the outer tx — would hold the Postgres connection
+    // across a Stripe round-trip (A276-P1-3). Mirrors preResolveReceiptUrl.
+    // Best-effort and never throws.
+    // Guard the method reference: legacy/unit-test wiring may stub
+    // checkoutWebhooks with only a `handle` fn and no prefetch method.
+    const checkoutPrefetch =
+      this.checkoutWebhooks &&
+      typeof this.checkoutWebhooks.prefetchForOuterTx === 'function'
+        ? await this.checkoutWebhooks.prefetchForOuterTx(event)
+        : undefined;
+
     // PR-9 — purchase ids whose immediate drops were materialised inside
     // the outer tx and whose drip alerts (push + in-app, decision #9)
     // need to be flushed AFTER commit. Failing to send an alert MUST
     // NEVER roll back entitlement, so the alert dispatch is moved
     // outside the $transaction.
     let dripAlertPurchaseId: string | null = null;
+
+    // PR-18 B1 R3 P1 — head-coach split posting that the checkout webhook
+    // handler DEFERRED because this outer $transaction (and the CoachPackage
+    // FOR UPDATE lock the activation takes) was held when the charge
+    // succeeded. onChargeSucceeded resolves the parent charge id
+    // (retrievePaymentIntent) and may post the head-coach Transfer
+    // (createTransfer) — both Stripe HTTP. Running them inside the tx would
+    // hold the Postgres connection (and the package row lock) across a Stripe
+    // round-trip (the no-Stripe-HTTP-in-DB-tx gate, worse under B1). The
+    // handler pre-resolves the charge id out-of-tx in prefetchForOuterTx and
+    // hands back this descriptor; we run the posting AFTER the tx commits.
+    // The split ledger is idempotent and the transfer is idempotency-keyed +
+    // sweeper-backed, so a rolled-back tx simply skips this (the descriptor
+    // is captured but never executed) and Stripe's redelivery reconciles.
+    let deferredSplit: DeferredSplitTask | null = null;
 
     // PR-14 R2 P0-1 — recurring/combo guest subscription backstop. The
     // PI-succeeded route is the primary trigger for converting a guest
@@ -239,10 +273,19 @@ export class BillingService {
         // retry safe. See PR9_BUILD_REPORT for the atomicity contract.
         let claimedByCheckout = false;
         if (this.checkoutWebhooks) {
-          const result = await this.checkoutWebhooks.handle(event, tx);
+          const result = await this.checkoutWebhooks.handle(
+            event,
+            tx,
+            checkoutPrefetch,
+          );
           claimedByCheckout = !!result.claimed;
           if (result.claimed && result.purchase_id) {
             dripAlertPurchaseId = result.purchase_id;
+          }
+          // PR-18 B1 R3 P1 — capture any deferred split posting; run it
+          // post-commit (below) so no Stripe HTTP fires inside this tx.
+          if (result.deferredSplit) {
+            deferredSplit = result.deferredSplit;
           }
         }
 
@@ -587,6 +630,24 @@ export class BillingService {
           `drip alert flush failed purchase=${dripAlertPurchaseId}: ${(err as Error).message}`,
         );
       }
+    }
+
+    // PR-18 B1 R3 P1 — outer tx COMMITTED. Now run any head-coach split
+    // posting the checkout handler deferred. This is the FIRST point at which
+    // the CoachPackage FOR UPDATE lock is released and no DB transaction is
+    // open, so the Stripe HTTP inside onChargeSucceeded (retrievePaymentIntent
+    // + createTransfer) no longer holds the Postgres connection. The handler
+    // pre-resolved the charge id out-of-tx, so the typical post-commit run
+    // issues only the transfer POST. Failure-isolated (runDeferredSplit never
+    // throws): the split ledger is idempotent and the transfer is
+    // idempotency-keyed + sweeper-backed, so a transient Stripe failure is
+    // retried by the sweeper rather than rolling back committed entitlement.
+    if (
+      deferredSplit &&
+      this.checkoutWebhooks &&
+      typeof this.checkoutWebhooks.runDeferredSplit === 'function'
+    ) {
+      await this.checkoutWebhooks.runDeferredSplit(deferredSplit);
     }
 
     // PR-14 R2 P0-1 — BACKSTOP for recurring guest checkouts. The PI
