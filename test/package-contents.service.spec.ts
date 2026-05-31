@@ -1008,12 +1008,13 @@ describe('PackageContentsService', () => {
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
-      const b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
+      const _b = await svc.attach('coach-1', 'coach-1', 'pkg-1', {
         asset_type: 'meal_plan',
         asset_id: 'mp-1',
         cadence_kind: 'immediate',
         cadence_payload: {},
       });
+      expect(_b.id).toBeTruthy();
       (prisma as any)._lockLog.length = 0;
       // a is at 0, b is at 1; move a to 2 (free slot).
       await svc.patch('coach-1', 'pkg-1', a.id, { display_order: 2 });
