@@ -125,8 +125,18 @@ describe('A9 — ai.service Perplexity branch never folds a system role into the
         renderForPrompt: (c: any) =>
           new ClientAIContextService({} as any).renderForPrompt(c),
       };
+      // A1 — AiService.chat now reserves daily tokens against UserAIQuota
+      // before the model call. Provide a permissive in-memory prisma stub so
+      // this A9 role-folding test still reaches the provider branch.
+      const prismaStub = {
+        userAIQuota: {
+          upsert: jest.fn().mockResolvedValue({}),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        aiRequestAudit: { create: jest.fn().mockResolvedValue({}) },
+      };
       const svc = new AiService(
-        {} as any,
+        prismaStub as any,
         ctxSvc as any,
         new AIGuardrailsService(),
         { capture: jest.fn(), identify: jest.fn() } as any,

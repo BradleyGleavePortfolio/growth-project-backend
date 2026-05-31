@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger, Optional } from '@nestjs/common';
 import OpenAI from 'openai';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
@@ -45,6 +45,114 @@ export interface UserContextPayload {
   recent_fasting: Prisma.FastingWindowGetPayload<Record<string, never>>[];
   todays_logs: Prisma.LoggedFoodEntryGetPayload<{ include: { food_item: true } }>[];
 }
+
+// A1 — per-user DAILY AI token quota.
+//
+// Rationale for the cap value: /ai/chat already has a 20-requests-per-hour
+// per-user throttle (defense-in-depth burst limit). The model call is bounded
+// to max_tokens=600 per turn (MAX_TOKENS_PER_CALL below). We pick the daily
+// token budget as 20 full-budget calls/day — i.e. one hour's worth of the
+// burst limit spread across a day — which is generous for a legitimate client
+// but caps a token-amplification attacker who slow-drips under the hourly
+// throttle. 20 * 600 = 12000 tokens/day. Documented in the build report.
+export const MAX_TOKENS_PER_CALL = 600;
+export const DAILY_TOKEN_QUOTA = 20 * MAX_TOKENS_PER_CALL; // 12000
+
+// A1 — the daily cap bounds provider TOTAL tokens (prompt + completion). It is
+// enforced as a two-part mechanism: a BOUNDED BEST-EFFORT pre-spend reservation
+// gate, trued up by an EXACT post-call reconcile. The pre-gate works as:
+//
+//   1. CLAMP the assembled prompt's user-controllable tail. We clamp
+//      (history + user message) so the assembled prompt fits MAX_INPUT_CHARS
+//      characters BEFORE sending it, and that clamped text is what every
+//      provider branch sends. Oversized context/history is truncated
+//      (documented, lossy on extreme inputs only).
+//   2. RESERVE an estimated worst case = MAX_INPUT_TOKENS + MAX_TOKENS_PER_CALL,
+//      where MAX_INPUT_TOKENS = MAX_INPUT_CHARS / APPROX_CHARS_PER_TOKEN. Output
+//      is hard-capped at MAX_TOKENS_PER_CALL at the provider.
+//   3. RECONCILE to the provider's ACTUAL reported usage after the call
+//      (decrement-only, underflow-guarded). This post-reconcile is what makes
+//      the running DAILY TOTAL exact and authoritative.
+//
+// ACCEPTED-LIMITATION (A1, owner-accepted P2/P3 — documented, NOT a defect to
+// fix): the chars/APPROX_CHARS_PER_TOKEN estimate is a HEURISTIC, not a provable
+// token upper bound. CJK text, emoji, and base64 can tokenize to MORE tokens
+// than chars/3 predicts, and the system-prompt / role-framing tokens are not
+// included in the pre-gate clamp. So the pre-gate is BEST-EFFORT and a single
+// over-budget call can transiently overshoot the cap until the EXACT post-call
+// reconcile trues the daily total up. The cap is therefore enforced as a
+// bounded best-effort pre-gate plus an exact, authoritative post-reconcile.
+export const APPROX_CHARS_PER_TOKEN = 3;
+
+// Backward-compatible alias. Older call sites / tests reference
+// CONSERVATIVE_CHARS_PER_TOKEN; it now points at the clearly-named heuristic
+// constant above. NOTE: the name "conservative" overstated the guarantee — the
+// ratio is a best-effort heuristic, not a conservative provable bound (see the
+// ACCEPTED-LIMITATION note above). Value and behavior are unchanged.
+export const CONSERVATIVE_CHARS_PER_TOKEN = APPROX_CHARS_PER_TOKEN;
+
+// Estimated ceiling on the provider INPUT tokens any single call is sized for.
+// Half the daily quota, so a single estimated-worst-case call (input ceiling +
+// max output) always fits within the daily budget at least once. The assembled
+// prompt's user-controllable tail is clamped to MAX_INPUT_CHARS = MAX_INPUT_TOKENS
+// * APPROX_CHARS_PER_TOKEN. Per the ACCEPTED-LIMITATION note above this maps to
+// MAX_INPUT_TOKENS only as a BEST-EFFORT heuristic (not a provable bound); the
+// exact post-call reconcile is what makes the daily total authoritative.
+export const MAX_INPUT_TOKENS = DAILY_TOKEN_QUOTA / 2; // 6000
+export const MAX_INPUT_CHARS = MAX_INPUT_TOKENS * CONSERVATIVE_CHARS_PER_TOKEN; // 18000
+
+// The estimated worst-case TOTAL tokens a single call is reserved for: the
+// estimated input ceiling plus the hard provider output cap. Reserving this up
+// front is the BOUNDED BEST-EFFORT pre-spend gate (see the ACCEPTED-LIMITATION
+// note above); the exact post-call reconcile trues the daily total up.
+export const PER_CALL_TOKEN_RESERVATION = MAX_INPUT_TOKENS + MAX_TOKENS_PER_CALL; // 6600
+
+// Clamp the user-controllable prompt so the TOTAL assembled text the provider
+// receives never exceeds MAX_INPUT_CHARS. The system prompt carries guardrails
+// and is preserved intact (it is app-controlled and bounded by the finite
+// CLIENT_CONTEXT fields, comfortably under the ceiling); only the
+// user-controllable tail (conversation history + the user message) is truncated
+// to fit. NOTE (ACCEPTED-LIMITATION): clamping CHARACTERS bounds the assembled
+// text length, but char count maps to token count only as a best-effort
+// heuristic (chars/APPROX_CHARS_PER_TOKEN), and the system prompt's own tokens
+// are not part of this clamp. The reservation built from it is therefore a
+// best-effort pre-gate, not a provable hard cap; the exact post-call reconcile
+// is authoritative for the daily total.
+//
+// Returns the clamped history (oldest-trimmed, each entry length-bounded) and
+// the clamped user message. The combined length of systemPrompt + the returned
+// parts (with single-char join separators) is <= MAX_INPUT_CHARS.
+export function clampPromptParts(
+  systemPrompt: string,
+  history: Array<{ role: ChatRole; content: string }>,
+  userMessage: string,
+): { history: Array<{ role: ChatRole; content: string }>; userMessage: string } {
+  // Budget left for the user-controllable tail after the system prompt. If the
+  // system prompt alone somehow exceeds the ceiling, the tail budget is 0 (the
+  // system prompt is never truncated so guardrails always reach the model; the
+  // ceiling is sized so this does not happen for normal app contexts).
+  const tailBudget = Math.max(0, MAX_INPUT_CHARS - systemPrompt.length);
+
+  // The user's CURRENT message takes priority over older history. Reserve up to
+  // half the tail budget for it, then give the remainder to history.
+  const messageBudget = Math.min(userMessage.length, Math.floor(tailBudget / 2) || tailBudget);
+  const clampedMessage = userMessage.slice(0, messageBudget);
+
+  let remaining = tailBudget - clampedMessage.length;
+  // Walk history newest-first so the most recent turns survive truncation.
+  const clampedHistoryReversed: Array<{ role: ChatRole; content: string }> = [];
+  for (let i = history.length - 1; i >= 0 && remaining > 0; i--) {
+    const entry = history[i];
+    const take = Math.min(entry.content.length, remaining);
+    if (take <= 0) break;
+    clampedHistoryReversed.push({ role: entry.role, content: entry.content.slice(0, take) });
+    remaining -= take;
+  }
+  return { history: clampedHistoryReversed.reverse(), userMessage: clampedMessage };
+}
+
+// Machine code returned (HTTP 429) when a user is at/over their daily budget.
+export const AI_DAILY_QUOTA_EXCEEDED = 'AI_DAILY_QUOTA_EXCEEDED';
 
 export interface ChatResult {
   reply: string;
@@ -283,42 +391,137 @@ Now answer the user's next message using the rules above. Keep the answer under 
     // entry can never be folded into the prompt WITH a system role.
     conversationHistory: Array<{ role: ChatRole; content: string }>,
   ): Promise<ChatResult> {
+    // A1 — build context first (this performs NO provider calls and burns no
+    // billable tokens) so we can assemble + clamp the prompt and reserve the
+    // best-effort worst-case TOTAL-token estimate before any model call.
     const ctx = await this.contextSvc.build(userId);
     let modelUsed: 'perplexity' | 'anthropic' | 'fallback' = 'perplexity';
 
-    let rawReply: string;
+    // A1 (P1) — ENFORCE the hard input ceiling. Build the system prompt once,
+    // take the last 10 history turns, then CLAMP the user-controllable prompt
+    // (history + user message) so the TOTAL assembled text the provider receives
+    // can never exceed MAX_INPUT_CHARS. MAX_INPUT_CHARS maps to MAX_INPUT_TOKENS
+    // via APPROX_CHARS_PER_TOKEN, which is a BEST-EFFORT heuristic, not a provable
+    // upper bound on real input tokens (see the ACCEPTED-LIMITATION note above):
+    // CJK / emoji / base64 can tokenize to more, and the system-prompt tokens are
+    // not counted. The clamped values below are what BOTH provider branches send,
+    // so the assembled CHARACTER length is bounded on the wire; the token estimate
+    // built from it remains best-effort. Oversized history/messages are truncated
+    // (lossy only on extreme inputs; the system prompt with all guardrails is
+    // preserved). The EXACT post-call reconcile is authoritative for the daily
+    // total.
+    const systemPrompt = this.buildSystemPrompt(ctx, userMessage);
+    const clamped = clampPromptParts(
+      systemPrompt,
+      conversationHistory.slice(-10),
+      userMessage,
+    );
+    const clampedHistory = clamped.history;
+    const clampedUserMessage = clamped.userMessage;
+
+    // A1 — reserve the worst-case total estimate for this call: the enforced
+    // input-char ceiling (mapped to tokens via APPROX_CHARS_PER_TOKEN) plus the
+    // hard provider output cap (MAX_TOKENS_PER_CALL). The assembled input is
+    // clamped to MAX_INPUT_CHARS and output is hard-capped at the provider, so
+    // this reservation is the up-front PRE-GATE the daily cap is enforced with.
+    //
+    // ACCEPTED-LIMITATION (A1, owner-accepted P2/P3 — documented, NOT fixed):
+    // The pre-gate is BOUNDED BEST-EFFORT, not a provable hard upper bound.
+    //  (a) chars/APPROX_CHARS_PER_TOKEN (chars/3) is a HEURISTIC estimate of
+    //      token count, NOT a provable upper bound. Inputs such as CJK text,
+    //      emoji, or base64 blobs can tokenize to MORE tokens than chars/3
+    //      predicts, so the real provider input can exceed the estimate.
+    //  (b) the input clamp bounds only the user-controllable tail (history +
+    //      user message); the SYSTEM PROMPT / role-framing tokens are NOT
+    //      counted in the pre-gate clamp, so the estimate omits them.
+    // Consequently a single over-budget call can TRANSIENTLY overshoot the daily
+    // cap before reconcile runs. Correctness of the DAILY TOTAL is guaranteed
+    // NOT by this pre-gate but by the EXACT post-call reconcile below, which
+    // DECREMENTS the ledger by the provider's ACTUAL reported usage. So the cap
+    // is enforced as: bounded best-effort pre-gate + exact post-reconcile, and
+    // the post-reconcile is the authoritative source of the running total. The
+    // product owner has accepted this bounded best-effort behavior for merge.
+    const reservation = PER_CALL_TOKEN_RESERVATION;
+
+    // A1 (P1) — apply the per-user DAILY token quota as a bounded best-effort
+    // pre-spend gate BEFORE we call any model. reserveDailyTokens enforces:
+    //  (a) PRE-CALL reject if the already-consumed daily total is at/over cap;
+    //  (b) PRE-CALL reject if the full worst-case reservation estimate would not
+    //      fit in the remaining budget — a best-effort guard that blocks calls
+    //      whose estimated cost cannot fit, keeping the pre-gate from running
+    //      over the cap on the estimate;
+    //  (c) the atomic guarded updateMany (tokens_used + reservation <= cap)
+    //      which is the race-safe gate so concurrent calls cannot both pass. The
+    //      reservation captures the day-bucket key (P2) ONCE here so the
+    //      post-call reconcile/refund always hits the SAME row even across a
+    //      midnight rollover. The EXACT post-call reconcile is what makes the
+    //      running daily total authoritative.
+    const quotaDate = await this.reserveDailyTokens(
+      userId,
+      reservation,
+      reservation,
+    );
+
+    // A1 (P1-a) — actual provider TOTAL token usage (prompt+completion) when
+    // the provider reports it, for the post-call reconcile against the up-front
+    // reservation. Null means the provider never ran or did not report usage
+    // (e.g. the deterministic fallback), in which case the reservation is
+    // refunded in full (P1-b) since no billable tokens were spent.
+    let actualTokens: number | null = null;
+    let rawReply = '';
     const perplexityKey = process.env.PERPLEXITY_API_KEY?.trim();
     const anthropicReady =
       this.anthropic && this.coachAIState && this.coachAIState.isReady();
 
+    // A1 (P1-b) — reconcile/refund the reservation in a finally path so a
+    // failed or fallback call never permanently leaks reserved quota. When the
+    // provider reported real usage we reconcile the reservation to that TOTAL;
+    // otherwise (exception, empty completion, or fallback) we refund the entire
+    // reservation because no billable provider tokens were consumed.
+    try {
     if (!perplexityKey && anthropicReady && this.anthropic) {
       // Coach AI v1 — Claude Sonnet fallback for the client chat surface.
       // We hand it the same system prompt the Perplexity branch would
       // see so guardrails / APP_PRESCRIBED defense apply identically.
       try {
-        const systemPrompt = this.buildSystemPrompt(ctx, userMessage);
-        const historyText = conversationHistory
-          .slice(-10)
+        // A1 (P1) — send the CLAMPED history + user message so the provider
+        // input is the same bounded text the reservation was sized against.
+        const historyText = clampedHistory
           .map((m) => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${m.content}`)
           .join('\n');
         const result = await this.anthropic.complete(
           {
             system: systemPrompt,
             user: historyText
-              ? `${historyText}\nUser: ${userMessage}`
-              : userMessage,
+              ? `${historyText}\nUser: ${clampedUserMessage}`
+              : clampedUserMessage,
           },
           {
-            maxTokens: 600,
+            // P3 — use the shared MAX_TOKENS_PER_CALL constant so the provider
+            // output cap and the reservation can never desynchronize.
+            maxTokens: MAX_TOKENS_PER_CALL,
             temperature: 0.7,
             capability: COACH_AI_CAPABILITIES.CLIENT_CHAT_FALLBACK,
             clientId: userId,
           },
         );
+        // P2 — the provider may report billable usage even when it returns no
+        // text (e.g. a truncated/empty completion that still consumed prompt +
+        // some output tokens). Capture the reported usage REGARDLESS of whether
+        // there was text so the reconcile charges the TRUE usage instead of
+        // refunding a call that genuinely spent tokens. Only a response with no
+        // usage at all leaves actualTokens null (full refund in the finally).
+        const reportedUsage = (result.tokensIn ?? 0) + (result.tokensOut ?? 0);
+        if (reportedUsage > 0) {
+          actualTokens = reportedUsage;
+        }
         if (result.text) {
           rawReply = result.text;
           modelUsed = 'anthropic';
         } else {
+          // No text to return to the user — serve the deterministic fallback,
+          // but the daily ledger is reconciled to the real usage above (P2),
+          // NOT refunded, because the provider still billed those tokens.
           const fb = this.generateFallbackResponse(userMessage, ctx);
           rawReply = fb.text;
           modelUsed = 'fallback';
@@ -336,10 +539,11 @@ Now answer the user's next message using the rules above. Keep the answer under 
       rawReply = fb.text;
       modelUsed = 'fallback';
     } else {
-      const systemPrompt = this.buildSystemPrompt(ctx, userMessage);
+      // A1 (P1) — send the CLAMPED history + user message so the provider input
+      // is the same bounded text the reservation was sized against.
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         { role: 'system', content: systemPrompt },
-        ...conversationHistory.slice(-10).map((m) => {
+        ...clampedHistory.map((m) => {
           // A9 defense-in-depth: the role is already validated to
           // 'user'|'assistant' by ChatRequestDto, but we still narrow here so
           // any non-'assistant' value collapses to 'user' — a 'system' role
@@ -347,18 +551,28 @@ Now answer the user's next message using the rules above. Keep the answer under 
           const role: 'assistant' | 'user' = m.role === 'assistant' ? 'assistant' : 'user';
           return { role, content: m.content };
         }),
-        { role: 'user', content: userMessage },
+        { role: 'user', content: clampedUserMessage },
       ];
       try {
         const response = await this.getPerplexityClient().chat.completions.create({
           model: 'sonar-pro',
           messages,
           temperature: 0.7,
-          max_tokens: 600,
+          max_tokens: MAX_TOKENS_PER_CALL,
         });
+        // P2 — capture the reported TOTAL usage REGARDLESS of whether the
+        // provider returned text. A response with empty content but a real
+        // usage figure still billed those tokens, so we reconcile to the true
+        // usage rather than refunding the reservation in full. Only a response
+        // with no usage figure leaves actualTokens null (full refund).
+        if (typeof response.usage?.total_tokens === 'number') {
+          actualTokens = response.usage.total_tokens;
+        }
         if (response.choices[0]?.message?.content) {
           rawReply = response.choices[0].message.content;
         } else {
+          // No text — serve the deterministic fallback, but keep the real usage
+          // (captured above) charged to the daily ledger (P2), not refunded.
           const fb = this.generateFallbackResponse(userMessage, ctx);
           rawReply = fb.text;
           modelUsed = 'fallback';
@@ -370,6 +584,36 @@ Now answer the user's next message using the rules above. Keep the answer under 
         const fb = this.generateFallbackResponse(userMessage, ctx);
         rawReply = fb.text;
         modelUsed = 'fallback';
+      }
+    }
+
+    } finally {
+      // A1 (P1) — settle the reservation against reality on the SAME day-bucket
+      // row we reserved (P2). In the designed path the reservation estimate is
+      // at/above the provider's real total (enforced input-char clamp + hard
+      // output cap), so reconciliation only ever DECREMENTS — it refunds the
+      // over-reservation. A clamp (see reconcileDailyTokens) defends the rare
+      // case where a best-effort under-estimate is exceeded so the post-call step
+      // never increments above the reservation. The EXACT reconcile is what makes
+      // the daily total authoritative. Three cases:
+      //  1. Provider reported a real TOTAL usage => reconcile DOWN to that exact
+      //     total (refund reserved - actual). Since actual <= reserved, this is
+      //     always a refund; the daily ledger then reflects TRUE total tokens.
+      //     This fires whenever usage was reported, INCLUDING the P2 case of a
+      //     usage-but-no-text response: we charge the real usage rather than
+      //     refunding it in full.
+      //  2. The call produced NO billable provider tokens — a thrown provider
+      //     error, or an empty completion with NO usage reported, that fell
+      //     back to the deterministic responder => refund the ENTIRE
+      //     reservation (P1) so a genuinely free call never leaks quota.
+      //  3. Provider ran successfully but did NOT report usage => keep the
+      //     worst-case reservation in place (we cannot know the true cost, so
+      //     we must not refund a call that really did spend tokens; the
+      //     reservation already bounds it at/under the cap).
+      if (actualTokens != null) {
+        await this.reconcileDailyTokens(userId, quotaDate, reservation, actualTokens);
+      } else if (modelUsed === 'fallback') {
+        await this.reconcileDailyTokens(userId, quotaDate, reservation, 0);
       }
     }
 
@@ -405,5 +649,171 @@ Now answer the user's next message using the rules above. Keep the answer under 
       model_used: modelUsed,
       degraded: isFallback,
     };
+  }
+
+  // A1 — "today" as a UTC date bucket (midnight UTC), matching the
+  // UserAIQuota.quota_date @db.Date column. Pulled out as a protected method
+  // so tests can stub the day boundary without coupling to the wall clock
+  // (e.g. to exercise the day-rollover path deterministically).
+  protected getQuotaDate(): Date {
+    const now = new Date();
+    return new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+  }
+
+  // A1 (P1) — atomically reserve `cost` tokens against the user's daily budget,
+  // applying the DAILY_TOKEN_QUOTA as a bounded best-effort PRE-SPEND gate.
+  //
+  // `cost` is the BEST-EFFORT worst-case estimate for the call (enforced
+  // input-char clamp + hard output cap). It is a heuristic estimate, not a
+  // provable upper bound on the real provider total (see the ACCEPTED-LIMITATION
+  // note above: CJK / emoji / base64 and the uncounted system-prompt tokens can
+  // exceed it). Reserving it up front gates the spend in three layers:
+  //  (a) PRE-CALL reject if the already-consumed daily total is at/over the
+  //      cap — an at/over-cap user is blocked even for an individually tiny
+  //      call, before any model is touched.
+  //  (b) PRE-CALL reject if the worst-case reservation estimate (`minRequired`,
+  //      equal to `cost`) would not fit in the remaining budget — a best-effort
+  //      guard that blocks calls whose estimated cost cannot fit.
+  //  (c) the atomic guarded `updateMany` (tokens_used + cost <= cap, i.e.
+  //      tokens_used <= cap - cost) which is the race-safe gate: N concurrent
+  //      requests each either win the guarded update (count === 1) or are
+  //      rejected (count === 0) with no read-modify-write race, so they can
+  //      never collectively push the RESERVED total past the cap.
+  //
+  // Any rejection throws 429 BEFORE a model call, so an at/over-cap user never
+  // burns provider tokens. In the designed path the estimate is at/above the
+  // real total, so the post-call reconcile only ever refunds the
+  // over-reservation DOWN. The EXACT post-call reconcile — not this pre-gate — is
+  // what makes the running daily total authoritative; the pre-gate is bounded
+  // best-effort.
+  //
+  // P2 (day key) — returns the captured quota_date so the caller passes the
+  // SAME day-bucket key to the post-call reconcile/refund. Recomputing the
+  // bucket at reconcile time would mis-target the row for a request that
+  // crosses midnight; reusing the reservation's key keeps reserve and reconcile
+  // on the same ledger row.
+  private async reserveDailyTokens(
+    userId: string,
+    cost: number,
+    minRequired: number,
+  ): Promise<Date> {
+    const quotaDate = this.getQuotaDate();
+
+    // Upsert returns the current row so we can run the explicit pre-call checks
+    // below. The @@unique makes the upsert idempotent under concurrency; we
+    // create the day's row at zero so the guarded increment is the single
+    // source of truth for the reservation (avoids a create that races a
+    // concurrent reserve into double-charging).
+    const row = await this.prisma.userAIQuota.upsert({
+      where: { UserAIQuota_user_id_quota_date_key: { user_id: userId, quota_date: quotaDate } },
+      create: { user_id: userId, quota_date: quotaDate, tokens_used: 0, request_count: 0 },
+      update: {},
+    });
+
+    // (a) + (b) — explicit pre-call checks. Reject when already at/over the cap,
+    // or when the worst-case reservation estimate would not fit in the remaining
+    // budget. These are best-effort pre-spend guards on the estimate; the EXACT
+    // post-call reconcile is what makes the daily total authoritative.
+    const consumed = row?.tokens_used ?? 0;
+    if (
+      consumed >= DAILY_TOKEN_QUOTA ||
+      consumed + minRequired > DAILY_TOKEN_QUOTA
+    ) {
+      throw new HttpException(
+        {
+          error: AI_DAILY_QUOTA_EXCEEDED,
+          message:
+            'You have reached your daily AI coaching limit. It refreshes tomorrow.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS, // 429
+      );
+    }
+
+    // (c) — the atomic race-safe hard gate. Only reserve the full cost if there
+    // is room for it (tokens_used + cost <= cap). At/over the remaining budget
+    // this matches 0 rows and we reject below.
+    const guarded = await this.prisma.userAIQuota.updateMany({
+      where: {
+        user_id: userId,
+        quota_date: quotaDate,
+        tokens_used: { lte: DAILY_TOKEN_QUOTA - cost },
+      },
+      data: {
+        tokens_used: { increment: cost },
+        request_count: { increment: 1 },
+      },
+    });
+
+    if (guarded.count === 0) {
+      throw new HttpException(
+        {
+          error: AI_DAILY_QUOTA_EXCEEDED,
+          message:
+            'You have reached your daily AI coaching limit. It refreshes tomorrow.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS, // 429
+      );
+    }
+
+    return quotaDate;
+  }
+
+  // A1 (P1) — reconcile the up-front reservation DOWN to the provider's actual
+  // TOTAL usage (prompt + completion). We reserved `reserved` tokens (a
+  // best-effort worst-case estimate); the real cost was `actual`. In the
+  // designed path the estimate is at/above the real total, so `actual <=
+  // reserved` and reconciliation is a refund (decrement) of `reserved - actual`.
+  // This EXACT reconcile is what makes the daily total authoritative: after it
+  // runs the ledger reflects the provider's ACTUAL reported usage, regardless of
+  // whether the best-effort pre-estimate over- or under-counted.
+  //
+  // P1-b — when the call spent no billable tokens (provider failure, empty
+  // completion, or deterministic fallback) the caller passes actual=0, which
+  // refunds the ENTIRE reservation so a failed call never permanently consumes
+  // quota.
+  //
+  // P2 — the day-bucket key is the one CAPTURED AT RESERVATION TIME and passed
+  // in here, so reserve and reconcile always hit the same row even across a
+  // midnight rollover.
+  //
+  // Defensive: if a provider ever reports actual > reserved (possible since the
+  // pre-estimate is best-effort, not a provable bound — e.g. heavy tokenization
+  // the heuristic could not foresee), we DO NOT apply an unguarded post-spend
+  // increment. Instead we clamp the reconcile to charge at most the reservation
+  // (treat the call as having consumed its full reservation — i.e. no refund),
+  // so the post-call step never increments the ledger above what was reserved.
+  //
+  // Safety: the refund is a DB-side decrement guarded by tokens_used >= refund
+  // so it can never underflow below zero, and it is atomic (single guarded
+  // updateMany). Non-fatal: a failed reconcile leaves the worst-case
+  // reservation in place rather than throwing.
+  private async reconcileDailyTokens(
+    userId: string,
+    quotaDate: Date,
+    reserved: number,
+    actual: number,
+  ): Promise<void> {
+    // Clamp actual at the reservation: in the designed path the best-effort
+    // estimate is at/above the real total, so actual should not exceed it. If a
+    // provider ever reports more, we charge at most the reservation (no
+    // post-spend increment), so the post-call step never grows the ledger above
+    // what was reserved.
+    const effectiveActual = Math.min(actual, reserved);
+    const refund = reserved - effectiveActual; // always >= 0 (decrement-only)
+    if (refund === 0) return;
+    try {
+      // Refund the over-reserved (or, when actual=0, the full) reservation,
+      // never below 0. The guard makes the decrement atomic and underflow-safe.
+      await this.prisma.userAIQuota.updateMany({
+        where: { user_id: userId, quota_date: quotaDate, tokens_used: { gte: refund } },
+        data: { tokens_used: { decrement: refund } },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Daily token reconcile failed (non-fatal): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }

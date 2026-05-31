@@ -275,8 +275,17 @@ describe('analytics instrumentation — AI chat', () => {
     const analytics = makeAnalytics();
     const prevKey = process.env.PERPLEXITY_API_KEY;
     delete process.env.PERPLEXITY_API_KEY;
+    // A1 — AiService.chat reserves daily tokens against UserAIQuota before the
+    // (fallback) path; provide a permissive in-memory prisma stub.
+    const prismaStub = {
+      userAIQuota: {
+        upsert: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      aiRequestAudit: { create: jest.fn().mockResolvedValue({}) },
+    };
     const svc = new AiService(
-      {} as any,
+      prismaStub as any,
       ctxSvc as ClientAIContextService,
       new AIGuardrailsService(),
       analytics as any,
