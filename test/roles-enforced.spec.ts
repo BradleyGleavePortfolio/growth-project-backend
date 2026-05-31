@@ -71,12 +71,9 @@ const LEGACY_GUARD_ALLOWLIST: Array<{
   { controller: 'CoachController', method: 'getAlerts', reason: 'CoachGuard at class level' },
   // ── CoachCheckInsController ──
   { controller: 'CoachCheckInsController', method: 'list', reason: 'CoachGuard at class level' },
-  // ── CoachMessagingController ──
-  { controller: 'CoachMessagingController', method: 'listThread', reason: 'CoachGuard at class level' },
-  { controller: 'CoachMessagingController', method: 'send', reason: 'CoachGuard at class level' },
-  { controller: 'CoachMessagingController', method: 'voiceUpload', reason: 'CoachGuard at class level' },
-  { controller: 'CoachMessagingController', method: 'markRead', reason: 'CoachGuard at class level' },
-  { controller: 'CoachMessagingController', method: 'unreadCount', reason: 'CoachGuard at class level' },
+  // CoachMessagingController removed from this allowlist: it now carries an
+  // explicit class-level @Roles('coach') (defence-in-depth), so every route
+  // is gated by the global RolesGuard and no longer needs a legacy exemption.
   // ── CoachNudgesController ──
   { controller: 'CoachNudgesController', method: 'create', reason: 'CoachGuard at class level' },
   // ── CoachMealPlansController ──
