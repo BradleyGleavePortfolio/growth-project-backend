@@ -19,6 +19,45 @@ export class LandingPagePublicService {
     private readonly rateLimiter: LeadRateLimiterService,
   ) {}
 
+  // ─── Custom-domain → slug address resolution (B3) ────────────────────────
+
+  /**
+   * B3 — resolve a verified custom domain (Host header) to the
+   * `{ coachSlug, pageSlug }` of its single published page so the public
+   * routes can reuse the existing slug-keyed render/checkout/lead/view
+   * paths verbatim.
+   *
+   * Security contract:
+   *  - `host` MUST already be normalized + non-canonical by the caller
+   *    (the controller's `resolvePageAddress`). We re-guard empties here
+   *    so a direct caller cannot bypass it.
+   *  - The DB lookup (`findPublishedByCustomDomain`) only matches rows
+   *    with `custom_domain_verified_at NOT NULL` AND `status:'published'`,
+   *    so an unverified / unpublished / unknown host resolves to `null`
+   *    (IDOR-safe: a domain can only ever map to ITS OWN page).
+   *  - The returned `coachSlug` is the coach's `invite_code` (the canonical
+   *    URL slug) and `pageSlug` is the page's own `slug`; both are the
+   *    exact identifiers the slug-keyed service methods already expect, so
+   *    no host value is ever reflected past this DB-verified boundary.
+   */
+  async resolveCustomDomainAddress(
+    host: string,
+  ): Promise<{ coachSlug: string; pageSlug: string } | null> {
+    if (!host) return null;
+    const page = await this.landingPageService.findPublishedByCustomDomain(host);
+    if (!page) return null;
+
+    // The verified-domain lookup already enforces status:'published' and
+    // custom_domain_verified_at NOT NULL; we still defensively re-check.
+    if (page.status !== 'published') return null;
+
+    const coachSlug = page.coach?.coach_profile?.invite_code;
+    const pageSlug = page.slug;
+    if (!coachSlug || !pageSlug) return null;
+
+    return { coachSlug, pageSlug };
+  }
+
   // ─── Public page render ─────────────────────────────────────────────────
 
   async renderPage(

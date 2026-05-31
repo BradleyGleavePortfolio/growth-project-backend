@@ -15,6 +15,7 @@ import { BootstrapValidationError } from './common/errors/bootstrap-validation.e
 import { setupSwagger } from './common/openapi';
 import { CacheControlInterceptor } from './common/cache-control.interceptor';
 import { MetricsService } from './observability/metrics.service';
+import { LANDING_PUBLIC_PREFIX_EXCLUDE } from './landing-pages/public-route-prefix';
 
 async function bootstrap() {
   // Fail fast at boot if required env vars are missing. See
@@ -200,14 +201,16 @@ async function bootstrap() {
       'help/faq',
       'help/support',
       'help/contact',
-      // R46 — Public coach landing pages. Mounted outside /api so the URL is
-      // app.trygrowthproject.com/p/<coachSlug>/<pageSlug> — no /api prefix.
-      // The :coachSlug/:pageSlug and sub-paths (checkout, leads, view) are all
-      // served by LandingPagePublicController with @Public() + throttle guards.
-      'p/:coachSlug/:pageSlug',
-      'p/:coachSlug/:pageSlug/checkout',
-      'p/:coachSlug/:pageSlug/leads',
-      'p/:coachSlug/:pageSlug/view',
+      // R46 — Public coach landing pages (canonical `/p/...` slug routes) AND
+      // B3 (PR-18) — verified custom-domain apex routes (`GET /`,
+      // `GET /checkout`, `POST /leads`, `POST /view`). Both shapes are pinned
+      // in LANDING_PUBLIC_PREFIX_EXCLUDE so the route-registration spec boots
+      // against the EXACT same exclude list — a future edit that drops an
+      // exclusion fails the test rather than silently regressing routing
+      // (the prior P0 was a bare custom-domain route mounted under /api).
+      // The custom-domain entries are method-scoped, so no `/api/...` route
+      // is shadowed and `/p/...` is never hijacked.
+      ...LANDING_PUBLIC_PREFIX_EXCLUDE,
     ],
   });
 
