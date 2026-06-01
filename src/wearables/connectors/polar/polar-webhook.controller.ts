@@ -19,7 +19,7 @@ import { Public } from '../../../common/decorators/public.decorator';
 import { PrismaService } from '../../../prisma.service';
 import { IngestionService } from '../../ingestion/ingestion.service';
 import { PolarConnector, redactErrorMessage } from './polar.connector';
-import { PolarWebhookEvent } from './polar.types';
+import { POLAR_WEBHOOK_EVENTS, PolarWebhookEvent } from './polar.types';
 
 /**
  * PR-HK-2.g — Polar AccessLink webhook receiver.
@@ -32,22 +32,28 @@ import { PolarWebhookEvent } from './polar.types';
  *  3. Zod-validate the parsed payload (#8). Malformed → 400 (no payload echo).
  *  4. `PING` is acknowledged with a plain 200 — no fetch, no dedup row.
  *  5. Replay/idempotency via `WearableProcessedEvent` (provider='POLAR',
- *     provider_event_id) — a duplicate is a 200 no-op (#28/#29).
+ *     provider_event_id) — RESERVE FIRST, then process (#28/#29).
  *  6. Resolve the connection (by Polar user_id), fetch ONLY the just-changed
  *     resource, normalize, and batch-ingest via IngestionService (#21 no N+1).
- *  7. ONLY AFTER a successful fetch+ingest, persist the
- *     {@link WearableProcessedEvent} dedup row ("check → process → commit").
+ *  7. ONLY AFTER a successful fetch+ingest, STAMP `handler_completed_at` on the
+ *     reservation row to mark the delivery durably complete.
  * Throttled (#6). Never logs raw payloads/ids/tokens — only redacted,
  * hashed metadata (audit patterns 3 + 7).
  *
- * Idempotency ordering (audit pattern 1 + 6): the dedup row is written AFTER
- * fetch+normalize+ingest succeed, not before. If fetch/ingest throws, NO
- * processed-event row exists, so Polar's redelivery is reprocessed (not
- * silently no-op'd) and no data is lost. A small race window (two concurrent
- * deliveries of the SAME event) is absorbed by the PR-HK-0 sample `dedup_key`
- * UNIQUE constraint (`createMany({ skipDuplicates: true })`); the
- * processed-event `create` treats a concurrent P2002 on the composite PK as a
- * benign 200 no-op rather than a 500.
+ * Idempotency ordering (audit pattern 1 + 6) — RESERVATION-FIRST, not
+ * check-then-act. We atomically reserve the event with
+ * `createMany({ skipDuplicates: true })` BEFORE any fetch/ingest work. The
+ * insert's `count` tells us whether THIS delivery owns processing:
+ *  - `count === 0` → a concurrent or prior delivery already holds the row. We
+ *    return a 200 no-op; that owner is (or already finished) doing the work, so
+ *    we never double-fetch the provider or double-call ingestion.
+ *  - `count === 1` → we own it. We run fetch+normalize+ingest, then stamp
+ *    `handler_completed_at` to mark completion.
+ * If our owned processing FAILS, we delete OUR reservation row before
+ * rethrowing so Polar's redelivery can re-reserve and reprocess — there is no
+ * stuck half-done state and no silently-dropped event. This converts the prior
+ * check-then-act window (where two concurrent misses both ran the expensive
+ * work) into a single-winner atomic barrier on the composite PK.
  */
 @ApiTags('wearables-webhooks')
 @Controller('v1/wearables/webhooks')
@@ -95,19 +101,27 @@ export class PolarWebhookController {
 
     const providerEventId = this.connector.eventId(event);
 
-    // (5) Replay protection. A prior row for (POLAR, providerEventId) means we
-    // already FULLY processed this delivery → 200 no-op. The row is written
-    // only AFTER a successful ingest (step 7), so a present row proves
-    // completion — there is no half-processed state to re-drive.
-    const existing = await this.prisma.wearableProcessedEvent.findUnique({
-      where: {
-        provider_provider_event_id: {
+    // (5) RESERVE FIRST. Atomically insert the processed-event row BEFORE any
+    // fetch/ingest work. `createMany({ skipDuplicates: true })` is a single
+    // INSERT ... ON CONFLICT DO NOTHING on the composite (provider,
+    // provider_event_id) PK, so exactly one concurrent delivery gets count===1
+    // and owns processing; every other delivery gets count===0 and no-ops.
+    // `handler_completed_at` is left NULL until processing completes (step 7).
+    const { count } = await this.prisma.wearableProcessedEvent.createMany({
+      data: [
+        {
           provider: WearableProvider.POLAR,
           provider_event_id: providerEventId,
+          type: event.event,
+          // handler_completed_at left NULL → reserved, not yet completed.
         },
-      },
+      ],
+      skipDuplicates: true,
     });
-    if (existing) {
+
+    if (count === 0) {
+      // A prior or concurrent delivery already owns this event → 200 no-op.
+      // We never re-run the expensive fetch/ingest for a duplicate.
       this.logger.log({
         msg: 'wearables.polar.webhook.replay_noop',
         provider: 'POLAR',
@@ -116,88 +130,87 @@ export class PolarWebhookController {
       return { ok: true };
     }
 
-    // (6) Resolve the connection by Polar user id, fetch the just-changed
-    // resource, normalize, and batch-ingest — BEFORE any dedup row is written.
-    // If fetch/ingest throws here, we never reach the dedup-row write (step 7),
-    // so Polar's retry reprocesses the event instead of being dropped.
-    const externalAccountId =
-      event.user_id != null ? String(event.user_id) : null;
+    // (6) We own processing. Resolve the connection by Polar user id, fetch the
+    // just-changed resource, normalize, and batch-ingest. If anything here
+    // fails we release OUR reservation (delete the row we just inserted) before
+    // rethrowing, so Polar's redelivery can re-reserve and reprocess instead of
+    // being silently dropped by a stuck NULL-completion row.
+    try {
+      const externalAccountId =
+        event.user_id != null ? String(event.user_id) : null;
 
-    if (externalAccountId) {
-      const connection = await this.prisma.wearableConnection.findFirst({
-        where: {
-          provider: WearableProvider.POLAR,
-          external_account_id: externalAccountId,
-          disconnected_at: null,
-        },
-      });
+      if (externalAccountId) {
+        const connection = await this.prisma.wearableConnection.findFirst({
+          where: {
+            provider: WearableProvider.POLAR,
+            external_account_id: externalAccountId,
+            disconnected_at: null,
+          },
+        });
 
-      if (connection) {
-        try {
-          const raw = await this.connector.fetchChangedRecord(
-            connection,
-            event,
-          );
-          const samples = this.connector.normalize(raw);
-          if (samples.length > 0) {
-            await this.ingestion.ingest(samples);
-          }
-        } catch (err) {
-          // Fail-explicit: mark the connection in error, log redacted +
-          // PII-free, and rethrow so the delivery is retried. No
-          // processed-event row was written, so the retry reprocesses.
-          await this.prisma.wearableConnection
-            .update({
+        if (connection) {
+          try {
+            const raw = await this.connector.fetchChangedRecord(
+              connection,
+              event,
+            );
+            const samples = this.connector.normalize(raw);
+            if (samples.length > 0) {
+              await this.ingestion.ingest(samples);
+            }
+          } catch (err) {
+            // Fail-explicit: mark the connection in error (PII-free, redacted)
+            // and rethrow. The outer catch releases our reservation so the
+            // delivery is retried — no silent swallow, no half-done barrier.
+            await this.prisma.wearableConnection.update({
               where: { id: connection.id },
-              data: { status: 'error', last_error: redactErrorMessage(err) },
-            })
-            .catch(() => undefined);
-          this.logger.error({
-            msg: 'wearables.polar.webhook.ingest_failure',
+              data: {
+                status: 'error',
+                last_error: redactErrorMessage(err),
+              },
+            });
+            this.logger.error({
+              msg: 'wearables.polar.webhook.ingest_failure',
+              provider: 'POLAR',
+              event_type: event.event,
+              user_id_hash: this.hash(externalAccountId),
+              error_class: err instanceof Error ? err.name : 'unknown',
+              error_message: redactErrorMessage(err),
+            });
+            throw err;
+          }
+        } else {
+          this.logger.warn({
+            msg: 'wearables.polar.webhook.no_connection',
             provider: 'POLAR',
             event_type: event.event,
             user_id_hash: this.hash(externalAccountId),
-            error_class: err instanceof Error ? err.name : 'unknown',
-            error_message: redactErrorMessage(err),
           });
-          throw err;
         }
-      } else {
-        this.logger.warn({
-          msg: 'wearables.polar.webhook.no_connection',
-          provider: 'POLAR',
-          event_type: event.event,
-          user_id_hash: this.hash(externalAccountId),
-        });
       }
-    }
-
-    // (7) COMMIT: only now that fetch+ingest have succeeded do we persist the
-    // dedup row. `handler_completed_at` is set in the same write so the row is
-    // never observed in a half-done state. A concurrent delivery that already
-    // wrote the row produces a P2002 on the composite PK — we absorb it as a
-    // benign no-op; the sample dedup_key UNIQUE constraint already prevented
-    // double-counted samples.
-    try {
-      await this.prisma.wearableProcessedEvent.create({
-        data: {
+    } catch (err) {
+      // Release our reservation so the redelivery reprocesses (the event is NOT
+      // durably complete). Use deleteMany so a not-found row is not an error.
+      await this.prisma.wearableProcessedEvent.deleteMany({
+        where: {
           provider: WearableProvider.POLAR,
           provider_event_id: providerEventId,
-          type: event.event,
-          handler_completed_at: new Date(),
+          handler_completed_at: null,
         },
       });
-    } catch (err) {
-      if ((err as { code?: string })?.code === 'P2002') {
-        this.logger.log({
-          msg: 'wearables.polar.webhook.concurrent_commit_noop',
-          provider: 'POLAR',
-          event_type: event.event,
-        });
-        return { ok: true };
-      }
       throw err;
     }
+
+    // (7) COMPLETE: processing succeeded. Stamp `handler_completed_at` so the
+    // reservation row is now observably a durable, fully-processed dedup row.
+    await this.prisma.wearableProcessedEvent.updateMany({
+      where: {
+        provider: WearableProvider.POLAR,
+        provider_event_id: providerEventId,
+        handler_completed_at: null,
+      },
+      data: { handler_completed_at: new Date() },
+    });
 
     this.logger.log({
       msg: 'wearables.polar.webhook.handled',
@@ -208,8 +221,11 @@ export class PolarWebhookController {
   }
 
   /**
-   * Zod schema for the Polar webhook event payload. `.passthrough()` keeps
-   * unknown fields from rejecting the request (ignored safely). `event` +
+   * Strict Zod schema for the Polar webhook event payload. `.strict()` rejects
+   * any unknown top-level field as provider drift instead of silently ignoring
+   * it, and `event` is constrained to the supported {@link POLAR_WEBHOOK_EVENTS}
+   * enum so an unrecognised event type fails closed with a 400 rather than
+   * reaching connection resolution and mapping to a null resource. `event` +
    * `timestamp` are always required; resource events additionally carry a
    * numeric `user_id` and either an `entity_id` or a `date`. A `PING` carries
    * only `event` + `timestamp`.
@@ -224,14 +240,14 @@ export class PolarWebhookController {
 
     const schema = z
       .object({
-        event: z.string().min(1),
+        event: z.enum(POLAR_WEBHOOK_EVENTS),
         timestamp: z.string().min(1),
         user_id: z.number().int().optional(),
         entity_id: z.string().min(1).optional(),
         date: z.string().min(1).optional(),
         url: z.string().url().optional(),
       })
-      .passthrough()
+      .strict()
       .superRefine((val, ctx) => {
         // Non-PING events must identify a subject (entity_id or date) and a
         // user so the connection can be resolved.
@@ -258,7 +274,7 @@ export class PolarWebhookController {
       // Redacted: report field paths, never the raw payload values.
       throw new BadRequestException(
         `Polar webhook payload failed validation: ${result.error.issues
-          .map((i) => i.path.join('.'))
+          .map((i) => i.path.join('.') || '(root)')
           .join(', ')}`,
       );
     }

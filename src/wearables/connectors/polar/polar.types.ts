@@ -71,8 +71,9 @@ export interface PolarExercise {
 
 /**
  * `GET /v3/users/sleep/{date}` — a single night's sleep result. Stage
- * durations are SECONDS. There is no provider `efficiency` field; the
- * normalizer derives SLEEP_EFFICIENCY_PCT from asleep vs. interruption time.
+ * durations are SECONDS. Polar exposes no `efficiency` field, and the
+ * AGENT_2_CODING_PLAN §3.1 Polar binding limits sleep to minute-based stage
+ * metrics, so no derived efficiency metric is emitted.
  */
 export interface PolarSleep {
   /** Result date of the sleep, `YYYY-MM-DD`. */
@@ -112,6 +113,23 @@ export interface PolarNightlyRecharge {
 }
 
 /**
+ * The exhaustive set of Polar AccessLink webhook event types this connector
+ * supports. Any payload whose `event` is not in this set is provider drift and
+ * MUST be rejected at the validation boundary (fail-closed) rather than
+ * silently acknowledged. `PING` is a liveness check; the remaining three map
+ * 1:1 to the §3.1-bound resources (`exercises`, `sleep`, `nightly-recharge`).
+ */
+export const POLAR_WEBHOOK_EVENTS = [
+  'PING',
+  'EXERCISE',
+  'SLEEP',
+  'NIGHTLY_RECHARGE',
+] as const;
+
+/** A supported Polar webhook event type (see {@link POLAR_WEBHOOK_EVENTS}). */
+export type PolarWebhookEventType = (typeof POLAR_WEBHOOK_EVENTS)[number];
+
+/**
  * Polar webhook event POST payload. Polar pushes one event per changed
  * entity and includes the absolute `url` to fetch the changed resource, so
  * the connector never reconstructs an endpoint by hand.
@@ -120,8 +138,8 @@ export interface PolarNightlyRecharge {
  * `timestamp` and is acknowledged without any fetch.
  */
 export interface PolarWebhookEvent {
-  /** "PING" | "EXERCISE" | "SLEEP" | "CONTINUOUS_HEART_RATE" | … */
-  event: string;
+  /** One of the supported {@link POLAR_WEBHOOK_EVENTS}. */
+  event: PolarWebhookEventType;
   /** Polar-native numeric user id (maps to external_account_id as a string). */
   user_id?: number;
   /** Entity id for resource events that carry one (e.g. EXERCISE). */

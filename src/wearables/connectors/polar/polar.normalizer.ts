@@ -20,25 +20,24 @@ import {
  * and the canonical sample requires them) plus the source `resource` tag so
  * the normalizer can dispatch without re-sniffing the shape.
  *
- * §3.1 mapping (Polar row):
+ * §3.1 mapping (Polar row) — implemented EXACTLY as bound; anything not listed
+ * is dropped (no speculative/derived metrics):
  *   exercises        → WORKOUT_DURATION_MIN, WORKOUT_DISTANCE_M,
  *                      HEART_RATE_BPM                              (HEALTH_FITNESS)
  *   sleep            → SLEEP_TOTAL_MIN, SLEEP_REM_MIN, SLEEP_DEEP_MIN,
- *                      SLEEP_LIGHT_MIN, SLEEP_AWAKE_MIN,
- *                      SLEEP_EFFICIENCY_PCT                        (SLEEP_RECOVERY)
+ *                      SLEEP_LIGHT_MIN, SLEEP_AWAKE_MIN             (SLEEP_RECOVERY)
  *   nightly-recharge → RECOVERY_SCORE, HRV_MS                     (SLEEP_RECOVERY)
  *
  * Units + buckets are taken verbatim from the seeded WearableMetricDef
  * (PR-HK-0 migration): durations in "min", distance in "m", HR/HRV in
- * "bpm"/"ms", efficiency in "%", score in "score".
+ * "bpm"/"ms", score in "score".
  *
  * Unit conversions:
  *  - Exercise `duration` is an ISO-8601 duration ("PT1H30M") → whole minutes.
  *  - Sleep stage durations are SECONDS → whole minutes.
- *  - Sleep efficiency is DERIVED (Polar exposes no `efficiency` field):
- *    asleep / (asleep + interruptions) × 100, where asleep = light + deep +
- *    rem. This matches the canonical "% of in-bed/asleep window not awake"
- *    semantics other providers report directly.
+ *
+ * The §3.1 Polar binding limits sleep to minute-based stage metrics, so the
+ * normalizer deliberately does NOT emit a derived SLEEP_EFFICIENCY_PCT sample.
  *
  * Defenses: anything unmapped or null is dropped (no speculative ingestion,
  * #42); a record with an unparseable date/window is skipped rather than
@@ -61,7 +60,6 @@ const UNIT = {
   MIN: 'min',
   METRE: 'm',
   BPM: 'bpm',
-  PCT: '%',
   MS: 'ms',
   SCORE: 'score',
 } as const;
@@ -219,26 +217,6 @@ function normalizeExercise(ctx: PolarRawPayload): NormalizedSample[] {
     .filter((s): s is NormalizedSample => s !== null);
 }
 
-/**
- * Derive sleep efficiency as the share of the asleep+awake window actually
- * spent asleep: asleep / (asleep + interruptions) × 100. Returns null when
- * the denominator is unknown/zero so no speculative efficiency is emitted
- * (#42). Rounded to one decimal place to match the canonical "%" granularity.
- */
-function deriveEfficiencyPct(
-  asleepSeconds: number | null,
-  interruptionSeconds: number | null,
-): number | null {
-  if (asleepSeconds == null || !Number.isFinite(asleepSeconds)) return null;
-  const interruptions =
-    interruptionSeconds != null && Number.isFinite(interruptionSeconds)
-      ? interruptionSeconds
-      : 0;
-  const denom = asleepSeconds + interruptions;
-  if (denom <= 0) return null;
-  return Math.round((asleepSeconds / denom) * 1000) / 10;
-}
-
 function sumStages(rec: PolarSleep): number | null {
   const parts = [rec.light_sleep, rec.deep_sleep, rec.rem_sleep];
   let sum = 0;
@@ -262,10 +240,6 @@ function normalizeSleep(ctx: PolarRawPayload): NormalizedSample[] {
   const id = rec.date ?? null;
 
   const asleepSeconds = sumStages(rec);
-  const efficiency = deriveEfficiencyPct(
-    asleepSeconds,
-    rec.total_interruption_duration ?? null,
-  );
 
   const seeds: SampleSeed[] = [
     {
@@ -307,13 +281,6 @@ function normalizeSleep(ctx: PolarRawPayload): NormalizedSample[] {
           ? secondsToMinutes(rec.total_interruption_duration)
           : null,
       unit: UNIT.MIN,
-      ...window,
-    },
-    {
-      metric: 'SLEEP_EFFICIENCY_PCT',
-      bucket: 'SLEEP_RECOVERY',
-      value: efficiency,
-      unit: UNIT.PCT,
       ...window,
     },
   ];

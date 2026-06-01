@@ -169,11 +169,13 @@ describe('polar.normalizer — sleep', () => {
     sleep_score: 80,
   };
 
-  it('maps every stage + derived total + derived efficiency', () => {
+  it('maps every §3.1-bound stage metric + derived total (no efficiency)', () => {
     const out = normalizePolarRecord(
       wrap('sleep', SLEEP).payload as PolarRawPayload,
     );
-    expect(out).toHaveLength(6);
+    // §3.1 Polar sleep binding = exactly 5 minute-based metrics; efficiency is
+    // intentionally NOT emitted (it is outside the approved binding).
+    expect(out).toHaveLength(5);
     const byMetric = Object.fromEntries(out.map((s) => [s.metric, s]));
 
     // total asleep = light+deep+rem = 27000s = 450 min.
@@ -182,12 +184,9 @@ describe('polar.normalizer — sleep', () => {
     expect(byMetric.SLEEP_DEEP_MIN.value).toBe(80);
     expect(byMetric.SLEEP_LIGHT_MIN.value).toBe(280);
     expect(byMetric.SLEEP_AWAKE_MIN.value).toBe(20);
-    // efficiency = 27000 / (27000 + 1200) × 100 = 95.7 (1 dp).
-    expect(byMetric.SLEEP_EFFICIENCY_PCT).toMatchObject({
-      value: 95.7,
-      unit: '%',
-      bucket: 'SLEEP_RECOVERY',
-    });
+    // The unapproved derived metric MUST NOT be present.
+    expect(byMetric.SLEEP_EFFICIENCY_PCT).toBeUndefined();
+    expect(out.some((s) => s.unit === '%')).toBe(false);
   });
 
   it('uses the explicit sleep_start/end window', () => {
@@ -212,12 +211,11 @@ describe('polar.normalizer — sleep', () => {
     const total = out.find((s) => s.metric === 'SLEEP_TOTAL_MIN')!;
     expect(total.startAt.toISOString()).toBe('2026-05-31T00:00:00.000Z');
     expect(total.endAt.toISOString()).toBe('2026-05-31T23:59:59.999Z');
-    // efficiency with zero interruptions == 100%.
-    const eff = out.find((s) => s.metric === 'SLEEP_EFFICIENCY_PCT')!;
-    expect(eff.value).toBe(100);
+    // No efficiency metric is emitted regardless of interruption data.
+    expect(out.find((s) => s.metric === 'SLEEP_EFFICIENCY_PCT')).toBeUndefined();
   });
 
-  it('drops efficiency when no stage data is present', () => {
+  it('emits nothing when no stage data is present', () => {
     const out = normalizePolarRecord(
       wrap('sleep', { date: '2026-05-31' }).payload as PolarRawPayload,
     );
