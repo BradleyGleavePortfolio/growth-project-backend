@@ -39,17 +39,33 @@ export interface FitbitStepsTimeSeries {
 }
 
 /**
+ * A single Fitbit heart-rate zone bucket (`Out of Range`, `Fat Burn`, `Cardio`,
+ * `Peak`). `min`/`max` bound the zone in bpm and `minutes` is the time the user
+ * spent in that zone for the day. We derive a day-level average bpm by weighting
+ * each zone's bpm midpoint by its minutes (see {@link normalizeHeart}).
+ */
+export interface FitbitHeartRateZone {
+  name?: string | null;
+  min?: number | null;
+  max?: number | null;
+  minutes?: number | null;
+  caloriesOut?: number | null;
+}
+
+/**
  * `GET /1/user/-/activities/heart/date/<start>/<end>.json` — the heart-rate
  * time series. Each `activities-heart` entry carries a `value.restingHeartRate`
- * (bpm) for the day when available.
+ * (bpm) for the day when available, plus `value.heartRateZones` (the per-zone
+ * minutes breakdown) from which we compute the canonical day-average
+ * `HEART_RATE_BPM`.
  */
 export interface FitbitHeartTimeSeries {
   'activities-heart'?: Array<{
     dateTime: string;
     value: {
       restingHeartRate?: number | null;
-      /** HR zones present but not mapped to a canonical metric. */
-      heartRateZones?: unknown;
+      /** Per-zone minutes breakdown; used to derive day-average bpm. */
+      heartRateZones?: FitbitHeartRateZone[] | null;
     };
   }>;
 }
@@ -149,20 +165,47 @@ export interface FitbitSpo2Entry {
 export type FitbitSpo2Response = FitbitSpo2Entry[] | FitbitSpo2Entry;
 
 /**
+ * The exact set of `collectionType` values Fitbit emits in a subscription
+ * notification. Fitbit documents these as the only collection subscriptions a
+ * subscriber endpoint can receive
+ * (https://dev.fitbit.com/build/reference/web-api/developer-guide/using-subscriptions/):
+ * `activities`, `body`, `foods`, `sleep`, plus the granular metric collections
+ * this connector subscribes to (`heart`, `br`, `spo2`), and the synthetic
+ * `userRevokedAccess` lifecycle event. The webhook schema is fail-closed: a
+ * `collectionType` outside this set is rejected with 400 before any DB I/O.
+ */
+export const FITBIT_NOTIFICATION_COLLECTION_TYPES = [
+  'activities',
+  'body',
+  'foods',
+  'sleep',
+  'heart',
+  'br',
+  'spo2',
+  'userRevokedAccess',
+] as const;
+
+export type FitbitNotificationCollectionType =
+  (typeof FITBIT_NOTIFICATION_COLLECTION_TYPES)[number];
+
+/** Fitbit subscription notifications are always owned by a `user`. */
+export const FITBIT_NOTIFICATION_OWNER_TYPE = 'user' as const;
+
+/**
  * Fitbit subscription notification element. Fitbit POSTs a JSON ARRAY of these
  * to the configured subscriber endpoint when a user's data of a given
  * `collectionType` changes (https://dev.fitbit.com/build/reference/web-api/developer-guide/using-subscriptions/).
  * The notification carries NO data — only a reference to fetch.
  */
 export interface FitbitNotification {
-  /** "activities" | "heart" | "sleep" | "body" | "br" | "spo2" | "userRevokedAccess". */
-  collectionType: string;
+  /** One of {@link FITBIT_NOTIFICATION_COLLECTION_TYPES}. */
+  collectionType: FitbitNotificationCollectionType;
   /** Affected calendar day, `YYYY-MM-DD` (absent for userRevokedAccess). */
   date?: string;
   /** Fitbit encoded user id (maps to WearableConnection.external_account_id). */
   ownerId: string;
-  /** "user". */
-  ownerType: string;
+  /** Always "user". */
+  ownerType: typeof FITBIT_NOTIFICATION_OWNER_TYPE;
   /** The subscription id WE assigned at subscribe time. */
   subscriptionId: string;
 }

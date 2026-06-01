@@ -89,6 +89,94 @@ describe('normalizeFitbitRecord — activities/heart → RESTING_HEART_RATE_BPM 
   });
 });
 
+describe('normalizeFitbitRecord — activities/heart → HEART_RATE_BPM (H&F)', () => {
+  it('emits the minutes-weighted day-average bpm from heartRateZones alongside resting HR', () => {
+    const out = normalizeFitbitRecord(
+      ctx('activities/heart', {
+        'activities-heart': [
+          {
+            dateTime: DAY,
+            value: {
+              restingHeartRate: 58,
+              heartRateZones: [
+                // Out of Range: midpoint (30+91)/2 = 60.5, 1200 min
+                { name: 'Out of Range', min: 30, max: 91, minutes: 1200 },
+                // Fat Burn: midpoint (91+127)/2 = 109, 180 min
+                { name: 'Fat Burn', min: 91, max: 127, minutes: 180 },
+                // Cardio: midpoint (127+153)/2 = 140, 60 min
+                { name: 'Cardio', min: 127, max: 153, minutes: 60 },
+                // Peak: zero minutes → excluded from the weighting
+                { name: 'Peak', min: 153, max: 220, minutes: 0 },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+    // weightedSum = 60.5*1200 + 109*180 + 140*60 = 72600 + 19620 + 8400 = 100620
+    // totalMinutes = 1440 → 100620/1440 = 69.875 → round → 70
+    const hr = out.find((s) => s.metric === 'HEART_RATE_BPM');
+    const resting = out.find((s) => s.metric === 'RESTING_HEART_RATE_BPM');
+    expect(resting).toMatchObject({ value: 58, unit: 'bpm' });
+    expect(hr).toEqual({
+      userId: USER,
+      connectionId: CONN,
+      provider: WearableProvider.FITBIT,
+      metric: 'HEART_RATE_BPM',
+      bucket: 'HEALTH_FITNESS',
+      value: 70,
+      unit: 'bpm',
+      startAt: DAY_START,
+      endAt: DAY_END,
+      sourceTz: 'America/Los_Angeles',
+      sourceRecordId: null,
+    });
+  });
+
+  it('drops HEART_RATE_BPM when no zone carries minutes rather than emit a zero (#42)', () => {
+    const out = normalizeFitbitRecord(
+      ctx('activities/heart', {
+        'activities-heart': [
+          {
+            dateTime: DAY,
+            value: {
+              restingHeartRate: 60,
+              heartRateZones: [
+                { name: 'Out of Range', min: 30, max: 91, minutes: 0 },
+                { name: 'Fat Burn', min: 91, max: 127, minutes: 0 },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+    expect(out.some((s) => s.metric === 'HEART_RATE_BPM')).toBe(false);
+    // The resting metric is still emitted independently.
+    expect(out.some((s) => s.metric === 'RESTING_HEART_RATE_BPM')).toBe(true);
+  });
+
+  it('emits HEART_RATE_BPM even when restingHeartRate is absent (independent metrics)', () => {
+    const out = normalizeFitbitRecord(
+      ctx('activities/heart', {
+        'activities-heart': [
+          {
+            dateTime: DAY,
+            value: {
+              restingHeartRate: null,
+              heartRateZones: [
+                { name: 'Out of Range', min: 60, max: 100, minutes: 100 },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+    // midpoint (60+100)/2 = 80, single zone → 80
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ metric: 'HEART_RATE_BPM', value: 80 });
+  });
+});
+
 describe('normalizeFitbitRecord — sleep → SLEEP_* (S&R)', () => {
   const SLEEP_LOG = {
     logId: 987654321,

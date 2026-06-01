@@ -6,6 +6,7 @@ import {
 import {
   FitbitBreathingRateEntry,
   FitbitCollection,
+  FitbitHeartRateZone,
   FitbitHeartTimeSeries,
   FitbitSleepLog,
   FitbitSpo2Entry,
@@ -156,6 +157,39 @@ function normalizeSteps(ctx: FitbitRawPayload): NormalizedSample[] {
   return out;
 }
 
+/**
+ * Derive a day-level average heart rate (bpm) from Fitbit's per-zone minutes
+ * breakdown. Fitbit's daily `activities/heart` document does not expose a
+ * single day-average field, but it reports `heartRateZones[]` with each zone's
+ * `{ min, max, minutes }`. We weight each zone's bpm MIDPOINT ((min+max)/2) by
+ * the minutes spent in it and divide by the total active minutes — a
+ * deterministic, well-defined day-average over the time the wearer's HR was
+ * recorded. Returns null when no zone carries finite minutes (so no
+ * speculative zero is emitted, #42).
+ */
+function dayAverageHeartRate(
+  zones: FitbitHeartRateZone[] | null | undefined,
+): number | null {
+  if (!Array.isArray(zones)) return null;
+  let weightedSum = 0;
+  let totalMinutes = 0;
+  for (const zone of zones) {
+    const minutes = toFiniteNumber(zone?.minutes);
+    const min = toFiniteNumber(zone?.min);
+    const max = toFiniteNumber(zone?.max);
+    if (minutes === null || minutes <= 0 || min === null || max === null) {
+      continue;
+    }
+    const midpoint = (min + max) / 2;
+    weightedSum += midpoint * minutes;
+    totalMinutes += minutes;
+  }
+  if (totalMinutes <= 0) return null;
+  // Round to a whole bpm — a fractional heart rate is not meaningful and keeps
+  // the canonical value stable for dedup.
+  return Math.round(weightedSum / totalMinutes);
+}
+
 function normalizeHeart(ctx: FitbitRawPayload): NormalizedSample[] {
   const rec = ctx.record as FitbitHeartTimeSeries;
   const series = rec['activities-heart'];
@@ -165,15 +199,30 @@ function normalizeHeart(ctx: FitbitRawPayload): NormalizedSample[] {
     if (!entry?.dateTime) continue;
     const window = dayWindow(entry.dateTime);
     if (!window) continue;
+
+    // RESTING_HEART_RATE_BPM — the day's resting HR (dropped when absent).
     const rhr = toFiniteNumber(entry.value?.restingHeartRate);
-    const sample = build(ctx, null, {
+    const resting = build(ctx, null, {
       metric: 'RESTING_HEART_RATE_BPM',
       bucket: 'HEALTH_FITNESS',
       value: rhr,
       unit: UNIT.BPM,
       ...window,
     });
-    if (sample) out.push(sample);
+    if (resting) out.push(resting);
+
+    // HEART_RATE_BPM — the canonical day-average HR derived from the per-zone
+    // minutes breakdown (§3.1 binds activities/heart to BOTH metrics). Dropped
+    // when no zone carries finite minutes, never emitted as a guessed zero.
+    const avg = dayAverageHeartRate(entry.value?.heartRateZones);
+    const average = build(ctx, null, {
+      metric: 'HEART_RATE_BPM',
+      bucket: 'HEALTH_FITNESS',
+      value: avg,
+      unit: UNIT.BPM,
+      ...window,
+    });
+    if (average) out.push(average);
   }
   return out;
 }

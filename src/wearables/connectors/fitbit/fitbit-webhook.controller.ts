@@ -21,8 +21,12 @@ import { z } from 'zod';
 import { Public } from '../../../common/decorators/public.decorator';
 import { PrismaService } from '../../../prisma.service';
 import { IngestionService } from '../../ingestion/ingestion.service';
-import { FitbitConnector } from './fitbit.connector';
-import { FitbitNotification } from './fitbit.types';
+import { FitbitConnector, redactErrorMessage } from './fitbit.connector';
+import {
+  FITBIT_NOTIFICATION_COLLECTION_TYPES,
+  FITBIT_NOTIFICATION_OWNER_TYPE,
+  FitbitNotification,
+} from './fitbit.types';
 
 /**
  * PR-HK-2.e — Fitbit subscription webhook receiver.
@@ -34,8 +38,10 @@ import { FitbitNotification } from './fitbit.types';
  *  1. `@Public` — Fitbit is not a Supabase user; auth is the HMAC, not a JWT.
  *  2. Raw-body HMAC verify FIRST (constant-time, base64(HMAC-SHA1(rawBody,
  *     `<client_secret>&`)) vs `X-Fitbit-Signature`). Invalid → 401, no handling.
- *  3. Zod-validate the parsed array (#8). Malformed → 400. `.passthrough()`
- *     keeps unknown fields from rejecting (ignored safely; mirrors Oura).
+ *  3. Zod-validate the parsed array (#8). Malformed → 400. The envelope is
+ *     `.strict()` and array-only: unknown fields, a singleton object, an
+ *     unknown `collectionType`, or a non-`user` `ownerType` are all rejected
+ *     with a redacted 400 (field paths only) before any fetch/dedup/ingest.
  *  4. Per notification: replay/idempotency via `WearableProcessedEvent`
  *     (provider='FITBIT', provider_event_id) — a duplicate is a no-op (#28/#29).
  *  5. Resolve the connection (by Fitbit ownerId → external_account_id), fetch
@@ -116,7 +122,9 @@ export class FitbitWebhookController {
       throw new UnauthorizedException('Invalid Fitbit webhook signature');
     }
 
-    // (3) Zod-validate the parsed array. Unknown fields are ignored safely.
+    // (3) STRICT Zod-validate the parsed array. A non-Fitbit envelope (unknown
+    // fields, singleton object, unknown collectionType, non-`user` ownerType)
+    // is rejected with 400 before any fetch/dedup/ingest — fail closed.
     const notifications = this.parseAndValidate(rawBody);
 
     // (4–6) Process each notification independently. Fitbit batches multiple
@@ -187,12 +195,18 @@ export class FitbitWebhookController {
           // Fail-explicit: mark the connection in error, log redacted, and
           // rethrow so the delivery is retried (no silent swallow, #36/#50).
           // No processed-event row was written, so the retry reprocesses.
+          // Redact token-like secrets (Bearer/Basic/access_token/refresh_token/
+          // client_secret/code/…) from the upstream error BEFORE it is
+          // persisted to `last_error` or logged. Same helper the connector's
+          // backfill/refresh paths use, so the webhook edge path can't leak a
+          // credential that an HTTP/provider error string happened to carry.
+          const safeMessage = redactErrorMessage(err);
           await this.prisma.wearableConnection
             .update({
               where: { id: connection.id },
               data: {
                 status: 'error',
-                last_error: (err as Error)?.message?.slice(0, 500) ?? 'unknown',
+                last_error: safeMessage,
               },
             })
             .catch(() => undefined);
@@ -201,7 +215,7 @@ export class FitbitWebhookController {
             provider: 'FITBIT',
             collection_type: notification.collectionType,
             user_hash: userHash,
-            error_message: (err as Error)?.message ?? String(err),
+            error_message: safeMessage,
           });
           throw err;
         }
@@ -252,10 +266,18 @@ export class FitbitWebhookController {
   }
 
   /**
-   * Zod schema for the Fitbit subscription notification batch. Fitbit POSTs a
-   * JSON ARRAY of notifications. `.passthrough()` keeps unknown fields from
-   * rejecting the request (ignored safely; mirrors Oura), but the fields we
-   * depend on are required + typed.
+   * STRICT Zod schema for the Fitbit subscription notification batch. Fitbit
+   * POSTs a JSON ARRAY of notifications whose envelope is documented exactly as
+   * `{ collectionType, date, ownerId, ownerType, subscriptionId }`. This
+   * validation is fail-closed (Wave-2 webhook doctrine):
+   *  - `.strict()` — ANY unknown/extra field rejects the whole payload (no
+   *    `.passthrough()`), so a non-Fitbit envelope cannot be acknowledged.
+   *  - array-only — a bare singleton object is rejected (Fitbit always sends an
+   *    array; a non-array shape is not a Fitbit notification).
+   *  - `collectionType` is constrained to the documented Fitbit enum, and
+   *    `ownerType` to the literal `user`; unknown/misspelled values reject.
+   * On failure we return 400 with field PATHS only — never the raw payload
+   * values — and no dedup/fetch/ingest is performed.
    */
   private parseAndValidate(rawBody: Buffer): FitbitNotification[] {
     let json: unknown;
@@ -267,28 +289,38 @@ export class FitbitWebhookController {
 
     const notification = z
       .object({
-        collectionType: z.string().min(1),
+        collectionType: z.enum(FITBIT_NOTIFICATION_COLLECTION_TYPES),
+        // Fitbit omits `date` only for the synthetic userRevokedAccess event.
         date: z.string().min(1).optional(),
         ownerId: z.string().min(1),
-        ownerType: z.string().min(1),
+        ownerType: z.literal(FITBIT_NOTIFICATION_OWNER_TYPE),
         subscriptionId: z.string().min(1),
       })
-      .passthrough();
+      .strict();
 
-    // Fitbit always sends an array; tolerate a single object defensively.
-    const schema = z.union([z.array(notification), notification]);
+    // Fitbit ALWAYS sends a JSON array. A singleton object or any other shape
+    // is not a Fitbit subscription notification and is rejected.
+    const schema = z.array(notification);
 
     const result = schema.safeParse(json);
     if (!result.success) {
-      // Redacted: report field paths, never the raw payload values.
+      // Field PATHS only — never the raw payload values (no PII / secret echo).
+      const fieldPaths = result.error.issues
+        .map((i) => i.path.join('.') || '(root)')
+        .join(', ');
+      // Audit a rejected (but HMAC-valid) delivery so a misconfigured or
+      // spoofing subscriber is visible in logs, without echoing the body.
+      this.logger.warn({
+        msg: 'wearables.fitbit.webhook.invalid_payload',
+        provider: 'FITBIT',
+        invalid_fields: fieldPaths,
+        issue_count: result.error.issues.length,
+      });
       throw new BadRequestException(
-        `Fitbit webhook payload failed validation: ${result.error.issues
-          .map((i) => i.path.join('.'))
-          .join(', ')}`,
+        `Fitbit webhook payload failed validation: ${fieldPaths}`,
       );
     }
-    const data = result.data;
-    return (Array.isArray(data) ? data : [data]) as FitbitNotification[];
+    return result.data as FitbitNotification[];
   }
 
   /**

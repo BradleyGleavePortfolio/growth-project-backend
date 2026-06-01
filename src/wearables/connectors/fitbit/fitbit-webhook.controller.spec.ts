@@ -243,7 +243,114 @@ describe('FitbitWebhookController — payload validation', () => {
       BadRequestException,
     );
   });
+
+  it('rejects a payload carrying an unknown extra field (.strict) with 400, before any fetch/ingest', async () => {
+    const { controller, processedEvent, connector, ingestion } = setup({});
+    await expect(
+      controller.handle(makeReq([{ ...NOTIF, injected: 'evil' }])),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(processedEvent.findUnique).not.toHaveBeenCalled();
+    expect(connector.fetchNotificationRecords).not.toHaveBeenCalled();
+    expect(ingestion.ingest).not.toHaveBeenCalled();
+  });
+
+  it('rejects a bare singleton object (Fitbit always sends an array) with 400', async () => {
+    const { controller, processedEvent, ingestion } = setup({});
+    // A single notification OBJECT (not wrapped in an array) is not a Fitbit
+    // subscription delivery and must be rejected.
+    await expect(controller.handle(makeReq(NOTIF))).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(processedEvent.findUnique).not.toHaveBeenCalled();
+    expect(ingestion.ingest).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown collectionType with 400', async () => {
+    const { controller, ingestion } = setup({});
+    await expect(
+      controller.handle(makeReq([{ ...NOTIF, collectionType: 'bogus' }])),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(ingestion.ingest).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-`user` ownerType with 400', async () => {
+    const { controller, ingestion } = setup({});
+    await expect(
+      controller.handle(makeReq([{ ...NOTIF, ownerType: 'org' }])),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(ingestion.ingest).not.toHaveBeenCalled();
+  });
+
+  it('accepts every documented Fitbit collectionType', async () => {
+    for (const collectionType of [
+      'activities',
+      'body',
+      'foods',
+      'sleep',
+      'heart',
+      'br',
+      'spo2',
+      'userRevokedAccess',
+    ]) {
+      const { controller, processedEvent } = setup({});
+      await expect(
+        controller.handle(makeReq([{ ...NOTIF, collectionType }])),
+      ).resolves.toBeUndefined();
+      expect(processedEvent.create).toHaveBeenCalledTimes(1);
+    }
+  });
 });
+
+describe('FitbitWebhookController — ingest-failure error redaction', () => {
+  it('redacts token-like secrets from the upstream error before it reaches last_error or logs', async () => {
+    const { controller, wearableConnection } = setup({});
+    const leaky =
+      'Fitbit 500: Authorization: Bearer abc.def.ghi failed; ' +
+      'client_secret=supersecret refresh_token=rotate-me-please';
+    (connectorFetchMock(controller) as jest.Mock).mockRejectedValueOnce(
+      new Error(leaky),
+    );
+    const errorSpy = jest
+      .spyOn(
+        (controller as unknown as { logger: { error: (...a: unknown[]) => void } })
+          .logger,
+        'error',
+      )
+      .mockImplementation(() => undefined);
+
+    await expect(controller.handle(makeReq([NOTIF]))).rejects.toThrow();
+
+    // 1) DB write must carry a redacted message — no raw secret substrings.
+    const updateArg = (wearableConnection.update as jest.Mock).mock.calls[0][0];
+    const persisted: string = updateArg.data.last_error;
+    expect(persisted).not.toContain('abc.def.ghi');
+    expect(persisted).not.toContain('supersecret');
+    expect(persisted).not.toContain('rotate-me-please');
+    expect(persisted).toContain('[REDACTED]');
+
+    // 2) The structured log must carry the SAME redacted message.
+    const logged = errorSpy.mock.calls.find(
+      (c) =>
+        (c[0] as { msg?: string })?.msg ===
+        'wearables.fitbit.webhook.ingest_failure',
+    );
+    expect(logged).toBeDefined();
+    const loggedMessage = (logged?.[0] as { error_message?: string })
+      ?.error_message;
+    expect(loggedMessage).not.toContain('abc.def.ghi');
+    expect(loggedMessage).not.toContain('supersecret');
+    expect(loggedMessage).not.toContain('rotate-me-please');
+    expect(loggedMessage).toContain('[REDACTED]');
+
+    errorSpy.mockRestore();
+  });
+});
+
+/** Reach the connector mock's fetchNotificationRecords for failure injection. */
+function connectorFetchMock(controller: FitbitWebhookController) {
+  return (controller as unknown as { connector: FitbitConnector })
+    .connector.fetchNotificationRecords;
+}
 
 describe('FitbitWebhookController — verification handshake', () => {
   function makeRes(): { res: Response; status: jest.Mock; send: jest.Mock } {
