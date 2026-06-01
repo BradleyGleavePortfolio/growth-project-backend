@@ -306,10 +306,11 @@ export class WahooConnector implements WearableConnector {
    *     by `WAHOO_WEBHOOK_SECRET` (falls back to `WAHOO_CLIENT_SECRET`),
    *     matching the `x-wahoo-signature` header (hex), AND
    *  2. the `webhook_token` field equal to the configured `WAHOO_WEBHOOK_TOKEN`
-   *     (Wahoo's documented shared-token control).
-   * Fails CLOSED (returns false, never throws) on any missing secret/header,
-   * length mismatch, or compare failure so the controller maps it to a single
-   * 401 (audit pattern #5 fail-closed verification).
+   *     (Wahoo's documented shared-token control). This control is REQUIRED:
+   *     a missing/empty `WAHOO_WEBHOOK_TOKEN` fails closed (returns false).
+   * Fails CLOSED (returns false, never throws) on any missing secret/token
+   * config/header, length mismatch, or compare failure so the controller maps
+   * it to a single 401 (audit pattern #5 fail-closed verification).
    */
   verifyWebhook(req: RawWebhookRequest): boolean {
     const secret =
@@ -335,14 +336,22 @@ export class WahooConnector implements WearableConnector {
       return false;
     }
 
-    // Shared-token control: only enforced when configured. Wahoo says "any
-    // request that doesn't include this token should be ignored".
+    // Shared-token control: REQUIRED (fail closed). Wahoo's documented
+    // authenticity control is the `webhook_token` field, and the binding brief
+    // mandates BOTH controls. If `WAHOO_WEBHOOK_TOKEN` is unset/empty we cannot
+    // enforce the documented control, so we reject rather than silently
+    // accepting an HMAC-only delivery (audit pattern #5 — never fail open under
+    // missing config). The check runs BEFORE payload parse/dedup/ingest.
     const expectedToken = process.env[ENV.webhookToken];
-    if (expectedToken) {
-      const provided = this.extractWebhookToken(req.rawBody);
-      if (!provided || !this.constantTimeEquals(expectedToken, provided)) {
-        return false;
-      }
+    if (!expectedToken) {
+      this.logger.error(
+        'wahoo.verifyWebhook: no WAHOO_WEBHOOK_TOKEN configured — failing closed',
+      );
+      return false;
+    }
+    const provided = this.extractWebhookToken(req.rawBody);
+    if (!provided || !this.constantTimeEquals(expectedToken, provided)) {
+      return false;
     }
     return true;
   }

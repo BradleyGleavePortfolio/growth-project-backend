@@ -313,6 +313,30 @@ describe('WahooConnector — verifyWebhook (HMAC + shared token, fail-closed)', 
     expect(new WahooConnector(client).verifyWebhook(req)).toBe(false);
   });
 
+  it('fails closed when WAHOO_WEBHOOK_TOKEN is unset, even with a valid HMAC', () => {
+    // Regression for R1 Finding 1: the shared-token control must be REQUIRED.
+    // A valid HMAC delivery with NO configured webhook_token must reject
+    // rather than fail open. The body even carries a token; with no expected
+    // value configured the connector still refuses to enforce-then-accept.
+    delete process.env.WAHOO_WEBHOOK_TOKEN;
+    const { client } = makeHttp();
+    const req = signed({ event_type: 'workout_summary', webhook_token: TOKEN });
+    expect(new WahooConnector(client).verifyWebhook(req)).toBe(false);
+  });
+
+  it('fails closed when WAHOO_WEBHOOK_TOKEN is empty string', () => {
+    process.env.WAHOO_WEBHOOK_TOKEN = '';
+    const { client } = makeHttp();
+    const req = signed({ event_type: 'workout_summary', webhook_token: TOKEN });
+    expect(new WahooConnector(client).verifyWebhook(req)).toBe(false);
+  });
+
+  it('rejects when the body carries no webhook_token even though one is configured', () => {
+    const { client } = makeHttp();
+    const req = signed({ event_type: 'workout_summary' });
+    expect(new WahooConnector(client).verifyWebhook(req)).toBe(false);
+  });
+
   it('rejects when the signature header is missing', () => {
     const { client } = makeHttp();
     const rawBody = Buffer.from(JSON.stringify({ event_type: 'x' }));

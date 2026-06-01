@@ -28,6 +28,7 @@ const VALID_BODY = {
   webhook_token: 'wt-abc',
   user: { id: 9988 },
   workout_summary: {
+    id: 77,
     distance_accum: '5000.0',
     heart_rate_avg: '130.0',
     workout: { id: 555, starts: '2026-05-30T13:00:00.000Z', minutes: 20 },
@@ -94,7 +95,14 @@ function setup(opts: {
   } as unknown as WahooConnector;
 
   const controller = new WahooWebhookController(prisma, ingestion, connector);
-  return { controller, prisma, ingestion, connector, processedEvent };
+  return {
+    controller,
+    prisma,
+    ingestion,
+    connector,
+    processedEvent,
+    wearableConnection,
+  };
 }
 
 describe('WahooWebhookController.handle', () => {
@@ -121,6 +129,114 @@ describe('WahooWebhookController.handle', () => {
       controller.handle(makeReq({ bogus: true })),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(ingestion.ingest).not.toHaveBeenCalled();
+  });
+
+  // ── R1 Finding 2: reject malformed workout events BEFORE dedup / commit ──
+
+  it('rejects an unsupported event_type (400) before any dedup lookup', async () => {
+    const { controller, ingestion, processedEvent } = setup({});
+    await expect(
+      controller.handle(
+        makeReq({ ...VALID_BODY, event_type: 'some_other_event' }),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(processedEvent.findUnique).not.toHaveBeenCalled();
+    expect(ingestion.ingest).not.toHaveBeenCalled();
+    expect(processedEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects when user.id is missing (400) before any dedup lookup', async () => {
+    const { controller, ingestion, processedEvent } = setup({});
+    const body = { ...VALID_BODY, user: {} };
+    await expect(controller.handle(makeReq(body))).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(processedEvent.findUnique).not.toHaveBeenCalled();
+    expect(ingestion.ingest).not.toHaveBeenCalled();
+    expect(processedEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects when workout_summary is missing (400) before any dedup lookup', async () => {
+    const { controller, processedEvent } = setup({});
+    const body = {
+      event_type: 'workout_summary',
+      webhook_token: 'wt-abc',
+      user: { id: 9988 },
+    };
+    await expect(controller.handle(makeReq(body))).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(processedEvent.findUnique).not.toHaveBeenCalled();
+    expect(processedEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects when workout_summary.id is missing (400)', async () => {
+    const { controller, processedEvent } = setup({});
+    const body = {
+      ...VALID_BODY,
+      workout_summary: {
+        distance_accum: '5000.0',
+        workout: { id: 555, starts: '2026-05-30T13:00:00.000Z' },
+      },
+    };
+    await expect(controller.handle(makeReq(body))).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(processedEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the embedded workout is missing (400)', async () => {
+    const { controller, processedEvent } = setup({});
+    const body = {
+      ...VALID_BODY,
+      workout_summary: { id: 77, distance_accum: '5000.0' },
+    };
+    await expect(controller.handle(makeReq(body))).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(processedEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the embedded workout has no id or no starts (400)', async () => {
+    const { controller, processedEvent } = setup({});
+    const missingStarts = {
+      ...VALID_BODY,
+      workout_summary: { id: 77, workout: { id: 555 } },
+    };
+    await expect(
+      controller.handle(makeReq(missingStarts)),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    const missingId = {
+      ...VALID_BODY,
+      workout_summary: {
+        id: 77,
+        workout: { starts: '2026-05-30T13:00:00.000Z' },
+      },
+    };
+    await expect(controller.handle(makeReq(missingId))).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(processedEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('redacts a token-like ingest error before persisting last_error', async () => {
+    // R1 Finding 3: the webhook ingest-failure path must redact last_error.
+    const { controller, connector, wearableConnection } = setup({});
+    (connector.normalize as jest.Mock).mockImplementationOnce(() => {
+      throw new Error(
+        'ingest failed Authorization: Bearer abc.def.ghi refresh_token=zzz',
+      );
+    });
+    await expect(controller.handle(makeReq(VALID_BODY))).rejects.toThrow();
+    const update = wearableConnection.update as jest.Mock;
+    expect(update).toHaveBeenCalledTimes(1);
+    const arg = update.mock.calls[0][0] as {
+      data: { status: string; last_error: string };
+    };
+    expect(arg.data.status).toBe('error');
+    expect(arg.data.last_error).not.toContain('abc.def.ghi');
+    expect(arg.data.last_error).not.toContain('zzz');
+    expect(arg.data.last_error).toContain('[REDACTED]');
   });
 
   it('processes a valid first delivery: normalize → ingest → commit', async () => {

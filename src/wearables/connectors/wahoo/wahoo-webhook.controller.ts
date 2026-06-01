@@ -18,8 +18,17 @@ import { z } from 'zod';
 import { Public } from '../../../common/decorators/public.decorator';
 import { PrismaService } from '../../../prisma.service';
 import { IngestionService } from '../../ingestion/ingestion.service';
-import { WahooConnector } from './wahoo.connector';
+import { redactErrorMessage, WahooConnector } from './wahoo.connector';
 import { WahooWebhookEvent } from './wahoo.types';
+
+/**
+ * Supported Wahoo webhook event types. Wahoo's Cloud API pushes one event per
+ * changed workout summary under the `workout_summary` event type — the only
+ * event this connector ingests. Any other `event_type` is an unsupported /
+ * malformed delivery and is rejected at the schema boundary (R1 Finding 2) so
+ * it can never be durably committed as "processed" without ingestion.
+ */
+const SUPPORTED_WAHOO_EVENT_TYPES = ['workout_summary'] as const;
 
 /**
  * PR-HK-2.h — Wahoo webhook receiver.
@@ -88,8 +97,9 @@ export class WahooWebhookController {
     const event = this.parseAndValidate(rawBody);
 
     const providerEventId = this.connector.eventId(event);
-    const userId =
-      event.user?.id !== undefined ? String(event.user.id) : undefined;
+    // Schema guarantees `user.id` for a supported workout event (R1 Finding 2),
+    // so connection resolution always has a subject id to key on.
+    const userId = String(event.user!.id);
 
     // (5) Replay protection. A prior row for (WAHOO, providerEventId) proves a
     // prior FULL completion (the row is written only after successful ingest)
@@ -113,57 +123,56 @@ export class WahooWebhookController {
 
     // (6) Resolve the connection by Wahoo user id, extract the just-changed
     // workout, normalize, and batch-ingest — BEFORE any dedup row is written.
-    if (userId) {
-      const connection = await this.prisma.wearableConnection.findFirst({
-        where: {
-          provider: WearableProvider.WAHOO,
-          external_account_id: userId,
-          disconnected_at: null,
-        },
-      });
+    const connection = await this.prisma.wearableConnection.findFirst({
+      where: {
+        provider: WearableProvider.WAHOO,
+        external_account_id: userId,
+        disconnected_at: null,
+      },
+    });
 
-      if (connection) {
-        try {
-          const raw = this.connector.extractWorkoutRecords(connection, event);
-          const samples = this.connector.normalize(raw);
-          if (samples.length > 0) {
-            await this.ingestion.ingest(samples);
-          }
-        } catch (err) {
-          // Fail-explicit: mark the connection in error (redacted), log hashed
-          // metadata, and rethrow so the delivery is retried. No processed
-          // row was written, so the retry reprocesses.
-          await this.prisma.wearableConnection
-            .update({
-              where: { id: connection.id },
-              data: {
-                status: 'error',
-                last_error: (err as Error)?.message?.slice(0, 500) ?? 'unknown',
-              },
-            })
-            .catch(() => undefined);
-          this.logger.error({
-            msg: 'wearables.wahoo.webhook.ingest_failure',
-            provider: 'WAHOO',
-            event_type: event.event_type,
-            user_hash: this.hash(userId),
-            error_class: (err as Error)?.name ?? 'Error',
-          });
-          throw err;
+    if (connection) {
+      try {
+        const raw = this.connector.extractWorkoutRecords(connection, event);
+        const samples = this.connector.normalize(raw);
+        if (samples.length > 0) {
+          await this.ingestion.ingest(samples);
         }
-      } else {
-        this.logger.warn({
-          msg: 'wearables.wahoo.webhook.no_connection',
+      } catch (err) {
+        // Fail-explicit: mark the connection in error (redacted), log hashed
+        // metadata, and rethrow so the delivery is retried. No processed
+        // row was written, so the retry reprocesses.
+        // R1 Finding 3: redact before persisting. The connector's redaction
+        // helper strips bearer tokens / token-like query params / secrets so
+        // a provider URL or token fragment in the thrown error can never
+        // leak into durable connection state (#1/#12, audit pattern #7).
+        await this.prisma.wearableConnection
+          .update({
+            where: { id: connection.id },
+            data: {
+              status: 'error',
+              last_error: redactErrorMessage(err),
+            },
+          })
+          .catch(() => undefined);
+        this.logger.error({
+          msg: 'wearables.wahoo.webhook.ingest_failure',
           provider: 'WAHOO',
           event_type: event.event_type,
           user_hash: this.hash(userId),
+          error_class: (err as Error)?.name ?? 'Error',
         });
+        throw err;
       }
     } else {
+      // Verified, well-formed delivery for a user we have no ACTIVE connection
+      // for (e.g. disconnected after the event was queued). Not an error: we
+      // still commit the dedup row below so Wahoo's redeliveries are no-ops.
       this.logger.warn({
-        msg: 'wearables.wahoo.webhook.no_user',
+        msg: 'wearables.wahoo.webhook.no_connection',
         provider: 'WAHOO',
         event_type: event.event_type,
+        user_hash: this.hash(userId),
       });
     }
 
@@ -202,9 +211,20 @@ export class WahooWebhookController {
   /**
    * STRICT Zod schema for the Wahoo webhook payload (audit pattern #4). The
    * documented top-level keys are enumerated; unknown TOP-LEVEL keys reject
-   * with a 400. Nested objects are `.passthrough()` since Wahoo evolves the
-   * summary/workout shapes and the normalizer only reads known sub-fields.
-   * On failure we report field PATHS only — never the raw payload values.
+   * with a 400.
+   *
+   * R1 Finding 2 hardening: Wahoo's workout delivery is `event_type ===
+   * 'workout_summary'`. For that (the only supported, ingest-bearing) event we
+   * REQUIRE the fields the handler depends on so a malformed-but-authenticated
+   * delivery is rejected BEFORE any dedup lookup or processed-event commit:
+   *  - `event_type` must be a SUPPORTED Wahoo event,
+   *  - `user.id` must be present (connection resolution),
+   *  - `workout_summary` must be present with a stable `id`,
+   *  - the embedded `workout` must carry an `id` and a `starts` instant
+   *    (the normalizer's window/dedup anchor).
+   * Nested objects stay `.passthrough()` for forward-compat on UNKNOWN keys,
+   * but the KNOWN required keys are enforced. On failure we report field PATHS
+   * only — never the raw payload values.
    */
   private parseAndValidate(rawBody: Buffer): WahooWebhookEvent {
     let json: unknown;
@@ -214,15 +234,26 @@ export class WahooWebhookController {
       throw new BadRequestException('Wahoo webhook payload is not valid JSON');
     }
 
+    const id = z.union([z.number(), z.string().min(1)]);
+
+    const workoutSchema = z
+      .object({
+        id,
+        starts: z.string().min(1),
+      })
+      .passthrough();
+
     const schema = z
       .object({
-        event_type: z.string().min(1),
+        event_type: z.enum(SUPPORTED_WAHOO_EVENT_TYPES),
         webhook_token: z.string().min(1).optional(),
-        user: z
-          .object({ id: z.union([z.number(), z.string()]).optional() })
-          .passthrough()
-          .nullish(),
-        workout_summary: z.object({}).passthrough().nullish(),
+        user: z.object({ id }).passthrough(),
+        workout_summary: z
+          .object({
+            id,
+            workout: workoutSchema,
+          })
+          .passthrough(),
       })
       .strict();
 
