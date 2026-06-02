@@ -201,15 +201,29 @@ export class FitbitWebhookController {
           // backfill/refresh paths use, so the webhook edge path can't leak a
           // credential that an HTTP/provider error string happened to carry.
           const safeMessage = redactErrorMessage(err);
-          await this.prisma.wearableConnection
-            .update({
+          // Mark the connection in error state — best effort, but NEVER
+          // silent. If the status write itself fails we log it with full
+          // structured context (no PII); the original provider error still
+          // rethrows below so the delivery is retried (#36 Silent Failures).
+          try {
+            await this.prisma.wearableConnection.update({
               where: { id: connection.id },
               data: {
                 status: 'error',
                 last_error: safeMessage,
               },
-            })
-            .catch(() => undefined);
+            });
+          } catch (markErr) {
+            this.logger.error({
+              msg: 'wearables.fitbit.webhook.error_marking_failed',
+              provider: 'FITBIT',
+              collection_type: notification.collectionType,
+              user_hash: userHash,
+              error_class: (markErr as { constructor?: { name?: string } })
+                ?.constructor?.name,
+              error_message: redactErrorMessage(markErr),
+            });
+          }
           this.logger.error({
             msg: 'wearables.fitbit.webhook.ingest_failure',
             provider: 'FITBIT',

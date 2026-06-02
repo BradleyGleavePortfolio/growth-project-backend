@@ -1,4 +1,5 @@
 import { createHash, createHmac } from 'crypto';
+import { Logger } from '@nestjs/common';
 import { WearableConnection, WearableProvider } from '@prisma/client';
 import {
   ProviderHttpClient,
@@ -420,6 +421,32 @@ describe('FitbitConnector — outage marking', () => {
       },
     });
     expect(update.mock.calls[0][0].data.last_error).not.toContain('rt-live-LEAK');
+  });
+
+  it('logs (never swallows) a failed error-status DB write and still rethrows the original provider error', async () => {
+    const { client, enqueue } = makeHttp();
+    const { prisma, update } = makePrisma();
+    enqueue(new Error('fitbit.fetch.activities/steps: HTTP 502 boom'));
+    // The best-effort status write itself fails (DB/RLS outage).
+    update.mockRejectedValueOnce(new Error('db write down'));
+    const errSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    const c = new FitbitConnector(client, prisma);
+    // The ORIGINAL provider error must still propagate — never a silent
+    // success and never the marking error.
+    await expect(c.backfill(conn, new Date())).rejects.toThrow(/HTTP 502/);
+
+    // The marking failure must be logged with structured context — proving it
+    // was NOT swallowed by `.catch(() => undefined)` (#36 Silent Failures).
+    const loggedMarkingFailure = errSpy.mock.calls.some(
+      (call) =>
+        (call[0] as { msg?: string })?.msg ===
+        'wearables.fitbit.error_marking_failed',
+    );
+    expect(loggedMarkingFailure).toBe(true);
+    errSpy.mockRestore();
   });
 
   it('still rethrows (and does not crash) when no PrismaService is wired', async () => {

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   HttpStatus,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
@@ -212,6 +213,39 @@ describe('FitbitWebhookController — first delivery', () => {
       where: { id: 'conn-1' },
       data: { status: 'error', last_error: 'upstream 503' },
     });
+  });
+
+  it('logs (never swallows) a failed error-status DB write and still rethrows the original error', async () => {
+    const { controller, connector, wearableConnection, processedEvent } =
+      setup({});
+    (connector.fetchNotificationRecords as jest.Mock).mockRejectedValueOnce(
+      new Error('upstream 503'),
+    );
+    // The best-effort error-status write itself fails (e.g. DB/RLS outage).
+    (wearableConnection.update as jest.Mock).mockRejectedValueOnce(
+      new Error('db write down'),
+    );
+    const errSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    // The ORIGINAL provider error must still propagate (not the marking error,
+    // and never a silent success) so Fitbit retries the delivery.
+    await expect(controller.handle(makeReq([NOTIF]))).rejects.toThrow(
+      'upstream 503',
+    );
+    // No dedup row written — the retry can reprocess.
+    expect(processedEvent.create).not.toHaveBeenCalled();
+
+    // The marking failure must be logged with structured context — proving it
+    // was NOT swallowed by a `.catch(() => undefined)` (#36 Silent Failures).
+    const loggedMarkingFailure = errSpy.mock.calls.some(
+      (call) =>
+        (call[0] as { msg?: string })?.msg ===
+        'wearables.fitbit.webhook.error_marking_failed',
+    );
+    expect(loggedMarkingFailure).toBe(true);
+    errSpy.mockRestore();
   });
 
   it('no-ops gracefully when no matching connection exists (still records)', async () => {

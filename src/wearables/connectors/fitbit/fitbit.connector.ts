@@ -596,12 +596,26 @@ export class FitbitConnector implements WearableConnector {
       error_message: message,
     });
     if (!this.prisma || !conn?.id) return;
-    await this.prisma.wearableConnection
-      .update({
+    // Mark the connection in error state — best effort, but NEVER silent. If
+    // the status write itself fails we log it with full structured context
+    // (no PII); the original provider error is still rethrown by the caller
+    // (#36 Silent Failures).
+    try {
+      await this.prisma.wearableConnection.update({
         where: { id: conn.id },
         data: { status: 'error', last_error: message },
-      })
-      .catch(() => undefined);
+      });
+    } catch (markErr) {
+      this.logger.error({
+        msg: 'wearables.fitbit.error_marking_failed',
+        op,
+        provider: 'FITBIT',
+        conn_id: conn.id,
+        error_class: (markErr as { constructor?: { name?: string } })
+          ?.constructor?.name,
+        error_message: redactErrorMessage(markErr),
+      });
+    }
   }
 
   private requireEnv(name: string): string {
