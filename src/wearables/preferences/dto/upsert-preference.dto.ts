@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import { WearableMetricType, WearableProvider } from '@prisma/client';
 import { z } from 'zod';
 
@@ -38,3 +39,33 @@ export const PreferenceResponseSchema = z
   .strict();
 
 export type PreferenceResponse = z.infer<typeof PreferenceResponseSchema>;
+
+/**
+ * OpenAPI response DTO for the `POST /v1/wearables/preferences` 200 body
+ * (P2 #1). Documentation-only: the runtime contract is the Zod
+ * `PreferenceResponseSchema` above (the controller `.parse()`s every payload
+ * through it). The shape mirrors that schema EXACTLY; `updated_at` is the
+ * persisted timestamp serialized as an ISO-8601 string.
+ */
+export class PreferenceResponseDto {
+  @ApiProperty({
+    enum: WearableMetricType,
+    enumName: 'WearableMetricType',
+    description: 'The metric whose read-precedence override was persisted.',
+  })
+  metric!: WearableMetricType;
+
+  @ApiProperty({
+    enum: WearableProvider,
+    enumName: 'WearableProvider',
+    description: 'The pinned preferred provider for that metric.',
+  })
+  preferred_provider!: WearableProvider;
+
+  @ApiProperty({
+    format: 'date-time',
+    description: 'ISO-8601 timestamp the override was last written.',
+    example: '2026-06-01T12:00:00.000Z',
+  })
+  updated_at!: string;
+}

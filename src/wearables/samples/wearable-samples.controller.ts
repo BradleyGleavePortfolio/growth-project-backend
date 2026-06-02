@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiOkResponse,
   ApiOperation,
   ApiQuery,
   ApiResponse,
@@ -25,6 +26,7 @@ import {
   SamplesResponse,
   SamplesResponseSchema,
 } from './dto/sample-response.schema';
+import { SamplesResponseDto } from './dto/sample-response.dto';
 
 /**
  * PR-HK-3a — `GET /v1/wearables/samples`.
@@ -104,7 +106,10 @@ export class WearableSamplesController {
       'When true (default) returns the read-precedence provider only; when ' +
       'false returns every provider (compare-sources mode).',
   })
-  @ApiResponse({ status: 200, description: 'Samples + freshness envelope (version 1).' })
+  @ApiOkResponse({
+    type: SamplesResponseDto,
+    description: 'Samples + freshness envelope (version 1).',
+  })
   @ApiResponse({
     status: 400,
     description:

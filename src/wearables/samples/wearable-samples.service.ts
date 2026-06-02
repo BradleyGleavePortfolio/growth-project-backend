@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
@@ -15,7 +16,13 @@ import {
 import { PrismaService } from '../../prisma.service';
 import { IngestionService } from '../ingestion/ingestion.service';
 import { WearableConnectionStatus } from '../connections/types';
-import { metricsInBucket, METRIC_BUCKET } from './metric-bucket.map';
+import {
+  metricsInBucket,
+  METRIC_BUCKET,
+  METRIC_AGGREGATION,
+  MetricAggregation,
+  isMetricAggregation,
+} from './metric-bucket.map';
 import { GetSamplesQuery } from './dto/get-samples.query';
 import {
   AggBucket,
@@ -46,11 +53,22 @@ import {
  *    findMany per metric in the bucket); aggregation is pushed into Postgres.
  */
 @Injectable()
-export class WearableSamplesService {
+export class WearableSamplesService implements OnModuleInit {
   private readonly logger = new Logger(WearableSamplesService.name);
 
   /** Per-Prisma-call wall-clock budget (#35). */
   static readonly PRISMA_TIMEOUT_MS = 5_000;
+
+  /**
+   * Working metric → aggregation map. Seeded at module init from the live
+   * `WearableMetricDef` table (the #40 single source of truth) so the read path
+   * never hits the DB to learn a metric's aggregation. Initialised to the
+   * compile-time mirror {@link METRIC_AGGREGATION} so the read path is correct
+   * even before {@link onModuleInit} runs (cold start / unit tests that never
+   * boot the Nest lifecycle).
+   */
+  private aggregationByMetric: Readonly<Record<WearableMetricType, MetricAggregation>> =
+    METRIC_AGGREGATION;
 
   /**
    * A connection is "current" when it synced within this window; older →
@@ -66,6 +84,97 @@ export class WearableSamplesService {
     private readonly prisma: PrismaService,
     private readonly ingestion: IngestionService,
   ) {}
+
+  /**
+   * Bootstrap the in-memory metric metadata from the seeded `WearableMetricDef`
+   * (the #40 single source of truth) and assert the compile-time mirrors match
+   * it. Two drift classes are guarded:
+   *
+   *  1. bucket drift — the compile-time {@link METRIC_BUCKET} (which the Zod
+   *     query validator and `metricsInBucket` both read) must agree with the
+   *     seed's `bucket` column. A mismatch (e.g. RESTING_HEART_RATE_BPM landing
+   *     in the wrong bucket) would silently route a metric to the wrong UX tab.
+   *  2. aggregation drift — the seed's `aggregation` value for each metric is
+   *     loaded into {@link aggregationByMetric}; if a row carries a value that
+   *     is not one of the four canonical aggregations it is a seed/data bug we
+   *     surface LOUD rather than silently defaulting.
+   *
+   * On ANY drift we log an error and THROW so the mismatch fails the boot
+   * (never a silent wrong-bucket / wrong-aggregation read). When the table is
+   * unreachable at boot (e.g. a unit context with no DB) we keep the
+   * compile-time mirrors — they are the authoritative fallback, not a guess.
+   */
+  async onModuleInit(): Promise<void> {
+    let defs: Array<{
+      metric: WearableMetricType;
+      bucket: WearableMetricBucket;
+      aggregation: string;
+    }>;
+    try {
+      defs = await this.raceTimeout(
+        this.prisma.wearableMetricDef.findMany({
+          select: { metric: true, bucket: true, aggregation: true },
+        }),
+      );
+    } catch (err) {
+      // DB unreachable at boot: retain the compile-time mirrors (authoritative
+      // fallback). We log so the absence of a live cross-check is visible —
+      // this is NOT a silent swallow of an application error.
+      this.logger.warn({
+        event: 'wearable_metric_def_bootstrap_skipped',
+        reason: err instanceof Error ? err.message : 'unknown',
+      });
+      return;
+    }
+
+    if (defs.length === 0) {
+      this.logger.warn({ event: 'wearable_metric_def_bootstrap_empty' });
+      return;
+    }
+
+    const drift: string[] = [];
+    const aggregation: Record<WearableMetricType, MetricAggregation> = {
+      ...METRIC_AGGREGATION,
+    };
+
+    for (const def of defs) {
+      if (METRIC_BUCKET[def.metric] !== def.bucket) {
+        drift.push(
+          `bucket: ${def.metric} seeded ${def.bucket} but map has ${METRIC_BUCKET[def.metric]}`,
+        );
+      }
+      if (!isMetricAggregation(def.aggregation)) {
+        drift.push(
+          `aggregation: ${def.metric} seeded non-canonical '${def.aggregation}'`,
+        );
+        continue;
+      }
+      aggregation[def.metric] = def.aggregation;
+      if (METRIC_AGGREGATION[def.metric] !== def.aggregation) {
+        drift.push(
+          `aggregation: ${def.metric} seeded '${def.aggregation}' but map has '${METRIC_AGGREGATION[def.metric]}'`,
+        );
+      }
+    }
+
+    if (drift.length > 0) {
+      this.logger.error({
+        event: 'wearable_metric_def_map_drift',
+        mismatches: drift,
+      });
+      throw new Error(
+        `WearableMetricDef map drift detected (seed is source of truth): ${drift.join('; ')}`,
+      );
+    }
+
+    // Seed and mirror agree: adopt the live values (identical here, but this
+    // makes the DB the runtime source once it is reachable).
+    this.aggregationByMetric = aggregation;
+    this.logger.log({
+      event: 'wearable_metric_def_bootstrap_ok',
+      metric_count: defs.length,
+    });
+  }
 
   /**
    * Build the full samples response for a validated query.
@@ -278,10 +387,16 @@ export class WearableSamplesService {
 
   /**
    * Postgres-side aggregation via `date_trunc` (#4 — closed unit allow-list,
-   * bound parameters; NO user string interpolated into SQL). The aggregation
-   * function is chosen per the metric def's documented semantics (sum/avg/
-   * last/max); we default to AVG which is correct for the rate metrics that
-   * dominate the H&F bucket, and SUM for the additive ones.
+   * bound parameters; NO user string interpolated into SQL).
+   *
+   * The aggregation FUNCTION is driven by the seeded `WearableMetricDef`
+   * (P1 NEW #2 — no more hardcoded SUM/AVG): a `sum`/`avg`/`max` metric maps to
+   * the matching SQL aggregate over the bucket window, while a `last` metric
+   * (point-in-time readings such as weight, VO2max, recovery score) takes the
+   * latest reading within the bucket via `(array_agg(value ORDER BY start_at
+   * DESC))[1]` — averaging or summing those would be physically meaningless.
+   * The expression comes from {@link aggSqlExprFor}, a closed server-controlled
+   * mapping keyed off the canonical aggregation union (never a request value).
    *
    * Scoped to EXACTLY the providers present in the returned `samples` (one in
    * preferred mode, possibly several in compare-all mode) so the buckets and
@@ -297,7 +412,7 @@ export class WearableSamplesService {
     if (providers.length === 0 || query.granularity === 'raw') return [];
 
     const unit = WearableSamplesService.TRUNC_UNIT[query.granularity];
-    const aggFn = this.aggFunctionFor(metric);
+    const aggExpr = this.aggSqlExprFor(metric);
 
     // The provider IN-list is built from bound parameters, each with an
     // explicit ::"WearableProvider" cast. Prisma.join interpolates ONLY the
@@ -307,19 +422,19 @@ export class WearableSamplesService {
       providers.map((p) => Prisma.sql`${p}::"WearableProvider"`),
     );
 
-    // `Prisma.raw` is used ONLY for the date_trunc unit + agg function name,
-    // both drawn from closed server-side allow-lists above (SQL IDENTIFIERS /
-    // function names, never request VALUES). Every value (userId, metric,
-    // provider, window) is a BOUND parameter — enum values use a bound param
-    // with an explicit ::"<enum>" cast (P1 #4 / R65 #3 / OWASP-1). No request
-    // string is ever interpolated into SQL text.
+    // `Prisma.raw` is used ONLY for the date_trunc unit + the agg expression,
+    // both drawn from closed server-side allow-lists (SQL IDENTIFIERS / a fixed
+    // expression per canonical aggregation, never request VALUES). Every value
+    // (userId, metric, provider, window) is a BOUND parameter — enum values use
+    // a bound param with an explicit ::"<enum>" cast (P1 #4 / R65 #3 / OWASP-1).
+    // No request string is ever interpolated into SQL text.
     const rows = await this.raceTimeout(
       this.prisma.$queryRaw<
         Array<{ bucket_start: Date; agg: number | null; count: bigint }>
       >`
         SELECT
           date_trunc(${unit}, "start_at") AS bucket_start,
-          ${Prisma.raw(aggFn)}("value") AS agg,
+          ${aggExpr} AS agg,
           COUNT(*)::bigint AS count
         FROM "WearableSample"
         WHERE "user_id" = ${userId}
@@ -341,26 +456,59 @@ export class WearableSamplesService {
     }));
   }
 
-  /** Aggregation function per metric semantics. Closed allow-list (#4). */
-  private aggFunctionFor(metric: WearableMetricType): 'SUM' | 'AVG' | 'MAX' {
-    const additive: ReadonlySet<WearableMetricType> = new Set<WearableMetricType>([
-      WearableMetricType.STEPS,
-      WearableMetricType.ACTIVE_ENERGY_KCAL,
-      WearableMetricType.WORKOUT_DURATION_MIN,
-      WearableMetricType.WORKOUT_DISTANCE_M,
-    ]);
-    return additive.has(metric) ? 'SUM' : 'AVG';
+  /**
+   * The per-bucket SQL aggregation expression for a metric, derived from the
+   * seeded {@link aggregationByMetric} (P1 NEW #2). The `switch` is EXHAUSTIVE
+   * over the canonical {@link MetricAggregation} union — adding a fifth
+   * aggregation to the seed without handling it here is a COMPILE ERROR (the
+   * `default` arm narrows to `never` and is assigned to a `never`-typed const).
+   * The returned `Prisma.Sql` is server-controlled (no request value), so the
+   * #4 SQL-injection posture is unchanged.
+   */
+  private aggSqlExprFor(metric: WearableMetricType): Prisma.Sql {
+    const aggregation = this.aggregationByMetric[metric];
+    switch (aggregation) {
+      case 'sum':
+        return Prisma.sql`SUM("value")`;
+      case 'avg':
+        return Prisma.sql`AVG("value")`;
+      case 'max':
+        return Prisma.sql`MAX("value")`;
+      case 'last':
+        // Latest reading within the bucket (point-in-time metrics). Ordered by
+        // sample time DESC, tie-broken on end_at then id for determinism.
+        return Prisma.sql`(array_agg("value" ORDER BY "start_at" DESC, "end_at" DESC, "id" DESC))[1]`;
+      default: {
+        // Exhaustiveness guard: if MetricAggregation ever grows a member that
+        // is not handled above, this assignment fails to compile.
+        const exhaustive: never = aggregation;
+        throw new Error(
+          `Unhandled metric aggregation '${String(exhaustive)}' for metric ${metric}`,
+        );
+      }
+    }
   }
 
   /**
    * Freshness chip data: ONE entry per provider with a non-disconnected
-   * connection for this user. Drives the client freshness chip (recomputed
-   * client-side per plan line 91 — this is the server-truth fallback).
+   * connection for this user that is RELEVANT to the requested bucket. Drives
+   * the client freshness chip (recomputed client-side per plan line 91 — this
+   * is the server-truth fallback).
    *
-   * Coverage (P1 #2): EVERY non-disconnected connection is reported, even when
-   * it has zero samples in this bucket. A connected-and-synced provider that
-   * simply has no data in the requested window must still surface so the user
-   * is never silently told a source is missing.
+   * Bucket relevance (P2 NEW #1): the chip on the H&F tab must not advertise a
+   * sleep-only source (and vice-versa). A connection is therefore filtered OUT
+   * of a bucket's freshness ONLY when the provider DEMONSTRABLY serves a
+   * different bucket exclusively — i.e. it has produced sample data for this
+   * user but NONE of it lands in `METRIC_BUCKET[bucket]`. We decide relevance
+   * from the user's own sample history (two distinct-provider probes) rather
+   * than a static capability matrix, because the per-connector capability set
+   * is not uniformly declared in code and would mis-filter not-yet-normalized
+   * providers.
+   *
+   * Coverage / zero-data (P1 #2 — preserved): a connected, recently-synced
+   * provider that has produced NO samples at all (so we cannot yet tell which
+   * bucket it serves) is STILL reported — it is never excluded on a hunch, so
+   * the user is never silently told a freshly-connected source is missing.
    *
    * Status precedence (P1 #3):
    *  1. A connection in any non-healthy lifecycle state (expired / error /
@@ -376,24 +524,76 @@ export class WearableSamplesService {
     userId: string,
     bucket: WearableMetricBucket,
   ): Promise<FreshnessProvider[]> {
-    void bucket; // freshness is per-connection, not gated on bucket membership.
-    const connections = await this.raceTimeout(
-      this.prisma.wearableConnection.findMany({
-        where: {
-          user_id: userId,
-          status: { not: WearableConnectionStatus.DISCONNECTED },
-        },
-        select: { provider: true, last_synced_at: true, status: true },
-        orderBy: { provider: 'asc' },
-      }),
-    );
+    const [connections, bucketSampleProviders, anySampleProviders] =
+      await Promise.all([
+        this.raceTimeout(
+          this.prisma.wearableConnection.findMany({
+            where: {
+              user_id: userId,
+              status: { not: WearableConnectionStatus.DISCONNECTED },
+            },
+            select: { provider: true, last_synced_at: true, status: true },
+            orderBy: { provider: 'asc' },
+          }),
+        ),
+        this.distinctSampleProviders(userId, metricsInBucket(bucket)),
+        this.distinctSampleProviders(userId, null),
+      ]);
 
     const now = Date.now();
-    return connections.map((c) => ({
-      provider: c.provider,
-      last_synced_at: c.last_synced_at ? c.last_synced_at.toISOString() : null,
-      status: this.freshnessStatusFor(c.status, c.last_synced_at, now),
-    }));
+    return connections
+      .filter((c) =>
+        this.isProviderRelevantToBucket(
+          c.provider,
+          bucketSampleProviders,
+          anySampleProviders,
+        ),
+      )
+      .map((c) => ({
+        provider: c.provider,
+        last_synced_at: c.last_synced_at ? c.last_synced_at.toISOString() : null,
+        status: this.freshnessStatusFor(c.status, c.last_synced_at, now),
+      }));
+  }
+
+  /**
+   * Distinct providers that have at least one `WearableSample` for the user,
+   * optionally restricted to a set of metrics (the bucket's metrics). Returns a
+   * Set for O(1) membership in the freshness relevance check.
+   */
+  private async distinctSampleProviders(
+    userId: string,
+    metrics: WearableMetricType[] | null,
+  ): Promise<ReadonlySet<WearableProvider>> {
+    const rows = await this.raceTimeout(
+      this.prisma.wearableSample.findMany({
+        where: {
+          user_id: userId,
+          ...(metrics ? { metric: { in: metrics } } : {}),
+        },
+        select: { provider: true },
+        distinct: ['provider'],
+      }),
+    );
+    return new Set(rows.map((r) => r.provider));
+  }
+
+  /**
+   * A connection is relevant to the requested bucket UNLESS it provably serves
+   * a different bucket exclusively: it has produced sample data for the user
+   * (`anySampleProviders`) but none of it in this bucket
+   * (`bucketSampleProviders`). A provider with bucket samples is relevant; a
+   * provider with NO samples anywhere is kept (zero-data coverage, P1 #2).
+   */
+  private isProviderRelevantToBucket(
+    provider: WearableProvider,
+    bucketSampleProviders: ReadonlySet<WearableProvider>,
+    anySampleProviders: ReadonlySet<WearableProvider>,
+  ): boolean {
+    if (bucketSampleProviders.has(provider)) return true;
+    // No samples in this bucket. Exclude only if it has samples in some OTHER
+    // bucket (so it demonstrably belongs elsewhere); otherwise keep it.
+    return !anySampleProviders.has(provider);
   }
 
   /**

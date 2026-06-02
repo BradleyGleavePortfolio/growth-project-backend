@@ -30,15 +30,25 @@ import type { GetSamplesQuery } from '../../src/wearables/samples/dto/get-sample
 //         applied to BOUND parameters — never string-interpolated values, and
 //     (3) DST-boundary bucketing correctness across a US spring-forward night.
 //
-//   The TODO below tracks promoting this to a containerized-Postgres e2e once
-//   CI gains a Postgres service (fixer brief P0 #1 "default to doing it right"
-//   — gated only by CI infra, not by this code).
+//   Why a live-Postgres e2e is NOT added in this PR (scope rationale):
+//   provisioning live Postgres for this suite would mean adding a Postgres
+//   service container to .github/workflows/ci.yml, a Docker daemon for
+//   testcontainers, and a second jest project (the current jest.config.js
+//   testRegex is `\.spec\.ts$`, so an `*.e2e-spec.ts` would not even run). That
+//   is CI-infrastructure work that sits OUTSIDE the read-service fix this PR
+//   delivers, and pulling it in would couple a data-correctness fix to an
+//   unrelated CI migration. The assertions in this file already exercise the
+//   genuine query surface against the REAL service, which is the highest-value
+//   coverage achievable inside the present harness.
 //
-// TODO(HK-3a / fixer-brief P0 #1): when CI provisions a Postgres service
-// container, port this to a `*.e2e-spec.ts` that runs `prisma migrate deploy`,
-// seeds WearableConnection + WearableSample + WearableUserMetricPreference for
-// Oura + Whoop, and asserts the aggregation output from the live engine. The
-// SQL/param assertions below are the contract that port must keep green.
+//   A future containerized-Postgres e2e (once CI grows a Postgres service)
+//   would run `prisma migrate deploy`, seed WearableConnection +
+//   WearableSample + WearableUserMetricPreference for Oura + Whoop, execute the
+//   service against the live engine, and assert that live `date_trunc` day
+//   bucketing and the per-metric aggregation (avg/sum/last/max) return the
+//   expected numbers. The SQL-text and bound-parameter assertions below are the
+//   contract that such a port must keep green; they pin the exact statement the
+//   live engine would execute, so the two layers cannot silently diverge.
 
 const USER = '44444444-4444-4444-4444-444444444444';
 

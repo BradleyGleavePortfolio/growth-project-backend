@@ -12,6 +12,8 @@ import {
 import {
   ApiBearerAuth,
   ApiBody,
+  ApiNoContentResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiParam,
   ApiResponse,
@@ -27,6 +29,7 @@ import { PreferencesService } from './preferences.service';
 import {
   DeletePreferenceParamSchema,
   PreferenceResponse,
+  PreferenceResponseDto,
   PreferenceResponseSchema,
   UpsertPreferenceSchema,
 } from './dto/upsert-preference.dto';
@@ -70,7 +73,10 @@ export class PreferencesController {
       },
     },
   })
-  @ApiResponse({ status: 200, description: 'The persisted override (metric, provider, updated_at).' })
+  @ApiOkResponse({
+    type: PreferenceResponseDto,
+    description: 'The persisted override (metric, provider, updated_at).',
+  })
   @ApiResponse({
     status: 400,
     description:
@@ -100,7 +106,9 @@ export class PreferencesController {
     enum: WearableMetricType,
     description: 'The metric whose override to remove.',
   })
-  @ApiResponse({ status: 204, description: 'Override removed (or already absent — idempotent).' })
+  @ApiNoContentResponse({
+    description: 'Override removed (or already absent — idempotent).',
+  })
   @ApiResponse({
     status: 400,
     description: 'WEARABLE_PREFERENCE_PAYLOAD_INVALID — the :metric segment is not a valid enum.',

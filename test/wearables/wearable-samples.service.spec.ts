@@ -373,3 +373,203 @@ describe('WearableSamplesService', () => {
     expect(out.series[0].unit).toBe('count');
   });
 });
+
+// ── P1 NEW #2: aggregation function is driven by the seeded WearableMetricDef
+//    aggregation, not a hardcoded SUM/AVG split. We capture the compiled raw
+//    SQL to assert the per-metric aggregation EXPRESSION the service emits.
+// ── P2 NEW #1: freshness is filtered to providers relevant to the bucket while
+//    preserving the R1 #2 zero-data coverage.
+describe('WearableSamplesService — def-driven aggregation + freshness bucket filter', () => {
+  // Build a service whose $queryRaw records the compiled SQL text, and whose
+  // sample.findMany supports BOTH the distinct-provider probes (per metric set)
+  // and the compare/read path. `bucketSamples`/`anySamples` model which
+  // providers have rows in the requested bucket vs anywhere.
+  function captureService(opts: {
+    metric: WearableMetricType;
+    bucket: WearableMetricBucket;
+    connections?: Array<{ provider: WearableProvider; last_synced_at: Date | null; status?: string }>;
+    bucketSampleProviders?: WearableProvider[];
+    anySampleProviders?: WearableProvider[];
+  }): { svc: WearableSamplesService; sql: string[] } {
+    const sql: string[] = [];
+    const bucketMetrics = new Set<WearableMetricType>(metricsOf(opts.bucket));
+    const prisma = {
+      user: { findFirst: jest.fn(async () => null) },
+      wearableSample: {
+        findMany: jest.fn(async (args?: {
+          distinct?: unknown;
+          where?: { metric?: { in?: unknown } };
+        }) => {
+          if (args?.distinct) {
+            // A bucket-scoped probe carries a metric `in` filter; the unscoped
+            // probe does not. Return the matching provider set.
+            const scoped = args?.where?.metric?.in !== undefined;
+            const providers = scoped
+              ? opts.bucketSampleProviders ?? []
+              : opts.anySampleProviders ?? [];
+            return providers.map((provider) => ({ provider }));
+          }
+          // read path: one row for the requested metric so aggregation runs.
+          return [sample(WearableProvider.OURA, 70, '2026-01-02T00:00:00.000Z')];
+        }),
+      },
+      wearableMetricDef: { findUnique: jest.fn(async () => ({ unit: 'kg' })) },
+      wearableConnection: {
+        findMany: jest.fn(async () =>
+          (opts.connections ?? []).map((c) => ({ ...c, status: c.status ?? 'connected' })),
+        ),
+      },
+      $queryRaw: jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const { Prisma } = jest.requireActual('@prisma/client');
+        sql.push(Prisma.sql(strings, ...values).sql);
+        return [];
+      }),
+    };
+    const ingestion = {
+      resolveBest: jest.fn(async () => [sample(WearableProvider.OURA, 70, '2026-01-02T00:00:00.000Z')]),
+    };
+    void bucketMetrics;
+    return { svc: new WearableSamplesService(prisma as never, ingestion as never), sql };
+  }
+
+  // Local mirror of which metrics belong to a bucket (avoid importing internals).
+  function metricsOf(bucket: WearableMetricBucket): WearableMetricType[] {
+    const hf = [
+      WearableMetricType.STEPS,
+      WearableMetricType.BODY_WEIGHT_KG,
+      WearableMetricType.TRAINING_LOAD,
+      WearableMetricType.HEART_RATE_BPM,
+    ];
+    const sr = [WearableMetricType.HRV_MS, WearableMetricType.RESTING_HEART_RATE_BPM];
+    return bucket === WearableMetricBucket.HEALTH_FITNESS ? hf : sr;
+  }
+
+  it("emits SUM for an additive metric (STEPS -> 'sum')", async () => {
+    const { svc, sql } = captureService({
+      metric: WearableMetricType.STEPS,
+      bucket: WearableMetricBucket.HEALTH_FITNESS,
+    });
+    await svc.getSeries(USER, 'student', query({ metric: WearableMetricType.STEPS, granularity: 'day' }));
+    expect(sql[0]).toContain('SUM("value")');
+  });
+
+  it("emits MAX for a peak metric (TRAINING_LOAD -> 'max')", async () => {
+    const { svc, sql } = captureService({
+      metric: WearableMetricType.TRAINING_LOAD,
+      bucket: WearableMetricBucket.HEALTH_FITNESS,
+    });
+    await svc.getSeries(
+      USER,
+      'student',
+      query({ metric: WearableMetricType.TRAINING_LOAD, granularity: 'day' }),
+    );
+    expect(sql[0]).toContain('MAX("value")');
+  });
+
+  it("emits a latest-reading expression for a point-in-time metric (BODY_WEIGHT_KG -> 'last')", async () => {
+    const { svc, sql } = captureService({
+      metric: WearableMetricType.BODY_WEIGHT_KG,
+      bucket: WearableMetricBucket.HEALTH_FITNESS,
+    });
+    await svc.getSeries(
+      USER,
+      'student',
+      query({ metric: WearableMetricType.BODY_WEIGHT_KG, granularity: 'day' }),
+    );
+    // `last` must NOT be averaged or summed — it takes the most-recent reading.
+    expect(sql[0]).toContain('array_agg("value" ORDER BY "start_at" DESC');
+    expect(sql[0]).not.toContain('AVG("value")');
+    expect(sql[0]).not.toContain('SUM("value")');
+  });
+
+  it("emits AVG for a rate metric (HEART_RATE_BPM -> 'avg')", async () => {
+    const { svc, sql } = captureService({
+      metric: WearableMetricType.HEART_RATE_BPM,
+      bucket: WearableMetricBucket.HEALTH_FITNESS,
+    });
+    await svc.getSeries(
+      USER,
+      'student',
+      query({ metric: WearableMetricType.HEART_RATE_BPM, granularity: 'day' }),
+    );
+    expect(sql[0]).toContain('AVG("value")');
+  });
+
+  it('freshness EXCLUDES a provider that has samples only in the OTHER bucket (P2 NEW #1)', async () => {
+    // STRAVA produces only H&F samples; querying SLEEP_RECOVERY must drop it.
+    const { svc } = captureService({
+      metric: WearableMetricType.HRV_MS,
+      bucket: WearableMetricBucket.SLEEP_RECOVERY,
+      connections: [
+        { provider: WearableProvider.STRAVA, last_synced_at: new Date(), status: 'connected' },
+        { provider: WearableProvider.OURA, last_synced_at: new Date(), status: 'connected' },
+      ],
+      bucketSampleProviders: [WearableProvider.OURA], // only Oura has S&R samples
+      anySampleProviders: [WearableProvider.OURA, WearableProvider.STRAVA],
+    });
+    const out = await svc.getSeries(
+      USER,
+      'student',
+      query({ bucket: WearableMetricBucket.SLEEP_RECOVERY, metric: WearableMetricType.HRV_MS }),
+    );
+    const providers = out.freshness.providers.map((p) => p.provider);
+    expect(providers).toContain(WearableProvider.OURA);
+    expect(providers).not.toContain(WearableProvider.STRAVA);
+  });
+
+  it('freshness KEEPS a connected provider with NO samples anywhere (zero-data, P1 #2 preserved)', async () => {
+    const { svc } = captureService({
+      metric: WearableMetricType.HRV_MS,
+      bucket: WearableMetricBucket.SLEEP_RECOVERY,
+      connections: [
+        { provider: WearableProvider.WHOOP, last_synced_at: new Date(), status: 'connected' },
+      ],
+      bucketSampleProviders: [],
+      anySampleProviders: [], // never produced a sample -> cannot be excluded
+    });
+    const out = await svc.getSeries(
+      USER,
+      'student',
+      query({ bucket: WearableMetricBucket.SLEEP_RECOVERY, metric: WearableMetricType.HRV_MS }),
+    );
+    expect(out.freshness.providers.map((p) => p.provider)).toEqual([WearableProvider.WHOOP]);
+  });
+
+  it('onModuleInit THROWS on a seed/map bucket drift (fail-loud, never silent)', async () => {
+    const prisma = {
+      wearableMetricDef: {
+        findMany: jest.fn(async () => [
+          // RESTING_HEART_RATE_BPM is SLEEP_RECOVERY in the map; seed HEALTH_FITNESS -> drift.
+          {
+            metric: WearableMetricType.RESTING_HEART_RATE_BPM,
+            bucket: WearableMetricBucket.HEALTH_FITNESS,
+            aggregation: 'avg',
+          },
+        ]),
+      },
+    };
+    const svc = new WearableSamplesService(prisma as never, {} as never);
+    await expect(svc.onModuleInit()).rejects.toThrow(/map drift/i);
+  });
+
+  it('onModuleInit accepts a seed that matches the compile-time map', async () => {
+    const prisma = {
+      wearableMetricDef: {
+        findMany: jest.fn(async () => [
+          {
+            metric: WearableMetricType.RESTING_HEART_RATE_BPM,
+            bucket: WearableMetricBucket.SLEEP_RECOVERY,
+            aggregation: 'avg',
+          },
+          {
+            metric: WearableMetricType.STEPS,
+            bucket: WearableMetricBucket.HEALTH_FITNESS,
+            aggregation: 'sum',
+          },
+        ]),
+      },
+    };
+    const svc = new WearableSamplesService(prisma as never, {} as never);
+    await expect(svc.onModuleInit()).resolves.toBeUndefined();
+  });
+});
