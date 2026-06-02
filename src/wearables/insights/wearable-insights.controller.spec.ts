@@ -3,14 +3,20 @@ import { BadRequestException } from '@nestjs/common';
 import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
 import { WearableMetricBucket } from '@prisma/client';
 import { WearableInsightsController } from './wearable-insights.controller';
-import type { WearableInsightsService } from './wearable-insights.service';
-import type { AuthedRequest } from '../../auth/auth-request';
 import {
   CoachInsight,
   ClientInsight,
   emptyInsight,
   isEmptyInsight,
 } from './insight-output.schema';
+import {
+  makeServiceDouble,
+  makeApprovalDeps,
+  makeController,
+  makeAuthedRequest,
+  type WearableInsightsServiceDouble,
+  type ApprovalDeps,
+} from './wearable-insights.controller.test-helpers';
 
 // PR-HK-4 controller contract tests: route registration, guard wiring,
 // query validation, coach-owns-client authorization, and the dual-role
@@ -42,54 +48,34 @@ function clientInsight(): ClientInsight {
   };
 }
 
-function makeSvc(): jest.Mocked<Pick<WearableInsightsService, 'assertCoachOwnsClient' | 'generateForCoach' | 'generateForClient'>> {
-  return {
-    assertCoachOwnsClient: jest.fn().mockResolvedValue(undefined),
-    generateForCoach: jest.fn().mockResolvedValue(coachInsight()),
-    generateForClient: jest.fn().mockResolvedValue(clientInsight()),
-  } as never;
-}
-
-function reqFor(role: string, id: string): AuthedRequest {
-  return { user: { id, role } as never };
-}
-
-// HK-6a doubles. The approve endpoint creates an AiActionDraft then delegates
-// to AiApprovalService.decide(); these stubs let the controller test own both
-// the created draft id and the row decide() reads back.
-import type { AiApprovalService } from '../../ai/gateway/ai-approval.service';
-import type { PrismaService } from '../../prisma.service';
-
+// HK-6a R2 (P1-1): typed test doubles and a centralised controller factory
+// live in `wearable-insights.controller.test-helpers.ts`. The previous
+// type-laundering casts are gone; the suite now constructs the controller and
+// its dependencies through named, narrowly-typed builders.
 const DRAFT_ID = '99999999-9999-9999-9999-999999999999';
 
-interface ApprovalDeps {
-  approvals: AiApprovalService;
-  decide: jest.Mock;
-  prisma: PrismaService;
-  create: jest.Mock;
+// Local convenience wrappers binding the shared builders to this suite's
+// fixtures so each test reads the same as before.
+function makeSvc(): WearableInsightsServiceDouble {
+  return makeServiceDouble({
+    coachInsight: coachInsight(),
+    clientInsight: clientInsight(),
+  });
 }
 
-function makeApprovalDeps(
-  decideResult: Record<string, unknown>,
-): ApprovalDeps {
-  const create = jest.fn().mockResolvedValue({ id: DRAFT_ID });
-  const decide = jest.fn().mockResolvedValue(decideResult);
-  const prisma = {
-    aiActionDraft: { create },
-  } as never as PrismaService;
-  const approvals = { decide } as never as AiApprovalService;
-  return { approvals, decide, prisma, create };
+function reqFor(role: string, id: string) {
+  return makeAuthedRequest(role, id);
+}
+
+function approvalDeps(decideResult: Record<string, unknown>): ApprovalDeps {
+  return makeApprovalDeps(DRAFT_ID, decideResult);
 }
 
 function ctrlWithApprovals(
-  svc: ReturnType<typeof makeSvc>,
+  svc: WearableInsightsServiceDouble,
   deps: ApprovalDeps,
 ): WearableInsightsController {
-  return new WearableInsightsController(
-    svc as never,
-    deps.approvals,
-    deps.prisma,
-  );
+  return makeController({ svc, approvals: deps.approvals, prisma: deps.prisma });
 }
 
 describe('WearableInsightsController', () => {
@@ -148,11 +134,7 @@ describe('WearableInsightsController', () => {
   describe('getCoachInsight', () => {
     it('validates query, checks ownership, returns coach schema', async () => {
       const svc = makeSvc();
-      const ctrl = new WearableInsightsController(
-        svc as never,
-        makeApprovalDeps({}).approvals,
-        makeApprovalDeps({}).prisma,
-      );
+      const ctrl = makeController({ svc });
       const out = await ctrl.getCoachInsight(reqFor('coach', COACH), {
         clientId: CLIENT,
         bucket: WearableMetricBucket.SLEEP_RECOVERY,
@@ -171,7 +153,7 @@ describe('WearableInsightsController', () => {
 
     it('rejects an invalid clientId with 400', async () => {
       const svc = makeSvc();
-      const ctrl = new WearableInsightsController(svc as never, null as never, null as never);
+      const ctrl = makeController({ svc });
       await expect(
         ctrl.getCoachInsight(reqFor('coach', COACH), {
           clientId: 'not-a-uuid',
@@ -183,7 +165,7 @@ describe('WearableInsightsController', () => {
 
     it('rejects an invalid bucket with 400', async () => {
       const svc = makeSvc();
-      const ctrl = new WearableInsightsController(svc as never, null as never, null as never);
+      const ctrl = makeController({ svc });
       await expect(
         ctrl.getCoachInsight(reqFor('coach', COACH), {
           clientId: CLIENT,
@@ -240,7 +222,7 @@ describe('WearableInsightsController', () => {
   describe('approveInsight', () => {
     const MATERIALISED = '2026-01-01T00:00:00.000Z';
 
-    function approveBody(action: 'approve' | 'edit' | 'dismiss', body: string) {
+    function approveBody(action: 'approve' | 'edit' | 'reject', body: string) {
       return {
         client_id: CLIENT,
         bucket: WearableMetricBucket.SLEEP_RECOVERY,
@@ -251,7 +233,7 @@ describe('WearableInsightsController', () => {
 
     it('approve → creates draft, decides approved, returns ok shape', async () => {
       const svc = makeSvc();
-      const deps = makeApprovalDeps({
+      const deps = approvalDeps({
         materialised_at: new Date(MATERIALISED),
         decided_at: new Date(MATERIALISED),
       });
@@ -292,7 +274,7 @@ describe('WearableInsightsController', () => {
 
     it('edit → persists the edited body and records the edit note', async () => {
       const svc = makeSvc();
-      const deps = makeApprovalDeps({
+      const deps = approvalDeps({
         materialised_at: new Date(MATERIALISED),
       });
       const ctrl = ctrlWithApprovals(svc, deps);
@@ -314,18 +296,19 @@ describe('WearableInsightsController', () => {
       expect(out.status).toBe('ok');
     });
 
-    it('dismiss → decides rejected, no materialiser dispatch, ok shape', async () => {
+    it('reject → decides rejected, no materialiser dispatch, null materialised_at', async () => {
       const svc = makeSvc();
-      // Rejected drafts have no materialised_at; the wire timestamp falls
-      // back to decided_at.
-      const deps = makeApprovalDeps({
+      // P1-3: a rejected draft has no materialised_at, so the wire field is
+      // null (nothing was materialised). decided_at is present on the row but
+      // is deliberately NOT used as a materialisation timestamp fallback.
+      const deps = approvalDeps({
         materialised_at: null,
         decided_at: new Date(MATERIALISED),
       });
       const ctrl = ctrlWithApprovals(svc, deps);
       const out = await ctrl.approveInsight(
         reqFor('coach', COACH),
-        approveBody('dismiss', 'Not relevant this week.'),
+        approveBody('reject', 'Not relevant this week.'),
       );
 
       expect(deps.decide).toHaveBeenCalledWith(
@@ -334,13 +317,13 @@ describe('WearableInsightsController', () => {
       expect(out).toEqual({
         status: 'ok',
         draft_id: DRAFT_ID,
-        materialised_at: MATERIALISED,
+        materialised_at: null,
       });
     });
 
     it('rejects a malformed body (missing bucket) with 400 before any write', async () => {
       const svc = makeSvc();
-      const deps = makeApprovalDeps({});
+      const deps = approvalDeps({});
       const ctrl = ctrlWithApprovals(svc, deps);
       await expect(
         ctrl.approveInsight(reqFor('coach', COACH), {
@@ -358,7 +341,7 @@ describe('WearableInsightsController', () => {
       svc.assertCoachOwnsClient.mockRejectedValue(
         new BadRequestException('not your client'),
       );
-      const deps = makeApprovalDeps({});
+      const deps = approvalDeps({});
       const ctrl = ctrlWithApprovals(svc, deps);
       await expect(
         ctrl.approveInsight(
@@ -372,7 +355,7 @@ describe('WearableInsightsController', () => {
 
     it('rejects a whitespace-only draft_body with 400', async () => {
       const svc = makeSvc();
-      const deps = makeApprovalDeps({});
+      const deps = approvalDeps({});
       const ctrl = ctrlWithApprovals(svc, deps);
       await expect(
         ctrl.approveInsight(reqFor('coach', COACH), approveBody('approve', '   ')),
@@ -382,7 +365,7 @@ describe('WearableInsightsController', () => {
 
     it('rejects a draft_body longer than 1000 chars with 400', async () => {
       const svc = makeSvc();
-      const deps = makeApprovalDeps({});
+      const deps = approvalDeps({});
       const ctrl = ctrlWithApprovals(svc, deps);
       await expect(
         ctrl.approveInsight(
@@ -395,7 +378,7 @@ describe('WearableInsightsController', () => {
 
     it('rejects an unknown body key (strict schema) with 400', async () => {
       const svc = makeSvc();
-      const deps = makeApprovalDeps({});
+      const deps = approvalDeps({});
       const ctrl = ctrlWithApprovals(svc, deps);
       await expect(
         ctrl.approveInsight(reqFor('coach', COACH), {
@@ -410,7 +393,7 @@ describe('WearableInsightsController', () => {
   describe('getClientInsight', () => {
     it('validates query and returns client schema for the authed user', async () => {
       const svc = makeSvc();
-      const ctrl = new WearableInsightsController(svc as never, null as never, null as never);
+      const ctrl = makeController({ svc });
       const out = await ctrl.getClientInsight(reqFor('student', CLIENT), {
         bucket: WearableMetricBucket.HEALTH_FITNESS,
       });
@@ -429,8 +412,8 @@ describe('WearableInsightsController', () => {
 
     it('returns the strict empty state when the service degrades', async () => {
       const svc = makeSvc();
-      svc.generateForClient.mockResolvedValue(emptyInsight() as never);
-      const ctrl = new WearableInsightsController(svc as never, null as never, null as never);
+      svc.generateForClient.mockResolvedValue(emptyInsight());
+      const ctrl = makeController({ svc });
       const out = await ctrl.getClientInsight(reqFor('student', CLIENT), {
         bucket: WearableMetricBucket.HEALTH_FITNESS,
       });
@@ -443,7 +426,7 @@ describe('WearableInsightsController', () => {
 
     it('rejects a missing bucket with 400', async () => {
       const svc = makeSvc();
-      const ctrl = new WearableInsightsController(svc as never, null as never, null as never);
+      const ctrl = makeController({ svc });
       await expect(
         ctrl.getClientInsight(reqFor('student', CLIENT), {}),
       ).rejects.toBeInstanceOf(BadRequestException);
@@ -451,7 +434,7 @@ describe('WearableInsightsController', () => {
 
     it('never calls the coach generator from the client endpoint', async () => {
       const svc = makeSvc();
-      const ctrl = new WearableInsightsController(svc as never, null as never, null as never);
+      const ctrl = makeController({ svc });
       await ctrl.getClientInsight(reqFor('student', CLIENT), {
         bucket: WearableMetricBucket.HEALTH_FITNESS,
       });

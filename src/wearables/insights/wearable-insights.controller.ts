@@ -71,7 +71,7 @@ const ApproveBodySchema = z
       .refine((s) => s.trim().length > 0, {
         message: 'draft_body must not be whitespace-only',
       }),
-    action: z.enum(['approve', 'edit', 'dismiss']),
+    action: z.enum(['approve', 'edit', 'reject']),
   })
   .strict();
 
@@ -81,7 +81,12 @@ const ApproveBodySchema = z
 const ApproveResponseShape = z.object({
   status: z.literal('ok'),
   draft_id: z.string().uuid(),
-  materialised_at: z.string(),
+  // Nullable by contract (HK-6a R2, P1-3): a reject never materialises a
+  // message, so there is no materialisation timestamp to report — the field
+  // is null on the reject branch and an ISO string on approve/edit. This
+  // keeps the two concepts (decision time vs. materialisation time) from
+  // being conflated, which the prior `decided_at`-in-the-slot hack did.
+  materialised_at: z.string().nullable(),
 });
 type ApproveResponseShape = z.infer<typeof ApproveResponseShape>;
 
@@ -133,9 +138,9 @@ export class WearableInsightsController {
   // The action is then dispatched through AiApprovalService.decide():
   //   - approve / edit -> decision 'approved' -> the wearable-message
   //     materialiser sends via MessagingService.sendAsCoach.
-  //   - dismiss        -> decision 'rejected' -> no message; the draft is
-  //     flipped to rejected and audited. materialised_at on the wire is the
-  //     rejection timestamp so the mobile contract stays uniform.
+  //   - reject         -> decision 'rejected' -> no message; the draft is
+  //     flipped to rejected and audited. materialised_at on the wire is null
+  //     (nothing was materialised); the decision still succeeded.
   @Roles('coach', 'owner')
   @UseGuards(JwtAuthGuard, CoachGuard)
   @Throttle({ [THROTTLER_NAMES.COACH_AI_GENERATION]: { ttl: 3_600_000, limit: 60 } })
@@ -189,11 +194,11 @@ export class WearableInsightsController {
       },
     });
 
-    // Dispatch on action. dismiss -> rejected (no send); approve/edit ->
+    // Dispatch on action. reject -> rejected (no send); approve/edit ->
     // approved (materialiser sends). decide() owns the lock, audit, and
     // materialiser dispatch; we let its NotFound/Conflict/Forbidden
     // exceptions propagate untouched (no catch-and-rewrap).
-    const decision = body.action === 'dismiss' ? 'rejected' : 'approved';
+    const decision = body.action === 'reject' ? 'rejected' : 'approved';
     const fresh = await this.approvals.decide({
       draftId: draft.id,
       decider: { id: req.user.id, role: req.user.role },
@@ -206,13 +211,11 @@ export class WearableInsightsController {
       userAgent: extractUserAgent(req),
     });
 
-    // Uniform wire timestamp. For approve/edit it's the materialisation time;
-    // for dismiss it's the decision time. Fall back to now() only if both are
-    // somehow absent (decide() always sets decided_at, so this is defensive).
-    const materialisedAt =
-      fresh.materialised_at?.toISOString() ??
-      fresh.decided_at?.toISOString() ??
-      new Date().toISOString();
+    // Wire timestamp (P1-3): materialised_at is the actual materialisation
+    // time for approve/edit, and null for reject (nothing was materialised).
+    // We report exactly what the draft row carries — no decided_at fallback,
+    // so the field never conflates decision time with materialisation time.
+    const materialisedAt = fresh.materialised_at?.toISOString() ?? null;
 
     // Validate the wire response against the locked contract before returning
     // (defence in depth, same pattern as getCoachInsight).

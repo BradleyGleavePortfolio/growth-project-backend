@@ -33,8 +33,15 @@ function matchesWhere(row: any, where: any): boolean {
 
 function buildPrisma(seed: any[]) {
   const drafts = [...seed];
-  return {
+  const client: any = {
     drafts,
+    // HK-6a R2 (P1-4): decide() wraps the status-flip + linked audit-row update
+    // in an interactive $transaction. Re-use this client as the transaction
+    // client so the in-memory `drafts` array and the same mocked delegates are
+    // observed inside and outside the transaction, exactly as before.
+    $transaction: jest.fn(async (arg: any) =>
+      typeof arg === 'function' ? arg(client) : Promise.all(arg),
+    ),
     aiActionDraft: {
       findUnique: jest.fn(async ({ where }: any) =>
         drafts.find((d) => d.id === where.id) ?? null,
@@ -65,7 +72,8 @@ function buildPrisma(seed: any[]) {
     auditLog: {
       create: jest.fn(async () => ({ id: 'a-1' })),
     },
-  } as any;
+  };
+  return client;
 }
 
 function makeMaterializer(

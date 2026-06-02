@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
-import type { AiActionDraft } from '@prisma/client';
+import type { AiActionDraft, Prisma } from '@prisma/client';
 import { WearableMetricBucket } from '@prisma/client';
 import { PrismaService } from '../../../prisma.service';
 import { MessagingService } from '../../../messaging/messaging.service';
@@ -102,7 +102,20 @@ export class CoachWearableMessageMaterializer implements CapabilityMaterializer 
     return capability === COACH_WEARABLE_MESSAGE_CAPABILITY;
   }
 
-  async materialize(draft: AiActionDraft): Promise<MaterializeResult> {
+  // HK-6a R2 (P1-4): `tx` lets a caller run the materialiser's DB writes
+  // inside an enclosing unit-of-work. It defaults to `this.prisma` so the
+  // standard approve path (and every existing caller) keeps the same
+  // behaviour. NOTE: the idempotency claim (`materialised_at`) is
+  // deliberately the cross-process coordination marker for concurrent
+  // approvers, so production does NOT pass a `tx` that would hide the claim
+  // until commit — see AiApprovalService.decide()'s comment on why the send
+  // and its claim stay outside the decide transaction. The parameter exists
+  // so the materialiser composes with a transaction when a caller genuinely
+  // owns one (e.g. an admin backfill that has no concurrent racer).
+  async materialize(
+    draft: AiActionDraft,
+    tx: Prisma.TransactionClient = this.prisma,
+  ): Promise<MaterializeResult> {
     // Three in-flight states on the draft row (see CoachMessageMaterializer
     // for the full P1-1 / P2-1 derivation):
     //   (a) materialised_at=null, materialised_ref=null — never claimed.
@@ -148,12 +161,12 @@ export class CoachWearableMessageMaterializer implements CapabilityMaterializer 
     //     — rejected-but-sent, the symmetric PRODUCT-1 failure).
     // count=0 means we lost the race (or a STUCK-CLAIM / concurrent
     // reject is present); the race-loser path below handles all three.
-    const claim = await this.prisma.aiActionDraft.updateMany({
+    const claim = await tx.aiActionDraft.updateMany({
       where: { id: draft.id, materialised_at: null, status: 'pending' },
       data: { materialised_at: new Date() },
     });
     if (claim.count === 0) {
-      return this.awaitWinnerOrRecover(draft, payload);
+      return this.awaitWinnerOrRecover(draft, payload, tx);
     }
 
     // Send. If sendAsCoach throws (auth boundary, blocked recipient, DB
@@ -168,7 +181,7 @@ export class CoachWearableMessageMaterializer implements CapabilityMaterializer 
       );
       sentId = created.id;
     } catch (err) {
-      await this.prisma.aiActionDraft
+      await tx.aiActionDraft
         .updateMany({
           where: {
             id: draft.id,
@@ -189,7 +202,7 @@ export class CoachWearableMessageMaterializer implements CapabilityMaterializer 
 
     // Record the downstream ref so support can trace approved-draft ->
     // sent-message without grepping logs.
-    await this.prisma.aiActionDraft.update({
+    await tx.aiActionDraft.update({
       where: { id: draft.id },
       data: { materialised_ref: sentId },
     });
@@ -207,13 +220,14 @@ export class CoachWearableMessageMaterializer implements CapabilityMaterializer 
   private async awaitWinnerOrRecover(
     draft: AiActionDraft,
     payload: CoachWearableMessagePayload,
+    tx: Prisma.TransactionClient = this.prisma,
   ): Promise<MaterializeResult> {
     for (
       let i = 0;
       i < CoachWearableMessageMaterializer.RACE_POLL_ATTEMPTS;
       i++
     ) {
-      const fresh = await this.prisma.aiActionDraft.findUnique({
+      const fresh = await tx.aiActionDraft.findUnique({
         where: { id: draft.id },
       });
       if (!fresh) {
@@ -239,7 +253,7 @@ export class CoachWearableMessageMaterializer implements CapabilityMaterializer 
       if (!fresh.materialised_at) {
         // Winner rolled back. Re-attempt the claim ourselves with the freshly
         // observed draft (state (a)). Recursion is bounded by the poll budget.
-        return this.materialize(fresh as AiActionDraft);
+        return this.materialize(fresh as AiActionDraft, tx);
       }
       await this.sleep(
         CoachWearableMessageMaterializer.RACE_POLL_INTERVAL_MS,

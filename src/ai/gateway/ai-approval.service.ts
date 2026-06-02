@@ -241,14 +241,48 @@ export class AiApprovalService {
         decideGate.materialised_at = null;
       }
     }
-    const decideResult = await this.prisma.aiActionDraft.updateMany({
-      where: decideGate,
-      data: {
-        status,
-        decided_by_id: input.decider.id,
-        decided_at: new Date(),
-        decision_note: input.note ?? null,
-      },
+    // HK-6a R2 (P1-4): the status flip and the linked AiRequestAudit status
+    // update are wrapped in a single interactive $transaction so a mid-flight
+    // crash can never leave `status='approved'/'rejected'` on the draft while
+    // the linked audit row still reads its old approval_status. Before this,
+    // those were two independent writes (the auditor's "status flip with a
+    // missing follow-on audit update" gap). Both run on `tx` so they commit
+    // or roll back together.
+    //
+    // Deliberately OUTSIDE this transaction:
+    //   - The materialiser ran ABOVE (it performs MessagingService.sendAsCoach,
+    //     an external push/notification side-effect that cannot be rolled
+    //     back; the materialised_ref it persists is the committed-success
+    //     marker, and its claim write must stay visible to concurrent
+    //     approvers for the idempotency state machine to work — holding it
+    //     inside an interactive transaction would hide it until commit and
+    //     also pin a DB connection across a network call).
+    //   - The global AuditLog write (best-effort, its own error handling, and
+    //     the terminal write — a crash after it is immaterial).
+    const decideResult = await this.prisma.$transaction(async (tx) => {
+      const flip = await tx.aiActionDraft.updateMany({
+        where: decideGate,
+        data: {
+          status,
+          decided_by_id: input.decider.id,
+          decided_at: new Date(),
+          decision_note: input.note ?? null,
+        },
+      });
+      if (flip.count === 0) {
+        // No row matched the gate (already decided, or the P1-1/P1-A
+        // materialisation invariant not yet satisfied). Return early so the
+        // transaction commits as a no-op and the caller surfaces a 409 — we
+        // do NOT touch the linked audit row in that case.
+        return flip;
+      }
+      // Reflect the decision on the linked audit row, if any. Same tx so it
+      // is atomic with the status flip above.
+      await tx.aiRequestAudit.updateMany({
+        where: { approval_draft_id: draft.id },
+        data: { approval_status: status },
+      });
+      return flip;
     });
     if (decideResult.count === 0) {
       // Another approver already decided this draft (P2-3) OR — for the
@@ -269,16 +303,11 @@ export class AiApprovalService {
       where: { id: draft.id },
     });
     if (!updated) {
-      // Should be unreachable — updateMany returned count=1 a moment ago —
-      // but TypeScript still requires we treat findUnique as nullable.
+      // Should be unreachable — the transaction's updateMany returned count=1
+      // a moment ago — but TypeScript still requires we treat findUnique as
+      // nullable.
       throw new InternalServerErrorException('Draft not found after decide');
     }
-
-    // Reflect the decision on the linked audit row, if any.
-    await this.prisma.aiRequestAudit.updateMany({
-      where: { approval_draft_id: draft.id },
-      data: { approval_status: status },
-    });
 
     await this.audit.write({
       action: status === 'approved' ? 'ai.draft_approved' : 'ai.draft_rejected',

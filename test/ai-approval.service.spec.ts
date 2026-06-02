@@ -20,8 +20,21 @@ function matchesWhere(row: any, where: any): boolean {
 
 function buildPrisma(seed: any[] = []) {
   const drafts: any[] = [...seed];
-  return {
+  const client: any = {
     drafts,
+    // HK-6a R2 (P1-4): decide() now wraps the status-flip + linked audit-row
+    // update in an interactive $transaction. Prisma's interactive transaction
+    // invokes the callback with a transaction client that exposes the same
+    // delegate surface; our mock simply re-uses this client, so the existing
+    // updateMany / aiRequestAudit.updateMany mocks observe the same in-memory
+    // `drafts` array exactly as before.
+    $transaction: jest.fn(async (arg: any) => {
+      if (typeof arg === 'function') {
+        return arg(client);
+      }
+      // Array form (kept for completeness): resolve each promise in order.
+      return Promise.all(arg);
+    }),
     aiActionDraft: {
       findUnique: jest.fn(async ({ where }: any) =>
         drafts.find((d) => d.id === where.id) ?? null,
@@ -62,7 +75,8 @@ function buildPrisma(seed: any[] = []) {
     auditLog: {
       create: jest.fn(async () => ({ id: 'a-1' })),
     },
-  } as any;
+  };
+  return client;
 }
 
 function makeAudit(prisma: any) {

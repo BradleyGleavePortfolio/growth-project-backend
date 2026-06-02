@@ -58,10 +58,16 @@ function makePrisma(): PrismaDouble {
   const updateMany = jest.fn();
   const update = jest.fn();
   const findUnique = jest.fn();
-  const service = {
-    aiActionDraft: { updateMany, update, findUnique },
-  } as never;
-  return { service, updateMany, update, findUnique };
+  // HK-6a R2 (P1-1): narrowly-typed double. `aiActionDraft` is narrowed to the
+  // three methods this materialiser calls and widened to the full delegate;
+  // the whole object is then a `Pick` of PrismaService. No type laundering.
+  const service: Pick<PrismaService, 'aiActionDraft'> = {
+    aiActionDraft: { updateMany, update, findUnique } as Pick<
+      PrismaService['aiActionDraft'],
+      'updateMany' | 'update' | 'findUnique'
+    > as PrismaService['aiActionDraft'],
+  };
+  return { service: service as PrismaService, updateMany, update, findUnique };
 }
 
 function makeMessaging(): {
@@ -69,8 +75,9 @@ function makeMessaging(): {
   sendAsCoach: jest.Mock;
 } {
   const sendAsCoach = jest.fn();
-  const service = { sendAsCoach } as never;
-  return { service, sendAsCoach };
+  // Narrow double exposing only the one method the materialiser calls.
+  const service: Pick<MessagingService, 'sendAsCoach'> = { sendAsCoach };
+  return { service: service as MessagingService, sendAsCoach };
 }
 
 describe('CoachWearableMessageMaterializer', () => {
