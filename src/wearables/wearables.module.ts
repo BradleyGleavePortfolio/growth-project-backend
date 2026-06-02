@@ -5,6 +5,8 @@ import { ConnectionsModule } from './connections/connections.module';
 import { OauthModule } from './oauth/oauth.module';
 import { ConnectorRegistry } from './connector-registry';
 import { InsightsModule } from './insights/insights.module';
+import { SamplesModule } from './samples/samples.module';
+import { PreferencesModule } from './preferences/preferences.module';
 
 /**
  * PR-HK-0 — wearables foundation module.
@@ -44,9 +46,25 @@ import { InsightsModule } from './insights/insights.module';
  * coach + client insight endpoints mount under the wearables feature without
  * touching the PR-HK-0 ingestion seam or the PR-HK-1 connections seam.
  * Disjoint folder (src/wearables/insights/), no shared providers.
+ *
+ * ── PR-HK-3a (pure-additive wiring) ──
+ * Mount {@link SamplesModule} (GET /v1/wearables/samples — the H&F / S&R
+ * read API consumed by the mobile WearablesShell + Metric Detail) and
+ * {@link PreferencesModule} (POST/DELETE /v1/wearables/preferences — the
+ * read-time precedence override the provider-overlap chips write). Both are
+ * disjoint folders (src/wearables/samples/, src/wearables/preferences/) with
+ * no shared providers beyond the @Global PrismaService + the PR-HK-0
+ * IngestionService (re-provided inside SamplesModule), so this block is
+ * strictly additive over the PR-HK-0/1/4 seams.
  */
 @Module({
-  imports: [ConnectionsModule, OauthModule, InsightsModule],
+  imports: [
+    ConnectionsModule,
+    OauthModule,
+    InsightsModule,
+    SamplesModule,
+    PreferencesModule,
+  ],
   providers: [IngestionService, ProviderHttpClient],
   exports: [
     IngestionService,
@@ -55,6 +73,8 @@ import { InsightsModule } from './insights/insights.module';
     OauthModule,
     ConnectorRegistry,
     InsightsModule,
+    SamplesModule,
+    PreferencesModule,
   ],
 })
 export class WearablesModule {}
