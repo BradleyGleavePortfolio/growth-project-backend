@@ -170,9 +170,27 @@ const CLIENT_ACTOR = {
 };
 
 describe('SchedulingService — request + state machine + audit', () => {
+  // Pin the clock to a moment where the hard-coded 2026-06-01 / 2026-06-02
+  // session start_at values are still in the future. Without this, the
+  // production 5-minute future-lead validator (scheduling-session-lifecycle
+  // .service.ts:79-81) correctly rejects every test fixture once the wall
+  // clock crosses 2026-06-01T14:55:00Z. We pin instead of mutating the
+  // fixtures because the tests are exercising the state machine + audit
+  // contract, not the time-skew validator (which has its own coverage).
+  const PINNED_NOW = new Date('2026-05-31T12:00:00Z');
+
   let prisma: any;
   let auditCtx: ReturnType<typeof buildAudit>;
   let svc: SchedulingService;
+
+  beforeAll(() => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    jest.setSystemTime(PINNED_NOW);
+  });
+
+  afterAll(() => {
+    jest.useRealTimers();
+  });
 
   beforeEach(() => {
     // Default state: no provider env flags set — every adapter falls
