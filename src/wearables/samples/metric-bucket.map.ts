@@ -36,6 +36,12 @@ export const METRIC_BUCKET: Readonly<
   SLEEP_DEEP_MIN: WearableMetricBucket.SLEEP_RECOVERY,
   SLEEP_LIGHT_MIN: WearableMetricBucket.SLEEP_RECOVERY,
   SLEEP_AWAKE_MIN: WearableMetricBucket.SLEEP_RECOVERY,
+  // HK-3b parity (recovery bucket): total time asleep + sleep-consistency
+  // bedtime/wake times (the latter encoded as local minute-of-day; the
+  // `_ISO` suffix follows the established time-of-day naming convention).
+  SLEEP_DURATION_MIN: WearableMetricBucket.SLEEP_RECOVERY,
+  SLEEP_ONSET_ISO: WearableMetricBucket.SLEEP_RECOVERY,
+  SLEEP_WAKE_ISO: WearableMetricBucket.SLEEP_RECOVERY,
   SLEEP_EFFICIENCY_PCT: WearableMetricBucket.SLEEP_RECOVERY,
   HRV_MS: WearableMetricBucket.SLEEP_RECOVERY,
   RECOVERY_SCORE: WearableMetricBucket.SLEEP_RECOVERY,
@@ -125,6 +131,13 @@ export const METRIC_AGGREGATION: Readonly<
   SLEEP_DEEP_MIN: 'sum',
   SLEEP_LIGHT_MIN: 'sum',
   SLEEP_AWAKE_MIN: 'sum',
+  // Total time asleep is additive over the night, like the other sleep-stage
+  // minute totals (mirrors SLEEP_TOTAL_MIN).
+  SLEEP_DURATION_MIN: 'sum',
+  // Bedtime / wake-time are point-in-time minute-of-day readings: take the
+  // latest reading within the bucket, exactly like the other `last` metrics.
+  SLEEP_ONSET_ISO: 'last',
+  SLEEP_WAKE_ISO: 'last',
   SLEEP_EFFICIENCY_PCT: 'avg',
   RESPIRATORY_RATE_BRPM: 'avg',
   SPO2_PCT: 'avg',
