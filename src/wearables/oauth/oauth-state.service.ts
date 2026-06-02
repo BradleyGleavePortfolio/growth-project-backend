@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, Optional, OnModuleDestroy } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { WearableProvider } from '@prisma/client';
 import { generatePkcePair, PKCE_CHALLENGE_METHOD } from './pkce.util';
@@ -149,11 +149,12 @@ export class OauthStateService implements OnModuleDestroy {
   private readonly store: OauthStateStore;
 
   /**
-   * @param store optional injected store (tests pass an in-memory or fake
-   *   store). In production the constructor selects Redis when `REDIS_URL` is
-   *   set, otherwise the in-memory fallback.
+   * @param store optional injected store (`@Optional()` because the type is an
+   *   interface and Nest cannot reflect on it). Tests pass an in-memory or
+   *   fake store. In production the constructor selects Redis when `REDIS_URL`
+   *   is set, otherwise the in-memory fallback.
    */
-  constructor(store?: OauthStateStore) {
+  constructor(@Optional() store?: OauthStateStore) {
     this.store = store ?? OauthStateService.resolveStore(this.logger);
   }
 
