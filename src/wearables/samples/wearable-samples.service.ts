@@ -52,6 +52,43 @@ import {
  *  - #21 no N+1: at most a bounded number of queries (one resolveBest or one
  *    findMany per metric in the bucket); aggregation is pushed into Postgres.
  */
+
+/**
+ * Prisma error codes that signify the database was UNREACHABLE (connectivity),
+ * as opposed to a query/schema/permission fault. These are the only conditions
+ * under which the boot-time `WearableMetricDef` cross-check is allowed to be
+ * skipped (fail-open onto the compile-time mirrors). Sourced from Prisma's
+ * common-error reference:
+ *   P1001 can't reach DB server, P1002 server timed out (TLS handshake),
+ *   P1008 operation timed out, P1011 TLS connection error,
+ *   P1017 server has closed the connection.
+ */
+const PRISMA_CONNECTIVITY_CODES: ReadonlySet<string> = new Set([
+  'P1001',
+  'P1002',
+  'P1008',
+  'P1011',
+  'P1017',
+]);
+
+/**
+ * True ONLY for errors that mean the database could not be reached at boot:
+ * a `PrismaClientInitializationError` (engine could not connect), or a
+ * `PrismaClientKnownRequestError` carrying one of {@link PRISMA_CONNECTIVITY_CODES}.
+ * Everything else (empty table, schema/permission faults, malformed enum, seed
+ * drift, timeouts) returns false so the caller fails LOUD rather than silently
+ * masking a real configuration bug.
+ */
+export function isConnectivityError(err: unknown): boolean {
+  if (err instanceof Prisma.PrismaClientInitializationError) {
+    return true;
+  }
+  if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    return PRISMA_CONNECTIVITY_CODES.has(err.code);
+  }
+  return false;
+}
+
 @Injectable()
 export class WearableSamplesService implements OnModuleInit {
   private readonly logger = new Logger(WearableSamplesService.name);
@@ -100,38 +137,66 @@ export class WearableSamplesService implements OnModuleInit {
    *     surface LOUD rather than silently defaulting.
    *
    * On ANY drift we log an error and THROW so the mismatch fails the boot
-   * (never a silent wrong-bucket / wrong-aggregation read). When the table is
-   * unreachable at boot (e.g. a unit context with no DB) we keep the
-   * compile-time mirrors — they are the authoritative fallback, not a guess.
+   * (never a silent wrong-bucket / wrong-aggregation read). The boot catch is
+   * narrowed to connectivity-class Prisma errors (see {@link isConnectivityError}):
+   * only when the database is unreachable at boot (e.g. a unit context with no
+   * DB) do we keep the compile-time mirrors — they are the authoritative
+   * fallback, not a guess. An empty defs table, a schema/permission fault, a
+   * malformed enum, or seed/map drift all rethrow and fail the boot LOUD.
    */
   async onModuleInit(): Promise<void> {
-    let defs: Array<{
-      metric: WearableMetricType;
-      bucket: WearableMetricBucket;
-      aggregation: string;
-    }>;
     try {
-      defs = await this.raceTimeout(
+      const defs = await this.raceTimeout(
         this.prisma.wearableMetricDef.findMany({
           select: { metric: true, bucket: true, aggregation: true },
         }),
       );
+
+      // Empty table is a real config bug (seed never applied), NOT a
+      // connectivity condition — it must fail the boot LOUD rather than
+      // silently running on the compile-time mirrors.
+      if (defs.length === 0) {
+        this.logger.error({ event: 'wearable_metric_def_bootstrap_empty' });
+        throw new Error('WearableMetricDef seed missing');
+      }
+
+      this.assertMetricMapMatchesSeed(defs);
     } catch (err) {
-      // DB unreachable at boot: retain the compile-time mirrors (authoritative
-      // fallback). We log so the absence of a live cross-check is visible —
-      // this is NOT a silent swallow of an application error.
-      this.logger.warn({
-        event: 'wearable_metric_def_bootstrap_skipped',
+      // Fail-open is permitted ONLY when the database was unreachable at boot
+      // (e.g. a unit context with no DB): keep the compile-time mirrors, which
+      // are the authoritative fallback. We log so the absence of a live
+      // cross-check is visible — this is NOT a silent swallow.
+      if (isConnectivityError(err)) {
+        this.logger.warn({
+          event: 'wearable_metric_def_bootstrap_skipped',
+          reason: err instanceof Error ? err.message : 'unknown',
+        });
+        return;
+      }
+      // Anything else — empty table, schema/permission fault, malformed enum,
+      // or seed/map drift — is a config bug we surface LOUD by rethrowing.
+      this.logger.error({
+        event: 'wearable_metric_def_bootstrap_failed',
         reason: err instanceof Error ? err.message : 'unknown',
       });
-      return;
+      throw err;
     }
+  }
 
-    if (defs.length === 0) {
-      this.logger.warn({ event: 'wearable_metric_def_bootstrap_empty' });
-      return;
-    }
-
+  /**
+   * Cross-check the live `WearableMetricDef` rows against the compile-time
+   * mirrors and adopt the seeded aggregations. On ANY drift (wrong bucket,
+   * non-canonical aggregation, or an aggregation that disagrees with the
+   * mirror) we log an error and THROW so the mismatch fails the boot — never a
+   * silent wrong-bucket / wrong-aggregation read.
+   */
+  private assertMetricMapMatchesSeed(
+    defs: Array<{
+      metric: WearableMetricType;
+      bucket: WearableMetricBucket;
+      aggregation: string;
+    }>,
+  ): void {
     const drift: string[] = [];
     const aggregation: Record<WearableMetricType, MetricAggregation> = {
       ...METRIC_AGGREGATION,

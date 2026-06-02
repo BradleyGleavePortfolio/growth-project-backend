@@ -5,6 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
+  Prisma,
   WearableMetricBucket,
   WearableMetricType,
   WearableProvider,
@@ -571,5 +572,83 @@ describe('WearableSamplesService — def-driven aggregation + freshness bucket f
     };
     const svc = new WearableSamplesService(prisma as never, {} as never);
     await expect(svc.onModuleInit()).resolves.toBeUndefined();
+  });
+});
+
+// ── R65 #36: the onModuleInit boot catch is NARROWED to connectivity-class
+//    Prisma errors. A DB-unreachable boot fails open onto the compile-time
+//    mirrors; everything else (empty seed table, a non-connectivity Prisma
+//    fault, or seed/map drift) fails the boot LOUD by rethrowing. Previously
+//    the catch swallowed ALL errors and masked real config bugs.
+describe('WearableSamplesService — onModuleInit boot catch narrowing', () => {
+  // A connectivity-class error means the engine could not reach the database
+  // at boot. We build the service with only the def query wired since
+  // onModuleInit touches nothing else.
+  function bootService(findMany: jest.Mock): WearableSamplesService {
+    const prisma = { wearableMetricDef: { findMany } };
+    return new WearableSamplesService(prisma as never, {} as never);
+  }
+
+  it('keeps the compile-time mirrors when the database is unreachable at boot', async () => {
+    const initError = new Prisma.PrismaClientInitializationError(
+      'Can\'t reach database server',
+      '5.0.0',
+      'P1001',
+    );
+    const svc = bootService(jest.fn(async () => {
+      throw initError;
+    }));
+    const warn = jest.spyOn((svc as unknown as { logger: { warn: jest.Mock } }).logger, 'warn');
+    // DB unreachable is the ONLY fail-open case: no throw, and a warn is logged
+    // so the skipped cross-check is visible (never a silent swallow).
+    await expect(svc.onModuleInit()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'wearable_metric_def_bootstrap_skipped' }),
+    );
+  });
+
+  it('treats a P1017 closed-connection known-request error as connectivity and keeps mirrors', async () => {
+    const closed = new Prisma.PrismaClientKnownRequestError(
+      'Server has closed the connection',
+      { code: 'P1017', clientVersion: '5.0.0' },
+    );
+    const svc = bootService(jest.fn(async () => {
+      throw closed;
+    }));
+    await expect(svc.onModuleInit()).resolves.toBeUndefined();
+  });
+
+  it('throws WearableMetricDef seed missing when the defs table is empty at boot', async () => {
+    // An empty table is a real config bug (seed never applied), NOT a
+    // connectivity condition — it must fail the boot, not run on mirrors.
+    const svc = bootService(jest.fn(async () => []));
+    await expect(svc.onModuleInit()).rejects.toThrow('WearableMetricDef seed missing');
+  });
+
+  it('rethrows a non-connectivity Prisma error (P2002) instead of masking it', async () => {
+    const known = new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed',
+      { code: 'P2002', clientVersion: '5.0.0' },
+    );
+    const svc = bootService(jest.fn(async () => {
+      throw known;
+    }));
+    // P2002 is a query/constraint fault, not connectivity — surface it LOUD.
+    await expect(svc.onModuleInit()).rejects.toBe(known);
+  });
+
+  it('rethrows a seed/map drift error raised while validating the seed', async () => {
+    // RESTING_HEART_RATE_BPM maps to SLEEP_RECOVERY; seeding HEALTH_FITNESS is
+    // drift. The drift Error is not connectivity, so it must rethrow.
+    const svc = bootService(
+      jest.fn(async () => [
+        {
+          metric: WearableMetricType.RESTING_HEART_RATE_BPM,
+          bucket: WearableMetricBucket.HEALTH_FITNESS,
+          aggregation: 'avg',
+        },
+      ]),
+    );
+    await expect(svc.onModuleInit()).rejects.toThrow(/map drift/i);
   });
 });
