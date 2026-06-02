@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -86,11 +87,13 @@ export class WearableSamplesService {
     }
 
     // Reject a metric that does not live in the requested bucket (#8). The
-    // controller already validated each field's type; this is the cross-field
-    // semantic check the enum alone cannot express.
+    // controller's Zod superRefine is the primary gate (returns 400
+    // WEARABLE_SAMPLES_QUERY_INVALID); this is defense-in-depth for any direct
+    // service caller. It is a query-VALIDATION failure (400) — NOT a 403:
+    // confusing the two ruins client error UX (P1 #5 / R0 Notion test).
     if (query.metric && METRIC_BUCKET[query.metric] !== query.bucket) {
-      throw new ForbiddenException({
-        error: 'WEARABLE_SAMPLES_FORBIDDEN',
+      throw new BadRequestException({
+        error: 'WEARABLE_SAMPLES_QUERY_INVALID',
         message: `metric ${query.metric} does not belong to bucket ${query.bucket}`,
       });
     }
@@ -187,8 +190,22 @@ export class WearableSamplesService {
       provider: r.provider,
     }));
 
+    // Distinct providers actually present in the returned rows. In
+    // preferredOnly mode resolveBest yields a single provider; in compare-all
+    // mode (preferredOnly=false) this can be several. The aggregation MUST be
+    // scoped to EXACTLY this set so the buckets and the `samples` array agree
+    // (P1 #1 — previously buckets used only rows[0].provider while `samples`
+    // spanned every provider, producing an inconsistent envelope).
+    const providersInRows = Array.from(
+      new Set(rows.map((r) => r.provider)),
+    ).sort();
+
+    // `provider_used` is the single resolved provider in preferred mode (or a
+    // single-provider compare-all result); when the response spans MULTIPLE
+    // providers it is null — no one provider "was used". The envelope shape is
+    // identical across both preferredOnly modes (P1 #1).
     const providerUsed: WearableProvider | null =
-      rows.length > 0 ? rows[0].provider : null;
+      providersInRows.length === 1 ? providersInRows[0] : null;
 
     const series: SampleSeries = {
       metric,
@@ -203,7 +220,7 @@ export class WearableSamplesService {
         userId,
         metric,
         query,
-        providerUsed,
+        providersInRows,
       );
     }
 
@@ -266,23 +283,36 @@ export class WearableSamplesService {
    * last/max); we default to AVG which is correct for the rate metrics that
    * dominate the H&F bucket, and SUM for the additive ones.
    *
-   * Scoped to the resolved provider so the buckets match the returned series
-   * (no double-counting across providers).
+   * Scoped to EXACTLY the providers present in the returned `samples` (one in
+   * preferred mode, possibly several in compare-all mode) so the buckets and
+   * the `samples` array always agree (P1 #1 — no provider-scope drift between
+   * the two envelope fields).
    */
   private async aggregate(
     userId: string,
     metric: WearableMetricType,
     query: GetSamplesQuery,
-    provider: WearableProvider | null,
+    providers: WearableProvider[],
   ): Promise<AggBucket[]> {
-    if (!provider || query.granularity === 'raw') return [];
+    if (providers.length === 0 || query.granularity === 'raw') return [];
 
     const unit = WearableSamplesService.TRUNC_UNIT[query.granularity];
     const aggFn = this.aggFunctionFor(metric);
 
-    // `Prisma.raw` is used ONLY for the unit + agg function, both drawn from
-    // closed server-side allow-lists above (never from the request string).
-    // Every value (userId, metric, provider, window) is a BOUND parameter.
+    // The provider IN-list is built from bound parameters, each with an
+    // explicit ::"WearableProvider" cast. Prisma.join interpolates ONLY the
+    // placeholder positions ("$n"), never the values themselves, so this stays
+    // fully parameterized for an arbitrary provider count (P1 #1 + P1 #4).
+    const providerList = Prisma.join(
+      providers.map((p) => Prisma.sql`${p}::"WearableProvider"`),
+    );
+
+    // `Prisma.raw` is used ONLY for the date_trunc unit + agg function name,
+    // both drawn from closed server-side allow-lists above (SQL IDENTIFIERS /
+    // function names, never request VALUES). Every value (userId, metric,
+    // provider, window) is a BOUND parameter — enum values use a bound param
+    // with an explicit ::"<enum>" cast (P1 #4 / R65 #3 / OWASP-1). No request
+    // string is ever interpolated into SQL text.
     const rows = await this.raceTimeout(
       this.prisma.$queryRaw<
         Array<{ bucket_start: Date; agg: number | null; count: bigint }>
@@ -293,8 +323,8 @@ export class WearableSamplesService {
           COUNT(*)::bigint AS count
         FROM "WearableSample"
         WHERE "user_id" = ${userId}
-          AND "metric" = ${Prisma.raw(`'${metric}'`)}::"WearableMetricType"
-          AND "provider" = ${Prisma.raw(`'${provider}'`)}::"WearableProvider"
+          AND "metric" = ${metric}::"WearableMetricType"
+          AND "provider" IN (${providerList})
           AND "start_at" < ${query.to}
           AND "end_at" > ${query.from}
         GROUP BY bucket_start
@@ -323,68 +353,69 @@ export class WearableSamplesService {
   }
 
   /**
-   * Freshness chip data: ONE entry per provider that has a (non-disconnected)
-   * connection in this bucket's domain. Status is derived from last_synced_at.
-   * Drives the client freshness chip (the chip itself is recomputed client-side
-   * per plan line 91 — this is the server-truth fallback).
+   * Freshness chip data: ONE entry per provider with a non-disconnected
+   * connection for this user. Drives the client freshness chip (recomputed
+   * client-side per plan line 91 — this is the server-truth fallback).
+   *
+   * Coverage (P1 #2): EVERY non-disconnected connection is reported, even when
+   * it has zero samples in this bucket. A connected-and-synced provider that
+   * simply has no data in the requested window must still surface so the user
+   * is never silently told a source is missing.
+   *
+   * Status precedence (P1 #3):
+   *  1. A connection in any non-healthy lifecycle state (expired / error /
+   *     revoked / anything that is not `connected`) is ALWAYS `needs_attention`
+   *     regardless of how recent `last_synced_at` is — a recent sync before a
+   *     token expiry must NOT be reported as `current` (that would lie to the
+   *     user about a source that can no longer pull data).
+   *  2. Otherwise a null `last_synced_at` is `never_synced`.
+   *  3. Otherwise recency vs the current-window threshold decides
+   *     `current` vs `needs_attention`.
    */
   private async buildFreshness(
     userId: string,
     bucket: WearableMetricBucket,
   ): Promise<FreshnessProvider[]> {
+    void bucket; // freshness is per-connection, not gated on bucket membership.
     const connections = await this.raceTimeout(
       this.prisma.wearableConnection.findMany({
         where: {
           user_id: userId,
           status: { not: WearableConnectionStatus.DISCONNECTED },
         },
-        select: { provider: true, last_synced_at: true },
+        select: { provider: true, last_synced_at: true, status: true },
         orderBy: { provider: 'asc' },
       }),
     );
 
-    // A provider belongs to this bucket's freshness chip when it has EVER
-    // contributed a sample in the bucket for this user. This keeps the chip
-    // bucket-scoped (plan line 100) without inventing a per-connection bucket
-    // column. The query is a single grouped read over the indexed
-    // (user_id, bucket, start_at) composite — no per-connection loop (#21).
-    const bucketProviders = await this.raceTimeout(
-      this.prisma.wearableSample.findMany({
-        where: { user_id: userId, bucket },
-        select: { provider: true },
-        distinct: ['provider'],
-      }),
-    );
-    const inBucket = new Set<WearableProvider>(
-      bucketProviders.map((r) => r.provider),
-    );
-
-    // Keep a connection in the chip when it has bucket data OR when it has
-    // never synced (so a freshly-connected provider with zero data still
-    // shows as never_synced rather than silently vanishing).
-    const relevant = connections.filter(
-      (c) => inBucket.has(c.provider) || c.last_synced_at === null,
-    );
-
     const now = Date.now();
-    return relevant.map((c) => {
-      let status: FreshnessStatus;
-      if (!c.last_synced_at) {
-        status = 'never_synced';
-      } else if (
-        now - c.last_synced_at.getTime() <=
-        WearableSamplesService.FRESHNESS_CURRENT_MS
-      ) {
-        status = 'current';
-      } else {
-        status = 'needs_attention';
-      }
-      return {
-        provider: c.provider,
-        last_synced_at: c.last_synced_at ? c.last_synced_at.toISOString() : null,
-        status,
-      };
-    });
+    return connections.map((c) => ({
+      provider: c.provider,
+      last_synced_at: c.last_synced_at ? c.last_synced_at.toISOString() : null,
+      status: this.freshnessStatusFor(c.status, c.last_synced_at, now),
+    }));
+  }
+
+  /**
+   * Derive the freshness tier for a single connection (P1 #3). A connection in
+   * any state other than `connected` is forced to `needs_attention` — recency
+   * cannot override a broken/expired link.
+   */
+  private freshnessStatusFor(
+    status: string,
+    lastSyncedAt: Date | null,
+    now: number,
+  ): FreshnessStatus {
+    if (status !== WearableConnectionStatus.CONNECTED) {
+      return 'needs_attention';
+    }
+    if (!lastSyncedAt) {
+      return 'never_synced';
+    }
+    return now - lastSyncedAt.getTime() <=
+      WearableSamplesService.FRESHNESS_CURRENT_MS
+      ? 'current'
+      : 'needs_attention';
   }
 
   /**

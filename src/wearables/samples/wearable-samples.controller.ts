@@ -6,7 +6,14 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { WearableMetricBucket, WearableMetricType } from '@prisma/client';
 import { Throttle } from '@nestjs/throttler';
 import { z } from 'zod';
 import type { AuthedRequest } from '../../auth/auth-request';
@@ -35,6 +42,7 @@ import {
  * Throttle: 60 requests / 60s per user (LOCK).
  */
 @ApiTags('wearables-samples')
+@ApiBearerAuth()
 @Controller('v1/wearables/samples')
 export class WearableSamplesController {
   constructor(private readonly svc: WearableSamplesService) {}
@@ -42,6 +50,77 @@ export class WearableSamplesController {
   @UseGuards(JwtAuthGuard)
   @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: 60 } })
   @Get()
+  @ApiOperation({
+    summary: 'Read normalized wearable samples for a bucket',
+    description:
+      'Returns the H&F / S&R samples series + per-provider freshness for the ' +
+      'authenticated user (or, when `clientId` is supplied, a coach-owned ' +
+      'client). Window is capped at 90 days.',
+  })
+  @ApiQuery({
+    name: 'bucket',
+    enum: WearableMetricBucket,
+    required: true,
+    description: 'UX bucket to read (HEALTH_FITNESS | SLEEP_RECOVERY).',
+  })
+  @ApiQuery({
+    name: 'metric',
+    enum: WearableMetricType,
+    required: false,
+    description:
+      'Single metric to read; must belong to `bucket`. Omit to read every ' +
+      'metric in the bucket.',
+  })
+  @ApiQuery({
+    name: 'from',
+    type: String,
+    required: true,
+    description: 'ISO-8601 window start (inclusive).',
+  })
+  @ApiQuery({
+    name: 'to',
+    type: String,
+    required: true,
+    description: 'ISO-8601 window end (exclusive). `to - from` must be <= 90d.',
+  })
+  @ApiQuery({
+    name: 'clientId',
+    type: String,
+    required: false,
+    description:
+      'UUID of a coached client to read on their behalf (coach/owner only).',
+  })
+  @ApiQuery({
+    name: 'granularity',
+    enum: ['raw', 'hour', 'day'],
+    required: false,
+    description: 'Aggregation granularity. Defaults to `raw` (no buckets).',
+  })
+  @ApiQuery({
+    name: 'preferredOnly',
+    enum: ['true', 'false'],
+    required: false,
+    description:
+      'When true (default) returns the read-precedence provider only; when ' +
+      'false returns every provider (compare-sources mode).',
+  })
+  @ApiResponse({ status: 200, description: 'Samples + freshness envelope (version 1).' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'WEARABLE_SAMPLES_QUERY_INVALID — malformed query (bad enum, window > 90d, ' +
+      'from > to, unknown key, or metric not in bucket).',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'WEARABLE_SAMPLES_FORBIDDEN — coach is not assigned to the requested client.',
+  })
+  @ApiResponse({
+    status: 503,
+    description:
+      'WEARABLE_SAMPLES_DEGRADED — the wearable data store did not respond in time.',
+  })
   async getSamples(
     @Request() req: AuthedRequest,
     @Query() rawQuery: unknown,

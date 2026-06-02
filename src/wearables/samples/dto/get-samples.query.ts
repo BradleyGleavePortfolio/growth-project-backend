@@ -1,5 +1,6 @@
 import { WearableMetricBucket, WearableMetricType } from '@prisma/client';
 import { z } from 'zod';
+import { METRIC_BUCKET } from '../metric-bucket.map';
 
 /**
  * PR-HK-3a — Zod schema for `GET /v1/wearables/samples`.
@@ -55,6 +56,18 @@ export const GetSamplesQuerySchema = z
         code: z.ZodIssueCode.custom,
         path: ['to'],
         message: `window (to - from) must be <= ${MAX_WINDOW_DAYS} days`,
+      });
+    }
+    // Cross-field semantic check the per-field enum alone cannot express: a
+    // supplied `metric` MUST live in the requested `bucket`. This is a query
+    // VALIDATION failure (400 WEARABLE_SAMPLES_QUERY_INVALID), never an
+    // authorization failure (403) — 403 triggers logout flows on the client
+    // and is reserved for the coach-owns-client gate (P1 #5 / R0 Notion test).
+    if (val.metric && METRIC_BUCKET[val.metric] !== val.bucket) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['metric'],
+        message: `metric ${val.metric} does not belong to bucket ${val.bucket}`,
       });
     }
   });

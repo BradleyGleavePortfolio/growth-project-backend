@@ -1,5 +1,4 @@
 import 'reflect-metadata';
-import { NotFoundException } from '@nestjs/common';
 import { WearableMetricType, WearableProvider } from '@prisma/client';
 import { PreferencesService } from '../../src/wearables/preferences/preferences.service';
 
@@ -86,8 +85,19 @@ describe('PreferencesService', () => {
     expect(await svc.get(USER, WearableMetricType.STEPS)).toBeNull();
   });
 
-  it('#36: removing a non-existent override -> 404 (not a silent no-op)', async () => {
+  it('P2 #2: removing a non-existent override is an idempotent no-op (resolves, 204)', async () => {
+    const { svc, deleteMany } = buildService();
+    // DELETE is idempotent: an absent override still reaches the desired
+    // end-state (no override). It must resolve (controller -> 204), not throw.
+    await expect(svc.remove(USER, WearableMetricType.VO2_MAX)).resolves.toBeUndefined();
+    expect(deleteMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('P2 #2: DELETE is idempotent across repeated calls (both resolve)', async () => {
     const { svc } = buildService();
-    await expect(svc.remove(USER, WearableMetricType.VO2_MAX)).rejects.toThrow(NotFoundException);
+    await svc.upsert(USER, { metric: WearableMetricType.STEPS, preferred_provider: WearableProvider.OURA });
+    await expect(svc.remove(USER, WearableMetricType.STEPS)).resolves.toBeUndefined();
+    // Second delete of the now-absent override still resolves cleanly.
+    await expect(svc.remove(USER, WearableMetricType.STEPS)).resolves.toBeUndefined();
   });
 });

@@ -1,5 +1,9 @@
 import 'reflect-metadata';
-import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import {
   WearableMetricBucket,
   WearableMetricType,
@@ -43,10 +47,21 @@ interface FakeOpts {
   preferenceProvider?: WearableProvider | null;
   resolveBestRows?: ReturnType<typeof sample>[];
   allProviderRows?: ReturnType<typeof sample>[];
-  connections?: Array<{ provider: WearableProvider; last_synced_at: Date | null }>;
+  connections?: Array<{
+    provider: WearableProvider;
+    last_synced_at: Date | null;
+    status?: string;
+  }>;
   bucketProviders?: WearableProvider[];
   metricDefUnit?: string | null;
   ownsClient?: boolean;
+}
+
+/** Default a connection to the healthy 'connected' state unless overridden. */
+function withStatus(
+  conns: Array<{ provider: WearableProvider; last_synced_at: Date | null; status?: string }> = [],
+): Array<{ provider: WearableProvider; last_synced_at: Date | null; status: string }> {
+  return conns.map((c) => ({ ...c, status: c.status ?? 'connected' }));
 }
 
 function buildService(opts: FakeOpts = {}): WearableSamplesService {
@@ -76,7 +91,7 @@ function buildService(opts: FakeOpts = {}): WearableSamplesService {
       ),
     },
     wearableConnection: {
-      findMany: jest.fn(async () => opts.connections ?? []),
+      findMany: jest.fn(async () => withStatus(opts.connections ?? [])),
     },
     $queryRaw: jest.fn(async () => []),
   };
@@ -117,28 +132,36 @@ describe('WearableSamplesService', () => {
     expect(out.series[0].samples.every((s) => s.provider === WearableProvider.OURA)).toBe(true);
   });
 
-  it('empty window: provider_used null, empty samples, but freshness still lists the connected zero-data provider', async () => {
-    const lastSync = new Date('2026-01-05T00:00:00.000Z');
+  it('P1 #2: connected+synced provider with ZERO bucket samples still appears in freshness', async () => {
+    const lastSync = new Date(); // recent -> current
     const svc = buildService({
       resolveBestRows: [],
-      connections: [{ provider: WearableProvider.WHOOP, last_synced_at: lastSync }],
-      bucketProviders: [], // no samples in bucket
+      connections: [
+        { provider: WearableProvider.WHOOP, last_synced_at: lastSync, status: 'connected' },
+      ],
+      bucketProviders: [], // no samples in bucket at all
     });
     const out = await svc.getSeries(USER, 'student', query());
     expect(out.series[0].provider_used).toBeNull();
     expect(out.series[0].sample_count).toBe(0);
     expect(out.series[0].samples).toEqual([]);
-    // connected-but-zero-data provider must still appear in freshness via the
-    // never-synced retention rule OR bucket membership. Here last_synced_at is
-    // set, so it only appears if it has bucket data; assert the never-synced
-    // path separately below.
-    expect(Array.isArray(out.freshness.providers)).toBe(true);
+    // The connected, recently-synced provider MUST surface even with zero
+    // bucket data (previously it silently vanished — P1 #2).
+    expect(out.freshness.providers).toEqual([
+      {
+        provider: WearableProvider.WHOOP,
+        last_synced_at: lastSync.toISOString(),
+        status: 'current',
+      },
+    ]);
   });
 
   it('freshness: a never-synced connected provider is retained as never_synced', async () => {
     const svc = buildService({
       resolveBestRows: [],
-      connections: [{ provider: WearableProvider.GARMIN, last_synced_at: null }],
+      connections: [
+        { provider: WearableProvider.GARMIN, last_synced_at: null, status: 'connected' },
+      ],
       bucketProviders: [],
     });
     const out = await svc.getSeries(USER, 'student', query());
@@ -147,12 +170,45 @@ describe('WearableSamplesService', () => {
     ]);
   });
 
+  it('P1 #3: a connection with status=expired and a recent last_synced_at reports needs_attention', async () => {
+    const recent = new Date(); // would be 'current' if status were healthy
+    const svc = buildService({
+      resolveBestRows: [],
+      connections: [
+        { provider: WearableProvider.OURA, last_synced_at: recent, status: 'expired' },
+      ],
+      bucketProviders: [],
+    });
+    const out = await svc.getSeries(USER, 'student', query());
+    // A recent sync must NOT mask an expired connection — it cannot pull data.
+    expect(out.freshness.providers).toEqual([
+      {
+        provider: WearableProvider.OURA,
+        last_synced_at: recent.toISOString(),
+        status: 'needs_attention',
+      },
+    ]);
+  });
+
+  it('P1 #3: a connection with status=error and a recent last_synced_at reports needs_attention', async () => {
+    const recent = new Date();
+    const svc = buildService({
+      resolveBestRows: [],
+      connections: [
+        { provider: WearableProvider.FITBIT, last_synced_at: recent, status: 'error' },
+      ],
+      bucketProviders: [],
+    });
+    const out = await svc.getSeries(USER, 'student', query());
+    expect(out.freshness.providers[0].status).toBe('needs_attention');
+  });
+
   it('freshness: derives current vs needs_attention from last_synced_at', async () => {
     const svc = buildService({
       resolveBestRows: [sample(WearableProvider.OURA, 1, '2026-01-02T00:00:00.000Z')],
       connections: [
-        { provider: WearableProvider.OURA, last_synced_at: new Date() },
-        { provider: WearableProvider.WHOOP, last_synced_at: new Date('2020-01-01T00:00:00.000Z') },
+        { provider: WearableProvider.OURA, last_synced_at: new Date(), status: 'connected' },
+        { provider: WearableProvider.WHOOP, last_synced_at: new Date('2020-01-01T00:00:00.000Z'), status: 'connected' },
       ],
       bucketProviders: [WearableProvider.OURA, WearableProvider.WHOOP],
     });
@@ -177,6 +233,72 @@ describe('WearableSamplesService', () => {
     expect(out.series[0].sample_count).toBe(2);
   });
 
+  it('P1 #1: preferredOnly=false multi-provider envelope matches the preferredOnly=true shape', async () => {
+    // The aggregation must be scoped to EXACTLY the providers present in the
+    // returned samples (both, here) — it must not silently pick rows[0].provider
+    // and drop WHOOP from the buckets. We capture the $queryRaw call to assert
+    // BOTH providers are bound into the IN-list (no provider-scope drift).
+    const captured: unknown[] = [];
+    const prisma = {
+      user: { findFirst: jest.fn(async () => null) },
+      wearableSample: {
+        findMany: jest.fn(async (args: any) =>
+          args?.distinct
+            ? []
+            : [
+                sample(WearableProvider.OURA, 10, '2026-01-02T00:00:00.000Z'),
+                sample(WearableProvider.WHOOP, 11, '2026-01-03T00:00:00.000Z'),
+              ],
+        ),
+      },
+      wearableMetricDef: { findUnique: jest.fn(async () => ({ unit: 'count' })) },
+      wearableConnection: { findMany: jest.fn(async () => []) },
+      $queryRaw: jest.fn(async (...args: unknown[]) => {
+        captured.push(args);
+        return [
+          { bucket_start: new Date('2026-01-02T00:00:00.000Z'), agg: 10, count: BigInt(1) },
+          { bucket_start: new Date('2026-01-03T00:00:00.000Z'), agg: 11, count: BigInt(1) },
+        ];
+      }),
+    };
+    const ingestion = { resolveBest: jest.fn(async () => []) };
+    const svc = new WearableSamplesService(prisma as never, ingestion as never);
+
+    const out = await svc.getSeries(
+      USER,
+      'student',
+      query({ preferredOnly: false, granularity: 'day' }),
+    );
+
+    // Envelope shape parity: same series keys as a preferredOnly=true read.
+    const s = out.series[0];
+    expect(Object.keys(s).sort()).toEqual(
+      ['buckets', 'metric', 'provider_used', 'sample_count', 'samples', 'unit'].sort(),
+    );
+    // Spanning two providers -> provider_used is null (no single source).
+    expect(s.provider_used).toBeNull();
+    expect(s.sample_count).toBe(2);
+    // Buckets are present and span the full window (both provider rows feed it).
+    expect(s.buckets).toHaveLength(2);
+    // Both providers were bound into the aggregation IN-list (parameterized).
+    const sqlText = JSON.stringify(captured);
+    expect(sqlText).toContain('OURA');
+    expect(sqlText).toContain('WHOOP');
+  });
+
+  it('P1 #1: preferredOnly=true single-provider sets provider_used to that provider', async () => {
+    const svc = buildService({
+      resolveBestRows: [
+        sample(WearableProvider.OURA, 5, '2026-01-02T00:00:00.000Z'),
+        sample(WearableProvider.OURA, 6, '2026-01-03T00:00:00.000Z'),
+      ],
+      connections: [],
+      bucketProviders: [],
+    });
+    const out = await svc.getSeries(USER, 'student', query({ granularity: 'day' }));
+    expect(out.series[0].provider_used).toBe(WearableProvider.OURA);
+  });
+
   it('IDOR: coach reading a foreign client -> 403 WEARABLE_SAMPLES_FORBIDDEN, no data read', async () => {
     const svc = buildService({ ownsClient: false });
     await expect(
@@ -195,15 +317,27 @@ describe('WearableSamplesService', () => {
     expect(out.user_id).toBe(CLIENT);
   });
 
-  it('rejects a metric that does not belong to the requested bucket (403)', async () => {
+  it('rejects a metric that does not belong to the requested bucket (400, not 403)', async () => {
     const svc = buildService();
-    await expect(
-      svc.getSeries(
+    const promise = svc.getSeries(
+      USER,
+      'student',
+      query({ bucket: WearableMetricBucket.SLEEP_RECOVERY, metric: WearableMetricType.STEPS }),
+    );
+    // P1 #5: this is a query-validation failure (400), never an authorization
+    // failure (403). 403 would trigger logout flows on the client.
+    await expect(promise).rejects.toBeInstanceOf(BadRequestException);
+    await expect(promise).rejects.not.toBeInstanceOf(ForbiddenException);
+    try {
+      await svc.getSeries(
         USER,
         'student',
         query({ bucket: WearableMetricBucket.SLEEP_RECOVERY, metric: WearableMetricType.STEPS }),
-      ),
-    ).rejects.toThrow(ForbiddenException);
+      );
+    } catch (err) {
+      const resp = (err as BadRequestException).getResponse() as { error: string };
+      expect(resp.error).toBe('WEARABLE_SAMPLES_QUERY_INVALID');
+    }
   });
 
   it('timeout: a Prisma call exceeding the 5s budget -> 503 WEARABLE_SAMPLES_DEGRADED', async () => {

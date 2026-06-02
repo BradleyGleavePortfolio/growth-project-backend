@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { WearableMetricType, WearableProvider } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import {
@@ -19,8 +15,11 @@ import {
  *  - #29 idempotency: the write is a Prisma `upsert` on the UNIQUE
  *    (user_id, metric) key, so repeated/concurrent POSTs converge to exactly
  *    one row (no duplicate-row race, #28).
- *  - #36 no silent failure: a DELETE for a non-existent override is a clean
- *    404, not a silent no-op the client mistakes for success.
+ *  - #29 idempotency (DELETE): removing an override is idempotent — a delete
+ *    for an already-absent override returns 204 No Content, matching the
+ *    builder brief ("Removes override; subsequent reads fall back") and REST
+ *    semantics for an idempotent verb (R0 Notion test). The no-op is logged
+ *    with an `existed:false` flag so it is observable, NOT silent (#36).
  *  - #34 logging: structured event log on write/delete (ids + metric +
  *    provider only — no health values are ever involved here).
  */
@@ -71,22 +70,20 @@ export class PreferencesService {
 
   /**
    * Remove the (user, metric) override so subsequent reads fall back to
-   * recency. A missing override is a 404 (not a silent no-op, #36).
+   * recency. IDEMPOTENT (P2 #2): deleting an already-absent override is a
+   * successful no-op (the controller returns 204) — DELETE is an idempotent
+   * verb and the desired end-state (no override) is reached either way. The
+   * no-op is logged with `existed:false` so it is observable, not silent (#36).
    */
   async remove(userId: string, metric: WearableMetricType): Promise<void> {
     const { count } = await this.prisma.wearableUserMetricPreference.deleteMany({
       where: { user_id: userId, metric },
     });
-    if (count === 0) {
-      throw new NotFoundException({
-        error: 'WEARABLE_PREFERENCE_NOT_FOUND',
-        message: `No preferred-source override set for ${metric}`,
-      });
-    }
     this.logger.log({
       event: 'wearable_preference_delete',
       user_id: userId,
       metric,
+      existed: count > 0,
     });
   }
 

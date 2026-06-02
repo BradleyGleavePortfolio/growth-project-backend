@@ -142,6 +142,26 @@ describe('WearableSamplesController', () => {
     it('rejects a non-UUID clientId', async () => {
       await expectInvalid({ ...baseQuery(), clientId: 'not-a-uuid' });
     });
+
+    it('rejects a SQL-injection-shaped metric at the Zod layer — P1 #4', async () => {
+      // A malicious string must be rejected as 400 by Zod (nativeEnum) and
+      // never reach the SQL layer. This double-binds defense alongside the
+      // bound-parameter + enum-cast aggregation (no Prisma.raw on values).
+      await expectInvalid({
+        ...baseQuery(),
+        metric: "STEPS'; DROP TABLE \"WearableSample\"; --",
+      });
+    });
+
+    it('rejects a metric/bucket mismatch as 400 (not 403) — P1 #5', async () => {
+      // STEPS is a HEALTH_FITNESS metric; pairing it with SLEEP_RECOVERY is a
+      // query-validation failure (400), never an authorization failure (403).
+      await expectInvalid({
+        ...baseQuery(),
+        bucket: WearableMetricBucket.SLEEP_RECOVERY,
+        metric: WearableMetricType.STEPS,
+      });
+    });
   });
 
   describe('happy path + delegation', () => {
