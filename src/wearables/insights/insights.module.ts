@@ -15,7 +15,14 @@ import { InsightCacheService } from './insight-cache.service';
  *   - {@link InsightCacheService} — 6h TTL read/write over the PR-HK-0
  *     WearableInsightCache table (sync-driven invalidation is a row delete,
  *     performed by PR-HK-0's IngestionService — not edited here).
- *   - {@link WearableInsightsController} — coach + client GET endpoints.
+ *   - {@link WearableInsightsController} — coach + client GET endpoints plus
+ *     the HK-6a coach approval POST endpoint.
+ *
+ * PR-HK-6 (HK-6a): the controller additionally injects AiApprovalService
+ * (exported from the @Global AiGatewayModule) and PrismaService (global) for
+ * the approve endpoint. Neither requires an import here — AiGatewayModule's
+ * @Global registration provides AiApprovalService app-wide, and PrismaModule
+ * is global too. No provider/import change is needed.
  *
  * REUSE, no edits:
  *   - AiGatewayService (src/ai/gateway) is injected directly — the
