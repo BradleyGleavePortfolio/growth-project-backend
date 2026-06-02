@@ -24,6 +24,7 @@ import { Throttle } from '@nestjs/throttler';
 import { z } from 'zod';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { JwtAuthGuard } from '../../auth/auth.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { THROTTLER_NAMES } from '../../throttler/throttler.config';
 import { PreferencesService } from './preferences.service';
 import {
@@ -47,6 +48,12 @@ import {
 export class PreferencesController {
   constructor(private readonly svc: PreferencesService) {}
 
+  // TODO(HK-6b): row-level coach/owner scoping — the service currently writes
+  // to the caller's own (req.user.id) preference only. Coach-on-behalf-of an
+  // assigned client (Bradley option (ii)) requires the service/DTO to accept
+  // and validate a target clientId against the coach assignment relation. The
+  // decorator gates the door; the on-behalf plumbing lands in HK-6b.
+  @Roles('student', 'coach')
   @UseGuards(JwtAuthGuard)
   @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: 60 } })
   @Post()
@@ -91,6 +98,9 @@ export class PreferencesController {
     return PreferenceResponseSchema.parse(payload);
   }
 
+  // TODO(HK-6b): row-level coach/owner scoping — same as upsert above; the
+  // coach-on-behalf-of-client target clientId plumbing lands in HK-6b.
+  @Roles('student', 'coach')
   @UseGuards(JwtAuthGuard)
   @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: 60 } })
   @Delete(':metric')

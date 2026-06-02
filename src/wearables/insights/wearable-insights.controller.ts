@@ -81,6 +81,7 @@ export class WearableInsightsController {
   // Gated by JwtAuthGuard only (any authenticated user reads their OWN
   // insight — subjectUserId is always req.user.id, so there is no IDOR
   // surface). Throttled per user.
+  @Roles('student')
   @UseGuards(JwtAuthGuard)
   @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 3_600_000, limit: 60 } })
   @Get('client')

@@ -19,6 +19,7 @@ import { Throttle } from '@nestjs/throttler';
 import { z } from 'zod';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { JwtAuthGuard } from '../../auth/auth.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { THROTTLER_NAMES } from '../../throttler/throttler.config';
 import { WearableSamplesService } from './wearable-samples.service';
 import { GetSamplesQuerySchema } from './dto/get-samples.query';
@@ -49,6 +50,7 @@ import { SamplesResponseDto } from './dto/sample-response.dto';
 export class WearableSamplesController {
   constructor(private readonly svc: WearableSamplesService) {}
 
+  @Roles('student', 'coach', 'owner')
   @UseGuards(JwtAuthGuard)
   @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: 60 } })
   @Get()

@@ -17,6 +17,7 @@ import { Throttle } from '@nestjs/throttler';
 import { WearableProvider } from '@prisma/client';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import type { AuthedRequest } from '../../auth/auth-request';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { ConnectionsService } from './connections.service';
 import { ConnectProviderDto } from './dto/connect-provider.dto';
 import { OauthCallbackDto } from './dto/oauth-callback.dto';
@@ -56,6 +57,7 @@ export class ConnectionsController {
    * stopping automated abuse of the outbound OAuth round-trip.
    */
   @Post('oauth/start')
+  @Roles('student')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   async startOauth(
@@ -73,6 +75,7 @@ export class ConnectionsController {
    * returned — the response is just `{success, provider}`.
    */
   @Get('oauth/callback')
+  @Roles('student')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
   async oauthCallback(
@@ -90,6 +93,7 @@ export class ConnectionsController {
    * ever sees their own connections.
    */
   @Get()
+  @Roles('student', 'coach')
   async list(
     @Request() req: AuthedRequest,
   ): Promise<SafeWearableConnection[]> {
@@ -102,6 +106,7 @@ export class ConnectionsController {
    * `:provider` param is enum-validated. IDOR-safe: scoped to `req.user.id`.
    */
   @Delete(':provider')
+  @Roles('student')
   @HttpCode(HttpStatus.OK)
   async disconnect(
     @Request() req: AuthedRequest,
