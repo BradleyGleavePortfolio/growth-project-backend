@@ -353,6 +353,60 @@ describe('GarminWebhookController', () => {
     expect(serializedLog).not.toContain(USER_ACCESS_TOKEN);
   });
 
+  // ── Ingest-failure recovery: a FAILED status write is never swallowed ───
+
+  it('on a failed status-mark write, logs a redacted secondary failure (no silent swallow) and still rethrows the original error', async () => {
+    // Primary ingest fails, AND the best-effort status='error' write also
+    // throws — its message embeds the raw Garmin userId so we can prove the
+    // secondary log is redacted, not raw. Against the old `.catch(() =>
+    // undefined)` this branch logged nothing → this test would fail.
+    ingestion.ingest.mockRejectedValueOnce(new Error('ingest exploded'));
+    const markFailure = new Error(
+      `db write failed for user ${GARMIN_USER}: connection pool exhausted`,
+    );
+    prisma.wearableConnection.update.mockRejectedValueOnce(markFailure);
+
+    const controllerLogger = (
+      controller as unknown as {
+        logger: { error: (...a: unknown[]) => void };
+      }
+    ).logger;
+    const errorSpy = jest
+      .spyOn(controllerLogger, 'error')
+      .mockImplementation(() => undefined);
+
+    const rawBody = dailyEnvelope('daily-1');
+
+    // The ORIGINAL ingest error must still propagate (not the mark error).
+    await expect(
+      controller.handle(makeReq(rawBody, pushHeaders())),
+    ).rejects.toThrow('ingest exploded');
+
+    // The failed mark write is observable: a structured secondary error log.
+    const markLog = errorSpy.mock.calls
+      .map((c) => c[0] as { msg?: string })
+      .find((a) => a?.msg === 'wearables.garmin.webhook.error_marking_failed');
+    expect(markLog).toBeDefined();
+    const typedMarkLog = markLog as unknown as {
+      msg: string;
+      conn_id: string;
+      user_hash: string;
+      error_code: string;
+      error_class: string;
+      error_message: string;
+    };
+    expect(typedMarkLog.error_code).toBe('GARMIN_ERROR_MARKING_FAILED');
+    expect(typedMarkLog.error_class).toBe('Error');
+    expect(typedMarkLog.conn_id).toBe('conn-uuid-1');
+    expect(typedMarkLog.user_hash).toBe(hashGarminUserId(GARMIN_USER));
+    // The raw Garmin userId from the mark-failure message must be redacted.
+    const serialized = JSON.stringify(typedMarkLog);
+    expect(serialized).not.toContain(GARMIN_USER);
+    expect(typedMarkLog.error_message).toContain('[redacted');
+    // No dedup row was committed → Garmin redelivery reprocesses.
+    expect(prisma.wearableProcessedEvent.createMany).not.toHaveBeenCalled();
+  });
+
   // ── (5) Deregistration → flips connection status to 'disconnected' ──────
 
   it('on deregistration push soft-disconnects matching connection(s)', async () => {

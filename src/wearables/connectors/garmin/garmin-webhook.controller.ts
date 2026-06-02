@@ -187,15 +187,35 @@ export class GarminWebhookController {
         // user id + token/secret fragments and yields a structured, length-
         // capped descriptor (Wave-2 audit pattern #3, PII/token redaction).
         const redacted = redactGarminError(err, summary.userId);
-        await this.prisma.wearableConnection
-          .update({
+        // Mark the connection in error state — best effort, but NEVER silent.
+        // If this secondary write fails we log a redacted, structured record
+        // (no PII/token text) so the failed status write stays observable; the
+        // original ingest error still rethrows below (#36 no silent failure).
+        try {
+          await this.prisma.wearableConnection.update({
             where: { id: connection.id },
             data: {
               status: 'error',
               last_error: redacted.redacted_message,
             },
-          })
-          .catch(() => undefined);
+          });
+        } catch (markErr) {
+          const markRedacted = redactGarminError(
+            markErr,
+            summary.userId,
+            'GARMIN_ERROR_MARKING_FAILED',
+          );
+          this.logger.error({
+            msg: 'wearables.garmin.webhook.error_marking_failed',
+            provider: 'GARMIN',
+            type: event.type,
+            conn_id: connection.id,
+            user_hash: hashGarminUserId(summary.userId),
+            error_code: markRedacted.error_code,
+            error_class: markRedacted.error_class,
+            error_message: markRedacted.redacted_message,
+          });
+        }
         this.logger.error({
           msg: 'wearables.garmin.webhook.ingest_failure',
           provider: 'GARMIN',
