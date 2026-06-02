@@ -33,7 +33,7 @@ const CALLBACK_SECRET = 'hook-secret-1';
  * body of the four event fields, NO synthetic signature header, and the
  * callback secret carried on the registered callback URL as `?secret=`
  * (Express surfaces it on `req.query`). `secret` overrides let tests exercise
- * the authentication gate without stubbing the connector verifier.
+ * the authentication gate against the real connector verifier.
  */
 function makeReq(
   form = FORM,
@@ -296,7 +296,7 @@ describe('WithingsWebhookController — secret callback URL authentication (real
 
   // Wire a controller whose connector uses the REAL verifyWebhook so the
   // end-to-end secret-URL auth path (query → header → constant-time compare)
-  // is exercised, not a stub.
+  // is exercised against production verification logic, not a mock.
   function realSetup() {
     const processedEvent = {
       findUnique: jest.fn(async () => null),

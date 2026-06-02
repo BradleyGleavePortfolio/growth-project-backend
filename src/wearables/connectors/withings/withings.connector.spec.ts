@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { WearableConnection, WearableProvider } from '@prisma/client';
 import {
   ProviderHttpClient,
@@ -14,12 +15,13 @@ import { PrismaService } from '../../../prisma.service';
 /**
  * PR-HK-2.i connector tests — real-value assertions.
  *
- * `ProviderHttpClient` is stubbed so no real network is touched: `request`
- * returns a fake `Response`-like with `.json()`. OAuth + webhook env is set in
- * beforeEach so the URL/token/verify paths are exercised deterministically.
+ * `ProviderHttpClient` is replaced with a mock so no real network is touched:
+ * `request` returns a fake `Response`-like with `.json()`. OAuth + webhook env
+ * is set in beforeEach so the URL/token/verify paths are exercised
+ * deterministically and asserted against concrete provider-shaped values.
  */
 
-/** Minimal Prisma stub exposing only the connection.update path. */
+/** Minimal Prisma mock exposing only the connection.update path. */
 function makePrisma(): { prisma: PrismaService; update: jest.Mock } {
   const update = jest.fn(async () => ({}));
   const prisma = {
@@ -504,6 +506,41 @@ describe('WithingsConnector — outage marking', () => {
     enqueue(new Error('withings.backfill.measure: HTTP 500'));
     const c = new WithingsConnector(client);
     await expect(c.backfill(conn, new Date())).rejects.toThrow(/HTTP 500/);
+  });
+
+  it('rethrows the ORIGINAL provider error and logs (does not swallow) when the error-status persistence itself fails', async () => {
+    const { client, enqueue } = makeHttp();
+    const update = jest.fn(async () => {
+      throw new Error('db connection lost while persisting last_error');
+    });
+    const prisma = {
+      wearableConnection: { update },
+    } as unknown as PrismaService;
+    enqueue(new Error('withings.backfill.measure: HTTP 502 upstream down'));
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    const c = new WithingsConnector(client, prisma);
+
+    // The original provider failure must still propagate, NOT the DB error.
+    await expect(c.backfill(conn, new Date())).rejects.toThrow(/HTTP 502/);
+    expect(update).toHaveBeenCalledTimes(1);
+
+    // The marking failure must be observable via a structured log, not silent.
+    const markFailLog = errorSpy.mock.calls.find(
+      (call) =>
+        typeof call[0] === 'object' &&
+        (call[0] as { msg?: string }).msg ===
+          'wearables.withings.error_marking_failed',
+    );
+    expect(markFailLog).toBeDefined();
+    const logged = markFailLog![0] as {
+      conn_id?: string;
+      error_message?: string;
+    };
+    expect(logged.conn_id).toBe('conn-err-1');
+    expect(logged.error_message).toContain('db connection lost');
+    errorSpy.mockRestore();
   });
 });
 

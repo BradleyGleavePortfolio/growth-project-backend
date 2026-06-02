@@ -650,12 +650,26 @@ export class WithingsConnector implements WearableConnector {
       error_message: message,
     });
     if (!this.prisma || !conn?.id) return;
-    await this.prisma.wearableConnection
-      .update({
+    // Best-effort status persistence. The provider error has already been
+    // logged above and is rethrown by the caller; if this secondary write
+    // fails we log a structured, redacted warning rather than swallow it
+    // silently (#36).
+    try {
+      await this.prisma.wearableConnection.update({
         where: { id: conn.id },
         data: { status: 'error', last_error: message },
-      })
-      .catch(() => undefined);
+      });
+    } catch (markErr) {
+      this.logger.error({
+        msg: 'wearables.withings.error_marking_failed',
+        op,
+        provider: 'WITHINGS',
+        conn_id: conn.id,
+        error_class: (markErr as Error)?.name ?? typeof markErr,
+        // Redact before emit — a DB error may echo column/connection data.
+        error_message: redactErrorMessage(markErr),
+      });
+    }
   }
 
   private requireEnv(name: string): string {

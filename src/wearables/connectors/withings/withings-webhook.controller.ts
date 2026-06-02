@@ -203,15 +203,29 @@ export class WithingsWebhookController {
         // BEFORE it is persisted to `last_error` or logged (audit pattern
         // #7 / #1 / #12) — never the raw exception string.
         const safeError = redactErrorMessage(err);
-        await this.prisma.wearableConnection
-          .update({
+        // Best-effort: mark the connection in error state. This is secondary to
+        // the primary fetch/ingest failure, but the inner failure is NEVER
+        // swallowed silently (#36) — if the status write itself fails we log a
+        // structured, redacted warning before the original error rethrows.
+        try {
+          await this.prisma.wearableConnection.update({
             where: { id: connection.id },
             data: {
               status: 'error',
               last_error: safeError,
             },
-          })
-          .catch(() => undefined);
+          });
+        } catch (markErr) {
+          this.logger.error({
+            msg: 'wearables.withings.webhook.error_marking_failed',
+            provider: 'WITHINGS',
+            conn_id: connection.id,
+            appli: event.appli,
+            error_class: (markErr as Error)?.name ?? typeof markErr,
+            // Redact before emit — a DB error may echo column/connection data.
+            error_message: redactErrorMessage(markErr),
+          });
+        }
         this.logger.error({
           msg: 'wearables.withings.webhook.ingest_failure',
           provider: 'WITHINGS',
