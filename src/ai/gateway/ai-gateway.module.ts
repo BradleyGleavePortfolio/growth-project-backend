@@ -16,6 +16,10 @@ import {
   CapabilityMaterializerRegistry,
 } from './materialisers/capability-materialiser.registry';
 import { CoachMessageMaterializer } from './materialisers/coach-message.materialiser';
+// PR-HK-6 (HK-6a) — wearable-insight approval materialiser. Sibling to
+// CoachMessageMaterializer; shares the claim/race/recovery state machine and
+// sends through MessagingService.sendAsCoach (already imported below).
+import { CoachWearableMessageMaterializer } from './materialisers/coach-wearable-message.materialiser';
 // Stream 2 — AI execution capability materialisers.
 import { AssignWorkoutMaterializer } from './materialisers/assign-workout.materialiser';
 import { AssignMealPlanMaterializer } from './materialisers/assign-meal-plan.materialiser';
@@ -58,6 +62,10 @@ import { SendNotificationMaterializer } from './materialisers/send-notification.
     // multi-injection array bound to CAPABILITY_MATERIALIZERS; the registry
     // pulls the array out and dispatches by capability string.
     CoachMessageMaterializer,
+    // PR-HK-6 (HK-6a) — wearable-message capability. Registered as a concrete
+    // provider AND added to CAPABILITY_MATERIALIZERS so the registry resolves
+    // it by capability string, exactly like CoachMessageMaterializer.
+    CoachWearableMessageMaterializer,
     // Stream 2 — AI execution capabilities. Each is registered as a
     // concrete provider AND added to CAPABILITY_MATERIALIZERS so the
     // registry can resolve by capability string. Mirrors the round-1
@@ -69,12 +77,20 @@ import { SendNotificationMaterializer } from './materialisers/send-notification.
       provide: CAPABILITY_MATERIALIZERS,
       useFactory: (
         coachMessage: CoachMessageMaterializer,
+        coachWearableMessage: CoachWearableMessageMaterializer,
         assignWorkout: AssignWorkoutMaterializer,
         assignMealPlan: AssignMealPlanMaterializer,
         sendNotification: SendNotificationMaterializer,
-      ) => [coachMessage, assignWorkout, assignMealPlan, sendNotification],
+      ) => [
+        coachMessage,
+        coachWearableMessage,
+        assignWorkout,
+        assignMealPlan,
+        sendNotification,
+      ],
       inject: [
         CoachMessageMaterializer,
+        CoachWearableMessageMaterializer,
         AssignWorkoutMaterializer,
         AssignMealPlanMaterializer,
         SendNotificationMaterializer,

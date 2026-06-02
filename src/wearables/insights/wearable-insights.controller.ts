@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
+  Post,
   Query,
   Request,
   UseGuards,
@@ -9,12 +11,15 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { z } from 'zod';
-import { WearableMetricBucket } from '@prisma/client';
+import { Prisma, WearableMetricBucket } from '@prisma/client';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { CoachGuard } from '../../auth/coach.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { THROTTLER_NAMES } from '../../throttler/throttler.config';
+import { PrismaService } from '../../prisma.service';
+import { AiApprovalService } from '../../ai/gateway/ai-approval.service';
+import { COACH_WEARABLE_MESSAGE_CAPABILITY } from '../../ai/gateway/materialisers/coach-wearable-message.materialiser';
 import { WearableInsightsService } from './wearable-insights.service';
 import {
   CoachInsightResponse,
@@ -51,10 +56,49 @@ const ClientQuerySchema = z.object({
   bucket: BucketSchema,
 });
 
+// Request body for POST /v1/wearables/insights/approve. This is the exact
+// shape the mobile coach panel (HK-5a) already sends — see
+// `wearableInsightsApi.ts:approveDraft`. `.strict()` rejects unknown keys so
+// a future drift can never smuggle extra fields into the draft payload.
+const ApproveBodySchema = z
+  .object({
+    client_id: z.string().uuid({ message: 'client_id must be a UUID' }),
+    bucket: BucketSchema,
+    draft_body: z
+      .string()
+      .min(1, { message: 'draft_body must not be empty' })
+      .max(1000, { message: 'draft_body exceeds 1000 chars' })
+      .refine((s) => s.trim().length > 0, {
+        message: 'draft_body must not be whitespace-only',
+      }),
+    action: z.enum(['approve', 'edit', 'dismiss']),
+  })
+  .strict();
+
+// Wire response for the approve endpoint. Discriminated by `status` on the
+// mobile side; the backend only ever emits the `ok` branch (the
+// `not_implemented` branch is the pre-HK-6 404 fallback, now dead).
+const ApproveResponseShape = z.object({
+  status: z.literal('ok'),
+  draft_id: z.string().uuid(),
+  materialised_at: z.string(),
+});
+type ApproveResponseShape = z.infer<typeof ApproveResponseShape>;
+
 @ApiTags('wearables-insights')
 @Controller('v1/wearables/insights')
 export class WearableInsightsController {
-  constructor(private readonly svc: WearableInsightsService) {}
+  constructor(
+    private readonly svc: WearableInsightsService,
+    // AiApprovalService is exported from the @Global AiGatewayModule; it owns
+    // the row-lock, status flip, audit log, and materialiser dispatch. We do
+    // NOT re-implement any of that here — the endpoint creates the draft then
+    // delegates the decision to decide().
+    private readonly approvals: AiApprovalService,
+    // PrismaService is global; used only to create the human-validated draft
+    // row and read it back for the materialised_at timestamp.
+    private readonly prisma: PrismaService,
+  ) {}
 
   // Coach-side insight for a specific client + bucket. Gated by
   // JwtAuthGuard + CoachGuard (coach/owner only). The service additionally
@@ -75,6 +119,108 @@ export class WearableInsightsController {
     // coach insight OR the strict empty state). Both branches are exact-
     // field; an empty fallback can never leak a contract-violating shape.
     return CoachInsightResponseSchema.parse(payload);
+  }
+
+  // Coach approval of an AI-suggested wearable message. Mobile (HK-5a) is
+  // already wired to this exact contract:
+  //   POST /v1/wearables/insights/approve
+  //   body { client_id, bucket, draft_body, action }
+  //   -> { status: 'ok', draft_id, materialised_at }
+  //
+  // The body is HUMAN-validated input that already carries its text (the
+  // coach saw — and possibly edited — the suggested_message_draft), so we
+  // skip the LLM gateway-invoke path and create the AiActionDraft directly.
+  // The action is then dispatched through AiApprovalService.decide():
+  //   - approve / edit -> decision 'approved' -> the wearable-message
+  //     materialiser sends via MessagingService.sendAsCoach.
+  //   - dismiss        -> decision 'rejected' -> no message; the draft is
+  //     flipped to rejected and audited. materialised_at on the wire is the
+  //     rejection timestamp so the mobile contract stays uniform.
+  @Roles('coach', 'owner')
+  @UseGuards(JwtAuthGuard, CoachGuard)
+  @Throttle({ [THROTTLER_NAMES.COACH_AI_GENERATION]: { ttl: 3_600_000, limit: 60 } })
+  @Post('approve')
+  async approveInsight(
+    @Request() req: AuthedRequest,
+    @Body() rawBody: unknown,
+  ): Promise<ApproveResponseShape> {
+    const body = parseOrThrow(ApproveBodySchema, rawBody);
+
+    // IDOR boundary (#5): a coach can only approve a message to a client they
+    // own. This runs BEFORE any draft row is created so an unauthorised
+    // request never persists state.
+    await this.svc.assertCoachOwnsClient(
+      req.user.id,
+      body.client_id,
+      req.user.role,
+    );
+
+    // Create the human-validated draft. tenant_coach_id is pinned to the
+    // requester so the materialiser sends from the correct coach namespace
+    // and decide()'s tenant boundary matches. requester_id is intentionally
+    // left null: this draft has no separate AI requester, and decide()
+    // forbids a decider from deciding their OWN draft
+    // (requester_id === decider.id) — the human-in-the-loop guard that
+    // protects LLM-generated drafts. Here the human IS the author, so a null
+    // requester keeps that guard inert without weakening any other check
+    // (the tenant boundary + coach-owns-client above are the real authz).
+    const draft = await this.prisma.aiActionDraft.create({
+      data: {
+        capability: COACH_WEARABLE_MESSAGE_CAPABILITY,
+        status: 'pending',
+        requester_id: null,
+        subject_user_id: body.client_id,
+        tenant_coach_id: req.user.id,
+        payload: {
+          clientId: body.client_id,
+          bucket: body.bucket,
+          body: body.draft_body,
+        } as Prisma.InputJsonValue,
+        rationale: `Approved from wearable insight (bucket=${body.bucket}, action=${body.action})`,
+        redacted_inputs: {} as Prisma.InputJsonValue,
+        provenance: [
+          {
+            source: 'wearable_insight_approve',
+            bucket: body.bucket,
+            action: body.action,
+          },
+        ] satisfies Prisma.InputJsonValue,
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      },
+    });
+
+    // Dispatch on action. dismiss -> rejected (no send); approve/edit ->
+    // approved (materialiser sends). decide() owns the lock, audit, and
+    // materialiser dispatch; we let its NotFound/Conflict/Forbidden
+    // exceptions propagate untouched (no catch-and-rewrap).
+    const decision = body.action === 'dismiss' ? 'rejected' : 'approved';
+    const fresh = await this.approvals.decide({
+      draftId: draft.id,
+      decider: { id: req.user.id, role: req.user.role },
+      decision,
+      note:
+        body.action === 'edit'
+          ? 'Coach edited body before approve'
+          : undefined,
+      ip: extractIp(req),
+      userAgent: extractUserAgent(req),
+    });
+
+    // Uniform wire timestamp. For approve/edit it's the materialisation time;
+    // for dismiss it's the decision time. Fall back to now() only if both are
+    // somehow absent (decide() always sets decided_at, so this is defensive).
+    const materialisedAt =
+      fresh.materialised_at?.toISOString() ??
+      fresh.decided_at?.toISOString() ??
+      new Date().toISOString();
+
+    // Validate the wire response against the locked contract before returning
+    // (defence in depth, same pattern as getCoachInsight).
+    return ApproveResponseShape.parse({
+      status: 'ok',
+      draft_id: draft.id,
+      materialised_at: materialisedAt,
+    });
   }
 
   // Client-side self-coaching insight for the authenticated user + bucket.
@@ -111,4 +257,20 @@ function parseOrThrow<T>(schema: z.ZodSchema<T>, raw: unknown): T {
     });
   }
   return result.data;
+}
+
+// Audit-context extractors, mirroring ai-gateway.controller. We read the
+// first x-forwarded-for hop (proxy chain) and fall back to the socket IP, and
+// normalise a possibly-array user-agent header. Returning null (not throwing)
+// keeps the audit best-effort — a missing header must never block an approve.
+function extractIp(req: AuthedRequest): string | null {
+  const xff = (req.headers?.['x-forwarded-for'] as string) ?? '';
+  if (xff) return xff.split(',')[0].trim();
+  return req.ip ?? null;
+}
+
+function extractUserAgent(req: AuthedRequest): string | null {
+  const ua = req.headers?.['user-agent'];
+  if (!ua) return null;
+  return Array.isArray(ua) ? ua[0] ?? null : ua;
 }
