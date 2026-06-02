@@ -561,12 +561,25 @@ export class WahooConnector implements WearableConnector {
       error_message: message,
     });
     if (!this.prisma || !conn?.id) return;
-    await this.prisma.wearableConnection
-      .update({
+    try {
+      await this.prisma.wearableConnection.update({
         where: { id: conn.id },
         data: { status: 'error', last_error: message },
-      })
-      .catch(() => undefined);
+      });
+    } catch (markErr) {
+      // Best-effort marker, but NEVER silent (#36 Bradley Law). Log the
+      // marking failure with structured, redacted metadata. Callers still see
+      // the original provider error propagate; this never masks it.
+      this.logger.error({
+        msg: 'wearables.wahoo.connection_error_marking_failed',
+        op,
+        provider: 'WAHOO',
+        conn_id: conn.id,
+        user_hash: conn?.user_id ? hashForLog(conn.user_id) : 'na',
+        error_class: (markErr as Error)?.name ?? 'Error',
+        error_message: redactErrorMessage(markErr),
+      });
+    }
   }
 
   /** Read a required env var, failing loud (with the var NAME, not value). */

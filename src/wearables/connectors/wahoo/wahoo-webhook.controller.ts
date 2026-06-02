@@ -146,15 +146,28 @@ export class WahooWebhookController {
         // helper strips bearer tokens / token-like query params / secrets so
         // a provider URL or token fragment in the thrown error can never
         // leak into durable connection state (#1/#12, audit pattern #7).
-        await this.prisma.wearableConnection
-          .update({
+        try {
+          await this.prisma.wearableConnection.update({
             where: { id: connection.id },
             data: {
               status: 'error',
               last_error: redactErrorMessage(err),
             },
-          })
-          .catch(() => undefined);
+          });
+        } catch (markErr) {
+          // Best-effort marker, but NEVER silent (#36 Bradley Law). Log the
+          // marking failure with structured, redacted metadata. The original
+          // ingest error still rethrows below, so the delivery is retried.
+          this.logger.error({
+            msg: 'wearables.wahoo.webhook.error_marking_failed',
+            provider: 'WAHOO',
+            conn_id: connection.id,
+            event_type: event.event_type,
+            user_hash: this.hash(userId),
+            error_class: (markErr as Error)?.name ?? 'Error',
+            redacted_message: redactErrorMessage(markErr),
+          });
+        }
         this.logger.error({
           msg: 'wearables.wahoo.webhook.ingest_failure',
           provider: 'WAHOO',

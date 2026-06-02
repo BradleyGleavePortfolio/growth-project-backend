@@ -15,7 +15,7 @@ import { WahooWebhookEvent } from './wahoo.types';
 
 /**
  * PR-HK-2.h connector tests — real-value assertions. `ProviderHttpClient` is
- * stubbed so no real network is touched. OAuth env is set in beforeEach.
+ * mocked so no real network is touched. OAuth env is set in beforeEach.
  */
 
 function fakeResponse(body: unknown, ok = true, status = 200): Response {
@@ -185,6 +185,50 @@ describe('WahooConnector — refresh (rotation + fail-explicit)', () => {
     expect(arg.where.id).toBe('conn-1');
     expect(arg.data.status).toBe('error');
     expect(typeof arg.data.last_error).toBe('string');
+  });
+
+  it('logs the marking failure (never silent) and still rethrows the original provider error', async () => {
+    // R3 Finding 1 (#36 Bradley Law): if the status=error update itself throws,
+    // that failure MUST be logged with structured context — never swallowed
+    // silently — and the ORIGINAL provider error MUST still propagate.
+    const { client, enqueue } = makeHttp();
+    const update = jest.fn(async () => {
+      throw new Error('prisma update P1001 connection refused');
+    });
+    const prisma = {
+      wearableConnection: { update },
+    } as unknown as PrismaService;
+    enqueue(new ProviderHttpError('unauthorized', 1, 401));
+    const c = new WahooConnector(client, prisma);
+    const errorSpy = jest
+      .spyOn(
+        (c as unknown as { logger: { error: (...a: unknown[]) => void } })
+          .logger,
+        'error',
+      )
+      .mockImplementation(() => undefined);
+
+    // The original provider 401 still propagates (not masked by the mark failure).
+    await expect(
+      c.refresh(conn({ refresh_token: 'ref-x' })),
+    ).rejects.toThrow(/status=401/);
+    expect(update).toHaveBeenCalledTimes(1);
+
+    const markFailureLog = errorSpy.mock.calls.find(
+      (l) =>
+        (l[0] as { msg?: string })?.msg ===
+        'wearables.wahoo.connection_error_marking_failed',
+    );
+    expect(markFailureLog).toBeDefined();
+    const logArg = markFailureLog![0] as {
+      conn_id: string;
+      error_class: string;
+      error_message: string;
+    };
+    expect(logArg.conn_id).toBe('conn-1');
+    expect(logArg.error_class).toBe('Error');
+    expect(logArg.error_message).toContain('P1001');
+    errorSpy.mockRestore();
   });
 
   it('throws when the connection has no refresh token', async () => {

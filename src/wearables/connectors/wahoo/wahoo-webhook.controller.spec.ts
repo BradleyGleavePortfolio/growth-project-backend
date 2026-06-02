@@ -239,6 +239,52 @@ describe('WahooWebhookController.handle', () => {
     expect(arg.data.last_error).toContain('[REDACTED]');
   });
 
+  it('logs the marking failure (never silent) and still rethrows the original ingest error', async () => {
+    // R3 Finding 1 (#36 Bradley Law): if marking the connection in error
+    // throws, that failure MUST be logged with structured context — never
+    // swallowed silently — and the ORIGINAL ingest error MUST still propagate
+    // so the delivery is retried.
+    const { controller, connector, wearableConnection } = setup({});
+    const ingestError = new Error('ingest exploded');
+    (connector.normalize as jest.Mock).mockImplementationOnce(() => {
+      throw ingestError;
+    });
+    const markError = new Error('prisma update P1001 connection refused');
+    (wearableConnection.update as jest.Mock).mockRejectedValueOnce(markError);
+    const errorSpy = jest
+      .spyOn(
+        (controller as unknown as { logger: { error: (...a: unknown[]) => void } })
+          .logger,
+        'error',
+      )
+      .mockImplementation(() => undefined);
+
+    // The original ingest error still propagates (not masked by the mark failure).
+    await expect(controller.handle(makeReq(VALID_BODY))).rejects.toBe(
+      ingestError,
+    );
+
+    // The mark-update was attempted and failed.
+    expect(wearableConnection.update).toHaveBeenCalledTimes(1);
+
+    // The marking failure was logged with structured context — never silent.
+    const markFailureLog = errorSpy.mock.calls.find(
+      (c) =>
+        (c[0] as { msg?: string })?.msg ===
+        'wearables.wahoo.webhook.error_marking_failed',
+    );
+    expect(markFailureLog).toBeDefined();
+    const logArg = markFailureLog![0] as {
+      conn_id: string;
+      error_class: string;
+      redacted_message: string;
+    };
+    expect(logArg.conn_id).toBe('conn-1');
+    expect(logArg.error_class).toBe('Error');
+    expect(logArg.redacted_message).toContain('P1001');
+    errorSpy.mockRestore();
+  });
+
   it('processes a valid first delivery: normalize → ingest → commit', async () => {
     const { controller, ingestion, processedEvent, connector } = setup({});
     const res = await controller.handle(makeReq(VALID_BODY));
