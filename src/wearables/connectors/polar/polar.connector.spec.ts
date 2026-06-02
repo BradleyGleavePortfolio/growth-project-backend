@@ -1,4 +1,5 @@
 import { createHmac } from 'crypto';
+import { Logger } from '@nestjs/common';
 import { WearableConnection, WearableProvider } from '@prisma/client';
 import {
   ProviderHttpClient,
@@ -314,6 +315,45 @@ describe('PolarConnector — backfill + fetchChangedRecord', () => {
     expect(arg.data.last_error).toContain('client_secret=[REDACTED]');
     expect(arg.data.last_error).not.toContain('at-live-SECRET');
     expect(arg.data.last_error).not.toContain('secret-xyz');
+  });
+
+  it('logs a redacted persist-failure (never swallows) when the error-status write itself fails, and still rethrows the provider error', async () => {
+    const { client, enqueue } = makeHttp();
+    const update = jest.fn(async () => {
+      throw new Error(
+        'prisma P1001 connect ECONNREFUSED for token=db-live-SECRET',
+      );
+    });
+    const prisma = {
+      wearableConnection: { update },
+    } as unknown as PrismaService;
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    enqueue(new Error('polar.backfill.exercises: HTTP 503 upstream outage'));
+    const c = new PolarConnector(client, prisma);
+
+    // The ORIGINAL provider error must still propagate — the failed status
+    // write must NOT mask it nor be silently swallowed.
+    await expect(c.backfill(conn, new Date())).rejects.toThrow(/HTTP 503/);
+    expect(update).toHaveBeenCalledTimes(1);
+
+    // A structured persist-failure log must have been emitted with the
+    // dedicated message and a REDACTED error_message (no DB secret leak).
+    const persistFailLog = errorSpy.mock.calls
+      .map((call) => call[0])
+      .find(
+        (a) =>
+          a &&
+          typeof a === 'object' &&
+          (a as { msg?: string }).msg ===
+            'wearables.polar.connection_error_persist_failed',
+      ) as { error_message?: string } | undefined;
+    expect(persistFailLog).toBeTruthy();
+    expect(persistFailLog?.error_message).not.toContain('db-live-SECRET');
+    expect(persistFailLog?.error_message).toContain('token=[REDACTED]');
+
+    errorSpy.mockRestore();
   });
 
   it('fetchChangedRecord trusts the event url only for the AccessLink host', async () => {

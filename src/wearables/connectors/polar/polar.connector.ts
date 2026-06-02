@@ -603,12 +603,26 @@ export class PolarConnector implements WearableConnector {
       error_message: message,
     });
     if (!this.prisma || !conn?.id) return;
-    await this.prisma.wearableConnection
-      .update({
+    // Persist the error status — best-effort, but NEVER silent. If the write
+    // itself fails we log it with structured, PII-free context so the failed
+    // trust-indicator update is observable; the original provider error still
+    // rethrows at the call site (audit patterns #34/#36).
+    try {
+      await this.prisma.wearableConnection.update({
         where: { id: conn.id },
         data: { status: 'error', last_error: message },
-      })
-      .catch(() => undefined);
+      });
+    } catch (markErr) {
+      this.logger.error({
+        msg: 'wearables.polar.connection_error_persist_failed',
+        op,
+        provider: 'POLAR',
+        user_id_hash: conn?.user_id ? userHash(conn.user_id) : undefined,
+        error_class: markErr instanceof Error ? markErr.name : 'unknown',
+        // Redacted — safe to log; never persisted nor surfaced to clients.
+        error_message: redactErrorMessage(markErr),
+      });
+    }
   }
 
   private requireEnv(name: string): string {
