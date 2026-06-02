@@ -248,6 +248,36 @@ describe('FitbitWebhookController — first delivery', () => {
     errSpy.mockRestore();
   });
 
+  it('does NOT commit a dedup row when a data-bearing fetch returns [] (releases the reservation so a redelivery re-attempts) and logs empty_fetch', async () => {
+    // R5/R6 regression: a data-bearing notification that passes validation but
+    // whose fetch yields ZERO records is a transient provider miss, NOT a
+    // successful ingest. Committing a WearableProcessedEvent here would dedup
+    // the providerEventId so the redelivery is a no-op — silent data loss
+    // disguised as idempotency (#36). The row MUST NOT be written.
+    const { controller, connector, ingestion, processedEvent } = setup({});
+    (connector.fetchNotificationRecords as jest.Mock).mockResolvedValueOnce([]);
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+
+    await expect(controller.handle(makeReq([NOTIF]))).resolves.toBeUndefined();
+
+    // The fetch was attempted but produced nothing.
+    expect(connector.fetchNotificationRecords).toHaveBeenCalledTimes(1);
+    // No ingest (nothing to ingest) and CRUCIALLY no dedup row committed —
+    // the reservation is released so Fitbit's redelivery reprocesses.
+    expect(ingestion.ingest).not.toHaveBeenCalled();
+    expect(processedEvent.create).not.toHaveBeenCalled();
+
+    // The empty fetch must be observable via a structured warning.
+    const loggedEmptyFetch = warnSpy.mock.calls.some(
+      (call) =>
+        (call[0] as { msg?: string })?.msg === 'wearables.fitbit.empty_fetch',
+    );
+    expect(loggedEmptyFetch).toBe(true);
+    warnSpy.mockRestore();
+  });
+
   it('no-ops gracefully when no matching connection exists (still records)', async () => {
     const { controller, ingestion, connector, processedEvent } = setup({
       connection: null,
@@ -313,6 +343,48 @@ describe('FitbitWebhookController — payload validation', () => {
       controller.handle(makeReq([{ ...NOTIF, ownerType: 'org' }])),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(ingestion.ingest).not.toHaveBeenCalled();
+  });
+
+  it('rejects a data-bearing notification missing `date` with 400, before any findUnique/fetch/ingest/create', async () => {
+    // R5/R6 regression: the controller comment promised `date` is omitted ONLY
+    // for userRevokedAccess, but the schema previously let ANY collection omit
+    // it — the fail-open / ghost-success path. A `sleep` notification with no
+    // `date` MUST fail closed (400) before any side effect.
+    const { controller, processedEvent, connector, ingestion } = setup({});
+    const { date: _omit, ...noDate } = NOTIF;
+    await expect(
+      controller.handle(makeReq([noDate])),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(processedEvent.findUnique).not.toHaveBeenCalled();
+    expect(connector.fetchNotificationRecords).not.toHaveBeenCalled();
+    expect(ingestion.ingest).not.toHaveBeenCalled();
+    expect(processedEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a data-bearing `activities` notification with an empty `date` with 400', async () => {
+    const { controller, processedEvent, ingestion } = setup({});
+    await expect(
+      controller.handle(
+        makeReq([{ ...NOTIF, collectionType: 'activities', date: '' }]),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(processedEvent.findUnique).not.toHaveBeenCalled();
+    expect(ingestion.ingest).not.toHaveBeenCalled();
+    expect(processedEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('accepts a userRevokedAccess notification WITHOUT a `date` and still records it (no fetch/ingest)', async () => {
+    // Revocation legitimately has no day to fetch; it must remain accepted.
+    const { controller, processedEvent, connector, ingestion } = setup({});
+    const { date: _omit, ...noDate } = NOTIF;
+    await expect(
+      controller.handle(
+        makeReq([{ ...noDate, collectionType: 'userRevokedAccess' }]),
+      ),
+    ).resolves.toBeUndefined();
+    expect(connector.fetchNotificationRecords).not.toHaveBeenCalled();
+    expect(ingestion.ingest).not.toHaveBeenCalled();
+    expect(processedEvent.create).toHaveBeenCalledTimes(1);
   });
 
   it('accepts every documented Fitbit collectionType', async () => {

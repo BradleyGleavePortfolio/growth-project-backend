@@ -42,6 +42,11 @@ import {
  *     `.strict()` and array-only: unknown fields, a singleton object, an
  *     unknown `collectionType`, or a non-`user` `ownerType` are all rejected
  *     with a redacted 400 (field paths only) before any fetch/dedup/ingest.
+ *     `date` is CONDITIONALLY required: a data-bearing `collectionType`
+ *     (activities/body/foods/sleep/heart/br/spo2) MUST carry a non-empty
+ *     `date`; only the synthetic `userRevokedAccess` event may omit it. A
+ *     data-bearing notification missing `date` fails CLOSED (400) so it can
+ *     never be acknowledged + deduped without any data being ingested.
  *  4. Per notification: replay/idempotency via `WearableProcessedEvent`
  *     (provider='FITBIT', provider_event_id) — a duplicate is a no-op (#28/#29).
  *  5. Resolve the connection (by Fitbit ownerId → external_account_id), fetch
@@ -187,6 +192,27 @@ export class FitbitWebhookController {
             connection,
             notification,
           );
+          // Fail-explicit on a ghost-success: a data-bearing notification that
+          // passed validation (so it HAS a `date`) but yields ZERO records means
+          // the provider returned nothing for a day that should have data — a
+          // transient provider/availability issue, NOT a successful ingest. We
+          // must NOT commit a dedup row in that case, or the redelivery of this
+          // SAME providerEventId would be no-op'd and the changed data lost
+          // forever (silent data loss disguised as idempotency, #36). Release
+          // the (not-yet-written) reservation by returning early WITHOUT
+          // committing, and log a structured warning so the empty fetch is
+          // observable; Fitbit's redelivery then re-attempts the fetch.
+          if (raw.length === 0) {
+            this.logger.warn({
+              msg: 'wearables.fitbit.empty_fetch',
+              provider: 'FITBIT',
+              collection_type: notification.collectionType,
+              date: notification.date,
+              conn_id: connection.id,
+              user_hash: userHash,
+            });
+            return;
+          }
           const samples = this.connector.normalize(raw);
           if (samples.length > 0) {
             await this.ingestion.ingest(samples);
@@ -304,13 +330,34 @@ export class FitbitWebhookController {
     const notification = z
       .object({
         collectionType: z.enum(FITBIT_NOTIFICATION_COLLECTION_TYPES),
-        // Fitbit omits `date` only for the synthetic userRevokedAccess event.
+        // `date` is the affected calendar day (`YYYY-MM-DD`). Per Fitbit's
+        // subscription docs it is ALWAYS present for a data-bearing collection
+        // (activities/body/foods/sleep/heart/br/spo2) and is omitted ONLY for
+        // the synthetic `userRevokedAccess` lifecycle event. We model it as
+        // optional at the field level and then enforce the conditional
+        // requirement in `.superRefine` below — so a data-bearing notification
+        // with a missing/empty `date` fails CLOSED (400) before any
+        // fetch/dedup/ingest, instead of being acknowledged and deduped with no
+        // data ever ingested (the R5 fail-open / ghost-success path, #8/#36).
         date: z.string().min(1).optional(),
         ownerId: z.string().min(1),
         ownerType: z.literal(FITBIT_NOTIFICATION_OWNER_TYPE),
         subscriptionId: z.string().min(1),
       })
-      .strict();
+      .strict()
+      .superRefine((value, ctx) => {
+        // Data-bearing collections MUST carry a non-empty `date`; only
+        // `userRevokedAccess` legitimately omits it (it has no day to fetch).
+        if (value.collectionType !== 'userRevokedAccess' && !value.date) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            // Point the issue at `date` so the 400 reports the field PATH only,
+            // never the (PII-bearing) payload values.
+            path: ['date'],
+            message: 'date is required for data-bearing Fitbit notifications',
+          });
+        }
+      });
 
     // Fitbit ALWAYS sends a JSON array. A singleton object or any other shape
     // is not a Fitbit subscription notification and is rejected.
