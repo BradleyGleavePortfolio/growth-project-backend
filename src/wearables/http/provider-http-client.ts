@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
   BACKOFF_DEFAULTS,
   DEFAULT_HTTP_TIMEOUT_MS,
@@ -81,7 +81,7 @@ export class ProviderHttpClient {
    *   a stub fetch, a synchronous sleep, and a deterministic RNG to assert
    *   retry count and backoff cap without wall-clock waits.
    */
-  constructor(deps?: Partial<ProviderHttpDeps>) {
+  constructor(@Optional() deps?: Partial<ProviderHttpDeps>) {
     this.deps = {
       fetchFn: deps?.fetchFn ?? globalThis.fetch.bind(globalThis),
       sleep: deps?.sleep ?? realSleep,

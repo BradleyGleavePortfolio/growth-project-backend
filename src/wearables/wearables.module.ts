@@ -3,7 +3,6 @@ import { IngestionService } from './ingestion/ingestion.service';
 import { ProviderHttpClient } from './http/provider-http-client';
 import { ConnectionsModule } from './connections/connections.module';
 import { OauthModule } from './oauth/oauth.module';
-import { ConnectorRegistry } from './connector-registry';
 import { InsightsModule } from './insights/insights.module';
 import { SamplesModule } from './samples/samples.module';
 import { PreferencesModule } from './preferences/preferences.module';
@@ -32,8 +31,10 @@ import { PreferencesModule } from './preferences/preferences.module';
  * Mount the generic OAuth + connection-management surface:
  *  - {@link ConnectionsModule} — connect/callback/list/disconnect API +
  *    service. It also provides + exports the single {@link ConnectorRegistry}
- *    instance (DiscoveryService-backed), re-exported here so connector PRs
- *    (PR-HK-2.*) and any wearables submodule can inject it.
+ *    instance (DiscoveryService-backed), exposed transitively via
+ *    `ConnectionsModule`'s exports — connector PRs (PR-HK-2.*) and submodules
+ *    consume it through `imports: [ConnectionsModule]` or
+ *    `imports: [WearablesModule]`.
  *  - {@link OauthModule} — `OauthStateService` (CSRF state + PKCE).
  *
  * The {@link ConnectorRegistry} ships EMPTY in PR-HK-1; connector PRs register
@@ -71,7 +72,6 @@ import { PreferencesModule } from './preferences/preferences.module';
     ProviderHttpClient,
     ConnectionsModule,
     OauthModule,
-    ConnectorRegistry,
     InsightsModule,
     SamplesModule,
     PreferencesModule,
