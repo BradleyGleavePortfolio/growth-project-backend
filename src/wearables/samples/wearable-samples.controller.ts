@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Post,
   Query,
@@ -23,10 +24,14 @@ import { z } from 'zod';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { PrismaService } from '../../prisma.service';
 import { THROTTLER_NAMES } from '../../throttler/throttler.config';
 import { WearableSamplesService } from './wearable-samples.service';
 import { GetSamplesQuerySchema } from './dto/get-samples.query';
-import { IngestSamplesBodySchema } from './dto/ingest-samples.dto';
+import {
+  IngestSamplesBodySchema,
+  type IngestSamplesBody,
+} from './dto/ingest-samples.dto';
 import { IngestionService } from '../ingestion/ingestion.service';
 import {
   SamplesResponse,
@@ -56,6 +61,7 @@ export class WearableSamplesController {
   constructor(
     private readonly svc: WearableSamplesService,
     private readonly ingestion: IngestionService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -211,6 +217,21 @@ export class WearableSamplesController {
   ): Promise<{ inserted: number; skipped: number }> {
     this.assertIngestEnabled();
     const parsed = parseOrThrow(IngestSamplesBodySchema, rawBody);
+
+    // CONNECTION OWNERSHIP / PROVIDER GATE (request-specific authz).
+    //
+    // The body carries a client-controlled `connectionId` per sample. Before
+    // any write side effect we MUST prove every distinct connection (a) belongs
+    // to the authenticated user, (b) matches the sample's declared provider,
+    // and (c) is not in a disconnected lifecycle state. Without this a student
+    // could post samples against another user's connection (cross-user write
+    // IDOR, #5) or smuggle a provider that does not match the link.
+    //
+    // This lives at the controller seam — NOT in IngestionService — because
+    // that service is shared with the trusted cloud/webhook lanes, which run
+    // under service_role with no end-user identity to scope by.
+    await this.assertConnectionsOwnedByUser(parsed, req.user.id);
+
     // Stamp the subject from the JWT — the body NEVER names the subject user
     // (#5 IDOR). Normalize the optional pointers to explicit null so the
     // NormalizedSample shape the IngestionService consumes is exact.
@@ -223,7 +244,57 @@ export class WearableSamplesController {
     }));
     return this.ingestion.ingest(samples);
   }
+
+  /**
+   * Verify every submitted connection belongs to `userId`, matches the
+   * sample's provider, and is live. Throws a TYPED 403 on the FIRST failure.
+   *
+   * Enumeration-safe: the thrown error never names the offending UUID, and a
+   * connection that does not exist is treated exactly like a foreign one (a
+   * generic 403, never a 404) so a caller cannot probe which UUIDs exist.
+   * Runs as a SINGLE batched query (distinct ids), no per-sample round trip.
+   */
+  private async assertConnectionsOwnedByUser(
+    parsed: IngestSamplesBody,
+    userId: string,
+  ): Promise<void> {
+    const distinctIds = [...new Set(parsed.map((s) => s.connectionId))];
+
+    const owned = await this.prisma.wearableConnection.findMany({
+      where: { id: { in: distinctIds }, user_id: userId },
+      select: { id: true, provider: true, status: true },
+    });
+
+    const byId = new Map(owned.map((c) => [c.id, c] as const));
+
+    const ok = parsed.every((sample) => {
+      const conn = byId.get(sample.connectionId);
+      if (!conn) return false; // missing OR owned by another user
+      if (conn.provider !== sample.provider) return false; // provider mismatch
+      if (DISCONNECTED_CONNECTION_STATUSES.has(conn.status)) return false;
+      return true;
+    });
+
+    if (!ok) {
+      throw new ForbiddenException({
+        code: 'wearables_connection_forbidden',
+        message: 'connection does not belong to user or provider mismatch',
+      });
+    }
+  }
 }
+
+/**
+ * Connection lifecycle states that are NOT writable from the on-device ingest
+ * lane. The model defaults to `connected`; a provider outage / unlink moves it
+ * to one of these (see prisma/schema.prisma WearableConnection.status). A
+ * sample arriving for a disconnected link is rejected at the controller seam.
+ */
+const DISCONNECTED_CONNECTION_STATUSES = new Set<string>([
+  'disconnected',
+  'expired',
+  'error',
+]);
 
 /**
  * Zod-parse a query object, converting a ZodError into a 400 with the
