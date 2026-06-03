@@ -236,11 +236,21 @@ export class PreferencesController {
     // client sees a single, stable contract.
     try {
       await this.insights.assertCoachOwnsClient(callerId, targetUserId, role);
-    } catch {
-      throw new ForbiddenException({
-        error: 'WEARABLE_PREFERENCE_CROSS_USER_FORBIDDEN',
-        target_user_id: targetUserId,
-      });
+    } catch (err) {
+      if (err instanceof ForbiddenException) {
+        // Authorization denied (unassigned coach) — remap to the stable
+        // HK-6b 403 contract so the body is identical regardless of whether
+        // the caller is a student writing to a peer or a coach without the
+        // assignment.
+        throw new ForbiddenException({
+          error: 'WEARABLE_PREFERENCE_CROSS_USER_FORBIDDEN',
+          target_user_id: targetUserId,
+        });
+      }
+      // Anything else (DB connection failure, programmer error, etc.)
+      // propagates as its real type so it surfaces as an honest 5xx, not a
+      // misleading 403 (#36 silent-failure regression).
+      throw err;
     }
     return targetUserId;
   }

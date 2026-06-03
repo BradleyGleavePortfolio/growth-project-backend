@@ -208,6 +208,32 @@ describe('PreferencesController', () => {
       expect(svc.upsert).not.toHaveBeenCalled();
     });
 
+    it('coach, non-Forbidden helper error (db down) propagates verbatim; service not called (#36)', async () => {
+      const svc = makeSvc();
+      const insights = makeInsights();
+      insights.assertCoachOwnsClient.mockRejectedValueOnce(new Error('db down'));
+      const ctrl = makeController(svc, insights);
+      await expect(
+        ctrl.upsert(reqFor(COACH, 'coach'), {
+          metric: WearableMetricType.STEPS,
+          preferred_provider: WearableProvider.WHOOP,
+          target_user_id: CLIENT,
+        }),
+      ).rejects.toThrow('db down');
+      // The error must NOT be remapped to the 403 cross-user contract.
+      insights.assertCoachOwnsClient.mockRejectedValueOnce(
+        new Error('db down'),
+      );
+      await expect(
+        ctrl.upsert(reqFor(COACH, 'coach'), {
+          metric: WearableMetricType.STEPS,
+          preferred_provider: WearableProvider.WHOOP,
+          target_user_id: CLIENT,
+        }),
+      ).rejects.not.toBeInstanceOf(ForbiddenException);
+      expect(svc.upsert).not.toHaveBeenCalled();
+    });
+
     it('owner, any target_user_id: 200 (platform-admin bypass)', async () => {
       const svc = makeSvc();
       const insights = makeInsights();
@@ -390,12 +416,36 @@ describe('PreferencesController', () => {
       );
     });
 
-    it('coach, UNassigned client query: 403, service not called', async () => {
+    it('coach, UNassigned client query: 403 CROSS_USER_FORBIDDEN body, service not called', async () => {
       const svc = makeSvc();
       const insights = makeInsights();
       insights.assertCoachOwnsClient.mockRejectedValueOnce(
         new ForbiddenException('Client is not assigned to this coach'),
       );
+      const ctrl = makeController(svc, insights);
+      try {
+        await ctrl.remove(
+          reqFor(COACH, 'coach'),
+          { metric: WearableMetricType.STEPS },
+          { target_user_id: CLIENT },
+        );
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ForbiddenException);
+        const resp = (err as ForbiddenException).getResponse() as {
+          error: string;
+          target_user_id: string;
+        };
+        expect(resp.error).toBe('WEARABLE_PREFERENCE_CROSS_USER_FORBIDDEN');
+        expect(resp.target_user_id).toBe(CLIENT);
+      }
+      expect(svc.remove).not.toHaveBeenCalled();
+    });
+
+    it('coach, non-Forbidden helper error (db down) propagates verbatim; service not called (#36)', async () => {
+      const svc = makeSvc();
+      const insights = makeInsights();
+      insights.assertCoachOwnsClient.mockRejectedValueOnce(new Error('db down'));
       const ctrl = makeController(svc, insights);
       await expect(
         ctrl.remove(
@@ -403,7 +453,18 @@ describe('PreferencesController', () => {
           { metric: WearableMetricType.STEPS },
           { target_user_id: CLIENT },
         ),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toThrow('db down');
+      // The error must NOT be remapped to the 403 cross-user contract.
+      insights.assertCoachOwnsClient.mockRejectedValueOnce(
+        new Error('db down'),
+      );
+      await expect(
+        ctrl.remove(
+          reqFor(COACH, 'coach'),
+          { metric: WearableMetricType.STEPS },
+          { target_user_id: CLIENT },
+        ),
+      ).rejects.not.toBeInstanceOf(ForbiddenException);
       expect(svc.remove).not.toHaveBeenCalled();
     });
 
