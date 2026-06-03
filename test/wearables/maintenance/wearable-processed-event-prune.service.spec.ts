@@ -1,9 +1,10 @@
+import { Test, TestingModule } from '@nestjs/testing';
 import {
   WearableProcessedEventPruneService,
   DEFAULT_WEARABLE_PROCESSED_EVENT_RETENTION_DAYS,
   resolveRetentionDays,
-} from '../../src/wearables/maintenance/wearable-processed-event-prune.service';
-import type { PrismaService } from '../../src/prisma.service';
+} from '../../../src/wearables/maintenance/wearable-processed-event-prune.service';
+import { PrismaService } from '../../../src/prisma.service';
 
 // WearableProcessedEvent retention-prune worker tests. The worker bounds the
 // growth of the webhook-idempotency ledger by deleting rows whose processed_at
@@ -15,15 +16,38 @@ import type { PrismaService } from '../../src/prisma.service';
 //   - Boundary windows: retention=0 prunes everything strictly before now;
 //     retention=999999 pushes the cutoff far into the past so nothing matches.
 //   - Env resolution: default 30, honors 0, falls back on blank/garbage/negative.
+//
+// The PrismaService dependency is supplied through Nest's DI container via
+// Test.createTestingModule().overrideProvider(...).useValue(...). The override
+// value is typed as `unknown` at the DI boundary, so a structural mock exposing
+// only the surface the service touches (`wearableProcessedEvent.deleteMany`)
+// satisfies the provider without any cast — the same idiom the rest of this
+// repo's service specs use (see test/timeline.service.spec.ts,
+// test/sub-coach-*.service.spec.ts).
 
 const DAY_MS = 86_400_000;
 
-function buildPrisma() {
-  const deleteMany = jest.fn(async (_args: any) => ({ count: 7 }));
-  const prisma = {
-    wearableProcessedEvent: { deleteMany },
-  } as unknown as PrismaService;
-  return { prisma, deleteMany };
+interface PrunePrismaHarness {
+  service: WearableProcessedEventPruneService;
+  deleteMany: jest.Mock;
+}
+
+// Builds the service against an overridden PrismaService whose
+// wearableProcessedEvent.deleteMany resolves to { count: 7 }. Returns the
+// service plus the deleteMany mock so tests can assert call shape.
+async function buildPrisma(): Promise<PrunePrismaHarness> {
+  const deleteMany = jest.fn(async () => ({ count: 7 }));
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [WearableProcessedEventPruneService, PrismaService],
+  })
+    .overrideProvider(PrismaService)
+    .useValue({ wearableProcessedEvent: { deleteMany } })
+    .compile();
+
+  const service = module.get<WearableProcessedEventPruneService>(
+    WearableProcessedEventPruneService,
+  );
+  return { service, deleteMany };
 }
 
 describe('WearableProcessedEventPruneService', () => {
@@ -71,8 +95,7 @@ describe('WearableProcessedEventPruneService', () => {
   describe('prune', () => {
     it('computes cutoff = now - retentionDays days (default 30) and passes it to deleteMany', async () => {
       delete process.env.WEARABLE_PROCESSED_EVENT_RETENTION_DAYS;
-      const { prisma, deleteMany } = buildPrisma();
-      const service = new WearableProcessedEventPruneService(prisma);
+      const { service, deleteMany } = await buildPrisma();
 
       const now = new Date('2026-01-31T04:00:00.000Z');
       const result = await service.prune(now);
@@ -88,8 +111,7 @@ describe('WearableProcessedEventPruneService', () => {
 
     it('honors a custom retention window from the environment', async () => {
       process.env.WEARABLE_PROCESSED_EVENT_RETENTION_DAYS = '14';
-      const { prisma, deleteMany } = buildPrisma();
-      const service = new WearableProcessedEventPruneService(prisma);
+      const { service, deleteMany } = await buildPrisma();
 
       const now = new Date('2026-01-31T04:00:00.000Z');
       const { cutoff } = await service.prune(now);
@@ -103,8 +125,7 @@ describe('WearableProcessedEventPruneService', () => {
 
     it('retention=0 prunes everything strictly before now (cutoff === now)', async () => {
       process.env.WEARABLE_PROCESSED_EVENT_RETENTION_DAYS = '0';
-      const { prisma, deleteMany } = buildPrisma();
-      const service = new WearableProcessedEventPruneService(prisma);
+      const { service, deleteMany } = await buildPrisma();
 
       const now = new Date('2026-01-31T04:00:00.000Z');
       const { cutoff } = await service.prune(now);
@@ -117,8 +138,7 @@ describe('WearableProcessedEventPruneService', () => {
 
     it('retention=999999 pushes the cutoff far into the past so nothing is pruned', async () => {
       process.env.WEARABLE_PROCESSED_EVENT_RETENTION_DAYS = '999999';
-      const { prisma, deleteMany } = buildPrisma();
-      const service = new WearableProcessedEventPruneService(prisma);
+      const { service, deleteMany } = await buildPrisma();
 
       const now = new Date('2026-01-31T04:00:00.000Z');
       const { cutoff } = await service.prune(now);

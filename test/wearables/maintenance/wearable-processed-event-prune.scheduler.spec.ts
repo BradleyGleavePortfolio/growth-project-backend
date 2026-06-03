@@ -1,9 +1,10 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { Logger } from '@nestjs/common';
 import {
   WearableProcessedEventPruneScheduler,
   WEARABLE_PROCESSED_EVENT_PRUNE_CRON_EXPRESSION,
-} from '../../src/wearables/maintenance/wearable-processed-event-prune.scheduler';
-import type { WearableProcessedEventPruneService } from '../../src/wearables/maintenance/wearable-processed-event-prune.service';
-import { Logger } from '@nestjs/common';
+} from '../../../src/wearables/maintenance/wearable-processed-event-prune.scheduler';
+import { WearableProcessedEventPruneService } from '../../../src/wearables/maintenance/wearable-processed-event-prune.service';
 
 // Pins the contract between the scheduler and WearableProcessedEventPruneService:
 //
@@ -19,8 +20,35 @@ import { Logger } from '@nestjs/common';
 //     'wearable_processed_event_prune_failed', and swallowed — the scheduler
 //     must never crash the Nest process (a single bad night would otherwise
 //     take the API down until the next deploy).
+//
+// The prune service is supplied through Nest's DI container via
+// Test.createTestingModule().overrideProvider(...).useValue(...). The override
+// value is typed as `unknown` at the DI boundary, so a structural mock that
+// implements only the surface the scheduler touches (`prune`) satisfies the
+// provider without any cast — the same idiom the rest of this repo's service
+// specs use (see test/timeline.service.spec.ts, test/sub-coach-*.service.spec.ts).
 
 describe('WearableProcessedEventPruneScheduler', () => {
+  // Builds a TestingModule whose WearableProcessedEventPruneService provider is
+  // overridden with a structural mock exposing the given prune() implementation.
+  async function buildScheduler(
+    prune: jest.Mock,
+  ): Promise<WearableProcessedEventPruneScheduler> {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        WearableProcessedEventPruneScheduler,
+        WearableProcessedEventPruneService,
+      ],
+    })
+      .overrideProvider(WearableProcessedEventPruneService)
+      .useValue({ prune })
+      .compile();
+
+    return module.get<WearableProcessedEventPruneScheduler>(
+      WearableProcessedEventPruneScheduler,
+    );
+  }
+
   afterEach(() => {
     jest.restoreAllMocks();
   });
@@ -47,9 +75,7 @@ describe('WearableProcessedEventPruneScheduler', () => {
       .spyOn(Logger.prototype, 'log')
       .mockImplementation(() => undefined);
 
-    const scheduler = new WearableProcessedEventPruneScheduler({
-      prune,
-    } as unknown as WearableProcessedEventPruneService);
+    const scheduler = await buildScheduler(prune);
 
     await expect(scheduler.handleCron()).resolves.toBeUndefined();
 
@@ -70,9 +96,7 @@ describe('WearableProcessedEventPruneScheduler', () => {
       .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => undefined);
 
-    const scheduler = new WearableProcessedEventPruneScheduler({
-      prune,
-    } as unknown as WearableProcessedEventPruneService);
+    const scheduler = await buildScheduler(prune);
 
     // The contract is that the handler resolves rather than rejects — an
     // unhandled rejection here would propagate to @nestjs/schedule and, on
@@ -91,9 +115,7 @@ describe('WearableProcessedEventPruneScheduler', () => {
       .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => undefined);
 
-    const scheduler = new WearableProcessedEventPruneScheduler({
-      prune,
-    } as unknown as WearableProcessedEventPruneService);
+    const scheduler = await buildScheduler(prune);
 
     await expect(scheduler.handleCron()).resolves.toBeUndefined();
     expect(errorSpy).toHaveBeenCalledWith({
