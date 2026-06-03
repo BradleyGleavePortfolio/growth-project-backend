@@ -34,10 +34,16 @@ import {
  * DELIVERY model — documented inline so the divergences are explicit:
  *
  *  1. AUTH — Garmin uses the partner OAuth model. The legacy Health API used
- *     OAuth1.0a (signed requests); the modern Health API uses OAuth2 with PKCE.
- *     This connector implements the OAuth2/PKCE flow (the model Garmin steers
- *     new partners to) and reads `GARMIN_CLIENT_ID` / `GARMIN_CLIENT_SECRET` /
- *     `GARMIN_REDIRECT_URI` from env — never hardcoded, never logged (#1/#12).
+ *     OAuth1.0a (signed requests); the modern Health API offers OAuth2, and
+ *     PKCE is on Garmin's roadmap for new partners. This connector implements
+ *     the OAuth2 authorization-code flow with a confidential client
+ *     (`client_secret`) and does NOT yet emit a PKCE `code_challenge`, so the
+ *     registry advertises `supportsPkce: false` and the generic OAuth state
+ *     service threads only CSRF state (no PKCE challenge) for Garmin. PKCE is
+ *     TBD pending Garmin's client_secret rotation policy; flip the registry
+ *     flag to true and add `code_challenge` here together when it lands. It
+ *     reads `GARMIN_CLIENT_ID` / `GARMIN_CLIENT_SECRET` / `GARMIN_REDIRECT_URI`
+ *     from env — never hardcoded, never logged (#1/#12).
  *     The `WearableAuthModel` enum in the foundation interface is
  *     (`oauth2` | `sdk-native` | `on-device`); the Garmin partner-signed push
  *     is an OAuth2-family flow, so `authModel = 'oauth2'`. The partner-signed
@@ -122,18 +128,36 @@ export class GarminConnector implements WearableConnector {
 
   // ── Config (env) ──────────────────────────────────────────────────────
 
+  // OAuth config is fail-loud (matches the other six OAuth2 connectors, e.g.
+  // wahoo/withings `requireEnv`): a missing client id / secret / redirect uri
+  // must raise a clean server-side configuration error rather than emit a
+  // malformed authorization URL with a blank client_id.
   private get clientId(): string {
-    return process.env.GARMIN_CLIENT_ID ?? '';
+    return this.requireEnv('GARMIN_CLIENT_ID');
   }
   private get clientSecret(): string {
-    return process.env.GARMIN_CLIENT_SECRET ?? '';
+    return this.requireEnv('GARMIN_CLIENT_SECRET');
   }
   private get redirectUri(): string {
-    return process.env.GARMIN_REDIRECT_URI ?? '';
+    return this.requireEnv('GARMIN_REDIRECT_URI');
   }
-  /** Partner-configured push verification token (no per-event HMAC). */
+  /**
+   * Partner-configured push verification token (no per-event HMAC). Stays
+   * fail-OPEN on read: when unset the webhook verifier treats every push as
+   * untrusted and FAILS CLOSED (returns false), so a missing token never
+   * throws at request time — see the webhook controller.
+   */
   get pushToken(): string {
     return process.env.GARMIN_PUSH_TOKEN ?? '';
+  }
+
+  /** Fail-loud env read for required OAuth configuration. */
+  private requireEnv(name: string): string {
+    const v = process.env[name];
+    if (!v) {
+      throw new Error(`garmin: required env var ${name} is not set`);
+    }
+    return v;
   }
 
   // ── OAuth ─────────────────────────────────────────────────────────────

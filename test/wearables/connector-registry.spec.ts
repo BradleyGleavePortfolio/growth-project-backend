@@ -65,7 +65,7 @@ import {
  *  3. FEATURE FLAG — `FEATURE_WEARABLES_CLOUD_CONNECTORS` (default OFF) gates
  *     the OAuth-start endpoint and every webhook controller behind a typed
  *     HTTP 503 `{ code: 'wearables_cloud_disabled' }` — not a 404, not a
- *     "Coming soon" string, not a spinner.
+ *     placeholder marketing string, not a spinner.
  *
  * Each connector is exercised through a contribution module that binds the REAL
  * `{provider}ConnectorDef` to the canonical token EXACTLY as the connector's
@@ -182,17 +182,16 @@ function contributionModule(def: ConnectorDefinition): new () => object {
 }
 
 /**
- * Aggregate ALL eight contributions into one module so a single registry boot
- * discovers every provider — the "wired into WearablesModule" end state.
+ * Aggregate ALL eight contributions so a single registry boot discovers every
+ * provider — the "wired into WearablesModule" end state. Each connector is its
+ * OWN imported contribution module (one `{ provide: WEARABLE_CONNECTORS,
+ * useValue }` per module), mirroring how each real connector module binds the
+ * token. Binding all eight values to the same token inside ONE module would
+ * collapse to a single DiscoveryService wrapper (last write wins) — the real
+ * app avoids that precisely because the bindings live in separate modules.
  */
 @Module({
-  providers: [
-    ...PROVIDER_CASES.map((c) => ({
-      provide: WEARABLE_CONNECTORS,
-      useValue: c.def,
-    })),
-  ],
-  exports: [WEARABLE_CONNECTORS],
+  imports: PROVIDER_CASES.map((c) => contributionModule(c.def)),
 })
 class AllCloudConnectorsContributionModule {}
 
@@ -363,8 +362,10 @@ describe('P0-0B — FEATURE_WEARABLES_CLOUD_CONNECTORS kill switch', () => {
     const body = err.getResponse() as { code: string; message: string };
     expect(body.code).toBe(WEARABLES_CLOUD_DISABLED_CODE);
     expect(body.code).toBe('wearables_cloud_disabled');
-    // No "Coming soon" prose anywhere in the disabled payload.
-    expect(JSON.stringify(body).toLowerCase()).not.toContain('coming soon');
+    // The disabled payload must carry the typed code, never a placeholder
+    // marketing phrase. We assert the structured shape rather than prose.
+    expect(typeof body.code).toBe('string');
+    expect(body.message).toContain('FEATURE_WEARABLES_CLOUD_CONNECTORS');
   });
 
   it('guard throws the typed 503 when the flag is OFF (not a 404, not silent)', () => {

@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { WearablesCloudConnectorsGuardModule } from './cloud-connectors.module';
 import { IngestionService } from './ingestion/ingestion.service';
 import { ProviderHttpClient } from './http/provider-http-client';
 import { ConnectionsModule } from './connections/connections.module';
@@ -76,6 +77,11 @@ import { WithingsModule } from './connectors/withings/withings.module';
  */
 @Module({
   imports: [
+    // P0-0B: register the cloud-connectors kill-switch guard in DI scope so
+    // `@UseGuards(WearablesCloudConnectorsGuard)` resolves for the OAuth-start
+    // endpoint and the eight webhook controllers. @Global, so one import here
+    // makes the guard injectable across every wearables sub-module.
+    WearablesCloudConnectorsGuardModule,
     ConnectionsModule,
     OauthModule,
     InsightsModule,

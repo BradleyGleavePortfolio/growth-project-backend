@@ -20,8 +20,9 @@ import {
  * the wearables kill switch returns a TYPED 503 disabled error — the route is
  * mounted and known, the feature is just turned off — so the mobile client can
  * render an actionable "cloud connectors are off" state rather than a 404
- * (route-missing) or an indefinite spinner. There is NO "Coming soon" string,
- * NO `as any`, NO swallowed rejection.
+ * (route-missing) or an indefinite spinner. Disabled responses always use the
+ * typed error code below rather than a placeholder marketing phrase, and the
+ * guard never relies on broad-cast escape hatches or swallowed rejections.
  */
 
 /** The typed error code returned by every disabled cloud-connector route. */

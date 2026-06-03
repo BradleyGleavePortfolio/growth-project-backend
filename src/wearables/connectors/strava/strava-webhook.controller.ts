@@ -9,6 +9,7 @@ import {
   Injectable,
   Logger,
   OnModuleInit,
+  Optional,
   Post,
   Query,
   Req,
@@ -170,7 +171,10 @@ export class StravaWebhookController implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly fetchQueue: StravaActivityFetchQueue,
-    env?: Partial<StravaWebhookEnv>,
+    // `env` is a test-only seam (no DI token); mark @Optional so Nest injects
+    // undefined in production instead of trying to resolve the interface type
+    // and failing the whole AppModule boot.
+    @Optional() env?: Partial<StravaWebhookEnv>,
   ) {
     this.getEnv = env?.getEnv ?? ((k) => process.env[k]);
   }

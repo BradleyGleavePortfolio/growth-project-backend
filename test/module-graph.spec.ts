@@ -81,6 +81,17 @@ const KNOWN_FORWARDREF_CYCLES: ReadonlyArray<readonly [string, string]> = [
   // each other at their imports. See src/admin/admin.module.ts L52-58
   // and src/coach/coach.module.ts L38-43 for the justification.
   ['AdminModule', 'CoachModule'],
+  // P0-0B: GarminModule + WhoopModule each import WearablesModule back (for the
+  // shared HTTP/ingestion seam they reuse), while WearablesModule imports all
+  // eight connector modules to aggregate them into the ConnectorRegistry. Both
+  // sides wrap the edge in forwardRef(): WearablesModule wraps Garmin/WHOOP in
+  // its imports list, and GarminModule/WhoopModule wrap WearablesModule in
+  // theirs. The other six connectors do not import WearablesModule back, so
+  // only these two pairs are cyclical. See src/wearables/wearables.module.ts
+  // (imports) and src/wearables/connectors/{garmin,whoop}/*.module.ts for the
+  // justification at each import site.
+  ['GarminModule', 'WearablesModule'],
+  ['WearablesModule', 'WhoopModule'],
 ];
 
 type ModuleLike =
