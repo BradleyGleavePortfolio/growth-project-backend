@@ -401,6 +401,11 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Per-run cap on candidates the GDPR scrub worker will process. Defaults to 100; clamped to [1, 1000].',
   },
   {
+    name: 'WEARABLE_PROCESSED_EVENT_RETENTION_DAYS',
+    tier: 'optional',
+    reason: 'Retention window (in days) for the WearableProcessedEvent webhook-idempotency ledger. The daily prune deletes rows whose processed_at is older than this many days. Defaults to 30 (>2x the longest provider redelivery window of ≥14d). 0 prunes everything older than now; a missing, blank, non-numeric, or negative value falls back to 30.',
+  },
+  {
     name: 'PTM_SCORING_ENABLED',
     tier: 'optional',
     reason: 'Feature flag — when "false", the nightly PTM recompute cron and the admin teaching endpoints are disabled. Defaults to true (engine runs). Use to quickly disable the scoring engine if a heuristic regression is shipped.',

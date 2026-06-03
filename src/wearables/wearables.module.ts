@@ -6,6 +6,7 @@ import { OauthModule } from './oauth/oauth.module';
 import { InsightsModule } from './insights/insights.module';
 import { SamplesModule } from './samples/samples.module';
 import { PreferencesModule } from './preferences/preferences.module';
+import { MaintenanceModule } from './maintenance/maintenance.module';
 
 /**
  * PR-HK-0 — wearables foundation module.
@@ -57,6 +58,13 @@ import { PreferencesModule } from './preferences/preferences.module';
  * no shared providers beyond the @Global PrismaService + the PR-HK-0
  * IngestionService (re-provided inside SamplesModule), so this block is
  * strictly additive over the PR-HK-0/1/4 seams.
+ *
+ * ── PR-HK (cron prune) (pure-additive wiring) ──
+ * Mount {@link MaintenanceModule} — the daily WearableProcessedEvent retention
+ * prune (scheduler + service). Disjoint folder (src/wearables/maintenance/),
+ * no shared providers beyond the @Global PrismaService, so this block is
+ * strictly additive over the seams above. This is the prune cron deferred from
+ * the HK wearables expansion (unbounded webhook-idempotency ledger growth).
  */
 @Module({
   imports: [
@@ -65,6 +73,7 @@ import { PreferencesModule } from './preferences/preferences.module';
     InsightsModule,
     SamplesModule,
     PreferencesModule,
+    MaintenanceModule,
   ],
   providers: [IngestionService, ProviderHttpClient],
   exports: [
@@ -75,6 +84,7 @@ import { PreferencesModule } from './preferences/preferences.module';
     InsightsModule,
     SamplesModule,
     PreferencesModule,
+    MaintenanceModule,
   ],
 })
 export class WearablesModule {}
