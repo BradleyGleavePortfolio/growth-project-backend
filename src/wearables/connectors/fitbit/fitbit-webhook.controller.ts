@@ -11,7 +11,9 @@ import {
   Req,
   Res,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
+import { WearablesCloudConnectorsGuard } from '../../cloud-connectors.feature';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { RawBodyRequest } from '@nestjs/common';
@@ -73,6 +75,7 @@ import {
  */
 @ApiTags('wearables-webhooks')
 @Controller('v1/wearables/webhooks')
+@UseGuards(WearablesCloudConnectorsGuard)
 export class FitbitWebhookController {
   private readonly logger = new Logger(FitbitWebhookController.name);
 

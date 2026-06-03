@@ -1,58 +1,108 @@
-import { InjectionToken } from '@nestjs/common';
-import { WearableProvider } from '@prisma/client';
-import { WearableAuthModel } from '../connector.interface';
-import { createPolarConnector } from './polar.connector';
+import { WearableConnection, WearableProvider } from '@prisma/client';
+import {
+  NormalizedSample,
+  RawRecord,
+  TokenSet,
+} from '../../normalization/normalizer.types';
+import { ConnectorDefinition } from '../../connector-registry';
+import { ProviderHttpClient } from '../../http/provider-http-client';
+import { PolarConnector, createPolarConnector } from './polar.connector';
 
 /**
  * PR-HK-2.g — Polar connector public surface + registry contribution.
  *
  * Connectors do NOT edit `connector-registry.ts` (owned by PR-HK-1). Instead
- * each connector exports a side-effect-free {@link ConnectorDefinition} const
- * that the registry consumes, and contributes its instance into the
- * `WEARABLE_CONNECTORS` multi-provider collection (see `polar.module.ts`).
+ * each connector binds a {@link ConnectorDefinition} value to PR-HK-1's
+ * canonical {@link WEARABLE_CONNECTORS} token inside its OWN module
+ * (`polar.module.ts`). PR-HK-1's {@link ConnectorRegistry} discovers every such
+ * binding across all loaded modules via Nest's `DiscoveryService` and indexes
+ * it by provider — so importing {@link PolarModule} is sufficient to make Polar
+ * discoverable/activatable through the generic connect flow, with no edit to
+ * the registry file.
  *
- * ── WIRING (deferred to the final integration PR, NOT this PR) ──────────────
- * To activate Polar, the integration PR adds ONE import to
- * `src/wearables/wearables.module.ts`:
- *
- *     import { PolarModule } from './connectors/polar/polar.module';
- *     @Module({ imports: [PolarModule], ... }) export class WearablesModule {}
- *
- * This PR deliberately does NOT touch `wearables.module.ts` to stay strictly
- * file-disjoint (no mutex with the other PR-HK-2.* connector PRs).
+ * ── WIRING (P0-0B) ─────────────────────────────────────────────────────────
+ * Polar is wired into `src/wearables/wearables.module.ts` via `imports: [PolarModule]`.
  */
 
 /**
- * Multi-injection DI token for the connector registry. PR-HK-1 defines the
- * canonical token; until it lands, this `Symbol.for` provides a stable,
- * process-global seam so `polar.module.ts` can contribute via
- * `{ provide: WEARABLE_CONNECTORS, useExisting: PolarConnector, multi: true }`.
- * The integration PR aliases this to PR-HK-1's token if they differ.
+ * Re-export PR-HK-1's canonical registry token so `polar.module.ts` binds its
+ * contribution to the SAME token the registry discovers
+ * (`connector-registry.ts:WEARABLE_CONNECTORS`). The token is the string
+ * `'WEARABLE_CONNECTORS'`; binding to any other token (e.g. a local
+ * `Symbol.for(...)`) would NOT be seen by `ConnectorRegistry` and Polar would
+ * never activate. (P0-0B registry-token alignment — landmine fix.)
  */
-export const WEARABLE_CONNECTORS: InjectionToken =
-  Symbol.for('WEARABLE_CONNECTORS');
+export { WEARABLE_CONNECTORS, ConnectorDefinition } from '../../connector-registry';
+
+/** Polar does not use PKCE in the connect flow (base OAuth2 authorization-code). */
+const POLAR_SUPPORTS_PKCE = false;
+
+/** Human-readable provider label for connection-management UIs. */
+const POLAR_DISPLAY_NAME = 'Polar';
+
+/** Webhook receive path mounted by {@link PolarWebhookController}. */
+export const POLAR_WEBHOOK_PATH = '/v1/wearables/webhooks/polar';
 
 /**
- * The shape the registry reads to describe a provider without instantiating
- * it. Mirrors the minimal metadata PR-HK-1's registry needs; the live
- * behaviour lives on {@link PolarConnector} (injected via DI).
+ * Polar's registry contribution. Satisfies PR-HK-1's canonical
+ * {@link ConnectorDefinition} contract so {@link ConnectorRegistry} discovers
+ * and activates it. The live behaviour lives on {@link PolarConnector}; this
+ * definition delegates to a lazily-constructed connector instance so the value
+ * is self-describing for the registry while routing OAuth/backfill through the
+ * real implementation (which reads client credentials from env and routes all
+ * HTTP through {@link ProviderHttpClient}).
  */
-export interface ConnectorDefinition {
-  readonly provider: WearableProvider;
-  readonly authModel: WearableAuthModel;
-  /** Webhook receive path mounted by the connector's controller. */
-  readonly webhookPath?: string;
-  /** Factory so a non-DI registry can construct an instance if needed. */
-  readonly create: typeof createPolarConnector;
+class PolarConnectorDefinition implements ConnectorDefinition {
+  readonly provider: WearableProvider = WearableProvider.POLAR;
+  readonly authModel = 'oauth2' as const;
+  readonly displayName: string = POLAR_DISPLAY_NAME;
+  readonly supportsPkce: boolean = POLAR_SUPPORTS_PKCE;
+
+  private connector: PolarConnector | null = null;
+
+  private get impl(): PolarConnector {
+    if (!this.connector) {
+      this.connector = createPolarConnector(new ProviderHttpClient());
+    }
+    return this.connector;
+  }
+
+  buildAuthorizationUrl(
+    _redirectUri: string,
+    state: string,
+    _pkceChallenge?: string,
+  ): string | null {
+    return this.impl.buildAuthUrl('', state);
+  }
+
+  exchangeCode(code: string, _pkceVerifier?: string): Promise<TokenSet> {
+    return this.impl.exchangeCode(code);
+  }
+
+  // ── base WearableConnector surface (delegated) ─────────────────────────────
+
+  buildAuthUrl(userId: string, state: string): string | null {
+    return this.impl.buildAuthUrl(userId, state);
+  }
+
+  refresh(conn: WearableConnection): Promise<TokenSet> {
+    return this.impl.refresh(conn);
+  }
+
+  backfill(conn: WearableConnection, since: Date): Promise<RawRecord[]> {
+    return this.impl.backfill(conn, since);
+  }
+
+  normalize(raw: RawRecord[]): NormalizedSample[] {
+    return this.impl.normalize(raw);
+  }
 }
 
-/** Polar's registry contribution (consumed by PR-HK-1's registry, by value). */
-export const polarConnectorDef: ConnectorDefinition = {
-  provider: WearableProvider.POLAR,
-  authModel: 'oauth2',
-  webhookPath: '/v1/wearables/webhooks/polar',
-  create: createPolarConnector,
-};
+/**
+ * Polar's registry contribution (consumed by PR-HK-1's {@link
+ * ConnectorRegistry}, by value, via the {@link WEARABLE_CONNECTORS} token).
+ */
+export const polarConnectorDef: ConnectorDefinition = new PolarConnectorDefinition();
 
 export { PolarConnector, createPolarConnector } from './polar.connector';
 export { PolarModule } from './polar.module';

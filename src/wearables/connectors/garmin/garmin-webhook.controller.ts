@@ -8,7 +8,9 @@ import {
   Req,
   ServiceUnavailableException,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
+import { WearablesCloudConnectorsGuard } from '../../cloud-connectors.feature';
 import type { RawBodyRequest } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
@@ -69,6 +71,7 @@ import {
  */
 @ApiTags('wearables-webhooks')
 @Controller('v1/wearables/webhooks')
+@UseGuards(WearablesCloudConnectorsGuard)
 export class GarminWebhookController {
   private readonly logger = new Logger(GarminWebhookController.name);
 

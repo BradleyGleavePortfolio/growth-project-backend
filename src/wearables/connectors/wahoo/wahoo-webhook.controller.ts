@@ -8,7 +8,9 @@ import {
   Post,
   Req,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
+import { WearablesCloudConnectorsGuard } from '../../cloud-connectors.feature';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { RawBodyRequest } from '@nestjs/common';
@@ -60,6 +62,7 @@ const SUPPORTED_WAHOO_EVENT_TYPES = ['workout_summary'] as const;
  */
 @ApiTags('wearables-webhooks')
 @Controller('v1/wearables/webhooks')
+@UseGuards(WearablesCloudConnectorsGuard)
 export class WahooWebhookController {
   private readonly logger = new Logger(WahooWebhookController.name);
 

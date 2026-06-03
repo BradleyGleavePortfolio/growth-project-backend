@@ -13,7 +13,9 @@ import {
   Query,
   Req,
   ServiceUnavailableException,
+  UseGuards,
 } from '@nestjs/common';
+import { WearablesCloudConnectorsGuard } from '../../cloud-connectors.feature';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
@@ -160,6 +162,7 @@ export interface StravaWebhookEnv {
 
 @ApiTags('webhooks')
 @Controller('v1/wearables/webhooks')
+@UseGuards(WearablesCloudConnectorsGuard)
 export class StravaWebhookController implements OnModuleInit {
   private readonly logger = new Logger(StravaWebhookController.name);
   private readonly getEnv: (key: string) => string | undefined;

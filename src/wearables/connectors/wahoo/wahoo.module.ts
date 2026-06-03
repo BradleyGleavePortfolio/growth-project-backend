@@ -1,4 +1,4 @@
-import { Module, Provider } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { IngestionService } from '../../ingestion/ingestion.service';
 import { ProviderHttpClient } from '../../http/provider-http-client';
 import { WahooConnector } from './wahoo.connector';
@@ -15,9 +15,12 @@ import { wahooConnectorDef, WEARABLE_CONNECTORS } from './index';
  * final integration PR. See `index.ts` for the one-line wiring instruction.
  *
  * Registry integration (PR-HK-1 owns `connector-registry.ts`): rather than
- * editing that file, this module CONTRIBUTES its {@link wahooConnectorDef}
- * into the `WEARABLE_CONNECTORS` multi-provider collection via DI
- * multi-injection. No connector ever edits the registry.
+ * editing that file, this module CONTRIBUTES its {@link wahooConnectorDef} by
+ * binding it as a VALUE to PR-HK-1's canonical {@link WEARABLE_CONNECTORS}
+ * token. PR-HK-1's `ConnectorRegistry` enumerates every provider whose
+ * injection token is `WEARABLE_CONNECTORS` across all loaded modules via Nest's
+ * `DiscoveryService` and indexes the discovered {@link ConnectorDefinition}s by
+ * provider at boot — no edit to the registry file, no local token.
  *
  * Dependencies (`IngestionService`, `ProviderHttpClient`) are re-provided here
  * so the module is independently testable; when imported under WearablesModule
@@ -29,14 +32,11 @@ import { wahooConnectorDef, WEARABLE_CONNECTORS } from './index';
     ProviderHttpClient,
     IngestionService,
     WahooConnector,
-    // Multi-injection contribution into the connector registry collection.
-    // `multi` is a valid runtime option on Nest providers but is absent from
-    // this @nestjs/common version's Provider typings, so we assert the shape.
-    {
-      provide: WEARABLE_CONNECTORS,
-      useExisting: WahooConnector,
-      multi: true,
-    } as unknown as Provider,
+    // Registry contribution: bind Wahoo's canonical ConnectorDefinition VALUE to
+    // PR-HK-1's `WEARABLE_CONNECTORS` token. `DiscoveryService` discovers it by
+    // token at boot (connector-registry.ts); the registry fails loud on
+    // duplicate providers, so each connector binds exactly one definition.
+    { provide: WEARABLE_CONNECTORS, useValue: wahooConnectorDef },
   ],
   exports: [WahooConnector, WEARABLE_CONNECTORS],
 })

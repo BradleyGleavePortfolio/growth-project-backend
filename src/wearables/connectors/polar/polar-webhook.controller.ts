@@ -7,7 +7,9 @@ import {
   Post,
   Req,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
+import { WearablesCloudConnectorsGuard } from '../../cloud-connectors.feature';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { RawBodyRequest } from '@nestjs/common';
@@ -57,6 +59,7 @@ import { POLAR_WEBHOOK_EVENTS, PolarWebhookEvent } from './polar.types';
  */
 @ApiTags('wearables-webhooks')
 @Controller('v1/wearables/webhooks')
+@UseGuards(WearablesCloudConnectorsGuard)
 export class PolarWebhookController {
   private readonly logger = new Logger(PolarWebhookController.name);
 
