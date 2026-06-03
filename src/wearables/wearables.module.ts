@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
+import { WearablesCloudConnectorsGuardModule } from './cloud-connectors.module';
 import { IngestionService } from './ingestion/ingestion.service';
 import { ProviderHttpClient } from './http/provider-http-client';
 import { ConnectionsModule } from './connections/connections.module';
@@ -7,6 +8,14 @@ import { InsightsModule } from './insights/insights.module';
 import { SamplesModule } from './samples/samples.module';
 import { PreferencesModule } from './preferences/preferences.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
+import { FitbitModule } from './connectors/fitbit/fitbit.module';
+import { GarminModule } from './connectors/garmin/garmin.module';
+import { OuraModule } from './connectors/oura/oura.module';
+import { PolarModule } from './connectors/polar/polar.module';
+import { StravaConnectorModule } from './connectors/strava/strava.module';
+import { WahooModule } from './connectors/wahoo/wahoo.module';
+import { WhoopModule } from './connectors/whoop/whoop.module';
+import { WithingsModule } from './connectors/withings/withings.module';
 
 /**
  * PR-HK-0 — wearables foundation module.
@@ -68,12 +77,31 @@ import { MaintenanceModule } from './maintenance/maintenance.module';
  */
 @Module({
   imports: [
+    // P0-0B: register the cloud-connectors kill-switch guard in DI scope so
+    // `@UseGuards(WearablesCloudConnectorsGuard)` resolves for the OAuth-start
+    // endpoint and the eight webhook controllers. @Global, so one import here
+    // makes the guard injectable across every wearables sub-module.
+    WearablesCloudConnectorsGuardModule,
     ConnectionsModule,
     OauthModule,
     InsightsModule,
     SamplesModule,
     PreferencesModule,
     MaintenanceModule,
+    // ── P0-0B: cloud wearable connector modules ──────────────────────────────
+    // Each connector module binds its ConnectorDefinition to the canonical
+    // `WEARABLE_CONNECTORS` token; ConnectionsModule's ConnectorRegistry
+    // (DiscoveryService-backed) aggregates all eight at boot. Garmin + WHOOP
+    // import WearablesModule back (for the shared HTTP/ingestion seam), so they
+    // are wrapped in `forwardRef` on BOTH sides to break the module cycle.
+    FitbitModule,
+    forwardRef(() => GarminModule),
+    OuraModule,
+    PolarModule,
+    StravaConnectorModule,
+    WahooModule,
+    forwardRef(() => WhoopModule),
+    WithingsModule,
   ],
   providers: [IngestionService, ProviderHttpClient],
   exports: [
@@ -85,6 +113,14 @@ import { MaintenanceModule } from './maintenance/maintenance.module';
     SamplesModule,
     PreferencesModule,
     MaintenanceModule,
+    FitbitModule,
+    GarminModule,
+    OuraModule,
+    PolarModule,
+    StravaConnectorModule,
+    WahooModule,
+    WhoopModule,
+    WithingsModule,
   ],
 })
 export class WearablesModule {}

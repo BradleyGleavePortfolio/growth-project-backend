@@ -8,7 +8,9 @@ import {
   Post,
   Req,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
+import { WearablesCloudConnectorsGuard } from '../../cloud-connectors.feature';
 import { createHash } from 'crypto';
 import { ZodError } from 'zod';
 import { ApiTags } from '@nestjs/swagger';
@@ -54,6 +56,7 @@ import {
  */
 @ApiTags('wearables-webhooks')
 @Controller('v1/wearables/webhooks')
+@UseGuards(WearablesCloudConnectorsGuard)
 export class WhoopWebhookController {
   private readonly logger = new Logger(WhoopWebhookController.name);
 

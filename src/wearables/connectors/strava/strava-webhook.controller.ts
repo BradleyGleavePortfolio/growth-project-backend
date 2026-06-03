@@ -9,11 +9,14 @@ import {
   Injectable,
   Logger,
   OnModuleInit,
+  Optional,
   Post,
   Query,
   Req,
   ServiceUnavailableException,
+  UseGuards,
 } from '@nestjs/common';
+import { WearablesCloudConnectorsGuard } from '../../cloud-connectors.feature';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
@@ -160,6 +163,7 @@ export interface StravaWebhookEnv {
 
 @ApiTags('webhooks')
 @Controller('v1/wearables/webhooks')
+@UseGuards(WearablesCloudConnectorsGuard)
 export class StravaWebhookController implements OnModuleInit {
   private readonly logger = new Logger(StravaWebhookController.name);
   private readonly getEnv: (key: string) => string | undefined;
@@ -167,7 +171,10 @@ export class StravaWebhookController implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly fetchQueue: StravaActivityFetchQueue,
-    env?: Partial<StravaWebhookEnv>,
+    // `env` is a test-only seam (no DI token); mark @Optional so Nest injects
+    // undefined in production instead of trying to resolve the interface type
+    // and failing the whole AppModule boot.
+    @Optional() env?: Partial<StravaWebhookEnv>,
   ) {
     this.getEnv = env?.getEnv ?? ((k) => process.env[k]);
   }

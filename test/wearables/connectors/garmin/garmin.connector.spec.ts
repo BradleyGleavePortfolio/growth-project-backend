@@ -1,11 +1,11 @@
 import { WearableConnection, WearableProvider } from '@prisma/client';
-import { KmsService } from '../../../common/kms/kms.service';
+import { KmsService } from '../../../../src/common/kms/kms.service';
 import {
   ProviderHttpClient,
   ProviderHttpError,
-} from '../../http/provider-http-client';
-import { GarminConnector } from './garmin.connector';
-import { GARMIN_PUSH_TOKEN_HEADER } from './garmin.types';
+} from '../../../../src/wearables/http/provider-http-client';
+import { GarminConnector } from '../../../../src/wearables/connectors/garmin/garmin.connector';
+import { GARMIN_PUSH_TOKEN_HEADER } from '../../../../src/wearables/connectors/garmin/garmin.types';
 
 const PUSH_TOKEN = 'garmin-push-token-abc';
 
@@ -109,6 +109,25 @@ describe('GarminConnector', () => {
       for (const scope of ['activities', 'dailies', 'sleeps', 'hrv', 'bodyComps']) {
         expect(decoded).toContain(scope);
       }
+    });
+
+    it('fails loud (configuration error) when GARMIN_CLIENT_ID is missing', () => {
+      // Fail-loud parity with the other six OAuth2 connectors: a blank client
+      // id must raise a clean server-side error, never emit a malformed auth
+      // URL with an empty client_id.
+      delete process.env.GARMIN_CLIENT_ID;
+      const { connector } = makeConnector(jest.fn());
+      expect(() => connector.buildAuthUrl('user-1', 'state-xyz')).toThrow(
+        /GARMIN_CLIENT_ID/,
+      );
+    });
+
+    it('fails loud when GARMIN_REDIRECT_URI is missing', () => {
+      delete process.env.GARMIN_REDIRECT_URI;
+      const { connector } = makeConnector(jest.fn());
+      expect(() => connector.buildAuthUrl('user-1', 'state-xyz')).toThrow(
+        /GARMIN_REDIRECT_URI/,
+      );
     });
   });
 

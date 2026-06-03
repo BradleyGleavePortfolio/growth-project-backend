@@ -110,18 +110,38 @@ export class WhoopConnector implements WearableConnector {
 
   // ── Config (env) ──────────────────────────────────────────────────────
 
+  // OAuth config is fail-loud (matches the other six OAuth2 connectors, e.g.
+  // wahoo/withings `requireEnv`): a missing client id / secret / redirect uri
+  // must raise a clean server-side configuration error rather than emit a
+  // malformed authorization URL with a blank client_id.
   private get clientId(): string {
-    return process.env.WHOOP_CLIENT_ID ?? '';
+    return this.requireEnv('WHOOP_CLIENT_ID');
   }
   private get clientSecret(): string {
-    return process.env.WHOOP_CLIENT_SECRET ?? '';
+    return this.requireEnv('WHOOP_CLIENT_SECRET');
   }
   private get redirectUri(): string {
-    return process.env.WHOOP_REDIRECT_URI ?? '';
+    return this.requireEnv('WHOOP_REDIRECT_URI');
   }
-  /** WHOOP signs webhooks with the app client secret unless overridden. */
+  /**
+   * WHOOP signs webhooks with the app client secret unless overridden. Reads
+   * env directly (fail-OPEN to empty string) rather than via the fail-loud
+   * `clientSecret` getter, so a missing secret leaves the webhook verifier to
+   * FAIL CLOSED at request time instead of throwing during signature checks.
+   */
   private get webhookSecret(): string {
-    return process.env.WHOOP_WEBHOOK_SECRET ?? this.clientSecret;
+    return (
+      process.env.WHOOP_WEBHOOK_SECRET ?? process.env.WHOOP_CLIENT_SECRET ?? ''
+    );
+  }
+
+  /** Fail-loud env read for required OAuth configuration. */
+  private requireEnv(name: string): string {
+    const v = process.env[name];
+    if (!v) {
+      throw new Error(`whoop: required env var ${name} is not set`);
+    }
+    return v;
   }
 
   // ── OAuth ─────────────────────────────────────────────────────────────

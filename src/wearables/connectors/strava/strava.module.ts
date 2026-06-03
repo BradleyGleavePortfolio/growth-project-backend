@@ -4,6 +4,7 @@ import {
   StravaActivityFetchQueue,
   StravaWebhookController,
 } from './strava-webhook.controller';
+import { stravaConnectorDef, WEARABLE_CONNECTORS } from './index';
 
 /**
  * PR-HK-2.f — Strava connector module (file-disjoint under connectors/strava/).
@@ -26,13 +27,22 @@ import {
  * tests inject stub http + env. The connector is exported so the registry /
  * sync worker (separate PRs, NOT edited here) can consume it.
  *
- * This module is intentionally NOT imported into WearablesModule or the
- * connector registry here — that wiring is a different PR's write-set
- * (file-disjoint mutex). It stands alone and self-contained.
+ * Registry integration (P0-0B): this module CONTRIBUTES {@link stravaConnectorDef}
+ * by binding it as a VALUE to PR-HK-1's canonical {@link WEARABLE_CONNECTORS}
+ * token. PR-HK-1's `ConnectorRegistry` enumerates every provider whose injection
+ * token is `WEARABLE_CONNECTORS` across all loaded modules via Nest's
+ * `DiscoveryService` and indexes the discovered definitions by provider at boot —
+ * so Strava becomes OAuth-discoverable once this module is imported.
  */
 @Module({
   controllers: [StravaWebhookController],
-  providers: [StravaConnector, StravaActivityFetchQueue],
-  exports: [StravaConnector, StravaActivityFetchQueue],
+  providers: [
+    StravaConnector,
+    StravaActivityFetchQueue,
+    // Registry contribution: bind Strava's canonical ConnectorDefinition VALUE
+    // to PR-HK-1's `WEARABLE_CONNECTORS` token (discovered by token at boot).
+    { provide: WEARABLE_CONNECTORS, useValue: stravaConnectorDef },
+  ],
+  exports: [StravaConnector, StravaActivityFetchQueue, WEARABLE_CONNECTORS],
 })
 export class StravaConnectorModule {}

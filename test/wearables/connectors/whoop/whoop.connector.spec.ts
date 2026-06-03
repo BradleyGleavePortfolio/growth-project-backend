@@ -1,8 +1,8 @@
 import { WearableConnection, WearableProvider } from '@prisma/client';
-import { KmsService } from '../../../common/kms/kms.service';
-import { ProviderHttpClient } from '../../http/provider-http-client';
-import { WhoopConnector, signWhoopWebhook } from './whoop.connector';
-import { WHOOP_SIGNATURE_HEADER, WHOOP_SIGNATURE_TIMESTAMP_HEADER } from './whoop.types';
+import { KmsService } from '../../../../src/common/kms/kms.service';
+import { ProviderHttpClient } from '../../../../src/wearables/http/provider-http-client';
+import { WhoopConnector, signWhoopWebhook } from '../../../../src/wearables/connectors/whoop/whoop.connector';
+import { WHOOP_SIGNATURE_HEADER, WHOOP_SIGNATURE_TIMESTAMP_HEADER } from '../../../../src/wearables/connectors/whoop/whoop.types';
 
 const SECRET = 'whoop-test-secret';
 
@@ -90,6 +90,25 @@ describe('WhoopConnector', () => {
       const connector = makeConnector(jest.fn()).connector;
       expect(connector.provider).toBe(WearableProvider.WHOOP);
       expect(connector.authModel).toBe('oauth2');
+    });
+
+    it('fails loud (configuration error) when WHOOP_CLIENT_ID is missing', () => {
+      // Fail-loud parity with the other six OAuth2 connectors: a blank client
+      // id must raise a clean server-side error, never emit a malformed auth
+      // URL with an empty client_id.
+      delete process.env.WHOOP_CLIENT_ID;
+      const connector = makeConnector(jest.fn()).connector;
+      expect(() => connector.buildAuthUrl('user-1', 'state-xyz')).toThrow(
+        /WHOOP_CLIENT_ID/,
+      );
+    });
+
+    it('fails loud when WHOOP_REDIRECT_URI is missing', () => {
+      delete process.env.WHOOP_REDIRECT_URI;
+      const connector = makeConnector(jest.fn()).connector;
+      expect(() => connector.buildAuthUrl('user-1', 'state-xyz')).toThrow(
+        /WHOOP_REDIRECT_URI/,
+      );
     });
   });
 

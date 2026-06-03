@@ -18,6 +18,7 @@ import { WearableProvider } from '@prisma/client';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { WearablesCloudConnectorsGuard } from '../cloud-connectors.feature';
 import { ConnectionsService } from './connections.service';
 import { ConnectProviderDto } from './dto/connect-provider.dto';
 import { OauthCallbackDto } from './dto/oauth-callback.dto';
@@ -58,6 +59,7 @@ export class ConnectionsController {
    */
   @Post('oauth/start')
   @Roles('student')
+  @UseGuards(WearablesCloudConnectorsGuard)
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   async startOauth(

@@ -1,4 +1,4 @@
-import { Module, Provider } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { IngestionService } from '../../ingestion/ingestion.service';
 import { ProviderHttpClient } from '../../http/provider-http-client';
 import { PolarConnector } from './polar.connector';
@@ -16,11 +16,12 @@ import { polarConnectorDef, WEARABLE_CONNECTORS } from './index';
  * instruction.
  *
  * Registry integration (PR-HK-1 owns `connector-registry.ts`): rather than
- * editing that file, this module CONTRIBUTES its {@link polarConnectorDef}
- * into the `WEARABLE_CONNECTORS` multi-provider collection via DI
- * multi-injection. Once PR-HK-1 + the wire PR land, the registry reads every
- * module's contribution through that token — no connector ever edits the
- * registry.
+ * editing that file, this module CONTRIBUTES its {@link polarConnectorDef} by
+ * binding it as a VALUE to PR-HK-1's canonical {@link WEARABLE_CONNECTORS}
+ * token. PR-HK-1's `ConnectorRegistry` enumerates every provider whose
+ * injection token is `WEARABLE_CONNECTORS` across all loaded modules via Nest's
+ * `DiscoveryService` and indexes the discovered {@link ConnectorDefinition}s by
+ * provider at boot — no edit to the registry file, no local token.
  *
  * Dependencies (`IngestionService`, `ProviderHttpClient`) are re-provided here
  * so the module is independently testable; when imported under WearablesModule
@@ -32,14 +33,11 @@ import { polarConnectorDef, WEARABLE_CONNECTORS } from './index';
     ProviderHttpClient,
     IngestionService,
     PolarConnector,
-    // Multi-injection contribution into the connector registry collection.
-    // `multi` is a valid runtime option on Nest providers but is absent from
-    // this @nestjs/common version's Provider typings, so we assert the shape.
-    {
-      provide: WEARABLE_CONNECTORS,
-      useExisting: PolarConnector,
-      multi: true,
-    } as unknown as Provider,
+    // Registry contribution: bind Polar's canonical ConnectorDefinition VALUE to
+    // PR-HK-1's `WEARABLE_CONNECTORS` token. `DiscoveryService` discovers it by
+    // token at boot (connector-registry.ts); the registry fails loud on
+    // duplicate providers, so each connector binds exactly one definition.
+    { provide: WEARABLE_CONNECTORS, useValue: polarConnectorDef },
   ],
   exports: [PolarConnector, WEARABLE_CONNECTORS],
 })
