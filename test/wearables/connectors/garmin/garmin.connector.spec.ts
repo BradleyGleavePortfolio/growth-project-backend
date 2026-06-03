@@ -1,11 +1,11 @@
 import { WearableConnection, WearableProvider } from '@prisma/client';
-import { KmsService } from '../../../common/kms/kms.service';
+import { KmsService } from '../../../../src/common/kms/kms.service';
 import {
   ProviderHttpClient,
   ProviderHttpError,
-} from '../../http/provider-http-client';
-import { GarminConnector } from './garmin.connector';
-import { GARMIN_PUSH_TOKEN_HEADER } from './garmin.types';
+} from '../../../../src/wearables/http/provider-http-client';
+import { GarminConnector } from '../../../../src/wearables/connectors/garmin/garmin.connector';
+import { GARMIN_PUSH_TOKEN_HEADER } from '../../../../src/wearables/connectors/garmin/garmin.types';
 
 const PUSH_TOKEN = 'garmin-push-token-abc';
 

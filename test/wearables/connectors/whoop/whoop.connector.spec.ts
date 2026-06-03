@@ -1,8 +1,8 @@
 import { WearableConnection, WearableProvider } from '@prisma/client';
-import { KmsService } from '../../../common/kms/kms.service';
-import { ProviderHttpClient } from '../../http/provider-http-client';
-import { WhoopConnector, signWhoopWebhook } from './whoop.connector';
-import { WHOOP_SIGNATURE_HEADER, WHOOP_SIGNATURE_TIMESTAMP_HEADER } from './whoop.types';
+import { KmsService } from '../../../../src/common/kms/kms.service';
+import { ProviderHttpClient } from '../../../../src/wearables/http/provider-http-client';
+import { WhoopConnector, signWhoopWebhook } from '../../../../src/wearables/connectors/whoop/whoop.connector';
+import { WHOOP_SIGNATURE_HEADER, WHOOP_SIGNATURE_TIMESTAMP_HEADER } from '../../../../src/wearables/connectors/whoop/whoop.types';
 
 const SECRET = 'whoop-test-secret';
 
