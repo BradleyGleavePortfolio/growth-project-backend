@@ -1,9 +1,12 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
+  Post,
   Query,
   Request,
+  ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -23,6 +26,8 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { THROTTLER_NAMES } from '../../throttler/throttler.config';
 import { WearableSamplesService } from './wearable-samples.service';
 import { GetSamplesQuerySchema } from './dto/get-samples.query';
+import { IngestSamplesBodySchema } from './dto/ingest-samples.dto';
+import { IngestionService } from '../ingestion/ingestion.service';
 import {
   SamplesResponse,
   SamplesResponseSchema,
@@ -48,7 +53,30 @@ import { SamplesResponseDto } from './dto/sample-response.dto';
 @ApiBearerAuth()
 @Controller('v1/wearables/samples')
 export class WearableSamplesController {
-  constructor(private readonly svc: WearableSamplesService) {}
+  constructor(
+    private readonly svc: WearableSamplesService,
+    private readonly ingestion: IngestionService,
+  ) {}
+
+  /**
+   * Feature-flag gate for the on-device ingest route.
+   *
+   * `FEATURE_WEARABLES_INGEST_POST` defaults to OFF in production until the
+   * mobile smoke test passes (planner rollout note). When the flag is not the
+   * literal string 'true', the route is a kill switch: it returns a TYPED 503
+   * disabled error (a real, documented degradation contract) rather than a
+   * 404, a spinner state, or an uncaught throw. The client reads
+   * `code === 'wearables_ingest_disabled'` and shows a real "not available
+   * yet" surface (non-spinner empty state, mobile audit requirement).
+   */
+  private assertIngestEnabled(): void {
+    if (process.env.FEATURE_WEARABLES_INGEST_POST?.toLowerCase() !== 'true') {
+      throw new ServiceUnavailableException({
+        code: 'wearables_ingest_disabled',
+        message: 'On-device sample ingest is currently disabled.',
+      });
+    }
+  }
 
   @Roles('student', 'coach', 'owner')
   @UseGuards(JwtAuthGuard)
@@ -137,6 +165,63 @@ export class WearableSamplesController {
     // Validate the wire response against the LOCKED contract before it leaves
     // the process — a contract-violating shape can never reach the client.
     return SamplesResponseSchema.parse(payload);
+  }
+
+  /**
+   * P0-0A — `POST /v1/wearables/samples/ingest`.
+   *
+   * The on-device ingest lane. A mobile client posts a batch of normalized
+   * samples; we validate it (Zod, #8), stamp the subject `userId` from the
+   * authenticated JWT, and forward to the shared IngestionService.
+   *
+   * Auth posture: `@Roles('student')` + JwtAuthGuard. The subject user is ALWAYS
+   * `req.user.id` — the body cannot name a different subject. Any `userId` in
+   * the payload is impossible by construction: the schema is `.strict()` so a
+   * `userId` key is rejected outright (unknown field), and even if it slipped
+   * through, we overwrite it with the JWT id here. This closes the cross-user
+   * write IDOR (#5) at the controller seam — a coach cannot post for a foreign
+   * client through this route.
+   *
+   * Throttle: 20 requests / 60s per user (on-device batches are infrequent).
+   *
+   * Kill switch: gated by FEATURE_WEARABLES_INGEST_POST. When off, returns a
+   * typed 503 (`wearables_ingest_disabled`), not a 404 or a silent stub.
+   */
+  @Roles('student')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: 20 } })
+  @Post('ingest')
+  @ApiOperation({ summary: 'Ingest normalized on-device wearable samples' })
+  @ApiResponse({ status: 201, description: 'Accepted normalized sample batch.' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'WEARABLE_SAMPLES_QUERY_INVALID — malformed batch (empty, over the 2000 ' +
+      'cap, bad enum, bad date order, or unknown field).',
+  })
+  @ApiResponse({
+    status: 503,
+    description:
+      'wearables_ingest_disabled — FEATURE_WEARABLES_INGEST_POST is off on ' +
+      'this environment (kill switch).',
+  })
+  async ingestSamples(
+    @Request() req: AuthedRequest,
+    @Body() rawBody: unknown,
+  ): Promise<{ inserted: number; skipped: number }> {
+    this.assertIngestEnabled();
+    const parsed = parseOrThrow(IngestSamplesBodySchema, rawBody);
+    // Stamp the subject from the JWT — the body NEVER names the subject user
+    // (#5 IDOR). Normalize the optional pointers to explicit null so the
+    // NormalizedSample shape the IngestionService consumes is exact.
+    const samples = parsed.map((sample) => ({
+      ...sample,
+      userId: req.user.id,
+      sourceTz: sample.sourceTz ?? null,
+      sourceRecordId: sample.sourceRecordId ?? null,
+      rawRef: sample.rawRef ?? null,
+    }));
+    return this.ingestion.ingest(samples);
   }
 }
 
