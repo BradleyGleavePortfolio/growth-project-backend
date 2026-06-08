@@ -64,6 +64,61 @@ branch on every natural breakpoint (after spawning subagents,
 before waiting, after each completion). Uncommitted work on a
 sandbox is unrecoverable. Push first, push often.
 
+## Build Discipline (R66–R70) — added 2026-06-08
+
+Codified after the community v1-1 PR #365 unblock. The PR sat red for
+5 days on a single `doctrine-cleanup` token collision; the round-1
+auditor's sandbox died before completing, the dispatch state was
+lost, and the original builder shipped without running the full test
+suite locally. R66–R70 close those holes. See `docs/decisions/0001-community-v1-1-doctrine-collision-path-a.md` for the precipitating incident.
+
+**R66 — Full-Suite-Before-PR.** Every builder/fixer MUST run
+`npx jest --runInBand` to completion BEFORE force-pushing. Targeted
+subsets are fine for iteration, but the push itself is gated by a
+full green suite — recorded to a log file in `/home/user/workspace/`.
+No exceptions; partial runs hide cross-suite regressions (the
+class of failure that killed PR #365 in the first place). Pre-existing
+grandfathered failures are listed in `docs/PRE_EXISTING_TEST_FAILURES.md`
+and may be excluded ONLY by name in the log header.
+
+**R67 — Dispatch-State-Persisted.** When the parent agent dispatches
+any code-writing or auditing subagent, it MUST also push a row to
+`handoffs/dispatch.json` in `tgp-agent-context` BEFORE waiting:
+`{ts, subagent_id, role, worktree, base_sha, branch, brief_path}`.
+This is the recovery breadcrumb if the parent sandbox dies mid-flight.
+Dispatch-without-persist is forbidden; the next operator must be
+able to resume from `dispatch.json` alone.
+
+**R68 — Doctrine-Decision-Of-Record.** Every decision that affects
+a doctrine guard, a banned-token list, an invariant test, or a
+repo-wide naming convention MUST land in a merged Markdown file
+under `docs/decisions/NNNN-<slug>.md` (ADR format). The decision
+is not in force until that PR is merged. No verbal/Slack/journal-only
+doctrine changes — those vanish when sandboxes die. See
+`docs/decisions/0001-community-v1-1-doctrine-collision-path-a.md`
+for the template.
+
+**R69 — Skipped-Tests-Are-Red.** Any `it.skip`, `describe.skip`,
+`xit`, or `xdescribe` in a committed test file MUST be annotated
+with a `// SKIP-BECAUSE: <reason> — owner: <name> — expires: <YYYY-MM-DD>`
+comment on the line immediately above. CI rejects PRs where an
+unannotated skip appears. Environment-gated skips (`liveDbUrl()
+? describe : describe.skip`) are exempt because the skip reason
+IS the gate expression — but the surrounding comment block must
+still say what the gate means.
+
+**R70 — Fail-Fast Pre-Push Lane.** Before the full R66 suite,
+builders MUST run the <30s doctrine fail-fast lane first:
+```
+npx jest test/doctrine-cleanup.spec.ts test/invariants/locked_defaults.spec.ts \
+         test/diagnostic-prompt-doctrine.spec.ts --runInBand
+```
+If the fast lane is red, fix BEFORE running the full suite. This
+is the lane that would have caught PR #365's `Reaction`-token
+regression in 6 seconds instead of 26-minute CI cycles. See
+`docs/REPO_DOCTRINE_GUARDS.md` for the canonical guard-test index
+and recommended fail-fast lanes for other domains.
+
 ## Retired rules
 
 - **R10 — RETIRED 2026-05-26.** Original intent: grandfathered failing
