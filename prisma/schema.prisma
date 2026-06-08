@@ -440,6 +440,26 @@ model User {
   wearable_insights           WearableInsightCache[]         @relation("WearableInsightUser")
   wearable_metric_preferences WearableUserMetricPreference[] @relation("WearablePrefUser")
 
+  // Community Expansion v1-1 — back-relations only (FKs live on the
+  // community-side rows). A coach owns workspaces; any user authors
+  // messages/posts/events/challenges and holds memberships, RSVPs, and
+  // challenge participations. Author/sender relations are RESTRICT on the
+  // FK side so content history is never silently orphaned; membership and
+  // participation rows cascade on user hard-delete; moderation reporter/
+  // actor relations are SetNull so audit rows survive a PII scrub.
+  community_workspaces_as_coach      CommunityWorkspace[]              @relation("CommunityWorkspaceCoach")
+  community_memberships              CommunityMembership[]             @relation("CommunityMembershipUser")
+  community_messages_sent            CommunityMessage[]                @relation("community_message_sender")
+  community_messages_received        CommunityMessage[]                @relation("community_message_recipient")
+  community_posts_authored           CommunityPost[]                   @relation("CommunityPostAuthor")
+  community_responses                CommunityResponse[]               @relation("CommunityResponseUser")
+  community_events_created           CommunityEvent[]                  @relation("CommunityEventCreatedBy")
+  community_event_rsvps              CommunityEventRsvp[]              @relation("CommunityEventRsvpUser")
+  community_challenges_created       CommunityChallenge[]              @relation("CommunityChallengeCreatedBy")
+  community_challenge_participations CommunityChallengeParticipation[] @relation("CommunityChallengeParticipationUser")
+  community_reports_filed            CommunityModerationAction[]       @relation("community_reporter")
+  community_moderation_actions       CommunityModerationAction[]       @relation("community_moderator")
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -892,38 +912,38 @@ model NotificationPreferences {
   // muted=true overrides all per-kind settings (master kill switch).
   // Each kind has three channel flags: _email, _push, _inapp.
   // Defaults match the Kind × Channel × Default matrix in the README.
-  muted                   Boolean @default(false)
-  milestone_email         Boolean @default(true)
-  milestone_push          Boolean @default(true)
-  milestone_inapp         Boolean @default(true)
-  message_email           Boolean @default(false)
-  message_push            Boolean @default(true)
-  message_inapp           Boolean @default(true)
-  missed_checkin_email    Boolean @default(false)
-  missed_checkin_push     Boolean @default(true)
-  missed_checkin_inapp    Boolean @default(true)
-  weight_trend_email      Boolean @default(false)
-  weight_trend_push       Boolean @default(true)
-  weight_trend_inapp      Boolean @default(true)
-  checkin_submitted_email Boolean @default(false)
-  checkin_submitted_push  Boolean @default(false)
-  checkin_submitted_inapp Boolean @default(true)
-  build_week_email        Boolean @default(true)
-  build_week_push         Boolean @default(true)
-  build_week_inapp        Boolean @default(true)
-  coach_alert_email       Boolean @default(false)
-  coach_alert_push        Boolean @default(true)
-  coach_alert_inapp       Boolean @default(true)
-  digest_email            Boolean @default(true)
-  digest_push             Boolean @default(false)
-  digest_inapp            Boolean @default(false)
+  muted                    Boolean @default(false)
+  milestone_email          Boolean @default(true)
+  milestone_push           Boolean @default(true)
+  milestone_inapp          Boolean @default(true)
+  message_email            Boolean @default(false)
+  message_push             Boolean @default(true)
+  message_inapp            Boolean @default(true)
+  missed_checkin_email     Boolean @default(false)
+  missed_checkin_push      Boolean @default(true)
+  missed_checkin_inapp     Boolean @default(true)
+  weight_trend_email       Boolean @default(false)
+  weight_trend_push        Boolean @default(true)
+  weight_trend_inapp       Boolean @default(true)
+  checkin_submitted_email  Boolean @default(false)
+  checkin_submitted_push   Boolean @default(false)
+  checkin_submitted_inapp  Boolean @default(true)
+  build_week_email         Boolean @default(true)
+  build_week_push          Boolean @default(true)
+  build_week_inapp         Boolean @default(true)
+  coach_alert_email        Boolean @default(false)
+  coach_alert_push         Boolean @default(true)
+  coach_alert_inapp        Boolean @default(true)
+  digest_email             Boolean @default(true)
+  digest_push              Boolean @default(false)
+  digest_inapp             Boolean @default(false)
   // PR-10 — DRIP_RELEASED (buyer content-unlocked alerts). Default ON for
   // push + in-app (the brief mandates push + in-app on every unlock);
   // email default OFF because no transactional drip-release email
   // channel exists today (mirrors the booking cluster's defaults).
-  drip_released_email     Boolean @default(false)
-  drip_released_push      Boolean @default(true)
-  drip_released_inapp     Boolean @default(true)
+  drip_released_email      Boolean @default(false)
+  drip_released_push       Boolean @default(true)
+  drip_released_inapp      Boolean @default(true)
   // PR-15A — COACH_NEW_PURCHASE (selling coach learns of a new buyer at
   // entitlement). Default ON for push + in-app per decision #9 mirror —
   // a coach who is SELLING packages wants to know. email default OFF
@@ -938,9 +958,9 @@ model NotificationPreferences {
   // because there is no transactional email transport for booking
   // events in Phase 1 (digest only); the column is provisioned so
   // a future PR can flip it on without another schema change.
-  booking_email           Boolean @default(false)
-  booking_push            Boolean @default(true)
-  booking_inapp           Boolean @default(true)
+  booking_email            Boolean @default(false)
+  booking_push             Boolean @default(true)
+  booking_inapp            Boolean @default(true)
 
   // NUDGE-V1 — Behavioral re-engagement nudges. Four trigger types, each
   // independently opt-out-able (spec §6). Channel routing reuses the
@@ -1144,7 +1164,7 @@ model CoachMessage {
   // level idempotency guard — two concurrent approve calls cannot
   // produce two CoachMessage rows; the second INSERT trips P2002 and
   // the materialiser falls through to its "already_materialised" branch.
-  ai_draft_id        String?         @unique
+  ai_draft_id String? @unique
 
   @@index([coach_id])
   @@index([client_id])
@@ -1916,7 +1936,7 @@ model Notification {
   // `draft.send_notification` is approved. NULL for system/automatic
   // notifications. Same `@unique`-on-nullable pattern as the other
   // Stream 2 ai_draft_id columns.
-  ai_draft_id String?  @unique
+  ai_draft_id String? @unique
 
   @@index([user_id, created_at])
   @@index([user_id, read_at])
@@ -2094,7 +2114,7 @@ model ClientWorkoutAssignment {
   // `draft.assign_workout` is approved. NULL for human-assigned workouts.
   // `@unique` enforces single-emit at the schema layer (see CoachMessage
   // above for the same pattern + rationale).
-  ai_draft_id                String?     @unique
+  ai_draft_id String? @unique
 
   @@index([client_id, scheduled_for])
   @@index([workout_plan_id, scheduled_for])
@@ -2217,7 +2237,7 @@ model DailyMealPlanAssignment {
   // Stream 2 — AI execution. Set by `AssignMealPlanMaterializer` when a
   // `draft.assign_meal_plan` is approved. Same `@unique`-on-nullable
   // pattern as `ClientWorkoutAssignment.ai_draft_id`.
-  ai_draft_id          String?       @unique
+  ai_draft_id String? @unique
 
   // PR-7 — Packages & Drip-Feed. Set by MealPlanAssetResolver when the
   // assignment is materialised from a `ScheduledDrop` (drip cron or
@@ -2227,7 +2247,7 @@ model DailyMealPlanAssignment {
   // race guard: two concurrent retries of the same drop race on this
   // unique, the loser trips P2002, and the resolver re-reads the
   // winner's id. Mirrors the existing `ai_draft_id @unique` pattern.
-  drip_drop_id         String?       @unique
+  drip_drop_id String? @unique
 
   @@index([client_id, starts_on])
   @@index([daily_meal_plan_id])
@@ -3033,7 +3053,7 @@ model CoachPackage {
   // PR-3 Packages & Drip-Feed foundation. Coaches mark a package as
   // sellable once it has attachable content; until then every package
   // behaves exactly as today (paywall-only, zero content rows).
-  is_sellable Boolean                @default(false)
+  is_sellable Boolean               @default(false)
   contents    CoachPackageContent[]
 
   // PR-6 — draft/publish lifecycle. null = DRAFT (not purchasable); a
@@ -3095,7 +3115,7 @@ model GuestCheckout {
   /// the existing applySubscriptionUpdated webhook already keys lifecycle
   /// claims by stripe_subscription_id. Null on one-time-only checkouts
   /// and on all pre-PR-14 rows.
-  stripe_subscription_id   String?  @unique
+  stripe_subscription_id String? @unique
 
   guest_email String
   guest_name  String
@@ -3321,7 +3341,7 @@ model ClientPurchase {
   /// onto this column inside its conversion $transaction so per-page
   /// revenue / LTV joins read directly off ClientPurchase. Nullable: in-app
   /// purchases and direct-storefront guest checkouts leave it null.
-  landing_page_id            String?
+  landing_page_id String?
 
   // PR-3 Packages & Drip-Feed foundation. scheduled_drops is the
   // per-buyer schedule snapshotted at purchase; fanout is the 1:1
@@ -4724,23 +4744,23 @@ model CoachPackageContent {
 // snapshot ref (NOT an FK) — the authoring row can be soft-removed
 // without invalidating already-scheduled drops.
 model ScheduledDrop {
-  id                 String         @id @default(uuid())
-  client_purchase_id String
-  client_purchase    ClientPurchase @relation(fields: [client_purchase_id], references: [id], onDelete: Cascade)
-  content_id         String // snapshot ref, NOT an FK (content can be soft-removed)
-  asset_type         String
-  asset_id           String
-  asset_revision_id  String?
-  cadence_kind       String
-  cadence_payload    Json
-  display_title      String?
-  display_caption    String?
-  fire_at            DateTime?
-  fired_at           DateTime?
-  status             String         @default("pending") // pending|due|fired|skipped|failed|canceled
-  attempt_count      Int            @default(0)
-  materialised_ref   String?
-  failure_reason     String?
+  id                  String         @id @default(uuid())
+  client_purchase_id  String
+  client_purchase     ClientPurchase @relation(fields: [client_purchase_id], references: [id], onDelete: Cascade)
+  content_id          String // snapshot ref, NOT an FK (content can be soft-removed)
+  asset_type          String
+  asset_id            String
+  asset_revision_id   String?
+  cadence_kind        String
+  cadence_payload     Json
+  display_title       String?
+  display_caption     String?
+  fire_at             DateTime?
+  fired_at            DateTime?
+  status              String         @default("pending") // pending|due|fired|skipped|failed|canceled
+  attempt_count       Int            @default(0)
+  materialised_ref    String?
+  failure_reason      String?
   // PR-10 — DripDispatcherCron retry/backoff + claim columns. All nullable
   // and additive (see migration 20261205000000_pr10_scheduled_drop_retry_lock).
   locked_at           DateTime?
@@ -4755,9 +4775,9 @@ model ScheduledDrop {
   // only, so they materialise a fresh delivery instead of collapsing to the
   // cached marker/ledger result. See migration
   // 20261209000000_pr17_scheduled_drop_push_seq.
-  push_seq           Int            @default(0)
-  created_at         DateTime       @default(now())
-  updated_at         DateTime       @updatedAt
+  push_seq            Int            @default(0)
+  created_at          DateTime       @default(now())
+  updated_at          DateTime       @updatedAt
 
   @@unique([client_purchase_id, content_id, push_seq])
   @@index([status, fire_at])
@@ -4768,16 +4788,16 @@ model ScheduledDrop {
 // Runtime bookkeeping: one row per ClientPurchase tracking the package→
 // schedule fan-out job.
 model PurchaseFanout {
-  id           String         @id @default(uuid())
-  purchase_id  String         @unique
-  purchase     ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
-  state        String         @default("pending") // pending|in_progress|succeeded|failed
-  entrypoint   String // in_app_hosted | in_app_ps | storefront_guest
-  started_at   DateTime?
-  finished_at  DateTime?
-  retry_count  Int            @default(0)
-  last_error   String?
-  created_at   DateTime       @default(now())
+  id          String         @id @default(uuid())
+  purchase_id String         @unique
+  purchase    ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  state       String         @default("pending") // pending|in_progress|succeeded|failed
+  entrypoint  String // in_app_hosted | in_app_ps | storefront_guest
+  started_at  DateTime?
+  finished_at DateTime?
+  retry_count Int            @default(0)
+  last_error  String?
+  created_at  DateTime       @default(now())
 }
 
 // PR-9 R1 audit-fix — durable, rollback-survivable idempotency marker
@@ -4818,31 +4838,31 @@ model DripResolverMarker {
 // Coach-uploaded media library (PDFs/videos) attachable to packages
 // via CoachPackageContent.
 model CoachMediaAsset {
-  id              String    @id @default(uuid())
-  coach_id        String
-  coach           User      @relation("CoachMediaAssetCoach", fields: [coach_id], references: [id], onDelete: Cascade)
-  kind            String // pdf | video
-  title           String
-  description     String?
-  storage_key     String
-  provider        String // supabase | mux
-  byte_size       BigInt?
-  content_type    String?
-  duration_sec    Int?
-  page_count      Int?
-  mux_playback_id String?
+  id                String    @id @default(uuid())
+  coach_id          String
+  coach             User      @relation("CoachMediaAssetCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  kind              String // pdf | video
+  title             String
+  description       String?
+  storage_key       String
+  provider          String // supabase | mux
+  byte_size         BigInt?
+  content_type      String?
+  duration_sec      Int?
+  page_count        Int?
+  mux_playback_id   String?
   // PR-12 — async upload lifecycle. uploading -> ready (pdf, synchronous
   // confirm) OR uploading -> processing -> ready|errored (video, via Mux
   // webhook). MediaAssetResolver gates on status='ready' so a not-yet-ready
   // asset can never silently materialise into a buyer's grant.
-  status          String    @default("ready") // uploading | processing | ready | errored
+  status            String    @default("ready") // uploading | processing | ready | errored
   // Mux Direct Upload id we minted when the coach started a video upload.
   // Unique so the Mux webhook can resolve a single CoachMediaAsset row by
   // upload id (mirrors the ExerciseCatalogItem.mux_upload_id pattern).
-  mux_upload_id     String?  @unique
+  mux_upload_id     String?   @unique
   mux_error_message String?
-  created_at      DateTime  @default(now())
-  archived_at     DateTime?
+  created_at        DateTime  @default(now())
+  archived_at       DateTime?
 
   @@index([coach_id, archived_at, kind])
   @@index([coach_id, archived_at, kind, status])
@@ -5192,4 +5212,444 @@ model WearableUserMetricPreference {
 
   @@unique([user_id, metric], name: "WearablePref_user_metric_key")
   @@index([user_id])
+}
+
+// ============================================================
+// COMMUNITY EXPANSION v1-1 — workspace, cohorts, messages,
+// posts, reactions, events, challenges, moderation.
+//
+// Three space types only (product plan): The Lab (fixed coach
+// broadcast hall, scope=hall), Cohort (scope=cohort), and Direct
+// (scope=dm). Every row is workspace-scoped; RLS (defined in the
+// v1_1 migration via app.current_user_id() — the repo convention,
+// see prisma/migrations/rls_fitness_backend.sql) enforces tenant
+// isolation. Workspace deletion cascades to all child rows; the
+// User who authors content is RESTRICT-protected so history is not
+// silently lost, while membership/RSVP/participation rows cascade
+// on user delete. Ships schema-only behind FEATURE_COMMUNITY_SCHEMA;
+// no controllers until FEATURE_COMMUNITY_API (v1-2).
+// ============================================================
+
+enum CommunityCohortStatus {
+  draft
+  active
+  archived
+}
+
+enum CommunityMembershipRole {
+  coach
+  assistant
+  student
+}
+
+enum CommunityMembershipStatus {
+  invited
+  active
+  muted
+  removed
+}
+
+enum CommunityMessageScope {
+  cohort
+  dm
+}
+
+enum CommunityMessageKind {
+  text
+  voice
+  system
+}
+
+enum CommunityPostScope {
+  hall
+  cohort
+}
+
+enum CommunityPostType {
+  text
+  lesson
+  replay
+  poll
+  win
+}
+
+enum CommunityResponseTargetType {
+  message
+  post
+  comment
+  event
+  challenge
+}
+
+enum CommunityEventState {
+  scheduled
+  tomorrow
+  live
+  replay
+  reflected
+}
+
+enum CommunityEventRsvpStatus {
+  going
+  maybe
+  declined
+  attended
+  missed
+}
+
+enum CommunityChallengeStatus {
+  draft
+  active
+  completed
+  archived
+}
+
+enum CommunityModerationTargetType {
+  message
+  post
+  reaction
+  event
+  challenge
+  member
+}
+
+enum CommunityModerationStatus {
+  open
+  reviewed
+  actioned
+  dismissed
+}
+
+model CommunityWorkspace {
+  id                 String    @id @default(uuid()) @db.Uuid
+  coach_id           String    @db.Uuid
+  name               String    @db.VarChar(120)
+  slug               String    @unique @db.VarChar(80)
+  description        String?   @db.Text
+  dm_enabled_default Boolean   @default(false)
+  hall_enabled       Boolean   @default(true)
+  events_enabled     Boolean   @default(false)
+  challenges_enabled Boolean   @default(false)
+  max_cohort_members Int?      @db.Integer
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @updatedAt @db.Timestamptz(6)
+  archived_at        DateTime? @db.Timestamptz(6)
+
+  coach                    User                              @relation("CommunityWorkspaceCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  cohorts                  CommunityCohort[]
+  memberships              CommunityMembership[]
+  posts                    CommunityPost[]
+  responses                CommunityResponse[]
+  events                   CommunityEvent[]
+  event_rsvps              CommunityEventRsvp[]
+  challenges               CommunityChallenge[]
+  challenge_participations CommunityChallengeParticipation[]
+  moderation_actions       CommunityModerationAction[]
+
+  // Coach dashboard: list a coach's non-archived workspaces.
+  @@index([coach_id, archived_at])
+  // Ops/analytics: recent-workspace scans by creation time.
+  @@index([created_at])
+  @@map("community_workspaces")
+}
+
+model CommunityCohort {
+  id           String                @id @default(uuid()) @db.Uuid
+  workspace_id String                @db.Uuid
+  name         String                @db.VarChar(120)
+  description  String?               @db.Text
+  status       CommunityCohortStatus @default(active)
+  starts_at    DateTime?             @db.Timestamptz(6)
+  ends_at      DateTime?             @db.Timestamptz(6)
+  capacity     Int?                  @db.Integer
+  sort_order   Int                   @default(0)
+  created_at   DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime              @updatedAt @db.Timestamptz(6)
+  archived_at  DateTime?             @db.Timestamptz(6)
+
+  workspace   CommunityWorkspace    @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  memberships CommunityMembership[]
+  posts       CommunityPost[]
+  events      CommunityEvent[]
+  challenges  CommunityChallenge[]
+
+  @@unique([workspace_id, name])
+  // Cohort list ordered for a workspace (coach + client surfaces).
+  @@index([workspace_id, status, sort_order])
+  // Archived-cohort filtering within a workspace.
+  @@index([workspace_id, archived_at])
+  @@map("community_cohorts")
+}
+
+model CommunityMembership {
+  id                   String                    @id @default(uuid()) @db.Uuid
+  workspace_id         String                    @db.Uuid
+  cohort_id            String                    @db.Uuid
+  user_id              String                    @db.Uuid
+  role                 CommunityMembershipRole   @default(student)
+  status               CommunityMembershipStatus @default(active)
+  dm_enabled           Boolean?
+  notify_level         String                    @default("digest") @db.VarChar(32)
+  joined_at            DateTime?                 @db.Timestamptz(6)
+  last_read_message_at DateTime?                 @db.Timestamptz(6)
+  created_at           DateTime                  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime                  @updatedAt @db.Timestamptz(6)
+  removed_at           DateTime?                 @db.Timestamptz(6)
+
+  workspace CommunityWorkspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  cohort    CommunityCohort    @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
+  user      User               @relation("CommunityMembershipUser", fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([cohort_id, user_id])
+  // Membership lookup for a user within a workspace (RLS shared-cohort checks).
+  @@index([workspace_id, user_id, status])
+  // "My active memberships" across workspaces.
+  @@index([user_id, status])
+  // Cohort roster filtered by role/status.
+  @@index([cohort_id, status, role])
+  @@map("community_memberships")
+}
+
+model CommunityMessage {
+  id                String                @default(uuid()) @db.Uuid
+  created_at        DateTime              @default(now()) @db.Timestamptz(6)
+  workspace_id      String                @db.Uuid
+  cohort_id         String?               @db.Uuid
+  scope             CommunityMessageScope
+  dm_key            String?               @db.VarChar(160)
+  recipient_user_id String?               @db.Uuid
+  sender_id         String                @db.Uuid
+  kind              CommunityMessageKind  @default(text)
+  body              String?               @db.VarChar(4000)
+  voice_url         String?               @db.Text
+  voice_duration_ms Int?                  @db.Integer
+  voice_mime_type   String?               @db.VarChar(80)
+  voice_size_bytes  Int?                  @db.Integer
+  plan_context_type String?               @db.VarChar(40)
+  plan_context_id   String?               @db.Uuid
+  plan_week_start   DateTime?             @db.Date
+  parent_message_id String?               @db.Uuid
+  parent_message_at DateTime?             @db.Timestamptz(6)
+  coach_seen_at     DateTime?             @db.Timestamptz(6)
+  coach_acked_at    DateTime?             @db.Timestamptz(6)
+  coach_replied_at  DateTime?             @db.Timestamptz(6)
+  visibility        String                @default("active") @db.VarChar(24)
+  deleted_at        DateTime?             @db.Timestamptz(6)
+  updated_at        DateTime              @updatedAt @db.Timestamptz(6)
+
+  // RESTRICT on sender/recipient so a hard user delete cannot silently
+  // orphan or vanish conversation history; the GDPR scrubber soft-deletes.
+  sender    User  @relation("community_message_sender", fields: [sender_id], references: [id], onDelete: Restrict)
+  recipient User? @relation("community_message_recipient", fields: [recipient_user_id], references: [id], onDelete: Restrict)
+
+  // Composite PK includes the partition key (created_at) — required for
+  // Postgres native range partitioning on community_messages.
+  @@id([id, created_at])
+  // Workspace timeline (coach all-message reads).
+  @@index([workspace_id, created_at])
+  // Cohort thread pagination.
+  @@index([cohort_id, created_at])
+  // DM thread pagination by deterministic dm_key.
+  @@index([dm_key, created_at])
+  // Recipient inbox scans for DMs.
+  @@index([recipient_user_id, created_at])
+  // Sender outbox / authored-message scans.
+  @@index([sender_id, created_at])
+  // Plan-context tag filtering (v2-1 plan tags).
+  @@index([workspace_id, plan_context_type, plan_context_id])
+  // Visibility-filtered workspace timeline (moderation soft-deletes).
+  @@index([workspace_id, visibility, created_at])
+  @@map("community_messages")
+}
+
+model CommunityPost {
+  id             String             @id @default(uuid()) @db.Uuid
+  workspace_id   String             @db.Uuid
+  cohort_id      String?            @db.Uuid
+  author_id      String             @db.Uuid
+  scope          CommunityPostScope
+  type           CommunityPostType  @default(text)
+  title          String?            @db.VarChar(160)
+  body           String?            @db.Text
+  media_asset_id String?            @db.Uuid
+  event_id       String?            @db.Uuid
+  pinned_at      DateTime?          @db.Timestamptz(6)
+  release_at     DateTime?          @db.Timestamptz(6)
+  expires_at     DateTime?          @db.Timestamptz(6)
+  visibility     String             @default("active") @db.VarChar(24)
+  created_at     DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime           @updatedAt @db.Timestamptz(6)
+  deleted_at     DateTime?          @db.Timestamptz(6)
+
+  workspace CommunityWorkspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  cohort    CommunityCohort?   @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
+  author    User               @relation("CommunityPostAuthor", fields: [author_id], references: [id], onDelete: Restrict)
+
+  // Hall/cohort feed: pinned-first then recent, per scope.
+  @@index([workspace_id, scope, pinned_at, created_at])
+  // Cohort feed pagination.
+  @@index([cohort_id, created_at])
+  // Scheduled-release sweeps.
+  @@index([workspace_id, release_at])
+  // Visibility-filtered feed (moderation soft-deletes).
+  @@index([workspace_id, visibility, created_at])
+  @@map("community_posts")
+}
+
+model CommunityResponse {
+  id                String                      @id @default(uuid()) @db.Uuid
+  workspace_id      String                      @db.Uuid
+  target_type       CommunityResponseTargetType
+  target_id         String                      @db.Uuid
+  target_created_at DateTime?                   @db.Timestamptz(6)
+  user_id           String                      @db.Uuid
+  response_kind     String                      @db.VarChar(32)
+  created_at        DateTime                    @default(now()) @db.Timestamptz(6)
+
+  workspace CommunityWorkspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  user      User               @relation("CommunityResponseUser", fields: [user_id], references: [id], onDelete: Cascade)
+
+  // One response of a given emoji per user per target (idempotency).
+  @@unique([target_type, target_id, user_id, response_kind])
+  // Response-count aggregation for a target.
+  @@index([workspace_id, target_type, target_id])
+  // A user's recent responses.
+  @@index([user_id, created_at])
+  @@map("community_responses")
+}
+
+model CommunityEvent {
+  id                    String              @id @default(uuid()) @db.Uuid
+  workspace_id          String              @db.Uuid
+  cohort_id             String?             @db.Uuid
+  created_by_id         String              @db.Uuid
+  title                 String              @db.VarChar(160)
+  description           String?             @db.Text
+  state                 CommunityEventState @default(scheduled)
+  starts_at             DateTime            @db.Timestamptz(6)
+  ends_at               DateTime?           @db.Timestamptz(6)
+  live_url              String?             @db.Text
+  replay_media_asset_id String?             @db.Uuid
+  reflected_at          DateTime?           @db.Timestamptz(6)
+  created_at            DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime            @updatedAt @db.Timestamptz(6)
+  canceled_at           DateTime?           @db.Timestamptz(6)
+
+  workspace  CommunityWorkspace   @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  cohort     CommunityCohort?     @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
+  created_by User                 @relation("CommunityEventCreatedBy", fields: [created_by_id], references: [id], onDelete: Restrict)
+  rsvps      CommunityEventRsvp[]
+
+  // Upcoming-events board filtered by state.
+  @@index([workspace_id, state, starts_at])
+  // Cohort calendar.
+  @@index([cohort_id, starts_at])
+  // Global transition jobs (tomorrow/live sweeps).
+  @@index([starts_at])
+  @@map("community_events")
+}
+
+model CommunityEventRsvp {
+  id           String                   @id @default(uuid()) @db.Uuid
+  workspace_id String                   @db.Uuid
+  event_id     String                   @db.Uuid
+  user_id      String                   @db.Uuid
+  status       CommunityEventRsvpStatus
+  reminded_at  DateTime?                @db.Timestamptz(6)
+  created_at   DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime                 @updatedAt @db.Timestamptz(6)
+
+  workspace CommunityWorkspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  event     CommunityEvent     @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  user      User               @relation("CommunityEventRsvpUser", fields: [user_id], references: [id], onDelete: Cascade)
+
+  // One RSVP per user per event.
+  @@unique([event_id, user_id])
+  // "My RSVPs" within a workspace.
+  @@index([workspace_id, user_id, status])
+  // Reminder sweeps for unsent reminders.
+  @@index([workspace_id, status, reminded_at])
+  @@map("community_event_rsvps")
+}
+
+model CommunityChallenge {
+  id                  String                   @id @default(uuid()) @db.Uuid
+  workspace_id        String                   @db.Uuid
+  cohort_id           String?                  @db.Uuid
+  created_by_id       String                   @db.Uuid
+  title               String                   @db.VarChar(160)
+  description         String?                  @db.Text
+  status              CommunityChallengeStatus @default(draft)
+  starts_at           DateTime?                @db.Timestamptz(6)
+  ends_at             DateTime?                @db.Timestamptz(6)
+  metric_key          String?                  @db.VarChar(80)
+  target_value        Decimal?                 @db.Decimal(12, 2)
+  unit                String?                  @db.VarChar(40)
+  leaderboard_enabled Boolean                  @default(false)
+  created_at          DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime                 @updatedAt @db.Timestamptz(6)
+  archived_at         DateTime?                @db.Timestamptz(6)
+
+  workspace    CommunityWorkspace                @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  cohort       CommunityCohort?                  @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
+  created_by   User                              @relation("CommunityChallengeCreatedBy", fields: [created_by_id], references: [id], onDelete: Restrict)
+  participants CommunityChallengeParticipation[]
+
+  // Active-challenge board.
+  @@index([workspace_id, status, starts_at])
+  // Cohort challenge list.
+  @@index([cohort_id, status])
+  @@map("community_challenges")
+}
+
+model CommunityChallengeParticipation {
+  id             String    @id @default(uuid()) @db.Uuid
+  workspace_id   String    @db.Uuid
+  challenge_id   String    @db.Uuid
+  user_id        String    @db.Uuid
+  progress_value Decimal   @default(0) @db.Decimal(12, 2)
+  completed_at   DateTime? @db.Timestamptz(6)
+  last_logged_at DateTime? @db.Timestamptz(6)
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @updatedAt @db.Timestamptz(6)
+
+  workspace CommunityWorkspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  challenge CommunityChallenge @relation(fields: [challenge_id], references: [id], onDelete: Cascade)
+  user      User               @relation("CommunityChallengeParticipationUser", fields: [user_id], references: [id], onDelete: Cascade)
+
+  // One participation row per user per challenge.
+  @@unique([challenge_id, user_id])
+  // "My participations" within a workspace.
+  @@index([workspace_id, user_id])
+  // Leaderboard ordering by progress.
+  @@index([challenge_id, progress_value])
+  @@map("community_challenge_participations")
+}
+
+model CommunityModerationAction {
+  id             String                        @id @default(uuid()) @db.Uuid
+  workspace_id   String                        @db.Uuid
+  target_type    CommunityModerationTargetType
+  target_id      String                        @db.Uuid
+  reported_by_id String?                       @db.Uuid
+  actor_id       String?                       @db.Uuid
+  status         CommunityModerationStatus     @default(open)
+  reason         String                        @db.VarChar(80)
+  notes          String?                       @db.Text
+  action         String?                       @db.VarChar(80)
+  created_at     DateTime                      @default(now()) @db.Timestamptz(6)
+  resolved_at    DateTime?                     @db.Timestamptz(6)
+
+  workspace   CommunityWorkspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  // Reporter/actor are SetNull so the audit row survives a user scrub.
+  reported_by User?              @relation("community_reporter", fields: [reported_by_id], references: [id], onDelete: SetNull)
+  actor       User?              @relation("community_moderator", fields: [actor_id], references: [id], onDelete: SetNull)
+
+  // Coach moderation queue ordered by recency, filtered by status.
+  @@index([workspace_id, status, created_at])
+  // Lookup actions for a specific target.
+  @@index([target_type, target_id])
+  // A reporter's filed reports.
+  @@index([reported_by_id, created_at])
+  @@map("community_moderation_actions")
 }
