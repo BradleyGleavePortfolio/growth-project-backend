@@ -12,6 +12,8 @@ export interface AuthedRequest {
   ip?: string;
   socket?: { remoteAddress?: string };
   headers?: Record<string, string | string[] | undefined>;
+  // Set by CommunityFeatureFlagGuard for community endpoints.
+  community_flag_state?: 'enabled' | 'disabled';
 }
 
 // Subset of AuthedRequest the auditContext() helpers actually need. Lets

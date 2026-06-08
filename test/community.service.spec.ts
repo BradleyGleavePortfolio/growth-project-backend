@@ -41,7 +41,9 @@ describe('CommunityService.getLeaderboard (N+1 characterization)', () => {
         }),
       },
     };
-    service = new CommunityService(prismaMock as any);
+    // getLeaderboard does not touch CommunityRepository; an empty stub suffices.
+    const repoStub = {} as any;
+    service = new CommunityService(prismaMock as any, repoStub);
   });
 
   it('returns a leaderboard and records query count for 3 students', async () => {
