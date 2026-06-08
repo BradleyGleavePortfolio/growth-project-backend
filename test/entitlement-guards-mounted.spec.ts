@@ -77,7 +77,17 @@ const PAID_ROUTES: ReadonlyArray<PaidRoute> = [
   { controller: FastingController, label: '/fasting/*' },
   { controller: LogController, label: '/log/*' },
   { controller: ClientCheckInsController, label: '/check-ins/*' },
-  { controller: CommunityController, label: '/community/*' },
+  // The legacy paid community routes (leaderboard/feed/wins) carry
+  // ClientEntitlementGuard at the handler level now that the v1-2 foundation
+  // endpoints (/community/me, /today, /workspaces, /cohorts) were added: those
+  // are gated by CommunityFeatureFlagGuard instead, so the entitlement guard
+  // moved off the class onto each paid handler. getLeaderboard is the
+  // representative pin.
+  {
+    controller: CommunityController,
+    handler: 'getLeaderboard',
+    label: 'GET /community/leaderboard',
+  },
 
   // Audit follow-up (post-#259): three additional paid client surfaces
   // that were not pinned by the original allowlist. Adding them here
