@@ -56,6 +56,7 @@ sources:
   - "Cooling-off rule online-sales exclusion (Cornell LII Wex): https://www.law.cornell.edu/wex/cooling-off_rule"
   - "DMCA §512 safe harbor & designated agent (U.S. Copyright Office): https://www.copyright.gov/512/"
   - "17 U.S.C. §512 statutory text (Cornell LII): https://www.law.cornell.edu/uscode/text/17/512"
+  - "Cal. Civ. Code §1668 — limits on exculpatory/release-of-liability clauses (against public policy for fraud/willful injury): https://law.justia.com/codes/california/code-civ/division-3/part-2/title-4/section-1668/"
 disclaimer: >
   Draft wording prepared by an automated agent WITHOUT licensed legal review.
   FEATURE_CONTRACTS_ENABLED MUST remain OFF in production until reviewed by counsel.
