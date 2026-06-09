@@ -10,8 +10,9 @@
 -- ALSO owned by the system coach as canonical library templates; a coach who
 -- adopts one gets their own copy through ContractTemplateService.
 --
--- DISCLAIMER: Draft wording prepared by agent without licensed legal review.
--- FEATURE_CONTRACTS_ENABLED MUST remain OFF in prod until reviewed by counsel.
+-- DISCLAIMER:
+-- Draft wording prepared by an automated agent WITHOUT licensed legal review.
+-- FEATURE_CONTRACTS_ENABLED MUST remain OFF in production until reviewed by counsel.
 
 INSERT INTO "User" ("id", "supabase_id", "email", "name", "role")
 VALUES (
