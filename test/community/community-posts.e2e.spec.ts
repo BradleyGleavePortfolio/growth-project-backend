@@ -39,6 +39,11 @@ import {
 import { RolesGuard } from '../../src/auth/roles.guard';
 import { JwtAuthGuard } from '../../src/auth/auth.guard';
 import { PrismaService } from '../../src/prisma.service';
+import { CommunityRealtimeService } from '../../src/community/realtime/community-realtime.service';
+import { CommunityNotificationsService } from '../../src/community/notifications/community-notifications.service';
+import { SupabaseService } from '../../src/supabase/supabase.service';
+import { AnalyticsService } from '../../src/analytics/analytics.service';
+import { NotificationsService } from '../../src/notifications/notifications.service';
 import { liveDbUrl } from './_support/community-db';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
@@ -143,6 +148,11 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
         CommunityFeatureFlagGuard,
         CommunityPostsEnabledGuard,
         CommunityMessagesEnabledGuard,
+        CommunityRealtimeService,
+        CommunityNotificationsService,
+        SupabaseService,
+        AnalyticsService,
+        NotificationsService,
         Reflector,
         { provide: PrismaService, useValue: prismaForStub },
         { provide: APP_GUARD, useValue: new StubJwtAuthGuard(prismaForStub) },

@@ -20,6 +20,30 @@ The notifications module is the single place all communication with users and co
 
 Defaults live in `NotificationsService.getPreferences`. Each channel flag can be toggled independently via `PATCH /notifications/preferences`.
 
+### Community v1-4 push kinds
+
+These seven kinds are part of the Community Expansion (realtime + push slice).
+They are **code-level only** — the `NotificationPreferences` table has no
+per-kind column for them (v1-4 is schema-frozen), so their channel defaults
+live in `COMMUNITY_PUSH_DEFAULTS`
+(`src/community/notifications/community-notifications.types.ts`) and are applied
+at the read path. All delivery is gated behind `FEATURE_COMMUNITY_PUSH`.
+
+| Kind | In-app | Push | Email | Category | Who receives |
+|---|---|---|---|---|---|
+| `community_message_received` | on | on | off | COACH_DIRECT | Member |
+| `community_dm_received` | on | on | off | COACH_DIRECT | Member |
+| `community_post_replied` | on | on | off | CLIENT_BOT | Post author |
+| `community_event_starting_soon` | on | on | off | MILESTONE | RSVP'd member |
+| `community_challenge_milestone` | on | on | off | MILESTONE | Participant |
+| `community_moderation_action_against_me` | on | on | on | SYSTEM | Actioned member |
+| `community_membership_changed` | on | off | off | SYSTEM | Member |
+
+Lock-screen privacy: when enabled, the push `body` is a fixed safe string
+(`COMMUNITY_PUSH_BODIES[kind].privacyOn`) that never contains user names,
+message excerpts, cohort names, or event titles. The richer privacy-off body
+is built only from pre-approved short context.
+
 ---
 
 ## Endpoints

@@ -25,10 +25,12 @@ import { CommunityModerationController } from './moderation/community-moderation
 import { CommunityModerationService } from './moderation/community-moderation.service';
 import { CommunityModerationRepository } from './moderation/community-moderation.repository';
 import { AuthModule } from '../auth/auth.module';
+import { CommunityRealtimeModule } from './realtime/community-realtime.module';
+import { CommunityNotificationsModule } from './notifications/community-notifications.module';
 
 // PrismaService provided globally via PrismaModule.
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, CommunityRealtimeModule, CommunityNotificationsModule],
   controllers: [
     CommunityController,
     CommunityMessagesController,

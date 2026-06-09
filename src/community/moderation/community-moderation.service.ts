@@ -10,6 +10,10 @@ import type {
   User,
 } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
+import { CommunityRealtimeService } from '../realtime/community-realtime.service';
+import { CommunityNotificationsService } from '../notifications/community-notifications.service';
+import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
+import { NotificationKind } from '../../notifications/notification-kind';
 import { CommunityMessagesRepository } from '../messages/community-messages.repository';
 import { CommunityPostsRepository } from '../posts/community-posts.repository';
 import { CommunityModerationRepository } from './community-moderation.repository';
@@ -67,6 +71,8 @@ export class CommunityModerationService {
     private readonly moderation: CommunityModerationRepository,
     private readonly messagesRepo: CommunityMessagesRepository,
     private readonly postsRepo: CommunityPostsRepository,
+    private readonly realtime: CommunityRealtimeService,
+    private readonly communityPush: CommunityNotificationsService,
   ) {}
 
   private itemView(
@@ -229,9 +235,62 @@ export class CommunityModerationService {
       action,
       notes: notes ?? null,
     });
+    // v1-4 post-action tail — best-effort realtime ping on the moderation
+    // channel (IDs + enum action only, NEVER the moderation reason/notes,
+    // #24/#36). Mobile moderators refetch the queue via authenticated REST.
+    void this.realtime.broadcastCommunityEvent(
+      this.realtime.channels.moderation(resolved.workspace_id),
+      COMMUNITY_BROADCAST_EVENTS.moderationActionCreated,
+      {
+        actionId: resolved.id,
+        wsId: resolved.workspace_id,
+        targetType: resolved.target_type,
+        targetId: resolved.target_id,
+        action: resolved.action ?? action,
+      },
+      { distinctId: user.id, channelKind: 'moderation' },
+    );
+    // Notify the affected member (the content owner) when a real enforcement
+    // landed (not a dismiss). Fire-and-forget; gated behind
+    // FEATURE_COMMUNITY_PUSH inside the service.
+    if (action !== 'dismiss') {
+      const ownerId = await this.contentOwnerId(
+        resolved.target_type,
+        resolved.target_id,
+      );
+      if (ownerId) {
+        void this.communityPush.sendCommunityPush({
+          recipientId: ownerId,
+          kind: NotificationKind.COMMUNITY_MODERATION_ACTION_AGAINST_ME,
+          targetType: resolved.target_type,
+          targetId: resolved.target_id,
+          deepLink: 'tgp://community/moderation',
+        });
+      }
+    }
     return CommunityModerationItemResponseSchema.parse({
       item: this.itemView(resolved),
     });
+  }
+
+  /**
+   * Resolve the owning user of a moderated target (post author or message
+   * sender) so we can notify them. Returns null when unresolvable — the push
+   * is simply skipped (best-effort, never throws).
+   */
+  private async contentOwnerId(
+    targetType: CommunityModerationTargetType,
+    targetId: string,
+  ): Promise<string | null> {
+    if (targetType === 'post') {
+      const post = await this.postsRepo.findById(targetId);
+      return post?.author_id ?? null;
+    }
+    if (targetType === 'message') {
+      const msg = await this.messagesRepo.findById(targetId);
+      return msg?.sender_id ?? null;
+    }
+    return null;
   }
 
   /** Soft-hide the content a moderation action targets, where applicable. */

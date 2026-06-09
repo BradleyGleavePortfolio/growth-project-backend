@@ -113,6 +113,8 @@ export class CommunityService {
       community_api: flag === 'enabled',
       community_dm: process.env.FEATURE_COMMUNITY_DM === 'true',
       community_realtime: process.env.FEATURE_COMMUNITY_REALTIME === 'true',
+      community_push: process.env.FEATURE_COMMUNITY_PUSH === 'true',
+      community_telemetry: process.env.FEATURE_COMMUNITY_TELEMETRY === 'true',
     };
 
     if (flag === 'disabled') {

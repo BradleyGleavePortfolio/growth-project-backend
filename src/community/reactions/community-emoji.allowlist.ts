@@ -35,3 +35,41 @@ export type CommunityReactionEmoji = (typeof COMMUNITY_REACTION_EMOJI)[number];
 export function isAllowedReactionEmoji(value: string): boolean {
   return COMMUNITY_REACTION_EMOJI.includes(value);
 }
+
+/**
+ * Stable NAMED reaction-kind discriminator for each allowlisted emoji glyph.
+ *
+ * Realtime broadcast payloads must carry this opaque NAME (e.g. 'like',
+ * 'fire'), NEVER the raw emoji glyph: the broadcast channel is treated as
+ * untrusted and the no-PII/no-user-content doctrine forbids emoji strings on
+ * the wire (see community-realtime.types.ts ReactionChangedPayloadSchema and
+ * test/community/realtime/no-pii-in-broadcast.spec.ts). The glyph stays in the
+ * DB `response_kind` column and in the authenticated REST refetch only.
+ *
+ * Keys are the exact allowlisted graphemes; the map is exhaustive over
+ * COMMUNITY_REACTION_EMOJI.
+ */
+export const COMMUNITY_REACTION_KIND_BY_EMOJI: Readonly<
+  Record<string, string>
+> = {
+  '\u{1F44D}': 'like', // 👍 thumbs up
+  '\u{1F525}': 'fire', // 🔥 fire
+  '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}': 'family', // 👨‍👩‍👧‍👦
+  '\u2764\uFE0F': 'love', // ❤️ heart (VS16)
+  '\u{1F389}': 'celebrate', // 🎉
+  '\u{1F4AA}': 'strength', // 💪
+  '\u{1F44F}': 'clap', // 👏
+  '\u{1F602}': 'laugh', // 😂
+  '\u{1F62E}': 'wow', // 😮
+  '\u{1F622}': 'sad', // 😢
+} as const;
+
+/**
+ * Resolve the opaque named reaction kind for an emoji glyph. Falls back to
+ * 'other' for any value not in the map (the DTO @IsIn gate already rejects
+ * non-allowlisted emoji with a 400, so 'other' is a defensive belt-and-braces
+ * value that still never echoes the raw glyph onto the wire).
+ */
+export function reactionKindForEmoji(emoji: string): string {
+  return COMMUNITY_REACTION_KIND_BY_EMOJI[emoji] ?? 'other';
+}

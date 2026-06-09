@@ -76,6 +76,23 @@ export const NotificationKind = {
   // across Stripe webhook replay via DripResolverMarker(purpose=
   // 'coach_new_purchase')). Default prefs ON for the selling coach.
   COACH_NEW_PURCHASE: 'coach_new_purchase',
+
+  // ── Community v1-4 — realtime/push slice ──────────────────────────────────
+  // Seven push kinds for the Community Expansion. Code-level only: no schema
+  // migration. The v1-1 NotificationPreferences table has NO per-kind column
+  // for these, so their channel defaults live in the community push-defaults
+  // table (src/community/notifications/community-notifications.service.ts,
+  // COMMUNITY_PUSH_DEFAULTS) and are applied at the READ path — see the
+  // Community block appended to src/notifications/README.md. Each maps onto an
+  // EXISTING NotificationCategory (COACH_DIRECT / CLIENT_BOT / MILESTONE /
+  // SYSTEM) — no new category. All gated behind FEATURE_COMMUNITY_PUSH.
+  COMMUNITY_MESSAGE_RECEIVED: 'community_message_received',
+  COMMUNITY_DM_RECEIVED: 'community_dm_received',
+  COMMUNITY_POST_REPLIED: 'community_post_replied',
+  COMMUNITY_EVENT_STARTING_SOON: 'community_event_starting_soon',
+  COMMUNITY_CHALLENGE_MILESTONE: 'community_challenge_milestone',
+  COMMUNITY_MODERATION_ACTION_AGAINST_ME: 'community_moderation_action_against_me',
+  COMMUNITY_MEMBERSHIP_CHANGED: 'community_membership_changed',
 } as const;
 
 export type NotificationKindValue = (typeof NotificationKind)[keyof typeof NotificationKind];

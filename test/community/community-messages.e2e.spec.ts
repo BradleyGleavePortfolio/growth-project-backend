@@ -37,6 +37,9 @@ import { CommunityMessagesEnabledGuard } from '../../src/community/community-wri
 import { RolesGuard } from '../../src/auth/roles.guard';
 import { JwtAuthGuard } from '../../src/auth/auth.guard';
 import { PrismaService } from '../../src/prisma.service';
+import { CommunityRealtimeService } from '../../src/community/realtime/community-realtime.service';
+import { SupabaseService } from '../../src/supabase/supabase.service';
+import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { liveDbUrl } from './_support/community-db';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
@@ -59,6 +62,7 @@ itLive('community v1-3 cohort messages (live DB)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let baseUrl: string;
+  let realtime: CommunityRealtimeService;
 
   const ids = {
     coachA: '',
@@ -127,6 +131,9 @@ itLive('community v1-3 cohort messages (live DB)', () => {
     process.env.DATABASE_URL = liveDbUrl() as string;
     process.env.FEATURE_COMMUNITY_API = 'true';
     process.env.FEATURE_COMMUNITY_MESSAGES = 'true';
+    // v1-4: exercise the realtime broadcast tail. Telemetry stays OFF so the
+    // spy assertions don't depend on a PostHog client.
+    process.env.FEATURE_COMMUNITY_REALTIME = 'true';
     delete process.env.FEATURE_COMMUNITY_API_ALLOWLIST;
 
     const prismaForStub = new PrismaService();
@@ -140,6 +147,9 @@ itLive('community v1-3 cohort messages (live DB)', () => {
         CommunityAccessService,
         CommunityFeatureFlagGuard,
         CommunityMessagesEnabledGuard,
+        CommunityRealtimeService,
+        SupabaseService,
+        AnalyticsService,
         Reflector,
         { provide: PrismaService, useValue: prismaForStub },
         { provide: APP_GUARD, useValue: new StubJwtAuthGuard(prismaForStub) },
@@ -165,6 +175,7 @@ itLive('community v1-3 cohort messages (live DB)', () => {
     const port = typeof addr === 'object' && addr ? addr.port : 0;
     baseUrl = `http://127.0.0.1:${port}`;
 
+    realtime = moduleRef.get(CommunityRealtimeService);
     prisma = prismaForStub;
     await seed();
   });
@@ -276,6 +287,39 @@ itLive('community v1-3 cohort messages (live DB)', () => {
     expect(list.status).toBe(200);
     const bodies = list.body.messages.map((m: any) => m.body);
     expect(bodies).toContain('hello cohort');
+  });
+
+  it('2b. v1-4: send emits an IDs-only community.message.created broadcast', async () => {
+    const spy = jest
+      .spyOn(realtime, 'broadcastCommunityEvent')
+      .mockResolvedValue(undefined);
+    try {
+      const sent = await call(
+        'POST',
+        `/api/community/cohorts/${ids.cohortA}/messages`,
+        asUser(ids.studentA),
+        { body: 'SECRET-LEAK-TOKEN-XYZ' },
+      );
+      expect(sent.status).toBe(201);
+      // Fire-and-forget tail runs after the response; give the microtask a tick.
+      await new Promise((r) => setTimeout(r, 50));
+      expect(spy).toHaveBeenCalled();
+      const [channel, event, payload] = spy.mock.calls[0];
+      expect(event).toBe('community.message.created');
+      expect(channel).toMatch(
+        new RegExp(`^community:cohort:${ids.cohortA}:messages:[0-3]$`),
+      );
+      // IDs only — the user-authored body must NEVER reach the payload.
+      expect(JSON.stringify(payload)).not.toContain('SECRET-LEAK-TOKEN-XYZ');
+      expect(JSON.stringify(payload)).not.toMatch(
+        /body|content|text|emoji|reason/i,
+      );
+      expect(Object.keys(payload as object).sort()).toEqual(
+        ['authorId', 'cohortId', 'createdAt', 'id'].sort(),
+      );
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('3. cross-tenant: student B cannot read cohort A → 404', async () => {
