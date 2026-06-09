@@ -54,6 +54,7 @@ import { CheckoutModule } from './checkout/checkout.module';
 import { ContractsModule } from './contracts/contracts.module';
 import { DunningV2Module } from './checkout/dunning-v2/dunning-v2.module';
 import { PayoutsV2Module } from './payouts-v2/payouts-v2.module';
+import { RomanModule } from './roman/roman.module';
 import { PtmModule } from './ptm/ptm.module';
 import { DiagnosticModule } from './diagnostic/diagnostic.module';
 import { BuildWeekModule } from './build-week/build-week.module';
@@ -268,6 +269,14 @@ import { WearablesModule } from './wearables/wearables.module';
     // surface no-ops while FEATURE_BANK_PAYOUTS_V2 is OFF (default). Safe to
     // mount ahead of the operator flip. Mirrors DunningV2Module posture.
     PayoutsV2Module,
+    // Roman Phase 1 — Chat MVP backend (sessions + messages + SSE streaming +
+    // RLS). Mounted always so the module-graph cycle guard keeps exercising it,
+    // but the surface is dark by default: RomanFeatureGuard returns 404 on
+    // every /roman route while FEATURE_ROMAN_CHAT_ENABLED is OFF (default), and
+    // RomanService re-checks the flag before any Anthropic call. Mirrors the
+    // DunningV2Module / PayoutsV2Module mount-then-self-gate posture. Phase 2
+    // (mobile UI) and Phase 3 (push/email) follow. See src/roman/.
+    RomanModule,
     // V1 Backend-For-Frontend for tgp-coach-console.
     V1Module,
     // Public invite landing — server-rendered HTML at /join/:code and
