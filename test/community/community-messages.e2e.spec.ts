@@ -374,6 +374,67 @@ itLive('community v1-3 cohort messages (live DB)', () => {
     }
   });
 
+  it('10. post-comments do not bleed into the cohort message paths', async () => {
+    // A plain cohort message and a post-comment share the same cohort_id; the
+    // comment is a CommunityMessage row tagged with the comment discriminator.
+    const sent = await call(
+      'POST',
+      `/api/community/cohorts/${ids.cohortA}/messages`,
+      asUser(ids.studentA),
+      { body: 'real cohort message' },
+    );
+    expect(sent.status).toBe(201);
+
+    const comment = await prisma.communityMessage.create({
+      data: {
+        workspace_id: ids.wsA,
+        cohort_id: ids.cohortA,
+        scope: 'cohort',
+        kind: 'text',
+        sender_id: ids.studentA,
+        body: 'this is a post comment, not a chat message',
+        visibility: 'active',
+        plan_context_type: 'community_post_comment',
+        plan_context_id: randomUUID(),
+      },
+    });
+
+    // List excludes the comment.
+    const list = await call(
+      'GET',
+      `/api/community/cohorts/${ids.cohortA}/messages`,
+      asUser(ids.studentA),
+    );
+    expect(list.status).toBe(200);
+    const listedIds = list.body.messages.map((m: any) => m.id);
+    expect(listedIds).not.toContain(comment.id);
+    const bodies = list.body.messages.map((m: any) => m.body);
+    expect(bodies).toContain('real cohort message');
+
+    // The comment is unreachable through every /messages/:id path → 404.
+    const get = await call(
+      'GET',
+      `/api/community/messages/${comment.id}`,
+      asUser(ids.studentA),
+    );
+    expect(get.status).toBe(404);
+
+    const patch = await call(
+      'PATCH',
+      `/api/community/messages/${comment.id}`,
+      asUser(ids.studentA),
+      { body: 'tampered' },
+    );
+    expect(patch.status).toBe(404);
+
+    const del = await call(
+      'DELETE',
+      `/api/community/messages/${comment.id}`,
+      asUser(ids.studentA),
+    );
+    expect(del.status).toBe(404);
+  });
+
   it('9. master flag off → 503 even on reads', async () => {
     process.env.FEATURE_COMMUNITY_API = 'false';
     try {

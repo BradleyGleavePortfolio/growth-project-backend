@@ -5,7 +5,10 @@ import {
 } from '@nestjs/common';
 import type { CommunityMessage, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
-import { CommunityMessagesRepository } from './community-messages.repository';
+import {
+  COMMENT_CONTEXT_TYPE,
+  CommunityMessagesRepository,
+} from './community-messages.repository';
 import {
   CommunityMessageListResponse,
   CommunityMessageListResponseSchema,
@@ -115,7 +118,12 @@ export class CommunityMessagesService {
     messageId: string,
   ): Promise<CommunityMessageResponse> {
     const m = await this.repo.findById(messageId);
-    if (!m || m.scope !== 'cohort' || !m.cohort_id) {
+    if (
+      !m ||
+      m.scope !== 'cohort' ||
+      !m.cohort_id ||
+      m.plan_context_type === COMMENT_CONTEXT_TYPE
+    ) {
       throw new NotFoundException(NOT_FOUND);
     }
     const cohort = await this.access.findCohort(m.cohort_id);
@@ -131,7 +139,13 @@ export class CommunityMessagesService {
     body: string,
   ): Promise<CommunityMessageResponse> {
     const m = await this.repo.findById(messageId);
-    if (!m || m.scope !== 'cohort' || !m.cohort_id || m.deleted_at) {
+    if (
+      !m ||
+      m.scope !== 'cohort' ||
+      !m.cohort_id ||
+      m.deleted_at ||
+      m.plan_context_type === COMMENT_CONTEXT_TYPE
+    ) {
       throw new NotFoundException(NOT_FOUND);
     }
     // Reads must be authorised before any author/edit-window check leaks state.
@@ -160,7 +174,12 @@ export class CommunityMessagesService {
     messageId: string,
   ): Promise<CommunityMessageResponse> {
     const m = await this.repo.findById(messageId);
-    if (!m || m.scope !== 'cohort' || !m.cohort_id) {
+    if (
+      !m ||
+      m.scope !== 'cohort' ||
+      !m.cohort_id ||
+      m.plan_context_type === COMMENT_CONTEXT_TYPE
+    ) {
       throw new NotFoundException(NOT_FOUND);
     }
     const cohort = await this.access.findCohort(m.cohort_id);

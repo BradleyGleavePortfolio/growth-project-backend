@@ -50,6 +50,13 @@ export class CommunityMessagesRepository {
    * Cohort messages newest-first, cursor-paginated by created_at. `before` is an
    * ISO timestamp; rows strictly older than it are returned. Soft-deleted rows
    * are excluded.
+   *
+   * Post-comments are stored as CommunityMessage rows (scope='cohort', same
+   * cohort_id) tagged with plan_context_type=COMMENT_CONTEXT_TYPE. They must NOT
+   * appear in the cohort chat feed, so this list is bounded to rows with a null
+   * discriminator. The community module is the only writer of plan_context_type
+   * on cohort-scope messages (verified by grep), so `null` is the tightest
+   * correct exclusion — a plain cohort message never sets it.
    */
   async listCohortMessages(params: {
     cohortId: string;
@@ -61,6 +68,7 @@ export class CommunityMessagesRepository {
         cohort_id: params.cohortId,
         scope: 'cohort',
         deleted_at: null,
+        plan_context_type: null,
         ...(params.before ? { created_at: { lt: params.before } } : {}),
       },
       orderBy: { created_at: 'desc' },
