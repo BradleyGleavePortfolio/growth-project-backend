@@ -88,6 +88,25 @@ const PAID_ROUTES: ReadonlyArray<PaidRoute> = [
     handler: 'getLeaderboard',
     label: 'GET /community/leaderboard',
   },
+  // Carry-forward (v1-3): pin the remaining paid legacy community handlers
+  // per-handler so the v1-3 sub-module split (messages/posts/reactions/dms/
+  // moderation, all gated by CommunityFeatureFlagGuard, NOT the entitlement
+  // guard) can never silently strip the paywall off the original wins surface.
+  {
+    controller: CommunityController,
+    handler: 'getFeed',
+    label: 'GET /community/feed',
+  },
+  {
+    controller: CommunityController,
+    handler: 'postWin',
+    label: 'POST /community/wins',
+  },
+  {
+    controller: CommunityController,
+    handler: 'reactToWin',
+    label: 'POST /community/wins/:id/react (410 Gone, guard retained)',
+  },
 
   // Audit follow-up (post-#259): three additional paid client surfaces
   // that were not pinned by the original allowlist. Adding them here
