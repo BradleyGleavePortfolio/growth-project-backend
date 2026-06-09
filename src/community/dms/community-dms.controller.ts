@@ -24,11 +24,12 @@ import { CreateDmThreadDto, SendDmDto } from '../dto/community-dm.dto';
  * 1:1 direct messages within a workspace.
  *
  * Threads are keyed by participant pair (no separate thread row), so the
- * recipient user id is the thread handle. Writes carry CommunityDmEnabledGuard
- * (FEATURE_COMMUNITY_DM); reads carry only the master flag so an in-flight
- * conversation stays readable if DM writes are paused. Eligibility (membership +
- * dm_enabled tri-state) is enforced in the service, not the guard — the guard is
- * the global on/off, the service is the per-pair policy.
+ * recipient user id is the thread handle. EVERY DM route carries
+ * CommunityDmEnabledGuard (FEATURE_COMMUNITY_DM) — unlike messages/posts, DM is
+ * the sensitive surface and its kill switch silences reads too, so flipping the
+ * flag off fully disables direct messaging. Eligibility (membership + dm_enabled
+ * tri-state) is enforced in the service, not the guard — the guard is the global
+ * on/off, the service is the per-pair policy.
  */
 @ApiTags('community')
 @Controller('community')
@@ -36,7 +37,12 @@ export class CommunityDmsController {
   constructor(private readonly dms: CommunityDmsService) {}
 
   @Get('workspaces/:workspaceId/dms')
-  @UseGuards(JwtAuthGuard, RolesGuard, CommunityFeatureFlagGuard)
+  @UseGuards(
+    JwtAuthGuard,
+    RolesGuard,
+    CommunityFeatureFlagGuard,
+    CommunityDmEnabledGuard,
+  )
   @Roles('student', 'coach', 'owner')
   async listThreads(
     @Request() req: AuthedRequest,
@@ -66,7 +72,12 @@ export class CommunityDmsController {
   }
 
   @Get('workspaces/:workspaceId/dms/:recipientId/messages')
-  @UseGuards(JwtAuthGuard, RolesGuard, CommunityFeatureFlagGuard)
+  @UseGuards(
+    JwtAuthGuard,
+    RolesGuard,
+    CommunityFeatureFlagGuard,
+    CommunityDmEnabledGuard,
+  )
   @Roles('student', 'coach', 'owner')
   async listThread(
     @Request() req: AuthedRequest,
