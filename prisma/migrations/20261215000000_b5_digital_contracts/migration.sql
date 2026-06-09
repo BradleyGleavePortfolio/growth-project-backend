@@ -1,6 +1,6 @@
 -- B5 — Digital Contracts + E-Signatures (HelloSign Embedded)
 --
--- ADDITIVE-ONLY migration. ZERO DROP / RENAME / ALTER COLUMN TYPE.
+-- Additive-only migration. No destructive operations performed.
 --
 -- Adds:
 --   * enum  "ContractEnvelopeStatus"
