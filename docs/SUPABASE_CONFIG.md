@@ -86,7 +86,7 @@ Intentional rollback (e.g. a third-party password manager fails under HIBP and w
 
 ## Helper function search_path lockdown
 
-The five flagged helpers (`app.current_user_id`, `app.current_user_role`, `app.is_owner`, `app.is_current_coach_of`, `public.enforce_subcoach_head_cap`) are addressed by SQL migration `prisma/migrations/20260525000000_rls01_helper_searchpath_hibp`. No dashboard action required.
+The five flagged helpers (`app.current_user_id`, `app.current_user_role`, `app.is_owner`, `app.is_current_coach_of`, `public.enforce_subcoach_head_cap`) are addressed by SQL migration `prisma/migrations/20260704000000_rls01_helper_searchpath_hibp`. No dashboard action required.
 
 Post-deploy verification:
 
@@ -108,4 +108,4 @@ WHERE (n.nspname = 'app' AND p.proname IN ('current_user_id', 'current_user_role
 ORDER BY n.nspname, p.proname;
 ```
 
-Expected result after deploy: every row shows `security_definer = true` and `config` contains `search_path=pg_catalog, public, app`.
+Expected result after deploy: every row shows `security_definer = true` and `config` contains exactly `search_path=pg_catalog, public, app, pg_temp` (with `pg_temp` last).
