@@ -38,6 +38,8 @@ export const CommunityMeResponseSchema = z
         community_api: z.boolean(),
         community_dm: z.boolean(),
         community_realtime: z.boolean(),
+        community_push: z.boolean(),
+        community_telemetry: z.boolean(),
       })
       .strict(),
   })

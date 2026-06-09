@@ -10,6 +10,10 @@ import type {
   User,
 } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
+import { CommunityRealtimeService } from '../realtime/community-realtime.service';
+import { CommunityNotificationsService } from '../notifications/community-notifications.service';
+import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
+import { NotificationKind } from '../../notifications/notification-kind';
 import { CommunityDmsRepository } from './community-dms.repository';
 import {
   CommunityDmMessageListResponse,
@@ -65,6 +69,8 @@ export class CommunityDmsService {
   constructor(
     private readonly access: CommunityAccessService,
     private readonly dms: CommunityDmsRepository,
+    private readonly realtime: CommunityRealtimeService,
+    private readonly communityPush: CommunityNotificationsService,
   ) {}
 
   private resolveDmEnabled(
@@ -183,6 +189,32 @@ export class CommunityDmsService {
       senderId: user.id,
       recipientId,
       body,
+    });
+    // v1-4 post-write tail (after gateDmRead, inside authoriseDm). Best-effort
+    // realtime refetch ping on the RECIPIENT's private user channel — IDs only,
+    // never the DM body (#24/#36). DMs have no dedicated broadcast event in the
+    // v1-4 channel/event contract, so we reuse the message-created refetch
+    // signal: the recipient pings → refetches the thread via authenticated REST.
+    void this.realtime.broadcastCommunityEvent(
+      this.realtime.channels.user(recipientId),
+      COMMUNITY_BROADCAST_EVENTS.messageCreated,
+      {
+        id: created.id,
+        cohortId: created.dm_key ?? dmKey,
+        authorId: created.sender_id,
+        createdAt: created.created_at.toISOString(),
+      },
+      { distinctId: recipientId, channelKind: 'user' },
+    );
+    // Push the recipient that they have a new DM. Gated behind
+    // FEATURE_COMMUNITY_PUSH inside the service; idempotent per (kind,
+    // recipient, thread, message).
+    void this.communityPush.sendCommunityPush({
+      recipientId,
+      kind: NotificationKind.COMMUNITY_DM_RECEIVED,
+      targetType: 'dm',
+      targetId: created.id,
+      deepLink: `tgp://community/dms/${dmKey}`,
     });
     return CommunityDmMessageResponseSchema.parse({
       message: this.messageView(created),

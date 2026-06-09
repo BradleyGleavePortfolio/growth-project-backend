@@ -5,6 +5,10 @@ import {
 } from '@nestjs/common';
 import type { CommunityMessage, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
+import { CommunityRealtimeService } from '../realtime/community-realtime.service';
+import {
+  COMMUNITY_BROADCAST_EVENTS,
+} from '../community-events';
 import {
   COMMENT_CONTEXT_TYPE,
   CommunityMessagesRepository,
@@ -42,6 +46,7 @@ export class CommunityMessagesService {
   constructor(
     private readonly access: CommunityAccessService,
     private readonly repo: CommunityMessagesRepository,
+    private readonly realtime: CommunityRealtimeService,
   ) {}
 
   private view(m: CommunityMessage): CommunityMessageView {
@@ -87,6 +92,24 @@ export class CommunityMessagesService {
       senderId: user.id,
       body,
     });
+    // v1-4 post-write tail: best-effort realtime ping (IDs only). The cohort
+    // shard is derived from the WRITE RESULT's cohort_id (never request
+    // params) so a foreign cohortId cannot mis-route the broadcast (#5 IDOR).
+    // void-prefixed fire-and-forget — never blocks or fails the write (#24).
+    void this.realtime.broadcastCommunityEvent(
+      this.realtime.channels.cohort(
+        created.cohort_id ?? cohort.id,
+        this.realtime.cohortShard(created.cohort_id ?? cohort.id),
+      ),
+      COMMUNITY_BROADCAST_EVENTS.messageCreated,
+      {
+        id: created.id,
+        cohortId: created.cohort_id ?? cohort.id,
+        authorId: created.sender_id,
+        createdAt: created.created_at.toISOString(),
+      },
+      { distinctId: created.sender_id, channelKind: 'cohort' },
+    );
     return CommunityMessageResponseSchema.parse({ message: this.view(created) });
   }
 
@@ -166,6 +189,19 @@ export class CommunityMessagesService {
       });
     }
     const updated = await this.repo.updateBody(m, body);
+    void this.realtime.broadcastCommunityEvent(
+      this.realtime.channels.cohort(
+        updated.cohort_id ?? m.cohort_id,
+        this.realtime.cohortShard(updated.cohort_id ?? m.cohort_id),
+      ),
+      COMMUNITY_BROADCAST_EVENTS.messageUpdated,
+      {
+        id: updated.id,
+        cohortId: updated.cohort_id ?? m.cohort_id,
+        updatedAt: updated.updated_at.toISOString(),
+      },
+      { distinctId: updated.sender_id, channelKind: 'cohort' },
+    );
     return CommunityMessageResponseSchema.parse({ message: this.view(updated) });
   }
 

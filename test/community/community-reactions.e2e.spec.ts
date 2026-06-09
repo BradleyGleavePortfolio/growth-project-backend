@@ -37,6 +37,9 @@ import { CommunityFeatureFlagGuard } from '../../src/community/community-feature
 import { RolesGuard } from '../../src/auth/roles.guard';
 import { JwtAuthGuard } from '../../src/auth/auth.guard';
 import { PrismaService } from '../../src/prisma.service';
+import { CommunityRealtimeService } from '../../src/community/realtime/community-realtime.service';
+import { SupabaseService } from '../../src/supabase/supabase.service';
+import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { liveDbUrl } from './_support/community-db';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
@@ -143,6 +146,9 @@ itLive('community v1-3 reactions (live DB)', () => {
         CommunityPostsRepository,
         CommunityAccessService,
         CommunityFeatureFlagGuard,
+        CommunityRealtimeService,
+        SupabaseService,
+        AnalyticsService,
         Reflector,
         { provide: PrismaService, useValue: prismaForStub },
         { provide: APP_GUARD, useValue: new StubJwtAuthGuard(prismaForStub) },

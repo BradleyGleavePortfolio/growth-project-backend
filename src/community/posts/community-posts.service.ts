@@ -5,6 +5,10 @@ import {
 } from '@nestjs/common';
 import type { CommunityMessage, CommunityPost, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
+import { CommunityRealtimeService } from '../realtime/community-realtime.service';
+import { CommunityNotificationsService } from '../notifications/community-notifications.service';
+import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
+import { NotificationKind } from '../../notifications/notification-kind';
 import { CommunityPostsRepository } from './community-posts.repository';
 import { CommunityMessagesRepository } from '../messages/community-messages.repository';
 import {
@@ -51,6 +55,8 @@ export class CommunityPostsService {
     private readonly access: CommunityAccessService,
     private readonly posts: CommunityPostsRepository,
     private readonly messages: CommunityMessagesRepository,
+    private readonly realtime: CommunityRealtimeService,
+    private readonly communityPush: CommunityNotificationsService,
   ) {}
 
   private postView(p: CommunityPost): CommunityPostView {
@@ -125,6 +131,18 @@ export class CommunityPostsService {
       title: input.title,
       body: input.body,
     });
+    // v1-4 post-write tail — best-effort realtime ping (IDs only, #24/#36).
+    void this.realtime.broadcastCommunityEvent(
+      this.realtime.channels.workspace(created.workspace_id),
+      COMMUNITY_BROADCAST_EVENTS.postCreated,
+      {
+        id: created.id,
+        workspaceId: created.workspace_id,
+        authorId: created.author_id,
+        createdAt: created.created_at.toISOString(),
+      },
+      { distinctId: created.author_id, channelKind: 'workspace' },
+    );
     return CommunityPostResponseSchema.parse({ post: this.postView(created) });
   }
 
@@ -185,6 +203,16 @@ export class CommunityPostsService {
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.body !== undefined ? { body: input.body } : {}),
     });
+    void this.realtime.broadcastCommunityEvent(
+      this.realtime.channels.workspace(updated.workspace_id),
+      COMMUNITY_BROADCAST_EVENTS.postUpdated,
+      {
+        id: updated.id,
+        workspaceId: updated.workspace_id,
+        updatedAt: updated.updated_at.toISOString(),
+      },
+      { distinctId: updated.author_id, channelKind: 'workspace' },
+    );
     return CommunityPostResponseSchema.parse({ post: this.postView(updated) });
   }
 
@@ -220,6 +248,30 @@ export class CommunityPostsService {
       postId: post.id,
       body,
     });
+    // v1-4 post-write tail — realtime reaction-feed ping on the workspace hall
+    // (a comment is a CommunityMessage; the post author refetches via REST).
+    void this.realtime.broadcastCommunityEvent(
+      this.realtime.channels.workspace(post.workspace_id),
+      COMMUNITY_BROADCAST_EVENTS.messageCreated,
+      {
+        id: created.id,
+        cohortId: created.cohort_id ?? post.id,
+        authorId: created.sender_id,
+        createdAt: created.created_at.toISOString(),
+      },
+      { distinctId: created.sender_id, channelKind: 'workspace' },
+    );
+    // Push the post author (not the commenter) that their post got a reply.
+    // Fire-and-forget; gated behind FEATURE_COMMUNITY_PUSH inside the service.
+    if (post.author_id !== user.id) {
+      void this.communityPush.sendCommunityPush({
+        recipientId: post.author_id,
+        kind: NotificationKind.COMMUNITY_POST_REPLIED,
+        targetType: 'post',
+        targetId: post.id,
+        deepLink: `tgp://community/posts/${post.id}`,
+      });
+    }
     return CommunityCommentResponseSchema.parse({
       comment: this.commentView(created),
     });

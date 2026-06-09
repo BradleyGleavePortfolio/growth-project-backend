@@ -5,6 +5,8 @@ import type {
   User,
 } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
+import { CommunityRealtimeService } from '../realtime/community-realtime.service';
+import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
 import { CommunityMessagesRepository } from '../messages/community-messages.repository';
 import { CommunityPostsRepository } from '../posts/community-posts.repository';
 import { COMMENT_CONTEXT_TYPE } from '../messages/community-messages.repository';
@@ -47,7 +49,47 @@ export class CommunityReactionsService {
     private readonly reactions: CommunityReactionsRepository,
     private readonly messagesRepo: CommunityMessagesRepository,
     private readonly postsRepo: CommunityPostsRepository,
+    private readonly realtime: CommunityRealtimeService,
   ) {}
+
+  /**
+   * Broadcast a reaction-changed ping. The channel is derived from the
+   * RESOLVED target (never request params, #5 IDOR): a `post` target pings the
+   * workspace hall; a `message`/`comment` target pings the owning cohort shard
+   * when it has one, else the workspace hall. The payload carries the opaque
+   * response `kind` discriminator and a +/-1 delta — NEVER the emoji glyph.
+   */
+  private async emitReactionChanged(
+    user: User,
+    t: ResolvedTarget,
+    apiType: ApiTargetType,
+    responseKind: string,
+    delta: number,
+  ): Promise<void> {
+    let channel = this.realtime.channels.workspace(t.workspaceId);
+    let channelKind: 'workspace' | 'cohort' = 'workspace';
+    if (t.targetType !== 'post') {
+      const msg = await this.messagesRepo.findById(t.targetId);
+      if (msg?.cohort_id) {
+        channel = this.realtime.channels.cohort(
+          msg.cohort_id,
+          this.realtime.cohortShard(msg.cohort_id),
+        );
+        channelKind = 'cohort';
+      }
+    }
+    void this.realtime.broadcastCommunityEvent(
+      channel,
+      COMMUNITY_BROADCAST_EVENTS.reactionChanged,
+      {
+        targetType: apiType,
+        targetId: t.targetId,
+        kind: responseKind,
+        delta,
+      },
+      { distinctId: user.id, channelKind },
+    );
+  }
 
   /** Resolve + authorise a reaction target, or throw 404. */
   private async resolveTarget(
@@ -139,6 +181,7 @@ export class CommunityReactionsService {
       emoji,
     });
     const rows = await this.reactions.listForTarget(t.targetType, t.targetId);
+    void this.emitReactionChanged(user, t, apiType, t.targetType, 1);
     return this.summarise(apiType, t.targetId, rows, user.id);
   }
 
@@ -156,6 +199,7 @@ export class CommunityReactionsService {
       emoji,
     });
     const rows = await this.reactions.listForTarget(t.targetType, t.targetId);
+    void this.emitReactionChanged(user, t, apiType, t.targetType, -1);
     return this.summarise(apiType, t.targetId, rows, user.id);
   }
 }
