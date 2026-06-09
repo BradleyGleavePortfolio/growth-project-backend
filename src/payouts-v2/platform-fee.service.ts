@@ -51,6 +51,42 @@ export interface PlatformFeeResult {
   coach_net_cents: number;
 }
 
+/**
+ * FEE FORMULA — EXACT DERIVATION (Gate 5 worked-example documentation).
+ * =====================================================================
+ * The platform fee is computed in integer cents as:
+ *
+ *   cardCost     = round(0.029 × gross) + 30      // what a US card charge WOULD cost
+ *   base         = round(0.02 × gross)            // 2% platform base take
+ *   savings      = max(0, cardCost − stripe_actual_cost)
+ *   platform_fee = base + round(0.5 × savings)    // 2% + 50% of the rail savings
+ *   coach_net    = gross − platform_fee − stripe_actual_cost
+ *
+ * `stripe_actual_cost` (the `stripe_fee_cents` argument) is the ACTUAL fee the
+ * chosen rail charges. For the ACH-from-client path it is Stripe ACH 0.8%
+ * CAPPED at $5.00 (500 cents) — so for any gross >= $625 the ACH fee is exactly
+ * the $5.00 cap. For a real card it equals `cardCost`, making `savings = 0`.
+ *
+ * WORKED EXAMPLE — $1,000 ACH (gross = 100000 cents):
+ *   cardCost            = round(0.029 × 100000) + 30 = 2900 + 30 = 2930
+ *   stripe_actual_cost  = 500            // Stripe ACH 0.8% capped at $5.00
+ *   savings             = 2930 − 500     = 2430
+ *   base                = round(0.02 × 100000)       = 2000
+ *   platform_fee        = 2000 + round(0.5 × 2430) = 2000 + 1215 = 3215  = $32.15
+ *   coach_net           = 100000 − 3215 − 500        = 96285             = $962.85
+ *
+ * This is the STRICT, mechanically-correct derivation and it is exactly what
+ * `compute({ amount_cents: 100000, stripe_fee_cents: 500 })` returns; the
+ * worked-example test in `test/payouts-v2.spec.ts` asserts `3215 / 96285` and
+ * references this derivation.
+ *
+ * AUDITOR NOTE (R1 brief-drift, do not "fix"): an audit pass computed $36.10
+ * using DIFFERENT inputs — `cardCost = $33.00` and `stripe_actual_cost = $0.80`
+ * (an uncapped 0.8% on $100, not the $5.00 ACH cap). Those inputs do not match
+ * this service: the ACH fee here is the $5.00 CAP (500 cents), not 0.8% of
+ * gross, and `cardCost` is `round(0.029 × gross) + 30 = 2930`, not 3300. With
+ * the source's inputs the result is $32.15 / $962.85, which is what ships.
+ */
 @Injectable()
 export class PlatformFeeService {
   /** Stripe US card pricing reference: 2.9% + $0.30 (spec §2.6 / §9). */
@@ -84,6 +120,9 @@ export class PlatformFeeService {
     const amount = this.toCents(input.amount_cents, 'amount_cents');
     const stripeFee = this.toCents(input.stripe_fee_cents, 'stripe_fee_cents');
 
+    // See the class-level "FEE FORMULA — EXACT DERIVATION" block for the full
+    // worked example ($1,000 ACH: cardCost=2930, stripe=500 cap, savings=2430,
+    // base=2000, platform_fee=3215=$32.15, coach_net=96285=$962.85).
     const base = Math.round(amount * PlatformFeeService.BASE_RATE);
     const cardCost = this.cardCostCents(amount);
     const savings = Math.max(0, cardCost - stripeFee);

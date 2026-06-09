@@ -315,6 +315,14 @@ describe('PlatformFeeService.compute — §2.7 worked examples', () => {
   );
 
   it('the $1000 ACH row lands at $32.15 fee / $962.85 net (corrected formula)', () => {
+    // Derivation (see the "FEE FORMULA — EXACT DERIVATION" block in
+    // src/payouts-v2/platform-fee.service.ts):
+    //   cardCost     = round(0.029 × 100000) + 30 = 2930
+    //   stripe (ACH) = 500  (0.8% capped at $5.00)
+    //   savings      = 2930 − 500 = 2430
+    //   base         = round(0.02 × 100000) = 2000
+    //   platform_fee = 2000 + round(0.5 × 2430) = 3215  = $32.15
+    //   coach_net    = 100000 − 3215 − 500 = 96285        = $962.85
     const r = fee.compute({ amount_cents: 100000, stripe_fee_cents: 500 });
     expect(r.platform_fee_cents).toBe(3215); // $32.15
     expect(r.coach_net_cents).toBe(96285); // $962.85
