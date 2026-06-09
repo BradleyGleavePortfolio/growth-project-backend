@@ -90,9 +90,24 @@ function makePrismaMock(store: MiniStore, opts: MockOpts = {}): any {
       ),
     },
     workoutPlan: {
-      findUnique: jest.fn(async ({ where }: any) =>
-        store.workoutPlans.get(where.id) ?? null,
-      ),
+      findUnique: jest.fn(async ({ where }: any) => {
+        const plan = store.workoutPlans.get(where.id);
+        if (!plan) return null;
+        // MWB-1 (§3.3): the materialiser now selects plan metadata + live
+        // exercises so it can freeze a snapshot. Provide defaults for the
+        // fields the store doesn't model so the snapshot write succeeds.
+        return {
+          name: 'AI Plan',
+          type: 'strength',
+          version: 1,
+          exercises: [],
+          ...plan,
+        };
+      }),
+    },
+    clientWorkoutAssignmentSnapshot: {
+      create: jest.fn(async ({ data }: any) => ({ id: 'snap_1', ...data })),
+      findUnique: jest.fn(async () => null),
     },
     dailyMealPlan: {
       findUnique: jest.fn(async ({ where }: any) =>
