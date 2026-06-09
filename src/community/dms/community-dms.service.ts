@@ -39,11 +39,13 @@ const DM_DISABLED = {
 /**
  * 1:1 direct messages within a workspace.
  *
- * DM eligibility follows the established v1-2 tri-state contract
- * (community.service.ts resolveDmEnabled): a membership's dm_enabled is nullable
- * — null inherits the workspace's dm_enabled_default, an explicit boolean
- * overrides. The secure default is OFF (dm_enabled_default defaults false), so
- * DMs are workspace-gated and opt-in.
+ * DM eligibility follows the established v1-2 tri-state contract. The
+ * resolveDmEnabled below is a local mirror of the community.service.ts resolver,
+ * kept byte-for-byte in sync; a future refactor will share a single
+ * implementation. A membership's dm_enabled is nullable — null inherits the
+ * workspace's dm_enabled_default, an explicit boolean overrides. The secure
+ * default is OFF (dm_enabled_default defaults false), so DMs are workspace-gated
+ * and opt-in.
  *
  * DEVIATION (surfaced as a blocker in the report): the brief specifies a
  * tri-state dm_policy (coach_only | members | disabled) on the workspace. No
@@ -52,7 +54,7 @@ const DM_DISABLED = {
  * therefore enforces the boolean gate that DOES exist: both participants must be
  * active members of the same workspace AND have DMs effectively enabled. The
  * coach_only/members distinction is the single thing that cannot be honoured
- * until the column lands; canDm() is the one place to relax this.
+ * until the column lands; authoriseDm() is the one place to relax this.
  *
  * Both participants must be active workspace members or the caller gets 404
  * (cross-tenant non-leak posture). A disabled recipient yields 403 with an
