@@ -175,7 +175,7 @@ describe('BUG-R3 — PackagesService.archive() active-subscriber guard', () => {
       expect(body.active_subscriber_count).toBe(1);
       expect(body.message).toContain('1 active subscriber');
       // Package must NOT have been archived.
-      expect(prisma._rows.find((r) => r.id === pkg.id).archived_at).toBeNull();
+      expect(prisma._rows.find((r: any) => r.id === pkg.id).archived_at).toBeNull();
     }
   });
 
@@ -208,7 +208,7 @@ describe('BUG-R3 — PackagesService.archive() active-subscriber guard', () => {
     const pkg = seedPackageWithSubscribers(prisma, 'coach-1', { active: 2 });
     // Pre-archive the row directly so archive() hits the idempotency guard.
     const archivedAt = new Date('2026-01-01T00:00:00.000Z');
-    prisma._rows.find((r) => r.id === pkg.id).archived_at = archivedAt;
+    prisma._rows.find((r: any) => r.id === pkg.id).archived_at = archivedAt;
 
     const result = await svc.archive('coach-1', pkg.id);
 
