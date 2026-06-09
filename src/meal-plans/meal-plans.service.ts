@@ -103,6 +103,113 @@ export class MealPlansService {
     });
   }
 
+  // ---- BUG-R2 deprecation wrapper ----
+  //
+  // `real-meal-plans` is the CANONICAL meal-plan system (DailyMealPlan +
+  // MealTemplate + DailyMealPlanAssignment). This legacy `MealPlan` table is
+  // being kept alive only until every mobile client has migrated off the
+  // `GET /meal-plans` surface (see MealPlansModule removal note).
+  //
+  // The bug: a coach who builds a plan via the newer `coach/daily-meal-plans`
+  // API writes to `DailyMealPlan`, but a client still on the old app calls
+  // `GET /meal-plans`, which reads ONLY the legacy `MealPlan` table and
+  // returns nothing — so the client sees "no meal plan assigned" even though
+  // a real plan exists. This wrapper closes that gap by ALSO surfacing the
+  // client's most-recently-assigned canonical plan, reshaped into the legacy
+  // `MealPlan` response shape, so old clients see real data.
+  //
+  // Behaviour contract (deliberately additive — no change for callers that
+  // work today): genuine legacy `MealPlan` rows are returned exactly as
+  // before. The reshaped canonical plan is merged into the same newest-first
+  // list keyed on `created_at`/assignment recency, so a client with only a
+  // canonical plan now gets it, and a client with both sees both.
+  async listForClientWithCanonicalFallback(clientId: string) {
+    const legacy = await this.listForClient(clientId);
+    const canonical = await this.mostRecentCanonicalAsLegacyShape(clientId);
+    if (!canonical) return legacy;
+    // Merge newest-first. `created_at` is the comparable key across both
+    // shapes (the canonical entry carries its assignment's effective date).
+    const merged = [...legacy, canonical].sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+    return merged;
+  }
+
+  // Query the canonical system for the client's most-recently-assigned,
+  // currently-or-previously-effective DailyMealPlan and reshape ONE plan
+  // into the legacy `MealPlan` response shape. Returns null when the client
+  // has no canonical assignment, so the caller can fall through to legacy.
+  //
+  // SECURITY: scoped strictly by `client_id` — we never trust a caller to
+  // hand us a plan/assignment id. The assignment row is the ownership proof
+  // (a coach can only create one for their own client), so reading by
+  // `client_id` cannot leak another client's plan.
+  private async mostRecentCanonicalAsLegacyShape(clientId: string) {
+    const assignment = await this.prisma.dailyMealPlanAssignment.findFirst({
+      where: { client_id: clientId },
+      // Most recently assigned wins: order by effective start, then by the
+      // row's own creation so two same-day assignments are still ordered.
+      orderBy: [{ starts_on: 'desc' }, { created_at: 'desc' }],
+      include: {
+        daily_meal_plan: {
+          include: {
+            slots: {
+              orderBy: [{ slot_label: 'asc' }, { order: 'asc' }],
+              include: { meal_template: true },
+            },
+          },
+        },
+      },
+    });
+    if (!assignment || !assignment.daily_meal_plan) return null;
+    const plan = assignment.daily_meal_plan;
+    if (plan.archived_at) return null;
+
+    // Each canonical slot → one legacy `items[]` entry. `slot_label` maps to
+    // the legacy free-form `time_of_day`; the template macros map onto the
+    // legacy optional calorie/protein fields.
+    const items = (plan.slots ?? []).map(
+      (s: {
+        slot_label: string;
+        meal_template: {
+          name: string;
+          description: string | null;
+          calories_kcal: number;
+          protein_g: number;
+        };
+      }) => ({
+        name: s.meal_template.name,
+        calories: s.meal_template.calories_kcal,
+        protein: s.meal_template.protein_g,
+        notes: s.meal_template.description ?? undefined,
+        time_of_day: s.slot_label,
+      }),
+    );
+
+    // Reshape into the legacy `MealPlan` shape. `id` is namespaced so a
+    // client can tell this entry came from the canonical system and so it
+    // can never collide with a real legacy row id (and a client cannot use
+    // it against `GET /meal-plans/:id`, which only reads the legacy table).
+    return {
+      id: `canonical:${plan.id}`,
+      coach_id: plan.coach_id,
+      client_id: clientId,
+      title: plan.name,
+      notes: plan.notes ?? null,
+      items,
+      days: null,
+      // Surface the assignment's effective date as `created_at` so the merge
+      // ordering reflects when the client actually received this plan.
+      created_at: assignment.starts_on,
+      updated_at: plan.created_at,
+      archived_at: null,
+      // Marker so analytics / clients can distinguish a reshaped canonical
+      // plan from a genuine legacy row without parsing the id prefix.
+      source: 'real-meal-plans' as const,
+    };
+  }
+
   // Client reads a single plan. 404 if not found OR not theirs — foreign
   // ownership must return the same 404 as genuinely missing so callers can't
   // probe. Archived plans are hidden from clients (they're soft-deleted).
