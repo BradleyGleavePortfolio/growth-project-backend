@@ -241,6 +241,13 @@ model User {
   coach_packages             CoachPackage[]       @relation("CoachPackageCoach")
   purchases_as_client        ClientPurchase[]     @relation("ClientPurchaseClient")
   purchases_as_coach         ClientPurchase[]     @relation("ClientPurchaseCoach")
+  // B5 — Digital Contracts. A coach owns ContractTemplates and authors
+  // (coach-side) envelopes; a client signs (client-side) envelopes. The
+  // platform liability waiver layer is modeled via ContractTemplate.is_platform
+  // (coach_id points at the seeded TGP system-coach user for those rows).
+  contract_templates         ContractTemplate[]   @relation("ContractTemplateCoach")
+  contract_envelopes_as_coach  ContractEnvelope[] @relation("CoachEnvelopes")
+  contract_envelopes_as_client ContractEnvelope[] @relation("ClientEnvelopes")
   connect_customer           ConnectCustomer?
   // Phase 4-5 Connect — fee policy override, ledger payee back-refs,
   // outbound transfer destination, and payment reminder recipient.
@@ -3077,10 +3084,21 @@ model CoachPackage {
   recurring_interval_count  Int?
   recurring_stripe_price_id String?
 
+  // B5 — Layer 2 (Coach Service Agreement) opt-in. When requires_contract
+  // is true AND contract_template_id is set, the checkout gate creates a
+  // ContractEnvelope (after the Layer-1 platform-waiver gate clears) and
+  // HARD-BLOCKS the Stripe charge until that envelope is SIGNED. Both
+  // columns are additive + nullable/defaulted so every pre-existing package
+  // keeps its exact current behavior (no contract step).
+  requires_contract   Boolean @default(false)
+  contract_template_id String?
+  contract_template    ContractTemplate? @relation("PackageContractTemplate", fields: [contract_template_id], references: [id])
+
   @@index([coach_id, is_active])
   @@index([coach_id, archived_at])
   @@index([coach_id, published_at])
   @@index([stripe_price_id])
+  @@index([contract_template_id])
 }
 
 // R43 Storefront Phase 1 — guest checkout state machine.
@@ -3349,12 +3367,20 @@ model ClientPurchase {
   scheduled_drops ScheduledDrop[]
   fanout          PurchaseFanout?
 
+  // B5 — Digital Contracts. One signed envelope binds to one realized
+  // purchase. Nullable + @unique: existing purchases keep null (no
+  // backfill), and the FK is set ONLY after Stripe payment success so the
+  // signed PDF is linked to the realized purchase (spec §3.3 / §4.1).
+  contract_envelope_id String?           @unique
+  contract_envelope    ContractEnvelope? @relation("PurchaseContractEnvelope", fields: [contract_envelope_id], references: [id])
+
   @@index([client_user_id, status])
   @@index([coach_user_id, status])
   @@index([package_id])
   @@index([stripe_subscription_id])
   @@index([entitlement_active, access_expires_at])
   @@index([landing_page_id])
+  @@index([contract_envelope_id])
 }
 
 // Phase 4 Connect — Per-coach fee policy override.
@@ -5681,4 +5707,113 @@ model CommunityModerationAction {
   // A reporter's filed reports.
   @@index([reported_by_id, created_at])
   @@map("community_moderation_actions")
+}
+
+// ─── B5 — Digital Contracts + E-Signatures (HelloSign Embedded) ───────────────
+//
+// Two-layer contract scope:
+//   Layer 1 — Platform Liability Waiver (TGP ↔ Client): REQUIRED once per
+//             client. Modeled as a ContractTemplate with is_platform=true,
+//             owned by the seeded TGP "system coach" user. A client who has
+//             a SIGNED platform-waiver envelope at the current template
+//             version is grandfathered and never re-signs.
+//   Layer 2 — Coach Service Agreement (Coach ↔ Client): OPT-IN per package
+//             via CoachPackage.requires_contract + contract_template_id.
+//
+// Provider-agnostic by construction (spec §11): the models, controllers,
+// state machine, checkout integration and audit log do not know which
+// SignatureProvider is bound. Only the adapter changes (HelloSign v1;
+// DocuSign / native-canvas are future flag-flips, shipped here as stubs).
+//
+// FEATURE_CONTRACTS_ENABLED is the global go-live gate (default OFF in prod);
+// it is enforced as a server-side code-level invariant in
+// ContractEnvelopeService.createEnvelope() and the webhook handler.
+
+enum ContractEnvelopeStatus {
+  DRAFT
+  SENT
+  VIEWED
+  SIGNED
+  DECLINED
+  EXPIRED
+}
+
+model ContractTemplate {
+  id                  String   @id @default(cuid())
+  // For coach templates this is the authoring coach. For the platform
+  // liability waiver (is_platform=true) this points at the seeded TGP
+  // system-coach user so the FK stays NOT NULL and the relation is uniform.
+  coach_id            String
+  // B5 Layer-1 marker. true = TGP↔Client platform liability waiver (one
+  // per client, version-grandfathered). false = coach-authored Layer-2
+  // service agreement. Default false keeps coach CRUD behavior unchanged.
+  is_platform         Boolean  @default(false)
+  name                String
+  body_markdown       String
+  version             Int      @default(1)
+  dynamic_fields_json Json
+  requires_signature  Boolean  @default(true)
+  created_at          DateTime @default(now())
+
+  coach     User               @relation("ContractTemplateCoach", fields: [coach_id], references: [id])
+  envelopes ContractEnvelope[]
+  packages  CoachPackage[]     @relation("PackageContractTemplate")
+
+  @@index([coach_id])
+  @@index([is_platform, version])
+}
+
+model ContractEnvelope {
+  id                   String                 @id @default(cuid())
+  template_id          String
+  // Locked at send time (spec §5.2): a coach editing a template never
+  // mutates a contract a client was already sent or signed.
+  template_version     Int
+  client_id            String
+  coach_id             String
+  // Nullable — set ONLY after Stripe payment success (spec §3.3 / §4.1).
+  purchase_id          String?
+  status               ContractEnvelopeStatus @default(DRAFT)
+  // Carries the ACTIVE provider's request id regardless of provider
+  // (DocuSign envelope id / native-canvas job id when those flags are on).
+  // Column name kept per operator spec for migration stability; treated as
+  // a generic provider-request-id at the code layer.
+  hellosign_request_id String?
+  signed_pdf_url       String?
+  ip                   String?
+  user_agent           String?
+  signed_at            DateTime?
+  // Default now()+7d at SENT (set in code, not as a column default).
+  expires_at           DateTime?
+  created_at           DateTime               @default(now())
+
+  template ContractTemplate    @relation(fields: [template_id], references: [id])
+  client   User                @relation("ClientEnvelopes", fields: [client_id], references: [id])
+  coach    User                @relation("CoachEnvelopes", fields: [coach_id], references: [id])
+  events   ContractAuditEvent[]
+  purchase ClientPurchase?     @relation("PurchaseContractEnvelope")
+
+  @@index([client_id])
+  @@index([coach_id])
+  @@index([status])
+  @@index([hellosign_request_id])
+  // Idempotency spine for the Layer-1 grandfather check: find a client's
+  // SIGNED platform-waiver envelope by template + version fast.
+  @@index([client_id, template_id, template_version, status])
+}
+
+model ContractAuditEvent {
+  id          String   @id @default(cuid())
+  envelope_id String
+  // null for system / provider-originated events.
+  actor_id    String?
+  // VIEW | SIGN | DECLINE | SEND | EXPIRE | WEBHOOK
+  action      String
+  ip          String?
+  user_agent  String?
+  created_at  DateTime @default(now())
+
+  envelope ContractEnvelope @relation(fields: [envelope_id], references: [id])
+
+  @@index([envelope_id])
 }
