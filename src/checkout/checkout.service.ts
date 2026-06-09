@@ -15,6 +15,8 @@ import {
 } from '../connect/stripe-connect-api.service';
 import { PrismaService } from '../prisma.service';
 import { PackagesService } from '../packages/packages.service';
+import { CheckoutContractGate } from '../contracts/checkout-contract-gate.service';
+import { ContractRequiredException } from '../contracts/contract-required.exception';
 
 // CheckoutService — Stripe Checkout session minting + ClientPurchase row
 // lifecycle. This is the entry point clients hit to actually buy a package.
@@ -89,7 +91,36 @@ export class CheckoutService {
     private packages: PackagesService,
     private state: ConnectModuleState,
     private feePolicy: FeePolicyService,
+    // B5 — two-layer contract gate. No-op when FEATURE_CONTRACTS_ENABLED is
+    // OFF (the gate self-checks the flag), so existing checkout behavior for
+    // non-`requires_contract` packages is unchanged.
+    private contractGate: CheckoutContractGate,
   ) {}
+
+  /**
+   * B5 — Run the two-layer contract gate (platform waiver → coach service)
+   * BEFORE any Stripe call. Throws ContractRequiredException (409) when a
+   * required contract is not yet SIGNED — there is NO path to Stripe past an
+   * unsigned required contract (spec §4.1). Returns the SIGNED coach envelope
+   * id (if any) so the caller can bind it to the realized purchase post-pay.
+   */
+  private async runContractGate(args: {
+    clientId: string;
+    client: { email: string; name: string };
+    pkg: CoachPackage;
+    coach: { id: string; email: string; name: string };
+  }): Promise<{ coachEnvelopeId?: string }> {
+    const result = await this.contractGate.evaluate(args);
+    if (!result.ok) {
+      throw new ContractRequiredException({
+        layer: result.layer,
+        envelopeId: result.envelopeId,
+        embedUrl: result.embedUrl,
+        status: result.status,
+      });
+    }
+    return { coachEnvelopeId: result.coachEnvelopeId };
+  }
 
   async createCheckoutForClient(
     clientUserId: string,
@@ -162,6 +193,20 @@ export class CheckoutService {
           'The coach has not finished Stripe onboarding. Charges are not yet enabled on their account.',
       });
     }
+
+    // B5 — two-layer contract gate (platform waiver → coach service). Runs
+    // AFTER package + coach resolution and BEFORE any Stripe call. Throws 409
+    // ContractRequiredException when a required contract is unsigned. No-op
+    // when FEATURE_CONTRACTS_ENABLED is OFF (spec §4.1 / §E). The SIGNED coach
+    // envelope id (if any) is bound to the realized ClientPurchase below,
+    // mirroring the PaymentIntent path so both checkout flows persist the
+    // contract→purchase linkage consistently.
+    const contractGateResult = await this.runContractGate({
+      clientId: client.id,
+      client: { email: client.email, name: client.name ?? client.email },
+      pkg,
+      coach: { id: coach.id, email: coach.email, name: coach.name ?? '' },
+    });
 
     const customer = await this.ensureCustomer(client.id, client.email, client.name);
     const priceId = await this.ensurePriceForPackage(pkg);
@@ -320,6 +365,11 @@ export class CheckoutService {
         status: 'pending',
         entitlement_active: false,
         idempotency_key: idempotencyKey,
+        // B5 — bind the SIGNED coach-service envelope to this purchase. Set
+        // at create (the envelope is already SIGNED before the gate cleared);
+        // null for non-`requires_contract` packages. The FK is @unique so the
+        // same envelope can never bind to two purchases.
+        contract_envelope_id: contractGateResult.coachEnvelopeId ?? null,
       },
       update: {
         // If Stripe returned the same session id on retry, just touch
@@ -478,6 +528,18 @@ export class CheckoutService {
       });
     }
 
+    // B5 — two-layer contract gate (platform waiver → coach service). Runs
+    // BEFORE the reservation row + any Stripe call: a 409 here means no
+    // PaymentIntent is ever created for an unsigned required contract (spec
+    // §4.1). No-op when FEATURE_CONTRACTS_ENABLED is OFF. The returned SIGNED
+    // coach envelope id (if any) is bound to the realized purchase post-pay.
+    const contractGateResult = await this.runContractGate({
+      clientId: client.id,
+      client: { email: client.email, name: client.name ?? client.email },
+      pkg,
+      coach: { id: coach.id, email: coach.email, name: coach.name ?? '' },
+    });
+
     // Reserve the idempotency key BEFORE any Stripe call. The unique
     // constraint on `idempotency_key` is the single-flight gate. The
     // `stripe_checkout_session_id` column is also unique and required —
@@ -499,6 +561,11 @@ export class CheckoutService {
           status: 'pending',
           entitlement_active: false,
           idempotency_key: purchaseIdempotencyKey,
+          // B5 — bind the SIGNED coach-service envelope to this purchase. Set
+          // at reservation (the envelope is already SIGNED before the gate
+          // cleared); null for non-`requires_contract` packages. The FK is
+          // @unique so the same envelope can never bind to two purchases.
+          contract_envelope_id: contractGateResult.coachEnvelopeId ?? null,
         },
       });
     } catch (err) {

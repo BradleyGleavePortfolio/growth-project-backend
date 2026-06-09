@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConnectModule } from '../connect/connect.module';
+import { ContractsModule } from '../contracts/contracts.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PackagesModule } from '../packages/packages.module';
 import { AdminAnalyticsService } from './admin-analytics.service';
@@ -56,6 +57,10 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     // FEATURE_BANK_PAYOUTS_V2 is OFF (the service self-checks the flag). No
     // cycle: PayoutsV2Module does not import CheckoutModule.
     PayoutsV2Module,
+    // B5 — provides CheckoutContractGate so CheckoutService can enforce the
+    // two-layer contract gate before any Stripe call. No-op while
+    // FEATURE_CONTRACTS_ENABLED is OFF (the gate self-checks the flag).
+    ContractsModule,
   ],
   controllers: [
     CheckoutController,
