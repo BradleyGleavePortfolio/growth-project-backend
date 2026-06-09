@@ -146,6 +146,17 @@ export class HelloSignProvider implements SignatureProvider {
     return { embedUrl };
   }
 
+  /**
+   * Public, spec-named alias (spec §3.6 `createEmbeddedSignUrl`) that delegates
+   * to the private `embedUrlForSignature` helper. Mints a fresh, short-lived
+   * embedded sign URL for a given signature id via Dropbox Sign
+   * `EmbeddedApi.embeddedSignUrl()`. Kept as a thin delegate so callers using
+   * the spec phrasing resolve to one implementation (no logic divergence).
+   */
+  async createEmbeddedSignUrl(signatureId: string): Promise<string> {
+    return this.embedUrlForSignature(signatureId);
+  }
+
   private async embedUrlForSignature(signatureId: string): Promise<string> {
     if (!signatureId) {
       throw new ServiceUnavailableException({
@@ -192,6 +203,16 @@ export class HelloSignProvider implements SignatureProvider {
    * Recompute the HelloSign `event_hash` and compare in constant time.
    * Returns false on ANY problem (missing fields, bad hex, length mismatch)
    * so the controller can reject with 401 and never advance state.
+   *
+   * Scheme verified against current Dropbox Sign docs (v3.x / @dropbox/sign
+   * ^1.8.0): the canonical Event Hash Verification is
+   *   HMAC-SHA256( key = API key, message = event_time + event_type )
+   * i.e. `echo -n $event_time$event_type | openssl dgst -sha256 -hmac $apikey`.
+   * Source: https://developers.hellosign.com/docs/guides/events-and-callbacks/walkthrough
+   * (section "Event Hash Verification"). This is NOT a raw-body HMAC; the hash
+   * covers only the concatenated event_time + event_type fields, so we recompute
+   * from the parsed event rather than over rawBody. rawBody is retained on the
+   * request for byte-exact parsing fallback and audit, not for this HMAC.
    */
   verifyWebhook(req: ProviderWebhookRequest): boolean {
     const evt = this.extractEventObject(req);
