@@ -1,9 +1,14 @@
 /**
  * posthog-event-names.spec.ts — §10.1 + §9 telemetry contract.
  *
- * The seven PostHog event names mobile/analytics dashboards key off MUST match
+ * The six PostHog event names mobile/analytics dashboards key off MUST match
  * §9 of the builder brief byte-for-byte. A rename in either place silently
  * breaks the funnel — this string-equality pin makes that a red test instead.
+ *
+ * NOTE: community.digest.queued was removed in PR #370 as an orphaned event —
+ * it had no emitter (no queueCommunityDigest / no capture call anywhere). The
+ * existing email DigestService/DigestScheduler are unrelated. See the fixer
+ * RLS/telemetry change set.
  */
 
 import 'reflect-metadata';
@@ -16,15 +21,14 @@ describe('v1-4 PostHog telemetry event names (§9 exact spelling)', () => {
       realtimeBroadcastFailed: 'community.realtime.broadcast_failed',
       pushSent: 'community.push.sent',
       pushSkipped: 'community.push.skipped',
-      digestQueued: 'community.digest.queued',
       pushDeliveryFailed: 'community.push.delivery_failed',
       realtimeSubscriberCountUnknown:
         'community.realtime.subscriber_count_unknown',
     });
   });
 
-  it('declares exactly seven telemetry events', () => {
-    expect(Object.keys(COMMUNITY_TELEMETRY_EVENTS)).toHaveLength(7);
+  it('declares exactly six telemetry events', () => {
+    expect(Object.keys(COMMUNITY_TELEMETRY_EVENTS)).toHaveLength(6);
   });
 
   it('every event name is in the community.* namespace, snake_case tail', () => {

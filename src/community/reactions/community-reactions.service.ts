@@ -11,6 +11,7 @@ import { CommunityMessagesRepository } from '../messages/community-messages.repo
 import { CommunityPostsRepository } from '../posts/community-posts.repository';
 import { COMMENT_CONTEXT_TYPE } from '../messages/community-messages.repository';
 import { CommunityReactionsRepository } from './community-reactions.repository';
+import { reactionKindForEmoji } from './community-emoji.allowlist';
 import {
   CommunityReactionState,
   CommunityReactionStateSchema,
@@ -181,7 +182,10 @@ export class CommunityReactionsService {
       emoji,
     });
     const rows = await this.reactions.listForTarget(t.targetType, t.targetId);
-    void this.emitReactionChanged(user, t, apiType, t.targetType, 1);
+    // `kind` is the OPAQUE NAMED reaction discriminator (like, fire, love…),
+    // NOT the target type and NOT the raw emoji glyph (no-PII doctrine — the
+    // glyph stays in the DB / authenticated REST refetch only).
+    void this.emitReactionChanged(user, t, apiType, reactionKindForEmoji(emoji), 1);
     return this.summarise(apiType, t.targetId, rows, user.id);
   }
 
@@ -199,7 +203,9 @@ export class CommunityReactionsService {
       emoji,
     });
     const rows = await this.reactions.listForTarget(t.targetType, t.targetId);
-    void this.emitReactionChanged(user, t, apiType, t.targetType, -1);
+    // `kind` is the OPAQUE NAMED reaction discriminator — see react(); never
+    // the target type, never the raw emoji glyph.
+    void this.emitReactionChanged(user, t, apiType, reactionKindForEmoji(emoji), -1);
     return this.summarise(apiType, t.targetId, rows, user.id);
   }
 }

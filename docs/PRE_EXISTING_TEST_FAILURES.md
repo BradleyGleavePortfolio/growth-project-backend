@@ -126,3 +126,103 @@ If any of those conditions changes — for example, a future fix round
 edits `src/messaging/*` — the corresponding suite MUST be re-evaluated
 and either green or explicitly re-quarantined in this document with a
 new justification.
+
+---
+
+# RLS integration suites — DB-dependent, env-driven reds (PR #370)
+
+**Added:** 2026-06-09 by the PR #370 fixer (v1-4 community realtime + push +
+telemetry). **Not a grandfathered policy bug — a live-DB environment
+requirement, with the policy wall PROVEN green.**
+
+## Suites
+
+- `test/rls-tier1-policies.spec.ts`
+- `test/rls-tier2-policies.spec.ts`
+- `test/rls-tier2-sessions-policies.spec.ts`
+- `test/rls-tier3-nutrition-policies.spec.ts`
+- `test/rls-tier3-workouts-policies.spec.ts`
+- `test/rls-tier4-learning-analytics-policies.spec.ts`
+- `test/rls-tier5-policies.spec.ts`
+- `test/rls-helper-search-path.spec.ts`
+
+## Exact failure (no database present)
+
+Each suite is explicitly a live-PostgreSQL integration test ("This spec hits a
+REAL PostgreSQL instance (NO mocks, NO stubs)"). In an environment with no
+reachable database, every test errors at `beforeAll` / `setAuth` /
+`asServiceRole` with:
+
+```
+PrismaClientInitializationError: Can't reach database server at `localhost:5432`
+```
+
+This accounts for all 543 "failed" RLS tests in the full-suite artifact: they
+are erroring to connect, not asserting a policy hole.
+
+## Proof the policy wall is intact (not (i), not (iii))
+
+The PR #370 fixer stood up a real PostgreSQL 17, provisioned the role model the
+suites assume (a NON-superuser, NON-BYPASSRLS login role member of a BYPASSRLS
+`service_role` **with INHERIT FALSE**, plus `app_user` / `app_authenticated` /
+`authenticated` / `anon` policy-bucket roles, granted WITH ADMIN OPTION by a
+role admin), created the suite-default databases, and ran each suite
+individually. Result:
+
+| Suite | Result |
+|---|---|
+| rls-tier1-policies | 100/100 |
+| rls-tier2-policies | 77/77 |
+| rls-tier2-sessions-policies | 60/60 |
+| rls-tier3-nutrition-policies | 77/77 |
+| rls-tier3-workouts-policies | 64/64 |
+| rls-tier4-learning-analytics-policies | 88/88 |
+| rls-tier5-policies | 65/65 |
+| rls-helper-search-path | 12/12 |
+| **TOTAL** | **543/543 PASS** |
+
+Full per-suite investigation, exact errors, and the provisioning recipe are in
+`RLS_INVESTIGATION_LOG.md` at repo root.
+
+## Why this is NOT a v1-4 regression
+
+`git diff --name-only origin/main..HEAD` for PR #370 is confined to
+`src/community/*` and two `src/notifications/{README.md,notification-kind.ts}`
+files. No migration, no `prisma/schema.prisma`, no RLS policy SQL, and no
+`test/rls-*` SUT is modified. The RLS reds therefore cannot be attributed to
+v1-4 (R41 self-diff posture). The schema SHA is unchanged:
+`f4a70e7064d874426b1ca9c57e3f7addc36d72ca33b2076f70ca513285cb416a`.
+
+## CI requirement to turn these green
+
+Provision a PostgreSQL with the role model above and set the per-suite DB env
+vars (`RLS_TIER1_TEST_DATABASE_URL`, `RLS_TIER2_TEST_DATABASE_URL`,
+`RLS_FN_TEST_DATABASE_URL`, `RLS_TIER3_TEST_DATABASE_URL`,
+`RLS_TIER4_TEST_DATABASE_URL`, `RLS_TIER5_TEST_DATABASE_URL`). One harness
+follow-up (out of PR #370 scope): make `rls-tier5-policies` self-bootstrap a
+`coach_id` column on `CoachingSession` rather than assuming a production-shaped
+table.
+
+## R66 full-suite note: `test/openapi-spec.spec.ts` (DB-bootstrap dependency)
+
+SKIP-BECAUSE / RED-BECAUSE: In a bare sandbox where the default
+`DATABASE_URL` points at an empty `test` database (0 tables, no migrations
+applied), `test/openapi-spec.spec.ts` fails in its `beforeAll` hook. The hook
+boots the full `AppModule` (`app.init()`), which eagerly issues
+`this.prisma.wearableMetricDef.findMany()` during startup; against an
+unmigrated DB this raises `PrismaClientKnownRequestError` and every assertion
+in the suite errors out as a consequence.
+
+Classification: category (ii) test-environment / no-migrated-DB — NOT a
+broken contract (i) and NOT a v1-4 regression (iii). Evidence:
+- The file is byte-identical to `origin/main` (last touched by unrelated
+  commit `91bb892`, well before PR #370); it is absent from
+  `git diff --name-only origin/main..HEAD`.
+- PR #370's commit (`db87c07`) modifies none of `src/app.module.ts`,
+  `src/common/openapi*`, `prisma/*`, or any wearables code path.
+- The error is a Prisma data-layer invocation failure, not an OpenAPI
+  contract assertion failure.
+
+CI requirement to turn green: run R66 against a migrated database (the CI lane
+applies Prisma migrations before the suite). The 251 non-RLS suites that do not
+require a migrated production schema all pass in the bare sandbox.

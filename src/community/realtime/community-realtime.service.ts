@@ -29,6 +29,7 @@ import {
   COMMUNITY_TELEMETRY_EVENTS,
   CommunityBroadcastEventName,
   CommunityChannelKind,
+  classifyTelemetryError,
 } from '../community-events';
 import type { CommunityBroadcastPayload } from './community-realtime.types';
 
@@ -143,17 +144,20 @@ export class CommunityRealtimeService {
       // #36 — never silently swallow. Log at warn (server-side only; the
       // SUPABASE_SERVICE_ROLE_KEY never appears in a client response, #12)
       // and emit the failure telemetry (do NOT swallow the analytics call).
+      // Log the raw message SERVER-SIDE ONLY (never leaves the process).
       const message = (err as Error).message;
       this.logger.warn(
         `broadcastCommunityEvent failed: channel=${channel} event=${event} kind=${meta.channelKind}: ${message}`,
       );
+      // Telemetry carries a BOUNDED, allowlisted code — never the raw message
+      // (PII gate): a lower-layer string could leak user text / emails / tokens.
       this.track(
         meta.distinctId,
         COMMUNITY_TELEMETRY_EVENTS.realtimeBroadcastFailed,
         {
           channel_kind: meta.channelKind,
           event_name: event,
-          error_code: message,
+          error_code: classifyTelemetryError(err),
         },
       );
     }

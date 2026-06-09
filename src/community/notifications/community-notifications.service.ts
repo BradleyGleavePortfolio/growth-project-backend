@@ -12,19 +12,23 @@
  * even constructed; the standard NotificationsService path for non-community
  * kinds is unaffected.
  *
- * LOCK-SCREEN PRIVACY (DIRTY-CRITICAL): the v1-1 schema has NO lockscreen-
- * privacy column on User (verified by grep). v1-4 is schema-frozen, so we
- * resolve privacy from a forward-compatible code path that DEFAULTS TO ON
- * (the strictly safe choice — a generic body can never leak). See
- * resolveLockscreenPrivacy(). The instant a `lockscreen_privacy` column lands
- * in a future schema PR, that one method is the single place to read it.
+ * LOCK-SCREEN PRIVACY (HARD GATE #4): the v1-1 schema has NO lockscreen-
+ * privacy column on User (verified by grep; see
+ * LOCKSCREEN_PRIVACY_FIELD_MISSING.md at repo root). v1-4 is schema-frozen
+ * (zero schema mutation), so resolveLockscreenPrivacy() returns privacy-ON
+ * UNCONDITIONALLY — the strictly safe choice, a generic body can never leak
+ * sender names or message text. The instant a `lockscreenPrivacy` column
+ * lands in a future schema PR, that one method is the single place to read it.
  */
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { AnalyticsService } from '../../analytics/analytics.service';
-import { COMMUNITY_TELEMETRY_EVENTS } from '../community-events';
+import {
+  COMMUNITY_TELEMETRY_EVENTS,
+  classifyTelemetryError,
+} from '../community-events';
 import {
   COMMUNITY_PUSH_BODIES,
   COMMUNITY_PUSH_DEFAULTS,
@@ -46,8 +50,11 @@ export interface SendCommunityPushInput {
   /** Pre-approved short context for the privacy-OFF body only. */
   bodyContext?: CommunityPushBodyContext;
   /**
-   * Forward-compatible privacy override. When undefined, privacy resolves to
-   * the SAFE default (on) — see resolveLockscreenPrivacy().
+   * Forward-compatible carrier for a future per-user privacy value. Currently
+   * IGNORED — resolveLockscreenPrivacy() returns privacy-ON unconditionally
+   * because no `lockscreenPrivacy` column exists on User (zero schema
+   * mutation). Kept on the input shape so the call surface is stable once the
+   * column lands and the resolver starts reading the real value.
    */
   lockscreenPrivacy?: boolean;
 }
@@ -82,18 +89,20 @@ export class CommunityNotificationsService {
   /**
    * Resolve the recipient's lock-screen privacy state.
    *
-   * DEVIATION (documented in the build report): no `lockscreen_privacy` column
-   * exists on User in the v1-1 schema and v1-4 cannot add one. We therefore:
-   *  1. honour an explicit per-call override when the caller knows it, AND
-   *  2. otherwise DEFAULT TO ON (safe) — a generic body never leaks.
-   * This satisfies the hard privacy gate without a schema mutation; when the
-   * column lands, read it here.
+   * HARD GATE #4 + ZERO SCHEMA MUTATION: the v1-1 schema has NO
+   * `lockscreenPrivacy` / `lockscreen_privacy` column on User (verified by
+   * grep; see LOCKSCREEN_PRIVACY_FIELD_MISSING.md at repo root). v1-4 is
+   * schema-frozen, so we CANNOT read a real value and CANNOT add the column
+   * here. The strictly-safe resolution is therefore PRIVACY-ON, UNCONDITIONALLY
+   * — a generic body can never leak sender names or message text.
+   *
+   * There is intentionally NO caller override: an override could turn privacy
+   * OFF without a real per-user DB value backing it, defeating the gate. The
+   * instant a `lockscreenPrivacy` column lands in a future schema PR, replace
+   * the body of this method with a read of the recipient's column value.
    */
-  resolveLockscreenPrivacy(input: SendCommunityPushInput): boolean {
-    if (typeof input.lockscreenPrivacy === 'boolean') {
-      return input.lockscreenPrivacy;
-    }
-    return true; // safe default
+  resolveLockscreenPrivacy(_lockscreenPrivacy?: boolean): boolean {
+    return true; // privacy-on, unconditionally — schema field absent (gate #4)
   }
 
   /**
@@ -103,7 +112,7 @@ export class CommunityNotificationsService {
    */
   buildBody(input: SendCommunityPushInput): string {
     const copy = COMMUNITY_PUSH_BODIES[input.kind];
-    if (this.resolveLockscreenPrivacy(input)) {
+    if (this.resolveLockscreenPrivacy(input.lockscreenPrivacy)) {
       return copy.privacyOn;
     }
     return copy.privacyOff(input.bodyContext ?? {});
@@ -188,7 +197,7 @@ export class CommunityNotificationsService {
         return;
       }
 
-      const privacyOn = this.resolveLockscreenPrivacy(input);
+      const privacyOn = this.resolveLockscreenPrivacy(input.lockscreenPrivacy);
       const body = this.buildBody(input);
       const title = COMMUNITY_PUSH_TITLES[kind];
 
@@ -244,14 +253,17 @@ export class CommunityNotificationsService {
     } catch (err) {
       // Best-effort: never throw to the caller (the DB write already
       // committed). Log + emit delivery_failed telemetry (#36).
+      // Raw message stays SERVER-SIDE in the log only.
       const message = (err as Error).message;
       this.logger.warn(
         `sendCommunityPush failed: kind=${kind} recipient=${recipientId}: ${message}`,
       );
+      // Telemetry carries a BOUNDED, allowlisted code — never the raw exception
+      // message (PII gate): it could leak user text / emails / push tokens.
       this.track(
         recipientId,
         COMMUNITY_TELEMETRY_EVENTS.pushDeliveryFailed,
-        { kind, error_code: message },
+        { kind, error_code: classifyTelemetryError(err) },
       );
     }
   }

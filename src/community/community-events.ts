@@ -67,7 +67,6 @@ export const COMMUNITY_TELEMETRY_EVENTS = {
   realtimeBroadcastFailed: 'community.realtime.broadcast_failed',
   pushSent: 'community.push.sent',
   pushSkipped: 'community.push.skipped',
-  digestQueued: 'community.digest.queued',
   pushDeliveryFailed: 'community.push.delivery_failed',
   realtimeSubscriberCountUnknown:
     'community.realtime.subscriber_count_unknown',
@@ -75,3 +74,86 @@ export const COMMUNITY_TELEMETRY_EVENTS = {
 
 export type CommunityTelemetryEventName =
   (typeof COMMUNITY_TELEMETRY_EVENTS)[keyof typeof COMMUNITY_TELEMETRY_EVENTS];
+
+// ─── Telemetry error classification (PII gate) ──────────────────────────
+//
+// PostHog failure payloads MUST NOT carry raw exception messages: a message
+// from a lower layer can leak user-authored content, emails, names, tokens,
+// or stack-ish detail. We instead map any thrown value to a BOUNDED ALLOWLIST
+// of coarse codes. Unknown shapes collapse to 'UNKNOWN' — never the raw string.
+export type TelemetryErrorCode =
+  | 'TOKEN_INVALID'
+  | 'NETWORK_ERROR'
+  | 'RATE_LIMITED'
+  | 'AUTH_ERROR'
+  | 'PAYLOAD_TOO_LARGE'
+  | 'TIMEOUT'
+  | 'UNKNOWN';
+
+/**
+ * Map an arbitrary thrown value to a bounded telemetry error code. Pattern
+ * matching is intentionally conservative and case-insensitive over the
+ * message/name only; the original string is NEVER returned. Anything we cannot
+ * confidently classify becomes 'UNKNOWN'.
+ */
+export function classifyTelemetryError(e: unknown): TelemetryErrorCode {
+  const raw =
+    e instanceof Error
+      ? `${e.name} ${e.message}`
+      : typeof e === 'string'
+        ? e
+        : '';
+  const s = raw.toLowerCase();
+  if (!s) return 'UNKNOWN';
+
+  // Order matters: more specific patterns first.
+  if (
+    s.includes('devicenotregistered') ||
+    s.includes('invalid token') ||
+    s.includes('invalid_token') ||
+    s.includes('expo push token') ||
+    s.includes('push token')
+  ) {
+    return 'TOKEN_INVALID';
+  }
+  if (
+    s.includes('429') ||
+    s.includes('rate limit') ||
+    s.includes('rate-limit') ||
+    s.includes('too many requests') ||
+    s.includes('messageratelimit')
+  ) {
+    return 'RATE_LIMITED';
+  }
+  if (
+    s.includes('payload') && (s.includes('too large') || s.includes('size')) ||
+    s.includes('413') ||
+    s.includes('messagetoobig')
+  ) {
+    return 'PAYLOAD_TOO_LARGE';
+  }
+  if (
+    s.includes('401') ||
+    s.includes('403') ||
+    s.includes('unauthor') ||
+    s.includes('forbidden') ||
+    s.includes('auth')
+  ) {
+    return 'AUTH_ERROR';
+  }
+  if (s.includes('timeout') || s.includes('timed out') || s.includes('etimedout')) {
+    return 'TIMEOUT';
+  }
+  if (
+    s.includes('econnrefused') ||
+    s.includes('econnreset') ||
+    s.includes('enotfound') ||
+    s.includes('network') ||
+    s.includes('socket') ||
+    s.includes('fetch failed') ||
+    s.includes('dns')
+  ) {
+    return 'NETWORK_ERROR';
+  }
+  return 'UNKNOWN';
+}
