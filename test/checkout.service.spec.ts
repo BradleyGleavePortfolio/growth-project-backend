@@ -271,6 +271,8 @@ function makeService() {
     packages,
     state,
     feePolicy,
+    // B5 — contract gate stub: contracts OFF in this suite → gate is a no-op.
+    { evaluate: async () => ({ ok: true, reason: 'contracts_disabled' }) } as any,
   );
   return { svc, prisma, stripe, packages, state, feePolicy };
 }
