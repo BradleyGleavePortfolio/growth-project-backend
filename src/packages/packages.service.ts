@@ -268,7 +268,44 @@ export class PackagesService {
 
   async archive(coachUserId: string, packageId: string): Promise<CoachPackage> {
     const row = await this.requireOwnedPackage(coachUserId, packageId);
+    // Idempotency guard (preserved): an already-archived row returns as-is.
+    // No subscriber check is needed on this path — the package is already
+    // off the storefront and a re-archive is a no-op, so re-counting would
+    // only add a pointless query and could spuriously 409 a row that is
+    // already in its terminal state.
     if (row.archived_at) return row;
+
+    // BUG-R3 — refuse to archive a package that still has live subscribers
+    // (Option A, the safer path). Archiving sets is_active=false and pulls
+    // the package off the storefront, but it does NOT touch the underlying
+    // Stripe subscriptions — those keep billing the client for a package the
+    // app now treats as "not available", breaking the client UI. We block the
+    // archive and tell the coach to cancel the subscriptions first.
+    //
+    // The count keys on `entitlement_active` — the single derived field the
+    // checkout webhook flips true while a buyer's entitlement is live and
+    // false on cancel/expiry — so it captures every still-paying buyer
+    // regardless of one-time vs recurring billing shape.
+    //
+    // No owner-role force-archive override is offered here: the only
+    // comparable subscriber gate in this service (the pricing lock in
+    // update()) throws unconditionally with no owner bypass, and the
+    // archive controller hands this method a resolved coach id with no role
+    // signal to branch on. Adding an override would be a new, unmodelled
+    // bypass, so the safer no-override behaviour is kept. Cancelling the
+    // Stripe subscriptions automatically is intentionally out of scope here
+    // (that is BUG-R5's territory).
+    const activeCount = await this.prisma.clientPurchase.count({
+      where: { package_id: packageId, entitlement_active: true },
+    });
+    if (activeCount > 0) {
+      throw new ConflictException({
+        error: 'PACKAGE_HAS_ACTIVE_SUBSCRIBERS',
+        message: `This package has ${activeCount} active subscriber(s). Cancel their subscriptions before archiving.`,
+        active_subscriber_count: activeCount,
+      });
+    }
+
     return this.prisma.coachPackage.update({
       where: { id: packageId },
       data: { archived_at: new Date(), is_active: false },
