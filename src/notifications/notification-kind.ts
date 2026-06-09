@@ -99,6 +99,18 @@ export const NotificationKind = {
   // from DunningV2Dispatcher; the mobile client renders DunningBlockerModal
   // from the payload. Additive: no v1 emitter uses this kind.
   DUNNING_BLOCKER: 'dunning_blocker',
+
+  // ── B5 Digital Contracts — envelope lifecycle ─────────────────────────────
+  // Code-level only (no schema migration), gated behind
+  // FEATURE_CONTRACTS_ENABLED at the emit sites. Coach-targeted awareness of
+  // a required-contract envelope's terminal/near-terminal transitions so the
+  // coach can follow up (declined/expired) or knows a purchase can proceed
+  // (signed). Client-side signing prompts are surfaced inline at checkout
+  // (ContractRequiredException), not as notifications. Default prefs follow
+  // the COACH_DIRECT category. Additive: no existing emitter uses these.
+  CONTRACT_SIGNED: 'contract_signed',
+  CONTRACT_DECLINED: 'contract_declined',
+  CONTRACT_EXPIRED: 'contract_expired',
 } as const;
 
 export type NotificationKindValue = (typeof NotificationKind)[keyof typeof NotificationKind];

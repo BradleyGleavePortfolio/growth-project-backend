@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConnectModule } from '../connect/connect.module';
+import { ContractsModule } from '../contracts/contracts.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PackagesModule } from '../packages/packages.module';
 import { AdminAnalyticsService } from './admin-analytics.service';
@@ -50,6 +51,10 @@ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
     // handler's @Optional() recovery / late-reversal shim. No-op while
     // FEATURE_DUNNING_V2 is OFF (the service self-checks the flag).
     DunningV2Module,
+    // B5 — provides CheckoutContractGate so CheckoutService can enforce the
+    // two-layer contract gate before any Stripe call. No-op while
+    // FEATURE_CONTRACTS_ENABLED is OFF (the gate self-checks the flag).
+    ContractsModule,
   ],
   controllers: [
     CheckoutController,
