@@ -164,9 +164,32 @@ export class AssignWorkoutMaterializer implements CapabilityMaterializer {
       // for the assignment FK. Inside the tx so the plan-existence check
       // is consistent with the create.
       const created = await this.prisma.$transaction(async (tx) => {
+        // MWB-1 (§3.3): read the plan WITH its live exercise rows so we can
+        // freeze an immutable snapshot into the assignment, exactly like the
+        // human assign path (WorkoutBuilderService.writeAssignmentSnapshot).
         const plan = await tx.workoutPlan.findUnique({
           where: { id: payload.workoutPlanId },
-          select: { id: true, coach_id: true },
+          select: {
+            id: true,
+            coach_id: true,
+            name: true,
+            type: true,
+            version: true,
+            exercises: {
+              where: { archived_at: null },
+              orderBy: { order: 'asc' },
+              select: {
+                exercise_external_id: true,
+                order: true,
+                sets: true,
+                reps_or_duration_seconds: true,
+                weight_lbs: true,
+                rest_seconds: true,
+                superset_group_id: true,
+                notes: true,
+              },
+            },
+          },
         });
         if (!plan) {
           throw new ForbiddenException({
@@ -186,7 +209,7 @@ export class AssignWorkoutMaterializer implements CapabilityMaterializer {
             tenantCoachId: draft.tenant_coach_id,
           });
         }
-        return tx.clientWorkoutAssignment.create({
+        const assignment = await tx.clientWorkoutAssignment.create({
           data: {
             workout_plan_id: payload.workoutPlanId,
             client_id: payload.clientId,
@@ -195,6 +218,32 @@ export class AssignWorkoutMaterializer implements CapabilityMaterializer {
             ai_draft_id: draft.id,
           },
         });
+        // Freeze the snapshot in the SAME transaction so the client can never
+        // observe an assignment without its frozen exercise list (§3.3).
+        const frozen = plan.exercises
+          .slice()
+          .sort((a, b) => a.order - b.order)
+          .map((e) => ({
+            exercise_external_id: e.exercise_external_id,
+            order: e.order,
+            sets: e.sets,
+            reps_or_duration_seconds: e.reps_or_duration_seconds,
+            weight_lbs: e.weight_lbs ?? null,
+            rest_seconds: e.rest_seconds ?? null,
+            superset_group_id: e.superset_group_id ?? null,
+            notes: e.notes ?? null,
+          }));
+        await tx.clientWorkoutAssignmentSnapshot.create({
+          data: {
+            assignment_id: assignment.id,
+            plan_name: plan.name,
+            plan_type: plan.type,
+            exercises_json: frozen as unknown as Prisma.InputJsonValue,
+            source_plan_id: plan.id,
+            source_version: plan.version,
+          },
+        });
+        return assignment;
       });
       assignmentId = created.id;
     } catch (err) {

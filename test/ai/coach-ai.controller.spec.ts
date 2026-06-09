@@ -129,6 +129,17 @@ function makeFixtures() {
   const workouts = {
     createPlan: jest.fn().mockResolvedValue({ id: 'wp-1' }),
     setExercises: jest.fn().mockResolvedValue([]),
+    // MWB-1 (§7.2): CoachAIService now delegates its client gate to
+    // WorkoutBuilderService.assertCanAccessClient. Mirror the old ownership
+    // rule (only coach1 owns client1) so the access-control tests still
+    // exercise the same allow/deny matrix. Throwing here surfaces as the
+    // /coach/* 404 opacity convention in assertCoachOwnsClient.
+    assertCanAccessClient: jest
+      .fn()
+      .mockImplementation(async (coachId: string, clientId: string) => {
+        if (coachId === 'coach1' && clientId === 'client1') return;
+        throw new Error('no access');
+      }),
   } as any;
 
   const svc = new CoachAIService(prisma, state, anthropic, ctxSvc, mealPlans, workouts);

@@ -53,9 +53,12 @@ import {
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
+import { SubscriptionGuard } from '../billing/subscription.guard';
+import { RequiresTier } from '../billing/requires-tier.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import {
+  AssignProgramDto,
   CompleteAssignmentDto,
   CreateAssignmentDto,
   CreateWorkoutPlanDto,
@@ -224,6 +227,104 @@ export class WorkoutBuilderController {
       limit: limit ? Number(limit) : undefined,
       cursor: cursor ?? null,
     });
+  }
+}
+
+/**
+ * MWB-1 (§3.2 / §3.4 / §7.3) — WorkoutProgram coach surface.
+ *
+ * Route overview (workout-programs / coach-facing):
+ *   POST /workout-programs/:programId/fork           fork a template into your own copy
+ *   POST /workout-programs/:programId/clone          clone a master onto a client
+ *   POST /workout-programs/:programId/assignments    fan-out assign every plan to a client
+ *
+ * Same coach/owner role gate + Idempotency-Key contract as the plan routes.
+ * Service re-checks role, ownership/tenant reachability, and client access
+ * (sub-coach scope) before any write.
+ *
+ * Entitlement posture (R31 Gate 8): every route here is a coach-tier WRITE
+ * (fork / clone / fan-out assign). They are paid-plan features, so the class
+ * mounts SubscriptionGuard + @RequiresTier('pro') — parity with the other
+ * coach-tier write controllers (e.g. CoachMediaController, the coach-AI
+ * controllers). A coach on the free tier (or with an inactive subscription)
+ * is denied with 403 TIER_UPGRADE_REQUIRED in enforce mode; OWNER bypasses.
+ * Pinned by test/workout-program-controller-entitlement.spec.ts.
+ */
+@ApiTags('workout-programs')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard, SubscriptionGuard)
+@Roles('coach', 'owner')
+@RequiresTier('pro')
+@Controller('workout-programs')
+export class WorkoutProgramController {
+  constructor(private readonly workoutBuilder: WorkoutBuilderService) {}
+
+  @Post(':programId/fork')
+  @ApiOperation({
+    summary:
+      'Fork a template program into a NEW program you own (deep copy by ' +
+      'value). The source must be tenant-shared in your business or owned ' +
+      'by you. Edits to the fork never touch the source and vice-versa.',
+  })
+  @ApiResponse({ status: 201, description: 'Forked program + plans.' })
+  @ApiResponse({ status: 403, description: 'Not a coach, or source not forkable.' })
+  @ApiResponse({ status: 404, description: 'Source template not found.' })
+  fork(
+    @Req() req: AuthedRequest,
+    @Param('programId', new ParseUUIDPipe()) programId: string,
+  ) {
+    return this.workoutBuilder.forkTemplate(programId, req.user.id);
+  }
+
+  @Post(':programId/clone')
+  @ApiOperation({
+    summary:
+      'Clone a master template program onto a client (deep copy by value). ' +
+      'The coach must be able to reach the master and have access to the ' +
+      'client (head coach or open sub-coach).',
+  })
+  @ApiResponse({ status: 201, description: 'Cloned program + plans.' })
+  @ApiResponse({ status: 403, description: 'Not a coach, or no access to client/master.' })
+  @ApiResponse({ status: 404, description: 'Master program not found.' })
+  clone(
+    @Req() req: AuthedRequest,
+    @Param('programId', new ParseUUIDPipe()) programId: string,
+    @Body() body: { client_id: string },
+  ) {
+    if (!body || typeof body.client_id !== 'string' || !body.client_id) {
+      throw new BadRequestException('client_id is required');
+    }
+    return this.workoutBuilder.cloneProgramToClient(
+      programId,
+      body.client_id,
+      req.user.id,
+    );
+  }
+
+  @Post(':programId/assignments')
+  @ApiOperation({
+    summary:
+      'Assign every plan in a program to a client, scheduling each day by ' +
+      'its (week, day) offset from start_date. A single Idempotency-Key ' +
+      'covers the whole fan-out.',
+  })
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiResponse({ status: 201, description: 'Created assignments.' })
+  @ApiResponse({ status: 400, description: 'Missing/invalid Idempotency-Key or empty program.' })
+  @ApiResponse({ status: 403, description: 'Not a coach, or no access to client/program.' })
+  assignProgram(
+    @Req() req: AuthedRequest,
+    @Param('programId', new ParseUUIDPipe()) programId: string,
+    @Body() dto: AssignProgramDto,
+    @RequiredIdempotencyKey()
+    idempotencyKey: string,
+  ) {
+    return this.workoutBuilder.assignProgramToClient(
+      req.user.id,
+      programId,
+      dto,
+      idempotencyKey,
+    );
   }
 }
 
