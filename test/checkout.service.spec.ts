@@ -236,7 +236,7 @@ function makePrismaStub() {
   };
 }
 
-function makeService() {
+function makeService(gateStub?: { evaluate: (...a: any[]) => Promise<any> }) {
   const prisma: any = makePrismaStub();
   // Phase 4 — feePolicy + teamSubCoachAssignment stubs used by
   // FeePolicyService when resolving the split. Solo-PT default: no
@@ -272,7 +272,11 @@ function makeService() {
     state,
     feePolicy,
     // B5 — contract gate stub: contracts OFF in this suite → gate is a no-op.
-    { evaluate: async () => ({ ok: true, reason: 'contracts_disabled' }) } as any,
+    // Callers may inject a custom gate (e.g. to simulate a SIGNED coach
+    // envelope) so the contract→purchase linkage can be asserted.
+    (gateStub ?? {
+      evaluate: async () => ({ ok: true, reason: 'contracts_disabled' }),
+    }) as any,
   );
   return { svc, prisma, stripe, packages, state, feePolicy };
 }
@@ -533,6 +537,83 @@ describe('CheckoutService', () => {
     expect(second.url).toBe(first.url);
     // The second call does NOT mint a new checkout session.
     expect(stripe.createCheckoutSession).toHaveBeenCalledTimes(1);
+  });
+
+  // B5 — hosted-checkout contract→purchase linkage parity with the
+  // PaymentIntent path: when the two-layer gate clears carrying a SIGNED
+  // coach envelope id, that id MUST be persisted on the hosted-checkout
+  // ClientPurchase row (FK ContractEnvelope, @unique).
+  it('binds the SIGNED coach envelope id to the hosted-checkout ClientPurchase', async () => {
+    const { svc, prisma } = makeService({
+      evaluate: async () => ({
+        ok: true,
+        reason: 'all_signed',
+        coachEnvelopeId: 'env-signed-hosted-1',
+      }),
+    });
+    prisma._packages.push({
+      id: 'pkg-contract',
+      coach_id: 'coach-1',
+      name: 'Coaching w/ contract',
+      amount_cents: 49900,
+      currency: 'usd',
+      billing_type: 'one_time',
+      interval: null,
+      interval_count: 1,
+      duration_periods: null,
+      is_active: true,
+      archived_at: null,
+      published_at: new Date('2026-01-01'),
+      stripe_price_id: 'price_cached',
+      stripe_product_id: 'prod_cached',
+      requires_contract: true,
+    });
+    prisma._accounts.push({
+      coach_user_id: 'coach-1',
+      stripe_account_id: 'acct_coach',
+      charges_enabled: true,
+      deauthorized_at: null,
+    });
+    prisma._users.push({ id: 'coach-1', email: 'c@x.com', name: 'Coach' });
+    prisma._users.push({ id: 'client-1', email: 'a@b.c', name: 'A', coach_id: 'coach-1' });
+
+    await svc.createCheckoutForClient('client-1', { package_id: 'pkg-contract' });
+
+    expect(prisma._purchases).toHaveLength(1);
+    expect(prisma._purchases[0].contract_envelope_id).toBe('env-signed-hosted-1');
+  });
+
+  it('leaves contract_envelope_id null on hosted checkout when no contract is required', async () => {
+    const { svc, prisma } = makeService();
+    prisma._packages.push({
+      id: 'pkg-nocontract',
+      coach_id: 'coach-1',
+      name: 'No contract',
+      amount_cents: 5000,
+      currency: 'usd',
+      billing_type: 'one_time',
+      interval: null,
+      interval_count: 1,
+      duration_periods: null,
+      is_active: true,
+      archived_at: null,
+      published_at: new Date('2026-01-01'),
+      stripe_price_id: 'price_cached',
+      stripe_product_id: 'prod_cached',
+    });
+    prisma._accounts.push({
+      coach_user_id: 'coach-1',
+      stripe_account_id: 'acct_coach',
+      charges_enabled: true,
+      deauthorized_at: null,
+    });
+    prisma._users.push({ id: 'coach-1', email: 'c@x.com', name: 'Coach' });
+    prisma._users.push({ id: 'client-1', email: 'a@b.c', name: 'A', coach_id: 'coach-1' });
+
+    await svc.createCheckoutForClient('client-1', { package_id: 'pkg-nocontract' });
+
+    expect(prisma._purchases).toHaveLength(1);
+    expect(prisma._purchases[0].contract_envelope_id ?? null).toBeNull();
   });
 });
 
