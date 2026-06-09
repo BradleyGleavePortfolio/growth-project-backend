@@ -103,6 +103,23 @@ export class CommunityDmsService {
   }
 
   /**
+   * Single source of truth for the per-participant DM gate: a member whose
+   * effective DM state (tri-state membership.dm_enabled → workspace
+   * dm_enabled_default) resolves false may neither send NOR read DM data. Throws
+   * 403 DM_DISABLED. Both authoriseDm (write/thread reads) and listThreads (the
+   * thread-metadata read) route through here so no DM surface can return data to
+   * a default-OFF caller.
+   */
+  private gateDmRead(
+    membership: Pick<CommunityMembership, 'dm_enabled'> | null,
+    workspace: Pick<CommunityWorkspace, 'dm_enabled_default'> | null,
+  ): void {
+    if (!this.resolveDmEnabled(membership, workspace)) {
+      throw new ForbiddenException(DM_DISABLED);
+    }
+  }
+
+  /**
    * Authorise a DM between the caller and a recipient in a workspace. Throws 404
    * if either side is not an active member (non-leak), 403 if either side has
    * DMs disabled. Returns the deterministic thread key.
@@ -130,12 +147,8 @@ export class CommunityDmsService {
       throw new NotFoundException(DM_NOT_FOUND);
     }
 
-    if (!this.resolveDmEnabled(senderMembership, workspace)) {
-      throw new ForbiddenException(DM_DISABLED);
-    }
-    if (!this.resolveDmEnabled(recipientMembership, workspace)) {
-      throw new ForbiddenException(DM_DISABLED);
-    }
+    this.gateDmRead(senderMembership, workspace);
+    this.gateDmRead(recipientMembership, workspace);
 
     return CommunityDmsRepository.dmKey(workspaceId, sender.id, recipientId);
   }
@@ -199,12 +212,16 @@ export class CommunityDmsService {
     query: { limit?: string },
   ): Promise<CommunityDmThreadListResponse> {
     const workspace = await this.access.findWorkspace(workspaceId);
-    if (
-      !workspace ||
-      !(await this.access.membershipInWorkspace(workspaceId, user.id))
-    ) {
+    const membership = await this.access.membershipInWorkspace(
+      workspaceId,
+      user.id,
+    );
+    if (!workspace || !membership) {
       throw new NotFoundException(DM_NOT_FOUND);
     }
+    // Reading thread metadata is a DM surface too: gate on the caller's
+    // effective DM state before returning any rows.
+    this.gateDmRead(membership, workspace);
     const rows = await this.dms.listThreadsForUser({
       workspaceId,
       userId: user.id,

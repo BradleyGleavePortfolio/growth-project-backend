@@ -363,4 +363,67 @@ itLive('community v1-3 direct messages (live DB)', () => {
       }
     });
   });
+
+  describe('thread-list read honours the per-workspace default-OFF gate', () => {
+    // Pre-seed one DM thread row directly (bypassing the gate — simulating
+    // legacy data or a coach-initiated DM) so listThreads has rows to leak.
+    beforeAll(async () => {
+      const dmKey = `${ids.wsA}:${[ids.studentA, ids.studentA2].sort().join(':')}`;
+      await prisma.communityMessage.create({
+        data: {
+          workspace_id: ids.wsA,
+          scope: 'dm',
+          kind: 'text',
+          dm_key: dmKey,
+          sender_id: ids.studentA2,
+          recipient_user_id: ids.studentA,
+          body: 'pre-seeded legacy DM',
+          visibility: 'active',
+        },
+      });
+    });
+
+    afterEach(async () => {
+      // Reset studentA's per-membership override back to null (workspace default).
+      await prisma.communityMembership.updateMany({
+        where: { workspace_id: ids.wsA, user_id: ids.studentA },
+        data: { dm_enabled: null },
+      });
+    });
+
+    it('8. flag ON + workspace default-OFF + member dm_enabled null: listThreads → 403 DM_DISABLED', async () => {
+      process.env.FEATURE_COMMUNITY_DM = 'true';
+      try {
+        const res = await call(
+          'GET',
+          `/api/community/workspaces/${ids.wsA}/dms`,
+          asUser(ids.studentA),
+        );
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('community.dm.disabled');
+      } finally {
+        delete process.env.FEATURE_COMMUNITY_DM;
+      }
+    });
+
+    it('8b. negative control: member dm_enabled=true → 200 with the thread visible', async () => {
+      process.env.FEATURE_COMMUNITY_DM = 'true';
+      try {
+        await prisma.communityMembership.updateMany({
+          where: { workspace_id: ids.wsA, user_id: ids.studentA },
+          data: { dm_enabled: true },
+        });
+        const res = await call(
+          'GET',
+          `/api/community/workspaces/${ids.wsA}/dms`,
+          asUser(ids.studentA),
+        );
+        expect(res.status).toBe(200);
+        const others = res.body.threads.map((t: any) => t.other_user_id);
+        expect(others).toContain(ids.studentA2);
+      } finally {
+        delete process.env.FEATURE_COMMUNITY_DM;
+      }
+    });
+  });
 });
