@@ -276,6 +276,67 @@ describe('PlatformFeeService.compute — §2.7 worked examples', () => {
 });
 
 // ===========================================================================
+// 2b. Gross-conservation invariant: coach_net + platform_fee + stripe_fee == gross.
+//
+// The original builder brief stated "coachPayout + platformFee === gross",
+// which is mathematically wrong once Stripe takes a real cut: the Stripe fee
+// must also be a term. The correct conservation law the source implements is
+//   coach_net_cents + platform_fee_cents + stripe_fee_cents === amount_cents
+// because compute() defines coach_net = amount - platform_fee - stripe_fee.
+// This block asserts that law to the cent across >=5 adversarial inputs.
+// ===========================================================================
+describe('PlatformFeeService — gross-conservation invariant (coach + platform + stripe == gross)', () => {
+  const fee = new PlatformFeeService();
+
+  // [label, amount_cents (gross), stripe_fee_cents]
+  // stripe_fee_cents models the ACTUAL rail fee for the scenario:
+  //   - ACH: Stripe 0.8% capped at $5.00 (500 cents) — so always min(round(0.008*gross), 500).
+  const cases: Array<[string, number, number]> = [
+    ['$1,000 ACH (gross=100000, stripe=500 capped)', 100000, 500],
+    ['$25 micro-purchase (gross=2500, stripe=125)', 2500, 125],
+    ['$9,999.99 large ACH (gross=999999, stripe=500 capped)', 999999, 500],
+    ['$1.00 minimum (gross=100, stripe=1)', 100, 1],
+    ['$50 card (gross=5000, stripe=175)', 5000, 175],
+    ['$200 future ACH (gross=20000, stripe=160)', 20000, 160],
+  ];
+
+  it.each(cases)(
+    '%s → coach_net + platform_fee + stripe_fee === gross, to the cent',
+    (_label, gross, stripeFee) => {
+      const r = fee.compute({ amount_cents: gross, stripe_fee_cents: stripeFee });
+      // The gross is fully partitioned: nothing is created or destroyed.
+      expect(r.coach_net_cents + r.platform_fee_cents + stripeFee).toBe(gross);
+      // Each component is a non-negative integer number of cents.
+      expect(Number.isInteger(r.coach_net_cents)).toBe(true);
+      expect(Number.isInteger(r.platform_fee_cents)).toBe(true);
+      expect(r.coach_net_cents).toBeGreaterThanOrEqual(0);
+      expect(r.platform_fee_cents).toBeGreaterThanOrEqual(0);
+    },
+  );
+
+  it('rounding-edge: platform absorbs the internal penny while visible coach + visible platform + stripe still == gross', () => {
+    // Use the reconcileInternal path. computed basis stripe_fee=500 → visible
+    // fee 3215; actual basis stripe_fee=498 → internal fee 3216, so the
+    // platform absorbs a +1c delta (platform_absorbed_delta_cents > 0).
+    const gross = 100000;
+    const stripeFee = 500;
+    const recon = fee.reconcileInternal({
+      amount_cents: gross,
+      stripe_fee_cents: stripeFee,
+      actual_stripe_fee_cents: 498,
+    });
+    // The penny is absorbed by the platform, never surfaced to the coach.
+    expect(recon.platform_absorbed_delta_cents).toBeGreaterThan(0);
+    // The COACH-VISIBLE partition still conserves gross exactly.
+    expect(
+      recon.coach_visible_net_cents +
+        recon.coach_visible_fee_cents +
+        stripeFee,
+    ).toBe(gross);
+  });
+});
+
+// ===========================================================================
 // 3. Penny-absorb invariant (operator decision A: platform absorbs delta).
 // ===========================================================================
 describe('PlatformFeeService.reconcileInternal — penny absorb', () => {
