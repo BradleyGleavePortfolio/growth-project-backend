@@ -53,6 +53,8 @@ import {
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
+import { SubscriptionGuard } from '../billing/subscription.guard';
+import { RequiresTier } from '../billing/requires-tier.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import {
@@ -239,11 +241,20 @@ export class WorkoutBuilderController {
  * Same coach/owner role gate + Idempotency-Key contract as the plan routes.
  * Service re-checks role, ownership/tenant reachability, and client access
  * (sub-coach scope) before any write.
+ *
+ * Entitlement posture (R31 Gate 8): every route here is a coach-tier WRITE
+ * (fork / clone / fan-out assign). They are paid-plan features, so the class
+ * mounts SubscriptionGuard + @RequiresTier('pro') — parity with the other
+ * coach-tier write controllers (e.g. CoachMediaController, the coach-AI
+ * controllers). A coach on the free tier (or with an inactive subscription)
+ * is denied with 403 TIER_UPGRADE_REQUIRED in enforce mode; OWNER bypasses.
+ * Pinned by test/workout-program-controller-entitlement.spec.ts.
  */
 @ApiTags('workout-programs')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, SubscriptionGuard)
 @Roles('coach', 'owner')
+@RequiresTier('pro')
 @Controller('workout-programs')
 export class WorkoutProgramController {
   constructor(private readonly workoutBuilder: WorkoutBuilderService) {}
