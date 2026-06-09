@@ -432,7 +432,14 @@ const ALL_USER_IDS = [
     // Security flags assertion — the migration outcome itself
     // ────────────────────────────────────────────────────────────
     describe('helper security flags (post-migration)', () => {
-      it('reports SECURITY DEFINER + pinned search_path on every targeted helper', async () => {
+      // P1-004 (fix round 1): the prior version only checked that
+      // pg_catalog/public/app appeared SOMEWHERE in proconfig, which the
+      // buggy missing-pg_temp string also satisfied. We now assert the
+      // EXACT proconfig value with pg_temp LAST, plus the canonical
+      // pg_get_functiondef() output.
+      const EXPECTED_SEARCH_PATH = 'pg_catalog, public, app, pg_temp';
+
+      it('reports SECURITY DEFINER + exact pinned search_path (pg_temp last) on every targeted helper', async () => {
         expect.hasAssertions();
         const rows = (await prisma.$queryRawUnsafe(
           `SELECT n.nspname AS schema,
@@ -455,11 +462,53 @@ const ALL_USER_IDS = [
         for (const row of rows) {
           expect(row.security_definer).toBe(true);
           expect(row.config).not.toBeNull();
-          const joined = (row.config || []).join(' ');
-          expect(joined).toContain('search_path=');
-          expect(joined).toContain('pg_catalog');
-          expect(joined).toContain('public');
-          expect(joined).toContain('app');
+          // proconfig is a text[] of GUC=value settings. Exactly one entry
+          // must be the search_path, and it must equal the hardened string
+          // verbatim — no more, no less.
+          const searchPathEntries = (row.config || []).filter((c) =>
+            c.startsWith('search_path='),
+          );
+          expect(searchPathEntries).toHaveLength(1);
+          const value = searchPathEntries[0].slice('search_path='.length);
+          expect(value).toBe(EXPECTED_SEARCH_PATH);
+
+          // pg_temp must be the LAST element of the resolution order.
+          const elements = value.split(',').map((s) => s.trim());
+          expect(elements[elements.length - 1]).toBe('pg_temp');
+          // ...and appear exactly once (no duplicate/earlier pg_temp).
+          expect(elements.filter((e) => e === 'pg_temp')).toHaveLength(1);
+        }
+      });
+
+      it('emits canonical pg_get_functiondef() search_path clause with pg_temp last for every helper', async () => {
+        expect.hasAssertions();
+        const helperRegclasses: Array<string> = [
+          'app.current_user_id()',
+          'app.current_user_role()',
+          'app.is_owner()',
+          'app.is_current_coach_of(text)',
+          'public.enforce_subcoach_head_cap()',
+        ];
+        for (const sig of helperRegclasses) {
+          const def = await callScalar<string>(
+            `SELECT pg_get_functiondef($1::regprocedure) AS def`,
+            sig,
+          );
+          // Postgres canonical form quotes EACH search_path element and
+          // joins with ", ", using TO (older/newer servers may render `=`):
+          //   SET search_path TO 'pg_catalog', 'public', 'app', 'pg_temp'
+          // Normalize by stripping the per-element single quotes, then assert
+          // the exact ordered clause with pg_temp last.
+          const normalized = def.replace(/'/g, '');
+          expect(normalized).toMatch(
+            /SET search_path (?:TO|=) pg_catalog, public, app, pg_temp\b/,
+          );
+          // Negative guard: the unsafe (missing pg_temp) clause must be
+          // absent — the app-terminated form NOT followed by pg_temp.
+          expect(normalized).not.toMatch(
+            /SET search_path (?:TO|=) pg_catalog, public, app(?!, pg_temp)/,
+          );
+          expect(def).toContain('SECURITY DEFINER');
         }
       });
     });
@@ -530,14 +579,50 @@ const ALL_USER_IDS = [
         await prisma.$executeRawUnsafe(
           `CREATE SCHEMA IF NOT EXISTS ${ATTACKER_SCHEMA}`,
         );
-        // Plant a decoy current_setting that always returns a fixed
-        // attacker-controlled string. If the helper resolved
-        // current_setting under the caller's search_path it would call
-        // this instead of pg_catalog.current_setting.
+
+        // P1-003 (fix round 1): plant a same-NAME decoy in the attacker
+        // schema for EVERY hardened helper plus the built-ins their bodies
+        // resolve. Each decoy returns an attacker-controlled value so that
+        // if the hardened helper resolved any unqualified reference under
+        // the caller's hostile search_path, the observable result would
+        // change. The pinned `search_path = pg_catalog, public, app,
+        // pg_temp` must make all of these inert.
+
+        // Decoy built-in current_setting (chained by current_user_id /
+        // current_user_role bodies).
         await prisma.$executeRawUnsafe(
           `CREATE OR REPLACE FUNCTION ${ATTACKER_SCHEMA}.current_setting(text, boolean)
            RETURNS text LANGUAGE sql IMMUTABLE
            AS $fn$ SELECT 'attacker-controlled-id'::text $fn$`,
+        );
+
+        // Same-name decoy for each app.* helper. If a caller-controlled
+        // search_path could win, an unqualified call to e.g. is_owner()
+        // chained inside another helper would hit these and flip the result.
+        await prisma.$executeRawUnsafe(
+          `CREATE OR REPLACE FUNCTION ${ATTACKER_SCHEMA}.current_user_id()
+           RETURNS text LANGUAGE sql IMMUTABLE
+           AS $fn$ SELECT 'attacker-controlled-id'::text $fn$`,
+        );
+        await prisma.$executeRawUnsafe(
+          `CREATE OR REPLACE FUNCTION ${ATTACKER_SCHEMA}.current_user_role()
+           RETURNS text LANGUAGE sql IMMUTABLE
+           AS $fn$ SELECT 'owner'::text $fn$`,
+        );
+        await prisma.$executeRawUnsafe(
+          `CREATE OR REPLACE FUNCTION ${ATTACKER_SCHEMA}.is_owner()
+           RETURNS boolean LANGUAGE sql IMMUTABLE
+           AS $fn$ SELECT true $fn$`,
+        );
+        await prisma.$executeRawUnsafe(
+          `CREATE OR REPLACE FUNCTION ${ATTACKER_SCHEMA}.is_current_coach_of(text)
+           RETURNS boolean LANGUAGE sql IMMUTABLE
+           AS $fn$ SELECT true $fn$`,
+        );
+        await prisma.$executeRawUnsafe(
+          `CREATE OR REPLACE FUNCTION ${ATTACKER_SCHEMA}.is_user_coached_by(text, text)
+           RETURNS boolean LANGUAGE sql IMMUTABLE
+           AS $fn$ SELECT true $fn$`,
         );
       });
 
@@ -545,25 +630,193 @@ const ALL_USER_IDS = [
         await prisma.$executeRawUnsafe(
           `DROP SCHEMA IF EXISTS ${ATTACKER_SCHEMA} CASCADE`,
         );
+        await prisma.$executeRawUnsafe(`RESET search_path`);
       });
 
-      it('app.current_user_id ignores attacker schema even when caller search_path is hostile', async () => {
-        expect.hasAssertions();
-        await setContext(COACH_ID, 'coach');
-        // Point the caller search_path at the attacker schema first.
+      async function withHostileSearchPath<T>(fn: () => Promise<T>): Promise<T> {
+        // Point the caller search_path at the attacker schema FIRST so any
+        // unqualified resolution inside the helper would prefer the decoys.
         await prisma.$executeRawUnsafe(
           `SELECT set_config('search_path', $1, false)`,
           `${ATTACKER_SCHEMA}, public, app`,
         );
-        const got = await callScalar<string>(
-          'SELECT app.current_user_id() AS id',
+        try {
+          return await fn();
+        } finally {
+          await prisma.$executeRawUnsafe(`RESET search_path`);
+        }
+      }
+
+      it('app.current_user_id resists attacker-schema current_setting + same-name decoy', async () => {
+        expect.hasAssertions();
+        await setContext(COACH_ID, 'coach');
+        const got = await withHostileSearchPath(() =>
+          callScalar<string>('SELECT app.current_user_id() AS id'),
         );
-        // Helper resolved current_setting via pg_catalog because the
-        // pinned search_path overrides the caller's. If shadowing were
-        // possible, got would be 'attacker-controlled-id'.
+        // If shadowing were possible, got would be 'attacker-controlled-id'.
         expect(got).toBe(COACH_ID);
-        // Restore the default for subsequent tests.
+      });
+
+      it('app.current_user_role resists attacker-schema decoys', async () => {
+        expect.hasAssertions();
+        await setContext(COACH_ID, 'coach');
+        const got = await withHostileSearchPath(() =>
+          callScalar<string>('SELECT app.current_user_role() AS role'),
+        );
+        expect(got).toBe('coach');
+      });
+
+      it('app.is_owner resists attacker-schema decoys (does not return forced true)', async () => {
+        expect.hasAssertions();
+        // Authenticated NON-owner: a successful shadow of current_user_role
+        // (decoy returns 'owner') or is_owner itself (decoy returns true)
+        // would flip this to true.
+        await setContext(COACH_ID, 'coach');
+        const got = await withHostileSearchPath(() =>
+          callScalar<boolean>('SELECT app.is_owner() AS is_owner'),
+        );
+        expect(got).toBe(false);
+      });
+
+      it('app.is_current_coach_of resists attacker-schema decoys (does not return forced true)', async () => {
+        expect.hasAssertions();
+        // OTHER_COACH has no coaching link to STUDENT_OF_COACH_ID; a shadow
+        // of is_user_coached_by (decoy returns true) or is_current_coach_of
+        // itself would flip this to true.
+        await setContext(OTHER_COACH_ID, 'coach');
+        const got = await withHostileSearchPath(() =>
+          callScalar<boolean>(
+            'SELECT app.is_current_coach_of($1) AS r',
+            STUDENT_OF_COACH_ID,
+          ),
+        );
+        expect(got).toBe(false);
+      });
+
+      it('public.enforce_subcoach_head_cap still enforces the cap under a hostile caller search_path', async () => {
+        expect.hasAssertions();
+        const R1 = 'rls01-test-tsca-hostile-0001';
+        const R2 = 'rls01-test-tsca-hostile-0002';
+        const R3 = 'rls01-test-tsca-hostile-0003';
+        await prisma.$executeRawUnsafe(
+          `DELETE FROM "TeamSubCoachAssignment" WHERE id IN ($1,$2,$3)`,
+          R1,
+          R2,
+          R3,
+        );
+        try {
+          await withHostileSearchPath(async () => {
+            await prisma.$executeRawUnsafe(
+              `INSERT INTO "TeamSubCoachAssignment" (id, sub_coach_id, head_coach_id) VALUES ($1,$2,$3)`,
+              R1,
+              SUB,
+              HEAD_A,
+            );
+            await prisma.$executeRawUnsafe(
+              `INSERT INTO "TeamSubCoachAssignment" (id, sub_coach_id, head_coach_id) VALUES ($1,$2,$3)`,
+              R2,
+              SUB,
+              HEAD_B,
+            );
+          });
+          let raised: unknown;
+          try {
+            await withHostileSearchPath(() =>
+              prisma.$executeRawUnsafe(
+                `INSERT INTO "TeamSubCoachAssignment" (id, sub_coach_id, head_coach_id) VALUES ($1,$2,$3)`,
+                R3,
+                SUB,
+                HEAD_C,
+              ),
+            );
+          } catch (err) {
+            raised = err;
+          }
+          expect(raised).toBeDefined();
+          expect(errorMessage(raised)).toContain('sub_coach_head_cap_exceeded');
+        } finally {
+          await prisma.$executeRawUnsafe(
+            `DELETE FROM "TeamSubCoachAssignment" WHERE id IN ($1,$2,$3)`,
+            R1,
+            R2,
+            R3,
+          );
+        }
+      });
+    });
+
+    // ────────────────────────────────────────────────────────────
+    // P1-003 (fix round 1): pg_temp relation-shadow test. This is the
+    // test that proves pg_temp-LAST positioning matters. The trigger
+    // function public.enforce_subcoach_head_cap() counts rows from the
+    // UNQUALIFIED relation "TeamSubCoachAssignment". If pg_temp were
+    // searched before public, a session that created a temp table of the
+    // same name (seeded so the cap check reads 0 rows) could defeat the
+    // cap. With pg_temp pinned LAST, the count must resolve against
+    // public."TeamSubCoachAssignment" and the cap must still fire.
+    // ────────────────────────────────────────────────────────────
+    describe('pg_temp relation-shadow on enforce_subcoach_head_cap', () => {
+      const R1 = 'rls01-test-tsca-temp-0001';
+      const R2 = 'rls01-test-tsca-temp-0002';
+      const R3 = 'rls01-test-tsca-temp-0003';
+
+      afterEach(async () => {
+        await prisma.$executeRawUnsafe(
+          `DROP TABLE IF EXISTS pg_temp."TeamSubCoachAssignment"`,
+        );
         await prisma.$executeRawUnsafe(`RESET search_path`);
+        await prisma.$executeRawUnsafe(
+          `DELETE FROM "TeamSubCoachAssignment" WHERE id IN ($1,$2,$3)`,
+          R1,
+          R2,
+          R3,
+        );
+      });
+
+      it('cap check resolves against public.TeamSubCoachAssignment, not a pg_temp decoy', async () => {
+        expect.hasAssertions();
+
+        // Two real (public) active assignments => sub-coach is AT the cap.
+        await prisma.$executeRawUnsafe(
+          `INSERT INTO "TeamSubCoachAssignment" (id, sub_coach_id, head_coach_id) VALUES ($1,$2,$3)`,
+          R1,
+          SUB,
+          HEAD_A,
+        );
+        await prisma.$executeRawUnsafe(
+          `INSERT INTO "TeamSubCoachAssignment" (id, sub_coach_id, head_coach_id) VALUES ($1,$2,$3)`,
+          R2,
+          SUB,
+          HEAD_B,
+        );
+
+        // Plant an EMPTY temp table of the same name. If the trigger body
+        // resolved "TeamSubCoachAssignment" against pg_temp (i.e. pg_temp
+        // were not last), it would count 0 rows and wrongly allow a 3rd.
+        await prisma.$executeRawUnsafe(
+          `CREATE TEMP TABLE "TeamSubCoachAssignment"
+             (id text, sub_coach_id text, head_coach_id text, archived_at timestamptz)`,
+        );
+        // Make pg_temp explicitly first in the CALLER search_path; the
+        // function's own pinned search_path (pg_temp last) must still win.
+        await prisma.$executeRawUnsafe(
+          `SELECT set_config('search_path', 'pg_temp, public, app', false)`,
+        );
+
+        let raised: unknown;
+        try {
+          await prisma.$executeRawUnsafe(
+            `INSERT INTO public."TeamSubCoachAssignment" (id, sub_coach_id, head_coach_id) VALUES ($1,$2,$3)`,
+            R3,
+            SUB,
+            HEAD_C,
+          );
+        } catch (err) {
+          raised = err;
+        }
+        // Cap must still fire — proving public won resolution over pg_temp.
+        expect(raised).toBeDefined();
+        expect(errorMessage(raised)).toContain('sub_coach_head_cap_exceeded');
       });
     });
 
@@ -713,9 +966,20 @@ describe('PR-RLS-01 migration file (static checks)', () => {
     const createMatches = sql.match(/CREATE OR REPLACE FUNCTION/g) || [];
     expect(createMatches.length).toBe(5);
 
+    // P1-004 (fix round 1): assert the EXACT hardened string with pg_temp
+    // pinned LAST on all five helpers, not just the unsafe prefix. The old
+    // gate matched `pg_catalog, public, app` which the buggy missing-pg_temp
+    // string also satisfied.
     const pinnedSearchPath =
-      sql.match(/SET search_path = pg_catalog, public, app/g) || [];
+      sql.match(/SET search_path = pg_catalog, public, app, pg_temp\b/g) || [];
     expect(pinnedSearchPath.length).toBe(5);
+
+    // Defensive: no active SET search_path clause may omit pg_temp. Any
+    // `SET search_path = pg_catalog, public, app` NOT immediately followed
+    // by `, pg_temp` is the regression this PR fixes.
+    const missingPgTemp =
+      sql.match(/SET search_path = pg_catalog, public, app(?!, pg_temp)/g) || [];
+    expect(missingPgTemp.length).toBe(0);
 
     const securityDefiner = sql.match(/SECURITY DEFINER/g) || [];
     expect(securityDefiner.length).toBe(5);
