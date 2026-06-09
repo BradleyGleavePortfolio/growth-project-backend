@@ -76,6 +76,12 @@ export const NotificationKind = {
   // across Stripe webhook replay via DripResolverMarker(purpose=
   // 'coach_new_purchase')). Default prefs ON for the selling coach.
   COACH_NEW_PURCHASE: 'coach_new_purchase',
+
+  // B3 Smart Dunning v2 — the Day-3 / Day-7 in-app blocker pop-up the client
+  // reads on session start (spec §8.2). Emitted ONLY behind FEATURE_DUNNING_V2
+  // from DunningV2Dispatcher; the mobile client renders DunningBlockerModal
+  // from the payload. Additive: no v1 emitter uses this kind.
+  DUNNING_BLOCKER: 'dunning_blocker',
 } as const;
 
 export type NotificationKindValue = (typeof NotificationKind)[keyof typeof NotificationKind];

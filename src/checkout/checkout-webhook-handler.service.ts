@@ -7,6 +7,7 @@ import {
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { PrismaService } from '../prisma.service';
 import { DunningService } from './dunning.service';
+import { DunningV2Service } from './dunning-v2/dunning-v2.service';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 
@@ -119,6 +120,12 @@ export class CheckoutWebhookHandlerService {
     // without the full Nest container still work; in production wiring
     // (CheckoutModule imports PackagesModule) it is always present.
     @Optional() private fanout?: PurchaseFanoutService,
+    // B3 Smart Dunning v2 — @Optional() additive seam. Every call below is
+    // gated internally by FEATURE_DUNNING_V2 (default OFF), so this never
+    // alters v1 behaviour: while the flag is off the v2 methods return
+    // immediately without reading or writing state. No v1 dunning logic is
+    // modified — these are pure additions after the existing v1 calls.
+    @Optional() private dunningV2?: DunningV2Service,
   ) {}
 
   // Returns claimed=true iff the event was for a Connect package purchase
@@ -170,11 +177,61 @@ export class CheckoutWebhookHandlerService {
         // PR-16 — pass the outer tx so cancelPendingForPurchase can run
         // INSIDE the refund / dispute revocation $transaction (entitlement
         // revoke + drop cancel commit-or-rollback together).
+        //
+        // B3 v2 (§6) — additive late-reversal seam. For dispute-created /
+        // refunded events we additionally probe whether this reverses a
+        // PREVIOUSLY-CLEARED dunning payment and, if so, open a compressed
+        // cycle. No-op while FEATURE_DUNNING_V2 is off; fire-and-forget so it
+        // never alters the v1 refund/dispute result. The v2 service applies
+        // the one-active-cycle-per-state guard (§6.4) so a dispute→refund
+        // pair never double-opens.
+        if (
+          this.dunningV2 &&
+          (event.type === 'charge.dispute.created' ||
+            event.type === 'charge.refunded')
+        ) {
+          this.fireLateReversalProbe(event);
+        }
         if (this.refundDispute) return this.refundDispute.handle(event, tx);
         return { claimed: false };
       default:
         return { claimed: false };
     }
+  }
+
+  /**
+   * B3 v2 (§6) — fire-and-forget late-reversal probe. Extracts the charge /
+   * PI id + reversal timestamp from the Stripe event and hands them to the v2
+   * service, which applies the "previously cleared" + one-active-cycle guards.
+   * Never throws into the webhook path; no-op while FEATURE_DUNNING_V2 is off.
+   */
+  private fireLateReversalProbe(event: StripeEvent): void {
+    if (!this.dunningV2) return;
+    const obj = event.data.object as {
+      id?: string;
+      charge?: string | null;
+      payment_intent?: string | null;
+      created?: number | null;
+    };
+    // For charge.refunded the object IS the charge; for dispute.created the
+    // object is the dispute carrying a `charge` ref.
+    const chargeId =
+      event.type === 'charge.refunded' ? (obj.id ?? null) : (obj.charge ?? null);
+    const reversedAt =
+      typeof obj.created === 'number'
+        ? new Date(obj.created * 1000)
+        : new Date();
+    void this.dunningV2
+      .detectAndHandleLateReversal({
+        chargeId,
+        paymentIntentId: obj.payment_intent ?? null,
+        reversedChargeAt: reversedAt,
+      })
+      .catch((err) =>
+        this.logger.warn(
+          `dunningV2.detectAndHandleLateReversal failed: ${(err as Error).message}`,
+        ),
+      );
   }
 
   /**
@@ -968,6 +1025,18 @@ export class CheckoutWebhookHandlerService {
       } catch (err) {
         this.logger.warn(
           `dunning.recordResolution failed purchase=${updated.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    // B3 v2 (§5) — immediate-clear additions (restore entitlement, lift Day-10
+    // lockout, dismiss blockers, revoke recovery tokens). No-op when the flag
+    // is off; runs AFTER the v1 recordResolution so v1 behaviour is unchanged.
+    if (this.dunningV2) {
+      try {
+        await this.dunningV2.applyImmediateClear(updated.id, 'retry');
+      } catch (err) {
+        this.logger.warn(
+          `dunningV2.applyImmediateClear failed purchase=${updated.id}: ${(err as Error).message}`,
         );
       }
     }

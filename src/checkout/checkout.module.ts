@@ -10,6 +10,7 @@ import {
 import { CheckoutService } from './checkout.service';
 import { CheckoutWebhookHandlerService } from './checkout-webhook-handler.service';
 import { DunningService } from './dunning.service';
+import { DunningV2Module } from './dunning-v2/dunning-v2.module';
 import {
   AdminPaymentOpsController,
   CoachPaymentOpsController,
@@ -45,6 +46,10 @@ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
     ConnectModule,
     PackagesModule,
     NotificationsModule,
+    // B3 v2 (spec PR #6) — provides DunningV2Service for the webhook
+    // handler's @Optional() recovery / late-reversal shim. No-op while
+    // FEATURE_DUNNING_V2 is OFF (the service self-checks the flag).
+    DunningV2Module,
   ],
   controllers: [
     CheckoutController,
