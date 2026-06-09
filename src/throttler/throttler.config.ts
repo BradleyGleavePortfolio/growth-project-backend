@@ -149,6 +149,19 @@ const COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN = readIntEnv(
   120,
 );
 
+// Community v1-3 write surfaces. Per-user, per-window caps on the abusable
+// write paths (messages, posts, comments, DMs, reactions, moderation reports).
+// Each is env-tunable and clamped so a misconfigured env cannot open a flood
+// window. Rationale + windows are the audit table in the v1-3 builder brief.
+const COMMUNITY_MESSAGES_PER_MIN  = readIntEnv('COMMUNITY_MESSAGES_PER_MIN',  30, 1, 1_000);
+const COMMUNITY_MSG_EDIT_PER_MIN  = readIntEnv('COMMUNITY_MSG_EDIT_PER_MIN',  10, 1, 1_000);
+const COMMUNITY_POSTS_PER_MIN     = readIntEnv('COMMUNITY_POSTS_PER_MIN',      5, 1, 1_000);
+const COMMUNITY_COMMENTS_PER_MIN  = readIntEnv('COMMUNITY_COMMENTS_PER_MIN',  30, 1, 1_000);
+const COMMUNITY_DM_PER_MIN        = readIntEnv('COMMUNITY_DM_PER_MIN',        30, 1, 1_000);
+const COMMUNITY_REACTIONS_PER_MIN = readIntEnv('COMMUNITY_REACTIONS_PER_MIN', 60, 1, 1_000);
+// Report-spam is itself abuse: 10 per 5-minute window.
+const COMMUNITY_REPORTS_PER_5MIN  = readIntEnv('COMMUNITY_REPORTS_PER_5MIN',  10, 1, 1_000);
+
 // H4 #7 — IP-WIDE ceiling for the public storefront GET join/:token route
 // (the actual ceiling applied to that route via its route-level @Throttle).
 // This bounds the TOTAL number of distinct-token join GETs a single source
@@ -175,6 +188,13 @@ export const THROTTLER_ROUTE_LIMITS = {
   CHECKOUT_MINT_PER_HOUR,
   COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN,
   STOREFRONT_JOIN_IP_PER_MIN,
+  COMMUNITY_MESSAGES_PER_MIN,
+  COMMUNITY_MSG_EDIT_PER_MIN,
+  COMMUNITY_POSTS_PER_MIN,
+  COMMUNITY_COMMENTS_PER_MIN,
+  COMMUNITY_DM_PER_MIN,
+  COMMUNITY_REACTIONS_PER_MIN,
+  COMMUNITY_REPORTS_PER_5MIN,
 } as const;
 
 export const THROTTLER_LIMITS = [
