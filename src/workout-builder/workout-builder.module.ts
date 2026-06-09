@@ -18,10 +18,13 @@ import { forwardRef, Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { RolesGuard } from '../auth/roles.guard';
 import { ExerciseLibraryModule } from '../exercise-library/exercise-library.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { PackagesModule } from '../packages/packages.module';
+import { SubCoachModule } from '../sub-coach/sub-coach.module';
 import {
   AssignmentController,
   WorkoutBuilderController,
+  WorkoutProgramController,
 } from './workout-builder.controller';
 import { WorkoutBuilderService } from './workout-builder.service';
 
@@ -32,9 +35,23 @@ import { WorkoutBuilderService } from './workout-builder.service';
 // (@Global) does, and a future refactor of the resolver wiring could
 // introduce a cycle that the forwardRef cleanly absorbs.
 
+// MWB-1: SubCoachModule (@Global, but imported explicitly per spec §7 so the
+// dependency is legible) provides SubCoachScopeService for assertCanAccessClient.
+// NotificationsModule provides NotificationsService so coach-driven assigns emit
+// the same WORKOUT_ASSIGNED push as the AI assign-workout materialiser (§3.3).
 @Module({
-  imports: [AuthModule, ExerciseLibraryModule, forwardRef(() => PackagesModule)],
-  controllers: [WorkoutBuilderController, AssignmentController],
+  imports: [
+    AuthModule,
+    ExerciseLibraryModule,
+    forwardRef(() => PackagesModule),
+    SubCoachModule,
+    NotificationsModule,
+  ],
+  controllers: [
+    WorkoutBuilderController,
+    WorkoutProgramController,
+    AssignmentController,
+  ],
   providers: [WorkoutBuilderService, RolesGuard],
   exports: [WorkoutBuilderService],
 })

@@ -56,12 +56,21 @@ export class CoachAIService {
     }
   }
 
+  /**
+   * MWB-1 (§7.2): widen the AI-path client gate from head-coach-only to
+   * head-coach OR open sub-coach, so a sub-coach can drive AI generation for
+   * clients delegated to them — identical scope to the human assign path.
+   * Delegates to WorkoutBuilderService.assertCanAccessClient (the single
+   * source of truth) but preserves the /coach/* opacity convention: any
+   * access failure (Forbidden or missing) surfaces as 404 'Client not found'
+   * rather than leaking whether the client exists.
+   */
   private async assertCoachOwnsClient(coachId: string, clientId: string): Promise<void> {
-    const client = await this.prisma.user.findFirst({
-      where: { id: clientId, coach_id: coachId },
-      select: { id: true },
-    });
-    if (!client) throw new NotFoundException('Client not found');
+    try {
+      await this.workouts.assertCanAccessClient(coachId, clientId);
+    } catch {
+      throw new NotFoundException('Client not found');
+    }
   }
 
   async generateWorkoutProgram(

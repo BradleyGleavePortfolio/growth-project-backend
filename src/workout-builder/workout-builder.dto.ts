@@ -140,6 +140,20 @@ export class CreateAssignmentDto {
   scheduled_for!: string;
 }
 
+// MWB-1 (§3.4): program-level assignment fan-out. Assigns every plan
+// ("day") in a WorkoutProgram to one client, scheduling each plan by its
+// (week_index, day_index) offset from start_date. A single idempotency key
+// (header) covers the whole fan-out.
+export class AssignProgramDto {
+  @IsString()
+  @IsNotEmpty()
+  client_id!: string;
+
+  /** Anchor date for week 0 / day 0. Each plan is scheduled relative to it. */
+  @IsDateString()
+  start_date!: string;
+}
+
 // Mobile sends idempotency_key, started_at, and completion_payload on
 // PATCH /assignments/:id/complete. Server stores all three and uses
 // idempotency_key for per-assignment dedup (unique partial index in

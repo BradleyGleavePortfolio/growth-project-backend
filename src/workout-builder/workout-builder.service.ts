@@ -22,10 +22,16 @@
  *     on the row itself; replays return the original record.
  *
  * Soft-archive on setExercises:
- *   - If a plan already has active (non-completed) assignments, the
- *     prior exercise rows are soft-archived (archived_at = now) rather
- *     than deleted, so assigned clients keep seeing the exercises that
- *     were in the plan at assignment time.
+ *   - The prior exercise rows are soft-archived (archived_at = now) rather
+ *     than deleted, so the partial unique index on (workout_plan_id, order)
+ *     can re-use order slots cleanly and historical rows remain auditable.
+ *
+ * MWB-1 (§3.3) snapshots:
+ *   - assignPlan writes an immutable ClientWorkoutAssignmentSnapshot inside
+ *     the assign transaction. Assigned clients render from that snapshot, so
+ *     a coach may freely edit a plan that already has active assignments
+ *     (the legacy 409 guard is removed). Pre-MWB-1 assignments have no
+ *     snapshot and fall back to the live workout_plan join.
  */
 
 import {
@@ -42,7 +48,11 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { DripTriggerService } from '../packages/drip-trigger.service';
+import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationKind } from '../notifications/notification-kind';
 import {
+  AssignProgramDto,
   CompleteAssignmentDto,
   CreateAssignmentDto,
   CreateWorkoutPlanDto,
@@ -79,6 +89,19 @@ export class WorkoutBuilderService {
     @Optional()
     @Inject(forwardRef(() => DripTriggerService))
     private readonly dripTrigger?: DripTriggerService,
+    // MWB-1 — sub-coach scope (§7.2). Injected to widen client-access checks
+    // from "head coach owns client" to "head coach OR sub-coach with an open
+    // assignment". @Optional so the dozens of pre-existing unit tests that
+    // construct WorkoutBuilderService with just a PrismaService keep working;
+    // when absent we fall back to the head-coach-only ownership check.
+    @Optional()
+    private readonly subCoachScope?: SubCoachScopeService,
+    // MWB-1 — coach-driven assignment push (§3.3 gap (i)). Mirrors the AI
+    // assign-workout materialiser's WORKOUT_ASSIGNED push so a human-assigned
+    // workout notifies the client too. @Optional + fire-and-forget: a missing
+    // service or a push failure never blocks the authoritative assignment row.
+    @Optional()
+    private readonly notifications?: NotificationsService,
   ) {}
 
   // ─── RBAC guard ───────────────────────────────────────────────────────────
@@ -451,17 +474,22 @@ export class WorkoutBuilderService {
         await this.assertCoach(coachId);
         await this.assertPlanOwnership(coachId, planId);
 
-        // P1-3 (audit #5): the active-assignment check + exercise
-        // mutation must be serialised against concurrent assignPlan
-        // calls. Pre-transaction counting is a check-then-act race —
-        // another request can sneak in an INSERT between the count and
-        // the update. We take a `FOR UPDATE` lock on the WorkoutPlan
-        // row inside a serializable transaction so any concurrent
-        // assignment insert that targets the same plan must wait.
+        // The exercise mutation is serialised against concurrent
+        // setExercises calls on the same plan via a `FOR UPDATE` lock on
+        // the WorkoutPlan row inside a serializable transaction, so two
+        // concurrent edits cannot interleave their soft-archive + insert.
+        //
+        // MWB-1 (§3.3): the legacy 409 "plan has active assignments" guard is
+        // REMOVED. Editing an assigned plan is now safe because each
+        // assignment carries an immutable ClientWorkoutAssignmentSnapshot
+        // taken at assign time — assigned clients keep seeing exactly the
+        // workout they were given regardless of later edits to the source
+        // plan. Coaches can therefore freely iterate on a plan that already
+        // has active assignments.
         return this.prisma.$transaction(
           async (tx) => {
             // Lock the plan row to serialise against concurrent
-            // assignPlan() writers. The ownership check above already
+            // setExercises() writers. The ownership check above already
             // confirmed the plan exists, but we still re-check inside
             // the lock because a concurrent archive could have run.
             const planRows = await tx.$queryRaw<{ id: string }[]>`
@@ -471,23 +499,6 @@ export class WorkoutBuilderService {
             `;
             if (planRows.length === 0) {
               throw new NotFoundException('Workout plan not found');
-            }
-
-            // Count active assignments INSIDE the transaction, after
-            // the row lock — under SERIALIZABLE isolation a concurrent
-            // assignPlan() that reaches this point will either block on
-            // the lock or be retried by Postgres on commit conflict.
-            const activeAssignmentCount =
-              await tx.clientWorkoutAssignment.count({
-                where: { workout_plan_id: planId, completed_at: null },
-              });
-            if (activeAssignmentCount > 0) {
-              throw new ConflictException(
-                'This workout plan has active client assignments. Mark the ' +
-                  'existing assignments complete or unassign them before editing ' +
-                  'the exercise list, so assigned clients keep seeing the workout ' +
-                  'they were given.',
-              );
             }
 
             // Soft-archive all live rows. The partial unique index only
@@ -545,16 +556,31 @@ export class WorkoutBuilderService {
         // cached success rather than 4xx on a now-stale precondition.
         await this.assertCoach(coachId);
         await this.assertPlanOwnership(coachId, planId);
-        await this.assertClientBelongsToCoach(coachId, dto.client_id);
+        // MWB-1 (§7.2): widen from head-coach-only to head-coach OR open
+        // sub-coach. Legacy head-coach behaviour is preserved exactly when
+        // SubCoachScopeService is not wired (unit-test construction).
+        await this.assertCanAccessClient(coachId, dto.client_id);
 
-        return this.prisma.clientWorkoutAssignment.create({
-          data: {
-            workout_plan_id: planId,
-            client_id: dto.client_id,
-            assigned_by_coach_id: coachId,
-            scheduled_for: new Date(dto.scheduled_for),
-          },
+        // MWB-1 (§3.3): the assignment row AND its immutable plan snapshot are
+        // written in one transaction so a client can never observe an
+        // assignment without its frozen exercise list. Later coach edits to
+        // the source plan never mutate the snapshot (read path renders it).
+        const created = await this.prisma.$transaction(async (tx) => {
+          const assignment = await tx.clientWorkoutAssignment.create({
+            data: {
+              workout_plan_id: planId,
+              client_id: dto.client_id,
+              assigned_by_coach_id: coachId,
+              scheduled_for: new Date(dto.scheduled_for),
+            },
+          });
+          await this.writeAssignmentSnapshot(tx, assignment.id, planId);
+          return assignment;
         });
+
+        // Fire-and-forget WORKOUT_ASSIGNED push (mirrors the AI assign path).
+        this.emitAssignmentPush(dto.client_id, created.id, planId);
+        return created;
       },
     );
   }
@@ -635,6 +661,10 @@ export class WorkoutBuilderService {
       orderBy: [{ scheduled_for: 'asc' }, { id: 'asc' }],
       take: limit + 1,
       include: {
+        // MWB-1 (§3.3): include the immutable snapshot. When present, the
+        // client reads the frozen exercise list (presentAssignment below);
+        // the live join is the backward-compat fallback for pre-MWB-1 rows.
+        snapshot: true,
         workout_plan: {
           include: {
             exercises: {
@@ -652,7 +682,7 @@ export class WorkoutBuilderService {
       hasMore && last
         ? this.encodeCursor(last.scheduled_for, last.id)
         : null;
-    return { items: page, nextCursor };
+    return { items: page.map((a) => this.presentAssignment(a)), nextCursor };
   }
 
   /**
@@ -671,6 +701,7 @@ export class WorkoutBuilderService {
     const assignment = await this.prisma.clientWorkoutAssignment.findUnique({
       where: { id: assignmentId },
       include: {
+        snapshot: true,
         workout_plan: {
           include: {
             exercises: {
@@ -687,7 +718,7 @@ export class WorkoutBuilderService {
     if (assignment.client_id !== userId) {
       throw new ForbiddenException('Access denied');
     }
-    return assignment;
+    return this.presentAssignment(assignment);
   }
 
   /**
@@ -828,5 +859,499 @@ export class WorkoutBuilderService {
     if (!client) throw new NotFoundException('Client not found');
     if (client.coach_id !== coachId)
       throw new ForbiddenException('Client does not belong to this coach');
+  }
+
+  /**
+   * MWB-1 (§7.2) — widened client-access gate. Returns normally when the
+   * acting user may act on `clientId`, i.e. EITHER:
+   *   - they are the client's head coach/owner (client.coach_id === actingUserId), OR
+   *   - they are a sub-coach with an OPEN SubCoachAssignment to that client
+   *     (delegated to SubCoachScopeService — the single source of truth).
+   *
+   * Throws NotFoundException if the client does not exist, ForbiddenException
+   * if the acting user has no access. When SubCoachScopeService is not
+   * injected (legacy unit-test construction) we degrade to the original
+   * head-coach-only check so existing behaviour is preserved exactly.
+   */
+  async assertCanAccessClient(actingUserId: string, clientId: string) {
+    const client = await this.prisma.user.findUnique({
+      where: { id: clientId },
+      select: { id: true, coach_id: true },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+    // Head coach / owner direct ownership.
+    if (client.coach_id === actingUserId) return;
+    // Sub-coach overlay (open SubCoachAssignment). Only consulted when the
+    // service is wired with the scope helper.
+    if (this.subCoachScope) {
+      const ok = await this.subCoachScope.canAccessClient(actingUserId, clientId);
+      if (ok) return;
+    }
+    throw new ForbiddenException('Client does not belong to this coach');
+  }
+
+  // ─── MWB-1: programs — fork / clone / fan-out (§3.2, §3.4, §7.3) ──────────
+
+  /**
+   * Deep-copy (by value) every plan + exercise under `sourceProgramId` into
+   * `newProgramId`, inside the caller's transaction. Returns the created
+   * plans. Each plan gets a fresh id and an `initial`/`clone` revision
+   * baseline so undo (later phase) has an anchor. `superset_group_id`s are
+   * re-mapped into the NEW plan's namespace so two cloned plans can never
+   * collide on a shared group id. Shared by forkTemplate + cloneProgramToClient.
+   */
+  private async copyProgramPlans(
+    tx: Prisma.TransactionClient,
+    sourceProgramId: string,
+    newProgramId: string,
+    opts: {
+      isTemplate: boolean;
+      actingUserId: string;
+      authorKind: 'coach' | 'sub_coach' | 'ai';
+      // 'clone' for clone-to-client, 'initial' for a fork baseline.
+      cause: 'clone' | 'initial';
+      coachId: string;
+    },
+  ) {
+    const sourcePlans = await tx.workoutPlan.findMany({
+      where: { program_id: sourceProgramId, archived_at: null },
+      orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
+      include: {
+        exercises: {
+          where: { archived_at: null },
+          orderBy: { order: 'asc' },
+        },
+      },
+    });
+
+    const created: Array<{ id: string }> = [];
+    for (const src of sourcePlans) {
+      // Per-plan superset namespace remap: deterministic within this plan so
+      // grouped exercises stay grouped, but never shared across plans.
+      const groupRemap = new Map<string, string>();
+      const remapGroup = (g: string | null): string | null => {
+        if (g == null) return null;
+        const existing = groupRemap.get(g);
+        if (existing) return existing;
+        const fresh = `${newProgramId}:${created.length}:${groupRemap.size}`;
+        groupRemap.set(g, fresh);
+        return fresh;
+      };
+
+      const newPlan = await tx.workoutPlan.create({
+        data: {
+          coach_id: opts.coachId,
+          name: src.name,
+          type: src.type,
+          duration_estimate_minutes: src.duration_estimate_minutes,
+          program_id: newProgramId,
+          week_index: src.week_index,
+          day_index: src.day_index,
+          is_template: opts.isTemplate,
+          version: 1,
+          cloned_from_plan_id: src.id,
+        },
+      });
+
+      const rows = src.exercises.map((e) => ({
+        exercise_external_id: e.exercise_external_id,
+        order: e.order,
+        sets: e.sets,
+        reps_or_duration_seconds: e.reps_or_duration_seconds,
+        weight_lbs: e.weight_lbs ?? null,
+        rest_seconds: e.rest_seconds ?? null,
+        superset_group_id: remapGroup(e.superset_group_id ?? null),
+        notes: e.notes ?? null,
+      }));
+      if (rows.length > 0) {
+        await tx.workoutPlanExercise.createMany({
+          data: rows.map((r) => ({ ...r, workout_plan_id: newPlan.id })),
+        });
+      }
+
+      // Initial revision baseline (§5): full ordered snapshot so undo has
+      // an anchor and provenance is preserved (never pruned).
+      const revision = await tx.workoutPlanRevision.create({
+        data: {
+          workout_plan_id: newPlan.id,
+          revision_index: 0,
+          exercises_json: this.serialiseExerciseRows(rows),
+          plan_meta_json: {
+            name: newPlan.name,
+            type: newPlan.type,
+            duration_estimate_minutes: newPlan.duration_estimate_minutes ?? null,
+            week_index: newPlan.week_index ?? null,
+            day_index: newPlan.day_index ?? null,
+          } as unknown as Prisma.InputJsonValue,
+          author_id: opts.actingUserId,
+          author_kind: opts.authorKind,
+          cause: opts.cause,
+        },
+      });
+      await tx.workoutPlan.update({
+        where: { id: newPlan.id },
+        data: { head_revision_id: revision.id },
+      });
+
+      created.push({ id: newPlan.id });
+    }
+    return created;
+  }
+
+  /**
+   * MWB-1 (§7.3) — fork a template program into a NEW program owned by the
+   * acting user. "Grab a building block, make it your own." The source must
+   * be either `visibility='tenant_shared'` within the actor's tenant OR owned
+   * by the actor. The fork is a deep copy by value and fully independent of
+   * the source thereafter (the sub-coach's editing affordance — no
+   * canEditTemplates flag needed; a sub-coach never mutates a shared master).
+   */
+  async forkTemplate(sourceTemplateId: string, actingUserId: string) {
+    const source = await this.prisma.workoutProgram.findUnique({
+      where: { id: sourceTemplateId },
+    });
+    if (!source) throw new NotFoundException('Source template not found');
+
+    // Authorisation: owner, OR a tenant_shared building block within the
+    // actor's tenant. We resolve the actor's tenant from their own user row
+    // (head coaches: their own id is the tenant; sub-coaches: their coach_id).
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actingUserId },
+      select: { id: true, coach_id: true },
+    });
+    if (!actor) throw new ForbiddenException('Acting user not found');
+    const actorTenantId = actor.coach_id ?? actor.id;
+    const isOwner = source.owner_user_id === actingUserId;
+    const isSharedInTenant =
+      source.visibility === 'tenant_shared' &&
+      source.coach_id === actorTenantId;
+    if (!isOwner && !isSharedInTenant) {
+      throw new ForbiddenException(
+        'You may only fork a program you own or a tenant-shared building block in your business',
+      );
+    }
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const program = await tx.workoutProgram.create({
+          data: {
+            coach_id: actorTenantId,
+            owner_user_id: actingUserId,
+            visibility: 'owner_only',
+            forked_from_id: sourceTemplateId,
+            name: source.name,
+            description: source.description,
+            weeks: source.weeks,
+            days_per_week: source.days_per_week,
+            is_template: true,
+            goal_tag: source.goal_tag,
+            version: 1,
+          },
+        });
+        const plans = await this.copyProgramPlans(tx, sourceTemplateId, program.id, {
+          isTemplate: true,
+          actingUserId,
+          authorKind: actor.coach_id ? 'sub_coach' : 'coach',
+          cause: 'initial',
+          coachId: actorTenantId,
+        });
+        return { program, plans };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  }
+
+  /**
+   * MWB-1 (§3.2) — clone a master template program onto a specific client.
+   * Deep-copy by value into a NEW non-template program (`cloned_from_id` set)
+   * so the coach can keep refining the master without disturbing the client
+   * mid-program. Authorised via the widened scope check (head coach OR open
+   * sub-coach). Returns the new program + its plans.
+   */
+  async cloneProgramToClient(
+    masterProgramId: string,
+    clientId: string,
+    coachId: string,
+  ) {
+    await this.assertCoach(coachId);
+    const master = await this.prisma.workoutProgram.findUnique({
+      where: { id: masterProgramId },
+    });
+    if (!master) throw new NotFoundException('Master program not found');
+    // The coach must own the master (or it must be a tenant_shared block they
+    // can reach) AND have access to the target client.
+    const actor = await this.prisma.user.findUnique({
+      where: { id: coachId },
+      select: { id: true, coach_id: true },
+    });
+    if (!actor) throw new ForbiddenException('Acting user not found');
+    const actorTenantId = actor.coach_id ?? actor.id;
+    const canReachMaster =
+      master.owner_user_id === coachId ||
+      (master.visibility === 'tenant_shared' &&
+        master.coach_id === actorTenantId);
+    if (!canReachMaster) {
+      throw new ForbiddenException('You cannot clone this program');
+    }
+    await this.assertCanAccessClient(coachId, clientId);
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const program = await tx.workoutProgram.create({
+          data: {
+            coach_id: actorTenantId,
+            owner_user_id: coachId,
+            visibility: 'owner_only',
+            name: master.name,
+            description: master.description,
+            weeks: master.weeks,
+            days_per_week: master.days_per_week,
+            is_template: false,
+            cloned_from_id: masterProgramId,
+            goal_tag: master.goal_tag,
+            version: 1,
+          },
+        });
+        const plans = await this.copyProgramPlans(tx, masterProgramId, program.id, {
+          isTemplate: false,
+          actingUserId: coachId,
+          authorKind: actor.coach_id ? 'sub_coach' : 'coach',
+          cause: 'clone',
+          coachId: actorTenantId,
+        });
+        return { program, plans };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  }
+
+  /**
+   * MWB-1 (§3.4) — program-level assignment fan-out. Assigns every plan in
+   * `programId` to `dto.client_id`, scheduling each plan's `scheduled_for`
+   * by its (week_index, day_index) offset from `dto.start_date`. A single
+   * idempotency key (header) covers the whole fan-out: the key is claimed
+   * once and all N assignment rows + snapshots are emitted in one
+   * transaction, so a retry replays the cached batch rather than
+   * double-assigning.
+   */
+  async assignProgramToClient(
+    coachId: string,
+    programId: string,
+    dto: AssignProgramDto,
+    idempotencyKey?: string | null,
+  ) {
+    return this.withIdempotency(
+      coachId,
+      `workout-builder:assignProgram:${programId}`,
+      idempotencyKey,
+      async () => {
+        await this.assertCoach(coachId);
+        const program = await this.prisma.workoutProgram.findUnique({
+          where: { id: programId },
+          select: { id: true, owner_user_id: true, coach_id: true, visibility: true },
+        });
+        if (!program) throw new NotFoundException('Program not found');
+        const actor = await this.prisma.user.findUnique({
+          where: { id: coachId },
+          select: { id: true, coach_id: true },
+        });
+        if (!actor) throw new ForbiddenException('Acting user not found');
+        const actorTenantId = actor.coach_id ?? actor.id;
+        const canReach =
+          program.owner_user_id === coachId ||
+          (program.visibility === 'tenant_shared' &&
+            program.coach_id === actorTenantId);
+        if (!canReach) throw new ForbiddenException('You cannot assign this program');
+        await this.assertCanAccessClient(coachId, dto.client_id);
+
+        const plans = await this.prisma.workoutPlan.findMany({
+          where: { program_id: programId, archived_at: null },
+          orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
+          select: { id: true, week_index: true, day_index: true },
+        });
+        if (plans.length === 0) {
+          throw new BadRequestException('Program has no plans to assign');
+        }
+
+        const startDate = new Date(dto.start_date);
+        const DAY_MS = 24 * 60 * 60 * 1000;
+
+        const created = await this.prisma.$transaction(async (tx) => {
+          const out: Array<{ id: string }> = [];
+          for (const plan of plans) {
+            // Offset = full weeks (7 days each) + day-of-week within the week.
+            const offsetDays =
+              (plan.week_index ?? 0) * 7 + (plan.day_index ?? 0);
+            const scheduledFor = new Date(
+              startDate.getTime() + offsetDays * DAY_MS,
+            );
+            const assignment = await tx.clientWorkoutAssignment.create({
+              data: {
+                workout_plan_id: plan.id,
+                client_id: dto.client_id,
+                assigned_by_coach_id: coachId,
+                scheduled_for: scheduledFor,
+              },
+            });
+            await this.writeAssignmentSnapshot(tx, assignment.id, plan.id);
+            out.push({ id: assignment.id });
+          }
+          return out;
+        });
+
+        // One push for the whole program (avoid N notifications).
+        this.emitAssignmentPush(dto.client_id, created[0].id, plans[0].id);
+        return { assignments: created };
+      },
+    );
+  }
+
+  // ─── MWB-1: snapshot helpers (§3.3) ───────────────────────────────────────
+
+  /**
+   * Client read-path presenter. When the assignment carries a snapshot
+   * (MWB-1, §3.3) the returned `exercises` come from the frozen
+   * `exercises_json` — immune to later edits of the source plan. When there
+   * is no snapshot (pre-MWB-1 assignment) we fall back to the live
+   * workout_plan.exercises join, preserving the exact legacy shape. A
+   * `snapshot_source` flag is added so callers can tell which path was used
+   * without changing the existing fields.
+   */
+  private presentAssignment<
+    T extends {
+      snapshot?: { exercises_json: unknown } | null;
+      workout_plan?: { exercises?: unknown[] } | null;
+    },
+  >(assignment: T): T & { exercises: unknown[]; snapshot_source: boolean } {
+    if (assignment.snapshot) {
+      const frozen = assignment.snapshot.exercises_json;
+      return {
+        ...assignment,
+        exercises: Array.isArray(frozen) ? (frozen as unknown[]) : [],
+        snapshot_source: true,
+      };
+    }
+    return {
+      ...assignment,
+      exercises: assignment.workout_plan?.exercises ?? [],
+      snapshot_source: false,
+    };
+  }
+
+  /**
+   * Frozen, ordered representation of a plan's live exercise rows, used as the
+   * `exercises_json` payload of a ClientWorkoutAssignmentSnapshot. Field set
+   * mirrors WorkoutPlanExercise so the client read path can render a snapshot
+   * exactly like a live join.
+   */
+  private serialiseExerciseRows(
+    rows: Array<{
+      exercise_external_id: string;
+      order: number;
+      sets: number;
+      reps_or_duration_seconds: number;
+      weight_lbs: number | null;
+      rest_seconds: number | null;
+      superset_group_id: string | null;
+      notes: string | null;
+    }>,
+  ): Prisma.InputJsonValue {
+    return rows
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .map((r) => ({
+        exercise_external_id: r.exercise_external_id,
+        order: r.order,
+        sets: r.sets,
+        reps_or_duration_seconds: r.reps_or_duration_seconds,
+        weight_lbs: r.weight_lbs ?? null,
+        rest_seconds: r.rest_seconds ?? null,
+        superset_group_id: r.superset_group_id ?? null,
+        notes: r.notes ?? null,
+      })) as unknown as Prisma.InputJsonValue;
+  }
+
+  /**
+   * Take an immutable point-in-time snapshot of `planId` and attach it to
+   * `assignmentId`, inside the caller's transaction (`tx`). Reads the plan +
+   * its live (non-archived) exercise rows and writes one
+   * ClientWorkoutAssignmentSnapshot row. Idempotent at the schema layer via
+   * the @unique(assignment_id): a second call for the same assignment is a
+   * no-op (we upsert-by-skip). See spec §3.3.
+   */
+  private async writeAssignmentSnapshot(
+    tx: Prisma.TransactionClient,
+    assignmentId: string,
+    planId: string,
+  ): Promise<void> {
+    const plan = await tx.workoutPlan.findUnique({
+      where: { id: planId },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        version: true,
+        exercises: {
+          where: { archived_at: null },
+          orderBy: { order: 'asc' },
+          select: {
+            exercise_external_id: true,
+            order: true,
+            sets: true,
+            reps_or_duration_seconds: true,
+            weight_lbs: true,
+            rest_seconds: true,
+            superset_group_id: true,
+            notes: true,
+          },
+        },
+      },
+    });
+    if (!plan) throw new NotFoundException('Workout plan not found');
+    // @unique(assignment_id) means a re-emit would P2002; guard with a
+    // pre-check so a retried fan-out (same assignment) is a clean no-op.
+    const existing = await tx.clientWorkoutAssignmentSnapshot.findUnique({
+      where: { assignment_id: assignmentId },
+      select: { id: true },
+    });
+    if (existing) return;
+    await tx.clientWorkoutAssignmentSnapshot.create({
+      data: {
+        assignment_id: assignmentId,
+        plan_name: plan.name,
+        plan_type: plan.type,
+        exercises_json: this.serialiseExerciseRows(plan.exercises),
+        source_plan_id: plan.id,
+        source_version: plan.version,
+      },
+    });
+  }
+
+  /**
+   * Fire-and-forget WORKOUT_ASSIGNED push for a coach-driven assignment
+   * (§3.3 gap (i)). Mirrors AssignWorkoutMaterializer's notification so the
+   * human and AI assign paths behave identically. Never throws: the
+   * assignment row is authoritative, a push failure must not roll it back.
+   */
+  private emitAssignmentPush(
+    clientId: string,
+    assignmentId: string,
+    workoutPlanId: string,
+  ): void {
+    if (!this.notifications) return;
+    void this.notifications
+      .createNotification({
+        user_id: clientId,
+        kind: NotificationKind.WORKOUT_ASSIGNED,
+        body: 'Your coach assigned a new workout.',
+        deep_link: `tgp://workouts/${assignmentId}`,
+        channel: 'push',
+        payload: { assignmentId, workoutPlanId },
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `WorkoutBuilderService: workout-assigned push failed (assignment ${assignmentId} still authoritative): ${(err as Error).message}`,
+        );
+      });
   }
 }

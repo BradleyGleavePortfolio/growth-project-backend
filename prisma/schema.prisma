@@ -2077,10 +2077,132 @@ model WorkoutPlan {
   updated_at                DateTime        @updatedAt
   archived_at               DateTime?
 
+  // ─── MWB-1 (Master Workout Builder Phase 1) — ADDITIVE ONLY ──────────────
+  // Every column below is nullable or carries a default so existing rows
+  // (program_id=null, is_template=false, version=1) keep behaving exactly as
+  // before — the flat "quick plan" path is unchanged. See spec §3.1.
+  // program_id null  => legacy standalone plan (old code path, no behaviour
+  //                     change). Non-null => a "day" within a WorkoutProgram.
+  program_id          String?
+  program             WorkoutProgram? @relation("WorkoutProgramPlans", fields: [program_id], references: [id], onDelete: Cascade)
+  week_index          Int?            // 0-based week within the program; null for standalone
+  day_index           Int?            // 0-based day within the week; null for standalone
+  is_template         Boolean         @default(false) // mirrors program.is_template for fast filtering
+  version             Int             @default(1)      // per-plan optimistic-concurrency token (§6.4)
+  head_revision_id    String?         // current WorkoutPlanRevision head pointer (§5)
+  cloned_from_plan_id String?         // provenance for clone-to-client analytics
+
   exercises   WorkoutPlanExercise[]
   assignments ClientWorkoutAssignment[]
+  revisions   WorkoutPlanRevision[]
 
   @@index([coach_id, archived_at, created_at(sort: Desc)], name: "WorkoutPlan_coach_id_archived_at_created_at_idx")
+  @@index([program_id, week_index, day_index])
+  @@index([coach_id, is_template, archived_at])
+}
+
+// ─── MWB-1 (Master Workout Builder Phase 1) — NEW MODELS, ADDITIVE ONLY ─────
+//
+// A WorkoutProgram is a multi-week / multi-day container of WorkoutPlans
+// ("days"). Programs are template-first: a coach authors a master program
+// (is_template=true), then clones it onto a client (cloned_from_id set,
+// is_template=false). Legacy standalone plans (program_id=null) never touch
+// any of this. See spec §3.
+model WorkoutProgram {
+  id          String  @id @default(uuid())
+  // TENANT key — the coaching business this program belongs to. Used by RLS
+  // tenant-sharing checks and as the head-coach ownership anchor.
+  coach_id    String
+  // OWNER key — the individual user (head coach or sub-coach) who authored /
+  // owns this row. RLS write policy keys on this; forking writes a NEW owned
+  // row so the fork passes the owner check.
+  owner_user_id String
+  // 'owner_only'  => only owner_user_id (and service_role) can read.
+  // 'tenant_shared' => any coach/sub-coach in the same coach_id tenant may read.
+  visibility    String  @default("owner_only")
+  // Provenance when this program was forked from another template (§7.3).
+  forked_from_id String?
+  name          String
+  description    String?
+  weeks          Int
+  days_per_week  Int
+  // true => master template (authoring surface). false => a concrete program
+  // cloned onto a client (cloned_from_id points at the master).
+  is_template    Boolean   @default(true)
+  cloned_from_id String?
+  goal_tag       String?
+  version        Int       @default(1)
+  head_revision_id String?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+  archived_at    DateTime?
+
+  plans     WorkoutPlan[]            @relation("WorkoutProgramPlans")
+  revisions WorkoutProgramRevision[]
+
+  @@index([coach_id, visibility, is_template, archived_at, updated_at(sort: Desc)])
+  @@index([owner_user_id, archived_at])
+  @@index([coach_id, cloned_from_id])
+}
+
+// Append-only revision log for a single WorkoutPlan ("day"). The head pointer
+// lives on WorkoutPlan.head_revision_id. Used for undo / autosave history in
+// later phases — MWB-1 only writes the 'initial' and 'clone' causes. See §5.
+model WorkoutPlanRevision {
+  id              String      @id @default(uuid())
+  workout_plan_id String
+  workout_plan    WorkoutPlan @relation(fields: [workout_plan_id], references: [id], onDelete: Cascade)
+  // Monotonic per-plan revision counter (0-based).
+  revision_index  Int
+  // Full materialised snapshot of the plan's exercise rows at this revision.
+  exercises_json  Json
+  // Plan-level metadata snapshot (name, type, duration, week/day index…).
+  plan_meta_json  Json
+  author_id       String
+  // 'coach' | 'sub_coach' | 'ai'
+  author_kind     String
+  // 'manual_edit' | 'autosave' | 'ai_apply' | 'undo' | 'clone' | 'initial'
+  cause           String
+  created_at      DateTime    @default(now())
+
+  @@unique([workout_plan_id, revision_index])
+  @@index([workout_plan_id, created_at(sort: Desc)])
+}
+
+// Append-only revision log for a WorkoutProgram's structure (week/day layout
+// + plan references). See §5.
+model WorkoutProgramRevision {
+  id             String         @id @default(uuid())
+  program_id     String
+  program        WorkoutProgram @relation(fields: [program_id], references: [id], onDelete: Cascade)
+  revision_index Int
+  structure_json Json
+  author_id      String
+  // 'coach' | 'sub_coach' | 'ai'
+  author_kind    String
+  // 'manual_edit' | 'autosave' | 'ai_apply' | 'undo' | 'clone' | 'initial'
+  cause          String
+  created_at     DateTime       @default(now())
+
+  @@unique([program_id, revision_index])
+  @@index([program_id, created_at(sort: Desc)])
+}
+
+// Immutable point-in-time snapshot of the plan a client was assigned, written
+// inside the assign transaction (§3.3). Client read paths render from this so
+// later coach edits to the source plan never mutate an active assignment. NULL
+// for legacy assignments created before MWB-1 — read paths fall back to the
+// live join in that case.
+model ClientWorkoutAssignmentSnapshot {
+  id            String                  @id @default(uuid())
+  assignment_id String                  @unique
+  assignment    ClientWorkoutAssignment @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
+  plan_name     String
+  plan_type     WorkoutPlanType
+  exercises_json Json
+  source_plan_id String
+  source_version Int
+  created_at     DateTime                @default(now())
 }
 
 model WorkoutPlanExercise {
@@ -2134,6 +2256,10 @@ model ClientWorkoutAssignment {
   // `@unique` enforces single-emit at the schema layer (see CoachMessage
   // above for the same pattern + rationale).
   ai_draft_id String? @unique
+
+  // MWB-1: immutable plan snapshot taken at assign time (§3.3). Optional —
+  // legacy assignments have none and fall back to the live workout_plan join.
+  snapshot ClientWorkoutAssignmentSnapshot? @relation()
 
   @@index([client_id, scheduled_for])
   @@index([workout_plan_id, scheduled_for])
