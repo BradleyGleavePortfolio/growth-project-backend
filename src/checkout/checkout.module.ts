@@ -17,6 +17,7 @@ import {
 } from './payment-ops.controller';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
+import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
 
 // CheckoutModule — Stripe Checkout session minting and ClientPurchase
 // lifecycle. Pulls in ConnectModule for StripeConnectApiService +
@@ -50,6 +51,11 @@ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
     // handler's @Optional() recovery / late-reversal shim. No-op while
     // FEATURE_DUNNING_V2 is OFF (the service self-checks the flag).
     DunningV2Module,
+    // Bank-Account Payouts v2 (spec §2.5) — provides PayoutRoutingService for
+    // the webhook handler's @Optional() payout.* routing branch. No-op while
+    // FEATURE_BANK_PAYOUTS_V2 is OFF (the service self-checks the flag). No
+    // cycle: PayoutsV2Module does not import CheckoutModule.
+    PayoutsV2Module,
   ],
   controllers: [
     CheckoutController,

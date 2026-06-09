@@ -251,6 +251,18 @@ model User {
   // Phase 6 Connect — payout readiness snapshot per coach (cached
   // Stripe Connect balance + pending payout), refund + dispute back-refs.
   payout_snapshot            PayoutSnapshot?      @relation("PayoutSnapshotCoach")
+  // Bank-Account Payouts v2 (spec §2.2-§2.3) — coach-linked payout methods
+  // (Stripe Connect Custom bank accounts via Financial Connections) plus the
+  // single nullable FK to the coach's default method. ALL nullable / optional
+  // so the migration is additive and back-compatible: a coach with no
+  // PayoutMethod row falls through to the existing Stripe Express flow
+  // unchanged. Whatever Stripe Express account id / payout-schedule fields
+  // exist today (ConnectAccount) stay exactly as they are — v1 introduces no
+  // destructive schema change. The whole surface is gated behind
+  // FEATURE_BANK_PAYOUTS_V2 (default OFF).
+  payout_methods             PayoutMethod[]       @relation("CoachPayoutMethods")
+  default_payout_method_id   String?
+  default_payout_method      PayoutMethod?        @relation("UserDefaultPayoutMethod", fields: [default_payout_method_id], references: [id])
   drafts_as_coach            MessageDraft[]       @relation("MessageDraftCoach")
   drafts_as_client           MessageDraft[]       @relation("MessageDraftClient")
   // Phase 11 — Coach↔Client direct messaging. Sender/recipient are both Users
@@ -3744,6 +3756,67 @@ model PayoutSnapshot {
 
   @@index([readiness_status])
   @@index([stripe_account_id])
+}
+
+// ============================================================
+// Bank-Account Payouts v2 (spec §2 — FEATURE_BANK_PAYOUTS_V2, default OFF)
+// ============================================================
+//
+// The architecture (spec §1.2, LOCKED) ships v1 on Stripe Connect Custom +
+// Stripe Financial Connections: coaches link a bank account through the
+// Stripe-hosted Financial Connections widget; we create an `external_account`
+// on the coach's Connect Custom account and route payouts there (T+2 ACH).
+// Stripe remains the merchant-of-record and the 1099-K filer in EVERY case
+// (see §5 KYC/1099 posture below) — the backend never moves money itself and
+// holds NO custody/ledger responsibility in v1.
+//
+// KYC / 1099 posture (spec §5, read-only in this PR): because we stay on
+// Stripe Connect Custom, Stripe issues the 1099-K and handles W-9 collection,
+// state 1099s, backup withholding, and IRS B-notices. TGP does NONE of that
+// for v1. This schema therefore stores NO tax-identity fields (no W-9, no TIN,
+// no withholding state) — deliberately, so we never become a TPSO / payment
+// facilitator. The actual 1099 generator is explicitly a LATER PR.
+//
+// Treasury upgrade path (spec §6): `STRIPE_TREASURY` is reserved in the kind
+// enum so the Option B -> Option C migration is a flag-flip
+// (`FEATURE_STRIPE_TREASURY_PAYOUTS`) plus a per-coach opt-in, with no
+// re-architecture. The routing switch (§2.5) already has an inert branch for it.
+
+enum PayoutMethodKind {
+  STRIPE_EXPRESS
+  STRIPE_CONNECT_CUSTOM_BANK
+  STRIPE_TREASURY
+}
+
+enum PayoutMethodStatus {
+  PENDING_VERIFICATION
+  VERIFIED
+  DISABLED
+}
+
+// A coach-linked payout destination. NET-NEW table (spec §2.2). One row per
+// linked bank account; `default` marks the coach's active destination and is
+// mirrored by `User.default_payout_method_id`. `stripe_external_account_id`
+// holds the Stripe `ba_...` / `fca_...` id (null for a pure Express fallback
+// row). Lifecycle: PENDING_VERIFICATION -> VERIFIED (driven by the Stripe
+// `account.external_account.updated` webhook) -> DISABLED (soft-delete).
+model PayoutMethod {
+  id                         String             @id @default(cuid())
+  coach_id                   String
+  kind                       PayoutMethodKind
+  stripe_external_account_id String? // ba_... or fca_... ; null for pure Express
+  last4                      String?
+  bank_name                  String?
+  status                     PayoutMethodStatus @default(PENDING_VERIFICATION)
+  default                    Boolean            @default(false)
+  created_at                 DateTime           @default(now())
+
+  coach       User   @relation("CoachPayoutMethods", fields: [coach_id], references: [id], onDelete: Cascade)
+  // Back-relation for User.default_payout_method (the nullable FK lives on User).
+  default_for User[] @relation("UserDefaultPayoutMethod")
+
+  @@index([coach_id])
+  @@index([coach_id, status])
 }
 
 // Phase 6 Connect — Refund record per ClientPurchase.

@@ -10,6 +10,7 @@ import { DunningService } from './dunning.service';
 import { DunningV2Service } from './dunning-v2/dunning-v2.service';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
+import { PayoutRoutingService } from '../payouts-v2/payout-routing.service';
 
 // PR-9: BillingService.handleEvent passes its outer `$transaction`'s tx
 // client through `handle(event, tx)` so the entitlement update +
@@ -120,6 +121,13 @@ export class CheckoutWebhookHandlerService {
     // without the full Nest container still work; in production wiring
     // (CheckoutModule imports PackagesModule) it is always present.
     @Optional() private fanout?: PurchaseFanoutService,
+    // Bank-Account Payouts v2 (spec §2.5) — @Optional() additive routing seam.
+    // On payout.* events the router resolves the coach's effective
+    // PayoutMethod.kind and reports the bookkeeping tier (card vs bank). It
+    // NEVER moves money (Stripe already did) and NO-OPs while
+    // FEATURE_BANK_PAYOUTS_V2 is off, so v1 Express payout bookkeeping
+    // (RefundDisputeHandlerService.onPayoutEvent) is entirely unchanged.
+    @Optional() private payoutRouting?: PayoutRoutingService,
     // B3 Smart Dunning v2 — @Optional() additive seam. Every call below is
     // gated internally by FEATURE_DUNNING_V2 (default OFF), so this never
     // alters v1 behaviour: while the flag is off the v2 methods return
@@ -192,6 +200,18 @@ export class CheckoutWebhookHandlerService {
         ) {
           this.fireLateReversalProbe(event);
         }
+        // Bank-Account Payouts v2 (spec §2.5) — additive routing branch on the
+        // payout.* events. Fire-and-forget bookkeeping classification only;
+        // no-op while FEATURE_BANK_PAYOUTS_V2 is off. Never alters the v1
+        // refund/dispute/payout result below.
+        if (
+          this.payoutRouting &&
+          (event.type === 'payout.paid' ||
+            event.type === 'payout.failed' ||
+            event.type === 'payout.canceled')
+        ) {
+          this.firePayoutRouting(event);
+        }
         if (this.refundDispute) return this.refundDispute.handle(event, tx);
         return { claimed: false };
       default:
@@ -230,6 +250,33 @@ export class CheckoutWebhookHandlerService {
       .catch((err) =>
         this.logger.warn(
           `dunningV2.detectAndHandleLateReversal failed: ${(err as Error).message}`,
+        ),
+      );
+  }
+
+  /**
+   * Bank-Account Payouts v2 (spec §2.5) — fire-and-forget payout routing.
+   * Extracts the connected-account id + payout id from the Stripe payout event
+   * and hands them to the router, which resolves the coach's effective
+   * PayoutMethod.kind and the bookkeeping fee tier. The router NEVER moves
+   * money (Stripe already did) and no-ops while FEATURE_BANK_PAYOUTS_V2 is off.
+   * Never throws into the webhook path.
+   */
+  private firePayoutRouting(event: StripeEvent): void {
+    if (!this.payoutRouting) return;
+    const obj = event.data.object as {
+      id?: string;
+      account?: string | null;
+    };
+    void this.payoutRouting
+      .routePayoutWebhook({
+        connectedAccountId: obj.account ?? null,
+        payoutId: obj.id ?? '',
+        eventType: event.type,
+      })
+      .catch((err) =>
+        this.logger.warn(
+          `payoutRouting.routePayoutWebhook failed: ${(err as Error).message}`,
         ),
       );
   }
