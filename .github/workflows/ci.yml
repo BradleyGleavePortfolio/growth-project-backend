@@ -180,3 +180,93 @@ jobs:
           # advisor returns zero rls_disabled_in_public lints.
           RLS_ENFORCEMENT_FULL: 'off'
         run: bash scripts/ci/check-relrowsecurity.sh
+
+  rls-live-tests:
+    # PR-RLS-01 (audit R1-P1-002): the live RLS helper regression suite was
+    # skipped in the default PR gate because build-and-test runs `npm test`
+    # with no TEST_DATABASE_URL, so every behavioral RLS assertion
+    # (positive/negative helper paths, ACL lockdown, trigger cap, hostile
+    # search_path + pg_temp relation-shadow) was silently skipped.
+    #
+    # This job provisions a real Postgres 15 service container, applies the
+    # Supabase CI shim + a scoped RLS-01 bootstrap + the PR-RLS-01 migration,
+    # exports TEST_DATABASE_URL, and runs only test/rls. The suite HARD-FAILS
+    # (not skips) if the DB is configured-but-unreachable, so a broken DB can
+    # never read as green.
+    #
+    # NOTE on schema setup: the full Prisma migration chain is NOT deployable
+    # from empty on this repo (a pre-existing, out-of-PR-scope defect —
+    # 20250724120000 ALTERs SubCoachInvite before 20260604000000 creates it).
+    # So instead of `prisma migrate deploy` over the whole history, we
+    # materialize only the objects PR-RLS-01 touches (scripts/ci/*.sql) and
+    # then apply THIS PR's migration verbatim, so the live suite asserts
+    # against the real migration output. See scripts/ci/rls01-live-bootstrap.sql.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        # Wait for the container to accept connections before steps run.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Both URLs point at the service container. DIRECT_URL is what
+      # `prisma migrate deploy` uses; TEST_DATABASE_URL is what the live
+      # suite connects with.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply Supabase CI shim (roles + auth.uid)
+        # Vanilla Postgres has no anon/authenticated/service_role roles and no
+        # auth schema; the shim creates them so the migration's GRANTs to those
+        # roles apply cleanly. CI-only — never run against a real Supabase DB.
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/supabase-shim.sql
+
+      - name: Bootstrap RLS-01 schema (User + TeamSubCoachAssignment + dep helper)
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/rls01-live-bootstrap.sql
+
+      - name: Apply the PR-RLS-01 migration (the five hardened helpers)
+        # Apply THIS PR's migration verbatim so the live suite asserts against
+        # the real migration output, not a copy.
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260704000000_rls01_helper_searchpath_hibp/migration.sql
+
+      - name: Bind the head-cap trigger
+        # CREATE OR REPLACE FUNCTION in the migration preserves an existing
+        # trigger binding by OID in production, but a fresh CI DB has no prior
+        # trigger, so create it here against the hardened function.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+            'CREATE TRIGGER trg_enforce_subcoach_head_cap BEFORE INSERT OR UPDATE ON "TeamSubCoachAssignment" FOR EACH ROW EXECUTE FUNCTION enforce_subcoach_head_cap();'
+
+      - name: Run live RLS regression suite
+        # Exact path: `jest test/rls` is a regex that also matches the
+        # test/rls-tier*.spec.ts policy suites at the test/ root, which need
+        # the full schema this scoped bootstrap does not build. Target only
+        # the PR-RLS-01 helper suite. --runInBand so the GUC/search_path
+        # session state is not interleaved across workers on one connection.
+        run: npx jest test/rls/helper-functions.spec.ts --runInBand --testTimeout=60000
