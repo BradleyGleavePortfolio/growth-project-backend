@@ -5,10 +5,11 @@
  * §9 of the builder brief byte-for-byte. A rename in either place silently
  * breaks the funnel — this string-equality pin makes that a red test instead.
  *
- * NOTE: community.digest.queued was removed in PR #370 as an orphaned event —
- * it had no emitter (no queueCommunityDigest / no capture call anywhere). The
- * existing email DigestService/DigestScheduler are unrelated. See the fixer
- * RLS/telemetry change set.
+ * NOTE: An orphaned community digest event was removed in PR #370 — it had no
+ * emitter (no producer function, no capture() call anywhere). The constant map
+ * is therefore expected to omit it; the existing email DigestService/
+ * DigestScheduler are unrelated. This spec asserts the current set of six
+ * telemetry events. See the fixer RLS/telemetry change set.
  */
 
 import 'reflect-metadata';
