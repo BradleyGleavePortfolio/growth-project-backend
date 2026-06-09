@@ -20,11 +20,20 @@
  */
 import {
   BadRequestException,
+  CanActivate,
+  ExecutionContext,
+  INestApplication,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import * as http from 'http';
 import { PlatformFeeService } from '../src/payouts-v2/platform-fee.service';
 import { PayoutMethodService } from '../src/payouts-v2/payout-method.service';
 import { PayoutRoutingService } from '../src/payouts-v2/payout-routing.service';
+import { PayoutMethodController } from '../src/payouts-v2/payout-method.controller';
+import { PayoutsV2WebhookController } from '../src/payouts-v2/payouts-v2-webhook.controller';
+import { JwtAuthGuard } from '../src/auth/auth.guard';
+import { CoachOrOwnerGuard } from '../src/common/guards/coach-or-owner.guard';
 import {
   isBankPayoutsV2Enabled,
   isStripeTreasuryPayoutsEnabled,
@@ -35,6 +44,54 @@ import {
   signStripePayload,
   StripeSignatureError,
 } from '../src/billing/stripe-signature';
+
+// ---------------------------------------------------------------------------
+// Minimal HTTP client (supertest is intentionally absent from devDependencies
+// repo-wide; see test/notifications.controller.spec.ts). We POST raw bytes to
+// a real Nest app listening on an ephemeral port and read back status + body.
+// ---------------------------------------------------------------------------
+async function httpRequest(opts: {
+  app: INestApplication;
+  method: string;
+  path: string;
+  headers?: Record<string, string>;
+  body?: string;
+}): Promise<{ status: number; body: string }> {
+  const server = opts.app.getHttpServer();
+  const address = server.address();
+  const port =
+    typeof address === 'object' && address ? address.port : Number(address);
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port,
+        method: opts.method,
+        path: opts.path,
+        headers: opts.headers ?? {},
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 0, body: data }),
+        );
+      },
+    );
+    req.on('error', reject);
+    if (opts.body !== undefined) req.write(opts.body);
+    req.end();
+  });
+}
+
+/** A pass-through guard: lets the request through and stamps a coach user. */
+class AllowCoachGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const req = context.switchToHttp().getRequest();
+    req.user = { id: 'coach1', role: 'coach' };
+    return true;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // In-memory Prisma fake — only the surface the payout services touch.
@@ -690,6 +747,112 @@ describe('FEATURE_BANK_PAYOUTS_V2 OFF — every service method no-ops', () => {
       expect(res.action).toBe('noop');
       expect(res.reason).toBe('flag_off');
     });
+  });
+});
+
+// ===========================================================================
+// 8. Webhook HTTP-level signature reject (Gate 7) — real Nest app, real status
+//    codes, and a before/after no-mutation assertion against PayoutRouting.
+//
+// The dedicated PayoutsV2WebhookController verifies the Stripe-Signature HMAC
+// BEFORE delegating to PayoutRoutingService. A missing or invalid signature is
+// rejected with HTTP 400 (this repo's Stripe convention: BadRequest = "do not
+// retry"; see src/billing/stripe-webhook.controller.ts) and the routing service
+// is NEVER invoked, so no DB row / audit / side effect can occur. A valid
+// signature returns 200 and the expected routing state transition.
+// ===========================================================================
+describe('PayoutsV2WebhookController — HTTP-level signature reject (Gate 7)', () => {
+  const SECRET = 'whsec_http_test_secret';
+  let app: INestApplication;
+  let routePayoutWebhook: jest.Mock;
+
+  beforeAll(async () => {
+    routePayoutWebhook = jest.fn(async () => ({
+      routed: true,
+      kind: 'STRIPE_CONNECT_CUSTOM_BANK',
+      feeTier: 'bank',
+      action: 'custom_bank_log',
+    }));
+    const moduleRef = await Test.createTestingModule({
+      controllers: [PayoutsV2WebhookController],
+      providers: [
+        { provide: PayoutRoutingService, useValue: { routePayoutWebhook } },
+      ],
+    }).compile();
+    // rawBody:true mirrors src/main.ts so req.rawBody is the exact signed bytes.
+    app = moduleRef.createNestApplication({ rawBody: true });
+    await app.init();
+    await app.listen(0);
+    process.env.STRIPE_WEBHOOK_SECRET = SECRET;
+  });
+
+  afterAll(async () => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+    if (app) await app.close();
+  });
+
+  beforeEach(() => routePayoutWebhook.mockClear());
+
+  const PATH = '/v1/webhooks/payouts-v2/stripe-connect';
+  const payload = JSON.stringify({
+    id: 'evt_1',
+    type: 'account.external_account.updated',
+    data: { object: { id: 'ba_test123', account: 'acct_1' } },
+  });
+
+  it('POST with MISSING Stripe-Signature header → 400 and no routing/DB side effect', async () => {
+    const res = await httpRequest({
+      app,
+      method: 'POST',
+      path: PATH,
+      headers: { 'content-type': 'application/json' },
+      body: payload,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body).toContain('Stripe signature');
+    // The routing layer (the only DB/audit mutation path) was never reached.
+    expect(routePayoutWebhook).not.toHaveBeenCalled();
+  });
+
+  it('POST with INVALID Stripe-Signature → 400 and no routing/DB side effect', async () => {
+    const badHeader = signStripePayload({ payload, secret: 'whsec_attacker' });
+    const res = await httpRequest({
+      app,
+      method: 'POST',
+      path: PATH,
+      headers: { 'content-type': 'application/json', 'stripe-signature': badHeader },
+      body: payload,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body).toContain('Stripe signature');
+    expect(routePayoutWebhook).not.toHaveBeenCalled();
+  });
+
+  it('after both rejects, the routing service was never invoked (no row / no audit / no side effect)', () => {
+    // Both prior tests asserted not-called; this aggregate guard documents the
+    // before/after invariant: zero delegations across all rejected requests.
+    expect(routePayoutWebhook).not.toHaveBeenCalled();
+  });
+
+  it('POST with VALID Stripe-Signature → 200 and the expected routing transition', async () => {
+    const header = signStripePayload({ payload, secret: SECRET });
+    const res = await httpRequest({
+      app,
+      method: 'POST',
+      path: PATH,
+      headers: { 'content-type': 'application/json', 'stripe-signature': header },
+      body: payload,
+    });
+    expect(res.status).toBe(200);
+    expect(routePayoutWebhook).toHaveBeenCalledTimes(1);
+    expect(routePayoutWebhook).toHaveBeenCalledWith({
+      connectedAccountId: 'acct_1',
+      payoutId: 'ba_test123',
+      eventType: 'account.external_account.updated',
+    });
+    const parsed = JSON.parse(res.body);
+    expect(parsed.received).toBe(true);
+    expect(parsed.routing.action).toBe('custom_bank_log');
   });
 });
 

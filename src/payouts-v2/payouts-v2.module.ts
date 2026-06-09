@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma.service';
 import { PayoutMethodController } from './payout-method.controller';
 import { PayoutMethodService } from './payout-method.service';
 import { PayoutRoutingService } from './payout-routing.service';
+import { PayoutsV2WebhookController } from './payouts-v2-webhook.controller';
 import { PlatformFeeService } from './platform-fee.service';
 import {
   DefaultStripeConnect,
@@ -29,7 +30,7 @@ import {
  * override the provider with a fake.
  */
 @Module({
-  controllers: [PayoutMethodController],
+  controllers: [PayoutMethodController, PayoutsV2WebhookController],
   providers: [
     PrismaService,
     PlatformFeeService,
