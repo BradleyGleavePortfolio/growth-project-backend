@@ -93,6 +93,12 @@ export const NotificationKind = {
   COMMUNITY_CHALLENGE_MILESTONE: 'community_challenge_milestone',
   COMMUNITY_MODERATION_ACTION_AGAINST_ME: 'community_moderation_action_against_me',
   COMMUNITY_MEMBERSHIP_CHANGED: 'community_membership_changed',
+
+  // B3 Smart Dunning v2 — the Day-3 / Day-7 in-app blocker pop-up the client
+  // reads on session start (spec §8.2). Emitted ONLY behind FEATURE_DUNNING_V2
+  // from DunningV2Dispatcher; the mobile client renders DunningBlockerModal
+  // from the payload. Additive: no v1 emitter uses this kind.
+  DUNNING_BLOCKER: 'dunning_blocker',
 } as const;
 
 export type NotificationKindValue = (typeof NotificationKind)[keyof typeof NotificationKind];

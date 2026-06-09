@@ -3554,12 +3554,41 @@ model DunningState {
   escalated_at             DateTime?
   created_at               DateTime       @default(now())
   updated_at               DateTime       @updatedAt
+  // DUNNING-V2 (B3 §2.2) — Day-10 hard-lockout marker. Null until the
+  // lockout sweep flips it; cleared back to null on same-request recovery.
+  // Nullable: every existing row and read path is preserved unchanged.
+  locked_out_at            DateTime?
+  // DUNNING-V2 (B3 §2.2 / §6) — late-reversal cycle counter. 0 = first /
+  // normal dunning cycle. Incremented once per cycle-open when a cleared
+  // charge is later reversed. Drives regular-vs-"again" copy selection.
+  // Defaulted: existing rows read back 0 (zero-mutation-elsewhere).
+  reversal_count           Int            @default(0)
 
   attempts DunningAttempt[]
 
   @@index([status])
   @@index([status, cancel_scheduled_at])
   @@index([status, next_attempt_at])
+}
+
+// DUNNING-V2 (B3 §2.1) — branded JWT recovery links. NEW TABLE ONLY; no FK
+// alter on any existing table. `dunning_attempt_id` is a bare unique string
+// (no Prisma @relation) so DunningAttempt is not mutated. The row exists for
+// revocation + audit; JWT verification is signature + exp + jti-live +
+// used_at IS NULL. Gated entirely behind FEATURE_DUNNING_V2 at the service
+// layer — no v1 path reads or writes this table.
+model PaymentRecoveryToken {
+  id                 String    @id @default(uuid())
+  dunning_attempt_id String    @unique // 1:1 with the attempt that minted it
+  jwt_jti            String    @unique // the JWT's jti claim; revoke without storing the token
+  expires_at         DateTime
+  used_at            DateTime?
+  ip                 String?
+  ua                 String?
+  created_at         DateTime  @default(now())
+
+  @@index([expires_at])
+  @@index([jwt_jti])
 }
 
 // DUNNING-V1 — one row per scheduled cadence step.

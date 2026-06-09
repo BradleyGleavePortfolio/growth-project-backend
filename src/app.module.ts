@@ -51,6 +51,7 @@ import { ConnectModule } from './connect/connect.module';
 import { PackagesModule } from './packages/packages.module';
 import { AssignableAssetResolversModule } from './packages/asset-resolvers/asset-resolvers.module';
 import { CheckoutModule } from './checkout/checkout.module';
+import { DunningV2Module } from './checkout/dunning-v2/dunning-v2.module';
 import { PtmModule } from './ptm/ptm.module';
 import { DiagnosticModule } from './diagnostic/diagnostic.module';
 import { BuildWeekModule } from './build-week/build-week.module';
@@ -252,6 +253,11 @@ import { WearablesModule } from './wearables/wearables.module';
     // Phase 3 Connect — Stripe Checkout session creation + ClientPurchase
     // lifecycle, driven by checkout/subscription/payment webhooks.
     CheckoutModule,
+    // B3 Smart Dunning v2 — 4-attempt cadence + Day-10 lockout + late-reversal,
+    // ALL behind FEATURE_DUNNING_V2 (default OFF). Imported alongside (not
+    // inside) CheckoutModule so v1 dunning wiring is untouched; every v2
+    // service / guard / cron self-checks the flag and no-ops while it is off.
+    DunningV2Module,
     // V1 Backend-For-Frontend for tgp-coach-console.
     V1Module,
     // Public invite landing — server-rendered HTML at /join/:code and
