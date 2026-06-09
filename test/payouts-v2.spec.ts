@@ -856,6 +856,88 @@ describe('PayoutsV2WebhookController — HTTP-level signature reject (Gate 7)', 
   });
 });
 
+// ===========================================================================
+// 9. Controller 503 when FEATURE_BANK_PAYOUTS_V2 is OFF (Gate 9) — HTTP-level.
+//
+// Guards are overridden with a pass-through so the request reaches the handler;
+// the handler's assertEnabled() then throws ServiceUnavailableException (503)
+// with body { error: 'BANK_PAYOUTS_V2_DISABLED' }. The injected service is a
+// spy whose methods MUST NOT be called (no DB writes while dark).
+// ===========================================================================
+describe('PayoutMethodController — 503 when FEATURE_BANK_PAYOUTS_V2 off (Gate 9)', () => {
+  let app: INestApplication;
+  let svc: Record<string, jest.Mock>;
+
+  beforeAll(async () => {
+    svc = {
+      listForCoach: jest.fn(),
+      createFinancialConnectionsSession: jest.fn(),
+      createFromFinancialConnections: jest.fn(),
+      setDefault: jest.fn(),
+      disableForCoach: jest.fn(),
+    };
+    const moduleRef = await Test.createTestingModule({
+      controllers: [PayoutMethodController],
+      providers: [{ provide: PayoutMethodService, useValue: svc }],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useClass(AllowCoachGuard)
+      .overrideGuard(CoachOrOwnerGuard)
+      .useClass(AllowCoachGuard)
+      .compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+    await app.listen(0);
+  });
+
+  afterAll(async () => {
+    if (app) await app.close();
+  });
+
+  it('GET /me/payout-methods → 503 BANK_PAYOUTS_V2_DISABLED, no service call', async () => {
+    await withEnv({ FEATURE_BANK_PAYOUTS_V2: 'false' }, async () => {
+      const res = await httpRequest({
+        app,
+        method: 'GET',
+        path: '/me/payout-methods',
+      });
+      expect(res.status).toBe(503);
+      expect(JSON.parse(res.body).error).toBe('BANK_PAYOUTS_V2_DISABLED');
+      expect(svc.listForCoach).not.toHaveBeenCalled();
+    });
+  });
+
+  it('POST /me/payout-methods/financial-connections/session → 503, no service call', async () => {
+    await withEnv({ FEATURE_BANK_PAYOUTS_V2: 'false' }, async () => {
+      const res = await httpRequest({
+        app,
+        method: 'POST',
+        path: '/me/payout-methods/financial-connections/session',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      expect(res.status).toBe(503);
+      expect(JSON.parse(res.body).error).toBe('BANK_PAYOUTS_V2_DISABLED');
+      expect(svc.createFinancialConnectionsSession).not.toHaveBeenCalled();
+    });
+  });
+
+  it('POST /me/payout-methods/:id/default → 503, no service call (no DB write while dark)', async () => {
+    await withEnv({ FEATURE_BANK_PAYOUTS_V2: 'false' }, async () => {
+      const res = await httpRequest({
+        app,
+        method: 'POST',
+        path: '/me/payout-methods/pmA/default',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      expect(res.status).toBe(503);
+      expect(JSON.parse(res.body).error).toBe('BANK_PAYOUTS_V2_DISABLED');
+      expect(svc.setDefault).not.toHaveBeenCalled();
+    });
+  });
+});
+
 // Keep imports referenced for environments that tree-shake unused imports.
 void BadRequestException;
 void UnauthorizedException;
