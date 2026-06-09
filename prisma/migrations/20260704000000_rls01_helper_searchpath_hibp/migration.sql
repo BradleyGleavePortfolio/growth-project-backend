@@ -15,8 +15,13 @@
 -- preservation of behaviour is auditable. The new definition adds:
 --   * SECURITY DEFINER (function executes with the definer role,
 --     not the caller, eliminating session-driven shadowing)
---   * SET search_path = pg_catalog, public, app (pins resolution
---     order regardless of caller GUCs)
+--   * SET search_path = pg_catalog, public, app, pg_temp (pins
+--     resolution order regardless of caller GUCs). pg_temp is pinned
+--     LAST so a session holding CREATE on pg_temp cannot pre-empt an
+--     unqualified relation/function reference with a same-named temp
+--     object — the same shadowing threat class this PR exists to close.
+--     This matters most for public.enforce_subcoach_head_cap(), whose
+--     body references the unqualified relation "TeamSubCoachAssignment".
 --
 -- ACL pattern (R/RLS-01 canonical, applied identically to every
 -- downstream RLS PR per R42 cross-PR consistency):
@@ -55,7 +60,7 @@ RETURNS text
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, public, app
+SET search_path = pg_catalog, public, app, pg_temp
 AS $function$
   SELECT NULLIF(current_setting('app.current_user_id', true), '')
 $function$;
@@ -84,7 +89,7 @@ RETURNS text
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, public, app
+SET search_path = pg_catalog, public, app, pg_temp
 AS $function$
   SELECT NULLIF(current_setting('app.current_user_role', true), '')
 $function$;
@@ -113,7 +118,7 @@ RETURNS boolean
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, public, app
+SET search_path = pg_catalog, public, app, pg_temp
 AS $function$
   SELECT app.current_user_id() IS NOT NULL AND app.current_user_role() = 'owner'
 $function$;
@@ -143,7 +148,7 @@ RETURNS boolean
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, public, app
+SET search_path = pg_catalog, public, app, pg_temp
 AS $function$
   SELECT app.current_user_id() IS NOT NULL
      AND app.is_user_coached_by(client_user_id, app.current_user_id())
@@ -197,7 +202,7 @@ RETURNS trigger
 LANGUAGE plpgsql
 VOLATILE
 SECURITY DEFINER
-SET search_path = pg_catalog, public, app
+SET search_path = pg_catalog, public, app, pg_temp
 AS $function$
 DECLARE
     head_count INTEGER;

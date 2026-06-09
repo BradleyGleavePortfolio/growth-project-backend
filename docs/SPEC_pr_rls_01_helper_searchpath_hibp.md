@@ -55,7 +55,7 @@ RETURNS <type>
 LANGUAGE <plpgsql|sql>
 <volatility>
 SECURITY DEFINER
-SET search_path = pg_catalog, public, app
+SET search_path = pg_catalog, public, app, pg_temp
 AS $function$
   <body unchanged, verified byte-identical against pg_get_functiondef from live DB>
 $function$;
@@ -84,10 +84,11 @@ Idempotency: `REVOKE EXECUTE ... FROM anon` is safe to re-run even if no prior g
 
 Notes:
 
-- `search_path = pg_catalog, public, app` is the minimum sufficient set:
+- `search_path = pg_catalog, public, app, pg_temp` is the minimum sufficient set, in this exact order:
   - `pg_catalog` first so built-ins like `current_setting`, `EXISTS`, `NULLIF`, etc. always resolve to canonical Postgres.
   - `public` is needed because `is_user_coached_by` and the trigger function reference `public."User"` and `public."TeamSubCoachAssignment"` (the trigger function references its own table via unqualified identifier).
   - `app` is needed because `is_owner` and `is_current_coach_of` chain into other `app.*` helpers.
+  - `pg_temp` is pinned **LAST** (mandatory). Postgres always searches `pg_temp` implicitly; if it is not named explicitly it is searched *first*, which would let a session holding `CREATE` on `pg_temp` shadow an unqualified relation/function reference with a same-named temp object — the same threat class this lockdown closes. Naming it last forces `public`/`app` to win resolution. This is most load-bearing for `public.enforce_subcoach_head_cap()`, whose body references the unqualified relation `"TeamSubCoachAssignment"`: with `pg_temp` last, the cap check always resolves against `public."TeamSubCoachAssignment"`, never a `pg_temp` decoy. Omitting `pg_temp` is a HECTACORN-quality failure mode and is asserted against in the regression suite (`proconfig` exact-string + `pg_temp`-last checks).
 - `REVOKE ... FROM PUBLIC` clears the implicit broad grant; `REVOKE EXECUTE ... FROM anon` removes the unauthenticated-role access surface; `GRANT EXECUTE` re-grants to the two roles that actually need to evaluate helpers (`authenticated`, `service_role`). RLS policies that previously read like `TO public` still admit authenticated callers because PostgREST routes authenticated requests under role `authenticated`, which holds the explicit grant.
 - Function bodies are preserved byte-identical relative to the live database, fetched via `pg_get_functiondef`. The fetched bodies are documented in a SQL comment block above each `CREATE OR REPLACE` so a future reader can verify the round-trip.
 - `is_user_coached_by(text, text)` is intentionally untouched in this migration (audit P2-008): its body and flags are already correct and re-asserting its grants would expand the audit surface beyond the five-helper target.
