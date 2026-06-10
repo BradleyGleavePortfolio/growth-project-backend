@@ -18,7 +18,7 @@
 // covering the guard + handler contract.
 
 import 'reflect-metadata';
-import { NotFoundException, UseGuards } from '@nestjs/common';
+import { HttpException, HttpStatus, NotFoundException, UseGuards } from '@nestjs/common';
 import { ExecutionContext } from '@nestjs/common';
 import { RomanController } from '../../src/roman/roman.controller';
 import { RomanFeatureGuard } from '../../src/roman/roman-feature.guard';
@@ -163,11 +163,15 @@ function makeController() {
 // A fake express Response capturing SSE writes.
 function makeRes() {
   const writes: string[] = [];
+  const headers: Record<string, string> = {};
   let head: { status?: number; headers?: Record<string, string> } = {};
   let ended = false;
   const res = {
-    writeHead: jest.fn((status: number, headers: Record<string, string>): void => {
-      head = { status, headers };
+    writeHead: jest.fn((status: number, h: Record<string, string>): void => {
+      head = { status, headers: h };
+    }),
+    setHeader: jest.fn((name: string, value: string): void => {
+      headers[name] = value;
     }),
     flushHeaders: jest.fn(),
     write: jest.fn((chunk: string): boolean => {
@@ -178,7 +182,13 @@ function makeRes() {
       ended = true;
     }),
   };
-  return { res, writes, getHead: () => head, isEnded: () => ended };
+  return {
+    res,
+    writes,
+    headers,
+    getHead: () => head,
+    isEnded: () => ended,
+  };
 }
 
 // ─── 1. feature guard: flag-off → 404, flag-on → reachable (all 4 routes) ─────
@@ -385,9 +395,10 @@ describe('RomanController — POST /roman/sessions/:id/messages (SSE)', () => {
     const { ctrl, service, req } = makeController();
     const { res } = makeRes();
     service.assertWithinRateLimit.mockRejectedValueOnce(
-      Object.assign(new Error('rate limited'), {
-        response: { code: 'ROMAN_RATE_LIMIT' },
-      }),
+      new HttpException(
+        { code: 'ROMAN_RATE_LIMIT', retryAfterSeconds: 42 },
+        HttpStatus.TOO_MANY_REQUESTS,
+      ),
     );
 
     await expect(
@@ -396,5 +407,30 @@ describe('RomanController — POST /roman/sessions/:id/messages (SSE)', () => {
 
     expect(service.appendMessage).not.toHaveBeenCalled();
     expect(service.streamAssistantTurn).not.toHaveBeenCalled();
+  });
+
+  it('sets a Retry-After header (RFC 6585) when the rate-limit gate returns 429', async () => {
+    flagOn();
+    const { ctrl, service, req } = makeController();
+    const { res, headers } = makeRes();
+    service.assertWithinRateLimit.mockRejectedValueOnce(
+      new HttpException(
+        { code: 'ROMAN_RATE_LIMIT', retryAfterSeconds: 42 },
+        HttpStatus.TOO_MANY_REQUESTS,
+      ),
+    );
+
+    const err = await ctrl
+      .sendMessage(req, res as never, 'sess_1', { content: 'hi' })
+      .then(() => null)
+      .catch((e) => e);
+
+    // Re-thrown as 429 so the NestJS filter serialises the structured body…
+    expect(err).toBeInstanceOf(HttpException);
+    expect((err as HttpException).getStatus()).toBe(429);
+    // …and the seconds-until-reset are surfaced as a real Retry-After header.
+    expect(headers['Retry-After']).toBe('42');
+    // Never opens the SSE stream when rate-limited.
+    expect(res.writeHead).not.toHaveBeenCalled();
   });
 });
