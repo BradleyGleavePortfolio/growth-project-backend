@@ -24,6 +24,16 @@ import { CommunityDmsRepository } from './dms/community-dms.repository';
 import { CommunityModerationController } from './moderation/community-moderation.controller';
 import { CommunityModerationService } from './moderation/community-moderation.service';
 import { CommunityModerationRepository } from './moderation/community-moderation.repository';
+// v1-6 coach admin: cohort write, membership administration, coach inbox.
+import { CommunityCohortWriteController } from './cohorts/community-cohort-write.controller';
+import { CommunityCohortWriteService } from './cohorts/community-cohort-write.service';
+import { CommunityCohortWriteRepository } from './cohorts/community-cohort-write.repository';
+import { CommunityCohortMembersController } from './cohorts/community-cohort-members.controller';
+import { CommunityCohortMembersService } from './cohorts/community-cohort-members.service';
+import { CommunityCohortMembersRepository } from './cohorts/community-cohort-members.repository';
+import { CommunityCoachInboxController } from './inbox/community-coach-inbox.controller';
+import { CommunityCoachInboxService } from './inbox/community-coach-inbox.service';
+import { CommunityCoachInboxRepository } from './inbox/community-coach-inbox.repository';
 import { AuthModule } from '../auth/auth.module';
 import { CommunityRealtimeModule } from './realtime/community-realtime.module';
 import { CommunityNotificationsModule } from './notifications/community-notifications.module';
@@ -38,6 +48,9 @@ import { CommunityNotificationsModule } from './notifications/community-notifica
     CommunityReactionsController,
     CommunityDmsController,
     CommunityModerationController,
+    CommunityCohortWriteController,
+    CommunityCohortMembersController,
+    CommunityCoachInboxController,
   ],
   providers: [
     CommunityService,
@@ -57,6 +70,12 @@ import { CommunityNotificationsModule } from './notifications/community-notifica
     CommunityDmsRepository,
     CommunityModerationService,
     CommunityModerationRepository,
+    CommunityCohortWriteService,
+    CommunityCohortWriteRepository,
+    CommunityCohortMembersService,
+    CommunityCohortMembersRepository,
+    CommunityCoachInboxService,
+    CommunityCoachInboxRepository,
   ],
   exports: [],
 })

@@ -39,6 +39,34 @@ export class CommunityMessagesRepository {
     });
   }
 
+  /**
+   * Clear the "unanswered" flag on a cohort's outstanding client messages.
+   *
+   * Producer for the coach-inbox message arm (community-coach-inbox.repository
+   * `unansweredMessages` reads `coach_replied_at IS NULL`). Called when a coach
+   * sends a cohort message: every prior non-deleted, non-comment CLIENT message
+   * in that cohort that is still open is stamped `coach_replied_at = now`, so it
+   * drops out of the inbox. Bounded to client (non coach/owner) senders so the
+   * coach's own messages are never flagged. Returns the count updated.
+   */
+  async markCohortClientMessagesReplied(params: {
+    cohortId: string;
+    repliedAt: Date;
+  }): Promise<number> {
+    const { count } = await this.prisma.communityMessage.updateMany({
+      where: {
+        cohort_id: params.cohortId,
+        scope: 'cohort',
+        deleted_at: null,
+        plan_context_type: null,
+        coach_replied_at: null,
+        sender: { role: { notIn: ['coach', 'owner'] } },
+      },
+      data: { coach_replied_at: params.repliedAt },
+    });
+    return count;
+  }
+
   /** A single message by id (any scope), or null. */
   async findById(messageId: string): Promise<CommunityMessage | null> {
     return this.prisma.communityMessage.findFirst({
