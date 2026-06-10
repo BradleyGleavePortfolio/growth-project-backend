@@ -15,6 +15,7 @@ import {
   resolveStripeWebhookSecrets,
   verifyStripeSignature,
 } from '../billing/stripe-signature';
+import { Public } from '../common/decorators/public.decorator';
 import { PayoutRoutingService } from './payout-routing.service';
 
 /**
@@ -42,6 +43,7 @@ export class PayoutsV2WebhookController {
 
   constructor(private readonly payoutRouting: PayoutRoutingService) {}
 
+  @Public()
   @Post('stripe-connect')
   @HttpCode(HttpStatus.OK)
   async handle(
