@@ -227,37 +227,37 @@ model User {
   owners_created_profiles  CoachProfile[]           @relation("CoachProfileCreatedBy")
 
   // SaaS billing additions (1:1 with coach users; null for clients/owners).
-  coach_subscription         CoachSubscription?
-  invoices                   Invoice[]
-  payment_failures           PaymentFailure[]
+  coach_subscription           CoachSubscription?
+  invoices                     Invoice[]
+  payment_failures             PaymentFailure[]
   // Phase 1 Connect — 1:1 Stripe Express account per coach. Null until the
   // coach kicks off Connect onboarding via POST /v1/connect/accounts/create.
-  connect_account            ConnectAccount?
+  connect_account              ConnectAccount?
   // Phase 2-3 Connect — coach packages, client purchases, and saved
   // payment methods. A coach owns many CoachPackages (their offers);
   // a client owns many ClientPurchases (their bought packages) and at
   // most one ConnectCustomer mirror (Stripe Customer on the platform
   // account used to attach saved payment methods).
-  coach_packages             CoachPackage[]       @relation("CoachPackageCoach")
-  purchases_as_client        ClientPurchase[]     @relation("ClientPurchaseClient")
-  purchases_as_coach         ClientPurchase[]     @relation("ClientPurchaseCoach")
+  coach_packages               CoachPackage[]       @relation("CoachPackageCoach")
+  purchases_as_client          ClientPurchase[]     @relation("ClientPurchaseClient")
+  purchases_as_coach           ClientPurchase[]     @relation("ClientPurchaseCoach")
   // B5 — Digital Contracts. A coach owns ContractTemplates and authors
   // (coach-side) envelopes; a client signs (client-side) envelopes. The
   // platform liability waiver layer is modeled via ContractTemplate.is_platform
   // (coach_id points at the seeded TGP system-coach user for those rows).
-  contract_templates         ContractTemplate[]   @relation("ContractTemplateCoach")
-  contract_envelopes_as_coach  ContractEnvelope[] @relation("CoachEnvelopes")
-  contract_envelopes_as_client ContractEnvelope[] @relation("ClientEnvelopes")
-  connect_customer           ConnectCustomer?
+  contract_templates           ContractTemplate[]   @relation("ContractTemplateCoach")
+  contract_envelopes_as_coach  ContractEnvelope[]   @relation("CoachEnvelopes")
+  contract_envelopes_as_client ContractEnvelope[]   @relation("ClientEnvelopes")
+  connect_customer             ConnectCustomer?
   // Phase 4-5 Connect — fee policy override, ledger payee back-refs,
   // outbound transfer destination, and payment reminder recipient.
-  fee_policy                 FeePolicy?           @relation("FeePolicyCoach")
-  split_entries_as_payee     SplitLedgerEntry[]   @relation("SplitLedgerPayee")
-  transfers_as_destination   ConnectTransfer[]    @relation("ConnectTransferDestination")
-  payment_reminders          PaymentReminder[]    @relation("PaymentReminderRecipient")
+  fee_policy                   FeePolicy?           @relation("FeePolicyCoach")
+  split_entries_as_payee       SplitLedgerEntry[]   @relation("SplitLedgerPayee")
+  transfers_as_destination     ConnectTransfer[]    @relation("ConnectTransferDestination")
+  payment_reminders            PaymentReminder[]    @relation("PaymentReminderRecipient")
   // Phase 6 Connect — payout readiness snapshot per coach (cached
   // Stripe Connect balance + pending payout), refund + dispute back-refs.
-  payout_snapshot            PayoutSnapshot?      @relation("PayoutSnapshotCoach")
+  payout_snapshot              PayoutSnapshot?      @relation("PayoutSnapshotCoach")
   // Bank-Account Payouts v2 (spec §2.2-§2.3) — coach-linked payout methods
   // (Stripe Connect Custom bank accounts via Financial Connections) plus the
   // single nullable FK to the coach's default method. ALL nullable / optional
@@ -267,26 +267,26 @@ model User {
   // exist today (ConnectAccount) stay exactly as they are — v1 introduces no
   // destructive schema change. The whole surface is gated behind
   // FEATURE_BANK_PAYOUTS_V2 (default OFF).
-  payout_methods             PayoutMethod[]       @relation("CoachPayoutMethods")
-  default_payout_method_id   String?
-  default_payout_method      PayoutMethod?        @relation("UserDefaultPayoutMethod", fields: [default_payout_method_id], references: [id])
-  drafts_as_coach            MessageDraft[]       @relation("MessageDraftCoach")
-  drafts_as_client           MessageDraft[]       @relation("MessageDraftClient")
+  payout_methods               PayoutMethod[]       @relation("CoachPayoutMethods")
+  default_payout_method_id     String?
+  default_payout_method        PayoutMethod?        @relation("UserDefaultPayoutMethod", fields: [default_payout_method_id], references: [id])
+  drafts_as_coach              MessageDraft[]       @relation("MessageDraftCoach")
+  drafts_as_client             MessageDraft[]       @relation("MessageDraftClient")
   // Phase 11 — Coach↔Client direct messaging. Sender/recipient are both Users
   // (coach or client); RLS enforces per-row access (see Message model).
-  messages_sent              Message[]            @relation("MessageSender")
-  messages_received          Message[]            @relation("MessageRecipient")
-  activity_events_actor      ActivityEvent[]      @relation("ActivityEventActor")
-  activity_events_coach      ActivityEvent[]      @relation("ActivityEventCoach")
-  activity_events_client     ActivityEvent[]      @relation("ActivityEventClient")
-  audit_logs_actor           AuditLog[]           @relation("AuditLogActor")
-  audit_logs_target          AuditLog[]           @relation("AuditLogTarget")
-  data_export_requests       DataExportRequest[]
-  consents_as_client         ClientCoachConsent[] @relation("ConsentClient")
-  consents_as_coach          ClientCoachConsent[] @relation("ConsentCoach")
-  bloodwork_panels_as_client BloodworkPanel[]     @relation("BloodworkPanelClient")
-  bloodwork_panels_as_coach  BloodworkPanel[]     @relation("BloodworkPanelCoach")
-  bloodwork_panels_reviewed  BloodworkPanel[]     @relation("BloodworkPanelReviewer")
+  messages_sent                Message[]            @relation("MessageSender")
+  messages_received            Message[]            @relation("MessageRecipient")
+  activity_events_actor        ActivityEvent[]      @relation("ActivityEventActor")
+  activity_events_coach        ActivityEvent[]      @relation("ActivityEventCoach")
+  activity_events_client       ActivityEvent[]      @relation("ActivityEventClient")
+  audit_logs_actor             AuditLog[]           @relation("AuditLogActor")
+  audit_logs_target            AuditLog[]           @relation("AuditLogTarget")
+  data_export_requests         DataExportRequest[]
+  consents_as_client           ClientCoachConsent[] @relation("ConsentClient")
+  consents_as_coach            ClientCoachConsent[] @relation("ConsentCoach")
+  bloodwork_panels_as_client   BloodworkPanel[]     @relation("BloodworkPanelClient")
+  bloodwork_panels_as_coach    BloodworkPanel[]     @relation("BloodworkPanelCoach")
+  bloodwork_panels_reviewed    BloodworkPanel[]     @relation("BloodworkPanelReviewer")
 
   // Phase 1 PTM (Predictive Tracking Model). Append-only signal log,
   // outcome labels (taught by OWNERs/coaches), and append-only score
@@ -478,6 +478,16 @@ model User {
   community_challenge_participations CommunityChallengeParticipation[] @relation("CommunityChallengeParticipationUser")
   community_reports_filed            CommunityModerationAction[]       @relation("community_reporter")
   community_moderation_actions       CommunityModerationAction[]       @relation("community_moderator")
+
+  // Roman Phase 1 — Chat MVP. A user owns Roman chat sessions (one active
+  // session per (userId, surface) day-key). Each session holds an ordered
+  // message log. Both relations are optional and additive: pre-existing rows
+  // own zero Roman sessions and behave exactly as before. The whole surface
+  // is gated behind FEATURE_ROMAN_CHAT_ENABLED (default OFF) — see
+  // src/roman/roman.feature.ts. RLS scopes every row to userId at the DB
+  // layer (migration 20261216000000_add_roman_chat).
+  roman_sessions RomanSession[] @relation("RomanSessionUser")
+  roman_messages RomanMessage[] @relation("RomanMessageUser")
 
   @@index([coach_id])
   @@index([deletion_scheduled_at])
@@ -3228,7 +3238,7 @@ model CoachPackage {
   // HARD-BLOCKS the Stripe charge until that envelope is SIGNED. Both
   // columns are additive + nullable/defaulted so every pre-existing package
   // keeps its exact current behavior (no contract step).
-  requires_contract   Boolean @default(false)
+  requires_contract    Boolean           @default(false)
   contract_template_id String?
   contract_template    ContractTemplate? @relation("PackageContractTemplate", fields: [contract_template_id], references: [id])
 
@@ -5986,11 +5996,11 @@ model ContractEnvelope {
   expires_at           DateTime?
   created_at           DateTime               @default(now())
 
-  template ContractTemplate    @relation(fields: [template_id], references: [id])
-  client   User                @relation("ClientEnvelopes", fields: [client_id], references: [id])
-  coach    User                @relation("CoachEnvelopes", fields: [coach_id], references: [id])
+  template ContractTemplate     @relation(fields: [template_id], references: [id])
+  client   User                 @relation("ClientEnvelopes", fields: [client_id], references: [id])
+  coach    User                 @relation("CoachEnvelopes", fields: [coach_id], references: [id])
   events   ContractAuditEvent[]
-  purchase ClientPurchase?     @relation("PurchaseContractEnvelope")
+  purchase ClientPurchase?      @relation("PurchaseContractEnvelope")
 
   @@index([client_id])
   @@index([coach_id])
@@ -6015,4 +6025,116 @@ model ContractAuditEvent {
   envelope ContractEnvelope @relation(fields: [envelope_id], references: [id])
 
   @@index([envelope_id])
+}
+
+// ============================================================
+// ROMAN — Phase 1 chat MVP (additive; gated behind
+// FEATURE_ROMAN_CHAT_ENABLED, default OFF). See src/roman/.
+// ============================================================
+
+// Which app surface a Roman session belongs to. One Roman, two framings:
+// `client` (the TGP client app) and `coach` (the coach app). Surface drives
+// the system-prompt framing only — the voice contract is identical.
+enum RomanSurface {
+  client
+  coach
+}
+
+// Author of a single chat turn. `user` = the human; `roman` = the single AI
+// persona. Stored lowercase so raw SQL / admin tooling reads naturally.
+enum RomanMessageRole {
+  user
+  roman
+}
+
+// A persistent Roman chat session. Idempotent on (user_id, surface, day_key):
+// the service opens at most one active session per user/surface/day. Soft
+// delete via deleted_at (never hard-deleted from the chat surface).
+model RomanSession {
+  id      String       @id @default(cuid())
+  user_id String
+  surface RomanSurface
+
+  // Idempotency key for "open or resume" — the UTC calendar day (YYYY-MM-DD)
+  // the session was opened. The unique index below makes "one active session
+  // per (user, surface, day)" a database invariant, not just service logic.
+  day_key String
+
+  // Lightweight session bookkeeping. message_count is denormalised for cheap
+  // listing; last_activity_at advances on every appended turn.
+  message_count    Int      @default(0)
+  started_at       DateTime @default(now())
+  last_activity_at DateTime @default(now())
+
+  // Voice-contract self-rate-limiting state (spec §1.5 / brief §2). The
+  // service surfaces these to the model so it can honour the per-session quip
+  // allowance and the single-exclamation budget.
+  quips_in_session Int     @default(0)
+  exclamation_used Boolean @default(false)
+
+  // Optional brief/subject context blob (e.g. a coach brief) the session was
+  // opened against. Nullable — most sessions carry none.
+  subject_context_json Json?
+
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  // Soft-delete tombstone. Non-null = session is hidden from the chat surface
+  // but retained for audit/budget history.
+  deleted_at DateTime?
+
+  user     User           @relation("RomanSessionUser", fields: [user_id], references: [id], onDelete: Cascade)
+  messages RomanMessage[]
+
+  // Idempotency spine for open-or-resume: at most one row per
+  // (user, surface, day_key). The partial-by-convention uniqueness is enforced
+  // in full (including soft-deleted rows) so a deleted session does not free
+  // the day-key for a duplicate; the service resumes a live one or opens the
+  // next day.
+  @@unique([user_id, surface, day_key], name: "roman_session_user_surface_day")
+  // Listing index: a user's sessions for a surface, newest first.
+  @@index([user_id, surface, created_at(sort: Desc)])
+}
+
+// A single chat turn within a Roman session. Append-only in practice; an
+// assistant turn may be marked `interrupted` when the client disconnects
+// mid-stream (partial content persisted).
+model RomanMessage {
+  id         String           @id @default(cuid())
+  session_id String
+  // Denormalised owner for direct RLS scoping (avoids a join through session
+  // on the hot read path). Always equals the parent session's user_id; the
+  // RLS policy enforces both the direct predicate AND the session-join.
+  user_id    String
+  role       RomanMessageRole
+  content    String
+
+  // Token accounting for future budgeting (brief §3). Null on a user turn
+  // (no model call) until/unless we attribute prompt tokens to the turn.
+  prompt_tokens     Int?
+  completion_tokens Int?
+  // The Anthropic model id that produced an assistant turn (null on user
+  // turns). Persisted so a later model upgrade is auditable per-message.
+  model_id          String?
+
+  // True when an assistant turn was persisted from a partial stream because
+  // the client disconnected before completion (brief §1.3 streaming rule).
+  interrupted Boolean @default(false)
+
+  // Optional branch pointer for future message-tree editing. Nullable; Phase 1
+  // never sets it but the column ships now so branching is additive later.
+  parent_message_id String?
+
+  created_at DateTime @default(now())
+
+  session RomanSession   @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  user    User           @relation("RomanMessageUser", fields: [user_id], references: [id], onDelete: Cascade)
+  parent  RomanMessage?  @relation("RomanMessageParent", fields: [parent_message_id], references: [id])
+  replies RomanMessage[] @relation("RomanMessageParent")
+
+  // Hot read path: a session's messages in chronological order (the controller
+  // paginates newest-first by reversing a created_at cursor over this index).
+  @@index([session_id, created_at])
+  // Direct owner scope for RLS / per-user budget queries.
+  @@index([user_id])
+  @@index([parent_message_id])
 }
