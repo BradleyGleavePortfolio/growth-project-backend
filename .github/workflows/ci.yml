@@ -229,7 +229,14 @@ jobs:
       # suite connects with.
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
       DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
-      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # connection_limit=1 pins the live suite's Prisma pool to a single
+      # backend connection. The suite sets session GUCs (app.current_user_id /
+      # app.current_user_role) via set_config(..., is_local=false) and reads
+      # them back in a later auto-committed statement; with the default
+      # multi-connection pool those reads can land on a different backend that
+      # never had the GUC set, so app.is_owner() intermittently sees NULL role
+      # and returns false. One connection makes the session state stable.
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?connection_limit=1
     steps:
       - uses: actions/checkout@v6
 
