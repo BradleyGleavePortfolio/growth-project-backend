@@ -34,6 +34,8 @@ import {
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import type { AuthedRequest } from '../auth/auth-request';
+import { Roles } from '../common/decorators/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import {
@@ -47,7 +49,7 @@ import {
 } from './roman.dto';
 
 @Controller('roman')
-@UseGuards(JwtAuthGuard, RomanFeatureGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, RomanFeatureGuard)
 export class RomanController {
   constructor(
     private readonly roman: RomanService,
@@ -57,6 +59,7 @@ export class RomanController {
   // ─── POST /roman/sessions — open or resume ─────────────────────────────────
   @Post('sessions')
   @HttpCode(HttpStatus.OK)
+  @Roles('student', 'coach', 'owner')
   async openSession(@Req() req: AuthedRequest, @Body() dto: OpenSessionDto) {
     const caller = await this.callerOf(req);
     const session = await this.roman.openOrResumeSession(caller, dto.surface);
@@ -65,6 +68,7 @@ export class RomanController {
 
   // ─── GET /roman/sessions/:id/messages — paginated, newest first ────────────
   @Get('sessions/:id/messages')
+  @Roles('student', 'coach', 'owner')
   async listMessages(
     @Req() req: AuthedRequest,
     @Param('id') id: string,
@@ -83,6 +87,7 @@ export class RomanController {
 
   // ─── POST /roman/sessions/:id/messages — submit a turn, stream the reply ───
   @Post('sessions/:id/messages')
+  @Roles('student', 'coach', 'owner')
   async sendMessage(
     @Req() req: Request & AuthedRequest,
     @Res() res: Response,
@@ -153,6 +158,7 @@ export class RomanController {
   // ─── DELETE /roman/sessions/:id — soft-delete ──────────────────────────────
   @Delete('sessions/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Roles('student', 'coach', 'owner')
   async deleteSession(@Req() req: AuthedRequest, @Param('id') id: string) {
     const caller = await this.callerOf(req);
     await this.roman.softDeleteSession(caller, id);
