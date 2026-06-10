@@ -51,7 +51,13 @@ jobs:
         run: npm run build
 
       - name: Test
+        # Jest's default worker pool plus this repo's suite count overruns
+        # Node's ~2GB default heap and OOM-aborts (exit 134) even after the
+        # RLS specs are excluded. Raise the heap; the ubuntu-latest runner has
+        # ~16GB, so 4GB is comfortably safe.
         run: npm test --if-present
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
       # Confirm the env-validation rules accept a fully-populated prod env.
       # Catches accidental rule additions that would brick the next deploy
@@ -271,5 +277,9 @@ jobs:
         # need the full schema this scoped bootstrap does not build (see the
         # bootstrap steps above), so they stay out until that bootstrap grows.
         # --runInBand so the GUC/search_path session state is not interleaved
-        # across workers on one connection.
+        # across workers on one connection. NODE_OPTIONS raises the heap: even
+        # this single spec under --runInBand overruns Node's ~2GB default and
+        # OOM-aborts (exit 134); the runner has ~16GB so 4GB is safe.
         run: npx jest --config jest.rls.config.js test/rls/helper-functions.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
