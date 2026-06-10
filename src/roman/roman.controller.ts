@@ -92,7 +92,7 @@ export class RomanController {
     const caller = await this.callerOf(req);
 
     // Rate-limit BEFORE persisting the user turn (so a rejected turn does not
-    // count against the cap). Throws a structured 429-shaped Forbidden.
+    // count against the cap). Throws a structured 429 Too Many Requests.
     await this.roman.assertWithinRateLimit(caller);
 
     const session = await this.roman.getOwnedSession(caller, id);
