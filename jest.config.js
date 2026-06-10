@@ -14,6 +14,16 @@ module.exports = {
     '^.+\\.(js|mjs)$': 'babel-jest',
   },
   setupFiles: ['<rootDir>/test/jest.setup.ts'],
+  // RLS specs connect to a real Postgres and hard-fail without one, so they are
+  // excluded from this default suite (the build-and-test CI job has no DB) and
+  // run only via jest.rls.config.js in the rls-live-tests job. Keep the two
+  // configs in sync: anything ignored here must be matched there.
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/dist/',
+    '<rootDir>/test/rls/',
+    '<rootDir>/test/rls-.*\\.spec\\.ts$',
+  ],
   // jose ships ESM-only source that ts-jest's CJS transform can't parse. Tests
   // don't exercise JWT verification (they stub JwksService directly), so the
   // mock just needs to make the import resolve.
