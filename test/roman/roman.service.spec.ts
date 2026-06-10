@@ -8,7 +8,11 @@
  * in-memory fake Prisma + fake Anthropic stream (no DB, no network).
  */
 
-import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import type { PrismaService } from '../../src/prisma.service';
 import {
   RomanCaller,
@@ -327,9 +331,15 @@ describe('RomanService — rate limiting', () => {
     await expect(svc.assertWithinRateLimit(CALLER)).rejects.toMatchObject({
       response: { code: 'ROMAN_RATE_LIMIT' },
     });
-    await expect(svc.assertWithinRateLimit(CALLER)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    // Must be HTTP 429 Too Many Requests — not 403 — so clients honour retry
+    // semantics (brief §3).
+    const err = await svc
+      .assertWithinRateLimit(CALLER)
+      .then(() => null)
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(HttpException);
+    expect((err as HttpException).getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+    expect((err as HttpException).getStatus()).toBe(429);
   });
 
   it('exempts the owner from the rate limit', async () => {

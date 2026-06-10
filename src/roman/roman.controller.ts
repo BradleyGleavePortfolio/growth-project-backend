@@ -92,8 +92,20 @@ export class RomanController {
     const caller = await this.callerOf(req);
 
     // Rate-limit BEFORE persisting the user turn (so a rejected turn does not
-    // count against the cap). Throws a structured 429-shaped Forbidden.
-    await this.roman.assertWithinRateLimit(caller);
+    // count against the cap). Throws a structured 429 Too Many Requests; we
+    // surface the retry budget as a real Retry-After header (RFC 6585 §4)
+    // before re-throwing so the NestJS filter serialises the body.
+    try {
+      await this.roman.assertWithinRateLimit(caller);
+    } catch (err) {
+      const payload = (
+        err as { getResponse?: () => unknown }
+      ).getResponse?.() as { retryAfterSeconds?: number } | undefined;
+      if (typeof payload?.retryAfterSeconds === 'number') {
+        res.setHeader('Retry-After', String(payload.retryAfterSeconds));
+      }
+      throw err;
+    }
 
     const session = await this.roman.getOwnedSession(caller, id);
     await this.roman.appendMessage(caller, session.id, {
