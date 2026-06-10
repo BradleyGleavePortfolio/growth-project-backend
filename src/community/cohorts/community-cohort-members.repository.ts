@@ -77,12 +77,21 @@ export class CommunityCohortMembersRepository {
     });
   }
 
-  /** Resolve a user by (lowercased) email, or null. */
+  /**
+   * Resolve a user by email, case-insensitively (R1-P2-002).
+   *
+   * The DTO lowercases the lookup, but User.email is a plain unique String with
+   * no DB-level case-folding and is not normalized at write time (auth compares
+   * with .toLowerCase() on both sides). A mixed-case stored email (e.g.
+   * `Jane@Example.com`) would miss an exact-match findUnique and 404 a real
+   * user. `mode: 'insensitive'` (Postgres ILIKE-equivalent) matches regardless
+   * of casing; findFirst because an insensitive predicate is not a unique key.
+   */
   async findUserByEmail(
     email: string,
   ): Promise<Pick<User, 'id' | 'name' | 'email'> | null> {
-    return this.prisma.user.findUnique({
-      where: { email },
+    return this.prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
       select: { id: true, name: true, email: true },
     });
   }
