@@ -143,7 +143,11 @@ function makeAnthropic(deltas: string[], gap: () => Promise<void> = async () => 
     },
   };
   return {
-    messages: { stream: jest.fn(() => stream) },
+    messages: {
+      stream: jest.fn(
+        (_body: unknown, _options?: { signal?: AbortSignal }) => stream,
+      ),
+    },
   };
 }
 
@@ -297,6 +301,59 @@ describe('Roman SSE streaming — client disconnect', () => {
     const done = frames.find((f) => f.data?.type === 'done');
     expect(done?.data.interrupted).toBe(true);
     expect(isEnded()).toBe(true);
+  });
+
+  it('forwards an AbortSignal to the Anthropic SDK and aborts it on client disconnect', async () => {
+    const { prisma } = makePrisma();
+
+    const req = makeReq();
+    let gapCalls = 0;
+    const gap = async () => {
+      gapCalls += 1;
+      if (gapCalls === 2) {
+        req.emit('close'); // client disconnects mid-stream
+        await Promise.resolve();
+      }
+    };
+    const anthropic = makeAnthropic(['First ', 'second ', 'third'], gap);
+    const service = new RomanService(prisma as never, anthropic as never);
+    const ctrl = new RomanController(
+      service as never,
+      { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
+    );
+    const { res } = makeRes();
+
+    await ctrl.sendMessage(req as never, res as never, 'sess_1', {
+      content: 'go',
+    });
+
+    // The SDK stream call must have received a signal (second-arg options) so
+    // the upstream provider request can be cancelled (brief §7).
+    expect(anthropic.messages.stream).toHaveBeenCalledTimes(1);
+    const options = anthropic.messages.stream.mock.calls[0][1] as
+      | { signal?: AbortSignal }
+      | undefined;
+    expect(options?.signal).toBeInstanceOf(AbortSignal);
+    // After the client disconnected, that upstream signal must be aborted so
+    // Anthropic stops generating — no orphaned stream.
+    expect(options?.signal?.aborted).toBe(true);
+  });
+
+  it('aborts the upstream signal even on a clean completion (no leak)', async () => {
+    const { prisma } = makePrisma();
+    const anthropic = makeAnthropic(['done ', 'now']);
+    const service = new RomanService(prisma as never, anthropic as never);
+
+    const session = await service.getOwnedSession(FREE, 'sess_1');
+    for await (const _chunk of service.streamAssistantTurn(FREE, session)) {
+      // drain to completion
+    }
+
+    const options = anthropic.messages.stream.mock.calls[0][1] as
+      | { signal?: AbortSignal }
+      | undefined;
+    expect(options?.signal).toBeInstanceOf(AbortSignal);
+    expect(options?.signal?.aborted).toBe(true);
   });
 
   it('aborting before any token still records an honest interrupted turn', async () => {

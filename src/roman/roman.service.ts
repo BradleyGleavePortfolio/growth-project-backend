@@ -11,7 +11,8 @@
  */
 
 import {
-  ForbiddenException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -289,12 +290,15 @@ export class RomanService {
             ),
           )
         : Math.ceil(ROMAN_RATE_LIMIT_WINDOW_MS / 1000);
-      throw new ForbiddenException({
-        code: ROMAN_ERROR_RATE_LIMIT,
-        retryAfterSeconds,
-        message:
-          'You have reached the Roman conversation limit for now. It will reset shortly.',
-      });
+      throw new HttpException(
+        {
+          code: ROMAN_ERROR_RATE_LIMIT,
+          retryAfterSeconds,
+          message:
+            'You have reached the Roman conversation limit for now. It will reset shortly.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
   }
 
@@ -371,13 +375,26 @@ export class RomanService {
     let promptTokens: number | null = null;
     let completionTokens: number | null = null;
 
+    // Own AbortController forwarded to the SDK so a client disconnect actively
+    // cancels the upstream Anthropic request — otherwise the provider keeps
+    // generating tokens after we stop reading (brief §7: no orphan upstream).
+    const upstream = new AbortController();
+    const forwardAbort = () => upstream.abort();
+    if (opts.signal) {
+      if (opts.signal.aborted) upstream.abort();
+      else opts.signal.addEventListener('abort', forwardAbort, { once: true });
+    }
+
     try {
-      const stream = this.anthropic.messages.stream({
-        model: ROMAN_MODEL_PHASE_1,
-        max_tokens: ROMAN_MAX_OUTPUT_TOKENS,
-        system,
-        messages,
-      });
+      const stream = this.anthropic.messages.stream(
+        {
+          model: ROMAN_MODEL_PHASE_1,
+          max_tokens: ROMAN_MAX_OUTPUT_TOKENS,
+          system,
+          messages,
+        },
+        { signal: upstream.signal },
+      );
 
       for await (const event of stream) {
         if (opts.signal?.aborted) {
@@ -407,6 +424,11 @@ export class RomanService {
           err instanceof Error ? err.message : String(err)
         }`,
       );
+    } finally {
+      // Cancel the upstream HTTP request and drop the listener regardless of
+      // how the loop exited (clean finish, client abort, or SDK error).
+      opts.signal?.removeEventListener('abort', forwardAbort);
+      upstream.abort();
     }
 
     // Persist the assistant turn (full or partial). An empty partial (client
