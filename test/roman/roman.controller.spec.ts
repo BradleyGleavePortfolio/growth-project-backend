@@ -23,6 +23,7 @@ import { ExecutionContext } from '@nestjs/common';
 import { RomanController } from '../../src/roman/roman.controller';
 import { RomanFeatureGuard } from '../../src/roman/roman-feature.guard';
 import { JwtAuthGuard } from '../../src/auth/auth.guard';
+import { RolesGuard } from '../../src/auth/roles.guard';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
 import type { RomanCaller } from '../../src/roman/roman.service';
 
@@ -241,9 +242,13 @@ describe('RomanController — auth + feature guards mounted', () => {
     const guards = Reflect.getMetadata('__guards__', RomanController) as unknown[];
     expect(Array.isArray(guards)).toBe(true);
     expect(guards).toContain(JwtAuthGuard);
+    expect(guards).toContain(RolesGuard);
     expect(guards).toContain(RomanFeatureGuard);
-    // Order matters: authenticate first, then gate on the flag.
+    // Order matters: authenticate first, then enforce roles, then gate on the flag.
     expect(guards.indexOf(JwtAuthGuard)).toBeLessThan(
+      guards.indexOf(RolesGuard),
+    );
+    expect(guards.indexOf(RolesGuard)).toBeLessThan(
       guards.indexOf(RomanFeatureGuard),
     );
   });
@@ -251,7 +256,7 @@ describe('RomanController — auth + feature guards mounted', () => {
   // The @UseGuards decorator is what attaches that metadata — sanity that the
   // controller class itself is decorated (not a per-method override).
   it('applies the guards at class scope', () => {
-    @UseGuards(JwtAuthGuard, RomanFeatureGuard)
+    @UseGuards(JwtAuthGuard, RolesGuard, RomanFeatureGuard)
     class Probe {}
     const probeGuards = Reflect.getMetadata('__guards__', Probe) as unknown[];
     const ctrlGuards = Reflect.getMetadata('__guards__', RomanController) as unknown[];
