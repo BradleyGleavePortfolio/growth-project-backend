@@ -264,9 +264,12 @@ jobs:
             'CREATE TRIGGER trg_enforce_subcoach_head_cap BEFORE INSERT OR UPDATE ON "TeamSubCoachAssignment" FOR EACH ROW EXECUTE FUNCTION enforce_subcoach_head_cap();'
 
       - name: Run live RLS regression suite
-        # Exact path: `jest test/rls` is a regex that also matches the
-        # test/rls-tier*.spec.ts policy suites at the test/ root, which need
-        # the full schema this scoped bootstrap does not build. Target only
-        # the PR-RLS-01 helper suite. --runInBand so the GUC/search_path
-        # session state is not interleaved across workers on one connection.
-        run: npx jest test/rls/helper-functions.spec.ts --runInBand --testTimeout=60000
+        # Use the dedicated rls-live jest config (jest.rls.config.js), which
+        # selects the DB-requiring RLS specs the default build-and-test job now
+        # excludes. We still pass an explicit path filter so this job runs ONLY
+        # the PR-RLS-01 helper suite: the other test/rls-*.spec.ts policy suites
+        # need the full schema this scoped bootstrap does not build (see the
+        # bootstrap steps above), so they stay out until that bootstrap grows.
+        # --runInBand so the GUC/search_path session state is not interleaved
+        # across workers on one connection.
+        run: npx jest --config jest.rls.config.js test/rls/helper-functions.spec.ts --runInBand --testTimeout=60000
