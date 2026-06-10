@@ -227,37 +227,37 @@ model User {
   owners_created_profiles  CoachProfile[]           @relation("CoachProfileCreatedBy")
 
   // SaaS billing additions (1:1 with coach users; null for clients/owners).
-  coach_subscription         CoachSubscription?
-  invoices                   Invoice[]
-  payment_failures           PaymentFailure[]
+  coach_subscription           CoachSubscription?
+  invoices                     Invoice[]
+  payment_failures             PaymentFailure[]
   // Phase 1 Connect — 1:1 Stripe Express account per coach. Null until the
   // coach kicks off Connect onboarding via POST /v1/connect/accounts/create.
-  connect_account            ConnectAccount?
+  connect_account              ConnectAccount?
   // Phase 2-3 Connect — coach packages, client purchases, and saved
   // payment methods. A coach owns many CoachPackages (their offers);
   // a client owns many ClientPurchases (their bought packages) and at
   // most one ConnectCustomer mirror (Stripe Customer on the platform
   // account used to attach saved payment methods).
-  coach_packages             CoachPackage[]       @relation("CoachPackageCoach")
-  purchases_as_client        ClientPurchase[]     @relation("ClientPurchaseClient")
-  purchases_as_coach         ClientPurchase[]     @relation("ClientPurchaseCoach")
+  coach_packages               CoachPackage[]       @relation("CoachPackageCoach")
+  purchases_as_client          ClientPurchase[]     @relation("ClientPurchaseClient")
+  purchases_as_coach           ClientPurchase[]     @relation("ClientPurchaseCoach")
   // B5 — Digital Contracts. A coach owns ContractTemplates and authors
   // (coach-side) envelopes; a client signs (client-side) envelopes. The
   // platform liability waiver layer is modeled via ContractTemplate.is_platform
   // (coach_id points at the seeded TGP system-coach user for those rows).
-  contract_templates         ContractTemplate[]   @relation("ContractTemplateCoach")
-  contract_envelopes_as_coach  ContractEnvelope[] @relation("CoachEnvelopes")
-  contract_envelopes_as_client ContractEnvelope[] @relation("ClientEnvelopes")
-  connect_customer           ConnectCustomer?
+  contract_templates           ContractTemplate[]   @relation("ContractTemplateCoach")
+  contract_envelopes_as_coach  ContractEnvelope[]   @relation("CoachEnvelopes")
+  contract_envelopes_as_client ContractEnvelope[]   @relation("ClientEnvelopes")
+  connect_customer             ConnectCustomer?
   // Phase 4-5 Connect — fee policy override, ledger payee back-refs,
   // outbound transfer destination, and payment reminder recipient.
-  fee_policy                 FeePolicy?           @relation("FeePolicyCoach")
-  split_entries_as_payee     SplitLedgerEntry[]   @relation("SplitLedgerPayee")
-  transfers_as_destination   ConnectTransfer[]    @relation("ConnectTransferDestination")
-  payment_reminders          PaymentReminder[]    @relation("PaymentReminderRecipient")
+  fee_policy                   FeePolicy?           @relation("FeePolicyCoach")
+  split_entries_as_payee       SplitLedgerEntry[]   @relation("SplitLedgerPayee")
+  transfers_as_destination     ConnectTransfer[]    @relation("ConnectTransferDestination")
+  payment_reminders            PaymentReminder[]    @relation("PaymentReminderRecipient")
   // Phase 6 Connect — payout readiness snapshot per coach (cached
   // Stripe Connect balance + pending payout), refund + dispute back-refs.
-  payout_snapshot            PayoutSnapshot?      @relation("PayoutSnapshotCoach")
+  payout_snapshot              PayoutSnapshot?      @relation("PayoutSnapshotCoach")
   // Bank-Account Payouts v2 (spec §2.2-§2.3) — coach-linked payout methods
   // (Stripe Connect Custom bank accounts via Financial Connections) plus the
   // single nullable FK to the coach's default method. ALL nullable / optional
@@ -267,26 +267,26 @@ model User {
   // exist today (ConnectAccount) stay exactly as they are — v1 introduces no
   // destructive schema change. The whole surface is gated behind
   // FEATURE_BANK_PAYOUTS_V2 (default OFF).
-  payout_methods             PayoutMethod[]       @relation("CoachPayoutMethods")
-  default_payout_method_id   String?
-  default_payout_method      PayoutMethod?        @relation("UserDefaultPayoutMethod", fields: [default_payout_method_id], references: [id])
-  drafts_as_coach            MessageDraft[]       @relation("MessageDraftCoach")
-  drafts_as_client           MessageDraft[]       @relation("MessageDraftClient")
+  payout_methods               PayoutMethod[]       @relation("CoachPayoutMethods")
+  default_payout_method_id     String?
+  default_payout_method        PayoutMethod?        @relation("UserDefaultPayoutMethod", fields: [default_payout_method_id], references: [id])
+  drafts_as_coach              MessageDraft[]       @relation("MessageDraftCoach")
+  drafts_as_client             MessageDraft[]       @relation("MessageDraftClient")
   // Phase 11 — Coach↔Client direct messaging. Sender/recipient are both Users
   // (coach or client); RLS enforces per-row access (see Message model).
-  messages_sent              Message[]            @relation("MessageSender")
-  messages_received          Message[]            @relation("MessageRecipient")
-  activity_events_actor      ActivityEvent[]      @relation("ActivityEventActor")
-  activity_events_coach      ActivityEvent[]      @relation("ActivityEventCoach")
-  activity_events_client     ActivityEvent[]      @relation("ActivityEventClient")
-  audit_logs_actor           AuditLog[]           @relation("AuditLogActor")
-  audit_logs_target          AuditLog[]           @relation("AuditLogTarget")
-  data_export_requests       DataExportRequest[]
-  consents_as_client         ClientCoachConsent[] @relation("ConsentClient")
-  consents_as_coach          ClientCoachConsent[] @relation("ConsentCoach")
-  bloodwork_panels_as_client BloodworkPanel[]     @relation("BloodworkPanelClient")
-  bloodwork_panels_as_coach  BloodworkPanel[]     @relation("BloodworkPanelCoach")
-  bloodwork_panels_reviewed  BloodworkPanel[]     @relation("BloodworkPanelReviewer")
+  messages_sent                Message[]            @relation("MessageSender")
+  messages_received            Message[]            @relation("MessageRecipient")
+  activity_events_actor        ActivityEvent[]      @relation("ActivityEventActor")
+  activity_events_coach        ActivityEvent[]      @relation("ActivityEventCoach")
+  activity_events_client       ActivityEvent[]      @relation("ActivityEventClient")
+  audit_logs_actor             AuditLog[]           @relation("AuditLogActor")
+  audit_logs_target            AuditLog[]           @relation("AuditLogTarget")
+  data_export_requests         DataExportRequest[]
+  consents_as_client           ClientCoachConsent[] @relation("ConsentClient")
+  consents_as_coach            ClientCoachConsent[] @relation("ConsentCoach")
+  bloodwork_panels_as_client   BloodworkPanel[]     @relation("BloodworkPanelClient")
+  bloodwork_panels_as_coach    BloodworkPanel[]     @relation("BloodworkPanelCoach")
+  bloodwork_panels_reviewed    BloodworkPanel[]     @relation("BloodworkPanelReviewer")
 
   // Phase 1 PTM (Predictive Tracking Model). Append-only signal log,
   // outcome labels (taught by OWNERs/coaches), and append-only score
@@ -2085,12 +2085,12 @@ model WorkoutPlan {
   //                     change). Non-null => a "day" within a WorkoutProgram.
   program_id          String?
   program             WorkoutProgram? @relation("WorkoutProgramPlans", fields: [program_id], references: [id], onDelete: Cascade)
-  week_index          Int?            // 0-based week within the program; null for standalone
-  day_index           Int?            // 0-based day within the week; null for standalone
+  week_index          Int? // 0-based week within the program; null for standalone
+  day_index           Int? // 0-based day within the week; null for standalone
   is_template         Boolean         @default(false) // mirrors program.is_template for fast filtering
-  version             Int             @default(1)      // per-plan optimistic-concurrency token (§6.4)
-  head_revision_id    String?         // current WorkoutPlanRevision head pointer (§5)
-  cloned_from_plan_id String?         // provenance for clone-to-client analytics
+  version             Int             @default(1) // per-plan optimistic-concurrency token (§6.4)
+  head_revision_id    String? // current WorkoutPlanRevision head pointer (§5)
+  cloned_from_plan_id String? // provenance for clone-to-client analytics
 
   exercises   WorkoutPlanExercise[]
   assignments ClientWorkoutAssignment[]
@@ -2109,33 +2109,33 @@ model WorkoutPlan {
 // is_template=false). Legacy standalone plans (program_id=null) never touch
 // any of this. See spec §3.
 model WorkoutProgram {
-  id          String  @id @default(uuid())
+  id               String    @id @default(uuid())
   // TENANT key — the coaching business this program belongs to. Used by RLS
   // tenant-sharing checks and as the head-coach ownership anchor.
-  coach_id    String
+  coach_id         String
   // OWNER key — the individual user (head coach or sub-coach) who authored /
   // owns this row. RLS write policy keys on this; forking writes a NEW owned
   // row so the fork passes the owner check.
-  owner_user_id String
+  owner_user_id    String
   // 'owner_only'  => only owner_user_id (and service_role) can read.
   // 'tenant_shared' => any coach/sub-coach in the same coach_id tenant may read.
-  visibility    String  @default("owner_only")
+  visibility       String    @default("owner_only")
   // Provenance when this program was forked from another template (§7.3).
-  forked_from_id String?
-  name          String
-  description    String?
-  weeks          Int
-  days_per_week  Int
+  forked_from_id   String?
+  name             String
+  description      String?
+  weeks            Int
+  days_per_week    Int
   // true => master template (authoring surface). false => a concrete program
   // cloned onto a client (cloned_from_id points at the master).
-  is_template    Boolean   @default(true)
-  cloned_from_id String?
-  goal_tag       String?
-  version        Int       @default(1)
+  is_template      Boolean   @default(true)
+  cloned_from_id   String?
+  goal_tag         String?
+  version          Int       @default(1)
   head_revision_id String?
-  created_at     DateTime  @default(now())
-  updated_at     DateTime  @updatedAt
-  archived_at    DateTime?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+  archived_at      DateTime?
 
   plans     WorkoutPlan[]            @relation("WorkoutProgramPlans")
   revisions WorkoutProgramRevision[]
@@ -2194,11 +2194,11 @@ model WorkoutProgramRevision {
 // for legacy assignments created before MWB-1 — read paths fall back to the
 // live join in that case.
 model ClientWorkoutAssignmentSnapshot {
-  id            String                  @id @default(uuid())
-  assignment_id String                  @unique
-  assignment    ClientWorkoutAssignment @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
-  plan_name     String
-  plan_type     WorkoutPlanType
+  id             String                  @id @default(uuid())
+  assignment_id  String                  @unique
+  assignment     ClientWorkoutAssignment @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
+  plan_name      String
+  plan_type      WorkoutPlanType
   exercises_json Json
   source_plan_id String
   source_version Int
@@ -3228,7 +3228,7 @@ model CoachPackage {
   // HARD-BLOCKS the Stripe charge until that envelope is SIGNED. Both
   // columns are additive + nullable/defaulted so every pre-existing package
   // keeps its exact current behavior (no contract step).
-  requires_contract   Boolean @default(false)
+  requires_contract    Boolean           @default(false)
   contract_template_id String?
   contract_template    ContractTemplate? @relation("PackageContractTemplate", fields: [contract_template_id], references: [id])
 
@@ -5986,11 +5986,11 @@ model ContractEnvelope {
   expires_at           DateTime?
   created_at           DateTime               @default(now())
 
-  template ContractTemplate    @relation(fields: [template_id], references: [id])
-  client   User                @relation("ClientEnvelopes", fields: [client_id], references: [id])
-  coach    User                @relation("CoachEnvelopes", fields: [coach_id], references: [id])
+  template ContractTemplate     @relation(fields: [template_id], references: [id])
+  client   User                 @relation("ClientEnvelopes", fields: [client_id], references: [id])
+  coach    User                 @relation("CoachEnvelopes", fields: [coach_id], references: [id])
   events   ContractAuditEvent[]
-  purchase ClientPurchase?     @relation("PurchaseContractEnvelope")
+  purchase ClientPurchase?      @relation("PurchaseContractEnvelope")
 
   @@index([client_id])
   @@index([coach_id])
