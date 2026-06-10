@@ -51,7 +51,13 @@ jobs:
         run: npm run build
 
       - name: Test
+        # Jest's default worker pool plus this repo's suite count overruns
+        # Node's ~2GB default heap and OOM-aborts (exit 134) even after the
+        # RLS specs are excluded. Raise the heap; the ubuntu-latest runner has
+        # ~16GB, so 4GB is comfortably safe.
         run: npm test --if-present
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
       # Confirm the env-validation rules accept a fully-populated prod env.
       # Catches accidental rule additions that would brick the next deploy
@@ -153,3 +159,134 @@ jobs:
           COACH_AI_MAX_ACTUAL_CENTS: '4000'
           COACH_AI_VALUE_MULTIPLIER: '3.125'
         run: node -e "require('./dist/common/env-validation').assertEnv()"
+
+  rls-floor-guard:
+    # PR-RLS-01 (audit P1-002): the relrowsecurity floor guard must be
+    # called by an actual workflow step or it protects nothing. The script
+    # itself is soft until RLS_ENFORCEMENT_FULL is flipped to 'on' after
+    # PR-RLS-08 lands, but it MUST be invoked unconditionally so the gate
+    # exists and the table-count trends are surfaced in CI logs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install postgresql-client
+        # Required by scripts/ci/check-relrowsecurity.sh. Once
+        # RLS_ENFORCEMENT_FULL=on, the script hard-fails if psql is missing
+        # (audit P2-007); installing it here keeps the guard meaningful.
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: RLS floor guard (soft until PR-RLS-08)
+        env:
+          # DATABASE_URL_AUDIT is a read-only Postgres URL to the project
+          # whose floor we want to measure. The script soft-skips when this
+          # secret is unset, so CI stays green for forks without secrets.
+          DATABASE_URL: ${{ secrets.DATABASE_URL_AUDIT }}
+          # Flip to 'on' in the workflow after PR-RLS-08 merges and the
+          # advisor returns zero rls_disabled_in_public lints.
+          RLS_ENFORCEMENT_FULL: 'off'
+        run: bash scripts/ci/check-relrowsecurity.sh
+
+  rls-live-tests:
+    # PR-RLS-01 (audit R1-P1-002): the live RLS helper regression suite was
+    # skipped in the default PR gate because build-and-test runs `npm test`
+    # with no TEST_DATABASE_URL, so every behavioral RLS assertion
+    # (positive/negative helper paths, ACL lockdown, trigger cap, hostile
+    # search_path + pg_temp relation-shadow) was silently skipped.
+    #
+    # This job provisions a real Postgres 15 service container, applies the
+    # Supabase CI shim + a scoped RLS-01 bootstrap + the PR-RLS-01 migration,
+    # exports TEST_DATABASE_URL, and runs only test/rls. The suite HARD-FAILS
+    # (not skips) if the DB is configured-but-unreachable, so a broken DB can
+    # never read as green.
+    #
+    # NOTE on schema setup: the full Prisma migration chain is NOT deployable
+    # from empty on this repo (a pre-existing, out-of-PR-scope defect —
+    # 20250724120000 ALTERs SubCoachInvite before 20260604000000 creates it).
+    # So instead of `prisma migrate deploy` over the whole history, we
+    # materialize only the objects PR-RLS-01 touches (scripts/ci/*.sql) and
+    # then apply THIS PR's migration verbatim, so the live suite asserts
+    # against the real migration output. See scripts/ci/rls01-live-bootstrap.sql.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        # Wait for the container to accept connections before steps run.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Both URLs point at the service container. DIRECT_URL is what
+      # `prisma migrate deploy` uses; TEST_DATABASE_URL is what the live
+      # suite connects with.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # connection_limit=1 pins the live suite's Prisma pool to a single
+      # backend connection. The suite sets session GUCs (app.current_user_id /
+      # app.current_user_role) via set_config(..., is_local=false) and reads
+      # them back in a later auto-committed statement; with the default
+      # multi-connection pool those reads can land on a different backend that
+      # never had the GUC set, so app.is_owner() intermittently sees NULL role
+      # and returns false. One connection makes the session state stable.
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?connection_limit=1
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply Supabase CI shim (roles + auth.uid)
+        # Vanilla Postgres has no anon/authenticated/service_role roles and no
+        # auth schema; the shim creates them so the migration's GRANTs to those
+        # roles apply cleanly. CI-only — never run against a real Supabase DB.
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/supabase-shim.sql
+
+      - name: Bootstrap RLS-01 schema (User + TeamSubCoachAssignment + dep helper)
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/rls01-live-bootstrap.sql
+
+      - name: Apply the PR-RLS-01 migration (the five hardened helpers)
+        # Apply THIS PR's migration verbatim so the live suite asserts against
+        # the real migration output, not a copy.
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260704000000_rls01_helper_searchpath_hibp/migration.sql
+
+      - name: Bind the head-cap trigger
+        # CREATE OR REPLACE FUNCTION in the migration preserves an existing
+        # trigger binding by OID in production, but a fresh CI DB has no prior
+        # trigger, so create it here against the hardened function.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+            'CREATE TRIGGER trg_enforce_subcoach_head_cap BEFORE INSERT OR UPDATE ON "TeamSubCoachAssignment" FOR EACH ROW EXECUTE FUNCTION enforce_subcoach_head_cap();'
+
+      - name: Run live RLS regression suite
+        # Use the dedicated rls-live jest config (jest.rls.config.js), which
+        # selects the DB-requiring RLS specs the default build-and-test job now
+        # excludes. We still pass an explicit path filter so this job runs ONLY
+        # the PR-RLS-01 helper suite: the other test/rls-*.spec.ts policy suites
+        # need the full schema this scoped bootstrap does not build (see the
+        # bootstrap steps above), so they stay out until that bootstrap grows.
+        # --runInBand so the GUC/search_path session state is not interleaved
+        # across workers on one connection. NODE_OPTIONS raises the heap: even
+        # this single spec under --runInBand overruns Node's ~2GB default and
+        # OOM-aborts (exit 134); the runner has ~16GB so 4GB is safe.
+        run: npx jest --config jest.rls.config.js test/rls/helper-functions.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
