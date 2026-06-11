@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Put,
@@ -61,7 +62,8 @@ export class CommunityChallengesController {
   })
   async create(
     @Request() req: AuthedRequest,
-    @Param('workspaceId') workspaceId: string,
+    @Param('workspaceId', new ParseUUIDPipe({ version: '4' }))
+    workspaceId: string,
     @Body() body: CreateChallengeDto,
   ) {
     return this.challenges.create(req.user, workspaceId, body);
@@ -80,7 +82,8 @@ export class CommunityChallengesController {
   })
   async edit(
     @Request() req: AuthedRequest,
-    @Param('challengeId') challengeId: string,
+    @Param('challengeId', new ParseUUIDPipe({ version: '4' }))
+    challengeId: string,
     @Body() body: EditChallengeDto,
   ) {
     return this.challenges.edit(req.user, challengeId, body);
@@ -99,7 +102,8 @@ export class CommunityChallengesController {
   })
   async archive(
     @Request() req: AuthedRequest,
-    @Param('challengeId') challengeId: string,
+    @Param('challengeId', new ParseUUIDPipe({ version: '4' }))
+    challengeId: string,
   ) {
     return this.challenges.archive(req.user, challengeId);
   }
@@ -111,7 +115,8 @@ export class CommunityChallengesController {
   @Roles('student', 'coach', 'owner')
   async list(
     @Request() req: AuthedRequest,
-    @Param('workspaceId') workspaceId: string,
+    @Param('workspaceId', new ParseUUIDPipe({ version: '4' }))
+    workspaceId: string,
     @Query() query: ListChallengesQueryDto,
   ) {
     return this.challenges.list(req.user, workspaceId, query);
@@ -122,7 +127,8 @@ export class CommunityChallengesController {
   @Roles('student', 'coach', 'owner')
   async getOne(
     @Request() req: AuthedRequest,
-    @Param('challengeId') challengeId: string,
+    @Param('challengeId', new ParseUUIDPipe({ version: '4' }))
+    challengeId: string,
   ) {
     return this.challenges.getOne(req.user, challengeId);
   }
@@ -132,7 +138,8 @@ export class CommunityChallengesController {
   @Roles('student', 'coach', 'owner')
   async leaderboard(
     @Request() req: AuthedRequest,
-    @Param('challengeId') challengeId: string,
+    @Param('challengeId', new ParseUUIDPipe({ version: '4' }))
+    challengeId: string,
   ) {
     return this.challenges.getLeaderboard(req.user, challengeId);
   }
@@ -142,7 +149,8 @@ export class CommunityChallengesController {
   @Roles('student', 'coach', 'owner')
   async listComments(
     @Request() req: AuthedRequest,
-    @Param('challengeId') challengeId: string,
+    @Param('challengeId', new ParseUUIDPipe({ version: '4' }))
+    challengeId: string,
   ) {
     return this.challenges.listComments(req.user, challengeId);
   }
@@ -162,7 +170,8 @@ export class CommunityChallengesController {
   })
   async join(
     @Request() req: AuthedRequest,
-    @Param('challengeId') challengeId: string,
+    @Param('challengeId', new ParseUUIDPipe({ version: '4' }))
+    challengeId: string,
   ) {
     return this.challenges.join(req.user, challengeId);
   }
@@ -180,7 +189,8 @@ export class CommunityChallengesController {
   })
   async updateProgress(
     @Request() req: AuthedRequest,
-    @Param('challengeId') challengeId: string,
+    @Param('challengeId', new ParseUUIDPipe({ version: '4' }))
+    challengeId: string,
     @Body() body: UpdateProgressDto,
   ) {
     return this.challenges.updateProgress(
@@ -203,7 +213,8 @@ export class CommunityChallengesController {
   })
   async leaderboardOptIn(
     @Request() req: AuthedRequest,
-    @Param('challengeId') challengeId: string,
+    @Param('challengeId', new ParseUUIDPipe({ version: '4' }))
+    challengeId: string,
     @Body() body: LeaderboardOptInDto,
   ) {
     return this.challenges.setLeaderboardOptIn(
@@ -226,7 +237,8 @@ export class CommunityChallengesController {
   })
   async addComment(
     @Request() req: AuthedRequest,
-    @Param('challengeId') challengeId: string,
+    @Param('challengeId', new ParseUUIDPipe({ version: '4' }))
+    challengeId: string,
     @Body() body: CreateChallengeCommentDto,
   ) {
     return this.challenges.addComment(req.user, challengeId, body.body);
@@ -240,8 +252,10 @@ export class CommunityChallengesController {
   })
   async reportComment(
     @Request() req: AuthedRequest,
-    @Param('challengeId') challengeId: string,
-    @Param('commentId') commentId: string,
+    @Param('challengeId', new ParseUUIDPipe({ version: '4' }))
+    challengeId: string,
+    @Param('commentId', new ParseUUIDPipe({ version: '4' }))
+    commentId: string,
     @Body() body: CreateReportDto,
   ) {
     return this.challenges.reportComment(

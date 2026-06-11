@@ -145,8 +145,15 @@ describe('v3-1 cross-surface containment (Finding 1)', () => {
   });
 
   describe('CommunityRepository.countUnreadCohortMessages — sub-surface rows excluded', () => {
+    type CountArg = {
+      where: {
+        plan_context_type: unknown;
+        scope: unknown;
+        deleted_at: unknown;
+      };
+    };
     it('counts only plan_context_type: null cohort messages', async () => {
-      const count = jest.fn(async () => 3);
+      const count = jest.fn<Promise<number>, [CountArg]>(async () => 3);
       const prisma = { communityMessage: { count } };
       const repository = new CommunityRepository(prisma as never);
 

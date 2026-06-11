@@ -55,6 +55,7 @@ type RepoMock = {
   listOptedInUserIds: jest.Mock;
   createComment: jest.Mock;
   listComments: jest.Mock;
+  findCommentById: jest.Mock;
 };
 type ModerationMock = { report: jest.Mock };
 type RealtimeMock = {
@@ -158,6 +159,7 @@ describe('CommunityChallengesService', () => {
       listOptedInUserIds: jest.fn(),
       createComment: jest.fn(),
       listComments: jest.fn(),
+      findCommentById: jest.fn(),
     };
     moderation = { report: jest.fn() };
     realtime = {
@@ -506,7 +508,15 @@ describe('CommunityChallengesService', () => {
       expect(repo.createComment).not.toHaveBeenCalled();
     });
 
-    it('delegates a report to the public moderation comment path', async () => {
+    it('delegates a report to moderation when the comment is bound to the challenge', async () => {
+      repo.findCommentById.mockResolvedValue({
+        id: MSG_ID,
+        workspace_id: WS_A,
+        cohort_id: null,
+        plan_context_type: 'community_challenge_comment',
+        plan_context_id: CH_A,
+        deleted_at: null,
+      } as CommunityMessage);
       moderation.report.mockResolvedValue({ item: { id: 'rep-1' } });
       await service.reportComment(member, CH_A, MSG_ID, 'inappropriate', undefined);
       expect(moderation.report).toHaveBeenCalledWith(
@@ -516,6 +526,53 @@ describe('CommunityChallengesService', () => {
         'inappropriate',
         undefined,
       );
+    });
+
+    it('404s without delegating when the comment is not bound to THIS challenge', async () => {
+      // A real, visible message — but its plan_context_id points at a DIFFERENT
+      // challenge, so the report must not be steered at it.
+      repo.findCommentById.mockResolvedValue({
+        id: MSG_ID,
+        workspace_id: WS_A,
+        cohort_id: null,
+        plan_context_type: 'community_challenge_comment',
+        plan_context_id: '00000000-0000-4000-8000-000000000999',
+        deleted_at: null,
+      } as CommunityMessage);
+      await expect(
+        service.reportComment(member, CH_A, MSG_ID, 'inappropriate', undefined),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(moderation.report).not.toHaveBeenCalled();
+    });
+
+    it('404s a plain cohort message (wrong discriminator) without delegating', async () => {
+      repo.findCommentById.mockResolvedValue({
+        id: MSG_ID,
+        workspace_id: WS_A,
+        cohort_id: null,
+        plan_context_type: null,
+        plan_context_id: null,
+        deleted_at: null,
+      } as CommunityMessage);
+      await expect(
+        service.reportComment(member, CH_A, MSG_ID, 'spam', undefined),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(moderation.report).not.toHaveBeenCalled();
+    });
+
+    it('404s a soft-deleted challenge comment without delegating', async () => {
+      repo.findCommentById.mockResolvedValue({
+        id: MSG_ID,
+        workspace_id: WS_A,
+        cohort_id: null,
+        plan_context_type: 'community_challenge_comment',
+        plan_context_id: CH_A,
+        deleted_at: NOW,
+      } as CommunityMessage);
+      await expect(
+        service.reportComment(member, CH_A, MSG_ID, 'spam', undefined),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(moderation.report).not.toHaveBeenCalled();
     });
   });
 });

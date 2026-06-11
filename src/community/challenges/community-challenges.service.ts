@@ -19,7 +19,10 @@ import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { CommunityModerationService } from '../moderation/community-moderation.service';
 import type { CommunityModerationItemResponse } from '../dto/community-moderation.dto';
-import { CommunityChallengesRepository } from './community-challenges.repository';
+import {
+  CHALLENGE_COMMENT_CONTEXT_TYPE,
+  CommunityChallengesRepository,
+} from './community-challenges.repository';
 import {
   ChallengeCommentListResponse,
   ChallengeCommentListResponseSchema,
@@ -594,8 +597,15 @@ export class CommunityChallengesService {
   /**
    * Report a challenge comment. The comment is a CommunityMessage row, so this
    * delegates to the public moderation service's existing comment path (no
-   * moderation internals are modified). readableChallenge first confirms the
-   * caller may see the challenge, then moderation re-validates the comment id.
+   * moderation internals are modified).
+   *
+   * Sub-surface binding (Finding 5): readableChallenge confirms the caller may
+   * see the challenge, then we BIND the commentId to THIS challenge before
+   * delegating — the row must be a non-deleted challenge comment
+   * (plan_context_type === CHALLENGE_COMMENT_CONTEXT_TYPE) whose
+   * plan_context_id is exactly challengeId and whose workspace/cohort match the
+   * challenge. Any mismatch returns the SAME 404, so the report endpoint can
+   * never be steered at an unrelated message while appearing challenge-scoped.
    */
   async reportComment(
     user: User,
@@ -604,7 +614,18 @@ export class CommunityChallengesService {
     reason: string,
     notes: string | undefined,
   ): Promise<CommunityModerationItemResponse> {
-    await this.readableChallenge(user, challengeId);
+    const challenge = await this.readableChallenge(user, challengeId);
+    const comment = await this.repo.findCommentById(commentId);
+    if (
+      !comment ||
+      comment.deleted_at !== null ||
+      comment.plan_context_type !== CHALLENGE_COMMENT_CONTEXT_TYPE ||
+      comment.plan_context_id !== challengeId ||
+      comment.workspace_id !== challenge.workspace_id ||
+      comment.cohort_id !== challenge.cohort_id
+    ) {
+      throw new NotFoundException(NOT_FOUND);
+    }
     return this.moderation.report(user, 'comment', commentId, reason, notes);
   }
 

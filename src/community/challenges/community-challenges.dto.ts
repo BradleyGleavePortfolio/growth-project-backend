@@ -151,8 +151,7 @@ export class CreateChallengeCommentDto {
 
 export class ListChallengesQueryDto {
   @IsOptional()
-  @IsString()
-  @MaxLength(36)
+  @IsUUID('4')
   cohort_id?: string;
 
   @IsOptional()

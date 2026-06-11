@@ -353,6 +353,18 @@ export class CommunityChallengesRepository {
       orderBy: { created_at: 'asc' },
     });
   }
+
+  /**
+   * Resolve a single CommunityMessage row by id (any discriminator) so the
+   * service can bind a reported commentId to its challenge before delegating to
+   * moderation (Finding 5). community_messages has a composite PK [id,
+   * created_at], so this uses findFirst({ where: { id } }).
+   */
+  async findCommentById(commentId: string): Promise<CommunityMessage | null> {
+    return this.prisma.communityMessage.findFirst({
+      where: { id: commentId },
+    });
+  }
 }
 
 /**
