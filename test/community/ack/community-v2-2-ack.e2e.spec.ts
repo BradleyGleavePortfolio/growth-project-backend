@@ -34,10 +34,15 @@ import { CommunityFeatureFlagGuard } from '../../../src/community/community-feat
 import { AckController } from '../../../src/community/ack/ack.controller';
 import { AckFeatureFlagGuard } from '../../../src/community/ack/ack-flag.guard';
 import { AckService } from '../../../src/community/ack/ack.service';
+import { AckRepository } from '../../../src/community/ack/ack.repository';
+import { CommunityAccessService } from '../../../src/community/community-access.service';
+import { AnalyticsService } from '../../../src/analytics/analytics.service';
 import { CommunityCoachInboxController } from '../../../src/community/inbox/community-coach-inbox.controller';
 import { CommunityCoachInboxService } from '../../../src/community/inbox/community-coach-inbox.service';
 
-const MSG_ID = 'eeeeeeee-0000-0000-0000-000000000001';
+// Valid v4 UUID: the route param is now guarded by ParseUUIDPipe({ version:
+// '4' }), so the path id must carry the v4 version/variant nibbles.
+const MSG_ID = 'eeeeeeee-0000-4000-8000-000000000001';
 const COHORT = '11111111-1111-1111-1111-111111111111';
 const COACH = { id: 'cccccccc-0000-0000-0000-00000000000a', role: 'coach' };
 const CLIENT = { id: 'dddddddd-0000-0000-0000-00000000000b', role: 'student' };
@@ -211,6 +216,34 @@ describe('community v2-2 coach ack signals (HTTP)', () => {
     });
   });
 
+  describe('param validation — ParseUUIDPipe v4 (R1)', () => {
+    beforeEach(() => {
+      process.env.FEATURE_COMMUNITY_API = 'true';
+      process.env.FEATURE_COMMUNITY_ACKS = 'true';
+    });
+
+    it('a malformed messageId → 400, service untouched', async () => {
+      const res = await call('POST', '/api/community/ack/not-a-uuid/seen');
+      expect(res.status).toBe(400);
+      expect(ackService.applyTransition).not.toHaveBeenCalled();
+    });
+
+    it('a well-formed but non-v4 messageId → 400, service untouched', async () => {
+      const res = await call(
+        'POST',
+        '/api/community/ack/eeeeeeee-0000-0000-0000-000000000001/acked',
+      );
+      expect(res.status).toBe(400);
+      expect(ackService.applyTransition).not.toHaveBeenCalled();
+    });
+
+    it('a valid v4 messageId reaches the service (200)', async () => {
+      const res = await call('POST', `/api/community/ack/${MSG_ID}/replied`);
+      expect(res.status).toBe(200);
+      expect(ackService.applyTransition).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('inbox shape under the flag', () => {
     const path = `/api/community/me/coach-inbox`;
 
@@ -231,5 +264,163 @@ describe('community v2-2 coach ack signals (HTTP)', () => {
       expect(res.status).toBe(200);
       expect(res.body.items[0]).not.toHaveProperty('ack');
     });
+  });
+});
+
+/**
+ * v2-2 ack non-leak + eligibility at the HTTP boundary (R1).
+ *
+ * Wires the REAL AckService (so the authorize() non-leak + client-authored
+ * eligibility rules execute) behind the real route + full guard chain, with
+ * the repository / access / analytics dependencies mocked (no DB). Proves that
+ * an absent message, a foreign-workspace message, and an ineligible
+ * (coach/owner-authored) message ALL surface the SAME 404 over HTTP — no
+ * 403-vs-404 existence oracle.
+ */
+describe('community v2-2 ack non-leak + eligibility (HTTP, real service)', () => {
+  let app: INestApplication;
+  let baseUrl: string;
+  const WORKSPACE = '22222222-2222-2222-2222-222222222222';
+
+  const repo = {
+    findById: jest.fn(),
+    findSenderRole: jest.fn(),
+    stampAck: jest.fn(),
+  };
+  const access = { isWorkspaceCoach: jest.fn() };
+  const analytics = { capture: jest.fn() };
+
+  function rowFor(overrides: Record<string, unknown> = {}) {
+    return {
+      id: MSG_ID,
+      created_at: new Date('2026-01-01T00:00:00.000Z'),
+      workspace_id: WORKSPACE,
+      cohort_id: COHORT,
+      scope: 'cohort',
+      sender_id: CLIENT.id,
+      deleted_at: null,
+      coach_seen_at: null,
+      coach_acked_at: null,
+      coach_replied_at: null,
+      ...overrides,
+    };
+  }
+
+  async function call(method: string, path: string): Promise<HttpResult> {
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        `${baseUrl}${path}`,
+        { method, headers: { 'content-type': 'application/json' } },
+        (res) => {
+          let data = '';
+          res.on('data', (c) => (data += c));
+          res.on('end', () => {
+            let parsed: any = null;
+            try {
+              parsed = data.length ? JSON.parse(data) : null;
+            } catch {
+              parsed = data;
+            }
+            resolve({ status: res.statusCode ?? 0, body: parsed });
+          });
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+  }
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      controllers: [AckController],
+      providers: [
+        AckService,
+        RolesGuard,
+        CommunityFeatureFlagGuard,
+        AckFeatureFlagGuard,
+        Reflector,
+        { provide: AckRepository, useValue: repo },
+        { provide: CommunityAccessService, useValue: access },
+        { provide: AnalyticsService, useValue: analytics },
+      ],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue(new StubJwtAuthGuard())
+      .compile();
+
+    app = moduleRef.createNestApplication();
+    app.setGlobalPrefix('api');
+    await app.init();
+    await app.listen(0);
+    const addr = app.getHttpServer().address();
+    const port = typeof addr === 'object' && addr ? addr.port : 0;
+    baseUrl = `http://127.0.0.1:${port}`;
+  });
+
+  afterAll(async () => {
+    if (app) await app.close();
+  });
+
+  beforeEach(() => {
+    process.env.FEATURE_COMMUNITY_API = 'true';
+    process.env.FEATURE_COMMUNITY_ACKS = 'true';
+    CURRENT_USER = { ...COACH };
+    jest.clearAllMocks();
+    access.isWorkspaceCoach.mockResolvedValue(true);
+    repo.findSenderRole.mockResolvedValue('student');
+  });
+
+  it('absent message → 404, no stamp', async () => {
+    repo.findById.mockResolvedValue(null);
+    const res = await call('POST', `/api/community/ack/${MSG_ID}/seen`);
+    expect(res.status).toBe(404);
+    expect(repo.stampAck).not.toHaveBeenCalled();
+  });
+
+  it('foreign-workspace message → SAME 404 (no 403 oracle)', async () => {
+    repo.findById.mockResolvedValue(rowFor());
+    access.isWorkspaceCoach.mockResolvedValue(false);
+    const res = await call('POST', `/api/community/ack/${MSG_ID}/seen`);
+    expect(res.status).toBe(404);
+    expect(repo.stampAck).not.toHaveBeenCalled();
+  });
+
+  it('coach-authored message → 404 (ineligible, non-leaking)', async () => {
+    repo.findById.mockResolvedValue(rowFor({ sender_id: COACH.id }));
+    repo.findSenderRole.mockResolvedValue('coach');
+    const res = await call('POST', `/api/community/ack/${MSG_ID}/acked`);
+    expect(res.status).toBe(404);
+    expect(repo.stampAck).not.toHaveBeenCalled();
+  });
+
+  it('owner/system-authored message → 404 (ineligible, non-leaking)', async () => {
+    repo.findById.mockResolvedValue(rowFor());
+    repo.findSenderRole.mockResolvedValue('owner');
+    const res = await call('POST', `/api/community/ack/${MSG_ID}/replied`);
+    expect(res.status).toBe(404);
+    expect(repo.stampAck).not.toHaveBeenCalled();
+  });
+
+  it('absent and foreign messages return identical 404 bodies (no oracle)', async () => {
+    repo.findById.mockResolvedValueOnce(null);
+    const absent = await call('POST', `/api/community/ack/${MSG_ID}/seen`);
+    repo.findById.mockResolvedValueOnce(rowFor());
+    access.isWorkspaceCoach.mockResolvedValue(false);
+    const foreign = await call('POST', `/api/community/ack/${MSG_ID}/seen`);
+    expect(absent.status).toBe(foreign.status);
+    expect(absent.body).toEqual(foreign.body);
+  });
+
+  it('client-authored, owned, eligible message → 200 (stamps + emits)', async () => {
+    repo.findById.mockResolvedValue(rowFor());
+    repo.stampAck.mockResolvedValue({
+      advanced: true,
+      message: rowFor({ coach_seen_at: new Date('2026-01-02T00:00:00.000Z') }),
+    });
+    const res = await call('POST', `/api/community/ack/${MSG_ID}/seen`);
+    expect(res.status).toBe(200);
+    expect(res.body.ack.state).toBe('seen');
+    expect(repo.stampAck).toHaveBeenCalledTimes(1);
+    expect(analytics.capture).toHaveBeenCalledTimes(1);
   });
 });
