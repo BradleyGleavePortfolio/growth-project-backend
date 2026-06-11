@@ -1,4 +1,4 @@
-import { VoicePolicyService } from '../../src/roman/voice/voice-policy.service';
+import { VoicePolicyService } from '../voice-policy.service';
 import {
   AVATAR_CROP_BY_SURFACE,
   AvatarCrop,
@@ -7,11 +7,11 @@ import {
   ROMAN_V2,
   SURFACE_KEYS,
   SurfaceKey,
-} from '../../src/roman/voice/voice-policy.constants';
+} from '../voice-policy.constants';
 import {
   FEATURE_ROMAN_COPY_V2_ENV,
   isRomanCopyV2Enabled,
-} from '../../src/roman/voice/voice-policy.feature';
+} from '../voice-policy.feature';
 
 /**
  * Roman Phase 2 — VoicePolicyService contract suite.
@@ -19,7 +19,8 @@ import {
  * Covers every gate the builder brief requires:
  *   - flag OFF returns LEGACY, flag ON returns ROMAN_V2 (per surface);
  *   - the LEGACY map is byte-for-byte the pinned snapshot (no drift);
- *   - no exclamation point / emoji / "Oops" / "sonnet" in any ROMAN_V2 string;
+ *   - no exclamation point / emoji / soft-error filler / forbidden model name
+ *     in any ROMAN_V2 string;
  *   - face+voice: copyFor() ALWAYS returns non-empty text AND a valid crop;
  *   - money-surface guard: dunning / lockout / paywall / billing-update never
  *     return avatar_crop="smile";

@@ -1,10 +1,10 @@
-import { NotificationsService } from '../../src/notifications/notifications.service';
-import { VoicePolicyService } from '../../src/roman/voice/voice-policy.service';
+import { NotificationsService } from '../../../notifications/notifications.service';
+import { VoicePolicyService } from '../voice-policy.service';
 import {
   LEGACY,
   ROMAN_V2,
-} from '../../src/roman/voice/voice-policy.constants';
-import { FEATURE_ROMAN_COPY_V2_ENV } from '../../src/roman/voice/voice-policy.feature';
+} from '../voice-policy.constants';
+import { FEATURE_ROMAN_COPY_V2_ENV } from '../voice-policy.feature';
 
 /**
  * Roman Phase 2 — integration: the notifications list empty-state copy routes

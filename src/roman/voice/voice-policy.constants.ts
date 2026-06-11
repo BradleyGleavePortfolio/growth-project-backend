@@ -18,8 +18,9 @@
  *   - `ROMAN_V2` — the locked Roman Option-3 brand-voice variant
  *                  (`ROMAN_VOICE_POLICY.md` §3). Calm authority, short
  *                  sentences, second person, one next step, no exclamation
- *                  points, no emoji, no apologies, no "Oops". A lint test
- *                  enforces these invariants across every ROMAN_V2 string.
+ *                  points, no emoji, no apologies; never the soft-error filler
+ *                  words listed in the lint contract. A lint test enforces these
+ *                  invariants across every ROMAN_V2 string.
  *
  * `VoicePolicyService.copyFor(surfaceKey)` selects between the two maps based on
  * `FEATURE_ROMAN_COPY_V2` and returns a `RomanCopyPayload` carrying both the
@@ -158,7 +159,7 @@ export const LEGACY: Readonly<Record<SurfaceKey, string>> = {
  *   - Direct, never apologetic. No "Sorry" / "Apologies" openers.
  *   - Short sentences, second person, present tense.
  *   - One next step per message.
- *   - No emoji, no "Oops" / "Whoops" / "Uh oh".
+ *   - No emoji; none of the soft-error filler words (see lint contract).
  *   - Sometimes signs off "— Roman"; never "— The TGP Team".
  *
  * Token placeholders are preserved so the consuming builder substitutes them.

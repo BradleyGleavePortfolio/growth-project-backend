@@ -1,13 +1,13 @@
-import { DunningV2Dispatcher } from '../../src/checkout/dunning-v2/dunning-v2.dispatcher';
-import { DunningEscalationClassifier } from '../../src/checkout/dunning-v2/dunning-escalation.classifier';
-import { DunningV2Renderer } from '../../src/checkout/dunning-v2/dunning-v2.renderer';
-import { VoicePolicyService } from '../../src/roman/voice/voice-policy.service';
+import { DunningV2Dispatcher } from '../../../checkout/dunning-v2/dunning-v2.dispatcher';
+import { DunningEscalationClassifier } from '../../../checkout/dunning-v2/dunning-escalation.classifier';
+import { DunningV2Renderer } from '../../../checkout/dunning-v2/dunning-v2.renderer';
+import { VoicePolicyService } from '../voice-policy.service';
 import {
   LEGACY,
   ROMAN_V2,
-} from '../../src/roman/voice/voice-policy.constants';
-import { FEATURE_DUNNING_V2_ENV } from '../../src/checkout/dunning-v2/dunning-v2.feature';
-import { FEATURE_ROMAN_COPY_V2_ENV } from '../../src/roman/voice/voice-policy.feature';
+} from '../voice-policy.constants';
+import { FEATURE_DUNNING_V2_ENV } from '../../../checkout/dunning-v2/dunning-v2.feature';
+import { FEATURE_ROMAN_COPY_V2_ENV } from '../voice-policy.feature';
 
 /**
  * Roman Phase 2 — integration: the dunning dispatcher's in-app client push for
@@ -88,12 +88,23 @@ describe('Dunning dispatcher → VoicePolicyService (Phase 2 in-app copy)', () =
 
   it('flag OFF → Day 0 push body is the legacy string (token-substituted)', async () => {
     delete process.env[FEATURE_ROMAN_COPY_V2_ENV];
-    const notifications = new FakeNotifications();
-    const dispatcher = buildDispatcher(notifications);
-    await dispatcher.dispatchStep(DAY0_CTX);
-    expect(notifications.pushes).toHaveLength(1);
-    const expected = LEGACY.dunning_day0.replace('{firstName}', 'Sam');
-    expect(notifications.pushes[0].body).toBe(expected);
+    // The flag-OFF branch preserves the legacy renderer's per-session
+    // QuipRotation (client money-surface quip rate 0.125). The LEGACY string is
+    // byte-equal to the renderer's `straight` (non-quip) variant, so pin the
+    // rng above the quip threshold to deterministically assert the straight
+    // legacy body rather than the occasional `dryRoman` quip. Production
+    // behaviour is unchanged; only the test's RNG is made deterministic.
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.99);
+    try {
+      const notifications = new FakeNotifications();
+      const dispatcher = buildDispatcher(notifications);
+      await dispatcher.dispatchStep(DAY0_CTX);
+      expect(notifications.pushes).toHaveLength(1);
+      const expected = LEGACY.dunning_day0.replace('{firstName}', 'Sam');
+      expect(notifications.pushes[0].body).toBe(expected);
+    } finally {
+      randomSpy.mockRestore();
+    }
   });
 
   it('flag ON → Day 0 push body is the Roman variant (token-substituted)', async () => {

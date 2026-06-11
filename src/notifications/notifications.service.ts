@@ -20,10 +20,7 @@ import {
   PushDeliveryResult,
 } from './push-delivery.types';
 import { VoicePolicyService } from '../roman/voice/voice-policy.service';
-import {
-  RomanCopyPayload,
-  SurfaceKey,
-} from '../roman/voice/voice-policy.constants';
+import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
 
 // Phase 6B: PushPayload is the minimal envelope CoachAlertsService.tryPush
 // passes through. It intentionally contains no PII — only the alert
@@ -389,75 +386,6 @@ export class NotificationsService {
       text: 'You have no notifications.',
       avatar_crop: 'neutral',
       surface_key: 'empty_notifications',
-      voice_variant: 'legacy',
-    };
-  }
-
-  /**
-   * Phase 2 paywall copy builder. The single in-app source of truth for the
-   * paywall surface, routed through the Roman Voice Policy
-   * (FEATURE_ROMAN_COPY_V2-gated). Callers that render the paywall read both
-   * the `text` and the `avatar_crop` from this payload. Throws (never returns
-   * blank copy) when the policy is wired but the surface is unknown.
-   */
-  paywallCopy(): RomanCopyPayload {
-    return this.surfaceCopy('paywall', {
-      text: 'This content requires an active subscription. Choose a plan to continue.',
-      avatar_crop: 'neutral',
-    });
-  }
-
-  /**
-   * Phase 2 billing-update prompt copy builder (card expiry / pre-retry card
-   * decline). Money surface — the avatar crop is always `neutral`, never
-   * `smile` (ROMAN_VOICE_POLICY §4).
-   */
-  billingUpdateCopy(): RomanCopyPayload {
-    return this.surfaceCopy('billing_update', {
-      text: 'Your payment method needs attention. Please update your card to avoid an interruption to your access.',
-      avatar_crop: 'neutral',
-    });
-  }
-
-  /**
-   * Phase 2 ED.3 first-payment "wow" copy builder. Fired on the first
-   * successful charge. Celebratory surface — the avatar crop is `smile`.
-   */
-  firstPaymentCopy(): RomanCopyPayload {
-    return this.surfaceCopy('first_payment_ed3', {
-      text: 'Your payment was successful. Your subscription is now active.',
-      avatar_crop: 'smile',
-    });
-  }
-
-  /**
-   * Phase 2 onboarding welcome copy builder (post-signup first-run message).
-   * Celebratory surface — the avatar crop is `smile`.
-   */
-  onboardingWelcomeCopy(): RomanCopyPayload {
-    return this.surfaceCopy('onboarding_welcome', {
-      text: 'Welcome to The Growth Project. Your account is ready and your coach has been notified.',
-      avatar_crop: 'smile',
-    });
-  }
-
-  /**
-   * Shared resolver for the four Phase 2 surfaces that have no DI-less default
-   * builder of their own. Routes through the Voice Policy when wired, otherwise
-   * returns the supplied pinned legacy fallback so a missing DI never ships a
-   * blank notification (no silent failure).
-   */
-  private surfaceCopy(
-    surfaceKey: SurfaceKey,
-    fallback: { text: string; avatar_crop: RomanCopyPayload['avatar_crop'] },
-  ): RomanCopyPayload {
-    if (this.voice) {
-      return this.voice.copyFor(surfaceKey);
-    }
-    return {
-      text: fallback.text,
-      avatar_crop: fallback.avatar_crop,
-      surface_key: surfaceKey,
       voice_variant: 'legacy',
     };
   }

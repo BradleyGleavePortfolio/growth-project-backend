@@ -1,7 +1,16 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  roots: ['<rootDir>/test'],
+  // `test/` holds the legacy/integration suites. `src/roman/voice` is added as
+  // a SECOND, NARROWLY-SCOPED root so the Roman Phase 2 voice specs colocated
+  // under src/roman/voice/__tests__/ are discovered (G9 requires the voice
+  // specs to live in the source tree, and `npm test -- src/roman/voice` must
+  // find them). The root is intentionally NOT the whole `src/` tree: dozens of
+  // other src-colocated *.spec.ts files were never part of this default suite
+  // (they predate this config and some need a live DB), so widening to all of
+  // `src/` would silently pull unrelated, possibly-red suites into the
+  // build-and-test lane. ts-jest transforms both roots identically.
+  roots: ['<rootDir>/test', '<rootDir>/src/roman/voice'],
   testRegex: '\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'mjs', 'json'],
   transform: {

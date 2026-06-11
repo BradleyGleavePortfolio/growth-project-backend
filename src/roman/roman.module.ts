@@ -18,16 +18,10 @@ import { RomanController } from './roman.controller';
 import { RomanService } from './roman.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { romanAnthropicClientProvider } from './anthropic-client.provider';
-import { VoiceModule } from './voice/voice.module';
 
-// Phase 2 — `VoiceModule` (the Roman Option-3 copy policy) is imported and
-// re-exported here so consumers that already depend on Roman get the policy
-// for free. It reads its own `FEATURE_ROMAN_COPY_V2` switch, independent of the
-// Phase 1 chat flag, so the two phases roll out separately.
 @Module({
-  imports: [VoiceModule],
   controllers: [RomanController],
   providers: [RomanService, RomanFeatureGuard, romanAnthropicClientProvider],
-  exports: [RomanService, VoiceModule],
+  exports: [RomanService],
 })
 export class RomanModule {}
