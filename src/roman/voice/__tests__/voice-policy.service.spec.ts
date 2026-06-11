@@ -196,9 +196,10 @@ describe('VoicePolicyService', () => {
     });
   });
 
-  describe('there are exactly 10 surface entries (7 logical surfaces)', () => {
-    it('SURFACE_KEYS has 10 entries and both maps cover them', () => {
-      expect(SURFACE_KEYS).toHaveLength(10);
+  describe('the surface union covers Phase 2 (10) + coach community (5) = 15', () => {
+    it('SURFACE_KEYS has 15 entries and both maps cover them', () => {
+      // 10 Phase 2 notification surfaces ⋃ 5 v1-6 coach-community surfaces.
+      expect(SURFACE_KEYS).toHaveLength(15);
       for (const key of SURFACE_KEYS) {
         expect(LEGACY[key]).toBeDefined();
         expect(ROMAN_V2[key]).toBeDefined();

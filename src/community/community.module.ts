@@ -34,6 +34,9 @@ import { CommunityCohortMembersRepository } from './cohorts/community-cohort-mem
 import { CommunityCoachInboxController } from './inbox/community-coach-inbox.controller';
 import { CommunityCoachInboxService } from './inbox/community-coach-inbox.service';
 import { CommunityCoachInboxRepository } from './inbox/community-coach-inbox.repository';
+// v1-6 coach-community empty-state copy (Roman face+voice contract).
+import { CommunityCoachEmptyStatesController } from './inbox/community-coach-empty-states.controller';
+import { VoicePolicyService } from '../roman/voice/voice-policy.service';
 import { AuthModule } from '../auth/auth.module';
 import { CommunityRealtimeModule } from './realtime/community-realtime.module';
 import { CommunityNotificationsModule } from './notifications/community-notifications.module';
@@ -59,6 +62,7 @@ import { PlanContextModule } from './plan-context/plan-context.module';
     CommunityCohortWriteController,
     CommunityCohortMembersController,
     CommunityCoachInboxController,
+    CommunityCoachEmptyStatesController,
   ],
   providers: [
     CommunityService,
@@ -84,6 +88,7 @@ import { PlanContextModule } from './plan-context/plan-context.module';
     CommunityCohortMembersRepository,
     CommunityCoachInboxService,
     CommunityCoachInboxRepository,
+    VoicePolicyService,
   ],
   exports: [],
 })
