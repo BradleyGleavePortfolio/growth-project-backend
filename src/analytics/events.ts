@@ -75,6 +75,14 @@ export const Events = {
   // ── Client logging ───────────────────────────────────────────────────
   /** Client logged a food entry (one event per logFood call). */
   CLIENT_FOOD_LOGGED: 'client_food_logged',
+
+  // ── Workout builder (MWB-3 autosave/undo) ────────────────────────────
+  /**
+   * MWB-3 (spec §5.2): the revision-prune cron deleted one or more stale
+   * WorkoutPlanRevision rows for a plan beyond the 30-revision retention limit.
+   * Properties: { plan_id, deleted_count }. Emitted only when deleted_count > 0.
+   */
+  MWB_AUTOSAVE_REVISION_PRUNED: 'mwb_autosave_revision_pruned',
 } as const;
 
 export type EventName = (typeof Events)[keyof typeof Events];
