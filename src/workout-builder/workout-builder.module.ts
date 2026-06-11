@@ -28,6 +28,10 @@ import {
 } from './workout-builder.controller';
 import { WorkoutBuilderService } from './workout-builder.service';
 import { MwbTemplatesFeatureGuard } from './mwb-templates-feature.guard';
+import { WorkoutBuilderAutosaveController } from './workout-builder-autosave.controller';
+import { WorkoutBuilderAutosaveService } from './workout-builder-autosave.service';
+import { MwbAutosaveUndoFeatureGuard } from './workout-builder-autosave-feature.guard';
+import { WorkoutBuilderRevisionPruneCron } from './workout-builder-revision-prune.cron';
 
 // PR-11 — PackagesModule is imported with forwardRef so DripTriggerService
 // is reachable from WorkoutBuilderService.completeAssignment to fire
@@ -52,8 +56,21 @@ import { MwbTemplatesFeatureGuard } from './mwb-templates-feature.guard';
     WorkoutBuilderController,
     WorkoutProgramController,
     AssignmentController,
+    // MWB-3 (§5/§6) — autosave + real-undo surface. Stays mounted at all times;
+    // MwbAutosaveUndoFeatureGuard 404s the handlers while the flag is off.
+    WorkoutBuilderAutosaveController,
   ],
-  providers: [WorkoutBuilderService, RolesGuard, MwbTemplatesFeatureGuard],
-  exports: [WorkoutBuilderService],
+  providers: [
+    WorkoutBuilderService,
+    RolesGuard,
+    MwbTemplatesFeatureGuard,
+    // MWB-3 — autosave/undo domain service, its handler-level feature guard, and
+    // the 6-hourly revision-prune cron (operator decision C: retain 30). The
+    // cron self-checks FEATURE_MWB_AUTOSAVE_UNDO and no-ops when off.
+    WorkoutBuilderAutosaveService,
+    MwbAutosaveUndoFeatureGuard,
+    WorkoutBuilderRevisionPruneCron,
+  ],
+  exports: [WorkoutBuilderService, WorkoutBuilderAutosaveService],
 })
 export class WorkoutBuilderModule {}
