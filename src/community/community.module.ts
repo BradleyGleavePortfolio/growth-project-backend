@@ -36,6 +36,11 @@ import { CommunityCoachInboxService } from './inbox/community-coach-inbox.servic
 import { CommunityCoachInboxRepository } from './inbox/community-coach-inbox.repository';
 // v1-6 coach-community empty-state copy (Roman face+voice contract).
 import { CommunityCoachEmptyStatesController } from './inbox/community-coach-empty-states.controller';
+// v3-1 challenges: join, progress, opt-in leaderboard, comments, coach CRUD.
+import { CommunityChallengesController } from './challenges/community-challenges.controller';
+import { CommunityChallengesService } from './challenges/community-challenges.service';
+import { CommunityChallengesRepository } from './challenges/community-challenges.repository';
+import { CommunityChallengesEnabledGuard } from './challenges/community-challenges-flag.guard';
 import { VoicePolicyService } from '../roman/voice/voice-policy.service';
 import { AuthModule } from '../auth/auth.module';
 import { CommunityRealtimeModule } from './realtime/community-realtime.module';
@@ -63,6 +68,7 @@ import { PlanContextModule } from './plan-context/plan-context.module';
     CommunityCohortMembersController,
     CommunityCoachInboxController,
     CommunityCoachEmptyStatesController,
+    CommunityChallengesController,
   ],
   providers: [
     CommunityService,
@@ -89,6 +95,9 @@ import { PlanContextModule } from './plan-context/plan-context.module';
     CommunityCoachInboxService,
     CommunityCoachInboxRepository,
     VoicePolicyService,
+    CommunityChallengesService,
+    CommunityChallengesRepository,
+    CommunityChallengesEnabledGuard,
   ],
   exports: [],
 })
