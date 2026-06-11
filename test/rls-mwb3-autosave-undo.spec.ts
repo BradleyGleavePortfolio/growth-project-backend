@@ -35,6 +35,10 @@ import { AnalyticsService } from '../src/analytics/analytics.service';
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 import { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
 import { WorkoutBuilderAutosaveService } from '../src/workout-builder/workout-builder-autosave.service';
+import {
+  MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV,
+  computeLockToken,
+} from '../src/workout-builder/lock-token.helper';
 import { bootstrapTestSchema } from './utils/bootstrap-test-schema';
 import { resetPublicSchema } from './utils/reset-public-schema';
 
@@ -446,8 +450,11 @@ liveDescribe('MWB-3 #13 — WorkoutPlanRevision RLS (sub-coach cross-tenant)', (
 
 const COACH_ID = 'mwb3-conc-coach';
 const PLAN_ID = 'mwb3-conc-plan';
-// 16 lowercase hex chars (§6.2 lock-token shape).
-const TOKEN = 'abcdef0123456789';
+// Deterministic HMAC test secret for the optimistic-lock token (§6.2). The
+// token is no longer a static literal: it is computeLockToken(planId, version,
+// head_revision_id), so each test derives the EXPECTED token from the persisted
+// plan state it just created.
+const LOCK_SECRET = 'mwb3-test-lock-secret-0123456789abcdef';
 
 function insertOp(externalId: string) {
   // Insert (no row_id) one exercise row — matches UpsertExerciseOpSchema /
@@ -472,6 +479,11 @@ const settle = (p: Promise<unknown>) =>
 liveDescribe('MWB-3 #1/#8 — autosave concurrency (real service, live DB)', () => {
   let prisma: PrismaClient;
   let autosave: WorkoutBuilderAutosaveService;
+  // The valid optimistic-lock token for the freshly-seeded plan at version 1
+  // with head = rev0 (revision_index 0). Recomputed each beforeEach from the
+  // actual persisted state so the parallel autosaves below pass the lock gate
+  // and the conflict is decided purely by the base-index / Serializable race.
+  let validToken: string;
 
   beforeAll(async () => {
     prisma = new PrismaClient({
@@ -491,17 +503,21 @@ liveDescribe('MWB-3 #1/#8 — autosave concurrency (real service, live DB)', () 
       prisma as unknown as PrismaService,
       builder,
       new AnalyticsService(),
+      scope,
     );
     process.env.FEATURE_MWB_AUTOSAVE_UNDO = 'true';
+    process.env[MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV] = LOCK_SECRET;
   }, 120_000);
 
   afterAll(async () => {
     delete process.env.FEATURE_MWB_AUTOSAVE_UNDO;
+    delete process.env[MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV];
     if (prisma) await prisma.$disconnect();
   });
 
   beforeEach(async () => {
     process.env.FEATURE_MWB_AUTOSAVE_UNDO = 'true';
+    process.env[MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV] = LOCK_SECRET;
     // Clean slate, children first (FK order).
     await prisma.workoutPlanRevision.deleteMany({});
     await prisma.workoutPlanExercise.deleteMany({});
@@ -540,6 +556,8 @@ liveDescribe('MWB-3 #1/#8 — autosave concurrency (real service, live DB)', () 
       where: { id: PLAN_ID },
       data: { head_revision_id: rev0.id, version: 1 },
     });
+    // Derive the valid token for the seeded state (version 1, head = rev0).
+    validToken = computeLockToken(PLAN_ID, 1, rev0.id);
   });
 
   it('#1/#8 two parallel autosaves at base 0: exactly one commits, the other gets a typed 409', async () => {
@@ -550,7 +568,7 @@ liveDescribe('MWB-3 #1/#8 — autosave concurrency (real service, live DB)', () 
           { userId: COACH_ID },
           {
             base_revision_index: 0,
-            lock_token: TOKEN,
+            lock_token: validToken,
             ops: [insertOp('squat')],
             cause: 'manual_edit',
           },
@@ -562,7 +580,7 @@ liveDescribe('MWB-3 #1/#8 — autosave concurrency (real service, live DB)', () 
           { userId: COACH_ID },
           {
             base_revision_index: 0,
-            lock_token: TOKEN,
+            lock_token: validToken,
             ops: [insertOp('bench')],
             cause: 'manual_edit',
           },

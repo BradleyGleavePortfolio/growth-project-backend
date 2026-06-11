@@ -42,6 +42,10 @@ import {
   AutosaveConflictDto,
   LOCK_TOKEN_RE,
 } from '../src/workout-builder/workout-builder-autosave.dto';
+import {
+  MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV,
+  computeLockToken,
+} from '../src/workout-builder/lock-token.helper';
 import { bootstrapTestSchema } from './utils/bootstrap-test-schema';
 import { resetPublicSchema } from './utils/reset-public-schema';
 
@@ -165,6 +169,7 @@ describe('#7 service layer re-checks the flag (defence-in-depth)', () => {
     explodingPrisma,
     {} as unknown as WorkoutBuilderService,
     {} as unknown as AnalyticsService,
+    {} as unknown as SubCoachScopeService,
   );
 
   it('applyAutosave throws 404 and never touches the DB when the flag is OFF', async () => {
@@ -221,7 +226,15 @@ const COACH_ID = 'mwb3-ctl-coach';
 const OUTSIDE_SUBCOACH_ID = 'mwb3-ctl-outside-subcoach';
 const OTHER_COACH_ID = 'mwb3-ctl-other-coach';
 const PLAN_ID = '22222222-2222-4222-8222-222222222222';
-const TOKEN = '0123456789abcdef';
+// Deterministic HMAC test secret for the optimistic-lock token (§6.2). The
+// lock_token is no longer a static literal — it is computeLockToken(planId,
+// version, head_revision_id) over the PERSISTED plan state — so tests derive
+// the EXPECTED token from the live row via the tokenFor() helper below.
+const LOCK_SECRET = 'mwb3-test-lock-secret-0123456789abcdef';
+// A syntactically valid (LOCK_TOKEN_RE) but WRONG token, used only where the
+// authorization gate (which runs BEFORE the lock check) is expected to reject
+// the request first, so the token value is never actually evaluated.
+const WRONG_TOKEN = '0123456789abcdef';
 
 liveDescribe('Autosave/Undo authorization + conflict (live DB)', () => {
   let prisma: PrismaClient;
@@ -243,15 +256,30 @@ liveDescribe('Autosave/Undo authorization + conflict (live DB)', () => {
       prisma as unknown as PrismaService,
       builder,
       new AnalyticsService(),
+      scope,
     );
   }, 120_000);
 
   afterAll(async () => {
+    delete process.env[MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV];
     if (prisma) await prisma.$disconnect();
   });
 
+  // Derive the CURRENT valid lock token for a plan straight from its persisted
+  // optimistic-concurrency state (version + head_revision_id) — exactly what
+  // the service re-derives server-side. A test seeds/advances the plan, then
+  // calls this to get the token the next request must echo.
+  const tokenFor = async (planId: string): Promise<string> => {
+    const plan = await prisma.workoutPlan.findUniqueOrThrow({
+      where: { id: planId },
+      select: { version: true, head_revision_id: true },
+    });
+    return computeLockToken(planId, plan.version, plan.head_revision_id!);
+  };
+
   beforeEach(async () => {
     process.env.FEATURE_MWB_AUTOSAVE_UNDO = 'true';
+    process.env[MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV] = LOCK_SECRET;
     await prisma.workoutPlanRevision.deleteMany({});
     await prisma.workoutPlanExercise.deleteMany({});
     await prisma.workoutPlan.deleteMany({});
@@ -330,6 +358,9 @@ liveDescribe('Autosave/Undo authorization + conflict (live DB)', () => {
   });
 
   // ── Matrix #6: sub-coach scope honoured (403) ─────────────────────────────
+  // The authorization gate runs BEFORE the optimistic-lock check, so these
+  // forbidden callers are rejected regardless of the token value — WRONG_TOKEN
+  // documents that the 403 is the auth wall, not a lock mismatch.
   it('#6 an out-of-scope sub-coach gets 403 on autosave', async () => {
     await expect(
       autosave.applyAutosave(
@@ -337,7 +368,7 @@ liveDescribe('Autosave/Undo authorization + conflict (live DB)', () => {
         { userId: OUTSIDE_SUBCOACH_ID },
         {
           base_revision_index: 0,
-          lock_token: TOKEN,
+          lock_token: WRONG_TOKEN,
           ops: [insertOp('squat')],
           cause: 'manual_edit',
         },
@@ -348,12 +379,13 @@ liveDescribe('Autosave/Undo authorization + conflict (live DB)', () => {
   it('#6 an out-of-scope sub-coach gets 403 on undo', async () => {
     // Advance the head once (as the owner) so there is an earlier index to
     // target — proving the 403 is the authorization gate, not an empty history.
+    // The owner's own autosave must carry the VALID derived token.
     await autosave.applyAutosave(
       PLAN_ID,
       { userId: COACH_ID },
       {
         base_revision_index: 0,
-        lock_token: TOKEN,
+        lock_token: await tokenFor(PLAN_ID),
         ops: [insertOp('squat')],
         cause: 'manual_edit',
       },
@@ -374,7 +406,7 @@ liveDescribe('Autosave/Undo authorization + conflict (live DB)', () => {
         { userId: OTHER_COACH_ID },
         {
           base_revision_index: 0,
-          lock_token: TOKEN,
+          lock_token: WRONG_TOKEN,
           ops: [insertOp('squat')],
           cause: 'manual_edit',
         },
@@ -384,13 +416,15 @@ liveDescribe('Autosave/Undo authorization + conflict (live DB)', () => {
 
   // ── Matrix #12: lock_token rotates on conflict, retry succeeds ────────────
   it('#12 a stale base_revision_index yields 409 with a fresh token; retry succeeds', async () => {
-    // First edit advances head 0 -> 1.
+    // First edit advances head 0 -> 1. It carries the VALID token derived from
+    // the seeded state (version 1, head = initial revision).
+    const firstToken = await tokenFor(PLAN_ID);
     const first = await autosave.applyAutosave(
       PLAN_ID,
       { userId: COACH_ID },
       {
         base_revision_index: 0,
-        lock_token: TOKEN,
+        lock_token: firstToken,
         ops: [insertOp('squat')],
         cause: 'manual_edit',
       },
@@ -398,8 +432,13 @@ liveDescribe('Autosave/Undo authorization + conflict (live DB)', () => {
     expect(first.head_revision_index).toBe(1);
     expect(first.lock_token).toMatch(LOCK_TOKEN_RE);
 
-    // A second caller still believes head is 0 (stale) -> 409 conflict that
-    // carries the CURRENT head index and a freshly rotated lock_token.
+    // A second caller carries the CURRENT valid lock token (the plan advanced,
+    // so the token rotated) but still believes head is 0 (a STALE base index).
+    // The lock-token gate passes; the base-index assert fails -> a typed 409
+    // 'autosave_conflict_retry' carrying the current head index + fresh token.
+    // (Using the current token isolates this test to the base-index path; the
+    // separate stale-TOKEN path is covered by the dedicated lock-stale spec.)
+    const staleBaseToken = await tokenFor(PLAN_ID);
     let conflict: ConflictException | undefined;
     try {
       await autosave.applyAutosave(
@@ -407,7 +446,7 @@ liveDescribe('Autosave/Undo authorization + conflict (live DB)', () => {
         { userId: COACH_ID },
         {
           base_revision_index: 0,
-          lock_token: TOKEN,
+          lock_token: staleBaseToken,
           ops: [insertOp('bench')],
           cause: 'manual_edit',
         },
@@ -421,7 +460,7 @@ liveDescribe('Autosave/Undo authorization + conflict (live DB)', () => {
     expect(body.head_revision_index).toBe(1);
     expect(body.lock_token).toMatch(LOCK_TOKEN_RE);
     // The rotated token differs from the one the client sent.
-    expect(body.lock_token).not.toBe(TOKEN);
+    expect(body.lock_token).not.toBe(staleBaseToken);
 
     // The client rebases to the conflict's head index + retries with the new
     // token and succeeds (head 1 -> 2).

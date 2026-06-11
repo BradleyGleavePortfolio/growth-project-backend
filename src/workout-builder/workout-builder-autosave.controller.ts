@@ -73,7 +73,9 @@ export class WorkoutBuilderAutosaveController {
   })
   @ApiResponse({
     status: 409,
-    description: 'autosave_conflict_retry — stale base_revision_index.',
+    description:
+      'autosave_lock_stale (stale lock_token) or autosave_conflict_retry ' +
+      '(stale base_revision_index / serialization conflict).',
   })
   autosaveBatch(
     @Req() req: AuthedRequest,

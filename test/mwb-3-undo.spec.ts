@@ -20,6 +20,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaService } from '../src/prisma.service';
 import { AnalyticsService } from '../src/analytics/analytics.service';
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
+import { computeLockToken } from '../src/workout-builder/lock-token.helper';
 import { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
 import { WorkoutBuilderAutosaveService } from '../src/workout-builder/workout-builder-autosave.service';
 import { bootstrapTestSchema } from './utils/bootstrap-test-schema';
@@ -37,7 +38,6 @@ if (!TEST_DB_URL) {
 
 const COACH_ID = 'mwb3-undo-coach';
 const PLAN_ID = '33333333-3333-4333-8333-333333333333';
-const TOKEN = '0123456789abcdef';
 
 liveDescribe('Real undo / redo (live DB, MWB-3 §5.1)', () => {
   let prisma: PrismaClient;
@@ -59,6 +59,7 @@ liveDescribe('Real undo / redo (live DB, MWB-3 §5.1)', () => {
       prisma as unknown as PrismaService,
       builder,
       new AnalyticsService(),
+      scope,
     );
   }, 120_000);
 
@@ -68,6 +69,8 @@ liveDescribe('Real undo / redo (live DB, MWB-3 §5.1)', () => {
 
   beforeEach(async () => {
     process.env.FEATURE_MWB_AUTOSAVE_UNDO = 'true';
+    process.env.MWB_AUTOSAVE_LOCK_TOKEN_SECRET =
+      'mwb3-test-lock-secret-0123456789abcdef';
     await prisma.workoutPlanRevision.deleteMany({});
     await prisma.workoutPlanExercise.deleteMany({});
     await prisma.workoutPlan.deleteMany({});
@@ -117,13 +120,23 @@ liveDescribe('Real undo / redo (live DB, MWB-3 §5.1)', () => {
     },
   });
 
-  const edit = (base: number, externalId: string, sets: number) =>
+  // Derive the lock_token from the plan's persisted (version, head_revision_id)
+  // so each sequential edit echoes the deterministic token the service expects.
+  const tokenFor = async (planId: string): Promise<string> => {
+    const plan = await prisma.workoutPlan.findUniqueOrThrow({
+      where: { id: planId },
+      select: { version: true, head_revision_id: true },
+    });
+    return computeLockToken(planId, plan.version, plan.head_revision_id!);
+  };
+
+  const edit = async (base: number, externalId: string, sets: number) =>
     autosave.applyAutosave(
       PLAN_ID,
       { userId: COACH_ID },
       {
         base_revision_index: base,
-        lock_token: TOKEN,
+        lock_token: await tokenFor(PLAN_ID),
         ops: [insertOp(externalId, sets)],
         cause: 'manual_edit',
       },

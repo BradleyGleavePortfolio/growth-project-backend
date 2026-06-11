@@ -173,11 +173,18 @@ export interface UndoResponseDto {
 }
 
 /**
- * 409 conflict body for a stale `base_revision_index` (spec §6.2). Carries the
- * current head index + a fresh lock_token so the client can rebase and retry.
+ * 409 conflict body for an autosave optimistic-concurrency failure (spec §6.2).
+ * Two discriminated causes share this shape:
+ *   - `autosave_lock_stale`     — the client's `lock_token` does not match the
+ *     deterministic token derived from the plan's persisted (version,
+ *     head_revision_id) state (a stale optimistic lock).
+ *   - `autosave_conflict_retry` — a stale `base_revision_index` (or a Postgres
+ *     serialization conflict coerced to this code).
+ * Both carry the current head index + a freshly-derived lock_token so the client
+ * can rebase and retry. The lock_token wire shape is unchanged (16 hex chars).
  */
 export interface AutosaveConflictDto {
-  error: 'autosave_conflict_retry';
+  error: 'autosave_conflict_retry' | 'autosave_lock_stale';
   head_revision_index: number;
   lock_token: string;
 }

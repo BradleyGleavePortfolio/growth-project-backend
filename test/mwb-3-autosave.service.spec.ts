@@ -28,6 +28,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaService } from '../src/prisma.service';
 import { AnalyticsService } from '../src/analytics/analytics.service';
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
+import { computeLockToken } from '../src/workout-builder/lock-token.helper';
 import { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
 import {
   WorkoutBuilderAutosaveService,
@@ -53,9 +54,6 @@ const SUBCOACH_ID = 'mwb3-svc-subcoach';
 const CLIENT_ID = 'mwb3-svc-client';
 const PLAN_ID = '11111111-1111-4111-8111-111111111111';
 
-/** A valid 16-lowercase-hex lock token (the client echoes whatever it last got). */
-const TOKEN = '0123456789abcdef';
-
 liveDescribe('WorkoutBuilderAutosaveService (live DB, MWB-3 §6 autosave)', () => {
   let prisma: PrismaClient;
   let autosave: WorkoutBuilderAutosaveService;
@@ -76,6 +74,7 @@ liveDescribe('WorkoutBuilderAutosaveService (live DB, MWB-3 §6 autosave)', () =
       prisma as unknown as PrismaService,
       builder,
       new AnalyticsService(),
+      scope,
     );
   }, 120_000);
 
@@ -87,6 +86,10 @@ liveDescribe('WorkoutBuilderAutosaveService (live DB, MWB-3 §6 autosave)', () =
     // Feature ON for the matrix (default is OFF — the flag-off matrix case #7
     // lives in the controller spec).
     process.env.FEATURE_MWB_AUTOSAVE_UNDO = 'true';
+    // MWB-3 — the optimistic-lock token is an HMAC keyed by this secret; the
+    // service refuses to derive a token without it (R0, no silent default).
+    process.env.MWB_AUTOSAVE_LOCK_TOKEN_SECRET =
+      'mwb3-test-lock-secret-0123456789abcdef';
 
     // Clean slate (FK child order).
     await prisma.workoutPlanRevision.deleteMany({});
@@ -166,6 +169,17 @@ liveDescribe('WorkoutBuilderAutosaveService (live DB, MWB-3 §6 autosave)', () =
     },
   });
 
+  // The lock_token is a deterministic HMAC of the plan's PERSISTED state
+  // (id, version, head_revision_id); read that state and derive the token the
+  // service will expect for the NEXT request (matrix #12's optimistic lock).
+  const tokenFor = async (planId: string): Promise<string> => {
+    const plan = await prisma.workoutPlan.findUniqueOrThrow({
+      where: { id: planId },
+      select: { version: true, head_revision_id: true },
+    });
+    return computeLockToken(planId, plan.version, plan.head_revision_id!);
+  };
+
   const headIndex = async (): Promise<number> => {
     const plan = await prisma.workoutPlan.findUniqueOrThrow({
       where: { id: PLAN_ID },
@@ -187,7 +201,7 @@ liveDescribe('WorkoutBuilderAutosaveService (live DB, MWB-3 §6 autosave)', () =
         { userId: COACH_ID },
         {
           base_revision_index: base,
-          lock_token: TOKEN,
+          lock_token: await tokenFor(PLAN_ID),
           ops: [insertOp(`ex-${i}`, i)],
           cause: 'manual_edit',
         },
@@ -215,7 +229,7 @@ liveDescribe('WorkoutBuilderAutosaveService (live DB, MWB-3 §6 autosave)', () =
       { userId: COACH_ID },
       {
         base_revision_index: 0,
-        lock_token: TOKEN,
+        lock_token: await tokenFor(PLAN_ID),
         ops: [insertOp('squat', 3)],
         cause: 'manual_edit',
       },
@@ -226,7 +240,7 @@ liveDescribe('WorkoutBuilderAutosaveService (live DB, MWB-3 §6 autosave)', () =
       { userId: COACH_ID },
       {
         base_revision_index: 1,
-        lock_token: TOKEN,
+        lock_token: await tokenFor(PLAN_ID),
         ops: [insertOp('bench', 4)],
         cause: 'manual_edit',
       },
@@ -251,7 +265,7 @@ liveDescribe('WorkoutBuilderAutosaveService (live DB, MWB-3 §6 autosave)', () =
       { userId: COACH_ID },
       {
         base_revision_index: 2,
-        lock_token: TOKEN,
+        lock_token: await tokenFor(PLAN_ID),
         ops: [insertOp('row', 5)],
         cause: 'manual_edit',
       },
@@ -312,7 +326,7 @@ liveDescribe('WorkoutBuilderAutosaveService (live DB, MWB-3 §6 autosave)', () =
         { userId: COACH_ID },
         {
           base_revision_index: 0,
-          lock_token: TOKEN,
+          lock_token: await tokenFor(PLAN_ID),
           ops: [insertOp('deadlift', 2)],
           cause: 'manual_edit',
         },

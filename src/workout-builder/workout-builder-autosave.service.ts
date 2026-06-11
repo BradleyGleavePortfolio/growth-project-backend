@@ -22,10 +22,13 @@
  *   - The revision row's exercises_json is the FULL post-ops ordered snapshot,
  *     so undo can restore any point without replaying diffs.
  *
- * Authorisation is delegated to WorkoutBuilderService.assertCanAccessClient
- * (the MWB-1/§7.2 single source of truth: head coach OR sub-coach with an open
- * SubCoachAssignment), so the autosave + undo routes honour sub-coach scope
- * identically to clone-to-client.
+ * Authorisation is plan-ownership-based: the acting user is either the plan's
+ * head coach (plan.coach_id === actingUserId) OR a sub-coach whose head coach
+ * IS plan.coach_id (resolved via SubCoachScopeService.getHeadCoachIdForSubCoach),
+ * so an in-team sub-coach may edit a plan owned by their head coach while an
+ * out-of-team coach/sub-coach is rejected with 403. (Note: assertCanAccessClient
+ * is the WRONG gate here — it expects a CLIENT/student id, not the coach FK that
+ * a WorkoutPlan carries.)
  */
 
 import {
@@ -34,14 +37,19 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
-import { randomBytes } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
+import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { WorkoutBuilderService } from './workout-builder.service';
 import { isMwbAutosaveUndoEnabled } from './workout-builder-autosave.feature';
+import {
+  assertLockTokenSecretConfigured,
+  computeLockToken,
+} from './lock-token.helper';
 import {
   AUTOSAVE_OPS_MAX_BYTES,
   AutosaveBatchInput,
@@ -99,7 +107,7 @@ export interface AutosaveActor {
 }
 
 @Injectable()
-export class WorkoutBuilderAutosaveService {
+export class WorkoutBuilderAutosaveService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly workoutBuilder: WorkoutBuilderService,
@@ -107,7 +115,26 @@ export class WorkoutBuilderAutosaveService {
     // Not @Optional — the module always has it in the DI graph. The wrapper is
     // itself a no-op when POSTHOG_KEY is unset, so tests need no PostHog.
     private readonly analytics: AnalyticsService,
+    // MWB-1 SubCoachModule (@Global, imported by WorkoutBuilderModule) provides
+    // this. Used by authorisePlanAccess to resolve a sub-coach's head coach id
+    // and compare it to the plan's coach_id — the correct plan-ownership gate.
+    private readonly subCoachScope: SubCoachScopeService,
   ) {}
+
+  /**
+   * Bootstrap-time config validation (R0 — fail fast, never silently default).
+   * When FEATURE_MWB_AUTOSAVE_UNDO is ON, the optimistic-lock token cannot be
+   * derived without MWB_AUTOSAVE_LOCK_TOKEN_SECRET; an absent secret would make
+   * every token forgeable under a predictable empty key. We assert the secret
+   * is present at module init so a misconfigured deploy crashes on boot rather
+   * than minting worthless tokens at request time. When the flag is OFF the
+   * token path is never reached, so the secret is not required.
+   */
+  onModuleInit(): void {
+    if (isMwbAutosaveUndoEnabled()) {
+      assertLockTokenSecretConfigured();
+    }
+  }
 
   // ─── Public: autosave (spec §6.2) ──────────────────────────────────────────
 
@@ -148,17 +175,35 @@ export class WorkoutBuilderAutosaveService {
               `Cannot PATCH /workout-plans/${planId}/autosave`,
             );
           }
-          // (b) Lock the plan row + load its current head index. FOR UPDATE so
-          // two concurrent autosaves serialise on the same row.
+          // (b) Lock the plan row + load its current head index + version.
+          // FOR UPDATE so two concurrent autosaves serialise on the same row.
           const locked = await this.lockPlanAndHead(tx, planId);
 
-          // (c) Optimistic-concurrency assert. A stale base index => 409 with
-          // the current head index + a fresh lock_token so the client rebases.
+          // (c) Optimistic-lock token assert. The token is a deterministic HMAC
+          // of the plan's PERSISTED state (planId, version, head_revision_id);
+          // re-derive the expected token and reject a stale client token with a
+          // typed 409 BEFORE mutating any row. Issue a fresh token (derived from
+          // the CURRENT state) so the client can rebase and retry.
+          const expectedToken = computeLockToken(
+            planId,
+            locked.version,
+            locked.headRevisionId,
+          );
+          if (body.lock_token !== expectedToken) {
+            throw new ConflictException({
+              error: 'autosave_lock_stale',
+              head_revision_index: locked.headIndex,
+              lock_token: expectedToken,
+            });
+          }
+
+          // (c.2) Base-index assert (kept). A stale base index => 409 with the
+          // current head index + a fresh lock_token so the client rebases.
           if (body.base_revision_index !== locked.headIndex) {
             throw new ConflictException({
               error: 'autosave_conflict_retry',
               head_revision_index: locked.headIndex,
-              lock_token: this.issueLockToken(),
+              lock_token: expectedToken,
             });
           }
 
@@ -190,9 +235,16 @@ export class WorkoutBuilderAutosaveService {
             },
           });
 
+          // The new token is derived from the POST-commit persisted state: the
+          // incremented version + the new head revision id. Deterministic, so a
+          // follow-up request that echoes it passes the assert above.
           return {
             head_revision_index: nextIndex,
-            lock_token: this.issueLockToken(),
+            lock_token: computeLockToken(
+              planId,
+              locked.version + 1,
+              revision.id,
+            ),
             saved_at: revision.created_at.toISOString(),
           };
         },
@@ -282,9 +334,16 @@ export class WorkoutBuilderAutosaveService {
             },
           });
 
+          // Deterministic token from the POST-undo persisted state (incremented
+          // version + new head revision id), matching the autosave contract so
+          // a subsequent autosave can echo it through the optimistic-lock gate.
           return {
             head_revision_index: nextIndex,
-            lock_token: this.issueLockToken(),
+            lock_token: computeLockToken(
+              planId,
+              locked.version + 1,
+              revision.id,
+            ),
           };
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -397,16 +456,19 @@ export class WorkoutBuilderAutosaveService {
   }
 
   /**
-   * Authorise the actor against the plan's owning client. The plan's coach_id
-   * IS the owning client-side coach context; we delegate to the MWB-1 §7.2
-   * gate so a sub-coach with an open SubCoachAssignment to the plan's coach
-   * team passes, and an out-of-scope sub-coach is rejected with 403.
+   * Authorise the actor against the plan's OWNERSHIP. A WorkoutPlan.coach_id is
+   * a coach/head-coach FK (NOT a client/student id), so the correct gate is:
+   *   1. the acting user IS the plan's head coach (direct owner), OR
+   *   2. the acting user is a sub-coach whose head coach IS plan.coach_id
+   *      (an in-team sub-coach editing a plan owned by their head coach).
+   * Anything else (a foreign coach, or a sub-coach on a different head coach's
+   * team) is a 403. A non-existent plan is a 404.
    *
-   * assertCanAccessClient(actingUserId, clientId) returns when acting user is
-   * the client's head coach OR a scoped sub-coach. For a coach-owned plan the
-   * "client" relationship is the plan.coach_id tenant: a head coach editing
-   * their own plan satisfies `coach_id === actingUserId`; a sub-coach satisfies
-   * it via SubCoachScopeService.canAccessClient against the head coach team.
+   * This replaces the prior assertCanAccessClient(actingUserId, plan.coach_id)
+   * call, which was semantically wrong: assertCanAccessClient expects a
+   * client/student id, and SubCoachScopeService.canAccessClient only returns
+   * true for assigned STUDENT ids — never for the head coach id a plan carries
+   * — so a valid in-scope sub-coach was incorrectly denied (audit P1.1).
    */
   private async authorisePlanAccess(
     planId: string,
@@ -417,13 +479,16 @@ export class WorkoutBuilderAutosaveService {
       select: { coach_id: true },
     });
     if (!plan) throw new NotFoundException('Workout plan not found');
-    // Head coach / owner editing their own plan: direct ownership.
+    // (1) Head coach / owner editing their own plan: direct ownership.
     if (plan.coach_id === actingUserId) return;
-    // Sub-coach overlay: the actor must have an open assignment that grants
-    // access to the plan's coach tenant. assertCanAccessClient throws 403 when
-    // out of scope; we map a "not in scope" outcome to 403 explicitly so the
-    // route never leaks a 404 for an existing-but-forbidden plan.
-    await this.workoutBuilder.assertCanAccessClient(actingUserId, plan.coach_id);
+    // (2) In-team sub-coach: resolve the acting user's head coach and require it
+    // to BE the plan's owner. Returns null for non-sub-coaches (foreign head
+    // coaches, students), so they fall through to the 403 below.
+    const headCoachId =
+      await this.subCoachScope.getHeadCoachIdForSubCoach(actingUserId);
+    if (headCoachId !== null && headCoachId === plan.coach_id) return;
+    // Out of scope: an existing-but-forbidden plan is a 403, never a 404 leak.
+    throw new ForbiddenException('No access to this workout plan');
   }
 
   /**
@@ -436,11 +501,15 @@ export class WorkoutBuilderAutosaveService {
   private async lockPlanAndHead(
     tx: Prisma.TransactionClient,
     planId: string,
-  ): Promise<{ headIndex: number; headRevisionId: string }> {
+  ): Promise<{ headIndex: number; headRevisionId: string; version: number }> {
     // FOR UPDATE via raw SQL — Prisma's typed API has no row-lock modifier.
-    // Parameterised (never interpolated): no injection surface.
-    const rows = await tx.$queryRaw<Array<{ head_revision_id: string | null }>>`
-      SELECT "head_revision_id" FROM "WorkoutPlan" WHERE "id" = ${planId} FOR UPDATE
+    // Parameterised (never interpolated): no injection surface. We also read
+    // `version` here so the caller can derive the optimistic-lock token from
+    // the row's PERSISTED concurrency markers (version + head_revision_id).
+    const rows = await tx.$queryRaw<
+      Array<{ head_revision_id: string | null; version: number | bigint }>
+    >`
+      SELECT "head_revision_id", "version" FROM "WorkoutPlan" WHERE "id" = ${planId} FOR UPDATE
     `;
     if (rows.length === 0) {
       throw new NotFoundException('Workout plan not found');
@@ -460,7 +529,13 @@ export class WorkoutBuilderAutosaveService {
       // tolerated (R0).
       throw new ConflictException('Plan head revision is missing');
     }
-    return { headIndex: head.revision_index, headRevisionId };
+    // version is an Int column; coerce a possible bigint driver representation
+    // to a JS number so the HMAC message string is canonical.
+    return {
+      headIndex: head.revision_index,
+      headRevisionId,
+      version: Number(rows[0].version),
+    };
   }
 
   /**
@@ -751,11 +826,6 @@ export class WorkoutBuilderAutosaveService {
         `ops payload exceeds the ${AUTOSAVE_OPS_MAX_BYTES}-byte limit`,
       );
     }
-  }
-
-  /** Issue a fresh server-side lock token: 16 lowercase hex chars (§6.2). */
-  private issueLockToken(): string {
-    return randomBytes(8).toString('hex');
   }
 
   /**

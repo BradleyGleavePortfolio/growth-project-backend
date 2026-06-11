@@ -132,6 +132,7 @@ liveDescribe('Revision prune retention (live DB, MWB-3 §5.2)', () => {
       prisma as unknown as PrismaService,
       builder,
       new AnalyticsService(),
+      scope,
     );
     cron = new WorkoutBuilderRevisionPruneCron(autosave);
   }, 120_000);
