@@ -23,9 +23,11 @@
  * ONLY in the `rls-live-tests` CI job, which provisions a postgres service.
  * It connects when `MWB2_CLONE_TEST_DATABASE_URL` (or `DATABASE_URL`) is set;
  * otherwise it `describe.skip`s with a logged reason \u2014 never a silent pass.
- * The full schema is materialised with `prisma db push` against the throwaway
- * DB in beforeAll, so the test exercises the real WorkoutProgram /
- * WorkoutProgramRevision tables, not a hand-rolled subset.
+ * The full schema is materialised in beforeAll via
+ * `test/utils/bootstrap-test-schema.ts`, which applies the canonical DDL Prisma
+ * generates from prisma/schema.prisma (so every model is byte-faithful to the
+ * generated client, including all User columns), so the test exercises the real
+ * WorkoutProgram / WorkoutProgramRevision tables, not a hand-rolled subset.
  *
  * To run locally:
  *   1. docker run -e POSTGRES_PASSWORD=pw -p 55432:5432 -d postgres:16
@@ -37,11 +39,47 @@ import { ConflictException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { PrismaService } from '../src/prisma.service';
 import { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
+import { bootstrapTestSchema } from './utils/bootstrap-test-schema';
 
 // A DEDICATED env var (never the app's DATABASE_URL) — beforeAll runs
 // `prisma db push --accept-data-loss`, which would wipe a real DB. Requiring an
 // explicit throwaway URL makes that impossible by accident.
-const TEST_DB_URL = process.env.MWB2_CLONE_TEST_DATABASE_URL || '';
+const RAW_TEST_DB_URL = process.env.MWB2_CLONE_TEST_DATABASE_URL || '';
+
+// Pin the Prisma connection pool to >= 2 connections so the two parallel
+// clones run on SEPARATE pooled connections — i.e. genuine DB-level
+// concurrency. With a single pooled connection the pool (not the advisory
+// lock) serialises the transactions, so the loser would hit the existence
+// probe instead of a real Serializable write-conflict; that bypasses the
+// concurrency-control mechanism entirely and proves nothing. At >= 2 the loser
+// aborts with a serialization failure (Postgres 40001 -> Prisma P2034) which
+// the service must coerce to a typed ConflictException. We force 5 to keep a
+// comfortable margin; any pre-existing connection_limit in the URL is replaced.
+function pinMultiConnection(url: string): string {
+  if (!url) return url;
+  const MIN_POOL = 5;
+  // Read any existing connection_limit WITHOUT mutating the rest of the URL:
+  // URLSearchParams.toString() percent-encodes reserved characters, which
+  // corrupts a Postgres unix-socket URL (e.g. `?host=/tmp` -> `host=%2Ftmp`).
+  // So we inspect with a regex and append/replace only the one param, leaving
+  // every other byte of the operator-supplied URL untouched.
+  const existing = /[?&]connection_limit=(\d+)/.exec(url);
+  const current = existing ? Number(existing[1]) : NaN;
+  if (Number.isInteger(current) && current >= 2) {
+    return url;
+  }
+  if (existing) {
+    // Bump an explicit-but-too-low value (e.g. connection_limit=1) up to MIN.
+    return url.replace(
+      /([?&]connection_limit=)\d+/,
+      `$1${MIN_POOL}`,
+    );
+  }
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}connection_limit=${MIN_POOL}`;
+}
+
+const TEST_DB_URL = pinMultiConnection(RAW_TEST_DB_URL);
 
 const liveDescribe = TEST_DB_URL ? describe : describe.skip;
 
@@ -65,110 +103,13 @@ liveDescribe('cloneProgramToClient — real concurrent clones (MWB-2 §3.3, G9)'
     prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
     await prisma.$connect();
 
-    // Materialise ONLY the tables the clone path touches, with the exact
-    // columns Prisma reads/writes. A full `prisma db push` of the whole schema
-    // is avoided here because unrelated pre-existing models (e.g. community)
-    // carry FK type mismatches that fail a clean push — this minimal harness
-    // mirrors the repo's RLS specs (PREREQ_SQL) and keeps the suite focused on
-    // the MWB-2 clone tables. Every column is the Prisma-mapped name/type.
-    // $executeRawUnsafe runs one statement per call (Postgres prepared-statement
-    // limit), so the DDL is split on top-level semicolons; the enum DO-block has
-    // none inside that would break the split.
-    const ddl = [
-      `DO $do$ BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'WorkoutPlanType') THEN
-          CREATE TYPE "WorkoutPlanType" AS ENUM ('strength','cardio','mobility');
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'Role') THEN
-          CREATE TYPE "Role" AS ENUM ('coach','student','owner');
-        END IF;
-      END $do$`,
-      `CREATE TABLE IF NOT EXISTS public."User" (
-        "id" text PRIMARY KEY,
-        "supabase_id" text UNIQUE NOT NULL,
-        "email" text UNIQUE NOT NULL,
-        "name" text NOT NULL,
-        "role" "Role" NOT NULL DEFAULT 'student',
-        "coach_id" text REFERENCES public."User"("id"),
-        "created_at" timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "archived_at" timestamp(3)
-      )`,
-      `CREATE TABLE IF NOT EXISTS public."WorkoutProgram" (
-        "id" text PRIMARY KEY,
-        "coach_id" text NOT NULL,
-        "owner_user_id" text NOT NULL,
-        "visibility" text NOT NULL DEFAULT 'owner_only',
-        "forked_from_id" text,
-        "name" text NOT NULL,
-        "description" text,
-        "weeks" integer NOT NULL,
-        "days_per_week" integer NOT NULL,
-        "is_template" boolean NOT NULL DEFAULT true,
-        "cloned_from_id" text,
-        "goal_tag" text,
-        "version" integer NOT NULL DEFAULT 1,
-        "head_revision_id" text,
-        "created_at" timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updated_at" timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "archived_at" timestamp(3)
-      )`,
-      `CREATE TABLE IF NOT EXISTS public."WorkoutPlan" (
-        "id" text PRIMARY KEY,
-        "coach_id" text NOT NULL,
-        "name" text NOT NULL,
-        "type" "WorkoutPlanType" NOT NULL DEFAULT 'strength',
-        "duration_estimate_minutes" integer,
-        "created_at" timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updated_at" timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "archived_at" timestamp(3),
-        "program_id" text REFERENCES public."WorkoutProgram"("id") ON DELETE CASCADE,
-        "week_index" integer,
-        "day_index" integer,
-        "is_template" boolean NOT NULL DEFAULT false,
-        "version" integer NOT NULL DEFAULT 1,
-        "head_revision_id" text,
-        "cloned_from_plan_id" text
-      )`,
-      `CREATE TABLE IF NOT EXISTS public."WorkoutPlanExercise" (
-        "id" text PRIMARY KEY,
-        "workout_plan_id" text NOT NULL REFERENCES public."WorkoutPlan"("id") ON DELETE CASCADE,
-        "exercise_external_id" text NOT NULL,
-        "order" integer NOT NULL,
-        "sets" integer NOT NULL,
-        "reps_or_duration_seconds" integer NOT NULL,
-        "weight_lbs" double precision,
-        "rest_seconds" integer,
-        "superset_group_id" text,
-        "notes" text,
-        "archived_at" timestamp(3)
-      )`,
-      `CREATE TABLE IF NOT EXISTS public."WorkoutPlanRevision" (
-        "id" text PRIMARY KEY,
-        "workout_plan_id" text NOT NULL REFERENCES public."WorkoutPlan"("id") ON DELETE CASCADE,
-        "revision_index" integer NOT NULL,
-        "exercises_json" jsonb NOT NULL,
-        "plan_meta_json" jsonb NOT NULL,
-        "author_id" text NOT NULL,
-        "author_kind" text NOT NULL,
-        "cause" text NOT NULL,
-        "created_at" timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE ("workout_plan_id", "revision_index")
-      )`,
-      `CREATE TABLE IF NOT EXISTS public."WorkoutProgramRevision" (
-        "id" text PRIMARY KEY,
-        "program_id" text NOT NULL REFERENCES public."WorkoutProgram"("id") ON DELETE CASCADE,
-        "revision_index" integer NOT NULL,
-        "structure_json" jsonb NOT NULL,
-        "author_id" text NOT NULL,
-        "author_kind" text NOT NULL,
-        "cause" text NOT NULL,
-        "created_at" timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE ("program_id", "revision_index")
-      )`,
-    ];
-    for (const stmt of ddl) {
-      await prisma.$executeRawUnsafe(stmt);
-    }
+    // Materialise the FULL schema exactly as `prisma db push` would, generated
+    // by Prisma from prisma/schema.prisma, so every model (and every User
+    // column the generated client serialises — e.g. show_on_leaderboard) is
+    // byte-faithful to the client. See test/utils/bootstrap-test-schema.ts for
+    // the Option-A rationale and the single tolerated pre-existing community
+    // uuid<->text FK mismatch (out of PR scope, never on the clone path).
+    await bootstrapTestSchema(prisma);
 
     service = new WorkoutBuilderService(prisma as unknown as PrismaService);
   }, 120_000);

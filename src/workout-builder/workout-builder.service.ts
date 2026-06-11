@@ -1219,12 +1219,17 @@ export class WorkoutBuilderService {
         } catch (err) {
           // P2002 unique-constraint violation: a racing winner that slipped
           // past the probe (e.g. if a unique key is added to the schema in a
-          // later phase). Surface it as the same typed 409 the probe raises so
-          // the loser receives a consistent ConflictException, never a leaked
-          // Prisma error.
+          // later phase). P2034 serialization failure: under Serializable
+          // isolation with the two clones on separate pool connections, the
+          // losing transaction aborts here with a write-conflict/serialization
+          // failure (Postgres 40001 -> Prisma P2034) rather than a probe hit.
+          // Surface both as the same typed 409 the probe raises so the loser
+          // receives a consistent ConflictException, never a leaked Prisma
+          // error (-> raw HTTP 500). Mirrors the sibling concurrency-aware
+          // service at src/scheduling/scheduling-session-lifecycle.service.ts:151.
           if (
             err instanceof Prisma.PrismaClientKnownRequestError &&
-            err.code === 'P2002'
+            (err.code === 'P2002' || err.code === 'P2034')
           ) {
             throw new ConflictException(
               'A clone of this program for this client already exists',
