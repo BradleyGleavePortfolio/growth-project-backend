@@ -148,9 +148,23 @@ export class EditWorkoutPlanMaterializer implements CapabilityMaterializer {
           // approver (or a prior finalised run) yields count=0 and we throw a
           // typed ConflictException; on any write error the txn rolls back and
           // the claim is released automatically.
+          //
+          // The `status: 'pending'` predicate (mirroring
+          // coach-message.materialiser.ts:160-163) closes the approve/reject
+          // race: `AiApprovalService.decide` reads the draft, checks
+          // `status === 'pending'`, then calls this materialiser BEFORE the
+          // terminal status flip. If a concurrent reject wins the status update
+          // first, `materialised_at`/`materialised_ref` are both still null, so
+          // without the status clause this claim would still match the
+          // now-rejected draft and edit real WorkoutPlan rows — leaving
+          // `status='rejected'` with a real workout side-effect. Including
+          // `status: 'pending'` makes the claim yield count=0 against a draft a
+          // concurrent reject already moved off pending, so we throw the typed
+          // conflict BEFORE any downstream write.
           const claim = await tx.aiActionDraft.updateMany({
             where: {
               id: draft.id,
+              status: 'pending',
               materialised_at: null,
               materialised_ref: null,
             },

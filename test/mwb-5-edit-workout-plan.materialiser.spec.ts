@@ -78,6 +78,14 @@ function buildPrisma(initialDraft: any, opts: { assignments?: any[]; planCoachId
   // current row, count is 0 and nothing is written.
   const aiActionDraftUpdateMany = jest.fn(async ({ where, data }: any) => {
     if (where.id !== store.draft.id) return { count: 0 };
+    // P1 (R2) — honour the `status: 'pending'` predicate exactly as Postgres
+    // would: when the authoritative row has already been moved off `pending`
+    // (e.g. a concurrent reject won the decision gate), the claim's
+    // `where.status === 'pending'` no longer matches and count is 0 — nothing
+    // is written, so no downstream plan revision/exercise row can land.
+    if (where.status !== undefined && store.draft.status !== where.status) {
+      return { count: 0 };
+    }
     if (where.materialised_at === null && store.draft.materialised_at !== null) {
       return { count: 0 };
     }
@@ -361,6 +369,52 @@ describe('EditWorkoutPlanMaterializer', () => {
     const mat = new EditWorkoutPlanMaterializer(prisma, scope(true), analyticsStub());
     await expect(mat.materialize(draft())).rejects.toThrow(/disabled|off/i);
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('P1 (R2) approve/reject race — a draft that concurrently became `rejected` throws mwb_materialise_conflict and writes ZERO downstream rows', async () => {
+    // Trust-surface regression (R2 audit P1), mirroring the create spec. The
+    // reject WON the decision gate first: the authoritative store row is
+    // `status='rejected'` with markers still null. The stale approve arrives
+    // here with its own pending view (markers null) so the idempotency
+    // short-circuit does NOT fire and we reach the in-txn claim. Because the
+    // claim now includes `status: 'pending'`
+    // (edit-workout-plan.materialiser.ts:164-172) it matches ZERO rows against
+    // the rejected draft → count=0 → ConflictException, BEFORE any
+    // WorkoutPlanRevision/exercise/plan write. Without the status predicate the
+    // claim would still match (markers null) and we'd edit a real plan for a
+    // rejected draft.
+    const prisma = buildPrisma(draft({ status: 'rejected' }));
+    const analytics = analyticsStub();
+    const mat = new EditWorkoutPlanMaterializer(prisma, scope(true), analytics);
+
+    const staleApproveView = draft({ status: 'pending' }); // markers null
+    let thrown: unknown;
+    try {
+      await mat.materialize(staleApproveView);
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).toBeInstanceOf(ConflictException);
+    expect((thrown as ConflictException).getResponse()).toEqual(
+      expect.objectContaining({ error: 'mwb_materialise_conflict' }),
+    );
+
+    // ZERO downstream writes: no new revision beyond the seeded head, no new
+    // exercise rows, no plan version bump.
+    expect(prisma.store.planRevisions).toHaveLength(1); // only the seeded HEAD_REV
+    expect(prisma.store.exercises).toHaveLength(2); // only the seeded live rows
+    expect(prisma.store.exercises.every((e: any) => e.archived_at == null)).toBe(true);
+    expect(prisma.store.plans[0].version).toBe(3); // unchanged
+    expect(prisma.store.plans[0].head_revision_id).toBe(HEAD_REV.id); // unchanged
+
+    // Draft stays rejected with no materialisation marker — no side-effect.
+    expect(prisma.store.draft.status).toBe('rejected');
+    expect(prisma.store.draft.materialised_at).toBeNull();
+    expect(prisma.store.draft.materialised_ref).toBeNull();
+
+    // No success telemetry on a conflict.
+    expect(analytics.capture).not.toHaveBeenCalled();
   });
 
   it('P1.1 — claim-first race: two concurrent approvers, exactly ONE succeeds and the OTHER throws mwb_materialise_conflict; the plan advances exactly once', async () => {

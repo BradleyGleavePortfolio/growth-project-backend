@@ -130,6 +130,17 @@ function buildPrisma(initialDraft: any, seedRows: any = {}) {
       // nothing is written — exactly how Postgres would behave.
       updateMany: jest.fn(async ({ where, data }: any) => {
         if (where.id !== store.draft.id) return { count: 0 };
+        // P1 (R2) — honour the `status: 'pending'` predicate exactly as
+        // Postgres would: when the authoritative row has already been moved
+        // off `pending` (e.g. a concurrent reject won the decision gate), the
+        // claim's `where.status === 'pending'` no longer matches and count is
+        // 0 — nothing is written, so no downstream plan/program row can land.
+        if (
+          where.status !== undefined &&
+          store.draft.status !== where.status
+        ) {
+          return { count: 0 };
+        }
         if (
           where.materialised_at === null &&
           store.draft.materialised_at !== null
@@ -157,6 +168,15 @@ function buildPrisma(initialDraft: any, seedRows: any = {}) {
     },
   };
 
+  // Serialize $transaction bodies through a mutex chain. The production code
+  // opens this txn with `Prisma.TransactionIsolationLevel.Serializable`, so the
+  // faithful in-memory model runs one txn body to completion (commit OR
+  // rollback) before the next begins. This is what makes the concurrent-
+  // approver tests deterministic: the loser's txn starts only AFTER the
+  // winner has committed + the draft row carries the winner's claim, so the
+  // loser's claim sees count=0, throws, and its rollback restores ONLY its own
+  // (no-op) snapshot — it cannot clobber the winner's committed claim.
+  let txGate: Promise<unknown> = Promise.resolve();
   const prisma: any = {
     ...client,
     store,
@@ -165,37 +185,50 @@ function buildPrisma(initialDraft: any, seedRows: any = {}) {
     // claim-conflict thrown by a race-loser, or a diff-apply error), restore
     // the snapshot so the in-txn claim's materialised_at write is reverted —
     // exactly as Postgres would roll back an aborted transaction.
-    $transaction: jest.fn(async (fn: any) => {
-      const snap = {
-        plans: store.plans.map((r: any) => ({ ...r })),
-        exercises: store.exercises.map((r: any) => ({ ...r })),
-        planRevisions: store.planRevisions.map((r: any) => ({ ...r })),
-        programs: store.programs.map((r: any) => ({ ...r })),
-        programRevisions: store.programRevisions.map((r: any) => ({ ...r })),
-        draft: { ...store.draft },
-        seq: store.seq,
+    $transaction: jest.fn((fn: any) => {
+      const run = async () => {
+        const snap = {
+          plans: store.plans.map((r: any) => ({ ...r })),
+          exercises: store.exercises.map((r: any) => ({ ...r })),
+          planRevisions: store.planRevisions.map((r: any) => ({ ...r })),
+          programs: store.programs.map((r: any) => ({ ...r })),
+          programRevisions: store.programRevisions.map((r: any) => ({ ...r })),
+          draft: { ...store.draft },
+          seq: store.seq,
+        };
+        try {
+          return await fn(client);
+        } catch (err) {
+          store.plans.splice(0, store.plans.length, ...snap.plans);
+          store.exercises.splice(0, store.exercises.length, ...snap.exercises);
+          store.planRevisions.splice(
+            0,
+            store.planRevisions.length,
+            ...snap.planRevisions,
+          );
+          store.programs.splice(0, store.programs.length, ...snap.programs);
+          store.programRevisions.splice(
+            0,
+            store.programRevisions.length,
+            ...snap.programRevisions,
+          );
+          Object.keys(store.draft).forEach(
+            (k) => delete (store.draft as any)[k],
+          );
+          Object.assign(store.draft, snap.draft);
+          store.seq = snap.seq;
+          throw err;
+        }
       };
-      try {
-        return await fn(client);
-      } catch (err) {
-        store.plans.splice(0, store.plans.length, ...snap.plans);
-        store.exercises.splice(0, store.exercises.length, ...snap.exercises);
-        store.planRevisions.splice(
-          0,
-          store.planRevisions.length,
-          ...snap.planRevisions,
-        );
-        store.programs.splice(0, store.programs.length, ...snap.programs);
-        store.programRevisions.splice(
-          0,
-          store.programRevisions.length,
-          ...snap.programRevisions,
-        );
-        Object.keys(store.draft).forEach((k) => delete (store.draft as any)[k]);
-        Object.assign(store.draft, snap.draft);
-        store.seq = snap.seq;
-        throw err;
-      }
+      // Chain onto the gate so txn bodies never interleave (Serializable).
+      const result = txGate.then(run, run);
+      // Keep the gate alive regardless of this txn's outcome so a rejected
+      // (rolled-back) txn still releases the lock for the next one.
+      txGate = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
     }),
   };
   return prisma;
@@ -491,6 +524,93 @@ describe('CreateWorkoutPlanMaterializer', () => {
     );
 
     // Exactly ONE program + ONE plan row — the duplicate-write window is closed.
+    expect(prisma.store.programs).toHaveLength(1);
+    expect(prisma.store.plans).toHaveLength(1);
+    expect(prisma.store.draft.materialised_ref).toBe(prisma.store.plans[0].id);
+  });
+
+  it('P1 (R2) approve/reject race — a draft that concurrently became `rejected` throws mwb_materialise_conflict and writes ZERO downstream rows', async () => {
+    // Trust-surface regression (R2 audit P1). `AiApprovalService.decide` reads
+    // the draft, checks `status === 'pending'`, then calls this materialiser
+    // BEFORE flipping the terminal status. A concurrent approve + reject can
+    // both pass that initial pending read. Here the reject WON the status flip
+    // first: the authoritative store row is `status='rejected'` with markers
+    // still null (the reject path does not stamp materialised_at). The stale
+    // approve then arrives at this materialiser carrying its OWN pending view
+    // (markers null) so the idempotency short-circuit does NOT fire and we
+    // reach the in-txn claim. Because the claim now includes `status:
+    // 'pending'` (create-workout-plan.materialiser.ts:223-231) it matches ZERO
+    // rows against the rejected draft → count=0 → ConflictException, BEFORE any
+    // WorkoutProgram/WorkoutPlan/exercise/revision write. Without the status
+    // predicate the claim would still match (markers are null) and we'd write a
+    // real plan for a rejected draft.
+    const prisma = buildPrisma(draft({ status: 'rejected' }));
+    const analytics = analyticsStub();
+    const mat = new CreateWorkoutPlanMaterializer(prisma, scope(true), analytics);
+
+    const staleApproveView = draft({ status: 'pending' }); // markers null
+    let thrown: unknown;
+    try {
+      await mat.materialize(staleApproveView);
+    } catch (e) {
+      thrown = e;
+    }
+
+    // Typed conflict with the canonical error code.
+    expect(thrown).toBeInstanceOf(ConflictException);
+    expect((thrown as ConflictException).getResponse()).toEqual(
+      expect.objectContaining({ error: 'mwb_materialise_conflict' }),
+    );
+
+    // ZERO downstream rows of every kind the create path can write.
+    expect(prisma.store.programs).toHaveLength(0);
+    expect(prisma.store.plans).toHaveLength(0);
+    expect(prisma.store.exercises).toHaveLength(0);
+    expect(prisma.store.planRevisions).toHaveLength(0);
+    expect(prisma.store.programRevisions).toHaveLength(0);
+    expect(prisma.workoutProgram.create).not.toHaveBeenCalled();
+    expect(prisma.workoutPlan.create).not.toHaveBeenCalled();
+    expect(prisma.workoutPlanExercise.createMany).not.toHaveBeenCalled();
+
+    // The draft stays rejected with no materialisation marker — no side-effect.
+    expect(prisma.store.draft.status).toBe('rejected');
+    expect(prisma.store.draft.materialised_at).toBeNull();
+    expect(prisma.store.draft.materialised_ref).toBeNull();
+
+    // No success telemetry on a conflict.
+    expect(analytics.capture).not.toHaveBeenCalled();
+  });
+
+  it('P2 (R2) true concurrency — two approvers race via Promise.allSettled; exactly ONE fulfilled with a WorkoutProgram and ONE rejected with ConflictException', async () => {
+    // Mirrors the edit spec's Promise.allSettled concurrency pattern. Both
+    // approvers race against the SAME in-memory store; the conditional in-txn
+    // claim (id + status='pending' + markers null) behaves like a real row, so
+    // only the FIRST claim lands. The loser observes count=0 and aborts at the
+    // claim BEFORE any program/plan write; the $transaction mock rolls its
+    // claim write back. Asserts exactly one fulfilled (with a WorkoutProgram
+    // row created) and exactly one ConflictException — no duplicate program.
+    const prisma = buildPrisma(draft());
+    const a = new CreateWorkoutPlanMaterializer(prisma, scope(true), analyticsStub());
+    const b = new CreateWorkoutPlanMaterializer(prisma, scope(true), analyticsStub());
+
+    const settled = await Promise.allSettled([
+      a.materialize(draft()),
+      b.materialize(draft()),
+    ]);
+
+    const fulfilled = settled.filter((s) => s.status === 'fulfilled');
+    const rejected = settled.filter((s) => s.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+
+    expect((fulfilled[0] as PromiseFulfilledResult<any>).value.status).toBe('sent');
+    const loser = rejected[0] as PromiseRejectedResult;
+    expect(loser.reason).toBeInstanceOf(ConflictException);
+    expect((loser.reason as ConflictException).getResponse()).toEqual(
+      expect.objectContaining({ error: 'mwb_materialise_conflict' }),
+    );
+
+    // Exactly ONE WorkoutProgram (and ONE plan) — the loser wrote nothing.
     expect(prisma.store.programs).toHaveLength(1);
     expect(prisma.store.plans).toHaveLength(1);
     expect(prisma.store.draft.materialised_ref).toBe(prisma.store.plans[0].id);

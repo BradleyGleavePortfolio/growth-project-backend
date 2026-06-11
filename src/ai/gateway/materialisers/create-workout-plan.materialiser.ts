@@ -202,12 +202,28 @@ export class CreateWorkoutPlanMaterializer implements CapabilityMaterializer {
         async (tx) => {
           // Atomic idempotency claim. Requires the draft to be unclaimed
           // (materialised_at IS NULL) AND not yet finalised (materialised_ref
-          // IS NULL). If another approver already holds the claim (or a prior
-          // run finalised it) count is 0 and we abort BEFORE any write — the
-          // duplicate-plan window is closed.
+          // IS NULL) AND still `status: 'pending'`. If another approver already
+          // holds the claim (or a prior run finalised it) count is 0 and we
+          // abort BEFORE any write — the duplicate-plan window is closed.
+          //
+          // The `status: 'pending'` predicate (mirroring
+          // coach-message.materialiser.ts:160-163) closes the approve/reject
+          // race: `AiApprovalService.decide` reads the draft, checks
+          // `status === 'pending'`, then calls this materialiser BEFORE the
+          // terminal status flip. Two concurrent requests (one approve, one
+          // reject) can both pass that initial pending read. If the reject
+          // wins the status update first, `materialised_at`/`materialised_ref`
+          // are both still null, so without the status clause this claim would
+          // still match the now-rejected draft and write real
+          // WorkoutProgram/WorkoutPlan rows — leaving `status='rejected'` with
+          // a real generated workout side-effect (a trust-surface failure).
+          // Including `status: 'pending'` makes the claim yield count=0 against
+          // a draft a concurrent reject already moved off pending, so we throw
+          // the typed conflict BEFORE any downstream write.
           const claim = await tx.aiActionDraft.updateMany({
             where: {
               id: draft.id,
+              status: 'pending',
               materialised_at: null,
               materialised_ref: null,
             },
