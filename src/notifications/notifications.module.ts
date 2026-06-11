@@ -16,6 +16,10 @@ import { BookingEmitter } from './emitters/booking.emitter';
 import { NudgeEngineService } from './nudges/nudge-engine.service';
 import { NudgeDetectorService } from './nudges/nudge-detector.service';
 import { NudgeScheduler } from './nudges/nudge.scheduler';
+// Phase 2: VoiceModule supplies VoicePolicyService for the empty-list copy.
+// VoiceModule has no module dependencies, so it cannot reopen the documented
+// BillingModule → CheckoutModule → NotificationsModule cycle.
+import { VoiceModule } from '../roman/voice/voice.module';
 
 // PrismaService is provided globally via PrismaModule.
 //
@@ -40,7 +44,7 @@ import { NudgeScheduler } from './nudges/nudge.scheduler';
 @Module({
   // NUDGE-V1: EmailService comes from the @Global EmailModule — no
   // import required. NudgeEngineService injects it as Optional.
-  imports: [ConfigModule],
+  imports: [ConfigModule, VoiceModule],
   controllers: [NotificationsController],
   providers: [
     NotificationsService,

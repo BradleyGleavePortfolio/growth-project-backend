@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma.service';
 import { AnalyticsModule } from '../../analytics/analytics.module';
 import { EmailModule } from '../../email/email.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
+import { VoiceModule } from '../../roman/voice/voice.module';
 import { DunningEscalationClassifier } from './dunning-escalation.classifier';
 import { DunningLockoutGuard } from './dunning-lockout.guard';
 import { DunningLockoutScheduler } from './dunning-lockout.scheduler';
@@ -25,7 +26,10 @@ import { DunningV2Telemetry } from './dunning-v2.telemetry';
  * can consume them.
  */
 @Module({
-  imports: [AnalyticsModule, EmailModule, NotificationsModule],
+  // Phase 2: VoiceModule supplies VoicePolicyService so the dispatcher routes
+  // the Day 0/1/3/7 in-app client copy through the Roman Option-3 source of
+  // truth (FEATURE_ROMAN_COPY_V2-gated; no-op while OFF).
+  imports: [AnalyticsModule, EmailModule, NotificationsModule, VoiceModule],
   providers: [
     PrismaService,
     DunningEscalationClassifier,

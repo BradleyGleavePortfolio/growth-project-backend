@@ -1,0 +1,12 @@
+{
+  "dunning_day0": "A small matter, {firstName}: your payment did not go through. I will try again tomorrow. You need do nothing for now.",
+  "dunning_day1": "{firstName}, your payment is still outstanding. I attempted it again today without success. Updating your card will settle it.",
+  "dunning_day3": "{firstName}, your access is at risk. Three attempts have not cleared {amount}. Please update your card to keep things in order.",
+  "dunning_day7": "{firstName}, this is the last reminder. Your payment of {amount} is still outstanding. Without it, your access will be locked in three days.",
+  "lockout_day10": "The household ledger remains unsettled, {firstName}. Your payment of {amount} did not clear after several attempts. Access will resume the moment billing is current. Update your card to restore everything at once; I will be here when it is done.",
+  "paywall": "This content requires an active subscription. Choose a plan to continue.",
+  "billing_update": "Your payment method needs attention. Please update your card to avoid an interruption to your access.",
+  "first_payment_ed3": "Your payment was successful. Your subscription is now active.",
+  "empty_notifications": "You have no notifications.",
+  "onboarding_welcome": "Welcome to The Growth Project. Your account is ready and your coach has been notified."
+}

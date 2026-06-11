@@ -19,6 +19,8 @@ import {
   PushAbortedError,
   PushDeliveryResult,
 } from './push-delivery.types';
+import { VoicePolicyService } from '../roman/voice/voice-policy.service';
+import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
 
 // Phase 6B: PushPayload is the minimal envelope CoachAlertsService.tryPush
 // passes through. It intentionally contains no PII — only the alert
@@ -64,6 +66,10 @@ export class NotificationsService {
     // audit events. Optional so tests that build NotificationsService
     // without DI continue to work (audit writes become no-ops).
     @Optional() private audit?: AuditService,
+    // Phase 2: the Roman Option-3 copy policy. @Optional so thin unit tests
+    // that construct NotificationsService without DI keep working — when it is
+    // absent the empty-state copy falls back to the pinned legacy string.
+    @Optional() private voice?: VoicePolicyService,
   ) {}
 
   // ── Preferences ───────────────────────────────────────────────────────────
@@ -354,7 +360,34 @@ export class NotificationsService {
       where: { user_id: userId, read_at: null },
     });
 
-    return { items, nextCursor, unreadCount };
+    // Phase 2: when the panel is empty, attach the Roman empty-state copy +
+    // avatar crop so the UI renders a calm "nothing here" message rather than a
+    // blank list. `emptyState` is null when there ARE items, so the existing
+    // shape (items / nextCursor / unreadCount) is preserved for non-empty
+    // responses and no consumer that ignores the field is affected.
+    const emptyState: RomanCopyPayload | null =
+      items.length === 0 ? this.emptyNotificationsCopy() : null;
+
+    return { items, nextCursor, unreadCount, emptyState };
+  }
+
+  /**
+   * Phase 2 empty-list copy, routed through the Roman Voice Policy
+   * (FEATURE_ROMAN_COPY_V2-gated). Falls back to the pinned legacy string when
+   * the policy service is not wired (thin unit tests). Never returns an empty
+   * string — a blank empty-state is a worse user experience than a default.
+   */
+  private emptyNotificationsCopy(): RomanCopyPayload {
+    if (this.voice) {
+      return this.voice.copyFor('empty_notifications');
+    }
+    // No-DI fallback: the pinned legacy empty-state copy + neutral crop.
+    return {
+      text: 'You have no notifications.',
+      avatar_crop: 'neutral',
+      surface_key: 'empty_notifications',
+      voice_variant: 'legacy',
+    };
   }
 
   /**

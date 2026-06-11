@@ -15,6 +15,33 @@ import {
 } from './dunning-v2.renderer';
 import { DunningV2Telemetry } from './dunning-v2.telemetry';
 import { DUNNING_V2_CADENCE_DAYS } from './dunning-v2.cadence';
+import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
+import {
+  SurfaceKey,
+  RomanCopyPayload,
+} from '../../roman/voice/voice-policy.constants';
+import { applyTokens } from './dunning-v2.renderer';
+
+/**
+ * Phase 2 — map a dunning classifier `copyKey` to the Roman Phase 2 in-app
+ * `SurfaceKey`. Only the Day 0/1/3/7 client surfaces are in Phase 2 scope; the
+ * late-reversal keys and coach surfaces are NOT swapped here and return
+ * `undefined` so the dispatcher keeps its existing rendering for them.
+ */
+function phase2SurfaceForCopyKey(copyKey: string): SurfaceKey | undefined {
+  switch (copyKey) {
+    case 'day0':
+      return 'dunning_day0';
+    case 'day1':
+      return 'dunning_day1';
+    case 'day3':
+      return 'dunning_day3';
+    case 'day7':
+      return 'dunning_day7';
+    default:
+      return undefined;
+  }
+}
 
 /**
  * B3 Smart Dunning v2 — notification dispatcher + coach notifier (spec §4, §9).
@@ -66,6 +93,10 @@ export class DunningV2Dispatcher {
     @Optional() private readonly notifications?: NotificationsService,
     @Optional() private readonly email?: EmailService,
     @Optional() private readonly coachAlert?: CoachAlertEmitter,
+    // Phase 2 — the single Roman Option-3 copy source of truth. @Optional so
+    // thin unit tests can construct the dispatcher without DI; when present,
+    // the Day 0/1/3/7 in-app client copy funnels through it (flag-gated).
+    @Optional() private readonly voice?: VoicePolicyService,
   ) {}
 
   /**
@@ -115,15 +146,50 @@ export class DunningV2Dispatcher {
     ctx: DispatchContext,
     decision: ChannelDecision,
   ): Promise<void> {
-    // Money surface: quip is allowed but may opt out; client rate 0.125.
-    const rotation = new QuipRotation();
-    const quip = rotation.shouldQuip('client');
-    const body = this.renderer.clientPush(decision.copyKey, ctx.tokens, quip);
+    // Phase 2: route the Day 0/1/3/7 in-app client copy through the Roman
+    // Voice Policy. With FEATURE_ROMAN_COPY_V2 OFF the policy returns the
+    // LEGACY string — byte-equal to this renderer's `straight` variant — so
+    // flag-off behaviour is unchanged. With the flag ON it returns the Roman
+    // Option-3 variant. The `avatar_crop` rides along on the surface so the UI
+    // never renders Roman's voice without his face.
+    const policy = this.resolvePhase2Copy(decision.copyKey, ctx);
+    let body: string;
+    if (policy && policy.voice_variant === 'roman_v2') {
+      // Flag ON: use the Roman Option-3 Phase 2 copy.
+      body = applyTokens(policy.text, ctx.tokens);
+    } else {
+      // Flag OFF (or out of Phase 2 scope): keep the EXACT existing rendering,
+      // including the locked quip rotation, so flag-off runtime behaviour is
+      // byte-for-byte unchanged. Money surface, client rate 0.125.
+      const rotation = new QuipRotation();
+      const quip = rotation.shouldQuip('client');
+      body = this.renderer.clientPush(decision.copyKey, ctx.tokens, quip);
+    }
     if (this.notifications) {
       await this.notifications.pushToUser(ctx.clientUserId, 'Payment', body);
     }
     const day = DUNNING_V2_CADENCE_DAYS[ctx.stepIndex] ?? ctx.stepIndex;
     this.telemetry.notifySent(ctx.clientUserId, day, 'push', 'client');
+  }
+
+  /**
+   * Phase 2 helper: resolve the Roman Voice Policy payload for a Day 0/1/3/7
+   * client copyKey, or `undefined` when the key is out of Phase 2 scope or the
+   * VoicePolicyService is not wired (thin unit tests). Never throws into the
+   * dispatch path — a missing policy falls back to the legacy renderer.
+   */
+  private resolvePhase2Copy(
+    copyKey: string,
+    _ctx: DispatchContext,
+  ): RomanCopyPayload | undefined {
+    if (!this.voice) {
+      return undefined;
+    }
+    const surface = phase2SurfaceForCopyKey(copyKey);
+    if (!surface) {
+      return undefined;
+    }
+    return this.voice.copyFor(surface);
   }
 
   private async sendClientEmail(
