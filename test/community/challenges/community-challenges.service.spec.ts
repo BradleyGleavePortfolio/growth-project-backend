@@ -29,6 +29,7 @@ import type {
   User,
 } from '@prisma/client';
 import { CommunityChallengesService } from '../../../src/community/challenges/community-challenges.service';
+import { makeUser } from './test-user.factory';
 
 type AccessMock = {
   findWorkspace: jest.Mock;
@@ -46,6 +47,7 @@ type RepoMock = {
   findParticipation: jest.Mock;
   createParticipation: jest.Mock;
   updateParticipation: jest.Mock;
+  applyProgressAtomically: jest.Mock;
   listParticipationsByProgress: jest.Mock;
   findOptIn: jest.Mock;
   setOptIn: jest.Mock;
@@ -73,10 +75,10 @@ const LURKER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const PART_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const MSG_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
-const coachA = { id: COACH_A_ID, role: 'coach' } as unknown as User;
-const member = { id: MEMBER_ID, role: 'student' } as unknown as User;
-const stranger = { id: STRANGER_ID, role: 'student' } as unknown as User;
-const owner = { id: OWNER_ID, role: 'owner' } as unknown as User;
+const coachA = makeUser({ id: COACH_A_ID, role: 'coach' });
+const member = makeUser({ id: MEMBER_ID, role: 'student' });
+const stranger = makeUser({ id: STRANGER_ID, role: 'student' });
+const owner = makeUser({ id: OWNER_ID, role: 'owner' });
 
 const NOW = new Date('2026-03-01T00:00:00.000Z');
 
@@ -148,6 +150,7 @@ describe('CommunityChallengesService', () => {
       findParticipation: jest.fn(),
       createParticipation: jest.fn(),
       updateParticipation: jest.fn(),
+      applyProgressAtomically: jest.fn(),
       listParticipationsByProgress: jest.fn(),
       findOptIn: jest.fn(),
       setOptIn: jest.fn(),
@@ -298,27 +301,31 @@ describe('CommunityChallengesService', () => {
       expect(repo.updateParticipation).not.toHaveBeenCalled();
     });
 
-    it('is monotonic — a lower log cannot reduce the visible value', async () => {
+    it('is monotonic — the atomic statement receives the raw incoming value', async () => {
       repo.findParticipation.mockResolvedValue(participation()); // current 40
-      repo.updateParticipation.mockImplementation((_c, _u, data) =>
-        Promise.resolve(participation({ progress_value: data.progress_value })),
-      );
-      await service.updateProgress(member, CH_A, 10);
-      const data = repo.updateParticipation.mock.calls[0][2];
-      // Clamped UP to the current 40, never down to 10.
-      expect((data.progress_value as Prisma.Decimal).toNumber()).toBe(40);
+      // The repo statement applies GREATEST in SQL; the service forwards the
+      // incoming log unmodified and reads back the clamped row.
+      repo.applyProgressAtomically.mockResolvedValue({
+        participation: participation({ progress_value: new Prisma.Decimal(40) }),
+        completionTransitioned: false,
+      });
+      const res = await service.updateProgress(member, CH_A, 10);
+      const args = repo.applyProgressAtomically.mock.calls[0][0];
+      expect((args.incoming as Prisma.Decimal).toNumber()).toBe(10);
+      // Visible value reflects the monotonic GREATEST result, never the lower log.
+      expect(res.participation.progress_value).toBe(40);
+      expect(push.sendCommunityPush).not.toHaveBeenCalled();
     });
 
     it('raises the value and marks completion + milestone push at target', async () => {
       repo.findParticipation.mockResolvedValue(participation()); // current 40, target 100
-      repo.updateParticipation.mockImplementation((_c, _u, data) =>
-        Promise.resolve(
-          participation({
-            progress_value: data.progress_value,
-            completed_at: data.completed_at ?? null,
-          }),
-        ),
-      );
+      repo.applyProgressAtomically.mockResolvedValue({
+        participation: participation({
+          progress_value: new Prisma.Decimal(100),
+          completed_at: NOW,
+        }),
+        completionTransitioned: true,
+      });
       const res = await service.updateProgress(member, CH_A, 100);
       expect(res.participation.progress_value).toBe(100);
       expect(res.participation.completed).toBe(true);
@@ -326,15 +333,63 @@ describe('CommunityChallengesService', () => {
       expect(realtime.broadcastCommunityEvent).toHaveBeenCalledTimes(1);
     });
 
-    it('does not re-fire the milestone when already complete', async () => {
+    it('does not re-fire the milestone when completion did not transition', async () => {
       repo.findParticipation.mockResolvedValue(
         participation({ progress_value: new Prisma.Decimal(100), completed_at: NOW }),
       );
-      repo.updateParticipation.mockResolvedValue(
-        participation({ progress_value: new Prisma.Decimal(120), completed_at: NOW }),
-      );
+      // Already complete: the atomic statement did not flip completed_at, so
+      // completionTransitioned is false and no push fires.
+      repo.applyProgressAtomically.mockResolvedValue({
+        participation: participation({
+          progress_value: new Prisma.Decimal(120),
+          completed_at: NOW,
+        }),
+        completionTransitioned: false,
+      });
       await service.updateProgress(member, CH_A, 120);
       expect(push.sendCommunityPush).not.toHaveBeenCalled();
+    });
+
+    it('concurrency: races lower/higher logs + double completion — progress never regresses, exactly one milestone', async () => {
+      // Two+ concurrent writers hit the SAME participation. The atomic statement
+      // (GREATEST + COALESCE completed_at) is simulated here by shared server
+      // state mutated under each call, pinning the service contract end-to-end:
+      // whichever order the writes interleave, the visible value only ever rises
+      // and completion emits exactly once.
+      repo.findParticipation.mockResolvedValue(participation()); // current 40, target 100
+      let serverProgress = 40;
+      let serverCompleted: Date | null = null;
+      repo.applyProgressAtomically.mockImplementation(
+        ({ incoming }: { incoming: Prisma.Decimal }) => {
+          // GREATEST(progress_value, incoming)
+          serverProgress = Math.max(serverProgress, incoming.toNumber());
+          // COALESCE(completed_at, CASE WHEN new >= target THEN now END)
+          const wasNull = serverCompleted === null;
+          if (wasNull && serverProgress >= 100) serverCompleted = NOW;
+          const transitioned = wasNull && serverCompleted !== null;
+          return Promise.resolve({
+            participation: participation({
+              progress_value: new Prisma.Decimal(serverProgress),
+              completed_at: serverCompleted,
+            }),
+            completionTransitioned: transitioned,
+          });
+        },
+      );
+
+      const results = await Promise.all([
+        service.updateProgress(member, CH_A, 120),
+        service.updateProgress(member, CH_A, 50),
+        service.updateProgress(member, CH_A, 110),
+      ]);
+
+      // Progress never regressed below the joined value.
+      for (const r of results) {
+        expect(r.participation.progress_value).toBeGreaterThanOrEqual(40);
+      }
+      expect(serverProgress).toBe(120);
+      // Completion fired exactly once across all racing target-reaching writes.
+      expect(push.sendCommunityPush).toHaveBeenCalledTimes(1);
     });
   });
 

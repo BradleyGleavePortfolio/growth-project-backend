@@ -148,6 +148,98 @@ export class CommunityChallengesRepository {
     });
   }
 
+  /**
+   * Atomically apply a progress log in a single SQL statement so concurrent
+   * writers cannot lose the higher value or double-fire completion (Finding 2).
+   *
+   *   - progress_value = GREATEST(progress_value, :incoming) — monotonic; a
+   *     lower log never regresses the bar (design §3.4, no shame state).
+   *   - completed_at = COALESCE(completed_at, <now if the NEW value reaches a
+   *     positive target>) — set exactly once, never cleared.
+   *
+   * The CTE captures the PRE-update completed_at so RETURNING can report
+   * `completion_transitioned` = true only for the single statement that flipped
+   * it from NULL. The caller emits the milestone push / telemetry solely on
+   * that flag, so racing target-reaching writers produce exactly one emission.
+   *
+   * `target` is null (or <= 0) for an open-ended challenge; in that case the
+   * CASE never fires and completion stays null.
+   */
+  async applyProgressAtomically(params: {
+    challengeId: string;
+    userId: string;
+    incoming: Prisma.Decimal;
+    target: Prisma.Decimal | null;
+    now: Date;
+  }): Promise<{
+    participation: CommunityChallengeParticipation;
+    completionTransitioned: boolean;
+  }> {
+    const hasTarget = params.target !== null && params.target.greaterThan(0);
+    const targetSql = hasTarget
+      ? (params.target as Prisma.Decimal).toString()
+      : null;
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        workspace_id: string;
+        challenge_id: string;
+        user_id: string;
+        progress_value: Prisma.Decimal;
+        completed_at: Date | null;
+        last_logged_at: Date | null;
+        created_at: Date;
+        updated_at: Date;
+        completion_transitioned: boolean;
+      }>
+    >`
+      WITH prior AS (
+        SELECT completed_at AS prev_completed_at
+        FROM community_challenge_participations
+        WHERE challenge_id = ${params.challengeId}::uuid
+          AND user_id = ${params.userId}::uuid
+      ),
+      updated AS (
+        UPDATE community_challenge_participations AS p
+        SET
+          progress_value = GREATEST(p.progress_value, ${params.incoming}),
+          last_logged_at = ${params.now},
+          completed_at = COALESCE(
+            p.completed_at,
+            CASE
+              WHEN ${targetSql}::numeric IS NOT NULL
+               AND GREATEST(p.progress_value, ${params.incoming}) >= ${targetSql}::numeric
+              THEN ${params.now}
+              ELSE NULL
+            END
+          ),
+          updated_at = ${params.now}
+        WHERE p.challenge_id = ${params.challengeId}::uuid
+          AND p.user_id = ${params.userId}::uuid
+        RETURNING p.*
+      )
+      SELECT
+        u.id,
+        u.workspace_id,
+        u.challenge_id,
+        u.user_id,
+        u.progress_value,
+        u.completed_at,
+        u.last_logged_at,
+        u.created_at,
+        u.updated_at,
+        (prior.prev_completed_at IS NULL AND u.completed_at IS NOT NULL)
+          AS completion_transitioned
+      FROM updated AS u CROSS JOIN prior
+    `;
+    const row = rows[0];
+    const { completion_transitioned, ...rest } = row;
+    return {
+      participation: rest as CommunityChallengeParticipation,
+      completionTransitioned: completion_transitioned,
+    };
+  }
+
   /** Leaderboard ordering: highest progress first, earliest completion as tiebreak. */
   async listParticipationsByProgress(
     challengeId: string,

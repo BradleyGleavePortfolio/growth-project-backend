@@ -432,22 +432,22 @@ export class CommunityChallengesService {
       });
     }
 
-    // Monotonic progress: never let a new log reduce the visible number. A
-    // lighter day simply does not move the bar — there is no regression and no
-    // shame state (design §3.4).
-    const current = existing.progress_value.toNumber();
-    const next = Math.max(current, progressValue);
+    // Atomic, monotonic progress + completion in ONE statement (Finding 2): the
+    // repository applies GREATEST(progress_value, incoming) and a COALESCE'd
+    // completed_at, and reports whether THIS statement transitioned completion
+    // from null. Racing writers can no longer lose the higher value, regress
+    // the bar (design §3.4, no shame state), or double-fire completion.
+    const { participation: updated, completionTransitioned } =
+      await this.repo.applyProgressAtomically({
+        challengeId,
+        userId: user.id,
+        incoming: new Prisma.Decimal(progressValue),
+        target: challenge.target_value,
+        now: new Date(),
+      });
 
     const target = this.toNumber(challenge.target_value);
-    const reachedTarget = target !== null && target > 0 && next >= target;
-    const wasComplete = existing.completed_at !== null;
-
-    const updated = await this.repo.updateParticipation(challengeId, user.id, {
-      progress_value: new Prisma.Decimal(next),
-      last_logged_at: new Date(),
-      ...(reachedTarget && !wasComplete ? { completed_at: new Date() } : {}),
-    });
-
+    const next = updated.progress_value.toNumber();
     const percent =
       target !== null && target > 0 ? Math.min(next / target, 1) : 0;
 
@@ -461,8 +461,10 @@ export class CommunityChallengesService {
     );
 
     // Celebrate the participant's OWN completion as a positive milestone — a
-    // self-directed closure event, never a comparison against others.
-    if (reachedTarget && !wasComplete) {
+    // self-directed closure event, never a comparison against others. Emitted
+    // ONLY when the atomic statement actually flipped completed_at from null,
+    // so concurrent target-reaching writes yield exactly one milestone push.
+    if (completionTransitioned) {
       void this.communityPush.sendCommunityPush({
         recipientId: user.id,
         kind: NotificationKind.COMMUNITY_CHALLENGE_MILESTONE,
