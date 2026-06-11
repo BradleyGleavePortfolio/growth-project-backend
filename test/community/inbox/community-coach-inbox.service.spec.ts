@@ -30,6 +30,8 @@ function msg(over: Partial<MessageWithSender> = {}): MessageWithSender {
     sender_id: 'aaaaaaaa-0000-0000-0000-0000000000c1',
     kind: 'text',
     body: 'help please',
+    coach_seen_at: null,
+    coach_acked_at: null,
     coach_replied_at: null,
     deleted_at: null,
     plan_context_type: null,
@@ -185,5 +187,86 @@ describe('CommunityCoachInboxService', () => {
     ]);
     const res = await service.list(coach, {} as never);
     expect(res.items[0].preview).toBe('hello world');
+  });
+
+  // ── v2-2 (R1 fixer, B-NEW): inbox ack envelope is the FULL canonical shape ──
+  //
+  // These tests exercise the REAL ackSummary() projection (no mocking of the
+  // ack shape), pinning the contract the mobile client parses. Before B-NEW the
+  // inbox emitted a narrow `{ state, sla_state }` summary that the mobile
+  // full-envelope parse silently dropped (the R1 P0). Now the inbox emits the
+  // same `{ state, seen_at, acked_at, replied_at, sla }` envelope as the
+  // transition + message-detail surfaces.
+  describe('ack envelope under FEATURE_COMMUNITY_ACKS (B-NEW)', () => {
+    const ORIGINAL = process.env.FEATURE_COMMUNITY_ACKS;
+
+    afterEach(() => {
+      if (ORIGINAL === undefined) delete process.env.FEATURE_COMMUNITY_ACKS;
+      else process.env.FEATURE_COMMUNITY_ACKS = ORIGINAL;
+    });
+
+    it('flag ON: a message row carries the full five-field ack envelope', async () => {
+      process.env.FEATURE_COMMUNITY_ACKS = 'true';
+      repo.coachedCohortIds.mockResolvedValue([COHORT_1]);
+      repo.unansweredMessages.mockResolvedValue([msg()]);
+      const res = await service.list(coach, {} as never);
+      const ack = (res.items[0] as { ack?: Record<string, unknown> }).ack;
+      expect(ack).toBeDefined();
+      expect(Object.keys(ack as object).sort()).toEqual([
+        'acked_at',
+        'replied_at',
+        'seen_at',
+        'sla',
+        'state',
+      ]);
+      expect(ack).toMatchObject({
+        state: 'none',
+        seen_at: null,
+        acked_at: null,
+        replied_at: null,
+      });
+      expect(ack?.sla).toMatchObject({
+        sla_state: expect.stringMatching(/within|warning|breached/),
+        elapsed_ms: expect.any(Number),
+        soft_target_ms: expect.any(Number),
+        hard_target_ms: expect.any(Number),
+      });
+    });
+
+    it('flag ON: derives the highest stamped state and mirrors the timestamps', async () => {
+      process.env.FEATURE_COMMUNITY_ACKS = 'true';
+      const seenAt = new Date('2026-01-01T01:00:00.000Z');
+      const ackedAt = new Date('2026-01-01T02:00:00.000Z');
+      repo.coachedCohortIds.mockResolvedValue([COHORT_1]);
+      repo.unansweredMessages.mockResolvedValue([
+        msg({ coach_seen_at: seenAt, coach_acked_at: ackedAt }),
+      ]);
+      const res = await service.list(coach, {} as never);
+      const ack = (res.items[0] as { ack?: Record<string, unknown> }).ack;
+      expect(ack).toMatchObject({
+        state: 'acked',
+        seen_at: seenAt.toISOString(),
+        acked_at: ackedAt.toISOString(),
+        replied_at: null,
+      });
+    });
+
+    it('flag OFF: a message row has NO ack key (v1-6 shape preserved)', async () => {
+      delete process.env.FEATURE_COMMUNITY_ACKS;
+      repo.coachedCohortIds.mockResolvedValue([COHORT_1]);
+      repo.unansweredMessages.mockResolvedValue([msg()]);
+      const res = await service.list(coach, {} as never);
+      expect(res.items[0]).not.toHaveProperty('ack');
+    });
+
+    it('posts never carry an ack envelope even when the flag is ON', async () => {
+      process.env.FEATURE_COMMUNITY_ACKS = 'true';
+      repo.coachedCohortIds.mockResolvedValue([COHORT_2]);
+      repo.unansweredPosts.mockResolvedValue([post()]);
+      const res = await service.list(coach, {} as never);
+      const postItem = res.items.find((i) => i.type === 'post');
+      expect(postItem).toBeDefined();
+      expect(postItem).not.toHaveProperty('ack');
+    });
   });
 });
