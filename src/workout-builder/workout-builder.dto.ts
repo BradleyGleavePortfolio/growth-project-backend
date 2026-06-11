@@ -154,6 +154,47 @@ export class AssignProgramDto {
   start_date!: string;
 }
 
+// ─── MWB-2: clone-to-client (FEATURE_MWB_TEMPLATES) ───────────────────────────
+
+/**
+ * MWB-2 (§3.3) request body for POST /workout-programs/:programId/clone-to-client.
+ * The acting coach clones a master template program (the path param) onto a
+ * specific client by value. The body carries only the target client; the
+ * source program id is the route param and the acting coach is the JWT subject,
+ * so neither is trusted from the body. `client_id` must be a UUID (R68: every
+ * DTO field is typed and validated).
+ */
+export class CloneProgramToClientDto {
+  /** Target client the master is cloned onto. Must be a UUID. */
+  @IsUUID('all')
+  @IsNotEmpty()
+  client_id!: string;
+}
+
+/**
+ * MWB-2 (§3.3) typed result of a clone-to-client. Returns the new program id
+ * and the ids of every cloned plan (in week/day order) plus the fresh
+ * program-level revision id the clone now points at via head_revision_id. The
+ * shape is explicit (no `unknown`/`any`) so OpenAPI regenerates a stable
+ * contract and callers can act on the result without re-fetching.
+ */
+export class CloneProgramResultDto {
+  /** Id of the newly created (non-template) program owned by the coach. */
+  program_id!: string;
+
+  /** Source master program this clone was taken from (echoed for provenance). */
+  cloned_from_id!: string;
+
+  /** Always false on a clone — the brief's Decision A invariant. */
+  is_template!: boolean;
+
+  /** Fresh program-level revision the clone starts from (its "v1" anchor). */
+  head_revision_id!: string;
+
+  /** Ids of every cloned plan, in (week_index, day_index) order. */
+  plan_ids!: string[];
+}
+
 // Mobile sends idempotency_key, started_at, and completion_payload on
 // PATCH /assignments/:id/complete. Server stores all three and uses
 // idempotency_key for per-assignment dedup (unique partial index in

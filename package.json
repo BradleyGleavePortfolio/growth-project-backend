@@ -10,6 +10,7 @@
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:rls-mwb2-concurrency": "jest --config jest.rls.config.js test/rls-mwb2-clone-concurrency.spec.ts --runInBand --testTimeout=120000",
     "env:check": "ts-node -e \"require('./src/common/env-validation').assertEnv()\"",
     "secrets:print": "ts-node scripts/print-required-secrets.ts",
     "secrets:print:fly": "FORMAT=fly ts-node scripts/print-required-secrets.ts",

@@ -75,8 +75,13 @@ interface PrismaMock {
   workoutProgram: {
     create: jest.Mock;
     findUnique: jest.Mock;
+    findFirst: jest.Mock;
+    update: jest.Mock;
   };
   workoutPlanRevision: {
+    create: jest.Mock;
+  };
+  workoutProgramRevision: {
     create: jest.Mock;
   };
   user: { findUnique: jest.Mock };
@@ -87,6 +92,10 @@ interface PrismaMock {
     delete: jest.Mock;
   };
   $transaction: jest.Mock;
+  // MWB-2 G9: the clone's in-txn advisory lock runs via tx.$executeRaw. The
+  // $transaction mock runs the callback with this same mock as `tx`, so the
+  // raw handle must exist (and resolve) for the clone path to proceed.
+  $executeRaw: jest.Mock;
 }
 
 const makePrismaMock = (): PrismaMock => ({
@@ -118,9 +127,16 @@ const makePrismaMock = (): PrismaMock => ({
   workoutProgram: {
     create: jest.fn(),
     findUnique: jest.fn(),
+    // No prior clone exists by default, so the G9 existence probe lets the
+    // winner path proceed.
+    findFirst: jest.fn().mockResolvedValue(null),
+    update: jest.fn(),
   },
   workoutPlanRevision: {
     create: jest.fn().mockResolvedValue({ id: 'rev-1' }),
+  },
+  workoutProgramRevision: {
+    create: jest.fn().mockResolvedValue({ id: 'prog-rev-1' }),
   },
   user: { findUnique: jest.fn() },
   workoutBuilderIdempotencyKey: {
@@ -130,6 +146,7 @@ const makePrismaMock = (): PrismaMock => ({
     delete: jest.fn(),
   },
   $transaction: jest.fn(),
+  $executeRaw: jest.fn().mockResolvedValue(1),
 });
 
 describe('WorkoutBuilderService', () => {
@@ -766,7 +783,7 @@ describe('WorkoutBuilderService', () => {
 
   // ─── MWB-1 cloneProgramToClient (§3.2) ────────────────────────────────────
 
-  describe('cloneProgramToClient (MWB-1 §3.2)', () => {
+  describe('cloneProgramToClient (MWB-2 §3.3, FEATURE_MWB_TEMPLATES)', () => {
     const master = {
       id: 'prog-master',
       coach_id: COACH_ID,
@@ -780,9 +797,32 @@ describe('WorkoutBuilderService', () => {
       goal_tag: null,
     };
 
+    // MWB-2 is flag-gated (default OFF). These tests exercise the enabled
+    // behaviour; the OFF→404 invariant is pinned separately below.
+    const ORIGINAL_FLAG = process.env.FEATURE_MWB_TEMPLATES;
+    beforeEach(() => {
+      process.env.FEATURE_MWB_TEMPLATES = 'true';
+    });
+    afterEach(() => {
+      if (ORIGINAL_FLAG === undefined) delete process.env.FEATURE_MWB_TEMPLATES;
+      else process.env.FEATURE_MWB_TEMPLATES = ORIGINAL_FLAG;
+    });
+
     it('clones into a NEW non-template program with cloned_from_id set', async () => {
       prismaMock.workoutProgram.findUnique.mockResolvedValue(master);
-      prismaMock.workoutProgram.create.mockResolvedValue({ id: 'prog-clone' });
+      prismaMock.workoutProgram.create.mockResolvedValue({
+        id: 'prog-clone',
+        is_template: false,
+        cloned_from_id: 'prog-master',
+        weeks: 4,
+        days_per_week: 3,
+      });
+      prismaMock.workoutProgram.update.mockResolvedValue({
+        id: 'prog-clone',
+        is_template: false,
+        cloned_from_id: 'prog-master',
+        head_revision_id: 'prog-rev-1',
+      });
       prismaMock.workoutPlan.findMany.mockResolvedValue([]);
 
       const result = await service.cloneProgramToClient(
@@ -800,7 +840,26 @@ describe('WorkoutBuilderService', () => {
           }),
         }),
       );
-      expect(result.program).toEqual({ id: 'prog-clone' });
+      // Decision A: a fresh program-level revision (index 0, cause 'clone')
+      // is written and head_revision_id is pointed at it ("v1").
+      expect(prismaMock.workoutProgramRevision.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            program_id: 'prog-clone',
+            revision_index: 0,
+            cause: 'clone',
+            author_kind: 'coach',
+          }),
+        }),
+      );
+      expect(prismaMock.workoutProgram.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'prog-clone' },
+          data: { head_revision_id: 'prog-rev-1' },
+        }),
+      );
+      expect(result.program.head_revision_id).toBe('prog-rev-1');
+      expect(result.programRevision.id).toBe('prog-rev-1');
     });
 
     it('403s when the coach cannot access the target client', async () => {
@@ -816,6 +875,62 @@ describe('WorkoutBuilderService', () => {
       await expect(
         service.cloneProgramToClient('prog-master', CLIENT_ID, COACH_ID),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('404s a foreign-tenant master (does not leak that it exists)', async () => {
+      prismaMock.workoutProgram.findUnique.mockResolvedValue({
+        ...master,
+        owner_user_id: 'other-coach',
+        coach_id: 'other-coach',
+        visibility: 'owner_only',
+      });
+      await expect(
+        service.cloneProgramToClient('prog-master', CLIENT_ID, COACH_ID),
+      ).rejects.toThrow(NotFoundException);
+      // No write was attempted on a non-reachable master.
+      expect(prismaMock.workoutProgram.create).not.toHaveBeenCalled();
+    });
+
+    it('404s when FEATURE_MWB_TEMPLATES is OFF, before any DB read', async () => {
+      delete process.env.FEATURE_MWB_TEMPLATES;
+      await expect(
+        service.cloneProgramToClient('prog-master', CLIENT_ID, COACH_ID),
+      ).rejects.toThrow(NotFoundException);
+      // Flag gate runs first — the master is never even looked up.
+      expect(prismaMock.workoutProgram.findUnique).not.toHaveBeenCalled();
+      expect(prismaMock.workoutProgram.create).not.toHaveBeenCalled();
+    });
+
+    it('cloneProgramToClientResult projects the typed CloneProgramResultDto', async () => {
+      prismaMock.workoutProgram.findUnique.mockResolvedValue(master);
+      prismaMock.workoutProgram.create.mockResolvedValue({
+        id: 'prog-clone',
+        is_template: false,
+        cloned_from_id: 'prog-master',
+        weeks: 4,
+        days_per_week: 3,
+      });
+      prismaMock.workoutProgram.update.mockResolvedValue({
+        id: 'prog-clone',
+        is_template: false,
+        cloned_from_id: 'prog-master',
+        head_revision_id: 'prog-rev-1',
+      });
+      prismaMock.workoutPlan.findMany.mockResolvedValue([]);
+
+      const dto = await service.cloneProgramToClientResult(
+        'prog-master',
+        CLIENT_ID,
+        COACH_ID,
+      );
+
+      expect(dto).toEqual({
+        program_id: 'prog-clone',
+        cloned_from_id: 'prog-master',
+        is_template: false,
+        head_revision_id: 'prog-rev-1',
+        plan_ids: [],
+      });
     });
   });
 
