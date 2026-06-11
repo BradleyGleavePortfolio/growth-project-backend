@@ -64,11 +64,19 @@ type PushMock = { sendCommunityPush: jest.Mock };
 const WS_A = '11111111-1111-1111-1111-111111111111';
 const COHORT_A = '33333333-3333-3333-3333-333333333333';
 const CH_A = '44444444-4444-4444-4444-444444444444';
+const COACH_A_ID = '55555555-5555-5555-5555-555555555555';
+const MEMBER_ID = '66666666-6666-6666-6666-666666666666';
+const STRANGER_ID = '77777777-7777-7777-7777-777777777777';
+const OWNER_ID = '88888888-8888-8888-8888-888888888888';
+const PEER_ID = '99999999-9999-9999-9999-999999999999';
+const LURKER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const PART_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const MSG_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
-const coachA = { id: 'coach-a', role: 'coach' } as unknown as User;
-const member = { id: 'member-1', role: 'student' } as unknown as User;
-const stranger = { id: 'stranger-1', role: 'student' } as unknown as User;
-const owner = { id: 'platform-owner', role: 'owner' } as unknown as User;
+const coachA = { id: COACH_A_ID, role: 'coach' } as unknown as User;
+const member = { id: MEMBER_ID, role: 'student' } as unknown as User;
+const stranger = { id: STRANGER_ID, role: 'student' } as unknown as User;
+const owner = { id: OWNER_ID, role: 'owner' } as unknown as User;
 
 const NOW = new Date('2026-03-01T00:00:00.000Z');
 
@@ -98,10 +106,10 @@ function participation(
   over: Partial<CommunityChallengeParticipation> = {},
 ): CommunityChallengeParticipation {
   return {
-    id: 'part-1',
+    id: PART_ID,
     workspace_id: WS_A,
     challenge_id: CH_A,
-    user_id: member.id,
+    user_id: MEMBER_ID,
     progress_value: new Prisma.Decimal(40),
     completed_at: null,
     last_logged_at: NOW,
@@ -366,17 +374,17 @@ describe('CommunityChallengesService', () => {
       );
       access.canAccessWorkspace.mockResolvedValue(true);
       repo.findOptIn.mockResolvedValue(optInRow());
-      repo.listOptedInUserIds.mockResolvedValue(new Set(['member-1', 'peer-2']));
+      repo.listOptedInUserIds.mockResolvedValue(new Set([MEMBER_ID, PEER_ID]));
       repo.listParticipationsByProgress.mockResolvedValue([
-        participation({ user_id: 'peer-2', progress_value: new Prisma.Decimal(90) }),
-        participation({ user_id: 'member-1', progress_value: new Prisma.Decimal(40) }),
+        participation({ user_id: PEER_ID, progress_value: new Prisma.Decimal(90) }),
+        participation({ user_id: MEMBER_ID, progress_value: new Prisma.Decimal(40) }),
         // A non-consenting participant — must NOT appear.
-        participation({ user_id: 'lurker-3', progress_value: new Prisma.Decimal(99) }),
+        participation({ user_id: LURKER_ID, progress_value: new Prisma.Decimal(99) }),
       ]);
 
       const res = await service.getLeaderboard(member, CH_A);
       expect(res.available).toBe(true);
-      expect(res.rows.map((r) => r.user_id)).toEqual(['peer-2', 'member-1']);
+      expect(res.rows.map((r) => r.user_id)).toEqual([PEER_ID, MEMBER_ID]);
       expect(res.rows[0].rank).toBe(1);
       expect(res.rows[1].is_self).toBe(true);
     });
@@ -420,9 +428,9 @@ describe('CommunityChallengesService', () => {
 
     it('adds an encouragement comment on a visible challenge', async () => {
       repo.createComment.mockResolvedValue({
-        id: 'msg-1',
+        id: MSG_ID,
         plan_context_id: CH_A,
-        sender_id: member.id,
+        sender_id: MEMBER_ID,
         body: 'Great work!',
         created_at: NOW,
       } as CommunityMessage);
@@ -445,11 +453,11 @@ describe('CommunityChallengesService', () => {
 
     it('delegates a report to the public moderation comment path', async () => {
       moderation.report.mockResolvedValue({ item: { id: 'rep-1' } });
-      await service.reportComment(member, CH_A, 'msg-1', 'inappropriate', undefined);
+      await service.reportComment(member, CH_A, MSG_ID, 'inappropriate', undefined);
       expect(moderation.report).toHaveBeenCalledWith(
         member,
         'comment',
-        'msg-1',
+        MSG_ID,
         'inappropriate',
         undefined,
       );
