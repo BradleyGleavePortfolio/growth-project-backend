@@ -91,8 +91,24 @@ describe('community v2-2 coach ack signals (HTTP)', () => {
           preview: 'hello',
           created_at: new Date().toISOString(),
           item_url_path: `/community/cohorts/${COHORT}/messages/${MSG_ID}`,
+          // B-NEW: the inbox now emits the FULL canonical ack envelope
+          // (state + all three timestamps + full SLA snapshot) so the client
+          // parses every ack envelope through one schema.
           ...(process.env.FEATURE_COMMUNITY_ACKS === 'true'
-            ? { ack: { state: 'none', sla_state: 'within' } }
+            ? {
+                ack: {
+                  state: 'none',
+                  seen_at: null,
+                  acked_at: null,
+                  replied_at: null,
+                  sla: {
+                    sla_state: 'within',
+                    elapsed_ms: 0,
+                    soft_target_ms: 86400000,
+                    hard_target_ms: 172800000,
+                  },
+                },
+              }
             : {}),
         },
       ],
@@ -214,15 +230,33 @@ describe('community v2-2 coach ack signals (HTTP)', () => {
   describe('inbox shape under the flag', () => {
     const path = `/api/community/me/coach-inbox`;
 
-    it('acks ON → inbox row carries an ack envelope', async () => {
+    it('acks ON → inbox row carries the FULL ack envelope (state + timestamps + sla)', async () => {
       process.env.FEATURE_COMMUNITY_API = 'true';
       process.env.FEATURE_COMMUNITY_ACKS = 'true';
       const res = await call('GET', path);
       expect(res.status).toBe(200);
+      // B-NEW: the inbox ack envelope is the full canonical shape, identical to
+      // the transition + message-detail envelope (one shape the client parses).
       expect(res.body.items[0].ack).toEqual({
         state: 'none',
-        sla_state: 'within',
+        seen_at: null,
+        acked_at: null,
+        replied_at: null,
+        sla: {
+          sla_state: 'within',
+          elapsed_ms: 0,
+          soft_target_ms: 86400000,
+          hard_target_ms: 172800000,
+        },
       });
+      // The five-field shape is exactly what the transition endpoint returns.
+      expect(Object.keys(res.body.items[0].ack).sort()).toEqual([
+        'acked_at',
+        'replied_at',
+        'seen_at',
+        'sla',
+        'state',
+      ]);
     });
 
     it('acks OFF → inbox row has NO ack key (v1-6 shape preserved)', async () => {
