@@ -115,10 +115,13 @@ export class CommunityCoachInboxService {
   }
 
   /**
-   * v2-2: derive the per-thread ack summary for a message row from its existing
-   * coach_*_at columns (highest stamped wins) plus the read-time SLA state
-   * (elapsed since receipt vs configured thresholds). Read-only — building the
-   * inbox NEVER mutates ack state.
+   * v2-2 (R1 fixer, B-NEW): derive the FULL per-thread ack envelope for a
+   * message row from its existing coach_*_at columns (highest stamped state
+   * wins) plus the full read-time SLA snapshot (elapsed since receipt vs the
+   * configured thresholds). This is the SAME canonical `AckStateDto` shape the
+   * transition endpoints return and the message-detail read emits, so the
+   * client parses every ack envelope through one schema. Read-only — building
+   * the inbox NEVER mutates ack state.
    */
   private ackSummary(m: MessageWithSender): InboxAckSummary {
     const state: AckState = m.coach_replied_at
@@ -130,7 +133,10 @@ export class CommunityCoachInboxService {
           : 'none';
     return {
       state,
-      sla_state: buildSlaSnapshot({ receivedAt: m.created_at }).sla_state,
+      seen_at: m.coach_seen_at ? m.coach_seen_at.toISOString() : null,
+      acked_at: m.coach_acked_at ? m.coach_acked_at.toISOString() : null,
+      replied_at: m.coach_replied_at ? m.coach_replied_at.toISOString() : null,
+      sla: buildSlaSnapshot({ receivedAt: m.created_at }),
     };
   }
 
