@@ -57,7 +57,7 @@ export class CommunityMessagesController {
     @Param('cohortId') cohortId: string,
     @Body() body: CreateMessageDto,
   ) {
-    return this.messages.send(req.user, cohortId, body.body);
+    return this.messages.send(req.user, cohortId, body.body, body.plan_context);
   }
 
   @Get('cohorts/:cohortId/messages')

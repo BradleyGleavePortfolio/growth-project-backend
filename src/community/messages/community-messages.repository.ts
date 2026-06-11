@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { CommunityMessage } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
+import type { PlanContextTag } from '../plan-context/plan-context.dto';
 
 /**
  * Data access for cohort messages and post-comments.
@@ -25,6 +27,10 @@ export class CommunityMessagesRepository {
     cohortId: string;
     senderId: string;
     body: string;
+    // v2-1: a validated plan-context tag to persist into plan_context_payload
+    // (JsonB). Null/undefined writes a SQL NULL — the common, untagged case and
+    // the only case when FEATURE_COMMUNITY_PLAN_TAGS is off (tag dropped on send).
+    planContext?: PlanContextTag | null;
   }): Promise<CommunityMessage> {
     return this.prisma.communityMessage.create({
       data: {
@@ -35,6 +41,10 @@ export class CommunityMessagesRepository {
         sender_id: params.senderId,
         body: params.body,
         visibility: 'active',
+        plan_context_payload:
+          params.planContext == null
+            ? Prisma.JsonNull
+            : (params.planContext as unknown as Prisma.InputJsonValue),
       },
     });
   }

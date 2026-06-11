@@ -1,7 +1,9 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import type { CommunityMessage, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
@@ -13,6 +15,14 @@ import {
   COMMENT_CONTEXT_TYPE,
   CommunityMessagesRepository,
 } from './community-messages.repository';
+import {
+  PlanContextService,
+  planTagsEnabled,
+} from '../plan-context/plan-context.service';
+import {
+  PlanContextTag,
+  PlanContextTagSchema,
+} from '../plan-context/plan-context.dto';
 import {
   CommunityMessageListResponse,
   CommunityMessageListResponseSchema,
@@ -43,10 +53,13 @@ const NOT_FOUND = {
  */
 @Injectable()
 export class CommunityMessagesService {
+  private readonly logger = new Logger(CommunityMessagesService.name);
+
   constructor(
     private readonly access: CommunityAccessService,
     private readonly repo: CommunityMessagesRepository,
     private readonly realtime: CommunityRealtimeService,
+    private readonly planContext: PlanContextService,
   ) {}
 
   private view(m: CommunityMessage): CommunityMessageView {
@@ -60,7 +73,53 @@ export class CommunityMessagesService {
       updated_at: m.updated_at.toISOString(),
       edited: m.updated_at.getTime() - m.created_at.getTime() > 1000,
       deleted: m.deleted_at !== null,
+      plan_context: this.viewPlanContext(m.plan_context_payload),
     };
+  }
+
+  /**
+   * Project the persisted plan_context_payload JsonB back into the typed tag
+   * for the response. A row written before v2-1, or with the flag off, has a
+   * null payload. We re-validate through PlanContextTagSchema so a row that
+   * somehow holds a malformed payload surfaces as null rather than leaking an
+   * unvalidated shape (defence-in-depth at the read boundary).
+   */
+  private viewPlanContext(payload: unknown): PlanContextTag | null {
+    if (payload == null) return null;
+    const parsed = PlanContextTagSchema.safeParse(payload);
+    return parsed.success ? parsed.data : null;
+  }
+
+  /**
+   * Resolve an incoming raw plan_context field into a validated tag to persist.
+   *
+   * Flag OFF: any incoming tag is dropped (returns null) with an INFO log
+   *   carrying reason "flag_off_drop" — the send still succeeds (brief contract).
+   * Flag ON, no field: returns null (untagged message).
+   * Flag ON, field present: parsed by Zod (malformed → 422), then
+   *   PlanContextService.validate() applies the existence + ownership gate
+   *   (missing → 422, foreign coach → 403).
+   */
+  private async resolveIncomingPlanContext(
+    user: User,
+    raw: unknown,
+  ): Promise<PlanContextTag | null> {
+    if (raw == null) return null;
+    if (!planTagsEnabled()) {
+      this.logger.log(
+        `dropping plan_context on send reason=flag_off_drop sender=${user.id}`,
+      );
+      return null;
+    }
+    const parsed = PlanContextTagSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new UnprocessableEntityException({
+        error: 'unprocessable_entity',
+        code: 'community.plan_context.malformed',
+        message: parsed.error.issues.map((i) => i.message).join('; '),
+      });
+    }
+    return this.planContext.validate(user, parsed.data);
   }
 
   private parsePage(limit: string | undefined): number {
@@ -80,17 +139,25 @@ export class CommunityMessagesService {
     user: User,
     cohortId: string,
     body: string,
+    planContextRaw?: unknown,
   ): Promise<CommunityMessageResponse> {
     const cohort = await this.access.findCohort(cohortId);
     // Treat a missing cohort and an unauthorised cohort identically (404).
     if (!cohort || !(await this.access.canAccessCohort(cohort, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
+    // v2-1: validate + authorize any attached plan-context tag BEFORE the write
+    // (flag-off drops it; malformed → 422; missing entity → 422; foreign → 403).
+    const planContext = await this.resolveIncomingPlanContext(
+      user,
+      planContextRaw,
+    );
     const created = await this.repo.createCohortMessage({
       workspaceId: cohort.workspace_id,
       cohortId: cohort.id,
       senderId: user.id,
       body,
+      planContext,
     });
     // v1-6 coach-inbox producer: a coach/owner message into the cohort answers
     // the cohort's outstanding client messages, so stamp coach_replied_at on
