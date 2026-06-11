@@ -5675,31 +5675,32 @@ model CommunityMembership {
 }
 
 model CommunityMessage {
-  id                String                @default(uuid()) @db.Uuid
-  created_at        DateTime              @default(now()) @db.Timestamptz(6)
-  workspace_id      String                @db.Uuid
-  cohort_id         String?               @db.Uuid
-  scope             CommunityMessageScope
-  dm_key            String?               @db.VarChar(160)
-  recipient_user_id String?               @db.Uuid
-  sender_id         String                @db.Uuid
-  kind              CommunityMessageKind  @default(text)
-  body              String?               @db.VarChar(4000)
-  voice_url         String?               @db.Text
-  voice_duration_ms Int?                  @db.Integer
-  voice_mime_type   String?               @db.VarChar(80)
-  voice_size_bytes  Int?                  @db.Integer
-  plan_context_type String?               @db.VarChar(40)
-  plan_context_id   String?               @db.Uuid
-  plan_week_start   DateTime?             @db.Date
-  parent_message_id String?               @db.Uuid
-  parent_message_at DateTime?             @db.Timestamptz(6)
-  coach_seen_at     DateTime?             @db.Timestamptz(6)
-  coach_acked_at    DateTime?             @db.Timestamptz(6)
-  coach_replied_at  DateTime?             @db.Timestamptz(6)
-  visibility        String                @default("active") @db.VarChar(24)
-  deleted_at        DateTime?             @db.Timestamptz(6)
-  updated_at        DateTime              @updatedAt @db.Timestamptz(6)
+  id                   String                @default(uuid()) @db.Uuid
+  created_at           DateTime              @default(now()) @db.Timestamptz(6)
+  workspace_id         String                @db.Uuid
+  cohort_id            String?               @db.Uuid
+  scope                CommunityMessageScope
+  dm_key               String?               @db.VarChar(160)
+  recipient_user_id    String?               @db.Uuid
+  sender_id            String                @db.Uuid
+  kind                 CommunityMessageKind  @default(text)
+  body                 String?               @db.VarChar(4000)
+  voice_url            String?               @db.Text
+  voice_duration_ms    Int?                  @db.Integer
+  voice_mime_type      String?               @db.VarChar(80)
+  voice_size_bytes     Int?                  @db.Integer
+  plan_context_type    String?               @db.VarChar(40)
+  plan_context_id      String?               @db.Uuid
+  plan_week_start      DateTime?             @db.Date
+  plan_context_payload Json?                 @db.JsonB // v2-1: rich plan-context discriminated union (week_index, day_index, exercise_id, meal_id, package_id, check_in_id). Nullable, defaults to NULL. Existing scalars (plan_context_type, plan_context_id, plan_week_start) remain in use for COMMENT_CONTEXT_TYPE discrimination across inbox/posts/reactions.
+  parent_message_id    String?               @db.Uuid
+  parent_message_at    DateTime?             @db.Timestamptz(6)
+  coach_seen_at        DateTime?             @db.Timestamptz(6)
+  coach_acked_at       DateTime?             @db.Timestamptz(6)
+  coach_replied_at     DateTime?             @db.Timestamptz(6)
+  visibility           String                @default("active") @db.VarChar(24)
+  deleted_at           DateTime?             @db.Timestamptz(6)
+  updated_at           DateTime              @updatedAt @db.Timestamptz(6)
 
   // RESTRICT on sender/recipient so a hard user delete cannot silently
   // orphan or vanish conversation history; the GDPR scrubber soft-deletes.
