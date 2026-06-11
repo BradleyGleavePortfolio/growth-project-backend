@@ -68,9 +68,11 @@ itLive('community v2-3 events (live DB)', () => {
     coachB: '',
     studentA: '',
     studentB: '',
+    studentA2: '',
     wsA: '',
     wsB: '',
     cohortA: '',
+    cohortB: '',
   };
 
   class StubJwtAuthGuard implements CanActivate {
@@ -186,12 +188,14 @@ itLive('community v2-3 events (live DB)', () => {
     ids.coachB = randomUUID();
     ids.studentA = randomUUID();
     ids.studentB = randomUUID();
+    ids.studentA2 = randomUUID();
 
     const users: Array<[string, string, string, string | null]> = [
       [ids.coachA, 'coach', 'Coach A', null],
       [ids.coachB, 'coach', 'Coach B', null],
       [ids.studentA, 'student', 'Student A', ids.coachA],
       [ids.studentB, 'student', 'Student B', ids.coachB],
+      [ids.studentA2, 'student', 'Student A2', ids.coachA],
     ];
     for (const [id, role, name, coachId] of users) {
       await prisma.$executeRaw`
@@ -214,6 +218,13 @@ itLive('community v2-3 events (live DB)', () => {
     });
     ids.cohortA = cohortA.id;
 
+    // F1 — a SECOND cohort in the SAME workspace, with its own member. Used to
+    // prove a member of cohort A cannot list cohort B's events.
+    const cohortB = await prisma.communityCohort.create({
+      data: { workspace_id: wsA.id, name: 'Cohort B', status: 'active', sort_order: 1 },
+    });
+    ids.cohortB = cohortB.id;
+
     await prisma.communityMembership.create({
       data: {
         workspace_id: wsA.id,
@@ -223,12 +234,25 @@ itLive('community v2-3 events (live DB)', () => {
         status: 'active',
       },
     });
+    await prisma.communityMembership.create({
+      data: {
+        workspace_id: wsA.id,
+        cohort_id: cohortB.id,
+        user_id: ids.studentA2,
+        role: 'student',
+        status: 'active',
+      },
+    });
   }
 
   async function cleanup() {
-    const userIds = [ids.coachA, ids.coachB, ids.studentA, ids.studentB].filter(
-      Boolean,
-    );
+    const userIds = [
+      ids.coachA,
+      ids.coachB,
+      ids.studentA,
+      ids.studentB,
+      ids.studentA2,
+    ].filter(Boolean);
     const wsIds = [ids.wsA, ids.wsB].filter(Boolean);
     await prisma.communityEventRsvp.deleteMany({
       where: { workspace_id: { in: wsIds } },
@@ -451,5 +475,163 @@ itLive('community v2-3 events (live DB)', () => {
     } finally {
       process.env.FEATURE_COMMUNITY_EVENTS = 'true';
     }
+  });
+
+  // ── F2: ParseUUIDPipe v4 on every path param → malformed id is a 400 at the
+  //        HTTP boundary, before any service/repository/Prisma code runs.
+  describe('12. malformed path UUIDs are rejected with 400 (F2)', () => {
+    const BAD = 'not-a-uuid';
+
+    it('create: bad workspaceId → 400', async () => {
+      const res = await call(
+        'POST',
+        `/api/community/workspaces/${BAD}/events`,
+        asUser(ids.coachA),
+        { title: 'x', starts_at: futureIso(24) },
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('list: bad workspaceId → 400', async () => {
+      const res = await call(
+        'GET',
+        `/api/community/workspaces/${BAD}/events`,
+        asUser(ids.studentA),
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('getOne: bad eventId → 400', async () => {
+      const res = await call(
+        'GET',
+        `/api/community/events/${BAD}`,
+        asUser(ids.studentA),
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('update: bad eventId → 400', async () => {
+      const res = await call(
+        'PATCH',
+        `/api/community/events/${BAD}`,
+        asUser(ids.coachA),
+        { state: 'live' },
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('rsvp: bad eventId → 400', async () => {
+      const res = await call(
+        'POST',
+        `/api/community/events/${BAD}/rsvp`,
+        asUser(ids.studentA),
+        { status: 'going' },
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('replay: bad eventId → 400', async () => {
+      const res = await call(
+        'POST',
+        `/api/community/events/${BAD}/replay`,
+        asUser(ids.coachA),
+        { replay_url: 'https://vimeo.com/1' },
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('reflect: bad eventId → 400', async () => {
+      const res = await call(
+        'POST',
+        `/api/community/events/${BAD}/reflect`,
+        asUser(ids.coachA),
+        {},
+      );
+      expect(res.status).toBe(400);
+    });
+  });
+
+  // ── F1: cross-cohort event-list leak. A member of cohort A must see
+  //        workspace-wide events + their own cohort's events, but NEVER another
+  //        cohort's events in the same workspace (IDOR boundary, doctrine #5).
+  it('13. cohort-A member cannot see cohort-B events in the list (F1)', async () => {
+    const wsWideId = await createEventAsCoach({ title: 'WS-wide all-hands' });
+    const cohortAEventId = await createEventAsCoach({
+      title: 'Cohort A only',
+      cohort_id: ids.cohortA,
+    });
+    const cohortBEventId = await createEventAsCoach({
+      title: 'Cohort B only',
+      cohort_id: ids.cohortB,
+    });
+
+    const res = await call(
+      'GET',
+      `/api/community/workspaces/${ids.wsA}/events`,
+      asUser(ids.studentA),
+    );
+    expect(res.status).toBe(200);
+    const visibleIds: string[] = res.body.events.map((e: any) => e.id);
+    expect(visibleIds).toContain(wsWideId);
+    expect(visibleIds).toContain(cohortAEventId);
+    expect(visibleIds).not.toContain(cohortBEventId);
+
+    // The coach/owner of the workspace still sees every cohort's events.
+    const coachRes = await call(
+      'GET',
+      `/api/community/workspaces/${ids.wsA}/events`,
+      asUser(ids.coachA),
+    );
+    const coachVisible: string[] = coachRes.body.events.map((e: any) => e.id);
+    expect(coachVisible).toContain(cohortBEventId);
+  });
+
+  // ── F5: RSVP eligibility (client/student members only) + closure at ends_at.
+  it('14. coach/owner cannot RSVP → 403 rsvp_not_eligible (F5a)', async () => {
+    const eventId = await createEventAsCoach();
+    const res = await call(
+      'POST',
+      `/api/community/events/${eventId}/rsvp`,
+      asUser(ids.coachA),
+      { status: 'going' },
+    );
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('community.event.rsvp_not_eligible');
+  });
+
+  it('15. RSVP after ends_at → 400 rsvp_closed (F5b)', async () => {
+    // A short-lived event whose window has already closed (starts/ends in the
+    // past). Coach create accepts past times; RSVP must reject once now > ends.
+    const startsAt = new Date(Date.now() - 2 * 3600_000).toISOString();
+    const endsAt = new Date(Date.now() - 3600_000).toISOString();
+    const eventId = await createEventAsCoach({
+      title: 'Ended session',
+      starts_at: startsAt,
+      ends_at: endsAt,
+    });
+    const res = await call(
+      'POST',
+      `/api/community/events/${eventId}/rsvp`,
+      asUser(ids.studentA),
+      { status: 'going' },
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('community.event.rsvp_closed');
+  });
+
+  it('16. student member RSVP before ends_at → 201 (F5 happy path)', async () => {
+    const eventId = await createEventAsCoach({
+      title: 'Open session',
+      starts_at: futureIso(1),
+      ends_at: futureIso(3),
+    });
+    const res = await call(
+      'POST',
+      `/api/community/events/${eventId}/rsvp`,
+      asUser(ids.studentA),
+      { status: 'going' },
+    );
+    expect(res.status).toBe(201);
+    expect(res.body.rsvp.status).toBe('going');
   });
 });

@@ -22,12 +22,15 @@ const TICK_BATCH_SIZE = 250;
  *   2. `scheduled`/`tomorrow` → `live` when start time has passed.
  *
  * CONCURRENCY: like every existing @Cron in this repo (drip-dispatcher,
- * coach-brief, dunning) there is no external queue; we use an in-process
- * tick-overlap guard and the SchedulerService's own atomic state writes. A
- * promotion is a single conditional UPDATE guarded by the state machine
- * (canTransition), so two replicas contending re-read the same state and the
- * loser's transition is a no-op (the row already moved). Reminders are
- * idempotent because the fan-out stamps reminded_at.
+ * coach-brief, dunning) there is no external queue. The in-process tick-overlap
+ * guard only stops a slow tick overlapping itself on ONE replica; cross-replica
+ * safety comes from the service layer (F3, doctrine #28):
+ *   - Promotions are a compare-and-swap UPDATE (WHERE id AND state = expected
+ *     AND canceled_at IS NULL). Exactly one racing worker observes count===1 and
+ *     owns the side effects; the loser sees 0 and emits no ping/push.
+ *   - The "starting soon" reminder claims its rows atomically (UPDATE ... WHERE
+ *     reminded_at IS NULL ... RETURNING), so two workers push to disjoint sets
+ *     and no recipient is double-notified.
  *
  * FLAG GATING: the cron NEVER promotes while FEATURE_COMMUNITY_EVENTS is off —
  * the kill switch must freeze the lifecycle, not just the write endpoints, so a

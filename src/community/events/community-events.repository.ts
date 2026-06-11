@@ -54,25 +54,72 @@ export class CommunityEventsRepository {
   /**
    * List events visible in a workspace (optionally one cohort + one state),
    * soonest-first, cursor-paginated by starts_at. Excludes canceled rows.
+   *
+   * `cohortScope` controls cross-cohort visibility (the IDOR boundary — #5):
+   *  - `null`            → no cohort restriction (coach/owner of the workspace,
+   *                        who may see every cohort's events).
+   *  - `{ cohortId }`    → exactly one cohort (an explicit, access-checked
+   *                        cohort filter from the caller).
+   *  - `{ accessibleCohortIds }` → a MEMBER view: workspace-wide events
+   *                        (cohort_id IS NULL) PLUS events in the cohorts the
+   *                        caller actively belongs to. A member of cohort A
+   *                        therefore never sees cohort B's events.
    */
   async list(params: {
     workspaceId: string;
-    cohortId: string | null;
+    cohortScope:
+      | null
+      | { cohortId: string }
+      | { accessibleCohortIds: string[] };
     state: CommunityEventState | null;
     before: Date | null;
     limit: number;
   }): Promise<CommunityEvent[]> {
+    const scope = params.cohortScope;
+    let cohortWhere: Prisma.CommunityEventWhereInput = {};
+    if (scope && 'cohortId' in scope) {
+      cohortWhere = { cohort_id: scope.cohortId };
+    } else if (scope && 'accessibleCohortIds' in scope) {
+      cohortWhere =
+        scope.accessibleCohortIds.length > 0
+          ? {
+              OR: [
+                { cohort_id: null },
+                { cohort_id: { in: scope.accessibleCohortIds } },
+              ],
+            }
+          : { cohort_id: null };
+    }
     return this.prisma.communityEvent.findMany({
       where: {
         workspace_id: params.workspaceId,
         canceled_at: null,
-        ...(params.cohortId ? { cohort_id: params.cohortId } : {}),
+        ...cohortWhere,
         ...(params.state ? { state: params.state } : {}),
         ...(params.before ? { starts_at: { gt: params.before } } : {}),
       },
       orderBy: [{ starts_at: 'asc' }, { id: 'asc' }],
       take: params.limit,
     });
+  }
+
+  /**
+   * The ids of every cohort in the workspace the user is an ACTIVE member of.
+   * Used to bound a member's event list to their own cohorts (the F1 fix).
+   */
+  async activeCohortIds(
+    workspaceId: string,
+    userId: string,
+  ): Promise<string[]> {
+    const rows = await this.prisma.communityMembership.findMany({
+      where: {
+        workspace_id: workspaceId,
+        user_id: userId,
+        status: 'active',
+      },
+      select: { cohort_id: true },
+    });
+    return rows.map((r) => r.cohort_id);
   }
 
   async update(
@@ -83,6 +130,30 @@ export class CommunityEventsRepository {
       where: { id: eventId },
       data,
     });
+  }
+
+  /**
+   * Compare-and-swap state promotion (F3 — race safety, doctrine #28). Moves an
+   * event to `toState` ONLY IF it is still in `fromState` and not canceled, in a
+   * single atomic UPDATE. Returns the count actually changed (0 or 1): when two
+   * replicas race, exactly one observes count===1 and is responsible for the
+   * side effects (broadcast + reminder fan-out); the loser sees 0 and does
+   * nothing, so no duplicate ping/push is emitted.
+   */
+  async casPromoteState(params: {
+    eventId: string;
+    fromState: CommunityEventState;
+    toState: CommunityEventState;
+  }): Promise<number> {
+    const { count } = await this.prisma.communityEvent.updateMany({
+      where: {
+        id: params.eventId,
+        state: params.fromState,
+        canceled_at: null,
+      },
+      data: { state: params.toState },
+    });
+    return count;
   }
 
   // ── RSVP ──────────────────────────────────────────────────────────────────
@@ -118,33 +189,35 @@ export class CommunityEventsRepository {
   }
 
   /**
-   * RSVPs for one event in the given statuses, returning only the user ids —
-   * used by the "starting soon" reminder fan-out. Optionally restricts to rows
-   * that have not yet been reminded (reminded_at IS NULL) so a re-run of the
-   * promotion does not double-notify.
+   * ATOMICALLY claim the “starting soon” reminder rows for one event (F3 —
+   * reminder idempotency, doctrine #28/#29). A single SQL `UPDATE ... WHERE
+   * reminded_at IS NULL ... RETURNING` stamps and returns the rows in one
+   * statement: each unreminded going/maybe RSVP is claimed by exactly one
+   * caller, so two promotion workers firing in parallel cannot both send to the
+   * same recipient. The caller then sends a push ONLY to the rows it claimed
+   * (the returned set), guaranteeing zero duplicate pushes.
+   *
+   * Parameterised query (no string interpolation — doctrine #3). `statuses` is
+   * an enum-typed array bound through Prisma.join, never user input.
    */
-  async findRsvpRecipients(params: {
+  async claimReminderRecipients(params: {
     eventId: string;
     statuses: CommunityEventRsvpStatus[];
-    onlyUnreminded: boolean;
+    at: Date;
   }): Promise<Array<{ id: string; user_id: string }>> {
-    return this.prisma.communityEventRsvp.findMany({
-      where: {
-        event_id: params.eventId,
-        status: { in: params.statuses },
-        ...(params.onlyUnreminded ? { reminded_at: null } : {}),
-      },
-      select: { id: true, user_id: true },
-    });
-  }
-
-  /** Stamp reminded_at on a set of RSVP rows (idempotency for the reminder). */
-  async markReminded(rsvpIds: string[], at: Date): Promise<void> {
-    if (rsvpIds.length === 0) return;
-    await this.prisma.communityEventRsvp.updateMany({
-      where: { id: { in: rsvpIds } },
-      data: { reminded_at: at },
-    });
+    if (params.statuses.length === 0) return [];
+    const statusList = Prisma.join(params.statuses.map((s) => Prisma.sql`${s}`));
+    const rows = await this.prisma.$queryRaw<
+      Array<{ id: string; user_id: string }>
+    >`
+      UPDATE "community_event_rsvps"
+         SET "reminded_at" = ${params.at}
+       WHERE "event_id" = ${params.eventId}::uuid
+         AND "reminded_at" IS NULL
+         AND "status"::text IN (${statusList})
+      RETURNING "id", "user_id"
+    `;
+    return rows;
   }
 
   /** Per-status RSVP counts for one event. */

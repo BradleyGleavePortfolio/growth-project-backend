@@ -48,7 +48,13 @@ export const COMMUNITY_BROADCAST_EVENTS = {
   postCreated: 'community.post.created',
   postUpdated: 'community.post.updated',
   reactionChanged: 'community.reaction.changed',
+  // `eventStateChanged` fires ONLY on a real lifecycle transition
+  // (fromState !== toState). Event creation and RSVP writes are NOT state
+  // transitions, so they use their own names below — a subscriber to
+  // state_changed can therefore trust it to mean an actual transition (F4).
   eventStateChanged: 'community.event.state_changed',
+  eventCreated: 'community.event.created',
+  eventRsvpChanged: 'community.event.rsvp_changed',
   challengeProgressChanged: 'community.challenge.progress_changed',
   moderationActionCreated: 'community.moderation.action_created',
   membershipChanged: 'community.membership.changed',

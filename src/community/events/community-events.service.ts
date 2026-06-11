@@ -52,9 +52,12 @@ type RsvpCounts = Record<CommunityEventRsvpStatus, number>;
  *    membership so a member of cohort A never sees cohort B's event.
  *  - WRITE (create / edit / transition / replay / reflect): the OWNING COACH of
  *    the workspace only (or platform owner). A client write returns 403.
- *  - RSVP: any active member may set their OWN RSVP to a client-settable status
- *    (going/maybe/declined). attended/missed are coach/system-derived and a
- *    client attempt to self-assert them is rejected.
+ *  - RSVP: only an active CLIENT/STUDENT member may set their OWN RSVP to a
+ *    client-settable status (going/maybe/declined). Coach/owner/system actors
+ *    are rejected (they would otherwise pollute attendee counts). attended/
+ *    missed are coach/system-derived and a client self-assert is rejected.
+ *    RSVP closes once the event is reflected/canceled or, when ends_at is set,
+ *    once now > ends_at.
  *
  * NO NATIVE LIVE ROOM (Step 0): events carry an EXTERNAL validated link only.
  * The schema exposes one text URL column (`live_url`) and one media-asset UUID
@@ -238,7 +241,7 @@ export class CommunityEventsService {
       endsAt,
       liveUrl,
     });
-    this.broadcastState(created, CommunityEventState.scheduled, created.state);
+    this.broadcastCreated(created);
     return CommunityEventResponseSchema.parse({
       event: await this.buildView(created, user.id),
     });
@@ -257,10 +260,21 @@ export class CommunityEventsService {
       throw new NotFoundException(EVENT_NOT_FOUND);
     }
 
-    // If a cohort filter is supplied, the caller must have access to it; a
-    // member of another cohort gets an empty list rather than a leak.
-    let cohortId: string | null = null;
+    // Cross-cohort visibility (F1 — IDOR boundary, doctrine #5). A coach/owner
+    // of the workspace may see every cohort's events; a plain member is bounded
+    // to workspace-wide events plus the cohorts they ACTIVELY belong to, so a
+    // member of cohort A never sees cohort B's events.
+    const isPrivileged =
+      user.role === 'owner' ||
+      (await this.access.isWorkspaceCoach(workspaceId, user.id));
+
+    let cohortScope:
+      | null
+      | { cohortId: string }
+      | { accessibleCohortIds: string[] };
     if (query.cohort_id) {
+      // An explicit cohort filter: the caller must have access to it; a member
+      // of another cohort gets an empty list rather than a leak.
       const cohort = await this.access.findCohort(query.cohort_id);
       if (
         !cohort ||
@@ -275,13 +289,21 @@ export class CommunityEventsService {
           next_before: null,
         });
       }
-      cohortId = cohort.id;
+      cohortScope = { cohortId: cohort.id };
+    } else if (isPrivileged) {
+      cohortScope = null;
+    } else {
+      const accessibleCohortIds = await this.events.activeCohortIds(
+        workspaceId,
+        user.id,
+      );
+      cohortScope = { accessibleCohortIds };
     }
 
     const limit = this.parsePage(query.limit);
     const rows = await this.events.list({
       workspaceId,
-      cohortId,
+      cohortScope,
       state: this.parseState(query.state),
       before: null,
       limit,
@@ -501,8 +523,20 @@ export class CommunityEventsService {
         code: 'community.event.canceled',
       });
     }
-    // Reflected events are historical — RSVP is closed.
-    if (event.state === CommunityEventState.reflected) {
+    // F5(a) — OPERATOR RULE: only CLIENT/STUDENT members may RSVP. Coach, owner,
+    // and any other privileged/system actor is rejected with the route's typed
+    // ineligible-write 403 (mirrors assertCoach's coach_only) so an attendee
+    // count never includes a coach and the rule does not leak event existence
+    // (the caller already resolved the event via readableEvent).
+    await this.assertRsvpEligible(event, user);
+    // F5(b) — RSVP closure. Reflected events are historical (closed). When
+    // ends_at is set, RSVP also closes once now > ends_at; if ends_at is null,
+    // only the reflected/canceled closure applies (late RSVP stays open until a
+    // coach reflects). Both reject with the same calm rsvp_closed code.
+    if (
+      event.state === CommunityEventState.reflected ||
+      (event.ends_at !== null && Date.now() > event.ends_at.getTime())
+    ) {
       throw new BadRequestException({
         error: 'bad_request',
         code: 'community.event.rsvp_closed',
@@ -521,10 +555,36 @@ export class CommunityEventsService {
       status: status as CommunityEventRsvpStatus,
     });
     // Best-effort realtime ping so the coach console's RSVP ticker refetches.
-    this.broadcastState(event, event.state, event.state);
+    // An RSVP is NOT a lifecycle transition — it gets its own name (F4).
+    this.broadcastRsvpChanged(event);
     return CommunityRsvpResponseSchema.parse({
       rsvp: this.rsvpView(saved),
     });
+  }
+
+  /**
+   * F5(a) — RSVP actor eligibility. Only an active CLIENT/STUDENT MEMBER may
+   * RSVP. The owning coach, the platform owner, and a workspace coach are
+   * rejected (they appear in attendee counts otherwise, corrupting attendance
+   * semantics). Rejection is the route's typed ineligible-write 403 with an
+   * RSVP-specific code — non-leaking, since the caller already resolved the
+   * event through readableEvent.
+   */
+  private async assertRsvpEligible(
+    event: CommunityEvent,
+    user: User,
+  ): Promise<void> {
+    const privilegedRole = user.role === 'owner' || user.role === 'coach';
+    const owningCoach = await this.access.isWorkspaceCoach(
+      event.workspace_id,
+      user.id,
+    );
+    if (privilegedRole || owningCoach) {
+      throw new ForbiddenException({
+        error: 'forbidden',
+        code: 'community.event.rsvp_not_eligible',
+      });
+    }
   }
 
   private rsvpView(r: CommunityEventRsvp) {
@@ -543,12 +603,18 @@ export class CommunityEventsService {
    * Best-effort, IDs-only state-change ping on the per-event channel. Mobile
    * receives the ping and refetches over the authenticated REST API (the
    * channel is treated as untrusted; never carries titles/notes — #36).
+   *
+   * F4: this fires `community.event.state_changed` ONLY on a REAL lifecycle
+   * transition. If `fromState === toState` it is a no-op, so a subscriber can
+   * trust the event name to mean an actual transition. Creation and RSVP have
+   * their own names (`broadcastCreated`, `broadcastRsvpChanged`).
    */
   private broadcastState(
     event: CommunityEvent,
     fromState: CommunityEventState,
     toState: CommunityEventState,
   ): void {
+    if (fromState === toState) return;
     void this.realtime.broadcastCommunityEvent(
       this.realtime.channels.event(event.id),
       COMMUNITY_BROADCAST_EVENTS.eventStateChanged,
@@ -556,6 +622,45 @@ export class CommunityEventsService {
         eventId: event.id,
         fromState,
         toState,
+        at: new Date().toISOString(),
+      },
+      { distinctId: event.created_by_id, channelKind: 'event' },
+    );
+  }
+
+  /**
+   * IDs-only “event created” ping (F4). A creation is not a state transition
+   * (the event is born in `scheduled`), so it carries its own name. Payload is
+   * the same IDs-only shape — fromState === toState === the initial state — so
+   * no titles/notes ever cross the channel.
+   */
+  private broadcastCreated(event: CommunityEvent): void {
+    void this.realtime.broadcastCommunityEvent(
+      this.realtime.channels.event(event.id),
+      COMMUNITY_BROADCAST_EVENTS.eventCreated,
+      {
+        eventId: event.id,
+        fromState: event.state,
+        toState: event.state,
+        at: new Date().toISOString(),
+      },
+      { distinctId: event.created_by_id, channelKind: 'event' },
+    );
+  }
+
+  /**
+   * IDs-only “RSVP changed” ping (F4) so the coach console refetches the RSVP
+   * ticker. An RSVP write never changes the event's lifecycle state, so it gets
+   * its own name instead of a bogus `state_changed` with identical from/to.
+   */
+  private broadcastRsvpChanged(event: CommunityEvent): void {
+    void this.realtime.broadcastCommunityEvent(
+      this.realtime.channels.event(event.id),
+      COMMUNITY_BROADCAST_EVENTS.eventRsvpChanged,
+      {
+        eventId: event.id,
+        fromState: event.state,
+        toState: event.state,
         at: new Date().toISOString(),
       },
       { distinctId: event.created_by_id, channelKind: 'event' },
@@ -586,11 +691,24 @@ export class CommunityEventsService {
       // never label an in-progress event "tomorrow".
       if (event.starts_at.getTime() <= now.getTime()) continue;
       if (!canTransition(event.state, CommunityEventState.tomorrow)) continue;
-      const updated = await this.events.update(event.id, {
-        state: CommunityEventState.tomorrow,
+      // CAS: only ONE racing worker actually flips scheduled → tomorrow; the
+      // loser sees count===0 and emits no ping/push (F3, doctrine #28).
+      const changed = await this.events.casPromoteState({
+        eventId: event.id,
+        fromState: event.state,
+        toState: CommunityEventState.tomorrow,
       });
-      this.broadcastState(updated, event.state, updated.state);
-      await this.pushStartingSoon(updated);
+      if (changed !== 1) continue;
+      const promotedEvent: CommunityEvent = {
+        ...event,
+        state: CommunityEventState.tomorrow,
+      };
+      this.broadcastState(
+        promotedEvent,
+        event.state,
+        CommunityEventState.tomorrow,
+      );
+      await this.pushStartingSoon(promotedEvent);
       promoted += 1;
     }
     return promoted;
@@ -605,10 +723,19 @@ export class CommunityEventsService {
     let promoted = 0;
     for (const event of candidates) {
       if (!canTransition(event.state, CommunityEventState.live)) continue;
-      const updated = await this.events.update(event.id, {
-        state: CommunityEventState.live,
+      // CAS guarded on the OBSERVED from-state so two racing workers (or a
+      // tomorrow-sweep that already moved the row) cannot double-promote (F3).
+      const changed = await this.events.casPromoteState({
+        eventId: event.id,
+        fromState: event.state,
+        toState: CommunityEventState.live,
       });
-      this.broadcastState(updated, event.state, updated.state);
+      if (changed !== 1) continue;
+      const promotedEvent: CommunityEvent = {
+        ...event,
+        state: CommunityEventState.live,
+      };
+      this.broadcastState(promotedEvent, event.state, CommunityEventState.live);
       promoted += 1;
     }
     return promoted;
@@ -616,22 +743,25 @@ export class CommunityEventsService {
 
   /**
    * Fire-and-forget "event starting soon" push to every member who RSVP'd
-   * going/maybe and has not yet been reminded. reminded_at is stamped after the
-   * fan-out so a re-run of the promotion (or a retry tick) does not double-push.
-   * The push itself is gated behind FEATURE_COMMUNITY_PUSH inside the service
-   * and carries IDs + a deep link only (never the event title/notes).
+   * going/maybe (F3 — reminder idempotency). Recipients are CLAIMED atomically
+   * before any push: a single SQL UPDATE ... WHERE reminded_at IS NULL
+   * RETURNING stamps reminded_at and returns ONLY the rows this call won, so
+   * two promotion workers firing in parallel each push to a disjoint set and no
+   * recipient is double-notified. The push is gated behind FEATURE_COMMUNITY_
+   * PUSH inside the service and carries IDs + a deep link only (never the event
+   * title/notes).
    */
   private async pushStartingSoon(event: CommunityEvent): Promise<void> {
-    const recipients = await this.events.findRsvpRecipients({
+    const claimed = await this.events.claimReminderRecipients({
       eventId: event.id,
       statuses: [
         CommunityEventRsvpStatus.going,
         CommunityEventRsvpStatus.maybe,
       ],
-      onlyUnreminded: true,
+      at: new Date(),
     });
-    if (recipients.length === 0) return;
-    for (const r of recipients) {
+    if (claimed.length === 0) return;
+    for (const r of claimed) {
       void this.communityPush.sendCommunityPush({
         recipientId: r.user_id,
         kind: NotificationKind.COMMUNITY_EVENT_STARTING_SOON,
@@ -640,9 +770,5 @@ export class CommunityEventsService {
         deepLink: `tgp://community/events/${event.id}`,
       });
     }
-    await this.events.markReminded(
-      recipients.map((r) => r.id),
-      new Date(),
-    );
   }
 }

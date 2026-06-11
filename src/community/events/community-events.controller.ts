@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -58,7 +59,8 @@ export class CommunityEventsController {
   })
   async create(
     @Request() req: AuthedRequest,
-    @Param('workspaceId') workspaceId: string,
+    @Param('workspaceId', new ParseUUIDPipe({ version: '4' }))
+    workspaceId: string,
     @Body() body: CreateEventDto,
   ) {
     return this.events.create(req.user, workspaceId, body);
@@ -69,7 +71,8 @@ export class CommunityEventsController {
   @Roles('student', 'coach', 'owner')
   async list(
     @Request() req: AuthedRequest,
-    @Param('workspaceId') workspaceId: string,
+    @Param('workspaceId', new ParseUUIDPipe({ version: '4' }))
+    workspaceId: string,
     @Query() query: ListEventsQueryDto,
   ) {
     return this.events.list(req.user, workspaceId, query);
@@ -80,7 +83,7 @@ export class CommunityEventsController {
   @Roles('student', 'coach', 'owner')
   async getOne(
     @Request() req: AuthedRequest,
-    @Param('eventId') eventId: string,
+    @Param('eventId', new ParseUUIDPipe({ version: '4' })) eventId: string,
   ) {
     return this.events.getOne(req.user, eventId);
   }
@@ -101,7 +104,7 @@ export class CommunityEventsController {
   })
   async update(
     @Request() req: AuthedRequest,
-    @Param('eventId') eventId: string,
+    @Param('eventId', new ParseUUIDPipe({ version: '4' })) eventId: string,
     @Body() body: UpdateEventDto,
   ) {
     return this.events.update(req.user, eventId, body);
@@ -123,7 +126,7 @@ export class CommunityEventsController {
   })
   async rsvp(
     @Request() req: AuthedRequest,
-    @Param('eventId') eventId: string,
+    @Param('eventId', new ParseUUIDPipe({ version: '4' })) eventId: string,
     @Body() body: RsvpEventDto,
   ) {
     return this.events.rsvp(req.user, eventId, body.status);
@@ -145,7 +148,7 @@ export class CommunityEventsController {
   })
   async attachReplay(
     @Request() req: AuthedRequest,
-    @Param('eventId') eventId: string,
+    @Param('eventId', new ParseUUIDPipe({ version: '4' })) eventId: string,
     @Body() body: AttachReplayDto,
   ) {
     return this.events.attachReplay(req.user, eventId, body.replay_url);
@@ -167,7 +170,7 @@ export class CommunityEventsController {
   })
   async reflect(
     @Request() req: AuthedRequest,
-    @Param('eventId') eventId: string,
+    @Param('eventId', new ParseUUIDPipe({ version: '4' })) eventId: string,
   ) {
     return this.events.reflect(req.user, eventId);
   }

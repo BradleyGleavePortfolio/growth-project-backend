@@ -105,6 +105,7 @@ function makeService() {
       },
     ),
     findById: jest.fn(async (id: string) => store[id] ?? null),
+    list: jest.fn(async () => [] as CommunityEvent[]),
     update: jest.fn(async (id: string, data: Record<string, unknown>) => {
       store[id] = { ...store[id], ...data, updated_at: new Date() } as ReturnType<
         typeof baseEvent
@@ -126,8 +127,12 @@ function makeService() {
       attended: 0,
       missed: 0,
     })),
-    findRsvpRecipients: jest.fn(async () => []),
-    markReminded: jest.fn(async () => undefined),
+    // F3: CAS promotion + atomic reminder claim. casPromoteState returns the
+    // count actually flipped (1 = this worker won); claimReminderRecipients
+    // returns ONLY the rows this call claimed (atomic stamp).
+    casPromoteState: jest.fn(async () => 1),
+    claimReminderRecipients: jest.fn(async () => []),
+    activeCohortIds: jest.fn(async () => []),
     findScheduledStartingBefore: jest.fn(async () => []),
     findDueForLive: jest.fn(async () => []),
   };
@@ -331,15 +336,125 @@ describe('CommunityEventsService (v2-3)', () => {
     });
   });
 
+  describe('list cohort scoping (F1 — cross-cohort leak)', () => {
+    const COHORT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+    it('bounds a plain member to workspace-wide + their own cohorts', async () => {
+      const { service, access, repo } = makeService();
+      // The caller is an active member of cohort A only.
+      repo.activeCohortIds.mockResolvedValue([COHORT_A] as never);
+      await service.list(client as never, WS, {});
+      // Not a coach/owner → list is scoped to the caller's accessible cohorts.
+      expect(access.isWorkspaceCoach).toHaveBeenCalledWith(WS, client.id);
+      expect(repo.activeCohortIds).toHaveBeenCalledWith(WS, client.id);
+      expect(repo.list).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workspaceId: WS,
+          cohortScope: { accessibleCohortIds: [COHORT_A] },
+        }),
+      );
+    });
+
+    it('a member of no cohort sees only workspace-wide events', async () => {
+      const { service, repo } = makeService();
+      repo.activeCohortIds.mockResolvedValue([] as never);
+      await service.list(client as never, WS, {});
+      expect(repo.list).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cohortScope: { accessibleCohortIds: [] },
+        }),
+      );
+    });
+
+    it('a workspace coach sees every cohort (unscoped)', async () => {
+      const { service, repo } = makeService();
+      await service.list(coach as never, WS, {});
+      expect(repo.list).toHaveBeenCalledWith(
+        expect.objectContaining({ cohortScope: null }),
+      );
+      expect(repo.activeCohortIds).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('broadcast semantics (F4)', () => {
+    it('emits community.event.created on create (not state_changed)', async () => {
+      const { service, realtime } = makeService();
+      await service.create(coach as never, WS, {
+        title: 'Live Q&A',
+        starts_at: '2026-07-05T17:00:00.000Z',
+      });
+      const names = realtime.broadcastCommunityEvent.mock.calls.map(
+        (c: unknown[]) => c[1],
+      );
+      expect(names).toContain('community.event.created');
+      expect(names).not.toContain('community.event.state_changed');
+    });
+
+    it('emits community.event.rsvp_changed on RSVP (not state_changed)', async () => {
+      const { service, realtime } = makeService();
+      await service.rsvp(client as never, EVT, 'going');
+      const names = realtime.broadcastCommunityEvent.mock.calls.map(
+        (c: unknown[]) => c[1],
+      );
+      expect(names).toContain('community.event.rsvp_changed');
+      expect(names).not.toContain('community.event.state_changed');
+    });
+
+    it('emits state_changed only on a real transition', async () => {
+      const { service, realtime } = makeService();
+      await service.update(coach as never, EVT, { state: 'live' });
+      const names = realtime.broadcastCommunityEvent.mock.calls.map(
+        (c: unknown[]) => c[1],
+      );
+      expect(names).toContain('community.event.state_changed');
+    });
+  });
+
+  describe('rsvp eligibility + closure (F5)', () => {
+    it('rejects a coach RSVP with a typed 403', async () => {
+      const { service } = makeService();
+      // coach is the owning workspace coach → isWorkspaceCoach true.
+      await expect(
+        service.rsvp(coach as never, EVT, 'going'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects an owner RSVP with a typed 403', async () => {
+      const { service } = makeService();
+      const owner = { id: 'owner-1', role: 'owner' };
+      await expect(
+        service.rsvp(owner as never, EVT, 'going'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects RSVP after ends_at has passed (rsvp_closed)', async () => {
+      const { service, store } = makeService();
+      store[EVT].ends_at = new Date('2020-01-01T00:00:00.000Z'); // in the past
+      await expect(
+        service.rsvp(client as never, EVT, 'going'),
+      ).rejects.toMatchObject({
+        response: { code: 'community.event.rsvp_closed' },
+      });
+    });
+
+    it('member happy path: client RSVPs going before ends_at', async () => {
+      const { service, store } = makeService();
+      // ends_at far in the future → still open.
+      store[EVT].ends_at = new Date('2030-01-01T00:00:00.000Z');
+      const res = await service.rsvp(client as never, EVT, 'going');
+      expect(res.rsvp.status).toBe('going');
+    });
+  });
+
   describe('transition jobs', () => {
     it('promotes a scheduled event in-window to tomorrow and reminds RSVPs', async () => {
-      const { service, repo } = makeService();
+      const { service, repo, push } = makeService();
       const soon = baseEvent({
         id: 'evt-soon',
         starts_at: new Date('2026-07-01T20:00:00.000Z'),
       });
       repo.findScheduledStartingBefore.mockResolvedValue([soon] as never);
-      repo.findRsvpRecipients.mockResolvedValue([
+      repo.claimReminderRecipients.mockResolvedValue([
         { id: 'r1', user_id: client.id },
       ] as never);
       const now = new Date('2026-07-01T12:00:00.000Z');
@@ -349,10 +464,66 @@ describe('CommunityEventsService (v2-3)', () => {
         100,
       );
       expect(promoted).toBe(1);
-      expect(repo.update).toHaveBeenCalledWith('evt-soon', {
-        state: CommunityEventState.tomorrow,
+      expect(repo.casPromoteState).toHaveBeenCalledWith({
+        eventId: 'evt-soon',
+        fromState: CommunityEventState.scheduled,
+        toState: CommunityEventState.tomorrow,
       });
-      expect(repo.markReminded).toHaveBeenCalled();
+      expect(repo.claimReminderRecipients).toHaveBeenCalledTimes(1);
+      expect(push.sendCommunityPush).toHaveBeenCalledTimes(1);
+    });
+
+    it('CAS loser (count===0) promotes nothing and emits no ping/push', async () => {
+      const { service, repo, realtime, push } = makeService();
+      const soon = baseEvent({
+        id: 'evt-soon',
+        starts_at: new Date('2026-07-01T20:00:00.000Z'),
+      });
+      repo.findScheduledStartingBefore.mockResolvedValue([soon] as never);
+      // Another replica already flipped the row → this worker loses the CAS.
+      repo.casPromoteState.mockResolvedValue(0 as never);
+      const now = new Date('2026-07-01T12:00:00.000Z');
+      const promoted = await service.runTomorrowPromotion(
+        now,
+        24 * 60 * 60 * 1000,
+        100,
+      );
+      expect(promoted).toBe(0);
+      expect(repo.claimReminderRecipients).not.toHaveBeenCalled();
+      expect(realtime.broadcastCommunityEvent).not.toHaveBeenCalled();
+      expect(push.sendCommunityPush).not.toHaveBeenCalled();
+    });
+
+    it('parallel double-invoke: one transition, one broadcast, one push per RSVP', async () => {
+      const { service, repo, realtime, push } = makeService();
+      const soon = baseEvent({
+        id: 'evt-soon',
+        starts_at: new Date('2026-07-01T20:00:00.000Z'),
+      });
+      repo.findScheduledStartingBefore.mockResolvedValue([soon] as never);
+      // Exactly ONE of the two concurrent CAS calls flips the row.
+      let casCalls = 0;
+      repo.casPromoteState.mockImplementation(
+        async () => (casCalls++ === 0 ? 1 : 0),
+      );
+      // The reminder claim is atomic: only the winning worker's claim returns
+      // the recipient; a second claim sees it already stamped → empty.
+      let claimCalls = 0;
+      repo.claimReminderRecipients.mockImplementation((async () =>
+        claimCalls++ === 0
+          ? [{ id: 'r1', user_id: client.id }]
+          : []) as never);
+      const now = new Date('2026-07-01T12:00:00.000Z');
+      const [a, b] = await Promise.all([
+        service.runTomorrowPromotion(now, 24 * 60 * 60 * 1000, 100),
+        service.runTomorrowPromotion(now, 24 * 60 * 60 * 1000, 100),
+      ]);
+      expect(a + b).toBe(1); // exactly one transition across both invocations
+      const stateChanged = realtime.broadcastCommunityEvent.mock.calls.filter(
+        (c: unknown[]) => c[1] === 'community.event.state_changed',
+      );
+      expect(stateChanged).toHaveLength(1);
+      expect(push.sendCommunityPush).toHaveBeenCalledTimes(1);
     });
 
     it('does not label an already-started event tomorrow', async () => {
@@ -382,9 +553,26 @@ describe('CommunityEventsService (v2-3)', () => {
       const now = new Date('2026-07-01T12:00:00.000Z');
       const promoted = await service.runLivePromotion(now, 100);
       expect(promoted).toBe(1);
-      expect(repo.update).toHaveBeenCalledWith('evt-due', {
-        state: CommunityEventState.live,
+      expect(repo.casPromoteState).toHaveBeenCalledWith({
+        eventId: 'evt-due',
+        fromState: CommunityEventState.tomorrow,
+        toState: CommunityEventState.live,
       });
+    });
+
+    it('live promotion CAS loser promotes nothing and emits no ping', async () => {
+      const { service, repo, realtime } = makeService();
+      const due = baseEvent({
+        id: 'evt-due',
+        state: CommunityEventState.tomorrow,
+        starts_at: new Date('2026-07-01T11:00:00.000Z'),
+      });
+      repo.findDueForLive.mockResolvedValue([due] as never);
+      repo.casPromoteState.mockResolvedValue(0 as never);
+      const now = new Date('2026-07-01T12:00:00.000Z');
+      const promoted = await service.runLivePromotion(now, 100);
+      expect(promoted).toBe(0);
+      expect(realtime.broadcastCommunityEvent).not.toHaveBeenCalled();
     });
   });
 });
