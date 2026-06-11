@@ -26,7 +26,11 @@
  * → its own "v1"), never mutating the source.
  */
 
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../src/prisma.service';
 import { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
@@ -64,11 +68,19 @@ function serializationFailure(): Prisma.PrismaClientKnownRequestError {
 }
 
 interface CloneTxMock {
-  workoutProgram: { create: jest.Mock; update: jest.Mock };
+  workoutProgram: {
+    create: jest.Mock;
+    update: jest.Mock;
+    findFirst: jest.Mock;
+  };
   workoutPlan: { findMany: jest.Mock; create: jest.Mock; update: jest.Mock };
   workoutPlanExercise: { createMany: jest.Mock };
   workoutPlanRevision: { create: jest.Mock };
   workoutProgramRevision: { create: jest.Mock };
+  // MWB-2 audit G9 — the in-txn advisory lock + parameter-bound key. The
+  // service calls tx.$executeRaw`SELECT pg_advisory_xact_lock(...)` as its
+  // first DB op; the mock records the call so tests can assert the lock fired.
+  $executeRaw: jest.Mock;
 }
 
 function makeTx(): CloneTxMock {
@@ -87,6 +99,8 @@ function makeTx(): CloneTxMock {
         cloned_from_id: MASTER_ID,
         head_revision_id: 'prog-rev-1',
       }),
+      // Default: no prior clone exists, so the winner path proceeds.
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     workoutPlan: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -98,7 +112,19 @@ function makeTx(): CloneTxMock {
     workoutProgramRevision: {
       create: jest.fn().mockResolvedValue({ id: 'prog-rev-1' }),
     },
+    $executeRaw: jest.fn().mockResolvedValue(1),
   };
+}
+
+/**
+ * A Prisma P2002 unique-constraint violation. Surfaced by the service as a
+ * typed ConflictException if a racing winner slips past the existence probe.
+ */
+function uniqueViolation(): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError(
+    'Unique constraint failed',
+    { code: 'P2002', clientVersion: 'test' },
+  );
 }
 
 describe('cloneProgramToClient — Serializable transaction (MWB-2 §3.3)', () => {
@@ -235,15 +261,57 @@ describe('cloneProgramToClient — Serializable transaction (MWB-2 §3.3)', () =
     expect(tx.workoutProgramRevision.create).toHaveBeenCalledTimes(1);
   });
 
-  it('two concurrent clones of the same source: exactly one commits, the other aborts', async () => {
-    // Drive two clone calls against the same master. The first transaction
-    // wins and commits; the second collides on the source rows and Postgres
-    // aborts it with a serialization failure. This is the brief's
-    // "second one rolls back deterministically" — proven by one resolved
-    // result and one P2034 rejection, never two successful commits.
+  it('acquires the per-(master,client) advisory lock as the FIRST DB op inside the txn (G9)', async () => {
+    // AUDIT G9 — the REAL concurrency control. Before any clone write the
+    // service must take pg_advisory_xact_lock so two simultaneous identical
+    // clones serialise. We assert the lock fired before the program create.
+    const tx = makeTx();
+    const order: string[] = [];
+    tx.$executeRaw.mockImplementation(() => {
+      order.push('advisory_lock');
+      return Promise.resolve(1);
+    });
+    tx.workoutProgram.findFirst.mockImplementation(() => {
+      order.push('existence_probe');
+      return Promise.resolve(null);
+    });
+    tx.workoutProgram.create.mockImplementation(() => {
+      order.push('create');
+      return Promise.resolve({
+        id: 'prog-clone',
+        is_template: false,
+        cloned_from_id: MASTER_ID,
+        weeks: 12,
+        days_per_week: 4,
+      });
+    });
+    prisma.$transaction.mockImplementation(
+      async (fn: (t: CloneTxMock) => unknown) => fn(tx),
+    );
+
+    await service.cloneProgramToClient(MASTER_ID, CLIENT_ID, COACH_ID);
+
+    // The advisory lock is taken, then the existence probe, then the create —
+    // in that exact order. The lock is genuinely the first DB op.
+    expect(order).toEqual(['advisory_lock', 'existence_probe', 'create']);
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    // The raw call is a tagged-template (params bound, not interpolated): the
+    // first arg is the SQL string parts array containing pg_advisory_xact_lock.
+    const sqlParts = tx.$executeRaw.mock.calls[0][0] as string[];
+    expect(sqlParts.join('?')).toContain('pg_advisory_xact_lock');
+  });
+
+  it('two concurrent clones of the same (master, client): exactly one commits, the loser gets a typed ConflictException (G9)', async () => {
+    // Simulate the real serialised outcome the advisory lock produces: the
+    // WINNER takes the lock, finds no prior clone, and commits. The LOSER
+    // blocks on the lock until the winner commits, then its existence probe
+    // (findFirst) sees the winner's row and bows out with ConflictException.
+    // This proves exactly-one-commit + a TYPED loser — not a mocked P2034.
     const txWinner = makeTx();
     const txLoser = makeTx();
-    txLoser.workoutProgram.create.mockRejectedValueOnce(serializationFailure());
+    // Under the held lock the loser observes the winner's freshly-committed
+    // clone row.
+    txLoser.workoutProgram.findFirst.mockResolvedValue({ id: 'prog-clone' });
 
     prisma.$transaction
       .mockImplementationOnce(
@@ -253,20 +321,87 @@ describe('cloneProgramToClient — Serializable transaction (MWB-2 §3.3)', () =
         async (fn: (t: CloneTxMock) => unknown) => fn(txLoser),
       );
 
-    const [winner, loser] = await Promise.allSettled([
-      service.cloneProgramToClient(MASTER_ID, CLIENT_ID, COACH_ID),
-      service.cloneProgramToClient(MASTER_ID, CLIENT_ID, COACH_ID),
+    const [winner, loser] = await Promise.all([
+      service.cloneProgramToClient(MASTER_ID, CLIENT_ID, COACH_ID).then(
+        (r) => ({ ok: true as const, r }),
+        (e) => ({ ok: false as const, e }),
+      ),
+      service.cloneProgramToClient(MASTER_ID, CLIENT_ID, COACH_ID).then(
+        (r) => ({ ok: true as const, r }),
+        (e) => ({ ok: false as const, e }),
+      ),
     ]);
 
-    expect(winner.status).toBe('fulfilled');
-    expect(loser.status).toBe('rejected');
-    const reason = (loser as PromiseRejectedResult)
-      .reason as Prisma.PrismaClientKnownRequestError;
-    expect(reason).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
-    expect(reason.code).toBe('P2034');
-    // The loser never wrote a revision or a head pointer — it aborted before.
+    // Exactly one fulfilled, exactly one rejected.
+    const outcomes = [winner, loser];
+    expect(outcomes.filter((o) => o.ok)).toHaveLength(1);
+    expect(outcomes.filter((o) => !o.ok)).toHaveLength(1);
+
+    // The winner committed a real clone with a head revision.
+    expect(winner.ok).toBe(true);
+    if (winner.ok) {
+      expect(winner.r.program.head_revision_id).toBe('prog-rev-1');
+    }
+    // Both transactions acquired the advisory lock first.
+    expect(txWinner.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(txLoser.$executeRaw).toHaveBeenCalledTimes(1);
+    // The loser threw a TYPED ConflictException and never wrote anything.
+    expect(loser.ok).toBe(false);
+    if (!loser.ok) {
+      expect(loser.e).toBeInstanceOf(ConflictException);
+    }
+    expect(txLoser.workoutProgram.create).not.toHaveBeenCalled();
     expect(txLoser.workoutProgramRevision.create).not.toHaveBeenCalled();
     expect(txLoser.workoutProgram.update).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a racing P2002 unique violation as a typed ConflictException (G9)', async () => {
+    // Belt-and-braces: if a clone slips past the existence probe and the
+    // create hits a unique-constraint violation (P2002 — e.g. a later schema
+    // phase adds the unique key), the loser must still receive the SAME typed
+    // ConflictException, never a leaked raw Prisma error.
+    const tx = makeTx();
+    tx.workoutProgram.create.mockRejectedValueOnce(uniqueViolation());
+    prisma.$transaction.mockImplementation(
+      async (fn: (t: CloneTxMock) => unknown) => fn(tx),
+    );
+
+    const err = await service
+      .cloneProgramToClient(MASTER_ID, CLIENT_ID, COACH_ID)
+      .catch((e) => e);
+
+    expect(err).toBeInstanceOf(ConflictException);
+    // The lock was still acquired first; no revision/head write happened.
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(tx.workoutProgramRevision.create).not.toHaveBeenCalled();
+    expect(tx.workoutProgram.update).not.toHaveBeenCalled();
+  });
+
+  it('re-checks the flag INSIDE the txn and 404s on a mid-flight flip (G4)', async () => {
+    // AUDIT G4 — defence-in-depth. The outer check passes (flag ON), the
+    // transaction is opened, then an operator flips FEATURE_MWB_TEMPLATES OFF
+    // mid-flight. The FIRST operation inside the txn re-reads the flag and the
+    // whole unit aborts with NotFoundException — no advisory lock, no clone
+    // create, nothing committed.
+    const tx = makeTx();
+    prisma.$transaction.mockImplementation(
+      async (fn: (t: CloneTxMock) => unknown) => {
+        // The flip happens after the outer check but before the txn body runs.
+        delete process.env.FEATURE_MWB_TEMPLATES;
+        return fn(tx);
+      },
+    );
+
+    await expect(
+      service.cloneProgramToClient(MASTER_ID, CLIENT_ID, COACH_ID),
+    ).rejects.toThrow(NotFoundException);
+
+    // The flag re-check is the FIRST thing in the txn — it aborts before the
+    // advisory lock, the existence probe, and any write.
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+    expect(tx.workoutProgram.findFirst).not.toHaveBeenCalled();
+    expect(tx.workoutProgram.create).not.toHaveBeenCalled();
+    expect(tx.workoutProgramRevision.create).not.toHaveBeenCalled();
   });
 
   it('still 404s before opening any transaction when the flag is OFF', async () => {

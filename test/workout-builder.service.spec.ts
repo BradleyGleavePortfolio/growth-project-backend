@@ -75,6 +75,7 @@ interface PrismaMock {
   workoutProgram: {
     create: jest.Mock;
     findUnique: jest.Mock;
+    findFirst: jest.Mock;
     update: jest.Mock;
   };
   workoutPlanRevision: {
@@ -91,6 +92,10 @@ interface PrismaMock {
     delete: jest.Mock;
   };
   $transaction: jest.Mock;
+  // MWB-2 G9: the clone's in-txn advisory lock runs via tx.$executeRaw. The
+  // $transaction mock runs the callback with this same mock as `tx`, so the
+  // raw handle must exist (and resolve) for the clone path to proceed.
+  $executeRaw: jest.Mock;
 }
 
 const makePrismaMock = (): PrismaMock => ({
@@ -122,6 +127,9 @@ const makePrismaMock = (): PrismaMock => ({
   workoutProgram: {
     create: jest.fn(),
     findUnique: jest.fn(),
+    // No prior clone exists by default, so the G9 existence probe lets the
+    // winner path proceed.
+    findFirst: jest.fn().mockResolvedValue(null),
     update: jest.fn(),
   },
   workoutPlanRevision: {
@@ -138,6 +146,7 @@ const makePrismaMock = (): PrismaMock => ({
     delete: jest.fn(),
   },
   $transaction: jest.fn(),
+  $executeRaw: jest.fn().mockResolvedValue(1),
 });
 
 describe('WorkoutBuilderService', () => {

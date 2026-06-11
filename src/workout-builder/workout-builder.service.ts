@@ -65,6 +65,14 @@ import {
 /** Hard cap so paginated list endpoints can't be coerced into unbounded reads. */
 export const WORKOUT_BUILDER_PAGE_MAX = 50;
 
+// MWB-2 — stable namespace id for the clone-to-client advisory lock.
+// pg_advisory_xact_lock(int4, int4) is keyed on TWO 32-bit ints; a dedicated
+// namespace (the first arg) keeps these locks from colliding with any other
+// advisory-lock user in the schema (e.g. the package-contents 'pkgc' lock).
+// ASCII 'mwbc' (MWB clone). The only requirement is uniqueness across the
+// codebase.
+export const ADVISORY_LOCK_NAMESPACE_MWB_CLONE = 0x6d_77_62_63;
+
 export interface PaginatedQuery {
   limit?: number;
   cursor?: string | null;
@@ -1069,17 +1077,35 @@ export class WorkoutBuilderService {
    * (`cloned_from_id` set) so the coach keeps refining the master without ever
    * disturbing the client mid-program ("grab-a-copy, never mutate source").
    *
-   * Order of operations (hard gates, BUILDER_BRIEF):
-   *   1. FEATURE_MWB_TEMPLATES flag re-check — defence-in-depth so an internal
-   *      caller cannot drive a clone while the feature is OFF (R0: never a
-   *      silent bypass). Surfaces as 404 to match the route guard, never
-   *      leaking that the feature exists.
+   * Order of operations (hard gates, BUILDER_BRIEF + audit P1):
+   *   1. FEATURE_MWB_TEMPLATES flag check BEFORE any DB read — fast-fail so the
+   *      feature is genuinely unreachable when OFF (R0: never a silent bypass).
+   *      Surfaces as 404 to match the route guard, never leaking that the
+   *      feature exists.
    *   2. Sub-coach scope check is consulted via assertCanAccessClient (head
    *      coach OR open sub-coach), AFTER cheap role + reachability gates that
    *      decide 403/404 without leaking cross-tenant existence.
-   *   3. The whole clone runs in a SERIALIZABLE transaction so a concurrent
-   *      write to the source program forces one of the two to roll back
-   *      deterministically (no torn copy).
+   *   3. The whole clone runs in a SERIALIZABLE transaction. INSIDE the
+   *      transaction, in order:
+   *        a. The FEATURE_MWB_TEMPLATES flag is RE-CHECKED as the very first
+   *           operation (audit G4 — defence-in-depth so an operator flipping
+   *           the flag OFF mid-flight, after the outer check but before the
+   *           transaction commits, aborts cleanly with 404 rather than
+   *           committing a clone the feature should forbid). isMwbTemplatesEnabled
+   *           reads process.env fresh on every call, so the re-read observes a
+   *           live flip with no per-request caching to defeat.
+   *        b. A per-(masterProgramId, clientId) transaction-scoped advisory
+   *           lock (pg_advisory_xact_lock) is acquired as the first DB op
+   *           (audit G9 — REAL concurrency control). Concurrent identical
+   *           clones (the mobile double-tap) block here until the winner
+   *           commits; the lock is released automatically at commit/rollback.
+   *        c. After the lock, an existing-clone probe runs. If a non-archived
+   *           clone of this master already exists for this coach, the loser
+   *           throws ConflictException (409) — exactly one clone is created,
+   *           never two. Any P2002 unique violation racing past the probe is
+   *           also surfaced as a typed ConflictException.
+   *      A concurrent write to the source program still forces a Serializable
+   *      abort (P2034) so the copy can never tear.
    *
    * Decision A invariants enforced here:
    *   - every cloned plan + exercise is copied by value (copyProgramPlans),
@@ -1137,21 +1163,75 @@ export class WorkoutBuilderService {
     // program serialises against this read+copy and one side rolls back.
     return this.prisma.$transaction(
       async (tx) => {
-        const program = await tx.workoutProgram.create({
-          data: {
-            coach_id: actorTenantId,
-            owner_user_id: coachId,
-            visibility: 'owner_only',
-            name: master.name,
-            description: master.description,
-            weeks: master.weeks,
-            days_per_week: master.days_per_week,
-            is_template: false,
+        // (3a) AUDIT G4 — defence-in-depth flag re-check as the FIRST operation
+        // inside the transaction. isMwbTemplatesEnabled reads process.env fresh
+        // on every call, so an operator who flips FEATURE_MWB_TEMPLATES OFF
+        // mid-flight (after the outer check at the top of this method but
+        // before this transaction commits) is observed here and the whole
+        // unit aborts with 404 — never committing a clone the feature forbids.
+        if (!isMwbTemplatesEnabled()) {
+          throw new NotFoundException('Master program not found');
+        }
+        // (3b) AUDIT G9 — REAL concurrency control. Acquire a transaction-scoped
+        // advisory lock keyed on (masterProgramId, clientId) as the first DB
+        // op. Two simultaneous identical clones (the mobile double-tap) cannot
+        // both proceed: the loser blocks here until the winner commits and the
+        // lock is released, then re-evaluates the existence probe below and
+        // bows out with a typed 409. The lock is held for the transaction's
+        // lifetime and released automatically at commit OR rollback. Keys are
+        // bound as parameters (never interpolated) — no SQL injection surface.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${ADVISORY_LOCK_NAMESPACE_MWB_CLONE}::int4, hashtext(${`${masterProgramId}:${clientId}`}))`;
+        // (3c) Loser path — under the lock, a clone of this master by this
+        // coach already exists, so the winner has already committed. Surface a
+        // typed ConflictException (409) rather than silently creating a second
+        // clone (R0: never a silent double-create).
+        const existingClone = await tx.workoutProgram.findFirst({
+          where: {
             cloned_from_id: masterProgramId,
-            goal_tag: master.goal_tag,
-            version: 1,
+            owner_user_id: coachId,
+            is_template: false,
+            archived_at: null,
           },
+          select: { id: true },
         });
+        if (existingClone) {
+          throw new ConflictException(
+            'A clone of this program for this client already exists',
+          );
+        }
+        let program;
+        try {
+          program = await tx.workoutProgram.create({
+            data: {
+              coach_id: actorTenantId,
+              owner_user_id: coachId,
+              visibility: 'owner_only',
+              name: master.name,
+              description: master.description,
+              weeks: master.weeks,
+              days_per_week: master.days_per_week,
+              is_template: false,
+              cloned_from_id: masterProgramId,
+              goal_tag: master.goal_tag,
+              version: 1,
+            },
+          });
+        } catch (err) {
+          // P2002 unique-constraint violation: a racing winner that slipped
+          // past the probe (e.g. if a unique key is added to the schema in a
+          // later phase). Surface it as the same typed 409 the probe raises so
+          // the loser receives a consistent ConflictException, never a leaked
+          // Prisma error.
+          if (
+            err instanceof Prisma.PrismaClientKnownRequestError &&
+            err.code === 'P2002'
+          ) {
+            throw new ConflictException(
+              'A clone of this program for this client already exists',
+            );
+          }
+          throw err;
+        }
         const plans = await this.copyProgramPlans(tx, masterProgramId, program.id, {
           isTemplate: false,
           actingUserId: coachId,
