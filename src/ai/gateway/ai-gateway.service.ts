@@ -30,6 +30,15 @@ import {
   SEND_NOTIFICATION_CAPABILITY,
   assertSendNotificationPayload,
 } from './materialisers/send-notification.materialiser';
+import {
+  CREATE_WORKOUT_PLAN_CAPABILITY,
+  assertCreateWorkoutPlanPayload,
+} from './materialisers/create-workout-plan.materialiser';
+import {
+  EDIT_WORKOUT_PLAN_CAPABILITY,
+  assertEditWorkoutPlanPayload,
+} from './materialisers/edit-workout-plan.materialiser';
+import { isMwbLiveCreateCapability } from './mwb-live-create.feature';
 import { AuditService } from '../../audit/audit.service';
 import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
 import { CoachAiBudgetExhaustedException } from '../../ai-credits/budget-exhausted.exception';
@@ -176,6 +185,25 @@ export class AiGatewayService {
 
     const requestId = randomUUID();
     const resolved = this.config.resolve(req.capability);
+
+    // MWB-5 — live-create capabilities are rejected at the capability
+    // allow-list BEFORE any AiActionDraft row is created when they are not
+    // allowed (e.g. FEATURE_MWB_AI_LIVE_CREATE off, or not in
+    // AI_GATEWAY_CAPABILITIES). This is the gateway-level "capability not
+    // enabled" refusal the brief (Test matrix #7) requires: a 403 here means a
+    // draft is never persisted, so the coach never sees a card for a disabled
+    // capability. Other capabilities preserve the historical stub-fallback
+    // posture (a disallowed capability silently degrades to the stub) so this
+    // narrow gate does not change behaviour for any existing capability.
+    if (isMwbLiveCreateCapability(req.capability) && !resolved.capabilityAllowed) {
+      throw new ForbiddenException({
+        error: 'AI_CAPABILITY_NOT_ENABLED',
+        capability: req.capability,
+        message:
+          'This capability is not enabled. FEATURE_MWB_AI_LIVE_CREATE must be on and the capability allow-listed.',
+      });
+    }
+
     const adapter = this.providers.resolve(resolved.provider);
 
     // Stream 1 — pre-call budget gate. Skip for capabilities not in the
@@ -334,6 +362,8 @@ export class AiGatewayService {
         [ASSIGN_WORKOUT_CAPABILITY]: assertAssignWorkoutPayload,
         [ASSIGN_MEAL_PLAN_CAPABILITY]: assertAssignMealPlanPayload,
         [SEND_NOTIFICATION_CAPABILITY]: assertSendNotificationPayload,
+        [CREATE_WORKOUT_PLAN_CAPABILITY]: assertCreateWorkoutPlanPayload,
+        [EDIT_WORKOUT_PLAN_CAPABILITY]: assertEditWorkoutPlanPayload,
       };
       const validator = PAYLOAD_VALIDATORS[req.capability];
       if (validator) {

@@ -1,4 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import {
+  isMwbAiLiveCreateEnabled,
+  isMwbLiveCreateCapability,
+} from './mwb-live-create.feature';
 
 // AI gateway feature gate. Default is FAIL CLOSED: even if a provider key
 // is configured, the gateway only routes to a real provider when the
@@ -89,6 +93,16 @@ export class AiGatewayConfig {
   }
 
   private capabilityAllowed(capability: string): boolean {
+    // MWB-5 — the two live-create capabilities are gated by
+    // FEATURE_MWB_AI_LIVE_CREATE (default OFF). While the flag is off they are
+    // NEVER allowed, regardless of AI_GATEWAY_CAPABILITIES, so
+    // AiGatewayService.invoke rejects them at the capability-allow-list check
+    // BEFORE any AiActionDraft row is created (brief Test matrix #7). The
+    // env-list membership check below still applies when the flag is on, so an
+    // operator opts in explicitly on BOTH switches.
+    if (isMwbLiveCreateCapability(capability) && !isMwbAiLiveCreateEnabled()) {
+      return false;
+    }
     const raw = process.env.AI_GATEWAY_CAPABILITIES;
     if (raw == null || raw.trim() === '') return false;
     if (raw.trim() === '*') return true;
@@ -135,6 +149,10 @@ export const DEFAULT_APPROVAL_REQUIRED = new Set<string>([
   'draft.assign_workout',
   'draft.assign_meal_plan',
   'draft.send_notification',
+  // MWB-5 — live-create capabilities write real WorkoutPlan / revision rows on
+  // approval and must NEVER auto-fire; they require human approval by default.
+  'draft.create_workout_plan',
+  'draft.edit_workout_plan',
 ]);
 
 /**
