@@ -18,21 +18,32 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { CommunityEventState } from '@prisma/client';
+import { CommunityEvent, CommunityEventState } from '@prisma/client';
 import { CommunityEventsService } from '../../../src/community/events/community-events.service';
 
 type AnyUser = { id: string; role: string };
 
-const coach: AnyUser = { id: 'coach-1', role: 'coach' };
-const client: AnyUser = { id: 'client-1', role: 'student' };
-const stranger: AnyUser = { id: 'stranger-1', role: 'student' };
+const coach: AnyUser = {
+  id: '11111111-1111-4111-8111-111111111111',
+  role: 'coach',
+};
+const client: AnyUser = {
+  id: '22222222-2222-4222-8222-222222222222',
+  role: 'student',
+};
+const stranger: AnyUser = {
+  id: '33333333-3333-4333-8333-333333333333',
+  role: 'student',
+};
 
-const WS = 'ws-1';
+const WS = '44444444-4444-4444-8444-444444444444';
+const EVT = '55555555-5555-4555-8555-555555555555';
+const EVT_NEW = '66666666-6666-4666-8666-666666666666';
 
-function baseEvent(over: Partial<Record<string, unknown>> = {}) {
+function baseEvent(over: Partial<CommunityEvent> = {}): CommunityEvent {
   const now = new Date('2026-07-01T12:00:00.000Z');
   return {
-    id: 'evt-1',
+    id: EVT,
     workspace_id: WS,
     cohort_id: null,
     created_by_id: coach.id,
@@ -52,8 +63,8 @@ function baseEvent(over: Partial<Record<string, unknown>> = {}) {
 }
 
 function makeService() {
-  const store: Record<string, ReturnType<typeof baseEvent>> = {
-    'evt-1': baseEvent(),
+  const store: Record<string, CommunityEvent> = {
+    [EVT]: baseEvent(),
   };
 
   const access = {
@@ -71,19 +82,28 @@ function makeService() {
   };
 
   const repo = {
-    create: jest.fn(async (p: Record<string, unknown>) => {
-      const e = baseEvent({
-        id: 'evt-new',
-        title: p.title,
-        description: p.description ?? null,
-        starts_at: p.startsAt,
-        ends_at: p.endsAt ?? null,
-        cohort_id: p.cohortId ?? null,
-        live_url: p.liveUrl ?? null,
-      });
-      store['evt-new'] = e;
-      return e;
-    }),
+    create: jest.fn(
+      async (p: {
+        title: string;
+        description: string | null;
+        startsAt: Date;
+        endsAt: Date | null;
+        cohortId: string | null;
+        liveUrl: string | null;
+      }) => {
+        const e = baseEvent({
+          id: EVT_NEW,
+          title: p.title,
+          description: p.description ?? null,
+          starts_at: p.startsAt,
+          ends_at: p.endsAt ?? null,
+          cohort_id: p.cohortId ?? null,
+          live_url: p.liveUrl ?? null,
+        });
+        store[EVT_NEW] = e;
+        return e;
+      },
+    ),
     findById: jest.fn(async (id: string) => store[id] ?? null),
     update: jest.fn(async (id: string, data: Record<string, unknown>) => {
       store[id] = { ...store[id], ...data, updated_at: new Date() } as ReturnType<
@@ -187,7 +207,7 @@ describe('CommunityEventsService (v2-3)', () => {
       const { service, access } = makeService();
       access.canAccessWorkspace.mockResolvedValue(false);
       await expect(
-        service.getOne(stranger as never, 'evt-1'),
+        service.getOne(stranger as never, EVT),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
@@ -202,7 +222,7 @@ describe('CommunityEventsService (v2-3)', () => {
   describe('transitions', () => {
     it('coach may advance scheduled → live', async () => {
       const { service } = makeService();
-      const res = await service.update(coach as never, 'evt-1', {
+      const res = await service.update(coach as never, EVT, {
         state: 'live',
       });
       expect(res.event.state).toBe('live');
@@ -210,24 +230,24 @@ describe('CommunityEventsService (v2-3)', () => {
 
     it('rejects a backward transition', async () => {
       const { service, store } = makeService();
-      store['evt-1'].state = CommunityEventState.live;
+      store[EVT].state = CommunityEventState.live;
       await expect(
-        service.update(coach as never, 'evt-1', { state: 'scheduled' }),
+        service.update(coach as never, EVT, { state: 'scheduled' }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('rejects skipping live → reflected', async () => {
       const { service, store } = makeService();
-      store['evt-1'].state = CommunityEventState.live;
+      store[EVT].state = CommunityEventState.live;
       await expect(
-        service.update(coach as never, 'evt-1', { state: 'reflected' }),
+        service.update(coach as never, EVT, { state: 'reflected' }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('rejects a client transition with 403', async () => {
       const { service } = makeService();
       await expect(
-        service.update(client as never, 'evt-1', { state: 'live' }),
+        service.update(client as never, EVT, { state: 'live' }),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
@@ -235,10 +255,10 @@ describe('CommunityEventsService (v2-3)', () => {
   describe('replay attach', () => {
     it('attaches an external replay link and moves to replay', async () => {
       const { service, store } = makeService();
-      store['evt-1'].state = CommunityEventState.live;
+      store[EVT].state = CommunityEventState.live;
       const res = await service.attachReplay(
         coach as never,
-        'evt-1',
+        EVT,
         'https://vimeo.com/12345',
       );
       expect(res.event.state).toBe('replay');
@@ -247,17 +267,17 @@ describe('CommunityEventsService (v2-3)', () => {
 
     it('rejects an invalid replay link', async () => {
       const { service, store } = makeService();
-      store['evt-1'].state = CommunityEventState.live;
+      store[EVT].state = CommunityEventState.live;
       await expect(
-        service.attachReplay(coach as never, 'evt-1', 'javascript:alert(1)'),
+        service.attachReplay(coach as never, EVT, 'javascript:alert(1)'),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('rejects a client replay attach with 403', async () => {
       const { service, store } = makeService();
-      store['evt-1'].state = CommunityEventState.live;
+      store[EVT].state = CommunityEventState.live;
       await expect(
-        service.attachReplay(client as never, 'evt-1', 'https://vimeo.com/1'),
+        service.attachReplay(client as never, EVT, 'https://vimeo.com/1'),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
@@ -265,17 +285,17 @@ describe('CommunityEventsService (v2-3)', () => {
   describe('reflect', () => {
     it('marks a replay event reflected and stamps reflected_at', async () => {
       const { service, store } = makeService();
-      store['evt-1'].state = CommunityEventState.replay;
-      const res = await service.reflect(coach as never, 'evt-1');
+      store[EVT].state = CommunityEventState.replay;
+      const res = await service.reflect(coach as never, EVT);
       expect(res.event.state).toBe('reflected');
       expect(res.event.reflected_at).not.toBeNull();
     });
 
     it('rejects reflect from a non-replay state', async () => {
       const { service, store } = makeService();
-      store['evt-1'].state = CommunityEventState.live;
+      store[EVT].state = CommunityEventState.live;
       await expect(
-        service.reflect(coach as never, 'evt-1'),
+        service.reflect(coach as never, EVT),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
@@ -283,22 +303,22 @@ describe('CommunityEventsService (v2-3)', () => {
   describe('rsvp permissions', () => {
     it('lets a client RSVP going', async () => {
       const { service } = makeService();
-      const res = await service.rsvp(client as never, 'evt-1', 'going');
+      const res = await service.rsvp(client as never, EVT, 'going');
       expect(res.rsvp.status).toBe('going');
     });
 
     it('rejects a client self-asserting attended', async () => {
       const { service } = makeService();
       await expect(
-        service.rsvp(client as never, 'evt-1', 'attended'),
+        service.rsvp(client as never, EVT, 'attended'),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('rejects RSVP on a reflected (historical) event', async () => {
       const { service, store } = makeService();
-      store['evt-1'].state = CommunityEventState.reflected;
+      store[EVT].state = CommunityEventState.reflected;
       await expect(
-        service.rsvp(client as never, 'evt-1', 'going'),
+        service.rsvp(client as never, EVT, 'going'),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -306,7 +326,7 @@ describe('CommunityEventsService (v2-3)', () => {
       const { service, access } = makeService();
       access.canAccessWorkspace.mockResolvedValue(false);
       await expect(
-        service.rsvp(stranger as never, 'evt-1', 'going'),
+        service.rsvp(stranger as never, EVT, 'going'),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
