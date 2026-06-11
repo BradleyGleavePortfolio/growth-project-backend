@@ -1,5 +1,6 @@
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { z } from 'zod';
+import { AckStateSchema } from '../ack/ack.dto';
 
 /** Cursor pagination query for the coach inbox. */
 export class CoachInboxQueryDto {
@@ -16,18 +17,20 @@ export class CoachInboxQueryDto {
 
 // ── Response schema (Zod) ──────────────────────────────────────────────────
 
-// v2-2: OPTIONAL per-thread ack summary, present ONLY when
+// v2-2 (R1 fixer, B-NEW — contract alignment): the per-thread inbox ack
+// envelope is the FULL canonical ack shape (`AckStateSchema` from ack.dto.ts):
+// `{ state, seen_at, acked_at, replied_at, sla }`. It is present ONLY when
 // FEATURE_COMMUNITY_ACKS is on (omitted entirely when off, preserving the v1-6
-// inbox shape byte-for-byte). Summarises the coach ack state for the item plus
-// the derived read-time SLA state so the inbox can render a badge + SLA chip
-// without a second round-trip. Posts have no coach-ack columns, so this is
-// only attached to message-type items.
-export const InboxAckSummarySchema = z
-  .object({
-    state: z.enum(['none', 'seen', 'acked', 'replied']),
-    sla_state: z.enum(['within', 'warning', 'breached']),
-  })
-  .strict();
+// inbox shape byte-for-byte).
+//
+// Why the full shape (not the prior `{ state, sla_state }` summary)? The mobile
+// client parses every ack envelope — inbox row, message detail, and transition
+// response — through ONE schema (`AckStateSchema`). Emitting a narrower summary
+// here meant the mobile parse silently failed for inbox rows and the badge fell
+// back to `none`, dropping real backend state (the R1 P0 silent-failure). One
+// canonical envelope across all three surfaces removes that footgun for good.
+// Posts have no coach-ack columns, so this is only attached to message items.
+export const InboxAckSummarySchema = AckStateSchema;
 
 export type InboxAckSummary = z.infer<typeof InboxAckSummarySchema>;
 
