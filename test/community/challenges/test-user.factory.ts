@@ -1,7 +1,7 @@
 /**
  * Typed test-user factory for the v3-1 community challenges specs.
  *
- * R0 forbids `as any` / `as unknown as` / `@ts-ignore` escape hatches in
+ * R0 forbids type-escape hatches (forced double-casts, suppression comments) in
  * PR-introduced code, including tests. The challenge/message services only ever
  * read `User.id` and `User.role`, but those parameters are typed `User`, so a
  * faithful fixture must be a complete `User`. This factory builds every scalar

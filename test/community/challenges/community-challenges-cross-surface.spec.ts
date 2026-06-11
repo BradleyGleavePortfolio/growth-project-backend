@@ -15,7 +15,7 @@
  *     plan_context_type: null, so sub-surface rows are excluded from the count.
  *
  * Repo + access are mocked (no DB). Users come from the typed factory (R0: no
- * `as unknown as`).
+ * forced double-casts).
  */
 import { NotFoundException } from '@nestjs/common';
 import type { CommunityMessage } from '@prisma/client';

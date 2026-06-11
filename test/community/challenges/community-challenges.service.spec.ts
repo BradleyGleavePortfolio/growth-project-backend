@@ -353,28 +353,31 @@ describe('CommunityChallengesService', () => {
     });
 
     it('concurrency: races lower/higher logs + double completion — progress never regresses, exactly one milestone', async () => {
-      // Two+ concurrent writers hit the SAME participation. The atomic statement
-      // (GREATEST + COALESCE completed_at) is simulated here by shared server
-      // state mutated under each call, pinning the service contract end-to-end:
-      // whichever order the writes interleave, the visible value only ever rises
-      // and completion emits exactly once.
+      // Two+ concurrent writers hit the SAME participation. The repository
+      // contract (monotonic GREATEST progress write + a SEPARATE conditional
+      // completion claim that only the first transitioning writer wins) is
+      // simulated here by shared server state mutated under each call, pinning
+      // the service contract end-to-end: whichever order the writes interleave,
+      // the visible value only ever rises and completion emits exactly once.
+      // The REAL SQL race against Postgres is exercised by the env-gated
+      // live-DB spec (community-challenges-progress.live.spec.ts).
       repo.findParticipation.mockResolvedValue(participation()); // current 40, target 100
       let serverProgress = 40;
       let serverCompleted: Date | null = null;
       repo.applyProgressAtomically.mockImplementation(
         ({ incoming }: { incoming: Prisma.Decimal }) => {
-          // GREATEST(progress_value, incoming)
+          // Write 1: GREATEST(progress_value, incoming).
           serverProgress = Math.max(serverProgress, incoming.toNumber());
-          // COALESCE(completed_at, CASE WHEN new >= target THEN now END)
-          const wasNull = serverCompleted === null;
-          if (wasNull && serverProgress >= 100) serverCompleted = NOW;
-          const transitioned = wasNull && serverCompleted !== null;
+          // Write 2: conditional completion claim — succeeds only for the call
+          // that flips completed_at from null while progress has reached target.
+          const claimed = serverCompleted === null && serverProgress >= 100;
+          if (claimed) serverCompleted = NOW;
           return Promise.resolve({
             participation: participation({
               progress_value: new Prisma.Decimal(serverProgress),
               completed_at: serverCompleted,
             }),
-            completionTransitioned: transitioned,
+            completionTransitioned: claimed,
           });
         },
       );

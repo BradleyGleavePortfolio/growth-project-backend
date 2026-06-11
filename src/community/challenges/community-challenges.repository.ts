@@ -149,21 +149,27 @@ export class CommunityChallengesRepository {
   }
 
   /**
-   * Atomically apply a progress log in a single SQL statement so concurrent
-   * writers cannot lose the higher value or double-fire completion (Finding 2).
+   * Apply a progress log so concurrent writers cannot lose the higher value or
+   * double-fire completion (Finding 2).
    *
-   *   - progress_value = GREATEST(progress_value, :incoming) — monotonic; a
-   *     lower log never regresses the bar (design §3.4, no shame state).
-   *   - completed_at = COALESCE(completed_at, <now if the NEW value reaches a
-   *     positive target>) — set exactly once, never cleared.
+   * Done in two writes against the same row:
+   *   1. Progress write — progress_value = GREATEST(progress_value, :incoming),
+   *      monotonic; a lower log never regresses the bar (design §3.4, no shame
+   *      state). last_logged_at / updated_at advance too. This write is always
+   *      idempotent-safe and carries no completion side effect.
+   *   2. Completion claim — a SEPARATE conditional statement
+   *      `UPDATE ... SET completed_at = :now WHERE id = :id AND completed_at IS
+   *      NULL AND progress_value >= target RETURNING id`. Exactly one statement
+   *      can match `completed_at IS NULL`: the loser waits on the row lock, then
+   *      re-evaluates its WHERE against the already-completed row, matches zero
+   *      rows, and returns no row. `completion_transitioned` is therefore
+   *      derived from the row version THIS call wrote — true iff the claim
+   *      returned a row. The caller emits the milestone push / telemetry solely
+   *      on that flag, so racing target-reaching writers produce exactly one
+   *      emission.
    *
-   * The CTE captures the PRE-update completed_at so RETURNING can report
-   * `completion_transitioned` = true only for the single statement that flipped
-   * it from NULL. The caller emits the milestone push / telemetry solely on
-   * that flag, so racing target-reaching writers produce exactly one emission.
-   *
-   * `target` is null (or <= 0) for an open-ended challenge; in that case the
-   * CASE never fires and completion stays null.
+   * `target` is null (or <= 0) for an open-ended challenge; the completion claim
+   * is skipped entirely in that case and completion stays null.
    */
   async applyProgressAtomically(params: {
     challengeId: string;
@@ -179,7 +185,11 @@ export class CommunityChallengesRepository {
     const targetSql = hasTarget
       ? (params.target as Prisma.Decimal).toString()
       : null;
-    const rows = await this.prisma.$queryRaw<
+
+    // Write 1 — monotonic progress. GREATEST keeps the higher of the stored and
+    // incoming value so concurrent writers never regress the bar; this write
+    // never touches completed_at and so has no completion side effect.
+    const progressRows = await this.prisma.$queryRaw<
       Array<{
         id: string;
         workspace_id: string;
@@ -190,53 +200,62 @@ export class CommunityChallengesRepository {
         last_logged_at: Date | null;
         created_at: Date;
         updated_at: Date;
-        completion_transitioned: boolean;
       }>
     >`
-      WITH prior AS (
-        SELECT completed_at AS prev_completed_at
-        FROM community_challenge_participations
-        WHERE challenge_id = ${params.challengeId}::uuid
-          AND user_id = ${params.userId}::uuid
-      ),
-      updated AS (
+      UPDATE community_challenge_participations AS p
+      SET
+        progress_value = GREATEST(p.progress_value, ${params.incoming}),
+        last_logged_at = ${params.now},
+        updated_at = ${params.now}
+      WHERE p.challenge_id = ${params.challengeId}::uuid
+        AND p.user_id = ${params.userId}::uuid
+      RETURNING
+        p.id,
+        p.workspace_id,
+        p.challenge_id,
+        p.user_id,
+        p.progress_value,
+        p.completed_at,
+        p.last_logged_at,
+        p.created_at,
+        p.updated_at
+    `;
+    const progressRow = progressRows[0];
+
+    // Write 2 — completion claim. A SEPARATE conditional statement that only the
+    // single transitioning writer can match: `completed_at IS NULL` plus the
+    // now-persisted progress reaching a positive target. A concurrent loser
+    // waits on the row lock, re-evaluates against the already-completed row,
+    // matches zero rows, and RETURNS NOTHING. The transition flag is therefore
+    // derived from the row version THIS call actually wrote — true iff the claim
+    // returned a row — never from an unlocked pre-update snapshot.
+    let completionRow: { completed_at: Date | null } | undefined;
+    if (targetSql !== null) {
+      const claimedRows = await this.prisma.$queryRaw<
+        Array<{ id: string; completed_at: Date | null }>
+      >`
         UPDATE community_challenge_participations AS p
-        SET
-          progress_value = GREATEST(p.progress_value, ${params.incoming}),
-          last_logged_at = ${params.now},
-          completed_at = COALESCE(
-            p.completed_at,
-            CASE
-              WHEN ${targetSql}::numeric IS NOT NULL
-               AND GREATEST(p.progress_value, ${params.incoming}) >= ${targetSql}::numeric
-              THEN ${params.now}
-              ELSE NULL
-            END
-          ),
-          updated_at = ${params.now}
+        SET completed_at = ${params.now}
         WHERE p.challenge_id = ${params.challengeId}::uuid
           AND p.user_id = ${params.userId}::uuid
-        RETURNING p.*
-      )
-      SELECT
-        u.id,
-        u.workspace_id,
-        u.challenge_id,
-        u.user_id,
-        u.progress_value,
-        u.completed_at,
-        u.last_logged_at,
-        u.created_at,
-        u.updated_at,
-        (prior.prev_completed_at IS NULL AND u.completed_at IS NOT NULL)
-          AS completion_transitioned
-      FROM updated AS u CROSS JOIN prior
-    `;
-    const row = rows[0];
-    const { completion_transitioned, ...rest } = row;
+          AND p.completed_at IS NULL
+          AND p.progress_value >= ${targetSql}::numeric
+        RETURNING p.id, p.completed_at
+      `;
+      completionRow = claimedRows[0];
+    }
+    const completionTransitioned = completionRow !== undefined;
+
     return {
-      participation: rest as CommunityChallengeParticipation,
-      completionTransitioned: completion_transitioned,
+      participation: {
+        ...progressRow,
+        // Reflect the timestamp this call claimed; otherwise keep whatever the
+        // progress write read (already-set for a prior completion, or null).
+        completed_at: completionTransitioned
+          ? (completionRow as { completed_at: Date | null }).completed_at
+          : progressRow.completed_at,
+      } as CommunityChallengeParticipation,
+      completionTransitioned,
     };
   }
 

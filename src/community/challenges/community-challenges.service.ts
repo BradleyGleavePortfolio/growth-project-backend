@@ -435,11 +435,13 @@ export class CommunityChallengesService {
       });
     }
 
-    // Atomic, monotonic progress + completion in ONE statement (Finding 2): the
-    // repository applies GREATEST(progress_value, incoming) and a COALESCE'd
-    // completed_at, and reports whether THIS statement transitioned completion
-    // from null. Racing writers can no longer lose the higher value, regress
-    // the bar (design §3.4, no shame state), or double-fire completion.
+    // Monotonic progress + idempotent completion claim (Finding 2): the
+    // repository applies GREATEST(progress_value, incoming) and then, as a
+    // SEPARATE conditional write, claims the completion transition only when
+    // this call is the one that flipped completed_at from null. Racing writers
+    // can no longer lose the higher value, regress the bar (design §3.4, no
+    // shame state), or double-fire completion — completionTransitioned is true
+    // for at most one of the concurrent target-reaching writers.
     const { participation: updated, completionTransitioned } =
       await this.repo.applyProgressAtomically({
         challengeId,
