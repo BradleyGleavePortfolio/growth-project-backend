@@ -93,7 +93,7 @@ export class CommunityMessagesService {
   /**
    * Resolve an incoming raw plan_context field into a validated tag to persist.
    *
-   * Flag OFF: any incoming tag is dropped (returns null) with an INFO log
+   * Flag OFF: every incoming tag is dropped (returns null) with an INFO log
    *   carrying reason "flag_off_drop" — the send still succeeds (brief contract).
    * Flag ON, no field: returns null (untagged message).
    * Flag ON, field present: parsed by Zod (malformed → 422), then

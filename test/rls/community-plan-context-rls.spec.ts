@@ -29,6 +29,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { User } from '@prisma/client';
+// Type-only imports: erased at compile time, so they do not defeat the lazy
+// require() of these modules inside the live block (which keeps the static
+// layer free of every DB/Prisma-engine dependency).
+import type { PrismaService } from '../../src/prisma.service';
+import type { PlanContextService } from '../../src/community/plan-context/plan-context.service';
 import { liveDbUrl } from '../community/_support/community-db';
 
 const MIGRATIONS = join(__dirname, '..', '..', 'prisma', 'migrations');
@@ -129,8 +134,8 @@ liveDescribe('v2-1 plan-context — live application-layer ownership gate', () =
   } = require('../../src/community/plan-context/plan-context.repository');
   const { randomUUID } = require('crypto') as typeof import('crypto');
 
-  let prisma: any;
-  let service: any;
+  let prisma: PrismaService;
+  let service: PlanContextService;
   const ids = { coachA: '', coachB: '', planA: '', planB: '' };
 
   const coachA = (): User =>

@@ -49,9 +49,22 @@ import { PrismaService } from '../../src/prisma.service';
 import { CommunityRealtimeService } from '../../src/community/realtime/community-realtime.service';
 import { SupabaseService } from '../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
+import type { CommunityMessageResponse } from '../../src/community/dto/community-message.dto';
+import type { ResolvePlanContextResponse } from '../../src/community/plan-context/plan-context.dto';
 import { liveDbUrl } from './_support/community-db';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
+
+/**
+ * Parsed JSON body returned by the plan-context HTTP endpoints under test.
+ * Success responses are either a created/echoed message envelope or a resolve
+ * snapshot envelope; error responses carry a stable `code` discriminator. A
+ * single helper drives every endpoint and JSON.parse hands back an untyped
+ * value, so this composite envelope lets each assertion read the fields its
+ * endpoint returns without per-call casts.
+ */
+type PlanContextResponseBody = CommunityMessageResponse &
+  ResolvePlanContextResponse & { code: string };
 
 if (!liveDbUrl()) {
   // eslint-disable-next-line no-console
@@ -64,7 +77,7 @@ const H_USER = 'x-test-user-id';
 
 interface HttpResult {
   status: number;
-  body: any;
+  body: PlanContextResponseBody;
 }
 
 itLive('community v2-1 plan-context tags (live DB)', () => {
@@ -122,11 +135,15 @@ itLive('community v2-1 plan-context tags (live DB)', () => {
           let data = '';
           res.on('data', (c) => (data += c));
           res.on('end', () => {
-            let parsed: any = null;
+            // JSON.parse hands back an untyped value, which assigns cleanly to
+            // the composite PlanContextResponseBody envelope (no cast). Every
+            // cohort endpoint under test answers with a JSON body, so an empty
+            // or non-JSON payload falls back to an empty envelope.
+            let parsed: PlanContextResponseBody = JSON.parse('{}');
             try {
-              parsed = data.length ? JSON.parse(data) : null;
+              if (data.length) parsed = JSON.parse(data);
             } catch {
-              parsed = data;
+              parsed = JSON.parse('{}');
             }
             resolve({ status: res.statusCode ?? 0, body: parsed });
           });
