@@ -117,6 +117,36 @@ export class CommunityEventsRepository {
     });
   }
 
+  /**
+   * RSVPs for one event in the given statuses, returning only the user ids —
+   * used by the "starting soon" reminder fan-out. Optionally restricts to rows
+   * that have not yet been reminded (reminded_at IS NULL) so a re-run of the
+   * promotion does not double-notify.
+   */
+  async findRsvpRecipients(params: {
+    eventId: string;
+    statuses: CommunityEventRsvpStatus[];
+    onlyUnreminded: boolean;
+  }): Promise<Array<{ id: string; user_id: string }>> {
+    return this.prisma.communityEventRsvp.findMany({
+      where: {
+        event_id: params.eventId,
+        status: { in: params.statuses },
+        ...(params.onlyUnreminded ? { reminded_at: null } : {}),
+      },
+      select: { id: true, user_id: true },
+    });
+  }
+
+  /** Stamp reminded_at on a set of RSVP rows (idempotency for the reminder). */
+  async markReminded(rsvpIds: string[], at: Date): Promise<void> {
+    if (rsvpIds.length === 0) return;
+    await this.prisma.communityEventRsvp.updateMany({
+      where: { id: { in: rsvpIds } },
+      data: { reminded_at: at },
+    });
+  }
+
   /** Per-status RSVP counts for one event. */
   async rsvpCounts(
     eventId: string,
