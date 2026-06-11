@@ -459,8 +459,19 @@ liveDescribe('Autosave/Undo authorization + conflict (live DB)', () => {
     expect(body.error).toBe('autosave_conflict_retry');
     expect(body.head_revision_index).toBe(1);
     expect(body.lock_token).toMatch(LOCK_TOKEN_RE);
-    // The rotated token differs from the one the client sent.
-    expect(body.lock_token).not.toBe(staleBaseToken);
+    // The conflict carries the token derived from the CURRENT persisted state
+    // (planId, version, head_revision_id). In THIS scenario the client already
+    // sent that exact current token (only its base_revision_index was stale),
+    // so the deterministic HMAC token returned EQUALS staleBaseToken — that is
+    // the correct, deterministic behaviour, not a defect. (The prior
+    // `.not.toBe(staleBaseToken)` assertion was a leftover from the pre-HMAC
+    // era when lock_token was a random blob; under the keyed-HMAC token it is
+    // false by construction here. The genuine rotation property — a NEW token
+    // after a committing write — is proven by the lock-token spec's
+    // "successful autosave ROTATES the token" case and by the successful retry
+    // below advancing the head.) We assert it equals the server-derived
+    // current-state token so the rebase contract is pinned exactly.
+    expect(body.lock_token).toBe(await tokenFor(PLAN_ID));
 
     // The client rebases to the conflict's head index + retries with the new
     // token and succeeds (head 1 -> 2).

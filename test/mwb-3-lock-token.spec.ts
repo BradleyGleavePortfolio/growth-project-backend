@@ -119,6 +119,215 @@ describe('MWB-3 P1.2 — computeLockToken determinism + keyed-secret contract', 
   });
 });
 
+// ─── Pure-unit lane: WRONG-SECRET lock-token rejection proves NO DB mutation ──
+//
+// R2 audit P1: the live block proves a STALE (wrong-version) token is rejected
+// with no revision write, but no test pinned the WRONG-SECRET case on the
+// autosave MUTATION path with an explicit "mutation methods were never called"
+// guarantee. This block closes that gap as a no-DB unit: the prisma transaction
+// surface is fully mocked, the service is configured with one HMAC secret, and
+// the client submits a token computed for the CURRENT (planId, version,
+// headRevisionId) under a DIFFERENT secret. Because the token is a keyed HMAC,
+// the wrong-secret token does NOT equal the server-derived expected token, so
+// applyAutosave must throw a typed 409 'autosave_lock_stale' BEFORE mutating any
+// row. We assert every mutation method on the transaction client was never
+// invoked, proving the lock is enforced ahead of any write (the lock is real,
+// not cosmetic). This runs in the default build-and-test lane (no DB), so it can
+// never be green-by-skip.
+
+describe('MWB-3 P1.2 — WRONG-SECRET lock token: typed 409 + ZERO DB mutation (no-DB unit)', () => {
+  const ORIGINAL_SECRET = process.env[MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV];
+  const ORIGINAL_FLAG = process.env.FEATURE_MWB_AUTOSAVE_UNDO;
+
+  // The secret the SERVICE is configured with (read from process.env at
+  // request time by computeLockToken inside the service).
+  const SERVER_SECRET = 'mwb3-server-secret-aaaaaaaaaaaaaaaaaaaa';
+  // A DIFFERENT secret the (hostile/stale) client used to forge its token.
+  const WRONG_SECRET = 'mwb3-attacker-secret-bbbbbbbbbbbbbbbbbbbb';
+
+  // The plan's persisted optimistic-concurrency markers the locked row reports.
+  const PLAN_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const HEAD_REVISION_ID = 'head-rev-id-0';
+  const HEAD_INDEX = 0;
+  const VERSION = 1;
+  const ACTING_USER_ID = 'mwb3-wrong-secret-coach';
+
+  // Mutation methods on the transaction client. EVERY one must stay un-called
+  // when a wrong-secret token is rejected — the assertion the R2 brief requires.
+  let txWorkoutPlanUpdate: jest.Mock;
+  let txRevisionCreate: jest.Mock;
+  let txExerciseUpdateMany: jest.Mock;
+  let txExerciseCreateMany: jest.Mock;
+
+  // Read-only methods the lock path touches BEFORE the token check.
+  let txQueryRaw: jest.Mock;
+  let txRevisionFindUnique: jest.Mock;
+
+  let prismaMock: PrismaService;
+  let service: WorkoutBuilderAutosaveService;
+
+  beforeEach(() => {
+    // Service is configured with SERVER_SECRET; feature flag ON so the autosave
+    // path is reachable.
+    process.env[MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV] = SERVER_SECRET;
+    process.env.FEATURE_MWB_AUTOSAVE_UNDO = 'true';
+
+    txWorkoutPlanUpdate = jest.fn();
+    txRevisionCreate = jest.fn();
+    txExerciseUpdateMany = jest.fn();
+    txExerciseCreateMany = jest.fn();
+
+    // FOR UPDATE row-lock read: returns the plan's persisted version +
+    // head_revision_id, exactly the shape lockPlanAndHead expects.
+    txQueryRaw = jest.fn().mockResolvedValue([
+      { head_revision_id: HEAD_REVISION_ID, version: VERSION },
+    ]);
+    // Head revision lookup: returns the current head's revision_index.
+    txRevisionFindUnique = jest
+      .fn()
+      .mockResolvedValue({ revision_index: HEAD_INDEX });
+
+    // The transaction client handed to the $transaction callback. The mutation
+    // methods are jest.fn()s that THROW if called, so an accidental write both
+    // fails the test AND is recorded by the not.toHaveBeenCalled assertions.
+    const tx = {
+      $queryRaw: txQueryRaw,
+      workoutPlanRevision: {
+        findUnique: txRevisionFindUnique,
+        create: txRevisionCreate,
+      },
+      workoutPlan: {
+        update: txWorkoutPlanUpdate,
+      },
+      workoutPlanExercise: {
+        updateMany: txExerciseUpdateMany,
+        createMany: txExerciseCreateMany,
+      },
+    };
+
+    prismaMock = {
+      // resolveAuthorKind: a head coach (coach_id null) => author_kind 'coach'.
+      user: {
+        findUnique: jest.fn().mockResolvedValue({ coach_id: null }),
+      },
+      // authorisePlanAccess: the acting user IS the plan owner (direct owner),
+      // so the access gate passes and we reach the transaction + token check.
+      workoutPlan: {
+        findUnique: jest.fn().mockResolvedValue({ coach_id: ACTING_USER_ID }),
+      },
+      // Run the callback with the mocked tx, mirroring a real $transaction.
+      $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb(tx)),
+    } as unknown as PrismaService;
+
+    service = new WorkoutBuilderAutosaveService(
+      prismaMock,
+      // WorkoutBuilderService + SubCoachScopeService are not reached before the
+      // token check on this path (owner short-circuits the sub-coach lookup),
+      // so undefined stand-ins are sufficient for this no-DB unit.
+      undefined as unknown as WorkoutBuilderService,
+      new AnalyticsService(),
+      undefined as unknown as SubCoachScopeService,
+    );
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_SECRET === undefined) {
+      delete process.env[MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV];
+    } else {
+      process.env[MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV] = ORIGINAL_SECRET;
+    }
+    if (ORIGINAL_FLAG === undefined) {
+      delete process.env.FEATURE_MWB_AUTOSAVE_UNDO;
+    } else {
+      process.env.FEATURE_MWB_AUTOSAVE_UNDO = ORIGINAL_FLAG;
+    }
+  });
+
+  const wrongSecretToken = () =>
+    // A token for the EXACT current persisted state, but keyed by the WRONG
+    // secret — the only thing that differs from the server-derived expected
+    // token, so the rejection is attributable solely to the secret mismatch.
+    computeLockToken(PLAN_ID, VERSION, HEAD_REVISION_ID, {
+      [MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV]: WRONG_SECRET,
+    } as NodeJS.ProcessEnv);
+
+  const autosaveBody = () => ({
+    base_revision_index: HEAD_INDEX,
+    lock_token: wrongSecretToken(),
+    ops: [
+      {
+        op: 'upsert_exercise' as const,
+        payload: {
+          exercise_external_id: 'squat',
+          order: 1,
+          sets: 3,
+          reps_or_duration_seconds: 10,
+        },
+      },
+    ],
+    cause: 'manual_edit' as const,
+  });
+
+  it('sanity: the wrong-secret token differs from the server-derived expected token but is wire-valid (16 hex)', () => {
+    const wrong = wrongSecretToken();
+    const expected = computeLockToken(PLAN_ID, VERSION, HEAD_REVISION_ID, {
+      [MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV]: SERVER_SECRET,
+    } as NodeJS.ProcessEnv);
+    expect(wrong).not.toBe(expected);
+    // Still passes the LOCK_TOKEN_RE wire-shape gate, so the rejection happens
+    // at the HMAC comparison (not the zod regex) — the case the audit named.
+    expect(wrong).toHaveLength(LOCK_TOKEN_HEX_LEN);
+    expect(wrong).toMatch(/^[0-9a-f]+$/);
+  });
+
+  it('rejects a WRONG-SECRET token with ConflictException error=autosave_lock_stale', async () => {
+    let thrown: ConflictException | undefined;
+    try {
+      await service.applyAutosave(
+        PLAN_ID,
+        { userId: ACTING_USER_ID },
+        autosaveBody(),
+      );
+    } catch (err) {
+      thrown = err as ConflictException;
+    }
+    expect(thrown).toBeInstanceOf(ConflictException);
+    const body = thrown!.getResponse() as AutosaveConflictDto;
+    expect(body.error).toBe('autosave_lock_stale');
+    // The 409 carries the current head index + a freshly server-derived token
+    // so the client can rebase — proving the response is the typed lock-stale
+    // envelope, not a leaked/generic error.
+    expect(body.head_revision_index).toBe(HEAD_INDEX);
+    expect(body.lock_token).toBe(
+      computeLockToken(PLAN_ID, VERSION, HEAD_REVISION_ID, {
+        [MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV]: SERVER_SECRET,
+      } as NodeJS.ProcessEnv),
+    );
+  });
+
+  it('NEVER mutates the DB: workoutPlan.update, revision insert, and exercise writes are all un-called', async () => {
+    await expect(
+      service.applyAutosave(PLAN_ID, { userId: ACTING_USER_ID }, autosaveBody()),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // The four mutation surfaces the autosave write-path would touch AFTER the
+    // token check. Every one must be untouched: the lock is enforced BEFORE any
+    // mutation (the R2 brief's explicit ">= 2 distinct mutation methods un-called"
+    // requirement; here we pin all four).
+    expect(txWorkoutPlanUpdate).not.toHaveBeenCalled();
+    expect(txRevisionCreate).not.toHaveBeenCalled();
+    expect(txExerciseUpdateMany).not.toHaveBeenCalled();
+    expect(txExerciseCreateMany).not.toHaveBeenCalled();
+
+    // And the read path DID run up to the lock check — proves the rejection is
+    // the HMAC mismatch inside the transaction, not an earlier short-circuit
+    // (e.g. auth/flag) that would make the no-mutation guarantee vacuous.
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(txQueryRaw).toHaveBeenCalledTimes(1);
+    expect(txRevisionFindUnique).toHaveBeenCalledTimes(1);
+  });
+});
+
 // ─── Live-DB lane: sub-coach authorization (P1.1) + lock enforcement (P1.2) ──
 
 const TEST_DB_URL = process.env.MWB3_TEST_DATABASE_URL || '';

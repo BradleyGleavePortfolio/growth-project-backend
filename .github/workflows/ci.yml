@@ -290,3 +290,104 @@ jobs:
         run: npx jest --config jest.rls.config.js test/rls/helper-functions.spec.ts --runInBand --testTimeout=60000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+
+  mwb-3-live-tests:
+    # MWB-3 R2 (audit P1): the MWB-3 autosave/undo live suite was skip-gated on
+    # MWB3_TEST_DATABASE_URL and never ran in CI, so the sub-coach authorization
+    # gate, the optimistic lock-token enforcement, the real undo/redo path, the
+    # revision-prune retention invariants, and the RLS + concurrency proof were
+    # all green-by-skip. This dedicated job provisions its own Postgres 15
+    # service, exports MWB3_TEST_DATABASE_URL, and runs the full MWB-3 live suite
+    # so those trust-surface assertions execute as a required CI check.
+    #
+    # Unlike rls-live-tests, NO psql bootstrap is needed: every MWB-3 live spec
+    # self-materialises a Prisma-faithful schema in its own beforeAll via
+    # test/utils/bootstrap-test-schema.ts (DROP SCHEMA public CASCADE + a
+    # `prisma migrate diff --from-empty` apply) and the RLS spec defensively
+    # creates the Supabase-convention roles it needs. The throwaway DB is
+    # selected EXCLUSIVELY via MWB3_TEST_DATABASE_URL (never the app DATABASE_URL),
+    # which is exactly the env var those specs gate on. Each spec wipes and
+    # rebuilds the schema, so the suite runs --runInBand to serialise the
+    # DROP/CREATE against the single shared database.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # DATABASE_URL/DIRECT_URL satisfy Prisma CLI invocations (generate / the
+      # migrate-diff inside bootstrap-test-schema). MWB3_TEST_DATABASE_URL is the
+      # var the MWB-3 live specs connect with AND gate on: setting it flips every
+      # `describe.skip` lane to a real run. It points at the same throwaway
+      # service container, which the specs reset (DROP SCHEMA public CASCADE)
+      # before each bootstrap.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      MWB3_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Provision the RLS-bound app_authenticated role
+        # test/rls-mwb3-autosave-undo.spec.ts (Part A, matrix #13) GRANTs table +
+        # schema-app privileges TO app_authenticated and reads WorkoutPlanRevision
+        # under SET LOCAL ROLE app_authenticated. That login-less, RLS-bound role
+        # pre-exists on a real Supabase database; the spec's own PREREQ_SQL
+        # defensively creates the Supabase-convention roles (anon/authenticated/
+        # service_role) but NOT app_authenticated, so we create it here. NOLOGIN
+        # NOINHERIT NOBYPASSRLS so RLS is genuinely enforced against it (matching
+        # the Supabase shim's posture for the authenticated role).
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+            "DO \$do\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_authenticated') THEN CREATE ROLE app_authenticated NOLOGIN NOINHERIT NOBYPASSRLS; END IF; END \$do\$;"
+
+      - name: Run MWB-3 autosave/undo live suite (default-lane specs)
+        # The five test/mwb-3-*.spec.ts files run under the DEFAULT jest config
+        # (jest.config.js matches them via testRegex). With MWB3_TEST_DATABASE_URL
+        # set they execute their live blocks instead of skipping. --runInBand so
+        # the per-file DROP SCHEMA public CASCADE + full-schema rebuild never race
+        # on the shared DB. NODE_OPTIONS raises the heap (same rationale as the
+        # other lanes: the default ~2GB heap OOM-aborts under --runInBand).
+        run: |
+          npx jest \
+            test/mwb-3-lock-token.spec.ts \
+            test/mwb-3-autosave.controller.spec.ts \
+            test/mwb-3-autosave.service.spec.ts \
+            test/mwb-3-undo.spec.ts \
+            test/mwb-3-revision-prune.cron.spec.ts \
+            --runInBand --testTimeout=120000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Run MWB-3 RLS + concurrency live spec (rls-lane spec)
+        # test/rls-mwb3-autosave-undo.spec.ts lives in the RLS lane
+        # (jest.rls.config.js testMatch test/rls-*.spec.ts; the default config
+        # ignores it). It applies the MWB-1 RLS migration itself and creates the
+        # Supabase-convention roles defensively, so it needs only a reachable DB
+        # via MWB3_TEST_DATABASE_URL. Run it via the RLS config so it is matched.
+        run: npx jest --config jest.rls.config.js test/rls-mwb3-autosave-undo.spec.ts --runInBand --testTimeout=120000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
