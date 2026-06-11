@@ -37,10 +37,18 @@ import { CommunityCoachInboxRepository } from './inbox/community-coach-inbox.rep
 import { AuthModule } from '../auth/auth.module';
 import { CommunityRealtimeModule } from './realtime/community-realtime.module';
 import { CommunityNotificationsModule } from './notifications/community-notifications.module';
+// v2-1 plan-context tags: read-only resolve surface + PlanContextService
+// (consumed by CommunityMessagesService on send to validate an attached tag).
+import { PlanContextModule } from './plan-context/plan-context.module';
 
 // PrismaService provided globally via PrismaModule.
 @Module({
-  imports: [AuthModule, CommunityRealtimeModule, CommunityNotificationsModule],
+  imports: [
+    AuthModule,
+    CommunityRealtimeModule,
+    CommunityNotificationsModule,
+    PlanContextModule,
+  ],
   controllers: [
     CommunityController,
     CommunityMessagesController,

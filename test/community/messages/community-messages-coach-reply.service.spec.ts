@@ -39,6 +39,7 @@ function createdMessage(senderId: string): CommunityMessage {
     coach_replied_at: null,
     deleted_at: null,
     plan_context_type: null,
+    plan_context_payload: null,
   } as unknown as CommunityMessage;
 }
 
@@ -53,6 +54,10 @@ describe('CommunityMessagesService.send — coach-inbox producer', () => {
     cohortShard: jest.Mock;
     broadcastCommunityEvent: jest.Mock;
   };
+  // v2-1: CommunityMessagesService now takes PlanContextService. These coach-
+  // reply tests never attach a plan_context, so validate() is never reached;
+  // the stub just satisfies the constructor arity.
+  let planContext: { validate: jest.Mock };
   let service: CommunityMessagesService;
 
   beforeEach(() => {
@@ -69,10 +74,14 @@ describe('CommunityMessagesService.send — coach-inbox producer', () => {
       cohortShard: jest.fn(() => 0),
       broadcastCommunityEvent: jest.fn(async () => undefined),
     };
+    planContext = {
+      validate: jest.fn(async (_user, tag) => tag),
+    };
     service = new CommunityMessagesService(
       access as never,
       repo as never,
       realtime as never,
+      planContext as never,
     );
   });
 
