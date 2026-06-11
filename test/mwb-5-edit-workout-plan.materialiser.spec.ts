@@ -71,7 +71,35 @@ function buildPrisma(initialDraft: any, opts: { assignments?: any[]; planCoachId
   };
   const id = (p: string) => `${p}-${++store.seq}`;
 
+  // Shared conditional-claim/update semantics for aiActionDraft.updateMany,
+  // used by BOTH the in-transaction client (the P1.1 claim is the first
+  // statement inside the txn) and the post-commit finalise on the top-level
+  // client. Mirrors Postgres: when the WHERE predicate does not match the
+  // current row, count is 0 and nothing is written.
+  const aiActionDraftUpdateMany = jest.fn(async ({ where, data }: any) => {
+    if (where.id !== store.draft.id) return { count: 0 };
+    if (where.materialised_at === null && store.draft.materialised_at !== null) {
+      return { count: 0 };
+    }
+    if (where.materialised_ref === null && store.draft.materialised_ref !== null) {
+      return { count: 0 };
+    }
+    if (
+      where.materialised_at instanceof Date &&
+      (!(store.draft.materialised_at instanceof Date) ||
+        store.draft.materialised_at.getTime() !== where.materialised_at.getTime())
+    ) {
+      return { count: 0 };
+    }
+    Object.assign(store.draft, data);
+    return { count: 1 };
+  });
+
   const client = {
+    aiActionDraft: {
+      updateMany: aiActionDraftUpdateMany,
+      findUnique: jest.fn(async () => store.draft),
+    },
     $queryRaw: jest.fn(async () => {
       // SELECT id, head_revision_id FROM WorkoutPlan WHERE id = ... FOR UPDATE
       return store.plans
@@ -132,18 +160,39 @@ function buildPrisma(initialDraft: any, opts: { assignments?: any[]; planCoachId
       findMany: jest.fn(async () => store.assignments),
     },
     aiActionDraft: {
-      updateMany: jest.fn(async ({ where, data }: any) => {
-        if (where.id !== store.draft.id) return { count: 0 };
-        if (where.materialised_at === null && store.draft.materialised_at !== null) {
-          return { count: 0 };
-        }
-        Object.assign(store.draft, data);
-        return { count: 1 };
-      }),
+      updateMany: aiActionDraftUpdateMany,
       findUnique: jest.fn(async () => store.draft),
     },
     store,
-    $transaction: jest.fn(async (fn: any) => fn(client)),
+    // Emulate Prisma $transaction ROLLBACK semantics (P1.1 requirement #3):
+    // snapshot the mutable store before running fn; if fn throws (e.g. the
+    // optimistic-concurrency 409, or the claim-conflict), restore the
+    // snapshot so the in-txn claim's materialised_at write is reverted —
+    // exactly as Postgres would roll back an aborted transaction.
+    $transaction: jest.fn(async (fn: any) => {
+      const snap = {
+        plans: store.plans.map((r: any) => ({ ...r })),
+        exercises: store.exercises.map((r: any) => ({ ...r })),
+        planRevisions: store.planRevisions.map((r: any) => ({ ...r })),
+        draft: { ...store.draft },
+        seq: store.seq,
+      };
+      try {
+        return await fn(client);
+      } catch (err) {
+        store.plans.splice(0, store.plans.length, ...snap.plans);
+        store.exercises.splice(0, store.exercises.length, ...snap.exercises);
+        store.planRevisions.splice(
+          0,
+          store.planRevisions.length,
+          ...snap.planRevisions,
+        );
+        Object.keys(store.draft).forEach((k) => delete (store.draft as any)[k]);
+        Object.assign(store.draft, snap.draft);
+        store.seq = snap.seq;
+        throw err;
+      }
+    }),
     _txClient: client,
   };
   return prisma;
@@ -154,6 +203,11 @@ function scope(canAccess = true, isSub = false) {
     canAccessClient: jest.fn(async () => canAccess),
     isSubCoach: jest.fn(async () => isSub),
   } as any;
+}
+
+/** Analytics stub mirroring AnalyticsService.capture's signature. */
+function analyticsStub() {
+  return { capture: jest.fn(), identify: jest.fn() } as any;
 }
 
 describe('EditWorkoutPlanPayloadSchema', () => {
@@ -189,14 +243,15 @@ describe('EditWorkoutPlanMaterializer', () => {
   });
 
   it('canHandle identifies only draft.edit_workout_plan', () => {
-    const mat = new EditWorkoutPlanMaterializer({} as any, {} as any);
+    const mat = new EditWorkoutPlanMaterializer({} as any, {} as any, {} as any);
     expect(mat.canHandle(EDIT_WORKOUT_PLAN_CAPABILITY)).toBe(true);
     expect(mat.canHandle('draft.create_workout_plan')).toBe(false);
   });
 
   it('happy path: head revision_index +1, cause ai_apply, author ai; head advances (#4)', async () => {
     const prisma = buildPrisma(draft());
-    const mat = new EditWorkoutPlanMaterializer(prisma, scope(true));
+    const analytics = analyticsStub();
+    const mat = new EditWorkoutPlanMaterializer(prisma, scope(true), analytics);
     const result = await mat.materialize(draft());
 
     expect(result.status).toBe('sent');
@@ -221,11 +276,29 @@ describe('EditWorkoutPlanMaterializer', () => {
 
     // Draft marked materialised.
     expect(prisma.store.draft.materialised_ref).toBe(PLAN);
+
+    // P1.2 — PostHog telemetry fired once on success with the expected event
+    // name + payload shape. distinctId is the coach id.
+    expect(analytics.capture).toHaveBeenCalledTimes(1);
+    const [distinctId, event, props] = analytics.capture.mock.calls[0];
+    expect(distinctId).toBe(COACH);
+    expect(event).toBe('mwb_live_create_invoked');
+    expect(props).toEqual(
+      expect.objectContaining({
+        capability: EDIT_WORKOUT_PLAN_CAPABILITY,
+        draft_id: 'draft-edit-1',
+        plan_id: PLAN,
+        coach_id: COACH,
+        week_count: 1,
+        exercise_count: 2,
+      }),
+    );
+    expect(typeof props.duration_ms).toBe('number');
   });
 
   it('optimistic concurrency: stale base_revision_index → 409 gateway_concurrent_edit_retry (#5)', async () => {
     const prisma = buildPrisma(draft({}, { base_revision_index: 1 }));
-    const mat = new EditWorkoutPlanMaterializer(prisma, scope(true));
+    const mat = new EditWorkoutPlanMaterializer(prisma, scope(true), analyticsStub());
     await expect(
       mat.materialize(draft({}, { base_revision_index: 1 })),
     ).rejects.toBeInstanceOf(ConflictException);
@@ -238,20 +311,20 @@ describe('EditWorkoutPlanMaterializer', () => {
     const prisma = buildPrisma(draft(), {
       assignments: [{ client_id: CLIENT }],
     });
-    const mat = new EditWorkoutPlanMaterializer(prisma, scope(false, true));
+    const mat = new EditWorkoutPlanMaterializer(prisma, scope(false, true), analyticsStub());
     await expect(mat.materialize(draft())).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('rejects a cross-tenant plan with 403 before any write', async () => {
     const prisma = buildPrisma(draft(), { planCoachId: 'other-coach' });
-    const mat = new EditWorkoutPlanMaterializer(prisma, scope(true));
+    const mat = new EditWorkoutPlanMaterializer(prisma, scope(true), analyticsStub());
     await expect(mat.materialize(draft())).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('unassigned plan: head coach (requester===tenant) is allowed', async () => {
     const prisma = buildPrisma(draft(), { assignments: [] });
-    const mat = new EditWorkoutPlanMaterializer(prisma, scope(true));
+    const mat = new EditWorkoutPlanMaterializer(prisma, scope(true), analyticsStub());
     const result = await mat.materialize(draft());
     expect(result.status).toBe('sent');
   });
@@ -260,7 +333,7 @@ describe('EditWorkoutPlanMaterializer', () => {
     const prisma = buildPrisma(
       draft({ materialised_at: new Date(), materialised_ref: PLAN }),
     );
-    const mat = new EditWorkoutPlanMaterializer(prisma, scope(true));
+    const mat = new EditWorkoutPlanMaterializer(prisma, scope(true), analyticsStub());
     const result = await mat.materialize(
       draft({ materialised_at: new Date(), materialised_ref: PLAN }),
     );
@@ -268,23 +341,56 @@ describe('EditWorkoutPlanMaterializer', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('coerces a P2034 serialization failure to a 409 ConflictException (#10)', async () => {
+  it('coerces a P2034 serialization failure to a 409 ConflictException (#10), and does NOT emit telemetry on failure (P1.2)', async () => {
     const prisma = buildPrisma(draft());
+    const analytics = analyticsStub();
     prisma.$transaction = jest.fn(async () => {
       throw new Prisma.PrismaClientKnownRequestError('write conflict', {
         code: 'P2034',
         clientVersion: 'test',
       });
     });
-    const mat = new EditWorkoutPlanMaterializer(prisma, scope(true));
+    const mat = new EditWorkoutPlanMaterializer(prisma, scope(true), analytics);
     await expect(mat.materialize(draft())).rejects.toBeInstanceOf(ConflictException);
+    expect(analytics.capture).not.toHaveBeenCalled();
   });
 
   it('rejects materialisation when the feature flag is OFF (defence-in-depth)', async () => {
     process.env[FEATURE_MWB_AI_LIVE_CREATE_ENV] = 'false';
     const prisma = buildPrisma(draft());
-    const mat = new EditWorkoutPlanMaterializer(prisma, scope(true));
+    const mat = new EditWorkoutPlanMaterializer(prisma, scope(true), analyticsStub());
     await expect(mat.materialize(draft())).rejects.toThrow(/disabled|off/i);
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('P1.1 — claim-first race: two concurrent approvers, exactly ONE succeeds and the OTHER throws mwb_materialise_conflict; the plan advances exactly once', async () => {
+    const prisma = buildPrisma(draft());
+    const a = new EditWorkoutPlanMaterializer(prisma, scope(true), analyticsStub());
+    const b = new EditWorkoutPlanMaterializer(prisma, scope(true), analyticsStub());
+
+    const settled = await Promise.allSettled([
+      a.materialize(draft()),
+      b.materialize(draft()),
+    ]);
+
+    const fulfilled = settled.filter((s) => s.status === 'fulfilled');
+    const rejected = settled.filter((s) => s.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+
+    expect((fulfilled[0] as PromiseFulfilledResult<any>).value.status).toBe('sent');
+    const loser = rejected[0] as PromiseRejectedResult;
+    expect(loser.reason).toBeInstanceOf(ConflictException);
+    expect((loser.reason as ConflictException).getResponse()).toEqual(
+      expect.objectContaining({ error: 'mwb_materialise_conflict' }),
+    );
+
+    // Exactly ONE new revision was written (index 3) — the second approver's
+    // txn aborted at the claim before any plan write.
+    const newRevs = prisma.store.planRevisions.filter(
+      (r: any) => r.revision_index === 3,
+    );
+    expect(newRevs).toHaveLength(1);
+    expect(prisma.store.draft.materialised_ref).toBe(PLAN);
   });
 });

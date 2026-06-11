@@ -654,6 +654,13 @@ describe('Stream 2 §3 — AiGatewayService draft.* role-gate (layer 2)', () => 
     'draft.assign_workout',
     'draft.assign_meal_plan',
     'draft.send_notification',
+    // MWB-5 (P2.1) — the two live-create capabilities are draft.* and so are
+    // subject to the same gateway role-gate. A client/student JWT must be
+    // refused with a 403 BEFORE any draft row is created, regardless of the
+    // FEATURE_MWB_AI_LIVE_CREATE flag (the role-gate runs before the
+    // capability allow-list).
+    'draft.create_workout_plan',
+    'draft.edit_workout_plan',
   ])('refuses %s when requester.role=client', async (capability) => {
     const audit = { write: jest.fn(async () => undefined) };
     const svc = buildSvc(audit);

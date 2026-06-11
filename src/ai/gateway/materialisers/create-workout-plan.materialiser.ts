@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -6,6 +7,8 @@ import {
 import { z } from 'zod';
 import { Prisma, type AiActionDraft } from '@prisma/client';
 import { PrismaService } from '../../../prisma.service';
+import { AnalyticsService } from '../../../analytics/analytics.service';
+import { Events } from '../../../analytics/events';
 import { SubCoachScopeService } from '../../../sub-coach/sub-coach-scope.service';
 import {
   CapabilityMaterializer,
@@ -105,6 +108,7 @@ export class CreateWorkoutPlanMaterializer implements CapabilityMaterializer {
   constructor(
     private readonly prisma: PrismaService,
     private readonly subCoachScope: SubCoachScopeService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   canHandle(capability: string): boolean {
@@ -176,10 +180,48 @@ export class CreateWorkoutPlanMaterializer implements CapabilityMaterializer {
     const tenantCoachId = draft.tenant_coach_id;
     const requesterId = draft.requester_id;
 
+    // P1.1 — claim-first inside the SAME transaction that writes the
+    // program/plan rows. The conditional claim is the FIRST statement in the
+    // txn so the draft-row claim is ATOMIC with the irreversible writes: two
+    // concurrent approvers can no longer both observe a pending draft and each
+    // commit a duplicate WorkoutProgram/WorkoutPlan. The race-loser's claim
+    // returns count=0 and we throw a typed ConflictException, which the
+    // approval service treats as a benign 409 retry (NOT a materialisation
+    // failure). On any write error the whole txn rolls back — releasing the
+    // claim automatically (Prisma $transaction semantics) so a retry can win.
+    // `claimAt` is the SAME timestamp persisted as materialised_at, so the
+    // claim row and the success marker agree.
+    const claimAt = new Date();
+    const startedAtMs = Date.now();
+
     let createdPlanId: string;
+    const weekCount = 1;
+    let exerciseCount = 0;
     try {
-      createdPlanId = await this.prisma.$transaction(
+      const txResult = await this.prisma.$transaction(
         async (tx) => {
+          // Atomic idempotency claim. Requires the draft to be unclaimed
+          // (materialised_at IS NULL) AND not yet finalised (materialised_ref
+          // IS NULL). If another approver already holds the claim (or a prior
+          // run finalised it) count is 0 and we abort BEFORE any write — the
+          // duplicate-plan window is closed.
+          const claim = await tx.aiActionDraft.updateMany({
+            where: {
+              id: draft.id,
+              materialised_at: null,
+              materialised_ref: null,
+            },
+            data: { materialised_at: claimAt },
+          });
+          if (claim.count === 0) {
+            throw new ConflictException({
+              error: 'mwb_materialise_conflict',
+              capability: this.capability,
+              reason:
+                'Another approver is materialising this draft, or it is already materialised. Refresh and retry.',
+            });
+          }
+
           // Build the baseline: empty, or a deep-copy fork of a template plan's
           // exercises (Option-C seed). The seed is read only — never mutated.
           const baseline = payload.template_seed
@@ -231,6 +273,7 @@ export class CreateWorkoutPlanMaterializer implements CapabilityMaterializer {
           });
 
           const rows = toPersistableRows(snapshot);
+          exerciseCount = rows.length;
           if (rows.length > 0) {
             await tx.workoutPlanExercise.createMany({
               data: rows.map((r) => ({ ...r, workout_plan_id: plan.id })),
@@ -268,18 +311,42 @@ export class CreateWorkoutPlanMaterializer implements CapabilityMaterializer {
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
+      createdPlanId = txResult;
     } catch (err) {
       // P2034 serialization failures + write conflicts coerce to a recoverable
       // 409 (never a leaked Prisma code — mirrors MWB-2 workout-builder).
+      // ConflictException (incl. our claim-conflict above) passes through
+      // untouched so the approval service treats it as a benign 409 retry.
       throw coercePrismaWriteConflict(err, this.capability);
     }
 
-    // Record the downstream ref + claim atomically so a retry / concurrent
-    // approver sees committed-success. Conditional on materialised_at IS NULL
-    // closes the double-write race (brief Test matrix #8).
+    // P1.1 — finalise: write materialised_ref in a SECOND short, idempotent
+    // update now that the txn has COMMITTED. The claim above already set
+    // materialised_at = claimAt inside the txn; here we only stamp the ref so
+    // consumers that read `materialised_ref IS NOT NULL` see the finalised
+    // state. Conditional on the claim still being ours (materialised_at =
+    // claimAt, materialised_ref IS NULL) so a concurrent rollback/re-claim
+    // can never have this overwrite someone else's marker.
     await this.prisma.aiActionDraft.updateMany({
-      where: { id: draft.id, materialised_at: null },
-      data: { materialised_at: new Date(), materialised_ref: createdPlanId },
+      where: {
+        id: draft.id,
+        materialised_at: claimAt,
+        materialised_ref: null,
+      },
+      data: { materialised_ref: createdPlanId },
+    });
+
+    // P1.2 — PostHog telemetry on SUCCESS only (failures already surface via
+    // the exception path; capturing there would double-count). capture() is
+    // internally guarded and never throws.
+    this.analytics.capture(tenantCoachId, Events.MWB_LIVE_CREATE_INVOKED, {
+      capability: this.capability,
+      draft_id: draft.id,
+      plan_id: createdPlanId,
+      coach_id: tenantCoachId,
+      week_count: weekCount,
+      exercise_count: exerciseCount,
+      duration_ms: Date.now() - startedAtMs,
     });
 
     return { status: 'sent', ref: createdPlanId };

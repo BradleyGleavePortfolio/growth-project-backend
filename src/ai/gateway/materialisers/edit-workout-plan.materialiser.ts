@@ -7,6 +7,8 @@ import {
 import { z } from 'zod';
 import { Prisma, type AiActionDraft } from '@prisma/client';
 import { PrismaService } from '../../../prisma.service';
+import { AnalyticsService } from '../../../analytics/analytics.service';
+import { Events } from '../../../analytics/events';
 import { SubCoachScopeService } from '../../../sub-coach/sub-coach-scope.service';
 import {
   CapabilityMaterializer,
@@ -87,6 +89,7 @@ export class EditWorkoutPlanMaterializer implements CapabilityMaterializer {
   constructor(
     private readonly prisma: PrismaService,
     private readonly subCoachScope: SubCoachScopeService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   canHandle(capability: string): boolean {
@@ -129,10 +132,39 @@ export class EditWorkoutPlanMaterializer implements CapabilityMaterializer {
     // a scope failure never holds a serializable lock.
     await this.assertScope(payload.target_plan_id, tenantCoachId, requesterId);
 
+    // P1.1 — same claim-first pattern as the create materialiser. `claimAt` is
+    // the timestamp persisted as materialised_at; `startedAtMs` measures the
+    // materialisation duration for telemetry.
+    const claimAt = new Date();
+    const startedAtMs = Date.now();
+
     let editedPlanId: string;
+    let exerciseCount = 0;
     try {
       editedPlanId = await this.prisma.$transaction(
         async (tx) => {
+          // Atomic idempotency claim — FIRST statement inside the txn so the
+          // draft claim is atomic with the plan writes below. A concurrent
+          // approver (or a prior finalised run) yields count=0 and we throw a
+          // typed ConflictException; on any write error the txn rolls back and
+          // the claim is released automatically.
+          const claim = await tx.aiActionDraft.updateMany({
+            where: {
+              id: draft.id,
+              materialised_at: null,
+              materialised_ref: null,
+            },
+            data: { materialised_at: claimAt },
+          });
+          if (claim.count === 0) {
+            throw new ConflictException({
+              error: 'mwb_materialise_conflict',
+              capability: this.capability,
+              reason:
+                'Another approver is materialising this draft, or it is already materialised. Refresh and retry.',
+            });
+          }
+
           // SELECT … FOR UPDATE the plan + its head revision. We lock the plan
           // row so a concurrent edit serialises against this one.
           const lockedRows = await tx.$queryRaw<
@@ -213,6 +245,7 @@ export class EditWorkoutPlanMaterializer implements CapabilityMaterializer {
             data: { archived_at: new Date() },
           });
           const rows = toPersistableRows(snapshot);
+          exerciseCount = rows.length;
           if (rows.length > 0) {
             await tx.workoutPlanExercise.createMany({
               data: rows.map((r) => ({
@@ -262,12 +295,34 @@ export class EditWorkoutPlanMaterializer implements CapabilityMaterializer {
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
     } catch (err) {
+      // ConflictException (incl. the claim-conflict above and the stale
+      // base_revision_index 409) passes through untouched; P2034/P2002 coerce
+      // to a recoverable 409.
       throw coercePrismaWriteConflict(err, this.capability);
     }
 
+    // P1.1 — finalise: stamp materialised_ref in a SECOND short, idempotent
+    // update post-commit, conditional on the claim still being ours.
     await this.prisma.aiActionDraft.updateMany({
-      where: { id: draft.id, materialised_at: null },
-      data: { materialised_at: new Date(), materialised_ref: editedPlanId },
+      where: {
+        id: draft.id,
+        materialised_at: claimAt,
+        materialised_ref: null,
+      },
+      data: { materialised_ref: editedPlanId },
+    });
+
+    // P1.2 — PostHog telemetry on SUCCESS only. An edit operates on a single
+    // plan, so week_count is 1 for this slice; exercise_count is the live row
+    // count after the diff applied.
+    this.analytics.capture(tenantCoachId, Events.MWB_LIVE_CREATE_INVOKED, {
+      capability: this.capability,
+      draft_id: draft.id,
+      plan_id: editedPlanId,
+      coach_id: tenantCoachId,
+      week_count: 1,
+      exercise_count: exerciseCount,
+      duration_ms: Date.now() - startedAtMs,
     });
 
     return { status: 'sent', ref: editedPlanId };

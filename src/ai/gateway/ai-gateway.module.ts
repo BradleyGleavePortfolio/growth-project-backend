@@ -26,7 +26,14 @@ import { AssignMealPlanMaterializer } from './materialisers/assign-meal-plan.mat
 import { SendNotificationMaterializer } from './materialisers/send-notification.materialiser';
 // MWB-5 — live-create capability materialisers. Diff-based, coach-editable,
 // written through the same AiActionDraft → materialise contract. SubCoachScopeService
-// (SubCoachModule is @Global) supplies the canAccessClient scope gate.
+// (SubCoachModule is @Global) supplies the canAccessClient scope gate, and
+// AnalyticsService (AnalyticsModule is @Global) supplies the PostHog capture()
+// call both materialisers fire on a successful materialisation (P1.2). Because
+// both providers come from @Global modules, the materialiser constructors
+// resolve them from the global container without an explicit local provider —
+// adding AnalyticsService to the providers array below would shadow the single
+// global PostHog client with a second instance, so it is deliberately NOT
+// re-registered here.
 import { CreateWorkoutPlanMaterializer } from './materialisers/create-workout-plan.materialiser';
 import { EditWorkoutPlanMaterializer } from './materialisers/edit-workout-plan.materialiser';
 

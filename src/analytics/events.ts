@@ -65,6 +65,15 @@ export const Events = {
   // ── AI ───────────────────────────────────────────────────────────────
   /** /ai/chat invocation, with `model_used` ('perplexity' | 'fallback'). */
   AI_CHAT_INVOKED: 'ai_chat_invoked',
+  /**
+   * MWB-5 — an approved live-create capability materialised a workout plan.
+   * Emitted once per successful create/edit materialisation, carrying the
+   * `capability` ('draft.create_workout_plan' | 'draft.edit_workout_plan'),
+   * `draft_id`, `plan_id`, `coach_id`, `week_count`, `exercise_count`, and
+   * `duration_ms`. NEVER emitted on a failed materialisation (failures flow
+   * through the exception path).
+   */
+  MWB_LIVE_CREATE_INVOKED: 'mwb_live_create_invoked',
 
   // ── Messaging ────────────────────────────────────────────────────────
   /** Coach sent a message to a client. */
