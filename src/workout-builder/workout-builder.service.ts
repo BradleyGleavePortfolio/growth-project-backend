@@ -51,8 +51,10 @@ import { DripTriggerService } from '../packages/drip-trigger.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
+import { isMwbTemplatesEnabled } from './mwb-templates.feature';
 import {
   AssignProgramDto,
+  CloneProgramResultDto,
   CompleteAssignmentDto,
   CreateAssignmentDto,
   CreateWorkoutPlanDto,
@@ -1062,17 +1064,48 @@ export class WorkoutBuilderService {
   }
 
   /**
-   * MWB-1 (§3.2) — clone a master template program onto a specific client.
-   * Deep-copy by value into a NEW non-template program (`cloned_from_id` set)
-   * so the coach can keep refining the master without disturbing the client
-   * mid-program. Authorised via the widened scope check (head coach OR open
-   * sub-coach). Returns the new program + its plans.
+   * MWB-2 (§3.3, Decision A LOCKED) — clone a master template program onto a
+   * specific client. Deep-copy BY VALUE into a NEW non-template program
+   * (`cloned_from_id` set) so the coach keeps refining the master without ever
+   * disturbing the client mid-program ("grab-a-copy, never mutate source").
+   *
+   * Order of operations (hard gates, BUILDER_BRIEF):
+   *   1. FEATURE_MWB_TEMPLATES flag re-check — defence-in-depth so an internal
+   *      caller cannot drive a clone while the feature is OFF (R0: never a
+   *      silent bypass). Surfaces as 404 to match the route guard, never
+   *      leaking that the feature exists.
+   *   2. Sub-coach scope check is consulted via assertCanAccessClient (head
+   *      coach OR open sub-coach), AFTER cheap role + reachability gates that
+   *      decide 403/404 without leaking cross-tenant existence.
+   *   3. The whole clone runs in a SERIALIZABLE transaction so a concurrent
+   *      write to the source program forces one of the two to roll back
+   *      deterministically (no torn copy).
+   *
+   * Decision A invariants enforced here:
+   *   - every cloned plan + exercise is copied by value (copyProgramPlans),
+   *   - `cloned_from_plan_id` is set on each new plan to its source plan,
+   *   - `is_template=false` on the program and all cloned children,
+   *   - a FRESH program-level WorkoutProgramRevision (revision_index 0,
+   *     cause='clone') is written and the clone's `head_revision_id` is
+   *     pointed at it, so the clone starts from its own "v1" rather than
+   *     inheriting the master's revision lineage.
+   *
+   * Foreign-coach (no reach to master) → 403. Foreign-tenant / missing master
+   * → 404 (do not leak that the program exists). Flag OFF → 404.
+   *
+   * Returns the new program, its plans, and the fresh program revision. The
+   * controller maps this to the typed CloneProgramResultDto.
    */
   async cloneProgramToClient(
     masterProgramId: string,
     clientId: string,
     coachId: string,
   ) {
+    // (1) Flag gate FIRST — before any DB read — so the feature is genuinely
+    // unreachable when OFF. 404 (NotFound), never 403, to hide its existence.
+    if (!isMwbTemplatesEnabled()) {
+      throw new NotFoundException('Master program not found');
+    }
     await this.assertCoach(coachId);
     const master = await this.prisma.workoutProgram.findUnique({
       where: { id: masterProgramId },
@@ -1091,10 +1124,17 @@ export class WorkoutBuilderService {
       (master.visibility === 'tenant_shared' &&
         master.coach_id === actorTenantId);
     if (!canReachMaster) {
-      throw new ForbiddenException('You cannot clone this program');
+      // A program the coach cannot reach (foreign owner / foreign tenant) must
+      // look NOT FOUND rather than forbidden — never leak that it exists
+      // across a tenant boundary (BUILDER_BRIEF hard gate).
+      throw new NotFoundException('Master program not found');
     }
+    // (2) Sub-coach scope: head coach OR open SubCoachAssignment. Foreign
+    // coach with no access → 403 (assertCanAccessClient).
     await this.assertCanAccessClient(coachId, clientId);
 
+    // (3) Serializable transaction — a concurrent mutation of the source
+    // program serialises against this read+copy and one side rolls back.
     return this.prisma.$transaction(
       async (tx) => {
         const program = await tx.workoutProgram.create({
@@ -1119,10 +1159,84 @@ export class WorkoutBuilderService {
           cause: 'clone',
           coachId: actorTenantId,
         });
-        return { program, plans };
+        // Decision A: fresh program-level revision so the clone starts at v1
+        // (its own lineage), and head_revision_id points at it. Written inside
+        // the same Serializable txn as the program + plans so the clone is
+        // atomic — a partial clone (program with no head revision) can never
+        // be observed.
+        const programRevision = await tx.workoutProgramRevision.create({
+          data: {
+            program_id: program.id,
+            revision_index: 0,
+            structure_json: this.serialiseProgramStructure(
+              program,
+              plans,
+            ),
+            author_id: coachId,
+            author_kind: actor.coach_id ? 'sub_coach' : 'coach',
+            cause: 'clone',
+          },
+        });
+        const programWithHead = await tx.workoutProgram.update({
+          where: { id: program.id },
+          data: { head_revision_id: programRevision.id },
+        });
+        return { program: programWithHead, plans, programRevision };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
+  }
+
+  /**
+   * MWB-2 (§3.3) typed facade over cloneProgramToClient for the
+   * clone-to-client HTTP surface. Runs the full clone (flag gate → scope →
+   * Serializable txn) and projects the result onto the explicit
+   * CloneProgramResultDto shape (R68: no `unknown`/`any` leaks across the API
+   * boundary). The plan ids are returned in (week_index, day_index) order as
+   * produced by copyProgramPlans.
+   */
+  async cloneProgramToClientResult(
+    masterProgramId: string,
+    clientId: string,
+    coachId: string,
+  ): Promise<CloneProgramResultDto> {
+    const { program, plans, programRevision } = await this.cloneProgramToClient(
+      masterProgramId,
+      clientId,
+      coachId,
+    );
+    return {
+      program_id: program.id,
+      cloned_from_id: program.cloned_from_id ?? masterProgramId,
+      is_template: program.is_template,
+      head_revision_id: programRevision.id,
+      plan_ids: plans.map((p) => p.id),
+    };
+  }
+
+  /**
+   * Frozen structural snapshot of a freshly-cloned program: its week/day
+   * layout plus the ordered ids of the plans that make it up. Stored as the
+   * `structure_json` of the program-level WorkoutProgramRevision (§5) so the
+   * clone's "v1" revision records exactly which plans composed it at clone
+   * time — the anchor for later program-level undo / history.
+   */
+  private serialiseProgramStructure(
+    program: {
+      id: string;
+      weeks: number;
+      days_per_week: number;
+      cloned_from_id: string | null;
+    },
+    plans: Array<{ id: string }>,
+  ): Prisma.InputJsonValue {
+    return {
+      program_id: program.id,
+      weeks: program.weeks,
+      days_per_week: program.days_per_week,
+      cloned_from_id: program.cloned_from_id ?? null,
+      plan_ids: plans.map((p) => p.id),
+    } as unknown as Prisma.InputJsonValue;
   }
 
   /**

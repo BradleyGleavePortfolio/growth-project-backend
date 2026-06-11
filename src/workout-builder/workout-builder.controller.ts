@@ -59,12 +59,15 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import {
   AssignProgramDto,
+  CloneProgramResultDto,
+  CloneProgramToClientDto,
   CompleteAssignmentDto,
   CreateAssignmentDto,
   CreateWorkoutPlanDto,
   UpdateWorkoutPlanDto,
   UpsertExerciseRowsDto,
 } from './workout-builder.dto';
+import { MwbTemplatesFeatureGuard } from './mwb-templates-feature.guard';
 import { WorkoutBuilderService } from './workout-builder.service';
 
 const IDEMPOTENCY_HEADER = 'idempotency-key';
@@ -234,9 +237,10 @@ export class WorkoutBuilderController {
  * MWB-1 (§3.2 / §3.4 / §7.3) — WorkoutProgram coach surface.
  *
  * Route overview (workout-programs / coach-facing):
- *   POST /workout-programs/:programId/fork           fork a template into your own copy
- *   POST /workout-programs/:programId/clone          clone a master onto a client
- *   POST /workout-programs/:programId/assignments    fan-out assign every plan to a client
+ *   POST /workout-programs/:programId/fork              fork a template into your own copy
+ *   POST /workout-programs/:programId/clone             clone a master onto a client
+ *   POST /workout-programs/:programId/clone-to-client   MWB-2 clone-to-client (flag-gated)
+ *   POST /workout-programs/:programId/assignments       fan-out assign every plan to a client
  *
  * Same coach/owner role gate + Idempotency-Key contract as the plan routes.
  * Service re-checks role, ownership/tenant reachability, and client access
@@ -297,6 +301,41 @@ export class WorkoutProgramController {
     return this.workoutBuilder.cloneProgramToClient(
       programId,
       body.client_id,
+      req.user.id,
+    );
+  }
+
+  // MWB-2 (§3.3) — the flag-gated clone-to-client surface. Returns the typed
+  // CloneProgramResultDto. MwbTemplatesFeatureGuard makes this 404 while
+  // FEATURE_MWB_TEMPLATES is OFF (default), so the route stays mounted but is
+  // invisible until an operator flips the flag. The handler-level guard leaves
+  // the existing MWB-1 fork/clone/assign routes (pinned by
+  // workout-program-controller-entitlement.spec.ts) untouched. The service
+  // re-checks the flag, role, master reachability, and sub-coach scope before
+  // any write (defence-in-depth), so the guard is not the only gate.
+  @Post(':programId/clone-to-client')
+  @UseGuards(MwbTemplatesFeatureGuard)
+  @ApiOperation({
+    summary:
+      'MWB-2: clone a master template program onto a client (deep copy by ' +
+      'value, Serializable transaction). Sub-coaches may clone for clients ' +
+      'in their scope; the source master is never mutated. Gated by ' +
+      'FEATURE_MWB_TEMPLATES — returns 404 while the flag is off.',
+  })
+  @ApiResponse({ status: 201, description: 'Cloned program result.', type: CloneProgramResultDto })
+  @ApiResponse({ status: 403, description: 'No access to the target client.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Feature off, master not found, or master not reachable.',
+  })
+  cloneToClient(
+    @Req() req: AuthedRequest,
+    @Param('programId', new ParseUUIDPipe()) programId: string,
+    @Body() dto: CloneProgramToClientDto,
+  ): Promise<CloneProgramResultDto> {
+    return this.workoutBuilder.cloneProgramToClientResult(
+      programId,
+      dto.client_id,
       req.user.id,
     );
   }

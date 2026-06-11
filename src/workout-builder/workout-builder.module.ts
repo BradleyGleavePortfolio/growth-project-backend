@@ -27,6 +27,7 @@ import {
   WorkoutProgramController,
 } from './workout-builder.controller';
 import { WorkoutBuilderService } from './workout-builder.service';
+import { MwbTemplatesFeatureGuard } from './mwb-templates-feature.guard';
 
 // PR-11 — PackagesModule is imported with forwardRef so DripTriggerService
 // is reachable from WorkoutBuilderService.completeAssignment to fire
@@ -52,7 +53,7 @@ import { WorkoutBuilderService } from './workout-builder.service';
     WorkoutProgramController,
     AssignmentController,
   ],
-  providers: [WorkoutBuilderService, RolesGuard],
+  providers: [WorkoutBuilderService, RolesGuard, MwbTemplatesFeatureGuard],
   exports: [WorkoutBuilderService],
 })
 export class WorkoutBuilderModule {}
