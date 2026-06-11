@@ -4,11 +4,13 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { isDunningV2Enabled } from './dunning-v2.feature';
 import { LOCKED_DUNNING_CODE } from './dunning-v2.cadence';
+import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
 
 /**
  * B3 Smart Dunning v2 — Day-10 hard-lockout guard (spec §3 / §8.1).
@@ -59,7 +61,14 @@ const ROMAN_CHAT_PREFIXES: readonly string[] = ['ai/gateway', 'ai'] as const;
 export class DunningLockoutGuard implements CanActivate {
   private readonly logger = new Logger(DunningLockoutGuard.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  // Phase 2: VoicePolicyService supplies the Day-10 lockout SCREEN copy + the
+  // RomanAvatar crop the locked client sees. @Optional so the guard keeps
+  // working in thin unit tests; the existing 403 `message` reason is left
+  // untouched, the Roman copy is attached additively under `lockout_copy`.
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly voice?: VoicePolicyService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // Flag OFF → guard is invisible. v1 unaffected.
@@ -90,10 +99,18 @@ export class DunningLockoutGuard implements CanActivate {
 
     if (!locked) return true;
 
+    // The short `message` is the stable 403 reason and is preserved verbatim
+    // (flag-independent). The Day-10 lockout SCREEN copy + avatar crop the
+    // client reads is supplied by the Voice Policy (FEATURE_ROMAN_COPY_V2-
+    // gated): legacy household-ledger text while OFF, Roman Option-3 while ON.
+    const lockoutCopy = this.voice
+      ? this.voice.copyFor('lockout_day10')
+      : undefined;
     throw new ForbiddenException({
       code: LOCKED_DUNNING_CODE,
       message:
         'Your account is locked pending a billing matter. Update your payment to restore access.',
+      lockout_copy: lockoutCopy,
     });
   }
 
