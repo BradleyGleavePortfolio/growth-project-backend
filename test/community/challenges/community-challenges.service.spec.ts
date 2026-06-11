@@ -1,0 +1,458 @@
+/**
+ * Unit tests for CommunityChallengesService (v3-1 community challenges).
+ *
+ * Mocks CommunityAccessService + CommunityChallengesRepository +
+ * CommunityModerationService + realtime + notifications, so these run with NO
+ * DB. They pin the slice's behavioral-design and tenancy doctrine:
+ *
+ *   - Tenancy: a cohort-scoped challenge is 404 to a non-member (existence never
+ *     leaks); coach-only writes 403 a non-coach.
+ *   - Participation: idempotent join; progress is MONOTONIC (a lower log cannot
+ *     reduce the visible number — §3.4 no shame); reaching the OWN target marks
+ *     completion exactly once and emits the milestone push.
+ *   - Leaderboard is STRICTLY OPT-IN: default OFF returns available:false with no
+ *     rows even when the coach enabled it; only opted-in participants ever appear,
+ *     and only to an opted-in caller (consent on both sides).
+ *   - Comments: visible-challenge gate; report delegates to the public moderation
+ *     service's existing comment path (no moderation internals touched).
+ */
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import type {
+  CommunityChallenge,
+  CommunityChallengeParticipation,
+  CommunityMessage,
+  User,
+} from '@prisma/client';
+import { CommunityChallengesService } from '../../../src/community/challenges/community-challenges.service';
+
+type AccessMock = {
+  findWorkspace: jest.Mock;
+  findCohort: jest.Mock;
+  isWorkspaceCoach: jest.Mock;
+  canAccessWorkspace: jest.Mock;
+  canAccessCohort: jest.Mock;
+};
+type RepoMock = {
+  createChallenge: jest.Mock;
+  findChallengeById: jest.Mock;
+  listChallenges: jest.Mock;
+  updateChallenge: jest.Mock;
+  archiveChallenge: jest.Mock;
+  findParticipation: jest.Mock;
+  createParticipation: jest.Mock;
+  updateParticipation: jest.Mock;
+  listParticipationsByProgress: jest.Mock;
+  findOptIn: jest.Mock;
+  setOptIn: jest.Mock;
+  clearOptIn: jest.Mock;
+  listOptedInUserIds: jest.Mock;
+  createComment: jest.Mock;
+  listComments: jest.Mock;
+};
+type ModerationMock = { report: jest.Mock };
+type RealtimeMock = {
+  broadcastCommunityEvent: jest.Mock;
+  channels: { challenge: (id: string) => string };
+};
+type PushMock = { sendCommunityPush: jest.Mock };
+
+const WS_A = '11111111-1111-1111-1111-111111111111';
+const COHORT_A = '33333333-3333-3333-3333-333333333333';
+const CH_A = '44444444-4444-4444-4444-444444444444';
+
+const coachA = { id: 'coach-a', role: 'coach' } as unknown as User;
+const member = { id: 'member-1', role: 'student' } as unknown as User;
+const stranger = { id: 'stranger-1', role: 'student' } as unknown as User;
+const owner = { id: 'platform-owner', role: 'owner' } as unknown as User;
+
+const NOW = new Date('2026-03-01T00:00:00.000Z');
+
+function challenge(over: Partial<CommunityChallenge> = {}): CommunityChallenge {
+  return {
+    id: CH_A,
+    workspace_id: WS_A,
+    cohort_id: null,
+    created_by_id: coachA.id,
+    title: 'Step challenge',
+    description: 'Walk together.',
+    status: 'active',
+    starts_at: null,
+    ends_at: null,
+    metric_key: 'steps',
+    target_value: new Prisma.Decimal(100),
+    unit: 'steps',
+    leaderboard_enabled: false,
+    created_at: NOW,
+    updated_at: NOW,
+    archived_at: null,
+    ...over,
+  } as CommunityChallenge;
+}
+
+function participation(
+  over: Partial<CommunityChallengeParticipation> = {},
+): CommunityChallengeParticipation {
+  return {
+    id: 'part-1',
+    workspace_id: WS_A,
+    challenge_id: CH_A,
+    user_id: member.id,
+    progress_value: new Prisma.Decimal(40),
+    completed_at: null,
+    last_logged_at: NOW,
+    created_at: NOW,
+    updated_at: NOW,
+    ...over,
+  } as CommunityChallengeParticipation;
+}
+
+function optInRow(): CommunityMessage {
+  return { id: 'optin-1' } as CommunityMessage;
+}
+
+describe('CommunityChallengesService', () => {
+  let access: AccessMock;
+  let repo: RepoMock;
+  let moderation: ModerationMock;
+  let realtime: RealtimeMock;
+  let push: PushMock;
+  let service: CommunityChallengesService;
+
+  beforeEach(() => {
+    access = {
+      findWorkspace: jest.fn(),
+      findCohort: jest.fn(),
+      isWorkspaceCoach: jest.fn(),
+      canAccessWorkspace: jest.fn(),
+      canAccessCohort: jest.fn(),
+    };
+    repo = {
+      createChallenge: jest.fn(),
+      findChallengeById: jest.fn(),
+      listChallenges: jest.fn(),
+      updateChallenge: jest.fn(),
+      archiveChallenge: jest.fn(),
+      findParticipation: jest.fn(),
+      createParticipation: jest.fn(),
+      updateParticipation: jest.fn(),
+      listParticipationsByProgress: jest.fn(),
+      findOptIn: jest.fn(),
+      setOptIn: jest.fn(),
+      clearOptIn: jest.fn(),
+      listOptedInUserIds: jest.fn(),
+      createComment: jest.fn(),
+      listComments: jest.fn(),
+    };
+    moderation = { report: jest.fn() };
+    realtime = {
+      broadcastCommunityEvent: jest.fn(),
+      channels: { challenge: (id: string) => `community:challenge:${id}` },
+    };
+    push = { sendCommunityPush: jest.fn() };
+    service = new CommunityChallengesService(
+      access as never,
+      repo as never,
+      moderation as never,
+      realtime as never,
+      push as never,
+    );
+  });
+
+  // ── Coach CRUD ──────────────────────────────────────────────────────────────
+
+  describe('create', () => {
+    it('creates a workspace-wide challenge for the owning coach', async () => {
+      access.findWorkspace.mockResolvedValue({ id: WS_A });
+      access.canAccessWorkspace.mockResolvedValue(true);
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      repo.createChallenge.mockResolvedValue(challenge());
+
+      const res = await service.create(coachA, WS_A, { title: 'Step challenge' });
+      expect(res.challenge.id).toBe(CH_A);
+      expect(res.participation).toBeNull();
+      // Even when a coach later enables the board, creation defaults it OFF.
+      expect(repo.createChallenge).toHaveBeenCalledWith(
+        expect.objectContaining({ leaderboardEnabled: false }),
+      );
+    });
+
+    it('403s a member who is not the coach', async () => {
+      access.findWorkspace.mockResolvedValue({ id: WS_A });
+      access.canAccessWorkspace.mockResolvedValue(true);
+      access.isWorkspaceCoach.mockResolvedValue(false);
+      await expect(
+        service.create(member, WS_A, { title: 'X' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repo.createChallenge).not.toHaveBeenCalled();
+    });
+
+    it('404s a non-member before any write (existence never leaks)', async () => {
+      access.findWorkspace.mockResolvedValue({ id: WS_A });
+      access.canAccessWorkspace.mockResolvedValue(false);
+      await expect(
+        service.create(stranger, WS_A, { title: 'X' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(repo.createChallenge).not.toHaveBeenCalled();
+    });
+
+    it('400s an inverted start/end window', async () => {
+      access.findWorkspace.mockResolvedValue({ id: WS_A });
+      access.canAccessWorkspace.mockResolvedValue(true);
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      await expect(
+        service.create(coachA, WS_A, {
+          title: 'X',
+          starts_at: '2026-03-10T00:00:00Z',
+          ends_at: '2026-03-01T00:00:00Z',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  // ── Tenancy / visibility ─────────────────────────────────────────────────────
+
+  describe('getOne tenancy', () => {
+    it('404s a cohort-scoped challenge for a non-member of that cohort', async () => {
+      repo.findChallengeById.mockResolvedValue(
+        challenge({ cohort_id: COHORT_A }),
+      );
+      access.findCohort.mockResolvedValue({ id: COHORT_A });
+      access.canAccessCohort.mockResolvedValue(false);
+      await expect(
+        service.getOne(stranger, CH_A),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('returns a cohort challenge to an active cohort member', async () => {
+      repo.findChallengeById.mockResolvedValue(
+        challenge({ cohort_id: COHORT_A }),
+      );
+      access.findCohort.mockResolvedValue({ id: COHORT_A });
+      access.canAccessCohort.mockResolvedValue(true);
+      repo.findParticipation.mockResolvedValue(null);
+
+      const res = await service.getOne(member, CH_A);
+      expect(res.challenge.id).toBe(CH_A);
+      expect(res.participation).toBeNull();
+    });
+
+    it('404s an archived challenge', async () => {
+      repo.findChallengeById.mockResolvedValue(
+        challenge({ archived_at: NOW }),
+      );
+      await expect(
+        service.getOne(member, CH_A),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  // ── Participation ────────────────────────────────────────────────────────────
+
+  describe('join', () => {
+    beforeEach(() => {
+      repo.findChallengeById.mockResolvedValue(challenge());
+      access.canAccessWorkspace.mockResolvedValue(true);
+    });
+
+    it('creates participation on first join', async () => {
+      repo.findParticipation.mockResolvedValue(null);
+      repo.createParticipation.mockResolvedValue(participation());
+      const res = await service.join(member, CH_A);
+      expect(res.participation.user_id).toBe(member.id);
+      expect(repo.createParticipation).toHaveBeenCalledTimes(1);
+    });
+
+    it('is idempotent — a second join returns the existing row', async () => {
+      repo.findParticipation.mockResolvedValue(participation());
+      const res = await service.join(member, CH_A);
+      expect(res.participation.progress_value).toBe(40);
+      expect(repo.createParticipation).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateProgress', () => {
+    beforeEach(() => {
+      repo.findChallengeById.mockResolvedValue(challenge());
+      access.canAccessWorkspace.mockResolvedValue(true);
+      repo.findOptIn.mockResolvedValue(null);
+    });
+
+    it('403s progress before joining', async () => {
+      repo.findParticipation.mockResolvedValue(null);
+      await expect(
+        service.updateProgress(member, CH_A, 10),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repo.updateParticipation).not.toHaveBeenCalled();
+    });
+
+    it('is monotonic — a lower log cannot reduce the visible value', async () => {
+      repo.findParticipation.mockResolvedValue(participation()); // current 40
+      repo.updateParticipation.mockImplementation((_c, _u, data) =>
+        Promise.resolve(participation({ progress_value: data.progress_value })),
+      );
+      await service.updateProgress(member, CH_A, 10);
+      const data = repo.updateParticipation.mock.calls[0][2];
+      // Clamped UP to the current 40, never down to 10.
+      expect((data.progress_value as Prisma.Decimal).toNumber()).toBe(40);
+    });
+
+    it('raises the value and marks completion + milestone push at target', async () => {
+      repo.findParticipation.mockResolvedValue(participation()); // current 40, target 100
+      repo.updateParticipation.mockImplementation((_c, _u, data) =>
+        Promise.resolve(
+          participation({
+            progress_value: data.progress_value,
+            completed_at: data.completed_at ?? null,
+          }),
+        ),
+      );
+      const res = await service.updateProgress(member, CH_A, 100);
+      expect(res.participation.progress_value).toBe(100);
+      expect(res.participation.completed).toBe(true);
+      expect(push.sendCommunityPush).toHaveBeenCalledTimes(1);
+      expect(realtime.broadcastCommunityEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not re-fire the milestone when already complete', async () => {
+      repo.findParticipation.mockResolvedValue(
+        participation({ progress_value: new Prisma.Decimal(100), completed_at: NOW }),
+      );
+      repo.updateParticipation.mockResolvedValue(
+        participation({ progress_value: new Prisma.Decimal(120), completed_at: NOW }),
+      );
+      await service.updateProgress(member, CH_A, 120);
+      expect(push.sendCommunityPush).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Leaderboard (strictly opt-in) ─────────────────────────────────────────────
+
+  describe('getLeaderboard', () => {
+    it('returns available:false with no rows by DEFAULT even if the coach enabled it', async () => {
+      repo.findChallengeById.mockResolvedValue(
+        challenge({ leaderboard_enabled: true }),
+      );
+      access.canAccessWorkspace.mockResolvedValue(true);
+      repo.findOptIn.mockResolvedValue(null); // caller has NOT opted in
+
+      const res = await service.getLeaderboard(member, CH_A);
+      expect(res.available).toBe(false);
+      expect(res.opted_in).toBe(false);
+      expect(res.rows).toHaveLength(0);
+      expect(repo.listParticipationsByProgress).not.toHaveBeenCalled();
+    });
+
+    it('returns available:false when opted in but the coach has NOT enabled it', async () => {
+      repo.findChallengeById.mockResolvedValue(
+        challenge({ leaderboard_enabled: false }),
+      );
+      access.canAccessWorkspace.mockResolvedValue(true);
+      repo.findOptIn.mockResolvedValue(optInRow());
+
+      const res = await service.getLeaderboard(member, CH_A);
+      expect(res.available).toBe(false);
+      expect(res.opted_in).toBe(true);
+      expect(res.rows).toHaveLength(0);
+    });
+
+    it('lists ONLY opted-in participants, ranked, for an opted-in caller', async () => {
+      repo.findChallengeById.mockResolvedValue(
+        challenge({ leaderboard_enabled: true }),
+      );
+      access.canAccessWorkspace.mockResolvedValue(true);
+      repo.findOptIn.mockResolvedValue(optInRow());
+      repo.listOptedInUserIds.mockResolvedValue(new Set(['member-1', 'peer-2']));
+      repo.listParticipationsByProgress.mockResolvedValue([
+        participation({ user_id: 'peer-2', progress_value: new Prisma.Decimal(90) }),
+        participation({ user_id: 'member-1', progress_value: new Prisma.Decimal(40) }),
+        // A non-consenting participant — must NOT appear.
+        participation({ user_id: 'lurker-3', progress_value: new Prisma.Decimal(99) }),
+      ]);
+
+      const res = await service.getLeaderboard(member, CH_A);
+      expect(res.available).toBe(true);
+      expect(res.rows.map((r) => r.user_id)).toEqual(['peer-2', 'member-1']);
+      expect(res.rows[0].rank).toBe(1);
+      expect(res.rows[1].is_self).toBe(true);
+    });
+  });
+
+  describe('setLeaderboardOptIn', () => {
+    beforeEach(() => {
+      repo.findChallengeById.mockResolvedValue(
+        challenge({ leaderboard_enabled: true }),
+      );
+      access.canAccessWorkspace.mockResolvedValue(true);
+    });
+
+    it('403s opting in before joining', async () => {
+      repo.findParticipation.mockResolvedValue(null);
+      await expect(
+        service.setLeaderboardOptIn(member, CH_A, true),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repo.setOptIn).not.toHaveBeenCalled();
+    });
+
+    it('opts in, then opts out via the sentinel', async () => {
+      repo.findParticipation.mockResolvedValue(participation());
+      const inRes = await service.setLeaderboardOptIn(member, CH_A, true);
+      expect(repo.setOptIn).toHaveBeenCalledTimes(1);
+      expect(inRes.participation.leaderboard_opted_in).toBe(true);
+
+      const outRes = await service.setLeaderboardOptIn(member, CH_A, false);
+      expect(repo.clearOptIn).toHaveBeenCalledTimes(1);
+      expect(outRes.participation.leaderboard_opted_in).toBe(false);
+    });
+  });
+
+  // ── Comments + moderation ──────────────────────────────────────────────────────
+
+  describe('comments', () => {
+    beforeEach(() => {
+      repo.findChallengeById.mockResolvedValue(challenge());
+      access.canAccessWorkspace.mockResolvedValue(true);
+    });
+
+    it('adds an encouragement comment on a visible challenge', async () => {
+      repo.createComment.mockResolvedValue({
+        id: 'msg-1',
+        plan_context_id: CH_A,
+        sender_id: member.id,
+        body: 'Great work!',
+        created_at: NOW,
+      } as CommunityMessage);
+      const res = await service.addComment(member, CH_A, 'Great work!');
+      expect(res.comment.body).toBe('Great work!');
+      expect(res.comment.challenge_id).toBe(CH_A);
+    });
+
+    it('404s commenting on a challenge the caller cannot see', async () => {
+      repo.findChallengeById.mockResolvedValue(
+        challenge({ cohort_id: COHORT_A }),
+      );
+      access.findCohort.mockResolvedValue({ id: COHORT_A });
+      access.canAccessCohort.mockResolvedValue(false);
+      await expect(
+        service.addComment(stranger, CH_A, 'hi'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(repo.createComment).not.toHaveBeenCalled();
+    });
+
+    it('delegates a report to the public moderation comment path', async () => {
+      moderation.report.mockResolvedValue({ item: { id: 'rep-1' } });
+      await service.reportComment(member, CH_A, 'msg-1', 'inappropriate', undefined);
+      expect(moderation.report).toHaveBeenCalledWith(
+        member,
+        'comment',
+        'msg-1',
+        'inappropriate',
+        undefined,
+      );
+    });
+  });
+});
