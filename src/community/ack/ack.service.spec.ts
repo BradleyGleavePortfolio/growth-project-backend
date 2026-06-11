@@ -6,59 +6,63 @@
  *  - happy-path transitions write the right column and emit telemetry;
  *  - idempotency: re-stamping an already-set state is a no-op (no write, no
  *    telemetry) and returns the existing timestamp;
+ *  - concurrency: the atomic conditional stamp advances at most once, so a
+ *    race produces exactly one advance + one telemetry emission (R1);
  *  - illegal transitions (seen/acked after replied) raise 409;
- *  - authorization: foreign coach → 403, missing/deleted message → 404,
- *    platform owner bypass;
+ *  - authorization NON-LEAK (R1): missing/deleted/foreign messages ALL 404
+ *    identically (no 403-vs-404 existence oracle), platform owner bypass;
+ *  - eligibility (R1): only client (student) authored messages are ackable —
+ *    coach/owner/system-authored messages 404 identically;
  *  - read-side state derivation + SLA envelope.
+ *
+ * Fakes come from the typed `ack.test-fixtures` builders (R0: no `as unknown
+ * as`). The atomic `stampAck` now returns `{ advanced, message }`; the repo
+ * mock honours the `{ [column]: null }` compare-and-set semantics.
  */
-import {
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
-import type { CommunityMessage, User } from '@prisma/client';
+import { ConflictException, NotFoundException } from '@nestjs/common';
+import type { CommunityMessage, Role } from '@prisma/client';
 import { ACK_TRANSITION_EVENT, AckService } from './ack.service';
+import type { StampResult } from './ack.repository';
+import {
+  FIXTURE_IDS,
+  coachUser,
+  foreignCoachUser,
+  message as msg,
+  ownerUser,
+} from './ack.test-fixtures';
 
-const WORKSPACE = '22222222-2222-2222-2222-222222222222';
-const MSG_ID = 'eeeeeeee-0000-0000-0000-000000000001';
+const MSG_ID = FIXTURE_IDS.message;
+const coach = coachUser();
+const owner = ownerUser();
+const foreignCoach = foreignCoachUser();
 
-const coach = {
-  id: 'cccccccc-0000-0000-0000-00000000000a',
-  role: 'coach',
-} as unknown as User;
-const owner = {
-  id: 'ffffffff-0000-0000-0000-00000000000f',
-  role: 'owner',
-} as unknown as User;
-const foreignCoach = {
-  id: 'aaaaaaaa-0000-0000-0000-00000000000c',
-  role: 'coach',
-} as unknown as User;
-
-function msg(overrides: Partial<CommunityMessage> = {}): CommunityMessage {
-  const at = new Date('2026-01-01T00:00:00.000Z');
-  return {
-    id: MSG_ID,
-    created_at: at,
-    updated_at: at,
-    workspace_id: WORKSPACE,
-    cohort_id: '11111111-1111-1111-1111-111111111111',
-    scope: 'cohort',
-    sender_id: 'dddddddd-0000-0000-0000-00000000000b',
-    kind: 'text',
-    body: 'hello coach',
-    coach_seen_at: null,
-    coach_acked_at: null,
-    coach_replied_at: null,
-    deleted_at: null,
-    plan_context_type: null,
-    plan_context_payload: null,
-    ...overrides,
-  } as unknown as CommunityMessage;
+/**
+ * A repo `stampAck` double that honours the atomic compare-and-set: it
+ * advances (count===1) only when the target column is currently null on the
+ * provided `current` row, otherwise it reports a zero-row no-op and returns
+ * the current row unchanged.
+ */
+function stampAckFrom(
+  current: CommunityMessage,
+): (
+  m: Pick<CommunityMessage, 'id' | 'created_at'>,
+  col: 'coach_seen_at' | 'coach_acked_at' | 'coach_replied_at',
+  at: Date,
+) => Promise<StampResult> {
+  return async (_m, col, at) => {
+    if (current[col]) {
+      return { advanced: false, message: current };
+    }
+    return { advanced: true, message: msg({ ...current, [col]: at }) };
+  };
 }
 
 describe('AckService', () => {
-  let repo: { findById: jest.Mock; stampAck: jest.Mock };
+  let repo: {
+    findById: jest.Mock;
+    findSenderRole: jest.Mock;
+    stampAck: jest.Mock;
+  };
   let access: { isWorkspaceCoach: jest.Mock };
   let analytics: { capture: jest.Mock };
   let service: AckService;
@@ -66,18 +70,17 @@ describe('AckService', () => {
   beforeEach(() => {
     repo = {
       findById: jest.fn(),
+      // Default: messages are client-authored (eligible) unless a test says
+      // otherwise.
+      findSenderRole: jest.fn(async (): Promise<Role> => 'student'),
       stampAck: jest.fn(),
     };
     access = { isWorkspaceCoach: jest.fn(async () => true) };
     analytics = { capture: jest.fn() };
-    service = new AckService(
-      repo as never,
-      access as never,
-      analytics as never,
-    );
+    service = new AckService(repo as never, access as never, analytics as never);
   });
 
-  describe('authorization', () => {
+  describe('authorization (non-leak: no 403-vs-404 oracle)', () => {
     it('404 when the message does not exist', async () => {
       repo.findById.mockResolvedValue(null);
       await expect(
@@ -93,32 +96,97 @@ describe('AckService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('403 when a coach does not own the message workspace', async () => {
+    it('404 (NOT 403) when a coach does not own the message workspace', async () => {
       repo.findById.mockResolvedValue(msg());
       access.isWorkspaceCoach.mockResolvedValue(false);
       await expect(
         service.applyTransition(foreignCoach, MSG_ID, 'seen'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(repo.stampAck).not.toHaveBeenCalled();
     });
 
-    it('platform owner bypasses the workspace-coach check', async () => {
-      repo.findById.mockResolvedValue(msg());
-      repo.stampAck.mockImplementation(async (m, col, at) =>
-        msg({ [col]: at }),
+    it('no existence oracle: an absent ID and a real foreign-workspace ID return identical 404s', async () => {
+      // Absent message.
+      repo.findById.mockResolvedValueOnce(null);
+      const absent = await service
+        .applyTransition(foreignCoach, MSG_ID, 'seen')
+        .catch((e) => e);
+      // Real message in a workspace this coach does not own.
+      repo.findById.mockResolvedValueOnce(msg());
+      access.isWorkspaceCoach.mockResolvedValue(false);
+      const foreign = await service
+        .applyTransition(foreignCoach, MSG_ID, 'seen')
+        .catch((e) => e);
+
+      expect(absent).toBeInstanceOf(NotFoundException);
+      expect(foreign).toBeInstanceOf(NotFoundException);
+      // Same status AND same body — a prober cannot distinguish the two.
+      expect((absent as NotFoundException).getStatus()).toBe(
+        (foreign as NotFoundException).getStatus(),
       );
+      expect((absent as NotFoundException).getResponse()).toEqual(
+        (foreign as NotFoundException).getResponse(),
+      );
+    });
+
+    it('platform owner bypasses the workspace-coach check', async () => {
+      const m = msg();
+      repo.findById.mockResolvedValue(m);
+      repo.stampAck.mockImplementation(stampAckFrom(m));
       const res = await service.applyTransition(owner, MSG_ID, 'seen');
       expect(access.isWorkspaceCoach).not.toHaveBeenCalled();
       expect(res.ack.state).toBe('seen');
     });
   });
 
+  describe('eligibility (only client-authored messages are ackable)', () => {
+    it('404 (non-leaking) when the message was authored by a coach', async () => {
+      repo.findById.mockResolvedValue(msg());
+      repo.findSenderRole.mockResolvedValue('coach');
+      await expect(
+        service.applyTransition(coach, MSG_ID, 'seen'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(repo.stampAck).not.toHaveBeenCalled();
+    });
+
+    it('404 (non-leaking) when the message was authored by the platform owner/system', async () => {
+      repo.findById.mockResolvedValue(msg());
+      repo.findSenderRole.mockResolvedValue('owner');
+      await expect(
+        service.applyTransition(coach, MSG_ID, 'acked'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(repo.stampAck).not.toHaveBeenCalled();
+    });
+
+    it('404 when the sender role cannot be resolved (fails safe)', async () => {
+      repo.findById.mockResolvedValue(msg());
+      repo.findSenderRole.mockResolvedValue(null);
+      await expect(
+        service.applyTransition(coach, MSG_ID, 'seen'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('ineligible coach-authored message 404s identically to an absent message (no oracle)', async () => {
+      repo.findById.mockResolvedValueOnce(null);
+      const absent = await service
+        .applyTransition(coach, MSG_ID, 'seen')
+        .catch((e) => e);
+      repo.findById.mockResolvedValueOnce(msg());
+      repo.findSenderRole.mockResolvedValue('coach');
+      const ineligible = await service
+        .applyTransition(coach, MSG_ID, 'seen')
+        .catch((e) => e);
+      expect((absent as NotFoundException).getResponse()).toEqual(
+        (ineligible as NotFoundException).getResponse(),
+      );
+    });
+  });
+
   describe('happy-path transitions', () => {
     it('marks seen — stamps coach_seen_at and emits telemetry', async () => {
-      repo.findById.mockResolvedValue(msg());
-      repo.stampAck.mockImplementation(async (m, col, at) =>
-        msg({ [col]: at }),
-      );
+      const m = msg();
+      repo.findById.mockResolvedValue(m);
+      repo.stampAck.mockImplementation(stampAckFrom(m));
       const res = await service.applyTransition(coach, MSG_ID, 'seen');
       expect(repo.stampAck).toHaveBeenCalledWith(
         expect.anything(),
@@ -140,10 +208,9 @@ describe('AckService', () => {
     });
 
     it('marks acked from seen', async () => {
-      repo.findById.mockResolvedValue(msg({ coach_seen_at: new Date() }));
-      repo.stampAck.mockImplementation(async (m, col, at) =>
-        msg({ coach_seen_at: m.coach_seen_at, [col]: at }),
-      );
+      const m = msg({ coach_seen_at: new Date() });
+      repo.findById.mockResolvedValue(m);
+      repo.stampAck.mockImplementation(stampAckFrom(m));
       const res = await service.applyTransition(coach, MSG_ID, 'acked');
       expect(repo.stampAck).toHaveBeenCalledWith(
         expect.anything(),
@@ -154,16 +221,9 @@ describe('AckService', () => {
     });
 
     it('marks replied (terminal)', async () => {
-      repo.findById.mockResolvedValue(
-        msg({ coach_seen_at: new Date(), coach_acked_at: new Date() }),
-      );
-      repo.stampAck.mockImplementation(async (m, col, at) =>
-        msg({
-          coach_seen_at: m.coach_seen_at,
-          coach_acked_at: m.coach_acked_at,
-          [col]: at,
-        }),
-      );
+      const m = msg({ coach_seen_at: new Date(), coach_acked_at: new Date() });
+      repo.findById.mockResolvedValue(m);
+      repo.stampAck.mockImplementation(stampAckFrom(m));
       const res = await service.applyTransition(coach, MSG_ID, 'replied');
       expect(res.ack.state).toBe('replied');
       expect(res.ack.replied_at).not.toBeNull();
@@ -185,6 +245,54 @@ describe('AckService', () => {
       repo.findById.mockResolvedValue(msg({ coach_seen_at: new Date() }));
       await service.applyTransition(coach, MSG_ID, 'seen');
       expect(repo.stampAck).not.toHaveBeenCalled();
+      expect(analytics.capture).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('concurrency (atomic conditional stamp)', () => {
+    it('two simultaneous callers → exactly one advance + one telemetry emission', async () => {
+      // Both callers read the same un-stamped row (the stale pre-check passes
+      // for both). The atomic stamp is the single source of truth: the first
+      // updateMany matches one row (advanced), the second matches zero.
+      const m = msg();
+      repo.findById.mockResolvedValue(m);
+
+      let stamped = false;
+      repo.stampAck.mockImplementation(
+        async (_m, col: 'coach_seen_at', at: Date): Promise<StampResult> => {
+          if (stamped) {
+            // Concurrent loser: zero rows matched `{ col: null }`; refetch
+            // returns the already-stamped row.
+            return { advanced: false, message: msg({ [col]: at }) };
+          }
+          stamped = true;
+          return { advanced: true, message: msg({ [col]: at }) };
+        },
+      );
+
+      const [a, b] = await Promise.all([
+        service.applyTransition(coach, MSG_ID, 'seen'),
+        service.applyTransition(coach, MSG_ID, 'seen'),
+      ]);
+
+      // Both callers get a coherent 'seen' envelope (idempotent for the loser).
+      expect(a.ack.state).toBe('seen');
+      expect(b.ack.state).toBe('seen');
+      // The conditional write was attempted twice but advanced exactly once...
+      expect(repo.stampAck).toHaveBeenCalledTimes(2);
+      // ...and telemetry fired exactly once (no double-emit).
+      expect(analytics.capture).toHaveBeenCalledTimes(1);
+    });
+
+    it('a zero-row stamp result is an idempotent no-op with no telemetry', async () => {
+      const m = msg();
+      repo.findById.mockResolvedValue(m);
+      repo.stampAck.mockResolvedValue({
+        advanced: false,
+        message: msg({ coach_seen_at: new Date() }),
+      });
+      const res = await service.applyTransition(coach, MSG_ID, 'seen');
+      expect(res.ack.state).toBe('seen');
       expect(analytics.capture).not.toHaveBeenCalled();
     });
   });

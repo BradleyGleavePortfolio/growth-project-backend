@@ -15,34 +15,45 @@ import {
 
 const HOUR = 60 * 60 * 1000;
 
+/**
+ * `NodeJS.ProcessEnv` has the index signature `[k: string]: string | undefined`,
+ * so a plain string-valued record is directly assignable to it. Typing the
+ * helper return as `NodeJS.ProcessEnv` keeps the fakes cast-free (R0).
+ */
+function env(vars: Record<string, string> = {}): NodeJS.ProcessEnv {
+  return vars;
+}
+
 describe('resolveSlaThresholds', () => {
   it('falls back to 24h soft / 48h hard when env is unset', () => {
-    const t = resolveSlaThresholds({} as NodeJS.ProcessEnv);
+    const t = resolveSlaThresholds(env());
     expect(t.softMs).toBe(DEFAULT_SLA_SOFT_MS);
     expect(t.hardMs).toBe(DEFAULT_SLA_HARD_MS);
   });
 
   it('reads positive integer overrides from the environment', () => {
-    const t = resolveSlaThresholds({
-      COMMUNITY_ACK_SLA_SOFT_MS: String(2 * HOUR),
-      COMMUNITY_ACK_SLA_HARD_MS: String(6 * HOUR),
-    } as unknown as NodeJS.ProcessEnv);
+    const t = resolveSlaThresholds(
+      env({
+        COMMUNITY_ACK_SLA_SOFT_MS: String(2 * HOUR),
+        COMMUNITY_ACK_SLA_HARD_MS: String(6 * HOUR),
+      }),
+    );
     expect(t.softMs).toBe(2 * HOUR);
     expect(t.hardMs).toBe(6 * HOUR);
   });
 
   it('ignores a non-positive / non-numeric soft override (fails safe)', () => {
-    const t = resolveSlaThresholds({
-      COMMUNITY_ACK_SLA_SOFT_MS: '-5',
-    } as unknown as NodeJS.ProcessEnv);
+    const t = resolveSlaThresholds(env({ COMMUNITY_ACK_SLA_SOFT_MS: '-5' }));
     expect(t.softMs).toBe(DEFAULT_SLA_SOFT_MS);
   });
 
   it('preserves soft < hard when hard is not strictly greater than soft', () => {
-    const t = resolveSlaThresholds({
-      COMMUNITY_ACK_SLA_SOFT_MS: String(10 * HOUR),
-      COMMUNITY_ACK_SLA_HARD_MS: String(5 * HOUR),
-    } as unknown as NodeJS.ProcessEnv);
+    const t = resolveSlaThresholds(
+      env({
+        COMMUNITY_ACK_SLA_SOFT_MS: String(10 * HOUR),
+        COMMUNITY_ACK_SLA_HARD_MS: String(5 * HOUR),
+      }),
+    );
     expect(t.softMs).toBe(10 * HOUR);
     expect(t.hardMs).toBe(20 * HOUR); // soft * 2 guard
     expect(t.hardMs).toBeGreaterThan(t.softMs);

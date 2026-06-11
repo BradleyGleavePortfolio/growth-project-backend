@@ -3,6 +3,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Post,
   Request,
   UseGuards,
@@ -54,7 +55,8 @@ export class AckController {
   })
   async markSeen(
     @Request() req: AuthedRequest,
-    @Param('messageId') messageId: string,
+    @Param('messageId', new ParseUUIDPipe({ version: '4' }))
+    messageId: string,
   ): Promise<AckTransitionResponseDto> {
     return this.ack.applyTransition(req.user, messageId, 'seen');
   }
@@ -76,7 +78,8 @@ export class AckController {
   })
   async markAcked(
     @Request() req: AuthedRequest,
-    @Param('messageId') messageId: string,
+    @Param('messageId', new ParseUUIDPipe({ version: '4' }))
+    messageId: string,
   ): Promise<AckTransitionResponseDto> {
     return this.ack.applyTransition(req.user, messageId, 'acked');
   }
@@ -98,7 +101,8 @@ export class AckController {
   })
   async markReplied(
     @Request() req: AuthedRequest,
-    @Param('messageId') messageId: string,
+    @Param('messageId', new ParseUUIDPipe({ version: '4' }))
+    messageId: string,
   ): Promise<AckTransitionResponseDto> {
     return this.ack.applyTransition(req.user, messageId, 'replied');
   }
