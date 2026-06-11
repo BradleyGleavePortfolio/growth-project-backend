@@ -161,6 +161,11 @@ const COMMUNITY_DM_PER_MIN        = readIntEnv('COMMUNITY_DM_PER_MIN',        30
 const COMMUNITY_REACTIONS_PER_MIN = readIntEnv('COMMUNITY_REACTIONS_PER_MIN', 60, 1, 1_000);
 // Report-spam is itself abuse: 10 per 5-minute window.
 const COMMUNITY_REPORTS_PER_5MIN  = readIntEnv('COMMUNITY_REPORTS_PER_5MIN',  10, 1, 1_000);
+// Community v2-3 event writes. Coach-only event CRUD + lifecycle transitions
+// are low-frequency (a handful per session); RSVP is a client tap that can
+// toggle but is naturally self-limiting. Both kept conservative and env-tunable.
+const COMMUNITY_EVENTS_PER_MIN      = readIntEnv('COMMUNITY_EVENTS_PER_MIN',      20, 1, 1_000);
+const COMMUNITY_EVENT_RSVP_PER_MIN  = readIntEnv('COMMUNITY_EVENT_RSVP_PER_MIN',  30, 1, 1_000);
 
 // H4 #7 — IP-WIDE ceiling for the public storefront GET join/:token route
 // (the actual ceiling applied to that route via its route-level @Throttle).
@@ -195,6 +200,8 @@ export const THROTTLER_ROUTE_LIMITS = {
   COMMUNITY_DM_PER_MIN,
   COMMUNITY_REACTIONS_PER_MIN,
   COMMUNITY_REPORTS_PER_5MIN,
+  COMMUNITY_EVENTS_PER_MIN,
+  COMMUNITY_EVENT_RSVP_PER_MIN,
 } as const;
 
 export const THROTTLER_LIMITS = [
