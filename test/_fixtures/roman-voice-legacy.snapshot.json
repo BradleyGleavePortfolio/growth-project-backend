@@ -8,5 +8,10 @@
   "billing_update": "Your payment method needs attention. Please update your card to avoid an interruption to your access.",
   "first_payment_ed3": "Your payment was successful. Your subscription is now active.",
   "empty_notifications": "You have no notifications.",
-  "onboarding_welcome": "Welcome to The Growth Project. Your account is ready and your coach has been notified."
+  "onboarding_welcome": "Welcome to The Growth Project. Your account is ready and your coach has been notified.",
+  "coach_community_home_empty": "Quiet morning. When your cohorts need you, I will bring it here. — Roman",
+  "coach_community_inbox_empty": "The inbox is clear. When something needs you, it will be here.",
+  "coach_community_cohorts_empty": "No cohorts yet. The first one you build is the one your clients remember.",
+  "coach_community_cohort_members_empty": "This cohort is waiting. Invite the first client when you are ready. — Roman",
+  "coach_community_moderation_empty": "Nothing flagged. The room is running itself."
 }
