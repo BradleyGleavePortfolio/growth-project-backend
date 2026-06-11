@@ -43,10 +43,15 @@ import { CommunityNotificationsModule } from './notifications/community-notifica
 // v2-1 plan-context tags: read-only resolve surface + PlanContextService
 // (consumed by CommunityMessagesService on send to validate an attached tag).
 import { PlanContextModule } from './plan-context/plan-context.module';
+// v2-2 coach ack signals: transition surface + AckService (consumed by the
+// messages/inbox read surfaces to enrich responses with the ack envelope when
+// FEATURE_COMMUNITY_ACKS is on). Module exports AckService for that reuse.
+import { AckModule } from './ack/ack.module';
 
 // PrismaService provided globally via PrismaModule.
 @Module({
   imports: [
+    AckModule,
     AuthModule,
     CommunityRealtimeModule,
     CommunityNotificationsModule,

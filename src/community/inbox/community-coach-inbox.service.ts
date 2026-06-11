@@ -10,8 +10,12 @@ import {
   CoachInboxQueryDto,
   CoachInboxResponse,
   CoachInboxResponseSchema,
+  InboxAckSummary,
   InboxItemView,
 } from './community-coach-inbox.dto';
+import { acksEnabled } from '../ack/ack.feature';
+import { buildSlaSnapshot } from '../ack/sla';
+import type { AckState } from '../ack/ack.dto';
 
 const DEFAULT_PAGE = 50;
 const MAX_PAGE = 100;
@@ -102,7 +106,31 @@ export class CommunityCoachInboxService {
         preview: this.preview(m.body),
         created_at: m.created_at.toISOString(),
         item_url_path: `/community/cohorts/${m.cohort_id}/messages/${m.id}`,
+        // v2-2: attach the per-thread ack summary ONLY when
+        // FEATURE_COMMUNITY_ACKS is on. Omitted when off so the v1-6 inbox
+        // shape is preserved (back-compat / kill-switch invariant).
+        ...(acksEnabled() ? { ack: this.ackSummary(m) } : {}),
       },
+    };
+  }
+
+  /**
+   * v2-2: derive the per-thread ack summary for a message row from its existing
+   * coach_*_at columns (highest stamped wins) plus the read-time SLA state
+   * (elapsed since receipt vs configured thresholds). Read-only — building the
+   * inbox NEVER mutates ack state.
+   */
+  private ackSummary(m: MessageWithSender): InboxAckSummary {
+    const state: AckState = m.coach_replied_at
+      ? 'replied'
+      : m.coach_acked_at
+        ? 'acked'
+        : m.coach_seen_at
+          ? 'seen'
+          : 'none';
+    return {
+      state,
+      sla_state: buildSlaSnapshot({ receivedAt: m.created_at }).sla_state,
     };
   }
 

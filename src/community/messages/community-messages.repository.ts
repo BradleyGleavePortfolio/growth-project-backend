@@ -77,7 +77,14 @@ export class CommunityMessagesRepository {
     return count;
   }
 
-  /** A single message by id (any scope), or null. */
+  /**
+   * A single message by id (any scope), or null.
+   *
+   * v2-2: this returns the full CommunityMessage row (no `select` projection),
+   * so the existing coach_seen_at / coach_acked_at / coach_replied_at columns
+   * are included in the result and the service can build the ack envelope when
+   * FEATURE_COMMUNITY_ACKS is on. No new columns are introduced (R69).
+   */
   async findById(messageId: string): Promise<CommunityMessage | null> {
     return this.prisma.communityMessage.findFirst({
       where: { id: messageId },
@@ -96,6 +103,9 @@ export class CommunityMessagesRepository {
    * on cohort-scope messages (verified by grep), so `null` is the tightest
    * correct exclusion — a plain cohort message never sets it.
    */
+  // v2-2: like findById, this list returns full rows (no `select`), so the
+  // existing coach_*_at ack columns ride along for the read-side ack envelope
+  // when FEATURE_COMMUNITY_ACKS is on. No new columns are introduced (R69).
   async listCohortMessages(params: {
     cohortId: string;
     before: Date | null;

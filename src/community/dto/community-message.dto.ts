@@ -56,6 +56,22 @@ export class ListMessagesQueryDto {
 
 // ── Response schemas (Zod, matching the v1-2 .parse() convention) ──────────
 
+// v2-2: the OPTIONAL coach ack envelope. Present ONLY when
+// FEATURE_COMMUNITY_ACKS is on; absent entirely when the flag is off so the
+// v1-6/v2-1 response shape is byte-for-byte preserved (back-compat /
+// kill-switch invariant). Coach-side-only signals shown TO the client:
+// seen/acked/replied timestamps plus the derived read-time SLA state.
+export const MessageAckEnvelopeSchema = z
+  .object({
+    seen_at: z.string().datetime().nullable(),
+    acked_at: z.string().datetime().nullable(),
+    replied_at: z.string().datetime().nullable(),
+    sla_state: z.enum(['within', 'warning', 'breached']),
+  })
+  .strict();
+
+export type MessageAckEnvelope = z.infer<typeof MessageAckEnvelopeSchema>;
+
 export const CommunityMessageSchema = z
   .object({
     id: z.string().uuid(),
@@ -71,6 +87,10 @@ export const CommunityMessageSchema = z
     // the message carries no tag (the common case, and always null when the
     // FEATURE_COMMUNITY_PLAN_TAGS flag is off — the tag is dropped on send).
     plan_context: PlanContextTagSchema.nullable(),
+    // v2-2: OPTIONAL coach ack envelope (see MessageAckEnvelopeSchema). Omitted
+    // when FEATURE_COMMUNITY_ACKS is off; .optional() (not .nullable()) so the
+    // key is simply absent in the flag-off shape.
+    ack: MessageAckEnvelopeSchema.optional(),
   })
   .strict();
 
