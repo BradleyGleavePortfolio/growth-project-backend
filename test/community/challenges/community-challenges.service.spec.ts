@@ -37,6 +37,7 @@ type AccessMock = {
   isWorkspaceCoach: jest.Mock;
   canAccessWorkspace: jest.Mock;
   canAccessCohort: jest.Mock;
+  listAccessibleCohortIds: jest.Mock;
 };
 type RepoMock = {
   createChallenge: jest.Mock;
@@ -141,6 +142,7 @@ describe('CommunityChallengesService', () => {
       isWorkspaceCoach: jest.fn(),
       canAccessWorkspace: jest.fn(),
       canAccessCohort: jest.fn(),
+      listAccessibleCohortIds: jest.fn().mockResolvedValue([]),
     };
     repo = {
       createChallenge: jest.fn(),
@@ -435,14 +437,14 @@ describe('CommunityChallengesService', () => {
       access.canAccessWorkspace.mockResolvedValue(true);
       repo.findOptIn.mockResolvedValue(optInRow());
       repo.listOptedInUserIds.mockResolvedValue(new Set([MEMBER_ID, PEER_ID]));
-      // v3-1 (D-040): listParticipationsByProgress now returns a paginated
-      // { items, nextCursor } page rather than a bare array.
+      // B-PAG-1 R3: the consent predicate is pushed INTO the repository, so the
+      // page (and its next_cursor) only ever contains opted-in participants —
+      // the service no longer post-filters. The repo mock therefore returns the
+      // already-consent-scoped page.
       repo.listParticipationsByProgress.mockResolvedValue({
         items: [
           participation({ user_id: PEER_ID, progress_value: new Prisma.Decimal(90) }),
           participation({ user_id: MEMBER_ID, progress_value: new Prisma.Decimal(40) }),
-          // A non-consenting participant — must NOT appear.
-          participation({ user_id: LURKER_ID, progress_value: new Prisma.Decimal(99) }),
         ],
         nextCursor: null,
       });
@@ -452,6 +454,16 @@ describe('CommunityChallengesService', () => {
       expect(res.rows.map((r) => r.user_id)).toEqual([PEER_ID, MEMBER_ID]);
       expect(res.rows[0].rank).toBe(1);
       expect(res.rows[1].is_self).toBe(true);
+      // The service forwards EXACTLY the opted-in user ids to the repository so
+      // the page + cursor anchor are consent-scoped; a non-consenting user id
+      // (LURKER) is never in that set and so can never be returned NOR become a
+      // public cursor token (Failure #5 IDOR).
+      const call = repo.listParticipationsByProgress.mock.calls[0][0];
+      expect(call.challengeId).toBe(CH_A);
+      expect([...call.optedInUserIds].sort()).toEqual(
+        [MEMBER_ID, PEER_ID].sort(),
+      );
+      expect(call.optedInUserIds).not.toContain(LURKER_ID);
     });
   });
 

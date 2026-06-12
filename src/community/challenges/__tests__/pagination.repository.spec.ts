@@ -24,6 +24,13 @@
  *     to the first page within scope instead of keying off an out-of-scope row
  *     (Failure #5 IDOR), and listChallenges carries an `id desc` tie-breaker
  *     for stable boundaries across equal-`created_at` rows;
+ *   - visibility-scoped cursors (B-PAG-1 R3): listChallenges takes the caller's
+ *     accessible-cohort predicate and listParticipationsByProgress takes the
+ *     opt-in consent predicate, and BOTH push it into the page query AND the
+ *     cursor anchor, so a hidden cohort challenge / non-consenting participant
+ *     at the DB page boundary can never be returned, become next_cursor, or be
+ *     replayed as a submitted cursor (Failure #5 IDOR); plus a REAL limit:1
+ *     tie-breaker boundary replay proving the id-desc anchor advances correctly;
  *   - listOptedInUserIds stays UNBOUNDED (internal-only set, never paginated).
  */
 import type {
@@ -211,7 +218,12 @@ describe('listChallenges pagination (D-040)', () => {
   it('over-fetches limit+1 and applies the default of 20 when no limit given', async () => {
     const h = makePrisma();
     h.setChallengeRows([challengeRow(1)]);
-    await h.repo.listChallenges({ workspaceId: WS, cohortId: null, status: null });
+    await h.repo.listChallenges({
+      workspaceId: WS,
+      cohortId: null,
+      status: null,
+      visibleCohortIds: null,
+    });
     const args = h.calls[0].args;
     // default 20 → take 21, no cursor/skip clause
     expect(args.take).toBe(21);
@@ -227,6 +239,7 @@ describe('listChallenges pagination (D-040)', () => {
       workspaceId: WS,
       cohortId: null,
       status: null,
+      visibleCohortIds: null,
       limit: 20,
     });
     expect(h.calls[0].args.take).toBe(21);
@@ -244,6 +257,7 @@ describe('listChallenges pagination (D-040)', () => {
       workspaceId: WS,
       cohortId: null,
       status: null,
+      visibleCohortIds: null,
       limit: 20,
     });
     expect(page.items).toHaveLength(19);
@@ -257,6 +271,7 @@ describe('listChallenges pagination (D-040)', () => {
       workspaceId: WS,
       cohortId: null,
       status: null,
+      visibleCohortIds: null,
       limit: 10,
       cursor: id(4),
     });
@@ -273,6 +288,7 @@ describe('listChallenges pagination (D-040)', () => {
       workspaceId: WS,
       cohortId: null,
       status: null,
+      visibleCohortIds: null,
       limit: 9999,
     });
     expect(over.calls[0].args.take).toBe(51);
@@ -283,6 +299,7 @@ describe('listChallenges pagination (D-040)', () => {
       workspaceId: WS,
       cohortId: null,
       status: null,
+      visibleCohortIds: null,
       limit: 0,
     });
     expect(under.calls[0].args.take).toBe(2); // clamped to 1 → take 1+1
@@ -300,6 +317,7 @@ describe('listChallenges pagination (D-040)', () => {
       workspaceId: WS,
       cohortId: null,
       status: null,
+      visibleCohortIds: null,
       limit: 20,
       cursor: id(999),
     });
@@ -333,6 +351,7 @@ describe('listChallenges pagination (D-040)', () => {
       workspaceId: WS,
       cohortId: null,
       status: 'active',
+      visibleCohortIds: null,
       limit: 20,
       cursor: id(7),
     });
@@ -360,12 +379,14 @@ describe('listChallenges pagination (D-040)', () => {
       workspaceId: WS,
       cohortId: null,
       status: null,
+      visibleCohortIds: null,
       limit: 20,
     });
     const second = await h.repo.listChallenges({
       workspaceId: WS,
       cohortId: null,
       status: null,
+      visibleCohortIds: null,
       limit: 20,
     });
     // Ordering is the deterministic compound [created_at desc, id desc].
@@ -381,13 +402,111 @@ describe('listChallenges pagination (D-040)', () => {
     expect(first.items.map((c) => c.id)).toEqual([id(2), id(1)]);
     expect(second.items.map((c) => c.id)).toEqual(first.items.map((c) => c.id));
   });
+
+  // B-PAG-1 R3 Fix #3: REAL tie-breaker page boundary. Two rows share an
+  // identical created_at and limit:1 forces an overflow, so the boundary is
+  // resolved purely by the id-desc tiebreak. First page must be [higher id]
+  // with nextCursor = higher id; replaying that cursor must return [lower id].
+  it('tie-breaker boundary (limit:1, equal created_at): first page [higher id], replay returns [lower id]', async () => {
+    const h = makePrisma();
+    const sameTs = new Date('2026-03-01T00:00:00.000Z');
+    const lower = { ...challengeRow(1), created_at: sameTs }; // id(1)
+    const higher = { ...challengeRow(2), created_at: sameTs }; // id(2)
+    // limit:1 over-fetches 2 rows ordered [id(2), id(1)]; paginate keeps id(2)
+    // and reports the overflow as nextCursor = id(2).
+    h.setChallengeRows([higher, lower]);
+    const first = await h.repo.listChallenges({
+      workspaceId: WS,
+      cohortId: null,
+      status: null,
+      visibleCohortIds: null,
+      limit: 1,
+    });
+    expect(h.calls[0].args.take).toBe(2);
+    expect(first.items.map((c) => c.id)).toEqual([id(2)]);
+    expect(first.nextCursor).toBe(id(2));
+
+    // Replay the boundary cursor: the anchor resolves in scope and the next
+    // page (the DB would skip past id(2)) returns the lower id(1).
+    h.setChallengeRows([lower]);
+    const second = await h.repo.listChallenges({
+      workspaceId: WS,
+      cohortId: null,
+      status: null,
+      visibleCohortIds: null,
+      limit: 1,
+      cursor: first.nextCursor as string,
+    });
+    const replayArgs = h.calls[1].args;
+    expect(replayArgs.cursor).toEqual({ id: id(2) });
+    expect(replayArgs.skip).toBe(1);
+    expect(second.items.map((c) => c.id)).toEqual([id(1)]);
+    expect(second.nextCursor).toBeNull();
+  });
+
+  // B-PAG-1 R3 Fix #1: an inaccessible cohort challenge sitting at the DB page
+  // boundary must be excluded by the SAME predicate that scopes the page, the
+  // overflow row, and the cursor anchor. A non-coach passes visibleCohortIds,
+  // so (a) the findMany + findFirst where carry the OR [cohort_id:null, in:ids]
+  // predicate (the DB never returns the hidden cohort row, so it can neither be
+  // a result nor become next_cursor), and (b) submitting the hidden row's id as
+  // a cursor does not resolve in scope, degrading to the first visible page.
+  it('hidden cohort cursor: visibility predicate scopes page + anchor; hidden-id cursor degrades to page 1', async () => {
+    const h = makePrisma();
+    const VISIBLE_COHORT = '22222222-2222-2222-2222-222222222222';
+    const HIDDEN_ID = id(900); // a cohort challenge the member cannot read
+    // The scoped anchor resolves ONLY ids that satisfy the OR predicate; the
+    // hidden cohort id does not, so findFirst returns null exactly as the DB
+    // would for an inaccessible-cohort row.
+    h.setChallengeFindFirst((args) => {
+      const where = args.where as { id?: string };
+      return where.id === HIDDEN_ID ? null : { id: (where.id ?? '') as string };
+    });
+    const rows = Array.from({ length: 5 }, (_, i) => challengeRow(i + 1));
+    h.setChallengeRows(rows);
+    const page = await h.repo.listChallenges({
+      workspaceId: WS,
+      cohortId: null,
+      status: null,
+      visibleCohortIds: [VISIBLE_COHORT],
+      limit: 20,
+      cursor: HIDDEN_ID,
+    });
+
+    // The page query carries the member visibility predicate.
+    const where = h.calls[0].args.where as Record<string, unknown>;
+    expect(where.workspace_id).toBe(WS);
+    expect(where.OR).toEqual([
+      { cohort_id: null },
+      { cohort_id: { in: [VISIBLE_COHORT] } },
+    ]);
+    // The cursor anchor was resolved INSIDE that same visibility predicate.
+    expect(h.challengeFindFirstArgs).toHaveLength(1);
+    const anchorWhere = h.challengeFindFirstArgs[0].where as Record<
+      string,
+      unknown
+    >;
+    expect(anchorWhere.OR).toEqual([
+      { cohort_id: null },
+      { cohort_id: { in: [VISIBLE_COHORT] } },
+    ]);
+    expect(anchorWhere.id).toBe(HIDDEN_ID);
+    // Hidden-id cursor did not resolve in scope → degrade to the first page.
+    expect(h.calls[0].args.cursor).toBeUndefined();
+    expect(h.calls[0].args.skip).toBeUndefined();
+    expect(page.items.map((c) => c.id)).toEqual(rows.map((r) => r.id));
+  });
 });
 
 describe('listParticipationsByProgress pagination (D-040)', () => {
   it('over-fetches limit+1 and keeps the progress ordering with a stable id tiebreak', async () => {
     const h = makePrisma();
     h.setParticipationRows([participationRow(1)]);
-    await h.repo.listParticipationsByProgress({ challengeId: CH, limit: 20 });
+    await h.repo.listParticipationsByProgress({
+      challengeId: CH,
+      optedInUserIds: null,
+      limit: 20,
+    });
     const args = h.calls[0].args;
     expect(args.take).toBe(21);
     expect(args.orderBy).toEqual([
@@ -404,6 +523,7 @@ describe('listParticipationsByProgress pagination (D-040)', () => {
     );
     const full = await many.repo.listParticipationsByProgress({
       challengeId: CH,
+      optedInUserIds: null,
       limit: 20,
     });
     expect(full.items).toHaveLength(20);
@@ -415,6 +535,7 @@ describe('listParticipationsByProgress pagination (D-040)', () => {
     );
     const last = await few.repo.listParticipationsByProgress({
       challengeId: CH,
+      optedInUserIds: null,
       limit: 20,
     });
     expect(last.items).toHaveLength(19);
@@ -426,6 +547,7 @@ describe('listParticipationsByProgress pagination (D-040)', () => {
     h.setParticipationRows([participationRow(3)]);
     await h.repo.listParticipationsByProgress({
       challengeId: CH,
+      optedInUserIds: null,
       limit: 5,
       cursor: id(2),
     });
@@ -444,6 +566,7 @@ describe('listParticipationsByProgress pagination (D-040)', () => {
     );
     const page = await h.repo.listParticipationsByProgress({
       challengeId: CH,
+      optedInUserIds: null,
       limit: 20,
       cursor: id(999),
     });
@@ -474,6 +597,7 @@ describe('listParticipationsByProgress pagination (D-040)', () => {
     h.setParticipationRows(rows);
     const page = await h.repo.listParticipationsByProgress({
       challengeId: CH,
+      optedInUserIds: null,
       limit: 20,
       cursor: id(7),
     });
@@ -482,6 +606,54 @@ describe('listParticipationsByProgress pagination (D-040)', () => {
     expect(args.skip).toBeUndefined();
     // findMany scope is pinned to THIS challenge, never widened.
     expect((args.where as Record<string, unknown>).challenge_id).toBe(CH);
+    expect(page.items.map((p) => p.id)).toEqual(rows.map((r) => r.id));
+  });
+
+  // B-PAG-1 R3 Fix #2: the consent predicate scopes the public leaderboard
+  // page + anchor. A non-consenting participant at the DB page boundary must be
+  // excluded by the SAME user_id IN (opted-in) predicate that scopes the page,
+  // the overflow row, and the cursor anchor, so it can neither be returned nor
+  // become next_cursor; and submitting a non-opted participation id as a cursor
+  // does not resolve in scope, degrading to the first opted-in page.
+  it('non-opted boundary: consent predicate scopes page + anchor; non-opted cursor degrades to page 1', async () => {
+    const h = makePrisma();
+    const OPTED_A = id(1001);
+    const OPTED_B = id(1002);
+    const NON_OPTED_ID = id(950); // a participation row that did NOT opt in
+    // The scoped anchor resolves ONLY ids inside the consent predicate; the
+    // non-opted id does not, so findFirst returns null exactly as the DB would
+    // for a `user_id NOT IN (opted-in)` row.
+    h.setParticipationFindFirst((args) => {
+      const where = args.where as { id?: string };
+      return where.id === NON_OPTED_ID
+        ? null
+        : { id: (where.id ?? '') as string };
+    });
+    const rows = Array.from({ length: 5 }, (_, i) => participationRow(i + 1));
+    h.setParticipationRows(rows);
+    const page = await h.repo.listParticipationsByProgress({
+      challengeId: CH,
+      optedInUserIds: [OPTED_A, OPTED_B],
+      limit: 20,
+      cursor: NON_OPTED_ID,
+    });
+
+    // The page query carries the consent predicate alongside the challenge scope.
+    const where = h.calls[0].args.where as Record<string, unknown>;
+    expect(where.challenge_id).toBe(CH);
+    expect(where.user_id).toEqual({ in: [OPTED_A, OPTED_B] });
+    // The cursor anchor was resolved INSIDE that same consent predicate.
+    expect(h.participationFindFirstArgs).toHaveLength(1);
+    const anchorWhere = h.participationFindFirstArgs[0].where as Record<
+      string,
+      unknown
+    >;
+    expect(anchorWhere.challenge_id).toBe(CH);
+    expect(anchorWhere.user_id).toEqual({ in: [OPTED_A, OPTED_B] });
+    expect(anchorWhere.id).toBe(NON_OPTED_ID);
+    // Non-opted cursor did not resolve in scope → degrade to the first page.
+    expect(h.calls[0].args.cursor).toBeUndefined();
+    expect(h.calls[0].args.skip).toBeUndefined();
     expect(page.items.map((p) => p.id)).toEqual(rows.map((r) => r.id));
   });
 });

@@ -114,17 +114,30 @@ export class CommunityChallengesRepository {
    * becomes `nextCursor`. `cursor` (when present) is the id of the last item of
    * the previous page; `skip: 1` excludes that anchor row from this page.
    *
-   * The cursor is resolved INSIDE the same visibility filter (workspace / cohort
-   * / status) via a scoped findFirst before it reaches Prisma. A stale, deleted,
-   * or foreign cursor (one that does not resolve within this scope) yields no
-   * cursor clause, so the read degrades to the first page rather than keying off
-   * a row the caller may not see. Ordering carries a deterministic `id` tiebreak
-   * so equal-`created_at` rows page in a stable, repeatable order.
+   * The caller's READ-visibility predicate is pushed INTO this query (B-PAG-1
+   * R3): a non-coach passes `visibleCohortIds`, so the page and its cursor
+   * anchor are restricted to workspace-wide rows (cohort_id = null) plus the
+   * cohorts they actively belong to; a coach passes `null` for workspace-wide
+   * visibility. Because the page, the overflow row that yields `nextCursor`, and
+   * the cursor anchor all share this one predicate, a hidden cohort challenge
+   * can never be returned, become a public cursor token, or be replayed as a
+   * submitted cursor — such a cursor simply does not resolve in scope and the
+   * read degrades to the first visible page (Failure #5 IDOR).
+   *
+   * The cursor is resolved INSIDE that same visibility filter via a scoped
+   * findFirst before it reaches Prisma. A stale, deleted, or foreign cursor (one
+   * that does not resolve within this scope) yields no cursor clause, so the
+   * read degrades to the first page rather than keying off a row the caller may
+   * not see. Ordering carries a deterministic `id` tiebreak so equal-`created_at`
+   * rows page in a stable, repeatable order.
    */
   async listChallenges(params: {
     workspaceId: string;
     cohortId: string | null;
     status: CommunityChallengeStatus | null;
+    // null → coach/owner workspace-wide visibility; a list → non-coach who sees
+    // workspace-wide rows plus exactly these actively-joined cohorts.
+    visibleCohortIds: string[] | null;
     limit?: number;
     cursor?: string;
   }): Promise<Page<CommunityChallenge>> {
@@ -134,6 +147,14 @@ export class CommunityChallengesRepository {
       archived_at: null,
       ...(params.cohortId !== null ? { cohort_id: params.cohortId } : {}),
       ...(params.status !== null ? { status: params.status } : {}),
+      ...(params.visibleCohortIds !== null
+        ? {
+            OR: [
+              { cohort_id: null },
+              { cohort_id: { in: params.visibleCohortIds } },
+            ],
+          }
+        : {}),
     };
 
     let cursorClause: { cursor: { id: string }; skip: 1 } | null = null;
@@ -345,21 +366,36 @@ export class CommunityChallengesRepository {
    * of the previous page's last participation; `skip: 1` drops that anchor.
    * `nextCursor` is the last kept participation id when an overflow row exists.
    *
-   * The cursor is resolved INSIDE the same challenge scope via a scoped
-   * findFirst before it reaches Prisma. A stale or foreign cursor (a
-   * participation id from a different challenge, or one that no longer exists)
-   * does not resolve within this challenge, so it yields no cursor clause and
-   * the read degrades to the first page rather than keying off an out-of-scope
-   * row.
+   * The CONSENT predicate is pushed INTO this query (B-PAG-1 R3): the public
+   * leaderboard surface passes `optedInUserIds`, so the page, the overflow row
+   * that yields `nextCursor`, and the cursor anchor are all restricted to
+   * participants who personally opted in. A non-consenting participation can
+   * therefore never be returned, become a public cursor token, or be replayed
+   * as a submitted cursor — it does not resolve in scope and the read degrades
+   * to the first opted-in page (Failure #5 IDOR). An internal caller that wants
+   * the unfiltered set (e.g. a coach roster) passes `null`.
+   *
+   * The cursor is resolved INSIDE the same challenge + consent scope via a
+   * scoped findFirst before it reaches Prisma. A stale or foreign cursor (a
+   * participation id from a different challenge, a non-opted-in row, or one that
+   * no longer exists) does not resolve within this scope, so it yields no cursor
+   * clause and the read degrades to the first page rather than keying off an
+   * out-of-scope row.
    */
   async listParticipationsByProgress(params: {
     challengeId: string;
+    // null → every participation in the challenge; a list → only these opted-in
+    // user ids (the consented public leaderboard set).
+    optedInUserIds: string[] | null;
     limit?: number;
     cursor?: string;
   }): Promise<Page<CommunityChallengeParticipation>> {
     const limit = clampLimit(params.limit);
     const filter: Prisma.CommunityChallengeParticipationWhereInput = {
       challenge_id: params.challengeId,
+      ...(params.optedInUserIds !== null
+        ? { user_id: { in: params.optedInUserIds } }
+        : {}),
     };
 
     let cursorClause: { cursor: { id: string }; skip: 1 } | null = null;

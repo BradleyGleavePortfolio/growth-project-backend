@@ -314,9 +314,11 @@ export const LeaderboardResponseSchema = z
     opted_in: z.boolean(),
     rows: z.array(LeaderboardRowSchema),
     /**
-     * Page cursor for the ranked rows (D-040): the user_id of the last row when
-     * a further page exists, else null. Null whenever the board is unavailable
-     * (rows are empty), so an opted-out caller never receives a cursor.
+     * Page cursor for the ranked rows (D-040): the opaque participation-row id
+     * of the last row when a further page exists, else null — NOT a user_id.
+     * It is replayed verbatim as the `cursor` query param to fetch the next
+     * page. Null whenever the board is unavailable (rows are empty), so an
+     * opted-out caller never receives a cursor.
      */
     next_cursor: z.string().uuid().nullable(),
   })

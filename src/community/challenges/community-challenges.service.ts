@@ -350,36 +350,29 @@ export class CommunityChallengesService {
       cohortFilter = cohort.id;
     }
 
+    // READ-visibility is pushed INTO the repository query (B-PAG-1 R3) so the
+    // page, its cursor anchor, and the overflow row that becomes next_cursor all
+    // share one predicate. A coach/owner sees the whole workspace
+    // (visibleCohortIds: null); a member sees workspace-wide rows plus exactly
+    // the cohorts they actively belong to. This replaces the prior
+    // paginate-then-post-filter, which could hand a member a next_cursor (or
+    // accept a submitted cursor) pointing at a hidden cohort challenge.
+    const visibleCohortIds = isCoach
+      ? null
+      : await this.access.listAccessibleCohortIds(workspaceId, user.id);
+
     const status = this.parseStatus(query.status);
     const page = await this.repo.listChallenges({
       workspaceId,
       cohortId: cohortFilter,
       status,
+      visibleCohortIds,
       limit: query.limit,
       cursor: query.cursor,
     });
 
-    // Visibility filter for non-coaches: drop cohort-scoped challenges the
-    // caller is not an active member of. Coaches see everything in their ws.
-    // The cursor is derived from the REPOSITORY page boundary (page.nextCursor),
-    // NOT from the post-filter slice: the next page must resume after the last
-    // row the DB returned, otherwise a page that is fully filtered out for this
-    // caller would wrongly look like the end of the list and silently strand
-    // the challenges that follow it.
-    const visible: CommunityChallenge[] = [];
-    for (const c of page.items) {
-      if (isCoach || c.cohort_id === null) {
-        visible.push(c);
-        continue;
-      }
-      const cohort = await this.access.findCohort(c.cohort_id);
-      if (cohort && (await this.access.canAccessCohort(cohort, user))) {
-        visible.push(c);
-      }
-    }
-
     return ChallengeListResponseSchema.parse({
-      challenges: visible.map((c) => this.challengeView(c)),
+      challenges: page.items.map((c) => this.challengeView(c)),
       next_cursor: page.nextCursor,
     });
   }
@@ -571,30 +564,27 @@ export class CommunityChallengesService {
       });
     }
 
-    const optedInIds = await this.repo.listOptedInUserIds(challengeId);
+    // Consent is pushed INTO the repository query (B-PAG-1 R3): the page, its
+    // cursor anchor, and the overflow row that becomes next_cursor are all
+    // restricted to opted-in participants, so a non-consenting participation can
+    // never be returned NOR become a public cursor token. This replaces the
+    // prior paginate-then-post-filter, which could expose a non-consenting
+    // participation id as next_cursor.
+    const optedInUserIds = [...(await this.repo.listOptedInUserIds(challengeId))];
     const page = await this.repo.listParticipationsByProgress({
       challengeId,
+      optedInUserIds,
       limit: query.limit,
       cursor: query.cursor,
     });
-    // Ranks are page-local (1-based within the returned page): the cursor walks
-    // the participation ordering and the opt-in filter only hides
-    // non-consenting rows within the page. next_cursor comes from the
-    // REPOSITORY page boundary (the last participation the DB returned, opted
-    // in or not), so the following page resumes at the correct row even when
-    // the tail of this page was entirely non-consenting.
-    const rows: LeaderboardRowView[] = [];
-    let rank = 0;
-    for (const p of page.items) {
-      if (!optedInIds.has(p.user_id)) continue;
-      rank += 1;
-      rows.push({
-        user_id: p.user_id,
-        rank,
-        progress_value: p.progress_value.toNumber(),
-        is_self: p.user_id === user.id,
-      });
-    }
+    // Every returned row is already opted in, so ranks are simply page-local
+    // (1-based within the returned page).
+    const rows: LeaderboardRowView[] = page.items.map((p, i) => ({
+      user_id: p.user_id,
+      rank: i + 1,
+      progress_value: p.progress_value.toNumber(),
+      is_self: p.user_id === user.id,
+    }));
     return LeaderboardResponseSchema.parse({
       available: true,
       opted_in: true,
