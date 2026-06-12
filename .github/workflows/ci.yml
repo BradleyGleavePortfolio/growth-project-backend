@@ -46,6 +46,9 @@ jobs:
 
       - name: Type-check
         run: npx tsc --noEmit
+        env:
+          # ai-triage module type-check needs >2GB heap (cache + cohort batch types).
+          NODE_OPTIONS: --max-old-space-size=4096
 
       - name: Build
         run: npm run build

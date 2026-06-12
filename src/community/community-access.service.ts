@@ -25,6 +25,23 @@ export class CommunityAccessService {
     return this.prisma.communityCohort.findUnique({ where: { id: cohortId } });
   }
 
+  /**
+   * Batch-resolve cohort ids to their (id, name) in a SINGLE query. Used by the
+   * v2-4 AI triage path to avoid an N+1 of per-cohort findCohort() calls when a
+   * cache miss can carry up to ~100 unique cohort ids. De-duplication of the
+   * input is the caller's concern; passing an empty list short-circuits to no
+   * query at all.
+   */
+  async findCohortsByIds(
+    ids: string[],
+  ): Promise<Array<Pick<CommunityCohort, 'id' | 'name'>>> {
+    if (ids.length === 0) return [];
+    return this.prisma.communityCohort.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true },
+    });
+  }
+
   async findWorkspace(workspaceId: string): Promise<CommunityWorkspace | null> {
     return this.prisma.communityWorkspace.findUnique({
       where: { id: workspaceId },

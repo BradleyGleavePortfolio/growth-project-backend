@@ -58,11 +58,15 @@ import { CommunityEventsService } from './events/community-events.service';
 import { CommunityEventsRepository } from './events/community-events.repository';
 import { CommunityEventsScheduler } from './events/community-events.scheduler';
 import { CommunityEventsEnabledGuard } from './events/community-events-flag.guard';
+// v2-4 community AI inbox triage: read-only generation surface
+// (GET /community/ai-triage). Self-contained module; no Prisma diff.
+import { AiTriageModule } from './ai-triage/ai-triage.module';
 
 // PrismaService provided globally via PrismaModule.
 @Module({
   imports: [
     AckModule,
+    AiTriageModule,
     AuthModule,
     CommunityRealtimeModule,
     CommunityNotificationsModule,

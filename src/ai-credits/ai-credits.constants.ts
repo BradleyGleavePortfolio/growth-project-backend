@@ -55,6 +55,12 @@ export const COACH_AI_METERED_CAPABILITIES: ReadonlySet<string> = new Set([
   // behavioural change to any existing capability.
   'wearable_insight.coach',
   'wearable_insight.client',
+  // v2-4 — community AI inbox triage. CLASSIFY-only (not a draft.* capability,
+  // so no materialiser/send path). Listed here so the gateway's existing
+  // pre-call budget gate + atomic post-call recordUsage meter it like every
+  // other real LLM call; resolves to the requesting coach's budget via
+  // tenantCoachId. No behavioural change to any existing capability.
+  'community_ai_triage',
 ]);
 
 /** Resolve the actual ceiling at call time so test env mutations stick. */
