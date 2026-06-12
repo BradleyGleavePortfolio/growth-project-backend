@@ -366,35 +366,56 @@ export class CommunityChallengesRepository {
    * of the previous page's last participation; `skip: 1` drops that anchor.
    * `nextCursor` is the last kept participation id when an overflow row exists.
    *
-   * The CONSENT predicate is pushed INTO this query (B-PAG-1 R3): the public
-   * leaderboard surface passes `optedInUserIds`, so the page, the overflow row
-   * that yields `nextCursor`, and the cursor anchor are all restricted to
-   * participants who personally opted in. A non-consenting participation can
-   * therefore never be returned, become a public cursor token, or be replayed
-   * as a submitted cursor — it does not resolve in scope and the read degrades
-   * to the first opted-in page (Failure #5 IDOR). An internal caller that wants
-   * the unfiltered set (e.g. a coach roster) passes `null`.
+   * The CONSENT predicate is pushed INTO this query as a BOUNDED, DB-side
+   * relation filter (B-PAG-1 R4): the public leaderboard surface passes
+   * `consent: { workspaceId }`, which adds an `EXISTS`-style `some` filter over
+   * the participant's own opt-in sentinel rows in `community_messages`
+   * (workspace_id + plan_context_type discriminator + plan_context_id +
+   * deleted_at: null; the sender match to the participation's user is intrinsic
+   * to traversing the participant's `community_messages_sent` relation, whose
+   * foreign key IS sender_id). The page, the overflow row that yields
+   * `nextCursor`, and the cursor anchor therefore all resolve only for
+   * participants who personally opted in — with NO unbounded pre-load of the
+   * opt-in set and only the bounded `limit + 1` page actually materialised. A
+   * non-consenting participation can never be returned, become a public cursor
+   * token, or be replayed as a submitted cursor: it does not resolve in scope
+   * and the read degrades to the first opted-in page (Failure #5 IDOR / #21 /
+   * #23). An internal caller that wants the unfiltered set (e.g. a coach
+   * roster) passes `consent: null`.
    *
    * The cursor is resolved INSIDE the same challenge + consent scope via a
-   * scoped findFirst before it reaches Prisma. A stale or foreign cursor (a
-   * participation id from a different challenge, a non-opted-in row, or one that
-   * no longer exists) does not resolve within this scope, so it yields no cursor
-   * clause and the read degrades to the first page rather than keying off an
-   * out-of-scope row.
+   * scoped findFirst before it reaches Prisma, reusing the SAME `filter` object
+   * as the page query so the predicate is byte-identical between page and
+   * anchor. A stale or foreign cursor (a participation id from a different
+   * challenge, a non-opted-in row, or one that no longer exists) does not
+   * resolve within this scope, so it yields no cursor clause and the read
+   * degrades to the first page rather than keying off an out-of-scope row.
    */
   async listParticipationsByProgress(params: {
     challengeId: string;
-    // null → every participation in the challenge; a list → only these opted-in
-    // user ids (the consented public leaderboard set).
-    optedInUserIds: string[] | null;
+    // null → every participation in the challenge (internal/unfiltered);
+    // { workspaceId } → only participants who hold an opt-in sentinel in this
+    // workspace (the consented public leaderboard set), enforced DB-side.
+    consent: { workspaceId: string } | null;
     limit?: number;
     cursor?: string;
   }): Promise<Page<CommunityChallengeParticipation>> {
     const limit = clampLimit(params.limit);
     const filter: Prisma.CommunityChallengeParticipationWhereInput = {
       challenge_id: params.challengeId,
-      ...(params.optedInUserIds !== null
-        ? { user_id: { in: params.optedInUserIds } }
+      ...(params.consent !== null
+        ? {
+            user: {
+              community_messages_sent: {
+                some: {
+                  workspace_id: params.consent.workspaceId,
+                  plan_context_type: CHALLENGE_OPTIN_CONTEXT_TYPE,
+                  plan_context_id: params.challengeId,
+                  deleted_at: null,
+                },
+              },
+            },
+          }
         : {}),
     };
 
@@ -477,19 +498,6 @@ export class CommunityChallengesRepository {
         data: { deleted_at: new Date(), visibility: 'hidden' },
       });
     }
-  }
-
-  /** Set of user ids who have personally opted into a challenge's leaderboard. */
-  async listOptedInUserIds(challengeId: string): Promise<Set<string>> {
-    const rows = await this.prisma.communityMessage.findMany({
-      where: {
-        plan_context_type: CHALLENGE_OPTIN_CONTEXT_TYPE,
-        plan_context_id: challengeId,
-        deleted_at: null,
-      },
-      select: { sender_id: true },
-    });
-    return new Set(rows.map((r) => r.sender_id));
   }
 
   // ── Comments (CommunityMessage with challenge discriminator) ────────────────

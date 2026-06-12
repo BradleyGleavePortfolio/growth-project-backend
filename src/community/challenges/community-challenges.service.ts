@@ -564,16 +564,16 @@ export class CommunityChallengesService {
       });
     }
 
-    // Consent is pushed INTO the repository query (B-PAG-1 R3): the page, its
-    // cursor anchor, and the overflow row that becomes next_cursor are all
-    // restricted to opted-in participants, so a non-consenting participation can
-    // never be returned NOR become a public cursor token. This replaces the
-    // prior paginate-then-post-filter, which could expose a non-consenting
-    // participation id as next_cursor.
-    const optedInUserIds = [...(await this.repo.listOptedInUserIds(challengeId))];
+    // Consent is pushed INTO the repository query as a bounded DB-side relation
+    // predicate (B-PAG-1 R4): the page, its cursor anchor, and the overflow row
+    // that becomes next_cursor are all restricted to opted-in participants via
+    // an EXISTS over each participant's own opt-in sentinel, so a non-consenting
+    // participation can never be returned NOR become a public cursor token. This
+    // replaces both the prior paginate-then-post-filter AND the prior unbounded
+    // pre-load of the full opt-in id set — only the bounded limit+1 page is read.
     const page = await this.repo.listParticipationsByProgress({
       challengeId,
-      optedInUserIds,
+      consent: { workspaceId: challenge.workspace_id },
       limit: query.limit,
       cursor: query.cursor,
     });

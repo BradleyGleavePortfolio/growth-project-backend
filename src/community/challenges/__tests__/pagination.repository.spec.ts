@@ -31,7 +31,11 @@
  *     at the DB page boundary can never be returned, become next_cursor, or be
  *     replayed as a submitted cursor (Failure #5 IDOR); plus a REAL limit:1
  *     tie-breaker boundary replay proving the id-desc anchor advances correctly;
- *   - listOptedInUserIds stays UNBOUNDED (internal-only set, never paginated).
+ *   - bounded consent (B-PAG-1 R4): the leaderboard read enforces consent as a
+ *     DB-side EXISTS relation filter inside the bounded limit+1 page (and its
+ *     anchor), with NO unbounded opt-in pre-load, and TRUE boundary-overflow
+ *     fixtures prove a hidden-cohort / non-opted row at the would-be boundary
+ *     can never be returned NOR become next_cursor.
  */
 import type {
   CommunityChallenge,
@@ -173,8 +177,9 @@ function makePrisma() {
     },
     communityMessage: {
       findMany: jest.fn(async (args: Record<string, unknown>) => {
-        // listOptedInUserIds selects sender_id only — route it separately so
-        // the comments findMany assertions are not polluted.
+        // A sender_id-only select would be an opt-in sentinel pre-load — route
+        // it into optInFindManyArgs so the R4 "no unbounded pre-load" guards can
+        // assert it NEVER happens, without polluting the comments assertions.
         if (
           (args.select as { sender_id?: boolean } | undefined)?.sender_id
         ) {
@@ -496,6 +501,46 @@ describe('listChallenges pagination (D-040)', () => {
     expect(h.calls[0].args.skip).toBeUndefined();
     expect(page.items.map((c) => c.id)).toEqual(rows.map((r) => r.id));
   });
+
+  // B-PAG-1 R4 Fix #2 (P3): a TRUE boundary-overflow assertion for the
+  // challenge list. A hidden-cohort challenge conceptually sits AT the limit+1
+  // overflow slot. Because the visibility OR predicate is applied DB-side, the
+  // DB never returns that hidden row, so the repository's limit+1 over-fetch
+  // sees only visible rows and next_cursor can ONLY ever be a visible challenge
+  // id — never the hidden-cohort row (Failure #5 IDOR / #17 / #23).
+  it('boundary overflow: a hidden-cohort row at the would-be boundary is never returned NOR becomes next_cursor', async () => {
+    const h = makePrisma();
+    const VISIBLE_COHORT = '22222222-2222-2222-2222-222222222222';
+    // The DB applies the OR [cohort_id:null, in:[visible]] predicate, so the
+    // result set the repository sees is ALREADY visibility-filtered: only rows
+    // the member can read. We stage limit(2) + 1 = 3 visible rows; the hidden
+    // cohort row that would conceptually sit at the boundary is absent.
+    const visibleRows = [challengeRow(1), challengeRow(2), challengeRow(3)];
+    const HIDDEN_COHORT_ROW = challengeRow(99);
+    h.setChallengeRows(visibleRows);
+    const page = await h.repo.listChallenges({
+      workspaceId: WS,
+      cohortId: null,
+      status: null,
+      visibleCohortIds: [VISIBLE_COHORT],
+      limit: 2,
+    });
+    // limit:2 over-fetches 3 rows → 2 items kept + next_cursor = 2nd kept id.
+    expect(h.calls[0].args.take).toBe(3);
+    expect(page.items).toHaveLength(2);
+    expect(page.items.map((c) => c.id)).toEqual([id(1), id(2)]);
+    // next_cursor is the last KEPT (visible) row — never the hidden-cohort row.
+    expect(page.nextCursor).toBe(id(2));
+    expect(page.nextCursor).not.toBe(HIDDEN_COHORT_ROW.id);
+    expect(page.items.map((c) => c.id)).not.toContain(HIDDEN_COHORT_ROW.id);
+    // The page query is visibility-scoped, so the DB could never have surfaced
+    // the hidden-cohort row at the boundary in the first place.
+    const where = h.calls[0].args.where as Record<string, unknown>;
+    expect(where.OR).toEqual([
+      { cohort_id: null },
+      { cohort_id: { in: [VISIBLE_COHORT] } },
+    ]);
+  });
 });
 
 describe('listParticipationsByProgress pagination (D-040)', () => {
@@ -504,7 +549,7 @@ describe('listParticipationsByProgress pagination (D-040)', () => {
     h.setParticipationRows([participationRow(1)]);
     await h.repo.listParticipationsByProgress({
       challengeId: CH,
-      optedInUserIds: null,
+      consent: null,
       limit: 20,
     });
     const args = h.calls[0].args;
@@ -523,7 +568,7 @@ describe('listParticipationsByProgress pagination (D-040)', () => {
     );
     const full = await many.repo.listParticipationsByProgress({
       challengeId: CH,
-      optedInUserIds: null,
+      consent: null,
       limit: 20,
     });
     expect(full.items).toHaveLength(20);
@@ -535,7 +580,7 @@ describe('listParticipationsByProgress pagination (D-040)', () => {
     );
     const last = await few.repo.listParticipationsByProgress({
       challengeId: CH,
-      optedInUserIds: null,
+      consent: null,
       limit: 20,
     });
     expect(last.items).toHaveLength(19);
@@ -547,7 +592,7 @@ describe('listParticipationsByProgress pagination (D-040)', () => {
     h.setParticipationRows([participationRow(3)]);
     await h.repo.listParticipationsByProgress({
       challengeId: CH,
-      optedInUserIds: null,
+      consent: null,
       limit: 5,
       cursor: id(2),
     });
@@ -566,7 +611,7 @@ describe('listParticipationsByProgress pagination (D-040)', () => {
     );
     const page = await h.repo.listParticipationsByProgress({
       challengeId: CH,
-      optedInUserIds: null,
+      consent: null,
       limit: 20,
       cursor: id(999),
     });
@@ -597,7 +642,7 @@ describe('listParticipationsByProgress pagination (D-040)', () => {
     h.setParticipationRows(rows);
     const page = await h.repo.listParticipationsByProgress({
       challengeId: CH,
-      optedInUserIds: null,
+      consent: null,
       limit: 20,
       cursor: id(7),
     });
@@ -609,20 +654,18 @@ describe('listParticipationsByProgress pagination (D-040)', () => {
     expect(page.items.map((p) => p.id)).toEqual(rows.map((r) => r.id));
   });
 
-  // B-PAG-1 R3 Fix #2: the consent predicate scopes the public leaderboard
-  // page + anchor. A non-consenting participant at the DB page boundary must be
-  // excluded by the SAME user_id IN (opted-in) predicate that scopes the page,
-  // the overflow row, and the cursor anchor, so it can neither be returned nor
-  // become next_cursor; and submitting a non-opted participation id as a cursor
-  // does not resolve in scope, degrading to the first opted-in page.
-  it('non-opted boundary: consent predicate scopes page + anchor; non-opted cursor degrades to page 1', async () => {
+  // B-PAG-1 R4 Fix #1: the consent predicate scopes the public leaderboard
+  // page + anchor as a BOUNDED, DB-side EXISTS over each participant's own
+  // opt-in sentinel (workspace_id + opt-in discriminator + plan_context_id +
+  // deleted_at: null). It is byte-identical between the page findMany and the
+  // cursor anchor findFirst, and submitting a non-opted participation id as a
+  // cursor does not resolve in scope, degrading to the first opted-in page.
+  it('non-opted boundary: bounded consent predicate scopes page + anchor (byte-identical); non-opted cursor degrades to page 1', async () => {
     const h = makePrisma();
-    const OPTED_A = id(1001);
-    const OPTED_B = id(1002);
     const NON_OPTED_ID = id(950); // a participation row that did NOT opt in
     // The scoped anchor resolves ONLY ids inside the consent predicate; the
     // non-opted id does not, so findFirst returns null exactly as the DB would
-    // for a `user_id NOT IN (opted-in)` row.
+    // for a participation whose user holds no opt-in sentinel.
     h.setParticipationFindFirst((args) => {
       const where = args.where as { id?: string };
       return where.id === NON_OPTED_ID
@@ -633,28 +676,97 @@ describe('listParticipationsByProgress pagination (D-040)', () => {
     h.setParticipationRows(rows);
     const page = await h.repo.listParticipationsByProgress({
       challengeId: CH,
-      optedInUserIds: [OPTED_A, OPTED_B],
+      consent: { workspaceId: WS },
       limit: 20,
       cursor: NON_OPTED_ID,
     });
 
-    // The page query carries the consent predicate alongside the challenge scope.
+    // The bounded DB-side consent predicate carried by the page query: an
+    // EXISTS over the participant's own opt-in sentinel rows, including
+    // workspace_id, the opt-in discriminator, plan_context_id, and deleted_at.
+    const expectedConsentUser = {
+      community_messages_sent: {
+        some: {
+          workspace_id: WS,
+          plan_context_type: 'community_challenge_optin',
+          plan_context_id: CH,
+          deleted_at: null,
+        },
+      },
+    };
     const where = h.calls[0].args.where as Record<string, unknown>;
     expect(where.challenge_id).toBe(CH);
-    expect(where.user_id).toEqual({ in: [OPTED_A, OPTED_B] });
-    // The cursor anchor was resolved INSIDE that same consent predicate.
+    expect(where.user).toEqual(expectedConsentUser);
+    // No unbounded opt-in pre-load: only the bounded limit+1 page findMany and
+    // the single anchor findFirst ran — never a sender_id-select findMany.
+    expect(h.optInFindManyArgs).toHaveLength(0);
+    // The cursor anchor was resolved INSIDE that same consent predicate, and
+    // the predicate is byte-identical to the page query's predicate.
     expect(h.participationFindFirstArgs).toHaveLength(1);
     const anchorWhere = h.participationFindFirstArgs[0].where as Record<
       string,
       unknown
     >;
     expect(anchorWhere.challenge_id).toBe(CH);
-    expect(anchorWhere.user_id).toEqual({ in: [OPTED_A, OPTED_B] });
+    expect(anchorWhere.user).toEqual(where.user);
+    expect(JSON.stringify(anchorWhere.user)).toBe(JSON.stringify(where.user));
     expect(anchorWhere.id).toBe(NON_OPTED_ID);
     // Non-opted cursor did not resolve in scope → degrade to the first page.
     expect(h.calls[0].args.cursor).toBeUndefined();
     expect(h.calls[0].args.skip).toBeUndefined();
     expect(page.items.map((p) => p.id)).toEqual(rows.map((r) => r.id));
+  });
+
+  // B-PAG-1 R4 Fix #2 (P3): a TRUE boundary-overflow assertion. The conceptual
+  // boundary row (the row that, if consent were ignored, would sit AT the
+  // limit+1 overflow position and become next_cursor) is non-opted. Because the
+  // bounded consent predicate is applied DB-side, the DB never materialises that
+  // hidden row, so the repository's limit+1 over-fetch sees only opted-in rows
+  // and next_cursor can ONLY ever be a visible/consented participation id
+  // (Failure #5 IDOR / #17 fake coverage / #23 pagination correctness).
+  it('boundary overflow: a non-opted row at the would-be boundary is never returned NOR becomes next_cursor', async () => {
+    const h = makePrisma();
+    // The DB applies the EXISTS consent predicate, so the result set the
+    // repository sees is ALREADY consent-filtered: only opted-in participants.
+    // We stage limit(2) + 1 = 3 opted-in rows; the hidden non-opted row that
+    // would conceptually sit at the boundary is absent from the DB result
+    // exactly as the predicate guarantees.
+    const optedRows = [
+      participationRow(1),
+      participationRow(2),
+      participationRow(3),
+    ];
+    // A non-opted participation that, absent the predicate, would have sorted
+    // into the boundary/overflow slot. It must never surface.
+    const HIDDEN_NON_OPTED = participationRow(99);
+    h.setParticipationRows(optedRows);
+    const page = await h.repo.listParticipationsByProgress({
+      challengeId: CH,
+      consent: { workspaceId: WS },
+      limit: 2,
+    });
+    // limit:2 over-fetches 3 rows → 2 items kept + next_cursor = 2nd kept id.
+    expect(h.calls[0].args.take).toBe(3);
+    expect(page.items).toHaveLength(2);
+    expect(page.items.map((p) => p.id)).toEqual([id(1), id(2)]);
+    // next_cursor is the last KEPT (visible, consented) row — never the hidden
+    // non-opted row, and never the dropped overflow row.
+    expect(page.nextCursor).toBe(id(2));
+    expect(page.nextCursor).not.toBe(HIDDEN_NON_OPTED.id);
+    expect(page.items.map((p) => p.id)).not.toContain(HIDDEN_NON_OPTED.id);
+    // The page query is consent-scoped, so the DB could never have surfaced the
+    // hidden row at the boundary in the first place.
+    const where = h.calls[0].args.where as Record<string, unknown>;
+    expect(where.user).toEqual({
+      community_messages_sent: {
+        some: {
+          workspace_id: WS,
+          plan_context_type: 'community_challenge_optin',
+          plan_context_id: CH,
+          deleted_at: null,
+        },
+      },
+    });
   });
 });
 
@@ -780,14 +892,29 @@ describe('listComments pagination (D-040, composite PK)', () => {
   });
 });
 
-describe('listOptedInUserIds stays unbounded (D-040 scope guard)', () => {
-  it('issues NO take/cursor/skip — the opt-in set is internal-only, never paged', async () => {
+describe('leaderboard consent is bounded DB-side (B-PAG-1 R4 scope guard)', () => {
+  // R4 replaces the prior unbounded opt-in pre-load: the leaderboard read no
+  // longer materialises the full opt-in id set before paginating. Consent is
+  // enforced entirely inside the bounded limit+1 page query (and its anchor) as
+  // a DB-side EXISTS, so the ONLY participation read is the bounded page itself
+  // and NO unbounded opt-in findMany (sender_id select) is ever issued.
+  it('issues only the bounded limit+1 page read — never an unbounded opt-in pre-load', async () => {
     const h = makePrisma();
-    await h.repo.listOptedInUserIds(CH);
-    expect(h.optInFindManyArgs).toHaveLength(1);
-    const args = h.optInFindManyArgs[0];
-    expect(args.take).toBeUndefined();
-    expect(args.cursor).toBeUndefined();
-    expect(args.skip).toBeUndefined();
+    h.setParticipationRows(
+      Array.from({ length: 21 }, (_, i) => participationRow(i + 1)),
+    );
+    await h.repo.listParticipationsByProgress({
+      challengeId: CH,
+      consent: { workspaceId: WS },
+      limit: 20,
+    });
+    // No unbounded opt-in sentinel pre-load occurred.
+    expect(h.optInFindManyArgs).toHaveLength(0);
+    // The single participation read is bounded by take: limit + 1.
+    const participationCalls = h.calls.filter(
+      (c) => c.model === 'communityChallengeParticipation',
+    );
+    expect(participationCalls).toHaveLength(1);
+    expect(participationCalls[0].args.take).toBe(21);
   });
 });
