@@ -28,6 +28,7 @@ import {
   EditChallengeDto,
   LeaderboardOptInDto,
   ListChallengesQueryDto,
+  PaginationQueryDto,
   UpdateProgressDto,
 } from './community-challenges.dto';
 
@@ -140,8 +141,9 @@ export class CommunityChallengesController {
     @Request() req: AuthedRequest,
     @Param('challengeId', new ParseUUIDPipe({ version: '4' }))
     challengeId: string,
+    @Query() query: PaginationQueryDto,
   ) {
-    return this.challenges.getLeaderboard(req.user, challengeId);
+    return this.challenges.getLeaderboard(req.user, challengeId, query);
   }
 
   @Get('challenges/:challengeId/comments')
@@ -151,8 +153,9 @@ export class CommunityChallengesController {
     @Request() req: AuthedRequest,
     @Param('challengeId', new ParseUUIDPipe({ version: '4' }))
     challengeId: string,
+    @Query() query: PaginationQueryDto,
   ) {
-    return this.challenges.listComments(req.user, challengeId);
+    return this.challenges.listComments(req.user, challengeId, query);
   }
 
   // ── Participation writes ──────────────────────────────────────────────────

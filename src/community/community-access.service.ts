@@ -62,6 +62,25 @@ export class CommunityAccessService {
     });
   }
 
+  /**
+   * The cohort ids a member is an ACTIVE member of within a workspace. The
+   * challenge list pushes these into the repository query so a non-coach's page
+   * and cursor anchor are scoped to rows they may actually read — never
+   * post-filtered after pagination (which would let a hidden cohort row become a
+   * public cursor token). An empty result means the member sees only
+   * workspace-wide (cohort_id = null) challenges.
+   */
+  async listAccessibleCohortIds(
+    workspaceId: string,
+    userId: string,
+  ): Promise<string[]> {
+    const rows = await this.prisma.communityMembership.findMany({
+      where: { workspace_id: workspaceId, user_id: userId, status: 'active' },
+      select: { cohort_id: true },
+    });
+    return rows.map((r) => r.cohort_id);
+  }
+
   /** The caller's first active membership row in a workspace, or null. */
   async membershipInWorkspace(
     workspaceId: string,

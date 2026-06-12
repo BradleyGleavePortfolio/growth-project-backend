@@ -9,6 +9,34 @@ import type {
 import { PrismaService } from '../../prisma.service';
 
 /**
+ * A single page of a cursor-paginated read (D-040). `items` is at most `limit`
+ * rows; `nextCursor` is the id of the last item when a further page exists
+ * (the repository fetched `limit + 1` rows and saw the overflow row), else
+ * null. The service maps this directly onto the `{ items, next_cursor }` API
+ * contract — `next_cursor` is therefore always an id the caller can replay as
+ * `cursor` to fetch the following page.
+ */
+export interface Page<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+/**
+ * Clamp a repository limit defensively. The DTO already enforces 1..50, but the
+ * repository is the last line before the database, so an internal caller that
+ * bypasses the DTO still cannot trigger an unbounded or absurd `take`. A
+ * missing limit falls back to the shared default page size.
+ */
+function clampLimit(limit: number | undefined): number {
+  const n = limit ?? PAGE_DEFAULT_LIMIT;
+  if (!Number.isFinite(n)) return PAGE_DEFAULT_LIMIT;
+  return Math.max(1, Math.min(PAGE_MAX_LIMIT, Math.trunc(n)));
+}
+
+const PAGE_DEFAULT_LIMIT = 20;
+const PAGE_MAX_LIMIT = 50;
+
+/**
  * Data access for community challenges.
  *
  * Tenant scoping follows the v1-2 doctrine (community.repository.ts): the app
@@ -79,20 +107,91 @@ export class CommunityChallengesRepository {
     });
   }
 
+  /**
+   * Cursor-paginated challenge list (D-040). Fetches `limit + 1` rows so the
+   * presence of an overflow row reveals whether a further page exists without a
+   * second COUNT query; the overflow row is dropped and its predecessor's id
+   * becomes `nextCursor`. `cursor` (when present) is the id of the last item of
+   * the previous page; `skip: 1` excludes that anchor row from this page.
+   *
+   * The caller's READ-visibility predicate is pushed INTO this query (B-PAG-1
+   * R3): a non-coach passes `visibleCohortIds`, so the page and its cursor
+   * anchor are restricted to workspace-wide rows (cohort_id = null) plus the
+   * cohorts they actively belong to; a coach passes `null` for workspace-wide
+   * visibility. Because the page, the overflow row that yields `nextCursor`, and
+   * the cursor anchor all share this one predicate, a hidden cohort challenge
+   * can never be returned, become a public cursor token, or be replayed as a
+   * submitted cursor — such a cursor simply does not resolve in scope and the
+   * read degrades to the first visible page (Failure #5 IDOR).
+   *
+   * The cursor is resolved INSIDE that same visibility filter via a scoped
+   * findFirst before it reaches Prisma. A stale, deleted, or foreign cursor (one
+   * that does not resolve within this scope) yields no cursor clause, so the
+   * read degrades to the first page rather than keying off a row the caller may
+   * not see. Ordering carries a deterministic `id` tiebreak so equal-`created_at`
+   * rows page in a stable, repeatable order.
+   */
   async listChallenges(params: {
     workspaceId: string;
     cohortId: string | null;
     status: CommunityChallengeStatus | null;
-  }): Promise<CommunityChallenge[]> {
-    return this.prisma.communityChallenge.findMany({
-      where: {
-        workspace_id: params.workspaceId,
-        archived_at: null,
-        ...(params.cohortId !== null ? { cohort_id: params.cohortId } : {}),
-        ...(params.status !== null ? { status: params.status } : {}),
-      },
-      orderBy: { created_at: 'desc' },
+    // null → coach/owner workspace-wide visibility; a list → non-coach who sees
+    // workspace-wide rows plus exactly these actively-joined cohorts.
+    visibleCohortIds: string[] | null;
+    limit?: number;
+    cursor?: string;
+  }): Promise<Page<CommunityChallenge>> {
+    const limit = clampLimit(params.limit);
+    const filter: Prisma.CommunityChallengeWhereInput = {
+      workspace_id: params.workspaceId,
+      archived_at: null,
+      ...(params.cohortId !== null ? { cohort_id: params.cohortId } : {}),
+      ...(params.status !== null ? { status: params.status } : {}),
+      ...(params.visibleCohortIds !== null
+        ? {
+            OR: [
+              { cohort_id: null },
+              { cohort_id: { in: params.visibleCohortIds } },
+            ],
+          }
+        : {}),
+    };
+
+    let cursorClause: { cursor: { id: string }; skip: 1 } | null = null;
+    if (params.cursor) {
+      const anchor = await this.prisma.communityChallenge.findFirst({
+        where: { ...filter, id: params.cursor },
+        select: { id: true },
+      });
+      if (anchor) {
+        cursorClause = { cursor: { id: anchor.id }, skip: 1 };
+      }
+    }
+
+    const rows = await this.prisma.communityChallenge.findMany({
+      where: filter,
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      ...(cursorClause ?? {}),
     });
+    return this.paginate(rows, limit);
+  }
+
+  /**
+   * Slice a `limit + 1` fetch down to one page and derive the cursor. When the
+   * extra row is present a further page exists, so the overflow row is dropped
+   * and the last KEPT row's id is the cursor; otherwise this is the final page
+   * and the cursor is null. Shared by every id-keyed paginated read here.
+   */
+  private paginate<T extends { id: string }>(
+    rows: T[],
+    limit: number,
+  ): Page<T> {
+    if (rows.length > limit) {
+      const items = rows.slice(0, limit);
+      return { items, nextCursor: items[items.length - 1].id };
+    }
+    return { items: rows, nextCursor: null };
   }
 
   async updateChallenge(
@@ -259,14 +358,90 @@ export class CommunityChallengesRepository {
     };
   }
 
-  /** Leaderboard ordering: highest progress first, earliest completion as tiebreak. */
-  async listParticipationsByProgress(
-    challengeId: string,
-  ): Promise<CommunityChallengeParticipation[]> {
-    return this.prisma.communityChallengeParticipation.findMany({
-      where: { challenge_id: challengeId },
-      orderBy: [{ progress_value: 'desc' }, { last_logged_at: 'asc' }],
+  /**
+   * Leaderboard ordering: highest progress first, earliest completion as
+   * tiebreak. Cursor-paginated (D-040): fetches `limit + 1` rows ordered by
+   * (progress_value desc, last_logged_at asc) with a stable `id` tiebreak so
+   * the cursor is deterministic across equal-progress rows. `cursor` is the id
+   * of the previous page's last participation; `skip: 1` drops that anchor.
+   * `nextCursor` is the last kept participation id when an overflow row exists.
+   *
+   * The CONSENT predicate is pushed INTO this query as a BOUNDED, DB-side
+   * relation filter (B-PAG-1 R4): the public leaderboard surface passes
+   * `consent: { workspaceId }`, which adds an `EXISTS`-style `some` filter over
+   * the participant's own opt-in sentinel rows in `community_messages`
+   * (workspace_id + plan_context_type discriminator + plan_context_id +
+   * deleted_at: null; the sender match to the participation's user is intrinsic
+   * to traversing the participant's `community_messages_sent` relation, whose
+   * foreign key IS sender_id). The page, the overflow row that yields
+   * `nextCursor`, and the cursor anchor therefore all resolve only for
+   * participants who personally opted in — with NO unbounded pre-load of the
+   * opt-in set and only the bounded `limit + 1` page actually materialised. A
+   * non-consenting participation can never be returned, become a public cursor
+   * token, or be replayed as a submitted cursor: it does not resolve in scope
+   * and the read degrades to the first opted-in page (Failure #5 IDOR / #21 /
+   * #23). An internal caller that wants the unfiltered set (e.g. a coach
+   * roster) passes `consent: null`.
+   *
+   * The cursor is resolved INSIDE the same challenge + consent scope via a
+   * scoped findFirst before it reaches Prisma, reusing the SAME `filter` object
+   * as the page query so the predicate is byte-identical between page and
+   * anchor. A stale or foreign cursor (a participation id from a different
+   * challenge, a non-opted-in row, or one that no longer exists) does not
+   * resolve within this scope, so it yields no cursor clause and the read
+   * degrades to the first page rather than keying off an out-of-scope row.
+   */
+  async listParticipationsByProgress(params: {
+    challengeId: string;
+    // null → every participation in the challenge (internal/unfiltered);
+    // { workspaceId } → only participants who hold an opt-in sentinel in this
+    // workspace (the consented public leaderboard set), enforced DB-side.
+    consent: { workspaceId: string } | null;
+    limit?: number;
+    cursor?: string;
+  }): Promise<Page<CommunityChallengeParticipation>> {
+    const limit = clampLimit(params.limit);
+    const filter: Prisma.CommunityChallengeParticipationWhereInput = {
+      challenge_id: params.challengeId,
+      ...(params.consent !== null
+        ? {
+            user: {
+              community_messages_sent: {
+                some: {
+                  workspace_id: params.consent.workspaceId,
+                  plan_context_type: CHALLENGE_OPTIN_CONTEXT_TYPE,
+                  plan_context_id: params.challengeId,
+                  deleted_at: null,
+                },
+              },
+            },
+          }
+        : {}),
+    };
+
+    let cursorClause: { cursor: { id: string }; skip: 1 } | null = null;
+    if (params.cursor) {
+      const anchor =
+        await this.prisma.communityChallengeParticipation.findFirst({
+          where: { ...filter, id: params.cursor },
+          select: { id: true },
+        });
+      if (anchor) {
+        cursorClause = { cursor: { id: anchor.id }, skip: 1 };
+      }
+    }
+
+    const rows = await this.prisma.communityChallengeParticipation.findMany({
+      where: filter,
+      orderBy: [
+        { progress_value: 'desc' },
+        { last_logged_at: 'asc' },
+        { id: 'asc' },
+      ],
+      take: limit + 1,
+      ...(cursorClause ?? {}),
     });
+    return this.paginate(rows, limit);
   }
 
   // ── Leaderboard opt-in (CommunityMessage sentinel) ──────────────────────────
@@ -325,19 +500,6 @@ export class CommunityChallengesRepository {
     }
   }
 
-  /** Set of user ids who have personally opted into a challenge's leaderboard. */
-  async listOptedInUserIds(challengeId: string): Promise<Set<string>> {
-    const rows = await this.prisma.communityMessage.findMany({
-      where: {
-        plan_context_type: CHALLENGE_OPTIN_CONTEXT_TYPE,
-        plan_context_id: challengeId,
-        deleted_at: null,
-      },
-      select: { sender_id: true },
-    });
-    return new Set(rows.map((r) => r.sender_id));
-  }
-
   // ── Comments (CommunityMessage with challenge discriminator) ────────────────
 
   async createComment(params: {
@@ -362,15 +524,62 @@ export class CommunityChallengesRepository {
     });
   }
 
-  async listComments(challengeId: string): Promise<CommunityMessage[]> {
-    return this.prisma.communityMessage.findMany({
+  /**
+   * Cursor-paginated challenge comments (D-040). community_messages has a
+   * COMPOSITE primary key [id, created_at] (range partitioning), so Prisma's
+   * `cursor` cannot key on the bare id: it needs the `id_created_at` compound
+   * selector. The public cursor token is just the comment id, so when a cursor
+   * is supplied we first resolve that row's created_at INSIDE the same comment
+   * scope (the challenge's non-deleted comment discriminator) and use it to
+   * build the compound cursor. A cursor that no longer resolves within that
+   * scope — a deleted comment, a foreign id, or a community_message with a
+   * different plan_context_type/plan_context_id — yields the FIRST page rather
+   * than throwing, so a stale client cursor degrades gracefully instead of
+   * erroring. Fetches `limit + 1` to derive nextCursor the same way as the
+   * other reads.
+   */
+  async listComments(params: {
+    challengeId: string;
+    limit?: number;
+    cursor?: string;
+  }): Promise<Page<CommunityMessage>> {
+    const limit = clampLimit(params.limit);
+
+    let cursorClause: {
+      cursor: Prisma.CommunityMessageWhereUniqueInput;
+      skip: number;
+    } | null = null;
+    if (params.cursor) {
+      const anchor = await this.prisma.communityMessage.findFirst({
+        where: {
+          id: params.cursor,
+          plan_context_type: CHALLENGE_COMMENT_CONTEXT_TYPE,
+          plan_context_id: params.challengeId,
+          deleted_at: null,
+        },
+        select: { id: true, created_at: true },
+      });
+      if (anchor) {
+        cursorClause = {
+          cursor: {
+            id_created_at: { id: anchor.id, created_at: anchor.created_at },
+          },
+          skip: 1,
+        };
+      }
+    }
+
+    const rows = await this.prisma.communityMessage.findMany({
       where: {
         plan_context_type: CHALLENGE_COMMENT_CONTEXT_TYPE,
-        plan_context_id: challengeId,
+        plan_context_id: params.challengeId,
         deleted_at: null,
       },
-      orderBy: { created_at: 'asc' },
+      orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+      take: limit + 1,
+      ...(cursorClause ?? {}),
     });
+    return this.paginate(rows, limit);
   }
 
   /**

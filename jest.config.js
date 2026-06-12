@@ -14,7 +14,18 @@ module.exports = {
   // ack-signal specs colocated under src/community/ack/*.spec.ts are discovered
   // (the builder brief owns those spec files in the source tree). As with
   // src/roman/voice, the root is intentionally NOT the whole `src/` tree.
-  roots: ['<rootDir>/test', '<rootDir>/src/roman/voice', '<rootDir>/src/community/ack'],
+  // v3-1 adds `src/community/challenges` as a FOURTH narrowly-scoped root so the
+  // pagination-enforcement specs colocated under
+  // src/community/challenges/__tests__/*.spec.ts (D-040) are discovered. Same
+  // rationale: the slice owns those spec files in the source tree, and the root
+  // is intentionally NOT the whole `src/` tree (unrelated src-colocated specs
+  // were never part of this default suite).
+  roots: [
+    '<rootDir>/test',
+    '<rootDir>/src/roman/voice',
+    '<rootDir>/src/community/ack',
+    '<rootDir>/src/community/challenges',
+  ],
   testRegex: '\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'mjs', 'json'],
   transform: {

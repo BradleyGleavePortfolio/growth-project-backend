@@ -37,6 +37,7 @@ type AccessMock = {
   isWorkspaceCoach: jest.Mock;
   canAccessWorkspace: jest.Mock;
   canAccessCohort: jest.Mock;
+  listAccessibleCohortIds: jest.Mock;
 };
 type RepoMock = {
   createChallenge: jest.Mock;
@@ -52,7 +53,6 @@ type RepoMock = {
   findOptIn: jest.Mock;
   setOptIn: jest.Mock;
   clearOptIn: jest.Mock;
-  listOptedInUserIds: jest.Mock;
   createComment: jest.Mock;
   listComments: jest.Mock;
   findCommentById: jest.Mock;
@@ -72,7 +72,6 @@ const MEMBER_ID = '66666666-6666-6666-6666-666666666666';
 const STRANGER_ID = '77777777-7777-7777-7777-777777777777';
 const OWNER_ID = '88888888-8888-8888-8888-888888888888';
 const PEER_ID = '99999999-9999-9999-9999-999999999999';
-const LURKER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const PART_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const MSG_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
@@ -141,6 +140,7 @@ describe('CommunityChallengesService', () => {
       isWorkspaceCoach: jest.fn(),
       canAccessWorkspace: jest.fn(),
       canAccessCohort: jest.fn(),
+      listAccessibleCohortIds: jest.fn().mockResolvedValue([]),
     };
     repo = {
       createChallenge: jest.fn(),
@@ -156,7 +156,6 @@ describe('CommunityChallengesService', () => {
       findOptIn: jest.fn(),
       setOptIn: jest.fn(),
       clearOptIn: jest.fn(),
-      listOptedInUserIds: jest.fn(),
       createComment: jest.fn(),
       listComments: jest.fn(),
       findCommentById: jest.fn(),
@@ -434,19 +433,31 @@ describe('CommunityChallengesService', () => {
       );
       access.canAccessWorkspace.mockResolvedValue(true);
       repo.findOptIn.mockResolvedValue(optInRow());
-      repo.listOptedInUserIds.mockResolvedValue(new Set([MEMBER_ID, PEER_ID]));
-      repo.listParticipationsByProgress.mockResolvedValue([
-        participation({ user_id: PEER_ID, progress_value: new Prisma.Decimal(90) }),
-        participation({ user_id: MEMBER_ID, progress_value: new Prisma.Decimal(40) }),
-        // A non-consenting participant — must NOT appear.
-        participation({ user_id: LURKER_ID, progress_value: new Prisma.Decimal(99) }),
-      ]);
+      // B-PAG-1 R4: the consent predicate is pushed INTO the repository as a
+      // bounded DB-side EXISTS, so the page (and its next_cursor) only ever
+      // contains opted-in participants — the service no longer post-filters NOR
+      // pre-loads the opt-in id set. The repo mock returns the already-consent-
+      // scoped page.
+      repo.listParticipationsByProgress.mockResolvedValue({
+        items: [
+          participation({ user_id: PEER_ID, progress_value: new Prisma.Decimal(90) }),
+          participation({ user_id: MEMBER_ID, progress_value: new Prisma.Decimal(40) }),
+        ],
+        nextCursor: null,
+      });
 
       const res = await service.getLeaderboard(member, CH_A);
       expect(res.available).toBe(true);
       expect(res.rows.map((r) => r.user_id)).toEqual([PEER_ID, MEMBER_ID]);
       expect(res.rows[0].rank).toBe(1);
       expect(res.rows[1].is_self).toBe(true);
+      // The service forwards the challenge's workspace as the consent scope so
+      // the repository enforces consent DB-side on the page + cursor anchor; it
+      // does NOT pre-load an opt-in id set. A non-consenting user can never be
+      // returned NOR become a public cursor token (Failure #5 IDOR / #21 / #23).
+      const call = repo.listParticipationsByProgress.mock.calls[0][0];
+      expect(call.challengeId).toBe(CH_A);
+      expect(call.consent).toEqual({ workspaceId: WS_A });
     });
   });
 

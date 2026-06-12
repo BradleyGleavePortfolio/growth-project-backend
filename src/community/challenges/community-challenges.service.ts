@@ -325,7 +325,7 @@ export class CommunityChallengesService {
   async list(
     user: User,
     workspaceId: string,
-    query: { cohort_id?: string; status?: string },
+    query: { cohort_id?: string; status?: string; limit?: number; cursor?: string },
   ): Promise<ChallengeListResponse> {
     const workspace = await this.access.findWorkspace(workspaceId);
     if (!workspace || !(await this.access.canAccessWorkspace(workspaceId, user))) {
@@ -350,29 +350,30 @@ export class CommunityChallengesService {
       cohortFilter = cohort.id;
     }
 
+    // READ-visibility is pushed INTO the repository query (B-PAG-1 R3) so the
+    // page, its cursor anchor, and the overflow row that becomes next_cursor all
+    // share one predicate. A coach/owner sees the whole workspace
+    // (visibleCohortIds: null); a member sees workspace-wide rows plus exactly
+    // the cohorts they actively belong to. This replaces the prior
+    // paginate-then-post-filter, which could hand a member a next_cursor (or
+    // accept a submitted cursor) pointing at a hidden cohort challenge.
+    const visibleCohortIds = isCoach
+      ? null
+      : await this.access.listAccessibleCohortIds(workspaceId, user.id);
+
     const status = this.parseStatus(query.status);
-    const rows = await this.repo.listChallenges({
+    const page = await this.repo.listChallenges({
       workspaceId,
       cohortId: cohortFilter,
       status,
+      visibleCohortIds,
+      limit: query.limit,
+      cursor: query.cursor,
     });
 
-    // Visibility filter for non-coaches: drop cohort-scoped challenges the
-    // caller is not an active member of. Coaches see everything in their ws.
-    const visible: CommunityChallenge[] = [];
-    for (const c of rows) {
-      if (isCoach || c.cohort_id === null) {
-        visible.push(c);
-        continue;
-      }
-      const cohort = await this.access.findCohort(c.cohort_id);
-      if (cohort && (await this.access.canAccessCohort(cohort, user))) {
-        visible.push(c);
-      }
-    }
-
     return ChallengeListResponseSchema.parse({
-      challenges: visible.map((c) => this.challengeView(c)),
+      challenges: page.items.map((c) => this.challengeView(c)),
+      next_cursor: page.nextCursor,
     });
   }
 
@@ -546,6 +547,7 @@ export class CommunityChallengesService {
   async getLeaderboard(
     user: User,
     challengeId: string,
+    query: { limit?: number; cursor?: string } = {},
   ): Promise<LeaderboardResponse> {
     const challenge = await this.readableChallenge(user, challengeId);
     const selfOptedIn =
@@ -556,29 +558,38 @@ export class CommunityChallengesService {
         available: false,
         opted_in: selfOptedIn,
         rows: [],
+        // An unavailable board exposes no rows, so it can never hand back a
+        // cursor an opted-out caller could replay.
+        next_cursor: null,
       });
     }
 
-    const optedInIds = await this.repo.listOptedInUserIds(challengeId);
-    const participations = await this.repo.listParticipationsByProgress(
+    // Consent is pushed INTO the repository query as a bounded DB-side relation
+    // predicate (B-PAG-1 R4): the page, its cursor anchor, and the overflow row
+    // that becomes next_cursor are all restricted to opted-in participants via
+    // an EXISTS over each participant's own opt-in sentinel, so a non-consenting
+    // participation can never be returned NOR become a public cursor token. This
+    // replaces both the prior paginate-then-post-filter AND the prior unbounded
+    // pre-load of the full opt-in id set — only the bounded limit+1 page is read.
+    const page = await this.repo.listParticipationsByProgress({
       challengeId,
-    );
-    const rows: LeaderboardRowView[] = [];
-    let rank = 0;
-    for (const p of participations) {
-      if (!optedInIds.has(p.user_id)) continue;
-      rank += 1;
-      rows.push({
-        user_id: p.user_id,
-        rank,
-        progress_value: p.progress_value.toNumber(),
-        is_self: p.user_id === user.id,
-      });
-    }
+      consent: { workspaceId: challenge.workspace_id },
+      limit: query.limit,
+      cursor: query.cursor,
+    });
+    // Every returned row is already opted in, so ranks are simply page-local
+    // (1-based within the returned page).
+    const rows: LeaderboardRowView[] = page.items.map((p, i) => ({
+      user_id: p.user_id,
+      rank: i + 1,
+      progress_value: p.progress_value.toNumber(),
+      is_self: p.user_id === user.id,
+    }));
     return LeaderboardResponseSchema.parse({
       available: true,
       opted_in: true,
       rows,
+      next_cursor: page.nextCursor,
     });
   }
 
@@ -605,11 +616,17 @@ export class CommunityChallengesService {
   async listComments(
     user: User,
     challengeId: string,
+    query: { limit?: number; cursor?: string } = {},
   ): Promise<ChallengeCommentListResponse> {
     await this.readableChallenge(user, challengeId);
-    const rows = await this.repo.listComments(challengeId);
+    const page = await this.repo.listComments({
+      challengeId,
+      limit: query.limit,
+      cursor: query.cursor,
+    });
     return ChallengeCommentListResponseSchema.parse({
-      comments: rows.map((m) => this.commentView(m)),
+      comments: page.items.map((m) => this.commentView(m)),
+      next_cursor: page.nextCursor,
     });
   }
 
