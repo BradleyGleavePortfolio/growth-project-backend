@@ -11,10 +11,7 @@ import { CommunityRealtimeService } from '../realtime/community-realtime.service
 import {
   COMMUNITY_BROADCAST_EVENTS,
 } from '../community-events';
-import {
-  COMMENT_CONTEXT_TYPE,
-  CommunityMessagesRepository,
-} from './community-messages.repository';
+import { CommunityMessagesRepository } from './community-messages.repository';
 import {
   PlanContextService,
   planTagsEnabled,
@@ -242,11 +239,16 @@ export class CommunityMessagesService {
     messageId: string,
   ): Promise<CommunityMessageResponse> {
     const m = await this.repo.findById(messageId);
+    // Cross-surface containment: the cohort chat surface only owns plain
+    // messages (plan_context_type === null). Any row carrying a non-null
+    // discriminator is a sub-surface row — a post comment (v2-2) or a v3-1
+    // challenge comment / leaderboard opt-in sentinel — and MUST be invisible
+    // here so it can't be read/edited/deleted through the message endpoints.
     if (
       !m ||
       m.scope !== 'cohort' ||
       !m.cohort_id ||
-      m.plan_context_type === COMMENT_CONTEXT_TYPE
+      m.plan_context_type !== null
     ) {
       throw new NotFoundException(NOT_FOUND);
     }
@@ -263,12 +265,14 @@ export class CommunityMessagesService {
     body: string,
   ): Promise<CommunityMessageResponse> {
     const m = await this.repo.findById(messageId);
+    // See getOne: any non-null plan_context_type row is a sub-surface row and
+    // is not editable through the cohort chat message endpoint.
     if (
       !m ||
       m.scope !== 'cohort' ||
       !m.cohort_id ||
       m.deleted_at ||
-      m.plan_context_type === COMMENT_CONTEXT_TYPE
+      m.plan_context_type !== null
     ) {
       throw new NotFoundException(NOT_FOUND);
     }
@@ -311,11 +315,13 @@ export class CommunityMessagesService {
     messageId: string,
   ): Promise<CommunityMessageResponse> {
     const m = await this.repo.findById(messageId);
+    // See getOne: any non-null plan_context_type row is a sub-surface row and
+    // is not deletable through the cohort chat message endpoint.
     if (
       !m ||
       m.scope !== 'cohort' ||
       !m.cohort_id ||
-      m.plan_context_type === COMMENT_CONTEXT_TYPE
+      m.plan_context_type !== null
     ) {
       throw new NotFoundException(NOT_FOUND);
     }

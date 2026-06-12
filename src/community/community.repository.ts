@@ -224,6 +224,11 @@ export class CommunityRepository {
         cohort_id: { in: params.cohortIds },
         sender_id: { not: params.userId },
         deleted_at: null,
+        // Cross-surface containment: only plain cohort chat messages
+        // (plan_context_type === null) count toward unread. Sub-surface rows
+        // — post comments and v3-1 challenge comments / opt-in sentinels — carry
+        // a non-null discriminator and must never inflate the unread badge.
+        plan_context_type: null,
         ...(params.since ? { created_at: { gt: params.since } } : {}),
       },
     });
