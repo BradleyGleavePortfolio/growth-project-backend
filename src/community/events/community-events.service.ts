@@ -569,6 +569,14 @@ export class CommunityEventsService {
    * semantics). Rejection is the route's typed ineligible-write 403 with an
    * RSVP-specific code — non-leaking, since the caller already resolved the
    * event through readableEvent.
+   *
+   * A global user role of student is necessary but NOT sufficient: the rule is
+   * about the caller's COMMUNITY MEMBERSHIP role for the event's scope. We
+   * resolve that membership and require it to be an active student row, so a
+   * global student who is actually an assistant / co_coach member is excluded
+   * (they would otherwise pollute attendee counts the same way a coach would).
+   * Cohort-scoped events resolve the cohort membership; workspace-wide events
+   * resolve the caller's active workspace membership.
    */
   private async assertRsvpEligible(
     event: CommunityEvent,
@@ -579,7 +587,14 @@ export class CommunityEventsService {
       event.workspace_id,
       user.id,
     );
-    if (privilegedRole || owningCoach) {
+    const membership = event.cohort_id
+      ? await this.access.membershipInCohort(event.cohort_id, user.id)
+      : await this.access.membershipInWorkspace(event.workspace_id, user.id);
+    const activeStudentMember =
+      membership !== null &&
+      membership.status === 'active' &&
+      membership.role === 'student';
+    if (privilegedRole || owningCoach || !activeStudentMember) {
       throw new ForbiddenException({
         error: 'forbidden',
         code: 'community.event.rsvp_not_eligible',

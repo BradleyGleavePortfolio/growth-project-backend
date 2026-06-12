@@ -79,6 +79,19 @@ function makeService() {
     isWorkspaceCoach: jest.fn(
       async (_id: string, userId: string) => userId === coach.id,
     ),
+    // Membership-role resolvers used by RSVP eligibility (F1). By default a
+    // non-coach caller resolves to an active STUDENT membership so the happy
+    // path RSVPs; tests override these to model an assistant / co_coach row.
+    membershipInWorkspace: jest.fn(async (_id: string, userId: string) =>
+      userId === coach.id
+        ? null
+        : { role: 'student', status: 'active', user_id: userId },
+    ),
+    membershipInCohort: jest.fn(async (_id: string, userId: string) =>
+      userId === coach.id
+        ? null
+        : { role: 'student', status: 'active', user_id: userId },
+    ),
   };
 
   const repo = {
@@ -441,6 +454,49 @@ describe('CommunityEventsService (v2-3)', () => {
       const { service, store } = makeService();
       // ends_at far in the future → still open.
       store[EVT].ends_at = new Date('2030-01-01T00:00:00.000Z');
+      const res = await service.rsvp(client as never, EVT, 'going');
+      expect(res.rsvp.status).toBe('going');
+    });
+
+    it('rejects an active co_coach (assistant) member on a workspace-wide event', async () => {
+      const { service, access } = makeService();
+      // Global role student but the workspace membership is an assistant
+      // (API co_coach) row — must NOT be allowed to pollute attendee counts.
+      access.membershipInWorkspace.mockResolvedValue({
+        role: 'assistant',
+        status: 'active',
+        user_id: client.id,
+      } as never);
+      await expect(
+        service.rsvp(client as never, EVT, 'going'),
+      ).rejects.toMatchObject({
+        response: { code: 'community.event.rsvp_not_eligible' },
+      });
+    });
+
+    it('rejects an active co_coach (assistant) member on a cohort-scoped event', async () => {
+      const COHORT = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+      const { service, access, store } = makeService();
+      store[EVT].cohort_id = COHORT;
+      access.membershipInCohort.mockResolvedValue({
+        role: 'assistant',
+        status: 'active',
+        user_id: client.id,
+      } as never);
+      await expect(
+        service.rsvp(client as never, EVT, 'going'),
+      ).rejects.toMatchObject({
+        response: { code: 'community.event.rsvp_not_eligible' },
+      });
+      // Eligibility resolved the COHORT membership, not the workspace one.
+      expect(access.membershipInCohort).toHaveBeenCalledWith(COHORT, client.id);
+    });
+
+    it('allows an active student member on a cohort-scoped event (happy path)', async () => {
+      const COHORT = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+      const { service, store } = makeService();
+      store[EVT].cohort_id = COHORT;
+      // Default cohort membership mock returns an active student row.
       const res = await service.rsvp(client as never, EVT, 'going');
       expect(res.rsvp.status).toBe('going');
     });
