@@ -1,10 +1,12 @@
 import {
   IsBoolean,
+  IsInt,
   IsISO8601,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
   MinLength,
@@ -14,6 +16,34 @@ import { z } from 'zod';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
+
+/**
+ * Defensive page size for every paginated challenge read (D-040). The mobile
+ * client (Mobile #235) already sends `{ limit: 20 }`, but the backend
+ * repositories read unbounded until this slice; the DTO is the authoritative
+ * clamp so a hand-crafted request (or an older client) can never ask the
+ * database for an unbounded result set.
+ */
+export const PAGINATION_DEFAULT_LIMIT = 20;
+export const PAGINATION_MAX_LIMIT = 50;
+
+/**
+ * Coerce an inbound query-string `limit` to an integer. Query params arrive as
+ * strings, so a bare `@IsInt()` would reject the valid `?limit=20`; this parses
+ * the string to a number and leaves it untouched (so @IsInt/@Min/@Max can
+ * reject `abc`, `1.5`, `0`, `99`). A missing value stays undefined so the
+ * `?? PAGINATION_DEFAULT_LIMIT` default applies downstream.
+ */
+const toIntLimit = ({ value }: { value: unknown }): unknown => {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!/^-?\d+$/.test(trimmed)) return value; // let @IsInt reject non-integers
+    return Number(trimmed);
+  }
+  return value;
+};
 
 // ── Request DTOs ────────────────────────────────────────────────────────────
 
@@ -149,7 +179,30 @@ export class CreateChallengeCommentDto {
   body!: string;
 }
 
-export class ListChallengesQueryDto {
+/**
+ * Cursor/limit page controls shared by every paginated challenge read (D-040).
+ * `limit` is clamped to 1..50 with a default of 20; `cursor` is the opaque id
+ * of the last item from the previous page (the `next_cursor` returned by this
+ * API). Both arrive as query-string values, so `limit` is coerced from its
+ * string form before integer validation.
+ */
+export class PaginationQueryDto {
+  @IsOptional()
+  @Transform(toIntLimit)
+  @IsInt({ message: 'limit must be an integer' })
+  @Min(1, { message: 'limit must be at least 1' })
+  @Max(PAGINATION_MAX_LIMIT, {
+    message: `limit must be ${PAGINATION_MAX_LIMIT} or fewer`,
+  })
+  limit?: number;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsUUID('4', { message: 'cursor must be a valid id' })
+  cursor?: string;
+}
+
+export class ListChallengesQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsUUID('4')
   cohort_id?: string;
@@ -214,8 +267,19 @@ export const ChallengeResponseSchema = z
   .strict();
 export type ChallengeResponse = z.infer<typeof ChallengeResponseSchema>;
 
+/**
+ * Paginated challenge list (D-040). `challenges` is the page; `next_cursor` is
+ * the id to pass back as `cursor` for the following page, or null when this is
+ * the last page. The `{ items, next_cursor }` contract is mirrored across every
+ * paginated challenge read (leaderboard rows + comments below) — here the page
+ * array keeps its domain name `challenges` for backward compatibility with the
+ * shape shipped in #390.
+ */
 export const ChallengeListResponseSchema = z
-  .object({ challenges: z.array(ChallengeSchema) })
+  .object({
+    challenges: z.array(ChallengeSchema),
+    next_cursor: z.string().uuid().nullable(),
+  })
   .strict();
 export type ChallengeListResponse = z.infer<typeof ChallengeListResponseSchema>;
 
@@ -249,6 +313,12 @@ export const LeaderboardResponseSchema = z
     available: z.boolean(),
     opted_in: z.boolean(),
     rows: z.array(LeaderboardRowSchema),
+    /**
+     * Page cursor for the ranked rows (D-040): the user_id of the last row when
+     * a further page exists, else null. Null whenever the board is unavailable
+     * (rows are empty), so an opted-out caller never receives a cursor.
+     */
+    next_cursor: z.string().uuid().nullable(),
   })
   .strict();
 export type LeaderboardResponse = z.infer<typeof LeaderboardResponseSchema>;
@@ -272,7 +342,11 @@ export type ChallengeCommentResponse = z.infer<
 >;
 
 export const ChallengeCommentListResponseSchema = z
-  .object({ comments: z.array(ChallengeCommentSchema) })
+  .object({
+    comments: z.array(ChallengeCommentSchema),
+    /** Page cursor (D-040): id of the last comment when more remain, else null. */
+    next_cursor: z.string().uuid().nullable(),
+  })
   .strict();
 export type ChallengeCommentListResponse = z.infer<
   typeof ChallengeCommentListResponseSchema

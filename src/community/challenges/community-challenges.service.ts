@@ -325,7 +325,7 @@ export class CommunityChallengesService {
   async list(
     user: User,
     workspaceId: string,
-    query: { cohort_id?: string; status?: string },
+    query: { cohort_id?: string; status?: string; limit?: number; cursor?: string },
   ): Promise<ChallengeListResponse> {
     const workspace = await this.access.findWorkspace(workspaceId);
     if (!workspace || !(await this.access.canAccessWorkspace(workspaceId, user))) {
@@ -351,16 +351,23 @@ export class CommunityChallengesService {
     }
 
     const status = this.parseStatus(query.status);
-    const rows = await this.repo.listChallenges({
+    const page = await this.repo.listChallenges({
       workspaceId,
       cohortId: cohortFilter,
       status,
+      limit: query.limit,
+      cursor: query.cursor,
     });
 
     // Visibility filter for non-coaches: drop cohort-scoped challenges the
     // caller is not an active member of. Coaches see everything in their ws.
+    // The cursor is derived from the REPOSITORY page boundary (page.nextCursor),
+    // NOT from the post-filter slice: the next page must resume after the last
+    // row the DB returned, otherwise a page that is fully filtered out for this
+    // caller would wrongly look like the end of the list and silently strand
+    // the challenges that follow it.
     const visible: CommunityChallenge[] = [];
-    for (const c of rows) {
+    for (const c of page.items) {
       if (isCoach || c.cohort_id === null) {
         visible.push(c);
         continue;
@@ -373,6 +380,7 @@ export class CommunityChallengesService {
 
     return ChallengeListResponseSchema.parse({
       challenges: visible.map((c) => this.challengeView(c)),
+      next_cursor: page.nextCursor,
     });
   }
 
@@ -546,6 +554,7 @@ export class CommunityChallengesService {
   async getLeaderboard(
     user: User,
     challengeId: string,
+    query: { limit?: number; cursor?: string } = {},
   ): Promise<LeaderboardResponse> {
     const challenge = await this.readableChallenge(user, challengeId);
     const selfOptedIn =
@@ -556,16 +565,27 @@ export class CommunityChallengesService {
         available: false,
         opted_in: selfOptedIn,
         rows: [],
+        // An unavailable board exposes no rows, so it can never hand back a
+        // cursor an opted-out caller could replay.
+        next_cursor: null,
       });
     }
 
     const optedInIds = await this.repo.listOptedInUserIds(challengeId);
-    const participations = await this.repo.listParticipationsByProgress(
+    const page = await this.repo.listParticipationsByProgress({
       challengeId,
-    );
+      limit: query.limit,
+      cursor: query.cursor,
+    });
+    // Ranks are page-local (1-based within the returned page): the cursor walks
+    // the participation ordering and the opt-in filter only hides
+    // non-consenting rows within the page. next_cursor comes from the
+    // REPOSITORY page boundary (the last participation the DB returned, opted
+    // in or not), so the following page resumes at the correct row even when
+    // the tail of this page was entirely non-consenting.
     const rows: LeaderboardRowView[] = [];
     let rank = 0;
-    for (const p of participations) {
+    for (const p of page.items) {
       if (!optedInIds.has(p.user_id)) continue;
       rank += 1;
       rows.push({
@@ -579,6 +599,7 @@ export class CommunityChallengesService {
       available: true,
       opted_in: true,
       rows,
+      next_cursor: page.nextCursor,
     });
   }
 
@@ -605,11 +626,17 @@ export class CommunityChallengesService {
   async listComments(
     user: User,
     challengeId: string,
+    query: { limit?: number; cursor?: string } = {},
   ): Promise<ChallengeCommentListResponse> {
     await this.readableChallenge(user, challengeId);
-    const rows = await this.repo.listComments(challengeId);
+    const page = await this.repo.listComments({
+      challengeId,
+      limit: query.limit,
+      cursor: query.cursor,
+    });
     return ChallengeCommentListResponseSchema.parse({
-      comments: rows.map((m) => this.commentView(m)),
+      comments: page.items.map((m) => this.commentView(m)),
+      next_cursor: page.nextCursor,
     });
   }
 

@@ -435,12 +435,17 @@ describe('CommunityChallengesService', () => {
       access.canAccessWorkspace.mockResolvedValue(true);
       repo.findOptIn.mockResolvedValue(optInRow());
       repo.listOptedInUserIds.mockResolvedValue(new Set([MEMBER_ID, PEER_ID]));
-      repo.listParticipationsByProgress.mockResolvedValue([
-        participation({ user_id: PEER_ID, progress_value: new Prisma.Decimal(90) }),
-        participation({ user_id: MEMBER_ID, progress_value: new Prisma.Decimal(40) }),
-        // A non-consenting participant — must NOT appear.
-        participation({ user_id: LURKER_ID, progress_value: new Prisma.Decimal(99) }),
-      ]);
+      // v3-1 (D-040): listParticipationsByProgress now returns a paginated
+      // { items, nextCursor } page rather than a bare array.
+      repo.listParticipationsByProgress.mockResolvedValue({
+        items: [
+          participation({ user_id: PEER_ID, progress_value: new Prisma.Decimal(90) }),
+          participation({ user_id: MEMBER_ID, progress_value: new Prisma.Decimal(40) }),
+          // A non-consenting participant — must NOT appear.
+          participation({ user_id: LURKER_ID, progress_value: new Prisma.Decimal(99) }),
+        ],
+        nextCursor: null,
+      });
 
       const res = await service.getLeaderboard(member, CH_A);
       expect(res.available).toBe(true);
