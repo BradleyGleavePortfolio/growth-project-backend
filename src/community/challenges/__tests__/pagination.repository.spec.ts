@@ -116,6 +116,25 @@ function makePrisma() {
   let participationRows: CommunityChallengeParticipation[] = [];
   let commentRows: CommunityMessage[] = [];
   let commentFindFirst: CommunityMessage | null = null;
+  // Scoped cursor-anchor resolvers. The repository now resolves the public
+  // cursor INSIDE the same scope via findFirst before passing it to Prisma, so
+  // the double models that lookup as a function of the args it receives. By
+  // default the anchor resolves to a stub `{ id }` (cursor valid in scope);
+  // tests that exercise stale/foreign/deleted cursors override the resolver to
+  // return null (anchor not in scope → degrade to page 1).
+  let challengeFindFirst: (
+    args: Record<string, unknown>,
+  ) => { id: string } | null = (args) => ({
+    id: ((args.where as { id?: string }).id ?? '') as string,
+  });
+  let participationFindFirst: (
+    args: Record<string, unknown>,
+  ) => { id: string } | null = (args) => ({
+    id: ((args.where as { id?: string }).id ?? '') as string,
+  });
+  const challengeFindFirstArgs: Record<string, unknown>[] = [];
+  const participationFindFirstArgs: Record<string, unknown>[] = [];
+  const commentFindFirstArgs: Record<string, unknown>[] = [];
   const optInFindManyArgs: Record<string, unknown>[] = [];
 
   const prisma = {
@@ -124,11 +143,19 @@ function makePrisma() {
         calls.push({ model: 'communityChallenge', args });
         return challengeRows;
       }),
+      findFirst: jest.fn(async (args: Record<string, unknown>) => {
+        challengeFindFirstArgs.push(args);
+        return challengeFindFirst(args);
+      }),
     },
     communityChallengeParticipation: {
       findMany: jest.fn(async (args: Record<string, unknown>) => {
         calls.push({ model: 'communityChallengeParticipation', args });
         return participationRows;
+      }),
+      findFirst: jest.fn(async (args: Record<string, unknown>) => {
+        participationFindFirstArgs.push(args);
+        return participationFindFirst(args);
       }),
     },
     communityMessage: {
@@ -144,7 +171,10 @@ function makePrisma() {
         calls.push({ model: 'communityMessage', args });
         return commentRows;
       }),
-      findFirst: jest.fn(async () => commentFindFirst),
+      findFirst: jest.fn(async (args: Record<string, unknown>) => {
+        commentFindFirstArgs.push(args);
+        return commentFindFirst;
+      }),
     },
   };
 
@@ -152,12 +182,21 @@ function makePrisma() {
     repo: new CommunityChallengesRepository(prisma as never),
     calls,
     optInFindManyArgs,
+    challengeFindFirstArgs,
+    participationFindFirstArgs,
+    commentFindFirstArgs,
     setChallengeRows: (r: CommunityChallenge[]) => (challengeRows = r),
     setParticipationRows: (r: CommunityChallengeParticipation[]) =>
       (participationRows = r),
     setCommentRows: (r: CommunityMessage[]) => (commentRows = r),
     setCommentFindFirst: (r: CommunityMessage | null) =>
       (commentFindFirst = r),
+    setChallengeFindFirst: (
+      fn: (args: Record<string, unknown>) => { id: string } | null,
+    ) => (challengeFindFirst = fn),
+    setParticipationFindFirst: (
+      fn: (args: Record<string, unknown>) => { id: string } | null,
+    ) => (participationFindFirst = fn),
     prisma,
   };
 }
