@@ -245,7 +245,12 @@ export class CommunityChallengesController {
   }
 
   @Post('challenges/:challengeId/comments/:commentId/report')
-  @UseGuards(JwtAuthGuard, RolesGuard, CommunityFeatureFlagGuard)
+  @UseGuards(
+    JwtAuthGuard,
+    RolesGuard,
+    CommunityFeatureFlagGuard,
+    CommunityChallengesEnabledGuard,
+  )
   @Roles('student', 'coach', 'owner')
   @Throttle({
     default: { ttl: 300_000, limit: THROTTLER_ROUTE_LIMITS.COMMUNITY_REPORTS_PER_5MIN },

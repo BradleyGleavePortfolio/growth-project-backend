@@ -469,6 +469,23 @@ export class CommunityChallengesService {
     // self-directed closure event, never a comparison against others. Emitted
     // ONLY when the atomic statement actually flipped completed_at from null,
     // so concurrent target-reaching writes yield exactly one milestone push.
+    //
+    // Delivery semantics are deliberately AT-MOST-ONCE, not exactly-once. The
+    // completion claim (repository: conditional UPDATE that flips completed_at)
+    // and this push are separate, non-transactional steps: completed_at is
+    // already committed before we get here, and the push is fire-and-forget
+    // (void). If the process dies after the claim commits but before this call
+    // is dispatched, the milestone is simply not delivered and is never
+    // retried, because this slice intentionally carries no durable notification
+    // outbox. That loss is accepted here: the milestone is a non-critical,
+    // self-directed celebration with no downstream state or money attached, the
+    // participant still sees completion via their own REST row, and adding an
+    // outbox would be scope creep for a best-effort signal (matches the
+    // campaign's documented best-effort reminder convention). A future durable
+    // path would persist a notification-intent row inside the completion claim
+    // transaction and drain it idempotently keyed by
+    // (kind, recipientId, targetType, targetId). See the PR "Declared
+    // deviations" entry for the full rationale.
     if (completionTransitioned) {
       void this.communityPush.sendCommunityPush({
         recipientId: user.id,
