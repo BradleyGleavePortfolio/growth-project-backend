@@ -311,17 +311,22 @@ export class AiTriageService {
     };
   }
 
+  /**
+   * Resolve cohort ids to names in a SINGLE query (was an N+1 of per-cohort
+   * findCohort() calls — a cache miss can carry up to ~100 unique cohort ids
+   * across the message + post candidate windows). Dedupe here, then issue one
+   * batched findMany via the access service.
+   */
   private async resolveCohortNames(
     cohortIds: string[],
   ): Promise<Map<string, string>> {
     const unique = [...new Set(cohortIds)];
     const map = new Map<string, string>();
-    await Promise.all(
-      unique.map(async (id) => {
-        const cohort = await this.access.findCohort(id);
-        if (cohort) map.set(id, cohort.name);
-      }),
-    );
+    if (unique.length === 0) return map;
+    const cohorts = await this.access.findCohortsByIds(unique);
+    for (const cohort of cohorts) {
+      map.set(cohort.id, cohort.name);
+    }
     return map;
   }
 

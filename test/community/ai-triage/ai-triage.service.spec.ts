@@ -45,9 +45,17 @@ interface Mocks {
     unansweredMessages: jest.Mock;
     unansweredPosts: jest.Mock;
   };
-  access: { findCohort: jest.Mock };
+  access: { findCohort: jest.Mock; findCohortsByIds: jest.Mock };
   gateway: { invoke: jest.Mock };
 }
+
+// Known cohort name table the batch resolver draws from. The mock returns ONLY
+// the rows whose id was requested, exactly like the real findMany({ id: { in }})
+// it stands in for.
+const COHORT_NAMES: Record<string, string> = {
+  [COHORT_A]: 'Spring Shred',
+  [COHORT_B]: 'Summer Cut',
+};
 
 function makeMocks(): Mocks {
   return {
@@ -58,6 +66,11 @@ function makeMocks(): Mocks {
     },
     access: {
       findCohort: jest.fn().mockResolvedValue({ id: COHORT_A, name: 'Spring Shred' }),
+      findCohortsByIds: jest.fn(async (ids: string[]) =>
+        ids
+          .filter((id) => id in COHORT_NAMES)
+          .map((id) => ({ id, name: COHORT_NAMES[id] })),
+      ),
     },
     gateway: { invoke: jest.fn() },
   };
@@ -526,6 +539,54 @@ describe('AiTriageService', () => {
       const out = await svc.generateForCoach(coach());
       // The smuggled draft_reply field fails .strict() on both attempts.
       expect(out.is_empty).toBe(true);
+    });
+  });
+
+  describe('cohort name resolution is batched (no N+1)', () => {
+    it('issues exactly ONE batched cohort lookup for many candidates spanning two cohorts', async () => {
+      const mocks = makeMocks();
+      // The caller coaches two cohorts; candidates span both. Pre-fix this path
+      // ran one findCohort() per unique cohort id (an N+1). Post-fix it must be
+      // a single findCohortsByIds() call carrying the de-duplicated id set.
+      mocks.repo.coachedCohortIds.mockResolvedValue([COHORT_A, COHORT_B]);
+      const now = new Date('2026-06-10T12:00:00Z');
+      mocks.repo.unansweredMessages.mockResolvedValue([
+        messageRow(MSG_1, COHORT_A, 'Question in cohort A.', now),
+        messageRow(MSG_2, COHORT_B, 'Question in cohort B.', now),
+      ]);
+      mocks.repo.unansweredPosts.mockResolvedValue([
+        postRow(POST_1, COHORT_A, 'Post in cohort A.', now),
+      ]);
+      mocks.gateway.invoke.mockResolvedValue(
+        gatewayReply(validModelJson({ msg: MSG_1, post: POST_1 })),
+      );
+      const svc = build(mocks);
+
+      await svc.generateForCoach(coach());
+
+      // EXACTLY ONE batched query, regardless of candidate count, and the
+      // per-id findCohort() N+1 path is never taken.
+      expect(mocks.access.findCohortsByIds).toHaveBeenCalledTimes(1);
+      expect(mocks.access.findCohort).not.toHaveBeenCalled();
+      // The single call carries the de-duplicated cohort id set (A appears on a
+      // message AND a post but is requested once).
+      const requested = (mocks.access.findCohortsByIds.mock.calls[0][0] as string[])
+        .slice()
+        .sort();
+      expect(requested).toEqual([COHORT_A, COHORT_B].slice().sort());
+    });
+
+    it('issues no cohort lookup at all when there are no candidates', async () => {
+      const mocks = makeMocks();
+      mocks.repo.unansweredMessages.mockResolvedValue([]);
+      mocks.repo.unansweredPosts.mockResolvedValue([]);
+      const svc = build(mocks);
+
+      await svc.generateForCoach(coach());
+
+      // Empty candidate set short-circuits before resolving cohort names.
+      expect(mocks.access.findCohortsByIds).not.toHaveBeenCalled();
+      expect(mocks.access.findCohort).not.toHaveBeenCalled();
     });
   });
 });
