@@ -19,6 +19,9 @@ import {
   PlanContextService,
   planTagsEnabled,
 } from '../plan-context/plan-context.service';
+import { acksEnabled } from '../ack/ack.feature';
+import { buildSlaSnapshot } from '../ack/sla';
+import type { MessageAckEnvelope } from '../dto/community-message.dto';
 import {
   PlanContextTag,
   PlanContextTagSchema,
@@ -74,6 +77,27 @@ export class CommunityMessagesService {
       edited: m.updated_at.getTime() - m.created_at.getTime() > 1000,
       deleted: m.deleted_at !== null,
       plan_context: this.viewPlanContext(m.plan_context_payload),
+      // v2-2: attach the coach ack envelope ONLY when FEATURE_COMMUNITY_ACKS is
+      // on. When off, the key is omitted entirely (spread of undefined adds no
+      // key) so the v1-6/v2-1 response shape is preserved byte-for-byte
+      // (kill-switch / back-compat invariant).
+      ...(acksEnabled() ? { ack: this.viewAck(m) } : {}),
+    };
+  }
+
+  /**
+   * v2-2: project the persisted coach_*_at columns into the optional ack
+   * envelope shown TO the client. The SLA state is derived at read time from
+   * the message receipt (created_at) vs the configured thresholds; the
+   * timestamps mirror the existing columns (null when un-stamped). Read-only —
+   * a read NEVER mutates ack state.
+   */
+  private viewAck(m: CommunityMessage): MessageAckEnvelope {
+    return {
+      seen_at: m.coach_seen_at ? m.coach_seen_at.toISOString() : null,
+      acked_at: m.coach_acked_at ? m.coach_acked_at.toISOString() : null,
+      replied_at: m.coach_replied_at ? m.coach_replied_at.toISOString() : null,
+      sla_state: buildSlaSnapshot({ receivedAt: m.created_at }).sla_state,
     };
   }
 

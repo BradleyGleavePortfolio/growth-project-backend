@@ -10,7 +10,11 @@ module.exports = {
   // (they predate this config and some need a live DB), so widening to all of
   // `src/` would silently pull unrelated, possibly-red suites into the
   // build-and-test lane. ts-jest transforms both roots identically.
-  roots: ['<rootDir>/test', '<rootDir>/src/roman/voice'],
+  // v2-2 adds `src/community/ack` as a THIRD narrowly-scoped root so the coach
+  // ack-signal specs colocated under src/community/ack/*.spec.ts are discovered
+  // (the builder brief owns those spec files in the source tree). As with
+  // src/roman/voice, the root is intentionally NOT the whole `src/` tree.
+  roots: ['<rootDir>/test', '<rootDir>/src/roman/voice', '<rootDir>/src/community/ack'],
   testRegex: '\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'mjs', 'json'],
   transform: {
