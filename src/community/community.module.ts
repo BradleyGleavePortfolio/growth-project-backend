@@ -52,6 +52,12 @@ import { PlanContextModule } from './plan-context/plan-context.module';
 // messages/inbox read surfaces to enrich responses with the ack envelope when
 // FEATURE_COMMUNITY_ACKS is on). Module exports AckService for that reuse.
 import { AckModule } from './ack/ack.module';
+// v2-3 event objects: five-state lifecycle, RSVP, coach CRUD, transition cron.
+import { CommunityEventsController } from './events/community-events.controller';
+import { CommunityEventsService } from './events/community-events.service';
+import { CommunityEventsRepository } from './events/community-events.repository';
+import { CommunityEventsScheduler } from './events/community-events.scheduler';
+import { CommunityEventsEnabledGuard } from './events/community-events-flag.guard';
 
 // PrismaService provided globally via PrismaModule.
 @Module({
@@ -74,6 +80,7 @@ import { AckModule } from './ack/ack.module';
     CommunityCoachInboxController,
     CommunityCoachEmptyStatesController,
     CommunityChallengesController,
+    CommunityEventsController,
   ],
   providers: [
     CommunityService,
@@ -103,6 +110,10 @@ import { AckModule } from './ack/ack.module';
     CommunityChallengesService,
     CommunityChallengesRepository,
     CommunityChallengesEnabledGuard,
+    CommunityEventsService,
+    CommunityEventsRepository,
+    CommunityEventsScheduler,
+    CommunityEventsEnabledGuard,
   ],
   exports: [],
 })
