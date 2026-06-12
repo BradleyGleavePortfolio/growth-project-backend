@@ -34,7 +34,16 @@ import { TriageCacheService } from './triage-cache.service';
   controllers: [AiTriageController],
   providers: [
     AiTriageService,
-    TriageCacheService,
+    // TriageCacheService's only constructor parameter is an injectable time
+    // source (`now: () => number`) that defaults to `() => Date.now()`. Nest's
+    // DI reads that parameter's design-time type as `Function` and, lacking an
+    // injection token, cannot resolve it from the container — which is what
+    // crashed AppModule compilation. The cache needs no container-supplied
+    // collaborators, so we register it through a factory that calls the
+    // zero-arg constructor (taking the production `Date.now` default). The unit
+    // tests still construct it directly with an injected clock for deterministic
+    // TTL assertions, so the class contract is unchanged.
+    { provide: TriageCacheService, useFactory: (): TriageCacheService => new TriageCacheService() },
     CommunityCoachInboxRepository,
     CommunityAccessService,
     AiTriageFeatureFlagGuard,
