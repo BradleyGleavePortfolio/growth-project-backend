@@ -104,7 +104,6 @@ After Phase 10 hardening: `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles('stud
 |---|---|---|---|
 | GET | /users/me/preferences | student+ | |
 | PATCH | /users/me/preferences | student+ | |
-| GET | /users/me/badges | student+ | Returns 410 Gone |
 | GET | /users/me/founding-number | student+ | |
 | GET | /users/me/circle-stats | student+ | |
 | POST | /users/me/data-export | student+ | |
