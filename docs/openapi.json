@@ -2509,30 +2509,6 @@
         ]
       }
     },
-    "/users/me/badges": {
-      "get": {
-        "description": "Earned badges include awardedAt; locked badges have awardedAt = null.",
-        "operationId": "UsersController_getBadges",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Badge list."
-          },
-          "401": {
-            "description": "Missing or invalid bearer token."
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List badges (earned + locked) for the caller",
-        "tags": [
-          "users"
-        ]
-      }
-    },
     "/users/me/founding-number": {
       "get": {
         "description": "Returns 1-indexed join rank, total user count, and whether the user is a Founding Member (rank ≤ 1000).",
