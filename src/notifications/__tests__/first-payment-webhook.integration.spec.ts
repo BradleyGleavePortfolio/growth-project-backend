@@ -156,9 +156,10 @@ describe('CheckoutWebhookHandlerService — first-payment seam (payment_intent.s
     // Calling handle without a tx means there is no transaction to ride; the
     // gate refuses to emit rather than write the ledger row outside a tx.
     // The handler's no-tx path reads this.prisma (empty stub) which has no
-    // clientPurchase delegate, so the event simply isn't claimed here — the
-    // important assertion is that the service is never invoked tx-less.
-    await handler.handle(piEvent()).catch(() => undefined);
+    // clientPurchase delegate, so resolving the purchase throws — we await
+    // that explicitly (NOT a silent swallow) and then assert the key
+    // invariant: the first-payment service is never invoked tx-less.
+    await expect(handler.handle(piEvent())).rejects.toBeDefined();
 
     expect(tryEmitFirstPayment).not.toHaveBeenCalled();
   });
