@@ -26,6 +26,7 @@ import { ClientAIContextService } from '../ai/client-ai-context.service';
 // other and (b) filter blocked senders out of list / unread responses.
 import { MessagesSafetyService } from '../messages-safety/messages-safety.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
+import { isCoachReviewedAtEnabled } from '../roman/coach-reviewed.feature';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -628,7 +629,67 @@ export class MessagingService {
       },
       data: { read_at: new Date() },
     });
+    // ED.6 — stamp the per-thread coach-review marker so the client
+    // CompetencePill can show "Your coach reviewed this thread {relative}.".
+    // Most-recent semantics: every coach read re-stamps coach_reviewed_at to
+    // now() (brief §Write paths). Keyed on the THREAD coach id (head coach for
+    // sub-coach threads) so a single marker tracks the conversation. GATED on
+    // FEATURE_ROMAN_COACH_REVIEWED_AT: while OFF no marker is ever written, so
+    // the pill stays hidden. Best-effort: a marker failure must never fail the
+    // read acknowledgement the coach app depends on.
+    if (isCoachReviewedAtEnabled()) {
+      try {
+        await this.stampConversationReview(threadCoachId, clientId);
+      } catch (err) {
+        this.logger.warn(
+          `ED.6 conversation-review stamp failed for coach=${threadCoachId} client=${clientId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
     return { updated: result.count };
+  }
+
+  // ED.6 — upsert the (coach, client) thread review marker to now(). Idempotent
+  // per thread via the (coach_id, client_id) unique key; concurrent reads just
+  // re-stamp the same row (no read-modify-write race — the new value is now(),
+  // independent of the old). Caller gates on the feature flag.
+  private async stampConversationReview(coachId: string, clientId: string) {
+    const now = new Date();
+    await this.prisma.conversationReview.upsert({
+      where: {
+        ConversationReview_coach_client_key: {
+          coach_id: coachId,
+          client_id: clientId,
+        },
+      },
+      update: { coach_reviewed_at: now },
+      create: { coach_id: coachId, client_id: clientId, coach_reviewed_at: now },
+    });
+  }
+
+  // ED.6 — read the coach-review timestamp for the requesting client's thread.
+  // Returns { coachReviewedAt: ISO | null }. Null whenever no coach has reviewed
+  // the thread yet OR the marker was never written (flag OFF) — the mobile
+  // CompetencePill renders nothing on null. Resolves the client's assigned
+  // coach the same way as the thread read (409 NO_COACH_ASSIGNED when none).
+  async coachReviewForClient(
+    clientId: string,
+  ): Promise<{ coachReviewedAt: string | null }> {
+    const coachId = await this.requireClientCoachId(clientId);
+    const marker = await this.prisma.conversationReview.findUnique({
+      where: {
+        ConversationReview_coach_client_key: {
+          coach_id: coachId,
+          client_id: clientId,
+        },
+      },
+      select: { coach_reviewed_at: true },
+    });
+    return {
+      coachReviewedAt: marker ? marker.coach_reviewed_at.toISOString() : null,
+    };
   }
 
   async markReadByClient(clientId: string) {
