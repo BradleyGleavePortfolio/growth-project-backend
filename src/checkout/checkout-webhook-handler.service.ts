@@ -11,6 +11,7 @@ import { DunningV2Service } from './dunning-v2/dunning-v2.service';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 import { PayoutRoutingService } from '../payouts-v2/payout-routing.service';
+import { CoachFirstPaymentService } from '../notifications/coach-first-payment.service';
 
 // PR-9: BillingService.handleEvent passes its outer `$transaction`'s tx
 // client through `handle(event, tx)` so the entitlement update +
@@ -134,7 +135,39 @@ export class CheckoutWebhookHandlerService {
     // immediately without reading or writing state. No v1 dunning logic is
     // modified — these are pure additions after the existing v1 calls.
     @Optional() private dunningV2?: DunningV2Service,
+    // Roman P4 (Option C) — @Optional() additive seam. The first-payment
+    // notification primitive. Every call below is gated on
+    // FEATURE_ROMAN_FIRST_PAYMENT (default OFF), so while the flag is off this
+    // never reads or writes state. @Optional() so legacy unit-test wiring that
+    // hand-constructs the handler without the full container still works.
+    @Optional() private coachFirstPaymentService?: CoachFirstPaymentService,
   ) {}
+
+  /**
+   * Roman P4 (Option C) — record + emit the coach's first-ever payment
+   * notification, gated on FEATURE_ROMAN_FIRST_PAYMENT (default OFF). Called
+   * from BOTH entitlement-activation callsites (checkout.session.completed and
+   * payment_intent.succeeded) AFTER the purchase status flips, on the SAME
+   * outer `tx` so the ledger row commits-or-rolls-back with the purchase
+   * (50-Failures #44). All inputs come from the SERVER-TRUSTED, just-persisted
+   * ClientPurchase row — never the Stripe webhook body (50-Failures #5 IDOR).
+   * Exactly-once is enforced downstream by CoachFirstPaymentNotification's
+   * coachId @unique. No-op when the flag is off, the service is unwired, or no
+   * outer tx is held (the emit MUST share the purchase transaction).
+   */
+  private async maybeEmitFirstPayment(
+    purchase: ClientPurchase,
+    tx: WebhookTx | undefined,
+  ): Promise<void> {
+    if (process.env.FEATURE_ROMAN_FIRST_PAYMENT !== 'true') return;
+    if (!this.coachFirstPaymentService || !tx) return;
+    await this.coachFirstPaymentService.tryEmitFirstPayment(tx, {
+      coachId: purchase.coach_user_id,
+      amount: purchase.amount_cents,
+      currency: purchase.currency,
+      clientId: purchase.client_user_id,
+    });
+  }
 
   // Returns claimed=true iff the event was for a Connect package purchase
   // (identified by `metadata.tgp_package_id` or by a matching
@@ -505,6 +538,12 @@ export class CheckoutWebhookHandlerService {
         }),
     );
 
+    // Roman P4 (Option C) — first-payment notification. Runs AFTER the status
+    // flip to a successful terminal status, on the SAME outer tx so the
+    // exactly-once ledger row commits-or-rolls-back with this purchase
+    // (50-Failures #44). Gated on FEATURE_ROMAN_FIRST_PAYMENT (default OFF).
+    await this.maybeEmitFirstPayment(updated, tx);
+
     // Phase 4 — materialize ledger + post head-coach transfer now that
     // the charge has actually succeeded.
     //
@@ -863,6 +902,11 @@ export class CheckoutWebhookHandlerService {
         last_error: null,
       },
     });
+
+    // Roman P4 (Option C) — first-payment notification on the PaymentSheet
+    // (payment_intent.succeeded) path too. Same in-tx, server-trusted,
+    // feature-flagged contract as the checkout.session.completed callsite.
+    await this.maybeEmitFirstPayment(updated, tx);
 
     // PR-18 B1 R3 P1 — defer the split posting to post-commit when an outer
     // tx is held (see runOrDeferSplit / runDeferredSplit + applyCheckoutCompleted
