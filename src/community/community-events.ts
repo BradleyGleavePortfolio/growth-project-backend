@@ -82,6 +82,14 @@ export const COMMUNITY_TELEMETRY_EVENTS = {
   classroomLessonPublished: 'community.classroom.lesson_published',
   classroomLessonScheduled: 'community.classroom.lesson_scheduled',
   classroomMediaUploadIssued: 'community.classroom.media_upload_issued',
+  // v3-3 voice notes (additive). Emitted only when
+  // FEATURE_COMMUNITY_TELEMETRY === 'true'; property values carry ids /
+  // timestamps / enum + numeric (duration_ms, bytes) only — never a transcript,
+  // an audio URL, or any user-authored text. `voicePublishFailed` carries a
+  // bounded error_code (classifyTelemetryError), never a raw message.
+  voiceUploadIssued: 'community.voice.upload_issued',
+  voiceNotePublished: 'community.voice.note_published',
+  voicePublishFailed: 'community.voice.publish_failed',
 } as const;
 
 export type CommunityTelemetryEventName =

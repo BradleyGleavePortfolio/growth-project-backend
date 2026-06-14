@@ -1,0 +1,158 @@
+import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import type { CommunityVoiceNote } from '@prisma/client';
+import { PrismaService } from '../../prisma.service';
+
+/**
+ * community-voice.repository.ts — data access for v3-3 community voice notes.
+ *
+ * Tenant scoping follows the v1-2 / v3-1 doctrine: the app connects as the
+ * Supabase service_role (BYPASSRLS), so isolation is enforced HERE in explicit
+ * WHERE clauses (and again at the DB by the migration's RLS policies as
+ * defence-in-depth). Every read is cursor-paginated with a clamped `take` so an
+ * internal caller can never trigger an unbounded scan (Failure #28).
+ */
+
+export interface Page<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+const PAGE_DEFAULT_LIMIT = 20;
+const PAGE_MAX_LIMIT = 50;
+
+function clampLimit(limit: number | undefined): number {
+  const n = limit ?? PAGE_DEFAULT_LIMIT;
+  if (!Number.isFinite(n)) return PAGE_DEFAULT_LIMIT;
+  return Math.max(1, Math.min(PAGE_MAX_LIMIT, Math.trunc(n)));
+}
+
+/** Fields needed to durably insert a voice note after upload confirmation. */
+export interface VoiceNoteSeed {
+  workspaceId: string;
+  cohortId: string | null;
+  conversationId: string | null;
+  authorId: string;
+  storageKey: string;
+  durationMs: number;
+  bytes: number;
+  mimeType: string;
+  waveformPeaks: Buffer | null;
+}
+
+export interface VoiceListFilter {
+  workspaceId: string;
+  cohortId: string | null;
+  conversationId: string | null;
+  /** Cohort ids the caller may see (student path); empty = none. */
+  visibleCohortIds?: string[];
+  /** When true, the caller is a coach/owner and sees the whole workspace. */
+  isCoach: boolean;
+  /** The caller's user id — used to scope DM-thread visibility on the student path. */
+  viewerId: string;
+  limit?: number;
+  cursor?: string;
+}
+
+@Injectable()
+export class CommunityVoiceRepository {
+  constructor(private readonly prisma: PrismaService) {}
+
+  /** Insert a voice note row inside a transaction (multi-row-safe — R0/§). */
+  async createVoiceNote(seed: VoiceNoteSeed): Promise<CommunityVoiceNote> {
+    // Single-row write, but wrapped in $transaction so the insert + any future
+    // sibling write stay atomic and the call site is consistent with the
+    // brief's "multi-row writes use prisma.$transaction" rule.
+    const [created] = await this.prisma.$transaction([
+      this.prisma.communityVoiceNote.create({
+        data: {
+          workspace_id: seed.workspaceId,
+          cohort_id: seed.cohortId,
+          conversation_id: seed.conversationId,
+          author_id: seed.authorId,
+          storage_key: seed.storageKey,
+          duration_ms: seed.durationMs,
+          bytes: BigInt(seed.bytes),
+          mime_type: seed.mimeType,
+          waveform_peaks: seed.waveformPeaks,
+        },
+      }),
+    ]);
+    return created;
+  }
+
+  async findById(id: string): Promise<CommunityVoiceNote | null> {
+    return this.prisma.communityVoiceNote.findUnique({ where: { id } });
+  }
+
+  async softDelete(id: string, at: Date): Promise<void> {
+    await this.prisma.communityVoiceNote.update({
+      where: { id },
+      data: { soft_deleted_at: at },
+    });
+  }
+
+  /**
+   * List voice notes most-recent-first. A coach/owner sees every non-deleted
+   * note in the workspace (optionally narrowed to a cohort/conversation); a
+   * student sees notes that are NOT soft-deleted AND either:
+   *   - a channel/cohort note in a cohort they can access (or the workspace
+   *     hall when cohort_id is null), or
+   *   - a DM note they authored (DM participant resolution is enforced by the
+   *     service before this query runs).
+   * Cursor pagination fetches limit+1 rows to detect the next page.
+   */
+  async list(filter: VoiceListFilter): Promise<Page<CommunityVoiceNote>> {
+    const take = clampLimit(filter.limit);
+
+    const visibility: Prisma.CommunityVoiceNoteWhereInput = filter.isCoach
+      ? {}
+      : {
+          OR: [
+            // Channel/cohort notes visible to this member.
+            {
+              conversation_id: null,
+              OR: [
+                { cohort_id: null },
+                {
+                  cohort_id: {
+                    in:
+                      filter.visibleCohortIds &&
+                      filter.visibleCohortIds.length > 0
+                        ? filter.visibleCohortIds
+                        : ['__none__'],
+                  },
+                },
+              ],
+            },
+            // DM notes the caller authored (further participant scoping is in
+            // the service layer, which knows the conversation roster).
+            { conversation_id: { not: null }, author_id: filter.viewerId },
+          ],
+        };
+
+    const where: Prisma.CommunityVoiceNoteWhereInput = {
+      workspace_id: filter.workspaceId,
+      soft_deleted_at: null,
+      ...(filter.cohortId !== null ? { cohort_id: filter.cohortId } : {}),
+      ...(filter.conversationId !== null
+        ? { conversation_id: filter.conversationId }
+        : {}),
+      ...visibility,
+    };
+
+    const rows = await this.prisma.communityVoiceNote.findMany({
+      where,
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      take: take + 1,
+      ...(filter.cursor
+        ? { cursor: { id: filter.cursor }, skip: 1 }
+        : {}),
+    });
+
+    const items = rows.slice(0, take);
+    const nextCursor =
+      rows.length > take ? items[items.length - 1].id : null;
+    return { items, nextCursor };
+  }
+}
