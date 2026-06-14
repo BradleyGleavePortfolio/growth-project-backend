@@ -45,7 +45,7 @@ import {
 
 // Both buckets, validated from the query string. The mobile clients send
 // the enum value verbatim.
-const BucketSchema = z.nativeEnum(WearableMetricBucket);
+const BucketSchema = z.enum(WearableMetricBucket);
 
 const CoachQuerySchema = z.object({
   clientId: z.string().uuid({ message: 'clientId must be a UUID' }),

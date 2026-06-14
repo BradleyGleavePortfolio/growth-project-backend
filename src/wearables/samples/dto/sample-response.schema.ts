@@ -24,7 +24,7 @@ const SampleSchema = z.object({
   start_at: IsoString,
   end_at: IsoString,
   value: z.number(),
-  provider: z.nativeEnum(WearableProvider),
+  provider: z.enum(WearableProvider),
 });
 
 const AggBucketSchema = z.object({
@@ -35,10 +35,10 @@ const AggBucketSchema = z.object({
 });
 
 const SeriesSchema = z.object({
-  metric: z.nativeEnum(WearableMetricType),
+  metric: z.enum(WearableMetricType),
   unit: z.string(),
   /** null when the series has zero samples in the window. */
-  provider_used: z.nativeEnum(WearableProvider).nullable(),
+  provider_used: z.enum(WearableProvider).nullable(),
   sample_count: z.number().int().nonnegative(),
   samples: z.array(SampleSchema),
   /** present only when granularity != 'raw'. */
@@ -52,7 +52,7 @@ export const FRESHNESS_STATUSES = [
 ] as const;
 
 const FreshnessProviderSchema = z.object({
-  provider: z.nativeEnum(WearableProvider),
+  provider: z.enum(WearableProvider),
   last_synced_at: IsoString.nullable(),
   status: z.enum(FRESHNESS_STATUSES),
 });
@@ -61,7 +61,7 @@ export const SamplesResponseSchema = z
   .object({
     version: z.literal(1),
     user_id: z.string(),
-    bucket: z.nativeEnum(WearableMetricBucket),
+    bucket: z.enum(WearableMetricBucket),
     window: z.object({ from: IsoString, to: IsoString }),
     series: z.array(SeriesSchema),
     freshness: z.object({ providers: z.array(FreshnessProviderSchema) }),
