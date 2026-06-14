@@ -90,6 +90,16 @@ export const COMMUNITY_TELEMETRY_EVENTS = {
   voiceUploadIssued: 'community.voice.upload_issued',
   voiceNotePublished: 'community.voice.note_published',
   voicePublishFailed: 'community.voice.publish_failed',
+  // v3-4 search + wearable-aware prompts (additive). Emitted only when
+  // FEATURE_COMMUNITY_TELEMETRY === 'true'; property values carry ids /
+  // timestamps / numeric (term_length, result_count, took_ms, observed-metric
+  // counts) + bounded enum/state ONLY — NEVER the raw search term, a post /
+  // transcript body, a wearable metric VALUE, or any user-authored text. The
+  // search term is reduced to its length; the fallback event carries the
+  // bounded WearableConnectionStatus reason (expired/error/disconnected) only.
+  searchQueryIssued: 'community.search.query_issued',
+  wearablePromptGenerated: 'community.wearable.prompt_generated',
+  wearablePromptFallbackFired: 'community.wearable.prompt_fallback_fired',
 } as const;
 
 export type CommunityTelemetryEventName =
