@@ -86,4 +86,15 @@ export class ClientMessagingController {
   async unreadCount(@Request() req: AuthedRequest) {
     return this.messaging.unreadCountForClient(req.user.id);
   }
+
+  // ED.6 — coach-review marker for the client's thread. Returns
+  // { coachReviewedAt: ISO | null } off the additive ConversationReview marker.
+  // Additive read — the existing GET /messages array contract is untouched so
+  // no consumer breaks. The mobile CompetencePill reads this and renders
+  // nothing on null (no coach review yet, or the backend flag is OFF). Free
+  // like the rest of the basic DM surface (see controller header).
+  @Get('coach-review')
+  async coachReview(@Request() req: AuthedRequest) {
+    return this.messaging.coachReviewForClient(req.user.id);
+  }
 }

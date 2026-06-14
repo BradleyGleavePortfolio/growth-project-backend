@@ -19,6 +19,8 @@ function makePrisma() {
     notes: string | null;
     type: string;
     logged_at: Date;
+    reviewed_by_coach: boolean;
+    coach_reviewed_at: Date | null;
   }> = [];
 
   let seq = 0;
@@ -109,8 +111,16 @@ function makePrisma() {
           notes: create.notes ?? null,
           type: create.type ?? 'morning',
           logged_at: new Date(),
+          reviewed_by_coach: create.reviewed_by_coach ?? false,
+          coach_reviewed_at: create.coach_reviewed_at ?? null,
         };
         rows.push(row);
+        return { ...row };
+      }),
+      update: jest.fn(async ({ where, data }: any) => {
+        const row = rows.find((r) => r.id === where.id);
+        if (!row) throw new Error('Record to update not found');
+        Object.assign(row, data);
         return { ...row };
       }),
       findMany: jest.fn(async ({ where, orderBy, take }: any) => {
@@ -286,6 +296,97 @@ describe('CheckInsService', () => {
       } as any);
       const list = await svc.listForClientByCoach('coach-A', 'client-1', {} as any);
       expect(list).toHaveLength(1); // only the recent one
+    });
+  });
+
+  // ED.6 — coach marks a check-in reviewed. Verifies the flag gate around
+  // coach_reviewed_at, the always-on reviewed_by_coach acknowledgement, the
+  // 404 ownership scope, most-recent re-stamp semantics, and idempotency.
+  describe('markReviewedByCoach (ED.6)', () => {
+    const FLAG = 'FEATURE_ROMAN_COACH_REVIEWED_AT';
+    let prev: string | undefined;
+
+    beforeEach(() => {
+      prev = process.env[FLAG];
+    });
+    afterEach(() => {
+      if (prev === undefined) delete process.env[FLAG];
+      else process.env[FLAG] = prev;
+    });
+
+    async function seedCheckIn(client = 'client-1') {
+      return svc.upsertForClient(client, { date: '2026-05-01', mood: 4 } as any);
+    }
+
+    it('flag ON: stamps coach_reviewed_at and flips reviewed_by_coach', async () => {
+      process.env[FLAG] = 'true';
+      const ci = await seedCheckIn();
+      const before = Date.now();
+      const out = await svc.markReviewedByCoach('coach-A', ci.id);
+      expect(out.reviewed_by_coach).toBe(true);
+      expect(out.coach_reviewed_at).toBeInstanceOf(Date);
+      expect((out.coach_reviewed_at as Date).getTime()).toBeGreaterThanOrEqual(
+        before,
+      );
+    });
+
+    it('flag OFF: flips reviewed_by_coach but leaves coach_reviewed_at NULL', async () => {
+      process.env[FLAG] = 'false';
+      const ci = await seedCheckIn();
+      const out = await svc.markReviewedByCoach('coach-A', ci.id);
+      expect(out.reviewed_by_coach).toBe(true);
+      expect(out.coach_reviewed_at).toBeNull();
+    });
+
+    it('flag UNSET defaults OFF (coach_reviewed_at stays NULL)', async () => {
+      delete process.env[FLAG];
+      const ci = await seedCheckIn();
+      const out = await svc.markReviewedByCoach('coach-A', ci.id);
+      expect(out.coach_reviewed_at).toBeNull();
+    });
+
+    it("404 when the check-in belongs to another coach's client", async () => {
+      process.env[FLAG] = 'true';
+      const ci = await svc.upsertForClient('client-other', {
+        date: '2026-05-01',
+      } as any);
+      await expect(
+        svc.markReviewedByCoach('coach-A', ci.id),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('404 on a non-existent check-in id (no probing)', async () => {
+      process.env[FLAG] = 'true';
+      await expect(
+        svc.markReviewedByCoach('coach-A', 'ci-does-not-exist'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('most-recent semantics: a second review re-stamps a later timestamp', async () => {
+      process.env[FLAG] = 'true';
+      const ci = await seedCheckIn();
+      const first = await svc.markReviewedByCoach('coach-A', ci.id);
+      const t1 = (first.coach_reviewed_at as Date).getTime();
+      await new Promise((r) => setTimeout(r, 5));
+      const second = await svc.markReviewedByCoach('coach-A', ci.id);
+      const t2 = (second.coach_reviewed_at as Date).getTime();
+      expect(t2).toBeGreaterThanOrEqual(t1);
+    });
+
+    it('idempotent under concurrent reviews (no read-modify-write race)', async () => {
+      process.env[FLAG] = 'true';
+      const ci = await seedCheckIn();
+      const results = await Promise.all([
+        svc.markReviewedByCoach('coach-A', ci.id),
+        svc.markReviewedByCoach('coach-A', ci.id),
+        svc.markReviewedByCoach('coach-A', ci.id),
+      ]);
+      for (const r of results) {
+        expect(r.reviewed_by_coach).toBe(true);
+        expect(r.coach_reviewed_at).toBeInstanceOf(Date);
+      }
+      // Still exactly one row — review never duplicates the check-in.
+      expect(prisma._rows.filter((r) => r.id === ci.id)).toHaveLength(1);
     });
   });
 });

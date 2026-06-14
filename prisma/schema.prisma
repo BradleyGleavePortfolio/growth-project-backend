@@ -202,6 +202,10 @@ model User {
   coach_messages_as_coach  CoachMessage[]           @relation("CoachMessagesAsCoach")
   coach_messages_as_client CoachMessage[]           @relation("CoachMessagesAsClient")
   coach_messages_sent      CoachMessage[]           @relation("CoachMessagesSender")
+  // ED.6 (Roman coach-is-watching) — per-thread coach-review markers this user
+  // participates in, as coach and as client.
+  conversation_reviews_as_coach  ConversationReview[] @relation("ConversationReviewCoach")
+  conversation_reviews_as_client ConversationReview[] @relation("ConversationReviewClient")
   // Apple 1.2 — safety: reports filed by this user, blocks they have set,
   // and inbound blocks against them. The reviewer relation is owner-staff only.
   reports_filed            MessageReport[]          @relation("MessageReportReporter")
@@ -1104,6 +1108,14 @@ model CheckIn {
   // acknowledged this check-in. Defaults to false; flipped to true when
   // the coach reviews. Filtered on by getDashboardSummary in CoachService.
   reviewed_by_coach Boolean     @default(false)
+  // ED.6 (Roman coach-is-watching micro-signal) — the timestamp of the
+  // coach's MOST RECENT review of this check-in. NULL until a coach first
+  // reviews; the client-facing CompetencePill renders "Your coach reviewed
+  // this {relative}." off this value and stays hidden while it is NULL.
+  // Most-recent semantics (brief §Write paths): every coach review re-stamps
+  // it so the relative copy reads naturally. Writes are gated server-side on
+  // FEATURE_ROMAN_COACH_REVIEWED_AT; while OFF the column stays NULL.
+  coach_reviewed_at DateTime?
 
   @@unique([user_id, date], name: "CheckIn_user_id_date_key")
   // Hot path: daily check-in lookups by (user_id, date).
@@ -1205,6 +1217,37 @@ model CoachMessage {
   @@index([client_id])
   @@index([created_at])
   @@index([coach_id, client_id, created_at])
+}
+
+// ED.6 (Roman coach-is-watching micro-signal) — per-conversation coach-review
+// marker. The 1:1 coach↔client thread has no first-class Conversation row (it
+// is addressed purely by the (coach_id, client_id) pair on CoachMessage), so
+// this thin marker table records when the coach last reviewed a given thread
+// WITHOUT touching the high-traffic CoachMessage rows. One row per
+// (coach_id, client_id); upserted to now() when the coach opens / marks the
+// thread read. The client-facing CompetencePill reads `coach_reviewed_at` to
+// render "Your coach reviewed this thread {relative}." and stays hidden while
+// the row is absent / NULL. Writes are gated server-side on
+// FEATURE_ROMAN_COACH_REVIEWED_AT; while OFF no row is ever written.
+model ConversationReview {
+  id                String   @id @default(uuid())
+  // FK columns are Cascade on delete: a hard-deleted participant takes the
+  // marker with them (unlike CoachMessage history, the marker carries no
+  // independent audit value once a participant is gone).
+  coach_id          String
+  coach             User     @relation("ConversationReviewCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  client_id         String
+  client            User     @relation("ConversationReviewClient", fields: [client_id], references: [id], onDelete: Cascade)
+  // Timestamp of the coach's most-recent review of this thread (most-recent
+  // semantics, brief §Write paths). Non-null whenever the row exists.
+  coach_reviewed_at DateTime @default(now())
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  // One marker per thread. Upsert target.
+  @@unique([coach_id, client_id], name: "ConversationReview_coach_client_key")
+  @@index([coach_id])
+  @@index([client_id])
 }
 
 // Apple App Review 1.2 — abuse-reporting for direct messages.

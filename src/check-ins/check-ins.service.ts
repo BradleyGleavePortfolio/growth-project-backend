@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma.service';
 import { PtmService } from '../ptm/ptm.service';
 import { CoachAlertsService } from '../coach/coach-alerts.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
+import { isCoachReviewedAtEnabled } from '../roman/coach-reviewed.feature';
 import type { CreateCheckInDto, ListCheckInsQueryDto } from './check-ins.dto';
 
 const DEFAULT_LIMIT = 30;
@@ -337,5 +338,50 @@ export class CheckInsService {
       orderBy: { date: 'desc' },
       take: limit,
     });
+  }
+
+  // ---- coach review (ED.6) ----
+
+  // ED.6 — mark a single check-in as reviewed by the coach. Re-stamps
+  // `coach_reviewed_at` to now() (most-recent semantics, brief §Write paths)
+  // and flips the long-standing `reviewed_by_coach` acknowledgement flag in the
+  // same write so the existing coach-dashboard "needs review" counters and the
+  // new client-facing CompetencePill stay consistent.
+  //
+  // GATED on FEATURE_ROMAN_COACH_REVIEWED_AT: while the flag is OFF the
+  // `coach_reviewed_at` column is left untouched (stays NULL) so the pill never
+  // renders — the feature is invisible until the operator flips the flag. The
+  // `reviewed_by_coach` acknowledgement flag is INDEPENDENT of ED.6 (it predates
+  // this lane and drives the dashboard), so it is always written regardless of
+  // the flag — turning ED.6 off must not regress the existing review workflow.
+  //
+  // Scopes the update by the OWNER (coach_id) so a coach can only review a
+  // check-in that is attached to them; a foreign / missing id returns the same
+  // 404 as a non-existent row (no probing). Idempotent under concurrent
+  // reviews: each call simply re-stamps now() — there is no read-modify-write
+  // race because the new value does not depend on the old one.
+  async markReviewedByCoach(coachId: string, checkInId: string) {
+    await this.assertCheckInOfCoach(coachId, checkInId);
+    const flagOn = isCoachReviewedAtEnabled();
+    const updated = await this.prisma.checkIn.update({
+      where: { id: checkInId },
+      data: {
+        reviewed_by_coach: true,
+        ...(flagOn ? { coach_reviewed_at: new Date() } : {}),
+      },
+    });
+    return updated;
+  }
+
+  // Authorize a coach for a specific check-in by its denormalized coach_id.
+  // 404 on missing / foreign so the existence of another coach's check-in does
+  // not leak.
+  private async assertCheckInOfCoach(coachId: string, checkInId: string) {
+    const row = await this.prisma.checkIn.findFirst({
+      where: { id: checkInId, coach_id: coachId },
+      select: { id: true },
+    });
+    if (!row) throw new NotFoundException('Check-in not found');
+    return row;
   }
 }
