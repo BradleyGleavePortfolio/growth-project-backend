@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { FirstPaymentEmitter } from './emitters/first-payment.emitter';
+
+// Prisma's unique-constraint violation code. The DIRECT INSERT below relies on
+// it: a duplicate (webhook retry / second payment / concurrent first payments)
+// raises P2002, which we treat as "already emitted" rather than an error.
+const PRISMA_UNIQUE_VIOLATION = 'P2002';
 
 /**
  * Input for {@link CoachFirstPaymentService.tryEmitFirstPayment}.
@@ -59,10 +65,41 @@ export class CoachFirstPaymentService {
     tx: Prisma.TransactionClient,
     input: TryEmitFirstPaymentInput,
   ): Promise<void> {
-    // Implemented in C3.
-    void tx;
-    void input;
-    void this.emitter;
-    void this.logger;
+    const { coachId, amount, currency, clientId } = input;
+
+    try {
+      // DIRECT INSERT — no pre-SELECT / check-then-act. The
+      // CoachFirstPaymentNotification(coachId @unique) constraint is the
+      // exactly-once guarantee and the race protection (50-Failures #28, #29).
+      // This runs on the AMBIENT `tx` so the ledger row commits-or-rolls-back
+      // together with the ClientPurchase write (50-Failures #44).
+      await tx.coachFirstPaymentNotification.create({
+        data: { coachId, amount, currency, clientId },
+      });
+    } catch (err) {
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === PRISMA_UNIQUE_VIOLATION
+      ) {
+        // Already fired for this coach (webhook retry, a later payment, or a
+        // concurrent first payment that lost the unique-constraint race). This
+        // is the expected idempotent no-op — NOT a silent swallow: we log it
+        // structured so it is observable (50-Failures #36). No PII / secrets in
+        // the log — only the event name and coachId (50-Failures #12, #34).
+        this.logger.log({ event: 'first_payment_already_emitted', coachId });
+        return;
+      }
+      // Any OTHER error is a real failure: rethrow so the outer transaction
+      // rolls back (the purchase row too) and Stripe redelivers the webhook.
+      throw err;
+    }
+
+    // The INSERT won the unique constraint — this is the coach's first-ever
+    // payment. Enqueue the notification via the existing notifications module.
+    // Because this only runs on the winning INSERT, the notification is
+    // enqueued exactly once, forever.
+    await this.emitter.emit(coachId, { amount, currency, clientId });
+
+    this.logger.log({ event: 'first_payment_emitted', coachId });
   }
 }
