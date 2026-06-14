@@ -6275,3 +6275,96 @@ model CoachFirstPaymentNotification {
 
   @@map("coach_first_payment_notification")
 }
+
+// ============================================================
+// COMMUNITY v3-4 — community search index + wearable-aware
+// coaching prompts. Additive only (R69 / R76 §6 — no existing
+// community table is altered, no FK on an existing table changes).
+//
+// All three tables ship behind feature flags (FEATURE_COMMUNITY_SEARCH
+// and FEATURE_COMMUNITY_WEARABLE_PROMPTS, both default OFF) and carry
+// RLS policies defined in their migrations. Following the v1-1 /
+// classroom / voice-note convention, the new tables reference User /
+// CommunityWorkspace / CommunityCohort by SCALAR id only (FK enforced
+// at the SQL migration layer) — NOT via Prisma `@relation` back-edges —
+// so the v3-4 lane never edits the shared User / Workspace models
+// (R77 scope discipline). The only Prisma-level relation is the
+// self-contained prompt → prompt-source edge below.
+// ============================================================
+
+// Search-index kinds. Mirrors the four searchable community object
+// families (post, classroom lesson, voice-note TRANSCRIPT-only, event).
+// A SQL enum so an unknown kind can never be written.
+enum CommunitySearchKind {
+  post
+  classroom_lesson
+  voice_note_transcript
+  event
+
+  @@map("CommunitySearchKind")
+}
+
+// One denormalized, PII-stripped search row per searchable target. The
+// indexer extracts ONLY title / tag / public-metadata text into `excerpt`
+// (never message/post/DM bodies, never wearable metric values — see
+// V3_4_PREFLIGHT_NOTES §8) and the migration adds a tsvector + GIN index
+// over it. `@@unique([workspaceId, kind, targetId])` makes re-indexing
+// the same target idempotent (brief test 7).
+model CommunitySearchEntry {
+  id             String              @id @default(cuid())
+  workspaceId    String              @db.Uuid
+  cohortId       String?             @db.Uuid
+  kind           CommunitySearchKind
+  targetId       String              @db.Uuid
+  authorId       String?             @db.Uuid
+  // First 500 chars of PII-stripped, body-free text — the tsvector basis.
+  excerpt        String              @db.Text
+  // Role allowlist the row is visible to: subset of ['coach','assistant','student'].
+  visibleToRoles String[]
+  createdAt      DateTime            @default(now()) @db.Timestamptz(6)
+  softDeletedAt  DateTime?           @db.Timestamptz(6)
+
+  @@unique([workspaceId, kind, targetId])
+  @@index([workspaceId, cohortId, kind, createdAt])
+  // tsvector column + GIN index added via raw SQL in the migration.
+  @@map("community_search_entries")
+}
+
+// A coach-facing, AI-generated coaching prompt sourced from a client's
+// already-opted-in wearable insight (e.g. "Sarah's HRV dropped 12% this
+// week"). NEVER readable by the client (RLS coach-only). The 24h cooldown
+// per (coachId, clientId, metricKey) is enforced by a partial unique index
+// in the migration, not application logic alone (brief §thresholds).
+model CommunityWearablePrompt {
+  id          String                           @id @default(cuid())
+  workspaceId String                           @db.Uuid
+  coachId     String                           @db.Uuid
+  clientId    String                           @db.Uuid
+  metricKey   String                           @db.VarChar(64)
+  promptText  String                           @db.Text
+  sources     CommunityWearablePromptSource[]
+  generatedAt DateTime                         @default(now()) @db.Timestamptz(6)
+  dismissedAt DateTime?                        @db.Timestamptz(6)
+  actedOnAt   DateTime?                        @db.Timestamptz(6)
+
+  @@index([workspaceId, coachId, generatedAt])
+  @@index([workspaceId, coachId, dismissedAt])
+  @@map("community_wearable_prompts")
+}
+
+// Audit trail: which real WearableSample.id drove which prompt. Every
+// CommunityWearablePrompt has >= 1 source (brief test 4). `sampleId`
+// references WearableSample.id from the existing wearables subsystem —
+// scalar only (no cross-subsystem Prisma relation; FK at SQL layer).
+model CommunityWearablePromptSource {
+  id            String                  @id @default(cuid())
+  promptId      String
+  sampleId      String                  @db.Uuid
+  metricKey     String                  @db.VarChar(64)
+  observedValue Decimal                 @db.Decimal(18, 6)
+  prompt        CommunityWearablePrompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
+
+  @@index([promptId])
+  @@index([sampleId])
+  @@map("community_wearable_prompt_sources")
+}
