@@ -4,6 +4,7 @@ import { AssignableAssetResolverRegistry } from './asset-resolvers/assignable-as
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { PrismaService } from '../prisma.service';
+import { computeFireAt, type CadenceKind } from './drip-fire-at';
 
 // PR-9 (Packages & Drip-Feed) — REAL fan-out body.
 //
@@ -127,13 +128,6 @@ type TxOrPrisma = Prisma.TransactionClient & {
   coachPackage?: Prisma.TransactionClient['coachPackage'];
 };
 
-type CadenceKind =
-  | 'immediate'
-  | 'relative_to_purchase'
-  | 'fixed_calendar'
-  | 'on_completion'
-  | 'on_milestone';
-
 interface AlertDescriptor {
   scheduledDropId: string;
   clientId: string;
@@ -254,7 +248,12 @@ export class PurchaseFanoutService {
     // --- (3) Compute snapshots + per-cadence fire_at --------------------
     const now = new Date();
     const seedRows = contents.map((c) => {
-      const fireAt = this.computeFireAt(
+      // PR-17 de-dup — the per-cadence fire_at math now lives in the shared
+      // ./drip-fire-at module (originally a private method here). The anchor
+      // is the BUYER'S purchase time so a relative_to_purchase drop fires
+      // relative to THIS buyer, never a shared coach-now (see drip-fire-at.ts
+      // header LAW).
+      const fireAt = computeFireAt(
         c.cadence_kind as CadenceKind,
         c.cadence_payload,
         purchaseTime,
@@ -681,65 +680,6 @@ export class PurchaseFanoutService {
     })();
   }
 
-  // --- internal --------------------------------------------------------
-
-  private computeFireAt(
-    kind: CadenceKind,
-    payload: unknown,
-    purchaseTime: Date,
-    now: Date,
-  ): Date | null {
-    switch (kind) {
-      case 'immediate':
-        return now;
-      case 'relative_to_purchase': {
-        const offset = this.readOffsetDays(payload);
-        return new Date(purchaseTime.getTime() + offset * 24 * 3600 * 1000);
-      }
-      case 'fixed_calendar': {
-        const releaseAt = this.readReleaseAt(payload);
-        if (!releaseAt) return now; // malformed — treat as immediate so
-                                    // the drop fires rather than dangles.
-        // PR-8 documented rule: past fixed_calendar at purchase
-        // counts as immediate — fire now.
-        if (releaseAt.getTime() <= now.getTime()) return now;
-        return releaseAt;
-      }
-      case 'on_completion':
-      case 'on_milestone':
-        // PR-11 wires the trigger; PR-9 just seeds with fire_at null.
-        return null;
-      default:
-        // Unknown kind — leave the drop pending with no fire_at so an
-        // operator notices and PR-10's executor doesn't blindly fire.
-        return null;
-    }
-  }
-
-  private readOffsetDays(payload: unknown): number {
-    if (
-      payload &&
-      typeof payload === 'object' &&
-      typeof (payload as { offset_days?: unknown }).offset_days === 'number'
-    ) {
-      const v = (payload as { offset_days: number }).offset_days;
-      return Number.isFinite(v) && v >= 0 ? v : 0;
-    }
-    return 0;
-  }
-
-  private readReleaseAt(payload: unknown): Date | null {
-    if (
-      payload &&
-      typeof payload === 'object' &&
-      typeof (payload as { release_at?: unknown }).release_at === 'string'
-    ) {
-      const raw = (payload as { release_at: string }).release_at;
-      const ms = Date.parse(raw);
-      if (!Number.isNaN(ms)) return new Date(ms);
-    }
-    return null;
-  }
 }
 
 // PR-15A helper — format integer minor-unit amounts as a human string
