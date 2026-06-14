@@ -12,6 +12,10 @@ import { MessagesSafetyModule } from '../messages-safety/messages-safety.module'
 import { ClientMessagingController } from './client-messaging.controller';
 import { CoachMessagingController } from './coach-messaging.controller';
 import { MessagingService } from './messaging.service';
+// v3-3: the signed-upload helper extracted out of MessagingService. Provided
+// here so production DI injects the shared, typed provider into MessagingService
+// (the @Optional ctor param). SupabaseService is global, so no extra import.
+import { VoiceUploadProvider } from '../community/voice/voice-upload.provider';
 
 // PrismaService / SupabaseService are provided globally. Providing the guards
 // locally (rather than `imports: [AuthModule]`) follows the same pattern as
@@ -27,7 +31,13 @@ import { MessagingService } from './messaging.service';
 @Module({
   imports: [NotificationsModule, AuditModule, AiModule, MessagesSafetyModule],
   controllers: [CoachMessagingController, ClientMessagingController],
-  providers: [MessagingService, JwtAuthGuard, CoachGuard, JwksVerifierService],
+  providers: [
+    MessagingService,
+    VoiceUploadProvider,
+    JwtAuthGuard,
+    CoachGuard,
+    JwksVerifierService,
+  ],
   exports: [MessagingService],
 })
 export class MessagingModule {}
