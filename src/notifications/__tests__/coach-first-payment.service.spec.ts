@@ -118,7 +118,7 @@ describe('CoachFirstPaymentService.tryEmitFirstPayment', () => {
   });
 
   it('second payment for the same coach: row NOT duplicated and notification NOT re-enqueued', async () => {
-    const { tx, create, insertedCoachIds } = makeTxWithUniqueConstraint();
+    const { tx, insertedCoachIds } = makeTxWithUniqueConstraint();
     const { emitter, emit } = makeEmitter();
     const svc = new CoachFirstPaymentService(emitter);
 
