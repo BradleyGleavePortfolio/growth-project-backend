@@ -13,6 +13,11 @@
  * FEATURE_COMMUNITY_TELEMETRY === 'true'; property values carry ids /
  * timestamps / enum state only — never lesson title or body text.
  *
+ * v3-3 voice notes (additive, +3 events): voice upload_issued, note_published,
+ * publish_failed. Property values carry ids / timestamps / numeric duration +
+ * bytes / a bounded error_code only — never a transcript, an audio URL, or any
+ * user-authored text. Baseline therefore moves 9 → 12 (R78).
+ *
  * NOTE: An orphaned community digest event was removed in PR #370 — it had no
  * emitter (no producer function, no capture() call anywhere). The constant map
  * is therefore expected to omit it; the existing email DigestService/
@@ -26,7 +31,7 @@
 import 'reflect-metadata';
 import { COMMUNITY_TELEMETRY_EVENTS } from '../../../src/community/community-events';
 
-describe('v1-4 + v3-2 PostHog telemetry event names (§9 exact spelling)', () => {
+describe('v1-4 + v3-2 + v3-3 PostHog telemetry event names (§9 exact spelling)', () => {
   it('matches the §9 event-name table exactly', () => {
     expect(COMMUNITY_TELEMETRY_EVENTS).toEqual({
       realtimeBroadcastSent: 'community.realtime.broadcast_sent',
@@ -39,11 +44,14 @@ describe('v1-4 + v3-2 PostHog telemetry event names (§9 exact spelling)', () =>
       classroomLessonPublished: 'community.classroom.lesson_published',
       classroomLessonScheduled: 'community.classroom.lesson_scheduled',
       classroomMediaUploadIssued: 'community.classroom.media_upload_issued',
+      voiceUploadIssued: 'community.voice.upload_issued',
+      voiceNotePublished: 'community.voice.note_published',
+      voicePublishFailed: 'community.voice.publish_failed',
     });
   });
 
-  it('declares exactly nine telemetry events (6 v1-4 + 3 v3-2 classroom)', () => {
-    expect(Object.keys(COMMUNITY_TELEMETRY_EVENTS)).toHaveLength(9);
+  it('declares exactly twelve telemetry events (6 v1-4 + 3 v3-2 classroom + 3 v3-3 voice)', () => {
+    expect(Object.keys(COMMUNITY_TELEMETRY_EVENTS)).toHaveLength(12);
   });
 
   it('every event name is in the community.* namespace, snake_case tail', () => {

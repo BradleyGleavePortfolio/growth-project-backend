@@ -483,6 +483,7 @@ model User {
   community_reports_filed            CommunityModerationAction[]       @relation("community_reporter")
   community_moderation_actions       CommunityModerationAction[]       @relation("community_moderator")
   community_classroom_posts_authored CommunityClassroomPost[]          @relation("CommunityClassroomPostCoach")
+  community_voice_notes_authored     CommunityVoiceNote[]              @relation("CommunityVoiceNoteAuthor")
 
   // Roman Phase 1 — Chat MVP. A user owns Roman chat sessions (one active
   // session per (userId, surface) day-key). Each session holds an ordered
@@ -5599,6 +5600,46 @@ enum CommunityClassroomPostStatus {
   archived
 }
 
+// v3-3 — community voice notes (audio attachments on classroom DMs/channels).
+//
+// Additive model. The id/column conventions follow the EXISTING community
+// schema (uuid PK + snake_case @map columns + @db.Uuid tenancy keys) rather
+// than the brief's illustrative `cuid()` sketch, so the row participates in the
+// same RLS helper functions (app.is_community_workspace_coach / _member /
+// shares_community_cohort) every other community table uses. This is a
+// deliberate consistency choice (R0) — documented in the v3-3 final report.
+//
+// `conversation_id` NULL = a cohort/channel voice note; non-NULL = a DM thread
+// voice note. `waveform_peaks` is an optional pre-computed waveform the player
+// renders without re-decoding the audio. The row is only inserted AFTER the
+// signed upload is confirmed (never durable-stored before upload — audit rule).
+model CommunityVoiceNote {
+  id              String    @id @default(uuid()) @db.Uuid
+  workspace_id    String    @db.Uuid
+  cohort_id       String?   @db.Uuid
+  conversation_id String?   @db.Uuid
+  author_id       String    @db.Uuid
+  storage_key     String    @db.Text
+  duration_ms     Int
+  bytes           BigInt
+  mime_type       String    @db.VarChar(120)
+  waveform_peaks  Bytes?
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  soft_deleted_at DateTime? @db.Timestamptz(6)
+
+  workspace CommunityWorkspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  cohort    CommunityCohort?   @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
+  author    User               @relation("CommunityVoiceNoteAuthor", fields: [author_id], references: [id], onDelete: Restrict)
+
+  // Cohort/channel feed: most-recent-first within a workspace+cohort.
+  @@index([workspace_id, cohort_id, created_at])
+  // DM thread feed: most-recent-first within a workspace+conversation.
+  @@index([workspace_id, conversation_id, created_at])
+  // An author's recent voice notes.
+  @@index([author_id, created_at])
+  @@map("community_voice_notes")
+}
+
 model CommunityWorkspace {
   id                 String    @id @default(uuid()) @db.Uuid
   coach_id           String    @db.Uuid
@@ -5624,6 +5665,7 @@ model CommunityWorkspace {
   challenges               CommunityChallenge[]
   challenge_participations CommunityChallengeParticipation[]
   moderation_actions       CommunityModerationAction[]
+  voice_notes              CommunityVoiceNote[]
 
   // Coach dashboard: list a coach's non-archived workspaces.
   @@index([coach_id, archived_at])
@@ -5651,6 +5693,7 @@ model CommunityCohort {
   posts       CommunityPost[]
   events      CommunityEvent[]
   challenges  CommunityChallenge[]
+  voice_notes CommunityVoiceNote[]
 
   @@unique([workspace_id, name])
   // Cohort list ordered for a workspace (coach + client surfaces).

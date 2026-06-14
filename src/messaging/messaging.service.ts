@@ -5,11 +5,14 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  NotImplementedException,
   Optional,
 } from '@nestjs/common';
-import { randomBytes } from 'crypto';
 import type { Prisma } from '@prisma/client';
+import {
+  VoiceUploadProvider,
+  type SignedVoiceUploadRequest as ProviderSignedVoiceUploadRequest,
+  type SignedVoiceUploadResponse as ProviderSignedVoiceUploadResponse,
+} from '../community/voice/voice-upload.provider';
 import { PrismaService } from '../prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -44,17 +47,12 @@ export interface SendMessagePayload {
   voice?: VoicePayload;
 }
 
-export interface SignedVoiceUploadRequest {
-  duration_sec: number;
-  size_bytes: number;
-  content_type: string;
-}
-
-export interface SignedVoiceUploadResponse {
-  upload_url: string;
-  public_url: string;
-  expires_at: string;
-}
+// v3-3: the signed-upload request/response shapes now live with the extracted
+// VoiceUploadProvider (src/community/voice/voice-upload.provider.ts) — the one
+// place the Supabase signed-upload contract is typed. Re-exported here under
+// the original names so existing messaging importers keep compiling unchanged.
+export type SignedVoiceUploadRequest = ProviderSignedVoiceUploadRequest;
+export type SignedVoiceUploadResponse = ProviderSignedVoiceUploadResponse;
 
 // Whitelist of accepted voice MIME types. Anything outside this set is
 // rejected before we touch storage. iOS records m4a/aac, Android typically
@@ -74,13 +72,6 @@ const VOICE_DEFAULT_MAX_SIZE_MB = 5;
 const VOICE_DURATION_CLAMP = { min: 10, max: 600 } as const;
 const VOICE_SIZE_MB_CLAMP = { min: 1, max: 25 } as const;
 const VOICE_DEFAULT_BUCKET = 'voice-notes';
-const VOICE_UPLOAD_TTL_SEC = 600; // 10 minutes — matches Supabase signed-upload default.
-
-// Cryptographic random token for storage object paths. Hex-only so the
-// path stays URL-safe without escaping.
-function randomToken(bytes = 8): string {
-  return randomBytes(bytes).toString('hex');
-}
 
 @Injectable()
 export class MessagingService {
@@ -104,7 +95,24 @@ export class MessagingService {
     // keep compiling. In production DI it's always populated because
     // SubCoachModule is @Global.
     private subCoachScope?: SubCoachScopeService,
+    // v3-3: the signed-upload helper is now the extracted VoiceUploadProvider.
+    // @Optional so the legacy unit tests that construct MessagingService with
+    // the positional 7-arg form still compile; production DI always provides it
+    // (MessagingModule imports CommunityVoiceModule's provider). When absent we
+    // lazily build one from the already-injected SupabaseService, so behaviour
+    // is identical whether or not DI supplied it.
+    @Optional() private voiceUpload: VoiceUploadProvider | null = null,
   ) {}
+
+  // Resolve the extracted signed-upload provider, lazily constructing one from
+  // the injected SupabaseService when DI did not supply it (legacy unit-test
+  // construction path). Behaviour is identical either way.
+  private voiceUploadProvider(): VoiceUploadProvider {
+    if (!this.voiceUpload) {
+      this.voiceUpload = new VoiceUploadProvider(this.supabase);
+    }
+    return this.voiceUpload;
+  }
 
   // Resolve a sender's display name for the push notification body. Falls
   // back to a neutral label so a missing user row never crashes the send.
@@ -590,101 +598,17 @@ export class MessagingService {
     userId: string,
     request: SignedVoiceUploadRequest,
   ): Promise<SignedVoiceUploadResponse> {
+    // Validate duration / size / content_type BEFORE issuing a signed URL so a
+    // URL is never minted for a payload that would be rejected at send time.
     this.assertVoiceWithinLimits(request);
 
-    // SECURITY NOTE: The signed URL allows the client to upload any content to
-    // this storage path within the URL's validity window. We validate the
-    // client-claimed MIME type and size here, but we do not verify the actual
-    // uploaded object's content-type or size after upload. Full remediation
-    // requires a pending-upload tracking table and a post-upload verification
-    // step before the object is accepted into a CoachMessage. This is tracked
-    // as a known gap (R7 Finding 4.1).
-
-    const supabase = this.supabase.getClient();
-    const bucket = this.voiceBucket();
-    const ext = this.contentTypeToExt(request.content_type);
-    const objectPath = `${userId}/${Date.now()}-${randomToken(8)}.${ext}`;
-
-    let signedUrl: string;
-    try {
-      const storage = supabase.storage.from(bucket);
-      // The Supabase JS SDK exposes createSignedUploadUrl() since v2.30. The
-      // method signature varies across minor versions; cast to a narrow shape
-      // so a schema bump elsewhere does not break this call site.
-      const fn = (
-        storage as unknown as {
-          createSignedUploadUrl?: (
-            path: string,
-          ) => Promise<{
-            data: { signedUrl: string; token?: string } | null;
-            error: { message: string } | null;
-          }>;
-        }
-      ).createSignedUploadUrl;
-      if (typeof fn !== 'function') {
-        throw new NotImplementedException({
-          error: 'VOICE_STORAGE_UNAVAILABLE',
-          reason:
-            'Supabase JS SDK in this build does not expose createSignedUploadUrl. Set SUPABASE_VOICE_BUCKET and upgrade @supabase/supabase-js to >=2.30.',
-        });
-      }
-      const result = await fn.call(storage, objectPath);
-      if (result.error || !result.data) {
-        throw new NotImplementedException({
-          error: 'VOICE_STORAGE_UNAVAILABLE',
-          reason: result.error?.message ?? 'No signed URL returned',
-        });
-      }
-      signedUrl = result.data.signedUrl;
-    } catch (err) {
-      if (err instanceof NotImplementedException) throw err;
-      this.logger.warn(
-        `Supabase voice signed-upload failed: ${(err as Error).message}`,
-      );
-      throw new NotImplementedException({
-        error: 'VOICE_STORAGE_UNAVAILABLE',
-        reason: (err as Error).message,
-      });
-    }
-
-    // The public URL is deterministic in Supabase Storage when the bucket is
-    // public; for private buckets the message render path issues a short-
-    // lived download URL on demand. We return both fields so the client can
-    // persist whichever the deployment uses.
-    const publicUrlResult = supabase.storage
-      .from(bucket)
-      .getPublicUrl(objectPath);
-    const publicUrl =
-      (publicUrlResult.data as { publicUrl?: string } | null)?.publicUrl ??
-      `${process.env.SUPABASE_URL ?? ''}/storage/v1/object/public/${bucket}/${objectPath}`;
-
-    const expiresAt = new Date(Date.now() + VOICE_UPLOAD_TTL_SEC * 1000);
-    return {
-      upload_url: signedUrl,
-      public_url: publicUrl,
-      expires_at: expiresAt.toISOString(),
-    };
-  }
-
-  // Map a whitelisted content_type to a file extension for the storage
-  // object path. Keep this small and exact — anything outside the
-  // allowlist has already been rejected by assertVoiceWithinLimits.
-  private contentTypeToExt(contentType: string): string {
-    switch (contentType) {
-      case 'audio/mp4':
-      case 'audio/m4a':
-        return 'm4a';
-      case 'audio/aac':
-        return 'aac';
-      case 'audio/mpeg':
-        return 'mp3';
-      case 'audio/webm':
-        return 'webm';
-      case 'audio/ogg':
-        return 'ogg';
-      default:
-        return 'bin';
-    }
+    // v3-3 typed extraction: the Supabase signed-upload mechanics (object-path
+    // namespacing by owner id, the SDK version-skew runtime guard, and the
+    // public-URL fallback) now live in the shared, typed VoiceUploadProvider.
+    // The forbidden structural double-cast that used to live here is gone — the
+    // provider expresses the structural SDK shape as a named interface while
+    // preserving the `typeof fn !== 'function'` runtime version-skew guard.
+    return this.voiceUploadProvider().createSignedUpload(userId, request);
   }
 
   // ---- read markers ----

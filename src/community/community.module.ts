@@ -65,6 +65,11 @@ import { AiTriageModule } from './ai-triage/ai-triage.module';
 // module (mirrors AiTriageModule); registered last in imports for a clean v3-3
 // voice rebase.
 import { CommunityClassroomModule } from './classroom/community-classroom.module';
+// v3-3 voice notes: audio attachments into cohort / workspace-hall channels and
+// DM threads. Self-contained module (mirrors CommunityClassroomModule);
+// registered LAST in imports so the slice stays a clean single-line add below
+// v3-2's line (the brief's rebase-coordination rule).
+import { CommunityVoiceModule } from './voice/community-voice.module';
 
 // PrismaService provided globally via PrismaModule.
 @Module({
@@ -76,6 +81,7 @@ import { CommunityClassroomModule } from './classroom/community-classroom.module
     CommunityNotificationsModule,
     PlanContextModule,
     CommunityClassroomModule,
+    CommunityVoiceModule,
   ],
   controllers: [
     CommunityController,
