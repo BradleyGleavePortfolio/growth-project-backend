@@ -90,8 +90,8 @@ export class UpdateCohortDto {
 
 export const CommunityCohortAdminSchema = z
   .object({
-    id: z.string().uuid(),
-    workspace_id: z.string().uuid(),
+    id: z.guid(),
+    workspace_id: z.guid(),
     name: z.string(),
     description: z.string().nullable(),
     status: z.enum(['draft', 'active', 'archived']),

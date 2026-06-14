@@ -57,7 +57,7 @@ export const SEND_NOTIFICATION_CAPABILITY = 'draft.send_notification';
  */
 export const SendNotificationPayloadSchema = z
   .object({
-    clientId: z.string().uuid({ message: 'clientId must be a UUID' }),
+    clientId: z.guid({ message: 'clientId must be a UUID' }),
     kind: z.string().min(1).max(64),
     body: z.string().min(1).max(160),
     deepLink: z.string().max(512).optional(),

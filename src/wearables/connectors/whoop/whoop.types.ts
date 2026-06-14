@@ -272,7 +272,7 @@ export const WHOOP_WEBHOOK_TYPES = [
  */
 export const WhoopWebhookEventSchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.guid(),
     type: z.enum(WHOOP_WEBHOOK_TYPES),
     user_id: z.number().int().positive(),
     trace_id: z.string().optional(),

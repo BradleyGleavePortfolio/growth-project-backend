@@ -41,7 +41,7 @@ export const AssignMealPlanPayloadSchema = z
     dailyMealPlanId: z
       .string()
       .uuid({ message: 'dailyMealPlanId must be a UUID' }),
-    clientId: z.string().uuid({ message: 'clientId must be a UUID' }),
+    clientId: z.guid({ message: 'clientId must be a UUID' }),
     startsOn: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, {

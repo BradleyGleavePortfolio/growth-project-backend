@@ -74,9 +74,9 @@ export type MessageAckEnvelope = z.infer<typeof MessageAckEnvelopeSchema>;
 
 export const CommunityMessageSchema = z
   .object({
-    id: z.string().uuid(),
-    cohort_id: z.string().uuid().nullable(),
-    sender_user_id: z.string().uuid(),
+    id: z.guid(),
+    cohort_id: z.guid().nullable(),
+    sender_user_id: z.guid(),
     body: z.string().nullable(),
     kind: z.enum(['text', 'voice', 'system']),
     created_at: z.string().datetime(),

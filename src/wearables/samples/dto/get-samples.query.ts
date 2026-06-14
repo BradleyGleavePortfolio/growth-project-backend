@@ -38,7 +38,7 @@ export const GetSamplesQuerySchema = z
     metric: z.enum(WearableMetricType).optional(),
     from: IsoDateTime,
     to: IsoDateTime,
-    clientId: z.string().uuid({ message: 'clientId must be a UUID' }).optional(),
+    clientId: z.guid({ message: 'clientId must be a UUID' }).optional(),
     granularity: z.enum(['raw', 'hour', 'day']).default('raw'),
     preferredOnly: QueryBoolean.prefault('true'),
   })

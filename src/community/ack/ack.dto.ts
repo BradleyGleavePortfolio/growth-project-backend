@@ -74,7 +74,7 @@ export type AckStateDto = z.infer<typeof AckStateSchema>;
 /** POST /community/ack/:messageId/(seen|acked|replied) response envelope. */
 export const AckTransitionResponseSchema = z
   .object({
-    message_id: z.string().uuid(),
+    message_id: z.guid(),
     ack: AckStateSchema,
   })
   .strict();

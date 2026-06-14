@@ -32,7 +32,7 @@ export const MAX_INGEST_BATCH = 2000;
 
 export const IngestSampleSchema = z
   .object({
-    connectionId: z.string().uuid(),
+    connectionId: z.guid(),
     provider: z.enum(WearableProvider),
     metric: z.enum(WearableMetricType),
     bucket: z.enum(WearableMetricBucket),

@@ -59,7 +59,7 @@ export const AssignWorkoutPayloadSchema = z
     workoutPlanId: z
       .string()
       .uuid({ message: 'workoutPlanId must be a UUID' }),
-    clientId: z.string().uuid({ message: 'clientId must be a UUID' }),
+    clientId: z.guid({ message: 'clientId must be a UUID' }),
     scheduledFor: z
       .string()
       .refine((s) => !Number.isNaN(Date.parse(s)), {

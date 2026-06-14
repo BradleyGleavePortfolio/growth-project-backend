@@ -53,12 +53,12 @@ export class ActOnItemDto {
 
 export const CommunityModerationItemSchema = z
   .object({
-    id: z.string().uuid(),
-    workspace_id: z.string().uuid(),
+    id: z.guid(),
+    workspace_id: z.guid(),
     target_type: z.enum(['message', 'post', 'reaction', 'event', 'challenge', 'member']),
-    target_id: z.string().uuid(),
-    reported_by_user_id: z.string().uuid().nullable(),
-    actor_user_id: z.string().uuid().nullable(),
+    target_id: z.guid(),
+    reported_by_user_id: z.guid().nullable(),
+    actor_user_id: z.guid().nullable(),
     status: z.enum(['open', 'reviewed', 'actioned', 'dismissed']),
     reason: z.string(),
     notes: z.string().nullable(),

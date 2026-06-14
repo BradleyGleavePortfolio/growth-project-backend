@@ -27,7 +27,7 @@ export const COACH_MESSAGE_CAPABILITY = 'draft.coach_message';
  */
 export const CoachMessagePayloadSchema = z
   .object({
-    clientId: z.string().uuid({ message: 'clientId must be a UUID' }),
+    clientId: z.guid({ message: 'clientId must be a UUID' }),
     // 4000 chars is well above the model's per-message budget (~1k tokens)
     // but stays under realistic mobile chat-bubble rendering limits.
     body: z

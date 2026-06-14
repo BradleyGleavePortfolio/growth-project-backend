@@ -47,7 +47,7 @@ export type TriageSourceKind = z.infer<typeof TriageSourceKindSchema>;
 // CommunityPost the summary was derived from (mandatory provenance).
 export const TriageItemSchema = z
   .object({
-    source_item_id: z.string().uuid(),
+    source_item_id: z.guid(),
     source_kind: TriageSourceKindSchema,
     category: TriageCategorySchema,
     summary: z.string().min(1).max(280),
@@ -87,7 +87,7 @@ export const TriageResponseSchema = z
     generated_at: z.string().datetime(),
     is_empty: z.boolean(),
     buckets: z.array(TriageBucketSchema).length(TRIAGE_CATEGORIES.length),
-    source_item_ids: z.array(z.string().uuid()),
+    source_item_ids: z.array(z.guid()),
   })
   .strict();
 export type TriageResponse = z.infer<typeof TriageResponseSchema>;

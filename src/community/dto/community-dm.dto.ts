@@ -25,8 +25,8 @@ export class SendDmDto {
 export const CommunityDmThreadSchema = z
   .object({
     thread_id: z.string(),
-    workspace_id: z.string().uuid(),
-    other_user_id: z.string().uuid(),
+    workspace_id: z.guid(),
+    other_user_id: z.guid(),
     created_at: z.string().datetime().nullable(),
     last_message_at: z.string().datetime().nullable(),
   })
@@ -50,10 +50,10 @@ export type CommunityDmThreadListResponse = z.infer<
 
 export const CommunityDmMessageSchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.guid(),
     thread_id: z.string(),
-    sender_user_id: z.string().uuid(),
-    recipient_user_id: z.string().uuid(),
+    sender_user_id: z.guid(),
+    recipient_user_id: z.guid(),
     body: z.string().nullable(),
     created_at: z.string().datetime(),
     deleted: z.boolean(),

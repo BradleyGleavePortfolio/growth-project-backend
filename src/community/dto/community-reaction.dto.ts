@@ -32,7 +32,7 @@ export const CommunityReactionSummarySchema = z
 export const CommunityReactionStateSchema = z
   .object({
     target_type: z.enum(['message', 'post', 'comment']),
-    target_id: z.string().uuid(),
+    target_id: z.guid(),
     reactions: z.array(CommunityReactionSummarySchema),
   })
   .strict();
