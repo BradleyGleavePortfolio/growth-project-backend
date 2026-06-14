@@ -4,11 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  Prisma,
-  WearableMetricType,
-  type User,
-} from '@prisma/client';
+import { Prisma, type User } from '@prisma/client';
 import { AnalyticsService } from '../../analytics/analytics.service';
 import { ConsentService } from '../../consent/consent.service';
 import { PrismaService } from '../../prisma.service';
@@ -43,7 +39,6 @@ const NOT_FOUND = {
   code: 'community.wearable_prompts.not_found',
 } as const;
 
-type SkipReason = GenerateResponse['skipped'][number]['reason'];
 
 /**
  * v3-4 wearable-aware coaching prompts (COACH-ONLY).

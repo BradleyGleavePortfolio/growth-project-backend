@@ -3,7 +3,7 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
-import type { CommunitySearchKind, User } from '@prisma/client';
+import type { User } from '@prisma/client';
 import { AnalyticsService } from '../../analytics/analytics.service';
 import { CommunityAccessService } from '../community-access.service';
 import { COMMUNITY_TELEMETRY_EVENTS } from '../community-events';
