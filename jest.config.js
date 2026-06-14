@@ -38,6 +38,17 @@ module.exports = {
   // (unrelated src-colocated specs were never part of this default suite). All
   // four voice unit specs use mocked deps and need no live DB; the voice RLS
   // spec lives under test/rls/ and runs only via jest.rls.config.js.
+  // v3-4 adds `src/community/search` and `src/community/wearable-prompts` as the
+  // SEVENTH and EIGHTH narrowly-scoped roots so the community-search and
+  // wearable-prompts unit specs colocated under those slices'
+  // __tests__/*.spec.ts (search service + indexer; prompt-generator,
+  // degraded-connector-fallback, and wearable-prompts service) are discovered.
+  // Same rationale as the roots above: each slice owns its spec files in the
+  // source tree, and the roots are intentionally the slice subtrees ONLY — NOT
+  // the whole `src/` tree (unrelated src-colocated specs were never part of
+  // this default suite). All v3-4 unit specs use mocked Prisma/deps and need no
+  // live DB; the v3-4 RLS specs live under test/rls/ and run only via
+  // jest.rls.config.js.
   roots: [
     '<rootDir>/test',
     '<rootDir>/src/roman/voice',
@@ -45,6 +56,8 @@ module.exports = {
     '<rootDir>/src/community/challenges',
     '<rootDir>/src/notifications/__tests__',
     '<rootDir>/src/community/voice',
+    '<rootDir>/src/community/search',
+    '<rootDir>/src/community/wearable-prompts',
   ],
   testRegex: '\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'mjs', 'json'],
