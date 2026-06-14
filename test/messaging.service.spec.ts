@@ -14,6 +14,13 @@ function makePrisma() {
     created_at: Date;
     read_at: Date | null;
   }> = [];
+  // ED.6 — per-thread coach-review markers (one row per coach/client pair).
+  const reviews: Array<{
+    id: string;
+    coach_id: string;
+    client_id: string;
+    coach_reviewed_at: Date;
+  }> = [];
 
   let seq = 0;
   const newId = () => `m-${++seq}`;
@@ -127,6 +134,42 @@ function makePrisma() {
         return out;
       }),
       count: jest.fn(async ({ where }: any) => messages.filter((m) => matches(m, where)).length),
+    },
+    // ED.6 — ConversationReview marker. Keyed on the composite unique
+    // (coach_id, client_id), addressed through the named key the service uses.
+    conversationReview: {
+      _rows: reviews,
+      upsert: jest.fn(async ({ where, create, update }: any) => {
+        const key = where.ConversationReview_coach_client_key;
+        const existing = reviews.find(
+          (r) => r.coach_id === key.coach_id && r.client_id === key.client_id,
+        );
+        if (existing) {
+          Object.assign(existing, update);
+          return { ...existing };
+        }
+        const row = {
+          id: newId(),
+          coach_id: create.coach_id,
+          client_id: create.client_id,
+          coach_reviewed_at: create.coach_reviewed_at ?? new Date(),
+        };
+        reviews.push(row);
+        return { ...row };
+      }),
+      findUnique: jest.fn(async ({ where, select }: any) => {
+        const key = where.ConversationReview_coach_client_key;
+        const row = reviews.find(
+          (r) => r.coach_id === key.coach_id && r.client_id === key.client_id,
+        );
+        if (!row) return null;
+        if (select) {
+          const out: any = {};
+          for (const k of Object.keys(select)) if (select[k]) out[k] = (row as any)[k];
+          return out;
+        }
+        return { ...row };
+      }),
     },
   };
 }
@@ -272,6 +315,87 @@ describe('MessagingService', () => {
       const again = await svc.markReadByCoach('coach-A', 'client-1');
       expect(again).toEqual({ updated: 0 });
       expect(prisma._messages[0].read_at).toBe(firstReadAt);
+    });
+  });
+
+  // ED.6 — coach thread-review marker stamped on markReadByCoach and read back
+  // for the client. Verifies the flag gate, most-recent re-stamp, the client
+  // read shape, and that a marker failure never fails the coach read.
+  describe('coach thread-review marker (ED.6)', () => {
+    const FLAG = 'FEATURE_ROMAN_COACH_REVIEWED_AT';
+    let prev: string | undefined;
+    beforeEach(() => {
+      prev = process.env[FLAG];
+    });
+    afterEach(() => {
+      if (prev === undefined) delete process.env[FLAG];
+      else process.env[FLAG] = prev;
+    });
+
+    it('flag ON: markReadByCoach stamps a ConversationReview marker', async () => {
+      process.env[FLAG] = 'true';
+      await svc.sendAsClient('client-1', 'hi');
+      await svc.markReadByCoach('coach-A', 'client-1');
+      expect(prisma.conversationReview._rows).toHaveLength(1);
+      expect(prisma.conversationReview._rows[0]).toMatchObject({
+        coach_id: 'coach-A',
+        client_id: 'client-1',
+      });
+      expect(prisma.conversationReview._rows[0].coach_reviewed_at).toBeInstanceOf(
+        Date,
+      );
+    });
+
+    it('flag OFF: markReadByCoach writes NO marker', async () => {
+      process.env[FLAG] = 'false';
+      await svc.sendAsClient('client-1', 'hi');
+      await svc.markReadByCoach('coach-A', 'client-1');
+      expect(prisma.conversationReview._rows).toHaveLength(0);
+    });
+
+    it('flag UNSET defaults OFF (no marker)', async () => {
+      delete process.env[FLAG];
+      await svc.sendAsClient('client-1', 'hi');
+      await svc.markReadByCoach('coach-A', 'client-1');
+      expect(prisma.conversationReview._rows).toHaveLength(0);
+    });
+
+    it('most-recent semantics: a second read re-stamps the same single marker', async () => {
+      process.env[FLAG] = 'true';
+      await svc.sendAsClient('client-1', 'hi');
+      await svc.markReadByCoach('coach-A', 'client-1');
+      const t1 = prisma.conversationReview._rows[0].coach_reviewed_at.getTime();
+      await new Promise((r) => setTimeout(r, 5));
+      await svc.sendAsClient('client-1', 'again');
+      await svc.markReadByCoach('coach-A', 'client-1');
+      expect(prisma.conversationReview._rows).toHaveLength(1);
+      expect(
+        prisma.conversationReview._rows[0].coach_reviewed_at.getTime(),
+      ).toBeGreaterThanOrEqual(t1);
+    });
+
+    it('coachReviewForClient returns the ISO timestamp when a marker exists', async () => {
+      process.env[FLAG] = 'true';
+      await svc.sendAsClient('client-1', 'hi');
+      await svc.markReadByCoach('coach-A', 'client-1');
+      const out = await svc.coachReviewForClient('client-1');
+      expect(out.coachReviewedAt).toEqual(expect.any(String));
+      expect(Number.isNaN(Date.parse(out.coachReviewedAt!))).toBe(false);
+    });
+
+    it('coachReviewForClient returns null when no marker exists', async () => {
+      const out = await svc.coachReviewForClient('client-1');
+      expect(out.coachReviewedAt).toBeNull();
+    });
+
+    it('marker upsert failure does not fail the coach read acknowledgement', async () => {
+      process.env[FLAG] = 'true';
+      await svc.sendAsClient('client-1', 'hi');
+      (prisma.conversationReview.upsert as jest.Mock).mockRejectedValueOnce(
+        new Error('boom'),
+      );
+      const result = await svc.markReadByCoach('coach-A', 'client-1');
+      expect(result).toEqual({ updated: 1 });
     });
   });
 
