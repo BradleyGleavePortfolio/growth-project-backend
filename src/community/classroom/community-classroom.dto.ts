@@ -203,6 +203,14 @@ export class UpdateClassroomPostDto {
   pinned_order?: number;
 }
 
+/** POST /community/classroom/:postId/media — coach attaches more media. */
+export class AttachClassroomMediaDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ClassroomMediaInputDto)
+  media!: ClassroomMediaInputDto[];
+}
+
 /** POST /community/classroom/:postId/publish — coach publishes a lesson. */
 export class PublishClassroomPostDto {
   /**
