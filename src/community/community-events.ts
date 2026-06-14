@@ -76,6 +76,12 @@ export const COMMUNITY_TELEMETRY_EVENTS = {
   pushDeliveryFailed: 'community.push.delivery_failed',
   realtimeSubscriberCountUnknown:
     'community.realtime.subscriber_count_unknown',
+  // v3-2 classroom posts (additive). Emitted only when
+  // FEATURE_COMMUNITY_TELEMETRY === 'true'; property values carry ids /
+  // timestamps / enum state only, never lesson title or body text.
+  classroomLessonPublished: 'community.classroom.lesson_published',
+  classroomLessonScheduled: 'community.classroom.lesson_scheduled',
+  classroomMediaUploadIssued: 'community.classroom.media_upload_issued',
 } as const;
 
 export type CommunityTelemetryEventName =

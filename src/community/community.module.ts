@@ -61,6 +61,10 @@ import { CommunityEventsEnabledGuard } from './events/community-events-flag.guar
 // v2-4 community AI inbox triage: read-only generation surface
 // (GET /community/ai-triage). Self-contained module; no Prisma diff.
 import { AiTriageModule } from './ai-triage/ai-triage.module';
+// v3-2 classroom posts: coach-authored, media-backed lessons. Self-contained
+// module (mirrors AiTriageModule); registered last in imports for a clean v3-3
+// voice rebase.
+import { CommunityClassroomModule } from './classroom/community-classroom.module';
 
 // PrismaService provided globally via PrismaModule.
 @Module({
@@ -71,6 +75,7 @@ import { AiTriageModule } from './ai-triage/ai-triage.module';
     CommunityRealtimeModule,
     CommunityNotificationsModule,
     PlanContextModule,
+    CommunityClassroomModule,
   ],
   controllers: [
     CommunityController,

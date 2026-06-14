@@ -482,6 +482,7 @@ model User {
   community_challenge_participations CommunityChallengeParticipation[] @relation("CommunityChallengeParticipationUser")
   community_reports_filed            CommunityModerationAction[]       @relation("community_reporter")
   community_moderation_actions       CommunityModerationAction[]       @relation("community_moderator")
+  community_classroom_posts_authored CommunityClassroomPost[]          @relation("CommunityClassroomPostCoach")
 
   // Roman Phase 1 — Chat MVP. A user owns Roman chat sessions (one active
   // session per (userId, surface) day-key). Each session holds an ordered
@@ -5588,6 +5589,16 @@ enum CommunityModerationStatus {
   dismissed
 }
 
+// v3-2 classroom posts: media-backed lessons. `scheduled` is the release-lock
+// state (releaseAt in the future); a post is visible to students only when
+// status='published' AND (release_at IS NULL OR release_at <= now()).
+enum CommunityClassroomPostStatus {
+  draft
+  scheduled
+  published
+  archived
+}
+
 model CommunityWorkspace {
   id                 String    @id @default(uuid()) @db.Uuid
   coach_id           String    @db.Uuid
@@ -5921,6 +5932,63 @@ model CommunityModerationAction {
   // A reporter's filed reports.
   @@index([reported_by_id, created_at])
   @@map("community_moderation_actions")
+}
+
+// v3-2 classroom posts: coach-authored, media-backed lessons. Additive only —
+// no FK churn on existing community tables. Tenancy mirrors the v1-1 convention:
+// scalar workspace_id / cohort_id / coach_id, server-derived, with RLS keyed on
+// the shared app.is_community_workspace_coach / _member / shares_community_cohort
+// helpers (defined in the v1-1 migration). Pinned lessons sort by pinned_order
+// ASC ahead of non-pinned (published_at DESC); release_at gates student reads.
+model CommunityClassroomPost {
+  id              String                       @id @default(uuid()) @db.Uuid
+  workspace_id    String                       @db.Uuid
+  cohort_id       String?                      @db.Uuid
+  coach_id        String                       @db.Uuid
+  title           String                       @db.VarChar(200)
+  body_markdown   String                       @db.Text
+  status          CommunityClassroomPostStatus @default(draft)
+  pinned          Boolean                      @default(false)
+  pinned_order    Int?                         @db.Integer
+  release_at      DateTime?                    @db.Timestamptz(6)
+  published_at    DateTime?                    @db.Timestamptz(6)
+  created_at      DateTime                     @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime                     @updatedAt @db.Timestamptz(6)
+  soft_deleted_at DateTime?                    @db.Timestamptz(6)
+
+  coach        User                           @relation("CommunityClassroomPostCoach", fields: [coach_id], references: [id], onDelete: Restrict)
+  media_assets CommunityClassroomMediaAsset[]
+
+  // Student feed: released, published lessons within a cohort/workspace.
+  @@index([workspace_id, cohort_id, status, release_at])
+  // Pinned-first ordering for the classroom feed.
+  @@index([workspace_id, cohort_id, pinned, pinned_order])
+  @@map("community_classroom_posts")
+}
+
+// v3-2 classroom media asset: one media object (video/audio/pdf/image) attached
+// to a classroom post. storage_key is the opaque object path; signed URLs are
+// minted at read time through the coach-media StorageProvider (no public URLs).
+model CommunityClassroomMediaAsset {
+  id           String   @id @default(uuid()) @db.Uuid
+  post_id      String   @db.Uuid
+  workspace_id String   @db.Uuid
+  kind         String   @db.VarChar(16)
+  storage_key  String   @db.Text
+  duration_sec Int?     @db.Integer
+  bytes        BigInt?
+  mime_type    String?  @db.VarChar(120)
+  width        Int?     @db.Integer
+  height       Int?     @db.Integer
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  post CommunityClassroomPost @relation(fields: [post_id], references: [id], onDelete: Cascade)
+
+  // Media listing for a post within a workspace (avoids cross-tenant fan-out).
+  @@index([workspace_id, post_id])
+  // Storage-key reverse lookup (signed-URL issuance, dedupe).
+  @@index([storage_key])
+  @@map("community_classroom_media_assets")
 }
 
 // ─── B5 — Digital Contracts + E-Signatures (HelloSign Embedded) ───────────────
