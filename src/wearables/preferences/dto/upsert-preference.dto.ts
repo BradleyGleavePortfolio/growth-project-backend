@@ -21,9 +21,7 @@ export const UpsertPreferenceSchema = z
   .object({
     metric: z.enum(WearableMetricType),
     preferred_provider: z.enum(WearableProvider),
-    target_user_id: z
-      .string()
-      .uuid({ message: 'target_user_id must be a UUID' })
+    target_user_id: z.guid({ message: 'target_user_id must be a UUID' })
       .optional(),
   })
   .strict();
@@ -55,9 +53,7 @@ export type DeletePreferenceParam = z.infer<typeof DeletePreferenceParamSchema>;
  */
 export const DeletePreferenceQuerySchema = z
   .object({
-    target_user_id: z
-      .string()
-      .uuid({ message: 'target_user_id must be a UUID' })
+    target_user_id: z.guid({ message: 'target_user_id must be a UUID' })
       .optional(),
   })
   .strict();

@@ -48,9 +48,7 @@ export const EDIT_WORKOUT_PLAN_CAPABILITY = 'draft.edit_workout_plan';
 export const EditWorkoutPlanPayloadSchema = z
   .object({
     capability: z.literal(EDIT_WORKOUT_PLAN_CAPABILITY),
-    target_plan_id: z
-      .string()
-      .uuid({ message: 'target_plan_id must be a UUID' }),
+    target_plan_id: z.guid({ message: 'target_plan_id must be a UUID' }),
     base_revision_index: z
       .number()
       .int({ message: 'base_revision_index must be an integer' })

@@ -38,9 +38,7 @@ export const ASSIGN_MEAL_PLAN_CAPABILITY = 'draft.assign_meal_plan';
  */
 export const AssignMealPlanPayloadSchema = z
   .object({
-    dailyMealPlanId: z
-      .string()
-      .uuid({ message: 'dailyMealPlanId must be a UUID' }),
+    dailyMealPlanId: z.guid({ message: 'dailyMealPlanId must be a UUID' }),
     clientId: z.guid({ message: 'clientId must be a UUID' }),
     startsOn: z
       .string()
