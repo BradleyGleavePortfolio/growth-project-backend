@@ -21,9 +21,30 @@
 // self-invalidates at the UTC day boundary and never serves a stale yesterday.
 // DO NOT add a Prisma model — this service only reads existing repositories.
 
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { isThreeArcCountsEnabled } from './three-arc-counts.feature';
+
+// Narrow structural slice of PrismaService this service reads. Declaring the
+// dependency as this interface (rather than the full PrismaService) lets the
+// controller spec supply a typed in-memory double WITHOUT a cast — keeping the
+// R0/R80 ban-scan clean (no `as any`). PrismaService satisfies it structurally
+// at the DI boundary. Every method here is read-only; this service NEVER writes
+// and NEVER adds a Prisma model.
+export interface DailyRingsRepo {
+  checkIn: { count(args: { where: Record<string, unknown> }): Promise<number> };
+  coachBrief: { count(args: { where: Record<string, unknown> }): Promise<number> };
+  conversationReview: {
+    count(args: { where: Record<string, unknown> }): Promise<number>;
+  };
+  coachMessage: {
+    findMany(args: {
+      where: Record<string, unknown>;
+      select: { client_id: true };
+      distinct: ['client_id'];
+    }): Promise<Array<{ client_id: string | null }>>;
+  };
+}
 
 export interface DailyRingsResponse {
   checkIns: { reviewed: number; submitted: number };
@@ -55,7 +76,9 @@ export class CoachHomeService {
   // yesterday count.
   private readonly cache = new Map<string, CacheEntry>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  // Injected by the PrismaService DI token but typed as the narrow read-only
+  // slice (DailyRingsRepo) so tests can pass a typed double without a cast.
+  constructor(@Inject(PrismaService) private readonly prisma: DailyRingsRepo) {}
 
   /**
    * Today's three-arc counts for the calling coach.
