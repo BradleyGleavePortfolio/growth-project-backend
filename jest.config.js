@@ -20,11 +20,21 @@ module.exports = {
   // rationale: the slice owns those spec files in the source tree, and the root
   // is intentionally NOT the whole `src/` tree (unrelated src-colocated specs
   // were never part of this default suite).
+  // Roman P4 (Option C) adds '<rootDir>/src/notifications/__tests__' as a FIFTH
+  // narrowly-scoped root so the first-payment specs colocated under
+  // src/notifications/__tests__/*.spec.ts are discovered. Same rationale as the
+  // roots above: this slice owns those spec files in the source tree, and the
+  // root is intentionally the __tests__ folder ONLY — NOT the whole
+  // src/notifications tree (the pre-existing src/notifications/
+  // notifications-category.spec.ts was never part of this default suite and is
+  // not pulled in by this scoped root). Both new specs use mocked Prisma/tx and
+  // need no live DB.
   roots: [
     '<rootDir>/test',
     '<rootDir>/src/roman/voice',
     '<rootDir>/src/community/ack',
     '<rootDir>/src/community/challenges',
+    '<rootDir>/src/notifications/__tests__',
   ],
   testRegex: '\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'mjs', 'json'],
