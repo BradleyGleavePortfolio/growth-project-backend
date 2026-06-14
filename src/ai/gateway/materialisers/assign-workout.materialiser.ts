@@ -56,10 +56,8 @@ export const ASSIGN_WORKOUT_CAPABILITY = 'draft.assign_workout';
  */
 export const AssignWorkoutPayloadSchema = z
   .object({
-    workoutPlanId: z
-      .string()
-      .uuid({ message: 'workoutPlanId must be a UUID' }),
-    clientId: z.string().uuid({ message: 'clientId must be a UUID' }),
+    workoutPlanId: z.guid({ message: 'workoutPlanId must be a UUID' }),
+    clientId: z.guid({ message: 'clientId must be a UUID' }),
     scheduledFor: z
       .string()
       .refine((s) => !Number.isNaN(Date.parse(s)), {

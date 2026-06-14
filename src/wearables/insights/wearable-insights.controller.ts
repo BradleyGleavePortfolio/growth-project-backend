@@ -45,10 +45,10 @@ import {
 
 // Both buckets, validated from the query string. The mobile clients send
 // the enum value verbatim.
-const BucketSchema = z.nativeEnum(WearableMetricBucket);
+const BucketSchema = z.enum(WearableMetricBucket);
 
 const CoachQuerySchema = z.object({
-  clientId: z.string().uuid({ message: 'clientId must be a UUID' }),
+  clientId: z.guid({ message: 'clientId must be a UUID' }),
   bucket: BucketSchema,
 });
 
@@ -62,7 +62,7 @@ const ClientQuerySchema = z.object({
 // a future drift can never smuggle extra fields into the draft payload.
 const ApproveBodySchema = z
   .object({
-    client_id: z.string().uuid({ message: 'client_id must be a UUID' }),
+    client_id: z.guid({ message: 'client_id must be a UUID' }),
     bucket: BucketSchema,
     draft_body: z
       .string()
@@ -80,7 +80,7 @@ const ApproveBodySchema = z
 // `not_implemented` branch is the pre-HK-6 404 fallback, now dead).
 const ApproveResponseShape = z.object({
   status: z.literal('ok'),
-  draft_id: z.string().uuid(),
+  draft_id: z.guid(),
   // Nullable by contract (HK-6a R2, P1-3): a reject never materialises a
   // message, so there is no materialisation timestamp to report — the field
   // is null on the reject branch and an ISO string on approve/edit. This

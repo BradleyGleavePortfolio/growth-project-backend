@@ -63,17 +63,17 @@ const MAX_MEAL_ID_LEN = 128;
 export const WorkoutPlanContextTagSchema = z
   .object({
     type: z.literal('workout'),
-    workout_plan_id: z.string().uuid(),
+    workout_plan_id: z.guid(),
     week_index: weekIndex,
     day_index: dayIndex,
-    exercise_id: z.string().uuid().optional(),
+    exercise_id: z.guid().optional(),
   })
   .strict();
 
 export const MealPlanContextTagSchema = z
   .object({
     type: z.literal('meal'),
-    meal_plan_id: z.string().uuid(),
+    meal_plan_id: z.guid(),
     meal_id: z.string().min(1).max(MAX_MEAL_ID_LEN).optional(),
   })
   .strict();
@@ -81,14 +81,14 @@ export const MealPlanContextTagSchema = z
 export const PackagePlanContextTagSchema = z
   .object({
     type: z.literal('package'),
-    package_id: z.string().uuid(),
+    package_id: z.guid(),
   })
   .strict();
 
 export const CheckInPlanContextTagSchema = z
   .object({
     type: z.literal('check_in'),
-    check_in_id: z.string().uuid(),
+    check_in_id: z.guid(),
   })
   .strict();
 
@@ -117,10 +117,10 @@ export type CheckInPlanContextTag = z.infer<typeof CheckInPlanContextTagSchema>;
 export const ResolvePlanContextQuerySchema = z
   .object({
     type: PlanContextTypeSchema,
-    id: z.string().uuid(),
+    id: z.guid(),
     week_index: z.coerce.number().int().min(0).max(MAX_WEEK_INDEX).optional(),
     day_index: z.coerce.number().int().min(0).max(MAX_DAY_INDEX).optional(),
-    exercise_id: z.string().uuid().optional(),
+    exercise_id: z.guid().optional(),
     meal_id: z.string().min(1).max(MAX_MEAL_ID_LEN).optional(),
   })
   .strict();
@@ -134,14 +134,14 @@ export type ResolvePlanContextQuery = z.infer<
 const WorkoutSnapshotSchema = z
   .object({
     type: z.literal('workout'),
-    workout_plan_id: z.string().uuid(),
+    workout_plan_id: z.guid(),
     name: z.string(),
     plan_type: z.enum(['strength', 'cardio', 'mobility']),
     week_index: z.number().int().nullable(),
     day_index: z.number().int().nullable(),
     exercise: z
       .object({
-        id: z.string().uuid(),
+        id: z.guid(),
         exercise_external_id: z.string(),
         order: z.number().int(),
         sets: z.number().int(),
@@ -154,7 +154,7 @@ const WorkoutSnapshotSchema = z
 const MealSnapshotSchema = z
   .object({
     type: z.literal('meal'),
-    meal_plan_id: z.string().uuid(),
+    meal_plan_id: z.guid(),
     title: z.string(),
     meal_id: z.string().nullable(),
   })
@@ -163,7 +163,7 @@ const MealSnapshotSchema = z
 const PackageSnapshotSchema = z
   .object({
     type: z.literal('package'),
-    package_id: z.string().uuid(),
+    package_id: z.guid(),
     name: z.string(),
     amount_cents: z.number().int(),
     currency: z.string(),
@@ -174,7 +174,7 @@ const PackageSnapshotSchema = z
 const CheckInSnapshotSchema = z
   .object({
     type: z.literal('check_in'),
-    check_in_id: z.string().uuid(),
+    check_in_id: z.guid(),
     date: z.string(),
     check_in_type: z.string(),
     reviewed_by_coach: z.boolean(),

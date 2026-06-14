@@ -34,13 +34,13 @@ const IsoDateTime = z
 
 export const GetSamplesQuerySchema = z
   .object({
-    bucket: z.nativeEnum(WearableMetricBucket),
-    metric: z.nativeEnum(WearableMetricType).optional(),
+    bucket: z.enum(WearableMetricBucket),
+    metric: z.enum(WearableMetricType).optional(),
     from: IsoDateTime,
     to: IsoDateTime,
-    clientId: z.string().uuid({ message: 'clientId must be a UUID' }).optional(),
+    clientId: z.guid({ message: 'clientId must be a UUID' }).optional(),
     granularity: z.enum(['raw', 'hour', 'day']).default('raw'),
-    preferredOnly: QueryBoolean.default('true'),
+    preferredOnly: QueryBoolean.prefault('true'),
   })
   .strict()
   .superRefine((val, ctx) => {

@@ -250,7 +250,7 @@ export function validateSectionPayload(
   }
   const result = schema.safeParse(payload);
   if (!result.success) {
-    const msg = result.error.errors
+    const msg = result.error.issues
       .map((e) => `${e.path.join('.')}: ${e.message}`)
       .join('; ');
     return { ok: false, message: msg };

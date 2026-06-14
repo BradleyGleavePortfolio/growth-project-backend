@@ -62,7 +62,7 @@ export const UpsertExerciseOpSchema = z
   .object({
     op: z.literal('upsert_exercise'),
     // row_id optional: present => update that row, absent => insert a new one.
-    row_id: z.string().uuid().optional(),
+    row_id: z.guid().optional(),
     payload: UpsertExerciseRowSchema,
   })
   .strict();
@@ -71,7 +71,7 @@ export const UpsertExerciseOpSchema = z
 export const RemoveExerciseOpSchema = z
   .object({
     op: z.literal('remove_exercise'),
-    row_id: z.string().uuid(),
+    row_id: z.guid(),
   })
   .strict();
 
@@ -80,7 +80,7 @@ export const ReorderOpSchema = z
   .object({
     op: z.literal('reorder'),
     // 0..200 ids; an empty array is a no-op reorder (still valid).
-    row_ids: z.array(z.string().uuid()).max(AUTOSAVE_OPS_MAX),
+    row_ids: z.array(z.guid()).max(AUTOSAVE_OPS_MAX),
   })
   .strict();
 

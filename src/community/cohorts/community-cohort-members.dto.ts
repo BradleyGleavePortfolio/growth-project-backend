@@ -59,8 +59,8 @@ export class ListMembersQueryDto {
 // email, notify_level) are coach-only — see CohortMembersService.memberView.
 export const CohortMemberSchema = z
   .object({
-    id: z.string().uuid(),
-    user_id: z.string().uuid(),
+    id: z.guid(),
+    user_id: z.guid(),
     display_name: z.string(),
     role: z.enum(['student', 'co_coach', 'coach']),
     // Coach-only fields: null/absent in the sanitized roster view.

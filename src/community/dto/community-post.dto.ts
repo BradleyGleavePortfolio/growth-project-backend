@@ -65,10 +65,10 @@ export class ListPostsQueryDto {
 
 export const CommunityPostSchema = z
   .object({
-    id: z.string().uuid(),
-    workspace_id: z.string().uuid(),
-    cohort_id: z.string().uuid().nullable(),
-    author_user_id: z.string().uuid(),
+    id: z.guid(),
+    workspace_id: z.guid(),
+    cohort_id: z.guid().nullable(),
+    author_user_id: z.guid(),
     title: z.string().nullable(),
     body: z.string().nullable(),
     scope: z.enum(['hall', 'cohort']),
@@ -99,9 +99,9 @@ export type CommunityPostListResponse = z.infer<
 
 export const CommunityCommentSchema = z
   .object({
-    id: z.string().uuid(),
-    post_id: z.string().uuid(),
-    author_user_id: z.string().uuid(),
+    id: z.guid(),
+    post_id: z.guid(),
+    author_user_id: z.guid(),
     body: z.string(),
     created_at: z.string().datetime(),
   })

@@ -33,11 +33,11 @@ export type InboxAckSummary = z.infer<typeof InboxAckSummarySchema>;
 
 export const InboxItemSchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.guid(),
     type: z.enum(['message', 'post']),
-    cohort_id: z.string().uuid(),
+    cohort_id: z.guid(),
     cohort_name: z.string(),
-    author_user_id: z.string().uuid(),
+    author_user_id: z.guid(),
     author_display_name: z.string(),
     preview: z.string().max(200),
     created_at: z.string().datetime(),

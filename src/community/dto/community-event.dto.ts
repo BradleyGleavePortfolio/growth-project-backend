@@ -167,10 +167,10 @@ export class ListEventsQueryDto {
 
 export const CommunityEventSchema = z
   .object({
-    id: z.string().uuid(),
-    workspace_id: z.string().uuid(),
-    cohort_id: z.string().uuid().nullable(),
-    created_by_user_id: z.string().uuid(),
+    id: z.guid(),
+    workspace_id: z.guid(),
+    cohort_id: z.guid().nullable(),
+    created_by_user_id: z.guid(),
     title: z.string(),
     description: z.string().nullable(),
     state: z.enum(EVENT_STATES),
@@ -217,8 +217,8 @@ export type CommunityEventListResponse = z.infer<
 
 export const CommunityRsvpView = z
   .object({
-    event_id: z.string().uuid(),
-    user_id: z.string().uuid(),
+    event_id: z.guid(),
+    user_id: z.guid(),
     status: z.enum(RSVP_STATUSES),
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),

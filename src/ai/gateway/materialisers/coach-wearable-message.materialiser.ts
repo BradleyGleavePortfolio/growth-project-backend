@@ -35,8 +35,8 @@ export const COACH_WEARABLE_MESSAGE_CAPABILITY = 'draft.coach_wearable_message';
  */
 export const CoachWearableMessagePayloadSchema = z
   .object({
-    clientId: z.string().uuid({ message: 'clientId must be a UUID' }),
-    bucket: z.nativeEnum(WearableMetricBucket),
+    clientId: z.guid({ message: 'clientId must be a UUID' }),
+    bucket: z.enum(WearableMetricBucket),
     // Matches insight-output `suggested_message_draft` max so an edited body
     // stays inside the contract the mobile panel renders against.
     body: z

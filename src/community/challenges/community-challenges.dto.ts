@@ -217,10 +217,10 @@ export class ListChallengesQueryDto extends PaginationQueryDto {
 
 export const ChallengeSchema = z
   .object({
-    id: z.string().uuid(),
-    workspace_id: z.string().uuid(),
-    cohort_id: z.string().uuid().nullable(),
-    created_by_user_id: z.string().uuid(),
+    id: z.guid(),
+    workspace_id: z.guid(),
+    cohort_id: z.guid().nullable(),
+    created_by_user_id: z.guid(),
     title: z.string(),
     description: z.string().nullable(),
     status: z.enum(['draft', 'active', 'completed', 'archived']),
@@ -244,8 +244,8 @@ export type ChallengeView = z.infer<typeof ChallengeSchema>;
  */
 export const ParticipationSchema = z
   .object({
-    challenge_id: z.string().uuid(),
-    user_id: z.string().uuid(),
+    challenge_id: z.guid(),
+    user_id: z.guid(),
     progress_value: z.number(),
     target_value: z.number().nullable(),
     /** 0..1 fraction toward own target; null when the challenge has no target. */
@@ -278,7 +278,7 @@ export type ChallengeResponse = z.infer<typeof ChallengeResponseSchema>;
 export const ChallengeListResponseSchema = z
   .object({
     challenges: z.array(ChallengeSchema),
-    next_cursor: z.string().uuid().nullable(),
+    next_cursor: z.guid().nullable(),
   })
   .strict();
 export type ChallengeListResponse = z.infer<typeof ChallengeListResponseSchema>;
@@ -295,7 +295,7 @@ export type ParticipationResponse = z.infer<typeof ParticipationResponseSchema>;
  */
 export const LeaderboardRowSchema = z
   .object({
-    user_id: z.string().uuid(),
+    user_id: z.guid(),
     rank: z.number().int().positive(),
     progress_value: z.number(),
     is_self: z.boolean(),
@@ -320,16 +320,16 @@ export const LeaderboardResponseSchema = z
      * page. Null whenever the board is unavailable (rows are empty), so an
      * opted-out caller never receives a cursor.
      */
-    next_cursor: z.string().uuid().nullable(),
+    next_cursor: z.guid().nullable(),
   })
   .strict();
 export type LeaderboardResponse = z.infer<typeof LeaderboardResponseSchema>;
 
 export const ChallengeCommentSchema = z
   .object({
-    id: z.string().uuid(),
-    challenge_id: z.string().uuid(),
-    author_user_id: z.string().uuid(),
+    id: z.guid(),
+    challenge_id: z.guid(),
+    author_user_id: z.guid(),
     body: z.string(),
     created_at: z.string().datetime(),
   })
@@ -347,7 +347,7 @@ export const ChallengeCommentListResponseSchema = z
   .object({
     comments: z.array(ChallengeCommentSchema),
     /** Page cursor (D-040): id of the last comment when more remain, else null. */
-    next_cursor: z.string().uuid().nullable(),
+    next_cursor: z.guid().nullable(),
   })
   .strict();
 export type ChallengeCommentListResponse = z.infer<

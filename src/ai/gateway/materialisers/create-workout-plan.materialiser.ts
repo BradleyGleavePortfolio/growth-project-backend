@@ -55,20 +55,14 @@ export const CREATE_WORKOUT_PLAN_CAPABILITY = 'draft.create_workout_plan';
 export const CreateWorkoutPlanPayloadSchema = z
   .object({
     capability: z.literal(CREATE_WORKOUT_PLAN_CAPABILITY),
-    target_client_id: z
-      .string()
-      .uuid({ message: 'target_client_id must be a UUID' }),
+    target_client_id: z.guid({ message: 'target_client_id must be a UUID' }),
     template_seed: z
       .object({
-        source_template_plan_id: z
-          .string()
-          .uuid({ message: 'source_template_plan_id must be a UUID' }),
+        source_template_plan_id: z.guid({ message: 'source_template_plan_id must be a UUID' }),
       })
       .strict()
       .optional(),
-    target_program_id: z
-      .string()
-      .uuid({ message: 'target_program_id must be a UUID' })
+    target_program_id: z.guid({ message: 'target_program_id must be a UUID' })
       .optional(),
     diff: WorkoutDiffSchema,
   })

@@ -12,7 +12,7 @@ export type CommunityMemberRole = z.infer<typeof CommunityMemberRoleSchema>;
 
 export const CommunityMeMembershipSchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.guid(),
     role: CommunityMemberRoleSchema,
     notify_level: CommunityNotifyLevelSchema,
     dm_enabled_effective: z.boolean(),
@@ -24,7 +24,7 @@ export const CommunityMeMembershipSchema = z
 export const CommunityMeResponseSchema = z
   .object({
     feature_flag_state: z.enum(['enabled', 'disabled']),
-    workspace_id: z.string().uuid().nullable(),
+    workspace_id: z.guid().nullable(),
     membership: CommunityMeMembershipSchema.nullable(),
     unread: z
       .object({

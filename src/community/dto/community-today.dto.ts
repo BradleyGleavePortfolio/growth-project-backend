@@ -5,7 +5,7 @@ export const CommunityTodayResponseSchema = z
     feature_flag_state: z.enum(['enabled', 'disabled']),
     cohort: z
       .object({
-        id: z.string().uuid(),
+        id: z.guid(),
         name: z.string(),
         member_count: z.number().int().nonnegative(),
       })
@@ -13,7 +13,7 @@ export const CommunityTodayResponseSchema = z
       .nullable(),
     event: z
       .object({
-        id: z.string().uuid(),
+        id: z.guid(),
         title: z.string(),
         starts_at: z.string().datetime(),
         live_url: z.string().nullable(),
@@ -22,15 +22,15 @@ export const CommunityTodayResponseSchema = z
       .nullable(),
     pinned_post: z
       .object({
-        id: z.string().uuid(),
+        id: z.guid(),
         title: z.string(),
-        author_user_id: z.string().uuid(),
+        author_user_id: z.guid(),
       })
       .strict()
       .nullable(),
     challenge: z
       .object({
-        id: z.string().uuid(),
+        id: z.guid(),
         title: z.string(),
         ends_at: z.string().datetime(),
       })

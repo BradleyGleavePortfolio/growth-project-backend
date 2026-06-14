@@ -35,7 +35,7 @@ const METRIC_VALUES = Object.values(WearableMetricType) as [
   WearableMetricType,
   ...WearableMetricType[],
 ];
-export const SourceMetricSchema = z.nativeEnum(WearableMetricType);
+export const SourceMetricSchema = z.enum(WearableMetricType);
 export const SourceMetricsSchema = z.array(SourceMetricSchema).min(1);
 
 // Keep METRIC_VALUES referenced so future schema edits that switch to a
