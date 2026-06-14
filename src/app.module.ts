@@ -21,6 +21,7 @@ import { AiCreditsModule } from './ai-credits/ai-credits.module';
 import { CoachAIModule } from './ai/coach/coach-ai.module';
 import { CoachModule } from './coach/coach.module';
 import { CoachBriefModule } from './coach/brief/coach-brief.module';
+import { CoachHomeModule } from './coach/home/coach-home.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { CommunityModule } from './community/community.module';
@@ -196,6 +197,9 @@ import { WearablesModule } from './wearables/wearables.module';
     // back to a deterministic narrative when ANTHROPIC_API_KEY is missing
     // or the Anthropic call fails — never 503 to the coach.
     CoachBriefModule,
+    // ED.2 (Roman three-arc router) — GET /coach/home/daily-rings daily
+    // completion counts; flag-gated FEATURE_ROMAN_THREE_ARC_COUNTS (off).
+    CoachHomeModule,
     // Phase 7C — Peer Leaderboard (opt-in, coach-roster scoped).
     // Score: combined 30-day habit completion rate, never raw health data.
     LeaderboardModule,
