@@ -12,6 +12,7 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { ListCheckInsQueryDto } from './check-ins.dto';
 import { CheckInsService } from './check-ins.service';
 
@@ -21,6 +22,7 @@ import { CheckInsService } from './check-ins.service';
 @ApiTags('check-ins')
 @Controller('coach')
 @UseGuards(JwtAuthGuard, CoachGuard)
+@Roles('coach')
 export class CoachCheckInsController {
   constructor(private checkIns: CheckInsService) {}
 
