@@ -29,12 +29,22 @@ module.exports = {
   // notifications-category.spec.ts was never part of this default suite and is
   // not pulled in by this scoped root). Both new specs use mocked Prisma/tx and
   // need no live DB.
+  // v3-3 adds `src/community/voice` as a SIXTH narrowly-scoped root so the
+  // voice-notes unit specs colocated under src/community/voice/__tests__/*.spec.ts
+  // (service tenancy/upload-confirm/bucket-binding, provider TTL/namespace,
+  // limit enforcement, and the R0 forbidden-cast scan) are discovered. Same
+  // rationale as the roots above: this slice owns those spec files in the
+  // source tree, and the root is intentionally NOT the whole `src/` tree
+  // (unrelated src-colocated specs were never part of this default suite). All
+  // four voice unit specs use mocked deps and need no live DB; the voice RLS
+  // spec lives under test/rls/ and runs only via jest.rls.config.js.
   roots: [
     '<rootDir>/test',
     '<rootDir>/src/roman/voice',
     '<rootDir>/src/community/ack',
     '<rootDir>/src/community/challenges',
     '<rootDir>/src/notifications/__tests__',
+    '<rootDir>/src/community/voice',
   ],
   testRegex: '\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'mjs', 'json'],
