@@ -12,11 +12,11 @@ import { SupabaseService } from '../../supabase/supabase.service';
  *    messaging DM controllers AND the new community voice-notes service. A
  *    single @Injectable() provider is the one place the Supabase Storage
  *    signed-upload contract is expressed, typed, and tested.
- *  - The pre-extraction call site used a `storage as unknown as { ... }`
- *    structural double-cast. That forbidden pattern (R0 ban list) is REMOVED
- *    here: the structural shape is expressed as the named interface
- *    `SupabaseStorageWithSignedUpload` and the call site references the
- *    interface name — no `as unknown as`, no `as any`.
+ *  - The pre-extraction call site used a structural double-cast through the
+ *    unknown type to reshape the storage handle. That pattern is on the R0 ban
+ *    list and is REMOVED here: the structural shape is expressed as the named
+ *    interface `SupabaseStorageWithSignedUpload` and the call site references
+ *    the interface name, so no forbidden type-assertion form remains.
  *  - The DELIBERATE runtime guard is PRESERVED. The Supabase JS SDK's
  *    `createSignedUploadUrl` signature varies across minor versions, so we
  *    still narrow to a structural type AND keep the
@@ -51,14 +51,22 @@ export interface SignedVoiceUploadResponse {
 
 /**
  * The narrow structural shape of the Supabase Storage bucket handle we depend
- * on. Named (not an inline `as unknown as { ... }`) so the call site is typed
- * without a forbidden double-cast. `createSignedUploadUrl` is optional because
+ * on. Named (not an inline double-cast through the unknown type) so the call
+ * site is typed without any forbidden type-assertion form.
+ * `createSignedUploadUrl` is optional because
  * the SDK version-skew guard below tolerates an SDK build that does not expose
  * it (see the runtime `typeof fn !== 'function'` check).
  */
 interface SupabaseStorageWithSignedUpload {
   createSignedUploadUrl?: (path: string) => Promise<{
     data: { signedUrl: string; token?: string } | null;
+    error: { message: string } | null;
+  }>;
+  createSignedUrl?: (
+    path: string,
+    expiresIn: number,
+  ) => Promise<{
+    data: { signedUrl: string } | null;
     error: { message: string } | null;
   }>;
   getPublicUrl?: (path: string) => { data: { publicUrl?: string } | null };
@@ -211,5 +219,44 @@ export class VoiceUploadProvider {
   /** Expose the object-path's storage key for a caller that persists it. */
   storageKeyFor(ownerId: string, contentType: string): string {
     return this.buildObjectPath(ownerId, contentType);
+  }
+
+  /**
+   * Mint a short-lived signed DOWNLOAD URL for a stored voice object, or null
+   * when storage is unconfigured (the player renders a disabled state, never a
+   * 500). Same named-interface narrowing + runtime version-skew guard as the
+   * upload path — no forbidden double-cast. Returns null on any signing
+   * failure so one bad key never blanks an entire voice-note feed.
+   */
+  async createSignedDownload(
+    storageKey: string,
+    expiresInSeconds?: number,
+  ): Promise<string | null> {
+    let supabase: ReturnType<SupabaseService['getClient']>;
+    try {
+      supabase = this.supabase.getClient();
+    } catch {
+      // SupabaseService throws when env vars are absent (test/CI). Treat as
+      // unconfigured — the caller renders a disabled player, not an error.
+      return null;
+    }
+    const bucket = this.bucket();
+    const ttl = expiresInSeconds ?? this.ttlSeconds();
+    try {
+      const storage: SupabaseStorageWithSignedUpload =
+        supabase.storage.from(bucket);
+      const fn = storage.createSignedUrl;
+      // Version-skew guard preserved: an SDK build without createSignedUrl
+      // degrades to a disabled player rather than throwing.
+      if (typeof fn !== 'function') return null;
+      const result = await fn.call(storage, storageKey, ttl);
+      if (result.error || !result.data?.signedUrl) return null;
+      return result.data.signedUrl;
+    } catch (err) {
+      this.logger.warn(
+        `voice signed-download failed: key=${storageKey}: ${(err as Error).message}`,
+      );
+      return null;
+    }
   }
 }
