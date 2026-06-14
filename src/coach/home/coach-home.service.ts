@@ -27,10 +27,10 @@ import { isThreeArcCountsEnabled } from './three-arc-counts.feature';
 
 // Narrow structural slice of PrismaService this service reads. Declaring the
 // dependency as this interface (rather than the full PrismaService) lets the
-// controller spec supply a typed in-memory double WITHOUT a cast — keeping the
-// R0/R80 ban-scan clean (no `as any`). PrismaService satisfies it structurally
-// at the DI boundary. Every method here is read-only; this service NEVER writes
-// and NEVER adds a Prisma model.
+// controller spec supply a typed in-memory double WITHOUT an unsafe widening
+// cast — keeping the R0/R80 ban-scan clean. PrismaService satisfies it
+// structurally at the DI boundary. Every method here is read-only; this service
+// NEVER writes and NEVER adds a Prisma model.
 export interface DailyRingsRepo {
   checkIn: { count(args: { where: Record<string, unknown> }): Promise<number> };
   coachBrief: { count(args: { where: Record<string, unknown> }): Promise<number> };
