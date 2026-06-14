@@ -16,7 +16,14 @@
  * v3-3 voice notes (additive, +3 events): voice upload_issued, note_published,
  * publish_failed. Property values carry ids / timestamps / numeric duration +
  * bytes / a bounded error_code only — never a transcript, an audio URL, or any
- * user-authored text. Baseline therefore moves 9 → 12 (R78).
+ * user-authored text. Baseline moves 9 → 12 (R78).
+ *
+ * v3-4 search + wearable-aware prompts (additive, +3 events): search
+ * query_issued, wearable prompt_generated, wearable prompt_fallback_fired.
+ * Property values carry ids / timestamps / numeric (term_length, result_count,
+ * took_ms) + a bounded WearableConnectionStatus reason ONLY — never the raw
+ * search term, a body/transcript, or a wearable metric VALUE. Baseline
+ * therefore moves 12 → 15 (R78).
  *
  * NOTE: An orphaned community digest event was removed in PR #370 — it had no
  * emitter (no producer function, no capture() call anywhere). The constant map
@@ -31,7 +38,7 @@
 import 'reflect-metadata';
 import { COMMUNITY_TELEMETRY_EVENTS } from '../../../src/community/community-events';
 
-describe('v1-4 + v3-2 + v3-3 PostHog telemetry event names (§9 exact spelling)', () => {
+describe('v1-4 + v3-2 + v3-3 + v3-4 PostHog telemetry event names (§9 exact spelling)', () => {
   it('matches the §9 event-name table exactly', () => {
     expect(COMMUNITY_TELEMETRY_EVENTS).toEqual({
       realtimeBroadcastSent: 'community.realtime.broadcast_sent',
@@ -47,11 +54,14 @@ describe('v1-4 + v3-2 + v3-3 PostHog telemetry event names (§9 exact spelling)'
       voiceUploadIssued: 'community.voice.upload_issued',
       voiceNotePublished: 'community.voice.note_published',
       voicePublishFailed: 'community.voice.publish_failed',
+      searchQueryIssued: 'community.search.query_issued',
+      wearablePromptGenerated: 'community.wearable.prompt_generated',
+      wearablePromptFallbackFired: 'community.wearable.prompt_fallback_fired',
     });
   });
 
-  it('declares exactly twelve telemetry events (6 v1-4 + 3 v3-2 classroom + 3 v3-3 voice)', () => {
-    expect(Object.keys(COMMUNITY_TELEMETRY_EVENTS)).toHaveLength(12);
+  it('declares exactly fifteen telemetry events (6 v1-4 + 3 v3-2 classroom + 3 v3-3 voice + 3 v3-4 search/wearable)', () => {
+    expect(Object.keys(COMMUNITY_TELEMETRY_EVENTS)).toHaveLength(15);
   });
 
   it('every event name is in the community.* namespace, snake_case tail', () => {

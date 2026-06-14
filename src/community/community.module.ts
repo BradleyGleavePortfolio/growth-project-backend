@@ -70,6 +70,13 @@ import { CommunityClassroomModule } from './classroom/community-classroom.module
 // registered LAST in imports so the slice stays a clean single-line add below
 // v3-2's line (the brief's rebase-coordination rule).
 import { CommunityVoiceModule } from './voice/community-voice.module';
+// v3-4 community search: full-text search across posts / lessons / voice-note
+// transcripts / events, RLS-scoped. Self-contained module (mirrors
+// CommunityVoiceModule); adds its own import line below the v3-3 line.
+import { CommunitySearchModule } from './search/community-search.module';
+// v3-4 wearable-aware coaching prompts (coach-only): AI prompts sourced from
+// already-opted-in wearable insights. Self-contained module.
+import { CommunityWearablePromptsModule } from './wearable-prompts/wearable-prompts.module';
 
 // PrismaService provided globally via PrismaModule.
 @Module({
@@ -82,6 +89,8 @@ import { CommunityVoiceModule } from './voice/community-voice.module';
     PlanContextModule,
     CommunityClassroomModule,
     CommunityVoiceModule,
+    CommunitySearchModule,
+    CommunityWearablePromptsModule,
   ],
   controllers: [
     CommunityController,
