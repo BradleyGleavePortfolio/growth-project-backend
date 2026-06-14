@@ -153,12 +153,10 @@ describe('CommunityClassroomService', () => {
         .fn()
         .mockResolvedValue('https://signed.download'),
     };
-    service = new CommunityClassroomService(
-      access as never,
-      repo as never,
-      config as never,
-      storage as never,
-    );
+    // Structural mocks stub only the methods the service calls; the partials are
+    // intentional (R0 permits @ts-expect-error with a one-line justification).
+    // @ts-expect-error mocks are partial implementations of the injected deps
+    service = new CommunityClassroomService(access, repo, config, storage);
   });
 
   // ── Create / media size cap / workspace-bound key ──────────────────────────

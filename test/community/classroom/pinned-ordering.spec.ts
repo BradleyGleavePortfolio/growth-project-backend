@@ -62,7 +62,8 @@ describe('CommunityClassroomRepository ordering + pagination', () => {
         findFirst: jest.fn().mockResolvedValue(null),
       },
     };
-    repo = new CommunityClassroomRepository(prisma as never);
+    // @ts-expect-error structural PrismaService mock: only communityClassroomPost is stubbed
+    repo = new CommunityClassroomRepository(prisma);
   });
 
   it('orders pinned-first, pinned_order ASC NULLS LAST, published_at DESC, stable tiebreak', async () => {
