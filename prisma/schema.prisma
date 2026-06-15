@@ -6383,7 +6383,7 @@ model CommunitySearchEntry {
 // per (coachId, clientId, metricKey) is enforced by a partial unique index
 // in the migration, not application logic alone (brief §thresholds).
 model CommunityWearablePrompt {
-  id          String                          @id @default(cuid())
+  id          String                          @id @default(uuid()) @db.Uuid
   workspaceId String                          @db.Uuid
   coachId     String                          @db.Uuid
   clientId    String                          @db.Uuid
@@ -6404,8 +6404,8 @@ model CommunityWearablePrompt {
 // references WearableSample.id from the existing wearables subsystem —
 // scalar only (no cross-subsystem Prisma relation; FK at SQL layer).
 model CommunityWearablePromptSource {
-  id            String                  @id @default(cuid())
-  promptId      String
+  id            String                  @id @default(uuid()) @db.Uuid
+  promptId      String                  @db.Uuid
   sampleId      String                  @db.Uuid
   metricKey     String                  @db.VarChar(64)
   observedValue Decimal                 @db.Decimal(18, 6)
