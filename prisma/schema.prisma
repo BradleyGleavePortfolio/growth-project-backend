@@ -2192,6 +2192,22 @@ model WorkoutProgram {
   goal_tag         String?
   version          Int       @default(1)
   head_revision_id String?
+  // ── F: Named Regimes (F2) ────────────────────────────────────────────
+  // A "named regime" is a WorkoutProgram a coach has explicitly promoted so
+  // it surfaces in the regime UI and can be attached to packages. We layer
+  // the regime concept ON TOP of WorkoutProgram (no parallel Regime table)
+  // per the F2 brief. All three columns are additive with safe defaults so
+  // every pre-existing program row is unaffected.
+  //
+  // is_regime — coach-marked flag distinguishing named regimes (surfaced in
+  // regime UI) from raw workout-builder programs. Default false.
+  is_regime               Boolean   @default(false)
+  // regime_display_name — name shown in the regime UI, INDEPENDENT of the
+  // package name and of WorkoutProgram.name. Falls back to `name` when null.
+  regime_display_name     String?
+  // revision_retention_count — rolling history depth for WorkoutProgramRevision
+  // eviction on this regime. Default 3 = "last 2 versions + the new one".
+  revision_retention_count Int      @default(3)
   created_at       DateTime  @default(now())
   updated_at       DateTime  @updatedAt
   archived_at      DateTime?
@@ -2202,6 +2218,8 @@ model WorkoutProgram {
   @@index([coach_id, visibility, is_template, archived_at, updated_at(sort: Desc)])
   @@index([owner_user_id, archived_at])
   @@index([coach_id, cloned_from_id])
+  // F2 — regime list query: `is_regime=true AND archived_at IS NULL` per coach.
+  @@index([coach_id, is_regime, archived_at])
 }
 
 // Append-only revision log for a single WorkoutPlan ("day"). The head pointer
@@ -3550,6 +3568,8 @@ model ClientPurchase {
   refunds        ChargeRefund[]
   disputes       ChargeDispute[]
   reconciliation ReconciliationSnapshot?
+  // F2 — partial-refund coach decisions keyed off this purchase.
+  partialRefundDecisions PartialRefundDecision[]
 
   /// PR-14 — landing page attribution. GuestCheckout already captures the
   /// referring landing page (R47); convertGuestToUser now copies the id
@@ -4071,6 +4091,32 @@ model ChargeRefund {
   @@index([purchase_id])
   @@index([status])
   @@index([stripe_charge_id])
+}
+
+// F2 — Partial-refund coach-decision surface.
+//
+// When a PARTIAL refund fires (a ChargeRefund whose cumulative amount stays
+// below the purchase amount, so `entitlement_active` remains true), we do NOT
+// auto-cancel the buyer's pending drops. Instead the coach gets a decision
+// card: "Keep drops" (client keeps the dripped content they paid net-of-credit
+// for) or "Unassign drops" (cancel the pending/due ScheduledDrops via
+// PurchaseFanoutService.cancelPendingForPurchase with reason
+// 'partial_refund_decision'). One row per Stripe refund id (unique) so Stripe
+// webhook redelivery collapses to the same pending decision.
+model PartialRefundDecision {
+  id                 String         @id @default(uuid())
+  client_purchase_id String
+  client_purchase    ClientPurchase @relation(fields: [client_purchase_id], references: [id], onDelete: Cascade)
+  // Stripe refund id this decision is keyed on. Unique so the partial-refund
+  // hook is idempotent under webhook redelivery.
+  stripe_refund_id   String         @unique
+  // 'pending' | 'keep_drops' | 'unassign_drops'
+  decision           String         @default("pending")
+  decided_at         DateTime?
+  decided_by_coach_id String?
+  created_at         DateTime       @default(now())
+
+  @@index([client_purchase_id, decision])
 }
 
 // Phase 6 Connect — Dispute (chargeback) record per ClientPurchase.
