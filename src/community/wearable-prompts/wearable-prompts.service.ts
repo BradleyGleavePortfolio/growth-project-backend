@@ -1,9 +1,4 @@
-import {
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { Prisma, type User } from '@prisma/client';
 import { AnalyticsService } from '../../analytics/analytics.service';
 import { ConsentService } from '../../consent/consent.service';
@@ -33,10 +28,6 @@ import {
 const FORBIDDEN = {
   error: 'forbidden',
   code: 'community.wearable_prompts.forbidden',
-} as const;
-const NOT_FOUND = {
-  error: 'not_found',
-  code: 'community.wearable_prompts.not_found',
 } as const;
 
 
@@ -190,11 +181,10 @@ export class WearablePromptsService {
     coach: Pick<User, 'id' | 'role'>,
     promptId: string,
   ): Promise<PromptView> {
-    const existing = await this.repo.findOneForCoach(promptId, coach.id);
-    if (!existing) throw new NotFoundException(NOT_FOUND);
-    if (!existing.dismissedAt) await this.repo.markDismissed(promptId, new Date());
-    const fresh = await this.repo.findOneForCoach(promptId, coach.id);
-    if (!fresh) throw new NotFoundException(NOT_FOUND);
+    // Single atomic, coach-scoped write (RLS-safe coachId re-assert; PR #399 F5).
+    // The repo maps a non-existent / foreign prompt to a 404 (never 403, never
+    // leaks existence) and returns the fresh row with sources for the view.
+    const fresh = await this.repo.markDismissed(promptId, coach.id, new Date());
     return this.toView(fresh);
   }
 
@@ -202,11 +192,7 @@ export class WearablePromptsService {
     coach: Pick<User, 'id' | 'role'>,
     promptId: string,
   ): Promise<PromptView> {
-    const existing = await this.repo.findOneForCoach(promptId, coach.id);
-    if (!existing) throw new NotFoundException(NOT_FOUND);
-    if (!existing.actedOnAt) await this.repo.markActedOn(promptId, new Date());
-    const fresh = await this.repo.findOneForCoach(promptId, coach.id);
-    if (!fresh) throw new NotFoundException(NOT_FOUND);
+    const fresh = await this.repo.markActedOn(promptId, coach.id, new Date());
     return this.toView(fresh);
   }
 

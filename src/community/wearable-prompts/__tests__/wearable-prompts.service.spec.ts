@@ -16,8 +16,10 @@
  *     generator surfaced (audit trail, brief test 4).
  *   - No PHI leak: the analytics capture payload carries counts only — never a
  *     raw metric value, prompt text, or client name.
- *   - Coach-only reads: dismiss / act-on of a prompt the coach does not own is
- *     404 (the repo's coach-scoped lookup returns null).
+ *   - Coach-only writes: dismiss / act-on are a SINGLE atomic, coach-scoped repo
+ *     call (RLS-safe coachId re-assert; PR #399 F5). A prompt the coach does not
+ *     own (or that does not exist) surfaces a 404 from the repo — never a 403,
+ *     never a leak. Dismiss/act-on of an already-acted prompt is idempotent.
  */
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Prisma, WearableMetricType } from '@prisma/client';
@@ -110,8 +112,8 @@ function build(overrides?: {
       overrides?.createImpl ?? jest.fn().mockResolvedValue(persistedPrompt()),
     listForCoach: jest.fn().mockResolvedValue([]),
     findOneForCoach: jest.fn(),
-    markDismissed: jest.fn().mockResolvedValue(undefined),
-    markActedOn: jest.fn().mockResolvedValue(undefined),
+    markDismissed: jest.fn().mockResolvedValue(persistedPrompt()),
+    markActedOn: jest.fn().mockResolvedValue(persistedPrompt()),
   };
   const access = {
     isWorkspaceCoach: jest.fn().mockResolvedValue(true),
@@ -290,30 +292,58 @@ describe('WearablePromptsService.generate', () => {
   });
 });
 
-describe('WearablePromptsService coach-only reads', () => {
+describe('WearablePromptsService coach-only writes', () => {
   afterEach(() => jest.clearAllMocks());
 
-  it('404s dismiss when the prompt is not the coachs', async () => {
+  it('dismiss makes a SINGLE coach-scoped repo call (RLS-safe coachId re-assert)', async () => {
     const { service, repo } = build();
-    repo.findOneForCoach.mockResolvedValue(null);
+    const view = await service.dismiss(coach, PROMPT_ID);
+    // One atomic, coach-scoped write — coachId is re-asserted INSIDE the repo's
+    // UPDATE ... WHERE so the authorizing read and the write can't drift apart.
+    expect(repo.markDismissed).toHaveBeenCalledTimes(1);
+    const [promptIdArg, coachIdArg] = repo.markDismissed.mock.calls[0]!;
+    expect(promptIdArg).toBe(PROMPT_ID);
+    expect(coachIdArg).toBe(COACH_ID);
+    expect(view.id).toBe(PROMPT_ID);
+  });
+
+  it('act-on makes a SINGLE coach-scoped repo call (RLS-safe coachId re-assert)', async () => {
+    const { service, repo } = build();
+    const view = await service.actOn(coach, PROMPT_ID);
+    expect(repo.markActedOn).toHaveBeenCalledTimes(1);
+    const [promptIdArg, coachIdArg] = repo.markActedOn.mock.calls[0]!;
+    expect(promptIdArg).toBe(PROMPT_ID);
+    expect(coachIdArg).toBe(COACH_ID);
+    expect(view.id).toBe(PROMPT_ID);
+  });
+
+  it('404s dismiss when the prompt is foreign / non-existent (repo throws — never 403)', async () => {
+    const { service, repo } = build();
+    // Repo's coach-scoped UPDATE ... WHERE matched zero rows AND no coach-owned
+    // row exists → NotFound (existence never leaks).
+    repo.markDismissed.mockRejectedValueOnce(new NotFoundException());
     await expect(service.dismiss(coach, PROMPT_ID)).rejects.toBeInstanceOf(
       NotFoundException,
     );
   });
 
-  it('404s act-on when the prompt is not the coachs', async () => {
+  it('404s act-on when the prompt is foreign / non-existent (repo throws — never 403)', async () => {
     const { service, repo } = build();
-    repo.findOneForCoach.mockResolvedValue(null);
+    repo.markActedOn.mockRejectedValueOnce(new NotFoundException());
     await expect(service.actOn(coach, PROMPT_ID)).rejects.toBeInstanceOf(
       NotFoundException,
     );
   });
 
-  it('dismiss is idempotent — does not re-mark an already-dismissed prompt', async () => {
+  it('dismiss is idempotent — returns the already-dismissed row unchanged', async () => {
     const { service, repo } = build();
-    const dismissed = { ...persistedPrompt(), dismissedAt: new Date() };
-    repo.findOneForCoach.mockResolvedValue(dismissed);
-    await service.dismiss(coach, PROMPT_ID);
-    expect(repo.markDismissed).not.toHaveBeenCalled();
+    const already = { ...persistedPrompt(), dismissedAt: new Date('2026-06-13T00:00:00.000Z') };
+    // Repo absorbs the no-op (its UPDATE matched zero active rows but the row
+    // exists & is coach-owned) and returns the existing row with its original
+    // dismissedAt — the service surfaces it as a normal 200 view.
+    repo.markDismissed.mockResolvedValueOnce(already);
+    const view = await service.dismiss(coach, PROMPT_ID);
+    expect(repo.markDismissed).toHaveBeenCalledTimes(1);
+    expect(view.dismissedAt).toBe('2026-06-13T00:00:00.000Z');
   });
 });
