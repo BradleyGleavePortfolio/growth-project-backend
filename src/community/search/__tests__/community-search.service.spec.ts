@@ -5,8 +5,8 @@
  * these run with NO DB and NO Supabase. They pin the slice's tenancy + leakage
  * doctrine:
  *
- *   - A non-member of the workspace is 403 BEFORE any search runs (the term's
- *     existence is never leaked; the repo is never queried).
+ *   - A non-member of the workspace is 404 BEFORE any search runs (the term's
+ *     AND the workspace's existence are never leaked; the repo is never queried).
  *   - A member's accessible cohorts are resolved and pushed DB-side; a coach
  *     gets the all-cohorts path (empty accessible list, isCoach=true).
  *   - Asking to filter by a cohort the member cannot see returns EMPTY rather
@@ -15,7 +15,7 @@
  *     the page is trimmed to the page size.
  *   - Telemetry carries the term LENGTH + counts only — never the raw term.
  */
-import { ForbiddenException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import { CommunitySearchService } from '../community-search.service';
 import { COMMUNITY_TELEMETRY_EVENTS } from '../../community-events';
@@ -74,11 +74,11 @@ describe('CommunitySearchService.search', () => {
     jest.clearAllMocks();
   });
 
-  it('403s a non-member before any search runs (no term leakage)', async () => {
+  it('404s a non-member before any search runs (no term or workspace leakage)', async () => {
     const { service, repo } = build({ canAccess: false });
     await expect(
       service.search(user('student'), WS, { q: 'secret' }),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    ).rejects.toBeInstanceOf(NotFoundException);
     expect(repo.search).not.toHaveBeenCalled();
   });
 
