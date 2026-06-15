@@ -27,7 +27,13 @@ import { RegimesController } from './regimes.controller';
 import { RegimesService } from './regimes.service';
 
 @Module({
-  imports: [AuthModule, forwardRef(() => PackagesModule)],
+  // forwardRef on BOTH imports: RegimesModule sits inside a module require
+  // cycle (CheckoutModule → RegimesModule → PackagesModule → BillingModule →
+  // CheckoutModule). Without the lazy refs the cycle can evaluate
+  // regimes.module.ts before auth.module.ts / packages.module.ts finish, so
+  // those imports resolve `undefined` at decorator-eval time. The thunks defer
+  // resolution until Nest's scan, by which point both modules are defined.
+  imports: [forwardRef(() => AuthModule), forwardRef(() => PackagesModule)],
   controllers: [RegimesController, RefundDecisionsController],
   providers: [
     RegimesService,

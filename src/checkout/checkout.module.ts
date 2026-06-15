@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ConnectModule } from '../connect/connect.module';
 import { ContractsModule } from '../contracts/contracts.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -50,9 +50,12 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     PackagesModule,
     // F2 — provides PartialRefundDecisionService for RefundDisputeHandler's
     // @Optional() partial-refund-decision seam. No-op while
-    // FEATURE_NAMED_REGIMES is OFF (the service self-checks the flag). No
-    // cycle: RegimesModule does not import CheckoutModule.
-    RegimesModule,
+    // FEATURE_NAMED_REGIMES is OFF (the service self-checks the flag).
+    // forwardRef: RegimesModule transitively imports PackagesModule, which
+    // imports BillingModule → CheckoutModule — a module cycle. The forwardRef
+    // defers RegimesModule resolution past CheckoutModule's own evaluation so
+    // RegimesModule's own imports (AuthModule) are defined when Nest scans it.
+    forwardRef(() => RegimesModule),
     NotificationsModule,
     // B3 v2 (spec PR #6) — provides DunningV2Service for the webhook
     // handler's @Optional() recovery / late-reversal shim. No-op while
