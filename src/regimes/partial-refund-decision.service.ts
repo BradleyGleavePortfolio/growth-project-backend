@@ -17,7 +17,7 @@
  */
 
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { isNamedRegimesEnabled } from './named-regimes.feature';
@@ -49,6 +49,19 @@ export class PartialRefundDecisionService {
    * No-op when the feature flag is OFF. Idempotent under Stripe redelivery via
    * the unique stripe_refund_id (a duplicate insert is swallowed as a no-op).
    *
+   * R81 PR #401 F2 — the find-then-create pair is race-safe: the check and the
+   * insert run inside a single transaction (the ambient tx when one is supplied,
+   * otherwise a fresh $transaction) and a P2002 unique-constraint violation on
+   * `stripe_refund_id` is caught as an idempotent skip (logged, not thrown). A
+   * concurrent Stripe redelivery whose findUnique observed null before the first
+   * delivery committed therefore collapses to the same pending decision instead
+   * of propagating an uncaught P2002 to the webhook handler. (Same lesson as the
+   * dispute-path P2002-catch six rows up the call graph; matches PR #395 F1.)
+   *
+   * `upsert` is deliberately NOT used: the regime version backing a decision can
+   * change between retries and an upsert would silently overwrite committed
+   * financial state.
+   *
    * @returns true when a new pending row was created, false otherwise.
    */
   async onPartialRefund(
@@ -60,24 +73,57 @@ export class PartialRefundDecisionService {
   ): Promise<boolean> {
     if (!isNamedRegimesEnabled()) return false;
 
-    // Both PrismaService and Prisma.TransactionClient expose the
-    // partialRefundDecision delegate we touch; narrow to exactly that.
-    const db: Pick<Prisma.TransactionClient, 'partialRefundDecision'> =
-      tx ?? this.prisma;
+    // Run the check-and-create atomically. When the caller already holds a
+    // transaction we reuse it (Prisma cannot nest $transaction on a
+    // TransactionClient); otherwise we open our own so the findUnique and the
+    // create share one snapshot/commit boundary.
+    if (tx) {
+      return this.createPendingDecision(tx, args);
+    }
+    return this.prisma.$transaction((innerTx) =>
+      this.createPendingDecision(innerTx, args),
+    );
+  }
 
-    const existing = await db.partialRefundDecision.findUnique({
+  /**
+   * Find-or-create the pending decision row inside the supplied transaction.
+   * The create is attempted directly; a P2002 (duplicate stripe_refund_id) is
+   * an idempotent skip — a concurrent delivery already inserted the row.
+   */
+  private async createPendingDecision(
+    tx: Prisma.TransactionClient,
+    args: { client_purchase_id: string; stripe_refund_id: string },
+  ): Promise<boolean> {
+    const existing = await tx.partialRefundDecision.findUnique({
       where: { stripe_refund_id: args.stripe_refund_id },
       select: { id: true },
     });
     if (existing) return false;
 
-    await db.partialRefundDecision.create({
-      data: {
-        client_purchase_id: args.client_purchase_id,
-        stripe_refund_id: args.stripe_refund_id,
-        decision: 'pending',
-      },
-    });
+    try {
+      await tx.partialRefundDecision.create({
+        data: {
+          client_purchase_id: args.client_purchase_id,
+          stripe_refund_id: args.stripe_refund_id,
+          decision: 'pending',
+        },
+      });
+    } catch (err) {
+      // P2002 = unique-constraint violation on stripe_refund_id: a concurrent
+      // Stripe redelivery won the race and inserted the pending row between our
+      // findUnique and this create. Treat as an idempotent no-op, never throw.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        this.logger.log(
+          `onPartialRefund: concurrent insert collapsed (P2002) for purchase=${args.client_purchase_id} refund=${args.stripe_refund_id}`,
+        );
+        return false;
+      }
+      throw err;
+    }
+
     this.logger.log(
       `onPartialRefund: pending decision created for purchase=${args.client_purchase_id} refund=${args.stripe_refund_id}`,
     );
