@@ -78,6 +78,7 @@ import { VideoModule } from './video/video.module';
 import { CoachMediaModule } from './coach-media/coach-media.module';
 import { ExerciseCatalogModule } from './exercise-catalog/exercise-catalog.module';
 import { WorkoutBuilderModule } from './workout-builder/workout-builder.module';
+import { RegimesModule } from './regimes/regimes.module';
 import { MacrosModule } from './macros/macros.module';
 import { RealMealPlansModule } from './real-meal-plans/real-meal-plans.module';
 import { InsightsModule } from './insights/insights.module';
@@ -322,6 +323,7 @@ import { WearablesModule } from './wearables/wearables.module';
     CoachMediaModule,
     ExerciseCatalogModule,
     WorkoutBuilderModule,
+    RegimesModule,
     MacrosModule,
     RealMealPlansModule,
     InsightsModule,

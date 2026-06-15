@@ -3,6 +3,7 @@ import { ConnectModule } from '../connect/connect.module';
 import { ContractsModule } from '../contracts/contracts.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PackagesModule } from '../packages/packages.module';
+import { RegimesModule } from '../regimes/regimes.module';
 import { AdminAnalyticsService } from './admin-analytics.service';
 import {
   CheckoutController,
@@ -47,6 +48,11 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
   imports: [
     ConnectModule,
     PackagesModule,
+    // F2 — provides PartialRefundDecisionService for RefundDisputeHandler's
+    // @Optional() partial-refund-decision seam. No-op while
+    // FEATURE_NAMED_REGIMES is OFF (the service self-checks the flag). No
+    // cycle: RegimesModule does not import CheckoutModule.
+    RegimesModule,
     NotificationsModule,
     // B3 v2 (spec PR #6) — provides DunningV2Service for the webhook
     // handler's @Optional() recovery / late-reversal shim. No-op while
