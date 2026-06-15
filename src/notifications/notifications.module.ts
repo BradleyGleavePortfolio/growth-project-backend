@@ -12,6 +12,9 @@ import { CheckinSubmittedEmitter } from './emitters/checkin-submitted.emitter';
 import { BuildWeekDayUnlockedEmitter } from './emitters/build-week-day-unlocked.emitter';
 import { CoachAlertEmitter } from './emitters/coach-alert.emitter';
 import { BookingEmitter } from './emitters/booking.emitter';
+// Roman P4 (Option C) — first-payment exactly-once primitive + emitter.
+import { FirstPaymentEmitter } from './emitters/first-payment.emitter';
+import { CoachFirstPaymentService } from './coach-first-payment.service';
 // NUDGE-V1 — behavioral re-engagement subsystem.
 import { NudgeEngineService } from './nudges/nudge-engine.service';
 import { NudgeDetectorService } from './nudges/nudge-detector.service';
@@ -58,6 +61,10 @@ import { VoiceModule } from '../roman/voice/voice.module';
     BuildWeekDayUnlockedEmitter,
     CoachAlertEmitter,
     BookingEmitter,
+    // Roman P4 (Option C) — exported below so CheckoutModule can inject the
+    // service into the webhook handler (gated on FEATURE_ROMAN_FIRST_PAYMENT).
+    FirstPaymentEmitter,
+    CoachFirstPaymentService,
     // NUDGE-V1 providers.
     NudgeEngineService,
     NudgeDetectorService,
@@ -74,6 +81,8 @@ import { VoiceModule } from '../roman/voice/voice.module';
     BuildWeekDayUnlockedEmitter,
     CoachAlertEmitter,
     BookingEmitter,
+    FirstPaymentEmitter,
+    CoachFirstPaymentService,
     NudgeEngineService,
     NudgeDetectorService,
   ],

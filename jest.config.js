@@ -20,6 +20,15 @@ module.exports = {
   // rationale: the slice owns those spec files in the source tree, and the root
   // is intentionally NOT the whole `src/` tree (unrelated src-colocated specs
   // were never part of this default suite).
+  // Roman P4 (Option C) adds '<rootDir>/src/notifications/__tests__' as a FIFTH
+  // narrowly-scoped root so the first-payment specs colocated under
+  // src/notifications/__tests__/*.spec.ts are discovered. Same rationale as the
+  // roots above: this slice owns those spec files in the source tree, and the
+  // root is intentionally the __tests__ folder ONLY — NOT the whole
+  // src/notifications tree (the pre-existing src/notifications/
+  // notifications-category.spec.ts was never part of this default suite and is
+  // not pulled in by this scoped root). Both new specs use mocked Prisma/tx and
+  // need no live DB.
   // v3-3 adds `src/community/voice` as a SIXTH narrowly-scoped root so the
   // voice-notes unit specs colocated under src/community/voice/__tests__/*.spec.ts
   // (service tenancy/upload-confirm/bucket-binding, provider TTL/namespace,
@@ -45,6 +54,7 @@ module.exports = {
     '<rootDir>/src/roman/voice',
     '<rootDir>/src/community/ack',
     '<rootDir>/src/community/challenges',
+    '<rootDir>/src/notifications/__tests__',
     '<rootDir>/src/community/voice',
     '<rootDir>/src/community/search',
     '<rootDir>/src/community/wearable-prompts',

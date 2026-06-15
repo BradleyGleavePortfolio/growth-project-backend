@@ -111,6 +111,20 @@ export const NotificationKind = {
   CONTRACT_SIGNED: 'contract_signed',
   CONTRACT_DECLINED: 'contract_declined',
   CONTRACT_EXPIRED: 'contract_expired',
+
+  // ── Roman P4 (Option C) — first-payment celebration ───────────────────────
+  // Coach: the coach just received their first-ever client payment. Emitted
+  // exactly once, forever, from CheckoutWebhookHandlerService inside the same
+  // $transaction that records the purchase, gated behind
+  // FEATURE_ROMAN_FIRST_PAYMENT (default OFF). The DB-level CoachFirstPayment
+  // Notification(coachId @unique) row is what guarantees exactly-once: the
+  // notification is enqueued only on the INSERT that wins the unique
+  // constraint. Mobile #242 subscribes to the notifications stream and filters
+  // for this kind instead of reading ClientPurchase directly. Code-level only
+  // (no NotificationPreferences migration); routes to the COACH_DIRECT
+  // category like other coach-targeted kinds.
+  // Payload: { amount: number; currency: string; clientId: string }.
+  FIRST_PAYMENT: 'first_payment',
 } as const;
 
 export type NotificationKindValue = (typeof NotificationKind)[keyof typeof NotificationKind];
