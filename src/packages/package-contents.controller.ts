@@ -115,27 +115,6 @@ export class CoachPackageContentsController {
     return this.contents.patch(coachId, packageId, contentId, body);
   }
 
-  // PR-17A — explicit, opt-in "push to existing" action. Default
-  // behavior remains snapshot-at-purchase (only NEW purchases get the
-  // edited content config). This endpoint additionally propagates the
-  // edit to every CURRENT buyer's UNDELIVERED (status='pending') drops.
-  // Same ownership + sub-coach scope as the other contents endpoints
-  // (resolveEffectiveCoachId → requireOwnedPackage → 404 on cross-coach).
-  // Body shape + per-cadence validation lives in
-  // PackageContentsService.pushToExisting.
-  @Roles('coach', 'owner')
-  @Post(':contentId/push-to-existing')
-  @HttpCode(HttpStatus.OK)
-  async pushToExistingDrops(
-    @Request() req: AuthedRequest,
-    @Param('id') packageId: string,
-    @Param('contentId') contentId: string,
-    @Body() body: unknown,
-  ) {
-    const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
-    return this.contents.pushToExisting(coachId, packageId, contentId, body);
-  }
-
   // Soft-delete: sets removed_at. List excludes removed rows. PR-9's
   // snapshots already reference content rows by id so existing buyers'
   // ScheduledDrops are unaffected by the removal.
