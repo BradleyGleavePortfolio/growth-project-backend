@@ -80,6 +80,47 @@ describe('wearable-prompts F1 migration — DDL recreates UUID ids', () => {
     expect(sql).toContain('DROP TABLE IF EXISTS "community_wearable_prompt_sources"');
     expect(sql).toContain('DROP TABLE IF EXISTS "community_wearable_prompts"');
   });
+
+  // ── PR #405 re-audit N1: non-empty-environment preflight guard ──────────────
+  // The migration documents that a non-empty environment must take the #404
+  // backfill path; this group pins that the SQL actually ENFORCES it (an
+  // executable RAISE EXCEPTION guard ahead of either destructive DROP) instead
+  // of silently dropping rows.
+
+  it('carries an executable preflight DO-block that RAISEs on non-empty tables', () => {
+    // A `DO $$ ... RAISE EXCEPTION ... END $$;` block must exist.
+    expect(sql).toMatch(/DO\s+\$\$/);
+    expect(sql).toMatch(/RAISE\s+EXCEPTION/);
+    // It must guard BOTH tables, and the abort message must redirect to #404.
+    const guard = sql.slice(sql.indexOf('DO $$'), sql.indexOf('END $$;') + 'END $$;'.length);
+    expect(guard).toContain('community_wearable_prompt_sources is non-empty');
+    expect(guard).toContain('community_wearable_prompts is non-empty');
+    expect(guard).toMatch(/issue #404 backfill path/);
+    // EXISTS(... LIMIT 1) is the non-empty probe; to_regclass keeps it safe when
+    // the table is absent (idempotent on a fresh environment).
+    expect(guard).toMatch(/EXISTS \(SELECT 1 FROM "community_wearable_prompt_sources" LIMIT 1\)/);
+    expect(guard).toMatch(/EXISTS \(SELECT 1 FROM "community_wearable_prompts" LIMIT 1\)/);
+    expect(guard).toMatch(/to_regclass\('public\.community_wearable_prompt_sources'\) IS NOT NULL/);
+    expect(guard).toMatch(/to_regclass\('public\.community_wearable_prompts'\) IS NOT NULL/);
+  });
+
+  it('header comment explicitly references issue #404 + the issue URL', () => {
+    expect(sql).toContain('#404');
+    expect(sql).toContain(
+      'https://github.com/BradleyGleavePortfolio/growth-project-backend/issues/404',
+    );
+  });
+
+  it('both DROP TABLE statements appear AFTER the preflight guard', () => {
+    const guardEnd = sql.indexOf('END $$;');
+    expect(guardEnd).toBeGreaterThanOrEqual(0);
+    const dropChild = sql.indexOf(
+      'DROP TABLE IF EXISTS "community_wearable_prompt_sources"',
+    );
+    const dropParent = sql.indexOf('DROP TABLE IF EXISTS "community_wearable_prompts"');
+    expect(dropChild).toBeGreaterThan(guardEnd);
+    expect(dropParent).toBeGreaterThan(guardEnd);
+  });
 });
 
 describe('wearable-prompts id format — ParseUUIDPipe contract (F1)', () => {

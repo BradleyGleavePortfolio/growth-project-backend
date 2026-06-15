@@ -15,8 +15,12 @@
 --   server-side default (Decision 8 (A), overnight wrap).
 --
 --   If a future environment is found to hold rows in these tables, this migration
---   MUST be revisited with a data backfill before applying — see the R82 tracking
---   issue referenced in PR #399's R81 cleanup.
+--   MUST be revisited with a data backfill before applying — see R82 tracking
+--   issue #404
+--   (https://github.com/BradleyGleavePortfolio/growth-project-backend/issues/404).
+--   The preflight guard below ENFORCES this: it RAISEs and aborts the whole
+--   transaction if either table is non-empty, redirecting the operator to the
+--   #404 backfill path instead of silently dropping data.
 --
 -- Additive-in-effect: no EXISTING table outside this slice is altered; the only
 -- tables dropped are the two introduced by 20261217000200_community_wearable_prompts.
@@ -32,6 +36,25 @@
 BEGIN;
 
 CREATE SCHEMA IF NOT EXISTS app;
+
+-- Non-empty-environment preflight (PR #405 re-audit N1). The DROP+RECREATE below
+-- is empty-table-only (Decision 8 (A)); this guard makes that contract
+-- EXECUTABLE. If either table holds rows, abort the transaction loudly and
+-- redirect to the #404 backfill path BEFORE any destructive DROP — never lose
+-- data silently. to_regclass(...) IS NOT NULL keeps it safe when a table is
+-- absent (fresh environment), preserving idempotency.
+DO $$
+BEGIN
+  IF to_regclass('public.community_wearable_prompt_sources') IS NOT NULL
+     AND EXISTS (SELECT 1 FROM "community_wearable_prompt_sources" LIMIT 1) THEN
+    RAISE EXCEPTION 'community_wearable_prompt_sources is non-empty; stop and follow GitHub issue #404 backfill path before applying 20261219000000';
+  END IF;
+
+  IF to_regclass('public.community_wearable_prompts') IS NOT NULL
+     AND EXISTS (SELECT 1 FROM "community_wearable_prompts" LIMIT 1) THEN
+    RAISE EXCEPTION 'community_wearable_prompts is non-empty; stop and follow GitHub issue #404 backfill path before applying 20261219000000';
+  END IF;
+END $$;
 
 -- Drop child first (FK), then parent. IF EXISTS keeps the migration idempotent.
 DROP TABLE IF EXISTS "community_wearable_prompt_sources";
