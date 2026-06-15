@@ -18,6 +18,10 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
+import {
+  GenerateResponseSchema,
+  PromptListResponseSchema,
+} from '../wearable-prompts.dto';
 
 const SCHEMA_PATH = join(__dirname, '..', '..', '..', '..', 'prisma', 'schema.prisma');
 const MIGRATION_PATH = join(
@@ -131,5 +135,83 @@ describe('wearable-prompts id format — ParseUUIDPipe contract (F1)', () => {
     for (let i = 0; i < 50; i += 1) {
       expect(randomUUID()).toMatch(UUID_V4);
     }
+  });
+});
+
+// ── PR #405 re-audit N4: response Zod schemas pin the UUID id contract ────────
+// F1 changed the public prompt-id contract to UUIDs, but the response view
+// schemas still typed ids as generic z.string(), so a regression that emitted a
+// cuid prompt id would have passed response validation. These tests pin the
+// tightened z.guid() contract at the response-parse seam.
+describe('wearable-prompts response schemas — UUID id contract (N4)', () => {
+  // Loosely typed (string ids) so a test can deliberately assign a non-UUID id
+  // without TS rejecting it — the whole point is to prove the runtime Zod
+  // validator catches what the static type would not.
+  interface SourceFixture {
+    sampleId: string;
+    metricKey: string;
+    observedValue: number;
+  }
+  interface PromptFixture {
+    id: string;
+    workspaceId: string;
+    coachId: string;
+    clientId: string;
+    metricKey: string;
+    promptText: string;
+    sources: SourceFixture[];
+    generatedAt: string;
+    dismissedAt: string | null;
+    actedOnAt: string | null;
+  }
+  const validPrompt = (): PromptFixture => ({
+    id: randomUUID(),
+    workspaceId: randomUUID(),
+    coachId: randomUUID(),
+    clientId: randomUUID(),
+    metricKey: 'HRV_MS',
+    promptText: 'HRV dropped 15% — consider a check-in.',
+    sources: [
+      {
+        sampleId: randomUUID(),
+        metricKey: 'HRV_MS',
+        observedValue: 85.123457,
+      },
+    ],
+    generatedAt: '2026-06-14T00:00:00.000Z',
+    dismissedAt: null,
+    actedOnAt: null,
+  });
+
+  it('GenerateResponseSchema.parse THROWS on a cuid prompt id', () => {
+    const prompt = { ...validPrompt(), id: 'clabc123' };
+    expect(() =>
+      GenerateResponseSchema.parse({ version: 1, generated: [prompt], skipped: [] }),
+    ).toThrow();
+  });
+
+  it('GenerateResponseSchema.parse PASSES on a valid UUID prompt id', () => {
+    const prompt = validPrompt();
+    const parsed = GenerateResponseSchema.parse({
+      version: 1,
+      generated: [prompt],
+      skipped: [],
+    });
+    expect(parsed.generated[0]!.id).toBe(prompt.id);
+  });
+
+  it('THROWS when a source sampleId is a non-UUID string', () => {
+    const prompt = validPrompt();
+    prompt.sources[0]!.sampleId = 'not-a-uuid';
+    expect(() =>
+      GenerateResponseSchema.parse({ version: 1, generated: [prompt], skipped: [] }),
+    ).toThrow();
+  });
+
+  it('PromptListResponseSchema.parse THROWS on a cuid prompt id', () => {
+    const prompt = { ...validPrompt(), id: 'clabc123' };
+    expect(() =>
+      PromptListResponseSchema.parse({ version: 1, prompts: [prompt] }),
+    ).toThrow();
   });
 });

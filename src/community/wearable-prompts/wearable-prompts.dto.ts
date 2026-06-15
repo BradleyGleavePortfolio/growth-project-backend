@@ -66,7 +66,9 @@ export type ListPromptsQuery = z.infer<typeof ListPromptsQuerySchema>;
  */
 export const PromptSourceViewSchema = z
   .object({
-    sampleId: z.string(),
+    // sampleId is a real WearableSample UUID; pin the UUID contract so a
+    // regression to a non-UUID id fails response validation (PR #405 N4).
+    sampleId: z.guid({ message: 'sampleId must be a UUID' }),
     metricKey: z.string(),
     observedValue: z.number(),
   })
@@ -77,10 +79,14 @@ export type PromptSourceView = z.infer<typeof PromptSourceViewSchema>;
 /** A coach-facing prompt view. NEVER returned to a client. */
 export const PromptViewSchema = z
   .object({
-    id: z.string(),
-    workspaceId: z.string(),
-    coachId: z.string(),
-    clientId: z.string(),
+    // F1 re-keyed these ids onto UUIDs; pin the UUID contract here so a
+    // regression that emitted a cuid (or any non-UUID) prompt id is caught by
+    // response validation, not only by the controller's ParseUUIDPipe path
+    // params (PR #405 re-audit N4).
+    id: z.guid({ message: 'id must be a UUID' }),
+    workspaceId: z.guid({ message: 'workspaceId must be a UUID' }),
+    coachId: z.guid({ message: 'coachId must be a UUID' }),
+    clientId: z.guid({ message: 'clientId must be a UUID' }),
     metricKey: z.string(),
     promptText: z.string(),
     sources: z.array(PromptSourceViewSchema),
