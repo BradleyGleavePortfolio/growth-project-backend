@@ -259,3 +259,37 @@ export const PushPreviewQuerySchema = z
   .strict();
 
 export type PushPreviewQueryInput = z.infer<typeof PushPreviewQuerySchema>;
+
+// ── push-to-existing body (PR-17A) ───────────────────────────────────────
+// Decision #2: pushing a content edit to EXISTING buyers' UNDELIVERED
+// drops is an EXPLICIT opt-in action. The body must affirm the choice;
+// we accept either `{ push: true }` (re-derive the snapshot from the
+// content's CURRENT config — every snapshotted field is rewritten) or
+// `{ fields: [...] }` (a narrower set). Today every field is rewritten
+// from the content snapshot regardless of `fields`, because the
+// recompute is deterministic from the content snapshot + each buyer
+// anchor and partial rewrites would create internally-inconsistent
+// drops (e.g. new cadence_kind with old cadence_payload). The `fields`
+// shape is reserved for a future narrower mode and rejected with a
+// clear error if it omits both shapes. Unknown top-level keys are
+// rejected (.strict()) so a typo in the editor doesn't silently no-op.
+export const PUSH_FIELDS = [
+  'cadence',
+  'asset_revision',
+  'display_title',
+  'display_caption',
+] as const;
+export type PushField = (typeof PUSH_FIELDS)[number];
+export const PushToExistingSchema = z
+  .object({
+    push: z.literal(true).optional(),
+    fields: z
+      .array(z.enum([...PUSH_FIELDS] as [PushField, ...PushField[]]))
+      .nonempty()
+      .optional(),
+  })
+  .strict()
+  .refine((v) => v.push === true || (v.fields && v.fields.length > 0), {
+    message: 'either push:true or a non-empty fields array is required',
+  });
+export type PushToExistingInput = z.infer<typeof PushToExistingSchema>;
