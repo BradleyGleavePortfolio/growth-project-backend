@@ -19,6 +19,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -41,6 +42,12 @@ export class RefundDecisionsController {
     return this.decisions.listPendingForCoach(req.user.id);
   }
 
+  // Most critical write route on this surface — applies a financial decision
+  // that calls cancelPendingForPurchase (cancels ScheduledDrop rows), an
+  // irreversible effect. Tightest cap of the F4 set (per-user 10/min) since
+  // 300/min global default is insufficient for a route with write
+  // amplification + financial impact (R81 F4).
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post(':refundId/decide')
   async decide(
     @Req() req: AuthedRequest,
