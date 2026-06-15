@@ -259,6 +259,21 @@ describe('WearablePromptsService.generate', () => {
     ]);
   });
 
+  it('rounds toView observedValue to the column precision DECIMAL(18,6) (F6)', async () => {
+    // A raw Decimal carrying more than 6 fractional digits (or a float-binary
+    // artifact like 72.0000000001) must be coerced to the column's stored
+    // precision before it crosses the wire — deterministic, no leaked noise.
+    const { service, repo } = build();
+    const noisy = persistedPrompt();
+    noisy.sources[0]!.observedValue = new Prisma.Decimal('85.12345678901234');
+    repo.createPromptWithSources.mockResolvedValueOnce(noisy);
+    const res = await service.generate(coach, WS, {
+      clientId: CLIENT_ID,
+      metricKey: WearableMetricType.HRV_MS,
+    });
+    expect(res.generated[0]!.sources[0]!.observedValue).toBe(85.123457);
+  });
+
   it('skips no_signal when the generator returns no trend', async () => {
     const { service, repo } = build({ trendResult: null });
     const res = await service.generate(coach, WS, {

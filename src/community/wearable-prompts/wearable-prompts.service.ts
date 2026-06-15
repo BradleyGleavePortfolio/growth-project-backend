@@ -269,10 +269,15 @@ export class WearablePromptsService {
       sources: p.sources.map((s) => ({
         sampleId: s.sampleId,
         metricKey: s.metricKey,
-        observedValue:
-          s.observedValue instanceof Prisma.Decimal
+        // Round to the column's stored precision (DECIMAL(18,6)) so the wire
+        // value is deterministic and never leaks float-binary imprecision
+        // (e.g. 72.000000001) into the coach-facing view (PR #399 F6).
+        observedValue: Number(
+          (s.observedValue instanceof Prisma.Decimal
             ? s.observedValue.toNumber()
-            : Number(s.observedValue),
+            : Number(s.observedValue)
+          ).toFixed(6),
+        ),
       })),
       generatedAt: p.generatedAt.toISOString(),
       dismissedAt: p.dismissedAt ? p.dismissedAt.toISOString() : null,
