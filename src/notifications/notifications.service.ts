@@ -738,17 +738,6 @@ export class NotificationsService {
     // short-circuiting every COACH_NEW_PURCHASE row write — the exact
     // PR-10 R1 P2 bug the brief calls out.
     if (kind.startsWith('coach_new_purchase')) return 'coach_new_purchase';
-    // Roman P4 (Option C) — FIRST_PAYMENT. Code-level kind with NO
-    // NotificationPreferences migration (the first-payment celebration is a
-    // once-ever coach moment that is not opt-out-able), so this prefix has no
-    // matching `first_payment_*` prefs columns. Returning a dedicated prefix
-    // (rather than letting it fall through to the 'digest' safe-default, whose
-    // _push / _inapp defaults are FALSE) means the per-kind gate reads
-    // `prefs['first_payment_<channel>']` which is `undefined` — and the gate
-    // only blocks on an explicit `=== false`, so the row is written. Without
-    // this branch FIRST_PAYMENT would silently short-circuit on the 'digest'
-    // false defaults (the PR-10 R1 P2 silent-drop bug, 50-Failures #36).
-    if (kind.startsWith('first_payment')) return 'first_payment';
     if (kind.startsWith('fasting')) return 'fasting';
     if (kind.includes('digest')) return 'digest';
     return 'digest'; // safe default — falls back to digest prefs
