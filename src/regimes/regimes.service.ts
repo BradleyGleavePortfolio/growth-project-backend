@@ -37,6 +37,20 @@ export interface RegimeRevisionItem {
   cause: string;
 }
 
+/**
+ * Hard ceiling on rows returned by getRegimeRevisions (R81 F5).
+ *
+ * The effective bound is the per-program rolling eviction window
+ * (`WorkoutProgram.revision_retention_count`, default 3) enforced by
+ * RegimeRevisionRetentionService, so a healthy program never has more than a
+ * handful of revisions. This query-level cap is defence-in-depth: it bounds the
+ * read even for an operator-configured high-retention regime (or a transient
+ * window before eviction runs), so the "last N versions" drawer can never pull
+ * an unbounded result set. 20 is generous headroom above the default retention
+ * of 3 while keeping the response payload small.
+ */
+export const REGIME_REVISIONS_HARD_CAP = 20;
+
 @Injectable()
 export class RegimesService {
   private readonly logger = new Logger(RegimesService.name);
@@ -142,6 +156,7 @@ export class RegimesService {
     const revisions = await this.prisma.workoutProgramRevision.findMany({
       where: { program_id: id },
       orderBy: { revision_index: 'desc' },
+      take: REGIME_REVISIONS_HARD_CAP,
       select: { revision_index: true, created_at: true, cause: true },
     });
     return revisions;
