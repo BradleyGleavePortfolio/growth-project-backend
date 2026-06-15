@@ -1,17 +1,21 @@
--- R81 BACKFILL CLEANUP — rebuild tail of PR #395 / PR #402.
+-- Roman P4 (Option C) — coach first-payment notification ledger.
 --
--- Recreates the coach first-payment notification ledger with DDL IDENTICAL to
--- the original 20260614065425_add_coach_first_payment_notification migration
--- (which is removed from main by the R81 revert of PR #395). It is ordered
--- strictly AFTER 20261220000000_drop_coach_first_payment_notification so the
--- migration history reads cleanly: drop the reverted table, then recreate it as
--- part of the rebuilt feature whose N1 (push-throttle pre-commit mutation) fix
--- ships in the same PR. R82 tracker: #407.
+-- Additive-only migration. No destructive operations performed. This migration
+-- adds:
+--   * table "coach_first_payment_notification"
+--       - coachId  UNIQUE  → the DB-level "exactly once, forever" guarantee
+--       - FK coachId → "User"(id)
+--   * the unique index + FK Prisma derives from the schema
+--   * FULL Row-Level Security (ENABLE + FORCE) on the new table.
 --
--- Additive-only in effect (the prior drop left no table). No pre-existing table,
--- column, type, index, or constraint outside this ledger is altered. The
--- additive back-relation on public."User" (first_payment_notification) is a
--- Prisma-level virtual relation and emits no DDL against the User table.
+-- No pre-existing table, column, type, index, or constraint is altered or
+-- dropped. The only edit to an existing object is the additive back-relation
+-- on public."User" (first_payment_notification), which is a Prisma-level
+-- virtual relation and emits no DDL against the User table.
+--
+-- Reversibility: purely additive (one new table + its index + FK + RLS
+-- policies). Prisma's shadow-DB drift detection handles down by recreating
+-- from migration history; no manual down step is required.
 --
 -- ───────────────────────────────────────────────────────────────────────────
 -- WHY UNIQUE(coachId) (50-Failures #28 Race / #29 Idempotency)
@@ -22,8 +26,7 @@
 -- retries (Stripe redelivers 3-5×) or simultaneous first payments race into
 -- the INSERT; exactly one wins, the rest raise 23505 (Prisma P2002), which the
 -- service swallows as "already emitted" with a structured log. Exactly one row
--- per coach can ever exist. This DB-backed exactly-once ledger is also why the
--- N1 fix can safely skip the in-process push throttle on transactional emits.
+-- per coach can ever exist.
 --
 -- ───────────────────────────────────────────────────────────────────────────
 -- RLS POLICY CITATION (HECTACORN security gate — ENGINEERING_RULES §2)
