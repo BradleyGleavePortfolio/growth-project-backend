@@ -74,12 +74,8 @@ export class NotificationsService {
 
   // ── Preferences ───────────────────────────────────────────────────────────
 
-  async getPreferences(userId: string, tx?: Prisma.TransactionClient) {
-    // R81 (PR-395 follow-up, F1/F2): read prefs on the ambient tx when one is
-    // supplied so a transactional notification write sees a consistent
-    // snapshot. Falls back to the autocommitting PrismaService otherwise.
-    const db = tx ?? this.prisma;
-    const prefs = await db.notificationPreferences.findUnique({
+  async getPreferences(userId: string) {
+    const prefs = await this.prisma.notificationPreferences.findUnique({
       where: { user_id: userId },
     });
     if (!prefs) {
@@ -282,24 +278,9 @@ export class NotificationsService {
    * individual emitters do not need to repeat preference lookups.
    *
    * Returns the created row, or null if suppressed by preferences.
-   *
-   * R81 (PR-395 follow-up, F1/F2): the optional `tx` lets a caller thread the
-   * AMBIENT purchase transaction through so the notification row is written
-   * via `tx.notification.create(...)` instead of this service's autocommitting
-   * PrismaService. When a tx is supplied, the row commits-or-rolls-back WITH
-   * the caller's outer transaction — closing the seam where a first-payment
-   * notification could survive an outer rollback (and re-fire on Stripe retry)
-   * or be delivered before the purchase ever committed. The preference read
-   * also rides `tx` for a consistent snapshot. When `tx` is omitted the
-   * behaviour is unchanged (autocommit on `this.prisma`), so every existing
-   * callsite keeps working.
    */
-  async createNotification(
-    input: CreateNotificationInput,
-    tx?: Prisma.TransactionClient,
-  ) {
-    const db = tx ?? this.prisma;
-    const prefs = await this.getPreferences(input.user_id, tx);
+  async createNotification(input: CreateNotificationInput) {
+    const prefs = await this.getPreferences(input.user_id);
     const channel = input.channel ?? 'inapp';
 
     // Global mute short-circuit.
@@ -328,7 +309,7 @@ export class NotificationsService {
       recentPushes.set(key, now);
     }
 
-    return db.notification.create({
+    return this.prisma.notification.create({
       data: {
         user_id: input.user_id,
         kind: input.kind,

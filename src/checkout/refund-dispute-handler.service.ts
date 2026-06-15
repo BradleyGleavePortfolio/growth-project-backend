@@ -184,19 +184,6 @@ export class RefundDisputeHandlerService {
     const refundedCents =
       typeof charge.amount_refunded === 'number' ? charge.amount_refunded : 0;
     const fullyRefunded = totalAmount > 0 && refundedCents >= totalAmount;
-    // R81 (PR-395 follow-up, F5) — refund/chargeback behaviour for the Roman P4
-    // first-payment celebration is RETAIN-BY-DESIGN: a refund (even a full one)
-    // or a chargeback does NOT un-record the CoachFirstPaymentNotification
-    // ledger row. The "you landed your first client" celebration is a once-ever,
-    // permanent milestone keyed to the coach's first SUCCESSFUL charge; a later
-    // refund does not retroactively erase that they made a first sale. The
-    // practical consequence is intentional and accepted: a coach whose only
-    // payment is fully refunded will not see the celebration fire again on a
-    // genuinely-new future first payment. This handler therefore deliberately
-    // never references coachFirstPaymentNotification (verified by
-    // first-payment-refund-retention.spec.ts). If product later wants the
-    // celebration to be re-armable, delete the ledger row inside the inner
-    // $transaction below — but that is a deliberate product decision, not a bug.
     if (fullyRefunded) {
       // A276-F2-P2-3 — the ClientPurchase status flip and the
       // GuestCheckout lockstep mirror MUST commit atomically. The

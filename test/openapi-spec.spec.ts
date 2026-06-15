@@ -18,16 +18,7 @@ import { AppModule } from '../src/app.module';
 // generators downstream and should be a deliberate, reviewed edit.
 
 describe('OpenAPI document', () => {
-  // The beforeAll hook below compiles the FULL AppModule + boots a Nest app
-  // purely to resolve the OpenAPI document. On the build-and-test lane Jest runs
-  // all ~428 suites with its default worker pool, so this full-graph boot
-  // competes for CPU and routinely needs >20s under that contention (observed
-  // ~28s on ubuntu-latest, ~12-17s in isolation). The previous 20s cap was too
-  // tight for a full-AppModule compile and flaked the hook. 60s gives ample
-  // headroom without masking a genuine boot regression (a real hang would still
-  // trip it). Applied to the hook explicitly since hook timeouts are independent
-  // of the per-test setTimeout.
-  jest.setTimeout(60000);
+  jest.setTimeout(20000);
 
   let document: any;
 
@@ -39,7 +30,7 @@ describe('OpenAPI document', () => {
     await app.init();
     document = buildOpenApiDocument(app);
     await app.close();
-  }, 60000);
+  });
 
   it('declares OpenAPI 3.1', () => {
     expect(document.openapi).toMatch(/^3\.[01](\.|$)/);

@@ -6301,11 +6301,7 @@ model RomanMessage {
 // ── Roman P4 (Option C) — first-payment notification ledger ──────────────────
 // DB-enforced "exactly once, forever": the coachId @unique constraint is what
 // guarantees a coach's first-ever client payment fires the celebration exactly
-// once. Scope is PER COACH, FOREVER — NOT per coach×client: any later payment
-// from any client (the same one or a different one) is suppressed once a coach
-// has had their first-ever (R81 F3 — the constraint is on coachId alone). A
-// DIFFERENT coach still gets their own first-ever celebration even for the same
-// client. The Stripe webhook handler performs a direct INSERT inside the same
+// once. The Stripe webhook handler performs a direct INSERT inside the same
 // $transaction that records the purchase; on the second (retry / second
 // payment) attempt the unique constraint raises P2002 and the emit silently
 // no-ops (logged structured). No check-then-act / pre-SELECT: the constraint IS
@@ -6313,7 +6309,7 @@ model RomanMessage {
 // table or column is modified.
 model CoachFirstPaymentNotification {
   id        String   @id @default(cuid())
-  coachId   String   @unique // <- DB enforces "exactly once" PER COACH, FOREVER
+  coachId   String   @unique // <- DB enforces "exactly once"
   coach     User     @relation("CoachFirstPaymentNotificationCoach", fields: [coachId], references: [id])
   amount    Int // cents
   currency  String

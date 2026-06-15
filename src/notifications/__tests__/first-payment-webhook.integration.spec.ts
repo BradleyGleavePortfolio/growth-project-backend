@@ -20,14 +20,8 @@
  * to `paid`. The split / fanout / dunning seams are left unwired (@Optional).
  */
 
-import { Logger } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
 import { CheckoutWebhookHandlerService } from '../../checkout/checkout-webhook-handler.service';
 import { CoachFirstPaymentService } from '../coach-first-payment.service';
-import { FirstPaymentEmitter } from '../emitters/first-payment.emitter';
-import { NotificationsService } from '../notifications.service';
-import { PrismaService } from '../../prisma.service';
-import { asStub } from './_first-payment-test-stubs';
 
 const FLAG = 'FEATURE_ROMAN_FIRST_PAYMENT';
 
@@ -58,18 +52,9 @@ function makeTx() {
 }
 
 function makeService() {
-  // R81 (PR-395 follow-up, F7) — typed stub, no `as unknown as`. The handler
-  // only ever calls `tryEmitFirstPayment`, so a `Pick<>` of that one method is
-  // a sound stand-in; the precise mock typing is preserved by jest.fn's
-  // generic params.
-  const tryEmitFirstPayment = jest.fn<
-    Promise<void>,
-    Parameters<CoachFirstPaymentService['tryEmitFirstPayment']>
-  >(() => Promise.resolve());
-  const service: Pick<CoachFirstPaymentService, 'tryEmitFirstPayment'> = {
-    tryEmitFirstPayment,
-  };
-  return { service: service as CoachFirstPaymentService, tryEmitFirstPayment };
+  const tryEmitFirstPayment = jest.fn().mockResolvedValue(undefined);
+  const service = { tryEmitFirstPayment } as unknown as CoachFirstPaymentService;
+  return { service, tryEmitFirstPayment };
 }
 
 function makeHandler(service: CoachFirstPaymentService) {
@@ -153,14 +138,11 @@ describe('CheckoutWebhookHandlerService — first-payment seam (payment_intent.s
     // Same transaction object → shares the purchase transaction (#44).
     expect(usedTx).toBe(tx);
     // Server-trusted values from the purchase row — NOT the forged webhook body.
-    // R81 (PR-395 follow-up, F8): the handler also threads the Stripe event id
-    // as `correlationId` for the audit entry.
     expect(input).toEqual({
       coachId: 'coach_1',
       amount: 4999,
       currency: 'usd',
       clientId: 'client_1',
-      correlationId: 'evt_1',
     });
     expect(input.amount).not.toBe(999999);
     expect(input.currency).not.toBe('xxx');
@@ -180,140 +162,5 @@ describe('CheckoutWebhookHandlerService — first-payment seam (payment_intent.s
     await expect(handler.handle(piEvent())).rejects.toBeDefined();
 
     expect(tryEmitFirstPayment).not.toHaveBeenCalled();
-  });
-});
-
-// ── R81 (PR-395 follow-up, F1/F2) — full webhook handler wrapped in a tx that
-//    THROWS after maybeEmitFirstPayment → ZERO notifications commit ───────────
-
-interface NotifRow {
-  user_id: string;
-  kind: string;
-  channel: string;
-}
-
-/**
- * Fake DB that buffers tx-scoped writes (committed only on commit()), so we can
- * prove a thrown outer-tx body leaves zero committed notification rows.
- */
-class WebhookFakeDb {
-  committedNotifications: NotifRow[] = [];
-  committedCoachIds = new Set<string>();
-
-  begin() {
-    const bufNotifs: NotifRow[] = [];
-    const bufCoachIds = new Set<string>();
-    const txSurface = {
-      clientPurchase: {
-        findFirst: async () => ({ ...PENDING_PURCHASE }),
-        update: async () => ({
-          ...PENDING_PURCHASE,
-          status: 'paid',
-          entitlement_active: true,
-          last_error: null,
-        }),
-      },
-      notificationPreferences: { findUnique: async () => null },
-      notification: {
-        create: async ({ data }: { data: NotifRow }) => {
-          bufNotifs.push({ user_id: data.user_id, kind: data.kind, channel: data.channel });
-          return { id: `tx_n_${bufNotifs.length}`, ...data };
-        },
-      },
-      coachFirstPaymentNotification: {
-        create: async ({ data }: { data: { coachId: string } }) => {
-          bufCoachIds.add(data.coachId);
-          return { id: `tx_row_${data.coachId}`, ...data };
-        },
-      },
-    };
-    const tx = asStub<Prisma.TransactionClient>(txSurface);
-    const commit = () => {
-      this.committedNotifications.push(...bufNotifs);
-      bufCoachIds.forEach((id) => this.committedCoachIds.add(id));
-    };
-    const rollback = () => {
-      bufNotifs.length = 0;
-      bufCoachIds.clear();
-    };
-    return { tx, commit, rollback };
-  }
-}
-
-describe('CheckoutWebhookHandlerService — first-payment rolls back with the outer tx (R81 F1/F2)', () => {
-  const prev = process.env[FLAG];
-  beforeAll(() => {
-    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
-    jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
-    // Neutralise NotificationsService's in-process push rate-limit (1 push per
-    // user+kind per 60s, module-level Map) so each push write is observable.
-    let clock = 2_000_000_000_000;
-    jest.spyOn(Date, 'now').mockImplementation(() => {
-      clock += 120_000;
-      return clock;
-    });
-  });
-  afterAll(() => jest.restoreAllMocks());
-  afterEach(() => {
-    if (prev === undefined) delete process.env[FLAG];
-    else process.env[FLAG] = prev;
-  });
-
-  function buildRealHandler() {
-    // Real emit chain so the tx truly threads through to notification.create.
-    const prismaSurface = { notification: { create: async () => { throw new Error('autocommit must not be used'); } }, notificationPreferences: { findUnique: async () => null } };
-    const notifications = new NotificationsService(asStub<PrismaService>(prismaSurface));
-    const emitter = new FirstPaymentEmitter(notifications);
-    const coachFirstPaymentService = new CoachFirstPaymentService(emitter);
-    const prisma = {} as PrismaService;
-    const stripeConnect = {} as never;
-    const handler = new CheckoutWebhookHandlerService(
-      prisma,
-      stripeConnect,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      coachFirstPaymentService,
-    );
-    return handler;
-  }
-
-  it('outer $transaction body throws AFTER the emit → ZERO committed notification rows', async () => {
-    process.env[FLAG] = 'true';
-    const db = new WebhookFakeDb();
-    const handler = buildRealHandler();
-    const { tx, rollback } = db.begin();
-
-    // Model BillingService's outer $transaction: run the handler, then a
-    // downstream step (fanout resolver) throws → the whole tx rolls back.
-    const runOuterTx = async () => {
-      await handler.handle(piEvent(), tx);
-      throw new Error('fanout resolver failed after entitlement flip');
-    };
-
-    await expect(runOuterTx()).rejects.toThrow('fanout resolver failed');
-    rollback();
-
-    // The emit DID run inside the tx, but because the tx rolled back nothing
-    // committed — closing the P0 duplicate-on-retry seam.
-    expect(db.committedNotifications).toHaveLength(0);
-    expect(db.committedCoachIds.size).toBe(0);
-  });
-
-  it('outer $transaction COMMITS → exactly one inapp + one push committed', async () => {
-    process.env[FLAG] = 'true';
-    const db = new WebhookFakeDb();
-    const handler = buildRealHandler();
-    const { tx, commit } = db.begin();
-
-    await handler.handle(piEvent(), tx);
-    commit();
-
-    expect(db.committedNotifications).toHaveLength(2);
-    expect(db.committedNotifications.map((n) => n.channel).sort()).toEqual(['inapp', 'push']);
-    expect(db.committedCoachIds.size).toBe(1);
   });
 });

@@ -158,20 +158,14 @@ export class CheckoutWebhookHandlerService {
   private async maybeEmitFirstPayment(
     purchase: ClientPurchase,
     tx: WebhookTx | undefined,
-    correlationId?: string,
   ): Promise<void> {
     if (process.env.FEATURE_ROMAN_FIRST_PAYMENT !== 'true') return;
     if (!this.coachFirstPaymentService || !tx) return;
-    // R81 (PR-395 follow-up, F1/F2): the SAME outer `tx` is threaded all the
-    // way through tryEmitFirstPayment → emitter → createNotification so the
-    // notification rows commit-or-roll-back with the ledger row + purchase.
-    // `correlationId` (the Stripe event id) is carried for the F8 audit entry.
     await this.coachFirstPaymentService.tryEmitFirstPayment(tx, {
       coachId: purchase.coach_user_id,
       amount: purchase.amount_cents,
       currency: purchase.currency,
       clientId: purchase.client_user_id,
-      correlationId,
     });
   }
 
@@ -548,7 +542,7 @@ export class CheckoutWebhookHandlerService {
     // flip to a successful terminal status, on the SAME outer tx so the
     // exactly-once ledger row commits-or-rolls-back with this purchase
     // (50-Failures #44). Gated on FEATURE_ROMAN_FIRST_PAYMENT (default OFF).
-    await this.maybeEmitFirstPayment(updated, tx, event.id);
+    await this.maybeEmitFirstPayment(updated, tx);
 
     // Phase 4 — materialize ledger + post head-coach transfer now that
     // the charge has actually succeeded.
@@ -912,7 +906,7 @@ export class CheckoutWebhookHandlerService {
     // Roman P4 (Option C) — first-payment notification on the PaymentSheet
     // (payment_intent.succeeded) path too. Same in-tx, server-trusted,
     // feature-flagged contract as the checkout.session.completed callsite.
-    await this.maybeEmitFirstPayment(updated, tx, event.id);
+    await this.maybeEmitFirstPayment(updated, tx);
 
     // PR-18 B1 R3 P1 — defer the split posting to post-commit when an outer
     // tx is held (see runOrDeferSplit / runDeferredSplit + applyCheckoutCompleted
