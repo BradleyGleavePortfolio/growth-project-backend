@@ -49,10 +49,18 @@ export class WearablePromptsRepository {
   }
 
   /**
-   * True when a prompt for (coachId, clientId, metricKey) was generated within
-   * the cooldown window. Belt to the partial-unique-index braces: the index is
-   * the authoritative race guard (a concurrent insert raises P2002), this is
-   * the cheap pre-check for the skip path.
+   * True when a prompt for (coachId, clientId, metricKey) is still within the
+   * 24h cooldown (TWO-GATE design, PR #399 audit F4 / Decision 9 (A)):
+   *
+   *   Gate 1 (concurrent-undismissed): the partial unique index
+   *     community_wearable_prompts_active_cooldown_key blocks a second *active*
+   *     (non-dismissed) prompt for the same key — a concurrent insert raises
+   *     P2002 → the service maps it to a 'cooldown' skip.
+   *   Gate 2 (cooldown-across-dismissed): THIS query counts any prompt generated
+   *     within the 24h window REGARDLESS of dismissedAt. Dismissing a prompt
+   *     does NOT re-open the window before 24h has elapsed, because the
+   *     `generatedAt >= since` predicate ignores the dismissed state — which the
+   *     partial index alone cannot do (a dismissed row drops out of the index).
    */
   async isWithinCooldown(
     coachId: string,
@@ -66,6 +74,8 @@ export class WearablePromptsRepository {
         coachId,
         clientId,
         metricKey,
+        // dismissedAt is intentionally NOT filtered: a prompt generated within
+        // the window still gates a new one even after the coach dismissed it.
         generatedAt: { gte: since },
       },
       select: { id: true },
