@@ -84,6 +84,12 @@ export class CommunitySearchController {
   )
   @Roles('coach', 'owner')
   @HttpCode(202)
+  @Throttle({
+    default: {
+      ttl: 60_000,
+      limit: THROTTLER_ROUTE_LIMITS.COMMUNITY_POSTS_PER_MIN,
+    },
+  })
   async reindex(
     @Request() _req: AuthedRequest,
     @Param('workspaceId', new ParseUUIDPipe({ version: '4' }))
