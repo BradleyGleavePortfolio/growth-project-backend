@@ -1,7 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { AuditService } from '../audit/audit.service';
 import { FirstPaymentEmitter } from './emitters/first-payment.emitter';
+
+// R81 (PR-395 follow-up, F8) — stable audit-event action for the once-ever
+// first-payment emit. Free-form action string (matches AuditService's
+// documented naming convention `<domain>.<event_past_tense>`); intentionally
+// distinct from the billing.* invoice actions so it can be queried in
+// isolation as the financial-celebration trail.
+const AUDIT_FIRST_PAYMENT_EMITTED = 'notification.first_payment_emitted';
 
 // Prisma's unique-constraint violation code. The DIRECT INSERT below relies on
 // it: a duplicate (webhook retry / second payment / concurrent first payments)
@@ -18,7 +26,19 @@ const PRISMA_UNIQUE_VIOLATION = 'P2002';
  * or carry an attacker-controlled amount.
  */
 export interface TryEmitFirstPaymentInput {
-  /** The coach who received the payment (ClientPurchase.coach_user_id). */
+  /**
+   * The coach who received the payment (ClientPurchase.coach_user_id).
+   *
+   * R81 (PR-395 follow-up, F6) — Stripe Connect / sub-coach attribution: this
+   * is the SELLING coach, i.e. whoever's package produced the sale
+   * (`coach_user_id` on the persisted purchase). When a sub-coach sells under a
+   * head coach's Connect account, the first-payment celebration is
+   * deliberately attributed to that selling sub-coach — it is THEIR first
+   * client payment that we are celebrating, not the head coach's. The
+   * head-coach revenue split is a separate ledger concern handled downstream
+   * (split-ledger / head_coach_split) and does not change who receives this
+   * once-ever notification.
+   */
   coachId: string;
   /** Amount in cents (ClientPurchase.amount_cents). */
   amount: number;
@@ -26,6 +46,12 @@ export interface TryEmitFirstPaymentInput {
   currency: string;
   /** The buying client's user id (ClientPurchase.client_user_id). */
   clientId: string;
+  /**
+   * Optional correlation id (e.g. the Stripe event id) for the F8 audit entry.
+   * Server-trusted / non-PII; threaded purely for traceability across the
+   * webhook → emit seam. Absent in unit tests that drive the service directly.
+   */
+  correlationId?: string;
 }
 
 /**
@@ -49,7 +75,13 @@ export interface TryEmitFirstPaymentInput {
 export class CoachFirstPaymentService {
   private readonly logger = new Logger(CoachFirstPaymentService.name);
 
-  constructor(private readonly emitter: FirstPaymentEmitter) {}
+  constructor(
+    private readonly emitter: FirstPaymentEmitter,
+    // R81 (PR-395 follow-up, F8) — AuditService is @Global; @Optional so the
+    // thin unit specs that construct the service without DI keep working (the
+    // audit write becomes a no-op when absent, exactly like sibling services).
+    @Optional() private readonly audit?: AuditService,
+  ) {}
 
   /**
    * Attempt to record + emit the coach's first-ever payment notification.
@@ -95,10 +127,34 @@ export class CoachFirstPaymentService {
     }
 
     // The INSERT won the unique constraint — this is the coach's first-ever
-    // payment. Enqueue the notification via the existing notifications module.
-    // Because this only runs on the winning INSERT, the notification is
-    // enqueued exactly once, forever.
-    await this.emitter.emit(coachId, { amount, currency, clientId });
+    // payment. R81 (PR-395 follow-up, F8): write the audit-log entry BEFORE the
+    // emit (after the P2002 no-op gate has passed) so the once-ever financial
+    // celebration is recorded. No PII: ids + amount/currency + correlation id
+    // only. The write is best-effort by AuditService contract (it swallows its
+    // own errors and never throws), so it cannot break the purchase tx.
+    await this.audit?.write({
+      action: AUDIT_FIRST_PAYMENT_EMITTED,
+      actorId: coachId,
+      targetUserId: clientId,
+      targetType: 'coach_first_payment_notification',
+      tenantCoachId: coachId,
+      metadata: {
+        event: 'first_payment_emitted',
+        coach_id: coachId,
+        client_id: clientId,
+        amount,
+        currency,
+        correlation_id: input.correlationId ?? null,
+      },
+    });
+
+    // Enqueue the notification via the existing notifications module. Because
+    // this only runs on the winning INSERT, the notification is enqueued
+    // exactly once, forever. The ambient `tx` is threaded through so the
+    // notification rows ride the SAME transaction as the ledger row + purchase
+    // (R81 F1/F2 — commit-or-roll-back together; no escape to an autocommit
+    // client that would survive an outer rollback and re-fire on Stripe retry).
+    await this.emitter.emit(coachId, { amount, currency, clientId }, tx);
 
     this.logger.log({ event: 'first_payment_emitted', coachId });
   }

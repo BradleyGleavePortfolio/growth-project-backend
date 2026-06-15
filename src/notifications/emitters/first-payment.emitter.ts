@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { NotificationsService } from '../notifications.service';
 import { NotificationKind } from '../notification-kind';
@@ -53,8 +54,20 @@ export class FirstPaymentEmitter {
    * @param coachId  the recipient coach user id (server-trusted — sourced from
    *                 the persisted ClientPurchase row, never the webhook body).
    * @param payload  validated { amount, currency, clientId }.
+   * @param tx       R81 (PR-395 follow-up, F1/F2) — the AMBIENT purchase
+   *                 transaction. Threaded into both createNotification calls so
+   *                 the inapp + push rows are written via `tx.notification.create`
+   *                 and commit-or-roll-back WITH the CoachFirstPaymentNotification
+   *                 ledger row and the ClientPurchase. Without this the rows
+   *                 escaped to NotificationsService's autocommitting client and
+   *                 could survive an outer rollback (re-firing on Stripe retry)
+   *                 or be delivered before the purchase committed.
    */
-  async emit(coachId: string, payload: FirstPaymentNotificationPayload): Promise<void> {
+  async emit(
+    coachId: string,
+    payload: FirstPaymentNotificationPayload,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
     // Validate the payload shape at the boundary. A malformed payload is a
     // programming error in the caller, so we throw (loud, not silent) rather
     // than emit a half-formed notification.
@@ -63,31 +76,37 @@ export class FirstPaymentEmitter {
     const body = "You just landed your first client. Your first payment is on its way.";
     const deepLink = `tgp://coach/clients/${parsed.clientId}`;
 
-    await this.notifications.createNotification({
-      user_id: coachId,
-      kind: NotificationKind.FIRST_PAYMENT,
-      body,
-      payload: {
-        amount: parsed.amount,
-        currency: parsed.currency,
-        clientId: parsed.clientId,
+    await this.notifications.createNotification(
+      {
+        user_id: coachId,
+        kind: NotificationKind.FIRST_PAYMENT,
+        body,
+        payload: {
+          amount: parsed.amount,
+          currency: parsed.currency,
+          clientId: parsed.clientId,
+        },
+        deep_link: deepLink,
+        channel: 'inapp',
       },
-      deep_link: deepLink,
-      channel: 'inapp',
-    });
+      tx,
+    );
 
-    await this.notifications.createNotification({
-      user_id: coachId,
-      kind: NotificationKind.FIRST_PAYMENT,
-      body,
-      payload: {
-        amount: parsed.amount,
-        currency: parsed.currency,
-        clientId: parsed.clientId,
+    await this.notifications.createNotification(
+      {
+        user_id: coachId,
+        kind: NotificationKind.FIRST_PAYMENT,
+        body,
+        payload: {
+          amount: parsed.amount,
+          currency: parsed.currency,
+          clientId: parsed.clientId,
+        },
+        deep_link: deepLink,
+        channel: 'push',
       },
-      deep_link: deepLink,
-      channel: 'push',
-    });
+      tx,
+    );
 
     this.logger.log({
       event: 'first_payment_notification_emitted',
