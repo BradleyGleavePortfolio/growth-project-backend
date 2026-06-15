@@ -2,7 +2,7 @@ import { Controller, Get, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
-import type { AppRole } from '../common/decorators/roles.decorator';
+import { Roles, type AppRole } from '../common/decorators/roles.decorator';
 import {
   FeatureFlagsResponseSchema,
   type FeatureFlagsResponseDto,
@@ -20,10 +20,13 @@ import { FeatureFlagsTelemetry } from './feature-flags.telemetry';
  * Expo-env flag copies that drift from the server gate.
  *
  * Auth: JwtAuthGuard is registered globally as APP_GUARD (Phase 10), so no
- * explicit @UseGuards is needed — the verified user is on `req.user`. No
- * @Roles gate on the route itself: every authenticated user may read THEIR
- * flag map; role-sensitive flags (coach_community_wearable_prompts) are
- * resolved to OFF for non-coach callers inside FeatureFlagsService.
+ * explicit @UseGuards is needed — the verified user is on `req.user`.
+ *
+ * Role gate: @Roles('student','coach','owner') — every authenticated user
+ * may read THEIR flag map. The repo's RolesEnforced test gate requires
+ * explicit decoration on every route; role-sensitive flags
+ * (coach_community_wearable_prompts) are still resolved to OFF for
+ * non-coach callers inside FeatureFlagsService regardless.
  *
  * Throttle: per-user 60/min — frequent foreground polling is expected from
  * mobile, but a single client should not hammer the endpoint. UserThrottlerGuard
@@ -55,6 +58,7 @@ export class FeatureFlagsController {
     description: 'The evaluated flag map plus the evaluation timestamp.',
   })
   @Get()
+  @Roles('student', 'coach', 'owner')
   @Throttle({ default: { ttl: 60_000, limit: 60 } })
   getFeatureFlags(@Request() req: AuthedRequest): FeatureFlagsResponseDto {
     const role = req.user.role as AppRole;
