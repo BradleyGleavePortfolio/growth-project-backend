@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma, type User } from '@prisma/client';
 import { AnalyticsService } from '../../analytics/analytics.service';
 import { ConsentService } from '../../consent/consent.service';
@@ -29,6 +29,16 @@ const FORBIDDEN = {
   error: 'forbidden',
   code: 'community.wearable_prompts.forbidden',
 } as const;
+
+/**
+ * Injectable wall-clock seam (PR #405 re-audit N3). The service owns "now" for
+ * the 24h cooldown gate and the dismiss/act-on stamps; injecting it (instead of
+ * calling `new Date()` inline) lets the service spec pin the cooldown boundary
+ * with jest fake timers at the SERVICE seam, not only the repository helper.
+ */
+export const CLOCK = Symbol('WearablePromptsClock');
+export type Clock = () => Date;
+export const defaultClock: Clock = () => new Date();
 
 
 /**
@@ -64,6 +74,7 @@ export class WearablePromptsService {
     private readonly insights: WearableInsightsService,
     private readonly analytics: AnalyticsService,
     private readonly prisma: PrismaService,
+    @Inject(CLOCK) private readonly clock: Clock = defaultClock,
   ) {}
 
   async generate(
@@ -73,7 +84,7 @@ export class WearablePromptsService {
   ): Promise<GenerateResponse> {
     await this.assertCoachOwnsWorkspaceAndClient(coach, workspaceId, body.clientId);
 
-    const now = new Date();
+    const now = this.clock();
     const generated: PromptView[] = [];
     const skipped: GenerateResponse['skipped'] = [];
 
@@ -184,7 +195,7 @@ export class WearablePromptsService {
     // Single atomic, coach-scoped write (RLS-safe coachId re-assert; PR #399 F5).
     // The repo maps a non-existent / foreign prompt to a 404 (never 403, never
     // leaks existence) and returns the fresh row with sources for the view.
-    const fresh = await this.repo.markDismissed(promptId, coach.id, new Date());
+    const fresh = await this.repo.markDismissed(promptId, coach.id, this.clock());
     return this.toView(fresh);
   }
 
@@ -192,7 +203,7 @@ export class WearablePromptsService {
     coach: Pick<User, 'id' | 'role'>,
     promptId: string,
   ): Promise<PromptView> {
-    const fresh = await this.repo.markActedOn(promptId, coach.id, new Date());
+    const fresh = await this.repo.markActedOn(promptId, coach.id, this.clock());
     return this.toView(fresh);
   }
 
