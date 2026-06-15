@@ -289,7 +289,16 @@ describe('PackageContentsService', () => {
     prisma = makePrismaStub();
     subCoach = makeSubCoachStub();
     packages = new PackagesService(prisma as any, subCoach as any);
-    svc = new PackageContentsService(prisma as any, packages, subCoach as any);
+    // AuditService stub (added when pushToExisting gained a durable audit
+    // entry — F4). This suite doesn't exercise the push path, so a no-op
+    // write() satisfies the constructor contract.
+    const audit = { write: jest.fn(async () => undefined) };
+    svc = new PackageContentsService(
+      prisma as any,
+      packages,
+      subCoach as any,
+      audit as any,
+    );
     seedPackage(prisma, { id: 'pkg-1', coach_id: 'coach-1' });
     seedWorkoutPlan(prisma, { id: 'wp-1', coach_id: 'coach-1' });
     seedMealPlan(prisma, { id: 'mp-1', coach_id: 'coach-1' });

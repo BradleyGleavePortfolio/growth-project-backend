@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   NotFoundException,
 } from '@nestjs/common';
 import { PackagesService } from '../src/packages/packages.service';
@@ -7,6 +8,8 @@ import { PackageContentsService } from '../src/packages/package-contents.service
 import { computeFireAt, type CadenceKind } from '../src/packages/drip-fire-at';
 import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
 import { AssignableAssetResolverRegistry } from '../src/packages/asset-resolvers/assignable-asset-resolver.registry';
+import { CoachPackageContentsController } from '../src/packages/package-contents.controller';
+import { PushToExistingResponseSchema } from '../src/packages/package-contents.dto';
 
 // PR-17 — drip "push to existing" fire_at extraction.
 //
@@ -537,6 +540,21 @@ function makePrismaStub() {
         Object.assign(row, data);
         return { ...row };
       }),
+      // updateMany honors the FULL composite filter (id + status) — this
+      // is the check-and-set the F1 fix relies on. count===0 when the row
+      // exists but its status no longer matches (e.g. a dispatcher claim
+      // flipped it to 'dispatching' mid-tx). The failure hook fires per
+      // matched row so the atomicity test can still inject a synthetic
+      // mid-loop throw.
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const matched = drops.filter((d: any) => whereMatch(d, where));
+        if (matched.length > 0) {
+          updateCallCount += 1;
+          if (updateFailureHook) updateFailureHook(matched[0].id, updateCallCount);
+          for (const row of matched) Object.assign(row, data);
+        }
+        return { count: matched.length };
+      }),
     },
     clientPurchase: {
       findMany: jest.fn(async ({ where, select }: any) => {
@@ -590,6 +608,14 @@ function makeSubCoachStub(headMap: Record<string, string | null> = {}) {
     getHeadCoachIdForSubCoach: jest.fn(
       async (userId: string) => headMap[userId] ?? null,
     ),
+  };
+}
+
+// Minimal AuditService stub. `write` is a jest.fn so the F4 tests can
+// assert call/no-call + payload. It resolves (success) by default.
+function makeAuditStub() {
+  return {
+    write: jest.fn(async (_input: any) => undefined),
   };
 }
 
@@ -663,14 +689,21 @@ function seedDrop(prisma: any, d: Partial<FakeDrop> & {
 describe('PackageContentsService.pushToExisting (PR-17A)', () => {
   let prisma: ReturnType<typeof makePrismaStub>;
   let subCoach: ReturnType<typeof makeSubCoachStub>;
+  let audit: ReturnType<typeof makeAuditStub>;
   let packages: PackagesService;
   let svc: PackageContentsService;
 
   beforeEach(() => {
     prisma = makePrismaStub();
     subCoach = makeSubCoachStub();
+    audit = makeAuditStub();
     packages = new PackagesService(prisma as any, subCoach as any);
-    svc = new PackageContentsService(prisma as any, packages, subCoach as any);
+    svc = new PackageContentsService(
+      prisma as any,
+      packages,
+      subCoach as any,
+      audit as any,
+    );
     seedPackage(prisma, { id: 'pkg-1', coach_id: 'coach-1' });
   });
 
@@ -1010,7 +1043,12 @@ describe('PackageContentsService.pushToExisting (PR-17A)', () => {
       // Sub-coach 'sc-1' is mapped to head 'coach-1' who owns pkg-1.
       const subStub = makeSubCoachStub({ 'sc-1': 'coach-1' });
       packages = new PackagesService(prisma as any, subStub as any);
-      svc = new PackageContentsService(prisma as any, packages, subStub as any);
+      svc = new PackageContentsService(
+        prisma as any,
+        packages,
+        subStub as any,
+        audit as any,
+      );
 
       seedContent(prisma, {
         id: 'content-1',
@@ -1076,6 +1114,7 @@ describe('PackageContentsService.pushToExisting (PR-17A)', () => {
       // BEFORE the tx writes.
       expect(prisma._drops.find((d: any) => d.id === 'd1')!.display_title).toBe('preserved');
       expect((prisma.scheduledDrop.update as jest.Mock).mock.calls.length).toBe(0);
+      expect((prisma.scheduledDrop.updateMany as jest.Mock).mock.calls.length).toBe(0);
     });
 
     it('rejects an unknown cadence_kind on the content row', async () => {
@@ -1244,5 +1283,291 @@ describe('PackageContentsService.pushToExisting (PR-17A)', () => {
       // The stub's $executeRaw records pg_advisory_xact_lock invocations.
       expect(prisma._lockLog.length).toBeGreaterThanOrEqual(1);
     });
+  });
+
+  // ── F1 (P1): dispatcher-claim race — check-and-set rollback ──────────
+  describe('F1: dispatcher-claim race (updateMany check-and-set)', () => {
+    it('rolls back the whole tx with ConflictException when a dispatcher claims a drop mid-tx', async () => {
+      seedContent(prisma, {
+        id: 'content-1',
+        package_id: 'pkg-1',
+        cadence_kind: 'relative_to_purchase',
+        cadence_payload: { offset_days: 5 },
+        display_title: 'NEW title',
+      });
+      seedPurchase(prisma, {
+        id: 'p1',
+        created_at: new Date('2026-01-01T00:00:00.000Z'),
+      });
+      seedPurchase(prisma, {
+        id: 'p2',
+        created_at: new Date('2026-02-01T00:00:00.000Z'),
+      });
+      // Two pending drops. The inner findMany sees both as pending.
+      seedDrop(prisma, {
+        id: 'd1',
+        content_id: 'content-1',
+        client_purchase_id: 'p1',
+        status: 'pending',
+        display_title: 'old title',
+      });
+      seedDrop(prisma, {
+        id: 'd2',
+        content_id: 'content-1',
+        client_purchase_id: 'p2',
+        status: 'pending',
+        display_title: 'old title',
+      });
+
+      // Simulate a concurrent dispatcher claim: a SEPARATE client flips d2
+      // to 'dispatching' AFTER the inner findMany has already read it as
+      // pending. We trigger this from the failure hook on the FIRST
+      // updateMany (which targets d1) so that by the time the loop reaches
+      // d2, its status no longer matches the composite filter → count===0.
+      (prisma as any)._setUpdateFailureHook((id: string) => {
+        if (id === 'd1') {
+          const claimed = prisma._drops.find((d: any) => d.id === 'd2')!;
+          claimed.status = 'dispatching';
+        }
+      });
+
+      await expect(
+        svc.pushToExisting('coach-1', 'pkg-1', 'content-1', { push: true }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      // Rollback: BOTH drops are back to 'old title' — the push wrote
+      // nothing durable. d1 was written then rolled back; d2 was never
+      // written because the composite filter (status:'pending') no longer
+      // matched the dispatcher-claimed row, yielding count===0 →
+      // ConflictException → full-tx rollback. This is the no-partial-leak
+      // guarantee: the push never silently overwrites a claimed drop's
+      // snapshot fields. (The stub's $transaction restores its drops
+      // snapshot on throw, so d2.status reads back as its tx-start value;
+      // what matters is the push left no committed mutation behind.)
+      const d1 = prisma._drops.find((d: any) => d.id === 'd1')!;
+      const d2 = prisma._drops.find((d: any) => d.id === 'd2')!;
+      expect(d1.display_title).toBe('old title');
+      expect(d2.display_title).toBe('old title');
+    });
+
+    it('uses the composite {id,status:pending} filter (never a bare {id} update)', async () => {
+      seedContent(prisma, {
+        id: 'content-1',
+        package_id: 'pkg-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      seedPurchase(prisma, {
+        id: 'p1',
+        created_at: new Date('2026-01-01T00:00:00.000Z'),
+      });
+      seedDrop(prisma, {
+        id: 'd1',
+        content_id: 'content-1',
+        client_purchase_id: 'p1',
+        status: 'pending',
+      });
+
+      await svc.pushToExisting('coach-1', 'pkg-1', 'content-1', { push: true });
+
+      const calls = (prisma.scheduledDrop.updateMany as jest.Mock).mock.calls;
+      expect(calls.length).toBeGreaterThanOrEqual(1);
+      // Every write goes through updateMany with status:'pending' asserted.
+      for (const [arg] of calls) {
+        expect(arg.where.status).toBe('pending');
+        expect(arg.where.id).toBeDefined();
+      }
+      // The bare per-row update path must NOT be used.
+      expect((prisma.scheduledDrop.update as jest.Mock).mock.calls.length).toBe(0);
+    });
+  });
+
+  // ── F4 (P3): durable audit entry ────────────────────────────────────
+  describe('F4: AuditService entry', () => {
+    it('writes an audit entry on a successful push (post-tx)', async () => {
+      seedContent(prisma, {
+        id: 'content-1',
+        package_id: 'pkg-1',
+        cadence_kind: 'relative_to_purchase',
+        cadence_payload: { offset_days: 5 },
+        display_title: 'NEW title',
+      });
+      seedPurchase(prisma, {
+        id: 'p1',
+        created_at: new Date('2026-01-01T00:00:00.000Z'),
+      });
+      seedDrop(prisma, {
+        id: 'd1',
+        content_id: 'content-1',
+        client_purchase_id: 'p1',
+        status: 'pending',
+      });
+
+      await svc.pushToExisting('coach-1', 'pkg-1', 'content-1', { push: true });
+
+      expect(audit.write).toHaveBeenCalledTimes(1);
+      const payload = (audit.write as jest.Mock).mock.calls[0][0];
+      expect(payload.action).toBe('package.push_to_existing_drops');
+      expect(payload.actorId).toBe('coach-1');
+      expect(payload.targetId).toBe('content-1');
+      expect(payload.metadata).toMatchObject({
+        packageId: 'pkg-1',
+        contentId: 'content-1',
+        dropsUpdated: 1,
+        buyersAffected: 1,
+        skippedDelivered: 0,
+      });
+    });
+
+    it('does NOT write an audit entry when the tx rolls back', async () => {
+      seedContent(prisma, {
+        id: 'content-1',
+        package_id: 'pkg-1',
+        cadence_kind: 'relative_to_purchase',
+        cadence_payload: { offset_days: 3 },
+        display_title: 'NEW',
+      });
+      seedPurchase(prisma, {
+        id: 'p1',
+        created_at: new Date('2026-01-01T00:00:00.000Z'),
+      });
+      seedDrop(prisma, {
+        id: 'd1',
+        content_id: 'content-1',
+        client_purchase_id: 'p1',
+        status: 'pending',
+      });
+
+      // Force the in-tx write to throw → tx rolls back before the audit
+      // write (which is post-tx).
+      (prisma as any)._setUpdateFailureHook(() => {
+        throw new Error('synthetic in-tx failure');
+      });
+
+      await expect(
+        svc.pushToExisting('coach-1', 'pkg-1', 'content-1', { push: true }),
+      ).rejects.toThrow(/synthetic/);
+
+      expect(audit.write).not.toHaveBeenCalled();
+    });
+
+    it('does NOT write an audit entry on the no-pending-drops fast path', async () => {
+      seedContent(prisma, {
+        id: 'content-1',
+        package_id: 'pkg-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      // Only a delivered (non-pending) drop exists → no mutation, no audit.
+      seedPurchase(prisma, {
+        id: 'p1',
+        created_at: new Date('2026-01-01T00:00:00.000Z'),
+      });
+      seedDrop(prisma, {
+        id: 'd1',
+        content_id: 'content-1',
+        client_purchase_id: 'p1',
+        status: 'fired',
+      });
+
+      await svc.pushToExisting('coach-1', 'pkg-1', 'content-1', { push: true });
+      expect(audit.write).not.toHaveBeenCalled();
+    });
+
+    it('audit write failure does NOT fail the push (swallowed + logged)', async () => {
+      seedContent(prisma, {
+        id: 'content-1',
+        package_id: 'pkg-1',
+        cadence_kind: 'immediate',
+        cadence_payload: {},
+      });
+      seedPurchase(prisma, {
+        id: 'p1',
+        created_at: new Date('2026-01-01T00:00:00.000Z'),
+      });
+      seedDrop(prisma, {
+        id: 'd1',
+        content_id: 'content-1',
+        client_purchase_id: 'p1',
+        status: 'pending',
+      });
+      (audit.write as jest.Mock).mockRejectedValueOnce(
+        new Error('audit backend down'),
+      );
+
+      const summary = await svc.pushToExisting(
+        'coach-1',
+        'pkg-1',
+        'content-1',
+        { push: true },
+      );
+      expect(summary.drops_updated).toBe(1);
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// F2 (P2): @Throttle metadata on the bulk-write endpoint
+// ─────────────────────────────────────────────────────────────────────────
+describe('F2: pushToExistingDrops @Throttle metadata', () => {
+  // @nestjs/throttler stores @Throttle({ default: { ttl, limit } }) under
+  // the `THROTTLER:TTLdefault` / `THROTTLER:LIMITdefault` reflect keys (same
+  // convention asserted across the repo's other throttle metadata tests).
+  it('pins ttl=60000 and limit=10 on the push-to-existing handler', () => {
+    const handler = CoachPackageContentsController.prototype.pushToExistingDrops;
+    const ttl = Reflect.getMetadata('THROTTLER:TTLdefault', handler) as number;
+    const limit = Reflect.getMetadata(
+      'THROTTLER:LIMITdefault',
+      handler,
+    ) as number;
+    expect(ttl).toBe(60_000);
+    expect(limit).toBe(10);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// F3 (P2): strict response envelope rejects unknown keys
+// ─────────────────────────────────────────────────────────────────────────
+describe('F3: PushToExistingResponseSchema (.strict())', () => {
+  it('accepts the exact response shape', () => {
+    const parsed = PushToExistingResponseSchema.parse({
+      drops_updated: 3,
+      buyers_affected: 2,
+      skipped_delivered: 1,
+    });
+    expect(parsed).toEqual({
+      drops_updated: 3,
+      buyers_affected: 2,
+      skipped_delivered: 1,
+    });
+  });
+
+  it('rejects an extra/unknown key (strict envelope)', () => {
+    expect(() =>
+      PushToExistingResponseSchema.parse({
+        drops_updated: 1,
+        buyers_affected: 1,
+        skipped_delivered: 0,
+        // a leaked internal field must be rejected, not silently passed
+        buyer_ids: ['secret'],
+      } as any),
+    ).toThrow();
+  });
+
+  it('rejects negative / non-integer counts', () => {
+    expect(() =>
+      PushToExistingResponseSchema.parse({
+        drops_updated: -1,
+        buyers_affected: 0,
+        skipped_delivered: 0,
+      }),
+    ).toThrow();
+    expect(() =>
+      PushToExistingResponseSchema.parse({
+        drops_updated: 1.5,
+        buyers_affected: 0,
+        skipped_delivered: 0,
+      }),
+    ).toThrow();
   });
 });

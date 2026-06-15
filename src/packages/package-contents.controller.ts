@@ -16,6 +16,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
@@ -125,6 +126,12 @@ export class CoachPackageContentsController {
   // PackageContentsService.pushToExisting.
   @Roles('coach', 'owner')
   @Post(':contentId/push-to-existing')
+  // Bulk mutation: a single call can issue up to DEFENSIVE_PUSH_CAP
+  // (10k) per-row UPDATEs inside a locked transaction. An explicit, tight
+  // bucket (10 calls / 60s per user) prevents a coach from chaining
+  // back-to-back bulk pushes; the global authed default (300/min) is far
+  // too loose for this cost profile.
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
   async pushToExistingDrops(
     @Request() req: AuthedRequest,
