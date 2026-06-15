@@ -22,8 +22,12 @@ import { PrismaService } from '../prisma.service';
 
 // Accepts either the live PrismaService or a Prisma.TransactionClient so the
 // eviction can ride the same transaction as the revision insert when a caller
-// has one open.
-type TxOrPrisma = Pick<PrismaService, 'workoutProgram' | 'workoutProgramRevision'>;
+// has one open. Both expose the `workoutProgram` and `workoutProgramRevision`
+// delegates we touch, so we narrow to exactly those.
+type RegimeRetentionDb = Pick<
+  Prisma.TransactionClient,
+  'workoutProgram' | 'workoutProgramRevision'
+>;
 
 @Injectable()
 export class RegimeRevisionRetentionService {
@@ -48,7 +52,7 @@ export class RegimeRevisionRetentionService {
     programId: string,
     tx?: Prisma.TransactionClient,
   ): Promise<number> {
-    const db: TxOrPrisma = (tx as unknown as TxOrPrisma) ?? this.prisma;
+    const db: RegimeRetentionDb = tx ?? this.prisma;
 
     const program = await db.workoutProgram.findUnique({
       where: { id: programId },

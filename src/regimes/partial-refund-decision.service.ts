@@ -60,7 +60,10 @@ export class PartialRefundDecisionService {
   ): Promise<boolean> {
     if (!isNamedRegimesEnabled()) return false;
 
-    const db = (tx as unknown as PrismaService) ?? this.prisma;
+    // Both PrismaService and Prisma.TransactionClient expose the
+    // partialRefundDecision delegate we touch; narrow to exactly that.
+    const db: Pick<Prisma.TransactionClient, 'partialRefundDecision'> =
+      tx ?? this.prisma;
 
     const existing = await db.partialRefundDecision.findUnique({
       where: { stripe_refund_id: args.stripe_refund_id },
