@@ -128,6 +128,14 @@ async function bootstrapSchema(prisma: PrismaClient): Promise<void> {
   await prisma.$executeRawUnsafe(
     `GRANT SELECT, INSERT, UPDATE, DELETE ON public."${HARNESS_TABLE}" TO ${HARNESS_ROLE}`,
   );
+  // app_user must reach the helper the policy (and any harness query) invokes:
+  // USAGE on the app schema + EXECUTE on the gym reader. This mirrors the grants
+  // the production app_user role carries; without them a NOBYPASSRLS query that
+  // touches app.current_gym_ids() fails with "permission denied for schema app".
+  await prisma.$executeRawUnsafe(`GRANT USAGE ON SCHEMA app TO ${HARNESS_ROLE}`);
+  await prisma.$executeRawUnsafe(
+    `GRANT EXECUTE ON FUNCTION app.current_gym_ids() TO ${HARNESS_ROLE}`,
+  );
 }
 
 /**
