@@ -400,6 +400,11 @@ import { WearablesModule } from './wearables/wearables.module';
     // each other out, and so per-user fairness holds for authed routes.
     { provide: APP_GUARD, useClass: UserThrottlerGuard },
 
+    // NOTE (W1.5-A2): Two RLS interceptors run per request. Order is NOT load-bearing
+    // because they write disjoint GUC namespaces (legacy: app.current_user_id/role;
+    // A2: app.user_id/gym_ids) and A2 has not enabled any policies yet. A3 retires the
+    // legacy interceptor; until then keep both registered.
+    //
     // RLS context interceptor — runs AFTER JwtAuthGuard so req.user is populated.
     // Sets app.current_user_id + app.current_user_role as transaction-scoped
     // PostgreSQL session variables consumed by RLS policies.

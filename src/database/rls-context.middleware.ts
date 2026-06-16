@@ -10,6 +10,13 @@ import { defer, Observable } from "rxjs";
 import { runWithRlsContext, type RlsContext } from "./prisma.context";
 
 /**
+ * Once-per-process guard for the missing-`gym_ids`-claim warning. Module scope
+ * so the warn fires on the first authenticated request after boot and then
+ * stays silent, preventing a per-request log flood while B1b is unshipped.
+ */
+let warnedMissingGymIdsClaim = false;
+
+/**
  * Minimal shape this interceptor reads off the request. After `JwtAuthGuard`
  * runs, `req.user` is the authenticated Prisma `User` record (see
  * `src/auth/auth-request.ts`), whose `id` drives per-user RLS predicates. Typed
@@ -92,8 +99,9 @@ export class RlsContextInterceptor implements NestInterceptor {
    *
    * A2 placeholder. If the JWT-derived user already carries a `gym_ids` claim,
    * it is used directly. Otherwise we fail closed with `[]` (deny-all per the
-   * empty-`gymIds` contract) and warn once per request, because the
-   * `gymMembership` model does not exist yet.
+   * empty-`gymIds` contract) and warn once per process boot (first-hit only) so
+   * production logs are not flooded while gym_ids claim is unpopulated, because
+   * the `gymMembership` model does not exist yet.
    *
    * TODO(B1b — gymMembership model): replace this fallback with a real
    * membership lookup (`prisma.gymMembership.findMany({ where: { userId } })`)
@@ -109,10 +117,14 @@ export class RlsContextInterceptor implements NestInterceptor {
     if (user.gym_ids !== undefined && user.gym_ids.length > 0) {
       return user.gym_ids;
     }
-    this.logger.warn(
-      `No gym_ids claim for user ${user.id}; failing closed with deny-all ` +
-        `gymIds=[] (A2 placeholder, B1b will populate via gymMembership lookup)`,
-    );
+    if (!warnedMissingGymIdsClaim) {
+      warnedMissingGymIdsClaim = true;
+      this.logger.warn(
+        `A2 placeholder: user ${user.id} has no gym_ids claim; ` +
+          `all authenticated requests will deny-all gym-scoped rows until B1b lands. ` +
+          `This warning fires once per process boot.`,
+      );
+    }
     return [];
   }
 }
