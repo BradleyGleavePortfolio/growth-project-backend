@@ -22,6 +22,7 @@
 
 import { Controller, Get, Request, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { CoachGuard } from '../../auth/coach.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -37,6 +38,11 @@ export class CoachHomeController {
   // GET /coach/home/daily-rings — the calling coach's three completion arcs
   // for today (check-ins reviewed/submitted, brief opened, threads reviewed/
   // total). Always scoped to req.user.id.
+  // Explicit per-route throttle (R79 pin). Read-only aggregation polled on
+  // Coach Home focus; the 30s service cache already absorbs bursts, but an
+  // explicit 60/min bucket caps abuse and is pinned in the controller spec so
+  // it cannot regress silently.
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
   @Get('daily-rings')
   @ApiOperation({ summary: "Today's three-arc completion counts for this coach" })
   async dailyRings(@Request() req: AuthedRequest): Promise<DailyRingsResponse> {

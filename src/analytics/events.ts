@@ -47,6 +47,14 @@ export const Events = {
   COACH_PROMOTED: 'coach_promoted',
   /** Coach took an action against a client (archive/unarchive/guidelines). */
   COACH_ACTION: 'coach_action',
+  /**
+   * ED.2 (Roman three-arc router) — the Coach Home daily-rings counts were
+   * computed for a coach. Emitted once per flag-ON cache MISS (never on a hit
+   * or the flag-OFF zeroed path). Properties are non-PII numbers/booleans only:
+   * checkIns_reviewed, checkIns_submitted, brief_opened, review_reviewed,
+   * review_total.
+   */
+  COACH_DAILY_RINGS_FETCHED: 'coach_daily_rings_fetched',
   /** Phase 6D — Coach Onboarding Wizard lifecycle. */
   COACH_ONBOARDING_STARTED: 'coach_onboarding_started',
   COACH_ONBOARDING_STEP_COMPLETED: 'coach_onboarding_step_completed',
