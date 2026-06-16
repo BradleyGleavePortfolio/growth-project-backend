@@ -56,6 +56,58 @@ export const HARNESS_ROLE = 'app_user';
 /** Gym-scoped table the harness owns end-to-end (no collision with other suites). */
 export const HARNESS_TABLE = 'HarnessGymScoped';
 
+/**
+ * Name of the tenant SELECT policy the harness owns. Exported as the single source
+ * of truth so self-tests/downstream suites never re-derive it from HARNESS_TABLE:
+ * the harness, not the caller, decides what its policy is called.
+ */
+export const HARNESS_POLICY = `p_${HARNESS_TABLE.toLowerCase()}_select`;
+
+/**
+ * Enable the harness's tenant isolation on its table: ENABLE + FORCE RLS and the
+ * tenant SELECT policy on the A3 new namespace. This is the exact sequence the
+ * harness considers "RLS on", so a self-test that restores isolation calls THIS
+ * rather than copying the SQL. Idempotent — drops the policy first so a CREATE
+ * after a partial teardown never collides.
+ *
+ * Empty-gyms DENY is handled by app.current_gym_ids() returning NULL
+ * (gym_id = ANY(NULL) is never true), so an empty authorization sees nothing.
+ */
+export async function enableHarnessRls(prisma: PrismaClient): Promise<void> {
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE public."${HARNESS_TABLE}" ENABLE ROW LEVEL SECURITY`,
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE public."${HARNESS_TABLE}" FORCE ROW LEVEL SECURITY`,
+  );
+  await prisma.$executeRawUnsafe(
+    `DROP POLICY IF EXISTS ${HARNESS_POLICY} ON public."${HARNESS_TABLE}"`,
+  );
+  await prisma.$executeRawUnsafe(
+    `CREATE POLICY ${HARNESS_POLICY} ON public."${HARNESS_TABLE}"
+       FOR SELECT USING ("gym_id" = ANY(app.current_gym_ids()))`,
+  );
+}
+
+/**
+ * Disable the harness's tenant isolation on its table: DROP POLICY + NO FORCE +
+ * DISABLE RLS. This is exactly the "missing/broken policy" state a downstream RLS
+ * PR must be caught committing; a self-test drives the table into it to prove the
+ * negative assertions can actually fail. Pair with {@link enableHarnessRls} to
+ * restore. Idempotent.
+ */
+export async function disableHarnessRls(prisma: PrismaClient): Promise<void> {
+  await prisma.$executeRawUnsafe(
+    `DROP POLICY IF EXISTS ${HARNESS_POLICY} ON public."${HARNESS_TABLE}"`,
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE public."${HARNESS_TABLE}" NO FORCE ROW LEVEL SECURITY`,
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE public."${HARNESS_TABLE}" DISABLE ROW LEVEL SECURITY`,
+  );
+}
+
 /** One provisioned tenant: its gym plus the coach + student that belong to it. */
 export interface HarnessTenant {
   readonly gymId: string;
@@ -110,19 +162,9 @@ async function bootstrapSchema(prisma: PrismaClient): Promise<void> {
        "label" text NOT NULL DEFAULT 'row'
      )`,
   );
-  await prisma.$executeRawUnsafe(
-    `ALTER TABLE public."${HARNESS_TABLE}" ENABLE ROW LEVEL SECURITY`,
-  );
-  await prisma.$executeRawUnsafe(
-    `ALTER TABLE public."${HARNESS_TABLE}" FORCE ROW LEVEL SECURITY`,
-  );
-  // Tenant-scoped SELECT policy on the A3 new namespace. Empty-gyms DENY is
-  // handled by app.current_gym_ids() returning NULL (gym_id = ANY(NULL) is
-  // never true), so an empty authorization sees nothing.
-  await prisma.$executeRawUnsafe(
-    `CREATE POLICY p_${HARNESS_TABLE.toLowerCase()}_select ON public."${HARNESS_TABLE}"
-       FOR SELECT USING ("gym_id" = ANY(app.current_gym_ids()))`,
-  );
+  // ENABLE + FORCE RLS and the tenant SELECT policy — owned by enableHarnessRls so
+  // the harness and its self-tests share one definition of "RLS on".
+  await enableHarnessRls(prisma);
   // app_user is non-owner, so FORCE RLS + this GRANT are what let it read at all;
   // the policy then gates which rows. Owner (postgres) seeds rows below.
   await prisma.$executeRawUnsafe(
@@ -140,10 +182,13 @@ async function bootstrapSchema(prisma: PrismaClient): Promise<void> {
 
 /**
  * Provision `count` isolated tenants (gyms), each with a coach, a student, and one
- * gym-scoped row, after bootstrapping the harness schema. Seeds as the table owner
- * (RLS does not gate the owner's INSERT here because the policy is SELECT-only and
- * the seed runs before any role drop). Returns the tenants in order so a caller can
- * pick `tenants[0]` as "own" and `tenants[1]` as "other".
+ * gym-scoped row, after bootstrapping the harness schema. Seeds on the base
+ * connection, which is `postgres` — a superuser, hence BYPASSRLS — so the owner
+ * INSERT is not RLS-gated regardless of the policy (the policy is SELECT-only
+ * anyway, but BYPASSRLS is the actual reason the write is unconstrained; a
+ * non-bypass owner would need an INSERT policy or a temporary NO FORCE to seed).
+ * Returns the tenants in order so a caller can pick `tenants[0]` as "own" and
+ * `tenants[1]` as "other".
  *
  * @param prisma - a connected PrismaClient (single-connection live URL).
  * @param count - number of tenants to create (default 2 — enough for cross-tenant).
@@ -163,7 +208,8 @@ export async function provisionTenants(
       rowId: `harness-row-${i}-${randomSuffix()}`,
     });
   }
-  // Seed one gym-scoped row per tenant on the owner connection (no role drop).
+  // Seed one gym-scoped row per tenant on the base (superuser/BYPASSRLS)
+  // connection — no role drop, so the write is not RLS-gated.
   for (const t of tenants) {
     await prisma.$executeRawUnsafe(
       `INSERT INTO public."${HARNESS_TABLE}"("id","gym_id") VALUES ($1,$2)`,
@@ -235,14 +281,32 @@ async function visibleRowCount(
   return Number(rows[0].n);
 }
 
+/**
+ * Selects which provisioned identity acts, and under which role GUC, for an
+ * isolation assertion. Defaults preserve the original two-line behaviour: act as
+ * the tenant's coach with the `student` role GUC. A7's gym_owner-role RLS uses
+ * `{ as: 'student' }` / `{ role: 'gym_owner' }` to prove role-scoped policies
+ * without re-implementing the assertion pair.
+ */
+export interface ActingIdentity {
+  /** Which provisioned user of the tenant acts. Default `'coach'`. */
+  readonly as?: 'coach' | 'student';
+  /** Role GUC stamped via withRlsContext (the A1 `app.current_user_role`). */
+  readonly role?: string;
+}
+
 /** The isolation assertion pair {@link makeIsolationAssertions} returns. */
 export interface IsolationAssertions {
   /** Assert the acting user CAN see their own tenant's row (RLS allows). */
-  expectCanSeeOwnTenant(own: HarnessTenant): Promise<void>;
+  expectCanSeeOwnTenant(
+    own: HarnessTenant,
+    acting?: ActingIdentity,
+  ): Promise<void>;
   /** Assert the acting user CANNOT see another tenant's row (RLS denies). */
   expectCannotSeeOtherTenant(
     own: HarnessTenant,
     other: HarnessTenant,
+    acting?: ActingIdentity,
   ): Promise<void>;
 }
 
@@ -253,19 +317,33 @@ export interface IsolationAssertions {
  *   await iso.expectCanSeeOwnTenant(tenants[0]);
  *   await iso.expectCannotSeeOtherTenant(tenants[0], tenants[1]);
  *
- * The acting identity is `own`'s coach scoped to ONLY `own.gymId`, so the
+ * The acting identity defaults to `own`'s coach scoped to ONLY `own.gymId`, so the
  * cross-tenant check is a true negative: the row exists (proven by the own-tenant
- * positive) and is hidden solely by the policy, not by being absent.
+ * positive) and is hidden solely by the policy, not by being absent. Pass an
+ * {@link ActingIdentity} to act as the student or under a different role GUC.
  */
 export function makeIsolationAssertions(asUser: AsUser): IsolationAssertions {
+  const actorId = (t: HarnessTenant, acting?: ActingIdentity): string =>
+    acting?.as === 'student' ? t.studentId : t.coachId;
+  const roleOpts = (
+    acting?: ActingIdentity,
+  ): { role?: string } | undefined =>
+    acting?.role === undefined ? undefined : { role: acting.role };
   return {
-    async expectCanSeeOwnTenant(own: HarnessTenant): Promise<void> {
-      const n = await asUser(own.coachId, [own.gymId], (tx) =>
-        visibleRowCount(tx, own.rowId),
+    async expectCanSeeOwnTenant(
+      own: HarnessTenant,
+      acting?: ActingIdentity,
+    ): Promise<void> {
+      const userId = actorId(own, acting);
+      const n = await asUser(
+        userId,
+        [own.gymId],
+        (tx) => visibleRowCount(tx, own.rowId),
+        roleOpts(acting),
       );
       if (n !== 1) {
         throw new Error(
-          `expectCanSeeOwnTenant: acting user ${own.coachId} scoped to gym ` +
+          `expectCanSeeOwnTenant: acting user ${userId} scoped to gym ` +
             `${own.gymId} should see own row ${own.rowId} (expected 1, got ${n})`,
         );
       }
@@ -273,13 +351,18 @@ export function makeIsolationAssertions(asUser: AsUser): IsolationAssertions {
     async expectCannotSeeOtherTenant(
       own: HarnessTenant,
       other: HarnessTenant,
+      acting?: ActingIdentity,
     ): Promise<void> {
-      const n = await asUser(own.coachId, [own.gymId], (tx) =>
-        visibleRowCount(tx, other.rowId),
+      const userId = actorId(own, acting);
+      const n = await asUser(
+        userId,
+        [own.gymId],
+        (tx) => visibleRowCount(tx, other.rowId),
+        roleOpts(acting),
       );
       if (n !== 0) {
         throw new Error(
-          `expectCannotSeeOtherTenant: acting user ${own.coachId} scoped to gym ` +
+          `expectCannotSeeOtherTenant: acting user ${userId} scoped to gym ` +
             `${own.gymId} must NOT see other tenant row ${other.rowId} ` +
             `(gym ${other.gymId}) — expected 0, got ${n}. RLS is not isolating tenants.`,
         );
@@ -288,7 +371,7 @@ export function makeIsolationAssertions(asUser: AsUser): IsolationAssertions {
   };
 }
 
-/** Short collision-resistant suffix for fixture ids (avoids crypto import churn). */
+/** Short unique-enough suffix for per-run fixture ids. */
 function randomSuffix(): string {
   return (
     Date.now().toString(36) + Math.random().toString(36).slice(2, 8)

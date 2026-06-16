@@ -19,6 +19,8 @@
 import { PrismaClient } from '@prisma/client';
 import {
   AsUser,
+  disableHarnessRls,
+  enableHarnessRls,
   HARNESS_TABLE,
   HarnessTenant,
   IsolationAssertions,
@@ -111,6 +113,20 @@ const dbAvailable = Boolean(DB_URL);
       expect(n).toBe(0);
     });
 
+    it('isolation assertions accept an acting-identity selector (student / role)', async () => {
+      // A7's role-scoped RLS reuses the same assertion pair by selecting which
+      // provisioned identity acts and under which role GUC. The harness's gym
+      // policy is identity-agnostic, so acting as the student under a gym_owner
+      // role GUC must isolate exactly as the default coach/student path does.
+      const acting = { as: 'student', role: 'gym_owner' } as const;
+      await expect(
+        iso.expectCanSeeOwnTenant(tenants[0], acting),
+      ).resolves.toBeUndefined();
+      await expect(
+        iso.expectCannotSeeOtherTenant(tenants[0], tenants[1], acting),
+      ).resolves.toBeUndefined();
+    });
+
     // ──────────────────────────────────────────────────────────────────────
     // FAILABILITY PROOF. The harness is only trustworthy if its negative
     // assertion can actually fail. We disable RLS on the table (DROP POLICY +
@@ -122,35 +138,32 @@ const dbAvailable = Boolean(DB_URL);
     describe('failability: the same negative assertion flips red when RLS is off', () => {
       afterAll(async () => {
         // Always restore RLS so suite ordering cannot leave the table open, even
-        // if a test above failed before its own restore ran. Idempotent: drop the
-        // policy first so the CREATE never collides with an existing one.
-        await prisma.$executeRawUnsafe(
-          `ALTER TABLE public."${HARNESS_TABLE}" ENABLE ROW LEVEL SECURITY`,
-        );
-        await prisma.$executeRawUnsafe(
-          `ALTER TABLE public."${HARNESS_TABLE}" FORCE ROW LEVEL SECURITY`,
-        );
-        await prisma.$executeRawUnsafe(
-          `DROP POLICY IF EXISTS p_${HARNESS_TABLE.toLowerCase()}_select ON public."${HARNESS_TABLE}"`,
-        );
-        await prisma.$executeRawUnsafe(
-          `CREATE POLICY p_${HARNESS_TABLE.toLowerCase()}_select ON public."${HARNESS_TABLE}"
-             FOR SELECT USING ("gym_id" = ANY(app.current_gym_ids()))`,
-        );
+        // if a test above failed before its own restore ran. enableHarnessRls is
+        // the harness's own definition of "RLS on" (and is idempotent), so this
+        // restore can never drift from the SQL the harness actually owns.
+        await enableHarnessRls(prisma);
+      });
+
+      it('expectCanSeeOwnTenant THROWS when the acting tenant cannot see its own row', async () => {
+        // Symmetric to the negative proof below: prove the POSITIVE assertion is
+        // not a tautology either. We act scoped to tenants[0].gymId but ask the
+        // assertion to find tenants[1]'s row (own gym authorization, other tenant's
+        // rowId) — with RLS on, that row is hidden, so expectCanSeeOwnTenant must
+        // reject with its "should see own row" message rather than silently pass.
+        const ownGymOtherRow: HarnessTenant = {
+          ...tenants[0],
+          rowId: tenants[1].rowId,
+        };
+        await expect(
+          iso.expectCanSeeOwnTenant(ownGymOtherRow),
+        ).rejects.toThrow(/should see own row/);
       });
 
       it('with RLS disabled, expectCannotSeeOtherTenant THROWS (cross-tenant row leaks)', async () => {
-        // Tear the policy down: this is exactly the "missing/broken policy" a
-        // downstream RLS PR must be caught committing.
-        await prisma.$executeRawUnsafe(
-          `DROP POLICY IF EXISTS p_${HARNESS_TABLE.toLowerCase()}_select ON public."${HARNESS_TABLE}"`,
-        );
-        await prisma.$executeRawUnsafe(
-          `ALTER TABLE public."${HARNESS_TABLE}" NO FORCE ROW LEVEL SECURITY`,
-        );
-        await prisma.$executeRawUnsafe(
-          `ALTER TABLE public."${HARNESS_TABLE}" DISABLE ROW LEVEL SECURITY`,
-        );
+        // Drive the table into the "missing/broken policy" state a downstream RLS
+        // PR must be caught committing — via the harness's own disableHarnessRls,
+        // so the failability proof exercises the REAL policy lifecycle SQL.
+        await disableHarnessRls(prisma);
 
         // The negative assertion must now FAIL: without the policy, the acting
         // tenant sees the other tenant's row, so expectCannotSeeOtherTenant
@@ -161,21 +174,9 @@ const dbAvailable = Boolean(DB_URL);
       });
 
       it('after restoring RLS, the negative assertion passes again', async () => {
-        // The afterAll restores RLS; assert the round-trip is clean so a later
-        // suite (or a re-run) starts from an isolating table.
-        await prisma.$executeRawUnsafe(
-          `ALTER TABLE public."${HARNESS_TABLE}" ENABLE ROW LEVEL SECURITY`,
-        );
-        await prisma.$executeRawUnsafe(
-          `ALTER TABLE public."${HARNESS_TABLE}" FORCE ROW LEVEL SECURITY`,
-        );
-        await prisma.$executeRawUnsafe(
-          `DROP POLICY IF EXISTS p_${HARNESS_TABLE.toLowerCase()}_select ON public."${HARNESS_TABLE}"`,
-        );
-        await prisma.$executeRawUnsafe(
-          `CREATE POLICY p_${HARNESS_TABLE.toLowerCase()}_select ON public."${HARNESS_TABLE}"
-             FOR SELECT USING ("gym_id" = ANY(app.current_gym_ids()))`,
-        );
+        // Restore via the harness's own enableHarnessRls and assert the round-trip
+        // is clean so a later suite (or a re-run) starts from an isolating table.
+        await enableHarnessRls(prisma);
         await expect(
           iso.expectCannotSeeOtherTenant(tenants[0], tenants[1]),
         ).resolves.toBeUndefined();
