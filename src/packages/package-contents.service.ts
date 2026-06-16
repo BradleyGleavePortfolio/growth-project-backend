@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import type { CoachPackageContent, Prisma } from '@prisma/client';
 import { z } from 'zod';
@@ -1032,6 +1033,28 @@ export class PackageContentsService {
             error: 'ASSET_NOT_FOUND',
             message: `No ${assetType} asset ${input.asset_id} owned by this coach`,
           });
+        }
+        // F2 — a workout_program that is an ARCHIVED named regime cannot be
+        // attached to new package content. Active clients on the regime keep
+        // receiving (existing ScheduledDrops are untouched), but new
+        // attachments are blocked per the operator's archive decision. We
+        // 422 (UnprocessableEntity) rather than 404 because the asset DOES
+        // exist and is owned by this coach — it is simply not attachable.
+        if (assetType === 'workout_program') {
+          const regime = await this.prisma.workoutProgram.findFirst({
+            where: {
+              id: input.asset_id,
+              coach_id: tenantCoachId,
+              is_regime: true,
+            },
+            select: { archived_at: true },
+          });
+          if (regime?.archived_at) {
+            throw new UnprocessableEntityException({
+              error: 'REGIME_ARCHIVED',
+              message: `Regime ${input.asset_id} is archived and cannot be attached to new package content`,
+            });
+          }
         }
         return;
       }

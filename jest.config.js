@@ -49,6 +49,13 @@ module.exports = {
   // this default suite). All v3-4 unit specs use mocked Prisma/deps and need no
   // live DB; the v3-4 RLS specs live under test/rls/ and run only via
   // jest.rls.config.js.
+  // F2 adds `src/regimes` as a NINTH narrowly-scoped root so the named-regimes
+  // unit specs colocated under src/regimes/__tests__/*.spec.ts (revision
+  // retention, partial-refund decision, regimes service, and the roles pin)
+  // are discovered. Same rationale as the roots above: this slice owns its
+  // spec files in the source tree, and the root is intentionally the slice
+  // subtree ONLY — NOT the whole `src/` tree. All four specs use mocked
+  // Prisma/tx (via the asPrismaDouble helper) and need no live DB.
   roots: [
     '<rootDir>/test',
     '<rootDir>/src/roman/voice',
@@ -58,6 +65,7 @@ module.exports = {
     '<rootDir>/src/community/voice',
     '<rootDir>/src/community/search',
     '<rootDir>/src/community/wearable-prompts',
+    '<rootDir>/src/regimes',
   ],
   testRegex: '\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'mjs', 'json'],

@@ -545,7 +545,13 @@ export class PurchaseFanoutService {
   // of 0 is a valid replay no-op, not an error.
   async cancelPendingForPurchase(
     clientPurchaseId: string,
-    reason: 'refund' | 'dispute' | 'subscription_canceled' | 'payment_failed',
+    reason:
+      | 'refund'
+      | 'dispute'
+      | 'subscription_canceled'
+      | 'payment_failed'
+      // F2 — coach chose "Unassign drops" on a partial-refund decision card.
+      | 'partial_refund_decision',
     tx?: TxOrPrisma | Prisma.TransactionClient,
   ): Promise<number> {
     const db: { scheduledDrop: Prisma.TransactionClient['scheduledDrop'] } | undefined =

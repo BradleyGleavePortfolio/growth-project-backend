@@ -15,6 +15,7 @@ import {
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
+import { PartialRefundDecisionService } from '../regimes/partial-refund-decision.service';
 import { PrismaService } from '../prisma.service';
 
 // PR-16 — outer tx forwarded by BillingService.handleEvent through
@@ -80,6 +81,11 @@ export class RefundDisputeHandlerService {
     // packages module still compiles; production wiring (CheckoutModule
     // imports PackagesModule) always provides it.
     @Optional() private fanout?: PurchaseFanoutService,
+    // F2 — partial-refund coach-decision seam. @Optional() so legacy unit-test
+    // wiring that hand-constructs this service still compiles; production
+    // wiring (CheckoutModule imports RegimesModule) always provides it. The
+    // service itself no-ops when FEATURE_NAMED_REGIMES is OFF.
+    @Optional() private partialRefundDecisions?: PartialRefundDecisionService,
   ) {}
 
   // Webhook entry point — returns claimed=true iff we matched to a
@@ -267,6 +273,24 @@ export class RefundDisputeHandlerService {
           );
         }
       });
+    }
+
+    // F2 — partial-refund coach-decision surface. When the refund is NOT a
+    // full refund, entitlement_active stays true (the fullyRefunded branch
+    // above never runs) and we do NOT auto-cancel drops. Instead we create a
+    // pending PartialRefundDecision per newly-applied refund id so the coach
+    // gets a "Keep drops / Unassign drops" card. The service no-ops when
+    // FEATURE_NAMED_REGIMES is OFF and is idempotent on the unique
+    // stripe_refund_id under Stripe redelivery. Gated on ledger_just_reversed
+    // (newlyAppliedRefunds) so a re-issued/pending refund never spawns a
+    // duplicate decision.
+    if (!fullyRefunded && this.partialRefundDecisions) {
+      for (const r of newlyAppliedRefunds) {
+        await this.partialRefundDecisions.onPartialRefund({
+          client_purchase_id: purchase.id,
+          stripe_refund_id: r.id,
+        });
+      }
     }
 
     // A276 P0-2 (refix) — emit COACH_ALERT once per refund id whose
