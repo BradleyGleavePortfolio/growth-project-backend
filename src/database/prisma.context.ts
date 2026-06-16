@@ -48,16 +48,36 @@ export const RLS_USER_ID_KEY = "app.user_id";
 export const RLS_GYM_IDS_KEY = "app.gym_ids";
 
 /**
+ * Postgres GUC name for the acting user's id under the LEGACY namespace, read by
+ * every shipped policy via `app.current_user_id()`. W1.5-A3.1 stamps this with
+ * the SAME value as {@link RLS_USER_ID_KEY} from the request path so both
+ * namespaces converge (expand step); the legacy namespace stays authoritative
+ * until A3.2 re-points policies onto the new helpers.
+ */
+export const RLS_LEGACY_USER_ID_KEY = "app.current_user_id";
+
+/**
+ * Postgres GUC name for the acting user's role under the LEGACY namespace, read
+ * by `app.current_user_role()` / `app.is_owner()`. Carried on the request path
+ * so a `withRlsContext` transaction reproduces the full legacy context.
+ */
+export const RLS_LEGACY_USER_ROLE_KEY = "app.current_user_role";
+
+/**
  * The tenant identity attached to a single request.
  *
  * - `userId`  — the authenticated `User.id` driving per-user RLS predicates.
  * - `gymIds`  — every gym the request is authorized to read/write. MAY be empty:
  *   an empty list serializes to `''` and, per the {@link RLS_GYM_IDS_KEY}
  *   contract, A3 policies MUST treat that as deny for gym-scoped rows.
+ * - `role`    — the acting user's role, carried so the request transaction can
+ *   also stamp the legacy `app.current_user_role` GUC (W1.5-A3.1 dual-context
+ *   expand). Optional: omitted for callers that have no role to assert.
  */
 export interface RlsContext {
   readonly userId: string;
   readonly gymIds: readonly string[];
+  readonly role?: string;
 }
 
 /**

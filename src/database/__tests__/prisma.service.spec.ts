@@ -12,7 +12,11 @@ import { runWithRlsContext } from "../prisma.context";
 
 type ExecuteRawCall = { strings: readonly string[]; values: unknown[] };
 
-function makeTx(): { calls: ExecuteRawCall[]; $executeRaw: jest.Mock } {
+function makeTx(): {
+  calls: ExecuteRawCall[];
+  $executeRaw: jest.Mock;
+  $queryRaw: jest.Mock;
+} {
   const calls: ExecuteRawCall[] = [];
   return {
     calls,
@@ -21,6 +25,11 @@ function makeTx(): { calls: ExecuteRawCall[]; $executeRaw: jest.Mock } {
         calls.push({ strings: [...strings], values });
         return Promise.resolve(1);
       },
+    ),
+    // A3.1 parity read; return an agreeing (NULL/NULL) pair so no mismatch logs.
+    $queryRaw: jest.fn(
+      (): Promise<unknown[]> =>
+        Promise.resolve([{ legacy_user_id: null, new_user_id: null }]),
     ),
   };
 }
@@ -72,7 +81,7 @@ describe("PrismaService.withRls", () => {
     // fn received the tx handle, NOT the base client.
     expect(fn.mock.calls[0][0]).toBe(tx);
     expect(result).toBe(tx);
-    // And both GUCs were stamped on the tx before fn ran.
-    expect(tx.$executeRaw).toHaveBeenCalledTimes(2);
+    // All 4 GUCs (new + legacy namespaces) were stamped on the tx before fn ran.
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(4);
   });
 });
