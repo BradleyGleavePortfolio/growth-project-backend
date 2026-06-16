@@ -83,6 +83,15 @@ export async function withRlsContext<T>(
     // (live policies read app.current_user_id()); the new namespace shadows it.
     await tx.$executeRaw`SELECT set_config(${legacyUserKey}, ${ctx.userId}, true)`;
     await tx.$executeRaw`SELECT set_config(${legacyRoleKey}, ${role}, true)`;
+    // Shadow-mode parity gate. F-A2 (P3): this gate is INTENTIONALLY INERT in
+    // A3.1. The A2 spine has ZERO production callers in this PR — nothing reads
+    // the new namespace until A3.2 wires request handlers through
+    // withRlsContext — so the verify-soak currently observes no real traffic.
+    // That is BY DESIGN for the Option-B expand→verify→contract rollout (expand
+    // only; no behaviour change). A3.2 must add the production callers so this
+    // parity soak observes real traffic and proves 100% agreement BEFORE the
+    // policy cutover (tracked in issue #419). Do not invent callers to make the
+    // gate "active" early.
     await assertParity(tx);
     return fn(tx);
   });

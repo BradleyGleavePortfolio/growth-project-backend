@@ -60,6 +60,21 @@ export class RlsContextInterceptor implements NestInterceptor {
         // Use transaction-scoped set_config (true) so the setting is discarded
         // after the transaction ends. This prevents connection-pool contamination
         // under pgbouncer transaction pooling mode.
+        //
+        // KNOWN HAZARD — F-A1 (P2), tracked for the A3.2 cutover (issue #419).
+        // These set_config calls run on the BASE Prisma client with NO enclosing
+        // $transaction, so under pgbouncer transaction-pool mode each statement is
+        // its own implicit transaction and may be leased a DIFFERENT pooled
+        // backend than the handler's subsequent ORM query. With is_local=true the
+        // GUC is then discarded at that implicit commit, so the real query can
+        // observe an UNSET context. This is the legacy interceptor's long-standing
+        // behaviour and the live RLS wall presently depends on its current shape;
+        // rewriting the tx model here is the A3.2 "retire legacy interceptor"
+        // contract step (out-of-lane for A3.1). The pgbouncer-safe primitive is
+        // withRlsContext() (src/database/rls-context.ts), which opens a
+        // $transaction and stamps the GUC on the tx handle; A3.2 must migrate this
+        // path onto it BEFORE any app_user role flip. Do not "fix" it piecemeal
+        // here — see issue #419.
         await this.prisma.$executeRawUnsafe(
           `SELECT set_config('app.current_user_id', $1, true)`,
           userId,
