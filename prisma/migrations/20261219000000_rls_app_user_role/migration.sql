@@ -33,7 +33,32 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
 
 -- DML on everything created hereafter (new tables/sequences from later migrations).
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
+--
+-- `FOR ROLE postgres` scopes these defaults to objects created by the
+-- migration-applying role (`postgres` on Supabase). ALTER DEFAULT PRIVILEGES
+-- only affects objects created by the named role(s); without FOR ROLE it would
+-- silently apply to objects created by the *current* role only, which is the
+-- migration runner here but is brittle to assume. If a different role ever
+-- creates tables in `public` (e.g. a future tooling role), it MUST run its own
+-- ALTER DEFAULT PRIVILEGES grant for `app_user`, or those tables will not be
+-- reachable by the app role.
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO app_user;
+
+-- Prisma's migration bookkeeping table must never be reachable by the app role:
+-- it is admin/migration surface, not tenant data, and (once A3 enables RLS) it
+-- would otherwise be an unguarded table the app role could read/write. The
+-- broad GRANT above may have included it, so revoke explicitly. Guarded so a
+-- fresh baseline (where the table does not yet exist) does not fail.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = '_prisma_migrations'
+  ) THEN
+    REVOKE ALL ON TABLE public._prisma_migrations FROM app_user;
+  END IF;
+END
+$$;
