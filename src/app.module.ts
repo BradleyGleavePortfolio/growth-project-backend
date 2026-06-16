@@ -103,6 +103,11 @@ import { SecretsModule } from './secrets/secrets.module';
 // ledger (EmailSendLog). Global, so any feature can inject EmailService.
 import { EmailModule } from './email/email.module';
 import { RlsContextInterceptor } from './common/interceptors/rls-context.interceptor';
+// Wave 1.5 / A2 — request-scoped RLS tenant spine. Binds { userId, gymIds } in
+// an AsyncLocalStorage scope around each authenticated request so
+// PrismaService.withRls stamps the app.user_id / app.gym_ids GUCs. Distinct
+// from the legacy app.current_user_id interceptor above; supersedes it in A3.
+import { RlsContextInterceptor as RlsTenantContextInterceptor } from './database/rls-context.middleware';
 // SecurityGuardsModule consolidates every cross-cutting NestJS guard into a
 // single @Global() module with zero feature-module imports. Loaded BEFORE
 // AuthModule so its guards are in DI scope for every downstream module —
@@ -395,12 +400,26 @@ import { WearablesModule } from './wearables/wearables.module';
     // each other out, and so per-user fairness holds for authed routes.
     { provide: APP_GUARD, useClass: UserThrottlerGuard },
 
+    // NOTE (W1.5-A2): Two RLS interceptors run per request. Order is NOT load-bearing
+    // because they write disjoint GUC namespaces (legacy: app.current_user_id/role;
+    // A2: app.user_id/gym_ids) and A2 has not enabled any policies yet. A3 retires the
+    // legacy interceptor; until then keep both registered.
+    //
     // RLS context interceptor — runs AFTER JwtAuthGuard so req.user is populated.
     // Sets app.current_user_id + app.current_user_role as transaction-scoped
     // PostgreSQL session variables consumed by RLS policies.
     // Replaces the old RlsContextMiddleware which ran before guards and therefore
     // could never observe a valid req.user (Bug 1 fix).
     { provide: APP_INTERCEPTOR, useClass: RlsContextInterceptor },
+
+    // Wave 1.5 / A2 — request-scoped RLS tenant context. Registered as a global
+    // interceptor so it runs AFTER JwtAuthGuard (req.user populated) and wraps
+    // next.handle() in an AsyncLocalStorage scope carrying { userId, gymIds }.
+    // PrismaService.withRls reads that context to stamp app.user_id /
+    // app.gym_ids. Authenticated-only: public requests proceed with no context
+    // (null = no scoping). gymIds is fail-closed deny-all ([]) until B1b ships
+    // the gymMembership lookup. A3 enables the policies that consume these GUCs.
+    { provide: APP_INTERCEPTOR, useClass: RlsTenantContextInterceptor },
 
     // ClientEntitlementGuard, SubscriptionGuard, and every other cross-cutting
     // guard are now provided by SecurityGuardsModule (@Global). Selective
