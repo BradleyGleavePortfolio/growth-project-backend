@@ -1,9 +1,22 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { Logger } from "@nestjs/common";
 import {
   RLS_GYM_IDS_KEY,
+  RLS_LEGACY_USER_ID_KEY,
+  RLS_LEGACY_USER_ROLE_KEY,
   RLS_USER_ID_KEY,
   type RlsContext,
 } from "./prisma.context";
+
+/**
+ * Shadow-mode parity logger (W1.5-A3.1). The "verify" half of the
+ * expand→verify→contract convergence: every request transaction stamps both the
+ * legacy (`app.current_user_id`) and new (`app.user_id`) namespaces and then
+ * asserts they resolved to the SAME acting user. A mismatch is deny-logged (no
+ * throw on the prod path in this PR) so A3.2 only re-points policies once the
+ * staging soak shows 100% agreement. Modeled on AWS IAM shadow evaluation.
+ */
+const parityLogger = new Logger("RlsParity");
 
 /**
  * Runs `fn` inside an interactive Postgres transaction whose session has the
@@ -54,12 +67,57 @@ export async function withRlsContext<T>(
   const gymIds = ctx.gymIds.join(",");
   // The GUC *names* are internal constants (never user input), inlined as SQL
   // literals so policies/tests can match `set_config('app.user_id', $1, true)`.
-  // The *values* (userId, gymIds) are always bound parameters — no injection.
+  // The *values* (userId, gymIds, role) are always bound parameters — no injection.
   const userKey = Prisma.raw(`'${RLS_USER_ID_KEY}'`);
   const gymKey = Prisma.raw(`'${RLS_GYM_IDS_KEY}'`);
+  const legacyUserKey = Prisma.raw(`'${RLS_LEGACY_USER_ID_KEY}'`);
+  const legacyRoleKey = Prisma.raw(`'${RLS_LEGACY_USER_ROLE_KEY}'`);
+  const role = ctx.role ?? "";
   return prisma.$transaction(async (tx) => {
+    // New namespace (A2 spine) — what A3.2 will eventually point policies at.
     await tx.$executeRaw`SELECT set_config(${userKey}, ${ctx.userId}, true)`;
     await tx.$executeRaw`SELECT set_config(${gymKey}, ${gymIds}, true)`;
+    // W1.5-A3.1 dual-context expand: stamp the LEGACY namespace on the SAME tx
+    // handle with the SAME identity so both namespaces are identical for the
+    // duration of this transaction. The legacy namespace remains authoritative
+    // (live policies read app.current_user_id()); the new namespace shadows it.
+    await tx.$executeRaw`SELECT set_config(${legacyUserKey}, ${ctx.userId}, true)`;
+    await tx.$executeRaw`SELECT set_config(${legacyRoleKey}, ${role}, true)`;
+    // Shadow-mode parity gate. F-A2 (P3): this gate is INTENTIONALLY INERT in
+    // A3.1. The A2 spine has ZERO production callers in this PR — nothing reads
+    // the new namespace until A3.2 wires request handlers through
+    // withRlsContext — so the verify-soak currently observes no real traffic.
+    // That is BY DESIGN for the Option-B expand→verify→contract rollout (expand
+    // only; no behaviour change). A3.2 must add the production callers so this
+    // parity soak observes real traffic and proves 100% agreement BEFORE the
+    // policy cutover (tracked in issue #419). Do not invent callers to make the
+    // gate "active" early.
+    await assertParity(tx);
     return fn(tx);
   });
+}
+
+/**
+ * Reads both GUC namespaces back off the SAME transaction handle and deny-logs
+ * (shadow mode — never throws) when the legacy and new acting-user GUCs diverge.
+ * Reading on `tx` is mandatory: under pgbouncer transaction-pool mode a read on
+ * the base client would land on a different connection with no GUC set. No PII
+ * is logged — only opaque user ids (which already appear in the legacy
+ * interceptor's logs).
+ */
+async function assertParity(tx: Prisma.TransactionClient): Promise<void> {
+  const rows = await tx.$queryRaw<
+    { legacy_user_id: string | null; new_user_id: string | null }[]
+  >`SELECT NULLIF(current_setting(${RLS_LEGACY_USER_ID_KEY}, true), '') AS legacy_user_id,
+           NULLIF(current_setting(${RLS_USER_ID_KEY}, true), '') AS new_user_id`;
+  const { legacy_user_id, new_user_id } = rows[0] ?? {
+    legacy_user_id: null,
+    new_user_id: null,
+  };
+  if (legacy_user_id !== new_user_id) {
+    parityLogger.warn(
+      `RLS_PARITY_MISMATCH legacy_user_id=${String(legacy_user_id)} ` +
+        `new_user_id=${String(new_user_id)}`,
+    );
+  }
 }

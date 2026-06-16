@@ -23,7 +23,7 @@ let warnedMissingGymIdsClaim = false;
  * as a partial `User` because public/unauthenticated requests carry no `user`.
  */
 interface RlsAuthedRequest {
-  user?: Pick<User, "id"> & { gym_ids?: readonly string[] };
+  user?: Pick<User, "id" | "role"> & { gym_ids?: readonly string[] };
 }
 
 /**
@@ -84,6 +84,10 @@ export class RlsContextInterceptor implements NestInterceptor {
     const rlsContext: RlsContext = {
       userId: user.id,
       gymIds: this.resolveGymIds(user),
+      // Carried so withRlsContext can also stamp the legacy app.current_user_role
+      // GUC (W1.5-A3.1 dual-context expand). undefined when the request shape has
+      // no role (e.g. lightweight test doubles).
+      role: user.role,
     };
 
     // `defer` runs the factory at subscription time, and `runWithRlsContext`

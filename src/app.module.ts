@@ -400,16 +400,38 @@ import { WearablesModule } from './wearables/wearables.module';
     // each other out, and so per-user fairness holds for authed routes.
     { provide: APP_GUARD, useClass: UserThrottlerGuard },
 
-    // NOTE (W1.5-A2): Two RLS interceptors run per request. Order is NOT load-bearing
-    // because they write disjoint GUC namespaces (legacy: app.current_user_id/role;
-    // A2: app.user_id/gym_ids) and A2 has not enabled any policies yet. A3 retires the
-    // legacy interceptor; until then keep both registered.
+    // NOTE (W1.5-A3.1 dual-context expand): Two RLS interceptors run per request.
+    // After A3.1 both paths set BOTH GUC namespaces with identical values:
+    //   - legacy interceptor stamps app.current_user_id/role (authoritative) AND
+    //     mirrors app.user_id with the same id;
+    //   - the A2 spine (withRlsContext, used by PrismaService.withRls) stamps
+    //     app.user_id/app.gym_ids AND mirrors app.current_user_id/role, then runs
+    //     a parity shadow-check (deny-log on mismatch, no throw).
+    // The legacy namespace stays AUTHORITATIVE — every live policy reads
+    // app.current_user_id(). A3.2 (R82 tracking issue) retires the legacy
+    // interceptor and re-points policies onto app.current_user_id_v2() only after
+    // the parity soak shows 100% agreement. Until then keep both registered.
+    //
+    // ── COMMENT-ONLY gym-scope policy template (B1a/B1b; carries forward P3-2) ──
+    // When B1a (Gym/GymMembership models) and B1b (the gymMembership lookup that
+    // populates req.user.gym_ids) land, gym-scoped tables get RLS policies of the
+    // shape below. This is documentation only — NO policy and NO behavior is added
+    // here; the live policies ship in their own audited migrations:
+    //
+    //   ALTER TABLE "<GymScopedTable>" ENABLE ROW LEVEL SECURITY;
+    //   ALTER TABLE "<GymScopedTable>" FORCE ROW LEVEL SECURITY;
+    //   CREATE POLICY "<table>_gym_scope" ON "<GymScopedTable>"
+    //     USING (
+    //       app.current_gym_ids() IS NOT NULL                     -- empty = deny-all
+    //       AND "gym_id" = ANY(app.current_gym_ids())
+    //     );
+    //   -- owner bypass: OR app.is_owner()
     //
     // RLS context interceptor — runs AFTER JwtAuthGuard so req.user is populated.
-    // Sets app.current_user_id + app.current_user_role as transaction-scoped
-    // PostgreSQL session variables consumed by RLS policies.
-    // Replaces the old RlsContextMiddleware which ran before guards and therefore
-    // could never observe a valid req.user (Bug 1 fix).
+    // Sets app.current_user_id + app.current_user_role (and, post-A3.1, mirrors
+    // app.user_id) as transaction-scoped PostgreSQL session variables consumed by
+    // RLS policies. Replaces the old RlsContextMiddleware which ran before guards
+    // and therefore could never observe a valid req.user (Bug 1 fix).
     { provide: APP_INTERCEPTOR, useClass: RlsContextInterceptor },
 
     // Wave 1.5 / A2 — request-scoped RLS tenant context. Registered as a global

@@ -14,10 +14,13 @@
  *   - fail-closed: a failed stamp (or a throwing `fn`) skips/rolls back the rest
  *   - empty gymIds serialize to '' (A3 owns the deny semantics)
  */
+import { Logger } from "@nestjs/common";
 import { withRlsContext } from "../rls-context";
 import {
   getRlsContext,
   RLS_GYM_IDS_KEY,
+  RLS_LEGACY_USER_ID_KEY,
+  RLS_LEGACY_USER_ROLE_KEY,
   RLS_USER_ID_KEY,
 } from "../prisma.context";
 
@@ -79,6 +82,14 @@ function makeTx() {
         return Promise.resolve(1);
       },
     ),
+    // The A3.1 parity check reads both GUC namespaces back off the tx handle.
+    // These bare fakes don't model GUC storage, so return an agreeing pair
+    // (no mismatch) — the dual-context-expand + mismatch behaviour is pinned by
+    // the stateful-fake suite below.
+    $queryRaw: jest.fn(
+      (): Promise<unknown[]> =>
+        Promise.resolve([{ legacy_user_id: null, new_user_id: null }]),
+    ),
   };
 }
 
@@ -134,13 +145,15 @@ describe("withRlsContext", () => {
     expect(gymCall!.values).toEqual(["g1,g2"]);
   });
 
-  it("invokes fn only AFTER both set_config calls", async () => {
+  it("invokes fn only AFTER all set_config stamps (new + legacy namespaces)", async () => {
     const { client, tx } = makeFakePrisma();
     const fn = jest.fn(() => Promise.resolve("done"));
 
     await withRlsContext(client as never, { userId: "u1", gymIds: ["g1"] }, fn);
 
-    expect(tx.$executeRaw).toHaveBeenCalledTimes(2);
+    // A3.1 stamps 4 GUCs: app.user_id, app.gym_ids, app.current_user_id,
+    // app.current_user_role.
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(4);
     expect(fn).toHaveBeenCalledTimes(1);
     const lastStampOrder = Math.max(
       ...tx.$executeRaw.mock.invocationCallOrder,
@@ -170,7 +183,7 @@ describe("withRlsContext", () => {
       async () => {},
     );
 
-    expect(tx.$executeRaw).toHaveBeenCalledTimes(2);
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(4);
     expect(result).toBeUndefined();
     expect($transaction).toHaveBeenCalledTimes(1);
   });
@@ -185,8 +198,8 @@ describe("withRlsContext", () => {
       ),
     ).rejects.toBe(boom);
 
-    // GUCs were still stamped; rollback is Prisma's job once the callback throws.
-    expect(tx.$executeRaw).toHaveBeenCalledTimes(2);
+    // All 4 GUCs were still stamped; rollback is Prisma's job once fn throws.
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(4);
   });
 
   it("fails closed: if set_config fails, fn is NOT invoked", async () => {
@@ -214,6 +227,162 @@ describe("withRlsContext", () => {
     const gymCall = tx.calls.find((c) => c.sql.includes(RLS_GYM_IDS_KEY));
     expect(gymCall).toBeDefined();
     expect(gymCall!.values).toEqual([""]);
+  });
+});
+
+/**
+ * A stateful fake tx that actually STORES the GUC values written by
+ * `set_config(name, value, true)` and lets `$queryRaw` read them back via
+ * `current_setting(name, true)`. This simulates the real Postgres behaviour the
+ * parity check depends on (legacy + new GUC resolving on the SAME connection),
+ * so the dual-context-expand assertions exercise the real helper logic — not a
+ * mock of it. Both `set_config` and `current_setting` are matched against the
+ * EXACT bound-parameter form the helper emits.
+ */
+function makeStatefulPrisma() {
+  const gucs = new Map<string, string>();
+  const setConfigCalls: { name: string; value: string }[] = [];
+  const tx = {
+    $executeRaw: jest.fn(
+      (strings: TemplateStringsArray, ...values: unknown[]): Promise<number> => {
+        const { sql, values: bound } = renderSql([...strings], values);
+        // set_config('<name>', $1, true) — name inlined via Prisma.raw, value bound.
+        const m = /set_config\('([^']+)',\s*\$1,\s*true\)/.exec(sql);
+        if (m) {
+          const name = m[1];
+          const value = String(bound[0] ?? "");
+          gucs.set(name, value);
+          setConfigCalls.push({ name, value });
+        }
+        return Promise.resolve(1);
+      },
+    ),
+    $queryRaw: jest.fn(
+      (
+        strings: TemplateStringsArray,
+        ...values: unknown[]
+      ): Promise<unknown[]> => {
+        // The parity read binds the two GUC names as $1/$2 to current_setting.
+        const legacy = gucs.get(String(values[0])) ?? "";
+        const next = gucs.get(String(values[1])) ?? "";
+        return Promise.resolve([
+          {
+            legacy_user_id: legacy === "" ? null : legacy,
+            new_user_id: next === "" ? null : next,
+          },
+        ]);
+      },
+    ),
+  };
+  const $transaction = jest.fn(
+    (cb: (t: typeof tx) => Promise<unknown>): Promise<unknown> => cb(tx),
+  );
+  return { tx, gucs, setConfigCalls, client: { $transaction } } as const;
+}
+
+describe("withRlsContext — W1.5-A3.1 dual-context expand + parity", () => {
+  let warnSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    warnSpy = jest
+      .spyOn(Logger.prototype, "warn")
+      .mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  it("stamps BOTH namespaces with the SAME user id on the tx handle", async () => {
+    const { client, gucs } = makeStatefulPrisma();
+
+    await withRlsContext(
+      client as never,
+      { userId: "u-parity", gymIds: ["g1"], role: "coach" },
+      () => Promise.resolve(null),
+    );
+
+    expect(gucs.get(RLS_USER_ID_KEY)).toBe("u-parity");
+    expect(gucs.get(RLS_LEGACY_USER_ID_KEY)).toBe("u-parity");
+    // The expand invariant: legacy and new acting-user GUCs are identical.
+    expect(gucs.get(RLS_LEGACY_USER_ID_KEY)).toBe(gucs.get(RLS_USER_ID_KEY));
+    expect(gucs.get(RLS_LEGACY_USER_ROLE_KEY)).toBe("coach");
+  });
+
+  it("does NOT deny-log when the two namespaces agree (parity holds)", async () => {
+    const { client } = makeStatefulPrisma();
+
+    await withRlsContext(
+      client as never,
+      { userId: "u-ok", gymIds: [], role: "student" },
+      () => Promise.resolve(null),
+    );
+
+    const mismatchLogged = warnSpy.mock.calls.some((c) =>
+      String(c[0]).includes("RLS_PARITY_MISMATCH"),
+    );
+    expect(mismatchLogged).toBe(false);
+  });
+
+  it("deny-logs RLS_PARITY_MISMATCH (shadow mode, no throw) when the namespaces diverge", async () => {
+    // Build a prisma whose set_config writes the legacy user id to a DIFFERENT
+    // value than the new one, so the parity read observes a real divergence.
+    const gucs = new Map<string, string>();
+    const tx = {
+      $executeRaw: jest.fn(
+        (strings: TemplateStringsArray, ...values: unknown[]) => {
+          const { sql, values: bound } = renderSql([...strings], values);
+          const m = /set_config\('([^']+)',\s*\$1,\s*true\)/.exec(sql);
+          if (m) {
+            const name = m[1];
+            let value = String(bound[0] ?? "");
+            // Corrupt ONLY the legacy id stamp to force a mismatch.
+            if (name === RLS_LEGACY_USER_ID_KEY) value = "tampered-legacy-id";
+            gucs.set(name, value);
+          }
+          return Promise.resolve(1);
+        },
+      ),
+      $queryRaw: jest.fn((_s: TemplateStringsArray, ...values: unknown[]) => {
+        const legacy = gucs.get(String(values[0])) ?? "";
+        const next = gucs.get(String(values[1])) ?? "";
+        return Promise.resolve([
+          {
+            legacy_user_id: legacy === "" ? null : legacy,
+            new_user_id: next === "" ? null : next,
+          },
+        ]);
+      }),
+    };
+    const client = {
+      $transaction: jest.fn((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+    };
+
+    await withRlsContext(
+      client as never,
+      { userId: "u-new", gymIds: ["g1"], role: "coach" },
+      () => Promise.resolve(null),
+    );
+
+    const mismatch = warnSpy.mock.calls.find((c) =>
+      String(c[0]).includes("RLS_PARITY_MISMATCH"),
+    );
+    expect(mismatch).toBeDefined();
+    expect(String(mismatch![0])).toContain("tampered-legacy-id");
+    expect(String(mismatch![0])).toContain("u-new");
+  });
+
+  it("reads parity off the tx handle (not the base client) — pgbouncer-safe", async () => {
+    const { client, tx } = makeStatefulPrisma();
+
+    await withRlsContext(
+      client as never,
+      { userId: "u1", gymIds: ["g1"], role: "coach" },
+      () => Promise.resolve(null),
+    );
+
+    // The parity read MUST be issued on the same tx that stamped the GUCs.
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
   });
 });
 

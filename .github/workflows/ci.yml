@@ -294,6 +294,16 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      - name: Run W1.5-A3.1 RLS spine-convergence live suite
+        # Self-bootstrapping (applies the A3.1 helper migration + the prior
+        # legacy helpers it converges with against the same throwaway DB), so it
+        # needs NO scoped psql bootstrap. Exercises the REAL withRlsContext
+        # transaction path to prove legacy app.current_user_id() and the new
+        # app.current_user_id_v2() resolve to the same user on one tx (parity).
+        run: npx jest --config jest.rls.config.js test/rls/a3-spine-convergence.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
   mwb-3-live-tests:
     # MWB-3 R2 (audit P1): the MWB-3 autosave/undo live suite was skip-gated on
     # MWB3_TEST_DATABASE_URL and never ran in CI, so the sub-coach authorization
