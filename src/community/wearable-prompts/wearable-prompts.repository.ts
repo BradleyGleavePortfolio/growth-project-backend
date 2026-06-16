@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   Prisma,
   WearableMetricType,
@@ -7,6 +7,11 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { WEARABLE_PROMPT_COOLDOWN_MS } from './wearable-prompts.dto';
+
+const NOT_FOUND = {
+  error: 'not_found',
+  code: 'community.wearable_prompts.not_found',
+} as const;
 
 export interface PromptSourceSeed {
   sampleId: string;
@@ -49,10 +54,18 @@ export class WearablePromptsRepository {
   }
 
   /**
-   * True when a prompt for (coachId, clientId, metricKey) was generated within
-   * the cooldown window. Belt to the partial-unique-index braces: the index is
-   * the authoritative race guard (a concurrent insert raises P2002), this is
-   * the cheap pre-check for the skip path.
+   * True when a prompt for (coachId, clientId, metricKey) is still within the
+   * 24h cooldown (TWO-GATE design, PR #399 audit F4 / Decision 9 (A)):
+   *
+   *   Gate 1 (concurrent-undismissed): the partial unique index
+   *     community_wearable_prompts_active_cooldown_key blocks a second *active*
+   *     (non-dismissed) prompt for the same key — a concurrent insert raises
+   *     P2002 → the service maps it to a 'cooldown' skip.
+   *   Gate 2 (cooldown-across-dismissed): THIS query counts any prompt generated
+   *     within the 24h window REGARDLESS of dismissedAt. Dismissing a prompt
+   *     does NOT re-open the window before 24h has elapsed, because the
+   *     `generatedAt >= since` predicate ignores the dismissed state — which the
+   *     partial index alone cannot do (a dismissed row drops out of the index).
    */
   async isWithinCooldown(
     coachId: string,
@@ -66,6 +79,8 @@ export class WearablePromptsRepository {
         coachId,
         clientId,
         metricKey,
+        // dismissedAt is intentionally NOT filtered: a prompt generated within
+        // the window still gates a new one even after the coach dismissed it.
         generatedAt: { gte: since },
       },
       select: { id: true },
@@ -143,17 +158,56 @@ export class WearablePromptsRepository {
     });
   }
 
-  async markDismissed(promptId: string, at: Date): Promise<void> {
-    await this.prisma.communityWearablePrompt.update({
-      where: { id: promptId },
+  /**
+   * Atomically dismiss a prompt the coach owns, returning the fresh row with
+   * sources. The race-guarded `updateMany` re-asserts `coachId` in the WHERE
+   * (RLS-safe TOCTOU close, PR #398 F3 / PR #399 F5) so the authorizing read and
+   * the write are a single coach-scoped operation — no window where coachId could
+   * drift between a separate find and update. A zero-row result is disambiguated
+   * with one coach-scoped read: a non-existent / foreign prompt → 404 (existence
+   * never leaks, never a 403); an already-dismissed prompt → idempotent return of
+   * the existing row with its original dismissedAt (no re-stamp).
+   */
+  async markDismissed(
+    promptId: string,
+    coachId: string,
+    at: Date,
+  ): Promise<PromptWithSources> {
+    const res = await this.prisma.communityWearablePrompt.updateMany({
+      where: { id: promptId, coachId, dismissedAt: null },
       data: { dismissedAt: at },
     });
+    if (res.count === 0) {
+      const existing = await this.findOneForCoach(promptId, coachId);
+      if (!existing) throw new NotFoundException(NOT_FOUND);
+      return existing; // already dismissed — idempotent
+    }
+    const fresh = await this.findOneForCoach(promptId, coachId);
+    if (!fresh) throw new NotFoundException(NOT_FOUND);
+    return fresh;
   }
 
-  async markActedOn(promptId: string, at: Date): Promise<void> {
-    await this.prisma.communityWearablePrompt.update({
-      where: { id: promptId },
+  /**
+   * Atomically act-on a prompt the coach owns, returning the fresh row with
+   * sources. Same RLS-safe coachId re-assert + 404-not-403 + idempotent
+   * semantics as markDismissed.
+   */
+  async markActedOn(
+    promptId: string,
+    coachId: string,
+    at: Date,
+  ): Promise<PromptWithSources> {
+    const res = await this.prisma.communityWearablePrompt.updateMany({
+      where: { id: promptId, coachId, actedOnAt: null },
       data: { actedOnAt: at },
     });
+    if (res.count === 0) {
+      const existing = await this.findOneForCoach(promptId, coachId);
+      if (!existing) throw new NotFoundException(NOT_FOUND);
+      return existing; // already acted-on — idempotent
+    }
+    const fresh = await this.findOneForCoach(promptId, coachId);
+    if (!fresh) throw new NotFoundException(NOT_FOUND);
+    return fresh;
   }
 }

@@ -81,6 +81,12 @@ export class CommunityWearablePromptsController {
     CommunityWearablePromptsEnabledGuard,
   )
   @Roles('coach', 'owner')
+  @Throttle({
+    default: {
+      ttl: 60_000,
+      limit: THROTTLER_ROUTE_LIMITS.COMMUNITY_READS_PER_MIN,
+    },
+  })
   async list(
     @Request() req: AuthedRequest,
     @Param('workspaceId', new ParseUUIDPipe({ version: '4' }))
@@ -102,6 +108,12 @@ export class CommunityWearablePromptsController {
   )
   @Roles('coach', 'owner')
   @HttpCode(200)
+  @Throttle({
+    default: {
+      ttl: 60_000,
+      limit: THROTTLER_ROUTE_LIMITS.COMMUNITY_POSTS_PER_MIN,
+    },
+  })
   async dismiss(
     @Request() req: AuthedRequest,
     @Param('workspaceId', new ParseUUIDPipe({ version: '4' }))
@@ -123,6 +135,12 @@ export class CommunityWearablePromptsController {
   )
   @Roles('coach', 'owner')
   @HttpCode(200)
+  @Throttle({
+    default: {
+      ttl: 60_000,
+      limit: THROTTLER_ROUTE_LIMITS.COMMUNITY_POSTS_PER_MIN,
+    },
+  })
   async actOn(
     @Request() req: AuthedRequest,
     @Param('workspaceId', new ParseUUIDPipe({ version: '4' }))

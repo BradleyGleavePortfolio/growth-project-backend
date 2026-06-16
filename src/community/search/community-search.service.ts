@@ -1,8 +1,4 @@
-import {
-  ForbiddenException,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import { AnalyticsService } from '../../analytics/analytics.service';
 import { CommunityAccessService } from '../community-access.service';
@@ -16,9 +12,9 @@ import {
   resolveConfiguredPageSize,
 } from './community-search.dto';
 
-const FORBIDDEN = {
-  error: 'forbidden',
-  code: 'community.search.forbidden',
+const NOT_FOUND = {
+  error: 'not_found',
+  code: 'community.search.not_found',
 } as const;
 
 interface DecodedCursor {
@@ -39,8 +35,10 @@ interface DecodedCursor {
  * any wearable metric value (brief §audit guarantees).
  *
  * TENANCY: the app runs as service_role (BYPASSRLS); a non-member of the
- * workspace is rejected 403 BEFORE any search runs (existence of the term is
- * never leaked). The migration RLS policies are defence-in-depth.
+ * workspace is rejected 404 BEFORE any search runs (existence of the workspace
+ * is never leaked — cross-tenant reads resolve to NotFound, never 403, matching
+ * the classroom / voice read surfaces; PR #399 F2). The migration RLS policies
+ * are defence-in-depth.
  */
 @Injectable()
 export class CommunitySearchService {
@@ -63,7 +61,9 @@ export class CommunitySearchService {
     // search executes so a cross-tenant term never even runs.
     const canAccess = await this.access.canAccessWorkspace(workspaceId, user);
     if (!canAccess) {
-      throw new ForbiddenException(FORBIDDEN);
+      // 404 (not 403): a cross-tenant caller must never learn the workspace
+      // exists. Mirrors community-classroom / community-voice read surfaces.
+      throw new NotFoundException(NOT_FOUND);
     }
 
     const isCoach =

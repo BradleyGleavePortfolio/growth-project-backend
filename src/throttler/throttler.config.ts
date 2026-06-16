@@ -59,6 +59,9 @@ export const THROTTLER_NAMES = {
   BLOODWORK_WRITE: 'bloodwork-write',
   /** Per-minute cap on coach command-center reads per user. */
   COACH_COMMAND_CENTER: 'coach-command-center',
+  /** Per-minute cap on community v3-4 read surfaces (search, wearable-prompts
+   *  list) per user. Cost-amplifying reads get their own observable bucket. */
+  COMMUNITY_READS: 'community-reads',
   /** Per-hour diagnostic submit cap per IP. */
   DIAGNOSTIC_SUBMIT: 'diagnostic-submit',
   /** Per-hour cap on checkout session / payment-intent minting per user.
@@ -166,6 +169,12 @@ const COMMUNITY_REPORTS_PER_5MIN  = readIntEnv('COMMUNITY_REPORTS_PER_5MIN',  10
 // toggle but is naturally self-limiting. Both kept conservative and env-tunable.
 const COMMUNITY_EVENTS_PER_MIN      = readIntEnv('COMMUNITY_EVENTS_PER_MIN',      20, 1, 1_000);
 const COMMUNITY_EVENT_RSVP_PER_MIN  = readIntEnv('COMMUNITY_EVENT_RSVP_PER_MIN',  30, 1, 1_000);
+// Community v3-4 read surfaces (search GET, wearable-prompts list GET). These
+// reads can be cost-amplifying (signed-URL mint per row / many source rows per
+// prompt), so they get an explicit, env-tunable per-user read bucket rather
+// than riding only the permissive global default (PR #399 F3). 60/min/user
+// mirrors the COACH_COMMAND_CENTER read precedent.
+const COMMUNITY_READS_PER_MIN       = readIntEnv('COMMUNITY_READS_PER_MIN',       60, 1, 1_000);
 
 // H4 #7 — IP-WIDE ceiling for the public storefront GET join/:token route
 // (the actual ceiling applied to that route via its route-level @Throttle).
@@ -202,6 +211,7 @@ export const THROTTLER_ROUTE_LIMITS = {
   COMMUNITY_REPORTS_PER_5MIN,
   COMMUNITY_EVENTS_PER_MIN,
   COMMUNITY_EVENT_RSVP_PER_MIN,
+  COMMUNITY_READS_PER_MIN,
 } as const;
 
 export const THROTTLER_LIMITS = [
@@ -225,6 +235,8 @@ export const THROTTLER_LIMITS = [
   { name: THROTTLER_NAMES.BLOODWORK_WRITE,     ttl: 60_000,       limit: BLOODWORK_WRITE_PER_MIN },
   // Coach command-center reads: 60/min/user
   { name: THROTTLER_NAMES.COACH_COMMAND_CENTER, ttl: 60_000,      limit: COACH_CMD_CENTER_PER_MIN },
+  // Community v3-4 reads: 60/min/user (search, wearable-prompts list)
+  { name: THROTTLER_NAMES.COMMUNITY_READS,      ttl: 60_000,      limit: COMMUNITY_READS_PER_MIN },
   // Diagnostic submit: 5/hour/IP
   { name: THROTTLER_NAMES.DIAGNOSTIC_SUBMIT,   ttl: 3_600_000,    limit: DIAGNOSTIC_RATE_LIMIT_PER_HOUR },
   // Checkout minting: 20/hour/user

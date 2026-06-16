@@ -9,7 +9,11 @@ import { CommunityWearablePromptsEnabledGuard } from './wearable-prompts-flag.gu
 import { DegradedConnectorFallbackService } from './degraded-connector-fallback.service';
 import { PromptGeneratorService } from './prompt-generator.service';
 import { WearablePromptsRepository } from './wearable-prompts.repository';
-import { WearablePromptsService } from './wearable-prompts.service';
+import {
+  CLOCK,
+  defaultClock,
+  WearablePromptsService,
+} from './wearable-prompts.service';
 
 /**
  * v3-4 wearable-aware coaching-prompts module (COACH-ONLY).
@@ -40,6 +44,8 @@ import { WearablePromptsService } from './wearable-prompts.service';
   providers: [
     WearablePromptsService,
     WearablePromptsRepository,
+    // Injectable wall-clock seam for the 24h cooldown gate (PR #405 N3).
+    { provide: CLOCK, useValue: defaultClock },
     CommunityWearablePromptsEnabledGuard,
     CommunityAccessService,
     CommunityFeatureFlagGuard,

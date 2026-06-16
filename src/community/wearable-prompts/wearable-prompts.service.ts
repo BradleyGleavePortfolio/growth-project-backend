@@ -1,9 +1,4 @@
-import {
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma, type User } from '@prisma/client';
 import { AnalyticsService } from '../../analytics/analytics.service';
 import { ConsentService } from '../../consent/consent.service';
@@ -34,10 +29,16 @@ const FORBIDDEN = {
   error: 'forbidden',
   code: 'community.wearable_prompts.forbidden',
 } as const;
-const NOT_FOUND = {
-  error: 'not_found',
-  code: 'community.wearable_prompts.not_found',
-} as const;
+
+/**
+ * Injectable wall-clock seam (PR #405 re-audit N3). The service owns "now" for
+ * the 24h cooldown gate and the dismiss/act-on stamps; injecting it (instead of
+ * calling `new Date()` inline) lets the service spec pin the cooldown boundary
+ * with jest fake timers at the SERVICE seam, not only the repository helper.
+ */
+export const CLOCK = Symbol('WearablePromptsClock');
+export type Clock = () => Date;
+export const defaultClock: Clock = () => new Date();
 
 
 /**
@@ -73,6 +74,7 @@ export class WearablePromptsService {
     private readonly insights: WearableInsightsService,
     private readonly analytics: AnalyticsService,
     private readonly prisma: PrismaService,
+    @Inject(CLOCK) private readonly clock: Clock = defaultClock,
   ) {}
 
   async generate(
@@ -82,7 +84,7 @@ export class WearablePromptsService {
   ): Promise<GenerateResponse> {
     await this.assertCoachOwnsWorkspaceAndClient(coach, workspaceId, body.clientId);
 
-    const now = new Date();
+    const now = this.clock();
     const generated: PromptView[] = [];
     const skipped: GenerateResponse['skipped'] = [];
 
@@ -190,11 +192,10 @@ export class WearablePromptsService {
     coach: Pick<User, 'id' | 'role'>,
     promptId: string,
   ): Promise<PromptView> {
-    const existing = await this.repo.findOneForCoach(promptId, coach.id);
-    if (!existing) throw new NotFoundException(NOT_FOUND);
-    if (!existing.dismissedAt) await this.repo.markDismissed(promptId, new Date());
-    const fresh = await this.repo.findOneForCoach(promptId, coach.id);
-    if (!fresh) throw new NotFoundException(NOT_FOUND);
+    // Single atomic, coach-scoped write (RLS-safe coachId re-assert; PR #399 F5).
+    // The repo maps a non-existent / foreign prompt to a 404 (never 403, never
+    // leaks existence) and returns the fresh row with sources for the view.
+    const fresh = await this.repo.markDismissed(promptId, coach.id, this.clock());
     return this.toView(fresh);
   }
 
@@ -202,11 +203,7 @@ export class WearablePromptsService {
     coach: Pick<User, 'id' | 'role'>,
     promptId: string,
   ): Promise<PromptView> {
-    const existing = await this.repo.findOneForCoach(promptId, coach.id);
-    if (!existing) throw new NotFoundException(NOT_FOUND);
-    if (!existing.actedOnAt) await this.repo.markActedOn(promptId, new Date());
-    const fresh = await this.repo.findOneForCoach(promptId, coach.id);
-    if (!fresh) throw new NotFoundException(NOT_FOUND);
+    const fresh = await this.repo.markActedOn(promptId, coach.id, this.clock());
     return this.toView(fresh);
   }
 
@@ -283,10 +280,15 @@ export class WearablePromptsService {
       sources: p.sources.map((s) => ({
         sampleId: s.sampleId,
         metricKey: s.metricKey,
-        observedValue:
-          s.observedValue instanceof Prisma.Decimal
+        // Round to the column's stored precision (DECIMAL(18,6)) so the wire
+        // value is deterministic and never leaks float-binary imprecision
+        // (e.g. 72.000000001) into the coach-facing view (PR #399 F6).
+        observedValue: Number(
+          (s.observedValue instanceof Prisma.Decimal
             ? s.observedValue.toNumber()
-            : Number(s.observedValue),
+            : Number(s.observedValue)
+          ).toFixed(6),
+        ),
       })),
       generatedAt: p.generatedAt.toISOString(),
       dismissedAt: p.dismissedAt ? p.dismissedAt.toISOString() : null,
