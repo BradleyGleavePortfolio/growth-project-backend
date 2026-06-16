@@ -52,6 +52,28 @@ const A3_MIGRATION = path.join(
   'migration.sql',
 );
 
+// The append-only ACL follow-up that locks the v2 helpers down (REVOKE from
+// PUBLIC/anon, GRANT to authenticated/service_role). The self-bootstrap below
+// applies ONLY the helper migration, so this suite loads the ACL SQL itself
+// before asserting the grant state — mirroring how the suite already loads the
+// helper migration via applyScript (and how the PR-RLS-01 helper suite relies
+// on its ACL migration being applied before its has_function_privilege checks).
+const A3_ACL_MIGRATION = path.join(
+  __dirname,
+  '..',
+  '..',
+  'prisma',
+  'migrations',
+  '20261221000000_rls_helpers_v2_acl',
+  'migration.sql',
+);
+
+// v2-helper signatures, used for the catalog privilege assertions below.
+const V2_HELPER_SIGS = [
+  'app.current_user_id_v2()',
+  'app.current_gym_ids()',
+] as const;
+
 // Prior helper migration this PR converges with: provides app.current_user_id()
 // + app.current_user_role() reading the LEGACY namespace.
 const LEGACY_HELPERS_SQL = `
@@ -152,6 +174,29 @@ async function applyScript(prisma: PrismaClient, sql: string): Promise<void> {
       await applyScript(prisma, LEGACY_HELPERS_SQL);
       await applyScript(prisma, fs.readFileSync(A3_MIGRATION, 'utf8'));
 
+      // The ACL migration GRANTs/REVOKEs to the Supabase convention roles. CI
+      // provisions them via scripts/ci/supabase-shim.sql before this job, but
+      // make the suite self-sufficient (and faithful to the migration's own
+      // documented precondition) by creating them idempotently if absent — so
+      // the v2-ACL SQL applies cleanly even against a bare throwaway Postgres.
+      await applyScript(
+        prisma,
+        `DO $boot$ BEGIN
+           IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN
+             CREATE ROLE anon NOLOGIN NOINHERIT;
+           END IF;
+           IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticated') THEN
+             CREATE ROLE authenticated NOLOGIN NOINHERIT;
+           END IF;
+           IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'service_role') THEN
+             CREATE ROLE service_role NOLOGIN NOINHERIT;
+           END IF;
+         END $boot$;`,
+      );
+      // Apply the v2 ACL migration verbatim so the privilege assertions below
+      // exercise the REAL shipped grant block, not a hand-rolled copy.
+      await applyScript(prisma, fs.readFileSync(A3_ACL_MIGRATION, 'utf8'));
+
       const helpers = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
         `SELECT count(*)::bigint AS n FROM pg_catalog.pg_proc p
            JOIN pg_catalog.pg_namespace ns ON ns.oid = p.pronamespace
@@ -217,6 +262,50 @@ async function applyScript(prisma: PrismaClient, sql: string): Promise<void> {
         },
       );
       expect(gyms).toBeNull();
+    });
+
+    // ────────────────────────────────────────────────────────────
+    // F-1 (re-audit R2): v2-helper ACL lockdown. The original 5 helpers get
+    // live has_function_privilege assertions (helper-functions.spec.ts); the
+    // two v2 helpers' ACL (migration 20261221000000_rls_helpers_v2_acl) was
+    // asserted nowhere. has_function_privilege reads the catalog grant state
+    // directly, so the superuser connection that bypasses EXECUTE *checks* does
+    // not mask a wrong grant here. Preconditions are established by applying the
+    // ACL migration SQL in beforeAll (this suite self-bootstraps and does NOT
+    // auto-apply 20261221), mirroring the existing helper privilege test.
+    // ────────────────────────────────────────────────────────────
+    describe('v2 helper ACL lockdown (post-20261221 migration)', () => {
+      it('PUBLIC and anon have NO EXECUTE on either v2 helper', async () => {
+        expect.hasAssertions();
+        for (const sig of V2_HELPER_SIGS) {
+          for (const role of ['public', 'anon']) {
+            const row = await prisma.$queryRawUnsafe<
+              { has_exec: boolean }[]
+            >(
+              `SELECT has_function_privilege($1, $2, 'EXECUTE') AS has_exec`,
+              role,
+              sig,
+            );
+            expect(row[0].has_exec).toBe(false);
+          }
+        }
+      });
+
+      it('authenticated and service_role HAVE EXECUTE on both v2 helpers', async () => {
+        expect.hasAssertions();
+        for (const sig of V2_HELPER_SIGS) {
+          for (const role of ['authenticated', 'service_role']) {
+            const row = await prisma.$queryRawUnsafe<
+              { has_exec: boolean }[]
+            >(
+              `SELECT has_function_privilege($1, $2, 'EXECUTE') AS has_exec`,
+              role,
+              sig,
+            );
+            expect(row[0].has_exec).toBe(true);
+          }
+        }
+      });
     });
 
     it('GUCs do not leak outside the transaction (pgbouncer is_local semantics)', async () => {
