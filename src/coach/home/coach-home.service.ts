@@ -21,8 +21,11 @@
 // self-invalidates at the UTC day boundary and never serves a stale yesterday.
 // DO NOT add a Prisma model — this service only reads existing repositories.
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { z } from 'zod';
 import { PrismaService } from '../../prisma.service';
+import { AnalyticsService } from '../../analytics/analytics.service';
+import { Events } from '../../analytics/events';
 import { isThreeArcCountsEnabled } from './three-arc-counts.feature';
 
 // Narrow structural slice of PrismaService this service reads. Declaring the
@@ -46,11 +49,22 @@ export interface DailyRingsRepo {
   };
 }
 
-export interface DailyRingsResponse {
-  checkIns: { reviewed: number; submitted: number };
-  brief: { opened: boolean };
-  review: { reviewed: number; totalConversations: number };
-}
+// Runtime response envelope. `.strict()` at every level rejects any field the
+// contract does not name, so a future change that widens a nested object (a
+// silent API leak) throws at parse time instead of shipping. Both the zeroed
+// and the computed responses are parsed before they leave the service (and
+// before they enter the cache).
+export const DailyRingsSchema = z
+  .object({
+    checkIns: z.object({ reviewed: z.number(), submitted: z.number() }).strict(),
+    brief: z.object({ opened: z.boolean() }).strict(),
+    review: z
+      .object({ reviewed: z.number(), totalConversations: z.number() })
+      .strict(),
+  })
+  .strict();
+
+export type DailyRingsResponse = z.infer<typeof DailyRingsSchema>;
 
 interface CacheEntry {
   expiresAt: number;
@@ -78,7 +92,14 @@ export class CoachHomeService {
 
   // Injected by the PrismaService DI token but typed as the narrow read-only
   // slice (DailyRingsRepo) so tests can pass a typed double without a cast.
-  constructor(@Inject(PrismaService) private readonly prisma: DailyRingsRepo) {}
+  // AnalyticsService is @Optional so when the provider is absent DI resolves it
+  // to undefined (a genuine no-op) rather than throwing — the TypeScript `?`
+  // alone does not make a NestJS dependency optional. This also lets existing
+  // specs construct the service with only a Prisma double.
+  constructor(
+    @Inject(PrismaService) private readonly prisma: DailyRingsRepo,
+    @Optional() private readonly analytics?: AnalyticsService,
+  ) {}
 
   /**
    * Today's three-arc counts for the calling coach.
@@ -90,17 +111,26 @@ export class CoachHomeService {
     coachId: string,
     now: Date = new Date(),
   ): Promise<DailyRingsResponse> {
-    // Flag OFF → zeroed shape, no Prisma reads, no cache pollution.
+    // Flag OFF → zeroed shape, no Prisma reads, no cache pollution, no
+    // telemetry. Parsed through the strict schema so the OFF path obeys the
+    // same response contract as the ON path.
     if (!isThreeArcCountsEnabled()) {
-      return zeroedDailyRings();
+      return DailyRingsSchema.parse(zeroedDailyRings());
     }
 
     const utcDay = now.toISOString().split('T')[0]; // YYYY-MM-DD (UTC)
     const cacheKey = `${coachId}:${utcDay}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.expiresAt > now.getTime()) {
+      // Cache HIT — no telemetry (only misses represent a real fetch).
       return cached.value;
     }
+
+    // Lazy prune: drop any entry keyed to a UTC day other than today. The
+    // cache key is `${coachId}:${utcDay}`, so a long-lived process otherwise
+    // accumulates one stale entry per coach per past day. Pruning here (before
+    // the new set) bounds the map to "coaches seen today" without a timer.
+    this.pruneStaleEntries(utcDay);
 
     const startOfDay = new Date(`${utcDay}T00:00:00.000Z`);
     const endOfDay = new Date(`${utcDay}T23:59:59.999Z`);
@@ -111,12 +141,34 @@ export class CoachHomeService {
       this.countReview(coachId, startOfDay, endOfDay),
     ]);
 
-    const value: DailyRingsResponse = { checkIns, brief, review };
+    const value = DailyRingsSchema.parse({ checkIns, brief, review });
     this.cache.set(cacheKey, {
       value,
       expiresAt: now.getTime() + DAILY_RINGS_CACHE_TTL_MS,
     });
+
+    // Telemetry on flag-ON cache MISS only — never on a hit, never on the
+    // flag-OFF zeroed path. Non-PII: the coach id (opaque distinctId) plus the
+    // numeric/boolean ring state only.
+    this.analytics?.capture(coachId, Events.COACH_DAILY_RINGS_FETCHED, {
+      checkIns_reviewed: checkIns.reviewed,
+      checkIns_submitted: checkIns.submitted,
+      brief_opened: brief.opened,
+      review_reviewed: review.reviewed,
+      review_total: review.totalConversations,
+    });
+
     return value;
+  }
+
+  /** Delete cache entries whose UTC-day key suffix is not today's. */
+  private pruneStaleEntries(utcDay: string): void {
+    const todaySuffix = `:${utcDay}`;
+    for (const key of this.cache.keys()) {
+      if (!key.endsWith(todaySuffix)) {
+        this.cache.delete(key);
+      }
+    }
   }
 
   /**

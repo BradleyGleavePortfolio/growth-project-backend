@@ -14,10 +14,24 @@
  * the down path is a mechanical DROP COLUMN / DROP TABLE captured in the SQL
  * header comment).
  */
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
 const ROOT = join(__dirname, '..');
+
+/**
+ * Real migration directory names (timestamp-prefixed folders only), sorted
+ * lexically. Prisma applies migrations in this lexical order, so the array tail
+ * is the migration that runs last. Reading the actual directory — rather than
+ * comparing hardcoded literals — means this guard FAILS if a future migration
+ * is inserted with a timestamp that sorts behind the most recent slot.
+ */
+function sortedMigrationDirs(): string[] {
+  return readdirSync(join(ROOT, 'prisma', 'migrations'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^\d{14}_/.test(entry.name))
+    .map((entry) => entry.name)
+    .sort();
+}
 
 function readMigrationSql(): string {
   return readFileSync(
@@ -34,6 +48,19 @@ function readMigrationSql(): string {
 
 function readSchema(): string {
   return readFileSync(join(ROOT, 'prisma', 'schema.prisma'), 'utf8');
+}
+
+function readReviewIdxMigrationSql(): string {
+  return readFileSync(
+    join(
+      ROOT,
+      'prisma',
+      'migrations',
+      '20261219000000_conv_review_coach_reviewed_at_idx',
+      'migration.sql',
+    ),
+    'utf8',
+  );
 }
 
 describe('ED.6 coach-reviewed migration — static integrity', () => {
@@ -136,5 +163,52 @@ describe('ED.6 coach-reviewed migration — static integrity', () => {
         /conversation_reviews_as_client\s+ConversationReview\[\]\s+@relation\("ConversationReviewClient"\)/,
       );
     });
+  });
+});
+
+/**
+ * ED.2 (Roman three-arc router) — F3 daily-rings review-arc composite index.
+ *
+ * Static drift-detection layer (no database): the additive index migration SQL
+ * and the prisma schema must agree on the composite (coach_id,
+ * coach_reviewed_at) index that serves the daily-rings review-arc range query.
+ * Anyone who edits one must mirror the other or explain why it broke.
+ */
+describe('ED.2 daily-rings review-arc composite index — static integrity', () => {
+  const sql = readReviewIdxMigrationSql();
+  const schema = readSchema();
+
+  it('migration creates the composite (coach_id, coach_reviewed_at) index idempotently', () => {
+    expect(sql).toMatch(
+      /CREATE INDEX IF NOT EXISTS "ConversationReview_coach_id_coach_reviewed_at_idx" ON "ConversationReview"\("coach_id", "coach_reviewed_at"\);/,
+    );
+  });
+
+  it('wraps the change in a single transaction', () => {
+    expect(sql).toMatch(/BEGIN;/);
+    expect(sql).toMatch(/COMMIT;/);
+  });
+
+  it('documents an executable rollback (DROP INDEX) in the header', () => {
+    expect(sql).toMatch(/DROP INDEX IF EXISTS/);
+    expect(sql).toMatch(/Rollback \(reverse\):/);
+  });
+
+  it('sorts last among all migration directories (R76 §6 append-only)', () => {
+    // Reads the real migrations directory: this index migration must be the
+    // lexically-last folder so the ordered apply never reorders it behind a
+    // landed migration. Fails if a future migration is inserted out of order.
+    const dirs = sortedMigrationDirs();
+    expect(dirs).toContain('20261219000000_conv_review_coach_reviewed_at_idx');
+    expect(dirs[dirs.length - 1]).toBe(
+      '20261219000000_conv_review_coach_reviewed_at_idx',
+    );
+  });
+
+  it('schema.prisma carries the matching @@index on ConversationReview', () => {
+    const model = schema
+      .slice(schema.indexOf('model ConversationReview '))
+      .split(/\n}/)[0];
+    expect(model).toMatch(/@@index\(\[coach_id, coach_reviewed_at\]\)/);
   });
 });

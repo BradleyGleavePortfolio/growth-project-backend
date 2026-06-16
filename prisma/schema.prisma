@@ -1248,6 +1248,10 @@ model ConversationReview {
   @@unique([coach_id, client_id], name: "ConversationReview_coach_client_key")
   @@index([coach_id])
   @@index([client_id])
+  // The daily-rings review arc counts this coach's reviews stamped inside
+  // today's UTC window (equality on coach_id + range on coach_reviewed_at), so
+  // a composite (coach_id, coach_reviewed_at) index serves that read directly.
+  @@index([coach_id, coach_reviewed_at])
 }
 
 // Apple App Review 1.2 — abuse-reporting for direct messages.

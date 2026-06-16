@@ -25,7 +25,9 @@ import {
   zeroedDailyRings,
   DAILY_RINGS_CACHE_TTL_MS,
   DailyRingsRepo,
+  DailyRingsSchema,
 } from '../src/coach/home/coach-home.service';
+import { Events } from '../src/analytics/events';
 import {
   isThreeArcCountsEnabled,
   FEATURE_ROMAN_THREE_ARC_COUNTS_ENV,
@@ -33,6 +35,12 @@ import {
 import { CoachGuard } from '../src/auth/coach.guard';
 import { Roles } from '../src/common/decorators/roles.decorator';
 import { ROLES_KEY } from '../src/common/decorators/roles.decorator';
+import { AnalyticsService } from '../src/analytics/analytics.service';
+
+// @nestjs/throttler stores per-bucket metadata under THROTTLER:LIMIT<name> /
+// THROTTLER:TTL<name>; the unnamed `default` bucket uses the "default" suffix.
+const THROTTLER_LIMIT_KEY = 'THROTTLER:LIMITdefault';
+const THROTTLER_TTL_KEY = 'THROTTLER:TTLdefault';
 
 const KEY = FEATURE_ROMAN_THREE_ARC_COUNTS_ENV;
 
@@ -266,6 +274,108 @@ describe('CoachHomeController — ED.2 GET /coach/home/daily-rings', () => {
   it('allows coaches and owners through the guard', () => {
     expect(guard.canActivate(guardCtx({ id: 'c1', role: 'coach' }))).toBe(true);
     expect(guard.canActivate(guardCtx({ id: 'o1', role: 'owner' }))).toBe(true);
+  });
+
+  // ── F1 (R79) explicit throttle metadata pin ─────────────────────────────
+  it('F1 — dailyRings carries an explicit 60/min @Throttle metadata pin', () => {
+    expect(
+      Reflect.getMetadata(
+        THROTTLER_LIMIT_KEY,
+        CoachHomeController.prototype.dailyRings,
+      ),
+    ).toBe(60);
+    expect(
+      Reflect.getMetadata(
+        THROTTLER_TTL_KEY,
+        CoachHomeController.prototype.dailyRings,
+      ),
+    ).toBe(60_000);
+  });
+
+  // ── F2 strict response envelope ─────────────────────────────────────────
+  describe('F2 — DailyRingsSchema strict envelope', () => {
+    it('accepts the canonical zeroed shape', () => {
+      expect(() => DailyRingsSchema.parse(zeroedDailyRings())).not.toThrow();
+    });
+
+    it('throws when an extra top-level field is present', () => {
+      const widened = { ...zeroedDailyRings(), extra: 1 };
+      expect(() => DailyRingsSchema.parse(widened)).toThrow();
+    });
+
+    it('throws when an extra nested field is present', () => {
+      const base = zeroedDailyRings();
+      const widened = {
+        ...base,
+        checkIns: { ...base.checkIns, sneaky: true },
+      };
+      expect(() => DailyRingsSchema.parse(widened)).toThrow();
+    });
+  });
+
+  // ── F4 cache stale-entry pruning ────────────────────────────────────────
+  it('F4 — prunes prior-UTC-day entries on a later-day call', async () => {
+    setFlag(true);
+    const prisma = buildPrisma({ checkInSubmitted: 3 });
+    const svc = new CoachHomeService(prisma.repo);
+    // seed a day-1 entry
+    await svc.getDailyRings('coach-1', new Date('2026-06-15T12:00:00.000Z'));
+    const map: Map<string, unknown> = (
+      svc as unknown as { cache: Map<string, unknown> }
+    ).cache;
+    expect(map.has('coach-1:2026-06-15')).toBe(true);
+    // advance to a later UTC day → the stale day-1 key must be pruned
+    await svc.getDailyRings('coach-1', new Date('2026-06-16T09:00:00.000Z'));
+    expect(map.has('coach-1:2026-06-15')).toBe(false);
+    expect(map.has('coach-1:2026-06-16')).toBe(true);
+  });
+
+  // ── F5 telemetry: emit once on flag-ON miss, never on hit or flag-OFF ───
+  describe('F5 — coach_daily_rings_fetched telemetry', () => {
+    it('captures once on a flag-ON cache MISS with non-PII numeric props', async () => {
+      setFlag(true);
+      const prisma = buildPrisma({
+        checkInSubmitted: 6,
+        checkInReviewed: 4,
+        briefOpened: 1,
+        reviewReviewed: 2,
+        senderClients: [{ client_id: 'a' }, { client_id: 'b' }],
+      });
+      const analytics = new AnalyticsService();
+      const capture = jest.spyOn(analytics, 'capture').mockImplementation(() => {});
+      const svc = new CoachHomeService(prisma.repo, analytics);
+      await svc.getDailyRings('coach-1', new Date('2026-06-16T10:00:00.000Z'));
+      expect(capture).toHaveBeenCalledTimes(1);
+      expect(capture).toHaveBeenCalledWith('coach-1', Events.COACH_DAILY_RINGS_FETCHED, {
+        checkIns_reviewed: 4,
+        checkIns_submitted: 6,
+        brief_opened: true,
+        review_reviewed: 2,
+        review_total: 2,
+      });
+    });
+
+    it('does NOT capture on a cache HIT', async () => {
+      setFlag(true);
+      const prisma = buildPrisma({ checkInSubmitted: 3 });
+      const analytics = new AnalyticsService();
+      const capture = jest.spyOn(analytics, 'capture').mockImplementation(() => {});
+      const svc = new CoachHomeService(prisma.repo, analytics);
+      const t0 = new Date('2026-06-16T10:00:00.000Z');
+      await svc.getDailyRings('coach-1', t0); // miss → 1 capture
+      await svc.getDailyRings('coach-1', new Date(t0.getTime() + 5_000)); // hit
+      expect(capture).toHaveBeenCalledTimes(1);
+    });
+
+    it('does NOT capture on the flag-OFF zeroed path', async () => {
+      setFlag(false);
+      const prisma = buildPrisma({ checkInSubmitted: 3 });
+      const analytics = new AnalyticsService();
+      const capture = jest.spyOn(analytics, 'capture').mockImplementation(() => {});
+      const svc = new CoachHomeService(prisma.repo, analytics);
+      await svc.getDailyRings('coach-1');
+      expect(capture).not.toHaveBeenCalled();
+    });
   });
 
   // ── feature-flag resolution (default-OFF invariant) ─────────────────────
