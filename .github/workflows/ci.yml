@@ -304,6 +304,17 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      - name: Run W1.5-A4 RLS live-DB harness self-test
+        # Self-bootstrapping (provisionTenants creates the app.current_gym_ids
+        # helper, the app_user NOBYPASSRLS role, and the gym-scoped table against
+        # the same throwaway DB), so it needs NO scoped psql bootstrap. Exercises
+        # the reusable harness via the REAL withRlsContext tx path (GUCs on the tx
+        # handle, then SET LOCAL ROLE app_user) and proves the negative isolation
+        # assertion is FAILABLE: it flips red when the policy is dropped.
+        run: npx jest --config jest.rls.config.js test/rls/rls-harness.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
   mwb-3-live-tests:
     # MWB-3 R2 (audit P1): the MWB-3 autosave/undo live suite was skip-gated on
     # MWB3_TEST_DATABASE_URL and never ran in CI, so the sub-coach authorization
