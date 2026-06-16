@@ -82,6 +82,32 @@ async function applyScript(prisma: PrismaClient, sql: string): Promise<void> {
       }
       continue;
     }
+    // Skip `--` line comments so a `;` inside a comment is not mistaken for a
+    // statement terminator (only meaningful outside a $$-quoted body).
+    if (sql[i] === '-' && sql[i + 1] === '-') {
+      const nl = sql.indexOf('\n', i);
+      if (nl === -1) break;
+      i = nl - 1;
+      continue;
+    }
+    // Copy single-quoted string literals verbatim (honoring the '' escape) so a
+    // `;` inside e.g. a COMMENT ... IS '...' body is not a statement terminator.
+    if (sql[i] === "'") {
+      buf += sql[i];
+      i += 1;
+      while (i < sql.length) {
+        if (sql[i] === "'" && sql[i + 1] === "'") {
+          buf += "''";
+          i += 2;
+          continue;
+        }
+        if (sql[i] === "'") break;
+        buf += sql[i];
+        i += 1;
+      }
+      buf += "'";
+      continue;
+    }
     if (sql[i] === '$') {
       const m = /^\$[A-Za-z0-9_]*\$/.exec(sql.slice(i));
       if (m) {
