@@ -20,6 +20,13 @@ import {
  * provides: it opens `prisma.$transaction`, stamps both GUCs on the `tx`
  * handle, then hands `tx` to `fn`.
  *
+ * @remarks
+ * Concurrency: each call to `withRlsContext` opens its own interactive
+ * transaction on its own backend connection. The `set_config` GUCs are
+ * transaction-local (`is_local := true`), so concurrent calls cannot pollute
+ * each other's tenant context — even under high-concurrency request handling.
+ * The caller does not need to serialize access.
+ *
  * **Caller contract.** `fn` MUST use the supplied `tx` handle for every
  * RLS-sensitive query. Issuing a query against the outer `prisma` client from
  * inside `fn` runs on a *different* connection with **no** GUCs set and will

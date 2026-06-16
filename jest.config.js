@@ -50,7 +50,7 @@ module.exports = {
   // live DB; the v3-4 RLS specs live under test/rls/ and run only via
   // jest.rls.config.js.
   // Wave 1.5 / A1 adds `src/database/__tests__` as the NINTH narrowly-scoped
-  // root so the RLS Prisma middleware unit specs colocated under
+  // root so the RLS Prisma context unit specs colocated under
   // src/database/__tests__/*.spec.ts are discovered. Same rationale as the
   // roots above: the slice owns its spec files in the source tree, and the root
   // is intentionally the __tests__ folder ONLY — NOT the whole `src/` tree.

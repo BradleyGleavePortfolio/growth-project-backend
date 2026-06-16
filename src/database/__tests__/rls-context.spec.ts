@@ -161,6 +161,20 @@ describe("withRlsContext", () => {
     expect(result).toBe(sentinel);
   });
 
+  it("stamps GUCs and resolves to undefined when fn is empty", async () => {
+    const { client, tx, $transaction } = makeFakePrisma();
+
+    const result = await withRlsContext(
+      client as never,
+      { userId: "u1", gymIds: ["g1"] },
+      async () => {},
+    );
+
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(2);
+    expect(result).toBeUndefined();
+    expect($transaction).toHaveBeenCalledTimes(1);
+  });
+
   it("propagates fn errors so the transaction rolls back", async () => {
     const { client, tx } = makeFakePrisma();
     const boom = new Error("fn failed");
