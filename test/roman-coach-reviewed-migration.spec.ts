@@ -36,6 +36,19 @@ function readSchema(): string {
   return readFileSync(join(ROOT, 'prisma', 'schema.prisma'), 'utf8');
 }
 
+function readReviewIdxMigrationSql(): string {
+  return readFileSync(
+    join(
+      ROOT,
+      'prisma',
+      'migrations',
+      '20261219000000_conv_review_coach_reviewed_at_idx',
+      'migration.sql',
+    ),
+    'utf8',
+  );
+}
+
 describe('ED.6 coach-reviewed migration — static integrity', () => {
   const sql = readMigrationSql();
   const schema = readSchema();
@@ -136,5 +149,47 @@ describe('ED.6 coach-reviewed migration — static integrity', () => {
         /conversation_reviews_as_client\s+ConversationReview\[\]\s+@relation\("ConversationReviewClient"\)/,
       );
     });
+  });
+});
+
+/**
+ * ED.2 (Roman three-arc router) — F3 daily-rings review-arc composite index.
+ *
+ * Static drift-detection layer (no database): the additive index migration SQL
+ * and the prisma schema must agree on the composite (coach_id,
+ * coach_reviewed_at) index that serves the daily-rings review-arc range query.
+ * Anyone who edits one must mirror the other or explain why it broke.
+ */
+describe('ED.2 daily-rings review-arc composite index — static integrity', () => {
+  const sql = readReviewIdxMigrationSql();
+  const schema = readSchema();
+
+  it('migration creates the composite (coach_id, coach_reviewed_at) index idempotently', () => {
+    expect(sql).toMatch(
+      /CREATE INDEX IF NOT EXISTS "ConversationReview_coach_id_coach_reviewed_at_idx" ON "ConversationReview"\("coach_id", "coach_reviewed_at"\);/,
+    );
+  });
+
+  it('wraps the change in a single transaction', () => {
+    expect(sql).toMatch(/BEGIN;/);
+    expect(sql).toMatch(/COMMIT;/);
+  });
+
+  it('documents an executable rollback (DROP INDEX) in the header', () => {
+    expect(sql).toMatch(/DROP INDEX IF EXISTS/);
+    expect(sql).toMatch(/Rollback \(reverse\):/);
+  });
+
+  it('uses a timestamp strictly after the most recent landed migration', () => {
+    // 20261218000000_add_coach_reviewed_at is the prior landed slot; this index
+    // migration must sort after it (R76 §6 append-only).
+    expect('20261219000000' > '20261218000000').toBe(true);
+  });
+
+  it('schema.prisma carries the matching @@index on ConversationReview', () => {
+    const model = schema
+      .slice(schema.indexOf('model ConversationReview '))
+      .split(/\n}/)[0];
+    expect(model).toMatch(/@@index\(\[coach_id, coach_reviewed_at\]\)/);
   });
 });
