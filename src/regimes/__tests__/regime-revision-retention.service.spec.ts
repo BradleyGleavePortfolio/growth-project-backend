@@ -7,9 +7,12 @@
  *  - eviction is idempotent: re-running on an already-pruned regime deletes 0;
  *  - retention is clamped to >= 1 so a misconfigured 0 never wipes history.
  *
- * No `as any` / `as unknown as` (R0). The deleteMany double computes the real
- * `revision_index < threshold` predicate against an in-memory revision list so
- * the assertions exercise the actual arithmetic.
+ * Prisma is widened via the shared `asPrismaDouble` helper, which uses a
+ * justified `@ts-expect-error` (the R0-sanctioned escape for partial
+ * structural mocks) rather than the banned double-assertion the audit flagged.
+ * The deleteMany double computes the real `revision_index < threshold`
+ * predicate against an in-memory revision list so the assertions exercise the
+ * actual arithmetic.
  */
 
 import { RegimeRevisionRetentionService } from '../regime-revision-retention.service';

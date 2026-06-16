@@ -235,6 +235,22 @@ export class RegimesService {
     const existing = await this.requireOwnedRegime(coachId, id);
 
     await this.prisma.$transaction(async (tx) => {
+      // Serialise concurrent edits on this program's revision history. The
+      // next revision_index is allocated via findFirst(desc)+create under the
+      // @@unique([program_id, revision_index]) constraint, so two simultaneous
+      // updates would otherwise compute the same nextIndex and one would 500 on
+      // a P2002. We take a SELECT … FOR UPDATE row lock on the parent
+      // WorkoutProgram first (the sanctioned pattern from
+      // workout-builder-autosave.service.ts lockPlanAndHead) so the second
+      // writer blocks until the first commits, then reads the bumped head.
+      // Parameterised (never interpolated): no injection surface.
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "WorkoutProgram" WHERE "id" = ${id} FOR UPDATE
+      `;
+      if (locked.length === 0) {
+        throw new NotFoundException('Regime not found');
+      }
+
       await tx.workoutProgram.updateMany({
         where: { id, coach_id: coachId, is_regime: true },
         data: { regime_display_name: regimeDisplayName },

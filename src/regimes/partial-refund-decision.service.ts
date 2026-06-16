@@ -199,15 +199,23 @@ export class PartialRefundDecisionService {
     let dropsCanceled = 0;
     await this.prisma.$transaction(async (tx) => {
       // WHERE-guard on decision='pending' makes the decision write idempotent:
-      // a concurrent second decide matches zero rows.
-      await tx.partialRefundDecision.updateMany({
+      // a concurrent second decide matches zero rows. Capturing count and
+      // throwing on zero rolls back the loser of a keep_drops/unassign_drops
+      // race INSIDE the tx, so cancelPendingForPurchase never runs against a
+      // decision this call did not actually persist (otherwise a concurrent
+      // unassign_drops could cancel the buyer's drops while the committed
+      // decision is keep_drops).
+      const updated = await tx.partialRefundDecision.updateMany({
         where: { id: row.id, decision: 'pending' },
         data: {
           decision,
           decided_at: new Date(),
-          decided_by_coach_id: coachUserId,
+          decided_by_coach_user_id: coachUserId,
         },
       });
+      if (updated.count === 0) {
+        throw new NotFoundException('Refund decision already decided');
+      }
 
       if (decision === 'unassign_drops') {
         dropsCanceled = await this.fanout.cancelPendingForPurchase(

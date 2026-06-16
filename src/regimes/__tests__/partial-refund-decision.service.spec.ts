@@ -193,8 +193,11 @@ describe('PartialRefundDecisionService', () => {
     function decideHarness(opts: {
       decision: string;
       coach_user_id: string;
+      updateCount?: number;
     }) {
-      const updateMany = jest.fn(async () => ({ count: 1 }));
+      const updateMany = jest.fn(async () => ({
+        count: opts.updateCount ?? 1,
+      }));
       const txClient = {
         partialRefundDecision: { updateMany },
       };
@@ -274,6 +277,30 @@ describe('PartialRefundDecisionService', () => {
       await expect(
         service.decide('coach-1', 're_123', 'unassign_drops'),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('throws and does NOT cancel drops when the guarded update matches zero rows (R81 P1-1 race)', async () => {
+      // The pre-tx findUnique still sees decision='pending' (a concurrent
+      // keep_drops decide has not yet committed its visible read), so the
+      // initial guard passes — but the in-tx WHERE-guarded updateMany matches
+      // ZERO rows because the concurrent call already flipped the row away from
+      // 'pending'. The loser MUST throw (rolling back its own tx) and MUST NOT
+      // run cancelPendingForPurchase: otherwise an unassign_drops loser would
+      // cancel the buyer's drops while the committed decision is keep_drops.
+      const { prisma, updateMany } = decideHarness({
+        decision: 'pending',
+        coach_user_id: 'coach-1',
+        updateCount: 0,
+      });
+      const { fanout, cancel } = fanoutDouble(4);
+      const service = new PartialRefundDecisionService(prisma, fanout);
+
+      await expect(
+        service.decide('coach-1', 're_123', 'unassign_drops'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(updateMany).toHaveBeenCalled();
+      // The drops cancel is gated on the guarded update succeeding.
+      expect(cancel).not.toHaveBeenCalled();
     });
   });
 });

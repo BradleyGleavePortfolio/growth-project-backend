@@ -4117,7 +4117,7 @@ model PartialRefundDecision {
   // 'pending' | 'keep_drops' | 'unassign_drops'
   decision           String         @default("pending")
   decided_at         DateTime?
-  decided_by_coach_id String?
+  decided_by_coach_user_id String?
   created_at         DateTime       @default(now())
 
   @@index([client_purchase_id, decision])
