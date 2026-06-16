@@ -331,7 +331,7 @@ describe('CoachHomeController — ED.2 GET /coach/home/daily-rings', () => {
   });
 
   // ── F5 telemetry: emit once on flag-ON miss, never on hit or flag-OFF ───
-  describe('F5 — coach.daily_rings_fetched telemetry', () => {
+  describe('F5 — coach_daily_rings_fetched telemetry', () => {
     it('captures once on a flag-ON cache MISS with non-PII numeric props', async () => {
       setFlag(true);
       const prisma = buildPrisma({

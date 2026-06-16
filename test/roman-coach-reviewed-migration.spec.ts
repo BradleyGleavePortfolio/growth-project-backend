@@ -14,10 +14,24 @@
  * the down path is a mechanical DROP COLUMN / DROP TABLE captured in the SQL
  * header comment).
  */
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
 const ROOT = join(__dirname, '..');
+
+/**
+ * Real migration directory names (timestamp-prefixed folders only), sorted
+ * lexically. Prisma applies migrations in this lexical order, so the array tail
+ * is the migration that runs last. Reading the actual directory — rather than
+ * comparing hardcoded literals — means this guard FAILS if a future migration
+ * is inserted with a timestamp that sorts behind the most recent slot.
+ */
+function sortedMigrationDirs(): string[] {
+  return readdirSync(join(ROOT, 'prisma', 'migrations'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^\d{14}_/.test(entry.name))
+    .map((entry) => entry.name)
+    .sort();
+}
 
 function readMigrationSql(): string {
   return readFileSync(
@@ -180,10 +194,15 @@ describe('ED.2 daily-rings review-arc composite index — static integrity', () 
     expect(sql).toMatch(/Rollback \(reverse\):/);
   });
 
-  it('uses a timestamp strictly after the most recent landed migration', () => {
-    // 20261218000000_add_coach_reviewed_at is the prior landed slot; this index
-    // migration must sort after it (R76 §6 append-only).
-    expect('20261219000000' > '20261218000000').toBe(true);
+  it('sorts last among all migration directories (R76 §6 append-only)', () => {
+    // Reads the real migrations directory: this index migration must be the
+    // lexically-last folder so the ordered apply never reorders it behind a
+    // landed migration. Fails if a future migration is inserted out of order.
+    const dirs = sortedMigrationDirs();
+    expect(dirs).toContain('20261219000000_conv_review_coach_reviewed_at_idx');
+    expect(dirs[dirs.length - 1]).toBe(
+      '20261219000000_conv_review_coach_reviewed_at_idx',
+    );
   });
 
   it('schema.prisma carries the matching @@index on ConversationReview', () => {

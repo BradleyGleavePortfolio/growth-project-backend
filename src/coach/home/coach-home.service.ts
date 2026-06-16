@@ -21,7 +21,7 @@
 // self-invalidates at the UTC day boundary and never serves a stale yesterday.
 // DO NOT add a Prisma model — this service only reads existing repositories.
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { z } from 'zod';
 import { PrismaService } from '../../prisma.service';
 import { AnalyticsService } from '../../analytics/analytics.service';
@@ -92,12 +92,13 @@ export class CoachHomeService {
 
   // Injected by the PrismaService DI token but typed as the narrow read-only
   // slice (DailyRingsRepo) so tests can pass a typed double without a cast.
-  // AnalyticsService is global + optional at the call site (no-op when PostHog
-  // is unconfigured) so existing specs that construct the service with only a
-  // Prisma double keep working.
+  // AnalyticsService is @Optional so when the provider is absent DI resolves it
+  // to undefined (a genuine no-op) rather than throwing — the TypeScript `?`
+  // alone does not make a NestJS dependency optional. This also lets existing
+  // specs construct the service with only a Prisma double.
   constructor(
     @Inject(PrismaService) private readonly prisma: DailyRingsRepo,
-    private readonly analytics?: AnalyticsService,
+    @Optional() private readonly analytics?: AnalyticsService,
   ) {}
 
   /**
