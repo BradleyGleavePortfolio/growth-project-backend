@@ -6642,6 +6642,7 @@ model MarketplaceMutationIdempotency {
   idempotency_key String
   response        Json?
   status          String    @default("completed")
+  claim_nonce     String?
   created_at      DateTime  @default(now())
   completed_at    DateTime?
 
