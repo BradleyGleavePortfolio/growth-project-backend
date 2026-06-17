@@ -194,15 +194,33 @@ describe('ED.2 daily-rings review-arc composite index — static integrity', () 
     expect(sql).toMatch(/Rollback \(reverse\):/);
   });
 
-  it('sorts last among all migration directories (R76 §6 append-only)', () => {
-    // Reads the real migrations directory: this index migration must be the
-    // lexically-last folder so the ordered apply never reorders it behind a
-    // landed migration. Fails if a future migration is inserted out of order.
+  it('is never reordered behind a later-landed migration (R76 §6 append-only)', () => {
+    // R76 §6 append-only invariant: no migration may be back-dated BEHIND the
+    // established floor. Checking "everything after `self` has a >= prefix" is a
+    // tautology — fixed-width 14-digit prefixes sort lexically, so any dir that
+    // sorts after `self` ALREADY has a >= prefix, and a back-dated migration
+    // sorts BEFORE `self` and is never inspected. We must check the offending
+    // direction instead.
+    //
+    // FLOOR_TS is the conv-review slot's prefix — the append-only floor at TM-1
+    // authoring time. The repo's known history below the floor is a fixed set;
+    // its size is pinned here. A genuinely back-dated migration carries a prefix
+    // strictly LESS than the floor (it reorders Prisma's ordered apply behind a
+    // landed migration), which grows the below-floor set and trips this guard.
+    // Legitimately-later migrations (prefix >= floor, e.g. TM-1's 20261220000000)
+    // never touch the below-floor set and pass.
+    const FLOOR_TS = '20261219000000';
+    // Count of migrations dated before the floor in the repo's known history at
+    // TM-1 authoring time. Bump this ONLY when intentionally landing a migration
+    // with a prefix below the floor (which should essentially never happen under
+    // append-only) — never to silence a surprise back-dated dir.
+    const KNOWN_BELOW_FLOOR_COUNT = 146;
     const dirs = sortedMigrationDirs();
-    expect(dirs).toContain('20261219000000_conv_review_coach_reviewed_at_idx');
-    expect(dirs[dirs.length - 1]).toBe(
-      '20261219000000_conv_review_coach_reviewed_at_idx',
-    );
+    const self = '20261219000000_conv_review_coach_reviewed_at_idx';
+    expect(dirs).toContain(self);
+    expect(self.slice(0, 14)).toBe(FLOOR_TS);
+    const belowFloor = dirs.filter((dir) => dir.slice(0, 14) < FLOOR_TS);
+    expect(belowFloor).toHaveLength(KNOWN_BELOW_FLOOR_COUNT);
   });
 
   it('schema.prisma carries the matching @@index on ConversationReview', () => {

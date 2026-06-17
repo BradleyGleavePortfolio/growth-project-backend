@@ -6465,3 +6465,186 @@ model CommunityWearablePromptSource {
   @@index([sampleId])
   @@map("community_wearable_prompt_sources")
 }
+
+// ============================================================
+// TALENT MARKETPLACE — TM-1 schema + RLS foundation (ADR-0002, refs #424).
+// Two-sided public job board. Schema is APPEND-ONLY (R71 shared-file
+// discipline): no existing model/User back-relations are edited. Every
+// user/listing/application FK is a SCALAR column (TEXT, matching User.id);
+// the foreign-key + RLS policies are authored in the SQL migration
+// 20261220000000_talent_marketplace_rls, which is the single source of
+// truth for referential integrity and tenancy here (same idiom as the
+// CommunityWearablePromptSource cross-subsystem scalar above).
+//
+// NO CoachConnectAccount (ADR decision 3: Connect reuses /coach/connect/*).
+// ============================================================
+
+// Public job-listing lifecycle. Only `published` rows are anon-readable.
+enum JobListingStatus {
+  draft
+  published
+  closed
+}
+
+// How a hirer specifies offered compensation on a listing / offer.
+enum CoachCompensationType {
+  commission
+  rev_share
+  flat
+  hybrid
+}
+
+// Application lifecycle for a listing-scoped Application (PII).
+enum ApplicationStatus {
+  submitted
+  screening
+  shortlisted
+  offered
+  placed
+  rejected
+  withdrawn
+}
+
+// Offer lifecycle (financial). The partial unique indexes in the migration
+// enforce one `pending` per (head_coach, application) and one `accepted`
+// per application even under a concurrent accept race.
+enum CoachOfferStatus {
+  pending
+  accepted
+  rejected
+  withdrawn
+}
+
+// ─── JobListing ───────────────────────────────────────────────────────────────
+//
+// A publicly browsable, SEO-indexable job posting authored by a verified
+// hirer (head-coach / solo coach / gym owner — verification gating lands in
+// TM-2). `hirer_id` is the owning User (scalar FK at SQL layer). Anon may
+// SELECT only rows where status = 'published' (RLS public-read).
+model JobListing {
+  id                 String                @id @default(uuid())
+  hirer_id           String
+  title              String
+  description        String
+  specialty          String?
+  location           String?
+  modality           String?
+  compensation_type  CoachCompensationType
+  // Shape validated server-side in TM-2 (ported comp-term validator):
+  //   commission { rate_pct } | rev_share { rate_pct, cap_usd? }
+  //   flat { amount_usd, period } | hybrid { base_usd, rate_pct }
+  compensation_terms Json
+  expectations       String?
+  status             JobListingStatus      @default(draft)
+  published_at       DateTime?
+  closed_at          DateTime?
+  idempotency_key    String?               @unique
+  created_at         DateTime              @default(now())
+  updated_at         DateTime              @updatedAt
+
+  @@index([status, created_at, id])
+  @@index([hirer_id, status])
+  @@index([specialty, status])
+}
+
+// ─── Applicant ──────────────────────────────────────────────────────────────
+//
+// Lightweight pre-coach profile (PII) created at Apply, before the job-hunter
+// becomes a sub-coach. `user_id` is the pre-coach User account (scalar FK,
+// unique — one profile per account). RLS: applicant reads/writes own;
+// head-coach SELECT is granted only via the reused TeamSubCoachAssignment
+// predicate after a flip. anon → zero rows.
+model Applicant {
+  id               String   @id @default(uuid())
+  user_id          String   @unique
+  email            String
+  first_name       String
+  last_name        String
+  headline         String?
+  bio              String?
+  specialties      String[]
+  certifications   String[]
+  years_experience Int?
+  sample_program_url String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@index([email])
+}
+
+// ─── Application ──────────────────────────────────────────────────────────────
+//
+// A listing-scoped application (PII). `applicant_id` is the owning Applicant;
+// `applicant_user_id` mirrors the pre-coach User for direct owner-scope RLS
+// without a join. `fit_score` is the two-way desired-vs-offered indicator
+// computed at Apply (TM-5). RLS: applicant reads/writes own; hirer of the
+// listing reads applications to their listing.
+model Application {
+  id                String            @id @default(uuid())
+  listing_id        String
+  applicant_id      String
+  applicant_user_id String
+  // Denormalized owning hirer of the listing — lets the hirer-read RLS
+  // policy scope by a single column instead of a JobListing sub-select.
+  hirer_id          String
+  cover_note        String?
+  fit_score         Int?
+  status            ApplicationStatus @default(submitted)
+  idempotency_key   String?           @unique
+  created_at        DateTime          @default(now())
+  updated_at        DateTime          @updatedAt
+
+  offers CoachOffer[] @relation("CoachOfferApplication")
+
+  @@index([listing_id, status, created_at, id])
+  @@index([applicant_user_id, created_at, id])
+  @@index([hirer_id, status])
+}
+
+// ─── CoachOffer ───────────────────────────────────────────────────────────────
+//
+// A head-coach extends an offer against an Application (financial). One
+// application may receive multiple offers from different head-coaches; only
+// one may be `accepted` (partial unique index). `head_coach_id` /
+// `applicant_user_id` are scalar User FKs at the SQL layer.
+model CoachOffer {
+  id                 String                @id @default(uuid())
+  head_coach_id      String
+  application_id     String
+  application        Application           @relation("CoachOfferApplication", fields: [application_id], references: [id], onDelete: Cascade)
+  applicant_user_id  String
+  compensation_type  CoachCompensationType
+  compensation_terms Json
+  client_capacity    Int
+  onboarding_message String?
+  status             CoachOfferStatus      @default(pending)
+  accepted_at        DateTime?
+  idempotency_key    String?               @unique
+  created_at         DateTime              @default(now())
+  updated_at         DateTime              @updatedAt
+
+  @@index([head_coach_id, status])
+  @@index([application_id, status])
+}
+
+// ─── MarketplaceMutationIdempotency ─────────────────────────────────────────────
+//
+// Per-route idempotency ledger for talent-marketplace mutations (ported from
+// 714a69af). Composite uniqueness `(user_id, route_key, idempotency_key)`:
+// the same UUID may appear under two routes/users — only the same user
+// retrying the same mutation hits the cache. `response` is nullable (NULL
+// while a claim is `in_progress`; populated on `completed`). RLS: RESTRICTIVE
+// deny-all to anon + authenticated — accessed only via service_role.
+model MarketplaceMutationIdempotency {
+  id              String    @id @default(uuid())
+  user_id         String
+  route_key       String
+  idempotency_key String
+  response        Json?
+  status          String    @default("completed")
+  created_at      DateTime  @default(now())
+  completed_at    DateTime?
+
+  @@unique([user_id, route_key, idempotency_key])
+  @@index([user_id, route_key])
+}
