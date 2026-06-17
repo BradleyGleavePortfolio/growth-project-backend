@@ -62,6 +62,14 @@ module.exports = {
   // the roots above: this slice owns those spec files in the source tree, and
   // the root is intentionally the slice subtree ONLY — NOT the whole `src/`
   // tree. Both specs use plain unit doubles (no Prisma, no live DB).
+  // FEATURE_CUSTOM_EXERCISE adds `src/coach-exercise` as an ELEVENTH
+  // narrowly-scoped root so the coach custom-exercise unit specs colocated
+  // under src/coach-exercise/__tests__/*.spec.ts (flag default-OFF, presign
+  // limits, bucket-binding, media_kind/mime, list) are discovered. Same
+  // rationale as the roots above: this slice owns its spec files in the source
+  // tree, and the root is intentionally the slice subtree ONLY — NOT the whole
+  // `src/` tree. The spec uses mocked repo/provider doubles and needs no live
+  // DB; the coach_exercises RLS check rides the migration's owner policy.
   roots: [
     '<rootDir>/test',
     '<rootDir>/src/roman/voice',
@@ -73,6 +81,7 @@ module.exports = {
     '<rootDir>/src/community/wearable-prompts',
     '<rootDir>/src/regimes',
     '<rootDir>/src/feature-flags',
+    '<rootDir>/src/coach-exercise',
   ],
   testRegex: '\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'mjs', 'json'],

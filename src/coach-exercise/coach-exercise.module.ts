@@ -1,18 +1,16 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { CoachExerciseController } from './coach-exercise.controller';
 import { CoachExerciseEnabledGuard } from './coach-exercise-flag.guard';
 import { CoachExerciseRepository } from './coach-exercise.repository';
+import { CoachExerciseService } from './coach-exercise.service';
 import { CoachExerciseUploadProvider } from './coach-exercise-upload.provider';
 
 /**
  * Coach custom-exercise library module (FEATURE_CUSTOM_EXERCISE, default OFF).
  *
- * The backend half of the mobile custom-exercise authoring stack. This is the
- * storage-layer half (B1 of the stacked chain): it wires only the data-access
- * and media-presign building blocks — the repository, the Supabase signed-URL
- * upload provider, and the flag kill-switch guard. The API surface (DTO +
- * service + controller + the /coach-exercises routes) lands in the stacked B2
- * PR, which extends this same module. Registered as a single line in
+ * The backend half of the mobile custom-exercise authoring stack. Mounts the
+ * /coach-exercises controller. Self-contained, registered as a single line in
  * AppModule.imports.
  *
  *   - AuthModule supplies JwtAuthGuard / RolesGuard — the same import every
@@ -24,11 +22,13 @@ import { CoachExerciseUploadProvider } from './coach-exercise-upload.provider';
  */
 @Module({
   imports: [AuthModule],
+  controllers: [CoachExerciseController],
   providers: [
+    CoachExerciseService,
     CoachExerciseRepository,
     CoachExerciseEnabledGuard,
     CoachExerciseUploadProvider,
   ],
-  exports: [CoachExerciseRepository, CoachExerciseUploadProvider],
+  exports: [CoachExerciseService],
 })
 export class CoachExerciseModule {}
