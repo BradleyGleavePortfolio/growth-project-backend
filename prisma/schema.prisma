@@ -499,6 +499,12 @@ model User {
   roman_sessions RomanSession[] @relation("RomanSessionUser")
   roman_messages RomanMessage[] @relation("RomanMessageUser")
 
+  // FEATURE_CUSTOM_EXERCISE (default OFF) — coach-authored custom exercise
+  // library. A coach owns the moves they author free-hand (name + written
+  // instructions + optional image/video). RESTRICT on the FK side so library
+  // history is never silently orphaned, matching the community author rels.
+  coach_exercises_as_coach           CoachExercise[]                   @relation("CoachExerciseCoach")
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -5731,6 +5737,40 @@ model CommunityVoiceNote {
   // An author's recent voice notes.
   @@index([author_id, created_at])
   @@map("community_voice_notes")
+}
+
+// FEATURE_CUSTOM_EXERCISE (default OFF) — coach-owned custom exercise library.
+//
+// Additive model. A coach (e.g. a yoga instructor) authors a brand-new move
+// NOT in the fixed catalog: a free-text name, written instructions, and an
+// optional image/video they upload to Supabase Storage. The row is the durable,
+// reusable, coach-OWNED library entry. id/column conventions mirror the EXISTING
+// coach-owned community schema (uuid PK + snake_case @map columns + @db.Uuid
+// tenancy key) so the row scopes through the same RLS idiom the v1-1 community
+// tables use (coach_id = app.current_user_id()).
+//
+// `media_kind` = 'none' when the coach authored instructions only; otherwise
+// 'image'/'video' with `storage_key` pointing at the confirmed upload. The row
+// is inserted only AFTER the signed upload is confirmed (presign -> direct PUT
+// -> durable create), the same idiom as community voice notes. `media_url` is
+// NOT stored — it is a freshly-signed READ url derived from `storage_key` at
+// read time. `archived_at` soft-retires a move without breaking history.
+model CoachExercise {
+  id           String    @id @default(uuid()) @db.Uuid
+  coach_id     String    @db.Uuid
+  name         String    @db.VarChar(120)
+  instructions String    @db.Text
+  media_kind   String    @db.VarChar(16)
+  storage_key  String?   @db.Text
+  media_mime   String?   @db.VarChar(120)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  archived_at  DateTime? @db.Timestamptz(6)
+
+  coach User @relation("CoachExerciseCoach", fields: [coach_id], references: [id], onDelete: Restrict)
+
+  // Coach library list: most-recent-first within a coach's own moves.
+  @@index([coach_id, created_at])
+  @@map("coach_exercises")
 }
 
 model CommunityWorkspace {
