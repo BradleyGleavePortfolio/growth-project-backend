@@ -90,6 +90,7 @@ import { TeamModeModule } from './team-mode/team-mode.module';
 // invite/revoke, coach Connect business view).
 import { TeamModule } from './team/team.module';
 import { SubCoachesModule } from './sub-coaches/sub-coaches.module';
+import { TalentMarketplaceModule } from './talent-marketplace/talent-marketplace.module';
 import { CoachConnectModule } from './coach-connect/coach-connect.module';
 // Concierge scheduling (PR #142) — private 1:1 coach <-> client booking
 // with optional Google Calendar two-way sync. See
@@ -337,6 +338,7 @@ import { WearablesModule } from './wearables/wearables.module';
     TeamModeModule,
     TeamModule,
     SubCoachesModule,
+    TalentMarketplaceModule,
     CoachConnectModule,
     // Concierge scheduling — private 1:1 coach<->client booking with
     // optional Google Calendar two-way sync. Stub adapters by default
