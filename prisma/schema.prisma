@@ -6648,3 +6648,34 @@ model MarketplaceMutationIdempotency {
   @@unique([user_id, route_key, idempotency_key])
   @@index([user_id, route_key])
 }
+
+// ─── MarketplaceAbuseSignal ─────────────────────────────────────────────────────
+//
+// TM-6 — PII-governed heuristic + abuse-log store for the in-house anti-bot
+// gate on the apply / account-create surface. One row per gate evaluation.
+// All correlatable identifiers are sha256-hashed by the provider BEFORE the
+// row is written — this table never holds a raw email / IP / device
+// fingerprint, only fixed-width hashes. `reason` is NULL for an allow and a
+// stable code (rate_exceeded | velocity_anomaly | duplicate_device |
+// duplicate_identity) when the gate challenged/denied.
+//
+// The duplicate-device / duplicate-identity heuristics read this store:
+// distinct identity_hash per device_hash (sock-puppets) and distinct ip_hash
+// per identity_hash (rotation) inside the retention window.
+//
+// RLS: RESTRICTIVE deny-all to anon + authenticated — accessed only via
+// service_role (the gate runs server-side). Mirrors
+// MarketplaceMutationIdempotency. See 20261220000020 migration.
+model MarketplaceAbuseSignal {
+  id            String   @id @default(uuid())
+  surface       String
+  ip_hash       String
+  identity_hash String
+  device_hash   String
+  reason        String?
+  created_at    DateTime @default(now())
+
+  @@index([device_hash, created_at])
+  @@index([identity_hash, created_at])
+  @@index([surface, created_at])
+}
