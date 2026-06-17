@@ -210,8 +210,8 @@ export class TalentConnectAdapter {
     const raw = err instanceof Error ? err.message : String(err);
     return raw
       .replace(/sk_(?:live|test)_[A-Za-z0-9]+/g, 'sk_[REDACTED]')
-      .replace(/\bBearer\s+[A-Za-z0-9._\-]+/gi, 'Bearer [REDACTED]')
-      .replace(/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g, '[EMAIL]');
+      .replace(/\bBearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]')
+      .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[EMAIL]');
   }
 }
 
