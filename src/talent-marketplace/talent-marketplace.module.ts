@@ -6,9 +6,7 @@ import { JobListingController } from './job-listing.controller';
 import { JobListingService } from './job-listing.service';
 import { HirerVerifiedGuard } from './hirer-verified.guard';
 
-// TM-2 — Talent Marketplace job-listing CRUD + publish. Provides the same
-// JwtAuthGuard + JwksVerifierService the rest of the authenticated surface
-// uses, plus the HirerVerifiedGuard that gates the write routes.
+// TM-2 — Talent Marketplace job-listing CRUD + publish.
 @Module({
   controllers: [JobListingController],
   providers: [

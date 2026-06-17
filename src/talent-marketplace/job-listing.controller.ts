@@ -18,12 +18,9 @@ import { CreateJobListingDto, UpdateJobListingDto } from './job-listing.dto';
 import { JobListingService } from './job-listing.service';
 import { HirerVerifiedGuard } from './hirer-verified.guard';
 
-// TM-2 — verified-hirer JobListing write surface. Every route is hirer-write:
-// JwtAuthGuard attaches req.user, HirerVerifiedGuard restricts to a verified
-// gym owner / head coach / solo coach, and the service scopes mutations to
-// the caller's own listings (RLS enforces the same write-scope at the DB).
-//
-// Public read of published listings is RLS-driven and lives in a later
+// TM-2 — verified-hirer JobListing write surface. JwtAuthGuard attaches
+// req.user, HirerVerifiedGuard restricts to verified hirers, and the service
+// scopes mutations to the caller's own listings. Public read lives in a later
 // browse ticket — this slice is writes only.
 @ApiTags('talent-marketplace')
 @Controller('talent-marketplace/listings')
