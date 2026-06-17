@@ -73,6 +73,7 @@ module.exports = {
     '<rootDir>/src/community/wearable-prompts',
     '<rootDir>/src/regimes',
     '<rootDir>/src/feature-flags',
+    '<rootDir>/src/talent-marketplace',
   ],
   testRegex: '\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'mjs', 'json'],

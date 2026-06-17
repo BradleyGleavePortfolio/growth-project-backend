@@ -8,35 +8,38 @@ import {
   AntiBotSignal,
   AntiBotVerdict,
   ANTI_BOT_REASONS,
+  AntiBotReason,
 } from './anti-bot.types';
+
+/** Minimal structural view of the ioredis client we use (INCR+EXPIRE pipeline). */
+interface RedisPipeline {
+  incr(key: string): unknown;
+  expire(key: string, ttl: number): unknown;
+  exec(): Promise<Array<[Error | null, unknown]> | null>;
+}
+interface RedisLike {
+  pipeline(): RedisPipeline;
+  connect(): Promise<void>;
+}
 
 /**
  * In-house anti-bot provider — the SHIPPED DEFAULT (operator ruling: build
- * in-house, no paid vendor). Combines three layers, cheapest first:
+ * in-house, no paid vendor). Three layers, cheapest first:
+ *   1. Rate     — hard per-(IP,surface) counter (Redis INCR+EXPIRE, in-memory
+ *                 fallback — same idiom as lead/checkout rate limiters) → deny.
+ *   2. Velocity — softer per-identity counter, same window → challenge.
+ *   3. Identity/device heuristics — from the PII-governed MarketplaceAbuseSignal
+ *      store: a device touching too many distinct identities (sock-puppets) or
+ *      an identity from too many distinct IPs (rotation) → challenge.
  *
- *  1. Rate    — hard per-(IP,surface) counter, Redis INCR+EXPIRE with an
- *               in-memory fallback (same idiom as
- *               `landing-pages/lead-rate-limiter` and
- *               `storefront/checkout-rate-limiter`). Over the ceiling → deny.
- *  2. Velocity— softer per-identity counter in the same window → challenge.
- *  3. Identity/device heuristics — backed by the PII-governed
- *               `MarketplaceAbuseSignal` store: a device fingerprint touching
- *               too many distinct identities (sock-puppets) or an identity
- *               applying from too many distinct IPs (rotation) → challenge.
- *
- * All persisted identifiers are sha256-hashed before storage — the store
- * holds correlatable hashes, never raw email / IP / fingerprint. The store
- * itself is RESTRICTIVE deny-all under RLS (service_role only); see the
- * 20261220000020 migration.
- *
- * FAIL OPEN on any storage error: the gate is defense-in-depth, never the
- * sole control, and an infra hiccup must not brick the apply flow.
+ * All persisted identifiers are sha256-hashed before storage. Fails OPEN on any
+ * storage error: the gate is defense-in-depth, never the sole control.
  */
 @Injectable()
 export class InHouseAntiBotProvider implements AntiBotProvider, OnModuleInit {
   readonly id = 'in-house';
   private readonly logger = new Logger(InHouseAntiBotProvider.name);
-  private redis: { pipeline: () => unknown } | null = null;
+  private redis: RedisLike | null = null;
   private readonly memory = new Map<string, { count: number; expiresAt: number }>();
 
   constructor(
@@ -52,14 +55,12 @@ export class InHouseAntiBotProvider implements AntiBotProvider, OnModuleInit {
     }
     try {
       const { default: Redis } = await import('ioredis');
-      const client = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1 });
+      const client: RedisLike = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1 });
       await client.connect();
-      this.redis = client as unknown as { pipeline: () => unknown };
+      this.redis = client;
       this.logger.log('In-house anti-bot Redis counters connected');
     } catch (err) {
-      this.logger.warn(
-        `Anti-bot Redis unavailable, falling back to in-memory: ${(err as Error).message}`,
-      );
+      this.logger.warn(`Anti-bot Redis unavailable, in-memory fallback: ${(err as Error).message}`);
       this.redis = null;
     }
   }
@@ -71,28 +72,25 @@ export class InHouseAntiBotProvider implements AntiBotProvider, OnModuleInit {
     const deviceHash = this.hash(signal.deviceFingerprint || signal.userAgent || 'unknown');
 
     try {
-      // Layer 1 — hard per-IP rate ceiling. Crossing it is a conclusive deny.
+      // Layer 1 — hard per-IP rate ceiling → conclusive deny.
       const ipCount = await this.incr(`tm:ab:ip:${signal.surface}:${ipHash}`, ipWindowSec);
       if (ipCount > ipLimit) {
         await this.record(signal, ipHash, identityHash, deviceHash, ANTI_BOT_REASONS.RateExceeded);
         return { decision: 'deny', reason: ANTI_BOT_REASONS.RateExceeded, retryAfterSeconds: ipWindowSec };
       }
 
-      // Layer 2 — softer per-identity velocity. Crossing it is a challenge.
-      const identityCount = await this.incr(
-        `tm:ab:id:${signal.surface}:${identityHash}`,
-        ipWindowSec,
-      );
-      if (identityCount > identityLimit) {
+      // Layer 2 — softer per-identity velocity → challenge.
+      const idCount = await this.incr(`tm:ab:id:${signal.surface}:${identityHash}`, ipWindowSec);
+      if (idCount > identityLimit) {
         await this.record(signal, ipHash, identityHash, deviceHash, ANTI_BOT_REASONS.VelocityAnomaly);
         return { decision: 'challenge', reason: ANTI_BOT_REASONS.VelocityAnomaly, retryAfterSeconds: ipWindowSec };
       }
 
       // Layer 3 — persisted duplicate-device / duplicate-identity heuristics.
       const heuristic = await this.checkPersistedHeuristics(identityHash, deviceHash);
-      await this.record(signal, ipHash, identityHash, deviceHash, heuristic?.reason);
+      await this.record(signal, ipHash, identityHash, deviceHash, heuristic ?? undefined);
       if (heuristic) {
-        return { decision: 'challenge', reason: heuristic.reason, retryAfterSeconds: ipWindowSec };
+        return { decision: 'challenge', reason: heuristic, retryAfterSeconds: ipWindowSec };
       }
 
       return { decision: 'allow' };
@@ -103,15 +101,11 @@ export class InHouseAntiBotProvider implements AntiBotProvider, OnModuleInit {
     }
   }
 
-  /**
-   * Persisted heuristics: count DISTINCT identities seen for this device and
-   * DISTINCT IPs seen for this identity inside the retention window. Either
-   * fan-out over its ceiling is a sock-puppet / rotation signal → challenge.
-   */
+  /** Distinct identities per device (sock-puppets) and distinct IPs per identity (rotation). */
   private async checkPersistedHeuristics(
     identityHash: string,
     deviceHash: string,
-  ): Promise<{ reason: typeof ANTI_BOT_REASONS.DuplicateDevice | typeof ANTI_BOT_REASONS.DuplicateIdentity } | null> {
+  ): Promise<AntiBotReason | null> {
     const since = new Date(Date.now() - ANTI_BOT_LIMITS.signalTtlDays * 86_400_000);
 
     const deviceRows = await this.prisma.marketplaceAbuseSignal.findMany({
@@ -119,31 +113,30 @@ export class InHouseAntiBotProvider implements AntiBotProvider, OnModuleInit {
       distinct: ['identity_hash'],
       select: { identity_hash: true },
     });
-    const distinctIdentities = new Set(deviceRows.map((r) => r.identity_hash));
-    distinctIdentities.add(identityHash);
-    if (distinctIdentities.size > ANTI_BOT_LIMITS.deviceIdentityFanout) {
-      return { reason: ANTI_BOT_REASONS.DuplicateDevice };
+    const identities = new Set(deviceRows.map((r) => r.identity_hash));
+    identities.add(identityHash);
+    if (identities.size > ANTI_BOT_LIMITS.deviceIdentityFanout) {
+      return ANTI_BOT_REASONS.DuplicateDevice;
     }
 
-    const identityRows = await this.prisma.marketplaceAbuseSignal.findMany({
+    const ipRows = await this.prisma.marketplaceAbuseSignal.findMany({
       where: { identity_hash: identityHash, created_at: { gte: since } },
       distinct: ['ip_hash'],
       select: { ip_hash: true },
     });
-    if (identityRows.length > ANTI_BOT_LIMITS.identityIpFanout) {
-      return { reason: ANTI_BOT_REASONS.DuplicateIdentity };
+    if (ipRows.length > ANTI_BOT_LIMITS.identityIpFanout) {
+      return ANTI_BOT_REASONS.DuplicateIdentity;
     }
-
     return null;
   }
 
-  /** Append one heuristic/abuse row to the PII-governed store. Best-effort. */
+  /** Append one heuristic/abuse row to the PII-governed store. */
   private async record(
     signal: AntiBotSignal,
     ipHash: string,
     identityHash: string,
     deviceHash: string,
-    reason?: string,
+    reason?: AntiBotReason,
   ): Promise<void> {
     await this.prisma.marketplaceAbuseSignal.create({
       data: {
@@ -164,15 +157,12 @@ export class InHouseAntiBotProvider implements AntiBotProvider, OnModuleInit {
   /** Atomic INCR+EXPIRE (Redis) or in-memory fallback. Returns post-incr count. */
   private async incr(key: string, ttlSec: number): Promise<number> {
     if (this.redis) {
-      const pipe = this.redis.pipeline() as {
-        incr: (k: string) => void;
-        expire: (k: string, t: number) => void;
-        exec: () => Promise<Array<[Error | null, number]> | null>;
-      };
+      const pipe = this.redis.pipeline();
       pipe.incr(key);
       pipe.expire(key, ttlSec);
       const result = await pipe.exec();
-      return result?.[0]?.[1] ?? 0;
+      const count = result?.[0]?.[1];
+      return typeof count === 'number' ? count : 0;
     }
     const now = Date.now();
     const existing = this.memory.get(key);

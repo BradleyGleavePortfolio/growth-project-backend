@@ -17,44 +17,25 @@ import {
   ANTI_BOT_SURFACES,
 } from './anti-bot.types';
 
-/**
- * Route metadata key carrying which {@link AntiBotSurface} a handler gates.
- * TM-5 attaches the gate to its apply / account-create handlers with the
- * {@link AntiBotGate} decorator below — the guard is otherwise a no-op, so
- * landing it now (TM-6) cannot affect any existing route.
- */
+/** Route metadata key carrying which {@link AntiBotSurface} a handler gates. */
 export const ANTI_BOT_SURFACE_KEY = 'tm_anti_bot_surface';
 
 /**
- * Decorator TM-5 puts on the apply / account-create handlers:
- *
- *   @AntiBotGate(ANTI_BOT_SURFACES.Apply)
- *   @UseGuards(AntiBotGuard)
- *   @Post('listings/:id/apply')
- *   apply() { ... }
- *
- * The guard reads this metadata to pick the per-surface limits.
+ * Decorator TM-5 puts on the apply / account-create handlers, e.g.
+ *   @AntiBotGate(ANTI_BOT_SURFACES.Apply) @UseGuards(AntiBotGuard) @Post(...)
+ * The guard reads this metadata to pick the per-surface limits; a handler
+ * without it is passed straight through, so landing this now is a no-op.
  */
 export const AntiBotGate = (surface: AntiBotSurface): MethodDecorator =>
   SetMetadata(ANTI_BOT_SURFACE_KEY, surface);
 
 /**
- * AntiBotGuard — the GATE LAYER for the talent-marketplace apply +
- * account-create surface. It does NOT touch Application / Applicant service
- * bodies (TM-5 owns those); it only sits in front of the route, normalizes
- * the request into a PII-light {@link AntiBotSignal}, asks the pluggable
- * provider for a verdict, and translates that verdict into HTTP:
- *
- *  - allow     → request proceeds.
- *  - challenge → 428 Precondition Required + Retry-After + a stable reason
- *                code so TM-5's client renders the challenge.
- *  - deny      → 429 Too Many Requests (rate) / 403 Forbidden (identity) +
- *                Retry-After.
- *
- * A handler with no {@link AntiBotGate} metadata is passed straight through,
- * so attaching this guard globally would be safe — but TM-5 wires it
- * per-route. The verdict body shape is uniform so a prober cannot tell which
- * heuristic fired (mirrors the throttler-exception filter's policy).
+ * AntiBotGuard — the GATE LAYER for the apply + account-create surface. Does
+ * NOT touch Application/Applicant service bodies (TM-5 owns those): it sits in
+ * front of the route, normalizes the request into a PII-light
+ * {@link AntiBotSignal}, asks the pluggable provider, and maps the verdict to
+ * HTTP — allow → pass; challenge → 428; deny → 429 (rate) / 403 (identity).
+ * The body shape is uniform so a prober cannot tell which heuristic fired.
  */
 @Injectable()
 export class AntiBotGuard implements CanActivate {
@@ -86,8 +67,7 @@ export class AntiBotGuard implements CanActivate {
     setHeader?.call(res, 'Retry-After', String(retryAfter));
 
     if (verdict.decision === 'challenge') {
-      // 428 Precondition Required — the client must complete a challenge and
-      // retry. Uniform body; only a stable reason code is exposed.
+      // 428 — client must complete a challenge and retry.
       throw new HttpException(
         {
           statusCode: HttpStatus.PRECONDITION_REQUIRED,
@@ -122,9 +102,9 @@ export class AntiBotGuard implements CanActivate {
   }
 
   /**
-   * Normalize the inbound request into a PII-light signal. IP extraction
-   * follows the Fly trusted-proxy chain used by `UserThrottlerGuard`:
-   * Fly-Client-IP → first X-Forwarded-For hop → socket address.
+   * Normalize the request into a PII-light signal. IP extraction follows the
+   * Fly trusted-proxy chain used by UserThrottlerGuard: Fly-Client-IP → first
+   * X-Forwarded-For hop → socket address.
    */
   private buildSignal(
     req: Record<string, unknown>,
