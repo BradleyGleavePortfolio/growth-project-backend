@@ -22,6 +22,7 @@ documentation:
 | ADR | Status | Title |
 |---|---|---|
 | [`adr-0001-team-mode-foundation.md`](./adr-0001-team-mode-foundation.md) | Implemented (v1, 2026-05-10) | Team Mode foundation: multi-staff coaching businesses |
+| [`adr-0002-talent-marketplace-rebuild.md`](./adr-0002-talent-marketplace-rebuild.md) | Accepted (operator-locked, 2026-06-17) | Talent Marketplace rebuild: two-sided job board, Connect reuse, in-house verification & anti-bot |
 
 ADR-0001 §10 was resolved on 2026-05-10 by Bradley; the resolutions
 are recorded inline as §10a of the ADR. The v1 implementation
