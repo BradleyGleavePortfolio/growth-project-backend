@@ -20,7 +20,7 @@ type IdempotencyMock = {
     findUnique: jest.Mock;
     update: jest.Mock;
     updateMany: jest.Mock;
-    delete: jest.Mock;
+    deleteMany: jest.Mock;
   };
 };
 
@@ -31,7 +31,7 @@ function makePrismaMock(): IdempotencyMock {
       findUnique: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
-      delete: jest.fn(),
+      deleteMany: jest.fn(),
     },
   };
 }
@@ -190,6 +190,33 @@ describe('MarketplaceIdempotencyService', () => {
     });
   });
 
+  // F3: when the stale reclaim loses the race AND the winner is itself a fresh
+  // pending claim still within the TTL, the recursive re-read must surface
+  // `in_flight` — never the old bogus {outcome:'replay', response:null}.
+  it('stale reclaim lost to a fresh-pending winner returns in_flight', async () => {
+    prisma.marketplaceMutationIdempotency.create.mockRejectedValue(p2002());
+    prisma.marketplaceMutationIdempotency.findUnique
+      .mockResolvedValueOnce({
+        id: 'stale-row',
+        status: 'pending',
+        response: null,
+        created_at: new Date(Date.now() - 700_000), // stale on first read
+      })
+      .mockResolvedValueOnce({
+        id: 'stale-row',
+        status: 'pending',
+        response: null,
+        created_at: new Date(), // winner's fresh claim, within TTL
+      });
+    prisma.marketplaceMutationIdempotency.updateMany.mockResolvedValue({
+      count: 0, // someone else reclaimed first
+    });
+
+    const result = await service.claimOrReplay(KEY_ARGS);
+
+    expect(result).toEqual({ outcome: 'in_flight' });
+  });
+
   it('row vanished between insert and read is reclaimed', async () => {
     prisma.marketplaceMutationIdempotency.create
       .mockRejectedValueOnce(p2002())
@@ -198,7 +225,7 @@ describe('MarketplaceIdempotencyService', () => {
 
     const result = await service.claimOrReplay(KEY_ARGS);
 
-    expect(result).toEqual({ outcome: 'claimed' });
+    expect(result.outcome).toBe('claimed');
     expect(prisma.marketplaceMutationIdempotency.create).toHaveBeenCalledTimes(2);
   });
 
@@ -209,13 +236,24 @@ describe('MarketplaceIdempotencyService', () => {
     await expect(service.claimOrReplay(KEY_ARGS)).rejects.toThrow('db down');
   });
 
-  it('markCompleted persists response and flips status to completed', async () => {
-    prisma.marketplaceMutationIdempotency.update.mockResolvedValue({});
+  const NONCE = 'nonce-aaaa';
 
-    await service.markCompleted(KEY_ARGS, { ok: true });
+  it('markCompleted persists response and flips status to completed (nonce match)', async () => {
+    prisma.marketplaceMutationIdempotency.updateMany.mockResolvedValue({
+      count: 1,
+    });
 
-    expect(prisma.marketplaceMutationIdempotency.update).toHaveBeenCalledWith(
+    const result = await service.markCompleted(KEY_ARGS, NONCE, { ok: true });
+
+    expect(result).toEqual({ outcome: 'ok' });
+    expect(prisma.marketplaceMutationIdempotency.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: expect.objectContaining({
+          user_id: USER_ID,
+          route_key: ROUTE_KEY,
+          idempotency_key: KEY,
+          claim_nonce: NONCE,
+        }),
         data: expect.objectContaining({
           status: 'completed',
           response: { ok: true },
@@ -224,32 +262,63 @@ describe('MarketplaceIdempotencyService', () => {
     );
   });
 
+  // F1 REGRESSION: a reclaimed original owner (slow-but-alive, past TTL) holds a
+  // STALE nonce. The TTL sweep rotated the row's nonce to the new owner's, so
+  // the dead owner's markCompleted matches zero rows. It MUST be rejected as a
+  // typed conflict — never a silent blind update that double-executes the
+  // mutation alongside the reclaiming caller.
+  it('F1: reclaimed owner markCompleted is fenced (typed conflict, no blind write)', async () => {
+    prisma.marketplaceMutationIdempotency.updateMany.mockResolvedValue({
+      count: 0, // row's claim_nonce was rotated by reclaimStale — no match
+    });
+
+    const result = await service.markCompleted(KEY_ARGS, 'stale-nonce', {
+      ok: true,
+    });
+
+    expect(result).toEqual({ outcome: 'conflict' });
+  });
+
   // P1-8 root cause: releaseClaim must NOT swallow its error. A failed delete
   // surfaces (fail-fast / R70) instead of silently orphaning the pending row.
   it('releaseClaim surfaces delete errors (no swallow)', async () => {
     const delErr = new Error('delete failed');
-    prisma.marketplaceMutationIdempotency.delete.mockRejectedValue(delErr);
+    prisma.marketplaceMutationIdempotency.deleteMany.mockRejectedValue(delErr);
 
-    await expect(service.releaseClaim(KEY_ARGS)).rejects.toThrow(
+    await expect(service.releaseClaim(KEY_ARGS, NONCE)).rejects.toThrow(
       'delete failed',
     );
   });
 
-  it('releaseClaim deletes the pending claim on success', async () => {
-    prisma.marketplaceMutationIdempotency.delete.mockResolvedValue({});
+  it('releaseClaim deletes the pending claim on success (nonce match)', async () => {
+    prisma.marketplaceMutationIdempotency.deleteMany.mockResolvedValue({
+      count: 1,
+    });
 
-    await service.releaseClaim(KEY_ARGS);
+    const result = await service.releaseClaim(KEY_ARGS, NONCE);
 
-    expect(prisma.marketplaceMutationIdempotency.delete).toHaveBeenCalledWith(
+    expect(result).toEqual({ outcome: 'ok' });
+    expect(prisma.marketplaceMutationIdempotency.deleteMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: {
-          user_id_route_key_idempotency_key: {
-            user_id: USER_ID,
-            route_key: ROUTE_KEY,
-            idempotency_key: KEY,
-          },
-        },
+        where: expect.objectContaining({
+          user_id: USER_ID,
+          route_key: ROUTE_KEY,
+          idempotency_key: KEY,
+          claim_nonce: NONCE,
+        }),
       }),
     );
+  });
+
+  // F1: a reclaimed owner's releaseClaim must not delete the NEW owner's live
+  // claim — nonce mismatch matches zero rows and returns a typed conflict.
+  it('F1: reclaimed owner releaseClaim is fenced (no-op conflict)', async () => {
+    prisma.marketplaceMutationIdempotency.deleteMany.mockResolvedValue({
+      count: 0,
+    });
+
+    const result = await service.releaseClaim(KEY_ARGS, 'stale-nonce');
+
+    expect(result).toEqual({ outcome: 'conflict' });
   });
 });
