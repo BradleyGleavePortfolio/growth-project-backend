@@ -315,7 +315,20 @@ export class NotificationsService {
     }
 
     // Push rate limit: at most 1 push per user per kind per 60 seconds.
-    if (channel === 'push') {
+    //
+    // R81 (PR-395/#402 rebuild, N1): the throttle lives in module-level process
+    // state (`recentPushes`), which does NOT participate in the caller's
+    // transaction. Mutating it here, before the ambient `tx` commits, opens a
+    // lost-push seam: if the outer Stripe webhook transaction rolls back after
+    // this write and Stripe redelivers the same event within 60s, the retry
+    // would commit the in-app row but find `recentPushes` still primed and
+    // silently drop the push. We therefore ONLY apply the in-process throttle
+    // for autocommit writes (`tx` undefined). When a `tx` is supplied the caller
+    // is a transactional emit whose exactly-once guarantee is already enforced
+    // by a DB-backed ledger (e.g. CoachFirstPaymentNotification.coachId @unique),
+    // so generic per-process push throttling is both unnecessary and unsafe —
+    // its state cannot roll back with the transaction.
+    if (channel === 'push' && !tx) {
       const key = `${input.user_id}:${input.kind}`;
       const last = recentPushes.get(key) ?? 0;
       const now = Date.now();
