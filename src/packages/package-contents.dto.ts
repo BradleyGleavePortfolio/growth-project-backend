@@ -293,3 +293,19 @@ export const PushToExistingSchema = z
     message: 'either push:true or a non-empty fields array is required',
   });
 export type PushToExistingInput = z.infer<typeof PushToExistingSchema>;
+
+// Strict response envelope for the push action. Parsing the service's
+// return value through this schema on the way out is a runtime fence:
+// `.strict()` rejects any unknown key, so a future edit that accidentally
+// adds an internal field (buyer ids, content row internals) to the return
+// object fails loudly instead of silently leaking it to the API consumer.
+export const PushToExistingResponseSchema = z
+  .object({
+    drops_updated: z.number().int().nonnegative(),
+    buyers_affected: z.number().int().nonnegative(),
+    skipped_delivered: z.number().int().nonnegative(),
+  })
+  .strict();
+export type PushToExistingResponse = z.infer<
+  typeof PushToExistingResponseSchema
+>;

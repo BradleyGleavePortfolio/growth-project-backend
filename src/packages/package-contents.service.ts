@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -15,11 +16,14 @@ import {
   CreateContentSchema,
   PatchContentSchema,
   PushToExistingSchema,
+  PushToExistingResponseSchema,
   ReorderContentSchema,
   type AssetType,
   type CadenceKind,
+  type PushToExistingResponse,
 } from './package-contents.dto';
 import { computeFireAt as sharedComputeFireAt } from './drip-fire-at';
+import { AuditService } from '../audit/audit.service';
 
 // Prisma's `TransactionClient` minus `$transaction` / `$connect` / etc.
 // Used as the in-transaction handle we thread through the read+write
@@ -62,6 +66,7 @@ export class PackageContentsService {
     private readonly prisma: PrismaService,
     private readonly packages: PackagesService,
     private readonly subCoachScope: SubCoachScopeService,
+    private readonly audit: AuditService,
   ) {}
 
   // ── public API ─────────────────────────────────────────────────────────
@@ -469,11 +474,7 @@ export class PackageContentsService {
     packageId: string,
     contentId: string,
     body: unknown,
-  ): Promise<{
-    drops_updated: number;
-    buyers_affected: number;
-    skipped_delivered: number;
-  }> {
+  ): Promise<PushToExistingResponse> {
     await this.packages.requireOwnedPackage(coachUserId, packageId);
     const parsed = PushToExistingSchema.safeParse(body);
     if (!parsed.success) {
@@ -527,12 +528,12 @@ export class PackageContentsService {
     if (pendingIds.length === 0) {
       // No drops to touch — the push is a no-op but the call still
       // succeeds so the mobile UI can show the skipped-delivered
-      // figure for context.
-      return {
+      // figure for context. No audit entry: nothing mutated.
+      return PushToExistingResponseSchema.parse({
         drops_updated: 0,
         buyers_affected: 0,
         skipped_delivered,
-      };
+      });
     }
 
     // Defensive cap. ScheduledDrop count for a single content is
@@ -645,17 +646,18 @@ export class PackageContentsService {
           anchor,
           sharedNow,
         );
-        await tx.scheduledDrop.update({
-          // Re-assert status='pending' in the WHERE so a sibling
-          // dispatcher claim mid-tx can never flip a row we believed
-          // was pending. With this composite filter Prisma's update
-          // throws P2025 when the row was claimed under us, rolling
-          // the whole push back — the dispatch wins, the push retries
-          // from a clean slate next call. Use updateMany so the
-          // composite filter is honored; count===1 indicates success,
-          // count===0 means the row was claimed under us and we
-          // must roll the tx back so the partial push doesn't leak.
-          where: { id: drop.id },
+        // Re-assert status='pending' in the WHERE so a sibling
+        // dispatcher claim mid-tx can never flip a row we believed
+        // was pending. updateMany honors the composite filter:
+        // count===1 means we won the row; count===0 means the
+        // dispatcher claimed it (status→'dispatching') between our
+        // inner findMany and this write. On count===0 we throw so the
+        // ENTIRE transaction rolls back — the dispatch wins, no partial
+        // push leaks, and the coach retries from a clean snapshot.
+        // NEVER pre-check then update separately (that re-opens the
+        // race); the filtered updateMany is the atomic check-and-set.
+        const updated = await tx.scheduledDrop.updateMany({
+          where: { id: drop.id, status: 'pending' },
           data: {
             display_title: liveContent.display_title,
             display_caption: liveContent.display_caption,
@@ -666,6 +668,11 @@ export class PackageContentsService {
             fire_at: newFireAt,
           },
         });
+        if (updated.count !== 1) {
+          throw new ConflictException(
+            'Drop claimed by dispatcher; tx rolled back',
+          );
+        }
         dropsUpdated += 1;
         buyersTouched.add(drop.client_purchase_id);
       }
@@ -680,11 +687,37 @@ export class PackageContentsService {
       `pushToExisting: package=${packageId} content=${contentId} drops_updated=${result.drops_updated} buyers_affected=${result.buyers_affected} skipped_delivered=${skipped_delivered}`,
     );
 
-    return {
+    // Durable audit trail for a high-value bulk coach mutation. Written
+    // AFTER the $transaction commits, so a rolled-back push (e.g. F1
+    // dispatcher-claim ConflictException) never records a success entry.
+    // Audit failure must NOT surface as a 500 — AuditService.write already
+    // swallows internally, but we wrap defensively so a future change to
+    // its contract can never break the push response.
+    try {
+      await this.audit.write({
+        action: 'package.push_to_existing_drops',
+        actorId: coachUserId,
+        tenantCoachId: coachUserId,
+        targetType: 'coach_package_content',
+        targetId: contentId,
+        metadata: {
+          packageId,
+          contentId,
+          dropsUpdated: result.drops_updated,
+          buyersAffected: result.buyers_affected,
+          skippedDelivered: skipped_delivered,
+        },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`pushToExisting audit write failed: ${msg}`);
+    }
+
+    return PushToExistingResponseSchema.parse({
       drops_updated: result.drops_updated,
       buyers_affected: result.buyers_affected,
       skipped_delivered,
-    };
+    });
   }
 
   // Atomic reorder. The caller MUST supply exactly the current set of
