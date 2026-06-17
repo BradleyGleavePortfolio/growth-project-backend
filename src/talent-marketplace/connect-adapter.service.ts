@@ -3,12 +3,25 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   CoachConnectService,
   CoachConnectStatus,
   OnboardingLink,
 } from '../coach-connect/coach-connect.service';
+
+// Structured codes emitted in the client-facing envelope (PAYMENTS_*) plus the
+// upstream codes this adapter compares against (CONNECT_*). Extracted to a typed
+// const-object so a typo can never compile + ship; clients and tests depend on
+// the literal VALUES, so those are frozen here.
+export const TalentConnectErrorCode = {
+  PAYMENTS_PROVIDER_TIMEOUT: 'PAYMENTS_PROVIDER_TIMEOUT',
+  PAYMENTS_PROVIDER_ERROR: 'PAYMENTS_PROVIDER_ERROR',
+  CONNECT_ONBOARDING_UNAVAILABLE: 'CONNECT_ONBOARDING_UNAVAILABLE',
+  CONNECT_NOT_CONFIGURED: 'CONNECT_NOT_CONFIGURED',
+} as const;
+export type TalentConnectErrorCode =
+  (typeof TalentConnectErrorCode)[keyof typeof TalentConnectErrorCode];
 
 // TM-10 — Talent-marketplace Connect reuse adapter.
 //
@@ -25,16 +38,23 @@ import {
 //   - structured Stripe error envelopes (PAYMENTS_PROVIDER_* /
 //     CONNECT_ONBOARDING_UNAVAILABLE) so upstream detail never leaks;
 //   - a 10s AbortController timeout guard on the delegated provider call;
-//   - deterministic Stripe Idempotency-Keys, derived with crypto.createHash
-//     (the old hand-rolled hashReturnUrl is replaced — see deriveIdempotencyKey).
+//   - a deterministic adapter-side correlation token, derived with
+//     crypto.createHash (replaces the old hand-rolled hashReturnUrl — see
+//     deriveCorrelationKey; this is NOT the provider Idempotency-Key).
 
 const PROVIDER_TIMEOUT_MS = 10_000;
 
 // Marketplace-facing onboarding result. Carries the same hosted URL the
-// existing surface returns plus the deterministic Stripe Idempotency-Key the
-// adapter derived, so callers can correlate retries.
+// existing surface returns plus an adapter-side correlation token.
+//
+// NOTE: `correlation_key` is NOT the Stripe Idempotency-Key. The real
+// Idempotency-Key is owned by the untouched /coach/connect/* delegate
+// (account_link:<id>:<5min-bucket>) and is never passed through this adapter
+// (the delegate signature accepts only coachUserId — append-only R71). This
+// token is a deterministic adapter-side correlator for grouping retries of a
+// given (coach, context) pair; do not assume Stripe ever saw it.
 export interface TalentOnboardingLink extends OnboardingLink {
-  idempotency_key: string;
+  correlation_key: string;
 }
 
 @Injectable()
@@ -50,11 +70,11 @@ export class TalentConnectAdapter {
     coachUserId: string,
     returnContext = 'talent-onboarding',
   ): Promise<TalentOnboardingLink> {
-    const idempotencyKey = this.deriveIdempotencyKey(coachUserId, returnContext);
+    const correlationKey = this.deriveCorrelationKey(coachUserId, returnContext);
     const link = await this.withProviderEnvelope('onboarding-link', () =>
       this.coachConnect.createOnboardingLink(coachUserId),
     );
-    return { ...link, idempotency_key: idempotencyKey };
+    return { ...link, correlation_key: correlationKey };
   }
 
   // GET /talent status — maps the shared status shape onto the marketplace
@@ -69,11 +89,11 @@ export class TalentConnectAdapter {
 
   // ── helpers ───────────────────────────────────────────────────────
 
-  // Deterministic Stripe Idempotency-Key. crypto.createHash (Node builtin)
-  // REPLACES the dropped branch's hand-rolled hashReturnUrl: a real digest
-  // avoids the collisions a 32-bit polynomial hash could produce across
-  // coach/context pairs.
-  private deriveIdempotencyKey(coachUserId: string, context: string): string {
+  // Deterministic adapter-side correlation token (NOT Stripe's Idempotency-Key
+  // — see TalentOnboardingLink). crypto.createHash (Node builtin) gives a real
+  // digest, avoiding the collisions a 32-bit polynomial hash could produce
+  // across coach/context pairs.
+  private deriveCorrelationKey(coachUserId: string, context: string): string {
     const digest = createHash('sha256')
       .update(`${coachUserId}:${context}`)
       .digest('hex')
@@ -102,6 +122,12 @@ export class TalentConnectAdapter {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
     try {
+      // NOTE: this Promise.race bounds CALLER-VISIBLE latency only. The
+      // delegate is not signal-aware, so aborting here does NOT cancel the
+      // in-flight Stripe request — it runs to completion in the background.
+      // TODO: true upstream cancellation requires threading this AbortSignal
+      // through the shared /coach/connect/* surface, which is out of scope for
+      // an append-only adapter (R71) and needs an ADR + operator sign-off.
       return await Promise.race([call(), this.abortGuard<T>(controller.signal)]);
     } catch (err) {
       throw this.toProviderEnvelope(op, err);
@@ -132,16 +158,32 @@ export class TalentConnectAdapter {
       this.logger.error(
         `Talent Connect ${op} timed out after ${PROVIDER_TIMEOUT_MS}ms`,
       );
-      return new ServiceUnavailableException('PAYMENTS_PROVIDER_TIMEOUT');
+      return new ServiceUnavailableException(
+        TalentConnectErrorCode.PAYMENTS_PROVIDER_TIMEOUT,
+      );
     }
     if (this.isConnectUnavailable(err)) {
-      this.logger.error(
-        `Talent Connect ${op} unavailable: ${this.describe(err)}`,
+      this.logServerError(op, 'unavailable', err);
+      return new ServiceUnavailableException(
+        TalentConnectErrorCode.CONNECT_ONBOARDING_UNAVAILABLE,
       );
-      return new ServiceUnavailableException('CONNECT_ONBOARDING_UNAVAILABLE');
     }
-    this.logger.error(`Talent Connect ${op} failed: ${this.describe(err)}`);
-    return new ServiceUnavailableException('PAYMENTS_PROVIDER_ERROR');
+    this.logServerError(op, 'failed', err);
+    return new ServiceUnavailableException(
+      TalentConnectErrorCode.PAYMENTS_PROVIDER_ERROR,
+    );
+  }
+
+  // Server-side error logging with a generated correlation id. The error
+  // message can name Stripe secrets (sk_live_/sk_test_), bearer tokens, or
+  // PII, so it is REDACTED before it ever reaches the logger — only err.name,
+  // the correlation id, and the scrubbed message are emitted.
+  private logServerError(op: string, kind: string, err: unknown): void {
+    const correlationId = randomUUID();
+    const name = err instanceof Error ? err.name : 'NonError';
+    this.logger.error(
+      `Talent Connect ${op} ${kind} [${correlationId}] ${name}: ${this.redact(err)}`,
+    );
   }
 
   // The shared surface raises ServiceUnavailableException with a
@@ -157,13 +199,19 @@ export class TalentConnectAdapter {
         : ((response as { error?: unknown; message?: unknown }).error ??
             (response as { message?: unknown }).message);
     return (
-      code === 'CONNECT_NOT_CONFIGURED' ||
-      code === 'CONNECT_ONBOARDING_UNAVAILABLE'
+      code === TalentConnectErrorCode.CONNECT_NOT_CONFIGURED ||
+      code === TalentConnectErrorCode.CONNECT_ONBOARDING_UNAVAILABLE
     );
   }
 
-  private describe(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
+  // Strip secrets/tokens/PII from an error message before it is logged:
+  // Stripe API keys (sk_live_/sk_test_), bearer tokens, and email addresses.
+  private redact(err: unknown): string {
+    const raw = err instanceof Error ? err.message : String(err);
+    return raw
+      .replace(/sk_(?:live|test)_[A-Za-z0-9]+/g, 'sk_[REDACTED]')
+      .replace(/\bBearer\s+[A-Za-z0-9._\-]+/gi, 'Bearer [REDACTED]')
+      .replace(/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g, '[EMAIL]');
   }
 }
 

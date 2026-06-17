@@ -10,6 +10,7 @@
 import { createHash } from 'node:crypto';
 import {
   HttpException,
+  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -97,7 +98,7 @@ describe('TalentConnectAdapter', () => {
       expect(result.expires_at).toBe(LINK.expires_at);
     });
 
-    it('derives a deterministic Idempotency-Key with crypto.createHash', async () => {
+    it('derives a deterministic correlation key with crypto.createHash', async () => {
       coachConnect.createOnboardingLink.mockResolvedValue(LINK);
 
       const expectedDigest = createHash('sha256')
@@ -108,9 +109,9 @@ describe('TalentConnectAdapter', () => {
       const first = await adapter.createOnboardingLink('coach-1');
       const second = await adapter.createOnboardingLink('coach-1');
 
-      expect(first.idempotency_key).toBe(`talent-connect-${expectedDigest}`);
+      expect(first.correlation_key).toBe(`talent-connect-${expectedDigest}`);
       // Deterministic: identical (coach, context) yields identical key.
-      expect(second.idempotency_key).toBe(first.idempotency_key);
+      expect(second.correlation_key).toBe(first.correlation_key);
     });
 
     it('namespaces the key per returnContext', async () => {
@@ -119,14 +120,14 @@ describe('TalentConnectAdapter', () => {
       const a = await adapter.createOnboardingLink('coach-1', 'apply');
       const b = await adapter.createOnboardingLink('coach-1', 'offer-accept');
 
-      expect(a.idempotency_key).not.toBe(b.idempotency_key);
+      expect(a.correlation_key).not.toBe(b.correlation_key);
     });
 
     it('uses a real crypto digest, not a hand-rolled 32-bit hash', async () => {
       coachConnect.createOnboardingLink.mockResolvedValue(LINK);
 
       const result = await adapter.createOnboardingLink('coach-1');
-      const digest = result.idempotency_key.replace('talent-connect-', '');
+      const digest = result.correlation_key.replace('talent-connect-', '');
 
       // A real sha256 hex slice is 32 lowercase hex chars; the dropped
       // hand-rolled hash produced a short variable-length base-16 string.
@@ -147,6 +148,29 @@ describe('TalentConnectAdapter', () => {
       expect(await rejectionCode(adapter.createOnboardingLink('coach-1'))).toBe(
         'PAYMENTS_PROVIDER_ERROR',
       );
+    });
+
+    it('redacts Stripe secrets/tokens/PII before logging the cause', async () => {
+      const logSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      coachConnect.createOnboardingLink.mockRejectedValue(
+        new Error(
+          'stripe exploded sk_live_secret123 Bearer abc.def-123 user@example.com',
+        ),
+      );
+
+      await rejectionCode(adapter.createOnboardingLink('coach-1'));
+
+      expect(logSpy).toHaveBeenCalled();
+      const logged = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      // The raw secret/token/PII must never reach the logger.
+      expect(logged).not.toContain('sk_live_secret123');
+      expect(logged).not.toContain('abc.def-123');
+      expect(logged).not.toContain('user@example.com');
+      // Redacted markers prove the scrubbing ran.
+      expect(logged).toContain('sk_[REDACTED]');
+      expect(logged).toContain('[EMAIL]');
     });
 
     it('maps a CONNECT_NOT_CONFIGURED failure to CONNECT_ONBOARDING_UNAVAILABLE', async () => {
