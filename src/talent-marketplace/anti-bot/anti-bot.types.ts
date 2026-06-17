@@ -1,8 +1,9 @@
 /**
  * TM-6 — Anti-bot / abuse gate: provider-agnostic contract.
  *
- * Protects the talent-marketplace apply + account-create surface (the product's
- * highest-abuse path). This file is the contract only; the provider is pluggable
+ * Protects the talent-marketplace apply + account-create + listing-publish
+ * surfaces (the product's highest-abuse paths). This file is the contract only;
+ * the provider is pluggable
  * behind {@link AntiBotProvider} so a Turnstile/hCaptcha-class vendor COULD slot
  * in later, but the shipped default is in-house (operator ruling: no paid
  * vendor). GATE LAYER only — never touches Application/Applicant service bodies
@@ -13,6 +14,7 @@
 export const ANTI_BOT_SURFACES = {
   Apply: 'apply',
   AccountCreate: 'account-create',
+  ListingPublish: 'listing-publish',
 } as const;
 
 export type AntiBotSurface =

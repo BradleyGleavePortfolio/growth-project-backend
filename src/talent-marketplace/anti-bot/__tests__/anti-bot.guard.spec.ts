@@ -107,6 +107,19 @@ describe('AntiBotGuard', () => {
     await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('gates the listing-publish surface and forwards it to the provider', async () => {
+    const provider: AntiBotProvider = {
+      id: 'stub',
+      evaluate: jest.fn(async () => ({ decision: 'allow' as const })),
+    };
+    const guard = new AntiBotGuard(stubReflector(ANTI_BOT_SURFACES.ListingPublish), provider);
+    const { ctx } = makeContext(ANTI_BOT_SURFACES.ListingPublish, baseReq());
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(provider.evaluate).toHaveBeenCalledWith(
+      expect.objectContaining({ surface: ANTI_BOT_SURFACES.ListingPublish }),
+    );
+  });
+
   it('reads the surface metadata key from handler + class', async () => {
     const provider: AntiBotProvider = { id: 'stub', evaluate: jest.fn(async () => ({ decision: 'allow' as const })) };
     const reflector = stubReflector(ANTI_BOT_SURFACES.Apply);
