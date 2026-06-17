@@ -24,16 +24,14 @@ function makeGuard(opts: {
   return { guard: new HirerVerifiedGuard(prisma), count, findUnique };
 }
 
-// Builds just the slice of ExecutionContext the guard reads
-// (switchToHttp().getRequest()), assembled onto a fresh object typed as
-// Pick<ExecutionContext, 'switchToHttp'> so no whole-context cast is needed.
+// A typed, minimal ExecutionContext exposing only switchToHttp().getRequest()
+// — same idiom as src/community/ack/ack.controller.spec.ts.
 function ctx(user: { id: string; role: string } | null): ExecutionContext {
   const partial: Pick<ExecutionContext, 'switchToHttp'> = {
-    switchToHttp: () => ({
-      getRequest: () => ({ user }),
-      getResponse: () => ({}),
-      getNext: () => ({}),
-    }),
+    switchToHttp: () =>
+      ({ getRequest: () => ({ user }) }) as ReturnType<
+        ExecutionContext['switchToHttp']
+      >,
   };
   return partial as ExecutionContext;
 }

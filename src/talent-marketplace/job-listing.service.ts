@@ -145,13 +145,13 @@ export class JobListingService {
       case 'commission':
         return { rate_pct: this.pct(terms, 'rate_pct') };
       case 'rev_share': {
-        const out: Prisma.InputJsonObject = {
-          rate_pct: this.pct(terms, 'rate_pct'),
-        };
-        if (terms.cap_usd !== undefined && terms.cap_usd !== null) {
-          out.cap_usd = this.money(terms, 'cap_usd');
-        }
-        return out;
+        const hasCap = terms.cap_usd !== undefined && terms.cap_usd !== null;
+        return hasCap
+          ? {
+              rate_pct: this.pct(terms, 'rate_pct'),
+              cap_usd: this.money(terms, 'cap_usd'),
+            }
+          : { rate_pct: this.pct(terms, 'rate_pct') };
       }
       case 'flat':
         return {
