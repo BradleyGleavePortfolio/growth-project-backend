@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 
@@ -37,9 +38,35 @@ interface ClaimKey {
   idempotencyKey: string;
 }
 
+/**
+ * Outcome of claimOrReplay — a discriminated union the caller MUST switch on:
+ *
+ *   - claimed:   the caller now owns the claim and must execute the mutation,
+ *                then call markCompleted/releaseClaim with `claimNonce`. The
+ *                nonce is a fencing token: a stale owner that was reclaimed
+ *                holds an OLD nonce and its completion is rejected, so the same
+ *                mutation never runs twice (F1).
+ *   - replay:    a `completed` row with a real stored response already exists;
+ *                return it verbatim without re-executing. Only ever produced
+ *                once a genuine completed response exists (F2) — never for an
+ *                in-flight pending row.
+ *   - in_flight: a sibling request claimed this (user, route, key) within the
+ *                TTL and is genuinely mid-flight. The caller must NOT execute
+ *                and should surface a retryable conflict (F2) rather than a
+ *                bogus success.
+ */
 export type ClaimOrReplayResult =
-  | { outcome: 'claimed' }
-  | { outcome: 'replay'; response: Prisma.JsonValue };
+  | { outcome: 'claimed'; claimNonce: string }
+  | { outcome: 'replay'; response: Prisma.JsonValue }
+  | { outcome: 'in_flight' };
+
+/**
+ * Result of a fencing-guarded write (markCompleted / releaseClaim). `ok` when
+ * the caller still owned the claim; `conflict` when the claim was reclaimed
+ * out from under them (their nonce no longer matches). A conflict is NEVER a
+ * silent blind write — the caller learns their mutation lost the claim.
+ */
+export type ClaimWriteResult = { outcome: 'ok' } | { outcome: 'conflict' };
 
 /**
  * MarketplaceIdempotencyService — per-route mutation idempotency ledger backed
@@ -49,15 +76,19 @@ export type ClaimOrReplayResult =
  *
  * Contract:
  *   - claimOrReplay: atomically claim a (user, route, key) by inserting a
- *     `pending` row. If a completed row already exists, return its stored
- *     response (replay). If a `pending` row exists but is older than the TTL,
- *     reclaim it (P1-8 staleness sweep). A fresh `pending` row that is within
- *     the TTL means a sibling request is genuinely in flight — surface that to
- *     the caller rather than double-executing.
- *   - markCompleted: persist the response and flip the claim to `completed`.
- *   - releaseClaim: delete the caller's `pending` claim after a mutation error
- *     so a corrected retry can proceed. Errors are surfaced (R70 fail-fast),
- *     never swallowed — that swallow was the root cause of P1-8.
+ *     `pending` row stamped with a fresh fencing `claim_nonce`. If a completed
+ *     row with a stored response already exists, replay it. If a `pending` row
+ *     exists but is older than the TTL, reclaim it (P1-8 staleness sweep) and
+ *     ROTATE the nonce so the dead owner is fenced (F1). A fresh `pending` row
+ *     within the TTL means a sibling is genuinely in flight — return
+ *     `in_flight` rather than double-executing (F2).
+ *   - markCompleted: compare-and-set on `claim_nonce`. Persists the response
+ *     and flips to `completed` ONLY if the caller still owns the claim. A
+ *     reclaimed owner's completion is rejected as a typed conflict (F1) — never
+ *     a silent blind update.
+ *   - releaseClaim: compare-and-set delete of the caller's `pending` claim
+ *     after a mutation error so a corrected retry can proceed. Guarded on
+ *     `claim_nonce` so a reclaimed owner cannot delete the new owner's claim.
  */
 @Injectable()
 export class MarketplaceIdempotencyService {
@@ -67,6 +98,7 @@ export class MarketplaceIdempotencyService {
 
   async claimOrReplay(key: ClaimKey): Promise<ClaimOrReplayResult> {
     const { userId, routeKey, idempotencyKey } = key;
+    const claimNonce = randomUUID();
 
     try {
       await this.prisma.marketplaceMutationIdempotency.create({
@@ -76,9 +108,10 @@ export class MarketplaceIdempotencyService {
           idempotency_key: idempotencyKey,
           status: MARKETPLACE_CLAIM_STATUS_PENDING,
           response: Prisma.JsonNull,
+          claim_nonce: claimNonce,
         },
       });
-      return { outcome: 'claimed' };
+      return { outcome: 'claimed', claimNonce };
     } catch (err) {
       if (
         !(err instanceof Prisma.PrismaClientKnownRequestError) ||
@@ -114,59 +147,89 @@ export class MarketplaceIdempotencyService {
     }
 
     // status === pending. If it is older than the TTL the original owner is
-    // presumed dead (P1-8). Atomically reclaim it; otherwise a sibling is
-    // genuinely mid-flight and the caller must not re-execute.
+    // presumed dead (P1-8). Atomically reclaim it with a rotated nonce that
+    // fences the dead owner; otherwise a sibling is genuinely mid-flight and
+    // the caller must surface a retryable conflict rather than re-execute.
     const ageMs = Date.now() - existing.created_at.getTime();
     if (ageMs <= resolveClaimTtlMs()) {
       this.logger.warn(
         `Active idempotency claim in flight for user=${userId} route=${routeKey}`,
       );
-      return { outcome: 'replay', response: existing.response };
+      return { outcome: 'in_flight' };
     }
 
     return this.reclaimStale(key, existing.id);
   }
 
+  /**
+   * Persist the response and flip the claim to `completed` — but ONLY if the
+   * caller still owns it (claim_nonce matches). Compare-and-set on the nonce
+   * fences a reclaimed dead owner: its stale completion affects zero rows and
+   * returns a typed conflict (F1) instead of blindly overwriting the live
+   * owner's work.
+   */
   async markCompleted(
     key: ClaimKey,
+    claimNonce: string,
     response: Prisma.InputJsonValue,
-  ): Promise<void> {
+  ): Promise<ClaimWriteResult> {
     const { userId, routeKey, idempotencyKey } = key;
-    await this.prisma.marketplaceMutationIdempotency.update({
-      where: {
-        user_id_route_key_idempotency_key: {
+    const updated =
+      await this.prisma.marketplaceMutationIdempotency.updateMany({
+        where: {
           user_id: userId,
           route_key: routeKey,
           idempotency_key: idempotencyKey,
+          claim_nonce: claimNonce,
         },
-      },
-      data: {
-        status: MARKETPLACE_CLAIM_STATUS_COMPLETED,
-        response,
-        completed_at: new Date(),
-      },
-    });
+        data: {
+          status: MARKETPLACE_CLAIM_STATUS_COMPLETED,
+          response,
+          completed_at: new Date(),
+        },
+      });
+    if (updated.count === 0) {
+      this.logger.warn(
+        `markCompleted rejected — claim reclaimed/lost for user=${userId} route=${routeKey}`,
+      );
+      return { outcome: 'conflict' };
+    }
+    return { outcome: 'ok' };
   }
 
-  async releaseClaim(key: ClaimKey): Promise<void> {
+  /**
+   * Delete the caller's `pending` claim after a mutation error so a corrected
+   * retry can proceed. Compare-and-set on claim_nonce so a reclaimed dead owner
+   * cannot delete the NEW owner's live claim (F1). A failed delete still
+   * surfaces (fail-fast / R70) — that swallow was the root cause of P1-8.
+   */
+  async releaseClaim(
+    key: ClaimKey,
+    claimNonce: string,
+  ): Promise<ClaimWriteResult> {
     const { userId, routeKey, idempotencyKey } = key;
-    // Fail-fast (R70): a failed release is the exact bug that produced P1-8.
-    // Surface the error so the caller (and alerting) sees a stuck claim instead
-    // of silently leaving a row that blocks every future replay.
-    await this.prisma.marketplaceMutationIdempotency.delete({
-      where: {
-        user_id_route_key_idempotency_key: {
+    const deleted =
+      await this.prisma.marketplaceMutationIdempotency.deleteMany({
+        where: {
           user_id: userId,
           route_key: routeKey,
           idempotency_key: idempotencyKey,
+          claim_nonce: claimNonce,
         },
-      },
-    });
+      });
+    if (deleted.count === 0) {
+      this.logger.warn(
+        `releaseClaim no-op — claim reclaimed/lost for user=${userId} route=${routeKey}`,
+      );
+      return { outcome: 'conflict' };
+    }
+    return { outcome: 'ok' };
   }
 
   /** Re-attempt the claim after the prior row disappeared concurrently. */
   private async reclaim(key: ClaimKey): Promise<ClaimOrReplayResult> {
     const { userId, routeKey, idempotencyKey } = key;
+    const claimNonce = randomUUID();
     await this.prisma.marketplaceMutationIdempotency.create({
       data: {
         user_id: userId,
@@ -174,19 +237,23 @@ export class MarketplaceIdempotencyService {
         idempotency_key: idempotencyKey,
         status: MARKETPLACE_CLAIM_STATUS_PENDING,
         response: Prisma.JsonNull,
+        claim_nonce: claimNonce,
       },
     });
-    return { outcome: 'claimed' };
+    return { outcome: 'claimed', claimNonce };
   }
 
   /**
    * Reclaim a stale `pending` row by id, guarding on status so we only take it
    * if it is still pending (a concurrent reclaim/complete loses harmlessly).
+   * Rotates `claim_nonce` to a fresh value so the presumed-dead original owner
+   * is fenced: its later markCompleted/releaseClaim no longer matches (F1).
    */
   private async reclaimStale(
     key: ClaimKey,
     rowId: string,
   ): Promise<ClaimOrReplayResult> {
+    const claimNonce = randomUUID();
     const reclaimed =
       await this.prisma.marketplaceMutationIdempotency.updateMany({
         where: { id: rowId, status: MARKETPLACE_CLAIM_STATUS_PENDING },
@@ -195,15 +262,17 @@ export class MarketplaceIdempotencyService {
           response: Prisma.JsonNull,
           created_at: new Date(),
           completed_at: null,
+          claim_nonce: claimNonce,
         },
       });
     if (reclaimed.count === 0) {
-      // Another request reclaimed or completed it first — re-read and replay.
+      // Another request reclaimed or completed it first — re-read and replay
+      // (or surface in_flight if the winner is still pending within the TTL).
       return this.claimOrReplay(key);
     }
     this.logger.warn(
       `Reclaimed stale idempotency claim user=${key.userId} route=${key.routeKey} (P1-8 sweep)`,
     );
-    return { outcome: 'claimed' };
+    return { outcome: 'claimed', claimNonce };
   }
 }

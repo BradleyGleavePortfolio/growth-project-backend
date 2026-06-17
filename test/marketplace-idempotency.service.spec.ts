@@ -58,12 +58,15 @@ describe('MarketplaceIdempotencyService', () => {
     delete process.env.MARKETPLACE_IDEMPOTENCY_CLAIM_TTL_MS;
   });
 
-  it('fresh claim succeeds (no existing row)', async () => {
+  it('fresh claim succeeds (no existing row) and stamps a fencing nonce', async () => {
     prisma.marketplaceMutationIdempotency.create.mockResolvedValue({});
 
     const result = await service.claimOrReplay(KEY_ARGS);
 
-    expect(result).toEqual({ outcome: 'claimed' });
+    expect(result.outcome).toBe('claimed');
+    if (result.outcome !== 'claimed') throw new Error('expected claimed');
+    expect(typeof result.claimNonce).toBe('string');
+    expect(result.claimNonce.length).toBeGreaterThan(0);
     expect(prisma.marketplaceMutationIdempotency.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -71,13 +74,18 @@ describe('MarketplaceIdempotencyService', () => {
           route_key: ROUTE_KEY,
           idempotency_key: KEY,
           status: 'pending',
+          claim_nonce: result.claimNonce,
         }),
       }),
     );
     expect(prisma.marketplaceMutationIdempotency.findUnique).not.toHaveBeenCalled();
   });
 
-  it('duplicate within window replays an in-flight pending claim (no re-execute)', async () => {
+  // F2: a fresh `pending` sibling within the TTL is genuinely in flight. It MUST
+  // surface as `in_flight` — NOT a bogus {outcome:'replay', response:null} that
+  // is indistinguishable from a completed-null response and would let the caller
+  // treat an unfinished mutation as a success.
+  it('duplicate within window returns in_flight (no re-execute, no bogus replay)', async () => {
     prisma.marketplaceMutationIdempotency.create.mockRejectedValue(p2002());
     prisma.marketplaceMutationIdempotency.findUnique.mockResolvedValue({
       id: 'row-1',
@@ -88,7 +96,7 @@ describe('MarketplaceIdempotencyService', () => {
 
     const result = await service.claimOrReplay(KEY_ARGS);
 
-    expect(result).toEqual({ outcome: 'replay', response: null });
+    expect(result).toEqual({ outcome: 'in_flight' });
     expect(prisma.marketplaceMutationIdempotency.updateMany).not.toHaveBeenCalled();
   });
 
@@ -127,10 +135,13 @@ describe('MarketplaceIdempotencyService', () => {
 
     const result = await service.claimOrReplay(KEY_ARGS);
 
-    expect(result).toEqual({ outcome: 'claimed' });
+    expect(result.outcome).toBe('claimed');
+    if (result.outcome !== 'claimed') throw new Error('expected claimed');
+    expect(typeof result.claimNonce).toBe('string');
     expect(prisma.marketplaceMutationIdempotency.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'stale-row', status: 'pending' },
+        data: expect.objectContaining({ claim_nonce: result.claimNonce }),
       }),
     );
   });
@@ -149,7 +160,7 @@ describe('MarketplaceIdempotencyService', () => {
 
     const result = await service.claimOrReplay(KEY_ARGS);
 
-    expect(result).toEqual({ outcome: 'claimed' });
+    expect(result.outcome).toBe('claimed');
   });
 
   it('stale reclaim lost to a concurrent winner re-reads and replays', async () => {
