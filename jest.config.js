@@ -56,6 +56,12 @@ module.exports = {
   // spec files in the source tree, and the root is intentionally the slice
   // subtree ONLY — NOT the whole `src/` tree. All four specs use mocked
   // Prisma/tx (via the asPrismaDouble helper) and need no live DB.
+  // D5=B+γ adds `src/feature-flags` as a TENTH narrowly-scoped root so the
+  // GET /me/feature-flags service + controller specs colocated under
+  // src/feature-flags/__tests__/*.spec.ts are discovered. Same rationale as
+  // the roots above: this slice owns those spec files in the source tree, and
+  // the root is intentionally the slice subtree ONLY — NOT the whole `src/`
+  // tree. Both specs use plain unit doubles (no Prisma, no live DB).
   roots: [
     '<rootDir>/test',
     '<rootDir>/src/roman/voice',
@@ -66,6 +72,7 @@ module.exports = {
     '<rootDir>/src/community/search',
     '<rootDir>/src/community/wearable-prompts',
     '<rootDir>/src/regimes',
+    '<rootDir>/src/feature-flags',
   ],
   testRegex: '\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'mjs', 'json'],
