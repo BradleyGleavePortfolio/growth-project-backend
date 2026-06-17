@@ -11,9 +11,9 @@ import type { AppRole } from '../common/decorators/roles.decorator';
  * @Optional so unit tests can construct this without it.
  *
  * `distinctId` is the opaque server-side userId (AnalyticsService additionally
- * strips PII keys defensively). We emit the role and the flag count — NOT the
- * individual flag values — so the event is a cheap volume/segmentation signal
- * without leaking the full flag map into the analytics pipeline.
+ * strips PII keys defensively). We emit the role and the count of ENABLED flags
+ * — NOT the individual flag values — so the event is a cheap volume/segmentation
+ * signal without leaking the full flag map into the analytics pipeline.
  */
 export const FeatureFlagEvents = {
   EVALUATED: 'feature_flags_evaluated',
@@ -28,7 +28,7 @@ export class FeatureFlagsTelemetry {
 
   evaluated(
     userId: string,
-    props: { role: AppRole; flag_count: number },
+    props: { role: AppRole; enabled_flag_count: number },
   ): void {
     this.analytics?.capture(userId, FeatureFlagEvents.EVALUATED, props);
   }

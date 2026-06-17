@@ -69,7 +69,7 @@ export class FeatureFlagsController {
 
     this.telemetry.evaluated(req.user.id, {
       role,
-      flag_count: Object.keys(flags).length,
+      enabled_flag_count: Object.values(flags).filter(Boolean).length,
     });
 
     return FeatureFlagsResponseSchema.parse({

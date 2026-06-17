@@ -39,16 +39,20 @@ export const FEATURE_FLAG_KEYS = [
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
 
 /**
- * The flag map. Keyed by the stable flag identifiers above; every value is a
- * server-evaluated boolean. Modelled as `z.record(string, boolean)` (per the
- * brief contract) rather than a fixed-key object so the mobile client tolerates
- * the server adding flags without a breaking schema change — the controller
- * always populates exactly FEATURE_FLAG_KEYS.
+ * The flag map. A fixed-key object built from FEATURE_FLAG_KEYS so the contract
+ * is enforced server-side: the response must contain EXACTLY those keys, each a
+ * boolean. `.strict()` rejects any extra key and the required shape rejects a
+ * missing one — so a future refactor that drops or renames a flag fails the
+ * controller's `.parse()` instead of silently shipping a partial map.
  */
+const FlagsShape = Object.fromEntries(
+  FEATURE_FLAG_KEYS.map((key) => [key, z.boolean()]),
+) as Record<FeatureFlagKey, z.ZodBoolean>;
+
 export const FeatureFlagsResponseSchema = z
   .object({
-    flags: z.record(z.string(), z.boolean()),
-    evaluated_at: z.string().datetime(),
+    flags: z.object(FlagsShape).strict(),
+    evaluated_at: z.iso.datetime(),
   })
   .strict();
 

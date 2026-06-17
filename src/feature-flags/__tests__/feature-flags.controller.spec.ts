@@ -9,10 +9,7 @@ import type { AuthedRequest } from '../../auth/auth-request';
 import { FeatureFlagsController } from '../feature-flags.controller';
 import { FeatureFlagsService } from '../feature-flags.service';
 import { FeatureFlagsTelemetry } from '../feature-flags.telemetry';
-import {
-  FEATURE_FLAG_KEYS,
-  FeatureFlagsResponseSchema,
-} from '../feature-flags.dto';
+import { FeatureFlagsResponseSchema } from '../feature-flags.dto';
 
 // @Throttle stores per-bucket metadata under `THROTTLER:LIMIT<name>` /
 // `THROTTLER:TTL<name>`; the unnamed `default` bucket uses the `default`
@@ -25,8 +22,10 @@ function makeReq(userId: string, role: 'coach' | 'owner' | 'student'): AuthedReq
 }
 
 describe('FeatureFlagsController', () => {
+  let evaluate: jest.MockedFunction<FeatureFlagsService['evaluate']>;
+  let evaluated: jest.MockedFunction<FeatureFlagsTelemetry['evaluated']>;
   let service: FeatureFlagsService;
-  let telemetry: { evaluated: jest.Mock };
+  let telemetry: FeatureFlagsTelemetry;
   let controller: FeatureFlagsController;
 
   const ALL_ON = {
@@ -37,12 +36,21 @@ describe('FeatureFlagsController', () => {
   };
 
   beforeEach(() => {
-    service = { evaluate: jest.fn(() => ({ ...ALL_ON })) } as never;
-    telemetry = { evaluated: jest.fn() };
-    controller = new FeatureFlagsController(
-      service,
-      telemetry as unknown as FeatureFlagsTelemetry,
+    evaluate = jest.fn((_ctx) => ({ ...ALL_ON }));
+    evaluated = jest.fn();
+    // Typed test doubles: only the members the controller exercises are
+    // implemented; `flagKeys`/`analytics` are unused by this route. Building
+    // each via Object.assign onto a real instance keeps the value structurally
+    // a FeatureFlagsService/FeatureFlagsTelemetry without any forbidden cast.
+    service = Object.assign(
+      Object.create(FeatureFlagsService.prototype) as FeatureFlagsService,
+      { evaluate },
     );
+    telemetry = Object.assign(
+      Object.create(FeatureFlagsTelemetry.prototype) as FeatureFlagsTelemetry,
+      { evaluated },
+    );
+    controller = new FeatureFlagsController(service, telemetry);
   });
 
   describe('GET /me/feature-flags', () => {
@@ -63,11 +71,12 @@ describe('FeatureFlagsController', () => {
       });
     });
 
-    it('emits feature_flags_evaluated telemetry with role + flag count', () => {
+    it('emits feature_flags_evaluated telemetry with role + enabled flag count', () => {
       controller.getFeatureFlags(makeReq('user-7', 'owner'));
+      const enabledCount = Object.values(ALL_ON).filter(Boolean).length;
       expect(telemetry.evaluated).toHaveBeenCalledWith('user-7', {
         role: 'owner',
-        flag_count: FEATURE_FLAG_KEYS.length,
+        enabled_flag_count: enabledCount,
       });
     });
   });

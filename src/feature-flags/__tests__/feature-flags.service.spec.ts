@@ -69,6 +69,22 @@ describe('FeatureFlagsService', () => {
     expect(flags.community_events).toBe(true);
   });
 
+  it('community_events is OFF when its own env is unset even with the master gate on', () => {
+    process.env.FEATURE_COMMUNITY_API = 'true';
+    // FEATURE_COMMUNITY_EVENTS intentionally left unset.
+    expect(
+      service.evaluate({ userId: 'u1', role: 'owner' }).community_events,
+    ).toBe(false);
+  });
+
+  it('community_search is OFF when its own env is off even with the master gate on', () => {
+    process.env.FEATURE_COMMUNITY_API = 'true';
+    process.env.FEATURE_COMMUNITY_SEARCH = 'false';
+    expect(
+      service.evaluate({ userId: 'u1', role: 'owner' }).community_search,
+    ).toBe(false);
+  });
+
   it('honours the community allowlist when the global master gate is off', () => {
     process.env.FEATURE_COMMUNITY_API = 'false';
     process.env.FEATURE_COMMUNITY_API_ALLOWLIST = 'allowed-user, other';
