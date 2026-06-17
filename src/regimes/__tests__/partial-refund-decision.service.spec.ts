@@ -13,11 +13,42 @@
  */
 
 import { NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PartialRefundDecisionService } from '../partial-refund-decision.service';
 import type { PrismaService } from '../../prisma.service';
 import type { PurchaseFanoutService } from '../../packages/purchase-fanout.service';
 import { asPrismaDouble } from './prisma-test-double';
 import { FEATURE_NAMED_REGIMES_ENV } from '../named-regimes.feature';
+
+/**
+ * Build a P2002 unique-constraint error exactly as Prisma raises it, so the
+ * service's `instanceof PrismaClientKnownRequestError && code === 'P2002'`
+ * branch is exercised against the real error class (not a structural fake).
+ */
+function p2002(): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+    code: 'P2002',
+    clientVersion: 'test',
+    meta: { target: ['stripe_refund_id'] },
+  });
+}
+
+/**
+ * Prisma double whose `$transaction(cb)` runs the callback against a tx client
+ * exposing the supplied partialRefundDecision delegate mocks. Mirrors how
+ * onPartialRefund opens its own $transaction when no ambient tx is passed.
+ */
+function txPrismaDouble(delegate: {
+  findUnique: jest.Mock;
+  create: jest.Mock;
+}): PrismaService {
+  const txClient = { partialRefundDecision: delegate };
+  return asPrismaDouble({
+    $transaction: jest.fn(async (cb: (tx: typeof txClient) => unknown) =>
+      cb(txClient),
+    ),
+  });
+}
 
 function fanoutDouble(canceled = 0): {
   fanout: PurchaseFanoutService;
@@ -42,11 +73,9 @@ describe('PartialRefundDecisionService', () => {
     it('creates a pending decision when the flag is ON', async () => {
       process.env[FEATURE_NAMED_REGIMES_ENV] = 'true';
       const create = jest.fn(async () => ({ id: 'dec-1' }));
-      const prisma = asPrismaDouble({
-        partialRefundDecision: {
-          findUnique: jest.fn(async () => null),
-          create,
-        },
+      const prisma = txPrismaDouble({
+        findUnique: jest.fn(async () => null),
+        create,
       });
       const { fanout } = fanoutDouble();
       const service = new PartialRefundDecisionService(prisma, fanout);
@@ -69,11 +98,28 @@ describe('PartialRefundDecisionService', () => {
     it('is a NO-OP when the feature flag is OFF (flag-off doctrine)', async () => {
       delete process.env[FEATURE_NAMED_REGIMES_ENV];
       const create = jest.fn();
-      const prisma = asPrismaDouble({
-        partialRefundDecision: {
-          findUnique: jest.fn(),
-          create,
-        },
+      const $transaction = jest.fn();
+      const prisma = asPrismaDouble({ $transaction });
+      const { fanout } = fanoutDouble();
+      const service = new PartialRefundDecisionService(prisma, fanout);
+
+      const created = await service.onPartialRefund({
+        client_purchase_id: 'cp-1',
+        stripe_refund_id: 're_123',
+      });
+
+      expect(created).toBe(false);
+      expect(create).not.toHaveBeenCalled();
+      // flag-off short-circuits BEFORE any transaction is opened.
+      expect($transaction).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent on the unique stripe_refund_id (pre-check fast path)', async () => {
+      process.env[FEATURE_NAMED_REGIMES_ENV] = 'true';
+      const create = jest.fn();
+      const prisma = txPrismaDouble({
+        findUnique: jest.fn(async () => ({ id: 'dec-existing' })),
+        create,
       });
       const { fanout } = fanoutDouble();
       const service = new PartialRefundDecisionService(prisma, fanout);
@@ -87,25 +133,59 @@ describe('PartialRefundDecisionService', () => {
       expect(create).not.toHaveBeenCalled();
     });
 
-    it('is idempotent on the unique stripe_refund_id', async () => {
+    it('runs the check-and-create inside a single $transaction', async () => {
       process.env[FEATURE_NAMED_REGIMES_ENV] = 'true';
-      const create = jest.fn();
-      const prisma = asPrismaDouble({
-        partialRefundDecision: {
-          findUnique: jest.fn(async () => ({ id: 'dec-existing' })),
-          create,
-        },
+      const prisma = txPrismaDouble({
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(async () => ({ id: 'dec-1' })),
       });
       const { fanout } = fanoutDouble();
       const service = new PartialRefundDecisionService(prisma, fanout);
 
-      const created = await service.onPartialRefund({
+      await service.onPartialRefund({
         client_purchase_id: 'cp-1',
         stripe_refund_id: 're_123',
       });
 
-      expect(created).toBe(false);
-      expect(create).not.toHaveBeenCalled();
+      // The atomic boundary is the whole point of the F2 fix: a bare
+      // findUnique+create outside a tx is the TOCTOU the audit flagged.
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('two concurrent calls create exactly one row; the racing call swallows P2002 (R81 F2)', async () => {
+      process.env[FEATURE_NAMED_REGIMES_ENV] = 'true';
+
+      // Simulate the TOCTOU window: BOTH deliveries observe findUnique=null
+      // (the first create has not committed yet). The first create wins; the
+      // second hits the unique constraint and Prisma raises P2002.
+      const rows = new Set<string>();
+      const findUnique = jest.fn(async () => null);
+      let createCalls = 0;
+      const create = jest.fn(
+        async (arg: { data: { stripe_refund_id: string } }) => {
+          createCalls += 1;
+          const key = arg.data.stripe_refund_id;
+          if (rows.has(key)) throw p2002();
+          rows.add(key);
+          return { id: `dec-${createCalls}` };
+        },
+      );
+      const prisma = txPrismaDouble({ findUnique, create });
+      const { fanout } = fanoutDouble();
+      const service = new PartialRefundDecisionService(prisma, fanout);
+
+      const args = { client_purchase_id: 'cp-1', stripe_refund_id: 're_race' };
+      const [a, b] = await Promise.all([
+        service.onPartialRefund(args),
+        service.onPartialRefund(args),
+      ]);
+
+      // Exactly one row was created; exactly one call reports it created the row.
+      expect(rows.size).toBe(1);
+      expect([a, b].filter(Boolean)).toHaveLength(1);
+      // Neither call threw - the loser collapsed the P2002 into a no-op (false).
+      expect([a, b].sort()).toEqual([false, true]);
+      expect(create).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -113,8 +193,11 @@ describe('PartialRefundDecisionService', () => {
     function decideHarness(opts: {
       decision: string;
       coach_user_id: string;
+      updateCount?: number;
     }) {
-      const updateMany = jest.fn(async () => ({ count: 1 }));
+      const updateMany = jest.fn(async () => ({
+        count: opts.updateCount ?? 1,
+      }));
       const txClient = {
         partialRefundDecision: { updateMany },
       };
@@ -194,6 +277,30 @@ describe('PartialRefundDecisionService', () => {
       await expect(
         service.decide('coach-1', 're_123', 'unassign_drops'),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('throws and does NOT cancel drops when the guarded update matches zero rows (R81 P1-1 race)', async () => {
+      // The pre-tx findUnique still sees decision='pending' (a concurrent
+      // keep_drops decide has not yet committed its visible read), so the
+      // initial guard passes — but the in-tx WHERE-guarded updateMany matches
+      // ZERO rows because the concurrent call already flipped the row away from
+      // 'pending'. The loser MUST throw (rolling back its own tx) and MUST NOT
+      // run cancelPendingForPurchase: otherwise an unassign_drops loser would
+      // cancel the buyer's drops while the committed decision is keep_drops.
+      const { prisma, updateMany } = decideHarness({
+        decision: 'pending',
+        coach_user_id: 'coach-1',
+        updateCount: 0,
+      });
+      const { fanout, cancel } = fanoutDouble(4);
+      const service = new PartialRefundDecisionService(prisma, fanout);
+
+      await expect(
+        service.decide('coach-1', 're_123', 'unassign_drops'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(updateMany).toHaveBeenCalled();
+      // The drops cancel is gated on the guarded update succeeding.
+      expect(cancel).not.toHaveBeenCalled();
     });
   });
 });

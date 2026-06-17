@@ -10,7 +10,7 @@
  */
 
 import { NotFoundException } from '@nestjs/common';
-import { RegimesService } from '../regimes.service';
+import { RegimesService, REGIME_REVISIONS_HARD_CAP } from '../regimes.service';
 import type { PrismaService } from '../../prisma.service';
 import type { RegimeRevisionRetentionService } from '../regime-revision-retention.service';
 import { asPrismaDouble } from './prisma-test-double';
@@ -182,6 +182,179 @@ describe('RegimesService', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('updateRegime', () => {
+    const ownedRegimeRow = {
+      id: 'reg-1',
+      name: 'Base',
+      regime_display_name: 'Old',
+      weeks: 12,
+      days_per_week: 4,
+      head_revision_id: null,
+      archived_at: null,
+      owner_user_id: 'coach-1',
+    };
+
+    function updateHarness(opts: {
+      lockedRows?: Array<{ id: string }>;
+      headRevisionIndex: number | null;
+    }) {
+      const queryRaw = jest.fn(
+        async (
+          _strings: TemplateStringsArray,
+          ..._values: unknown[]
+        ): Promise<Array<{ id: string }>> => opts.lockedRows ?? [{ id: 'reg-1' }],
+      );
+      const updateMany = jest.fn(async () => ({ count: 1 }));
+      const revisionCreate = jest.fn(async () => ({ id: 'rev-new' }));
+      const revisionFindFirst = jest.fn(async () =>
+        opts.headRevisionIndex === null
+          ? null
+          : { revision_index: opts.headRevisionIndex },
+      );
+      const evictForRegime = jest.fn(async () => 0);
+      const retention: Pick<
+        RegimeRevisionRetentionService,
+        'evictForRegime'
+      > = { evictForRegime };
+
+      const txClient = {
+        $queryRaw: queryRaw,
+        workoutProgram: { updateMany },
+        workoutProgramRevision: {
+          findFirst: revisionFindFirst,
+          create: revisionCreate,
+        },
+      };
+      const prisma = asPrismaDouble({
+        user: { findUnique: jest.fn(async () => COACH) },
+        workoutProgram: { findFirst: jest.fn(async () => ownedRegimeRow) },
+        coachPackageContent: { count: jest.fn(async () => 0) },
+        $transaction: jest.fn(async (cb: (tx: typeof txClient) => unknown) =>
+          cb(txClient),
+        ),
+      });
+      const service = new RegimesService(
+        prisma,
+        retention as RegimeRevisionRetentionService,
+      );
+      return {
+        service,
+        queryRaw,
+        updateMany,
+        revisionCreate,
+        revisionFindFirst,
+        evictForRegime,
+      };
+    }
+
+    it('locks the program row FOR UPDATE before allocating the next revision_index', async () => {
+      const { service, queryRaw, revisionCreate } = updateHarness({
+        headRevisionIndex: 4,
+      });
+
+      const result = await service.updateRegime('coach-1', 'reg-1', 'New name');
+
+      expect(result.regime_display_name).toBe('New name');
+      // The row lock is taken (the sanctioned SELECT … FOR UPDATE pattern) so
+      // concurrent edits serialise instead of racing the unique
+      // (program_id, revision_index) allocation into a 500.
+      expect(queryRaw).toHaveBeenCalledTimes(1);
+      const rawArg = queryRaw.mock.calls[0][0];
+      expect(rawArg.join('')).toMatch(/FOR UPDATE/);
+      // Next index = current head (4) + 1.
+      expect(revisionCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ revision_index: 5 }),
+        }),
+      );
+    });
+
+    it('allocates revision_index 0 for the first revision', async () => {
+      const { service, revisionCreate } = updateHarness({
+        headRevisionIndex: null,
+      });
+
+      await service.updateRegime('coach-1', 'reg-1', 'New name');
+
+      expect(revisionCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ revision_index: 0 }),
+        }),
+      );
+    });
+
+    it('404s inside the tx when the locked program row has vanished', async () => {
+      const { service, updateMany, revisionCreate } = updateHarness({
+        lockedRows: [],
+        headRevisionIndex: 4,
+      });
+
+      await expect(
+        service.updateRegime('coach-1', 'reg-1', 'New name'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      // The row never existed under the lock → no write, no revision append.
+      expect(updateMany).not.toHaveBeenCalled();
+      expect(revisionCreate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getRegimeRevisions', () => {
+    const ownedRegimeRow = {
+      id: 'reg-1',
+      name: 'Base',
+      regime_display_name: null,
+      weeks: 12,
+      days_per_week: 4,
+      head_revision_id: null,
+      archived_at: null,
+      owner_user_id: 'coach-1',
+    };
+
+    it('caps the findMany at the hard cap, newest first (R81 F5)', async () => {
+      const findMany = jest.fn(async () => [
+        { revision_index: 9, created_at: new Date('2026-03-01'), cause: 'edit' },
+        { revision_index: 8, created_at: new Date('2026-02-01'), cause: 'edit' },
+      ]);
+      const prisma = asPrismaDouble({
+        user: { findUnique: jest.fn(async () => COACH) },
+        // requireOwnedRegime lookup
+        workoutProgram: { findFirst: jest.fn(async () => ownedRegimeRow) },
+        workoutProgramRevision: { findMany },
+      });
+      const service = new RegimesService(prisma, retentionDouble());
+
+      const revisions = await service.getRegimeRevisions('coach-1', 'reg-1');
+
+      expect(revisions).toHaveLength(2);
+      // Query-level take cap is present and equal to the exported constant so an
+      // operator-configured high-retention regime can never return an unbounded
+      // result set.
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { program_id: 'reg-1' },
+          orderBy: { revision_index: 'desc' },
+          take: REGIME_REVISIONS_HARD_CAP,
+        }),
+      );
+    });
+
+    it('404s when the regime is not owned by the coach', async () => {
+      const findMany = jest.fn();
+      const prisma = asPrismaDouble({
+        user: { findUnique: jest.fn(async () => COACH) },
+        workoutProgram: { findFirst: jest.fn(async () => null) },
+        workoutProgramRevision: { findMany },
+      });
+      const service = new RegimesService(prisma, retentionDouble());
+
+      await expect(
+        service.getRegimeRevisions('coach-1', 'reg-x'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      // No row read attempted once ownership fails.
+      expect(findMany).not.toHaveBeenCalled();
     });
   });
 });

@@ -27,6 +27,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -57,6 +58,11 @@ export class RegimesController {
     return this.regimes.getRegimeRevisions(req.user.id, id);
   }
 
+  // Write route — flips is_regime=true with irreversible downstream effects on
+  // package-content attachment rules. Per-user 30/min cap matches the
+  // established write-route throttle pattern (checkout.controller.ts) so a
+  // compromised coach account cannot spam state-changing promotions (R81 F4).
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Post(':id/promote-from-program')
   async promote(
     @Req() req: AuthedRequest,
@@ -70,6 +76,10 @@ export class RegimesController {
     );
   }
 
+  // Write route — writes a WorkoutProgramRevision row and triggers eviction.
+  // Per-user 30/min cap matches the established write-route throttle pattern
+  // (R81 F4).
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Patch(':id')
   async update(
     @Req() req: AuthedRequest,
@@ -79,6 +89,9 @@ export class RegimesController {
     return this.regimes.updateRegime(req.user.id, id, body.regime_display_name);
   }
 
+  // Write route — archives a regime and blocks future attachments. Per-user
+  // 30/min cap matches the established write-route throttle pattern (R81 F4).
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Post(':id/archive')
   async archive(
     @Req() req: AuthedRequest,
