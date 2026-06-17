@@ -13,6 +13,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { CreateJobListingDto, UpdateJobListingDto } from './job-listing.dto';
 import { JobListingService } from './job-listing.service';
 import { HirerVerifiedGuard } from './hirer-verified.guard';
@@ -26,6 +27,7 @@ import { HirerVerifiedGuard } from './hirer-verified.guard';
 // browse ticket — this slice is writes only.
 @ApiTags('talent-marketplace')
 @Controller('talent-marketplace/listings')
+@Roles('coach', 'owner')
 @UseGuards(JwtAuthGuard, HirerVerifiedGuard)
 export class JobListingController {
   constructor(private readonly listings: JobListingService) {}
