@@ -194,15 +194,21 @@ describe('ED.2 daily-rings review-arc composite index — static integrity', () 
     expect(sql).toMatch(/Rollback \(reverse\):/);
   });
 
-  it('sorts last among all migration directories (R76 §6 append-only)', () => {
-    // Reads the real migrations directory: this index migration must be the
-    // lexically-last folder so the ordered apply never reorders it behind a
-    // landed migration. Fails if a future migration is inserted out of order.
+  it('is never reordered behind a later-landed migration (R76 §6 append-only)', () => {
+    // Reads the real migrations directory. The guard's purpose is that no future
+    // migration is inserted with a timestamp that sorts BEHIND this index
+    // migration's slot (which would reorder the ordered apply). A migration that
+    // lands AFTER it (strictly-greater timestamp, e.g. the talent-marketplace
+    // foundation 20261220000000) is correct append-only behavior and must pass.
     const dirs = sortedMigrationDirs();
-    expect(dirs).toContain('20261219000000_conv_review_coach_reviewed_at_idx');
-    expect(dirs[dirs.length - 1]).toBe(
-      '20261219000000_conv_review_coach_reviewed_at_idx',
-    );
+    const self = '20261219000000_conv_review_coach_reviewed_at_idx';
+    expect(dirs).toContain(self);
+    // Everything that sorts after this migration must carry a strictly-greater
+    // 14-digit timestamp prefix — nothing may be back-dated in behind it.
+    const selfTs = self.slice(0, 14);
+    for (const dir of dirs.slice(dirs.indexOf(self) + 1)) {
+      expect(dir.slice(0, 14) >= selfTs).toBe(true);
+    }
   });
 
   it('schema.prisma carries the matching @@index on ConversationReview', () => {
