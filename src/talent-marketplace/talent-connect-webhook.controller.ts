@@ -19,7 +19,8 @@ import { Public } from '../common/decorators/public.decorator';
 import { TalentConnectWebhookService } from './talent-connect-webhook.service';
 
 // TM-14 — Stripe Connect `account.updated` webhook for the talent marketplace.
-// Skeleton; sig-verify gate + delegation completed in subsequent commits.
+// Verifies the Stripe signature against configured secrets before parsing,
+// then delegates to the service for idempotent persistence + adapter sync.
 @ApiTags('talent-marketplace')
 @Controller('v1/webhooks/talent-marketplace')
 export class TalentConnectWebhookController {
