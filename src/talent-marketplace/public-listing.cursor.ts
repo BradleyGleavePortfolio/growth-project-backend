@@ -23,12 +23,42 @@ export interface TupleCursor {
 
 const SIG_LEN = 16;
 
+// Env var holding the HMAC key for the public-listing keyset cursor.
+export const PUBLIC_LISTING_CURSOR_SECRET_ENV = 'PUBLIC_LISTING_CURSOR_SECRET';
+
 // Per-env signing secret. A tampered cursor is non-exploitable (see threat model
 // above), so a deterministic dev fallback is acceptable when the env var is
 // unset — it keeps local/test runs working without a secret. Production should
 // still set PUBLIC_LISTING_CURSOR_SECRET (documented in .env.example).
 function cursorSecret(): string {
-  return process.env.PUBLIC_LISTING_CURSOR_SECRET || 'tm3-public-cursor-dev';
+  return process.env[PUBLIC_LISTING_CURSOR_SECRET_ENV] || 'tm3-public-cursor-dev';
+}
+
+// Whether the dev fallback secret would be used (i.e. the env var is unset/blank).
+function isUsingFallbackSecret(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env[PUBLIC_LISTING_CURSOR_SECRET_ENV] ?? '').trim() === '';
+}
+
+// Boot-time misconfiguration check. Unlike MWB_AUTOSAVE_LOCK_TOKEN_SECRET (an
+// authz token whose absence is FATAL — no fallback), the cursor secret is a
+// non-security pagination integrity check: a forged cursor can only reposition
+// the window over the SAME status='published' rows, never widen visibility (the
+// published filter is applied independently of the cursor). So an unset secret
+// in production is a WARNING, not a throw — pagination still works on the dev
+// fallback. We emit it once at boot so an operator gets a signal to rotate a
+// real secret before public launch, matching the secret-surface parity the rest
+// of the codebase carries. Returns the warning string (for tests) or null.
+export function cursorSecretBootWarning(
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  if (env.NODE_ENV === 'production' && isUsingFallbackSecret(env)) {
+    return (
+      `[TM-3] ${PUBLIC_LISTING_CURSOR_SECRET_ENV} is unset in production — ` +
+      'falling back to dev cursor secret. Pagination integrity is preserved ' +
+      '(filter applied independently) but rotate before public launch.'
+    );
+  }
+  return null;
 }
 
 function sign(payload: string): string {

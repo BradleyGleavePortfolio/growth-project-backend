@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import type { CoachCompensationType, JobListing, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { buildJobPostingJsonLd, JobPostingJsonLd } from './job-posting-jsonld';
 import {
   buildTupleCursor,
+  cursorSecretBootWarning,
   parseTupleCursor,
 } from './public-listing.cursor';
 import {
@@ -26,8 +27,17 @@ import {
 // duplicate rows across pages. published_at is still surfaced in the payload for
 // display — it is simply not the pagination key.
 @Injectable()
-export class PublicListingService {
+export class PublicListingService implements OnModuleInit {
+  private readonly logger = new Logger(PublicListingService.name);
+
   constructor(private readonly prisma: PrismaService) {}
+
+  // Emit a single boot-time warning if the cursor signing secret is unset in
+  // production (see cursorSecretBootWarning — non-fatal by design).
+  onModuleInit(): void {
+    const warning = cursorSecretBootWarning();
+    if (warning) this.logger.warn(warning);
+  }
 
   async browse(query: BrowseListingsQueryDto): Promise<BrowseListingsResponse> {
     const limit = clampLimit(query.limit);
@@ -78,7 +88,18 @@ export class PublicListingService {
     const row = await this.prisma.jobListing.findFirst({
       where: { id, status: 'published' },
     });
-    if (!row) throw new NotFoundException({ kind: 'job_listing_not_found' });
+    // House error-envelope shape ({ error, message, code }) consumed by the
+    // global HttpExceptionFilter — `code` is the machine-readable id that
+    // survives normalization to the wire (a bare `kind` field was dropped by
+    // the filter). 404 (never 401/403) so an anon caller cannot distinguish a
+    // draft/closed listing from a non-existent one.
+    if (!row) {
+      throw new NotFoundException({
+        error: 'Not Found',
+        message: 'Job listing not found',
+        code: 'job_listing_not_found',
+      });
+    }
     const listing = toDetail(row);
     return { listing, json_ld: buildJobPostingJsonLd(listing) };
   }
