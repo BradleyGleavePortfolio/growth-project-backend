@@ -6596,6 +6596,12 @@ model Application {
 
   offers CoachOffer[] @relation("CoachOfferApplication")
 
+  // Semantic single-application guard: one Application per (applicant, listing).
+  // The idempotency ledger dedups same-key retries, but two DISTINCT
+  // client-supplied keys for the same (account, listing) would otherwise create
+  // duplicate rows — this composite unique is the DB backstop. A P2002 on it is
+  // routed into the idempotent recoverConfirmation path in apply.service.
+  @@unique([applicant_user_id, listing_id])
   @@index([listing_id, status, created_at, id])
   @@index([applicant_user_id, created_at, id])
   @@index([hirer_id, status])
