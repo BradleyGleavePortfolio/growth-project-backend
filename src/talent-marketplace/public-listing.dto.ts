@@ -83,7 +83,16 @@ export interface PublicListingCardDto {
   modality: string | null;
   compensation_summary: string;
   published_at: string | null;
-  // The single primary action affordance: the listing id the Apply flow targets.
+  /**
+   * The single primary action affordance: the listing id the Apply flow targets.
+   *
+   * Intentionally duplicates `id` byte-for-byte. This is a deliberate, stable
+   * contract field — not redundancy to clean up. It gives the CTA layer
+   * (TM-M2 mobile, TM-W2 web) a semantically-named handle decoupled from the
+   * generic `id`, so the Apply button can bind to `cta_listing_id` without
+   * assuming the resource id and the apply target are forever the same value.
+   * Consumers MAY rely on this field; removing it is a breaking change.
+   */
   cta_listing_id: string;
 }
 

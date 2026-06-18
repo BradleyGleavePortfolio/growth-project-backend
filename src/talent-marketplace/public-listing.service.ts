@@ -18,6 +18,13 @@ import {
 // TM-3 — public browse + detail. Adds an explicit status:'published' filter
 // (defence-in-depth over TM-1 RLS) and maps rows through an allow-list DTO so no
 // PII escapes. Keyset tuple pagination on (created_at, id) — never offset.
+//
+// Sort key is created_at, NOT published_at: created_at is NOT NULL (DB default
+// now()) and is backed by @@index([status, created_at, id]), giving a total,
+// stable keyset order. published_at is nullable, so keying on it would make the
+// boundary ambiguous (NULLs have no defined keyset position) and could drop or
+// duplicate rows across pages. published_at is still surfaced in the payload for
+// display — it is simply not the pagination key.
 @Injectable()
 export class PublicListingService {
   constructor(private readonly prisma: PrismaService) {}
@@ -157,6 +164,12 @@ function compensationSummary(row: JobListing): string {
       return base && r ? `${base} base + ${r}` : 'Hybrid';
     }
     default:
+      // Intentionally unreachable today: compensation_type is a non-null DB enum
+      // (CoachCompensationType) exhausted by the four arms above. Kept as a safe
+      // fallback so a FUTURE enum variant degrades to a neutral card string
+      // instead of silently falling through to `undefined`. Exercised by a
+      // cast-driven spec in public-listing.service.spec.ts.
+      /* istanbul ignore next */
       return 'Compensation on application';
   }
 }
