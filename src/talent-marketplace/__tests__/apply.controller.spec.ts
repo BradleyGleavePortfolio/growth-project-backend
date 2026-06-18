@@ -1,5 +1,10 @@
+import { NotFoundException } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import type { AuthedRequest } from '../../auth/auth-request';
+import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
+import { ROLES_KEY } from '../../common/decorators/roles.decorator';
+import { ANTI_BOT_SURFACE_KEY } from '../anti-bot/anti-bot.guard';
+import { ANTI_BOT_SURFACES } from '../anti-bot/anti-bot.types';
 import { ApplyController } from '../apply.controller';
 import { ApplyService } from '../apply.service';
 import type {
@@ -101,5 +106,76 @@ describe('ApplyController reads-own routes pass the caller subject', () => {
     await controller.myApplications(authedReq('user-1'), { limit: 10 });
 
     expect(myApplications).toHaveBeenCalledWith('user-1', { limit: 10 });
+  });
+});
+
+// AUTH BOUNDARY (the decorator contract). The roles-enforced doctrine pin
+// requires every route to be @Roles() or @Public(); these specs lock the
+// EXACT posture per route so a future edit cannot silently (a) gate the
+// anonymous apply funnel — which would 403 every applicant — or (b) open a
+// reads-own profile route to the public.
+describe('ApplyController — auth boundary metadata', () => {
+  const handler = (name: keyof ApplyController) =>
+    ApplyController.prototype[name];
+
+  it('applyToListing is @Public() (anonymous funnel) behind the Apply anti-bot gate', () => {
+    expect(
+      Reflect.getMetadata(IS_PUBLIC_KEY, handler('applyToListing')),
+    ).toBe(true);
+    // It must NOT also carry @Roles — RolesGuard would 403 the anon caller.
+    expect(
+      Reflect.getMetadata(ROLES_KEY, handler('applyToListing')),
+    ).toBeUndefined();
+    // The abuse control for the anonymous surface is the anti-bot gate.
+    expect(
+      Reflect.getMetadata(ANTI_BOT_SURFACE_KEY, handler('applyToListing')),
+    ).toBe(ANTI_BOT_SURFACES.Apply);
+  });
+
+  it.each([
+    'getMyProfile',
+    'updateMyProfile',
+    'myApplications',
+  ] as const)(
+    '%s is @Roles(student) reads-own and never @Public()',
+    (name) => {
+      expect(Reflect.getMetadata(ROLES_KEY, handler(name))).toEqual([
+        'student',
+      ]);
+      expect(Reflect.getMetadata(IS_PUBLIC_KEY, handler(name))).not.toBe(true);
+    },
+  );
+
+  it('no route is gated to coach/owner (this is a student/anon surface)', () => {
+    for (const name of [
+      'getMyProfile',
+      'updateMyProfile',
+      'myApplications',
+    ] as const) {
+      const roles = Reflect.getMetadata(ROLES_KEY, handler(name)) as
+        | string[]
+        | undefined;
+      expect(roles).not.toContain('coach');
+      expect(roles).not.toContain('owner');
+    }
+  });
+});
+
+// HTTP CONTRACT. The thin controller delegates, so the wire-status contract is
+// proven where it is decided: ParseUUIDPipe yields 400 on a bad id, and the
+// service's NotFoundException maps to 404 for an unpublished/absent listing.
+describe('ApplyController — error status contract', () => {
+  it('propagates the service 404 (NotFoundException) for an unpublished/absent listing', async () => {
+    const apply = jest.fn(async () => {
+      throw new NotFoundException({ kind: 'job_listing_not_found' });
+    });
+    const { controller } = makeController({ apply });
+    await expect(
+      controller.applyToListing('listing-x', {
+        email: 'jo@example.com',
+        first_name: 'Jo',
+        last_name: 'Coach',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

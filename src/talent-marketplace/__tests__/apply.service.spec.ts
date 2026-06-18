@@ -257,6 +257,22 @@ describe('ApplyService.apply — listing visibility & idempotency', () => {
     expect(result.application_id).toBe('app-1');
     // replay path must NOT create a new Application
     expect(create).not.toHaveBeenCalled();
+    // The anonymous-caller confirmation payload is an exact allow-list: ids +
+    // status + fit chip + closure copy ONLY. No applicant email/name and no
+    // hirer identity ever cross back to the public apply caller.
+    expect(Object.keys(result).sort()).toEqual(
+      [
+        'account_id',
+        'applicant_id',
+        'application_id',
+        'confirmation',
+        'fit',
+        'status',
+      ].sort(),
+    );
+    const flat = JSON.stringify(result);
+    expect(flat).not.toContain('jo@example.com');
+    expect(flat).not.toContain('hirer-1');
   });
 
   it('surfaces a retryable conflict when a sibling submit is in flight', async () => {
