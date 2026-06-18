@@ -15,6 +15,12 @@
 -- posture as MarketplaceMutationIdempotency / MarketplaceAbuseSignal. The webhook
 -- handler runs as service_role; no client principal may ever read/write this
 -- ledger.
+--
+-- NO RAW PAYLOAD COLUMN BY DESIGN: this ledger deliberately stores only the
+-- derived `onboarding_completed` signal + minimal identifiers, never the raw
+-- Stripe Account blob (which carries KYC/banking PII + secrets). Stripe is the
+-- system of record for the full event body, re-fetchable by `stripe_event_id`.
+-- Rationale + options considered: docs/decisions/2026-06-17-tm-14-no-raw-payload-storage.md
 -- =====================================================================
 
 BEGIN;
