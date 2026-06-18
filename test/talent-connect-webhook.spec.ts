@@ -59,10 +59,17 @@ async function httpRequest(opts: {
   });
 }
 
+interface FakePrisma {
+  rows: Map<string, Record<string, unknown>>;
+  syncFromStripe: jest.Mock;
+  connectAccount: { findUnique: jest.Mock };
+  marketplaceConnectEvent: { create: jest.Mock };
+}
+
 // Minimal in-memory stand-in for the MarketplaceConnectEvent ledger that
 // enforces the PK uniqueness the idempotency contract relies on. `create`
 // throws a Prisma P2002 on a duplicate stripe_event_id, exactly like Postgres.
-function makeFakePrisma(opts?: { coachUserId?: string | null }) {
+function makeFakePrisma(opts?: { coachUserId?: string | null }): FakePrisma {
   const events = new Map<string, Record<string, unknown>>();
   const syncFromStripe = jest.fn(); // legacy polling fallback — must stay unused
   return {
@@ -76,19 +83,34 @@ function makeFakePrisma(opts?: { coachUserId?: string | null }) {
       ),
     },
     marketplaceConnectEvent: {
-      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
-        const id = data.stripe_event_id as string;
-        if (events.has(id)) {
-          throw new Prisma.PrismaClientKnownRequestError(
-            'Unique constraint failed',
-            { code: 'P2002', clientVersion: 'test' },
-          );
-        }
-        events.set(id, data);
-        return data;
-      }),
+      create: jest.fn(
+        async ({
+          data,
+        }: {
+          data: { stripe_event_id: string } & Record<string, unknown>;
+        }) => {
+          const id = data.stripe_event_id;
+          if (events.has(id)) {
+            throw new Prisma.PrismaClientKnownRequestError(
+              'Unique constraint failed',
+              { code: 'P2002', clientVersion: 'test' },
+            );
+          }
+          events.set(id, data);
+          return data;
+        },
+      ),
     },
   };
+}
+
+// The service reads only the two Prisma delegates the FakePrisma implements.
+// Constructing through this one adapter keeps the structural-mock injection in a
+// single place; @ts-expect-error documents that the jest-mock delegate types are
+// intentionally narrower than the full generated PrismaService surface.
+function buildService(prisma: FakePrisma): TalentConnectWebhookService {
+  // @ts-expect-error FakePrisma is a deliberate structural subset of PrismaService for this unit test
+  return new TalentConnectWebhookService(prisma);
 }
 
 function accountUpdatedEvent(overrides?: {
@@ -136,9 +158,7 @@ describe('TalentConnectAdapter.deriveOnboarded — single Connect interpretation
 describe('TalentConnectWebhookService — persistence + event-id idempotency', () => {
   it('valid account.updated (both caps enabled) persists onboarding_completed=true once', async () => {
     const prisma = makeFakePrisma({ coachUserId: 'coach_1' });
-    const svc = new TalentConnectWebhookService(
-      prisma as unknown as PrismaService,
-    );
+    const svc = buildService(prisma);
 
     const result = await svc.handleAccountUpdated(accountUpdatedEvent());
 
@@ -153,15 +173,13 @@ describe('TalentConnectWebhookService — persistence + event-id idempotency', (
       coach_user_id: 'coach_1',
       onboarding_completed: true,
     });
-    // The legacy polling fallback was never invoked by the webhook path.
+    // The legacy polling fallback is not invoked by the webhook path.
     expect(prisma.syncFromStripe).not.toHaveBeenCalled();
   });
 
   it('incomplete caps → onboarding_completed=false persisted', async () => {
     const prisma = makeFakePrisma();
-    const svc = new TalentConnectWebhookService(
-      prisma as unknown as PrismaService,
-    );
+    const svc = buildService(prisma);
 
     const result = await svc.handleAccountUpdated(
       accountUpdatedEvent({ payouts: false }),
@@ -176,9 +194,7 @@ describe('TalentConnectWebhookService — persistence + event-id idempotency', (
 
   it('redelivered SAME event id is processed exactly once (idempotent)', async () => {
     const prisma = makeFakePrisma();
-    const svc = new TalentConnectWebhookService(
-      prisma as unknown as PrismaService,
-    );
+    const svc = buildService(prisma);
 
     const first = await svc.handleAccountUpdated(accountUpdatedEvent());
     const second = await svc.handleAccountUpdated(accountUpdatedEvent());
@@ -193,9 +209,7 @@ describe('TalentConnectWebhookService — persistence + event-id idempotency', (
 
   it('ignores non-account.updated event types without recording a dedup row', async () => {
     const prisma = makeFakePrisma();
-    const svc = new TalentConnectWebhookService(
-      prisma as unknown as PrismaService,
-    );
+    const svc = buildService(prisma);
 
     const result = await svc.handleAccountUpdated({
       id: 'evt_pi',
