@@ -1,0 +1,104 @@
+import 'reflect-metadata';
+import {
+  GUARDS_METADATA,
+  METHOD_METADATA,
+  PATH_METADATA,
+} from '@nestjs/common/constants';
+import { RequestMethod } from '@nestjs/common';
+import { SpecialtyAlertsController } from '../specialty-alerts.controller';
+import { SpecialtyAlertsService } from '../specialty-alerts.service';
+import { ROLES_KEY } from '../../common/decorators/roles.decorator';
+import type { AuthedRequest } from '../../auth/auth-request';
+import type { User } from '@prisma/client';
+
+// TM-9b — the /me/alerts/* surface is owner-scoped: @Roles('student'), and every
+// handler forwards the JWT subject (req.user.id) to the service. Invariants:
+//   1. AUTH + ROLE GATED — @Roles('student') pins the applicant role at class
+//      level; JwtAuthGuard + RolesGuard are global APP_GUARDs (app.module.ts),
+//      so no per-controller @UseGuards is declared.
+//   2. OWNER-SCOPE — handlers pass req.user.id, never a client-supplied id.
+
+interface AlertsShape {
+  listForApplicant: jest.Mock;
+  savePreferences: jest.Mock;
+}
+
+function makeController() {
+  const alerts: AlertsShape = {
+    listForApplicant: jest.fn(),
+    savePreferences: jest.fn(),
+  };
+  const injected = Object.assign(
+    Object.create(SpecialtyAlertsService.prototype) as SpecialtyAlertsService,
+    alerts,
+  );
+  return { alerts, controller: new SpecialtyAlertsController(injected) };
+}
+
+// A concrete owner-scoped request fixture — only `user.id` is read by the
+// handlers, so a narrow concrete cast on the user keeps this structurally an
+// AuthedRequest without any forbidden double cast.
+const reqFor = (id: string): AuthedRequest => ({
+  user: { id } as Pick<User, 'id'> as User,
+});
+
+describe('SpecialtyAlertsController — owner-scoped /me/alerts surface', () => {
+  let alerts: AlertsShape;
+  let controller: SpecialtyAlertsController;
+
+  beforeEach(() => {
+    ({ alerts, controller } = makeController());
+  });
+
+  describe('security contract', () => {
+    it('declares no per-controller guard (relies on global APP_GUARDs)', () => {
+      const guards =
+        Reflect.getMetadata(GUARDS_METADATA, SpecialtyAlertsController) ?? [];
+      expect(guards).toEqual([]);
+    });
+
+    it("pins @Roles('student') at the class level", () => {
+      expect(Reflect.getMetadata(ROLES_KEY, SpecialtyAlertsController)).toEqual([
+        'student',
+      ]);
+    });
+
+    it('mounts at talent-marketplace/me/alerts', () => {
+      expect(Reflect.getMetadata(PATH_METADATA, SpecialtyAlertsController)).toBe(
+        'talent-marketplace/me/alerts',
+      );
+    });
+  });
+
+  describe('routes', () => {
+    it('GET alerts (index)', () => {
+      expect(Reflect.getMetadata(PATH_METADATA, controller.myAlerts)).toBe('/');
+      expect(Reflect.getMetadata(METHOD_METADATA, controller.myAlerts)).toBe(
+        RequestMethod.GET,
+      );
+    });
+
+    it('POST preferences', () => {
+      expect(Reflect.getMetadata(PATH_METADATA, controller.setPreferences)).toBe(
+        'preferences',
+      );
+      expect(
+        Reflect.getMetadata(METHOD_METADATA, controller.setPreferences),
+      ).toBe(RequestMethod.POST);
+    });
+  });
+
+  describe('owner-scope delegation (forwards req.user.id, never a client id)', () => {
+    it('myAlerts forwards the caller id', async () => {
+      alerts.listForApplicant.mockResolvedValue([]);
+      await controller.myAlerts(reqFor('u1'));
+      expect(alerts.listForApplicant).toHaveBeenCalledWith('u1');
+    });
+
+    it('setPreferences forwards the caller id + the dto specialties', async () => {
+      alerts.savePreferences.mockResolvedValue({ specialties: ['Strength'] });
+      await controller.setPreferences(reqFor('u2'), { specialties: ['Strength'] });
+      expect(alerts.savePreferences).toHaveBeenCalledWith('u2', ['Strength']);
+    });
+  });
+});
