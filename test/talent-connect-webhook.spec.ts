@@ -96,8 +96,13 @@ function makeFakePrisma(opts?: { coachUserId?: string | null }): FakePrisma {
               { code: 'P2002', clientVersion: 'test' },
             );
           }
-          events.set(id, data);
-          return data;
+          // Mirror the Postgres `processed_at TIMESTAMP NOT NULL DEFAULT
+          // CURRENT_TIMESTAMP` column default: the service never sets it, so the
+          // DB stamps it on insert. Simulating the default here lets the
+          // audit-trail-timestamp contract (B-P2-3) be asserted on the stored row.
+          const stored = { processed_at: new Date(), ...data };
+          events.set(id, stored);
+          return stored;
         },
       ),
     },
@@ -173,6 +178,12 @@ describe('TalentConnectWebhookService — persistence + event-id idempotency', (
       coach_user_id: 'coach_1',
       onboarding_completed: true,
     });
+    // B-P2-3: the ledger row carries an audit-trail timestamp. `processed_at`
+    // is a DB default (migration: TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)
+    // the service never sets; lock that the persisted row is stamped with a
+    // fresh Date so the audit-trail contract cannot silently regress.
+    expect(row?.processed_at).toBeInstanceOf(Date);
+    expect(Date.now() - (row?.processed_at as Date).getTime()).toBeLessThan(5000);
     // The legacy polling fallback is not invoked by the webhook path.
     expect(prisma.syncFromStripe).not.toHaveBeenCalled();
   });
@@ -220,6 +231,26 @@ describe('TalentConnectWebhookService — persistence + event-id idempotency', (
     expect(result.processed).toBe(false);
     expect(result.reason).toBe('ignored_event_type');
     expect(prisma.marketplaceConnectEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('account.updated whose payload lacks a valid acct_ id → processed=false, reason=missing_account_id, no row inserted', async () => {
+    // B-P3-1: cover the early-return branch (service L57-63). A valid
+    // account.updated event whose data.object.id is not an `acct_...` id cannot
+    // be attributed, so the handler returns processed=false without recording a
+    // dedup row. This is a 200-with-processed:false outcome (Stripe must not
+    // retry it). extractAccount rejects the non-acct id → no create call.
+    const prisma = makeFakePrisma();
+    const svc = buildService(prisma);
+
+    const result = await svc.handleAccountUpdated(
+      accountUpdatedEvent({ acct: 'not_an_acct_id' }),
+    );
+
+    expect(result.received).toBe(true);
+    expect(result.processed).toBe(false);
+    expect(result.reason).toBe('missing_account_id');
+    expect(prisma.marketplaceConnectEvent.create).not.toHaveBeenCalled();
+    expect(prisma.rows.size).toBe(0);
   });
 });
 
