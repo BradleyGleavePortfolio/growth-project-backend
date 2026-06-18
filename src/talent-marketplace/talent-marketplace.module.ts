@@ -16,6 +16,8 @@ import { PublicListingController } from './public-listing.controller';
 import { PublicListingService } from './public-listing.service';
 import { JobHunterController } from './job-hunter.controller';
 import { JobHunterService } from './job-hunter.service';
+import { SpecialtyAlertsController } from './specialty-alerts.controller';
+import { SpecialtyAlertsService } from './specialty-alerts.service';
 
 // TM-2 — Talent Marketplace job-listing CRUD + publish.
 // TM-3 — public, unauthenticated browse + SEO detail.
@@ -26,6 +28,7 @@ import { JobHunterService } from './job-hunter.service';
 // (controller + thin service) reusing the TM-10 adapter; append-only.
 // TM-9a — applicant-facing /me/* job-hunter dashboard (own applications,
 // portfolio showcase, profile-strength nudges); append-only.
+// TM-9b — applicant-facing /me/alerts/* specialty alerts; append-only.
 @Module({
   imports: [AntiBotModule, TalentConnectAdapterModule],
   controllers: [
@@ -34,6 +37,7 @@ import { JobHunterService } from './job-hunter.service';
     TalentConnectWebhookController,
     PublicListingController,
     JobHunterController,
+    SpecialtyAlertsController,
   ],
   providers: [
     JobListingService,
@@ -46,6 +50,7 @@ import { JobHunterService } from './job-hunter.service';
     HirerVerifiedGuard,
     TalentConnectWebhookService,
     JobHunterService,
+    SpecialtyAlertsService,
   ],
   exports: [JobListingService, ApplyService],
 })
