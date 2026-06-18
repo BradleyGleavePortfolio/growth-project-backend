@@ -328,6 +328,36 @@ describe('TalentConnectWebhookController — HTTP signature gate', () => {
     expect(handleAccountUpdated).not.toHaveBeenCalled();
   });
 
+  it('VALID signature over a body the JSON parser passes through but JSON.parse rejects → 400 "Invalid JSON" from the CONTROLLER guard, service never reached', async () => {
+    // B-P2-1: isolate the controller's own post-signature `JSON.parse` guard
+    // (controller L65-70). The previous malformed-body test sends
+    // `content-type: application/json`, so Nest's express JSON body parser may
+    // reject the bytes BEFORE the handler runs — proving "a 400 happens
+    // somewhere", not "the controller verified the signature THEN rejected the
+    // JSON". Here we send `content-type: text/plain` so the JSON body parser
+    // skips the body entirely (rawBody is still captured content-type-agnostically
+    // under `rawBody: true`). The Stripe signature therefore verifies over the
+    // raw bytes, execution reaches the controller, and the controller's OWN
+    // `JSON.parse(raw)` is the only thing that can reject it — asserted via the
+    // controller-specific 'Invalid JSON' message, which the body parser never
+    // emits. This locks the verify-signature-THEN-parse-JSON ordering.
+    const malformed = 'not-json{';
+    const header = signStripePayload({ payload: malformed, secret: SECRET });
+    const res = await httpRequest({
+      app,
+      method: 'POST',
+      path: PATH,
+      headers: {
+        'content-type': 'text/plain',
+        'stripe-signature': header,
+      },
+      body: malformed,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body).toContain('Invalid JSON');
+    expect(handleAccountUpdated).not.toHaveBeenCalled();
+  });
+
   it('VALID signature over well-formed JSON MISSING event fields → 400, service never reached', async () => {
     const incomplete = JSON.stringify({ id: 'evt_x' });
     const header = signStripePayload({ payload: incomplete, secret: SECRET });
