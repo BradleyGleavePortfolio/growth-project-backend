@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import type { JobListing } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { PublicListingService } from '../public-listing.service';
@@ -127,6 +127,16 @@ describe('PublicListingService.browse — PII omission', () => {
         'title',
       ].sort(),
     );
+  });
+
+  it('pins cta_listing_id === id byte-for-byte on the card (consumer contract)', async () => {
+    // B-CYCLE-P3-2: the DTO documents cta_listing_id as a stable, consumer-relied
+    // handle that duplicates id byte-for-byte. Pin the invariant so a future
+    // refactor deriving it from a different column fails the build.
+    const { service } = makeService([row({ id: 'listing-cta-1' })]);
+    const card = (await service.browse({})).items[0];
+    expect(card.cta_listing_id).toBe(card.id);
+    expect(card.cta_listing_id).toBe('listing-cta-1');
   });
 
   it('never leaks hirer_id, idempotency_key, or any PII onto the card', () => {
@@ -285,6 +295,14 @@ describe('PublicListingService.detail', () => {
     );
   });
 
+  it('pins cta_listing_id === id byte-for-byte on the detail (consumer contract)', async () => {
+    // B-CYCLE-P3-2: mirror the card pin on the detail shape.
+    const { service } = makeService([row({ id: 'listing-cta-2' })]);
+    const { listing } = await service.detail('listing-cta-2');
+    expect(listing.cta_listing_id).toBe(listing.id);
+    expect(listing.cta_listing_id).toBe('listing-cta-2');
+  });
+
   it('404s a draft/closed/non-existent id (never leaks unpublished rows)', async () => {
     const { service } = makeService([row({ id: 'draft-1', status: 'draft' })]);
     await expect(service.detail('draft-1')).rejects.toBeInstanceOf(
@@ -292,6 +310,26 @@ describe('PublicListingService.detail', () => {
     );
     await expect(service.detail('missing')).rejects.toBeInstanceOf(
       NotFoundException,
+    );
+  });
+
+  it('404 body carries the house { error, message, code } shape (B-CYCLE-P2-1)', async () => {
+    // The machine-readable id must live on `code` (read by HttpExceptionFilter),
+    // not a bare `kind` field (which the filter drops). This is the service-level
+    // body; the wire-envelope shape is locked in public-listing.controller.http.spec.ts.
+    const { service } = makeService([]);
+    await service.detail('missing').then(
+      () => {
+        throw new Error('expected NotFoundException');
+      },
+      (err: NotFoundException) => {
+        expect(err).toBeInstanceOf(NotFoundException);
+        expect(err.getResponse()).toEqual({
+          error: 'Not Found',
+          message: 'Job listing not found',
+          code: 'job_listing_not_found',
+        });
+      },
     );
   });
 });
@@ -342,5 +380,48 @@ describe('PublicListingService — compensation summary shaping', () => {
     const { service } = makeService([row(rogue as Partial<Row>)]);
     const res = await service.browse({});
     expect(res.items[0].compensation_summary).toBe('Compensation on application');
+  });
+});
+
+describe('PublicListingService.onModuleInit — cursor-secret boot warning (B-CYCLE-P3-1)', () => {
+  const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+  const ORIGINAL_SECRET = process.env.PUBLIC_LISTING_CURSOR_SECRET;
+  let warnSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+    if (ORIGINAL_NODE_ENV === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = ORIGINAL_NODE_ENV;
+    if (ORIGINAL_SECRET === undefined) delete process.env.PUBLIC_LISTING_CURSOR_SECRET;
+    else process.env.PUBLIC_LISTING_CURSOR_SECRET = ORIGINAL_SECRET;
+  });
+
+  it('emits the warning exactly once when prod + secret unset', () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.PUBLIC_LISTING_CURSOR_SECRET;
+    const { service } = makeService([]);
+    service.onModuleInit();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('PUBLIC_LISTING_CURSOR_SECRET');
+  });
+
+  it('stays silent when the secret is configured in prod', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.PUBLIC_LISTING_CURSOR_SECRET = 'a-real-secret';
+    const { service } = makeService([]);
+    service.onModuleInit();
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('stays silent outside production', () => {
+    process.env.NODE_ENV = 'development';
+    delete process.env.PUBLIC_LISTING_CURSOR_SECRET;
+    const { service } = makeService([]);
+    service.onModuleInit();
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 });

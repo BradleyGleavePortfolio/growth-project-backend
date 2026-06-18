@@ -1,5 +1,6 @@
 import {
   buildTupleCursor,
+  cursorSecretBootWarning,
   parseTupleCursor,
 } from '../public-listing.cursor';
 
@@ -153,5 +154,38 @@ describe('parseTupleCursor — HMAC tamper rejection', () => {
     } finally {
       delete process.env.PUBLIC_LISTING_CURSOR_SECRET;
     }
+  });
+});
+
+describe('cursorSecretBootWarning — prod misconfig signal (B-CYCLE-P3-1)', () => {
+  // The env is injected so the matrix is deterministic and side-effect-free
+  // (no mutation of the real process.env).
+  it('warns when NODE_ENV=production AND the secret is unset', () => {
+    const warning = cursorSecretBootWarning({ NODE_ENV: 'production' });
+    expect(warning).not.toBeNull();
+    expect(warning).toContain('PUBLIC_LISTING_CURSOR_SECRET');
+    expect(warning).toContain('production');
+    expect(warning).toContain('rotate before public launch');
+  });
+
+  it('warns when NODE_ENV=production AND the secret is blank/whitespace', () => {
+    expect(
+      cursorSecretBootWarning({ NODE_ENV: 'production', PUBLIC_LISTING_CURSOR_SECRET: '   ' }),
+    ).not.toBeNull();
+  });
+
+  it('is silent when the secret IS set in production', () => {
+    expect(
+      cursorSecretBootWarning({
+        NODE_ENV: 'production',
+        PUBLIC_LISTING_CURSOR_SECRET: 'a-real-secret',
+      }),
+    ).toBeNull();
+  });
+
+  it('is silent outside production even when the secret is unset', () => {
+    expect(cursorSecretBootWarning({ NODE_ENV: 'development' })).toBeNull();
+    expect(cursorSecretBootWarning({ NODE_ENV: 'test' })).toBeNull();
+    expect(cursorSecretBootWarning({})).toBeNull();
   });
 });
