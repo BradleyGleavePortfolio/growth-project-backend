@@ -25,6 +25,8 @@ import { SavedSearchController } from './saved-search.controller';
 import { SavedSearchService } from './saved-search.service';
 import { JobHunterController } from './job-hunter.controller';
 import { JobHunterService } from './job-hunter.service';
+import { SpecialtyAlertsController } from './specialty-alerts.controller';
+import { SpecialtyAlertsService } from './specialty-alerts.service';
 
 // TM-2 — Talent Marketplace job-listing CRUD + publish.
 // TM-3 — public, unauthenticated browse + SEO detail.
@@ -41,6 +43,7 @@ import { JobHunterService } from './job-hunter.service';
 //        returns 501 until persistence lands.
 // TM-9a — applicant-facing /me/* job-hunter dashboard (own applications,
 // portfolio showcase, profile-strength nudges); append-only.
+// TM-9b — applicant-facing /me/alerts/* specialty alerts; append-only.
 @Module({
   imports: [AntiBotModule, TalentConnectAdapterModule],
   controllers: [
@@ -53,6 +56,7 @@ import { JobHunterService } from './job-hunter.service';
     ApplicantTrackingController,
     SavedSearchController,
     JobHunterController,
+    SpecialtyAlertsController,
   ],
   providers: [
     JobListingService,
@@ -70,6 +74,7 @@ import { JobHunterService } from './job-hunter.service';
     ApplicantTrackingService,
     SavedSearchService,
     JobHunterService,
+    SpecialtyAlertsService,
   ],
   exports: [JobListingService, ApplyService],
 })
