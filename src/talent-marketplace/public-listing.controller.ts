@@ -16,7 +16,7 @@ import { PublicListingService } from './public-listing.service';
 // the service keep anon to published rows only, and the allow-list DTO keeps the
 // payload PII-free. Throttled per-IP since the surface is unauthenticated.
 @ApiTags('talent-marketplace')
-@Controller('listings')
+@Controller('talent-marketplace/public/listings')
 export class PublicListingController {
   constructor(private readonly listings: PublicListingService) {}
 
