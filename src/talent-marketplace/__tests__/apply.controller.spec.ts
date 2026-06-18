@@ -167,7 +167,11 @@ describe('ApplyController — auth boundary metadata', () => {
 describe('ApplyController — error status contract', () => {
   it('propagates the service 404 (NotFoundException) for an unpublished/absent listing', async () => {
     const apply = jest.fn(async () => {
-      throw new NotFoundException({ kind: 'job_listing_not_found' });
+      throw new NotFoundException({
+        error: 'Not Found',
+        message: 'Job listing not found',
+        code: 'job_listing_not_found',
+      });
     });
     const { controller } = makeController({ apply });
     await expect(

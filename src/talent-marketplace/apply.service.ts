@@ -62,7 +62,16 @@ export class ApplyService {
     });
     if (!listing || listing.status !== 'published') {
       // Drafts/closed are invisible to the public applicant (mirrors RLS).
-      throw new NotFoundException({ kind: 'job_listing_not_found' });
+      // House error-envelope shape ({ error, message, code }) consumed by the
+      // global HttpExceptionFilter — `code` is the machine-readable id that
+      // survives normalization to the wire (a bare `kind` field is dropped by
+      // the filter, which reads only message/error/code). Converges on the
+      // TM-3 public-detail 404 contract.
+      throw new NotFoundException({
+        error: 'Not Found',
+        message: 'Job listing not found',
+        code: 'job_listing_not_found',
+      });
     }
 
     const email = dto.email.trim().toLowerCase();
@@ -87,7 +96,15 @@ export class ApplyService {
     }
     if (claim.outcome === 'in_flight') {
       // A sibling submit owns this key right now — retryable, not a dupe.
-      throw new ConflictException({ kind: 'apply_in_flight' });
+      // `code` carries the retryable discriminator to the wire so clients can
+      // detect the in-flight case and retry (the bare `kind` field was dropped
+      // by HttpExceptionFilter).
+      throw new ConflictException({
+        error: 'Conflict',
+        message:
+          'A submission for this application is already in progress; retry shortly.',
+        code: 'apply_in_flight',
+      });
     }
 
     try {
@@ -104,8 +121,17 @@ export class ApplyService {
       }
       return confirmation;
     } catch (err) {
-      // P2002 on Application.idempotency_key → a concurrent submit already
-      // created the Application for this exact key. Recover it idempotently.
+      // P2002 on Application means a row for this (applicant, listing) already
+      // exists — recover it idempotently rather than surfacing a 500. Two
+      // distinct unique constraints route here:
+      //   • Application.idempotency_key — a concurrent submit with the SAME key
+      //     created the Application first (classic same-key race).
+      //   • (applicant_user_id, listing_id) composite — a submit with a
+      //     DIFFERENT idempotency key targeting the same (account, listing)
+      //     (the distinct-key duplicate-submission vector this composite guards;
+      //     see migration 20261220000031). recoverConfirmation reads back the
+      //     existing application owner-scoped, so the second caller replays the
+      //     original confirmation and no duplicate row is created.
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002'
@@ -124,7 +150,13 @@ export class ApplyService {
     const applicant = await this.prisma.applicant.findUnique({
       where: { user_id: userId },
     });
-    if (!applicant) throw new NotFoundException({ kind: 'applicant_not_found' });
+    if (!applicant) {
+      throw new NotFoundException({
+        error: 'Not Found',
+        message: 'Applicant profile not found',
+        code: 'applicant_not_found',
+      });
+    }
     return this.toProfile(applicant);
   }
 
@@ -138,17 +170,26 @@ export class ApplyService {
       where: { user_id: userId },
       select: { id: true },
     });
-    if (!existing) throw new NotFoundException({ kind: 'applicant_not_found' });
+    if (!existing) {
+      throw new NotFoundException({
+        error: 'Not Found',
+        message: 'Applicant profile not found',
+        code: 'applicant_not_found',
+      });
+    }
 
+    // Trim every free-text field for parity with the name fields — a profile
+    // should never persist leading/trailing whitespace (e.g. "  Strength  ").
+    // Arrays are trimmed per entry. DTO length bounds still apply post-trim.
     const data: Prisma.ApplicantUpdateInput = {};
     if (dto.first_name !== undefined) data.first_name = dto.first_name.trim();
     if (dto.last_name !== undefined) data.last_name = dto.last_name.trim();
-    if (dto.headline !== undefined) data.headline = dto.headline;
-    if (dto.bio !== undefined) data.bio = dto.bio;
-    if (dto.specialties !== undefined) data.specialties = dto.specialties;
-    if (dto.certifications !== undefined) data.certifications = dto.certifications;
+    if (dto.headline !== undefined) data.headline = trimOrNull(dto.headline);
+    if (dto.bio !== undefined) data.bio = trimOrNull(dto.bio);
+    if (dto.specialties !== undefined) data.specialties = trimEntries(dto.specialties);
+    if (dto.certifications !== undefined) data.certifications = trimEntries(dto.certifications);
     if (dto.years_experience !== undefined) data.years_experience = dto.years_experience;
-    if (dto.sample_program_url !== undefined) data.sample_program_url = dto.sample_program_url;
+    if (dto.sample_program_url !== undefined) data.sample_program_url = trimOrNull(dto.sample_program_url);
 
     const updated = await this.prisma.applicant.update({
       where: { user_id: userId },
@@ -228,12 +269,12 @@ export class ApplyService {
             email: account.email,
             first_name: dto.first_name.trim(),
             last_name: dto.last_name.trim(),
-            headline: dto.headline ?? null,
-            bio: dto.bio ?? null,
-            specialties: dto.specialties ?? [],
-            certifications: dto.certifications ?? [],
+            headline: trimOrNull(dto.headline),
+            bio: trimOrNull(dto.bio),
+            specialties: trimEntries(dto.specialties ?? []),
+            certifications: trimEntries(dto.certifications ?? []),
             years_experience: dto.years_experience ?? null,
-            sample_program_url: dto.sample_program_url ?? null,
+            sample_program_url: trimOrNull(dto.sample_program_url),
           },
           update: {},
         });
@@ -314,7 +355,11 @@ export class ApplyService {
     });
     if (!application || !applicant) {
       // Neither side committed — surface a true conflict, not a fake success.
-      throw new ConflictException({ kind: 'apply_conflict' });
+      throw new ConflictException({
+        error: 'Conflict',
+        message: 'Apply conflict',
+        code: 'apply_conflict',
+      });
     }
     const fit = fitFromScore(application.fit_score);
     return this.toConfirmation(account.id, applicant.id, application, fit);
@@ -325,7 +370,13 @@ export class ApplyService {
   // loudly rather than smuggling an off-shape object past the type system.
   private fromLedger(response: Prisma.JsonValue): ApplyConfirmationDto {
     const dto = parseLedgerConfirmation(response);
-    if (!dto) throw new ConflictException({ kind: 'apply_replay_corrupt' });
+    if (!dto) {
+      throw new ConflictException({
+        error: 'Conflict',
+        message: 'Apply replay corrupt',
+        code: 'apply_replay_corrupt',
+      });
+    }
     return dto;
   }
 
@@ -380,6 +431,19 @@ export class ApplyService {
       },
     };
   }
+}
+
+// Trim each entry of a free-text string array for storage parity with the
+// scalar text fields. Pure; preserves order and length (DTO ArrayMaxSize /
+// per-item length bounds still apply to the trimmed values).
+function trimEntries(values: string[]): string[] {
+  return values.map((v) => v.trim());
+}
+
+// Trim an optional/nullable free-text field, preserving an explicit null (a
+// client clearing the field) and absence. Storage parity with the name fields.
+function trimOrNull(value: string | null | undefined): string | null {
+  return value === null || value === undefined ? null : value.trim();
 }
 
 function clampLimit(limit: number | undefined): number {
