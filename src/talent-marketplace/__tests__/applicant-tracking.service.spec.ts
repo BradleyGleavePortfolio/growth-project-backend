@@ -28,7 +28,7 @@ function makeIdempotency(
 
 describe('ApplicantTrackingService.listApplicants — hirer-scope + PII projection', () => {
   it('pins the query to the caller hirer_id and listing, and projects PII-stripped cards', async () => {
-    const findMany = jest.fn(async () => [
+    const findMany = jest.fn(async (_args: { where: Record<string, unknown> }) => [
       {
         id: 'app-1',
         applicant_id: 'cand-1',
@@ -154,7 +154,7 @@ describe('ApplicantTrackingService.moveStage — transitions + idempotency', () 
   }
 
   it('advances a valid transition and persists via Application.status', async () => {
-    const update = jest.fn(async () => ({}));
+    const update = jest.fn(async (_args: { data: { status: string } }) => ({}));
     const { service } = serviceFor('submitted', { outcome: 'claimed', claimNonce: 'n1' }, update);
     const res = await service.moveStage('hirer-1', 'app-1', 'screening');
     expect(res.stage).toBe('screening');
