@@ -1,3 +1,6 @@
+// PII guardrails (TM-5): never log raw email/phone/IP; applicants may read only
+// their own applications (scoped to the JWT subject); fit-screen is in-house with
+// no third-party PII fan-out; idempotency keys are namespaced per applicant.
 import {
   ConflictException,
   ForbiddenException,
