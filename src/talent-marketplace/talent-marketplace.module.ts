@@ -14,6 +14,9 @@ import { TalentConnectWebhookController } from './talent-connect-webhook.control
 import { TalentConnectWebhookService } from './talent-connect-webhook.service';
 import { PublicListingController } from './public-listing.controller';
 import { PublicListingService } from './public-listing.service';
+import { AdminModerationController } from './admin-moderation.controller';
+import { AdminModerationService } from './admin-moderation.service';
+import { OwnerGuard } from '../common/guards/owner.guard';
 
 // TM-2 — Talent Marketplace job-listing CRUD + publish.
 // TM-3 — public, unauthenticated browse + SEO detail.
@@ -29,6 +32,7 @@ import { PublicListingService } from './public-listing.service';
     ApplyController,
     TalentConnectWebhookController,
     PublicListingController,
+    AdminModerationController,
   ],
   providers: [
     JobListingService,
@@ -40,6 +44,8 @@ import { PublicListingService } from './public-listing.service';
     JwksVerifierService,
     HirerVerifiedGuard,
     TalentConnectWebhookService,
+    AdminModerationService,
+    OwnerGuard,
   ],
   exports: [JobListingService, ApplyService],
 })
