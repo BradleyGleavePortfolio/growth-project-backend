@@ -307,4 +307,42 @@ describe('TalentConnectWebhookController — HTTP signature gate', () => {
     expect(parsed.received).toBe(true);
     expect(parsed.processed).toBe(true);
   });
+
+  it('VALID signature over MALFORMED (non-JSON) body → 400, no crash, service never reached', async () => {
+    const malformed = 'not-json{';
+    const header = signStripePayload({ payload: malformed, secret: SECRET });
+    const res = await httpRequest({
+      app,
+      method: 'POST',
+      path: PATH,
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': header,
+      },
+      body: malformed,
+    });
+    // 4xx with no crash and the thin service never reached is the contract;
+    // the body parser may reject the bytes before the handler's own JSON guard,
+    // so assert the status + isolation rather than a specific error string.
+    expect(res.status).toBe(400);
+    expect(handleAccountUpdated).not.toHaveBeenCalled();
+  });
+
+  it('VALID signature over well-formed JSON MISSING event fields → 400, service never reached', async () => {
+    const incomplete = JSON.stringify({ id: 'evt_x' });
+    const header = signStripePayload({ payload: incomplete, secret: SECRET });
+    const res = await httpRequest({
+      app,
+      method: 'POST',
+      path: PATH,
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': header,
+      },
+      body: incomplete,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body).toContain('Malformed Stripe event');
+    expect(handleAccountUpdated).not.toHaveBeenCalled();
+  });
 });
