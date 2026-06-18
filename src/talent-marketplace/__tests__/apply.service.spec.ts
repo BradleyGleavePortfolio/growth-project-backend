@@ -1,4 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import {
   MarketplaceIdempotencyService,
@@ -145,15 +146,28 @@ describe('ApplyService.updateOwnProfile — pinned to caller, no cross-write', (
     const prisma = makePrisma({ applicant: { findUnique, update } });
     const service = new ApplyService(prisma, makeIdempotency({}));
 
-    await service.updateOwnProfile('user-1', { first_name: '  Jordan  ' });
+    await service.updateOwnProfile('user-1', {
+      first_name: '  Jordan  ',
+      headline: '  Strength Coach  ',
+      bio: '  10 years in the gym.  ',
+      specialties: ['  Strength  ', 'Mobility'],
+      sample_program_url: '  https://example.com/p  ',
+    });
 
     expect(findUnique).toHaveBeenCalledWith({
       where: { user_id: 'user-1' },
       select: { id: true },
     });
     expect(update.mock.calls[0][0].where).toEqual({ user_id: 'user-1' });
-    // only provided fields are written, trimmed
-    expect(update.mock.calls[0][0].data).toEqual({ first_name: 'Jordan' });
+    // only provided fields are written, and EVERY free-text field is trimmed
+    // (names, headline, bio, per-entry array values, url) for parity — P3-3.
+    expect(update.mock.calls[0][0].data).toEqual({
+      first_name: 'Jordan',
+      headline: 'Strength Coach',
+      bio: '10 years in the gym.',
+      specialties: ['Strength', 'Mobility'],
+      sample_program_url: 'https://example.com/p',
+    });
   });
 
   it('throws NotFound rather than creating when no profile exists', async () => {
@@ -334,6 +348,75 @@ describe('ApplyService.apply — listing visibility & idempotency', () => {
 
     // default key is namespaced per (account, listing) — no cross-user intent leak
     expect(claimOrReplay.mock.calls[0][0].idempotencyKey).toBe('apply:user-1:listing-1');
+  });
+
+  it('recovers idempotently when a DISTINCT key hits the (applicant, listing) composite unique', async () => {
+    // P2-2: two different client-supplied idempotency keys for the same
+    // (account, listing) each claim a fresh ledger row, but the composite
+    // @@unique([applicant_user_id, listing_id]) is the DB backstop. The second
+    // create raises P2002 on the composite; apply() releases the claim and
+    // routes into recoverConfirmation, which reads back the ONE existing
+    // Application owner-scoped and replays its confirmation. Exactly one row is
+    // created and no error reaches the client.
+    const existing = applicationRow({ id: 'app-1', fit_score: 80 });
+    const create = jest.fn(async () => {
+      throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+        meta: { target: ['applicant_user_id', 'listing_id'] },
+      });
+    });
+    const $transaction = jest.fn(async (fn: (tx: unknown) => unknown) =>
+      fn({
+        applicant: { upsert: jest.fn(async () => applicantRow()) },
+        application: { create },
+      }),
+    );
+    const releaseClaim = jest.fn(async () => undefined);
+    const applicationFindFirst = jest.fn(
+      async (_args: { where: unknown; orderBy: unknown }) => existing,
+    );
+    const prisma = makePrisma({
+      jobListing: {
+        findUnique: jest.fn(async () => ({
+          id: 'listing-1',
+          hirer_id: 'hirer-1',
+          status: 'published',
+          specialty: 'Strength',
+          compensation_type: 'flat',
+        })),
+      },
+      user: { findUnique: jest.fn(async () => ({ id: 'user-1', email: 'jo@example.com' })) },
+      application: { findFirst: applicationFindFirst },
+      applicant: { findUnique: jest.fn(async () => ({ id: 'applicant-1' })) },
+      $transaction,
+    });
+    const idempotency = makeIdempotency({
+      claimOrReplay: jest.fn(
+        async (): Promise<ClaimOrReplayResult> => ({ outcome: 'claimed', claimNonce: 'nonce-2' }),
+      ),
+      releaseClaim,
+    });
+    const service = new ApplyService(prisma, idempotency);
+
+    const result = await service.apply('listing-1', {
+      email: 'jo@example.com',
+      first_name: 'Jo',
+      last_name: 'Coach',
+      idempotency_key: 'distinct-second-key',
+    });
+
+    // exactly one Application create was attempted (the duplicate is rejected by
+    // the composite unique, not created), and the claim was released for recovery
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(releaseClaim).toHaveBeenCalledTimes(1);
+    // the recovered confirmation points at the SAME pre-existing application id
+    expect(applicationFindFirst.mock.calls[0][0].where).toEqual({
+      applicant_user_id: 'user-1',
+      listing_id: 'listing-1',
+    });
+    expect(result.application_id).toBe('app-1');
+    expect(result.status).toBe('submitted');
   });
 });
 
