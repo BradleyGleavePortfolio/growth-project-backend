@@ -74,23 +74,10 @@ export class BrowseListingsQueryDto {
   compensation_type?: string;
 }
 
-/**
- * ── PUBLIC PAYLOAD CONTRACT (binding — mobile TM-M2 + web TM-W2 consume this) ──
- *
- * PII OMISSION: this is an explicit allow-list. The browse + detail payloads are
- * built by copying ONLY the fields below off the JobListing entity — the raw
- * entity is NEVER spread. hirer_id, idempotency_key, internal hirer contact, and
- * any applicant data MUST NOT appear here. Adding a field is a deliberate act:
- * confirm it is non-PII and safe for an unauthenticated audience.
- *
- * LUXURY DOCTRINE (Miller ≤5 visible elements, Hick's smart default, one primary
- * "Apply" tap, 3-taps-to-apply): the browse list returns the COMPACT card shape
- * (PublicListingCardDto) — title, specialty, location, a one-line comp summary,
- * and the cta_listing_id the Apply flow targets — so the mobile card stays
- * cognitively light. The detail payload (PublicListingDetailDto) carries the
- * full public blob plus the SAME single primary affordance: cta_listing_id is
- * the one obvious Apply target. One primary path, no competing CTAs.
- */
+// PUBLIC PAYLOAD CONTRACT (binding — mobile TM-M2 + web TM-W2 consume this).
+// Explicit allow-list: payloads copy ONLY the fields below off JobListing — the
+// raw entity is NEVER spread, so hirer_id / idempotency_key / applicant data
+// cannot leak. Adding a field is deliberate: confirm it is non-PII first.
 export interface PublicListingCardDto {
   id: string;
   title: string;

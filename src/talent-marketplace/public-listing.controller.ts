@@ -11,10 +11,9 @@ import { Public } from '../common/decorators/public.decorator';
 import { BrowseListingsQueryDto } from './public-listing.dto';
 import { PublicListingService } from './public-listing.service';
 
-// TM-3 — public, unauthenticated browse + SEO detail. @Public() opts these two
-// routes out of the global JwtAuthGuard; RLS + an explicit published filter in
-// the service keep anon to published rows only, and the allow-list DTO keeps the
-// payload PII-free. Throttled per-IP since the surface is unauthenticated.
+// TM-3 — public browse + SEO detail. @Public() opts these routes out of the
+// global JwtAuthGuard; the service's published filter + allow-list DTO keep anon
+// to published, PII-free rows. Throttled per-IP since the surface is anon.
 @ApiTags('talent-marketplace')
 @Controller('talent-marketplace/public/listings')
 export class PublicListingController {

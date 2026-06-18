@@ -1,9 +1,6 @@
-// TM-3 keyset tuple cursor. Public browse paginates on the stable sort key
-// (created_at, id) — the exact tuple backing the @@index([status, created_at,
-// id]) on JobListing — so a page boundary stays stable even when rows are
-// inserted or published mid-scroll (no offset drift, no duplicate/skipped rows).
-// The cursor is an opaque base64url blob; callers must treat it as opaque and
-// only ever echo back the next_cursor this module emits.
+// TM-3 keyset tuple cursor. Paginates on (created_at, id) — the tuple backing
+// @@index([status, created_at, id]) — so boundaries stay stable across inserts
+// (no offset drift). Opaque base64url blob; callers only echo back next_cursor.
 
 export interface TupleCursor {
   created_at: Date;
