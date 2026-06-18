@@ -15,6 +15,8 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import { AntiBotGate, AntiBotGuard } from './anti-bot/anti-bot.guard';
 import { ANTI_BOT_SURFACES } from './anti-bot/anti-bot.types';
 import {
@@ -52,6 +54,7 @@ export class ApplyController {
   // control for the account-create + apply surface). Returns 201 with the full
   // confirmation payload.
   @Post('listings/:id/apply')
+  @Public()
   @AntiBotGate(ANTI_BOT_SURFACES.Apply)
   @UseGuards(AntiBotGuard)
   @HttpCode(HttpStatus.CREATED)
@@ -64,12 +67,14 @@ export class ApplyController {
 
   // The applicant's own pre-coach profile (reads-own).
   @Get('applicants/me')
+  @Roles('student')
   @UseGuards(JwtAuthGuard)
   async getMyProfile(@Req() req: AuthedRequest) {
     return this.apply.getOwnProfile(req.user.id);
   }
 
   @Patch('applicants/me')
+  @Roles('student')
   @UseGuards(JwtAuthGuard)
   async updateMyProfile(
     @Req() req: AuthedRequest,
@@ -80,6 +85,7 @@ export class ApplyController {
 
   // "My applications" — keyset tuple pagination, scoped to the caller.
   @Get('applicants/me/applications')
+  @Roles('student')
   @UseGuards(JwtAuthGuard)
   async myApplications(
     @Req() req: AuthedRequest,
