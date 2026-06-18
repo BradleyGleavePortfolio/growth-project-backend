@@ -9,6 +9,15 @@ import {
 } from '../admin-moderation.controller';
 import { AdminModerationService } from '../admin-moderation.service';
 import type { ReviewDecisionDto } from '../admin-moderation.dto';
+import type { AuthedRequest } from '../../auth/auth-request';
+import type { User } from '@prisma/client';
+
+// The controller reads only req.user.id. A minimal owner stub: the user field
+// is narrowed with a concrete Pick<User,'id'> cast (no blanket any/never),
+// which is all the handler dereferences.
+function ownerReq(id: string): AuthedRequest {
+  return { user: { id } as Pick<User, 'id'> as User };
+}
 
 // TM-7a — the admin controller is owner-only. Its security contract is pinned
 // locally: class-level @Roles('owner') + JwtAuthGuard & OwnerGuard, and the
@@ -73,7 +82,7 @@ describe('AdminModerationController — delegation', () => {
 
   it('forwards the authed owner id, listing id and dto to reviewListing', async () => {
     const { controller, service } = makeController();
-    const req = { user: { id: 'owner-1' } } as never;
+    const req = ownerReq('owner-1');
     const dto: ReviewDecisionDto = { decision: 'approved' };
     await controller.reviewListing(req, 'list-1', dto, undefined);
     expect(service.reviewListing).toHaveBeenCalledWith('owner-1', 'list-1', dto);
@@ -81,7 +90,7 @@ describe('AdminModerationController — delegation', () => {
 
   it('folds the Idempotency-Key header into the dto when body omits it', async () => {
     const { controller, service } = makeController();
-    const req = { user: { id: 'owner-1' } } as never;
+    const req = ownerReq('owner-1');
     const dto: ReviewDecisionDto = { decision: 'approved' };
     await controller.reviewListing(req, 'list-1', dto, 'hdr-key');
     expect(service.reviewListing).toHaveBeenCalledWith('owner-1', 'list-1', {
