@@ -2210,3 +2210,29 @@ PATCH  /assignments/:assignmentId/complete    Client marks assignment complete (
 - **`ClientWorkoutAssignment`** — workout_plan_id, client_id, assigned_by_coach_id, scheduled_for, completed_at, post_rpe (1–10), post_notes
 
 Migration: `prisma/migrations/20260508000000_add_workout_builder/migration.sql`
+
+## Talent Marketplace
+
+A two-sided, public job board for coaches. Verified hirers post listings; anyone
+can browse published listings without an account; an applicant applies in a few
+taps, minting a lightweight pre-coach account. Stripe Connect onboarding is
+reused from the existing coach surface.
+
+The canonical reference lives in
+[`docs/talent-marketplace/`](docs/talent-marketplace/README.md):
+
+- [README](docs/talent-marketplace/README.md) — overview, who it is for, the
+  lane board, and what is in `main` today.
+- [architecture](docs/talent-marketplace/architecture.md) — request flow, RLS
+  posture, error envelope, idempotency ledger, cursor signing.
+- [endpoints](docs/talent-marketplace/endpoints.md) — public browse + SEO
+  detail, hirer CRUD, the Connect webhook, and the merge-ready apply funnel.
+- [error-contract](docs/talent-marketplace/error-contract.md) — the
+  `{ error, message, code }` envelope and its discriminators.
+- [pii-and-rls](docs/talent-marketplace/pii-and-rls.md) — PII-omission posture
+  and per-table RLS.
+- [roadmap](docs/talent-marketplace/roadmap.md) — what is queued next.
+
+Design rationale and the operator-locked decisions live in
+[ADR-0002](docs/architecture/adr-0002-talent-marketplace-rebuild.md). The apply
+funnel (TM-5) is merge-ready (PR #435), awaiting operator PII sign-off.
