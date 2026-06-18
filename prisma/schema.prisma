@@ -6650,6 +6650,34 @@ model MarketplaceMutationIdempotency {
   @@index([user_id, route_key])
 }
 
+// ─── MarketplaceConnectEvent ────────────────────────────────────────────────────
+//
+// TM-14 — event-driven Stripe Connect `account.updated` ledger for the talent
+// marketplace. One row per processed Stripe event id; the `stripe_event_id`
+// primary key is the idempotency anchor — a redelivered event loses the unique
+// insert race and is processed exactly once (mirrors StripeProcessedEvent).
+//
+// `onboarding_completed` is the EVENT-DRIVEN completion state derived from the
+// account payload via the TM-10 adapter mapping (charges_enabled &&
+// payouts_enabled). It replaces polling as the primary onboarding-completed
+// signal (fixes P1-7); the legacy ConnectService.syncFromStripe poll stays as
+// a fallback only.
+//
+// RLS: RESTRICTIVE deny-all to anon + authenticated — written/read only via
+// service_role (the webhook runs server-side). Mirrors
+// MarketplaceMutationIdempotency. See 20261220000030 migration.
+model MarketplaceConnectEvent {
+  stripe_event_id      String   @id
+  type                 String
+  stripe_account_id    String
+  coach_user_id        String?
+  onboarding_completed Boolean  @default(false)
+  processed_at         DateTime @default(now())
+
+  @@index([stripe_account_id])
+  @@index([coach_user_id])
+}
+
 // ─── MarketplaceAbuseSignal ─────────────────────────────────────────────────────
 //
 // TM-6 — PII-governed heuristic + abuse-log store for the in-house anti-bot

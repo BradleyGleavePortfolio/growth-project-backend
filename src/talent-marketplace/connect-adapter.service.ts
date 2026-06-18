@@ -103,12 +103,25 @@ export class TalentConnectAdapter {
 
   private mapStatus(status: CoachConnectStatus): TalentConnectStatus {
     return {
-      onboarded: status.charges_enabled && status.payouts_enabled,
+      onboarded: TalentConnectAdapter.deriveOnboarded(status),
       charges_enabled: status.charges_enabled,
       payouts_enabled: status.payouts_enabled,
       account_id: status.account_id,
       requirements_due: status.requirements_due,
     };
+  }
+
+  // The SINGLE interpretation of Connect capability flags → "onboarded".
+  // `mapStatus` (GET status, polling/read path) and the TM-14 event-driven
+  // account.updated webhook both call this so the two paths can never diverge
+  // on what "onboarded" means. A coach is onboarded once Stripe reports both
+  // charges_enabled and payouts_enabled — matching the long-standing read-time
+  // derivation. Static + pure so callers needn't construct an adapter instance.
+  static deriveOnboarded(flags: {
+    charges_enabled: boolean;
+    payouts_enabled: boolean;
+  }): boolean {
+    return flags.charges_enabled && flags.payouts_enabled;
   }
 
   // Run a delegated Connect call under a 10s AbortController timeout and
