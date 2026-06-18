@@ -15,8 +15,9 @@
  *   - the legacy polling fallback (ConnectService.syncFromStripe) is NEVER
  *     invoked by this path.
  */
-import { INestApplication } from '@nestjs/common';
+import { BadRequestException, INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import type { Request } from 'express';
 import * as http from 'http';
 import { Prisma } from '@prisma/client';
 import { TalentConnectWebhookController } from '../src/talent-marketplace/talent-connect-webhook.controller';
@@ -257,6 +258,7 @@ describe('TalentConnectWebhookService — persistence + event-id idempotency', (
 describe('TalentConnectWebhookController — HTTP signature gate', () => {
   const SECRET = 'whsec_tm14_test_secret';
   let app: INestApplication;
+  let controller: TalentConnectWebhookController;
   let handleAccountUpdated: jest.Mock;
 
   beforeAll(async () => {
@@ -274,6 +276,7 @@ describe('TalentConnectWebhookController — HTTP signature gate', () => {
         },
       ],
     }).compile();
+    controller = moduleRef.get(TalentConnectWebhookController);
     app = moduleRef.createNestApplication({ rawBody: true });
     await app.init();
     await app.listen(0);
@@ -359,33 +362,33 @@ describe('TalentConnectWebhookController — HTTP signature gate', () => {
     expect(handleAccountUpdated).not.toHaveBeenCalled();
   });
 
-  it('VALID signature over a body the JSON parser passes through but JSON.parse rejects → 400 "Invalid JSON" from the CONTROLLER guard, service never reached', async () => {
-    // B-P2-1: isolate the controller's own post-signature `JSON.parse` guard
-    // (controller L65-70). The previous malformed-body test sends
-    // `content-type: application/json`, so Nest's express JSON body parser may
-    // reject the bytes BEFORE the handler runs — proving "a 400 happens
-    // somewhere", not "the controller verified the signature THEN rejected the
-    // JSON". Here we send `content-type: text/plain` so the JSON body parser
-    // skips the body entirely (rawBody is still captured content-type-agnostically
-    // under `rawBody: true`). The Stripe signature therefore verifies over the
-    // raw bytes, execution reaches the controller, and the controller's OWN
-    // `JSON.parse(raw)` is the only thing that can reject it — asserted via the
-    // controller-specific 'Invalid JSON' message, which the body parser never
-    // emits. This locks the verify-signature-THEN-parse-JSON ordering.
+  it('controller JSON.parse guard rejects a validly-signed non-JSON rawBody with BadRequest("Invalid JSON"), service never reached', async () => {
+    // B-P2-1: isolate the controller's OWN post-signature `JSON.parse` guard
+    // (controller L65-70). Over HTTP this branch is unreachable in this app:
+    // under `rawBody: true`, express only captures `req.rawBody` for the parsers
+    // it runs — `application/json`, whose parser runs `JSON.parse` itself and
+    // rejects malformed bytes BEFORE the handler (that is the separate
+    // malformed-body test above, which only proves "a 400 happens somewhere").
+    // Any content-type whose parser does not consume the body leaves `rawBody`
+    // undefined, tripping the earlier "raw body unavailable" guard rather than
+    // the JSON guard. So we invoke the real controller (resolved from the test
+    // module, with the mocked service injected) DIRECTLY, passing a request
+    // whose `rawBody` is a Buffer of invalid JSON signed with the real secret
+    // over those exact bytes. Signature verification therefore passes and the
+    // controller's own `JSON.parse(raw)` is the ONLY thing that can reject the
+    // request — locking the verify-signature-THEN-parse-JSON ordering via the
+    // controller-specific 'Invalid JSON' message.
     const malformed = 'not-json{';
     const header = signStripePayload({ payload: malformed, secret: SECRET });
-    const res = await httpRequest({
-      app,
-      method: 'POST',
-      path: PATH,
-      headers: {
-        'content-type': 'text/plain',
-        'stripe-signature': header,
-      },
-      body: malformed,
-    });
-    expect(res.status).toBe(400);
-    expect(res.body).toContain('Invalid JSON');
+    // The handler reads only `req.rawBody`; this is the minimal honest stand-in
+    // for the Express request. @ts-expect-error documents that the stub is a
+    // deliberate structural subset of the full express Request type.
+    // @ts-expect-error minimal structural Request stub: the handler reads only rawBody
+    const req: Request = { rawBody: Buffer.from(malformed, 'utf8') };
+
+    await expect(controller.handle(req, header)).rejects.toThrow(
+      new BadRequestException('Invalid JSON'),
+    );
     expect(handleAccountUpdated).not.toHaveBeenCalled();
   });
 
