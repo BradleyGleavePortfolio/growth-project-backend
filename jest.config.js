@@ -62,6 +62,13 @@ module.exports = {
   // the roots above: this slice owns those spec files in the source tree, and
   // the root is intentionally the slice subtree ONLY — NOT the whole `src/`
   // tree. Both specs use plain unit doubles (no Prisma, no live DB).
+  // TM-2 adds `src/talent-marketplace` as an ELEVENTH narrowly-scoped root so
+  // the job-listing service + hirer-verified guard unit specs colocated under
+  // src/talent-marketplace/__tests__/*.spec.ts are discovered. Same rationale
+  // as the roots above: this slice owns those spec files in the source tree,
+  // and the root is intentionally the slice subtree ONLY — NOT the whole
+  // `src/` tree. Both specs use mocked Prisma and need no live DB; the
+  // JobListing RLS coverage lives under test/rls/ from TM-1.
   roots: [
     '<rootDir>/test',
     '<rootDir>/src/roman/voice',
@@ -73,6 +80,7 @@ module.exports = {
     '<rootDir>/src/community/wearable-prompts',
     '<rootDir>/src/regimes',
     '<rootDir>/src/feature-flags',
+    '<rootDir>/src/talent-marketplace',
   ],
   testRegex: '\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'mjs', 'json'],
