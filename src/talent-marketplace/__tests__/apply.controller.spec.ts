@@ -14,27 +14,39 @@ import type {
 // applicant's data or drop the subject.
 
 function authedReq(userId: string): AuthedRequest {
-  // The controller only reads req.user.id. Build a structurally complete-enough
-  // User by spreading a base test user and overriding the id, so no widening
-  // cast is needed beyond the single justified User assertion.
+  // The controller only reads req.user.id. Build a type-complete User fixture
+  // (every scalar field present) so the AuthedRequest is structurally valid
+  // without any forbidden widening cast.
   const user: User = { ...BASE_USER, id: userId };
   return { user };
 }
 
-// A minimal but type-complete User row for controller wiring tests. Field values
-// are inert placeholders; only `id` is consumed by the controller under test.
+// A type-complete User fixture for controller wiring tests. `satisfies User`
+// forces the compiler to flag any missing/renamed column, so this stays honest
+// as the schema evolves. Only `id` is consumed by the controller under test.
 const BASE_USER = {
   id: 'user-0',
   supabase_id: 'precoach:test',
   email: 'test@example.com',
   name: 'Test User',
+  phone: null,
   role: 'student',
+  coach_id: null,
+  coach_practice_type: null,
   created_at: new Date('2026-06-18T00:00:00.000Z'),
-  updated_at: new Date('2026-06-18T00:00:00.000Z'),
-} satisfies Pick<
-  User,
-  'id' | 'supabase_id' | 'email' | 'name' | 'role' | 'created_at' | 'updated_at'
-> as User;
+  archived_at: null,
+  deletion_scheduled_at: null,
+  deleted_at: null,
+  deletion_token_hash: null,
+  deletion_token_expires_at: null,
+  deletion_requested_at: null,
+  deletion_confirmed_at: null,
+  expo_push_token: null,
+  default_payout_method_id: null,
+  first_win_completed_at: null,
+  show_on_leaderboard: false,
+  leaderboard_display_name: null,
+} satisfies User;
 
 function makeController(parts: Partial<Record<keyof ApplyService, jest.Mock>>): {
   controller: ApplyController;

@@ -139,7 +139,9 @@ describe('ApplyService.getOwnProfile — owner-scoped read + allow-list DTO', ()
 describe('ApplyService.updateOwnProfile — pinned to caller, no cross-write', () => {
   it('pins both the existence check and the update where-clause to the caller', async () => {
     const findUnique = jest.fn(async () => ({ id: 'applicant-1' }));
-    const update = jest.fn(async () => applicantRow({ first_name: 'Jordan' }));
+    const update = jest.fn(async (_args: { where: unknown; data: unknown }) =>
+      applicantRow({ first_name: 'Jordan' }),
+    );
     const prisma = makePrisma({ applicant: { findUnique, update } });
     const service = new ApplyService(prisma, makeIdempotency({}));
 
@@ -169,7 +171,9 @@ describe('ApplyService.updateOwnProfile — pinned to caller, no cross-write', (
 
 describe('ApplyService.myApplications — owner-scoped keyset pagination', () => {
   it('filters by applicant_user_id and returns PII-free cards', async () => {
-    const findMany = jest.fn(async () => [applicationRow()]);
+    const findMany = jest.fn(async (_args: { where: unknown; take: number }) => [
+      applicationRow(),
+    ]);
     const prisma = makePrisma({ application: { findMany } });
     const service = new ApplyService(prisma, makeIdempotency({}));
 
@@ -188,7 +192,7 @@ describe('ApplyService.myApplications — owner-scoped keyset pagination', () =>
     const rows = Array.from({ length: 21 }, (_, i) =>
       applicationRow({ id: `app-${i}`, created_at: new Date(NOW.getTime() - i * 1000) }),
     );
-    const findMany = jest.fn(async () => rows);
+    const findMany = jest.fn(async (_args: { where: unknown; take: number }) => rows);
     const prisma = makePrisma({ application: { findMany } });
     const service = new ApplyService(prisma, makeIdempotency({}));
 
@@ -284,7 +288,11 @@ describe('ApplyService.apply — listing visibility & idempotency', () => {
 
   it('keys idempotency on the resolved account + listing when no client key given', async () => {
     const claimOrReplay = jest.fn(
-      async (): Promise<ClaimOrReplayResult> => ({ outcome: 'in_flight' }),
+      async (_key: {
+        userId: string;
+        routeKey: string;
+        idempotencyKey: string;
+      }): Promise<ClaimOrReplayResult> => ({ outcome: 'in_flight' }),
     );
     const prisma = makePrisma({
       jobListing: {
