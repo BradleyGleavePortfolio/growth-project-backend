@@ -14,6 +14,9 @@ import { TalentConnectWebhookController } from './talent-connect-webhook.control
 import { TalentConnectWebhookService } from './talent-connect-webhook.service';
 import { PublicListingController } from './public-listing.controller';
 import { PublicListingService } from './public-listing.service';
+import { JobHunterController } from './job-hunter.controller';
+import { JobHunterService } from './job-hunter.service';
+import { SpecialtyAlertsService } from './specialty-alerts.service';
 
 // TM-2 — Talent Marketplace job-listing CRUD + publish.
 // TM-3 — public, unauthenticated browse + SEO detail.
@@ -22,6 +25,8 @@ import { PublicListingService } from './public-listing.service';
 // TM-4 ledger backing idempotent submit).
 // TM-14 — appends the event-driven Connect `account.updated` webhook surface
 // (controller + thin service) reusing the TM-10 adapter; append-only.
+// TM-9 — applicant-facing /me/* job-hunter tooling (own applications, portfolio
+// showcase, specialty-matched alerts, profile-strength nudges); append-only.
 @Module({
   imports: [AntiBotModule, TalentConnectAdapterModule],
   controllers: [
@@ -29,6 +34,7 @@ import { PublicListingService } from './public-listing.service';
     ApplyController,
     TalentConnectWebhookController,
     PublicListingController,
+    JobHunterController,
   ],
   providers: [
     JobListingService,
@@ -40,6 +46,8 @@ import { PublicListingService } from './public-listing.service';
     JwksVerifierService,
     HirerVerifiedGuard,
     TalentConnectWebhookService,
+    JobHunterService,
+    SpecialtyAlertsService,
   ],
   exports: [JobListingService, ApplyService],
 })
