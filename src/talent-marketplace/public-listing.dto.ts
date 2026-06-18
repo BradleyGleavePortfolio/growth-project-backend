@@ -8,18 +8,15 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 
-// TM-3 public browse page controls. Defaults mirror the community pagination
-// idiom (clamp 1..50, default 20) so the database is never asked for an
-// unbounded set by a hand-crafted request or an older client.
+// Page controls clamp 1..50 (default 20) so an unbounded set is never queried.
 export const PUBLIC_LISTING_DEFAULT_LIMIT = 20;
 export const PUBLIC_LISTING_MAX_LIMIT = 50;
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
-// Query params arrive as strings; coerce `limit` to a number before @IsInt so
-// `?limit=20` is accepted while `abc`/`1.5`/`0` are still rejected. A missing
-// value stays undefined so the `?? DEFAULT` applies in the service.
+// Coerce the string `limit` query param to a number before @IsInt: `?limit=20`
+// is accepted, `abc`/`1.5`/`0` are rejected, missing stays undefined (-> default).
 const toIntLimit = ({ value }: { value: unknown }): unknown => {
   if (value === undefined || value === null || value === '') return undefined;
   if (typeof value === 'number') return value;

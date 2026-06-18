@@ -24,14 +24,13 @@ export class PublicListingService {
 
   async browse(query: BrowseListingsQueryDto): Promise<BrowseListingsResponse> {
     const limit = clampLimit(query.limit);
+    const comp = asCompensationType(query.compensation_type);
     const where: Prisma.JobListingWhereInput = {
       status: 'published',
       ...(query.specialty ? { specialty: query.specialty } : {}),
       ...(query.location ? { location: query.location } : {}),
       ...(query.modality ? { modality: query.modality } : {}),
-      ...(asCompensationType(query.compensation_type)
-        ? { compensation_type: asCompensationType(query.compensation_type) }
-        : {}),
+      ...(comp ? { compensation_type: comp } : {}),
     };
 
     // Keyset boundary under the stable (created_at DESC, id DESC) sort. A
