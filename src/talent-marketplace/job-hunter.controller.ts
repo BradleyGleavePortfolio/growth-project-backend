@@ -2,18 +2,18 @@
 // portfolio showcase, profile-strength nudges. JWT-gated, @Roles('student'),
 // owner-scoped on user_id. Specialty alerts live in their own controller (TM-9b).
 
-import { Body, Controller, Get, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Put, Query, Req } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
-import { JwtAuthGuard } from '../auth/auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { MyApplicationsQueryDto, UpdatePortfolioDto } from './job-hunter.dto';
 import { JobHunterService } from './job-hunter.service';
 
+// JwtAuthGuard + RolesGuard are global APP_GUARDs (app.module.ts), so @Roles
+// alone enforces the student tier — no per-controller @UseGuards needed.
 @ApiTags('talent-marketplace')
 @Controller('talent-marketplace/me')
 @Roles('student')
-@UseGuards(JwtAuthGuard)
 export class JobHunterController {
   constructor(private readonly jobHunter: JobHunterService) {}
 

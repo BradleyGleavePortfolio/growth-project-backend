@@ -7,7 +7,6 @@ import {
 import { RequestMethod } from '@nestjs/common';
 import { JobHunterController } from '../job-hunter.controller';
 import { JobHunterService } from '../job-hunter.service';
-import { JwtAuthGuard } from '../../auth/auth.guard';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import type { AuthedRequest } from '../../auth/auth-request';
 import type { User } from '@prisma/client';
@@ -15,9 +14,10 @@ import type { User } from '@prisma/client';
 // TM-9a — the /me/* dashboard surface is owner-scoped: JWT-gated,
 // @Roles('student'), and every handler forwards the JWT subject (req.user.id)
 // to the service. The invariants under test:
-//   1. AUTH-GATED — JwtAuthGuard is on the controller (no anon access).
-//   2. ROLE-GATED — @Roles('student') pins the applicant role at class level.
-//   3. OWNER-SCOPE — handlers pass req.user.id, never a client-supplied id, so
+//   1. AUTH + ROLE GATED — @Roles('student') pins the applicant role at class
+//      level; JwtAuthGuard + RolesGuard are global APP_GUARDs (app.module.ts),
+//      so no per-controller @UseGuards is needed (and none is declared).
+//   2. OWNER-SCOPE — handlers pass req.user.id, never a client-supplied id, so
 //      one applicant can never read another's data.
 
 interface HunterShape {
@@ -60,10 +60,10 @@ describe('JobHunterController — owner-scoped /me dashboard surface', () => {
   });
 
   describe('security contract', () => {
-    it('gates the controller with JwtAuthGuard', () => {
+    it('declares no per-controller guard (relies on global APP_GUARDs)', () => {
       const guards =
         Reflect.getMetadata(GUARDS_METADATA, JobHunterController) ?? [];
-      expect(guards).toContain(JwtAuthGuard);
+      expect(guards).toEqual([]);
     });
 
     it("pins @Roles('student') at the class level", () => {
