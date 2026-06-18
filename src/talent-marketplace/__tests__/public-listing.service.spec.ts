@@ -258,6 +258,33 @@ describe('PublicListingService.detail', () => {
     expect(res.json_ld.identifier.value).toBe('listing-1');
   });
 
+  it('detail payload contains ONLY allow-listed public fields (exact key-set lock)', async () => {
+    // Mirror the card key-set lock for the DETAIL DTO (the binding public
+    // contract, public-listing.dto.ts). Locking the exact key set means a future
+    // field added to toDetail() that copies a PII column fails this test even if
+    // its value never equals the two fixture secrets — closing the gap the
+    // value-only substring scan above leaves open (B-P2-1).
+    const { service } = makeService([row()]);
+    const { listing } = await service.detail('listing-1');
+    expect(Object.keys(listing).sort()).toEqual(
+      [
+        'compensation_summary',
+        'compensation_terms',
+        'compensation_type',
+        'created_at',
+        'cta_listing_id',
+        'description',
+        'expectations',
+        'id',
+        'location',
+        'modality',
+        'published_at',
+        'specialty',
+        'title',
+      ].sort(),
+    );
+  });
+
   it('404s a draft/closed/non-existent id (never leaks unpublished rows)', async () => {
     const { service } = makeService([row({ id: 'draft-1', status: 'draft' })]);
     await expect(service.detail('draft-1')).rejects.toBeInstanceOf(
@@ -300,5 +327,20 @@ describe('PublicListingService — compensation summary shaping', () => {
       const res = await service.browse({});
       expect(res.items[0].compensation_summary).toBe(expected);
     }
+  });
+
+  it('falls back to a neutral summary for an unknown compensation_type (future enum growth)', async () => {
+    // compensation_type is a non-null DB enum exhausted by the four arms today,
+    // so the switch default is unreachable through the type system. This drives
+    // it directly via a narrow concrete cast to prove a FUTURE enum variant
+    // degrades to the neutral card string instead of `undefined` (A-P3-3). The
+    // cast is the narrow `{ compensation_type: string }` shape, not a banned
+    // blanket escape-hatch cast.
+    const rogue = { compensation_type: 'equity_grant' } as Partial<Row> & {
+      compensation_type: string;
+    };
+    const { service } = makeService([row(rogue as Partial<Row>)]);
+    const res = await service.browse({});
+    expect(res.items[0].compensation_summary).toBe('Compensation on application');
   });
 });

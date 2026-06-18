@@ -164,12 +164,12 @@ function compensationSummary(row: JobListing): string {
       return base && r ? `${base} base + ${r}` : 'Hybrid';
     }
     default:
-      // Intentionally unreachable today: compensation_type is a non-null DB enum
-      // (CoachCompensationType) exhausted by the four arms above. Kept as a safe
-      // fallback so a FUTURE enum variant degrades to a neutral card string
-      // instead of silently falling through to `undefined`. Exercised by a
-      // cast-driven spec in public-listing.service.spec.ts.
-      /* istanbul ignore next */
+      // Unreachable through the type system today: compensation_type is a
+      // non-null DB enum (CoachCompensationType) exhausted by the four arms
+      // above. Kept as a deliberate safe fallback so a FUTURE enum variant
+      // degrades to a neutral card string instead of silently returning
+      // `undefined`. Exercised via a narrow cast in
+      // public-listing.service.spec.ts ("future enum growth").
       return 'Compensation on application';
   }
 }
