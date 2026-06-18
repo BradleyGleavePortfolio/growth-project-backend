@@ -25,8 +25,8 @@ import { BrowseListingsQueryDto } from './public-listing.dto';
 //      facets at the ValidationPipe boundary.
 //   4. DELEGATION + STATUS — handlers forward to the service unchanged; an
 //      unpublished/unknown id surfaces the service's NotFoundException (404,
-//      {kind:'job_listing_not_found'}) — never a 401/403, which would leak the
-//      existence of the gate to an anon caller.
+//      {error:'Not Found',message:'Job listing not found',code:'job_listing_not_found'})
+//      — never a 401/403, which would leak the existence of the gate to an anon caller.
 //
 // The @nestjs/throttler decorator stores per-bucket metadata under
 // `THROTTLER:LIMIT<name>` / `THROTTLER:TTL<name>`; the unnamed bucket uses the
@@ -137,12 +137,17 @@ describe('PublicListingController — public anon surface contract', () => {
     });
 
     it('propagates the service 404 (unpublished/unknown id) as-is — never 401/403', async () => {
-      // The service throws NotFoundException({kind:'job_listing_not_found'}) for a
-      // draft/closed/missing id. The controller adds no auth layer, so an anon
+      // The service throws NotFoundException({error,message,code:'job_listing_not_found'})
+      // for a draft/closed/missing id. The controller adds no auth layer, so an anon
       // caller sees a 404 (resource hidden), never a 401/403 (gate revealed).
+      // Wire-shape pin lives in __tests__/public-listing.controller.http.spec.ts.
       const notFound = Object.assign(new Error('nf'), {
         getStatus: () => 404,
-        getResponse: () => ({ kind: 'job_listing_not_found' }),
+        getResponse: () => ({
+          error: 'Not Found',
+          message: 'Job listing not found',
+          code: 'job_listing_not_found',
+        }),
       });
       service.detail.mockRejectedValue(notFound);
       await expect(
