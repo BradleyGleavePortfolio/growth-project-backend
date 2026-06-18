@@ -95,7 +95,7 @@ export class ApplyService {
       const completed = await this.idempotency.markCompleted(
         claimKey,
         claim.claimNonce,
-        confirmation as unknown as Prisma.InputJsonValue,
+        toLedgerJson(confirmation),
       );
       if (completed.outcome === 'conflict') {
         // Our claim was reclaimed mid-flight; the Application still exists. Read
@@ -321,17 +321,12 @@ export class ApplyService {
   }
 
   // Replay path: the ledger stored the verbatim confirmation JSON. Validate the
-  // shape before returning so a malformed ledger row degrades loudly.
+  // shape field-by-field before returning so a malformed ledger row degrades
+  // loudly rather than smuggling an off-shape object past the type system.
   private fromLedger(response: Prisma.JsonValue): ApplyConfirmationDto {
-    if (
-      response !== null &&
-      typeof response === 'object' &&
-      !Array.isArray(response) &&
-      typeof (response as Record<string, unknown>).application_id === 'string'
-    ) {
-      return response as unknown as ApplyConfirmationDto;
-    }
-    throw new ConflictException({ kind: 'apply_replay_corrupt' });
+    const dto = parseLedgerConfirmation(response);
+    if (!dto) throw new ConflictException({ kind: 'apply_replay_corrupt' });
+    return dto;
   }
 
   // ── allow-list mappers (the PII gate) ───────────────────────────────────────
@@ -400,4 +395,92 @@ function fitFromScore(score: number | null): FitSignalDto {
   if (s >= 67) return { level: 'strong', label: 'Strong match', score: s };
   if (s >= 34) return { level: 'moderate', label: 'Good potential', score: s };
   return { level: 'exploratory', label: 'Worth exploring', score: s };
+}
+
+// Widen the confirmation DTO to the Prisma JSON input type for ledger storage.
+// The DTO is a closed set of strings/numbers/nested string objects, so it is a
+// structurally valid JSON value; this spells that out without a double-cast.
+function toLedgerJson(dto: ApplyConfirmationDto): Prisma.InputJsonValue {
+  return {
+    application_id: dto.application_id,
+    applicant_id: dto.applicant_id,
+    account_id: dto.account_id,
+    status: dto.status,
+    fit: { level: dto.fit.level, label: dto.fit.label, score: dto.fit.score },
+    confirmation: {
+      headline: dto.confirmation.headline,
+      message: dto.confirmation.message,
+      next_step: dto.confirmation.next_step,
+    },
+  };
+}
+
+// Rebuild a confirmation DTO from a stored ledger JSON value, validating each
+// field. Returns null for any shape mismatch so the caller can fail loudly
+// rather than returning an off-shape object via a cast.
+function parseLedgerConfirmation(
+  value: Prisma.JsonValue,
+): ApplyConfirmationDto | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const row = value as Record<string, unknown>;
+  const fit = parseLedgerFit(row.fit);
+  const confirmation = parseLedgerCopy(row.confirmation);
+  if (
+    typeof row.application_id !== 'string' ||
+    typeof row.applicant_id !== 'string' ||
+    typeof row.account_id !== 'string' ||
+    typeof row.status !== 'string' ||
+    !fit ||
+    !confirmation
+  ) {
+    return null;
+  }
+  return {
+    application_id: row.application_id,
+    applicant_id: row.applicant_id,
+    account_id: row.account_id,
+    status: row.status,
+    fit,
+    confirmation,
+  };
+}
+
+function parseLedgerFit(value: unknown): FitSignalDto | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const row = value as Record<string, unknown>;
+  if (
+    (row.level !== 'strong' &&
+      row.level !== 'moderate' &&
+      row.level !== 'exploratory') ||
+    typeof row.label !== 'string' ||
+    typeof row.score !== 'number'
+  ) {
+    return null;
+  }
+  return { level: row.level, label: row.label, score: row.score };
+}
+
+function parseLedgerCopy(
+  value: unknown,
+): ApplyConfirmationDto['confirmation'] | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.headline !== 'string' ||
+    typeof row.message !== 'string' ||
+    typeof row.next_step !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    headline: row.headline,
+    message: row.message,
+    next_step: row.next_step,
+  };
 }
