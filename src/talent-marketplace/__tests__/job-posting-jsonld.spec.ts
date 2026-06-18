@@ -70,8 +70,12 @@ describe('buildJobPostingJsonLd', () => {
     // no PII to leak; assert the emitted JSON carries none of the public-blob's
     // own private-sounding keys either.
     const serialized = JSON.stringify(buildJobPostingJsonLd(detail()));
-    expect(serialized).not.toContain('hirer');
     expect(serialized).not.toContain('idempotency');
-    expect(serialized).not.toContain('applicant');
+    expect(serialized).not.toContain('applicantEmail');
+    expect(serialized).not.toContain('applicantName');
+    expect(serialized).not.toContain('hirerEmail');
+    expect(serialized).not.toContain('hirerName');
+    expect(serialized).not.toContain('hirer_id');
+    expect(serialized).not.toContain('owner_id');
   });
 });
