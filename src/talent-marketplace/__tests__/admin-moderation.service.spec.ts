@@ -101,7 +101,13 @@ describe('AdminModerationService.reviewListing — decision + idempotency', () =
     const prisma = makePrisma({
       jobListing: { findUnique, updateMany },
     });
-    const claimOrReplay = jest.fn(async () => claim);
+    const claimOrReplay = jest.fn(
+      async (_key: {
+        userId: string;
+        routeKey: string;
+        idempotencyKey: string;
+      }) => claim,
+    );
     const markCompleted =
       opts.markCompleted ?? jest.fn(async () => ({ outcome: 'ok' }));
     const releaseClaim =
