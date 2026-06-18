@@ -8,15 +8,23 @@ import { JobListingService } from './job-listing.service';
 import { HirerVerifiedGuard } from './hirer-verified.guard';
 import { TalentConnectWebhookController } from './talent-connect-webhook.controller';
 import { TalentConnectWebhookService } from './talent-connect-webhook.service';
+import { PublicListingController } from './public-listing.controller';
+import { PublicListingService } from './public-listing.service';
 
 // TM-2 — Talent Marketplace job-listing CRUD + publish.
+// TM-3 — public, unauthenticated browse + SEO detail.
 // TM-14 — appends the event-driven Connect `account.updated` webhook surface
 // (controller + thin service) reusing the TM-10 adapter; append-only.
 @Module({
   imports: [TalentConnectAdapterModule],
-  controllers: [JobListingController, TalentConnectWebhookController],
+  controllers: [
+    JobListingController,
+    TalentConnectWebhookController,
+    PublicListingController,
+  ],
   providers: [
     JobListingService,
+    PublicListingService,
     PrismaService,
     JwtAuthGuard,
     JwksVerifierService,
