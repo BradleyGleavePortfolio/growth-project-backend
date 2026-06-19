@@ -1,0 +1,15 @@
+-- IRREVERSIBLE: enables the pg_stat_statements extension for query-level
+-- performance telemetry surfaced via GET /admin/db-stats.
+--
+-- OPERATOR-ATTACH: on managed Postgres (Fly, RDS, etc.) loading this extension
+-- requires it to be present in shared_preload_libraries, which needs a
+-- superuser-level ALTER SYSTEM plus a Postgres RESTART on first deploy. Those
+-- steps cannot be performed from inside a Prisma migration (no superuser, no
+-- restart), so they are documented in OPERATOR_ATTACH and must be completed by
+-- an operator. The CREATE EXTENSION below is idempotent (IF NOT EXISTS) and is
+-- a no-op until the operator-attach prerequisites are satisfied.
+--
+-- This migration intentionally adds NO tables and NO columns — it only loads a
+-- read-only diagnostic extension, hence the IRREVERSIBLE classification (there
+-- is no schema change to roll back).
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
