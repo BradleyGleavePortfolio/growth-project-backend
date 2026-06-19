@@ -1,0 +1,22 @@
+# Code Owners (R107)
+#
+# Single-maintainer repo for now. CODEOWNERS exists to:
+#   1. Auto-request review from the maintainer on every PR.
+#   2. Give us a stub to flesh out when contributors land.
+#   3. Satisfy R107 (CODEOWNERS-exempt note where applicable).
+#
+# When more humans join, replace `*` with directory-scoped owners. See
+# https://docs.github.com/en/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners
+
+* @BradleyGleavePortfolio
+
+# Doctrine / rule edits — extra-careful review path.
+/AGENT_RULES.md         @BradleyGleavePortfolio
+/ENGINEERING_RULES.md   @BradleyGleavePortfolio
+
+# Migrations — destructive surface; never auto-merge.
+/prisma/migrations/     @BradleyGleavePortfolio
+
+# Boot-time validators — touching these can brick deploys.
+/src/common/env-validation.ts                @BradleyGleavePortfolio
+/src/common/errors/env-validation.error.ts   @BradleyGleavePortfolio

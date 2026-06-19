@@ -11,7 +11,10 @@ Files in scope:
  [x] .github/workflows/r100-quality-gate.yml      (banned casts, LOC budget, test density)
  [x] .release-please-config.json + manifest
  [x] scripts/setup-branch-protection.sh           (R102; main-only per Q3, enforce_admins per Q4)
- [ ] AGENT_RULES.md update with R108 (mandatory switch registry, per Q6 Part B)
- [ ] .github/CODEOWNERS (R107)
- [ ] dangerfile.ts (R107) — risk markers + PR hygiene
+ [x] AGENT_RULES.md update with R108 (mandatory switch registry, per Q6 Part B) — ctxrepo c5977e9
+ [x] .github/CODEOWNERS (R107)
+ [x] dangerfile.js (R107) — risk markers + PR hygiene
+ [x] .github/workflows/danger.yml
  [ ] PR body draft
+
+Ready for dual audit pending PR open.
