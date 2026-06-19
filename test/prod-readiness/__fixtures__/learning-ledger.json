@@ -2,73 +2,83 @@
   "version": 1,
   "entries": [
     {
-      "fingerprint": "src/contracts/contracts.module.ts:47:STUB",
+      "fingerprint": "5df54b514dd84abe14d28e41d9d632ce197aa8f19cceb9ef412e4c058503f820",
+      "source_path": "src/contracts/contracts.module.ts",
       "classification": "tracked_debt",
       "rationale": "Native-canvas contracts provider is intentional v1 STUB until coach e-sign feature lands (planned post-Wave-4). DocuSign path exists for now.",
-      "added_at": "2026-06-18T23:55:00Z",
+      "added_at": "2026-06-19T00:00:00Z",
       "added_by": "bradley@bradleytgpcoaching.com"
     },
     {
-      "fingerprint": "src/contracts/contracts.module.ts:53:STUB",
+      "fingerprint": "0da319b1cb48658c3e3e26775bd005610f38b0e62d558eb9980a3bb4b94b2243",
+      "source_path": "src/contracts/contracts.module.ts",
       "classification": "tracked_debt",
       "rationale": "DocuSign provider module wiring log mentions STUB in v1 — provider implementation is stubbed pending docusign account credentials.",
-      "added_at": "2026-06-18T23:55:00Z",
+      "added_at": "2026-06-19T00:00:00Z",
       "added_by": "bradley@bradleytgpcoaching.com"
     },
     {
-      "fingerprint": "src/contracts/providers/docusign.provider.ts:11:STUB",
+      "fingerprint": "d517219ad377a162f7e57cfd91e84d6dd91279d8b505fda43d782cd8fc0a3840",
+      "source_path": "src/contracts/providers/docusign.provider.ts",
       "classification": "tracked_debt",
       "rationale": "B5 DocuSign provider intentional v1 STUB — see docs/contracts.md.",
-      "added_at": "2026-06-18T23:55:00Z",
+      "added_at": "2026-06-19T00:00:00Z",
       "added_by": "bradley@bradleytgpcoaching.com"
     },
     {
-      "fingerprint": "src/contracts/providers/native-canvas.provider.ts:11:STUB",
+      "fingerprint": "b5b550486759103a95548e252b38af180c2f2758942b25f7a6dd65e8720a113d",
+      "source_path": "src/contracts/providers/native-canvas.provider.ts",
       "classification": "tracked_debt",
       "rationale": "B5 native-canvas provider intentional v1 STUB — see docs/contracts.md.",
-      "added_at": "2026-06-18T23:55:00Z",
+      "added_at": "2026-06-19T00:00:00Z",
       "added_by": "bradley@bradleytgpcoaching.com"
     },
     {
-      "fingerprint": "src/gym/gym-distribution.service.ts:4:STUB",
+      "fingerprint": "ae97166efc01d3dae2e61797807ecc6e537d202985eb9ab90bfd87914a36225c",
+      "source_path": "src/gym/gym-distribution.service.ts",
       "classification": "tracked_debt",
       "rationale": "GymDistributionService is a deliberate STUB for the future gym-distribution feature; controller returns 501 until implementation lands.",
-      "added_at": "2026-06-18T23:55:00Z",
+      "added_at": "2026-06-19T00:00:00Z",
       "added_by": "bradley@bradleytgpcoaching.com"
     },
     {
-      "fingerprint": "src/public-pages/help-pages.html.ts:12:Coming soon",
+      "fingerprint": "23bbca65ae41ba3a55c8b49548674a33f0abf278cdd6d8abcbd86f30a20b0f93",
+      "source_path": "src/public-pages/help-pages.html.ts",
       "classification": "false_positive",
-      "rationale": "Reference is inside a code-comment block describing the policy: 'No placeholders, TODO/FIXME, or \"coming soon\" copy'. Quote of the rule itself, not a violation.",
-      "added_at": "2026-06-18T23:55:00Z",
+      "rationale": "Reference is inside a code-comment block describing the policy: the rule text quotes the banned phrase to forbid it. Quote of the rule itself, not a violation.",
+      "added_at": "2026-06-19T00:00:00Z",
       "added_by": "bradley@bradleytgpcoaching.com"
     },
     {
-      "fingerprint": "src/scheduling/scheduling.controller.ts:83:Coming soon",
+      "fingerprint": "9df41bdceb8bdf28df82e4363c298a233ca9b40e0965f515d335487ecd00f230",
+      "source_path": "src/scheduling/scheduling.controller.ts",
       "classification": "tracked_debt",
-      "rationale": "User-facing 'Provider integrations are coming soon' string. Should be removed once Google/Apple Calendar integration lands — tracked as scheduling roadmap item.",
-      "added_at": "2026-06-18T23:55:00Z",
+      "rationale": "User-facing placeholder note on the scheduling controller. Should be removed once Google/Apple Calendar integration lands — tracked as scheduling roadmap item.",
+      "added_at": "2026-06-19T00:00:00Z",
       "added_by": "bradley@bradleytgpcoaching.com"
     },
     {
-      "fingerprint": "src/coach/command-center/ltv-metrics.dto.ts:153:STUB",
+      "fingerprint": "86b79950b07489d7ce9473ed848f42f018907a8fbab106ecf99c912270bc933d",
+      "source_path": "src/coach/command-center/ltv-metrics.dto.ts",
       "classification": "tracked_debt",
       "rationale": "LTV metrics use industry-average approximation when coach has <3 data points; documented STUB until enough cohort data accumulates. Returns reasonable defaults, not a placeholder.",
-      "added_at": "2026-06-18T23:55:00Z",
+      "added_at": "2026-06-19T00:00:00Z",
       "added_by": "bradley@bradleytgpcoaching.com"
     },
     {
-      "fingerprint": "src/coach/command-center/ltv-metrics.service.ts:179:STUB",
+      "fingerprint": "14996a1f3ded69028e4ff51756b1643857c767e0bcffce75daa9619261da6eb5",
+      "source_path": "src/coach/command-center/ltv-metrics.service.ts",
       "classification": "tracked_debt",
       "rationale": "LTV STUB fallback: 6 months industry-average when <3 data points. Tracked debt; remove when cohort data is sufficient.",
-      "added_at": "2026-06-18T23:55:00Z",
+      "added_at": "2026-06-19T00:00:00Z",
       "added_by": "bradley@bradleytgpcoaching.com"
     },
     {
-      "fingerprint": "src/coach/command-center/ltv-metrics.service.ts:277:STUB",
+      "fingerprint": "a6e8a3dd6d934015f403ae75d73df015d07f465b61e720edc3735590a7135274",
+      "source_path": "src/coach/command-center/ltv-metrics.service.ts",
       "classification": "tracked_debt",
       "rationale": "LTV STUB: gross_logo_retention = 1 - churn_rate approximation. Tracked debt.",
-      "added_at": "2026-06-18T23:55:00Z",
+      "added_at": "2026-06-19T00:00:00Z",
       "added_by": "bradley@bradleytgpcoaching.com"
     }
   ]
