@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "fingerprint": "src/contracts/contracts.module.ts:47:STUB",
+      "classification": "tracked_debt",
+      "rationale": "Native-canvas contracts provider is intentional v1 STUB until coach e-sign feature lands (planned post-Wave-4). DocuSign path exists for now.",
+      "added_at": "2026-06-18T23:55:00Z",
+      "added_by": "bradley@bradleytgpcoaching.com"
+    },
+    {
+      "fingerprint": "src/contracts/contracts.module.ts:53:STUB",
+      "classification": "tracked_debt",
+      "rationale": "DocuSign provider module wiring log mentions STUB in v1 — provider implementation is stubbed pending docusign account credentials.",
+      "added_at": "2026-06-18T23:55:00Z",
+      "added_by": "bradley@bradleytgpcoaching.com"
+    },
+    {
+      "fingerprint": "src/contracts/providers/docusign.provider.ts:11:STUB",
+      "classification": "tracked_debt",
+      "rationale": "B5 DocuSign provider intentional v1 STUB — see docs/contracts.md.",
+      "added_at": "2026-06-18T23:55:00Z",
+      "added_by": "bradley@bradleytgpcoaching.com"
+    },
+    {
+      "fingerprint": "src/contracts/providers/native-canvas.provider.ts:11:STUB",
+      "classification": "tracked_debt",
+      "rationale": "B5 native-canvas provider intentional v1 STUB — see docs/contracts.md.",
+      "added_at": "2026-06-18T23:55:00Z",
+      "added_by": "bradley@bradleytgpcoaching.com"
+    },
+    {
+      "fingerprint": "src/gym/gym-distribution.service.ts:4:STUB",
+      "classification": "tracked_debt",
+      "rationale": "GymDistributionService is a deliberate STUB for the future gym-distribution feature; controller returns 501 until implementation lands.",
+      "added_at": "2026-06-18T23:55:00Z",
+      "added_by": "bradley@bradleytgpcoaching.com"
+    },
+    {
+      "fingerprint": "src/public-pages/help-pages.html.ts:12:Coming soon",
+      "classification": "false_positive",
+      "rationale": "Reference is inside a code-comment block describing the policy: 'No placeholders, TODO/FIXME, or \"coming soon\" copy'. Quote of the rule itself, not a violation.",
+      "added_at": "2026-06-18T23:55:00Z",
+      "added_by": "bradley@bradleytgpcoaching.com"
+    },
+    {
+      "fingerprint": "src/scheduling/scheduling.controller.ts:83:Coming soon",
+      "classification": "tracked_debt",
+      "rationale": "User-facing 'Provider integrations are coming soon' string. Should be removed once Google/Apple Calendar integration lands — tracked as scheduling roadmap item.",
+      "added_at": "2026-06-18T23:55:00Z",
+      "added_by": "bradley@bradleytgpcoaching.com"
+    },
+    {
+      "fingerprint": "src/coach/command-center/ltv-metrics.dto.ts:153:STUB",
+      "classification": "tracked_debt",
+      "rationale": "LTV metrics use industry-average approximation when coach has <3 data points; documented STUB until enough cohort data accumulates. Returns reasonable defaults, not a placeholder.",
+      "added_at": "2026-06-18T23:55:00Z",
+      "added_by": "bradley@bradleytgpcoaching.com"
+    },
+    {
+      "fingerprint": "src/coach/command-center/ltv-metrics.service.ts:179:STUB",
+      "classification": "tracked_debt",
+      "rationale": "LTV STUB fallback: 6 months industry-average when <3 data points. Tracked debt; remove when cohort data is sufficient.",
+      "added_at": "2026-06-18T23:55:00Z",
+      "added_by": "bradley@bradleytgpcoaching.com"
+    },
+    {
+      "fingerprint": "src/coach/command-center/ltv-metrics.service.ts:277:STUB",
+      "classification": "tracked_debt",
+      "rationale": "LTV STUB: gross_logo_retention = 1 - churn_rate approximation. Tracked debt.",
+      "added_at": "2026-06-18T23:55:00Z",
+      "added_by": "bradley@bradleytgpcoaching.com"
+    }
+  ]
+}
