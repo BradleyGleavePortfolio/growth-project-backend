@@ -6,10 +6,23 @@ name: R100 Quality Gate
 #
 # Hard rules (cause failure):
 #   - Banned cast tokens (R75 / R100.A2): net positive count in PR diff = P0.
-#   - LOC budget (R100.A3): PR >400 net LOC = warning; >600 = failure unless
-#     PR title contains [LOC-EXEMPT: <reason>].
+#   - LOC budget (R100.A3): net LOC > 400 = failure unless the PR title
+#     contains [LOC-EXEMPT: <reason>]. There is no warning band — 400 is the
+#     hard cap per R100.A3.
 #   - test:src ratio (R100.A1): added-test-lines / added-src-lines < 2.0
 #     = failure unless PR title contains [TEST-EXEMPT: <reason>].
+#
+# Measurement scope (LOC + src-side of test density):
+#   src/**, test/**, prisma/migrations/**, scripts/**, dangerfile.js,
+#   .github/workflows/**, and *.config.json. Infrastructure files (workflows,
+#   shell scripts, dangerfile, config) ARE counted toward the LOC cap so an
+#   infra-heavy PR cannot bypass the gate by reporting 0 LOC. Lock files and
+#   generated artifacts remain excluded.
+#
+# Exemption markers (place in the PR title):
+#   [LOC-EXEMPT: <reason>]   waives the 400-LOC cap (operator sign-off needed).
+#   [TEST-EXEMPT: <reason>]  waives the 2.0 test:src ratio (e.g. workflows are
+#                            validated by actionlint/shellcheck, not unit tests).
 
 on:
   pull_request:
@@ -94,24 +107,27 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$BASE_SHA" ]; then echo "Not a PR; skip."; exit 0; fi
-          # Net added lines in code + tests (exclude lock files & generated).
-          NET=$(git diff --numstat "$BASE_SHA"...HEAD -- 'src/**' 'test/**' 'prisma/migrations/**' \
+          # Net added lines across code, tests, AND infrastructure (workflows,
+          # scripts, dangerfile, config). Lock files & generated artifacts are
+          # excluded. Infra files are counted so an infra-heavy PR cannot
+          # bypass the cap by reporting 0 LOC.
+          NET=$(git diff --numstat "$BASE_SHA"...HEAD -- \
+            'src/**' 'test/**' 'prisma/migrations/**' \
+            'scripts/**' 'dangerfile.js' '.github/workflows/**' '*.config.json' \
+            ':(exclude)package-lock.json' \
             | awk '{ a += $1; r += $2 } END { print a - r }')
           NET=${NET:-0}
           echo "Net LOC: $NET"
           if [ "$NET" -le 400 ]; then
-            echo "OK — under 400."
-            exit 0
-          fi
-          if [ "$NET" -le 600 ]; then
-            echo "WARN — $NET LOC (between 400 and 600). Consider splitting."
+            echo "OK — under the 400 LOC cap."
             exit 0
           fi
           if printf '%s' "$PR_TITLE" | grep -qE '\[LOC-EXEMPT:'; then
-            echo "OK — exempted via [LOC-EXEMPT:] in PR title."
+            echo "OK — over 400 but exempted via [LOC-EXEMPT: <reason>] in PR title."
             exit 0
           fi
-          echo "FAIL — $NET LOC > 600 and no [LOC-EXEMPT: <reason>] in title."
+          echo "FAIL — $NET LOC > 400 (hard cap, R100.A3) and no [LOC-EXEMPT: <reason>] in title."
+          echo "       Split the PR or add an operator-signed [LOC-EXEMPT: <reason>] marker."
           exit 1
 
   test-density:
@@ -128,7 +144,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$BASE_SHA" ]; then echo "Not a PR; skip."; exit 0; fi
-          SRC=$(git diff --numstat "$BASE_SHA"...HEAD -- 'src/**/*.ts' 'src/**/*.tsx' \
+          # src side counts application code plus testable infra code
+          # (scripts/*.ts, dangerfile.js). Non-TS infra (workflow YAML, shell)
+          # is not unit-testable and is validated by the infra-lint workflow
+          # instead; cover it with a [TEST-EXEMPT: <reason>] marker.
+          SRC=$(git diff --numstat "$BASE_SHA"...HEAD -- \
+            'src/**/*.ts' 'src/**/*.tsx' 'scripts/**/*.ts' 'dangerfile.js' \
             ':(exclude)src/**/*.spec.ts' ':(exclude)src/**/*.test.ts' \
             | awk '{ a += $1 } END { print a + 0 }')
           TEST=$(git diff --numstat "$BASE_SHA"...HEAD -- 'test/**/*.ts' 'src/**/*.spec.ts' 'src/**/*.test.ts' \
