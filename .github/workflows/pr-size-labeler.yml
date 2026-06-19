@@ -1,0 +1,29 @@
+name: pr-size-labeler
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+permissions:
+  pull-requests: write
+  contents: read
+jobs:
+  size-label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: pascalgn/size-label-action@v0.5.4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          sizes: |
+            {
+              "0": "size/XS",
+              "50": "size/S",
+              "150": "size/M",
+              "300": "size/L",
+              "400": "size/XL"
+            }
+          ignored: |
+            package-lock.json
+            yarn.lock
+            pnpm-lock.yaml
+            *.lock
+            **/*.generated.ts
