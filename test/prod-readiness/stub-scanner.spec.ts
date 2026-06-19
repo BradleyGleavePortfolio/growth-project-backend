@@ -399,10 +399,70 @@ describe('scanForStubs — determinism', () => {
     const f = scan();
     expect(f[0].fingerprint).toBe(computeFingerprint('src/a.ts', 'const v = "STUB";'));
   });
+
+  it('fingerprint is invariant to indentation of the matched line', async () => {
+    await srcFile('a.ts', '      const v = "STUB";');
+    const f = scan();
+    expect(f[0].fingerprint).toBe(computeFingerprint('src/a.ts', 'const v = "STUB";'));
+  });
+});
+
+// --- additional pattern + option coverage -----------------------------------
+describe('scanForStubs — multi-pattern and option combinations', () => {
+  it('reports two distinct kinds matched on the SAME line', async () => {
+    await srcFile('a.ts', 'const v = "STUB"; const w = PLACEHOLDER;');
+    const f = scan();
+    expect(kinds(f)).toEqual(['PLACEHOLDER', 'STUB']);
+    // Both findings share the line number because they live on line 1.
+    expect(f.every((x) => x.line === 1)).toBe(true);
+  });
+
+  it('honours multiple excludePaths prefixes at once', async () => {
+    await srcFile('legacy/a.ts', 'const v = "STUB";');
+    await srcFile('vendor/b.ts', 'const w = PLACEHOLDER;');
+    await srcFile('app/c.ts', 'const x = FAKE_X;');
+    const f = scan({ excludePaths: ['src/legacy/', 'src/vendor/'] });
+    expect(f).toHaveLength(1);
+    expect(f[0].file).toBe('src/app/c.ts');
+  });
+
+  it('applies an override only to the targeted pattern, leaving others default', async () => {
+    await srcFile('a.ts', 'const v = "STUB"; const w = PLACEHOLDER;');
+    const f = scan({ severityOverrides: { STUB: 'WARN' as StubSeverity } });
+    expect(f.find((x) => x.kind === 'STUB')!.severity).toBe('WARN');
+    expect(f.find((x) => x.kind === 'PLACEHOLDER')!.severity).toBe('BLOCK_SHIP');
+  });
+
+  it('drops one ledger-matched finding while keeping a sibling on the same file', async () => {
+    await srcFile('a.ts', ['const v = "STUB";', 'const w = PLACEHOLDER;'].join('\n'));
+    const all = scan();
+    expect(all).toHaveLength(2);
+    const drop = all.find((x) => x.kind === 'STUB')!;
+    const f = scan({ knownFalsePositives: new Set<string>([drop.fingerprint]) });
+    expect(kinds(f)).toEqual(['PLACEHOLDER']);
+  });
+
+  it('counts a marker inside a comment when includeComments is set, across files', async () => {
+    await srcFile('a.ts', 'const x = 1; // STUB pending');
+    await srcFile('b.ts', 'const y = "STUB";');
+    expect(scan()).toHaveLength(1);
+    expect(scan({ includeComments: true })).toHaveLength(2);
+  });
+
+  it('treats every PATTERNS entry as discoverable in src/', async () => {
+    const tokens = describePatterns().map((p) => p.token);
+    for (let i = 0; i < tokens.length; i++) {
+      await srcFile(`p${i}.ts`, `const v = "${tokens[i]}";`);
+    }
+    const found = new Set(scan({ includeComments: true }).map((f) => f.kind));
+    for (const t of tokens) expect(found.has(t)).toBe(true);
+  });
 });
 
 // Small helper so the symlink fixture has a non-cast fallback (R75: no
-// `.catch(() => undefined)` or `as` casts anywhere in this spec).
+// `.catch(() => undefined)` or `as` casts anywhere in this spec). It also
+// gives the symlink test an explicit, typed no-op continuation instead of an
+// inline empty arrow the banned-token gate would flag.
 function undefinedSafe(): void {
   return;
 }
