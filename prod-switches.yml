@@ -26,25 +26,25 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: AI_GATEWAY_CAPABILITIES
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: ai
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: AI_GATEWAY_PROVIDER
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: ai
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: AI_GATEWAY_REQUIRE_APPROVAL
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: ai
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: ALLOW_SELF_SERVICE_BECOME_COACH
     tier: optional
@@ -56,19 +56,19 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: ANDROID_PACKAGE_NAME
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: ANDROID_SHA256_FINGERPRINT
     tier: feature
     prod_default: ON
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "R43 / Android App Links — SHA-256 of the Android signing certificate (AA:BB:CC:... colon-separated uppercase hex). Alias for ANDROID_CERT_SH"
   - name: ANTHROPIC_API_KEY
     tier: feature
@@ -86,7 +86,7 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: APPLE_TEAM_ID
     tier: feature
@@ -98,19 +98,19 @@ switches:
     tier: feature
     prod_default: ON
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "iOS App Store URL surfaced on the public invite landing page. Falls back to a placeholder TestFlight-style link when unset; set once the App"
   - name: APP_URL
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: AUDIT_LOGGING_ENABLED
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: observability
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: AUTH_LOGIN_PER_HOUR
     tier: optional
@@ -140,49 +140,49 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: billing
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: BLOODWORK_STALE_AFTER_DAYS
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: BLOODWORK_STALE_DISABLED
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: BLOODWORK_WRITE_PER_MIN
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Phase 10 — per-user bloodwork POST writes per minute (POST /bloodwork/*). Defaults to 30; clamped to [1, 1000]. Applied when the bloodwork m"
   - name: BOOKING_REMINDERS_ENABLED
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: jobs
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: BOOKING_REMINDER_1H_CRON
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: jobs
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: BOOKING_REMINDER_24H_CRON
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: jobs
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: BOOTSTRAP_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: BUILD_WEEK_AUTO_START_ON_SIGNUP
     tier: optional
@@ -200,13 +200,13 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: billing
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: CHECKOUT_RECONCILE_DISABLED
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: billing
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: CHECKOUT_RECOVERY_SECRET
     tier: feature
@@ -218,49 +218,49 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: coach
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: COACH_AI_BUDGET_ROLLOVER_CRON
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: ai
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: COACH_AI_BUDGET_ROLLOVER_ENABLED
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: ai
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: COACH_AI_DORMANCY_UNREAD_THRESHOLD
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: ai
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: COACH_AI_MAX_ACTUAL_CENTS
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: ai
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: COACH_AI_PACK_CANCEL_URL
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: ai
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: COACH_AI_PACK_SUCCESS_URL
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: ai
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: COACH_AI_VALUE_MULTIPLIER
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: ai
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: COACH_ALERT_BATCH_LIMIT
     tier: optional
@@ -314,7 +314,7 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: coach
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: COACH_EFFECTIVENESS_CRON
     tier: optional
@@ -344,37 +344,37 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: COMMUNITY_SEARCH_PAGE_SIZE
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: CONTRACT_PDF_BUCKET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: contracts
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: CONTRACT_PDF_URL_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: contracts
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: CORS_ORIGINS
     tier: feature
     prod_default: ON
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Comma-separated allow-list of browser origins. Empty = deny all browsers (the safe mobile-only default). Set to the coach console origin onc"
   - name: CRM_LEAD_SYNC_DISABLED
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: billing
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: CRON_COACH_AI_INSIGHT
     tier: optional
@@ -392,43 +392,43 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: DATA_EXPORT_DOWNLOAD_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: DATA_EXPORT_EXPIRY_DAYS
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: DATA_EXPORT_FS_DIR
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: DATA_EXPORT_RATE_LIMIT_HRS
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: DATA_EXPORT_TOKEN_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: DIAGNOSTIC_AI_ENABLED
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: ai
     description: "Set to 'false' to skip Perplexity calls for /diagnostic/submit and store a placeholder roadmap. Defaults to true. Useful for CI / preview de"
   - name: DIAGNOSTIC_RATE_LIMIT_PER_HOUR
     tier: optional
@@ -446,7 +446,7 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: jobs
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: EXERCISEDB_API_HOST
     tier: optional
@@ -464,73 +464,73 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FEATURE_COMMUNITY_API_ALLOWLIST
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FEATURE_COMMUNITY_CLASSROOM_POSTS
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FEATURE_COMMUNITY_DM
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FEATURE_COMMUNITY_EVENTS
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FEATURE_COMMUNITY_PLAN_TAGS
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FEATURE_COMMUNITY_PUSH
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FEATURE_COMMUNITY_REALTIME
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FEATURE_COMMUNITY_SEARCH
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FEATURE_COMMUNITY_TELEMETRY
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FEATURE_COMMUNITY_WEARABLE_PROMPTS
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FEATURE_GOOGLE_CALENDAR_SYNC
     tier: optional
@@ -578,61 +578,61 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FITBIT_CLIENT_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FITBIT_REDIRECT_URI
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FITBIT_VERIFICATION_CODE
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: GARMIN_CLIENT_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: GARMIN_PUSH_TOKEN
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: GARMIN_WEBHOOK_SALT
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: GDPR_SCRUB_BATCH_LIMIT
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Per-run cap on candidates the GDPR scrub worker will process. Defaults to 100; clamped to [1, 1000]."
   - name: GDPR_SCRUB_DRY_RUN
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Feature flag — when 'true', the GDPR scrub worker only reports candidate rows and does not write deleted_at or PII zero-outs. Default is rea"
   - name: GIT_SHA
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: observability
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: GOOGLE_CALENDAR_ENABLED
     tier: optional
@@ -668,25 +668,25 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: GOOGLE_OAUTH_CLIENT_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: GOOGLE_OAUTH_REDIRECT_URI
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: GOOGLE_OAUTH_SCOPES
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: GUEST_CHECKOUT_PII_SALT
     tier: feature
@@ -698,91 +698,91 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: contracts
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: HELLOSIGN_CLIENT_ID
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: contracts
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: HELLOSIGN_TEST_MODE
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: contracts
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: IOS_BUNDLE_ID
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: JWT_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: KMS_KEY_ALIAS
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: KMS_KEY_VERSION
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: KMS_MASTER_KEY
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: LANDING_CNAME_TARGET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: LANDING_VIEW_HASH_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: LEADERBOARD_ENABLED
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: LEADERBOARD_RECOMPUTE_CRON
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: LEGACY_PDF_RECEIPT_ENABLED
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: billing
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: LOG_FORMAT
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: observability
     description: "Phase 10 — 'json' (default) for machine-readable structured logs (Fly, Better Stack, Datadog). 'pretty' for human-friendly dev console outpu"
   - name: LOG_LEVEL
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: observability
     description: "Phase 10 — minimum log severity to emit. One of error, warn, log, debug, verbose. Defaults to 'log'. Lower levels add volume; 'warn' is a go"
   - name: MARKETPLACE_IDEMPOTENCY_CLAIM_TTL_MS
     tier: optional
@@ -794,7 +794,7 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: observability
     description: "Phase 10 — 'on' (default) enables the Prometheus /metrics endpoint and in-process counter tracking. 'off' disables both. Set to 'off' if you"
   - name: MUSCLEWIKI_API_KEY
     tier: optional
@@ -806,7 +806,7 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: NOTIF_PREFS_PER_MIN
     tier: optional
@@ -818,31 +818,31 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: coach
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: OPENAI_API_KEY
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: ai
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: OURA_CLIENT_ID
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: OURA_CLIENT_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: OURA_VERIFICATION_TOKEN
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: PERPLEXITY_API_KEY
     tier: optional
@@ -854,31 +854,31 @@ switches:
     tier: feature
     prod_default: ON
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Google Play Store URL surfaced on the public invite landing page. Falls back to a com.growthproject.app placeholder when unset; set once the"
   - name: POLAR_CLIENT_ID
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: POLAR_WEBHOOK_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: PORT
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: POSTHOG_HOST
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: observability
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: POSTHOG_KEY
     tier: optional
@@ -890,13 +890,13 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Phase 10 — 'on' activates GET /debug/profile (30-second V8 CPU profile). Requires OWNER role. Defaults to 'off'. Leave off in production unl"
   - name: PTM_RECOMPUTE_BATCH_LIMIT
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: jobs
     description: "Per-run cap on the number of clients the PTM nightly cron recomputes. Defaults to 5000; clamped to [1, 50000]. Larger rosters are processed "
   - name: PTM_RISK_BOARD_PAGE_SIZE
     tier: optional
@@ -926,31 +926,31 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: PUBLIC_INVITE_BASE_URL
     tier: feature
     prod_default: ON
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Base URL used in /api/invite-codes responses and invite landing pages. Falls back to https://app.trygrowthproject.com/join when unset. MUST "
   - name: PUBLIC_LISTING_CURSOR_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: PUBLIC_WEB_SIGNUP_URL
     tier: feature
     prod_default: ON
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Web signup target the invite landing page links to when the user has no app installed. Falls back to PUBLIC_INVITE_BASE_URL/<code> when unse"
   - name: RATELIMIT_ANON_PER_MIN
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Phase 10 — global default: max requests per minute per IP (unauthenticated). Applies to every route with no explicit @Throttle decorator. De"
   - name: RATELIMIT_AUTHED_PER_MIN
     tier: optional
@@ -962,13 +962,13 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Phase 10 — master kill switch for all rate limiting. Set to 'off' only for load-test runs against staging. Any value other than 'off' leaves"
   - name: RECEIPT_FS_DIR
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: billing
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: RECENT_AUTH_SECRET
     tier: prod
@@ -986,13 +986,13 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: RELEASE_VERSION
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: observability
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: RESEND_API_KEY
     tier: feature
@@ -1028,13 +1028,13 @@ switches:
     tier: feature
     prod_default: ON
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: platform
     description: "R43 — base URL of the Next.js storefront (e.g. https://joingrowthproject.com). Used to build share_url responses for POST /v1/coach/packages"
   - name: STRIPE_API_TIMEOUT_MS
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: billing
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: STRIPE_BILLING_PORTAL_RETURN_URL
     tier: optional
@@ -1058,13 +1058,13 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: billing
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: STRIPE_CONNECT_RETURN_URL
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: billing
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: STRIPE_CUSTOMER_PORTAL_LOGIN_URL
     tier: optional
@@ -1076,13 +1076,13 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: billing
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: STRIPE_PRICE_GROWTH
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: billing
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: STRIPE_PRICE_ID_FINANCE
     tier: optional
@@ -1100,13 +1100,13 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: billing
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: STRIPE_PRICE_STAFF_SEAT
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: billing
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: STRIPE_PUBLISHABLE_KEY
     tier: feature
@@ -1136,13 +1136,13 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: SUPABASE_REDIRECT_URL
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: auth
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: SUPABASE_SERVICE_ROLE_KEY
     tier: hard
@@ -1172,61 +1172,61 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: VOICE_NOTE_MAX_DURATION_MS
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: VOICE_NOTE_MAX_DURATION_SEC
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Phase 6C — server-enforced max duration for voice attachments on coach <-> client messages. Defaults to 300; clamped to [10, 600]. Validated"
   - name: VOICE_NOTE_MAX_SIZE_MB
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Phase 6C — server-enforced max file size in megabytes for voice attachments. Defaults to 5; clamped to [1, 25]."
   - name: VOICE_SIGNED_URL_TTL_SEC
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: WAHOO_CLIENT_ID
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: WAHOO_CLIENT_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: WAHOO_WEBHOOK_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: WAHOO_WEBHOOK_TOKEN
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: WEARABLES_OAUTH_REDIRECT_BASE_URL
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: WEARABLE_PROCESSED_EVENT_RETENTION_DAYS
     tier: optional
@@ -1238,49 +1238,49 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: jobs
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: WHOOP_CLIENT_ID
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: WHOOP_CLIENT_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: WHOOP_WEBHOOK_SALT
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: WHOOP_WEBHOOK_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: WITHINGS_CLIENT_ID
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: WITHINGS_VERIFICATION_TOKEN
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: WITHINGS_WEBHOOK_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
+    owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: YMOVE_API_KEY
     tier: optional

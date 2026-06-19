@@ -23,15 +23,78 @@ import * as yaml from 'js-yaml';
 export type SwitchTier = 'hard' | 'prod' | 'feature' | 'optional';
 export type ProdDefault = 'MUST_SET' | 'ON' | 'OFF' | 'STUB_ALLOWED';
 
+/**
+ * Closed set of owning teams (F-A10). `unowned` is the explicit, auditable
+ * fallback — NOT a free-text escape hatch. A typo'd or invented owner now
+ * fails validation instead of silently fragmenting the ownership map.
+ */
+export type Owner =
+  | 'billing'
+  | 'platform'
+  | 'observability'
+  | 'auth'
+  | 'ai'
+  | 'media'
+  | 'email'
+  | 'sms'
+  | 'jobs'
+  | 'wearables'
+  | 'coach'
+  | 'community'
+  | 'contracts'
+  | 'unowned';
+
+/** Minimum meaningful description length (F-A11): a non-blank, informative line. */
+export const MIN_DESCRIPTION_LENGTH = 8;
+
 const TIERS: ReadonlySet<SwitchTier> = new Set(['hard', 'prod', 'feature', 'optional']);
 const PROD_DEFAULTS: ReadonlySet<ProdDefault> = new Set(['MUST_SET', 'ON', 'OFF', 'STUB_ALLOWED']);
+export const OWNERS: ReadonlySet<Owner> = new Set<Owner>([
+  'billing', 'platform', 'observability', 'auth', 'ai', 'media', 'email',
+  'sms', 'jobs', 'wearables', 'coach', 'community', 'contracts', 'unowned',
+]);
+
+/**
+ * Name-prefix ownership heuristic (F-B17). Ordered: first matching prefix wins.
+ * Mirrors scripts/show-unowned-switches.sh's intent. Returns 'unowned' when no
+ * prefix matches so callers always get a valid Owner. Kept deliberately
+ * conservative — better to leave a switch unowned than to mis-route it.
+ */
+const OWNER_PREFIX_RULES: ReadonlyArray<readonly [readonly string[], Owner]> = [
+  [['FITBIT_', 'GARMIN_', 'OURA_', 'POLAR_', 'WAHOO_', 'WHOOP_', 'WITHINGS_', 'WEARABLES_', 'BLOODWORK_'], 'wearables'],
+  [['CONTRACT_', 'HELLOSIGN_'], 'contracts'],
+  [['AI_GATEWAY_', 'OPENAI_', 'DIAGNOSTIC_AI_', 'COACH_AI_'], 'ai'],
+  [['FEATURE_COMMUNITY_', 'COMMUNITY_', 'VOICE_NOTE_', 'VOICE_SIGNED_', 'LEADERBOARD_'], 'community'],
+  [['STRIPE_', 'CHECKOUT_', 'BILLING_', 'RECEIPT_', 'LEGACY_PDF_RECEIPT_', 'CRM_LEAD_'], 'billing'],
+  [['JWT_', 'GOOGLE_OAUTH_', 'APPLE_', 'ANDROID_', 'IOS_', 'KMS_', 'BOOTSTRAP_', 'ADMIN_SERVICE_TOKEN', 'SUPABASE_'], 'auth'],
+  [['LOG_', 'METRICS_', 'AUDIT_', 'POSTHOG_', 'GIT_SHA', 'RELEASE_VERSION'], 'observability'],
+  [['COACH_', 'CLIENT_DAILY_', 'NUDGE_'], 'coach'],
+  [['BOOKING_REMINDER', 'BOOKING_', 'WEEKLY_DIGEST_', 'DRIP_DISPATCHER_', 'PTM_RECOMPUTE_'], 'jobs'],
+  [['PORT', 'NODE_ENV', 'REDIS_', 'CORS_', 'APP_URL', 'APP_STORE_URL', 'PLAY_STORE_URL', 'PUBLIC_', 'LANDING_', 'STOREFRONT_', 'RATELIMIT_', 'GDPR_', 'DATA_EXPORT_', 'PROFILE_ENABLED'], 'platform'],
+];
+
+export function inferOwner(name: string): Owner {
+  for (const [prefixes, owner] of OWNER_PREFIX_RULES) {
+    for (const p of prefixes) {
+      if (name === p || name.startsWith(p)) return owner;
+    }
+  }
+  return 'unowned';
+}
+
+/** Fraction of switches still owned by `unowned` (F-B17 ceiling input). */
+export function unownedRatio(switches: readonly SwitchEntry[]): number {
+  if (switches.length === 0) return 0;
+  const n = switches.filter((s) => s.owner === 'unowned').length;
+  return n / switches.length;
+}
 
 export interface SwitchEntry {
   name: string;
   tier: SwitchTier;
   prod_default: ProdDefault;
   auto_flip_on_in_prod: boolean;
-  owner: string;
+  owner: Owner;
   description: string;
 }
 
@@ -110,11 +173,11 @@ function validateEntry(raw: unknown, idx: number): { entry: SwitchEntry } | { er
   if (typeof r.auto_flip_on_in_prod !== 'boolean') {
     issues.push('auto_flip_on_in_prod must be boolean');
   }
-  if (typeof r.owner !== 'string' || r.owner.length === 0) {
-    issues.push('owner must be a non-empty string');
+  if (typeof r.owner !== 'string' || !OWNERS.has(r.owner as Owner)) {
+    issues.push(`owner must be one of ${[...OWNERS].join('|')}`);
   }
-  if (typeof r.description !== 'string') {
-    issues.push('description must be a string');
+  if (typeof r.description !== 'string' || r.description.trim().length < MIN_DESCRIPTION_LENGTH) {
+    issues.push(`description must be a non-blank string of at least ${MIN_DESCRIPTION_LENGTH} characters`);
   }
   if (issues.length) {
     return { error: `switches[${idx}] (${typeof r.name === 'string' ? r.name : '<no-name>'}): ${issues.join('; ')}` };
@@ -125,7 +188,7 @@ function validateEntry(raw: unknown, idx: number): { entry: SwitchEntry } | { er
       tier: r.tier as SwitchTier,
       prod_default: r.prod_default as ProdDefault,
       auto_flip_on_in_prod: r.auto_flip_on_in_prod as boolean,
-      owner: r.owner as string,
+      owner: r.owner as Owner,
       description: r.description as string,
     },
   };
