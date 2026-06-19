@@ -4,9 +4,10 @@ name: codeql
 # This workflow is intentionally tolerant of repositories where GitHub
 # Advanced Security (the SARIF-upload feature that surfaces findings in
 # the Security tab) is not enabled. The scan still runs and produces
-# build-log diagnostics; the upload step is allowed to fail without
-# failing the PR check. When the operator enables Advanced Security
-# the same workflow begins uploading findings without code changes.
+# build-log diagnostics; the analyze/upload step is allowed to fail
+# without failing the PR check. When the operator enables Advanced
+# Security the same workflow begins uploading findings to the Security
+# tab with no code change required.
 on:
   pull_request:
     branches: [main]
@@ -22,10 +23,6 @@ jobs:
   analyze:
     name: CodeQL JS/TS
     runs-on: ubuntu-latest
-    # Allow the job to complete green even if the SARIF upload fails because
-    # Advanced Security is not enabled. The scan output is still visible in
-    # the job log for operator review.
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +34,11 @@ jobs:
           languages: ${{ matrix.language }}
           queries: security-and-quality
       - uses: github/codeql-action/autobuild@v3
+      # Step-level continue-on-error: lets the SARIF upload fail
+      # (when GitHub Advanced Security isn't enabled) without marking
+      # the PR check red. The scan itself still runs and emits findings
+      # to the job log for operator review.
       - uses: github/codeql-action/analyze@v3
+        continue-on-error: true
         with:
           category: '/language:${{ matrix.language }}'
