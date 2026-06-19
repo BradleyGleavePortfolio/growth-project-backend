@@ -1,0 +1,313 @@
+name: Migration Dry-Run
+
+# R106 (AGENT_RULES) — every PR that touches prisma/migrations/** must prove
+# the migration applies cleanly AND has a reversible counterpart (or an
+# explicit IRREVERSIBLE annotation). Grandfather clause: migrations
+# committed before this workflow shipped are exempt; only NEW directories
+# created in this PR are checked.
+#
+# Behavior:
+#   1. forward-only: spin up a disposable Postgres, apply ALL migrations
+#      forward, and assert the resulting schema matches schema.prisma.
+#      Grandfather clause: if this PR touches zero files under
+#      prisma/migrations/**, a forward-deploy failure is treated as
+#      pre-existing debt on the base branch (warning, not error), so the
+#      gate cannot block unrelated PRs on bugs they did not introduce.
+#      Any PR that DOES modify prisma/migrations/** still fails hard on
+#      a broken forward-deploy.
+#   2. reversibility-check: detect migration directories added in this PR.
+#      For each NEW directory, require either:
+#        - a sibling `down.sql` file, OR
+#        - a `-- IRREVERSIBLE: <reason>` line in migration.sql.
+#      Directories with NEITHER fail (grandfathered dirs are never checked
+#      because only PR-added dirs enter the loop).
+#   3. For each NEW directory that DOES ship a `down.sql`, prove real
+#      reversibility: apply all migrations forward, snapshot the schema
+#      (pg_dump -s), apply that directory's down.sql, re-apply the same
+#      migration forward, snapshot again, and require the two schema dumps
+#      to be byte-identical. A down.sql that does not faithfully reverse the
+#      migration (e.g. a `-- placeholder`) makes the re-applied schema differ
+#      and fails the job. This replaces an earlier existence-only check that
+#      gave false rollback assurance.
+#
+# This protects ops from a class of "shipped a migration, can't roll back"
+# incidents that bite when a deploy goes sideways at 2 a.m.
+
+on:
+  pull_request:
+    paths:
+      - 'prisma/migrations/**'
+      - '.github/workflows/migration-dry-run.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: migration-dry-run-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  forward-only:
+    name: Forward migration applies cleanly
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:15.18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: migration_dryrun
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/migration_dryrun?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/migration_dryrun?schema=public
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Detect migration changes in this PR
+        id: detect_migration_changes
+        # Grandfather clause: this forward-only gate exists to catch NEW
+        # migrations that fail to apply. Pre-existing breakage on main
+        # (e.g. a migration ordering bug shipped before this gate landed)
+        # is not this PR's fault and must not block unrelated PRs. We
+        # compare the PR's prisma/migrations/** tree against the merge
+        # base; if the PR adds, modifies, or renames zero migration
+        # files, any forward-deploy failure is pre-existing debt and
+        # gets surfaced as a warning rather than a hard fail.
+        run: |
+          set -euo pipefail
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
+          # List files under prisma/migrations/** that changed in this PR.
+          # Use --diff-filter=AMRCD: Added, Modified, Renamed, Copied, Deleted.
+          # Deletions MUST count as a migration touch — a PR that only deletes
+          # migrations was previously classified pr_touches_migrations=false and
+          # silently slipped past the hard-fail path.
+          CHANGED=$(git diff --name-only --diff-filter=AMRCD "$BASE_SHA"..."$HEAD_SHA" -- 'prisma/migrations/**' 2>/dev/null || true)
+          DELETED=$(git diff --name-only --diff-filter=D "$BASE_SHA"..."$HEAD_SHA" -- 'prisma/migrations/**' 2>/dev/null || true)
+          if [ -n "$CHANGED" ]; then
+            echo "pr_touches_migrations=true" >> "$GITHUB_OUTPUT"
+            echo "This PR modifies prisma/migrations:"
+            printf '%s\n' "$CHANGED" | sed 's/^/  /'
+          else
+            echo "pr_touches_migrations=false" >> "$GITHUB_OUTPUT"
+            echo "This PR does not touch prisma/migrations — any forward-deploy failure is pre-existing debt."
+          fi
+          # Hard-fail policy: deleting committed migrations is forbidden without
+          # explicit operator approval (R106). Fail BEFORE the apply step so a
+          # deletion-only PR never reaches the grandfather path.
+          if [ -n "$DELETED" ]; then
+            echo "migration_deletion=true" >> "$GITHUB_OUTPUT"
+            echo "::error::Migration deletion detected in this PR. Deleting committed migrations is forbidden without explicit operator approval (R106). Files:"
+            printf '%s\n' "$DELETED" | sed 's/^/  /'
+            exit 1
+          fi
+          echo "migration_deletion=false" >> "$GITHUB_OUTPUT"
+
+      - name: Apply all migrations forward
+        id: apply
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          npx prisma migrate deploy 2>&1 | tee migrate_deploy.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      - name: Decide pass/fail based on PR scope
+        env:
+          PR_TOUCHES_MIGRATIONS: ${{ steps.detect_migration_changes.outputs.pr_touches_migrations }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$APPLY_OUTCOME" = "success" ]; then
+            echo "::notice::Forward migration applied cleanly."
+            exit 0
+          fi
+          if [ "$PR_TOUCHES_MIGRATIONS" = "true" ]; then
+            echo "::error::Forward migration failed AND this PR modifies prisma/migrations — this PR is responsible."
+            echo "::error::See migrate_deploy.log above for the failure detail."
+            exit 1
+          fi
+          echo "::warning::Forward migration failed, but this PR does not touch prisma/migrations."
+          echo "::warning::This is pre-existing debt on the base branch and is NOT this PR's fault."
+          echo "::warning::Track it as a separate fix-migration-ordering task; this gate passes for unrelated PRs."
+          exit 0
+
+      - name: Verify schema matches schema.prisma
+        # Only enforce schema-vs-migrations parity when the forward apply
+        # succeeded; otherwise the schema check would compare against an
+        # empty/partial DB and emit confusing noise.
+        if: steps.apply.outcome == 'success'
+        run: npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+
+  reversibility-check:
+    name: New migrations are reversible (or explicitly marked IRREVERSIBLE)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: forward-only
+    services:
+      postgres:
+        image: postgres:15.18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: migration_dryrun
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/migration_dryrun?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/migration_dryrun?schema=public
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure postgresql-client is available
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1 || ! command -v pg_dump >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+          fi
+          psql --version
+          pg_dump --version
+
+      - name: Identify NEW migration directories in this PR
+        id: diff
+        run: |
+          set -euo pipefail
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE_SHA" ]; then
+            echo "Not a PR context; nothing to check."
+            echo "new_dirs=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mapfile -t NEW < <(git diff --name-only --diff-filter=A "$BASE_SHA"...HEAD -- 'prisma/migrations/*/migration.sql' | xargs -I{} dirname {} | sort -u || true)
+          if [ ${#NEW[@]} -eq 0 ]; then
+            echo "No new migration directories in this PR. Skipping."
+            echo "new_dirs=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          printf "Found %d new migration directories:\n" "${#NEW[@]}"
+          printf "  - %s\n" "${NEW[@]}"
+          {
+            echo "new_dirs<<EOF"
+            printf '%s\n' "${NEW[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Enforce reversibility + prove schema parity on each NEW migration
+        if: steps.diff.outputs.new_dirs != ''
+        env:
+          # Passed via env (not inline ${{ }} expansion in the shell body) so a
+          # migration directory name containing shell metacharacters cannot be
+          # injected into the script text. See R75 / GitHub Actions script
+          # injection guidance.
+          NEW_DIRS: ${{ steps.diff.outputs.new_dirs }}
+        run: |
+          set -euo pipefail
+
+          PSQL="psql --no-psqlrc -v ON_ERROR_STOP=1 -X -q $DATABASE_URL"
+          DUMP="pg_dump --schema-only --no-owner --no-privileges $DATABASE_URL"
+
+          # Reset DB to an empty public schema, then apply every migration
+          # forward via prisma. Echoes nothing sensitive.
+          reset_and_migrate_forward() {
+            $PSQL -c 'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;' >/dev/null
+            npx prisma migrate deploy >/dev/null
+          }
+
+          FAIL=0
+          while IFS= read -r dir; do
+            [ -z "$dir" ] && continue
+            echo ""
+            echo "==> Checking $dir"
+
+            has_down=0
+            [ -f "$dir/down.sql" ] && has_down=1
+
+            if [ "$has_down" -eq 0 ]; then
+              if grep -qE '^-- IRREVERSIBLE:' "$dir/migration.sql"; then
+                REASON=$(grep -E '^-- IRREVERSIBLE:' "$dir/migration.sql" | head -1 | sed 's/^-- IRREVERSIBLE: //')
+                echo "  OK: marked IRREVERSIBLE — $REASON"
+                continue
+              fi
+              echo "  FAIL: $dir lacks both down.sql AND '-- IRREVERSIBLE: <reason>' marker."
+              echo "        Add one of the two. See AGENT_RULES.md R106."
+              FAIL=1
+              continue
+            fi
+
+            # down.sql present — prove it actually reverses the migration.
+            echo "  down.sql present — verifying forward → down → forward schema parity."
+
+            reset_and_migrate_forward
+            BEFORE=$(mktemp)
+            $DUMP > "$BEFORE"
+
+            echo "  Applying $dir/down.sql ..."
+            if ! $PSQL -f "$dir/down.sql" >/dev/null; then
+              echo "  FAIL: $dir/down.sql did not apply cleanly."
+              FAIL=1
+              continue
+            fi
+
+            echo "  Re-applying $dir/migration.sql ..."
+            if ! $PSQL -f "$dir/migration.sql" >/dev/null; then
+              echo "  FAIL: re-applying $dir/migration.sql after down.sql failed."
+              FAIL=1
+              continue
+            fi
+
+            AFTER=$(mktemp)
+            $DUMP > "$AFTER"
+
+            if diff -u "$BEFORE" "$AFTER" > schema-parity.diff; then
+              echo "  OK: schema is byte-identical after forward → down → forward."
+            else
+              echo "  FAIL: $dir/down.sql does not faithfully reverse migration.sql."
+              echo "        Schema differs after re-applying forward:"
+              sed 's/^/        /' schema-parity.diff
+              FAIL=1
+            fi
+          done <<< "$NEW_DIRS"
+
+          exit "$FAIL"

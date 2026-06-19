@@ -1,0 +1,238 @@
+name: R100 Quality Gate
+
+# Enforces AGENT_RULES R75 (banned cast tokens), R24-R78 (R100 quality bar),
+# A1 (test:src density), A3 (LOC budget), and R104 (no weak casts).
+# Runs on every PR; required check for merge per R102/R107.
+#
+# Hard rules (cause failure):
+#   - Banned cast tokens (R75 / R100.A2): net positive count in PR diff = P0.
+#   - LOC budget (R100.A3): net LOC > 400 = failure unless the PR title
+#     contains [LOC-EXEMPT: <reason>]. There is no warning band — 400 is the
+#     hard cap per R100.A3.
+#   - test:src ratio (R100.A1): added-test-lines / added-src-lines < 2.0
+#     = failure unless PR title contains [TEST-EXEMPT: <reason>].
+#
+# Measurement scope (LOC + src-side of test density):
+#   src/**, test/**, prisma/migrations/**, scripts/**, dangerfile.js,
+#   .github/workflows/**, and *.config.json. Infrastructure files (workflows,
+#   shell scripts, dangerfile, config) ARE counted toward the LOC cap so an
+#   infra-heavy PR cannot bypass the gate by reporting 0 LOC. Lock files and
+#   generated artifacts remain excluded.
+#
+# Exemption markers (place in the PR title):
+#   [LOC-EXEMPT: <reason>]   waives the 400-LOC cap (operator sign-off needed).
+#   [TEST-EXEMPT: <reason>]  waives the 2.0 test:src ratio (e.g. workflows are
+#                            validated by actionlint/shellcheck, not unit tests).
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: r100-quality-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  banned-casts:
+    name: Banned cast tokens (R75 / R100.A2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          fetch-depth: 0
+      - name: Diff banned tokens
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE_SHA" ]; then
+            echo "Not in PR context; skipping."
+            exit 0
+          fi
+          # Scan scope (R75 / R100.A2). Includes application code, prod scripts,
+          # and the Danger config; excludes type-declaration files, unit/spec
+          # files (fixture false positives), node_modules, and — critically —
+          # this gate's own home under .github/** so the token list below cannot
+          # self-match when a PR edits the gate workflow itself.
+          PATHSPEC=(
+            'src/**/*.ts' 'src/**/*.tsx' 'src/**/*.js' 'src/**/*.jsx'
+            'scripts/**/*.ts' 'scripts/**/*.js' 'scripts/**/*.sh'
+            'dangerfile.js'
+            'test/**/*.ts' 'test/**/*.tsx' 'test/**/*.js'
+            ':(exclude)**/*.d.ts'
+            ':(exclude)**/node_modules/**'
+            ':(exclude)**/*.test.*'
+            ':(exclude)**/*.spec.*'
+            ':(exclude).github/**'
+          )
+          # Build the added/removed line sets ONCE per side, scoped above.
+          ADDED_LINES=$(git diff "$BASE_SHA"...HEAD -- "${PATHSPEC[@]}" | grep -E '^\+[^+]' || true)
+          REMOVED_LINES=$(git diff "$BASE_SHA"...HEAD -- "${PATHSPEC[@]}" | grep -E '^-[^-]' || true)
+
+          # Literal banned tokens enumerated in AGENT_RULES R75. Placeholder and
+          # seed-data literals are matched here as data; the rule prose elsewhere
+          # avoids self-match by living under .github/** which is excluded above.
+          TOKENS=(
+            "@ts-ignore"
+            "@ts-expect-error"
+            "as any"
+            "as unknown as"
+            "as never"
+            ".catch(()=>undefined)"
+            ".catch(()=>null)"
+            ".catch(()=>{})"
+            "Coming soon"
+            "lorem ipsum"
+            "foo@bar"
+            "John Doe"
+          )
+          # @ts-expect-error is permitted ONLY when the same line carries a
+          # GitHub issue reference (#NNNN, 4+ digits). Such lines are stripped
+          # from the scanned sets before counting so a documented suppression
+          # does not trip the gate.
+          EXEMPT_RE='@ts-expect-error.*#[0-9]{4,}'
+          ADDED_SCAN=$(printf '%s\n' "$ADDED_LINES" | grep -Ev "$EXEMPT_RE" || true)
+          REMOVED_SCAN=$(printf '%s\n' "$REMOVED_LINES" | grep -Ev "$EXEMPT_RE" || true)
+
+          ADDED=0
+          REMOVED=0
+          for tok in "${TOKENS[@]}"; do
+            a=$(printf '%s\n' "$ADDED_SCAN" | grep -cF "$tok" || true)
+            r=$(printf '%s\n' "$REMOVED_SCAN" | grep -cF "$tok" || true)
+            net=$((a - r))
+            printf "  %-32s  +%-3d  -%-3d  net %+d\n" "$tok" "$a" "$r" "$net"
+            ADDED=$((ADDED + a))
+            REMOVED=$((REMOVED + r))
+          done
+
+          # Parametrized empty-catch: .catch(<param> => undefined|null|{}) with
+          # arbitrary whitespace and parameter names. Counted via regex (grep -E)
+          # because the literal list above cannot express a variable parameter.
+          EMPTY_CATCH_RE='\.catch\(\s*[^)]*\s*=>\s*(undefined|null|\{\s*\})\s*\)'
+          a=$(printf '%s\n' "$ADDED_SCAN" | grep -cE "$EMPTY_CATCH_RE" || true)
+          r=$(printf '%s\n' "$REMOVED_SCAN" | grep -cE "$EMPTY_CATCH_RE" || true)
+          net=$((a - r))
+          printf "  %-32s  +%-3d  -%-3d  net %+d\n" "parametrized-empty-catch" "$a" "$r" "$net"
+          ADDED=$((ADDED + a))
+          REMOVED=$((REMOVED + r))
+
+          NET=$((ADDED - REMOVED))
+          echo ""
+          echo "Total: +$ADDED added, -$REMOVED removed, net $NET"
+          if [ "$NET" -gt 0 ]; then
+            echo ""
+            echo "FAIL — R75 violation: this PR adds banned cast tokens (net +$NET)."
+            echo "       See AGENT_RULES.md R75 and R104. Fix the underlying type or"
+            echo "       narrow with a runtime guard. No exemptions."
+            exit 1
+          fi
+          echo "OK — no net banned-cast additions."
+
+  loc-budget:
+    name: LOC budget (R100.A3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          fetch-depth: 0
+      - name: Compute net LOC
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Fallback only; the live title is fetched below. The event-payload
+          # title is captured when the pull_request event fires and goes STALE
+          # if the title is edited afterwards (e.g. an operator adds the
+          # [LOC-EXEMPT:] marker post-open) without a new push to refresh it.
+          PR_TITLE_EVENT: ${{ github.event.pull_request.title }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE_SHA" ]; then echo "Not a PR; skip."; exit 0; fi
+          # Read the LIVE PR title (honors the operator-signed [LOC-EXEMPT:]
+          # marker per R23/R76 exception protocol even when added after open).
+          # Fall back to the event-payload title if the API read fails.
+          PR_TITLE="$(gh pr view "$PR_NUMBER" --json title --jq .title 2>/dev/null || true)"
+          if [ -z "$PR_TITLE" ]; then PR_TITLE="$PR_TITLE_EVENT"; fi
+          echo "PR title (live): $PR_TITLE"
+          # Net added lines across code, tests, AND infrastructure (workflows,
+          # scripts, dangerfile, config). Lock files & generated artifacts are
+          # excluded. Infra files are counted so an infra-heavy PR cannot
+          # bypass the cap by reporting 0 LOC.
+          NET=$(git diff --numstat "$BASE_SHA"...HEAD -- \
+            'src/**' 'test/**' 'prisma/migrations/**' \
+            'scripts/**' 'dangerfile.js' '.github/workflows/**' '*.config.json' \
+            ':(exclude)package-lock.json' \
+            | awk '{ a += $1; r += $2 } END { print a - r }')
+          NET=${NET:-0}
+          echo "Net LOC: $NET"
+          if [ "$NET" -le 400 ]; then
+            echo "OK — under the 400 LOC cap."
+            exit 0
+          fi
+          if printf '%s' "$PR_TITLE" | grep -qE '\[LOC-EXEMPT:'; then
+            echo "OK — over 400 but exempted via [LOC-EXEMPT: <reason>] in PR title."
+            exit 0
+          fi
+          echo "FAIL — $NET LOC > 400 (hard cap, R100.A3) and no [LOC-EXEMPT: <reason>] in title."
+          echo "       Split the PR or add an operator-signed [LOC-EXEMPT: <reason>] marker."
+          exit 1
+
+  test-density:
+    name: Test density (R100.A1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          fetch-depth: 0
+      - name: Compute test:src ratio
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Fallback only — see the LOC-budget job: the event-payload title goes
+          # STALE if the title is edited (e.g. adding [TEST-EXEMPT:]) after the
+          # event fires. Read the live title below per R23/R76 (R100.A1).
+          PR_TITLE_EVENT: ${{ github.event.pull_request.title }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE_SHA" ]; then echo "Not a PR; skip."; exit 0; fi
+          # Read the LIVE PR title so a post-open [TEST-EXEMPT:] marker is
+          # honored. Fall back to the event-payload title on API failure.
+          PR_TITLE="$(gh pr view "$PR_NUMBER" --json title --jq .title 2>/dev/null || true)"
+          if [ -z "$PR_TITLE" ]; then PR_TITLE="$PR_TITLE_EVENT"; fi
+          echo "PR title (live): $PR_TITLE"
+          # src side counts application code plus testable infra code
+          # (scripts/*.ts, dangerfile.js). Non-TS infra (workflow YAML, shell)
+          # is not unit-testable and is validated by the infra-lint workflow
+          # instead; cover it with a [TEST-EXEMPT: <reason>] marker.
+          SRC=$(git diff --numstat "$BASE_SHA"...HEAD -- \
+            'src/**/*.ts' 'src/**/*.tsx' 'scripts/**/*.ts' 'dangerfile.js' \
+            ':(exclude)src/**/*.spec.ts' ':(exclude)src/**/*.test.ts' \
+            | awk '{ a += $1 } END { print a + 0 }')
+          TEST=$(git diff --numstat "$BASE_SHA"...HEAD -- 'test/**/*.ts' 'src/**/*.spec.ts' 'src/**/*.test.ts' \
+            | awk '{ a += $1 } END { print a + 0 }')
+          echo "src lines added: $SRC"
+          echo "test lines added: $TEST"
+          if [ "$SRC" -eq 0 ]; then
+            echo "OK — no src additions; ratio not applicable."
+            exit 0
+          fi
+          # Compute ratio in integer math: ratio*100 = TEST*100/SRC
+          RATIO_X100=$(( TEST * 100 / SRC ))
+          printf "ratio test:src ≈ %d.%02d\n" $((RATIO_X100 / 100)) $((RATIO_X100 % 100))
+          if [ "$RATIO_X100" -ge 200 ]; then
+            echo "OK — ratio ≥ 2.0."
+            exit 0
+          fi
+          if printf '%s' "$PR_TITLE" | grep -qE '\[TEST-EXEMPT:'; then
+            echo "OK — exempted via [TEST-EXEMPT: <reason>] in PR title."
+            exit 0
+          fi
+          echo "FAIL — test:src ratio below 2.0 and no [TEST-EXEMPT: <reason>] in title."
+          echo "       Add tests, mark exempt with a reason, or split out src changes."
+          exit 1

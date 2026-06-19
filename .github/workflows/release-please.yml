@@ -1,0 +1,29 @@
+name: Release Please
+
+# Automates SemVer versioning + CHANGELOG generation from Conventional Commits.
+# Baseline: 0.1.0 (pre-launch, see Q2). When the product hits public GA,
+# operator bumps to 1.0.0 manually (release-please-config.json:
+# "release-as": "1.0.0" one-time override).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071  # v4.4.1
+        with:
+          config-file: .release-please-config.json
+          manifest-file: .release-please-manifest.json
