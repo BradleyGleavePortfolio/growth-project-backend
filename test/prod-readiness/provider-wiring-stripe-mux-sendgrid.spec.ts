@@ -293,10 +293,17 @@ describe('KEY_SHAPE_VALIDATORS predicates exercised directly', () => {
     expect(KEY_SHAPE_VALIDATORS.STRIPE_WEBHOOK_SECRET(`whsec_${'B'.repeat(19)}`)).toBe(false);
   });
 
-  it('SUPABASE_SERVICE_ROLE_KEY validator requires exactly three dot-segments', () => {
-    expect(KEY_SHAPE_VALIDATORS.SUPABASE_SERVICE_ROLE_KEY('eyJa.bbb.ccc')).toBe(true);
+  it('SUPABASE_SERVICE_ROLE_KEY validator decodes JWT segments offline (F001)', () => {
+    // A genuinely valid HS256 service-role token: header {"alg":"HS256"},
+    // payload {"role":"service_role"}, non-empty signature.
+    const valid =
+      'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.9f3kPq2rstuVWXabcdEFGH';
+    expect(KEY_SHAPE_VALIDATORS.SUPABASE_SERVICE_ROLE_KEY(valid)).toBe(true);
+    // F001: matches the old segment regex but decodes to invalid JSON → reject.
+    expect(KEY_SHAPE_VALIDATORS.SUPABASE_SERVICE_ROLE_KEY('eyJbad.abc.def')).toBe(false);
+    expect(KEY_SHAPE_VALIDATORS.SUPABASE_SERVICE_ROLE_KEY('eyJa.bbb.ccc')).toBe(false); // not valid base64url JSON
     expect(KEY_SHAPE_VALIDATORS.SUPABASE_SERVICE_ROLE_KEY('eyJa.bbb')).toBe(false); // two segments
-    expect(KEY_SHAPE_VALIDATORS.SUPABASE_SERVICE_ROLE_KEY('eyJa.bbb.ccc.ddd')).toBe(false); // four segments
+    expect(KEY_SHAPE_VALIDATORS.SUPABASE_SERVICE_ROLE_KEY(`${valid}.ddd`)).toBe(false); // four segments
     expect(KEY_SHAPE_VALIDATORS.SUPABASE_SERVICE_ROLE_KEY('xyz.bbb.ccc')).toBe(false); // wrong header prefix
   });
 

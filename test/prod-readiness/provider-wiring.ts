@@ -142,6 +142,66 @@ export interface ProviderReport {
  * changing) length. Vars with no known shape fall back to the placeholder /
  * length checks already applied in `classifyVars`.
  */
+/**
+ * Decode one base64url JWT segment to a UTF-8 string and `JSON.parse` it,
+ * returning the parsed object or `undefined` on any failure (invalid base64url,
+ * invalid UTF-8, or non-object JSON). OFFLINE only — never calls out to Supabase
+ * and never verifies the signature. `Buffer.from(seg, 'base64url')` is Node 16+.
+ */
+function decodeJwtJsonSegment(seg: string): Record<string, unknown> | undefined {
+  let json: string;
+  try {
+    json = Buffer.from(seg, 'base64url').toString('utf8');
+  } catch {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+  return parsed as Record<string, unknown>;
+}
+
+/**
+ * OFFLINE structural validator for a Supabase service-role JWT. A bare regex on
+ * the `eyJ….….…` segment shape lets malformed values through (`eyJbad.abc.def`
+ * decodes to broken JSON yet matches the old regex). We instead require:
+ *   1. exactly three dot-separated segments;
+ *   2. header decodes to valid JSON with a string `alg` claim (and, if a `typ`
+ *      claim is present, it equals `"JWT"` — real Supabase tokens set
+ *      `typ: "JWT"`, but we stay lenient when it is omitted);
+ *   3. payload decodes to valid JSON carrying a plausible service-role claim:
+ *      `role === "service_role"`, or (lenient offline fallback) a non-empty
+ *      `iss`/`ref` claim when the offline view cannot see the role.
+ * The signature segment is only required to be present and non-empty — it is
+ * never verified offline. Any failure returns `false`, so the value is bucketed
+ * as a placeholder (→ STUB) rather than wired.
+ */
+export function isPlausibleSupabaseServiceRoleJwt(v: string): boolean {
+  const segments = v.split('.');
+  if (segments.length !== 3) return false;
+  const [headerSeg, payloadSeg, signatureSeg] = segments;
+  if (signatureSeg.length === 0) return false;
+
+  const header = decodeJwtJsonSegment(headerSeg);
+  if (header === undefined) return false;
+  if (typeof header.alg !== 'string' || header.alg.length === 0) return false;
+  if (header.typ !== undefined && header.typ !== 'JWT') return false;
+
+  const payload = decodeJwtJsonSegment(payloadSeg);
+  if (payload === undefined) return false;
+
+  if (payload.role === 'service_role') return true;
+  // Lenient offline fallback: accept a token that carries a plausible Supabase
+  // project claim even when the role is not the explicit `service_role` string.
+  if (typeof payload.iss === 'string' && payload.iss.length > 0) return true;
+  if (typeof payload.ref === 'string' && payload.ref.length > 0) return true;
+  return false;
+}
+
 export const KEY_SHAPE_VALIDATORS: Readonly<Record<string, (v: string) => boolean>> = {
   // Must be a SECRET key (sk_), live or test, with a long-enough body. This
   // rejects publishable (pk_) and restricted (rk_) keys outright — they are the
@@ -149,9 +209,12 @@ export const KEY_SHAPE_VALIDATORS: Readonly<Record<string, (v: string) => boolea
   STRIPE_SECRET_KEY: (v) => /^sk_(live|test)_[A-Za-z0-9]{24,}$/.test(v),
   // Stripe webhook signing secret: `whsec_` + ≥20 chars of body.
   STRIPE_WEBHOOK_SECRET: (v) => /^whsec_[A-Za-z0-9]{20,}$/.test(v),
-  // Supabase service-role key is a JWT: three base64url segments, dot-separated,
-  // header starting `eyJ`.
-  SUPABASE_SERVICE_ROLE_KEY: (v) => /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(v),
+  // Supabase service-role key is a JWT. A regex on the segment shape is NOT
+  // sufficient — strings like `eyJbad.abc.def` match `eyJ…\.…\.…` yet are not
+  // valid base64url-encoded JSON. We decode and parse the header + payload
+  // OFFLINE (no signature verification, no network) and require plausible
+  // service-role claims. See `isPlausibleSupabaseServiceRoleJwt`.
+  SUPABASE_SERVICE_ROLE_KEY: (v) => isPlausibleSupabaseServiceRoleJwt(v),
   // OpenAI API key: `sk-` prefix + ≥20 chars of body (covers `sk-proj-…` too).
   OPENAI_API_KEY: (v) => /^sk-[A-Za-z0-9_-]{20,}$/.test(v),
 };
@@ -352,11 +415,33 @@ export function collectFileEvidence(env: EnvMap, providers: ProviderDef[] = PROV
     for (const fileVar of fileVarsOf(groups.flat())) {
       const value = env[fileVar];
       if (value !== undefined && value !== '') {
-        out[fileExistsEvidenceKey(fileVar)] = fs.existsSync(value);
+        out[fileExistsEvidenceKey(fileVar)] = isReadableRegularFile(value);
       }
     }
   }
   return out;
+}
+
+/**
+ * I/O EDGE helper: `true` only when `p` is a REGULAR file that is readable.
+ * `fs.existsSync` alone is insufficient — a DIRECTORY (or socket/fifo) at a
+ * credential path satisfies existence yet is not a usable token file, so the
+ * provider would wrongly classify WIRED. We `lstatSync` (no symlink-follow into
+ * a directory masquerade), reject anything that is not a regular file, then
+ * confirm read access with `accessSync`. Any error (missing path, permission,
+ * non-file) returns `false`; the reason is captured by `fileEvidenceReason` for
+ * the diagnostic surface. Errors are never swallowed silently — they map to an
+ * explicit `false` + a recorded reason (R59).
+ */
+function isReadableRegularFile(p: string): boolean {
+  try {
+    const st = fs.lstatSync(p);
+    if (!st.isFile()) return false;
+    fs.accessSync(p, fs.constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -373,6 +458,17 @@ export function filterProviders(providers: ProviderDef[], id: string): ProviderD
  */
 export function getProductionBlockers(reports: ProviderReport[]): ProviderReport[] {
   return reports.filter((r) => r.status === 'STUB');
+}
+
+/**
+ * Map a file name to the TypeScript `ScriptKind` so JSX-bearing files parse
+ * correctly. `.tsx`/`.jsx` need `Tsx`/`Jsx`; everything else (incl. `.mts`,
+ * `.cts`, `.ts`) parses as `TS`.
+ */
+function scriptKindFor(fileName: string): ts.ScriptKind {
+  if (fileName.endsWith('.tsx')) return ts.ScriptKind.TSX;
+  if (fileName.endsWith('.jsx')) return ts.ScriptKind.JSX;
+  return ts.ScriptKind.TS;
 }
 
 /**
@@ -394,9 +490,13 @@ function normalizeSpecifier(spec: string): string | undefined {
  * (CallExpression whose expression is the `import` keyword). Computed/dynamic
  * specifiers (e.g. `import(variable)`, `require(`a` + b)`) are NOT statically
  * known and are skipped safely.
+ *
+ * The `ScriptKind` is derived from the file name so `.tsx` (and `.jsx`) sources
+ * parse with JSX enabled — otherwise the `<Foo/>` syntax in a React component
+ * would be misparsed and its `import` statements lost (F003).
  */
 export function extractModuleSpecifiers(sourceText: string, fileName = 'in-memory.ts'): string[] {
-  const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, scriptKindFor(fileName));
   const specifiers: string[] = [];
   const visit = (node: ts.Node): void => {
     // Static `import ... from 'pkg'` and side-effect `import 'pkg'`.
@@ -428,6 +528,24 @@ export function extractModuleSpecifiers(sourceText: string, fileName = 'in-memor
  * `require(...)`, and dynamic `import(...)` while safely ignoring relative paths
  * and non-literal (computed) specifiers. Never reads env.
  */
+/**
+ * Should this filename be scanned for provider imports? Includes TypeScript
+ * sources (`.ts`), React TSX components (`.tsx`), and ESM/CJS module variants
+ * (`.mts`/`.cts`) — while always excluding ambient declaration files (`.d.ts`),
+ * which only declare types and never wire a real SDK. The old filter accepted
+ * `.ts` only, so a provider imported solely from a `.tsx` component reported
+ * NOT_USED even though it is genuinely used (F003).
+ */
+function isScannableSourceFile(name: string): boolean {
+  if (name.endsWith('.d.ts')) return false;
+  return (
+    name.endsWith('.ts') ||
+    name.endsWith('.tsx') ||
+    name.endsWith('.mts') ||
+    name.endsWith('.cts')
+  );
+}
+
 export function collectImports(repoRoot: string): Set<string> {
   const root = path.join(repoRoot, 'src');
   const found = new Set<string>();
@@ -438,7 +556,7 @@ export function collectImports(repoRoot: string): Set<string> {
       if (e.isDirectory()) {
         if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
         walk(p);
-      } else if (e.isFile() && e.name.endsWith('.ts') && !e.name.endsWith('.d.ts')) {
+      } else if (e.isFile() && isScannableSourceFile(e.name)) {
         const text = fs.readFileSync(p, 'utf8');
         for (const spec of extractModuleSpecifiers(text, p)) {
           const id = normalizeSpecifier(spec);

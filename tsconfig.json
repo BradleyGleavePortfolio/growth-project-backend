@@ -15,5 +15,6 @@
     "strictNullChecks": true,
     "noImplicitAny": true,
     "paths": {}
-  }
+  },
+  "exclude": ["node_modules", "bower_components", "jspm_packages", "dist", "test/**/__fixtures__/**"]
 }

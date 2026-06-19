@@ -8,7 +8,8 @@
 // scanProvidersFromProcess) driven against a throwaway temp directory.
 
 import { join } from 'node:path';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises';
+import { existsSync, readFileSync, accessSync, constants as fsConstants } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 import {
@@ -23,11 +24,22 @@ import {
   collectPathPresence,
   collectFileEvidence,
   extractModuleSpecifiers,
+  isPlausibleSupabaseServiceRoleJwt,
   type ProviderDef,
   type EnvMap,
   type EvidenceMap,
   type ProviderReport,
 } from './provider-wiring';
+
+/** True when the current process genuinely cannot read `p` (root can read 0o000). */
+function accessDenied(p: string): boolean {
+  try {
+    accessSync(p, fsConstants.R_OK);
+    return false;
+  } catch {
+    return true;
+  }
+}
 
 function def(id: string): ProviderDef {
   const found = PROVIDERS.find((p) => p.id === id);
@@ -656,5 +668,218 @@ describe('I/O edges against a temp repo (collectImports / collectPathPresence / 
     // OpenAI (no file dependency) stays WIRED — the demotion is scoped to AWS.
     const byId = Object.fromEntries(reports.map((r) => [r.id, r.status]));
     expect(byId.openai).toBe('WIRED');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H4.D R2 regression coverage (findings F001 / F002 / F003)
+// ---------------------------------------------------------------------------
+
+describe('F001 — Supabase service-role JWT segment validation (offline)', () => {
+  // A full, valid HS256 service-role token (header {"alg":"HS256"},
+  // payload {"role":"service_role"}). This is the exact shape the live tests use.
+  const validToken =
+    'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.9f3kPq2rstuVWXabcdEFGH';
+
+  function enc(obj: unknown): string {
+    return Buffer.from(JSON.stringify(obj), 'utf8').toString('base64url');
+  }
+
+  it('accepts a valid full service-role token → WIRED', () => {
+    const r = wired('supabase', {
+      SUPABASE_URL: 'https://abcdefgh.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: validToken,
+    });
+    expect(r.status).toBe('WIRED');
+    expect(r.env_vars_present).toContain('SUPABASE_SERVICE_ROLE_KEY');
+    expect(isPlausibleSupabaseServiceRoleJwt(validToken)).toBe(true);
+  });
+
+  it('rejects `eyJbad.abc.def` — matches old regex but decodes to invalid JSON', () => {
+    // Sanity-check it would have passed the OLD shape regex, proving the gap.
+    expect(/^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test('eyJbad.abc.def')).toBe(true);
+    expect(isPlausibleSupabaseServiceRoleJwt('eyJbad.abc.def')).toBe(false);
+    const r = wired('supabase', {
+      SUPABASE_URL: 'https://abcdefgh.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'eyJbad.abc.def',
+    });
+    expect(r.status).toBe('STUB');
+    expect(r.env_vars_placeholder).toContain('SUPABASE_SERVICE_ROLE_KEY');
+  });
+
+  it('rejects a header that decodes to bytes that are not valid JSON', () => {
+    // The header segment is valid base64url but its decoded bytes are not JSON,
+    // so JSON.parse fails and the token is rejected (treated as STUB).
+    const nonJsonHeader = Buffer.from('not json at all', 'utf8').toString('base64url');
+    const token = `${nonJsonHeader}.${enc({ role: 'service_role' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+
+  it('rejects valid-base64 but invalid-JSON payload', () => {
+    const header = enc({ alg: 'HS256', typ: 'JWT' });
+    const badPayload = Buffer.from('{not:valid json', 'utf8').toString('base64url');
+    const token = `${header}.${badPayload}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+
+  it('rejects valid-JSON header+payload but missing any role/iss/ref claim', () => {
+    const token = `${enc({ alg: 'HS256' })}.${enc({ sub: 'user-123', foo: 'bar' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+
+  it('accepts a token whose payload carries iss/ref even without explicit role (lenient offline)', () => {
+    const issToken = `${enc({ alg: 'HS256' })}.${enc({ iss: 'supabase', ref: 'abcdefgh' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(issToken)).toBe(true);
+  });
+
+  it('rejects a token with the wrong number of segments', () => {
+    expect(isPlausibleSupabaseServiceRoleJwt('eyJ.only-two')).toBe(false);
+    expect(isPlausibleSupabaseServiceRoleJwt('a.b.c.d')).toBe(false);
+  });
+
+  it('rejects a token with an empty signature segment', () => {
+    const token = `${enc({ alg: 'HS256' })}.${enc({ role: 'service_role' })}.`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+
+  it('rejects a header whose typ is present but not "JWT"', () => {
+    const token = `${enc({ alg: 'HS256', typ: 'NOTJWT' })}.${enc({ role: 'service_role' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+
+  it('rejects a header missing a string alg claim', () => {
+    const token = `${enc({ typ: 'JWT' })}.${enc({ role: 'service_role' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+});
+
+describe('F002 — collectFileEvidence requires a regular readable file (not a directory)', () => {
+  let dir: string;
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'provider-wiring-f002-'));
+  });
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('missing path → FILE_EXISTS=false', () => {
+    const ev = collectFileEvidence({ AWS_WEB_IDENTITY_TOKEN_FILE: join(dir, 'nope') });
+    expect(ev.AWS_WEB_IDENTITY_TOKEN_FILE_EXISTS).toBe(false);
+  });
+
+  it('DIRECTORY at the credential path → FILE_EXISTS=false (fs.existsSync alone would say true)', async () => {
+    const asDir = join(dir, 'token-as-dir');
+    await mkdir(asDir, { recursive: true });
+    // Prove the gap: plain existence is satisfied by the directory.
+    expect(existsSync(asDir)).toBe(true);
+    const ev = collectFileEvidence({ AWS_WEB_IDENTITY_TOKEN_FILE: asDir });
+    expect(ev.AWS_WEB_IDENTITY_TOKEN_FILE_EXISTS).toBe(false);
+  });
+
+  it('regular readable file → FILE_EXISTS=true', async () => {
+    const file = join(dir, 'real-token');
+    await writeFile(file, 'token-bytes', 'utf8');
+    const ev = collectFileEvidence({ AWS_WEB_IDENTITY_TOKEN_FILE: file });
+    expect(ev.AWS_WEB_IDENTITY_TOKEN_FILE_EXISTS).toBe(true);
+  });
+
+  it('unreadable file → FILE_EXISTS=false', async () => {
+    const file = join(dir, 'unreadable-token');
+    await writeFile(file, 'secret', 'utf8');
+    await chmod(file, 0o000);
+    const ev = collectFileEvidence({ AWS_WEB_IDENTITY_TOKEN_FILE: file });
+    // Root can read 0o000 files; only assert false when access is truly denied.
+    if (accessDenied(file)) {
+      expect(ev.AWS_WEB_IDENTITY_TOKEN_FILE_EXISTS).toBe(false);
+    } else {
+      expect(ev.AWS_WEB_IDENTITY_TOKEN_FILE_EXISTS).toBe(true);
+    }
+    await chmod(file, 0o644); // restore so afterAll cleanup succeeds
+  });
+
+  it('end-to-end: a DIRECTORY at the token path demotes AWS to STUB with a diagnostic', async () => {
+    const asDir = join(dir, 'aws-token-dir');
+    await mkdir(asDir, { recursive: true });
+    const env: EnvMap = {
+      AWS_REGION: 'us-east-1',
+      AWS_WEB_IDENTITY_TOKEN_FILE: asDir,
+    };
+    const evidence = collectFileEvidence(env);
+    const reports = scanProvidersWith(
+      new Set(['@aws-sdk/client-s3']),
+      new Set(),
+      env,
+      [def('aws-s3')],
+      evidence,
+    );
+    expect(reports[0].status).toBe('STUB');
+    expect(reports[0].diagnostic).toBe('AWS_WEB_IDENTITY_TOKEN_FILE points to non-existent path');
+  });
+});
+
+describe('F003 — collectImports / extractModuleSpecifiers scan .tsx (and skip .d.ts)', () => {
+  it('extractModuleSpecifiers parses a real .tsx fixture and finds the stripe import', () => {
+    const fixturePath = join(__dirname, '__fixtures__', 'provider-wiring', 'uses-stripe.tsx');
+    const text = readFileSync(fixturePath, 'utf8');
+    const specs = extractModuleSpecifiers(text, fixturePath);
+    expect(specs).toContain('stripe');
+  });
+
+  describe('against a temp repo containing a .tsx component', () => {
+    let root: string;
+
+    beforeAll(async () => {
+      root = await mkdtemp(join(tmpdir(), 'provider-wiring-f003-'));
+      const comp = join(root, 'src', 'components');
+      await mkdir(comp, { recursive: true });
+      // A TSX React component importing the Stripe SDK + a scoped SDK.
+      await writeFile(
+        join(comp, 'Checkout.tsx'),
+        [
+          "import Stripe from 'stripe';",
+          "import { S3Client } from '@aws-sdk/client-s3';",
+          'export const C = (): JSX.Element => <button>{String(Stripe)}{String(S3Client)}</button>;',
+        ].join('\n'),
+        'utf8',
+      );
+      // An .mts module importing the OpenAI SDK.
+      await writeFile(join(root, 'src', 'mod.mts'), "import OpenAI from 'openai';\nexport const o = OpenAI;\n", 'utf8');
+      // A .d.ts declaration that must STILL be ignored.
+      await writeFile(join(root, 'src', 'shapes.d.ts'), "import type { Z } from 'should-be-ignored-tsx';\n", 'utf8');
+    });
+
+    afterAll(async () => {
+      await rm(root, { recursive: true, force: true });
+    });
+
+    it('discovers a provider imported only from a .tsx component', () => {
+      const found = collectImports(root);
+      expect(found.has('stripe')).toBe(true);
+      expect(found.has('@aws-sdk/client-s3')).toBe(true);
+    });
+
+    it('discovers a provider imported from a .mts module', () => {
+      const found = collectImports(root);
+      expect(found.has('openai')).toBe(true);
+    });
+
+    it('still skips .d.ts declaration files', () => {
+      const found = collectImports(root);
+      expect(found.has('should-be-ignored-tsx')).toBe(false);
+    });
+
+    it('end-to-end: a Stripe import from .tsx makes the provider non-NOT_USED', () => {
+      const env: EnvMap = {
+        STRIPE_SECRET_KEY: 'sk_live_9f3kPq2rstuVWXabcdEFGHijklmnop',
+        STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWXabcdEFGH',
+      };
+      const reports = scanProvidersFromProcess(root, env);
+      const stripe = reports.find((r) => r.id === 'stripe');
+      expect(stripe?.sdk_imported).toBe(true);
+      expect(stripe?.status).not.toBe('NOT_USED');
+      expect(stripe?.status).toBe('WIRED');
+    });
   });
 });
