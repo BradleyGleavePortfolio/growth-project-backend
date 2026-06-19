@@ -36,8 +36,17 @@ export interface ProviderDef {
   label: string;
   /** Match-any: provider is considered used if ANY of these packages is imported. */
   packages: string[];
-  /** Env vars the SDK requires to function in prod. */
+  /** Env vars the SDK ALWAYS requires (every var here must be set + non-placeholder). */
   requires: string[];
+  /**
+   * Credential alternatives (F-B13): an array of mutually-exclusive var groups
+   * where AT LEAST ONE group must be fully satisfied. Used for providers that
+   * accept more than one auth mode — e.g. AWS S3 is wired with either static
+   * access keys (AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY) OR a web-identity
+   * token file (AWS_WEB_IDENTITY_TOKEN_FILE, the IAM-role / IRSA path). The
+   * provider is STUB only when NO group is fully satisfied.
+   */
+  requiresAnyOf?: string[][];
   /** Optional fallback domains (paths) to also confirm provider wiring. */
   filePathHints?: string[];
 }
@@ -52,7 +61,7 @@ const PROVIDERS: ProviderDef[] = [
   // ----- AI -----
   { id: 'openai', label: 'OpenAI', packages: ['openai'], requires: ['OPENAI_API_KEY'] },
   { id: 'anthropic', label: 'Anthropic', packages: ['@anthropic-ai/sdk'], requires: ['ANTHROPIC_API_KEY'] },
-  { id: 'perplexity', label: 'Perplexity', packages: [], filePathHints: ['perplexity'], requires: ['PERPLEXITY_API_KEY'] },
+  { id: 'perplexity', label: 'Perplexity', packages: ['@perplexity-ai/perplexity_ai'], filePathHints: ['src/perplexity'], requires: ['PERPLEXITY_API_KEY'] },
   // ----- Email -----
   { id: 'resend', label: 'Resend (email)', packages: [], filePathHints: ['src/email'], requires: ['RESEND_API_KEY', 'RESEND_FROM_EMAIL'] },
   // ----- Media / video -----
@@ -61,7 +70,18 @@ const PROVIDERS: ProviderDef[] = [
   { id: 'oura', label: 'Oura Ring', packages: [], filePathHints: ['src/wearables/connectors/oura'], requires: ['OURA_CLIENT_ID', 'OURA_CLIENT_SECRET'] },
   { id: 'whoop', label: 'WHOOP', packages: [], filePathHints: ['src/wearables/connectors/whoop'], requires: ['WHOOP_CLIENT_ID', 'WHOOP_CLIENT_SECRET'] },
   // ----- Storage / files -----
-  { id: 'aws-s3', label: 'AWS S3', packages: ['@aws-sdk/client-s3'], requires: ['AWS_REGION'] },
+  {
+    id: 'aws-s3',
+    label: 'AWS S3',
+    packages: ['@aws-sdk/client-s3'],
+    // AWS_REGION is always needed; credentials may arrive via static keys OR an
+    // IAM web-identity token file (IRSA / OIDC), so those are an either/or group.
+    requires: ['AWS_REGION'],
+    requiresAnyOf: [
+      ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'],
+      ['AWS_WEB_IDENTITY_TOKEN_FILE'],
+    ],
+  },
   // ----- Document signing -----
   { id: 'dropbox-sign', label: 'Dropbox Sign (e-sign)', packages: ['@dropbox/sign'], requires: ['DROPBOX_SIGN_API_KEY'] },
   // ----- Observability -----
@@ -96,20 +116,50 @@ export function scanProviders(repoRoot: string = process.cwd(), env: NodeJS.Proc
     const present: string[] = [];
     const missing: string[] = [];
     const placeholder: string[] = [];
-    for (const v of p.requires) {
-      const raw = env[v];
-      if (raw === undefined || raw === '') {
-        missing.push(v);
-      } else if (looksLikePlaceholder(raw)) {
-        placeholder.push(v);
+    // Classify each var in a group into present/missing/placeholder.
+    const classify = (vars: string[]): { present: string[]; missing: string[]; placeholder: string[] } => {
+      const g = { present: [] as string[], missing: [] as string[], placeholder: [] as string[] };
+      for (const v of vars) {
+        const raw = env[v];
+        if (raw === undefined || raw === '') g.missing.push(v);
+        else if (looksLikePlaceholder(raw)) g.placeholder.push(v);
+        else g.present.push(v);
+      }
+      return g;
+    };
+
+    const always = classify(p.requires);
+    present.push(...always.present);
+    missing.push(...always.missing);
+    placeholder.push(...always.placeholder);
+    const alwaysSatisfied = always.missing.length === 0 && always.placeholder.length === 0;
+
+    // Either/or credential groups (F-B13): satisfied when ANY group is fully
+    // set with non-placeholder values. We report the BEST (most-satisfied)
+    // group's gaps so the operator sees the shortest path to wiring it.
+    let anyOfSatisfied = true;
+    if (p.requiresAnyOf && p.requiresAnyOf.length > 0) {
+      const classified = p.requiresAnyOf.map(classify);
+      anyOfSatisfied = classified.some((g) => g.missing.length === 0 && g.placeholder.length === 0);
+      if (!anyOfSatisfied) {
+        // Surface the group with the fewest gaps as the actionable one.
+        const best = classified.reduce((a, b) =>
+          (b.missing.length + b.placeholder.length) < (a.missing.length + a.placeholder.length) ? b : a,
+        );
+        present.push(...best.present);
+        missing.push(...best.missing);
+        placeholder.push(...best.placeholder);
       } else {
-        present.push(v);
+        // Record the satisfied group's present vars for transparency.
+        const sat = classified.find((g) => g.missing.length === 0 && g.placeholder.length === 0)!;
+        present.push(...sat.present);
       }
     }
+
     let status: ProviderStatus;
     if (!sdkImported) {
       status = 'NOT_USED';
-    } else if (missing.length === 0 && placeholder.length === 0) {
+    } else if (alwaysSatisfied && anyOfSatisfied) {
       status = 'WIRED';
     } else {
       status = 'STUB';
