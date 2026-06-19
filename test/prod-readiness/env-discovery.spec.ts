@@ -855,6 +855,141 @@ describe('extractEnvVarRefs — destructuring and rest corners', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// F001 — computed destructuring keys: `const { ["FOO"]: x } = process.env` and
+// `const K = 'FOO'; const { [K]: x } = process.env`. The plain-identifier
+// destructuring path only saw IdentifierName keys; a ComputedPropertyName must
+// be unwrapped and resolved the same way bracket-access keys are.
+// ---------------------------------------------------------------------------
+
+describe('extractEnvVarRefs — computed destructuring keys (F001)', () => {
+  it('resolves a string-literal computed key { ["FOO"]: x }', () => {
+    const code = 'const { ["COMPUTED_LIT"]: x } = process.env;';
+    expect([...extractEnvVarRefs(code)]).toEqual(['COMPUTED_LIT']);
+  });
+
+  it('resolves a single-quoted string-literal computed key', () => {
+    const code = "const { ['COMPUTED_SQ']: x } = process.env;";
+    expect([...extractEnvVarRefs(code)]).toEqual(['COMPUTED_SQ']);
+  });
+
+  it('resolves a no-substitution template-literal computed key', () => {
+    const code = 'const { [`COMPUTED_TPL`]: x } = process.env;';
+    expect([...extractEnvVarRefs(code)]).toEqual(['COMPUTED_TPL']);
+  });
+
+  it('resolves a const-backed computed key { [K]: x }', () => {
+    const code = "const K = 'CONST_KEYED'; const { [K]: x } = process.env;";
+    expect([...extractEnvVarRefs(code)]).toEqual(['CONST_KEYED']);
+  });
+
+  it('resolves a const-backed computed key through an `as const` wrapper', () => {
+    const code = "const K = 'WRAPPED_KEY' as const; const { [K]: x } = process.env;";
+    expect([...extractEnvVarRefs(code)]).toEqual(['WRAPPED_KEY']);
+  });
+
+  it('does NOT record a let-aliased computed key (mutable alias)', () => {
+    const code = "let K = 'MUTABLE_KEY'; const { [K]: x } = process.env;";
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('skips a computed key whose identifier has no in-file string const', () => {
+    const code = 'const { [unknownKey]: x } = process.env;';
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('skips a substitution template-literal computed key (not static)', () => {
+    const code = 'const { [`PREFIX_${dyn}`]: x } = process.env;';
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('rejects a non-UPPER_SNAKE string-literal computed key', () => {
+    const code = 'const { ["lowerKey"]: x } = process.env;';
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('mixes a plain and a computed destructuring key in one pattern', () => {
+    const code = 'const { PLAIN_KEY, ["COMPUTED_MIX"]: x } = process.env;';
+    expect([...extractEnvVarRefs(code)].sort()).toEqual(['COMPUTED_MIX', 'PLAIN_KEY']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F002 — file-wide const map shadowing: collectStringConsts keys by identifier
+// name with no scope tracking, so a name bound more than once cannot be soundly
+// resolved. Per the conservative "ambiguous binding → skip" (option B) policy a
+// name resolves ONLY when it is bound exactly once in the file.
+// ---------------------------------------------------------------------------
+
+describe('extractEnvVarRefs — ambiguous const-key shadowing (F002)', () => {
+  it('drops a name re-declared at file scope twice (fail closed)', () => {
+    const code = [
+      "const K = 'OUTER_VAL';",
+      'const a = process.env[K];',
+      "const K2 = 'X'; const K = 'INNER_VAL';",
+    ].join('\n');
+    // K is bound twice → unresolvable → neither OUTER_VAL nor INNER_VAL.
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a name shadowed by an inner block const (fail closed)', () => {
+    const code = [
+      "const K = 'FOO';",
+      'const a = process.env[K];',
+      "{ const K = 'BAR'; void K; }",
+    ].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a name shadowed inside a function scope (fail closed)', () => {
+    const code = [
+      "const K = 'FOO';",
+      'const a = process.env[K];',
+      "function f() { const K = 'BAR'; return K; }",
+    ].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a const shadowed by a let of the same name (mutable alias)', () => {
+    const code = [
+      "const K = 'FOO';",
+      'const a = process.env[K];',
+      "{ let K = 'BAR'; K = 'BAZ'; void K; }",
+    ].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('still resolves a name bound exactly once even with other distinct consts', () => {
+    const code = [
+      "const ONLY = 'SINGLE_VAR';",
+      "const OTHER = 'unused';",
+      'const a = process.env[ONLY];',
+    ].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual(['SINGLE_VAR']);
+  });
+
+  it('drops an ambiguous name but keeps a distinct single-bound name', () => {
+    const code = [
+      "const DUPE = 'FIRST';",
+      "const KEEP = 'KEEP_VAR';",
+      'const a = process.env[DUPE];',
+      'const b = process.env[KEEP];',
+      "function f() { const DUPE = 'SECOND'; return DUPE; }",
+    ].join('\n');
+    // DUPE bound twice → dropped; KEEP bound once → resolved.
+    expect([...extractEnvVarRefs(code)]).toEqual(['KEEP_VAR']);
+  });
+
+  it('drops an ambiguous name used as a computed destructuring key (F001+F002)', () => {
+    const code = [
+      "const K = 'FOO';",
+      'const { [K]: x } = process.env;',
+      "{ const K = 'BAR'; void K; }",
+    ].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+});
+
 describe('discoverEnvVars — mixed-source repo end-to-end shape', () => {
   it('produces a union whose every entry has the full origin shape', async () => {
     const repo = await freshRepo();

@@ -265,7 +265,24 @@ export function extractEnvVarRefs(content: string, fileName = 'inline.ts'): Set<
       for (const elem of node.name.elements) {
         // Use the property name when aliased (`{ FOO: f }`), else the binding name.
         const key = elem.propertyName ?? elem.name;
-        if (ts.isIdentifier(key)) add(key.text);
+        if (ts.isIdentifier(key)) {
+          add(key.text);
+          continue;
+        }
+        // Computed destructuring key — `{ ["FOO"]: x }` or `{ [K]: x }`. Resolve
+        // the inner expression the same way bracket-access keys are resolved:
+        // a string literal contributes its text; an identifier contributes its
+        // value only when it is a resolvable (unambiguous) in-file string const.
+        // Anything else (dynamic expression, unresolved/ambiguous identifier) is
+        // skipped, consistent with `process.env[expr]` element-access handling.
+        if (ts.isComputedPropertyName(key)) {
+          const inner = unwrapExpression(key.expression);
+          if (ts.isStringLiteralLike(inner)) {
+            add(inner.text);
+          } else if (ts.isIdentifier(inner) && stringConsts.has(inner.text)) {
+            add(stringConsts.get(inner.text)!);
+          }
+        }
       }
     }
     ts.forEachChild(node, visit);
@@ -293,15 +310,41 @@ export function extractEnvVarRefs(content: string, fileName = 'inline.ts'): Set<
  *      accepted too. `isStringLiteralLike` already covers plain string and
  *      no-substitution-template literals; unwrapping handles the wrapped forms
  *      such as `const K = 'FOO' as const`.
+ *   3. AMBIGUOUS-BINDING SKIP (closes file-wide scope shadowing, F002): the map
+ *      is keyed by identifier name with no lexical-scope tracking, so a name
+ *      bound more than once in the file (an inner block/function const that
+ *      shadows an outer one, a file-scope re-declaration, or a `let`/`var`
+ *      shadow of a `const`) cannot be soundly resolved to a single value. Per
+ *      the conservative R59 "fail closed, never swallow" policy we DROP any
+ *      name with more than one binding from the resolvable map entirely rather
+ *      than guess outer-vs-inner. A name therefore resolves ONLY when it is
+ *      declared exactly once in the file and that single declaration is a
+ *      string-valued `const`.
  */
 function collectStringConsts(sf: ts.SourceFile): Map<string, string> {
+  // First pass: count every variable-declaration binding per identifier name,
+  // across all scopes. Any name bound more than once is an ambiguous alias and
+  // is excluded from resolution (F002 — ambiguous binding → skip).
+  const bindingCounts = new Map<string, number>();
+  const countBindings = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+      const name = node.name.text;
+      bindingCounts.set(name, (bindingCounts.get(name) ?? 0) + 1);
+    }
+    ts.forEachChild(node, countBindings);
+  };
+  countBindings(sf);
+
+  // Second pass: record string-valued `const` initializers, but only for names
+  // that are bound exactly once anywhere in the file.
   const map = new Map<string, string>();
   const visit = (node: ts.Node): void => {
     if (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
       node.initializer &&
-      isConstDeclaration(node)
+      isConstDeclaration(node) &&
+      bindingCounts.get(node.name.text) === 1
     ) {
       const init = unwrapExpression(node.initializer);
       if (ts.isStringLiteralLike(init)) {
