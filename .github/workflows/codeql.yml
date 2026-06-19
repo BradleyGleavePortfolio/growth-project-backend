@@ -34,11 +34,40 @@ jobs:
           languages: ${{ matrix.language }}
           queries: security-and-quality
       - uses: github/codeql-action/autobuild@v3
-      # Step-level continue-on-error: lets the SARIF upload fail
-      # (when GitHub Advanced Security isn't enabled) without marking
-      # the PR check red. The scan itself still runs and emits findings
-      # to the job log for operator review.
-      - uses: github/codeql-action/analyze@v3
+      # Step-level continue-on-error here is intentionally narrow: it only
+      # lets the SARIF upload fail when GitHub Advanced Security isn't
+      # enabled. The validation step below re-asserts the gate so that a
+      # genuine analyze failure (when Advanced Security IS enabled) still
+      # turns the PR check red. The scan itself always runs and emits
+      # findings to the job log for operator review.
+      - name: Perform CodeQL Analysis
+        id: codeql_analyze
+        uses: github/codeql-action/analyze@v3
         continue-on-error: true
         with:
           category: '/language:${{ matrix.language }}'
+
+      - name: Validate CodeQL outcome (GHAS-disabled-only tolerated)
+        if: always()
+        shell: bash
+        env:
+          ANALYZE_OUTCOME: ${{ steps.codeql_analyze.outcome }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ "${ANALYZE_OUTCOME}" == "success" ]]; then
+            echo "CodeQL analyze succeeded."
+            exit 0
+          fi
+          # Outcome failed/cancelled: only tolerate the SARIF-upload failure
+          # that occurs when Advanced Security is not enabled on the repo.
+          # Read the repo's Advanced Security setting via the API to decide.
+          GHAS_STATE=$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.security_and_analysis.advanced_security.status // "disabled"' 2>/dev/null || echo "disabled")
+          echo "Advanced Security state: $GHAS_STATE; analyze outcome: $ANALYZE_OUTCOME"
+          if [[ "$GHAS_STATE" == "enabled" ]]; then
+            echo "::error::CodeQL analyze failed and Advanced Security is enabled - this is a real failure, not the SARIF-upload-disabled workaround. Failing the gate."
+            exit 1
+          fi
+          echo "::warning::CodeQL analyze upload skipped (Advanced Security not enabled on this private repo). Scan itself ran; no SARIF sink available. To remove this workaround, enable Code Scanning in repo settings."
+          exit 0
