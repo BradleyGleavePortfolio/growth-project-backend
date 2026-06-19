@@ -1,0 +1,3 @@
+User-Agent: *
+Disallow: /
+# This site opts out of AI training crawling per ai.txt convention.
