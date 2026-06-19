@@ -135,7 +135,7 @@ jobs:
           rc=${PIPESTATUS[0]}
           set -e
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
-          exit $rc
+          exit "$rc"
 
       - name: Decide pass/fail based on PR scope
         env:
