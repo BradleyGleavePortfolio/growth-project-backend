@@ -283,13 +283,17 @@ switches:
   - name: COACH_BRIEF_ENABLED
     tier: feature
     prod_default: ON
-    auto_flip_on_in_prod: false
+    # Canary auto-flip (F-B12): boolean ON-default kill switch — safe to flip to
+    # "true" in prod when unset/false, since ON is already its intended prod state.
+    auto_flip_on_in_prod: true
     owner: coach
     description: "R43 — global server-side kill switch for the entire Coach Brief surface. When set to 'off', every /coach/brief/* route returns 404 NOT_FOUND"
   - name: COACH_BRIEF_NOTIFICATIONS_ENABLED
     tier: feature
     prod_default: ON
-    auto_flip_on_in_prod: false
+    # Canary auto-flip (F-B12): boolean ON-default toggle — safe to flip to "true"
+    # in prod; matches its documented default of running the daily dispatch.
+    auto_flip_on_in_prod: true
     owner: coach
     description: "R43 — set to 'off' to globally disable the daily Coach Brief push dispatch. When absent or any value other than 'off', the scheduler runs ev"
   - name: COACH_BRIEF_RETENTION_DAYS
@@ -1320,7 +1324,9 @@ switches:
   - name: FEATURE_COMMUNITY_SCHEMA
     tier: feature
     prod_default: ON
-    auto_flip_on_in_prod: false
+    # Canary auto-flip (F-B12): boolean ON-default master switch — safe to flip to
+    # "true" in prod; the var is read as ON unless explicitly "false".
+    auto_flip_on_in_prod: true
     owner: community
     description: "Community schema-readiness master switch (v1-1). Read via process.env[FEATURE_COMMUNITY_SCHEMA_ENV]; ON unless explicitly 'false'."
   - name: FEATURE_COMMUNITY_VOICE_NOTES
