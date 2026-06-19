@@ -28,6 +28,17 @@ export interface ReadinessReport {
 
 export type Verdict = 'CLEAN' | 'NEEDS_OPERATOR' | 'SHIP_BLOCKED';
 
+// ---- Console-rendering tunables (F-B11) ----
+// Named so the truncation behaviour is documented and adjustable in one place
+// rather than scattered as bare literals through the render functions.
+
+/** Max unregistered vars / BLOCK_SHIP stubs listed in the console summary before eliding. */
+export const MAX_STUB_FINDINGS_DISPLAYED = 10;
+/** Max characters of a stub excerpt shown inline in the console table. */
+export const MAX_EXCERPT_WIDTH = 80;
+/** Max characters of a switch description shown in the markdown table. */
+export const MAX_DESCRIPTION_WIDTH = 80;
+
 export function verdict(r: ReadinessReport): Verdict {
   const hardStubs = r.stubs.filter((s) => s.severity === 'BLOCK_SHIP').length;
   const stubProviders = r.providers.filter((p) => p.status === 'STUB').length;
@@ -45,15 +56,17 @@ export function renderConsole(r: ReadinessReport): string {
   lines.push('');
   lines.push(`Unregistered vars (R108): ${r.unregistered_in_code.length}`);
   if (r.unregistered_in_code.length) {
-    for (const n of r.unregistered_in_code.slice(0, 10)) lines.push(`  - ${n}`);
-    if (r.unregistered_in_code.length > 10) lines.push(`  … ${r.unregistered_in_code.length - 10} more`);
+    for (const n of r.unregistered_in_code.slice(0, MAX_STUB_FINDINGS_DISPLAYED)) lines.push(`  - ${n}`);
+    if (r.unregistered_in_code.length > MAX_STUB_FINDINGS_DISPLAYED) {
+      lines.push(`  … ${r.unregistered_in_code.length - MAX_STUB_FINDINGS_DISPLAYED} more`);
+    }
   }
   lines.push('');
   const bySeverity: Record<StubSeverity, number> = { BLOCK_SHIP: 0, WARN: 0, INFO: 0 };
   for (const s of r.stubs) bySeverity[s.severity]++;
   lines.push(`Stub findings: BLOCK_SHIP=${bySeverity.BLOCK_SHIP}  WARN=${bySeverity.WARN}  INFO=${bySeverity.INFO}`);
-  for (const s of r.stubs.filter((x) => x.severity === 'BLOCK_SHIP').slice(0, 10)) {
-    lines.push(`  [BLOCK] ${s.file}:${s.line}  ${s.pattern}  "${s.excerpt.slice(0, 80)}"`);
+  for (const s of r.stubs.filter((x) => x.severity === 'BLOCK_SHIP').slice(0, MAX_STUB_FINDINGS_DISPLAYED)) {
+    lines.push(`  [BLOCK] ${s.file}:${s.line}  ${s.pattern}  "${s.excerpt.slice(0, MAX_EXCERPT_WIDTH)}"`);
   }
   lines.push('');
   const wired = r.providers.filter((p) => p.status === 'WIRED').length;
@@ -133,7 +146,7 @@ export function renderMarkdown(r: ReadinessReport): string {
     out.push('| Switch | Tier | Owner | Description |');
     out.push('|---|---|---|---|');
     for (const s of r.switches_unset_in_prod) {
-      out.push(`| \`${s.name}\` | ${s.tier} | ${s.owner} | ${s.description.slice(0, 80)} |`);
+      out.push(`| \`${s.name}\` | ${s.tier} | ${s.owner} | ${s.description.slice(0, MAX_DESCRIPTION_WIDTH)} |`);
     }
   }
   out.push('');
