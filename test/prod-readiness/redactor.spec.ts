@@ -328,6 +328,108 @@ describe('R3 F001 — flyErrorMessage wired WITH plan secrets across envelope sh
   });
 });
 
+// ---------------------------------------------------------------------------
+// H4.F R4 — F001: YAML block-scalar CHOMPING / INDENT indicator grammar.
+//
+// The R3 spec advertised "exhaustive" block-scalar coverage but only exercised
+// the BARE `|` / `>` headers. YAML also permits chomping indicators (`-` strip,
+// `+` keep) and explicit indentation indicators (a digit `1`-`9`), in either
+// order: `|-`, `|+`, `>-`, `>+`, `|2`, `|2-`, `|-2`, `>1+`, … . The old inline
+// pattern guard only matched the bare forms, so a decorated header like
+// `PASSWORD: |-` was rewritten to `***` (destroying the indicator) and the
+// downstream block-scalar pass then had nothing to anchor on — the secret
+// continuation lines LEAKED. Every case below runs WITHOUT a `secretValues`
+// set so it proves the PATTERN passes (f)+(h) close the leak on the no-value
+// sinks (`flip()` RegistryParseError branch, `flyArgvContext`) — not just the
+// value-based pass on the primary commit() path (R125 defense-in-depth).
+// ---------------------------------------------------------------------------
+
+/** R4 synthetic secret — never a real credential (brief constraint + R24). */
+const CHOMP = 'sk_test_FAKE_CHOMP_DO_NOT_REPLACE';
+
+describe('R4 F001 — YAML block-scalar chomping/indent indicators (no value-based pass)', () => {
+  it('strip-chomp literal `|-`: header preserved, body redacted', () => {
+    const out = redactSecretValues(`KEY: |-\n  ${CHOMP}`, []);
+    expect(out).not.toContain(CHOMP);
+    expect(out).toContain('KEY: |-'); // header (indicator) intact
+    expect(out).toBe(`KEY: |-\n  ${REDACTED}`);
+  });
+
+  it('keep-chomp literal `|+`: header preserved, body redacted', () => {
+    const out = redactSecretValues(`KEY: |+\n  ${CHOMP}\n`, []);
+    expect(out).not.toContain(CHOMP);
+    expect(out).toContain('KEY: |+');
+    expect(out).toBe(`KEY: |+\n  ${REDACTED}\n`);
+  });
+
+  it('strip-chomp folded `>-`: header preserved, body redacted', () => {
+    const out = redactSecretValues(`KEY: >-\n  ${CHOMP}`, []);
+    expect(out).not.toContain(CHOMP);
+    expect(out).toContain('KEY: >-');
+    expect(out).toBe(`KEY: >-\n  ${REDACTED}`);
+  });
+
+  it('explicit indent `|2`: header preserved, body redacted', () => {
+    const out = redactSecretValues(`KEY: |2\n  ${CHOMP}`, []);
+    expect(out).not.toContain(CHOMP);
+    expect(out).toContain('KEY: |2');
+    expect(out).toBe(`KEY: |2\n  ${REDACTED}`);
+  });
+
+  it('indent+chomp `|2-`: header preserved, body redacted', () => {
+    const out = redactSecretValues(`KEY: |2-\n  ${CHOMP}`, []);
+    expect(out).not.toContain(CHOMP);
+    expect(out).toContain('KEY: |2-');
+    expect(out).toBe(`KEY: |2-\n  ${REDACTED}`);
+  });
+
+  it('folded indent+chomp `>1+` with single-space body: header preserved, body redacted', () => {
+    const out = redactSecretValues(`KEY: >1+\n ${CHOMP}`, []);
+    expect(out).not.toContain(CHOMP);
+    expect(out).toContain('KEY: >1+');
+    expect(out).toBe(`KEY: >1+\n ${REDACTED}`);
+  });
+
+  it('chomp+indent reversed order `|-2`: header preserved, body redacted', () => {
+    const out = redactSecretValues(`KEY: |-2\n  ${CHOMP}`, []);
+    expect(out).not.toContain(CHOMP);
+    expect(out).toContain('KEY: |-2');
+    expect(out).toBe(`KEY: |-2\n  ${REDACTED}`);
+  });
+
+  it('end-to-end: every chomping/indent variant redacts the body with NO value set', () => {
+    // Drives home the no-value sink coverage: each decorated header must still
+    // collapse its continuation lines purely on the pattern passes.
+    const headers = ['|', '>', '|-', '|+', '>-', '>+', '|2', '|2-', '|-2', '>1+'];
+    for (const h of headers) {
+      const out = redactSecretValues(`API_KEY: ${h}\n    ${CHOMP}`, []);
+      expect(out).not.toContain(CHOMP);
+      expect(out).toContain(`API_KEY: ${h}`); // indicator survives for pass (h)
+      expect(out).toContain(REDACTED);
+    }
+  });
+
+  it('multi-line decorated block body is fully redacted while a benign block survives', () => {
+    const yaml = [
+      'password: |-',
+      `  ${CHOMP}`,
+      `  ${CHOMP}-second`,
+      'count: |2',
+      '  5',
+    ].join('\n');
+    const out = redactSecretValues(yaml, []);
+    expect(out).not.toContain(CHOMP);
+    expect(out).toContain('password: |-'); // secret header intact
+    expect(out).toContain('count: |2'); // benign block header untouched
+    expect(out).toContain('5'); // benign block content untouched
+  });
+
+  it('does NOT redact a benign (non-secret-named) decorated block scalar', () => {
+    const out = redactSecretValues('count: |-\n  5\n  6', []);
+    expect(out).toBe('count: |-\n  5\n  6'); // wholly untouched
+  });
+});
+
 describe('redactSecretValues — safety / no-op cases', () => {
   it('returns the empty string unchanged', () => {
     expect(redactSecretValues('')).toBe('');

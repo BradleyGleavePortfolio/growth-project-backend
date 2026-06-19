@@ -29,7 +29,6 @@ import {
   constants as fsConstants,
   realpathSync,
   statSync,
-  type Stats,
 } from 'node:fs';
 import * as path from 'node:path';
 import type { RegistryRow } from './registry-loader';
@@ -51,20 +50,54 @@ export const FLY_BIN_DEFAULT = 'flyctl';
 export const FLY_BIN_REQUIRE_ABSOLUTE_ENV = 'FLY_BIN_REQUIRE_ABSOLUTE';
 
 /**
+ * The subset of `fs.Stats` the FLY_BIN gate consumes. Beyond the file-type
+ * predicate it carries the five identity fields that pin a binary to a specific
+ * inode + content version: `dev`/`ino` (which filesystem object), `mtimeNs`
+ * (last-modified, nanosecond precision — a `bigint` from a `{ bigint: true }`
+ * stat), `size`, and `mode`. Capturing these closes the same-path / different-
+ * inode TOCTOU swap (F002): realpath alone only proves the path still resolves,
+ * not that the FILE behind it is the one we verified.
+ */
+export interface FlyBinStat {
+  isFile: () => boolean;
+  dev: number | bigint;
+  ino: number | bigint;
+  mtimeNs: bigint;
+  size: number | bigint;
+  mode: number | bigint;
+}
+
+/**
  * Filesystem operations the resolver depends on, injectable so tests never
- * touch a real binary (F003). Defaults to the real `node:fs` sync calls.
+ * touch a real binary (F003/F002). Defaults to the real `node:fs` sync calls;
+ * the default `statSync` uses `{ bigint: true }` so `mtimeNs` is available at
+ * full nanosecond precision for identity comparison.
  */
 export interface FlyBinFs {
   realpathSync: (p: string) => string;
-  statSync: (p: string) => Pick<Stats, 'isFile'>;
+  statSync: (p: string) => FlyBinStat;
   accessSync: (p: string, mode: number) => void;
 }
 
 const DEFAULT_FLY_BIN_FS: FlyBinFs = {
   realpathSync: (p) => realpathSync(p),
-  statSync: (p) => statSync(p),
+  statSync: (p) => statSync(p, { bigint: true }),
   accessSync: (p, mode) => accessSync(p, mode),
 };
+
+/**
+ * Immutable identity snapshot of the resolved flyctl binary, captured at cache
+ * fill and compared field-by-field on every revalidation. A mismatch in ANY
+ * field means the file behind the (still-valid) realpath was swapped — we
+ * REFUSE to exec (F002, R125 defense-in-depth alongside the realpath check).
+ */
+export interface FlyBinIdentity {
+  dev: bigint;
+  ino: bigint;
+  mtimeNs: bigint;
+  size: bigint;
+  mode: bigint;
+}
 
 /**
  * Non-strict environments where the bare PATH default is tolerated: `development`
@@ -85,6 +118,41 @@ function isStrictEnv(env: NodeJS.ProcessEnv): boolean {
  * is `undefined` when {@link FLY_BIN} is the bare PATH default (dev only).
  */
 let _resolvedFlyBinPath: string | undefined;
+
+/**
+ * Canonical stat-identity of the resolved binary, captured the first time the
+ * path is verified (F002). `undefined` for the bare PATH default (no path to
+ * pin) and until the first capture. Every revalidation compares the live stat
+ * against this snapshot field-by-field; ANY difference is a refusal.
+ */
+let _flyBinIdentity: FlyBinIdentity | undefined;
+
+/**
+ * Thrown when the resolved flyctl binary's stat-identity differs from the
+ * snapshot captured at cache fill (F002 — R24/R58/R125). A same-path swap to a
+ * different inode/content (different `dev`, `ino`, `mtimeNs`, `size`, or `mode`)
+ * raises this and we REFUSE to exec. A legitimate redeploy that replaces the
+ * binary is expected to trip this — the fail-closed cure is an operator restart
+ * that clears the module-load cache.
+ */
+export class FlyBinIdentityMismatch extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'FlyBinIdentityMismatch';
+    Object.setPrototypeOf(this, FlyBinIdentityMismatch.prototype);
+  }
+}
+
+/** Normalize a {@link FlyBinStat}'s identity fields to bigints for exact compare. */
+function captureIdentity(stat: FlyBinStat): FlyBinIdentity {
+  return {
+    dev: BigInt(stat.dev),
+    ino: BigInt(stat.ino),
+    mtimeNs: BigInt(stat.mtimeNs),
+    size: BigInt(stat.size),
+    mode: BigInt(stat.mode),
+  };
+}
 
 /**
  * Resolve the flyctl binary path from `FLY_BIN`, validating it at module load
@@ -111,9 +179,12 @@ function resolveFlyBin(env: NodeJS.ProcessEnv, fs: FlyBinFs = DEFAULT_FLY_BIN_FS
     }
     // F003: resolve symlinks to their real target, then verify it is a regular
     // executable file. A symlink to a malicious binary, a dangling symlink, or
-    // a non-executable target are all rejected here.
-    const resolved = resolveAndVerifyBinary(override, fs);
+    // a non-executable target are all rejected here. F002: capture the resolved
+    // target's stat-identity as the canonical snapshot every later revalidation
+    // is compared against.
+    const { resolved, stat } = resolveAndVerifyBinary(override, fs);
     _resolvedFlyBinPath = resolved;
+    _flyBinIdentity = captureIdentity(stat);
     return resolved;
   }
   // Bare PATH default: forbidden on any secret-mutating path outside dev.
@@ -125,15 +196,21 @@ function resolveFlyBin(env: NodeJS.ProcessEnv, fs: FlyBinFs = DEFAULT_FLY_BIN_FS
     );
   }
   _resolvedFlyBinPath = undefined;
+  _flyBinIdentity = undefined;
   return FLY_BIN_DEFAULT;
 }
 
 /**
  * Realpath-resolve an absolute candidate and verify the canonical target is a
- * regular, executable file (F003). Throws a descriptive error otherwise. Shared
- * by module-load resolution and per-invocation TOCTOU revalidation.
+ * regular, executable file (F003), returning BOTH the resolved path and the
+ * stat used to verify it so the caller can capture/compare its identity (F002).
+ * Throws a descriptive error otherwise. Shared by module-load resolution and
+ * per-invocation TOCTOU revalidation.
  */
-function resolveAndVerifyBinary(candidate: string, fs: FlyBinFs): string {
+function resolveAndVerifyBinary(
+  candidate: string,
+  fs: FlyBinFs,
+): { resolved: string; stat: FlyBinStat } {
   let resolved: string;
   try {
     resolved = fs.realpathSync(candidate);
@@ -143,7 +220,7 @@ function resolveAndVerifyBinary(candidate: string, fs: FlyBinFs): string {
         `refusing to run flyctl on a secret-mutating path.`,
     );
   }
-  let stat: Pick<Stats, 'isFile'>;
+  let stat: FlyBinStat;
   try {
     stat = fs.statSync(resolved);
   } catch {
@@ -163,18 +240,51 @@ function resolveAndVerifyBinary(candidate: string, fs: FlyBinFs): string {
       `${FLY_BIN_ENV} resolved target "${resolved}" is not executable; refusing to run flyctl.`,
     );
   }
-  return resolved;
+  return { resolved, stat };
 }
 
 /**
- * TOCTOU revalidation (F003): before EVERY flyctl invocation, re-`statSync` the
- * cached canonical path and refuse if it has been swapped for a non-regular or
- * non-executable file since module load. No-op when running the bare PATH
- * default (dev only) since there is no canonical path to revalidate.
+ * TOCTOU revalidation (F003 + F002): before EVERY flyctl invocation, re-resolve
+ * the cached canonical path, re-verify it is a regular executable file, AND
+ * compare its stat-identity (`dev`, `ino`, `mtimeNs`, `size`, `mode`) against
+ * the snapshot captured at cache fill. A same-path swap to a DIFFERENT inode or
+ * a re-written file at the same inode (an attacker overwrites the binary in the
+ * window between the realpath cache and the exec call) changes at least one of
+ * these fields and is REFUSED with a {@link FlyBinIdentityMismatch} — realpath
+ * equality alone cannot catch it. No-op when running the bare PATH default (dev
+ * only) since there is no canonical path to revalidate.
+ *
+ * First-fill semantics: if a canonical path is cached but no identity snapshot
+ * exists yet (defensive — e.g. a path set without going through resolveFlyBin),
+ * the current stat is adopted as the canonical identity and the call PROCEEDS.
+ *
+ * Operability note (F002 item 4): a LEGITIMATE redeploy that swaps the binary
+ * at the same path is INTENTIONALLY treated as a mismatch (fail-closed). The
+ * cure is an operator process restart, which clears this module-load cache and
+ * re-captures the new binary's identity. We never silently exec a binary whose
+ * identity we did not verify.
  */
 export function assertFlyBinUnchanged(fs: FlyBinFs = DEFAULT_FLY_BIN_FS): void {
   if (_resolvedFlyBinPath === undefined) return;
-  resolveAndVerifyBinary(_resolvedFlyBinPath, fs);
+  const { stat } = resolveAndVerifyBinary(_resolvedFlyBinPath, fs);
+  const live = captureIdentity(stat);
+  if (_flyBinIdentity === undefined) {
+    // First-ever validation with a cached path but no identity yet: adopt the
+    // current stat as canonical and proceed.
+    _flyBinIdentity = live;
+    return;
+  }
+  const pinned = _flyBinIdentity;
+  const fields: ReadonlyArray<keyof FlyBinIdentity> = ['dev', 'ino', 'mtimeNs', 'size', 'mode'];
+  for (const field of fields) {
+    if (live[field] !== pinned[field]) {
+      throw new FlyBinIdentityMismatch(
+        `${FLY_BIN_ENV} resolved target "${_resolvedFlyBinPath}" changed identity ` +
+          `(${field}: ${pinned[field]} -> ${live[field]}); a same-path binary swap was ` +
+          `detected. Refusing to run flyctl. Restart the process to re-pin the binary.`,
+      );
+    }
+  }
 }
 
 /** Test-only: re-run resolution with injected env/fs, returning the result. */
@@ -187,9 +297,28 @@ export function __getResolvedFlyBinPathForTest(): string | undefined {
   return _resolvedFlyBinPath;
 }
 
-/** Test-only: clear the cached canonical path so suites cannot contaminate each other. */
+/** Test-only: read the cached canonical stat-identity snapshot (or undefined). */
+export function __getResolvedFlyBinIdentityForTest(): FlyBinIdentity | undefined {
+  return _flyBinIdentity;
+}
+
+/**
+ * Test-only: clear BOTH the cached canonical path and its stat-identity so
+ * suites cannot contaminate each other (F003/F002).
+ */
 export function __resetResolvedFlyBinForTest(): void {
   _resolvedFlyBinPath = undefined;
+  _flyBinIdentity = undefined;
+}
+
+/**
+ * Test-only: seed a cached canonical path WITHOUT an identity snapshot so the
+ * first-fill branch of {@link assertFlyBinUnchanged} can be exercised in
+ * isolation (F002). Never used in production.
+ */
+export function __seedResolvedFlyBinPathWithoutIdentityForTest(p: string): void {
+  _resolvedFlyBinPath = p;
+  _flyBinIdentity = undefined;
 }
 
 /** Binary we shell out to; an absolute, verified `FLY_BIN` override, else (dev) `flyctl`. */
@@ -241,6 +370,37 @@ const SECRET_KEY_HINT =
 function isSecretKey(key: string): boolean {
   if (/^[A-Z][A-Z0-9_]*$/.test(key)) return true; // UPPER_SNAKE — always a candidate
   return SECRET_KEY_HINT.test(key);
+}
+
+/**
+ * Full YAML block-scalar HEADER-VALUE grammar (F001, R125). A block scalar opens
+ * with a style indicator `|` (literal) or `>` (folded), optionally followed by a
+ * chomping indicator (`-` strip / `+` keep) AND/OR an explicit indentation
+ * indicator (a single digit `1`-`9`). YAML permits the chomping and indentation
+ * indicators in EITHER order, so all of `|`, `|-`, `|+`, `>-`, `>+`, `|2`,
+ * `|2-`, `|-2`, `>1+`, `>+1` are legal headers.
+ *
+ * The previous guard only recognised the bare `|`/`>` forms, so a header like
+ * `PASSWORD: |-` was misread as an inline `KEY: value` pair: pass (f) rewrote
+ * the header to `***`, destroying the indicator that pass (h) anchors on, and
+ * the continuation lines holding the secret then LEAKED. Both enforcers must
+ * recognise the same grammar (defense-in-depth, R125).
+ *
+ * Capture groups: 1 = style char (`|`/`>`), 2 = explicit indent digit (or '').
+ * The optional chomping indicator(s) on either side are matched but not
+ * captured — only the indent digit is needed downstream to anchor continuation
+ * scanning when an explicit indentation indicator is present.
+ */
+const YAML_BLOCK_SCALAR_VALUE_RE = /^([|>])(?:([+-])([1-9])?|([1-9])([+-])?)?$/;
+
+/**
+ * True when `value` is a complete YAML block-scalar header indicator (`|`, `>`
+ * with optional chomping/indent indicators in either order). When true, pass
+ * (f) must NOT rewrite the header — it leaves the indicator intact so pass (h)
+ * can anchor on it and redact the continuation lines.
+ */
+function isYamlBlockScalarHeader(value: string): boolean {
+  return YAML_BLOCK_SCALAR_VALUE_RE.test(value);
 }
 
 /**
@@ -342,9 +502,12 @@ export function redactSecretValues(text: string, secretValues?: Iterable<string>
     /\b([A-Za-z][A-Za-z0-9_-]*)(:[ \t]+)(?!\/\/)([^\s,}\]][^\n]*?)(?=$|[\n,}\]])/g,
     (m, key: string, sep: string, value: string) => {
       if (!isSecretKey(key)) return m;
-      // Leave block-scalar headers (`secret: |`, `key: >`) and already-redacted
-      // values intact — Pass 1 / pattern (a)(b) handled the real content.
-      if (value === '|' || value === '>' || value.includes(REDACTED)) return m;
+      // Leave block-scalar headers (`secret: |`, `key: >`, plus every chomping/
+      // indent variant `|-`, `|+`, `>-`, `|2`, `|2-`, `>1+`, …) and already-
+      // redacted values intact. Rewriting the header to `***` here would destroy
+      // the indicator pass (h) anchors on and LEAK the continuation lines
+      // (F001/R125). Pass (h) redacts the block body below.
+      if (isYamlBlockScalarHeader(value) || value.includes(REDACTED)) return m;
       return `${key}${sep}${REDACTED}`;
     },
   );
@@ -446,21 +609,43 @@ function redactBase64Values(text: string, literals: readonly string[]): string {
 }
 
 /**
- * Pass (h) helper (F001): redact YAML block scalars. A header line
- * `KEY: |` / `KEY: >` (with optional chomping/indent indicators) whose KEY is
- * secret-named is followed by more-indented continuation lines holding the
- * value; collapse each continuation line's content to `***` while keeping its
- * indentation. Non-secret block headers are left untouched.
+ * Pass (h) helper (F001, R125): redact YAML block scalars. A header line
+ * `KEY: |` / `KEY: >` whose KEY is secret-named — with the FULL chomping/indent
+ * indicator grammar (`|-`, `|+`, `>-`, `>+`, `|2`, `|2-`, `|-2`, `>1+`, …) — is
+ * followed by more-indented continuation lines holding the value; collapse each
+ * continuation line's content to `***` while keeping its indentation. Non-secret
+ * block headers are left untouched.
+ *
+ * Indentation anchor: continuation lines are those indented STRICTLY MORE than
+ * the header. When an explicit indentation indicator digit is present (`|2`),
+ * YAML fixes the block's content indent at `headerIndent + digit`; that is
+ * always `> headerIndent`, so the strict-greater rule covers it. We compute the
+ * explicit threshold too and use the larger of the two as the floor so a stray
+ * shallower-but-still-deeper line cannot be mistaken for content boundary.
+ *
+ * Header grammar must match pass (f)'s {@link YAML_BLOCK_SCALAR_VALUE_RE} so the
+ * two enforcers cover the identical surface (defense-in-depth, R125).
  */
+const YAML_BLOCK_SCALAR_HEADER_RE =
+  /^(\s*)([A-Za-z][A-Za-z0-9_-]*)\s*:[ \t]+[|>](?:[+-][1-9]?|[1-9][+-]?)?[ \t]*(?:#.*)?$/;
+/** Pulls the explicit indentation-indicator digit (1-9) out of a header, if any. */
+const YAML_BLOCK_SCALAR_INDENT_DIGIT_RE = /[|>][+-]?([1-9])|[|>]([1-9])/;
 function redactYamlBlockScalars(text: string): string {
   if (!text.includes('\n')) return text;
   const lines = text.split('\n');
-  const headerRe = /^(\s*)([A-Za-z][A-Za-z0-9_-]*)\s*:\s*[|>][+-]?\s*$/;
   let i = 0;
   while (i < lines.length) {
-    const m = headerRe.exec(lines[i]);
+    const m = YAML_BLOCK_SCALAR_HEADER_RE.exec(lines[i]);
     if (m && isSecretKey(m[2])) {
       const headerIndent = m[1].length;
+      const digitMatch = YAML_BLOCK_SCALAR_INDENT_DIGIT_RE.exec(lines[i]);
+      const explicitDigit = digitMatch
+        ? Number(digitMatch[1] ?? digitMatch[2])
+        : 0;
+      // Floor a content line must clear to count as block body: the deeper of
+      // the header indent and (when an explicit indicator is present) the
+      // header indent plus that indicator. Either way it is > headerIndent.
+      const contentFloor = Math.max(headerIndent, headerIndent + explicitDigit - 1);
       let j = i + 1;
       while (j < lines.length) {
         const line = lines[j];
@@ -469,7 +654,7 @@ function redactYamlBlockScalars(text: string): string {
           continue;
         }
         const indent = line.length - line.trimStart().length;
-        if (indent <= headerIndent) break;
+        if (indent <= contentFloor) break;
         lines[j] = `${line.slice(0, indent)}${REDACTED}`;
         j++;
       }

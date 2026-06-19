@@ -35,14 +35,18 @@ import {
   FLY_TIMEOUT_MS,
   safeCauseName,
   assertFlyBinUnchanged,
+  FlyBinIdentityMismatch,
   __resolveFlyBinForTest,
   __getResolvedFlyBinPathForTest,
+  __getResolvedFlyBinIdentityForTest,
   __resetResolvedFlyBinForTest,
+  __seedResolvedFlyBinPathWithoutIdentityForTest,
   type FlipPlan,
   type FlipResult,
   type FlyRunner,
   type RecheckCurrent,
   type FlyBinFs,
+  type FlyBinStat,
 } from './auto-flipper';
 import { RegistryParseError, type RegistryRow } from './registry-loader';
 
@@ -1303,13 +1307,31 @@ describe('F001 wiring — collectSecretValues gathers plan literals for the reda
 // filesystem is ever touched (brief constraint).
 // ---------------------------------------------------------------------------
 
+/**
+ * Build a {@link FlyBinStat} carrying the five identity fields (F002) plus the
+ * file-type predicate. Defaults describe a regular executable file with a fixed
+ * canonical identity; pass overrides to simulate a same-path swap (different
+ * inode, mtime, or size) or a non-regular target.
+ */
+function mkStat(over: Partial<FlyBinStat> = {}): FlyBinStat {
+  return {
+    isFile: () => true,
+    dev: 100n,
+    ino: 200n,
+    mtimeNs: 1_700_000_000_000_000_000n,
+    size: 4096n,
+    mode: 0o100755n,
+    ...over,
+  };
+}
+
 describe('R3 F003 — FLY_BIN realpath + regular-executable verification (mocked fs)', () => {
   afterEach(() => __resetResolvedFlyBinForTest());
 
   function fsStub(over: Partial<FlyBinFs> = {}): FlyBinFs {
     return {
       realpathSync: (p: string) => `/real${p}`,
-      statSync: () => ({ isFile: () => true }),
+      statSync: () => mkStat(),
       accessSync: (_p: string, _mode: number) => undefined,
       ...over,
     };
@@ -1332,7 +1354,7 @@ describe('R3 F003 — FLY_BIN realpath + regular-executable verification (mocked
   });
 
   it('absolute symlink to a NON-REGULAR file (directory) is REJECTED', () => {
-    const fs = fsStub({ statSync: () => ({ isFile: () => false }) });
+    const fs = fsStub({ statSync: () => mkStat({ isFile: () => false }) });
     expect(() => __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, fs)).toThrow(
       /not a regular file/,
     );
@@ -1365,7 +1387,7 @@ describe('R3 F003 — production-strict bare-flyctl rejection', () => {
   function fsStub(): FlyBinFs {
     return {
       realpathSync: (p: string) => p,
-      statSync: () => ({ isFile: () => true }),
+      statSync: () => mkStat(),
       accessSync: () => undefined,
     };
   }
@@ -1400,7 +1422,7 @@ describe('R3 F003 — TOCTOU revalidation catches a canonical-path swap mid-proc
 
   const goodFs: FlyBinFs = {
     realpathSync: (p: string) => p,
-    statSync: () => ({ isFile: () => true }),
+    statSync: () => mkStat(),
     accessSync: () => undefined,
   };
 
@@ -1414,7 +1436,7 @@ describe('R3 F003 — TOCTOU revalidation catches a canonical-path swap mid-proc
     expect(__getResolvedFlyBinPathForTest()).toBe('/opt/bin/flyctl');
     const swappedFs: FlyBinFs = {
       realpathSync: (p: string) => p,
-      statSync: () => ({ isFile: () => false }),
+      statSync: () => mkStat({ isFile: () => false }),
       accessSync: () => undefined,
     };
     expect(() => assertFlyBinUnchanged(swappedFs)).toThrow(/not a regular file/);
@@ -1424,12 +1446,113 @@ describe('R3 F003 — TOCTOU revalidation catches a canonical-path swap mid-proc
     __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFs);
     const swappedFs: FlyBinFs = {
       realpathSync: (p: string) => p,
-      statSync: () => ({ isFile: () => true }),
+      statSync: () => mkStat(),
       accessSync: () => {
         throw new Error('EACCES');
       },
     };
     expect(() => assertFlyBinUnchanged(swappedFs)).toThrow(/not executable/);
+  });
+});
+
+describe('R4 F002 — FLY_BIN stat-identity gate catches a same-path binary swap', () => {
+  afterEach(() => __resetResolvedFlyBinForTest());
+
+  /** A good fs whose stat returns the canonical identity from {@link mkStat}. */
+  function goodFsWith(stat: () => FlyBinStat): FlyBinFs {
+    return {
+      realpathSync: (p: string) => p,
+      statSync: stat,
+      accessSync: () => undefined,
+    };
+  }
+
+  it('captures the canonical identity at cache fill', () => {
+    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    const id = __getResolvedFlyBinIdentityForTest();
+    expect(id).toMatchObject({
+      dev: 100n,
+      ino: 200n,
+      mtimeNs: 1_700_000_000_000_000_000n,
+      size: 4096n,
+      mode: 0o100755n,
+    });
+  });
+
+  it('REFUSES when the INODE changes between cache and revalidation (same path)', () => {
+    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    const swapped = goodFsWith(() => mkStat({ ino: 999n }));
+    expect(() => assertFlyBinUnchanged(swapped)).toThrow(FlyBinIdentityMismatch);
+    expect(() => assertFlyBinUnchanged(swapped)).toThrow(/changed identity \(ino: 200 -> 999\)/);
+  });
+
+  it('REFUSES when only the MTIME changes (in-place overwrite at the same inode)', () => {
+    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    const swapped = goodFsWith(() => mkStat({ mtimeNs: 1_700_000_000_000_000_001n }));
+    expect(() => assertFlyBinUnchanged(swapped)).toThrow(FlyBinIdentityMismatch);
+    expect(() => assertFlyBinUnchanged(swapped)).toThrow(/mtimeNs:/);
+  });
+
+  it('REFUSES when only the SIZE changes', () => {
+    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    const swapped = goodFsWith(() => mkStat({ size: 8192n }));
+    expect(() => assertFlyBinUnchanged(swapped)).toThrow(FlyBinIdentityMismatch);
+    expect(() => assertFlyBinUnchanged(swapped)).toThrow(/size: 4096 -> 8192/);
+  });
+
+  it('REFUSES when only the DEV (mount point) changes', () => {
+    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    const swapped = goodFsWith(() => mkStat({ dev: 101n }));
+    expect(() => assertFlyBinUnchanged(swapped)).toThrow(/dev: 100 -> 101/);
+  });
+
+  it('REFUSES when only the MODE (permission bits) changes', () => {
+    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    const swapped = goodFsWith(() => mkStat({ mode: 0o100777n }));
+    expect(() => assertFlyBinUnchanged(swapped)).toThrow(/mode:/);
+  });
+
+  it('PROCEEDS when the stat-identity is IDENTICAL across two consecutive validations', () => {
+    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    const same = goodFsWith(() => mkStat());
+    expect(() => assertFlyBinUnchanged(same)).not.toThrow();
+    expect(() => assertFlyBinUnchanged(same)).not.toThrow(); // stable across repeats
+  });
+
+  it('FIRST-EVER validation (cached path, no identity yet) captures identity and PROCEEDS', () => {
+    __seedResolvedFlyBinPathWithoutIdentityForTest('/opt/bin/flyctl');
+    expect(__getResolvedFlyBinIdentityForTest()).toBeUndefined();
+    const fs = goodFsWith(() => mkStat({ ino: 555n }));
+    expect(() => assertFlyBinUnchanged(fs)).not.toThrow();
+    // The first observed stat is adopted as canonical.
+    expect(__getResolvedFlyBinIdentityForTest()).toMatchObject({ ino: 555n });
+    // A subsequent swap is then caught against the adopted identity.
+    const swapped = goodFsWith(() => mkStat({ ino: 556n }));
+    expect(() => assertFlyBinUnchanged(swapped)).toThrow(FlyBinIdentityMismatch);
+  });
+
+  it('REFUSES a SYMLINK swap that changes the realpath (regression — F003 behavior preserved)', () => {
+    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    // The symlink now points elsewhere AND the new target is not a regular file:
+    // the realpath-based F003 check fires first, before identity comparison.
+    const swapped: FlyBinFs = {
+      realpathSync: () => '/tmp/evil/flyctl',
+      statSync: () => mkStat({ isFile: () => false }),
+      accessSync: () => undefined,
+    };
+    expect(() => assertFlyBinUnchanged(swapped)).toThrow(/not a regular file/);
+  });
+
+  it('REFUSES a symlink swap whose new realpath target is a DIFFERENT-identity executable', () => {
+    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    // Realpath still equal, but the file behind it has a different inode — the
+    // F003 file-type checks pass; the F002 identity gate must still REFUSE.
+    const swapped: FlyBinFs = {
+      realpathSync: () => '/opt/bin/flyctl',
+      statSync: () => mkStat({ ino: 4242n }),
+      accessSync: () => undefined,
+    };
+    expect(() => assertFlyBinUnchanged(swapped)).toThrow(FlyBinIdentityMismatch);
   });
 });
 
