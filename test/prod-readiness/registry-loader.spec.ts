@@ -429,6 +429,60 @@ describe('parseRegistry — rejects YAML anchors/aliases/merge keys (MINOR-1)', 
   });
 });
 
+describe('parseRegistry — rejects explicit YAML tags (F1 tag-merge bypass)', () => {
+  it('rejects the !!merge "<<" tag bypass that materializes inherited fields', () => {
+    // The auditor's exact probe: a `!!merge "<<"` tag pulls `tier`/`prod_default`
+    // into the row through js-yaml tag resolution, without any raw `<<:`, `&`, or
+    // `*` token, so it slipped past the anchor/merge-key scan. It must now throw.
+    const probe =
+      'switches:\n  - name: TAG_MERGE\n' +
+      '    !!merge "<<": { tier: optional, prod_default: STUB_ALLOWED }\n' +
+      '    auto_flip_on_in_prod: false\n    owner: platform\n    description: "x"\n';
+    expect(() => parseRegistry(probe)).toThrow(RegistryParseError);
+    expect(() => parseRegistry(probe)).toThrow(/uses YAML tags/i);
+    expect(() => parseRegistry(probe)).toThrow(
+      /self-contained JSON-compatible YAML for diff-reviewability/i,
+    );
+  });
+
+  it('rejects a !!str type-coercion tag on a field value', () => {
+    const doc =
+      'switches:\n  - name: !!str FOO\n    tier: optional\n' +
+      '    prod_default: STUB_ALLOWED\n    auto_flip_on_in_prod: false\n' +
+      '    owner: platform\n    description: "x"\n';
+    expect(() => parseRegistry(doc)).toThrow(RegistryParseError);
+    expect(() => parseRegistry(doc)).toThrow(/uses YAML tags/i);
+  });
+
+  it('rejects a single-bang custom tag (!custom-tag)', () => {
+    const doc =
+      'switches:\n  - name: CUSTOM\n    tier: !custom-tag optional\n' +
+      '    prod_default: STUB_ALLOWED\n    auto_flip_on_in_prod: false\n' +
+      '    owner: platform\n    description: "x"\n';
+    expect(() => parseRegistry(doc)).toThrow(RegistryParseError);
+    expect(() => parseRegistry(doc)).toThrow(/uses YAML tags/i);
+  });
+
+  it('does not false-positive on "!!" inside a quoted description', () => {
+    const reg = parseRows([
+      row({ name: 'BANG_DESC', description: 'Some !! literal text in prose' }),
+    ]);
+    expect(reg.switches[0].description).toContain('!!');
+  });
+
+  it('does not false-positive on "!!" inside a # comment', () => {
+    const rows = pad([row({ name: 'COMMENT_BANG' })]);
+    const doc = `# !! looks like a tag in a comment\n${toYaml(rows)}`;
+    expect(() => parseRegistry(doc)).not.toThrow();
+  });
+
+  it('the real prod-switches.yml is free of explicit YAML tags', async () => {
+    // A clean load proves the seeded 223-row registry uses no `!`/`!!` tags, so
+    // the strict tag rule introduces zero false positives on real data.
+    await expect(loadRegistry(REAL_REGISTRY_PATH)).resolves.toBeDefined();
+  });
+});
+
 describe('loadRegistry — happy path through the filesystem', () => {
   let dir: string;
   beforeAll(async () => {

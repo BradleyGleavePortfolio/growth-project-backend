@@ -58,11 +58,15 @@ export class RegistryParseError extends Error {
 }
 
 /**
- * Reject YAML anchors (`&name`), aliases (`*name`), and merge keys (`<<:`) so
- * every switch row stays self-contained and reviewable by diff. Anchors/aliases
- * let a row inherit defaults from elsewhere in the file, hiding production
- * behaviour from a line-by-line review. Scans line-by-line, ignoring `#`
- * comments and the contents of single/double-quoted strings.
+ * Reject YAML anchors (`&name`), aliases (`*name`), merge keys (`<<:`), and
+ * explicit YAML tags (`!tag` / `!!tag`) so every switch row stays self-contained
+ * and reviewable by diff. Anchors/aliases let a row inherit defaults from
+ * elsewhere in the file; explicit tags such as `!!merge "<<"` reach the same
+ * indirection through js-yaml's tag resolution (materializing inherited fields
+ * before validation) and others (`!!str`, `!custom`) coerce types away from the
+ * boring JSON-compatible subset the registry is meant to be. Both hide
+ * production behaviour from a line-by-line review. Scans line-by-line, ignoring
+ * `#` comments and the contents of single/double-quoted strings.
  */
 export function assertNoYamlIndirection(raw: string): void {
   const code = raw.split(/\r?\n/).map(stripCommentsAndStrings);
@@ -81,6 +85,16 @@ export function assertNoYamlIndirection(raw: string): void {
   if (anchorLine !== -1) {
     throw new RegistryParseError(
       `registry uses YAML anchors/aliases (&name / *name) at line ${anchorLine + 1} — switch rows must be self-contained for diff-reviewability`,
+    );
+  }
+  // Explicit YAML tags (`!tag`, `!!tag`) — including the `!!merge "<<"` bypass of
+  // the merge-key scan above. A tag token is `!` or `!!` immediately followed by
+  // a tag-name letter; comment/quoted-string bodies are already stripped, so a
+  // `!!` in prose (a quoted description or a comment) never trips this.
+  const tagLine = code.findIndex((line) => /(^|\s)!{1,2}[A-Za-z]/.test(line));
+  if (tagLine !== -1) {
+    throw new RegistryParseError(
+      `registry uses YAML tags at line ${tagLine + 1} — switch rows must be self-contained JSON-compatible YAML for diff-reviewability`,
     );
   }
 }
