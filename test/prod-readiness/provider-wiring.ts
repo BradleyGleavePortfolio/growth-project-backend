@@ -166,15 +166,56 @@ function decodeJwtJsonSegment(seg: string): Record<string, unknown> | undefined 
 }
 
 /**
+ * Defensive cap on a single JWT segment's character length before we attempt a
+ * base64url decode. Real Supabase headers/payloads are well under 1 KB; an
+ * attacker-supplied env value could otherwise feed a multi-megabyte segment
+ * into `Buffer.from` + `JSON.parse`. Anything longer than this is rejected
+ * outright as malformed/oversized (H4.D R4 F001).
+ */
+const MAX_JWT_SEGMENT_CHARS = 8192;
+
+/**
+ * Allowlist of plausible Supabase signing algorithms (H4.D R4 F001). Supabase's
+ * canonical service-role token is signed `HS256`, but `RS256`/`ES256` (and the
+ * wider HMAC/RSA/ECDSA families) appear in some self-hosted or rotated
+ * deployments, so the allowlist is defensive without being brittle. Crucially
+ * it EXCLUDES `"none"` (an unsigned token any env-file editor could forge) and
+ * any unknown/garbage value. Comparison is case-insensitive — `"none"`,
+ * `"NONE"`, and `"None"` are all rejected; the canonical casing of the listed
+ * algs is upper-case, so we upper-case the candidate before membership test.
+ */
+const ALLOWED_JWT_ALGS: ReadonlySet<string> = new Set([
+  'HS256',
+  'HS384',
+  'HS512',
+  'RS256',
+  'RS384',
+  'RS512',
+  'ES256',
+  'ES384',
+]);
+
+/**
  * OFFLINE structural validator for a Supabase service-role JWT. A bare regex on
  * the `eyJ….….…` segment shape lets malformed values through (`eyJbad.abc.def`
  * decodes to broken JSON yet matches the old regex). We instead require:
- *   1. exactly three dot-separated segments;
- *   2. header decodes to valid JSON with a string `alg` claim (and, if a `typ`
- *      claim is present, it equals `"JWT"` — real Supabase tokens set
- *      `typ: "JWT"`, but we stay lenient when it is omitted);
+ *   1. exactly three dot-separated segments, each within `MAX_JWT_SEGMENT_CHARS`;
+ *   2. header decodes to valid JSON with a string `alg` claim that is on the
+ *      `ALLOWED_JWT_ALGS` allowlist (NOT `"none"` in any casing, NOT unknown/
+ *      garbage) and, if a `typ` claim is present, it equals `"JWT"` — real
+ *      Supabase tokens set `typ: "JWT"`, but we stay lenient when it is omitted;
  *   3. payload decodes to valid JSON whose `role` claim is EXACTLY the string
  *      `"service_role"`. This is a HARD GATE.
+ *
+ * Algorithm awareness (step 2 `alg` allowlist) is the H4.D R4 F001 fix. The
+ * prior revision accepted ANY non-empty string `alg`, so a token with
+ * `header.alg = "none"` (or a garbage alg) plus `payload.role = "service_role"`
+ * classified WIRED. Since this validator advertises "looks like a real
+ * service_role JWT" as the wired signal, accepting an unsigned/forgeable token
+ * lets anyone who can edit the env file fabricate a "looks-real" key with no
+ * signing material — defeating the heuristic and the R30 secret-hygiene /
+ * R108 provider-wiring surface it guards. The header is now validated BEFORE
+ * the payload role gate.
  *
  * The role gate is deliberate (H4.D R3 F001). An earlier revision also accepted
  * a token merely because it carried a non-empty `iss` or `ref` claim. That was
@@ -196,9 +237,25 @@ export function isPlausibleSupabaseServiceRoleJwt(v: string): boolean {
   const [headerSeg, payloadSeg, signatureSeg] = segments;
   if (signatureSeg.length === 0) return false;
 
+  // Defensive size cap (R4 F001): reject oversized segments before decoding so a
+  // malicious env value cannot force a huge base64url decode / JSON.parse.
+  if (
+    headerSeg.length > MAX_JWT_SEGMENT_CHARS ||
+    payloadSeg.length > MAX_JWT_SEGMENT_CHARS ||
+    signatureSeg.length > MAX_JWT_SEGMENT_CHARS
+  ) {
+    return false;
+  }
+
+  // Validate the HEADER first (R4 F001), before the payload role gate.
   const header = decodeJwtJsonSegment(headerSeg);
   if (header === undefined) return false;
   if (typeof header.alg !== 'string' || header.alg.length === 0) return false;
+  // Reject `alg=none` (any casing) and any value not on the allowlist. The
+  // allowlist members are upper-case, so upper-case the candidate to compare
+  // case-insensitively while still rejecting `"none"`/`"NONE"`/`"None"`.
+  if (!ALLOWED_JWT_ALGS.has(header.alg.toUpperCase())) return false;
+  // If a `typ` claim is present it must be exactly "JWT"; absent is tolerated.
   if (header.typ !== undefined && header.typ !== 'JWT') return false;
 
   const payload = decodeJwtJsonSegment(payloadSeg);

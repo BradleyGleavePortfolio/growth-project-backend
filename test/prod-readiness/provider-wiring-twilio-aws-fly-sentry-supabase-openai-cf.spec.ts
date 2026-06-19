@@ -801,6 +801,94 @@ describe('F001 — Supabase service-role JWT segment validation (offline)', () =
   });
 });
 
+describe('F001 (R4) — reject alg=none and unknown JWT algs', () => {
+  // H4.D R4 F001: the validator previously accepted ANY non-empty string `alg`,
+  // so a token with `header.alg = "none"` (or a garbage alg) plus
+  // `payload.role = "service_role"` classified WIRED. That lets an env-file
+  // editor forge a "looks-real" service_role JWT with no signing key. The
+  // validator now requires `alg` on an allowlist of plausible Supabase signing
+  // algorithms (HS256/384/512, RS256/384/512, ES256/384) and rejects `none`
+  // (any casing) and unknown values. The header is checked BEFORE the role gate.
+  function enc(obj: unknown): string {
+    return Buffer.from(JSON.stringify(obj), 'utf8').toString('base64url');
+  }
+
+  it('alg=none + role=service_role → REJECTED (not WIRED)', () => {
+    const token = `${enc({ alg: 'none', typ: 'JWT' })}.${enc({ role: 'service_role' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+    // End-to-end: the forged unsigned token must NOT classify WIRED.
+    const r = wired('supabase', {
+      SUPABASE_URL: 'https://abcdefgh.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: token,
+    });
+    expect(r.status).toBe('STUB');
+    expect(r.env_vars_placeholder).toContain('SUPABASE_SERVICE_ROLE_KEY');
+  });
+
+  it('alg=NONE (uppercase) + role=service_role → REJECTED (case-insensitive)', () => {
+    const token = `${enc({ alg: 'NONE' })}.${enc({ role: 'service_role' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+
+  it('alg=None (mixed case) + role=service_role → REJECTED', () => {
+    const token = `${enc({ alg: 'None' })}.${enc({ role: 'service_role' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+
+  it('alg=garbage + role=service_role → REJECTED (unknown alg)', () => {
+    const token = `${enc({ alg: 'totally-not-an-alg-XYZ' })}.${enc({ role: 'service_role' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+
+  it('alg=HS256 + role=service_role → WIRED (preserves existing pass)', () => {
+    const token = `${enc({ alg: 'HS256', typ: 'JWT' })}.${enc({ role: 'service_role' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(true);
+    const r = wired('supabase', {
+      SUPABASE_URL: 'https://abcdefgh.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: token,
+    });
+    expect(r.status).toBe('WIRED');
+    expect(r.env_vars_present).toContain('SUPABASE_SERVICE_ROLE_KEY');
+  });
+
+  it('alg=ES256 + role=service_role → WIRED (allowlist breadth check)', () => {
+    const token = `${enc({ alg: 'ES256' })}.${enc({ role: 'service_role' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(true);
+  });
+
+  it('every allowlisted alg + role=service_role → WIRED', () => {
+    for (const alg of ['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512', 'ES256', 'ES384']) {
+      const token = `${enc({ alg })}.${enc({ role: 'service_role' })}.sig`;
+      expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(true);
+    }
+  });
+
+  it('missing header (empty header segment) → REJECTED', () => {
+    // An empty header segment base64url-decodes to '' which is not valid JSON.
+    const token = `.${enc({ role: 'service_role' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+
+  it('malformed header (non-JSON bytes) → REJECTED', () => {
+    const nonJsonHeader = Buffer.from('this is not json', 'utf8').toString('base64url');
+    const token = `${nonJsonHeader}.${enc({ role: 'service_role' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+
+  it('malformed header (oversized segment) → REJECTED', () => {
+    // A header segment beyond the defensive size cap (8192 chars) is rejected
+    // before any decode is attempted.
+    const oversizedHeader = 'A'.repeat(9000);
+    const token = `${oversizedHeader}.${enc({ role: 'service_role' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+
+  it('alg=HS256 + role=anon → REJECTED (preserves R3 role gate)', () => {
+    const token = `${enc({ alg: 'HS256' })}.${enc({ role: 'anon' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+});
+
 describe('F002 — collectFileEvidence requires a regular readable file (not a directory)', () => {
   let dir: string;
 
