@@ -1,8 +1,7 @@
 Wave H1 — Quality Bar Raise (configs & policy files)
-Updated: 2026-06-19T01:05:17Z
+Started: 2026-06-19T01:04:32Z
 Builder: claude_opus_4_8 (respawn v2)
-Status: BUILDING
-Files completed: 3 (.editorconfig, .well-known/ai.txt, .well-known/security.txt)
-Files remaining: 9 (2 issue templates, PR template, renovate.json, codeql.yml, pr-size-labeler.yml, lefthook.yml, prettier configs, package.json prepare)
+Status: SCAFFOLDING
+Files completed: 0
+Files remaining: 12 (PR template, 2 issue templates, codeql.yml, editorconfig, prettier configs, security.txt, ai.txt, renovate.json, lefthook.yml, pr-size-labeler.yml, package.json prepare)
 Blocker: none
-Note: security.txt canonical host is TODO (D-H1-1) — prod API host not confidently derivable from fly.toml/.env.example.
