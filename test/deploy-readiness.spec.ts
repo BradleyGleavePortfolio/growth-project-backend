@@ -31,7 +31,7 @@ import { autoFlip } from './prod-readiness/auto-flipper';
 import { discoverEnvVars } from './prod-readiness/env-discovery';
 import { defaultLedgerPath, falsePositives, loadLedger, trackedDebt } from './prod-readiness/learning-ledger';
 import { writeOperatorKeysMarkdown } from './prod-readiness/operator-keys-generator';
-import { scanProviders } from './prod-readiness/provider-wiring';
+import { looksLikePlaceholder, scanProviders } from './prod-readiness/provider-wiring';
 import { loadRegistry, type SwitchEntry } from './prod-readiness/registry-loader';
 import { renderConsole, renderMarkdown, verdict, type ReadinessReport } from './prod-readiness/reporter';
 import { scanForStubs, type StubFinding } from './prod-readiness/stub-scanner';
@@ -79,12 +79,12 @@ describe('R100 — Deploy readiness', () => {
     }
 
     // MUST_SET switches that have no value (placeholder counts as no value).
-    const placeholder = (v: string | undefined): boolean => {
-      if (v === undefined || v === '') return true;
-      return /(placeholder|todo|tbd|changeme|insert_key_here|your_key)/i.test(v);
-    };
+    // Uses the single shared looksLikePlaceholder (F-A09 / F-B05) so the spec
+    // and provider-wiring can never diverge on what "placeholder" means.
+    const isUnset = (v: string | undefined): boolean =>
+      v === undefined || v === '' || looksLikePlaceholder(v);
     const switchesUnsetRequired = registry.switches.filter(
-      (s: SwitchEntry) => s.prod_default === 'MUST_SET' && placeholder(process.env[s.name]),
+      (s: SwitchEntry) => s.prod_default === 'MUST_SET' && isUnset(process.env[s.name]),
     );
 
     // Dead ledger entries (fingerprint no longer matches any file:line).

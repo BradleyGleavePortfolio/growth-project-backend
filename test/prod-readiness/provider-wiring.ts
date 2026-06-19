@@ -195,17 +195,35 @@ function collectPathPresence(repoRoot: string, providers: ProviderDef[]): Set<st
 }
 
 /**
- * Mirrors src/common/env-validation.ts:looksLikePlaceholder semantics —
- * intentionally re-implemented here so the test runs even when the boot
- * validator can't be imported (e.g. when DB is unreachable).
+ * Substring sentinels that mark a value as a placeholder anywhere it appears.
+ * Mirrors src/common/env-validation.ts placeholder vocabulary — intentionally
+ * re-implemented here so the test runs even when the boot validator cannot be
+ * imported (e.g. when the DB is unreachable).
  */
-function looksLikePlaceholder(v: string): boolean {
-  const s = v.trim().toLowerCase();
-  if (!s) return true;
-  const sentinels = [
-    'changeme', 'change-me', 'your-key', 'your_key', 'yourkey',
-    'placeholder', 'todo', 'tbd', 'xxx', 'fixme', 'fake', 'example',
-    'insert_key_here', 'sk_test_replace', 'whsec_replace', 'redacted',
-  ];
-  return sentinels.some((needle) => s.includes(needle));
+const PLACEHOLDER_SUBSTRINGS = [
+  'changeme', 'change-me', 'your-key', 'your_key', 'yourkey',
+  'placeholder', 'todo', 'tbd', 'xxx', 'fixme', 'fake', 'example',
+  'insert_key_here', 'sk_test_replace', 'whsec_replace', 'redacted',
+] as const;
+
+/**
+ * Prefix sentinels: a value is a placeholder when it STARTS WITH one of these.
+ * `sk_test_` is Stripe test mode (F-A08) — a real production Stripe secret is
+ * `sk_live_`, so any `sk_test_*` value in a prod environment is a stub that
+ * must never ship. We anchor at the start (not substring) so a legitimate
+ * value that merely contains the fragment elsewhere is not falsely flagged.
+ */
+const PLACEHOLDER_PREFIXES = ['sk_test_'] as const;
+
+/**
+ * Single source of truth for placeholder detection (F-A09 / F-B05). Exported
+ * so the orchestrator spec imports it instead of maintaining a divergent
+ * inline copy.
+ */
+export function looksLikePlaceholder(v: string): boolean {
+  const trimmed = v.trim();
+  if (!trimmed) return true;
+  const lower = trimmed.toLowerCase();
+  if (PLACEHOLDER_PREFIXES.some((p) => lower.startsWith(p))) return true;
+  return PLACEHOLDER_SUBSTRINGS.some((needle) => lower.includes(needle));
 }
