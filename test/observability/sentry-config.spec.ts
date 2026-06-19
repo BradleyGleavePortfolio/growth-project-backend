@@ -26,7 +26,7 @@ import {
   resolveTracesSampleRate,
   stripSensitiveHeaders,
   SENTRY_SERVICE_NAME,
-} from '../src/observability/sentry-config';
+} from '../../src/observability/sentry-config';
 
 describe('resolveEnvironment', () => {
   it('uses NODE_ENV when set', () => {

@@ -25,7 +25,7 @@ import {
   promHttpMiddleware,
   registerDefaultMetrics,
   renderPromMetrics,
-} from '../src/observability/prom-metrics';
+} from '../../src/observability/prom-metrics';
 
 describe('registerDefaultMetrics', () => {
   it('installs Node.js default runtime collectors on a fresh registry', async () => {

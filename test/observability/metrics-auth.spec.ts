@@ -22,7 +22,7 @@ import {
   constantTimeEquals,
   extractBearerToken,
   MetricsAuthGuard,
-} from '../src/observability/metrics-auth.guard';
+} from '../../src/observability/metrics-auth.guard';
 
 function ctxWithAuth(authHeader?: string): ExecutionContext {
   return {

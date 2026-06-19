@@ -20,9 +20,9 @@ import {
   DbStatsService,
   redactStatement,
   DB_STATS_QUERY_PREVIEW_CHARS,
-} from '../src/observability/db-stats.service';
-import { DbStatsController } from '../src/observability/db-stats.controller';
-import type { PrismaService } from '../src/prisma.service';
+} from '../../src/observability/db-stats.service';
+import { DbStatsController } from '../../src/observability/db-stats.controller';
+import type { PrismaService } from '../../src/prisma.service';
 
 describe('redactStatement', () => {
   it('preserves a short query verbatim and does not flag truncation', () => {
