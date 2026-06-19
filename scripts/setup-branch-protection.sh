@@ -67,16 +67,47 @@ fi
 
 # Required status checks — names must match the actual check_run names emitted
 # by the workflows. Update this list whenever a new required check ships.
+#
+# CANONICAL RULE: a check may be REQUIRED only if its workflow runs on EVERY
+# pull request to main (no `paths:` filter). A required check from a
+# path-filtered workflow stays PENDING on PRs that do not touch its paths and
+# permanently blocks the merge (GitHub treats a never-reported required check
+# as not-yet-satisfied under strict mode). The lists below were derived by
+# auditing each workflow's `on:` trigger in-repo.
+#
+# ALWAYS-RUN (no paths filter) — eligible to be REQUIRED:
+#   ci.yml              (pull_request, no paths): build-and-test,
+#                        rls-floor-guard, rls-live-tests, mwb-3-live-tests
+#   danger.yml          (pull_request: branches:[main], no paths): danger
+#   r100-quality-gate.yml (pull_request: branches:[main], no paths):
+#                        Banned cast tokens, LOC budget, Test density
+#
+# PATH-FILTERED — intentionally EXCLUDED from required checks:
+#   infra-lint.yml      (paths: .github/workflows/**, scripts/**, dangerfile.js):
+#                        checks: "shellcheck (scripts/*.sh)",
+#                        "actionlint (.github/workflows/*.yml)",
+#                        "danger dry-run (dangerfile.js)"
+#   migration-dry-run.yml (paths: prisma/migrations/**, the workflow file):
+#                        Forward migration applies cleanly,
+#                        New migrations are reversible (...)
+#   These gates still HARD-FAIL when their paths are touched; they just are not
+#   marked required, so a PR that does not touch those paths is not blocked by a
+#   check that will never report.
+#
+# NOT PRESENT IN THIS REPO — EXCLUDED:
+#   CodeQL — no CodeQL workflow exists on this branch's base. Marking a
+#   nonexistent check required would permanently block every PR. Add it back
+#   (as the exact reported name) once a CodeQL workflow actually ships and runs
+#   on every PR.
 REQUIRED_CHECKS=(
-  # From .github/workflows/ci.yml
+  # ci.yml — runs on every PR (no paths filter)
   "build-and-test"
   "rls-floor-guard"
   "rls-live-tests"
-  # From H1 PR #455
-  "CodeQL"
-  # From H2 (this PR)
-  "Forward migration applies cleanly"
-  "New migrations are reversible (or explicitly marked IRREVERSIBLE)"
+  "mwb-3-live-tests"
+  # danger.yml — runs on every PR to main (no paths filter)
+  "danger"
+  # r100-quality-gate.yml — runs on every PR to main (no paths filter)
   "Banned cast tokens (R75 / R100.A2)"
   "LOC budget (R100.A3)"
   "Test density (R100.A1)"
