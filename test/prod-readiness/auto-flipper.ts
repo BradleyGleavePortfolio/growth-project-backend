@@ -35,20 +35,54 @@ export const AUDIT_OPERATOR = 'Bradley Gleave';
 export const FLY_BIN = 'flyctl';
 /** Where to point operators when flyctl is not installed. */
 export const FLY_INSTALL_DOCS = 'https://fly.io/docs/flyctl/install/';
+/** Hard cap on a single flyctl invocation so a hung CLI cannot block forever. */
+export const FLY_TIMEOUT_MS = 60_000;
+/** The token every redacted secret value collapses to — value is never emitted. */
+export const REDACTED = '***';
+
+/**
+ * Replace every `KEY=VALUE` pair (env-style, `--secret KEY=VALUE`, or single/
+ * double quoted) with `KEY=***` so a secret value can never reach a log line,
+ * an Error message, or an audit record. The value is collapsed entirely — we
+ * deliberately do NOT keep a prefix of it, because even a few characters of a
+ * real secret are a leak. KEY matches an UPPER_SNAKE identifier; the value runs
+ * up to the next whitespace or matching quote and is dropped wholesale.
+ */
+export function redactSecretValues(text: string): string {
+  if (text.length === 0) return text;
+  let out = text;
+  // Quoted forms first: 'KEY=value with spaces' or "KEY=..." — drop to closing quote.
+  out = out.replace(/(['"])([A-Z][A-Z0-9_]*)\s*=\s*[^'"]*\1/g, `$1$2=${REDACTED}$1`);
+  // Bare env-style pairs: KEY=value (value is any run of non-space, non-quote chars).
+  out = out.replace(/\b([A-Z][A-Z0-9_]*)\s*=\s*[^\s'"]+/g, `$1=${REDACTED}`);
+  return out;
+}
+
+/** Thrown when a flyctl invocation exceeds {@link FLY_TIMEOUT_MS}. */
+export class FlyctlTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'FlyctlTimeoutError';
+    Object.setPrototypeOf(this, FlyctlTimeoutError.prototype);
+  }
+}
 
 /** The value a switch should hold in prod, derived from its prod_default. */
 export type TargetValue = 'true' | 'false';
 
 /** One reason a candidate row was excluded from the set plan. */
-export type SkipReason =
-  | 'not-auto-flip'
-  | 'needs-human-judgement'
-  | 'already-current';
+export type SkipReason = 'not-auto-flip' | 'needs-human-judgement' | 'already-current';
 
 /** A row paired with the value it should hold in prod. */
 export interface PlannedRow {
   row: RegistryRow;
   target: TargetValue;
+  /**
+   * The current Fly value observed at plan time (`undefined` when missing).
+   * Used by the optional commit-time TOCTOU recheck to detect drift between
+   * plan and commit before mutating.
+   */
+  was: string | undefined;
 }
 
 /** A row excluded from flipping, with the reason why. */
@@ -67,16 +101,27 @@ export interface FlipPlan {
   to_skip: SkippedRow[];
 }
 
-/** A flip that failed to apply, with the captured stderr/error context. */
+/** A flip that failed to apply, with the captured (redacted) error context. */
 export interface FailedFlip {
   row: RegistryRow;
   error: string;
+}
+
+/** Why a planned set was not applied at commit time. */
+export type CommitSkipReason = 'current state changed since plan' | 'forced over changed state';
+
+/** A planned set that commit deliberately did not apply (TOCTOU recheck). */
+export interface CommitSkippedFlip {
+  row: RegistryRow;
+  reason: CommitSkipReason;
 }
 
 /** Outcome of a commit run. */
 export interface FlipResult {
   succeeded: RegistryRow[];
   failed: FailedFlip[];
+  /** Rows skipped at commit time because Fly state drifted since plan. */
+  skipped: CommitSkippedFlip[];
 }
 
 /** Structured, secret-free audit entry emitted per flip (jsonl). */
@@ -98,6 +143,13 @@ export type LogSink = (line: string) => void;
 /** Injectable flyctl runner; the default uses execFileSync (no shell). */
 export type FlyRunner = (args: readonly string[]) => void;
 
+/**
+ * Optional commit-time recheck of the live Fly value for a key. Returns the
+ * current value (or `undefined` if unset). Used to detect drift between plan
+ * and commit; we await it so it may be sync or async.
+ */
+export type RecheckCurrent = (key: string) => Promise<string | undefined>;
+
 export interface PlanOptions {
   registry: readonly RegistryRow[];
   current: FlySecrets;
@@ -112,6 +164,16 @@ export interface CommitOptions {
   log?: LogSink;
   /** Clock injection for deterministic audit timestamps in tests. */
   now?: () => Date;
+  /**
+   * Optional TOCTOU guard. When provided, commit re-reads each key's live Fly
+   * value immediately before setting it; if that value no longer equals the
+   * `was` captured at plan time, the row is skipped (unless {@link force}).
+   * When omitted, commit preserves the original blind-apply behaviour and logs
+   * a single warning that no recheck is configured.
+   */
+  recheckCurrent?: RecheckCurrent;
+  /** Apply planned sets even when {@link recheckCurrent} reports drift. */
+  force?: boolean;
 }
 
 /** Map a row's prod_default onto the concrete value it should hold in prod. */
@@ -141,10 +203,10 @@ export function plan(opts: PlanOptions): FlipPlan {
     }
     const current = opts.current[row.name];
     if (current === target) {
-      already_set.push({ row, target });
+      already_set.push({ row, target, was: current });
       continue;
     }
-    to_set.push({ row, target });
+    to_set.push({ row, target, was: current });
   }
   return { to_set, already_set, to_skip };
 }
@@ -154,14 +216,29 @@ export function autoFlipEnabled(env: NodeJS.ProcessEnv): boolean {
   return env[AUTO_FLIP_ENV] === 'true';
 }
 
-/** Default flyctl runner: execFileSync with an explicit argv (no shell). */
+/**
+ * Default flyctl runner: execFileSync with an explicit argv (no shell) and a
+ * hard {@link FLY_TIMEOUT_MS} cap so a hung CLI cannot block the run forever.
+ * On timeout the child is sent SIGTERM and we surface a {@link FlyctlTimeoutError}
+ * whose message is built only from the (non-secret) subcommand verbs — never
+ * from argv pairs that carry a `KEY=VALUE` secret.
+ */
 export function runFlyctl(args: readonly string[]): void {
   try {
-    execFileSync(FLY_BIN, [...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync(FLY_BIN, [...args], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: FLY_TIMEOUT_MS,
+      killSignal: 'SIGTERM',
+    });
   } catch (err: unknown) {
     if (isBinaryMissing(err)) {
       throw new Error(
         `${FLY_BIN} not found on PATH — install it (${FLY_INSTALL_DOCS}) before running --commit`,
+      );
+    }
+    if (isTimeout(err)) {
+      throw new FlyctlTimeoutError(
+        `${FLY_BIN} ${flyArgvContext(args)} timed out after ${FLY_TIMEOUT_MS}ms and was sent SIGTERM`,
       );
     }
     throw new Error(flyErrorMessage(err));
@@ -178,16 +255,40 @@ function isBinaryMissing(err: unknown): boolean {
   );
 }
 
-/** Extract a useful, secret-free message from an execFileSync failure. */
-function flyErrorMessage(err: unknown): string {
+/** Detect the execFileSync timeout/kill shape across its several variants. */
+function isTimeout(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const e = err as { signal?: unknown; killed?: unknown; code?: unknown };
+  return e.signal === 'SIGTERM' || e.killed === true || e.code === 'ETIMEDOUT';
+}
+
+/**
+ * Build a secret-free description of the argv for error context: keep only the
+ * leading non-`KEY=VALUE` verbs (e.g. `secrets set`) and redact the rest. This
+ * never emits a secret value even if the argv pair is present.
+ */
+function flyArgvContext(args: readonly string[]): string {
+  const verbs = args.filter((a) => !/^[A-Z][A-Z0-9_]*\s*=/.test(a));
+  return redactSecretValues(verbs.join(' ')) || 'secrets set';
+}
+
+/**
+ * Extract a useful message from an execFileSync failure with the secret value
+ * REDACTED. flyctl frequently echoes the offending `KEY=VALUE` back in its
+ * stderr ("secret FEATURE_SECRET=true is rejected"), so every branch here runs
+ * the text through {@link redactSecretValues} before returning it.
+ */
+export function flyErrorMessage(err: unknown): string {
   if (typeof err === 'object' && err !== null) {
     const e = err as { stderr?: unknown; message?: unknown };
     if (e.stderr != null) {
       const text = Buffer.isBuffer(e.stderr) ? e.stderr.toString('utf8') : String(e.stderr);
       const trimmed = text.trim();
-      if (trimmed.length > 0) return trimmed;
+      if (trimmed.length > 0) return redactSecretValues(trimmed);
     }
-    if (typeof e.message === 'string' && e.message.length > 0) return e.message;
+    if (typeof e.message === 'string' && e.message.length > 0) {
+      return redactSecretValues(e.message);
+    }
   }
   return `${FLY_BIN} secrets set failed`;
 }
@@ -214,7 +315,7 @@ export function auditEntry(
  * logs a secret value — only `KEY=***` and the structured audit entry (which
  * carries the key name, never the value).
  */
-export function commit(opts: CommitOptions): FlipResult {
+export async function commit(opts: CommitOptions): Promise<FlipResult> {
   const env = opts.env ?? process.env;
   if (!autoFlipEnabled(env)) {
     throw new Error(
@@ -226,9 +327,46 @@ export function commit(opts: CommitOptions): FlipResult {
   const now = opts.now ?? (() => new Date());
   const succeeded: RegistryRow[] = [];
   const failed: FailedFlip[] = [];
+  const skipped: CommitSkippedFlip[] = [];
+  // TOCTOU guard: without a recheck callback we apply blindly (legacy
+  // behaviour) but record a single warning so the operator knows drift was
+  // not verified. The warning carries no secret value.
+  if (opts.recheckCurrent === undefined && opts.plan.to_set.length > 0) {
+    log('warning: no recheckCurrent configured — applying plan without TOCTOU re-verification');
+  }
   for (const planned of opts.plan.to_set) {
-    const { row, target } = planned;
+    const { row, target, was } = planned;
     const before: AuditEntry['before'] = row.name in env ? 'stale' : 'missing';
+    // Commit-time TOCTOU recheck: if the live value drifted from the value we
+    // planned against, skip the set (unless force). Only the KEY is logged.
+    if (opts.recheckCurrent !== undefined) {
+      const live = await opts.recheckCurrent(row.name);
+      if (live !== was) {
+        if (opts.force === true) {
+          log(
+            JSON.stringify({
+              operator: AUDIT_OPERATOR,
+              action: 'force',
+              key: row.name,
+              reason: 'forced over changed state',
+              timestamp: now().toISOString(),
+            }),
+          );
+        } else {
+          log(
+            JSON.stringify({
+              operator: AUDIT_OPERATOR,
+              action: 'skip',
+              key: row.name,
+              reason: 'current state changed since plan',
+              timestamp: now().toISOString(),
+            }),
+          );
+          skipped.push({ row, reason: 'current state changed since plan' });
+          continue;
+        }
+      }
+    }
     // Redacted operator log — the value is NEVER emitted, only `KEY=***`.
     log(`flyctl secrets set ${row.name}=*** --app <prod>`);
     try {
@@ -236,11 +374,13 @@ export function commit(opts: CommitOptions): FlipResult {
       log(JSON.stringify(auditEntry(row, before, now)));
       succeeded.push(row);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      failed.push({ row, error: message });
+      const raw = err instanceof Error ? err.message : String(err);
+      // Defence-in-depth: redact before this message reaches result.failed[i].error
+      // so a custom runner that echoes a `KEY=VALUE` cannot leak the value.
+      failed.push({ row, error: redactSecretValues(raw) });
     }
   }
-  return { succeeded, failed };
+  return { succeeded, failed, skipped };
 }
 
 /**
@@ -248,11 +388,11 @@ export function commit(opts: CommitOptions): FlipResult {
  * may throw a RegistryParseError, which we re-throw with auto-flipper context
  * so the caller sees where the failure surfaced.
  */
-export function flip(
+export async function flip(
   registryFor: () => readonly RegistryRow[],
   current: FlySecrets,
   commitOpts?: Omit<CommitOptions, 'plan'>,
-): { plan: FlipPlan; result: FlipResult | null } {
+): Promise<{ plan: FlipPlan; result: FlipResult | null }> {
   let registry: readonly RegistryRow[];
   try {
     registry = registryFor();
@@ -267,5 +407,5 @@ export function flip(
   if (!autoFlipEnabled(env)) {
     return { plan: flipPlan, result: null };
   }
-  return { plan: flipPlan, result: commit({ ...commitOpts, plan: flipPlan }) };
+  return { plan: flipPlan, result: await commit({ ...commitOpts, plan: flipPlan }) };
 }

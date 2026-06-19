@@ -20,13 +20,18 @@ import {
   targetValueFor,
   autoFlipEnabled,
   auditEntry,
+  redactSecretValues,
+  flyErrorMessage,
+  FlyctlTimeoutError,
   AUTO_FLIP_ENV,
   AUDIT_OPERATOR,
   FLY_BIN,
   FLY_INSTALL_DOCS,
+  FLY_TIMEOUT_MS,
   type FlipPlan,
   type FlipResult,
   type FlyRunner,
+  type RecheckCurrent,
 } from './auto-flipper';
 import { RegistryParseError, type RegistryRow } from './registry-loader';
 
@@ -137,18 +142,14 @@ describe('plan', () => {
   it('row with auto_flip_on_in_prod=false lands in to_skip (not-auto-flip)', () => {
     const registry = [row({ name: 'MANUAL', auto_flip_on_in_prod: false })];
     const p = plan({ registry, current: {} });
-    expect(p.to_skip).toEqual([
-      { row: registry[0], reason: 'not-auto-flip' },
-    ]);
+    expect(p.to_skip).toEqual([{ row: registry[0], reason: 'not-auto-flip' }]);
     expect(p.to_set).toHaveLength(0);
   });
 
   it('MUST_SET row is skipped as needs-human-judgement even if auto_flip is true', () => {
     const registry = [row({ name: 'DB_URL', prod_default: 'MUST_SET' })];
     const p = plan({ registry, current: {} });
-    expect(p.to_skip).toEqual([
-      { row: registry[0], reason: 'needs-human-judgement' },
-    ]);
+    expect(p.to_skip).toEqual([{ row: registry[0], reason: 'needs-human-judgement' }]);
   });
 
   it('STUB_ALLOWED row is skipped as needs-human-judgement', () => {
@@ -177,17 +178,17 @@ describe('plan', () => {
 });
 
 describe('commit — refusal gate', () => {
-  it('refuses without READINESS_AUTO_FLIP=true and never invokes the runner', () => {
+  it('refuses without READINESS_AUTO_FLIP=true and never invokes the runner', async () => {
     const run = jest.fn();
     const p: FlipPlan = plan({ registry: [row()], current: {} });
-    expect(() => commit({ plan: p, env: {}, run })).toThrow(/READINESS_AUTO_FLIP=true/);
+    await expect(commit({ plan: p, env: {}, run })).rejects.toThrow(/READINESS_AUTO_FLIP=true/);
     expect(run).not.toHaveBeenCalled();
   });
 
-  it('refuses when the flag is set to a non-"true" value', () => {
+  it('refuses when the flag is set to a non-"true" value', async () => {
     const run = jest.fn();
     const p = plan({ registry: [row()], current: {} });
-    expect(() => commit({ plan: p, env: { [AUTO_FLIP_ENV]: 'yes' }, run })).toThrow(
+    await expect(commit({ plan: p, env: { [AUTO_FLIP_ENV]: 'yes' }, run })).rejects.toThrow(
       /refusing to commit/,
     );
     expect(run).not.toHaveBeenCalled();
@@ -195,51 +196,51 @@ describe('commit — refusal gate', () => {
 });
 
 describe('commit — execution', () => {
-  it('invokes the runner once per to_set row with the correct flyctl argv', () => {
+  it('invokes the runner once per to_set row with the correct flyctl argv', async () => {
     const run = jest.fn<void, [readonly string[]]>();
     const p = plan({
       registry: [row({ name: 'FEATURE_A', prod_default: 'ON' })],
       current: {},
     });
-    const res = commit({ plan: p, env: ENABLED_ENV, run });
+    const res = await commit({ plan: p, env: ENABLED_ENV, run });
     expect(run).toHaveBeenCalledTimes(1);
     expect(run).toHaveBeenCalledWith(['secrets', 'set', 'FEATURE_A=true']);
     expect(res.succeeded.map((r) => r.name)).toEqual(['FEATURE_A']);
     expect(res.failed).toHaveLength(0);
   });
 
-  it('passes OFF rows the value "false" over argv', () => {
+  it('passes OFF rows the value "false" over argv', async () => {
     const run = jest.fn<void, [readonly string[]]>();
     const p = plan({ registry: [row({ name: 'KILL_SWITCH', prod_default: 'OFF' })], current: {} });
-    commit({ plan: p, env: ENABLED_ENV, run });
+    await commit({ plan: p, env: ENABLED_ENV, run });
     expect(run).toHaveBeenCalledWith(['secrets', 'set', 'KILL_SWITCH=false']);
   });
 
-  it('captures stderr into result.failed when a flip throws', () => {
+  it('captures stderr into result.failed when a flip throws', async () => {
     const run: FlyRunner = () => {
       throw new Error('Error: insufficient permissions for app');
     };
     const p = plan({ registry: [row({ name: 'FEATURE_A' })], current: {} });
-    const res = commit({ plan: p, env: ENABLED_ENV, run });
+    const res = await commit({ plan: p, env: ENABLED_ENV, run });
     expect(res.succeeded).toHaveLength(0);
     expect(res.failed).toHaveLength(1);
     expect(res.failed[0].row.name).toBe('FEATURE_A');
     expect(res.failed[0].error).toMatch(/insufficient permissions/);
   });
 
-  it('does not early-abort: 5 rows, 1 fails -> 4 succeeded, 1 failed', () => {
+  it('does not early-abort: 5 rows, 1 fails -> 4 succeeded, 1 failed', async () => {
     const names = ['R1', 'R2', 'R3', 'R4', 'R5'];
     const registry = names.map((n) => row({ name: n, prod_default: 'ON' }));
     const run: FlyRunner = (args) => {
       if (args[2] === 'R3=true') throw new Error('R3 boom');
     };
     const p = plan({ registry, current: {} });
-    const res = commit({ plan: p, env: ENABLED_ENV, run });
+    const res = await commit({ plan: p, env: ENABLED_ENV, run });
     expect(res.succeeded.map((r) => r.name)).toEqual(['R1', 'R2', 'R4', 'R5']);
     expect(res.failed.map((f) => f.row.name)).toEqual(['R3']);
   });
 
-  it('runs flips strictly sequentially (one inflight at a time, in order)', () => {
+  it('runs flips strictly sequentially (one inflight at a time, in order)', async () => {
     const registry = [
       row({ name: 'A', prod_default: 'ON' }),
       row({ name: 'B', prod_default: 'ON' }),
@@ -254,25 +255,28 @@ describe('commit — execution', () => {
       inflight -= 1;
     };
     const p = plan({ registry, current: {} });
-    commit({ plan: p, env: ENABLED_ENV, run });
+    await commit({ plan: p, env: ENABLED_ENV, run });
     expect(order).toEqual(['A=true', 'B=true', 'C=true']);
   });
 
-  it('is a no-op when to_set is empty (nothing to commit)', () => {
+  it('is a no-op when to_set is empty (nothing to commit)', async () => {
     const run = jest.fn();
-    const p = plan({ registry: [row({ name: 'OK', prod_default: 'ON' })], current: { OK: 'true' } });
-    const res = commit({ plan: p, env: ENABLED_ENV, run });
+    const p = plan({
+      registry: [row({ name: 'OK', prod_default: 'ON' })],
+      current: { OK: 'true' },
+    });
+    const res = await commit({ plan: p, env: ENABLED_ENV, run });
     expect(run).not.toHaveBeenCalled();
-    expect(res).toEqual({ succeeded: [], failed: [] });
+    expect(res).toEqual({ succeeded: [], failed: [], skipped: [] });
   });
 });
 
 describe('commit — secret redaction in logs', () => {
-  it('emits KEY=*** in the operator log and never the value', () => {
+  it('emits KEY=*** in the operator log and never the value', async () => {
     const sink = makeSink();
     const run: FlyRunner = () => undefined;
     const p = plan({ registry: [row({ name: 'API_KEY', prod_default: 'ON' })], current: {} });
-    commit({ plan: p, env: ENABLED_ENV, run, log: sink.log, now: fixedClock });
+    await commit({ plan: p, env: ENABLED_ENV, run, log: sink.log, now: fixedClock });
     const joined = sink.lines.join('\n');
     expect(joined).toContain('API_KEY=***');
     // The literal target value must NEVER appear in any log line.
@@ -281,11 +285,11 @@ describe('commit — secret redaction in logs', () => {
     }
   });
 
-  it('the structured audit line carries the key NAME but no value', () => {
+  it('the structured audit line carries the key NAME but no value', async () => {
     const sink = makeSink();
     const run: FlyRunner = () => undefined;
     const p = plan({ registry: [row({ name: 'TOKEN_X', prod_default: 'ON' })], current: {} });
-    commit({ plan: p, env: ENABLED_ENV, run, log: sink.log, now: fixedClock });
+    await commit({ plan: p, env: ENABLED_ENV, run, log: sink.log, now: fixedClock });
     const auditLine = sink.lines.find((l) => l.startsWith('{'));
     expect(auditLine).toBeDefined();
     const parsed = JSON.parse(auditLine as string);
@@ -293,13 +297,13 @@ describe('commit — secret redaction in logs', () => {
     expect(JSON.stringify(parsed)).not.toContain('true');
   });
 
-  it('does not emit a value even when the flyctl call fails', () => {
+  it('does not emit a value even when the flyctl call fails', async () => {
     const sink = makeSink();
     const run: FlyRunner = () => {
       throw new Error('boom while setting SECRET_Z');
     };
     const p = plan({ registry: [row({ name: 'SECRET_Z', prod_default: 'ON' })], current: {} });
-    commit({ plan: p, env: ENABLED_ENV, run, log: sink.log, now: fixedClock });
+    await commit({ plan: p, env: ENABLED_ENV, run, log: sink.log, now: fixedClock });
     for (const line of sink.lines) {
       expect(line).not.toMatch(/SECRET_Z=true/);
     }
@@ -307,11 +311,11 @@ describe('commit — secret redaction in logs', () => {
 });
 
 describe('commit — audit trail', () => {
-  it('emits a structured jsonl entry per successful flip', () => {
+  it('emits a structured jsonl entry per successful flip', async () => {
     const sink = makeSink();
     const run: FlyRunner = () => undefined;
     const p = plan({ registry: [row({ name: 'AUD_1', prod_default: 'ON' })], current: {} });
-    commit({ plan: p, env: ENABLED_ENV, run, log: sink.log, now: fixedClock });
+    await commit({ plan: p, env: ENABLED_ENV, run, log: sink.log, now: fixedClock });
     const auditLine = sink.lines.find((l) => l.startsWith('{'));
     const parsed = JSON.parse(auditLine as string);
     expect(parsed).toEqual({
@@ -324,24 +328,26 @@ describe('commit — audit trail', () => {
     });
   });
 
-  it('records before=stale when the key already exists in env', () => {
+  it('records before=stale when the key already exists in env', async () => {
     const sink = makeSink();
     const run: FlyRunner = () => undefined;
     const env: NodeJS.ProcessEnv = { ...ENABLED_ENV, STALE_K: 'false' };
     const p = plan({ registry: [row({ name: 'STALE_K', prod_default: 'ON' })], current: {} });
-    commit({ plan: p, env, run, log: sink.log, now: fixedClock });
+    await commit({ plan: p, env, run, log: sink.log, now: fixedClock });
     const parsed = JSON.parse(sink.lines.find((l) => l.startsWith('{')) as string);
     expect(parsed.before).toBe('stale');
   });
 
-  it('does not emit an audit entry for a failed flip', () => {
+  it('does not emit an audit entry for a failed flip', async () => {
     const sink = makeSink();
     const run: FlyRunner = () => {
       throw new Error('nope');
     };
     const p = plan({ registry: [row({ name: 'FAIL_K', prod_default: 'ON' })], current: {} });
-    commit({ plan: p, env: ENABLED_ENV, run, log: sink.log, now: fixedClock });
-    expect(sink.lines.find((l) => l.startsWith('{'))).toBeUndefined();
+    await commit({ plan: p, env: ENABLED_ENV, run, log: sink.log, now: fixedClock });
+    // The only jsonl line allowed here is the no-recheck warning (no key/value).
+    const auditLines = sink.lines.filter((l) => l.startsWith('{'));
+    expect(auditLines).toHaveLength(0);
   });
 });
 
@@ -445,14 +451,20 @@ describe('plan — ordering and multiplicity', () => {
 });
 
 describe('commit — multi-row argv and ordering', () => {
-  it('emits one redacted operator log line per to_set row', () => {
+  it('emits one redacted operator log line per to_set row', async () => {
     const sink = makeSink();
     const registry = [
       row({ name: 'K1', prod_default: 'ON' }),
       row({ name: 'K2', prod_default: 'OFF' }),
     ];
     const p = plan({ registry, current: {} });
-    commit({ plan: p, env: ENABLED_ENV, run: () => undefined, log: sink.log, now: fixedClock });
+    await commit({
+      plan: p,
+      env: ENABLED_ENV,
+      run: () => undefined,
+      log: sink.log,
+      now: fixedClock,
+    });
     const redacted = sink.lines.filter((l) => l.includes('flyctl secrets set'));
     expect(redacted).toEqual([
       'flyctl secrets set K1=*** --app <prod>',
@@ -460,7 +472,7 @@ describe('commit — multi-row argv and ordering', () => {
     ]);
   });
 
-  it('passes a fresh argv array per invocation (no shared mutation)', () => {
+  it('passes a fresh argv array per invocation (no shared mutation)', async () => {
     const seen: string[][] = [];
     const run: FlyRunner = (args) => {
       seen.push([...args]);
@@ -469,16 +481,16 @@ describe('commit — multi-row argv and ordering', () => {
       row({ name: 'A', prod_default: 'ON' }),
       row({ name: 'B', prod_default: 'ON' }),
     ];
-    commit({ plan: plan({ registry, current: {} }), env: ENABLED_ENV, run });
+    await commit({ plan: plan({ registry, current: {} }), env: ENABLED_ENV, run });
     expect(seen).toEqual([
       ['secrets', 'set', 'A=true'],
       ['secrets', 'set', 'B=true'],
     ]);
   });
 
-  it('records succeeded rows in the order they were set', () => {
+  it('records succeeded rows in the order they were set', async () => {
     const registry = ['P', 'Q', 'R'].map((n) => row({ name: n, prod_default: 'ON' }));
-    const res = commit({
+    const res = await commit({
       plan: plan({ registry, current: {} }),
       env: ENABLED_ENV,
       run: () => undefined,
@@ -486,10 +498,10 @@ describe('commit — multi-row argv and ordering', () => {
     expect(res.succeeded.map((r) => r.name)).toEqual(['P', 'Q', 'R']);
   });
 
-  it('uses the real Date clock when none is injected', () => {
+  it('uses the real Date clock when none is injected', async () => {
     const sink = makeSink();
     const before = Date.now();
-    commit({
+    await commit({
       plan: plan({ registry: [row({ name: 'NOWK', prod_default: 'ON' })], current: {} }),
       env: ENABLED_ENV,
       run: () => undefined,
@@ -502,11 +514,11 @@ describe('commit — multi-row argv and ordering', () => {
     expect(stamped).toBeLessThanOrEqual(after);
   });
 
-  it('stringifies a non-Error throw into the failed entry', () => {
+  it('stringifies a non-Error throw into the failed entry', async () => {
     const run: FlyRunner = () => {
       throw 'plain string failure';
     };
-    const res = commit({
+    const res = await commit({
       plan: plan({ registry: [row({ name: 'STR', prod_default: 'ON' })], current: {} }),
       env: ENABLED_ENV,
       run,
@@ -547,34 +559,358 @@ describe('runFlyctl — stdio and ENOENT message detail', () => {
 });
 
 describe('flip — orchestration', () => {
-  it('returns a plan and null result when auto-flip is disabled', () => {
+  it('returns a plan and null result when auto-flip is disabled', async () => {
     const registry = [row({ name: 'FEATURE_A', prod_default: 'ON' })];
-    const out = flip(() => registry, {}, { env: {} });
+    const out = await flip(() => registry, {}, { env: {} });
     expect(out.plan.to_set.map((r) => r.row.name)).toEqual(['FEATURE_A']);
     expect(out.result).toBeNull();
   });
 
-  it('plans and commits when auto-flip is enabled', () => {
+  it('plans and commits when auto-flip is enabled', async () => {
     const run = jest.fn<void, [readonly string[]]>();
     const registry = [row({ name: 'FEATURE_A', prod_default: 'ON' })];
-    const out = flip(() => registry, {}, { env: ENABLED_ENV, run });
+    const out = await flip(() => registry, {}, { env: ENABLED_ENV, run });
     expect(out.result).not.toBeNull();
     expect((out.result as FlipResult).succeeded.map((r) => r.name)).toEqual(['FEATURE_A']);
     expect(run).toHaveBeenCalledWith(['secrets', 'set', 'FEATURE_A=true']);
   });
 
-  it('re-throws a RegistryParseError with auto-flipper context', () => {
+  it('re-throws a RegistryParseError with auto-flipper context', async () => {
     const boom = (): readonly RegistryRow[] => {
       throw new RegistryParseError('registry truncated');
     };
-    expect(() => flip(boom, {})).toThrow(RegistryParseError);
-    expect(() => flip(boom, {})).toThrow(/auto-flipper could not load the registry/);
+    await expect(flip(boom, {})).rejects.toThrow(RegistryParseError);
+    await expect(flip(boom, {})).rejects.toThrow(/auto-flipper could not load the registry/);
   });
 
-  it('propagates non-registry errors unchanged', () => {
+  it('propagates non-registry errors unchanged', async () => {
     const boom = (): readonly RegistryRow[] => {
       throw new TypeError('unrelated');
     };
-    expect(() => flip(boom, {})).toThrow(TypeError);
+    await expect(flip(boom, {})).rejects.toThrow(TypeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H4.F R1 — three Lens B fixes: secret redaction, flyctl timeout, TOCTOU recheck
+// ---------------------------------------------------------------------------
+
+describe('redactSecretValues (Fix 1 — secret leak)', () => {
+  it('redacts a single KEY=VALUE pair embedded in an flyctl stderr message', () => {
+    const stderr = 'Error: secret FEATURE_SECRET=true is rejected by Fly';
+    expect(redactSecretValues(stderr)).toBe('Error: secret FEATURE_SECRET=*** is rejected by Fly');
+  });
+
+  it('redacts every KEY=VALUE pair when several appear in one message', () => {
+    const text = 'set API_KEY=abc123 and DB_PASSWORD=hunter2 then TOKEN_X=zzz';
+    const out = redactSecretValues(text);
+    expect(out).toContain('API_KEY=***');
+    expect(out).toContain('DB_PASSWORD=***');
+    expect(out).toContain('TOKEN_X=***');
+    expect(out).not.toMatch(/abc123|hunter2|zzz/);
+  });
+
+  it('drops the entire value (no prefix retained) even for long secrets', () => {
+    const long = 'X'.repeat(64);
+    const out = redactSecretValues(`SUPER_SECRET=${long}`);
+    expect(out).toBe('SUPER_SECRET=***');
+    // Not a single character of the real value survives.
+    expect(out).not.toContain('X');
+  });
+
+  it('handles the --secret KEY=VALUE flag form', () => {
+    expect(redactSecretValues('flyctl secrets set --secret FEATURE_SECRET=true')).toBe(
+      'flyctl secrets set --secret FEATURE_SECRET=***',
+    );
+  });
+
+  it('handles single- and double-quoted KEY=VALUE forms', () => {
+    expect(redactSecretValues("rejected 'FEATURE_SECRET=true here'")).toBe(
+      "rejected 'FEATURE_SECRET=***'",
+    );
+    expect(redactSecretValues('rejected "API_KEY=abc def"')).toBe('rejected "API_KEY=***"');
+  });
+
+  it('leaves text without an UPPER_SNAKE KEY=VALUE untouched', () => {
+    expect(redactSecretValues('app not found')).toBe('app not found');
+    // A lowercase assignment is not a secret-shaped key and is left alone.
+    expect(redactSecretValues('count=5')).toBe('count=5');
+  });
+
+  it('returns the empty string unchanged', () => {
+    expect(redactSecretValues('')).toBe('');
+  });
+
+  it('flyErrorMessage redacts a value echoed back in stderr', () => {
+    const err = Object.assign(new Error('Command failed'), {
+      stderr: Buffer.from('secret FEATURE_SECRET=true rejected\n'),
+    });
+    const msg = flyErrorMessage(err);
+    expect(msg).toContain('FEATURE_SECRET=***');
+    expect(msg).not.toContain('FEATURE_SECRET=true');
+  });
+
+  it('flyErrorMessage redacts a value carried in the error message field', () => {
+    const msg = flyErrorMessage(new Error('rejected API_KEY=topsecret value'));
+    expect(msg).toBe('rejected API_KEY=*** value');
+  });
+
+  it('commit never lets a runner-thrown KEY=VALUE reach result.failed[i].error', async () => {
+    // A runner that leaks the value in its thrown message — the probe that
+    // motivated this fix. result.failed[i].error MUST be redacted.
+    const run: FlyRunner = () => {
+      throw new Error('Fly rejected FEATURE_SECRET=true for the app');
+    };
+    const p = plan({
+      registry: [row({ name: 'FEATURE_SECRET', prod_default: 'ON' })],
+      current: {},
+    });
+    const res = await commit({ plan: p, env: ENABLED_ENV, run });
+    expect(res.failed).toHaveLength(1);
+    expect(res.failed[0].error).toContain('FEATURE_SECRET=***');
+    expect(res.failed[0].error).not.toContain('FEATURE_SECRET=true');
+  });
+});
+
+describe('runFlyctl timeout (Fix 2 — hang protection)', () => {
+  it('passes a 60s timeout and SIGTERM killSignal to execFileSync', () => {
+    execFileSyncMock.mockReturnValue(Buffer.from(''));
+    runFlyctl(['secrets', 'set', 'A=true']);
+    const options = execFileSyncMock.mock.calls[0][2] as {
+      timeout?: number;
+      killSignal?: string;
+    };
+    expect(options.timeout).toBe(FLY_TIMEOUT_MS);
+    expect(FLY_TIMEOUT_MS).toBe(60_000);
+    expect(options.killSignal).toBe('SIGTERM');
+  });
+
+  it('maps a SIGTERM-killed child to a FlyctlTimeoutError', () => {
+    execFileSyncMock.mockImplementation(() => {
+      throw Object.assign(new Error('Command failed'), { signal: 'SIGTERM', killed: true });
+    });
+    expect(() => runFlyctl(['secrets', 'set', 'A=true'])).toThrow(FlyctlTimeoutError);
+  });
+
+  it('maps an ETIMEDOUT code to a FlyctlTimeoutError mentioning the timeout', () => {
+    execFileSyncMock.mockImplementation(() => {
+      throw Object.assign(new Error('Command failed'), { code: 'ETIMEDOUT' });
+    });
+    expect(() => runFlyctl(['secrets', 'set', 'A=true'])).toThrow(/timed out after 60000ms/);
+  });
+
+  it('the timeout error context never echoes the secret value from argv', () => {
+    execFileSyncMock.mockImplementation(() => {
+      throw Object.assign(new Error('Command failed'), { killed: true, signal: 'SIGTERM' });
+    });
+    let caught: unknown;
+    try {
+      runFlyctl(['secrets', 'set', 'FEATURE_SECRET=true']);
+    } catch (e: unknown) {
+      caught = e;
+    }
+    const message = (caught as Error).message;
+    expect(message).toContain('secrets set');
+    expect(message).not.toContain('FEATURE_SECRET=true');
+  });
+
+  it('commit surfaces a timeout as a redacted failed entry (not a thrown error)', async () => {
+    execFileSyncMock.mockImplementation(() => {
+      throw Object.assign(new Error('Command failed'), {
+        signal: 'SIGTERM',
+        killed: true,
+      });
+    });
+    // Use the DEFAULT runner (runFlyctl) so the timeout path is exercised end-to-end.
+    const p = plan({
+      registry: [row({ name: 'FEATURE_SECRET', prod_default: 'ON' })],
+      current: {},
+    });
+    const res = await commit({ plan: p, env: ENABLED_ENV });
+    expect(res.succeeded).toHaveLength(0);
+    expect(res.failed).toHaveLength(1);
+    expect(res.failed[0].row.name).toBe('FEATURE_SECRET');
+    expect(res.failed[0].error).toMatch(/timed out/);
+    expect(res.failed[0].error).not.toContain('FEATURE_SECRET=true');
+  });
+
+  it('FlyctlTimeoutError is an instanceof Error with the right name', () => {
+    const e = new FlyctlTimeoutError('boom');
+    expect(e).toBeInstanceOf(Error);
+    expect(e).toBeInstanceOf(FlyctlTimeoutError);
+    expect(e.name).toBe('FlyctlTimeoutError');
+  });
+});
+
+describe('commit recheckCurrent (Fix 3 — TOCTOU)', () => {
+  it('proceeds with the set when the live value matches the planned `was`', async () => {
+    const run = jest.fn<void, [readonly string[]]>();
+    // Stale at plan time (Fly had "false", target "true") and still "false" at commit.
+    const p = plan({
+      registry: [row({ name: 'FEATURE_A', prod_default: 'ON' })],
+      current: { FEATURE_A: 'false' },
+    });
+    const recheckCurrent: RecheckCurrent = async () => 'false';
+    const res = await commit({ plan: p, env: ENABLED_ENV, run, recheckCurrent });
+    expect(run).toHaveBeenCalledWith(['secrets', 'set', 'FEATURE_A=true']);
+    expect(res.succeeded.map((r) => r.name)).toEqual(['FEATURE_A']);
+    expect(res.skipped).toHaveLength(0);
+  });
+
+  it('skips the set when the live value drifted from the planned `was`', async () => {
+    const run = jest.fn<void, [readonly string[]]>();
+    const p = plan({
+      registry: [row({ name: 'FEATURE_A', prod_default: 'ON' })],
+      current: { FEATURE_A: 'false' },
+    });
+    // Someone changed it between plan and commit.
+    const recheckCurrent: RecheckCurrent = async () => 'changed-value';
+    const res = await commit({ plan: p, env: ENABLED_ENV, run, recheckCurrent });
+    expect(run).not.toHaveBeenCalled();
+    expect(res.succeeded).toHaveLength(0);
+    expect(res.skipped).toEqual([
+      { row: p.to_set[0].row, reason: 'current state changed since plan' },
+    ]);
+  });
+
+  it('force:true overrides a drift skip and applies the set anyway', async () => {
+    const run = jest.fn<void, [readonly string[]]>();
+    const p = plan({
+      registry: [row({ name: 'FEATURE_A', prod_default: 'ON' })],
+      current: { FEATURE_A: 'false' },
+    });
+    const recheckCurrent: RecheckCurrent = async () => 'changed-value';
+    const res = await commit({ plan: p, env: ENABLED_ENV, run, recheckCurrent, force: true });
+    expect(run).toHaveBeenCalledWith(['secrets', 'set', 'FEATURE_A=true']);
+    expect(res.succeeded.map((r) => r.name)).toEqual(['FEATURE_A']);
+    expect(res.skipped).toHaveLength(0);
+  });
+
+  it('handles a key that was missing at plan time and is still missing on recheck', async () => {
+    const run = jest.fn<void, [readonly string[]]>();
+    const p = plan({ registry: [row({ name: 'NEW_KEY', prod_default: 'ON' })], current: {} });
+    const recheckCurrent: RecheckCurrent = async () => undefined; // matches `was` undefined
+    const res = await commit({ plan: p, env: ENABLED_ENV, run, recheckCurrent });
+    expect(run).toHaveBeenCalledWith(['secrets', 'set', 'NEW_KEY=true']);
+    expect(res.skipped).toHaveLength(0);
+  });
+
+  it('skips when a key appeared (undefined at plan, present on recheck)', async () => {
+    const run = jest.fn<void, [readonly string[]]>();
+    const p = plan({ registry: [row({ name: 'NEW_KEY', prod_default: 'ON' })], current: {} });
+    const recheckCurrent: RecheckCurrent = async () => 'true'; // someone set it meanwhile
+    const res = await commit({ plan: p, env: ENABLED_ENV, run, recheckCurrent });
+    expect(run).not.toHaveBeenCalled();
+    expect(res.skipped[0].reason).toBe('current state changed since plan');
+  });
+
+  it('audit-logs a skip decision with the key but no value', async () => {
+    const sink = makeSink();
+    const p = plan({
+      registry: [row({ name: 'FEATURE_A', prod_default: 'ON' })],
+      current: { FEATURE_A: 'false' },
+    });
+    const recheckCurrent: RecheckCurrent = async () => 'changed';
+    await commit({
+      plan: p,
+      env: ENABLED_ENV,
+      run: () => undefined,
+      log: sink.log,
+      now: fixedClock,
+      recheckCurrent,
+    });
+    const auditLine = sink.lines.find((l) => l.startsWith('{'));
+    const parsed = JSON.parse(auditLine as string);
+    expect(parsed.action).toBe('skip');
+    expect(parsed.key).toBe('FEATURE_A');
+    expect(parsed.reason).toBe('current state changed since plan');
+    for (const line of sink.lines) {
+      expect(line).not.toMatch(/FEATURE_A=true/);
+    }
+  });
+
+  it('audit-logs a force decision with the key but no value', async () => {
+    const sink = makeSink();
+    const p = plan({
+      registry: [row({ name: 'FEATURE_A', prod_default: 'ON' })],
+      current: { FEATURE_A: 'false' },
+    });
+    const recheckCurrent: RecheckCurrent = async () => 'changed';
+    await commit({
+      plan: p,
+      env: ENABLED_ENV,
+      run: () => undefined,
+      log: sink.log,
+      now: fixedClock,
+      recheckCurrent,
+      force: true,
+    });
+    const forceLine = sink.lines.find((l) => l.startsWith('{') && l.includes('"force"'));
+    const parsed = JSON.parse(forceLine as string);
+    expect(parsed.action).toBe('force');
+    expect(parsed.key).toBe('FEATURE_A');
+    for (const line of sink.lines) {
+      expect(line).not.toMatch(/FEATURE_A=true/);
+    }
+  });
+
+  it('without a recheck callback, applies the plan and logs a no-recheck warning', async () => {
+    const sink = makeSink();
+    const run = jest.fn<void, [readonly string[]]>();
+    const p = plan({ registry: [row({ name: 'FEATURE_A', prod_default: 'ON' })], current: {} });
+    const res = await commit({ plan: p, env: ENABLED_ENV, run, log: sink.log, now: fixedClock });
+    expect(run).toHaveBeenCalledWith(['secrets', 'set', 'FEATURE_A=true']);
+    expect(res.succeeded.map((r) => r.name)).toEqual(['FEATURE_A']);
+    expect(res.skipped).toHaveLength(0);
+    expect(sink.lines.some((l) => l.includes('no recheckCurrent configured'))).toBe(true);
+  });
+
+  it('rechecks each key independently in a multi-row plan', async () => {
+    const run = jest.fn<void, [readonly string[]]>();
+    const registry = [
+      row({ name: 'KEEP', prod_default: 'ON' }),
+      row({ name: 'DRIFT', prod_default: 'ON' }),
+    ];
+    const p = plan({ registry, current: {} });
+    const recheckCurrent: RecheckCurrent = async (key) =>
+      key === 'DRIFT' ? 'someone-set-it' : undefined;
+    const res = await commit({ plan: p, env: ENABLED_ENV, run, recheckCurrent });
+    expect(res.succeeded.map((r) => r.name)).toEqual(['KEEP']);
+    expect(res.skipped.map((s) => s.row.name)).toEqual(['DRIFT']);
+  });
+});
+
+describe('redactSecretValues — additional shapes (Fix 1 hardening)', () => {
+  it('redacts a KEY=VALUE that has surrounding spaces around the equals sign', () => {
+    expect(redactSecretValues('FEATURE_SECRET = topsecret')).toBe('FEATURE_SECRET=***');
+  });
+
+  it('redacts a digit-bearing UPPER_SNAKE key', () => {
+    expect(redactSecretValues('OAUTH2_TOKEN=abc.def.ghi rejected')).toBe(
+      'OAUTH2_TOKEN=*** rejected',
+    );
+  });
+
+  it('redacts multiple quoted pairs in one line', () => {
+    const out = redactSecretValues(`set 'A_KEY=one' and "B_KEY=two three"`);
+    expect(out).toContain("'A_KEY=***'");
+    expect(out).toContain('"B_KEY=***"');
+    expect(out).not.toMatch(/one|two|three/);
+  });
+
+  it('does not redact a value-only token with no UPPER_SNAKE key', () => {
+    expect(redactSecretValues('just a normal sentence with no secrets')).toBe(
+      'just a normal sentence with no secrets',
+    );
+  });
+
+  it('commit timeout via default runner records the row name without its value', async () => {
+    execFileSyncMock.mockImplementation(() => {
+      throw Object.assign(new Error('Command failed'), { code: 'ETIMEDOUT' });
+    });
+    const p = plan({ registry: [row({ name: 'HANGS', prod_default: 'ON' })], current: {} });
+    const res = await commit({ plan: p, env: ENABLED_ENV });
+    expect(res.failed[0].row.name).toBe('HANGS');
+    expect(res.failed[0].error).not.toContain('HANGS=true');
   });
 });
