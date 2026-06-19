@@ -1,0 +1,1373 @@
+# prod-switches.yml — single source of truth for every env-var-shaped
+# switch in this codebase. Required by AGENT_RULES R108. Updated by hand
+# whenever a new env var is added. test/deploy-readiness.spec.ts cross-
+# references this file against ENV_RULES + .env.example + process.env.*
+# references in src/ and FAILS the build if discovery > registry.
+#
+# Fields:
+#   tier: hard | prod | feature | optional   (mirrors EnvTier in env-validation.ts)
+#   prod_default: MUST_SET | ON | OFF | STUB_ALLOWED
+#     - MUST_SET: real value required in prod; absence = ship-block
+#     - ON: feature should be wired in prod; absence = warn
+#     - OFF: switch should default false in prod; if set/true triggers warn
+#     - STUB_ALLOWED: placeholder values are acceptable
+#   auto_flip_on_in_prod: if true, the readiness test will auto-set the var
+#     to its enabled value when running against a prod environment
+#   owner: rough domain group; refine as ownership crystallizes
+#
+# Seeded 2026-06-18 from src/common/env-validation.ts ENV_RULES (86)
+# + grep of process.env.* in src/ (126 additional). Each unregistered
+# entry below is marked owner: unowned and prod_default: STUB_ALLOWED so
+# the test passes; operator should refine over time. Adding a new env
+# var without a registry row is a CI failure per R108.
+
+switches:
+  - name: ADMIN_SERVICE_TOKEN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: AI_GATEWAY_CAPABILITIES
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: AI_GATEWAY_PROVIDER
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: AI_GATEWAY_REQUIRE_APPROVAL
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: ALLOW_SELF_SERVICE_BECOME_COACH
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: coach
+    description: "Feature flag — when 'true', re-opens POST /auth/become-coach. Hard-gated off by default; canonical promotion is OWNER-only POST /admin/users"
+  - name: ANDROID_CERT_SHA256_FINGERPRINTS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: ANDROID_PACKAGE_NAME
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: ANDROID_SHA256_FINGERPRINT
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "R43 / Android App Links — SHA-256 of the Android signing certificate (AA:BB:CC:... colon-separated uppercase hex). Alias for ANDROID_CERT_SH"
+  - name: ANTHROPIC_API_KEY
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "Required for Coach AI v1 (Claude Sonnet adapter behind /coach/ai/*). Set in Fly secrets. Without it, /coach/ai/* returns 503 ai_disabled and"
+  - name: APPLE_AUDIENCES
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Comma-separated allow-list of Apple audiences (iOS bundle ids and/or Apple Services IDs) accepted by POST /auth/apple. Without it, the endpo"
+  - name: APPLE_NONCE_REQUIRED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: APPLE_TEAM_ID
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "R43 / Universal Links — Apple Developer Team ID (10-char alphanumeric). When set, /.well-known/apple-app-site-association serves a valid AAS"
+  - name: APP_STORE_URL
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "iOS App Store URL surfaced on the public invite landing page. Falls back to a placeholder TestFlight-style link when unset; set once the App"
+  - name: APP_URL
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: AUDIT_LOGGING_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: observability
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: AUTH_LOGIN_PER_HOUR
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Phase 10 — per-IP login attempts per hour across all login endpoints. Sustained-attack brake. Defaults to 30; clamped to [1, 5000]."
+  - name: AUTH_LOGIN_PER_MIN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Phase 10 — per-IP login attempts per minute (POST /auth/login, /auth/apple, /auth/google). Defaults to 5; clamped to [1, 1000]. A successful"
+  - name: AUTH_PWD_RESET_PER_HOUR
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Phase 10 — per-IP password-reset email requests per hour (POST /auth/forgot-password). Defaults to 3; clamped to [1, 1000]."
+  - name: BILLING_ENFORCEMENT
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "SubscriptionGuard mode. 'enforce' blocks writes for past_due/canceled coaches; anything else observes only."
+  - name: BILLING_PORTAL_URL
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: BLOODWORK_STALE_AFTER_DAYS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: BLOODWORK_STALE_DISABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: BLOODWORK_WRITE_PER_MIN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Phase 10 — per-user bloodwork POST writes per minute (POST /bloodwork/*). Defaults to 30; clamped to [1, 1000]. Applied when the bloodwork m"
+  - name: BOOKING_REMINDERS_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: jobs
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: BOOKING_REMINDER_1H_CRON
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: jobs
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: BOOKING_REMINDER_24H_CRON
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: jobs
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: BOOTSTRAP_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: BUILD_WEEK_AUTO_START_ON_SIGNUP
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Feature flag — when 'true', new client signups auto-enroll in Build Week. Defaults to false. Wiring is a follow-on PR; this PR only exposes "
+  - name: BUILD_WEEK_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Feature flag — when 'false', the Build Week controllers refuse new writes and the admin funnel reports zeroed counts. Defaults to true (modu"
+  - name: CHECKOUT_RECEIPT_DISABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: CHECKOUT_RECONCILE_DISABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: CHECKOUT_RECOVERY_SECRET
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "r48 / audit A276-P1-1 + A276-F3-P2-1 — HS256 key shared by CheckoutRecoveryService (signs the 15-minute magic-link JWT used to resume an aba"
+  - name: CLIENT_DAILY_CRON
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: coach
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: COACH_AI_BUDGET_ROLLOVER_CRON
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: COACH_AI_BUDGET_ROLLOVER_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: COACH_AI_DORMANCY_UNREAD_THRESHOLD
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: COACH_AI_MAX_ACTUAL_CENTS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: COACH_AI_PACK_CANCEL_URL
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: COACH_AI_PACK_SUCCESS_URL
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: COACH_AI_VALUE_MULTIPLIER
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: COACH_ALERT_BATCH_LIMIT
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: coach
+    description: "Per-request cap on the number of CoachAlert rows the OWNER aggregator and coach inbox endpoints return. Defaults to 50; clamped to [1, 200]."
+  - name: COACH_ALERT_RED_TRANSITION_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: coach
+    description: "Feature flag — when 'false', the PTM-recompute hook does NOT create CoachAlert rows on green/amber → red transitions. Defaults to true. Use "
+  - name: COACH_BRIEF_CRON
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: jobs
+    description: "R43 — override for the @Cron schedule on CoachBriefScheduler.dispatchDailyBriefs. Defaults to '* * * * *' (every UTC minute) so per-coach no"
+  - name: COACH_BRIEF_ENABLED
+    tier: feature
+    prod_default: ON
+    # Canary auto-flip (F-B12): boolean ON-default kill switch — safe to flip to
+    # "true" in prod when unset/false, since ON is already its intended prod state.
+    auto_flip_on_in_prod: true
+    owner: coach
+    description: "R43 — global server-side kill switch for the entire Coach Brief surface. When set to 'off', every /coach/brief/* route returns 404 NOT_FOUND"
+  - name: COACH_BRIEF_NOTIFICATIONS_ENABLED
+    tier: feature
+    prod_default: ON
+    # Canary auto-flip (F-B12): boolean ON-default toggle — safe to flip to "true"
+    # in prod; matches its documented default of running the daily dispatch.
+    auto_flip_on_in_prod: true
+    owner: coach
+    description: "R43 — set to 'off' to globally disable the daily Coach Brief push dispatch. When absent or any value other than 'off', the scheduler runs ev"
+  - name: COACH_BRIEF_RETENTION_DAYS
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: coach
+    description: "Days of CoachBrief history retained before TTL prune. GDPR Art.17 hygiene — embedded client_name in brief_context JSON ages out within this "
+  - name: COACH_CMD_CENTER_PER_MIN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: coach
+    description: "Phase 10 — per-user coach command-center GET reads per minute (GET /coach/command-center/*). Defaults to 60; clamped to [1, 1000]. Applied w"
+  - name: COACH_CODE_GATE_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: coach
+    description: "Feature flag — when 'true', signup is blocked unless the user supplies a valid coach invite code."
+  - name: COACH_DAILY_CRON
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: coach
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: COACH_EFFECTIVENESS_CRON
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: jobs
+    description: "Override for the nightly Coach Effectiveness recompute cron expression. Defaults to '0 5 * * *' (05:00 UTC, one hour after the PTM recompute"
+  - name: COACH_EFFECTIVENESS_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: coach
+    description: "Feature flag — when 'false', the nightly Coach Effectiveness recompute cron is disabled. Defaults to true. Use to quickly disable scoring if"
+  - name: COACH_MESSAGES_PER_MIN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: coach
+    description: "Phase 10 — per-user coach message sends per minute (POST /coach/clients/:id/messages). Defaults to 30; clamped to [1, 1000]."
+  - name: COACH_ONBOARDING_AUTO_START
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: coach
+    description: "Phase 6D — when 'true' (default), AdminService.promoteUser auto-starts the 6-step onboarding wizard for newly-promoted coaches. Set to 'fals"
+  - name: COMMUNITY_EVENT_LINK_HOSTS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: COMMUNITY_SEARCH_PAGE_SIZE
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: CONTRACT_PDF_BUCKET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: contracts
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: CONTRACT_PDF_URL_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: contracts
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: CORS_ORIGINS
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Comma-separated allow-list of browser origins. Empty = deny all browsers (the safe mobile-only default). Set to the coach console origin onc"
+  - name: CRM_LEAD_SYNC_DISABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: CRON_COACH_AI_INSIGHT
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: jobs
+    description: "Feature flag — set to 'on' to enable the weekly Coach AI insight digest cron. Default off so the cron is dormant in every environment until "
+  - name: DATABASE_URL
+    tier: hard
+    prod_default: MUST_SET
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Supabase pgbouncer pooler URL (port 6543, ?pgbouncer=true). Used by the runtime app for all query traffic. Required at boot."
+  - name: DATA_EXPORT_BUCKET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: DATA_EXPORT_DOWNLOAD_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: DATA_EXPORT_EXPIRY_DAYS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: DATA_EXPORT_FS_DIR
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: DATA_EXPORT_RATE_LIMIT_HRS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: DATA_EXPORT_TOKEN_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: DIAGNOSTIC_AI_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "Set to 'false' to skip Perplexity calls for /diagnostic/submit and store a placeholder roadmap. Defaults to true. Useful for CI / preview de"
+  - name: DIAGNOSTIC_RATE_LIMIT_PER_HOUR
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Per-IP hourly cap on POST /diagnostic/submit (named throttler `diagnostic-submit`). Defaults to 5; clamped to [1, 1000]."
+  - name: DIRECT_URL
+    tier: hard
+    prod_default: MUST_SET
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Supabase direct connection URL (port 5432, no pgbouncer). Used only by `prisma migrate deploy` in the Fly release_command. Migrations requir"
+  - name: DRIP_DISPATCHER_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: jobs
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: EXERCISEDB_API_HOST
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Phase 11 — override for the RapidAPI host the exercise library calls. Defaults to 'exercisedb.p.rapidapi.com'. Only set this for staging/tes"
+  - name: EXERCISEDB_API_KEY
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Phase 11 — RapidAPI key for the ExerciseDB catalog used by the workout builder. When unset, ExerciseLibraryService falls back to the bundled"
+  - name: FEATURE_COMMUNITY_API
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FEATURE_COMMUNITY_API_ALLOWLIST
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FEATURE_COMMUNITY_CLASSROOM_POSTS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FEATURE_COMMUNITY_DM
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FEATURE_COMMUNITY_EVENTS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FEATURE_COMMUNITY_PLAN_TAGS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FEATURE_COMMUNITY_PUSH
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FEATURE_COMMUNITY_REALTIME
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FEATURE_COMMUNITY_SEARCH
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FEATURE_COMMUNITY_TELEMETRY
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FEATURE_COMMUNITY_WEARABLE_PROMPTS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FEATURE_GOOGLE_CALENDAR_SYNC
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FEATURE_ROMAN_FIRST_PAYMENT
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FEATURE_WEARABLES_INGEST_POST
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FINANCE_API_BASE_URL
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Base URL of the finance backend (e.g. https://api.finance.thegrowthproject.app). When unset, admin federation endpoints return fitness-only "
+  - name: FINANCE_FEDERATION_TIMEOUT_MS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Per-call timeout for outbound finance federation requests in milliseconds. Defaults to 2500ms; clamp range is 250..15000."
+  - name: FINANCE_SERVICE_TOKEN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Service-to-service bearer token sent on every admin federation call as Authorization: Bearer <token>. Required whenever FINANCE_API_BASE_URL"
+  - name: FINANCE_SERVICE_TOKEN_NEXT
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Incoming federation bearer token during a zero-downtime rotation. When set alongside FINANCE_SERVICE_TOKEN, an inbound request to /admin/fed"
+  - name: FITBIT_CLIENT_ID
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FITBIT_CLIENT_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FITBIT_REDIRECT_URI
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: FITBIT_VERIFICATION_CODE
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: GARMIN_CLIENT_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: GARMIN_PUSH_TOKEN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: GARMIN_WEBHOOK_SALT
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: GDPR_SCRUB_BATCH_LIMIT
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Per-run cap on candidates the GDPR scrub worker will process. Defaults to 100; clamped to [1, 1000]."
+  - name: GDPR_SCRUB_DRY_RUN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Feature flag — when 'true', the GDPR scrub worker only reports candidate rows and does not write deleted_at or PII zero-outs. Default is rea"
+  - name: GIT_SHA
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: observability
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: GOOGLE_CALENDAR_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: GOOGLE_CALENDAR_WEBHOOK_TOKEN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: GOOGLE_CLIENT_ID
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Google OAuth client ID accepted as audience by the local Google ID-token verifier (POST /auth/recent-auth-token, provider=google). Without i"
+  - name: GOOGLE_CLIENT_IDS
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Comma-separated allow-list of Google OAuth client IDs accepted as audiences by the local Google ID-token verifier. Supersedes GOOGLE_CLIENT_"
+  - name: GOOGLE_MEET_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: GOOGLE_OAUTH_CLIENT_ID
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: GOOGLE_OAUTH_CLIENT_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: GOOGLE_OAUTH_REDIRECT_URI
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: GOOGLE_OAUTH_SCOPES
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: GUEST_CHECKOUT_PII_SALT
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "R43 — stable per-deploy salt fed into sha256(lower(email) || salt) for GuestCheckoutPiiScrubService. REQUIRED in staging/production: prodHar"
+  - name: HELLOSIGN_API_KEY
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: contracts
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: HELLOSIGN_CLIENT_ID
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: contracts
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: HELLOSIGN_TEST_MODE
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: contracts
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: IOS_BUNDLE_ID
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: JWT_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: KMS_KEY_ALIAS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: KMS_KEY_VERSION
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: KMS_MASTER_KEY
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: LANDING_CNAME_TARGET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: LANDING_VIEW_HASH_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: LEADERBOARD_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: LEADERBOARD_RECOMPUTE_CRON
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: LEGACY_PDF_RECEIPT_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: LOG_FORMAT
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: observability
+    description: "Phase 10 — 'json' (default) for machine-readable structured logs (Fly, Better Stack, Datadog). 'pretty' for human-friendly dev console outpu"
+  - name: LOG_LEVEL
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: observability
+    description: "Phase 10 — minimum log severity to emit. One of error, warn, log, debug, verbose. Defaults to 'log'. Lower levels add volume; 'warn' is a go"
+  - name: MARKETPLACE_IDEMPOTENCY_CLAIM_TTL_MS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: METRICS_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: observability
+    description: "Phase 10 — 'on' (default) enables the Prometheus /metrics endpoint and in-process counter tracking. 'off' disables both. Set to 'off' if you"
+  - name: MUSCLEWIKI_API_KEY
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "MuscleWiki exercise video API key (RapidAPI key). When set, the MuscleWiki provider returns stable MP4 video URLs for 1,800+ exercises. When"
+  - name: NODE_ENV
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: NOTIF_PREFS_PER_MIN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Phase 10 — per-user notification preference writes per minute (PUT /notifications/preferences). Defaults to 30; clamped to [1, 1000]."
+  - name: NUDGE_DETECTION_CRON
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: coach
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: OPENAI_API_KEY
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: OURA_CLIENT_ID
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: OURA_CLIENT_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: OURA_VERIFICATION_TOKEN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: PERPLEXITY_API_KEY
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "Perplexity API key. AI chat falls back to a deterministic responder when unset."
+  - name: PLAY_STORE_URL
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Google Play Store URL surfaced on the public invite landing page. Falls back to a com.growthproject.app placeholder when unset; set once the"
+  - name: POLAR_CLIENT_ID
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: POLAR_WEBHOOK_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: PORT
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: POSTHOG_HOST
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: observability
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: POSTHOG_KEY
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: observability
+    description: "PostHog project key for product analytics. AnalyticsModule is a no-op when unset."
+  - name: PROFILE_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Phase 10 — 'on' activates GET /debug/profile (30-second V8 CPU profile). Requires OWNER role. Defaults to 'off'. Leave off in production unl"
+  - name: PTM_RECOMPUTE_BATCH_LIMIT
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: jobs
+    description: "Per-run cap on the number of clients the PTM nightly cron recomputes. Defaults to 5000; clamped to [1, 50000]. Larger rosters are processed "
+  - name: PTM_RISK_BOARD_PAGE_SIZE
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Default page size for GET /admin/ptm/risk-board. Defaults to 50; clamped to [1, 100] regardless of caller-supplied limit."
+  - name: PTM_SCORING_CRON
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: jobs
+    description: "Override for the nightly PTM recompute cron expression. Defaults to '0 4 * * *' (04:00 UTC, 1h after the GDPR scrub at 03:00 UTC). Must be a"
+  - name: PTM_SCORING_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Feature flag — when 'false', the nightly PTM recompute cron and the admin teaching endpoints are disabled. Defaults to true (engine runs). U"
+  - name: PTM_WEIGHTED_ACTIVATION_OUTCOMES
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Override the minimum number of labelled ClientOutcome rows before the weighted v2 engine activates. Defaults to 20. Below this threshold eve"
+  - name: PUBLIC_APP_BASE_URL
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: PUBLIC_INVITE_BASE_URL
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Base URL used in /api/invite-codes responses and invite landing pages. Falls back to https://app.trygrowthproject.com/join when unset. MUST "
+  - name: PUBLIC_LISTING_CURSOR_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: PUBLIC_WEB_SIGNUP_URL
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Web signup target the invite landing page links to when the user has no app installed. Falls back to PUBLIC_INVITE_BASE_URL/<code> when unse"
+  - name: RATELIMIT_ANON_PER_MIN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Phase 10 — global default: max requests per minute per IP (unauthenticated). Applies to every route with no explicit @Throttle decorator. De"
+  - name: RATELIMIT_AUTHED_PER_MIN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Phase 10 — global default: max requests per minute per user-id (authenticated). Applies to every route with no explicit @Throttle decorator."
+  - name: RATELIMIT_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Phase 10 — master kill switch for all rate limiting. Set to 'off' only for load-test runs against staging. Any value other than 'off' leaves"
+  - name: RECEIPT_FS_DIR
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: RECENT_AUTH_SECRET
+    tier: prod
+    prod_default: MUST_SET
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Phase 10 — HMAC signing secret for short-lived re-auth tokens (X-Recent-Auth-Token). Required for account deletion and other sensitive actio"
+  - name: RECENT_AUTH_TTL_MS
+    tier: prod
+    prod_default: MUST_SET
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Phase 10 — validity window for re-auth tokens, in milliseconds. Must be a finite integer in [60000, 3600000] (1 min to 1 hour). Defaults to "
+  - name: REDIS_URL
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: RELEASE_VERSION
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: observability
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: RESEND_API_KEY
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: email
+    description: "R43 — Resend API key used to dispatch the guest-checkout welcome email. When unset, the guest checkout flow still completes (account + entit"
+  - name: RESEND_FROM_EMAIL
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: email
+    description: "R43 — From-address Resend uses for the guest-checkout welcome email (e.g. 'Growth Project <welcome@trygrowthproject.com>'). Falls back to a "
+  - name: SCHEDULING_WEBHOOK_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: SENTRY_DSN
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: observability
+    description: "Sentry DSN for server-side error reporting. instrument.ts no-ops when unset, so absence is safe at boot — but prod errors are invisible unti"
+  - name: SENTRY_TRACES_SAMPLE_RATE
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: observability
+    description: "Phase 10 — fraction of transactions sampled for Sentry Performance (0.0–1.0). Defaults to 0.1 (10%). Errors are always captured at 1.0 regar"
+  - name: STOREFRONT_BASE_URL
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "R43 — base URL of the Next.js storefront (e.g. https://joingrowthproject.com). Used to build share_url responses for POST /v1/coach/packages"
+  - name: STRIPE_API_TIMEOUT_MS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: STRIPE_BILLING_PORTAL_RETURN_URL
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Return URL Stripe redirects coaches to after the Customer Portal session ends. Defaults to the console billing screen when unset."
+  - name: STRIPE_CHECKOUT_CANCEL_URL
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Stripe Checkout cancel_url. Used by CheckoutService when the client did not specify one inline. Falls back to growthproject://checkout/cance"
+  - name: STRIPE_CHECKOUT_SUCCESS_URL
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Stripe Checkout success_url. Used by CheckoutService when the client did not specify one inline. Falls back to growthproject://checkout/succ"
+  - name: STRIPE_CONNECT_REFRESH_URL
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: STRIPE_CONNECT_RETURN_URL
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: STRIPE_CUSTOMER_PORTAL_LOGIN_URL
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Hosted Stripe Customer Portal login link (https://billing.stripe.com/p/login/...). Used as a static fallback by /v1/coach/me/billing/portal-"
+  - name: STRIPE_PRICE_ENTERPRISE
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: STRIPE_PRICE_GROWTH
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: STRIPE_PRICE_ID_FINANCE
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Stripe price id for the finance vertical. Currently unused — set when a second price exists."
+  - name: STRIPE_PRICE_ID_FITNESS
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Stripe price id for the flat coach SaaS plan. Read at request time by start-subscription / portal-session controllers; safe to leave unset u"
+  - name: STRIPE_PRICE_PRO
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: STRIPE_PRICE_STAFF_SEAT
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: STRIPE_PUBLISHABLE_KEY
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "R43 storefront — publishable key embedded in the guest-checkout payment response so the browser Stripe.js SDK can confirm the PaymentIntent."
+  - name: STRIPE_SECRET_KEY
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Stripe API key used by BillingService for portal/subscription calls. Coach/owner billing routes return 400 STRIPE_NOT_CONFIGURED when unset,"
+  - name: STRIPE_WEBHOOK_SECRET
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "HMAC signing secret for /v1/webhooks/stripe. Without it the webhook controller rejects every request with 400 — no boot dependency. Set this"
+  - name: STRIPE_WEBHOOK_SECRET_NEXT
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Incoming Stripe webhook signing secret during a zero-downtime rotation. When set alongside STRIPE_WEBHOOK_SECRET, a webhook request is accep"
+  - name: SUPABASE_ANON_KEY
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: SUPABASE_REDIRECT_URL
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: SUPABASE_SERVICE_ROLE_KEY
+    tier: hard
+    prod_default: MUST_SET
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Supabase service-role key for server-side admin calls."
+  - name: SUPABASE_URL
+    tier: hard
+    prod_default: MUST_SET
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Supabase project URL for JWKS verification + admin API."
+  - name: SUPABASE_VOICE_BUCKET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Phase 6C — Supabase Storage bucket name for voice note objects. Defaults to 'voice-notes'. Bucket must exist in the Supabase project; signed"
+  - name: USDA_API_KEY
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: VOICE_NOTE_MAX_BYTES
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: VOICE_NOTE_MAX_DURATION_MS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: VOICE_NOTE_MAX_DURATION_SEC
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Phase 6C — server-enforced max duration for voice attachments on coach <-> client messages. Defaults to 300; clamped to [10, 600]. Validated"
+  - name: VOICE_NOTE_MAX_SIZE_MB
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Phase 6C — server-enforced max file size in megabytes for voice attachments. Defaults to 5; clamped to [1, 25]."
+  - name: VOICE_SIGNED_URL_TTL_SEC
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: WAHOO_CLIENT_ID
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: WAHOO_CLIENT_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: WAHOO_WEBHOOK_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: WAHOO_WEBHOOK_TOKEN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: WEARABLES_OAUTH_REDIRECT_BASE_URL
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: WEARABLE_PROCESSED_EVENT_RETENTION_DAYS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Retention window (in days) for the WearableProcessedEvent webhook-idempotency ledger. The daily prune deletes rows whose processed_at is old"
+  - name: WEEKLY_DIGEST_CRON
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: jobs
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: WHOOP_CLIENT_ID
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: WHOOP_CLIENT_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: WHOOP_WEBHOOK_SALT
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: WHOOP_WEBHOOK_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: WITHINGS_CLIENT_ID
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: WITHINGS_VERIFICATION_TOKEN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: WITHINGS_WEBHOOK_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: YMOVE_API_KEY
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "YMove exercise video API key (prefix: ym_). When set, the YMove provider returns HLS video URLs (via Bunny CDN) for up to 698 exercises. Whe"
+  - name: ZOOM_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: unowned
+    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+
+  # ── H4 fixer (F-A02 / F-B04): bracket-notation + literal-bracket env vars
+  # surfaced by the AST-aware discovery pass. Feature flags default OFF and
+  # are operator-decided (auto_flip_on_in_prod: false). The Fly platform vars
+  # are injected by the Fly runtime / set as secrets. ──
+  - name: FEATURE_COMMUNITY_ACKS
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Community coach-ack envelope feature flag (v2-2). Read via process.env[FEATURE_COMMUNITY_ACKS_ENV]; default OFF until rollout."
+  - name: FEATURE_COMMUNITY_AI_TRIAGE
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Community AI inbox-triage feature flag (v2-4). Read via process.env[FEATURE_COMMUNITY_AI_TRIAGE_ENV]; default OFF (kill-switch)."
+  - name: FEATURE_COMMUNITY_CHALLENGES
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Community challenges feature flag (v3-1). Read via process.env[FEATURE_COMMUNITY_CHALLENGES]; default OFF until rollout."
+  - name: FEATURE_COMMUNITY_SCHEMA
+    tier: feature
+    prod_default: ON
+    # Canary auto-flip (F-B12): boolean ON-default master switch — safe to flip to
+    # "true" in prod; the var is read as ON unless explicitly "false".
+    auto_flip_on_in_prod: true
+    owner: community
+    description: "Community schema-readiness master switch (v1-1). Read via process.env[FEATURE_COMMUNITY_SCHEMA_ENV]; ON unless explicitly 'false'."
+  - name: FEATURE_COMMUNITY_VOICE_NOTES
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Community voice-notes feature flag (v3-3). Read via process.env[FEATURE_COMMUNITY_VOICE_NOTES]; default OFF until rollout."
+  - name: FEATURE_WEARABLES_CLOUD_CONNECTORS
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Wearables cloud-connectors master switch (P0-0B). Read via process.env[FEATURE_WEARABLES_CLOUD_CONNECTORS_ENV]; default OFF."
+  - name: FLY_API_TOKEN
+    tier: prod
+    prod_default: MUST_SET
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Fly.io API token used by the SOC2 evidence collector to read app + secrets metadata. Set as a Fly secret; never auto-flipped."
+  - name: FLY_APP_NAME
+    tier: prod
+    prod_default: MUST_SET
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Fly.io application name. Required by auto-flipper apply mode (fly secrets set --app) and by the SOC2 evidence collector."
+  - name: FLY_PRIMARY_REGION
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Fly.io primary region, injected by the Fly runtime. Read by the SOC2 evidence collector; absent locally is acceptable."
+  - name: PRIMARY_REGION
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Deployment primary region fallback read by the SOC2 evidence collector when FLY_PRIMARY_REGION is unset. Optional."
+  - name: DELETION_FINALIZE_CRON
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Cron schedule for the account-deletion finalize job. Optional; absent falls back to the in-code default schedule."
