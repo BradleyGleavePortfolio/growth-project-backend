@@ -1294,3 +1294,74 @@ switches:
     auto_flip_on_in_prod: false
     owner: unowned
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
+
+  # ── H4 fixer (F-A02 / F-B04): bracket-notation + literal-bracket env vars
+  # surfaced by the AST-aware discovery pass. Feature flags default OFF and
+  # are operator-decided (auto_flip_on_in_prod: false). The Fly platform vars
+  # are injected by the Fly runtime / set as secrets. ──
+  - name: FEATURE_COMMUNITY_ACKS
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Community coach-ack envelope feature flag (v2-2). Read via process.env[FEATURE_COMMUNITY_ACKS_ENV]; default OFF until rollout."
+  - name: FEATURE_COMMUNITY_AI_TRIAGE
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Community AI inbox-triage feature flag (v2-4). Read via process.env[FEATURE_COMMUNITY_AI_TRIAGE_ENV]; default OFF (kill-switch)."
+  - name: FEATURE_COMMUNITY_CHALLENGES
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Community challenges feature flag (v3-1). Read via process.env[FEATURE_COMMUNITY_CHALLENGES]; default OFF until rollout."
+  - name: FEATURE_COMMUNITY_SCHEMA
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Community schema-readiness master switch (v1-1). Read via process.env[FEATURE_COMMUNITY_SCHEMA_ENV]; ON unless explicitly 'false'."
+  - name: FEATURE_COMMUNITY_VOICE_NOTES
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Community voice-notes feature flag (v3-3). Read via process.env[FEATURE_COMMUNITY_VOICE_NOTES]; default OFF until rollout."
+  - name: FEATURE_WEARABLES_CLOUD_CONNECTORS
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: wearables
+    description: "Wearables cloud-connectors master switch (P0-0B). Read via process.env[FEATURE_WEARABLES_CLOUD_CONNECTORS_ENV]; default OFF."
+  - name: FLY_API_TOKEN
+    tier: prod
+    prod_default: MUST_SET
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Fly.io API token used by the SOC2 evidence collector to read app + secrets metadata. Set as a Fly secret; never auto-flipped."
+  - name: FLY_APP_NAME
+    tier: prod
+    prod_default: MUST_SET
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Fly.io application name. Required by auto-flipper apply mode (fly secrets set --app) and by the SOC2 evidence collector."
+  - name: FLY_PRIMARY_REGION
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Fly.io primary region, injected by the Fly runtime. Read by the SOC2 evidence collector; absent locally is acceptable."
+  - name: PRIMARY_REGION
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Deployment primary region fallback read by the SOC2 evidence collector when FLY_PRIMARY_REGION is unset. Optional."
+  - name: DELETION_FINALIZE_CRON
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Cron schedule for the account-deletion finalize job. Optional; absent falls back to the in-code default schedule."
