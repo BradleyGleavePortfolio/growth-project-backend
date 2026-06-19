@@ -24,6 +24,13 @@
 // never auto-flipped — they need human judgement — so they land in to_skip.
 
 import { execFileSync } from 'node:child_process';
+import {
+  accessSync,
+  constants as fsConstants,
+  realpathSync,
+  statSync,
+  type Stats,
+} from 'node:fs';
 import * as path from 'node:path';
 import type { RegistryRow } from './registry-loader';
 import { RegistryParseError } from './registry-loader';
@@ -36,19 +43,63 @@ export const AUDIT_OPERATOR = 'Bradley Gleave';
 export const FLY_BIN_ENV = 'FLY_BIN';
 /** The bare default that relies on PATH resolution (operators SHOULD override). */
 export const FLY_BIN_DEFAULT = 'flyctl';
+/**
+ * Env flag that forces an absolute, resolved {@link FLY_BIN} regardless of
+ * `NODE_ENV` (F003). When `"true"`, the bare PATH-resolved default is REJECTED
+ * at module load — used to lock CI/staging/prod down explicitly.
+ */
+export const FLY_BIN_REQUIRE_ABSOLUTE_ENV = 'FLY_BIN_REQUIRE_ABSOLUTE';
+
+/**
+ * Filesystem operations the resolver depends on, injectable so tests never
+ * touch a real binary (F003). Defaults to the real `node:fs` sync calls.
+ */
+export interface FlyBinFs {
+  realpathSync: (p: string) => string;
+  statSync: (p: string) => Pick<Stats, 'isFile'>;
+  accessSync: (p: string, mode: number) => void;
+}
+
+const DEFAULT_FLY_BIN_FS: FlyBinFs = {
+  realpathSync: (p) => realpathSync(p),
+  statSync: (p) => statSync(p),
+  accessSync: (p, mode) => accessSync(p, mode),
+};
+
+/**
+ * Non-strict environments where the bare PATH default is tolerated: `development`
+ * and the unit-test runner (`test`), plus an unset NODE_ENV (local shells). Any
+ * other concrete NODE_ENV (production / staging / ci) is STRICT and rejects the
+ * bare default on this secret-mutating path (F003). An explicit
+ * FLY_BIN_REQUIRE_ABSOLUTE=true forces strict regardless of NODE_ENV.
+ */
+const NON_STRICT_NODE_ENVS: ReadonlySet<string> = new Set(['development', 'test']);
+function isStrictEnv(env: NodeJS.ProcessEnv): boolean {
+  if (env[FLY_BIN_REQUIRE_ABSOLUTE_ENV] === 'true') return true;
+  return env.NODE_ENV !== undefined && !NON_STRICT_NODE_ENVS.has(env.NODE_ENV);
+}
+
+/**
+ * The canonical (realpath-resolved) absolute path we will actually exec, cached
+ * at module load so {@link assertFlyBinUnchanged} can detect a TOCTOU swap. It
+ * is `undefined` when {@link FLY_BIN} is the bare PATH default (dev only).
+ */
+let _resolvedFlyBinPath: string | undefined;
 
 /**
  * Resolve the flyctl binary path from `FLY_BIN`, validating it at module load
- * (F007 — R24/R58/R95). A PATH-resolved binary on a secret-mutating path is a
- * spoof vector: anything earlier on PATH named `flyctl` would receive every
- * secret over argv. So:
- *   - An explicit `FLY_BIN` MUST be an absolute path — a relative override is
- *     rejected at load time (it is almost certainly a mistake or an attack).
- *   - The bare default `flyctl` is still permitted for local/dev ergonomics,
- *     but emits a one-time WARN on first use so operators see the PATH
- *     dependency and pin an absolute path in CI/staging/prod.
+ * (F003/F007 — R24/R58/R95/R110). A PATH-resolved binary on a secret-mutating
+ * path is a spoof vector, and an absolute SYMLINK can still point at a
+ * malicious target. So:
+ *   - An explicit `FLY_BIN` MUST be an absolute path (relative = rejected).
+ *   - The absolute path is `realpathSync`-resolved; the resolved target must be
+ *     a REGULAR FILE and `X_OK`-executable, else rejected. The resolved
+ *     canonical path is cached for per-invocation TOCTOU revalidation.
+ *   - The bare default `flyctl` is REJECTED in CI/staging/prod (NODE_ENV !==
+ *     "development") or when FLY_BIN_REQUIRE_ABSOLUTE=true. In development only,
+ *     it is permitted with a one-time WARN.
  */
-function resolveFlyBin(env: NodeJS.ProcessEnv): string {
+function resolveFlyBin(env: NodeJS.ProcessEnv, fs: FlyBinFs = DEFAULT_FLY_BIN_FS): string {
   const override = env[FLY_BIN_ENV];
   if (override !== undefined && override !== FLY_BIN_DEFAULT) {
     if (!path.isAbsolute(override)) {
@@ -58,12 +109,90 @@ function resolveFlyBin(env: NodeJS.ProcessEnv): string {
           `absolute binary path, or unset it to fall back to PATH-resolved "${FLY_BIN_DEFAULT}".`,
       );
     }
-    return override;
+    // F003: resolve symlinks to their real target, then verify it is a regular
+    // executable file. A symlink to a malicious binary, a dangling symlink, or
+    // a non-executable target are all rejected here.
+    const resolved = resolveAndVerifyBinary(override, fs);
+    _resolvedFlyBinPath = resolved;
+    return resolved;
   }
+  // Bare PATH default: forbidden on any secret-mutating path outside dev.
+  if (isStrictEnv(env)) {
+    throw new Error(
+      `${FLY_BIN_ENV} is unset and a bare PATH-resolved "${FLY_BIN_DEFAULT}" is not allowed ` +
+        `outside development (NODE_ENV=${env.NODE_ENV ?? 'unset'}). Set ${FLY_BIN_ENV} to an ` +
+        `absolute binary path on this secret-mutating path.`,
+    );
+  }
+  _resolvedFlyBinPath = undefined;
   return FLY_BIN_DEFAULT;
 }
 
-/** Binary we shell out to; an absolute `FLY_BIN` override, else PATH-resolved `flyctl`. */
+/**
+ * Realpath-resolve an absolute candidate and verify the canonical target is a
+ * regular, executable file (F003). Throws a descriptive error otherwise. Shared
+ * by module-load resolution and per-invocation TOCTOU revalidation.
+ */
+function resolveAndVerifyBinary(candidate: string, fs: FlyBinFs): string {
+  let resolved: string;
+  try {
+    resolved = fs.realpathSync(candidate);
+  } catch {
+    throw new Error(
+      `${FLY_BIN_ENV}="${candidate}" could not be resolved (dangling symlink or missing target); ` +
+        `refusing to run flyctl on a secret-mutating path.`,
+    );
+  }
+  let stat: Pick<Stats, 'isFile'>;
+  try {
+    stat = fs.statSync(resolved);
+  } catch {
+    throw new Error(
+      `${FLY_BIN_ENV} resolved target "${resolved}" could not be stat'd; refusing to run flyctl.`,
+    );
+  }
+  if (!stat.isFile()) {
+    throw new Error(
+      `${FLY_BIN_ENV} resolved target "${resolved}" is not a regular file; refusing to run flyctl.`,
+    );
+  }
+  try {
+    fs.accessSync(resolved, fsConstants.X_OK);
+  } catch {
+    throw new Error(
+      `${FLY_BIN_ENV} resolved target "${resolved}" is not executable; refusing to run flyctl.`,
+    );
+  }
+  return resolved;
+}
+
+/**
+ * TOCTOU revalidation (F003): before EVERY flyctl invocation, re-`statSync` the
+ * cached canonical path and refuse if it has been swapped for a non-regular or
+ * non-executable file since module load. No-op when running the bare PATH
+ * default (dev only) since there is no canonical path to revalidate.
+ */
+export function assertFlyBinUnchanged(fs: FlyBinFs = DEFAULT_FLY_BIN_FS): void {
+  if (_resolvedFlyBinPath === undefined) return;
+  resolveAndVerifyBinary(_resolvedFlyBinPath, fs);
+}
+
+/** Test-only: re-run resolution with injected env/fs, returning the result. */
+export function __resolveFlyBinForTest(env: NodeJS.ProcessEnv, fs: FlyBinFs): string {
+  return resolveFlyBin(env, fs);
+}
+
+/** Test-only: read the cached canonical resolved path (or undefined). */
+export function __getResolvedFlyBinPathForTest(): string | undefined {
+  return _resolvedFlyBinPath;
+}
+
+/** Test-only: clear the cached canonical path so suites cannot contaminate each other. */
+export function __resetResolvedFlyBinForTest(): void {
+  _resolvedFlyBinPath = undefined;
+}
+
+/** Binary we shell out to; an absolute, verified `FLY_BIN` override, else (dev) `flyctl`. */
 export const FLY_BIN = resolveFlyBin(process.env);
 
 /** Guards the one-time PATH-dependency warning for the bare-`flyctl` default. */
@@ -152,19 +281,33 @@ export function redactSecretValues(text: string, secretValues?: Iterable<string>
   if (text.length === 0) return text;
   let out = text;
 
-  // Pass 1 — value-based: replace every known literal secret wherever it
-  // appears (longest first so a value that is a prefix of another is not
-  // partially revealed). Empty/whitespace-only values are ignored.
-  if (secretValues !== undefined) {
-    const literals = Array.from(new Set(Array.from(secretValues)))
-      .filter((v) => v.trim().length > 0)
-      .sort((a, b) => b.length - a.length);
-    for (const literal of literals) {
-      out = out.replace(new RegExp(escapeRegExp(literal), 'g'), REDACTED);
-    }
-  }
+  // De-duplicated, longest-first literal set, reused by every pass below so a
+  // value that is a prefix of another is never partially revealed.
+  const literals =
+    secretValues === undefined
+      ? []
+      : Array.from(new Set(Array.from(secretValues)))
+          .filter((v) => v.trim().length > 0)
+          .sort((a, b) => b.length - a.length);
 
-  // Pass 2 — pattern-based, applied in most-specific-first order.
+  // Pass 1 — value-based: replace every known literal secret wherever it
+  // appears, even in free-form prose with no KEY=VAL shape (F001).
+  out = redactLiterals(out, literals);
+
+  // Pass 2 — structural JSON walk (F001 nested/escaped). If the input parses as
+  // JSON, walk the tree and redact every value at ANY depth whose KEY signals a
+  // secret, then re-stringify. This is the only pass that reaches a secret
+  // nested under a non-secret outer key (`{"error":{"SECRET":"…"}}`), which the
+  // greedy outer regex below cannot. Escaped-JSON strings
+  // (`"{\"SECRET\":\"…\"}"`) are unescaped and re-walked to a bounded fixed point.
+  out = redactStructuralJson(out, literals);
+
+  // Pass 3 — base64 (F001): if a value alternative looks base64-shaped, decode
+  // it and re-run literal + structural redaction on the decoded text; if the
+  // decoded form contained a known secret, drop the whole encoded blob to ***.
+  out = redactBase64Values(out, literals);
+
+  // Pass 4 — pattern-based, applied in most-specific-first order.
 
   // (a) HTTP auth headers: `Authorization: Bearer <secret>` / `Authorization: <scheme> <secret>`.
   out = out.replace(
@@ -209,8 +352,133 @@ export function redactSecretValues(text: string, secretValues?: Iterable<string>
   out = out.replace(/([A-Za-z][A-Za-z0-9_-]*)\s*=\s*[^\s'"&]+/g, (m, key: string) =>
     isSecretKey(key) ? `${key}=${REDACTED}` : m,
   );
+  // (h) YAML block scalar (F001): `KEY: |` / `KEY: >` followed by more-indented
+  //     continuation lines that hold the value. Redact each line's content.
+  out = redactYamlBlockScalars(out);
 
   return out;
+}
+
+/**
+ * Pass 1 helper: replace every known literal secret wherever it appears
+ * (longest-first so a prefix value is not partially revealed).
+ */
+function redactLiterals(text: string, literals: readonly string[]): string {
+  let out = text;
+  for (const literal of literals) {
+    out = out.replace(new RegExp(escapeRegExp(literal), 'g'), REDACTED);
+  }
+  return out;
+}
+
+/**
+ * Recursively redact a parsed-JSON value: any object entry whose KEY is
+ * secret-named has its value collapsed to `***` at ANY depth; other values are
+ * walked. Closes the nested-under-a-non-secret-outer-key leak
+ * (`{"error":{"SECRET":"..."}}`) the greedy outer regex cannot reach (F001).
+ */
+function redactJsonNode(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map((el) => redactJsonNode(el));
+  if (node !== null && typeof node === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      out[key] = isSecretKey(key) ? REDACTED : redactJsonNode(value);
+    }
+    return out;
+  }
+  return node;
+}
+
+/**
+ * Pass 2 helper (F001): structural + escaped-JSON redaction to a bounded fixed
+ * point. If `text` parses as JSON, walk it and re-stringify with secret-named
+ * fields collapsed. If it does not parse but contains escaped-quote JSON, one
+ * layer of escapes is removed and the parse retried. Capped at 3 iterations.
+ */
+function redactStructuralJson(text: string, literals: readonly string[]): string {
+  let current = text;
+  for (let i = 0; i < 3; i++) {
+    const trimmed = current.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed: unknown = JSON.parse(trimmed);
+        return redactLiterals(JSON.stringify(redactJsonNode(parsed)), literals);
+      } catch {
+        // not parseable as-is — fall through to the unescape attempt
+      }
+    }
+    if (current.includes('\\"')) {
+      const unescaped = current.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      if (unescaped !== current) {
+        current = unescaped;
+        continue;
+      }
+    }
+    break;
+  }
+  return current;
+}
+
+/** Base64 alphabet, >=20 chars, optional `=`/`==` padding — a likely encoded blob. */
+const BASE64_SHAPED = /[A-Za-z0-9+/]{20,}={0,2}/g;
+
+/**
+ * Pass 3 helper (F001): find base64-shaped runs, decode them, and if the
+ * decoded text contains a known literal secret, collapse the ENTIRE encoded run
+ * to `***`. Padding (`=`) is matched explicitly so an over-greedy `=` cannot
+ * break the redactor or leave a tail uncovered.
+ */
+function redactBase64Values(text: string, literals: readonly string[]): string {
+  if (literals.length === 0) return text;
+  return text.replace(BASE64_SHAPED, (candidate) => {
+    let decoded: string;
+    try {
+      decoded = Buffer.from(candidate, 'base64').toString('utf8');
+    } catch {
+      return candidate;
+    }
+    const norm = (s: string): string => s.replace(/=+$/, '');
+    if (norm(Buffer.from(decoded, 'utf8').toString('base64')) !== norm(candidate)) {
+      return candidate; // not a clean round-trip — leave as-is
+    }
+    return literals.some((lit) => decoded.includes(lit)) ? REDACTED : candidate;
+  });
+}
+
+/**
+ * Pass (h) helper (F001): redact YAML block scalars. A header line
+ * `KEY: |` / `KEY: >` (with optional chomping/indent indicators) whose KEY is
+ * secret-named is followed by more-indented continuation lines holding the
+ * value; collapse each continuation line's content to `***` while keeping its
+ * indentation. Non-secret block headers are left untouched.
+ */
+function redactYamlBlockScalars(text: string): string {
+  if (!text.includes('\n')) return text;
+  const lines = text.split('\n');
+  const headerRe = /^(\s*)([A-Za-z][A-Za-z0-9_-]*)\s*:\s*[|>][+-]?\s*$/;
+  let i = 0;
+  while (i < lines.length) {
+    const m = headerRe.exec(lines[i]);
+    if (m && isSecretKey(m[2])) {
+      const headerIndent = m[1].length;
+      let j = i + 1;
+      while (j < lines.length) {
+        const line = lines[j];
+        if (line.trim().length === 0) {
+          j++;
+          continue;
+        }
+        const indent = line.length - line.trimStart().length;
+        if (indent <= headerIndent) break;
+        lines[j] = `${line.slice(0, indent)}${REDACTED}`;
+        j++;
+      }
+      i = j;
+      continue;
+    }
+    i++;
+  }
+  return lines.join('\n');
 }
 
 /** Thrown when a flyctl invocation exceeds {@link FLY_TIMEOUT_MS}. */
@@ -238,6 +506,34 @@ export class AutoFlipperRegistryError extends Error {
     this.causeName = causeName;
     Object.setPrototypeOf(this, AutoFlipperRegistryError.prototype);
   }
+}
+
+/**
+ * Allowlist of cause-class names that are safe to surface verbatim in
+ * `causeName` (F002). An attacker (or accidental upstream) can throw
+ * `class SecretValueABC123 extends Error {}` and `error.constructor.name` would
+ * otherwise leak that name into log/audit output. Any name NOT in this set is
+ * replaced with `"UnknownError"`, and the chosen name is additionally run
+ * through the value-aware redactor before assignment (defence in depth, R125).
+ */
+export const SAFE_CAUSE_NAMES: ReadonlySet<string> = new Set([
+  'RegistryParseError',
+  'SyntaxError',
+  'TypeError',
+  'Error',
+  'RangeError',
+]);
+
+/**
+ * Map an arbitrary thrown error to a SAFE, redacted cause name (F002). Returns
+ * one of {@link SAFE_CAUSE_NAMES} verbatim, or `"UnknownError"` for anything
+ * else; the result is always passed through the value-aware redactor so a name
+ * that itself embeds a plan secret cannot leak.
+ */
+export function safeCauseName(err: unknown, secretValues?: ReadonlyArray<string>): string {
+  const raw = err instanceof Error ? err.constructor.name : typeof err;
+  const allowed = SAFE_CAUSE_NAMES.has(raw) ? raw : 'UnknownError';
+  return redactSecretValues(allowed, secretValues);
 }
 
 /** The value a switch should hold in prod, derived from its prod_default. */
@@ -414,6 +710,10 @@ export function runFlyctl(args: readonly string[]): void {
   // F007: surface the PATH-dependency once if no absolute FLY_BIN was pinned,
   // before we hand a secret to a possibly-spoofable binary.
   warnIfPathResolvedFlyBin();
+  // F003: TOCTOU revalidation — re-verify the cached canonical binary is still a
+  // regular executable file before every invocation (no-op for the dev PATH
+  // default). Refuses if the path was swapped since module load.
+  assertFlyBinUnchanged();
   try {
     execFileSync(FLY_BIN, [...args], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -431,8 +731,27 @@ export function runFlyctl(args: readonly string[]): void {
         `${FLY_BIN} ${flyArgvContext(args)} timed out after ${FLY_TIMEOUT_MS}ms and was sent SIGTERM`,
       );
     }
-    throw new Error(flyErrorMessage(err));
+    // F001: seed the value-aware redactor with the literal secret values from
+    // this invocation's argv so a stderr/message echo of the raw value is
+    // scrubbed even when it carries no KEY=VAL shape.
+    throw new Error(flyErrorMessage(err, argvSecretValues(args)));
   }
+}
+
+/**
+ * Extract the literal VALUE side of each `KEY=VALUE` argv pair so the redactor
+ * can scrub it from any error echo (F001). Never returns the KEY or the verbs.
+ */
+function argvSecretValues(args: readonly string[]): string[] {
+  const values: string[] = [];
+  for (const a of args) {
+    const eq = a.indexOf('=');
+    if (eq > 0 && /^[A-Za-z][A-Za-z0-9_-]*$/.test(a.slice(0, eq))) {
+      const value = a.slice(eq + 1);
+      if (value.length > 0) values.push(value);
+    }
+  }
+  return values;
 }
 
 /** ENOENT from execFileSync means the binary is not installed. */
@@ -468,16 +787,16 @@ function flyArgvContext(args: readonly string[]): string {
  * stderr ("secret FEATURE_SECRET=true is rejected"), so every branch here runs
  * the text through {@link redactSecretValues} before returning it.
  */
-export function flyErrorMessage(err: unknown): string {
+export function flyErrorMessage(err: unknown, secretValues?: ReadonlyArray<string>): string {
   if (typeof err === 'object' && err !== null) {
     const e = err as { stderr?: unknown; message?: unknown };
     if (e.stderr != null) {
       const text = Buffer.isBuffer(e.stderr) ? e.stderr.toString('utf8') : String(e.stderr);
       const trimmed = text.trim();
-      if (trimmed.length > 0) return redactSecretValues(trimmed);
+      if (trimmed.length > 0) return redactSecretValues(trimmed, secretValues);
     }
     if (typeof e.message === 'string' && e.message.length > 0) {
-      return redactSecretValues(e.message);
+      return redactSecretValues(e.message, secretValues);
     }
   }
   return `${FLY_BIN} secrets set failed`;
@@ -689,8 +1008,12 @@ export async function flip(
         `auto-flipper could not load the registry: ${redactSecretValues(err.message)}`,
       );
     }
-    // F005: any other error may carry a secret in its message. Do NOT echo it.
-    const causeName = err instanceof Error ? err.name : typeof err;
+    // F005/F002: any other error may carry a secret in its message AND its
+    // class NAME (an attacker can throw `class SecretValueABC extends Error{}`).
+    // Do NOT echo the message; the cause name is allowlisted to a fixed set and
+    // redacted against the known current Fly values before it is surfaced.
+    const knownValues = Object.values(current).filter((v) => v.length > 0);
+    const causeName = safeCauseName(err, knownValues);
     throw new AutoFlipperRegistryError(
       `auto-flipper could not load the registry (cause: ${causeName})`,
       causeName,

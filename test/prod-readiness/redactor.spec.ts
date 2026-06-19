@@ -17,7 +17,7 @@
 // One `describe` per format listed in the F001 brief; the coverage matrix in
 // the fixer report is generated from these block names.
 
-import { redactSecretValues, REDACTED } from './auto-flipper';
+import { redactSecretValues, REDACTED, flyErrorMessage } from './auto-flipper';
 
 /**
  * Canonical synthetic secret values. NONE of these is a real credential — the
@@ -206,6 +206,125 @@ describe('redactSecretValues — value-based + pattern-based run together', () =
     const out = redactSecretValues(text, [SECRET]);
     expect(out).not.toContain(SECRET);
     expect(out).toContain(`API_KEY=${REDACTED}`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H4.F R3 — F001 hardening: structural JSON walk, escaped JSON, JSON-in-array,
+// YAML block + folded scalars, base64-encoded values, and flyErrorMessage wired
+// WITH plan secrets. Every test plants a SYNTHETIC secret and asserts it is GONE.
+// ---------------------------------------------------------------------------
+
+/** R3 synthetic secret family — never a real credential (brief constraint + R24). */
+const NESTED = 'sk_test_FAKE_NESTED_REDACTOR';
+
+describe('R3 F001 — nested JSON under a non-secret outer key (structural walk)', () => {
+  it('redacts a 1-deep secret nested under a non-secret "error" key', () => {
+    const out = redactSecretValues(`{"error":{"SECRET":"${NESTED}"}}`);
+    expect(out).not.toContain(NESTED);
+    expect(out).toContain(REDACTED);
+  });
+
+  it('redacts a 3-deep nested secret', () => {
+    const out = redactSecretValues(`{"a":{"b":{"c":{"api_key":"${NESTED}"}}}}`);
+    expect(out).not.toContain(NESTED);
+    expect(out).toContain(REDACTED);
+    expect(out).toContain('"a"'); // structure preserved
+  });
+
+  it('preserves a benign sibling value while redacting the nested secret', () => {
+    const out = redactSecretValues(`{"meta":{"count":5,"token":"${NESTED}"}}`);
+    expect(out).not.toContain(NESTED);
+    expect(out).toContain('5'); // benign numeric sibling survives
+  });
+});
+
+describe('R3 F001 — JSON in array', () => {
+  it('redacts a secret nested inside an array of objects', () => {
+    const out = redactSecretValues(`{"errors":[{"SECRET":"${NESTED}"}]}`);
+    expect(out).not.toContain(NESTED);
+    expect(out).toContain(REDACTED);
+  });
+});
+
+describe('R3 F001 — escaped JSON (unescape to fixed point)', () => {
+  it('redacts a secret inside an escaped-quote JSON string', () => {
+    const escaped = `"{\\"SECRET\\":\\"${NESTED}\\"}"`;
+    const out = redactSecretValues(escaped);
+    expect(out).not.toContain(NESTED);
+    expect(out).toContain(REDACTED);
+  });
+
+  it('redacts a doubly-escaped nested secret within the 3-iteration cap', () => {
+    const inner = `{\\"token\\":\\"${NESTED}\\"}`;
+    const out = redactSecretValues(`{"payload":"${inner}"}`, [NESTED]);
+    expect(out).not.toContain(NESTED);
+    expect(out).toContain(REDACTED);
+  });
+});
+
+describe('R3 F001 — YAML block scalar (| literal) and folded (> ) forms', () => {
+  it('redacts a secret on the indented line of a literal block scalar', () => {
+    const yaml = ['SECRET: |', `  ${NESTED}`].join('\n');
+    const out = redactSecretValues(yaml);
+    expect(out).not.toContain(NESTED);
+    expect(out).toContain('SECRET: |'); // header preserved
+    expect(out).toContain(REDACTED);
+  });
+
+  it('redacts a secret in a folded (>) block scalar', () => {
+    const yaml = ['SECRET: >', `  ${NESTED}`].join('\n');
+    const out = redactSecretValues(yaml);
+    expect(out).not.toContain(NESTED);
+    expect(out).toContain('SECRET: >');
+    expect(out).toContain(REDACTED);
+  });
+
+  it('redacts multi-line block scalar content and keeps a benign block intact', () => {
+    const yaml = ['password: |', `  ${NESTED}`, `  ${NESTED}-second`, 'count: |', '  5'].join('\n');
+    const out = redactSecretValues(yaml);
+    expect(out).not.toContain(NESTED);
+    expect(out).toContain('count: |'); // benign block header untouched
+    expect(out).toContain('5'); // benign block content untouched
+  });
+});
+
+describe('R3 F001 — base64-encoded secret with = padding', () => {
+  it('redacts the whole base64 blob when it decodes to a known secret', () => {
+    const b64 = Buffer.from(NESTED, 'utf8').toString('base64'); // ends with = padding
+    expect(b64).toMatch(/=$/); // sanity: this fixture carries padding
+    const out = redactSecretValues(`upstream body: ${b64} end`, [NESTED]);
+    expect(out).not.toContain(b64);
+    expect(out).not.toContain(NESTED);
+    expect(out).toContain(REDACTED);
+    expect(out).toContain('end'); // surrounding prose survives
+  });
+
+  it('leaves a benign base64-shaped run that does not decode to a secret', () => {
+    const benign = Buffer.from('just a normal log line here', 'utf8').toString('base64');
+    const out = redactSecretValues(`body: ${benign}`, [NESTED]);
+    expect(out).toContain(benign); // not collapsed — no secret inside
+  });
+});
+
+describe('R3 F001 — flyErrorMessage wired WITH plan secrets across envelope shapes', () => {
+  it('scrubs the synthetic value regardless of envelope (bare, JSON, header)', () => {
+    const shapes = [
+      `upstream rejected ${NESTED} raw`,
+      `{"error":{"detail":"${NESTED}"}}`,
+      `Authorization: Bearer ${NESTED}`,
+      `body=${Buffer.from(NESTED, 'utf8').toString('base64')}`,
+    ];
+    for (const stderr of shapes) {
+      const msg = flyErrorMessage({ stderr }, [NESTED]);
+      expect(msg).not.toContain(NESTED);
+    }
+  });
+
+  it('scrubs a value carried in the error.message field too', () => {
+    const msg = flyErrorMessage(new Error(`set failed: ${NESTED}`), [NESTED]);
+    expect(msg).not.toContain(NESTED);
+    expect(msg).toContain(REDACTED);
   });
 });
 

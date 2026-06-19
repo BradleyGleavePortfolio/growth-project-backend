@@ -33,10 +33,16 @@ import {
   FLY_BIN_DEFAULT,
   FLY_INSTALL_DOCS,
   FLY_TIMEOUT_MS,
+  safeCauseName,
+  assertFlyBinUnchanged,
+  __resolveFlyBinForTest,
+  __getResolvedFlyBinPathForTest,
+  __resetResolvedFlyBinForTest,
   type FlipPlan,
   type FlipResult,
   type FlyRunner,
   type RecheckCurrent,
+  type FlyBinFs,
 } from './auto-flipper';
 import { RegistryParseError, type RegistryRow } from './registry-loader';
 
@@ -1233,18 +1239,6 @@ describe('F007 — FLY_BIN absolute-path validation and one-time PATH warning', 
     }).toThrow(/must be an absolute path/);
   });
 
-  it('an absolute FLY_BIN override is accepted and emits NO PATH warning', () => {
-    process.env[FLY_BIN_ENV] = '/usr/local/bin/flyctl';
-    jest.isolateModules(() => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const mod = require('./auto-flipper') as typeof import('./auto-flipper');
-      expect(mod.FLY_BIN).toBe('/usr/local/bin/flyctl');
-      const warnSink = jest.fn<void, [string]>();
-      mod.warnIfPathResolvedFlyBin(warnSink);
-      expect(warnSink).not.toHaveBeenCalled();
-    });
-  });
-
   it('the bare default flyctl is permitted and WARNS exactly once on first use', () => {
     delete process.env[FLY_BIN_ENV];
     jest.isolateModules(() => {
@@ -1298,5 +1292,192 @@ describe('F001 wiring — collectSecretValues gathers plan literals for the reda
     const res = await commit({ plan: p, env: ENABLED_ENV, run });
     expect(res.failed).toHaveLength(1);
     expect(res.failed[0].error).not.toContain(FAKE_SECRET);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// H4.F R3 — F003: FLY_BIN realpath resolution + regular-executable-file checks,
+// production-strict bare rejection, and per-invocation TOCTOU revalidation.
+// All fs calls are MOCKED via the injectable FlyBinFs — no real binary or
+// filesystem is ever touched (brief constraint).
+// ---------------------------------------------------------------------------
+
+describe('R3 F003 — FLY_BIN realpath + regular-executable verification (mocked fs)', () => {
+  afterEach(() => __resetResolvedFlyBinForTest());
+
+  function fsStub(over: Partial<FlyBinFs> = {}): FlyBinFs {
+    return {
+      realpathSync: (p: string) => `/real${p}`,
+      statSync: () => ({ isFile: () => true }),
+      accessSync: (_p: string, _mode: number) => undefined,
+      ...over,
+    };
+  }
+
+  it('absolute symlink to a regular executable file is ACCEPTED after realpath resolution', () => {
+    const resolved = __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, fsStub());
+    expect(resolved).toBe('/real/opt/bin/flyctl');
+  });
+
+  it('absolute symlink to a NON-EXECUTABLE target is REJECTED', () => {
+    const fs = fsStub({
+      accessSync: () => {
+        throw new Error('EACCES');
+      },
+    });
+    expect(() => __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, fs)).toThrow(
+      /not executable/,
+    );
+  });
+
+  it('absolute symlink to a NON-REGULAR file (directory) is REJECTED', () => {
+    const fs = fsStub({ statSync: () => ({ isFile: () => false }) });
+    expect(() => __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, fs)).toThrow(
+      /not a regular file/,
+    );
+  });
+
+  it('DANGLING absolute symlink (realpath throws) is REJECTED', () => {
+    const fs = fsStub({
+      realpathSync: () => {
+        throw new Error('ENOENT');
+      },
+    });
+    expect(() => __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, fs)).toThrow(
+      /could not be resolved/,
+    );
+  });
+
+  it('a non-absolute FLY_BIN override is REJECTED before any fs call', () => {
+    const realpathSync = jest.fn((p: string) => p);
+    const fs = fsStub({ realpathSync });
+    expect(() => __resolveFlyBinForTest({ [FLY_BIN_ENV]: 'flyctl-evil' }, fs)).toThrow(
+      /must be an absolute path/,
+    );
+    expect(realpathSync).not.toHaveBeenCalled();
+  });
+});
+
+describe('R3 F003 — production-strict bare-flyctl rejection', () => {
+  afterEach(() => __resetResolvedFlyBinForTest());
+
+  function fsStub(): FlyBinFs {
+    return {
+      realpathSync: (p: string) => p,
+      statSync: () => ({ isFile: () => true }),
+      accessSync: () => undefined,
+    };
+  }
+
+  it('bare flyctl with NODE_ENV=production is REJECTED', () => {
+    expect(() => __resolveFlyBinForTest({ NODE_ENV: 'production' }, fsStub())).toThrow(
+      /not allowed[\s\S]*outside development/,
+    );
+  });
+
+  it('bare flyctl with NODE_ENV=staging is REJECTED', () => {
+    expect(() => __resolveFlyBinForTest({ NODE_ENV: 'staging' }, fsStub())).toThrow(/not allowed/);
+  });
+
+  it('bare flyctl with NODE_ENV=development is ACCEPTED', () => {
+    expect(__resolveFlyBinForTest({ NODE_ENV: 'development' }, fsStub())).toBe(FLY_BIN_DEFAULT);
+  });
+
+  it('bare flyctl with FLY_BIN_REQUIRE_ABSOLUTE=true is REJECTED regardless of NODE_ENV', () => {
+    expect(() =>
+      __resolveFlyBinForTest({ NODE_ENV: 'development', FLY_BIN_REQUIRE_ABSOLUTE: 'true' }, fsStub()),
+    ).toThrow(/not allowed/);
+  });
+
+  it('bare flyctl with NODE_ENV unset is ACCEPTED (local shell)', () => {
+    expect(__resolveFlyBinForTest({}, fsStub())).toBe(FLY_BIN_DEFAULT);
+  });
+});
+
+describe('R3 F003 — TOCTOU revalidation catches a canonical-path swap mid-process', () => {
+  afterEach(() => __resetResolvedFlyBinForTest());
+
+  const goodFs: FlyBinFs = {
+    realpathSync: (p: string) => p,
+    statSync: () => ({ isFile: () => true }),
+    accessSync: () => undefined,
+  };
+
+  it('assertFlyBinUnchanged is a no-op for the bare PATH default (no cached path)', () => {
+    __resolveFlyBinForTest({ NODE_ENV: 'development' }, goodFs);
+    expect(() => assertFlyBinUnchanged()).not.toThrow();
+  });
+
+  it('a path swapped to a NON-regular file mid-process is caught on revalidation', () => {
+    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFs);
+    expect(__getResolvedFlyBinPathForTest()).toBe('/opt/bin/flyctl');
+    const swappedFs: FlyBinFs = {
+      realpathSync: (p: string) => p,
+      statSync: () => ({ isFile: () => false }),
+      accessSync: () => undefined,
+    };
+    expect(() => assertFlyBinUnchanged(swappedFs)).toThrow(/not a regular file/);
+  });
+
+  it('a path swapped to a NON-executable file mid-process is caught on revalidation', () => {
+    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFs);
+    const swappedFs: FlyBinFs = {
+      realpathSync: (p: string) => p,
+      statSync: () => ({ isFile: () => true }),
+      accessSync: () => {
+        throw new Error('EACCES');
+      },
+    };
+    expect(() => assertFlyBinUnchanged(swappedFs)).toThrow(/not executable/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H4.F R3 — F002: AutoFlipperRegistryError.causeName is allowlisted + redacted.
+// ---------------------------------------------------------------------------
+
+describe('R3 F002 — causeName allowlist + value redaction', () => {
+  const throwing = (err: unknown): (() => readonly RegistryRow[]) => () => {
+    throw err;
+  };
+  const NO_CURRENT: Record<string, string> = {};
+
+  it('an attacker-named error class collapses to "UnknownError"', async () => {
+    class SecretLeakedSk123 extends Error {}
+    await expect(
+      flip(throwing(new SecretLeakedSk123('boom')), NO_CURRENT, { env: {} }),
+    ).rejects.toMatchObject({ causeName: 'UnknownError', name: 'AutoFlipperRegistryError' });
+  });
+
+  it('a built-in TypeError is preserved verbatim (allowlisted)', async () => {
+    await expect(
+      flip(throwing(new TypeError('bad type')), NO_CURRENT, { env: {} }),
+    ).rejects.toMatchObject({ causeName: 'TypeError' });
+  });
+
+  it('a built-in SyntaxError is preserved verbatim (allowlisted)', async () => {
+    await expect(
+      flip(throwing(new SyntaxError('bad syntax')), NO_CURRENT, { env: {} }),
+    ).rejects.toMatchObject({ causeName: 'SyntaxError' });
+  });
+
+  it('safeCauseName redacts a class name that itself embeds a plan secret', () => {
+    const SECRET = 'sk_test_FAKE_NESTED_REDACTOR';
+    // Build an error whose constructor.name embeds the secret AND is not on the
+    // allowlist; it must collapse to UnknownError and never expose the secret.
+    const err = new Error('x');
+    Object.defineProperty(err.constructor, 'name', { value: `Error_${SECRET}` });
+    const name = safeCauseName(err, [SECRET]);
+    expect(name).not.toContain(SECRET);
+    expect(name).toBe('UnknownError');
+  });
+
+  it('the thrown AutoFlipperRegistryError message never echoes the raw error text', async () => {
+    const SECRET = 'sk_test_FAKE_NESTED_REDACTOR';
+    class Weird extends Error {}
+    await expect(
+      flip(throwing(new Weird(`leak ${SECRET}`)), { K: SECRET }, { env: {} }),
+    ).rejects.toMatchObject({ message: expect.not.stringContaining(SECRET) });
   });
 });
