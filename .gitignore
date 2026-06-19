@@ -9,3 +9,7 @@ dist/
 audit-*.md
 /tmp-audit-*.md
 node_modules
+
+# Wave status scratch files — local progress notes, never commit
+.h*-status.txt
+
