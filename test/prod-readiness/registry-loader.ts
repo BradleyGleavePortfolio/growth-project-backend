@@ -30,11 +30,106 @@ export const RegistryRowSchema = z
   .strict();
 export type RegistryRow = z.infer<typeof RegistryRowSchema>;
 
-export const RegistrySchema = z.object({ switches: z.array(RegistryRowSchema) }).strict();
+/**
+ * Minimum row count enforced by the schema. The seeded registry currently lists
+ * 223 prod-touching env switches; 200 is a safe floor that catches an accidental
+ * truncation or a regenerated-empty registry (a guardrail bypass) while leaving
+ * head-room for the registry to grow or shrink over time.
+ */
+export const MIN_SWITCHES = 200;
+export const RegistrySchema = z
+  .object({
+    switches: z
+      .array(RegistryRowSchema)
+      .min(
+        MIN_SWITCHES,
+        `production-readiness registry must list every prod-touching env switch (currently >${MIN_SWITCHES}); an empty or truncated registry is a guardrail bypass`,
+      ),
+  })
+  .strict();
 export type Registry = z.infer<typeof RegistrySchema>;
+
+/** Raised when the raw YAML uses constructs banned for diff-reviewability. */
+export class RegistryParseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RegistryParseError';
+  }
+}
+
+/**
+ * Reject YAML anchors (`&name`), aliases (`*name`), and merge keys (`<<:`) so
+ * every switch row stays self-contained and reviewable by diff. Anchors/aliases
+ * let a row inherit defaults from elsewhere in the file, hiding production
+ * behaviour from a line-by-line review. Scans line-by-line, ignoring `#`
+ * comments and the contents of single/double-quoted strings.
+ */
+export function assertNoYamlIndirection(raw: string): void {
+  const code = raw.split(/\r?\n/).map(stripCommentsAndStrings);
+  // Merge keys first: a `<<:` line is the clearest signal and is usually paired
+  // with an anchor define elsewhere, so report it specifically rather than as a
+  // generic anchor hit.
+  const mergeLine = code.findIndex((line) => /^\s*<<\s*:/.test(line));
+  if (mergeLine !== -1) {
+    throw new RegistryParseError(
+      `registry uses a YAML merge key (<<:) at line ${mergeLine + 1} — switch rows must be self-contained for diff-reviewability`,
+    );
+  }
+  const anchorLine = code.findIndex((line) =>
+    /(^|[\s\[\{:,])[&*][A-Za-z_][A-Za-z0-9_-]*/.test(line),
+  );
+  if (anchorLine !== -1) {
+    throw new RegistryParseError(
+      `registry uses YAML anchors/aliases (&name / *name) at line ${anchorLine + 1} — switch rows must be self-contained for diff-reviewability`,
+    );
+  }
+}
+
+/** Drop `#` comments and single/double-quoted string bodies from a YAML line. */
+function stripCommentsAndStrings(line: string): string {
+  let out = '';
+  let quote: "'" | '"' | null = null;
+  for (const ch of line) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      continue;
+    }
+    if (ch === '#') break;
+    out += ch;
+  }
+  return out;
+}
+
+/** Format zod issues one-per-line as `<field-path>: expected <x>, received <y>`. */
+function formatZodIssues(err: z.ZodError): string {
+  return err.issues
+    .map((issue) => {
+      const path = issue.path.length > 0 ? issue.path.join('.') : '(root)';
+      return `  ${path}: ${issue.message}`;
+    })
+    .join('\n');
+}
+
 /** Read, parse, and validate the registry at `path`. */
 export async function loadRegistry(path: string): Promise<Registry> {
-  return parseRegistry(await readFile(path, 'utf8'));
+  const raw = await readFile(path, 'utf8');
+  try {
+    return parseRegistry(raw);
+  } catch (err: unknown) {
+    if (err instanceof z.ZodError) {
+      throw new RegistryParseError(
+        `prod-switches registry "${path}" is invalid:\n${formatZodIssues(err)}`,
+      );
+    }
+    if (err instanceof Error) {
+      throw new RegistryParseError(`prod-switches registry "${path}" is invalid: ${err.message}`);
+    }
+    throw err;
+  }
 }
 
 /** Parse + validate registry contents already in memory (FS-free). */
@@ -42,6 +137,7 @@ export function parseRegistry(raw: string): Registry {
   if (raw.trim().length === 0) {
     throw new Error('registry is empty: expected a top-level `switches:` array');
   }
+  assertNoYamlIndirection(raw);
   const parsed: unknown = parseYaml(raw);
   return RegistrySchema.parse(parsed);
 }
