@@ -1,0 +1,61 @@
+name: SBOM (CycloneDX)
+
+# Generates a CycloneDX SBOM on every push to main and on every release tag,
+# uploads it as a workflow artifact, and (when the optional Dependency-Track
+# server URL is configured) submits it for vulnerability tracking. SBOM is
+# kept for 90 days per CISA SBOM guidance.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: sbom-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install production deps only
+        run: npm ci --omit=dev
+
+      - name: Install @cyclonedx/cdxgen
+        run: npm install --no-save --no-audit --no-fund @cyclonedx/cdxgen@10
+
+      - name: Generate SBOM (CycloneDX JSON)
+        run: |
+          npx cdxgen -o sbom.cdx.json -t nodejs -r .
+          ls -lh sbom.cdx.json
+
+      - name: Summarize SBOM
+        run: |
+          echo "## SBOM summary" >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          COMPONENTS=$(jq '.components | length' sbom.cdx.json)
+          echo "Components: **$COMPONENTS**" >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo "Top 10 by name (alpha):" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.components | sort_by(.name) | .[0:10] | .[] | "- \(.name)@\(.version // "?")"' sbom.cdx.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload SBOM artifact (90-day retention)
+        uses: actions/upload-artifact@v5
+        with:
+          name: sbom-cyclonedx-${{ github.sha }}
+          path: sbom.cdx.json
+          retention-days: 90

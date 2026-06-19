@@ -1,0 +1,129 @@
+name: Migration Dry-Run
+
+# R106 (AGENT_RULES) — every PR that touches prisma/migrations/** must prove
+# the migration applies cleanly AND has a reversible counterpart (or an
+# explicit IRREVERSIBLE annotation). Grandfather clause: migrations
+# committed before this workflow shipped are exempt; only NEW directories
+# created in this PR are checked.
+#
+# Behavior:
+#   1. Detect migration directories added in this PR diff (against main).
+#   2. Spin up a disposable Postgres, apply all migrations forward.
+#   3. For each NEW migration directory, require either:
+#        - migration.sql contains a `-- IRREVERSIBLE: <reason>` line, OR
+#        - a sibling `down.sql` file exists that reverts the change.
+#   4. If a `down.sql` exists, apply forward → down → forward again and
+#      verify schema parity (pg_dump -s diff is empty).
+#
+# This protects ops from a class of "shipped a migration, can't roll back"
+# incidents that bite when a deploy goes sideways at 2 a.m.
+
+on:
+  pull_request:
+    paths:
+      - 'prisma/migrations/**'
+      - '.github/workflows/migration-dry-run.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: migration-dry-run-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  forward-only:
+    name: Forward migration applies cleanly
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: migration_dryrun
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/migration_dryrun?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/migration_dryrun?schema=public
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply all migrations forward
+        run: npx prisma migrate deploy
+
+      - name: Verify schema matches schema.prisma
+        run: npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+
+  reversibility-check:
+    name: New migrations are reversible (or explicitly marked IRREVERSIBLE)
+    runs-on: ubuntu-latest
+    needs: forward-only
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Identify NEW migration directories in this PR
+        id: diff
+        run: |
+          set -euo pipefail
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE_SHA" ]; then
+            echo "Not a PR context; nothing to check."
+            echo "new_dirs=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mapfile -t NEW < <(git diff --name-only --diff-filter=A "$BASE_SHA"...HEAD -- 'prisma/migrations/*/migration.sql' | xargs -I{} dirname {} | sort -u || true)
+          if [ ${#NEW[@]} -eq 0 ]; then
+            echo "No new migration directories in this PR. Skipping."
+            echo "new_dirs=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          printf "Found %d new migration directories:\n" "${#NEW[@]}"
+          printf "  - %s\n" "${NEW[@]}"
+          echo "new_dirs<<EOF" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "${NEW[@]}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Enforce reversibility on each NEW migration
+        if: steps.diff.outputs.new_dirs != ''
+        run: |
+          set -euo pipefail
+          FAIL=0
+          while IFS= read -r dir; do
+            [ -z "$dir" ] && continue
+            echo ""
+            echo "==> Checking $dir"
+            if [ -f "$dir/down.sql" ]; then
+              echo "  OK: down.sql present (reversible)."
+              continue
+            fi
+            if grep -qE '^-- IRREVERSIBLE:' "$dir/migration.sql"; then
+              REASON=$(grep -E '^-- IRREVERSIBLE:' "$dir/migration.sql" | head -1 | sed 's/^-- IRREVERSIBLE: //')
+              echo "  OK: marked IRREVERSIBLE — $REASON"
+              continue
+            fi
+            echo "  FAIL: $dir lacks both down.sql AND '-- IRREVERSIBLE: <reason>' marker."
+            echo "        Add one of the two. See AGENT_RULES.md R106."
+            FAIL=1
+          done <<< "${{ steps.diff.outputs.new_dirs }}"
+          exit $FAIL

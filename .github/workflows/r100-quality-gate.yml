@@ -1,0 +1,155 @@
+name: R100 Quality Gate
+
+# Enforces AGENT_RULES R75 (banned cast tokens), R24-R78 (R100 quality bar),
+# A1 (test:src density), A3 (LOC budget), and R104 (no weak casts).
+# Runs on every PR; required check for merge per R102/R107.
+#
+# Hard rules (cause failure):
+#   - Banned cast tokens (R75 / R100.A2): net positive count in PR diff = P0.
+#   - LOC budget (R100.A3): PR >400 net LOC = warning; >600 = failure unless
+#     PR title contains [LOC-EXEMPT: <reason>].
+#   - test:src ratio (R100.A1): added-test-lines / added-src-lines < 2.0
+#     = failure unless PR title contains [TEST-EXEMPT: <reason>].
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: r100-quality-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  banned-casts:
+    name: Banned cast tokens (R75 / R100.A2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Diff banned tokens
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE_SHA" ]; then
+            echo "Not in PR context; skipping."
+            exit 0
+          fi
+          # Tokens enumerated in AGENT_RULES R75. The ' Coming soon' string is
+          # a placeholder-in-prod regression marker, intentionally bracketed
+          # so the rule itself can mention it without self-matching.
+          TOKENS=(
+            "@ts-ignore"
+            "as any"
+            "as unknown as"
+            "as never"
+            ".catch(()=>undefined)"
+            ".catch(()=>null)"
+            ".catch(()=>{})"
+            "Coming soon"
+          )
+          ADDED=0
+          REMOVED=0
+          for tok in "${TOKENS[@]}"; do
+            # Count net +/- of lines containing the token in the diff,
+            # restricted to TS/JS sources (skip docs, lock files).
+            a=$(git diff "$BASE_SHA"...HEAD -- 'src/**/*.ts' 'src/**/*.tsx' 'test/**/*.ts' \
+              | grep -E '^\+[^+]' | grep -cF "$tok" || true)
+            r=$(git diff "$BASE_SHA"...HEAD -- 'src/**/*.ts' 'src/**/*.tsx' 'test/**/*.ts' \
+              | grep -E '^-[^-]' | grep -cF "$tok" || true)
+            net=$((a - r))
+            printf "  %-32s  +%-3d  -%-3d  net %+d\n" "$tok" "$a" "$r" "$net"
+            ADDED=$((ADDED + a))
+            REMOVED=$((REMOVED + r))
+          done
+          NET=$((ADDED - REMOVED))
+          echo ""
+          echo "Total: +$ADDED added, -$REMOVED removed, net $NET"
+          if [ "$NET" -gt 0 ]; then
+            echo ""
+            echo "FAIL — R75 violation: this PR adds banned cast tokens (net +$NET)."
+            echo "       See AGENT_RULES.md R75 and R104. Fix the underlying type or"
+            echo "       narrow with a runtime guard. No exemptions."
+            exit 1
+          fi
+          echo "OK — no net banned-cast additions."
+
+  loc-budget:
+    name: LOC budget (R100.A3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Compute net LOC
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE_SHA" ]; then echo "Not a PR; skip."; exit 0; fi
+          # Net added lines in code + tests (exclude lock files & generated).
+          NET=$(git diff --numstat "$BASE_SHA"...HEAD -- 'src/**' 'test/**' 'prisma/migrations/**' \
+            | awk '{ a += $1; r += $2 } END { print a - r }')
+          NET=${NET:-0}
+          echo "Net LOC: $NET"
+          if [ "$NET" -le 400 ]; then
+            echo "OK — under 400."
+            exit 0
+          fi
+          if [ "$NET" -le 600 ]; then
+            echo "WARN — $NET LOC (between 400 and 600). Consider splitting."
+            exit 0
+          fi
+          if printf '%s' "$PR_TITLE" | grep -qE '\[LOC-EXEMPT:'; then
+            echo "OK — exempted via [LOC-EXEMPT:] in PR title."
+            exit 0
+          fi
+          echo "FAIL — $NET LOC > 600 and no [LOC-EXEMPT: <reason>] in title."
+          exit 1
+
+  test-density:
+    name: Test density (R100.A1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Compute test:src ratio
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE_SHA" ]; then echo "Not a PR; skip."; exit 0; fi
+          SRC=$(git diff --numstat "$BASE_SHA"...HEAD -- 'src/**/*.ts' 'src/**/*.tsx' \
+            ':(exclude)src/**/*.spec.ts' ':(exclude)src/**/*.test.ts' \
+            | awk '{ a += $1 } END { print a + 0 }')
+          TEST=$(git diff --numstat "$BASE_SHA"...HEAD -- 'test/**/*.ts' 'src/**/*.spec.ts' 'src/**/*.test.ts' \
+            | awk '{ a += $1 } END { print a + 0 }')
+          echo "src lines added: $SRC"
+          echo "test lines added: $TEST"
+          if [ "$SRC" -eq 0 ]; then
+            echo "OK — no src additions; ratio not applicable."
+            exit 0
+          fi
+          # Compute ratio in integer math: ratio*100 = TEST*100/SRC
+          RATIO_X100=$(( TEST * 100 / SRC ))
+          printf "ratio test:src ≈ %d.%02d\n" $((RATIO_X100 / 100)) $((RATIO_X100 % 100))
+          if [ "$RATIO_X100" -ge 200 ]; then
+            echo "OK — ratio ≥ 2.0."
+            exit 0
+          fi
+          if printf '%s' "$PR_TITLE" | grep -qE '\[TEST-EXEMPT:'; then
+            echo "OK — exempted via [TEST-EXEMPT: <reason>] in PR title."
+            exit 0
+          fi
+          echo "FAIL — test:src ratio below 2.0 and no [TEST-EXEMPT: <reason>] in title."
+          echo "       Add tests, mark exempt with a reason, or split out src changes."
+          exit 1
