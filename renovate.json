@@ -1,0 +1,19 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard"],
+  "schedule": ["before 9am on monday"],
+  "rangeStrategy": "bump",
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 10,
+  "vulnerabilityAlerts": { "enabled": true },
+  "lockFileMaintenance": { "enabled": true, "schedule": ["before 9am on monday"] },
+  "packageRules": [
+    { "matchUpdateTypes": ["patch", "minor"], "matchDepTypes": ["devDependencies"], "automerge": true },
+    { "matchUpdateTypes": ["patch", "minor"], "matchDepTypes": ["dependencies"], "automerge": false },
+    { "matchUpdateTypes": ["major"], "automerge": false },
+    { "matchPackagePatterns": ["^@types/"], "groupName": "type definitions" },
+    { "matchPackagePatterns": ["^eslint"], "groupName": "eslint" },
+    { "matchPackagePatterns": ["^vitest"], "groupName": "vitest" },
+    { "matchPackagePatterns": ["^@nestjs/"], "groupName": "nestjs" }
+  ]
+}
