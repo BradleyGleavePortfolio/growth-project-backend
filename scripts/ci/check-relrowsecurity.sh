@@ -54,7 +54,7 @@ WHERE c.relkind = '"'"'r'"'"'
 ORDER BY 1;'
 
 # -A unaligned, -t tuples-only, -X no psqlrc, ON_ERROR_STOP for safety.
-ROWS=$(PSQL_PAGER= psql "$DATABASE_URL" -XAtv ON_ERROR_STOP=1 -c "$QUERY")
+ROWS=$(PSQL_PAGER='' psql "$DATABASE_URL" -XAtv ON_ERROR_STOP=1 -c "$QUERY")
 
 COUNT=0
 if [ -n "$ROWS" ]; then
