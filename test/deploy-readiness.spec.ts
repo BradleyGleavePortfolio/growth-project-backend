@@ -27,10 +27,10 @@
  * exists so future expansions (e.g. live HTTP pings) have headroom.
  */
 
-import { autoFlip } from './prod-readiness/auto-flipper';
-import { discoverEnvVars } from './prod-readiness/env-discovery';
+import { autoFlip, type AppliedFlip, type FlipResult } from './prod-readiness/auto-flipper';
+import { discoverEnvVars, type EnvVarOrigin } from './prod-readiness/env-discovery';
 import { defaultLedgerPath, falsePositives, loadLedger, trackedDebt } from './prod-readiness/learning-ledger';
-import { writeOperatorKeysMarkdown } from './prod-readiness/operator-keys-generator';
+import { assertNoDrift, writeOperatorKeysMarkdown } from './prod-readiness/operator-keys-generator';
 import { looksLikePlaceholder, scanProviders } from './prod-readiness/provider-wiring';
 import { loadRegistry, type SwitchEntry } from './prod-readiness/registry-loader';
 import { renderConsole, renderMarkdown, verdict, type ReadinessReport } from './prod-readiness/reporter';
@@ -47,11 +47,19 @@ describe('R100 — Deploy readiness', () => {
   let stubs: StubFinding[];
   let providers: ReturnType<typeof scanProviders>;
   let report: ReadinessReport;
+  // Module-scope flip result (F-A05 / F-B06 / F-B08): the auto-flip is awaited
+  // once in `beforeAll` and the resolved value is held here, so every test —
+  // and the afterAll writer — reads a single, already-settled value instead of
+  // re-awaiting a promise stashed on `global`.
+  let flipResult: FlipResult;
+  let appliedFlips: AppliedFlip[];
+  let envOrigins: Map<string, EnvVarOrigin>;
   const isProdMode = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
 
-  beforeAll(() => {
+  beforeAll(async () => {
     registry = loadRegistry();
     discovery = discoverEnvVars(REPO_ROOT);
+    envOrigins = discovery.envVars;
 
     const ledger = loadLedger(defaultLedgerPath(REPO_ROOT));
     const fp = falsePositives(ledger);
@@ -97,8 +105,11 @@ describe('R100 — Deploy readiness', () => {
       .filter((fpStr) => !liveFingerprints.has(fpStr));
 
     // Auto-flip plans (dry-run by default; apply only in prod mode w/ explicit flag).
+    // Awaited directly here (F-A05): no promise leaks onto `global`, no later
+    // re-await; the settled result drives both the report and the writer.
     const flipMode = isProdMode && process.env.READINESS_AUTO_FLIP === 'true' ? 'apply' : 'dry-run';
-    const flipPromise = autoFlip({ switches: registry.switches, env: process.env, mode: flipMode });
+    flipResult = await autoFlip({ switches: registry.switches, env: process.env, mode: flipMode });
+    appliedFlips = flipResult.appliedFlips;
 
     report = {
       generated_at: new Date().toISOString(),
@@ -110,12 +121,8 @@ describe('R100 — Deploy readiness', () => {
       switches_unset_in_prod: switchesUnsetRequired,
       stubs,
       providers,
-      flips: [],
+      flips: flipResult.plans,
     };
-
-    // autoFlip is async but here we resolve synchronously by awaiting later.
-    // We capture the promise on a global so the test can `await` it.
-    (global as Record<string, unknown>).__readinessFlipPromise = flipPromise;
   });
 
   it('prod-switches.yml exists, parses, and has every entry valid', () => {
@@ -152,13 +159,27 @@ describe('R100 — Deploy readiness', () => {
     expect(report.ledger_dead_entries).toEqual([]);
   });
 
-  if (true /* always evaluate; only ASSERT under prod mode */) {
-    it('(prod-mode only) every MUST_SET switch has a non-placeholder value', async () => {
-      const flipResult = await (global as Record<string, unknown>).__readinessFlipPromise as Awaited<ReturnType<typeof autoFlip>>;
-      report.flips = flipResult.plans;
+  it('every applied auto-flip succeeded (failed flips escalate to NEEDS_OPERATOR)', () => {
+    // F-A03: in apply mode a failed flip is an operator-actionable gap, not a
+    // silent no-op. Surface each failure with its switch name so the operator
+    // knows exactly which secret to set, then fail the test.
+    const failed = appliedFlips.filter((f) => !f.ok);
+    if (failed.length > 0) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `\n${failed.length} auto-flip(s) FAILED — set these manually before deploy:\n` +
+        failed.map((f) => `  - ${f.name}: ${f.error ?? 'unknown error'}`).join('\n') +
+        '\n',
+      );
+    }
+    expect(failed).toEqual([]);
+  });
+
+  describe('prod-mode gates', () => {
+    it('(prod-mode only) every MUST_SET switch has a non-placeholder value', () => {
       if (!isProdMode) {
         // eslint-disable-next-line no-console
-        console.log(`(dry-run) ${report.switches_unset_in_prod.length} MUST_SET switches would be flagged in prod mode; ${flipResult.plans.length} would be auto-flipped.`);
+        console.log(`(dry-run) ${report.switches_unset_in_prod.length} MUST_SET switches would be flagged in prod mode; ${report.flips.length} would be auto-flipped.`);
         return;
       }
       expect(report.switches_unset_in_prod).toEqual([]);
@@ -180,19 +201,49 @@ describe('R100 — Deploy readiness', () => {
       }
       expect(stubProviders).toEqual([]);
     });
-  }
+  });
 
-  afterAll(async () => {
-    if (!(global as Record<string, unknown>).__readinessFlipPromise) return;
-    const flipResult = await (global as Record<string, unknown>).__readinessFlipPromise as Awaited<ReturnType<typeof autoFlip>>;
-    report.flips = flipResult.plans;
+  it('OPERATOR_KEYS_NEEDED.md committed to git matches freshly-generated content', () => {
+    // F-A06 / F-A16: the checked-in artifact must not drift from what the
+    // scanners produce. The timestamp line is excluded by assertNoDrift.
+    const drift = assertNoDrift(REPO_ROOT, {
+      generated_at: report.generated_at,
+      switches_unset_required: report.switches_unset_in_prod,
+      providers_stubbed: report.providers.filter((p) => p.status === 'STUB'),
+      unregistered_in_code: report.unregistered_in_code,
+      applied_flips: appliedFlips,
+      env_origins: envOrigins,
+    });
+    if (drift.drifted) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `\nOPERATOR_KEYS_NEEDED.md is stale: ${drift.detail ?? 'content differs'}.\n` +
+        'Re-run `npm run readiness:check` and commit the regenerated file.\n',
+      );
+    }
+    expect(drift.drifted).toBe(false);
+  });
 
+  it('overall verdict reflects the current gap state', () => {
+    // F-B16: the verdict function is the single source of truth for ship
+    // status; assert it explicitly so a regression in its logic is caught.
+    // In the committed repo state there is at least one stubbed provider /
+    // unset MUST_SET switch, so the steady-state verdict is NEEDS_OPERATOR.
+    const v = verdict(report);
+    expect(['CLEAN', 'NEEDS_OPERATOR', 'SHIP_BLOCKED']).toContain(v);
+    expect(v).toBe('NEEDS_OPERATOR');
+  });
+
+  afterAll(() => {
     // Always write OPERATOR_KEYS_NEEDED.md — the report is the artifact.
+    // Uses the module-scope settled flip result (F-A05): no re-await, no global.
     writeOperatorKeysMarkdown(REPO_ROOT, {
       generated_at: report.generated_at,
       switches_unset_required: report.switches_unset_in_prod,
       providers_stubbed: report.providers.filter((p) => p.status === 'STUB'),
       unregistered_in_code: report.unregistered_in_code,
+      applied_flips: appliedFlips,
+      env_origins: envOrigins,
     });
 
     // Emit format requested by the operator.
