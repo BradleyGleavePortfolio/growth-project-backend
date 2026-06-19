@@ -29,7 +29,7 @@ jobs:
     name: Banned cast tokens (R75 / R100.A2)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           fetch-depth: 0
       - name: Diff banned tokens
@@ -84,7 +84,7 @@ jobs:
     name: LOC budget (R100.A3)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           fetch-depth: 0
       - name: Compute net LOC
@@ -118,7 +118,7 @@ jobs:
     name: Test density (R100.A1)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           fetch-depth: 0
       - name: Compute test:src ratio
