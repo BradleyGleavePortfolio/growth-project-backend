@@ -7,13 +7,22 @@ name: Migration Dry-Run
 # created in this PR are checked.
 #
 # Behavior:
-#   1. Detect migration directories added in this PR diff (against main).
-#   2. Spin up a disposable Postgres, apply all migrations forward.
-#   3. For each NEW migration directory, require either:
-#        - migration.sql contains a `-- IRREVERSIBLE: <reason>` line, OR
-#        - a sibling `down.sql` file exists that reverts the change.
-#   4. If a `down.sql` exists, apply forward → down → forward again and
-#      verify schema parity (pg_dump -s diff is empty).
+#   1. forward-only: spin up a disposable Postgres, apply ALL migrations
+#      forward, and assert the resulting schema matches schema.prisma.
+#   2. reversibility-check: detect migration directories added in this PR.
+#      For each NEW directory, require either:
+#        - a sibling `down.sql` file, OR
+#        - a `-- IRREVERSIBLE: <reason>` line in migration.sql.
+#      Directories with NEITHER fail (grandfathered dirs are never checked
+#      because only PR-added dirs enter the loop).
+#   3. For each NEW directory that DOES ship a `down.sql`, prove real
+#      reversibility: apply all migrations forward, snapshot the schema
+#      (pg_dump -s), apply that directory's down.sql, re-apply the same
+#      migration forward, snapshot again, and require the two schema dumps
+#      to be byte-identical. A down.sql that does not faithfully reverse the
+#      migration (e.g. a `-- placeholder`) makes the re-applied schema differ
+#      and fails the job. This replaces an earlier existence-only check that
+#      gave false rollback assurance.
 #
 # This protects ops from a class of "shipped a migration, can't roll back"
 # incidents that bite when a deploy goes sideways at 2 a.m.
@@ -37,6 +46,7 @@ jobs:
   forward-only:
     name: Forward migration applies cleanly
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:15.18
@@ -76,11 +86,48 @@ jobs:
   reversibility-check:
     name: New migrations are reversible (or explicitly marked IRREVERSIBLE)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: forward-only
+    services:
+      postgres:
+        image: postgres:15.18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: migration_dryrun
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/migration_dryrun?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/migration_dryrun?schema=public
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           fetch-depth: 0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure postgresql-client is available
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1 || ! command -v pg_dump >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+          fi
+          psql --version
+          pg_dump --version
 
       - name: Identify NEW migration directories in this PR
         id: diff
@@ -100,30 +147,86 @@ jobs:
           fi
           printf "Found %d new migration directories:\n" "${#NEW[@]}"
           printf "  - %s\n" "${NEW[@]}"
-          echo "new_dirs<<EOF" >> "$GITHUB_OUTPUT"
-          printf '%s\n' "${NEW[@]}" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          {
+            echo "new_dirs<<EOF"
+            printf '%s\n' "${NEW[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Enforce reversibility on each NEW migration
+      - name: Enforce reversibility + prove schema parity on each NEW migration
         if: steps.diff.outputs.new_dirs != ''
+        env:
+          # Passed via env (not inline ${{ }} expansion in the shell body) so a
+          # migration directory name containing shell metacharacters cannot be
+          # injected into the script text. See R75 / GitHub Actions script
+          # injection guidance.
+          NEW_DIRS: ${{ steps.diff.outputs.new_dirs }}
         run: |
           set -euo pipefail
+
+          PSQL="psql --no-psqlrc -v ON_ERROR_STOP=1 -X -q $DATABASE_URL"
+          DUMP="pg_dump --schema-only --no-owner --no-privileges $DATABASE_URL"
+
+          # Reset DB to an empty public schema, then apply every migration
+          # forward via prisma. Echoes nothing sensitive.
+          reset_and_migrate_forward() {
+            $PSQL -c 'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;' >/dev/null
+            npx prisma migrate deploy >/dev/null
+          }
+
           FAIL=0
           while IFS= read -r dir; do
             [ -z "$dir" ] && continue
             echo ""
             echo "==> Checking $dir"
-            if [ -f "$dir/down.sql" ]; then
-              echo "  OK: down.sql present (reversible)."
+
+            has_down=0
+            [ -f "$dir/down.sql" ] && has_down=1
+
+            if [ "$has_down" -eq 0 ]; then
+              if grep -qE '^-- IRREVERSIBLE:' "$dir/migration.sql"; then
+                REASON=$(grep -E '^-- IRREVERSIBLE:' "$dir/migration.sql" | head -1 | sed 's/^-- IRREVERSIBLE: //')
+                echo "  OK: marked IRREVERSIBLE — $REASON"
+                continue
+              fi
+              echo "  FAIL: $dir lacks both down.sql AND '-- IRREVERSIBLE: <reason>' marker."
+              echo "        Add one of the two. See AGENT_RULES.md R106."
+              FAIL=1
               continue
             fi
-            if grep -qE '^-- IRREVERSIBLE:' "$dir/migration.sql"; then
-              REASON=$(grep -E '^-- IRREVERSIBLE:' "$dir/migration.sql" | head -1 | sed 's/^-- IRREVERSIBLE: //')
-              echo "  OK: marked IRREVERSIBLE — $REASON"
+
+            # down.sql present — prove it actually reverses the migration.
+            echo "  down.sql present — verifying forward → down → forward schema parity."
+
+            reset_and_migrate_forward
+            BEFORE=$(mktemp)
+            $DUMP > "$BEFORE"
+
+            echo "  Applying $dir/down.sql ..."
+            if ! $PSQL -f "$dir/down.sql" >/dev/null; then
+              echo "  FAIL: $dir/down.sql did not apply cleanly."
+              FAIL=1
               continue
             fi
-            echo "  FAIL: $dir lacks both down.sql AND '-- IRREVERSIBLE: <reason>' marker."
-            echo "        Add one of the two. See AGENT_RULES.md R106."
-            FAIL=1
-          done <<< "${{ steps.diff.outputs.new_dirs }}"
-          exit $FAIL
+
+            echo "  Re-applying $dir/migration.sql ..."
+            if ! $PSQL -f "$dir/migration.sql" >/dev/null; then
+              echo "  FAIL: re-applying $dir/migration.sql after down.sql failed."
+              FAIL=1
+              continue
+            fi
+
+            AFTER=$(mktemp)
+            $DUMP > "$AFTER"
+
+            if diff -u "$BEFORE" "$AFTER" > schema-parity.diff; then
+              echo "  OK: schema is byte-identical after forward → down → forward."
+            else
+              echo "  FAIL: $dir/down.sql does not faithfully reverse migration.sql."
+              echo "        Schema differs after re-applying forward:"
+              sed 's/^/        /' schema-parity.diff
+              FAIL=1
+            fi
+          done <<< "$NEW_DIRS"
+
+          exit "$FAIL"
