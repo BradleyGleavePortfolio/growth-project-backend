@@ -1,7 +1,8 @@
 Wave H1 — Quality Bar Raise (configs & policy files)
-Resumed: 2026-06-19T01:16:10Z
+Completed: 2026-06-19T01:19:02Z
 Builder: claude_opus_4_8 (continuation after sandbox death)
-Status: BUILDING
-Files completed: 4/13 (.h1-status.txt, .editorconfig, ai.txt, security.txt)
-Files remaining: 9 (bug_report.md, feature_request.md, PULL_REQUEST_TEMPLATE.md, renovate.json, codeql.yml, pr-size-labeler.yml, lefthook.yml, prettier configs, package.json prepare)
+Status: COMPLETE — ready for dual audit
+Files completed: 13/13
+Net LOC: 250 (256 additions, 6 deletions); 252 additions excl heartbeat
 Blocker: none
+Decision points: D-H1-1 (security.txt prod host TODO), D-H1-2 (renovate policy), D-H1-3 (template render check)
