@@ -103,10 +103,22 @@ jobs:
       - name: Compute net LOC
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Fallback only; the live title is fetched below. The event-payload
+          # title is captured when the pull_request event fires and goes STALE
+          # if the title is edited afterwards (e.g. an operator adds the
+          # [LOC-EXEMPT:] marker post-open) without a new push to refresh it.
+          PR_TITLE_EVENT: ${{ github.event.pull_request.title }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ -z "$BASE_SHA" ]; then echo "Not a PR; skip."; exit 0; fi
+          # Read the LIVE PR title (honors the operator-signed [LOC-EXEMPT:]
+          # marker per R23/R76 exception protocol even when added after open).
+          # Fall back to the event-payload title if the API read fails.
+          PR_TITLE="$(gh pr view "$PR_NUMBER" --json title --jq .title 2>/dev/null || true)"
+          if [ -z "$PR_TITLE" ]; then PR_TITLE="$PR_TITLE_EVENT"; fi
+          echo "PR title (live): $PR_TITLE"
           # Net added lines across code, tests, AND infrastructure (workflows,
           # scripts, dangerfile, config). Lock files & generated artifacts are
           # excluded. Infra files are counted so an infra-heavy PR cannot
@@ -140,10 +152,20 @@ jobs:
       - name: Compute test:src ratio
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Fallback only — see the LOC-budget job: the event-payload title goes
+          # STALE if the title is edited (e.g. adding [TEST-EXEMPT:]) after the
+          # event fires. Read the live title below per R23/R76 (R100.A1).
+          PR_TITLE_EVENT: ${{ github.event.pull_request.title }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ -z "$BASE_SHA" ]; then echo "Not a PR; skip."; exit 0; fi
+          # Read the LIVE PR title so a post-open [TEST-EXEMPT:] marker is
+          # honored. Fall back to the event-payload title on API failure.
+          PR_TITLE="$(gh pr view "$PR_NUMBER" --json title --jq .title 2>/dev/null || true)"
+          if [ -z "$PR_TITLE" ]; then PR_TITLE="$PR_TITLE_EVENT"; fi
+          echo "PR title (live): $PR_TITLE"
           # src side counts application code plus testable infra code
           # (scripts/*.ts, dangerfile.js). Non-TS infra (workflow YAML, shell)
           # is not unit-testable and is validated by the infra-lint workflow
