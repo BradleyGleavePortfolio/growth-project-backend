@@ -1,8 +1,24 @@
-Wave H1 — Quality Bar Raise (configs & policy files)
-Completed: 2026-06-19T01:19:02Z
-Builder: claude_opus_4_8 (continuation after sandbox death)
-Status: COMPLETE — ready for dual audit
-Files completed: 13/13
-Net LOC: 250 (256 additions, 6 deletions); 252 additions excl heartbeat
-Blocker: none
-Decision points: D-H1-1 (security.txt prod host TODO), D-H1-2 (renovate policy), D-H1-3 (template render check)
+Wave H1 — configs PR — status: READY FOR DUAL AUDIT
+================================================
+Last update: 2026-06-18 23:25 PDT (operator-direct build session)
+Commits: 16 (D-H1-1 + D-H1-2 resolved)
+Branch: quality-bar-h1-configs
+
+Files in this PR:
+ 1. .editorconfig
+ 2. .well-known/ai.txt
+ 3. .well-known/security.txt (RFC 9116) — D-H1-1 resolved: host = api.thegrowthproject.app
+ 4. .github/ISSUE_TEMPLATE/bug_report.md
+ 5. .github/ISSUE_TEMPLATE/feature_request.md
+ 6. .github/PULL_REQUEST_TEMPLATE.md (R101)
+ 7. .github/workflows/codeql.yml (R103)
+ 8. .github/workflows/pr-size-labeler.yml (R105)
+ 9. renovate.json — D-H1-2 resolved: active vacuum mode (patch+minor auto-merge for both dev + prod deps, major manual)
+10. lefthook.yml (R104: banned-cast grep, tsc, eslint, prettier, R3 commit-msg gate)
+11. .prettierrc.json + .prettierignore
+12. package.json (prepare script)
+13. .h1-status.txt (this file)
+
+D-H1-3 (verify PR template renders): operator visual check on GitHub UI after first PR opens.
+
+Operator decisions still owed AFTER H1 merges: none; H1 is self-contained.

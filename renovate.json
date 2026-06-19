@@ -5,15 +5,28 @@
   "rangeStrategy": "bump",
   "prHourlyLimit": 4,
   "prConcurrentLimit": 10,
-  "vulnerabilityAlerts": { "enabled": true },
+  "vulnerabilityAlerts": { "enabled": true, "labels": ["security", "renovate"] },
   "lockFileMaintenance": { "enabled": true, "schedule": ["before 9am on monday"] },
   "packageRules": [
-    { "matchUpdateTypes": ["patch", "minor"], "matchDepTypes": ["devDependencies"], "automerge": true },
-    { "matchUpdateTypes": ["patch", "minor"], "matchDepTypes": ["dependencies"], "automerge": false },
-    { "matchUpdateTypes": ["major"], "automerge": false },
+    {
+      "matchUpdateTypes": ["patch", "minor"],
+      "matchDepTypes": ["devDependencies"],
+      "automerge": true,
+      "automergeType": "branch"
+    },
+    {
+      "matchUpdateTypes": ["patch", "minor"],
+      "matchDepTypes": ["dependencies"],
+      "automerge": true,
+      "automergeType": "branch"
+    },
+    { "matchUpdateTypes": ["major"], "automerge": false, "labels": ["renovate", "major-bump"] },
+    { "matchDatasources": ["docker"], "automerge": false, "labels": ["renovate", "docker"] },
     { "matchPackagePatterns": ["^@types/"], "groupName": "type definitions" },
     { "matchPackagePatterns": ["^eslint"], "groupName": "eslint" },
     { "matchPackagePatterns": ["^vitest"], "groupName": "vitest" },
-    { "matchPackagePatterns": ["^@nestjs/"], "groupName": "nestjs" }
+    { "matchPackagePatterns": ["^@nestjs/"], "groupName": "nestjs" },
+    { "matchPackagePatterns": ["^@sentry/"], "groupName": "sentry" },
+    { "matchPackagePatterns": ["^prisma", "^@prisma/"], "groupName": "prisma" }
   ]
 }
