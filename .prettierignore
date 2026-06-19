@@ -1,0 +1,8 @@
+dist/
+build/
+coverage/
+node_modules/
+package-lock.json
+*.lock
+prisma/migrations/
+CHANGELOG.md

@@ -1,0 +1,39 @@
+pre-commit:
+  parallel: true
+  commands:
+    banned-cast-tokens:
+      run: |
+        # R75: fail if any net additions introduce banned cast tokens.
+        # Tokens: @ts-ignore, as any, as unknown as, as never,
+        # .catch(()=>undefined), .catch(()=>null), .catch(()=>{}), "Coming soon"
+        if git diff --cached --unified=0 -- '*.ts' '*.tsx' '*.js' '*.jsx' | grep -E '^\+[^+]' | grep -E '(@ts-ignore|\bas\s+any\b|\bas\s+unknown\s+as\b|\bas\s+never\b|\.catch\(\s*\(\s*\)\s*=>\s*(undefined|null|\{\s*\})\)|Coming soon)' ; then
+          echo "❌ R75 violation: banned cast tokens in staged diff. Build it right, not bare minimum."
+          exit 1
+        fi
+    tsc:
+      run: npx tsc --noEmit
+    eslint:
+      run: npx eslint --max-warnings 0 {staged_files}
+      glob: "*.{ts,tsx,js,jsx}"
+    prettier:
+      run: npx prettier --check {staged_files}
+      glob: "*.{ts,tsx,js,jsx,json,md,yml,yaml}"
+    prod-readiness-quick:
+      run: |
+        if [ -x scripts/prod-readiness-precheck.sh ]; then
+          bash scripts/prod-readiness-precheck.sh --quick
+        fi
+commit-msg:
+  commands:
+    no-ai-tokens:
+      # R3: block commits whose message includes banned identity tokens
+      # (full doctrine token list). Known-good web-standard strings
+      # (ai.txt, .well-known/ai*, User-Agent) are scrubbed before scanning
+      # so the standalone (ai|agent) word boundary does not false-positive.
+      run: |
+        MSG=$(cat {1})
+        SCRUBBED=$(printf '%s' "$MSG" | sed -E 's|ai\.txt||gI; s|\.well-known/ai[^ ]*||gI; s|User-Agent||gI')
+        if printf '%s' "$SCRUBBED" | grep -iqE 'claude|anthropic|openai|gpt[- ]|computer[- ]agent|perplexity|co-authored[- ]by|generated with|🤖|ai assist|\b(ai|agent)\b' ; then
+          echo "❌ R3 violation: commit message contains banned identity tokens (Claude/Anthropic/OpenAI/GPT/Computer/Agent/Perplexity/Co-Authored/AI/etc). Operator identity only."
+          exit 1
+        fi

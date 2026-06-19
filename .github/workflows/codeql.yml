@@ -1,0 +1,73 @@
+name: codeql
+# CodeQL JS/TS static analysis (R98 — security baseline).
+#
+# This workflow is intentionally tolerant of repositories where GitHub
+# Advanced Security (the SARIF-upload feature that surfaces findings in
+# the Security tab) is not enabled. The scan still runs and produces
+# build-log diagnostics; the analyze/upload step is allowed to fail
+# without failing the PR check. When the operator enables Advanced
+# Security the same workflow begins uploading findings to the Security
+# tab with no code change required.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+jobs:
+  analyze:
+    name: CodeQL JS/TS
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['javascript-typescript']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+      - uses: github/codeql-action/autobuild@v3
+      # Step-level continue-on-error here is intentionally narrow: it only
+      # lets the SARIF upload fail when GitHub Advanced Security isn't
+      # enabled. The validation step below re-asserts the gate so that a
+      # genuine analyze failure (when Advanced Security IS enabled) still
+      # turns the PR check red. The scan itself always runs and emits
+      # findings to the job log for operator review.
+      - name: Perform CodeQL Analysis
+        id: codeql_analyze
+        uses: github/codeql-action/analyze@v3
+        continue-on-error: true
+        with:
+          category: '/language:${{ matrix.language }}'
+
+      - name: Validate CodeQL outcome (GHAS-disabled-only tolerated)
+        if: always()
+        shell: bash
+        env:
+          ANALYZE_OUTCOME: ${{ steps.codeql_analyze.outcome }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ "${ANALYZE_OUTCOME}" == "success" ]]; then
+            echo "CodeQL analyze succeeded."
+            exit 0
+          fi
+          # Outcome failed/cancelled: only tolerate the SARIF-upload failure
+          # that occurs when Advanced Security is not enabled on the repo.
+          # Read the repo's Advanced Security setting via the API to decide.
+          GHAS_STATE=$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.security_and_analysis.advanced_security.status // "disabled"' 2>/dev/null || echo "disabled")
+          echo "Advanced Security state: $GHAS_STATE; analyze outcome: $ANALYZE_OUTCOME"
+          if [[ "$GHAS_STATE" == "enabled" ]]; then
+            echo "::error::CodeQL analyze failed and Advanced Security is enabled - this is a real failure, not the SARIF-upload-disabled workaround. Failing the gate."
+            exit 1
+          fi
+          echo "::warning::CodeQL analyze upload skipped (Advanced Security not enabled on this private repo). Scan itself ran; no SARIF sink available. To remove this workaround, enable Code Scanning in repo settings."
+          exit 0

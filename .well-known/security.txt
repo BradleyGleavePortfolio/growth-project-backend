@@ -1,0 +1,6 @@
+Contact: mailto:bradley@bradleytgpcoaching.com
+Expires: 2027-06-18T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://api.thegrowthproject.app/.well-known/security.txt
+# Policy: report responsibly disclosed vulnerabilities to the Contact above.
+# Acknowledgments page TBD; expect a reply within 5 business days.
