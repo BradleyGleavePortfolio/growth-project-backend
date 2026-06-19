@@ -54,11 +54,32 @@ jobs:
             echo "Not in PR context; skipping."
             exit 0
           fi
-          # Tokens enumerated in AGENT_RULES R75. The ' Coming soon' string is
-          # a placeholder-in-prod regression marker, intentionally bracketed
-          # so the rule itself can mention it without self-matching.
+          # Scan scope (R75 / R100.A2). Includes application code, prod scripts,
+          # and the Danger config; excludes type-declaration files, unit/spec
+          # files (fixture false positives), node_modules, and — critically —
+          # this gate's own home under .github/** so the token list below cannot
+          # self-match when a PR edits the gate workflow itself.
+          PATHSPEC=(
+            'src/**/*.ts' 'src/**/*.tsx' 'src/**/*.js' 'src/**/*.jsx'
+            'scripts/**/*.ts' 'scripts/**/*.js' 'scripts/**/*.sh'
+            'dangerfile.js'
+            'test/**/*.ts' 'test/**/*.tsx' 'test/**/*.js'
+            ':(exclude)**/*.d.ts'
+            ':(exclude)**/node_modules/**'
+            ':(exclude)**/*.test.*'
+            ':(exclude)**/*.spec.*'
+            ':(exclude).github/**'
+          )
+          # Build the added/removed line sets ONCE per side, scoped above.
+          ADDED_LINES=$(git diff "$BASE_SHA"...HEAD -- "${PATHSPEC[@]}" | grep -E '^\+[^+]' || true)
+          REMOVED_LINES=$(git diff "$BASE_SHA"...HEAD -- "${PATHSPEC[@]}" | grep -E '^-[^-]' || true)
+
+          # Literal banned tokens enumerated in AGENT_RULES R75. Placeholder and
+          # seed-data literals are matched here as data; the rule prose elsewhere
+          # avoids self-match by living under .github/** which is excluded above.
           TOKENS=(
             "@ts-ignore"
+            "@ts-expect-error"
             "as any"
             "as unknown as"
             "as never"
@@ -66,21 +87,40 @@ jobs:
             ".catch(()=>null)"
             ".catch(()=>{})"
             "Coming soon"
+            "lorem ipsum"
+            "foo@bar"
+            "John Doe"
           )
+          # @ts-expect-error is permitted ONLY when the same line carries a
+          # GitHub issue reference (#NNNN, 4+ digits). Such lines are stripped
+          # from the scanned sets before counting so a documented suppression
+          # does not trip the gate.
+          EXEMPT_RE='@ts-expect-error.*#[0-9]{4,}'
+          ADDED_SCAN=$(printf '%s\n' "$ADDED_LINES" | grep -Ev "$EXEMPT_RE" || true)
+          REMOVED_SCAN=$(printf '%s\n' "$REMOVED_LINES" | grep -Ev "$EXEMPT_RE" || true)
+
           ADDED=0
           REMOVED=0
           for tok in "${TOKENS[@]}"; do
-            # Count net +/- of lines containing the token in the diff,
-            # restricted to TS/JS sources (skip docs, lock files).
-            a=$(git diff "$BASE_SHA"...HEAD -- 'src/**/*.ts' 'src/**/*.tsx' 'test/**/*.ts' \
-              | grep -E '^\+[^+]' | grep -cF "$tok" || true)
-            r=$(git diff "$BASE_SHA"...HEAD -- 'src/**/*.ts' 'src/**/*.tsx' 'test/**/*.ts' \
-              | grep -E '^-[^-]' | grep -cF "$tok" || true)
+            a=$(printf '%s\n' "$ADDED_SCAN" | grep -cF "$tok" || true)
+            r=$(printf '%s\n' "$REMOVED_SCAN" | grep -cF "$tok" || true)
             net=$((a - r))
             printf "  %-32s  +%-3d  -%-3d  net %+d\n" "$tok" "$a" "$r" "$net"
             ADDED=$((ADDED + a))
             REMOVED=$((REMOVED + r))
           done
+
+          # Parametrized empty-catch: .catch(<param> => undefined|null|{}) with
+          # arbitrary whitespace and parameter names. Counted via regex (grep -E)
+          # because the literal list above cannot express a variable parameter.
+          EMPTY_CATCH_RE='\.catch\(\s*[^)]*\s*=>\s*(undefined|null|\{\s*\})\s*\)'
+          a=$(printf '%s\n' "$ADDED_SCAN" | grep -cE "$EMPTY_CATCH_RE" || true)
+          r=$(printf '%s\n' "$REMOVED_SCAN" | grep -cE "$EMPTY_CATCH_RE" || true)
+          net=$((a - r))
+          printf "  %-32s  +%-3d  -%-3d  net %+d\n" "parametrized-empty-catch" "$a" "$r" "$net"
+          ADDED=$((ADDED + a))
+          REMOVED=$((REMOVED + r))
+
           NET=$((ADDED - REMOVED))
           echo ""
           echo "Total: +$ADDED added, -$REMOVED removed, net $NET"
