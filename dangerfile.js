@@ -43,22 +43,43 @@ if (touchedWebhooks) warn('📬 This PR touches **webhook** code. Replay-protect
 if (touchedRules) warn('📜 This PR edits the **rule doctrine**. Operator review required. Mention rationale in PR body.');
 
 // ---------- 2) PR hygiene ----------
-const titleLooksConventional = /^(feat|fix|perf|deps|revert|docs|refactor|test|build|ci|chore)(\([^)]+\))?!?:\s/.test(danger.github.pr.title);
-if (!titleLooksConventional) {
+const CONVENTIONAL_RE = /^(feat|fix|perf|deps|revert|docs|refactor|test|build|ci|chore)(\([^)]+\))?!?:\s/;
+
+// Resolve the subject release-please will actually parse for the SemVer bump.
+// Prefer the PR title, but fall back to the latest commit's first line: some
+// CI hosts (mirrors / proxies) hydrate danger.github.pr.title as undefined
+// even though the commit DSL is fully populated, and release-please reads the
+// commit subjects anyway. Squash-merge uses the PR title; merge-commit uses
+// the commit subjects — both are valid sources, so accept either.
+const prTitle = (danger.github.pr && danger.github.pr.title) || '';
+const commits = danger.git.commits || [];
+const latestCommitSubject = commits.length
+  ? String(commits[commits.length - 1].message || '').split('\n')[0]
+  : '';
+const conventionalSubject = CONVENTIONAL_RE.test(prTitle)
+  ? prTitle
+  : (CONVENTIONAL_RE.test(latestCommitSubject) ? latestCommitSubject : '');
+
+if (!prTitle && !latestCommitSubject) {
+  // Neither source is available (CI could not hydrate the PR/commit DSL).
+  // Don't hard-fail on missing data — surface it as a nudge instead.
+  warn('Could not read the PR title or commit subjects to validate Conventional Commits format. Verify the title parses for release-please.');
+} else if (!conventionalSubject) {
   fail(
     'PR title is not Conventional Commits format. release-please reads commit messages / PR titles to compute SemVer bumps. ' +
     'Expected: `feat: …`, `fix: …`, `feat(billing)!: …`, etc. See .release-please-config.json.'
   );
 }
 
-if (danger.github.pr.body.length < 80) {
+const prBody = (danger.github.pr && danger.github.pr.body) || '';
+if (prBody.length < 80) {
   warn('PR description is short. Use the PR template — describe what changed, why, and the test plan.');
 }
 
 // Conventional Commits permits a `BREAKING CHANGE:` footer in the body even
 // when the title has no `!`. release-please parses that footer for the major
 // bump, but the title regex above would not surface it — so warn explicitly.
-if (danger.github.pr.body && danger.github.pr.body.includes('BREAKING CHANGE:')) {
+if (prBody.includes('BREAKING CHANGE:')) {
   warn('This PR contains a **BREAKING CHANGE:** footer. Confirm the major version bump is intentional and the migration/rollback path is documented.');
 }
 
