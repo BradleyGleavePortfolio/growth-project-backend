@@ -8,8 +8,9 @@
 // scanProvidersFromProcess) driven against a throwaway temp directory.
 
 import { join } from 'node:path';
-import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises';
-import { existsSync, readFileSync, accessSync, constants as fsConstants } from 'node:fs';
+import { mkdtemp, mkdir, writeFile, rm, chmod, symlink, link } from 'node:fs/promises';
+import { existsSync, readFileSync, accessSync, lstatSync, constants as fsConstants } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 
 import {
@@ -277,9 +278,12 @@ describe('extractModuleSpecifiers (AST-based import discovery)', () => {
     );
   });
 
-  it('captures type-only imports (import type X from) too', () => {
+  it('does NOT count a declaration-level type-only import (H4.D R3 F003)', () => {
+    // `import type { Stripe } from 'stripe'` is erased by the TS compiler and
+    // emits no runtime require — it must not register as runtime provider usage.
     const specs = extractModuleSpecifiers("import type { Stripe } from 'stripe';");
-    expect(specs).toContain('stripe');
+    expect(specs).not.toContain('stripe');
+    expect(specs).toEqual([]);
   });
 
   it('captures a namespace import (import * as)', () => {
@@ -722,14 +726,58 @@ describe('F001 — Supabase service-role JWT segment validation (offline)', () =
     expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
   });
 
-  it('rejects valid-JSON header+payload but missing any role/iss/ref claim', () => {
+  it('rejects valid-JSON header+payload but missing any role claim', () => {
     const token = `${enc({ alg: 'HS256' })}.${enc({ sub: 'user-123', foo: 'bar' })}.sig`;
     expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
   });
 
-  it('accepts a token whose payload carries iss/ref even without explicit role (lenient offline)', () => {
-    const issToken = `${enc({ alg: 'HS256' })}.${enc({ iss: 'supabase', ref: 'abcdefgh' })}.sig`;
-    expect(isPlausibleSupabaseServiceRoleJwt(issToken)).toBe(true);
+  // --- H4.D R3 F001: role === "service_role" is a HARD GATE -----------------
+  // The R2 revision accepted a token merely because it carried a non-empty
+  // `iss` OR `ref` claim. That OR-on-iss/ref was too permissive: any well-formed
+  // JWT (incl. a Supabase `anon` token, which also has `iss`/`ref`) validated
+  // as a service-role key. The gate is now: the `role` claim MUST be exactly
+  // "service_role"; `iss`/`ref` are corroborating evidence only.
+  it('R3 F001: an iss-only token (no role) → REJECT', () => {
+    const token = `${enc({ alg: 'HS256' })}.${enc({ iss: 'https://abcdefgh.supabase.co/auth/v1' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+
+  it('R3 F001: a ref-only token (no role) → REJECT', () => {
+    const token = `${enc({ alg: 'HS256' })}.${enc({ ref: 'abcdefghproj1234' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+
+  it('R3 F001: an iss + ref token with NO role → REJECT', () => {
+    const token = `${enc({ alg: 'HS256' })}.${enc({ iss: 'https://abcdefgh.supabase.co/auth/v1', ref: 'abcdefghproj1234' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+    // End-to-end: such a token must bucket the var as a placeholder → STUB.
+    const r = wired('supabase', {
+      SUPABASE_URL: 'https://abcdefgh.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: token,
+    });
+    expect(r.status).toBe('STUB');
+    expect(r.env_vars_placeholder).toContain('SUPABASE_SERVICE_ROLE_KEY');
+  });
+
+  it('R3 F001: a token with role "anon" (not service_role) → REJECT', () => {
+    const token = `${enc({ alg: 'HS256' })}.${enc({ role: 'anon', iss: 'https://abcdefgh.supabase.co/auth/v1', ref: 'abcdefghproj1234' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(false);
+  });
+
+  it('R3 F001: role "service_role" alone (no iss/ref) → ACCEPT', () => {
+    const token = `${enc({ alg: 'HS256' })}.${enc({ role: 'service_role' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(true);
+  });
+
+  it('R3 F001: a full Supabase service-role token (role + ref + iss) → ACCEPT', () => {
+    const token = `${enc({ alg: 'HS256', typ: 'JWT' })}.${enc({ role: 'service_role', ref: 'abcdefghproj1234', iss: 'https://abcdefgh.supabase.co/auth/v1' })}.sig`;
+    expect(isPlausibleSupabaseServiceRoleJwt(token)).toBe(true);
+    const r = wired('supabase', {
+      SUPABASE_URL: 'https://abcdefgh.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: token,
+    });
+    expect(r.status).toBe('WIRED');
+    expect(r.env_vars_present).toContain('SUPABASE_SERVICE_ROLE_KEY');
   });
 
   it('rejects a token with the wrong number of segments', () => {
@@ -819,6 +867,138 @@ describe('F002 — collectFileEvidence requires a regular readable file (not a d
   });
 });
 
+describe('F002 (R3) — symlink-to-regular-file is accepted; bad symlink targets are rejected', () => {
+  // The R2 revision used lstat-only and rejected ANY symlink (lstat reports the
+  // link itself, not the target). That broke legitimate AWS_WEB_IDENTITY_TOKEN_FILE
+  // deployments where Kubernetes service-account mounts present the token through
+  // a symlink to a regular file. R3 resolves the symlink target via realpath and
+  // accepts only when the resolved target is a readable regular file.
+  //
+  // Per the brief constraint: realpath resolution is fs-touching, so every case
+  // builds in a throwaway os.tmpdir() directory cleaned up in afterEach.
+  let dir: string;
+  const FILE_KEY = 'AWS_WEB_IDENTITY_TOKEN_FILE_EXISTS' as const;
+
+  function evidenceFor(p: string): boolean | undefined {
+    return collectFileEvidence({ AWS_WEB_IDENTITY_TOKEN_FILE: p })[FILE_KEY];
+  }
+
+  /** Make a FIFO via mkfifo; return its path, or undefined when mkfifo is unavailable. */
+  function tryMkfifo(p: string): string | undefined {
+    try {
+      execFileSync('mkfifo', [p]);
+      return p;
+    } catch {
+      return undefined;
+    }
+  }
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'provider-wiring-f002-symlink-'));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('symlink → regular readable file → ACCEPT', async () => {
+    const target = join(dir, 'real-token');
+    await writeFile(target, 'token-bytes', 'utf8');
+    const linkPath = join(dir, 'token-symlink');
+    await symlink(target, linkPath);
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true); // it really is a symlink
+    expect(evidenceFor(linkPath)).toBe(true);
+  });
+
+  it('symlink → directory → REJECT', async () => {
+    const targetDir = join(dir, 'a-dir');
+    await mkdir(targetDir, { recursive: true });
+    const linkPath = join(dir, 'dir-symlink');
+    await symlink(targetDir, linkPath);
+    expect(existsSync(linkPath)).toBe(true); // existence alone would say true
+    expect(evidenceFor(linkPath)).toBe(false);
+  });
+
+  it('symlink → FIFO → REJECT', async () => {
+    const fifo = tryMkfifo(join(dir, 'a-fifo'));
+    if (fifo === undefined) {
+      // mkfifo unavailable in this sandbox: assert the equivalent non-file case
+      // (a directory target) so the test still carries a real assertion (R117).
+      const targetDir = join(dir, 'fifo-fallback-dir');
+      await mkdir(targetDir, { recursive: true });
+      const linkPath = join(dir, 'fifo-fallback-symlink');
+      await symlink(targetDir, linkPath);
+      expect(evidenceFor(linkPath)).toBe(false);
+      return;
+    }
+    const linkPath = join(dir, 'fifo-symlink');
+    await symlink(fifo, linkPath);
+    expect(evidenceFor(linkPath)).toBe(false);
+  });
+
+  it('dangling symlink (target does not exist) → REJECT', async () => {
+    const linkPath = join(dir, 'dangling-symlink');
+    await symlink(join(dir, 'no-such-target'), linkPath);
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    expect(existsSync(linkPath)).toBe(false); // existsSync follows → false for dangling
+    expect(evidenceFor(linkPath)).toBe(false);
+  });
+
+  it('hardlink (= a regular file) → ACCEPT', async () => {
+    const target = join(dir, 'hardlink-target');
+    await writeFile(target, 'token-bytes', 'utf8');
+    const hardPath = join(dir, 'a-hardlink');
+    await link(target, hardPath); // hard link, not symbolic
+    expect(lstatSync(hardPath).isSymbolicLink()).toBe(false); // hardlink is a regular file
+    expect(lstatSync(hardPath).isFile()).toBe(true);
+    expect(evidenceFor(hardPath)).toBe(true);
+  });
+
+  it('plain regular file → ACCEPT (unchanged from R2)', async () => {
+    const file = join(dir, 'plain-token');
+    await writeFile(file, 'token-bytes', 'utf8');
+    expect(evidenceFor(file)).toBe(true);
+  });
+
+  it('plain directory → REJECT (unchanged from R2)', async () => {
+    const d = join(dir, 'plain-dir');
+    await mkdir(d, { recursive: true });
+    expect(evidenceFor(d)).toBe(false);
+  });
+
+  it('multi-hop symlink chain → regular file → ACCEPT (k8s ..data style)', async () => {
+    // Mirrors Kubernetes projected-token mounts: link → link → real file.
+    const target = join(dir, 'real-token');
+    await writeFile(target, 'token-bytes', 'utf8');
+    const mid = join(dir, 'mid-link');
+    await symlink(target, mid);
+    const top = join(dir, 'top-link');
+    await symlink(mid, top);
+    expect(evidenceFor(top)).toBe(true);
+  });
+
+  it('end-to-end: a symlink-to-token-file keeps AWS WIRED (no false STUB)', async () => {
+    const target = join(dir, 'token');
+    await writeFile(target, 'eyJ.fake.jwt', 'utf8');
+    const linkPath = join(dir, 'token-link');
+    await symlink(target, linkPath);
+    const env: EnvMap = {
+      AWS_REGION: 'us-east-1',
+      AWS_WEB_IDENTITY_TOKEN_FILE: linkPath,
+    };
+    const evidence = collectFileEvidence(env);
+    const reports = scanProvidersWith(
+      new Set(['@aws-sdk/client-s3']),
+      new Set(),
+      env,
+      [def('aws-s3')],
+      evidence,
+    );
+    expect(reports[0].status).toBe('WIRED');
+    expect(reports[0].diagnostic).toBeUndefined();
+  });
+});
+
 describe('F003 — collectImports / extractModuleSpecifiers scan .tsx (and skip .d.ts)', () => {
   it('extractModuleSpecifiers parses a real .tsx fixture and finds the stripe import', () => {
     const fixturePath = join(__dirname, '__fixtures__', 'provider-wiring', 'uses-stripe.tsx');
@@ -881,5 +1061,91 @@ describe('F003 — collectImports / extractModuleSpecifiers scan .tsx (and skip 
       expect(stripe?.status).not.toBe('NOT_USED');
       expect(stripe?.status).toBe('WIRED');
     });
+  });
+});
+
+describe('F003 (R3) — type-only imports/exports are not counted as runtime usage', () => {
+  // `import type`/`export type` (and per-specifier `{ type X }`) are erased by
+  // the TS compiler — they emit no runtime require/import. The R2 scanner
+  // counted them as provider usage, producing false-positive "used" providers.
+  // R3 skips them while still counting any mixed runtime binding.
+  it('import type { X } from \'stripe\' → not counted', () => {
+    expect(extractModuleSpecifiers("import type { Stripe } from 'stripe';")).toEqual([]);
+  });
+
+  it('export type { X } from \'stripe\' → not counted', () => {
+    expect(extractModuleSpecifiers("export type { Stripe } from 'stripe';")).toEqual([]);
+  });
+
+  it('named-only per-specifier type import { type X } → not counted', () => {
+    expect(extractModuleSpecifiers("import { type Stripe } from 'stripe';")).toEqual([]);
+  });
+
+  it('named-only per-specifier type export { type X } → not counted', () => {
+    expect(extractModuleSpecifiers("export { type Stripe } from 'stripe';")).toEqual([]);
+  });
+
+  it('mixed import { type X, Y } → ONLY the runtime binding keeps the package', () => {
+    // Y is a runtime binding, so the package stays counted. (The collector keys
+    // on the package specifier, not the individual binding names.)
+    const specs = extractModuleSpecifiers("import { type StripeType, Stripe } from 'stripe';");
+    expect(specs).toContain('stripe');
+  });
+
+  it('mixed export { type X, Y } → the runtime binding keeps the package', () => {
+    const specs = extractModuleSpecifiers("export { type StripeType, Stripe } from 'stripe';");
+    expect(specs).toContain('stripe');
+  });
+
+  it('plain runtime import { X } → counted (control)', () => {
+    expect(extractModuleSpecifiers("import { Stripe } from 'stripe';")).toContain('stripe');
+  });
+
+  it('side-effect import \'stripe\' → counted (still runtime per R2)', () => {
+    expect(extractModuleSpecifiers("import 'stripe';")).toContain('stripe');
+  });
+
+  it('default import of a type-erasable module is still a runtime binding → counted', () => {
+    // `import Stripe from 'stripe'` (no `type`) introduces a runtime default
+    // binding regardless of how the value is used downstream.
+    expect(extractModuleSpecifiers("import Stripe from 'stripe';")).toContain('stripe');
+  });
+
+  it('namespace import * as is a runtime binding → counted', () => {
+    expect(extractModuleSpecifiers("import * as S from 'stripe';")).toContain('stripe');
+  });
+
+  it('export * from \'stripe\' (runtime star re-export) → counted', () => {
+    expect(extractModuleSpecifiers("export * from 'stripe';")).toContain('stripe');
+  });
+
+  it('end-to-end: a provider imported ONLY via `import type` reports NOT_USED', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'provider-wiring-f003r3-'));
+    try {
+      // Deliberately NOT under any Stripe filePathHint dir (src/billing,
+      // src/stripe, src/checkout) so the only possible signal is the import
+      // itself — which is type-only and must therefore not register.
+      const srcDir = join(root, 'src', 'typesonly');
+      await mkdir(srcDir, { recursive: true });
+      // Stripe referenced for TYPES ONLY — no runtime import.
+      await writeFile(
+        join(srcDir, 'types.ts'),
+        "import type { Stripe } from 'stripe';\nexport type Pay = { s: Stripe };\n",
+        'utf8',
+      );
+      const found = collectImports(root);
+      expect(found.has('stripe')).toBe(false);
+      const env: EnvMap = {
+        STRIPE_SECRET_KEY: 'sk_live_9f3kPq2rstuVWXabcdEFGHijklmnop',
+        STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWXabcdEFGH',
+      };
+      const reports = scanProvidersFromProcess(root, env);
+      const stripe = reports.find((r) => r.id === 'stripe');
+      // No runtime import and no path hint dir of its own → NOT_USED.
+      expect(stripe?.sdk_imported).toBe(false);
+      expect(stripe?.status).toBe('NOT_USED');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

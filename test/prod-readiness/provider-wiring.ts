@@ -173,9 +173,19 @@ function decodeJwtJsonSegment(seg: string): Record<string, unknown> | undefined 
  *   2. header decodes to valid JSON with a string `alg` claim (and, if a `typ`
  *      claim is present, it equals `"JWT"` — real Supabase tokens set
  *      `typ: "JWT"`, but we stay lenient when it is omitted);
- *   3. payload decodes to valid JSON carrying a plausible service-role claim:
- *      `role === "service_role"`, or (lenient offline fallback) a non-empty
- *      `iss`/`ref` claim when the offline view cannot see the role.
+ *   3. payload decodes to valid JSON whose `role` claim is EXACTLY the string
+ *      `"service_role"`. This is a HARD GATE.
+ *
+ * The role gate is deliberate (H4.D R3 F001). An earlier revision also accepted
+ * a token merely because it carried a non-empty `iss` or `ref` claim. That was
+ * too permissive: virtually every well-formed JWT (including a Supabase `anon`
+ * token, whose payload also carries `iss`/`ref`) has an `iss`, so the OR-on-iss/
+ * ref let non-service-role tokens validate as service-role keys. The `iss`/`ref`
+ * claims remain useful *corroborating* evidence, but they are NOT sufficient on
+ * their own and never substitute for the role check. A token with the wrong
+ * role (e.g. `role: "anon"`) or no role at all is rejected even if it carries a
+ * project `ref` and an `iss`.
+ *
  * The signature segment is only required to be present and non-empty — it is
  * never verified offline. Any failure returns `false`, so the value is bucketed
  * as a placeholder (→ STUB) rather than wired.
@@ -194,12 +204,9 @@ export function isPlausibleSupabaseServiceRoleJwt(v: string): boolean {
   const payload = decodeJwtJsonSegment(payloadSeg);
   if (payload === undefined) return false;
 
-  if (payload.role === 'service_role') return true;
-  // Lenient offline fallback: accept a token that carries a plausible Supabase
-  // project claim even when the role is not the explicit `service_role` string.
-  if (typeof payload.iss === 'string' && payload.iss.length > 0) return true;
-  if (typeof payload.ref === 'string' && payload.ref.length > 0) return true;
-  return false;
+  // HARD GATE (R30/R31/R40): the role claim MUST be exactly "service_role".
+  // `iss`/`ref` are corroborating evidence only and never accepted alone.
+  return payload.role === 'service_role';
 }
 
 export const KEY_SHAPE_VALIDATORS: Readonly<Record<string, (v: string) => boolean>> = {
@@ -423,20 +430,49 @@ export function collectFileEvidence(env: EnvMap, providers: ProviderDef[] = PROV
 }
 
 /**
- * I/O EDGE helper: `true` only when `p` is a REGULAR file that is readable.
- * `fs.existsSync` alone is insufficient — a DIRECTORY (or socket/fifo) at a
- * credential path satisfies existence yet is not a usable token file, so the
- * provider would wrongly classify WIRED. We `lstatSync` (no symlink-follow into
- * a directory masquerade), reject anything that is not a regular file, then
- * confirm read access with `accessSync`. Any error (missing path, permission,
- * non-file) returns `false`; the reason is captured by `fileEvidenceReason` for
- * the diagnostic surface. Errors are never swallowed silently — they map to an
- * explicit `false` + a recorded reason (R59).
+ * I/O EDGE helper: `true` only when `p` resolves to a REGULAR file that is
+ * readable. `fs.existsSync` alone is insufficient — a DIRECTORY (or socket/fifo)
+ * at a credential path satisfies existence yet is not a usable token file, so
+ * the provider would wrongly classify WIRED.
+ *
+ * Symlink handling (H4.D R3 F002): we `lstatSync` FIRST so we can tell a symlink
+ * apart from a real file without following it blindly. An earlier revision
+ * stopped there and rejected anything whose `lstat` was not itself a regular
+ * file — which wrongly rejected a symlink pointing AT a valid token file. That
+ * broke legitimate `AWS_WEB_IDENTITY_TOKEN_FILE` deployments: Kubernetes mounts
+ * the projected service-account token through a symlink chain
+ * (`..data/token` → timestamped dir), so the path the pod sees is a symlink to a
+ * regular file. We now:
+ *   - if the path itself is a regular file (or a hardlink, which `lstat` reports
+ *     as a regular file), confirm read access and accept;
+ *   - if the path is a symlink, resolve its target with `fs.realpathSync.native`
+ *     (wrapped so a DANGLING link maps to `false`, never an unhandled throw),
+ *     `statSync` the resolved target (following the full chain), and accept only
+ *     when the target is a regular file that is readable;
+ *   - reject everything else: directories, sockets, FIFOs, character/block
+ *     devices, and symlinks pointing at any of those or at a dangling target.
+ *
+ * Any error (missing path, permission, non-file, dangling link) returns `false`
+ * rather than propagating. Errors are not swallowed silently in the sense R59
+ * guards against: each maps to a deterministic `false` (a usable-token-file
+ * negative), not a hidden failure — the caller records the resulting evidence
+ * bit, and a `false` here surfaces downstream as a STUB classification.
  */
 function isReadableRegularFile(p: string): boolean {
   try {
-    const st = fs.lstatSync(p);
-    if (!st.isFile()) return false;
+    const lst = fs.lstatSync(p);
+    if (lst.isSymbolicLink()) {
+      // Resolve the (possibly multi-hop) symlink chain to its real target.
+      // A dangling target throws ENOENT here — caught below → false.
+      const target = fs.realpathSync.native(p);
+      const tst = fs.statSync(target); // statSync follows links; target is real.
+      if (!tst.isFile()) return false; // dir / socket / fifo / device target.
+      fs.accessSync(target, fs.constants.R_OK);
+      return true;
+    }
+    // Not a symlink: a regular file (incl. hardlinks) is acceptable; a
+    // directory, socket, FIFO, or device is not.
+    if (!lst.isFile()) return false;
     fs.accessSync(p, fs.constants.R_OK);
     return true;
   } catch {
@@ -483,6 +519,52 @@ function normalizeSpecifier(spec: string): string | undefined {
 }
 
 /**
+ * True when an `ImportDeclaration` contributes NO runtime binding and should be
+ * ignored as provider usage (H4.D R3 F003). Two erased shapes:
+ *   - declaration-level `import type { X } from 'pkg'` — `importClause.isTypeOnly`;
+ *   - named-only imports where EVERY specifier is per-specifier type-only,
+ *     e.g. `import { type X, type Y } from 'pkg'`.
+ * A side-effect import (`import 'pkg'`, no `importClause`) is NOT type-only. A
+ * default or namespace import always introduces a runtime binding, so a clause
+ * carrying either is never treated as type-only here. A mixed named import
+ * (`import { type X, Y }`) keeps the runtime binding `Y` and is not type-only.
+ */
+function isTypeOnlyImport(node: ts.ImportDeclaration): boolean {
+  const clause = node.importClause;
+  if (clause === undefined) return false; // side-effect import: runtime.
+  if (clause.isTypeOnly) return true; // `import type ...`.
+  // A default binding (`import D from`) or namespace (`import * as ns from`) is
+  // a runtime binding regardless of any named bindings.
+  if (clause.name !== undefined) return false;
+  const bindings = clause.namedBindings;
+  if (bindings === undefined) return false;
+  if (ts.isNamespaceImport(bindings)) return false; // `* as ns` is runtime.
+  // NamedImports: type-only iff every element is per-specifier type-only.
+  if (bindings.elements.length === 0) return false;
+  return bindings.elements.every((el) => el.isTypeOnly);
+}
+
+/**
+ * True when an `ExportDeclaration` re-export contributes NO runtime binding and
+ * should be ignored as provider usage (H4.D R3 F003). Mirrors the import case:
+ *   - declaration-level `export type { X } from 'pkg'` — `node.isTypeOnly`;
+ *   - named re-exports where EVERY specifier is per-specifier type-only,
+ *     e.g. `export { type X } from 'pkg'`.
+ * A namespace/star re-export (`export * from 'pkg'`, `export * as ns from`) has
+ * no `exportClause` and is a runtime re-export, so it is never type-only. A
+ * mixed `export { type X, Y } from 'pkg'` keeps the runtime binding `Y`.
+ */
+function isTypeOnlyExport(node: ts.ExportDeclaration): boolean {
+  if (node.isTypeOnly) return true; // `export type ...`.
+  const clause = node.exportClause;
+  if (clause === undefined) return false; // `export * from 'pkg'`: runtime.
+  if (ts.isNamespaceExport(clause)) return false; // `export * as ns`: runtime.
+  // NamedExports: type-only iff every element is per-specifier type-only.
+  if (clause.elements.length === 0) return false;
+  return clause.elements.every((el) => el.isTypeOnly);
+}
+
+/**
  * Extract every statically-known module specifier from one source file's AST.
  * Covers: `import … from 'pkg'` and side-effect `import 'pkg'`
  * (ImportDeclaration), `require('pkg')` (CallExpression to the `require`
@@ -491,9 +573,24 @@ function normalizeSpecifier(spec: string): string | undefined {
  * specifiers (e.g. `import(variable)`, `require(`a` + b)`) are NOT statically
  * known and are skipped safely.
  *
+ * Type-only imports/exports are EXCLUDED (H4.D R3 F003). TypeScript erases
+ * `import type { X } from 'pkg'` and `export type { X } from 'pkg'` at compile
+ * time — they emit no runtime `require`/`import`, so counting them as runtime
+ * provider usage produces false positives (a provider "used" only for its types
+ * would wrongly classify as WIRED/blocking). We skip a declaration when:
+ *   - the whole declaration is type-only (`importClause.isTypeOnly` on
+ *     ImportDeclaration, `node.isTypeOnly` on ExportDeclaration), e.g.
+ *     `import type { X } from 'pkg'` / `export type { X } from 'pkg'`; OR
+ *   - every named binding is per-specifier type-only, e.g.
+ *     `import { type X } from 'pkg'` / `export { type X } from 'pkg'`.
+ * A MIXED import like `import { type X, Y } from 'pkg'` still counts (the
+ * runtime binding `Y` keeps the package in the emit). Side-effect imports
+ * (`import 'pkg'`), default/namespace imports, `require(...)`, and dynamic
+ * `import(...)` are always runtime and always counted.
+ *
  * The `ScriptKind` is derived from the file name so `.tsx` (and `.jsx`) sources
  * parse with JSX enabled — otherwise the `<Foo/>` syntax in a React component
- * would be misparsed and its `import` statements lost (F003).
+ * would be misparsed and its `import` statements lost.
  */
 export function extractModuleSpecifiers(sourceText: string, fileName = 'in-memory.ts'): string[] {
   const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, scriptKindFor(fileName));
@@ -501,11 +598,11 @@ export function extractModuleSpecifiers(sourceText: string, fileName = 'in-memor
   const visit = (node: ts.Node): void => {
     // Static `import ... from 'pkg'` and side-effect `import 'pkg'`.
     if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
-      specifiers.push(node.moduleSpecifier.text);
+      if (!isTypeOnlyImport(node)) specifiers.push(node.moduleSpecifier.text);
     }
     // `export ... from 'pkg'` re-exports also pull in the package.
     else if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
-      specifiers.push(node.moduleSpecifier.text);
+      if (!isTypeOnlyExport(node)) specifiers.push(node.moduleSpecifier.text);
     } else if (ts.isCallExpression(node)) {
       const arg = node.arguments[0];
       // Only string-literal arguments are statically known specifiers.
