@@ -36,7 +36,10 @@ jobs:
         run: npm ci --omit=dev
 
       - name: Install @cyclonedx/cdxgen
-        run: npm install --no-save --no-audit --no-fund @cyclonedx/cdxgen@10
+        # Exact version pin (not @10) so SBOM output format stays reproducible
+        # across runs. --no-audit dropped so npm surfaces advisories on the
+        # generator's own dependency tree.
+        run: npm install --no-save --no-fund @cyclonedx/cdxgen@10.11.0
 
       - name: Generate SBOM (CycloneDX JSON)
         run: |
@@ -45,13 +48,15 @@ jobs:
 
       - name: Summarize SBOM
         run: |
-          echo "## SBOM summary" >> "$GITHUB_STEP_SUMMARY"
-          echo '' >> "$GITHUB_STEP_SUMMARY"
           COMPONENTS=$(jq '.components | length' sbom.cdx.json)
-          echo "Components: **$COMPONENTS**" >> "$GITHUB_STEP_SUMMARY"
-          echo '' >> "$GITHUB_STEP_SUMMARY"
-          echo "Top 10 by name (alpha):" >> "$GITHUB_STEP_SUMMARY"
-          jq -r '.components | sort_by(.name) | .[0:10] | .[] | "- \(.name)@\(.version // "?")"' sbom.cdx.json >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## SBOM summary"
+            echo ''
+            echo "Components: **$COMPONENTS**"
+            echo ''
+            echo "Top 10 by name (alpha):"
+            jq -r '.components | sort_by(.name) | .[0:10] | .[] | "- \(.name)@\(.version // "?")"' sbom.cdx.json
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload SBOM artifact (90-day retention)
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5.0.0
