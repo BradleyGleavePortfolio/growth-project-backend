@@ -53,7 +53,7 @@ export function buildHttpHistogram(
   return new Histogram({
     name: 'http_request_duration_seconds',
     help: 'HTTP request latency in seconds by method, route and status code.',
-    labelNames: HTTP_HISTOGRAM_LABELS as unknown as string[],
+    labelNames: [...HTTP_HISTOGRAM_LABELS],
     buckets: HTTP_DURATION_BUCKETS_SECONDS,
     registers: [register],
   });
