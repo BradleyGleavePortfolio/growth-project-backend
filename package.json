@@ -21,7 +21,8 @@
     "openapi:export": "ts-node scripts/export-openapi.ts",
     "backfill:coach-subscriptions": "ts-node scripts/backfill-coach-subscriptions.ts",
     "seed:foods": "ts-node prisma/seed-foods.ts",
-    "seed:exercise-catalog": "ts-node scripts/seed-exercise-catalog.ts"
+    "seed:exercise-catalog": "ts-node scripts/seed-exercise-catalog.ts",
+    "prepare": "lefthook install"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
