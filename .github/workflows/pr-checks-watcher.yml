@@ -4,8 +4,11 @@ name: PR Checks Watcher
 # pass/fail per check. Authors stop scrolling through 20 individual job
 # tabs. Comment is updated in place (no spam).
 #
-# Triggered by check_suite completion rather than individual workflow runs
-# so it fires exactly once per push when the full suite is settled.
+# Triggered by check_suite:completed. NOTE: a single push produces one
+# check_suite per workflow app, so this workflow fires multiple times per
+# push (once per completed suite), not once. The concurrency group below
+# (keyed on the PR number, cancel-in-progress) serialises those runs so two
+# instances cannot both miss the existing comment and create duplicates.
 
 on:
   check_suite:
@@ -15,6 +18,10 @@ permissions:
   pull-requests: write
   checks: read
   contents: read
+
+concurrency:
+  group: pr-checks-watcher-${{ github.event.check_suite.pull_requests[0].number }}
+  cancel-in-progress: true
 
 jobs:
   comment:
@@ -64,8 +71,10 @@ jobs:
             const marker = '<!-- pr-checks-watcher -->';
             const body = `${marker}\n## CI status — \`${context.payload.check_suite.head_sha.slice(0, 7)}\`\n\n${header}\n\n${lines.join('\n')}\n\n_Updated automatically by pr-checks-watcher._`;
 
-            // Find existing comment to update.
-            const { data: comments } = await github.rest.issues.listComments({
+            // Find existing comment to update. Paginate so the marker comment
+            // is found even on long-running PRs with >100 comments (otherwise
+            // the watcher would create a fresh comment each push).
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: pr.number,
