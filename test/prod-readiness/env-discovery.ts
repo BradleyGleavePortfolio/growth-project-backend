@@ -310,26 +310,51 @@ export function extractEnvVarRefs(content: string, fileName = 'inline.ts'): Set<
  *      accepted too. `isStringLiteralLike` already covers plain string and
  *      no-substitution-template literals; unwrapping handles the wrapped forms
  *      such as `const K = 'FOO' as const`.
- *   3. AMBIGUOUS-BINDING SKIP (closes file-wide scope shadowing, F002): the map
- *      is keyed by identifier name with no lexical-scope tracking, so a name
- *      bound more than once in the file (an inner block/function const that
- *      shadows an outer one, a file-scope re-declaration, or a `let`/`var`
- *      shadow of a `const`) cannot be soundly resolved to a single value. Per
- *      the conservative R59 "fail closed, never swallow" policy we DROP any
+ *   3. AMBIGUOUS-BINDING SKIP (closes file-wide scope shadowing, F002 + R4 F001):
+ *      the map is keyed by identifier name with no lexical-scope tracking, so a
+ *      name bound more than once in the file cannot be soundly resolved to a
+ *      single value. The binding kinds that contribute to the count are:
+ *        - `const`/`let`/`var` variable declarations (an inner block/function
+ *          const that shadows an outer one, a file-scope re-declaration, or a
+ *          `let`/`var` shadow of a `const`);
+ *        - function / arrow-function / method parameters (R4 F001): a parameter
+ *          named the same as a file-scope const shadows that const inside the
+ *          body, so a dynamic `process.env[param]` read must NOT resolve to the
+ *          const's value — e.g. `function f(K){return process.env[K];} const
+ *          K='FOO';` must not fabricate `FOO`. Parameters parse as
+ *          `ParameterDeclaration` (NOT `VariableDeclaration`), so the original
+ *          walk missed them entirely; we now count them explicitly.
+ *      Catch-clause variables (`try{}catch(K){process.env[K];}`) are ALREADY
+ *      counted: a catch binding is itself a `ts.VariableDeclaration` node (its
+ *      parent is the `CatchClause`), so the `isVariableDeclaration` branch below
+ *      picks it up — a catch var that shadows a file-scope const therefore
+ *      makes the name ambiguous without any special-casing (regression-tested).
+ *      Per the conservative R59 "fail closed, never swallow" policy we DROP any
  *      name with more than one binding from the resolvable map entirely rather
  *      than guess outer-vs-inner. A name therefore resolves ONLY when it is
- *      declared exactly once in the file and that single declaration is a
- *      string-valued `const`.
+ *      bound exactly once in the file and that single binding is a
+ *      string-valued `const` variable declaration.
  */
 function collectStringConsts(sf: ts.SourceFile): Map<string, string> {
   // First pass: count every variable-declaration binding per identifier name,
   // across all scopes. Any name bound more than once is an ambiguous alias and
   // is excluded from resolution (F002 — ambiguous binding → skip).
   const bindingCounts = new Map<string, number>();
+  const bumpBinding = (name: string): void => {
+    bindingCounts.set(name, (bindingCounts.get(name) ?? 0) + 1);
+  };
   const countBindings = (node: ts.Node): void => {
+    // A catch-clause variable is itself a VariableDeclaration node (parent =
+    // CatchClause), so this branch already counts catch bindings — no separate
+    // CatchClause case is needed, and adding one would double-count.
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
-      const name = node.name.text;
-      bindingCounts.set(name, (bindingCounts.get(name) ?? 0) + 1);
+      bumpBinding(node.name.text);
+    } else if (ts.isParameter(node) && ts.isIdentifier(node.name)) {
+      // Function, method, and arrow-function parameters all parse as
+      // ParameterDeclaration (NOT VariableDeclaration), so the original walk
+      // missed them. A parameter shadows any file-scope const of the same name
+      // inside the body, so it must count toward ambiguity (R4 F001).
+      bumpBinding(node.name.text);
     }
     ts.forEachChild(node, countBindings);
   };

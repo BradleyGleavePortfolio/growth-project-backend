@@ -990,6 +990,59 @@ describe('extractEnvVarRefs — ambiguous const-key shadowing (F002)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// R4 F001 — parameter / catch-clause shadows must count toward the
+// ambiguous-binding map (R59/R65/R109). Before the fix the binding-count walk
+// only counted `ts.isVariableDeclaration` nodes, so a function/arrow parameter
+// or a catch-clause variable that shadowed a file-scope const left the const
+// resolvable. A dynamic `process.env[shadowedName]` read inside that scope was
+// then mis-resolved to the file-scope const's literal, FABRICATING an env var
+// (spurious UNDECLARED/TRACKED entry → false ship-block). The fix counts
+// parameters and catch-clause variables as bindings too, so a same-named
+// file-scope const becomes ambiguous (bound > 1) and is dropped (fail closed).
+// ---------------------------------------------------------------------------
+
+describe('extractEnvVarRefs — parameter / catch-clause shadows (R4 F001)', () => {
+  it('drops a const shadowed by a function parameter (no fabricated env)', () => {
+    const code = [
+      'function f(K) { return process.env[K]; }',
+      "const K = 'FOO';",
+    ].join('\n');
+    // K is bound by the parameter AND the file-scope const → ambiguous →
+    // dropped. The dynamic param read resolves to nothing, not FOO.
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a const shadowed by an arrow-function parameter (no fabricated env)', () => {
+    const code = [
+      'const g = (K) => process.env[K];',
+      "const K = 'BAR';",
+    ].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a const shadowed by a catch-clause variable (no fabricated env)', () => {
+    const code = [
+      'try { /* noop */ } catch (K) { void process.env[K]; }',
+      "const K = 'QUX';",
+    ].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('discovers nothing for a catch-clause key with NO same-named file-scope const', () => {
+    const code = 'try { /* noop */ } catch (K) { void process.env[K]; }';
+    // K is only a catch variable (dynamic, unresolvable) — no const to fabricate
+    // from, so the read yields nothing rather than a spurious discovery.
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('discovers nothing for a function-param key with NO same-named file-scope const (sanity)', () => {
+    const code = 'function f(K) { return process.env[K]; }';
+    // Pure dynamic parameter read, no const anywhere — nothing to resolve.
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+});
+
 describe('discoverEnvVars — mixed-source repo end-to-end shape', () => {
   it('produces a union whose every entry has the full origin shape', async () => {
     const repo = await freshRepo();
