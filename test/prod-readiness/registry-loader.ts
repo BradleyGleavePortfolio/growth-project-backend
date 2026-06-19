@@ -87,11 +87,15 @@ export function assertNoYamlIndirection(raw: string): void {
       `registry uses YAML anchors/aliases (&name / *name) at line ${anchorLine + 1} — switch rows must be self-contained for diff-reviewability`,
     );
   }
-  // Explicit YAML tags (`!tag`, `!!tag`) — including the `!!merge "<<"` bypass of
-  // the merge-key scan above. A tag token is `!` or `!!` immediately followed by
-  // a tag-name letter; comment/quoted-string bodies are already stripped, so a
-  // `!!` in prose (a quoted description or a comment) never trips this.
-  const tagLine = code.findIndex((line) => /(^|\s)!{1,2}[A-Za-z]/.test(line));
+  // Explicit YAML tags in any form. After stripping comments and quoted-string
+  // bodies, any remaining `!` is a YAML tag indicator — shorthand (`!tag`),
+  // secondary (`!!merge`, `!!str`), verbatim (`!<tag:yaml.org,2002:merge>`),
+  // percent-encoded verbatim (`!<tag%3Ayaml.org%2C2002%3Amerge>`), or a lone
+  // bang — and lets a row inherit fields before Zod validation. Registry rows
+  // must be self-contained JSON-compatible YAML for diff-reviewability, so we
+  // reject the bang outright. The real `prod-switches.yml` contains zero `!`
+  // characters, so this strict rule is a no-op for legitimate registry content.
+  const tagLine = code.findIndex((line) => line.includes('!'));
   if (tagLine !== -1) {
     throw new RegistryParseError(
       `registry uses YAML tags at line ${tagLine + 1} — switch rows must be self-contained JSON-compatible YAML for diff-reviewability`,

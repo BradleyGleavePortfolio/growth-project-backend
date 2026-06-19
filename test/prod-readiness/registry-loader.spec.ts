@@ -463,6 +463,54 @@ describe('parseRegistry — rejects explicit YAML tags (F1 tag-merge bypass)', (
     expect(() => parseRegistry(doc)).toThrow(/uses YAML tags/i);
   });
 
+  it('rejects the verbatim merge tag (!<tag:yaml.org,2002:merge> "<<") bypass', () => {
+    // Lens B round-3 probe: YAML's verbatim tag notation (`!<...>`) is another
+    // explicit tag form. `!<tag:yaml.org,2002:merge> "<<"` materializes hidden
+    // `tier`/`prod_default` through tag resolution exactly like `!!merge "<<"`,
+    // so the strict any-bang rule must reject it.
+    const probe =
+      'switches:\n  - name: VERBATIM_MERGE\n' +
+      '    !<tag:yaml.org,2002:merge> "<<": { tier: optional, prod_default: STUB_ALLOWED }\n' +
+      '    auto_flip_on_in_prod: false\n    owner: platform\n    description: "x"\n';
+    expect(() => parseRegistry(probe)).toThrow(RegistryParseError);
+    expect(() => parseRegistry(probe)).toThrow(/uses YAML tags/i);
+    expect(() => parseRegistry(probe)).toThrow(
+      /self-contained JSON-compatible YAML for diff-reviewability/i,
+    );
+  });
+
+  it('rejects a verbatim type tag (!<tag:yaml.org,2002:str> VALUE)', () => {
+    const doc =
+      'switches:\n  - name: !<tag:yaml.org,2002:str> VALUE\n    tier: optional\n' +
+      '    prod_default: STUB_ALLOWED\n    auto_flip_on_in_prod: false\n' +
+      '    owner: platform\n    description: "x"\n';
+    expect(() => parseRegistry(doc)).toThrow(RegistryParseError);
+    expect(() => parseRegistry(doc)).toThrow(/uses YAML tags/i);
+  });
+
+  it('rejects the percent-encoded verbatim merge tag bypass', () => {
+    // Percent-encoded verbatim form: `!<tag%3Ayaml.org%2C2002%3Amerge> "<<"`.
+    // It still begins with a bang, so the strict rule rejects it pre-parse.
+    const probe =
+      'switches:\n  - name: PCT_MERGE\n' +
+      '    !<tag%3Ayaml.org%2C2002%3Amerge> "<<": { tier: optional, prod_default: STUB_ALLOWED }\n' +
+      '    auto_flip_on_in_prod: false\n    owner: platform\n    description: "x"\n';
+    expect(() => parseRegistry(probe)).toThrow(RegistryParseError);
+    expect(() => parseRegistry(probe)).toThrow(/uses YAML tags/i);
+  });
+
+  it('rejects a lone unquoted bang (tier: ! optional) under the strict rule', () => {
+    // Round-3 regression: the prior letter-required regex let a lone `!` pass
+    // the guard (it was only caught downstream by Zod). The strict any-bang
+    // rule now rejects it at the guard, which is the stricter, safer behavior.
+    const doc =
+      'switches:\n  - name: LONE_BANG\n    tier: ! optional\n' +
+      '    prod_default: STUB_ALLOWED\n    auto_flip_on_in_prod: false\n' +
+      '    owner: platform\n    description: "x"\n';
+    expect(() => parseRegistry(doc)).toThrow(RegistryParseError);
+    expect(() => parseRegistry(doc)).toThrow(/uses YAML tags/i);
+  });
+
   it('does not false-positive on "!!" inside a quoted description', () => {
     const reg = parseRows([
       row({ name: 'BANG_DESC', description: 'Some !! literal text in prose' }),
