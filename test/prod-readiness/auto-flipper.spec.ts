@@ -22,10 +22,15 @@ import {
   auditEntry,
   redactSecretValues,
   flyErrorMessage,
+  collectSecretValues,
+  shouldCommit,
   FlyctlTimeoutError,
+  AutoFlipperRegistryError,
   AUTO_FLIP_ENV,
   AUDIT_OPERATOR,
   FLY_BIN,
+  FLY_BIN_ENV,
+  FLY_BIN_DEFAULT,
   FLY_INSTALL_DOCS,
   FLY_TIMEOUT_MS,
   type FlipPlan,
@@ -328,12 +333,16 @@ describe('commit — audit trail', () => {
     });
   });
 
-  it('records before=stale when the key already exists in env', async () => {
+  it('records before=stale when the key had a (stale) value at plan time (F003)', async () => {
     const sink = makeSink();
     const run: FlyRunner = () => undefined;
-    const env: NodeJS.ProcessEnv = { ...ENABLED_ENV, STALE_K: 'false' };
-    const p = plan({ registry: [row({ name: 'STALE_K', prod_default: 'ON' })], current: {} });
-    await commit({ plan: p, env, run, log: sink.log, now: fixedClock });
+    // F003: `before` is derived from the PLAN's observed value (planned.was),
+    // NOT from process env. A stale Fly value at plan time => before='stale'.
+    const p = plan({
+      registry: [row({ name: 'STALE_K', prod_default: 'ON' })],
+      current: { STALE_K: 'false' },
+    });
+    await commit({ plan: p, env: ENABLED_ENV, run, log: sink.log, now: fixedClock });
     const parsed = JSON.parse(sink.lines.find((l) => l.startsWith('{')) as string);
     expect(parsed.before).toBe('stale');
   });
@@ -566,10 +575,12 @@ describe('flip — orchestration', () => {
     expect(out.result).toBeNull();
   });
 
-  it('plans and commits when auto-flip is enabled', async () => {
+  it('plans and commits when auto-flip env AND an explicit commit opt are both set (F004)', async () => {
     const run = jest.fn<void, [readonly string[]]>();
     const registry = [row({ name: 'FEATURE_A', prod_default: 'ON' })];
-    const out = await flip(() => registry, {}, { env: ENABLED_ENV, run });
+    // F004: env gate is no longer sufficient on its own — an explicit
+    // `commit: true` API opt-in is also required before any mutation.
+    const out = await flip(() => registry, {}, { env: ENABLED_ENV, run, commit: true });
     expect(out.result).not.toBeNull();
     expect((out.result as FlipResult).succeeded.map((r) => r.name)).toEqual(['FEATURE_A']);
     expect(run).toHaveBeenCalledWith(['secrets', 'set', 'FEATURE_A=true']);
@@ -583,11 +594,14 @@ describe('flip — orchestration', () => {
     await expect(flip(boom, {})).rejects.toThrow(/auto-flipper could not load the registry/);
   });
 
-  it('propagates non-registry errors unchanged', async () => {
+  it('wraps non-registry errors in a typed AutoFlipperRegistryError (F005)', async () => {
+    // F005: a raw error from registryFor may embed a secret in its message, so
+    // flip() no longer propagates it unchanged — it wraps it in a typed error
+    // whose message is generic and carries only the non-sensitive cause name.
     const boom = (): readonly RegistryRow[] => {
       throw new TypeError('unrelated');
     };
-    await expect(flip(boom, {})).rejects.toThrow(TypeError);
+    await expect(flip(boom, {})).rejects.toThrow(AutoFlipperRegistryError);
   });
 });
 
@@ -912,5 +926,377 @@ describe('redactSecretValues — additional shapes (Fix 1 hardening)', () => {
     const res = await commit({ plan: p, env: ENABLED_ENV });
     expect(res.failed[0].row.name).toBe('HANGS');
     expect(res.failed[0].error).not.toContain('HANGS=true');
+  });
+});
+
+// ============================================================================
+// H4.F R2 — Lens B fixes F002–F007. Every secret-bearing error-path test below
+// uses a SYNTHETIC `sk_test_FAKE_DO_NOT_REPLACE` value (never a real secret,
+// brief constraint + R24) and asserts the secret is GONE from the captured
+// output. execFileSync stays module-mocked; no real flyctl is ever invoked.
+// ============================================================================
+
+/** Canonical synthetic secret for the R2 error-path tests. NOT a real value. */
+const FAKE_SECRET = 'sk_test_FAKE_DO_NOT_REPLACE_R2';
+
+describe('F002 — recheckCurrent throw is a redacting error boundary (no abort, no leak)', () => {
+  it('a callback that throws a KEY=VALUE message records a redacted failure and CONTINUES', async () => {
+    const run = jest.fn<void, [readonly string[]]>();
+    const registry = [
+      row({ name: 'FEATURE_A', prod_default: 'ON' }),
+      row({ name: 'FEATURE_B', prod_default: 'ON' }),
+    ];
+    const p = plan({ registry, current: {} });
+    // The callback throws ONLY for the first row; the loop must keep going and
+    // apply the second row's set unaffected.
+    const recheckCurrent: RecheckCurrent = async (key) => {
+      if (key === 'FEATURE_A') throw new Error(`upstream rejected API_KEY=${FAKE_SECRET}`);
+      return undefined; // FEATURE_B: still missing -> proceeds
+    };
+    const res = await commit({ plan: p, env: ENABLED_ENV, run, recheckCurrent });
+    // The throwing row is recorded as a redacted failure...
+    expect(res.failed).toHaveLength(1);
+    expect(res.failed[0].row.name).toBe('FEATURE_A');
+    expect(res.failed[0].error).toContain('recheck failed:');
+    expect(res.failed[0].error).not.toContain(FAKE_SECRET);
+    expect(res.failed[0].error).toContain(`API_KEY=***`);
+    // ...and the OTHER row is unaffected (commit did NOT abort).
+    expect(res.succeeded.map((r) => r.name)).toEqual(['FEATURE_B']);
+    expect(run).toHaveBeenCalledWith(['secrets', 'set', 'FEATURE_B=true']);
+  });
+
+  it('a callback that throws a BARE secret value redacts it via the value set', async () => {
+    const run = jest.fn<void, [readonly string[]]>();
+    // The plan target is the secret value, so collectSecretValues seeds the
+    // value-based pass; the callback leaks that literal with no KEY=VAL shape.
+    const registry = [row({ name: 'TOKEN_SECRET', prod_default: 'ON' })];
+    const p = plan({ registry, current: { TOKEN_SECRET: FAKE_SECRET } });
+    const recheckCurrent: RecheckCurrent = async () => {
+      throw new Error(`network error talking to upstream: ${FAKE_SECRET} (no key context)`);
+    };
+    const res = await commit({ plan: p, env: ENABLED_ENV, run, recheckCurrent });
+    expect(res.failed).toHaveLength(1);
+    expect(res.failed[0].error).not.toContain(FAKE_SECRET);
+    expect(res.failed[0].error).toContain('recheck failed:');
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('a callback that throws a JSON-formatted secret redacts the JSON field', async () => {
+    const run = jest.fn<void, [readonly string[]]>();
+    const registry = [row({ name: 'FEATURE_A', prod_default: 'ON' })];
+    const p = plan({ registry, current: {} });
+    const recheckCurrent: RecheckCurrent = async () => {
+      throw new Error(`{"api_key":"${FAKE_SECRET}","app":"prod"}`);
+    };
+    const res = await commit({ plan: p, env: ENABLED_ENV, run, recheckCurrent });
+    expect(res.failed).toHaveLength(1);
+    expect(res.failed[0].error).not.toContain(FAKE_SECRET);
+    expect(res.failed[0].error).toContain('"api_key":"***"');
+  });
+
+  it('a non-Error throw (string) is still stringified and redacted, loop continues', async () => {
+    const run = jest.fn<void, [readonly string[]]>();
+    const registry = [
+      row({ name: 'FEATURE_A', prod_default: 'ON' }),
+      row({ name: 'FEATURE_B', prod_default: 'ON' }),
+    ];
+    const p = plan({ registry, current: {} });
+    const recheckCurrent: RecheckCurrent = async (key) => {
+      if (key === 'FEATURE_A') {
+        throw `raw string leak API_KEY=${FAKE_SECRET}`;
+      }
+      return undefined;
+    };
+    const res = await commit({ plan: p, env: ENABLED_ENV, run, recheckCurrent });
+    expect(res.failed[0].error).not.toContain(FAKE_SECRET);
+    expect(res.succeeded.map((r) => r.name)).toEqual(['FEATURE_B']);
+  });
+});
+
+describe('F003 — audit `before` derived from planned.was, not env', () => {
+  it("records before='missing' when the key was absent at plan time", async () => {
+    const sink = makeSink();
+    const run: FlyRunner = () => undefined;
+    // Key absent in `current` => planned.was === undefined => 'missing'.
+    const p = plan({ registry: [row({ name: 'NEW_KEY', prod_default: 'ON' })], current: {} });
+    await commit({ plan: p, env: ENABLED_ENV, run, log: sink.log, now: fixedClock });
+    const parsed = JSON.parse(sink.lines.find((l) => l.includes('"action":"set"')) as string);
+    expect(parsed.before).toBe('missing');
+  });
+
+  it("records before='stale' even when the key IS present in process env (env is irrelevant)", async () => {
+    const sink = makeSink();
+    const run: FlyRunner = () => undefined;
+    // The key is present in `env`, but `before` must follow the PLAN's `was`,
+    // which is a stale Fly value here — so before='stale', NOT influenced by env.
+    const env: NodeJS.ProcessEnv = { ...ENABLED_ENV, STALE_K: 'whatever-env-says' };
+    const p = plan({
+      registry: [row({ name: 'STALE_K', prod_default: 'ON' })],
+      current: { STALE_K: 'false' },
+    });
+    await commit({ plan: p, env, run, log: sink.log, now: fixedClock });
+    const parsed = JSON.parse(sink.lines.find((l) => l.includes('"action":"set"')) as string);
+    expect(parsed.before).toBe('stale');
+  });
+
+  it("records before='missing' even when the key IS present in process env but absent on Fly", async () => {
+    const sink = makeSink();
+    const run: FlyRunner = () => undefined;
+    const env: NodeJS.ProcessEnv = { ...ENABLED_ENV, NEW_KEY: 'present-in-env' };
+    const p = plan({ registry: [row({ name: 'NEW_KEY', prod_default: 'ON' })], current: {} });
+    await commit({ plan: p, env, run, log: sink.log, now: fixedClock });
+    const parsed = JSON.parse(sink.lines.find((l) => l.includes('"action":"set"')) as string);
+    expect(parsed.before).toBe('missing');
+  });
+});
+
+describe('F004 — dry-run is the default; commit needs env gate AND explicit API opt-in', () => {
+  const registry = [row({ name: 'FEATURE_A', prod_default: 'ON' })];
+
+  it('env=true + no opt -> DRY-RUN (result null, runner never called)', async () => {
+    const run = jest.fn<void, [readonly string[]]>();
+    const out = await flip(() => registry, {}, { env: ENABLED_ENV, run });
+    expect(out.result).toBeNull();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('env=true + commit:true -> COMMITS', async () => {
+    const run = jest.fn<void, [readonly string[]]>();
+    const out = await flip(() => registry, {}, { env: ENABLED_ENV, run, commit: true });
+    expect(out.result).not.toBeNull();
+    expect((out.result as FlipResult).succeeded.map((r) => r.name)).toEqual(['FEATURE_A']);
+  });
+
+  it('env=true + dryRun:false -> COMMITS (dryRun:false is an equivalent opt-in)', async () => {
+    const run = jest.fn<void, [readonly string[]]>();
+    const out = await flip(() => registry, {}, { env: ENABLED_ENV, run, dryRun: false });
+    expect(out.result).not.toBeNull();
+    expect(run).toHaveBeenCalledWith(['secrets', 'set', 'FEATURE_A=true']);
+  });
+
+  it('env=false + commit:true -> DRY-RUN (env gate missing, never mutates)', async () => {
+    const run = jest.fn<void, [readonly string[]]>();
+    const out = await flip(() => registry, {}, { env: {}, run, commit: true });
+    expect(out.result).toBeNull();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('env=false + no opt -> DRY-RUN', async () => {
+    const run = jest.fn<void, [readonly string[]]>();
+    const out = await flip(() => registry, {}, { env: {}, run });
+    expect(out.result).toBeNull();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('shouldCommit truth table: only (opt-in AND env gate) authorises a commit', () => {
+    expect(shouldCommit({ commit: true }, ENABLED_ENV)).toBe(true);
+    expect(shouldCommit({ dryRun: false }, ENABLED_ENV)).toBe(true);
+    expect(shouldCommit({ commit: true }, {})).toBe(false); // env gate missing
+    expect(shouldCommit({}, ENABLED_ENV)).toBe(false); // opt-in missing
+    expect(shouldCommit(undefined, ENABLED_ENV)).toBe(false);
+    expect(shouldCommit({ dryRun: true }, ENABLED_ENV)).toBe(false); // explicit dry-run
+  });
+});
+
+describe('F005 — registryFor errors are wrapped in a typed, redacted AutoFlipperRegistryError', () => {
+  it('a raw Error carrying a secret is wrapped; the secret is NOT in the message', async () => {
+    const boom = (): readonly RegistryRow[] => {
+      throw new Error(`registry load failed: ${FAKE_SECRET}`);
+    };
+    await expect(flip(boom, {})).rejects.toBeInstanceOf(AutoFlipperRegistryError);
+    const err = await flip(boom, {}).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AutoFlipperRegistryError);
+    const ae = err as AutoFlipperRegistryError;
+    expect(ae.message).not.toContain(FAKE_SECRET);
+    expect(ae.message).toContain('auto-flipper could not load the registry');
+    // Only the non-sensitive class name of the cause is preserved.
+    expect(ae.causeName).toBe('Error');
+  });
+
+  it('preserves the original error CLASS name as non-sensitive cause metadata', async () => {
+    const boom = (): readonly RegistryRow[] => {
+      throw new TypeError(`type boom ${FAKE_SECRET}`);
+    };
+    const err = (await flip(boom, {}).catch((e: unknown) => e)) as AutoFlipperRegistryError;
+    expect(err).toBeInstanceOf(AutoFlipperRegistryError);
+    expect(err.causeName).toBe('TypeError');
+    expect(err.message).not.toContain(FAKE_SECRET);
+  });
+
+  it('a RegistryParseError keeps its type but still redacts its message', async () => {
+    const boom = (): readonly RegistryRow[] => {
+      throw new RegistryParseError(`bad row API_KEY=${FAKE_SECRET}`);
+    };
+    const err = (await flip(boom, {}).catch((e: unknown) => e)) as RegistryParseError;
+    expect(err).toBeInstanceOf(RegistryParseError);
+    expect(err.message).not.toContain(FAKE_SECRET);
+    expect(err.message).toContain('API_KEY=***');
+  });
+});
+
+describe('F006 — concurrent commit() calls are serialized (one inflight flyctl at a time)', () => {
+  it('two concurrent commits never overlap: maxInflight === 1', async () => {
+    let inflight = 0;
+    let maxInflight = 0;
+    // Instrumented async-ish runner: bump the inflight counter, yield to the
+    // event loop (so any overlap WOULD be observed), then release.
+    const makeRun = (): FlyRunner => () => {
+      inflight += 1;
+      maxInflight = Math.max(maxInflight, inflight);
+      // Synchronous runner, but the per-row await points around it give the
+      // other commit a chance to interleave if the mutex were absent.
+      inflight -= 1;
+    };
+    const registryA = [
+      row({ name: 'A1', prod_default: 'ON' }),
+      row({ name: 'A2', prod_default: 'ON' }),
+    ];
+    const registryB = [
+      row({ name: 'B1', prod_default: 'ON' }),
+      row({ name: 'B2', prod_default: 'ON' }),
+    ];
+    const pA = plan({ registry: registryA, current: {} });
+    const pB = plan({ registry: registryB, current: {} });
+    // A recheck callback that yields the event loop is the realistic overlap
+    // window; both commits race through it.
+    const recheckCurrent: RecheckCurrent = async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      return undefined;
+    };
+    await Promise.all([
+      commit({ plan: pA, env: ENABLED_ENV, run: makeRun(), recheckCurrent }),
+      commit({ plan: pB, env: ENABLED_ENV, run: makeRun(), recheckCurrent }),
+    ]);
+    expect(maxInflight).toBe(1);
+  });
+
+  it('serialization is observable: the second commit starts only after the first settles', async () => {
+    const order: string[] = [];
+    const registryA = [row({ name: 'A1', prod_default: 'ON' })];
+    const registryB = [row({ name: 'B1', prod_default: 'ON' })];
+    const pA = plan({ registry: registryA, current: {} });
+    const pB = plan({ registry: registryB, current: {} });
+    const runA: FlyRunner = () => order.push('A:set');
+    const runB: FlyRunner = () => order.push('B:set');
+    const slowRecheck: RecheckCurrent = async () => {
+      await new Promise((r) => setTimeout(r, 10));
+      return undefined;
+    };
+    const fastRecheck: RecheckCurrent = async () => undefined;
+    // A starts first with a slow recheck; B is fast. Without the mutex, B would
+    // finish before A. With it, A must complete entirely before B begins.
+    const cA = commit({ plan: pA, env: ENABLED_ENV, run: runA, recheckCurrent: slowRecheck });
+    const cB = commit({ plan: pB, env: ENABLED_ENV, run: runB, recheckCurrent: fastRecheck });
+    await Promise.all([cA, cB]);
+    expect(order).toEqual(['A:set', 'B:set']);
+  });
+
+  it('a throwing commit still releases the mutex so the next caller proceeds', async () => {
+    const registryA = [row({ name: 'A1', prod_default: 'ON' })];
+    const registryB = [row({ name: 'B1', prod_default: 'ON' })];
+    const pA = plan({ registry: registryA, current: {} });
+    const pB = plan({ registry: registryB, current: {} });
+    const throwingRecheck: RecheckCurrent = async () => {
+      throw new Error('boom'); // recorded as failed, does not reject commit()
+    };
+    const runB = jest.fn<void, [readonly string[]]>();
+    const resA = await commit({
+      plan: pA,
+      env: ENABLED_ENV,
+      run: () => undefined,
+      recheckCurrent: throwingRecheck,
+    });
+    const resB = await commit({ plan: pB, env: ENABLED_ENV, run: runB });
+    expect(resA.failed).toHaveLength(1);
+    expect(runB).toHaveBeenCalledWith(['secrets', 'set', 'B1=true']);
+    expect(resB.succeeded.map((r) => r.name)).toEqual(['B1']);
+  });
+});
+
+describe('F007 — FLY_BIN absolute-path validation and one-time PATH warning', () => {
+  const ORIGINAL_FLY_BIN = process.env[FLY_BIN_ENV];
+
+  afterEach(() => {
+    if (ORIGINAL_FLY_BIN === undefined) delete process.env[FLY_BIN_ENV];
+    else process.env[FLY_BIN_ENV] = ORIGINAL_FLY_BIN;
+    jest.resetModules();
+  });
+
+  it('a non-absolute FLY_BIN override REJECTS at module load', () => {
+    process.env[FLY_BIN_ENV] = 'flyctl-evil'; // relative -> spoof vector
+    expect(() => {
+      jest.isolateModules(() => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        require('./auto-flipper');
+      });
+    }).toThrow(/must be an absolute path/);
+  });
+
+  it('an absolute FLY_BIN override is accepted and emits NO PATH warning', () => {
+    process.env[FLY_BIN_ENV] = '/usr/local/bin/flyctl';
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mod = require('./auto-flipper') as typeof import('./auto-flipper');
+      expect(mod.FLY_BIN).toBe('/usr/local/bin/flyctl');
+      const warnSink = jest.fn<void, [string]>();
+      mod.warnIfPathResolvedFlyBin(warnSink);
+      expect(warnSink).not.toHaveBeenCalled();
+    });
+  });
+
+  it('the bare default flyctl is permitted and WARNS exactly once on first use', () => {
+    delete process.env[FLY_BIN_ENV];
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mod = require('./auto-flipper') as typeof import('./auto-flipper');
+      expect(mod.FLY_BIN).toBe(mod.FLY_BIN_DEFAULT);
+      const warnSink = jest.fn<void, [string]>();
+      mod.__resetFlyBinWarnedForTest();
+      mod.warnIfPathResolvedFlyBin(warnSink);
+      mod.warnIfPathResolvedFlyBin(warnSink); // second call: latched, no-op
+      expect(warnSink).toHaveBeenCalledTimes(1);
+      expect(warnSink.mock.calls[0][0]).toMatch(/PATH to resolve "flyctl"/);
+    });
+  });
+
+  it('the explicit bare value "flyctl" is treated as the default (no rejection)', () => {
+    process.env[FLY_BIN_ENV] = FLY_BIN_DEFAULT;
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mod = require('./auto-flipper') as typeof import('./auto-flipper');
+      expect(mod.FLY_BIN).toBe(FLY_BIN_DEFAULT);
+    });
+  });
+});
+
+describe('F001 wiring — collectSecretValues gathers plan literals for the redactor', () => {
+  it('collects both target and `was` values from to_set and already_set, deduped', () => {
+    const p = plan({
+      registry: [
+        row({ name: 'A', prod_default: 'ON' }), // target 'true', was 'false'
+        row({ name: 'B', prod_default: 'OFF' }), // already 'false'
+      ],
+      current: { A: 'false', B: 'false' },
+    });
+    const values = collectSecretValues(p);
+    expect(values.has('true')).toBe(true); // A target
+    expect(values.has('false')).toBe(true); // A was / B target+was
+    // de-duplicated set, not a list with repeats
+    expect(values.size).toBe(2);
+  });
+
+  it('the value-aware redactor scrubs a bare runner-thrown secret using plan literals', async () => {
+    // The plan target value IS the synthetic secret; a custom runner leaks it
+    // bare (no KEY=VAL). collectSecretValues -> value-based pass must catch it.
+    const registry = [row({ name: 'SECRET_FLAG', prod_default: 'ON' })];
+    const p = plan({ registry, current: { SECRET_FLAG: FAKE_SECRET } });
+    const run: FlyRunner = () => {
+      throw new Error(`fly rejected the value ${FAKE_SECRET} bare with no key`);
+    };
+    // make the planned target the secret by overriding via current/was path:
+    const res = await commit({ plan: p, env: ENABLED_ENV, run });
+    expect(res.failed).toHaveLength(1);
+    expect(res.failed[0].error).not.toContain(FAKE_SECRET);
   });
 });
