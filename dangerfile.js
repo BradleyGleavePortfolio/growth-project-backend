@@ -9,10 +9,17 @@
 // gate. The PR template + R100 checklist do the gating; Danger does the
 // nudging.
 
-const { danger, message, warn, fail, markdown } = require('danger');
+const { danger, message, warn, fail, markdown, schedule } = require('danger');
 
 // ---------- 1) Risk markers ----------
-const touched = [...danger.git.modified_files, ...danger.git.created_files];
+// Include deleted_files: a removed migration / auth / billing file is at
+// least as risky as a new one and must still trigger its warning.
+const touched = [
+  ...danger.git.modified_files,
+  ...danger.git.created_files,
+  ...danger.git.deleted_files,
+];
+const deleted = danger.git.deleted_files;
 
 const touchedMigrations = touched.some((f) => f.startsWith('prisma/migrations/'));
 const touchedPrismaSchema = touched.includes('prisma/schema.prisma');
@@ -24,6 +31,9 @@ const touchedWebhooks = touched.some((f) => /webhook/i.test(f));
 const touchedRules = touched.some((f) => /AGENT_RULES\.md$|ENGINEERING_RULES\.md$/.test(f));
 
 if (touchedMigrations) warn('🛢 This PR touches **prisma/migrations/**. Confirm `down.sql` exists or `-- IRREVERSIBLE: <reason>` is present (R106).');
+if (deleted.some((f) => f.startsWith('prisma/migrations/'))) warn('🗑 This PR **deletes** files under **prisma/migrations/**. Deleting a shipped migration can desync environments — confirm this is intentional and coordinated (R106).');
+if (deleted.some((f) => /\bsrc\/auth\b/.test(f) || /\bsrc\/.*oauth\b/.test(f))) warn('🗑 This PR **deletes** files under **src/auth**. Removing auth code can silently drop a security control — extra scrutiny.');
+if (deleted.some((f) => f.startsWith('src/billing/') || f.startsWith('src/stripe'))) warn('🗑 This PR **deletes** files under **src/billing**. Confirm no live payment path is being removed.');
 if (touchedPrismaSchema && !touchedMigrations) warn('📐 You changed **prisma/schema.prisma** without a matching migration. Did you run `prisma migrate dev`?');
 if (touchedEnvValidation) warn('🔐 You changed **env-validation.ts**. Boot-time invariant change — extra scrutiny.');
 if (touchedAuth) warn('🔑 This PR touches **auth/oauth** code. Pair with a unit test that exercises an expired-token path.');
@@ -45,6 +55,13 @@ if (danger.github.pr.body.length < 80) {
   warn('PR description is short. Use the PR template — describe what changed, why, and the test plan.');
 }
 
+// Conventional Commits permits a `BREAKING CHANGE:` footer in the body even
+// when the title has no `!`. release-please parses that footer for the major
+// bump, but the title regex above would not surface it — so warn explicitly.
+if (danger.github.pr.body && danger.github.pr.body.includes('BREAKING CHANGE:')) {
+  warn('This PR contains a **BREAKING CHANGE:** footer. Confirm the major version bump is intentional and the migration/rollback path is documented.');
+}
+
 // ---------- 3) Lockfile hygiene ----------
 const touchedPackage = touched.includes('package.json');
 const touchedLock = touched.includes('package-lock.json');
@@ -62,7 +79,14 @@ if (addedSensitive.length) {
 }
 
 // ---------- 5) TODO / FIXME density ----------
-const addedTodoCount = (async () => {
+// Wrapped in Danger's `schedule()` rather than an async IIFE + .then(): the
+// previous .then() could fire after Danger had already flushed its messages,
+// so the warning silently never appeared. `schedule` is the documented async
+// hook — Danger awaits every scheduled closure before flushing. (Dangerfiles
+// are evaluated as scripts, not ES modules, so top-level await is unavailable.)
+// Errors are surfaced via warn() instead of being swallowed, so a failed
+// diffForFile is visible in the Danger output rather than counting as 0.
+schedule(async () => {
   let n = 0;
   for (const f of touched.filter((f) => /\.(ts|tsx|js)$/.test(f))) {
     try {
@@ -70,14 +94,10 @@ const addedTodoCount = (async () => {
       if (!diff) continue;
       const matches = (diff.added.match(/\b(TODO|FIXME|XXX|HACK)\b/g) || []).length;
       n += matches;
-    } catch (_) {
-      /* file missing or binary — skip */
+    } catch (err) {
+      warn(`Could not diff ${f} for TODO density: ${err && err.message ? err.message : String(err)}`);
     }
   }
-  return n;
-})();
-
-addedTodoCount.then((n) => {
   if (n >= 5) warn(`This PR introduces **${n}** new TODO/FIXME/XXX/HACK markers. Track them in BACKLOG.md or an issue, not as drive-by markers.`);
 });
 
