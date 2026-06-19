@@ -1,7 +1,7 @@
 Wave H1 — Quality Bar Raise (configs & policy files)
-Started: 2026-06-19T01:04:32Z
-Builder: claude_opus_4_8 (respawn v2)
-Status: SCAFFOLDING
-Files completed: 0
-Files remaining: 12 (PR template, 2 issue templates, codeql.yml, editorconfig, prettier configs, security.txt, ai.txt, renovate.json, lefthook.yml, pr-size-labeler.yml, package.json prepare)
+Resumed: 2026-06-19T01:16:10Z
+Builder: claude_opus_4_8 (continuation after sandbox death)
+Status: BUILDING
+Files completed: 4/13 (.h1-status.txt, .editorconfig, ai.txt, security.txt)
+Files remaining: 9 (bug_report.md, feature_request.md, PULL_REQUEST_TEMPLATE.md, renovate.json, codeql.yml, pr-size-labeler.yml, lefthook.yml, prettier configs, package.json prepare)
 Blocker: none
