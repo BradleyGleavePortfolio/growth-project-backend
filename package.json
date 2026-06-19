@@ -21,7 +21,10 @@
     "openapi:export": "ts-node scripts/export-openapi.ts",
     "backfill:coach-subscriptions": "ts-node scripts/backfill-coach-subscriptions.ts",
     "seed:foods": "ts-node prisma/seed-foods.ts",
-    "seed:exercise-catalog": "ts-node scripts/seed-exercise-catalog.ts"
+    "seed:exercise-catalog": "ts-node scripts/seed-exercise-catalog.ts",
+    "readiness:check": "jest test/deploy-readiness.spec.ts",
+    "readiness:check:prod": "NODE_ENV=production READINESS_AUTO_FLIP=false jest test/deploy-readiness.spec.ts",
+    "readiness:report": "READINESS_FORMAT=markdown jest test/deploy-readiness.spec.ts --silent"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
@@ -61,6 +64,7 @@
     "@nestjs/cli": "^11.0.0",
     "@nestjs/testing": "^11.1.26",
     "@types/jest": "^30.0.0",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.9.1",
     "@types/passport-jwt": "^4.0.0",
     "@types/ws": "^8.18.1",
@@ -71,6 +75,7 @@
     "fast-check": "^3.23.2",
     "globals": "^17.6.0",
     "jest": "^30.4.2",
+    "js-yaml": "^4.2.0",
     "prisma": "^6.19.3",
     "ts-jest": "^29.4.9",
     "ts-node": "^10.9.0",
