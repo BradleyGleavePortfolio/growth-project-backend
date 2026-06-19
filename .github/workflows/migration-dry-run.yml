@@ -99,8 +99,12 @@ jobs:
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
           git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
           # List files under prisma/migrations/** that changed in this PR.
-          # Use --diff-filter=AMRC: Added, Modified, Renamed, Copied.
-          CHANGED=$(git diff --name-only --diff-filter=AMRC "$BASE_SHA"..."$HEAD_SHA" -- 'prisma/migrations/**' 2>/dev/null || true)
+          # Use --diff-filter=AMRCD: Added, Modified, Renamed, Copied, Deleted.
+          # Deletions MUST count as a migration touch — a PR that only deletes
+          # migrations was previously classified pr_touches_migrations=false and
+          # silently slipped past the hard-fail path.
+          CHANGED=$(git diff --name-only --diff-filter=AMRCD "$BASE_SHA"..."$HEAD_SHA" -- 'prisma/migrations/**' 2>/dev/null || true)
+          DELETED=$(git diff --name-only --diff-filter=D "$BASE_SHA"..."$HEAD_SHA" -- 'prisma/migrations/**' 2>/dev/null || true)
           if [ -n "$CHANGED" ]; then
             echo "pr_touches_migrations=true" >> "$GITHUB_OUTPUT"
             echo "This PR modifies prisma/migrations:"
@@ -109,14 +113,29 @@ jobs:
             echo "pr_touches_migrations=false" >> "$GITHUB_OUTPUT"
             echo "This PR does not touch prisma/migrations — any forward-deploy failure is pre-existing debt."
           fi
+          # Hard-fail policy: deleting committed migrations is forbidden without
+          # explicit operator approval (R106). Fail BEFORE the apply step so a
+          # deletion-only PR never reaches the grandfather path.
+          if [ -n "$DELETED" ]; then
+            echo "migration_deletion=true" >> "$GITHUB_OUTPUT"
+            echo "::error::Migration deletion detected in this PR. Deleting committed migrations is forbidden without explicit operator approval (R106). Files:"
+            printf '%s\n' "$DELETED" | sed 's/^/  /'
+            exit 1
+          fi
+          echo "migration_deletion=false" >> "$GITHUB_OUTPUT"
 
       - name: Apply all migrations forward
         id: apply
         continue-on-error: true
+        shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
+          set +e
           npx prisma migrate deploy 2>&1 | tee migrate_deploy.log
-          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          exit $rc
 
       - name: Decide pass/fail based on PR scope
         env:
