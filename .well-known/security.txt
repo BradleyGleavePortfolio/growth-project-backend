@@ -1,0 +1,7 @@
+Contact: mailto:bradley@bradleytgpcoaching.com
+Expires: 2027-06-18T00:00:00.000Z
+Preferred-Languages: en
+# TODO(D-H1-1): replace <production-host> with the canonical production API host.
+# Could not determine confidently from fly.toml (app = backend-spring-lake-3890)
+# or .env.example. Operator must confirm before merge (see PR body D-H1-1).
+Canonical: https://<production-host>/.well-known/security.txt
