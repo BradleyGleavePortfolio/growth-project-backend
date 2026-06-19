@@ -1,0 +1,97 @@
+name: Infra Lint
+
+# Validates the infrastructure files that the R100 test-density gate cannot
+# unit-test (shell scripts, workflow YAML, dangerfile.js). This is the
+# validation mechanism cited by the [TEST-EXEMPT:] marker on infra-only PRs:
+# instead of unit tests, infra code is checked by shellcheck + actionlint +
+# a Danger dry-run. Without this job, infra PRs would carry zero automated
+# validation.
+#
+# Triggers only when infra files change, so feature PRs are unaffected.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/**'
+      - 'dangerfile.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: infra-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    name: shellcheck (scripts/*.sh)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+
+      - name: Run shellcheck on shell scripts
+        run: |
+          set -euo pipefail
+          # ubuntu-latest ships shellcheck preinstalled.
+          shellcheck --version
+          mapfile -t FILES < <(find scripts -type f -name '*.sh' | sort)
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "No shell scripts under scripts/. Nothing to check."
+            exit 0
+          fi
+          printf 'Checking %d script(s):\n' "${#FILES[@]}"
+          printf '  - %s\n' "${FILES[@]}"
+          shellcheck "${FILES[@]}"
+          echo "shellcheck OK."
+
+  actionlint:
+    name: actionlint (.github/workflows/*.yml)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+
+      - name: Run actionlint
+        run: |
+          set -euo pipefail
+          # Pin actionlint to an exact release for reproducibility.
+          ACTIONLINT_VERSION=1.7.7
+          curl -fsSL \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            -o /tmp/actionlint.tar.gz
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          /tmp/actionlint -version
+          # actionlint runs shellcheck on embedded run: scripts too.
+          /tmp/actionlint -color
+          echo "actionlint OK."
+
+  danger-dry-run:
+    name: danger dry-run (dangerfile.js)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Danger dry-run (evaluate dangerfile, no PR comment)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # --text-only evaluates dangerfile.js against the current PR and prints
+        # results to STDOUT without posting a comment; --failOnErrors makes a
+        # syntax or runtime error in the dangerfile fail this job. This is the
+        # dangerfile's automated validation (it has no unit tests).
+        run: npx danger ci --dangerfile dangerfile.js --text-only --failOnErrors
