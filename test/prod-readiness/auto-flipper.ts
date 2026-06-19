@@ -19,11 +19,23 @@
  *     — those require human judgment.
  *   - Only flips when target env is genuinely prod-like (NODE_ENV in
  *     {production, staging}).
- *   - All flips are logged to `OPERATOR_KEYS_NEEDED.md` so the operator
- *     has a permanent record.
+ *   - apply mode requires FLY_APP_NAME (the target Fly app); absent, every
+ *     flip fails fast with a clear error rather than shelling out blindly.
+ *   - apply mode takes a single-holder file lock (F-A17) so two concurrent
+ *     runs cannot race `fly secrets set` against each other.
+ *   - On a successful flip, the in-process `env` is mutated (F-A12) so later
+ *     checks in the SAME run observe the new value.
+ *   - The structured `appliedFlips` result (F-A03) is returned to the caller,
+ *     which records it in `OPERATOR_KEYS_NEEDED.md` and escalates the verdict
+ *     if any flip failed. This module does NOT itself write that file — the
+ *     prior JSDoc claimed it did, which was untrue (F-A03).
  */
 
+import * as fs from 'fs';
 import type { SwitchEntry } from './registry-loader';
+
+/** Single-holder lock so concurrent apply runs cannot race (F-A17). */
+export const LOCK_PATH = '/tmp/readiness-apply.lock';
 
 export type FlipMode = 'dry-run' | 'apply';
 
@@ -34,11 +46,18 @@ export interface FlipPlan {
   proposed_value: string;
 }
 
+export interface AppliedFlip {
+  name: string;
+  ok: boolean;
+  error?: string;
+}
+
 export interface FlipResult {
   mode: FlipMode;
   prodLike: boolean;
   plans: FlipPlan[];
-  applied: { name: string; ok: boolean; detail?: string }[];
+  /** Per-flip outcome for apply mode; empty in dry-run (F-A03). */
+  appliedFlips: AppliedFlip[];
 }
 
 export interface AutoFlipOptions {
@@ -80,16 +99,57 @@ export async function autoFlip(opts: AutoFlipOptions): Promise<FlipResult> {
       });
     }
   }
-  const applied: FlipResult['applied'] = [];
+  const appliedFlips: AppliedFlip[] = [];
   if (mode === 'apply' && prodLike) {
-    const runFly = opts.runFlyCommand ?? defaultRunFly;
-    for (const plan of plans) {
-      // eslint-disable-next-line no-await-in-loop
-      const res = await runFly(['secrets', 'set', `${plan.name}=${plan.proposed_value}`, '--stage']);
-      applied.push({ name: plan.name, ok: res.ok, detail: res.stderr });
+    // FLY_APP_NAME is mandatory for `fly secrets set --app <name>` (F-A04).
+    const flyApp = env.FLY_APP_NAME;
+    if (!flyApp) {
+      for (const plan of plans) {
+        appliedFlips.push({ name: plan.name, ok: false, error: 'FLY_APP_NAME unset; cannot apply secrets' });
+      }
+      return { mode, prodLike, plans, appliedFlips };
+    }
+
+    // Single-holder lock (F-A17): refuse to apply if another run holds it.
+    let lockHeld = false;
+    try {
+      fs.writeFileSync(LOCK_PATH, String(process.pid), { flag: 'wx' });
+      lockHeld = true;
+    } catch (e: unknown) {
+      if (e && typeof e === 'object' && 'code' in e && (e as { code: unknown }).code === 'EEXIST') {
+        for (const plan of plans) {
+          appliedFlips.push({ name: plan.name, ok: false, error: 'another apply run in progress' });
+        }
+        return { mode, prodLike, plans, appliedFlips };
+      }
+      throw e;
+    }
+
+    try {
+      const runFly = opts.runFlyCommand ?? defaultRunFly;
+      for (const plan of plans) {
+        // eslint-disable-next-line no-await-in-loop
+        const res = await runFly(['secrets', 'set', `${plan.name}=${plan.proposed_value}`, '--app', flyApp]);
+        if (res.ok) {
+          // Mutate the in-process env so later same-run checks see the new
+          // value (F-A12). proposed_value is always a concrete string here.
+          env[plan.name] = plan.proposed_value;
+          appliedFlips.push({ name: plan.name, ok: true });
+        } else {
+          appliedFlips.push({ name: plan.name, ok: false, error: res.stderr ?? 'flyctl exited non-zero' });
+        }
+      }
+    } finally {
+      if (lockHeld) {
+        try {
+          fs.unlinkSync(LOCK_PATH);
+        } catch {
+          // Lock already removed; nothing to clean up.
+        }
+      }
     }
   }
-  return { mode, prodLike, plans, applied };
+  return { mode, prodLike, plans, appliedFlips };
 }
 
 async function defaultRunFly(args: string[]): Promise<{ ok: boolean; stderr?: string }> {
