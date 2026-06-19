@@ -54,6 +54,18 @@ export interface EnvVarOrigin {
 
 const ENV_VAR_NAME = /^[A-Z][A-Z0-9_]*$/;
 
+/**
+ * Discover every env-var-shaped switch across the three sources (ENV_RULES,
+ * .env.example, and code references under src/).
+ *
+ * SCOPE — Node.js only. Code-reference discovery scans Node-style env access:
+ * `process.env.*` and `process['env'].*` (property, string-element, const-keyed,
+ * and destructured forms). Frontend / Vite-style `import.meta.env.*` is
+ * INTENTIONALLY out of scope: this repository is a NestJS backend with no Vite
+ * build, so `import.meta.env` is never a real prod env source here. A reference
+ * such as `import.meta.env.VITE_FLAG` therefore contributes nothing to
+ * discovery (see `extractEnvVarRefs`, which returns an empty set for it).
+ */
 export function discoverEnvVars(repoRoot: string = process.cwd()): DiscoveryResult {
   const result = new Map<string, EnvVarOrigin>();
   const upsert = (name: string): EnvVarOrigin => {
@@ -129,7 +141,11 @@ export function extractEnvRuleNames(filePath: string): string[] {
   };
 
   const visit = (node: ts.Node): void => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === 'ENV_RULES') {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'ENV_RULES'
+    ) {
       // Unwrap `as const` / satisfies / parenthesized wrappers so the literal
       // `ENV_RULES = [...] as const` shape the codebase favours still resolves
       // to its array initializer.
@@ -161,17 +177,45 @@ function unwrapExpression(node: ts.Expression): ts.Expression {
  * Extract every statically-knowable env-var name referenced in one source
  * file, across all four access shapes. Identifier-keyed element accesses are
  * resolved against string `const`s declared in the same file.
+ *
+ * Node-scoped: only `process.env.*` and `process['env'].*` are recognised.
+ * `import.meta.env.*` (Vite/frontend) is deliberately NOT recognised — this is
+ * a NestJS backend with no Vite — so such a reference yields an empty set.
  */
 export function extractEnvVarRefs(content: string, fileName = 'inline.ts'): Set<string> {
   const sf = ts.createSourceFile(fileName, content, ts.ScriptTarget.Latest, true);
   const found = new Set<string>();
   const stringConsts = collectStringConsts(sf);
 
-  const isProcessEnv = (node: ts.Expression): boolean =>
-    ts.isPropertyAccessExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === 'process' &&
-    node.name.text === 'env';
+  // Recognise the `process.env` namespace in BOTH access forms the codebase
+  // can use to reach it:
+  //   - `process.env.X`        — property access on `process` named `env`
+  //   - `process['env'].X`     — element access on `process` with the string
+  //     literal key `"env"` / `'env'`
+  // The outer key extraction (property `.X`, string `['X']`, const-keyed, and
+  // destructuring) then applies uniformly to whichever inner form was used, so
+  // `process['env'].HIDDEN` and `process['env']['HIDDEN2']` are no longer able
+  // to slip past discovery.
+  const isProcessEnv = (node: ts.Expression): boolean => {
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'process' &&
+      node.name.text === 'env'
+    ) {
+      return true;
+    }
+    if (
+      ts.isElementAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'process' &&
+      ts.isStringLiteralLike(node.argumentExpression) &&
+      node.argumentExpression.text === 'env'
+    ) {
+      return true;
+    }
+    return false;
+  };
 
   const add = (name: string): void => {
     if (ENV_VAR_NAME.test(name)) found.add(name);
@@ -245,7 +289,11 @@ function readUtf8OrNull(file: string): string | null {
  * (F-A14) while tracking real (resolved) paths to avoid infinite loops on
  * cyclic links.
  */
-function walkTs(dir: string, visit: (file: string) => void, visited: Set<string> = new Set()): void {
+function walkTs(
+  dir: string,
+  visit: (file: string) => void,
+  visited: Set<string> = new Set(),
+): void {
   const real = fs.realpathSync(dir);
   if (visited.has(real)) return;
   visited.add(real);
@@ -286,8 +334,17 @@ function safeIsDir(p: string): boolean {
 /** Classification of a single env var after crossing discovery with registry. */
 export type EnvVarStatus = 'UNDECLARED' | 'DEAD' | 'TRACKED';
 
-/** Names matching this shape are test-only scaffolding, excluded from the prod scan. */
-export const TEST_ONLY_ENV = /(^|_)_?TEST_/;
+/**
+ * Names matching this shape are test-only scaffolding, excluded from the prod
+ * scan. The exclusion is PREFIX-anchored (`/^_?TEST_/`): a name is test-only
+ * only when it *starts* with an optional underscore followed by `TEST_`
+ * (e.g. `TEST_ONLY`, `_TEST_FLAG`). An infixed `TEST_` does NOT make a name
+ * test-only, so genuine prod vars such as `MY_TEST_VAR`, `AB_TEST_BUCKET`, and
+ * `FEATURE_TEST_MODE` are correctly retained in the prod readiness scan. (An
+ * earlier `/(^|_)_?TEST_/` matched any `_TEST_` segment and silently hid those
+ * real prod vars.)
+ */
+export const TEST_ONLY_ENV = /^_?TEST_/;
 
 /** One classified env var: its name, status, registry presence, and code refs. */
 export interface EnvVarFinding {

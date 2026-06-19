@@ -91,7 +91,10 @@ async function writeFixture(repo: string, rel: string, content: string): Promise
 
 /** Names that survive into a report keyed by status, for terse assertions. */
 function namesByStatus(report: DiscoveryReport, status: string): string[] {
-  return report.findings.filter((f) => f.status === status).map((f) => f.name).sort();
+  return report.findings
+    .filter((f) => f.status === status)
+    .map((f) => f.name)
+    .sort();
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +110,7 @@ describe('extractEnvVarRefs — access shapes', () => {
     expect([...extractEnvVarRefs('const x = process.env["BAR"];')]).toEqual(['BAR']);
   });
 
-  it('finds single-quoted element access process.env[\'BAZ\']', () => {
+  it("finds single-quoted element access process.env['BAZ']", () => {
     expect([...extractEnvVarRefs("const x = process.env['BAZ'];")]).toEqual(['BAZ']);
   });
 
@@ -224,7 +227,11 @@ describe('extractEnvRuleNames — ENV_RULES array parsing', () => {
 describe('discoverEnvVars — three-source union over a fixture repo', () => {
   it('attributes a var to all three sources when wired end-to-end', async () => {
     const repo = await freshRepo();
-    await writeFixture(repo, 'src/common/env-validation.ts', "const ENV_RULES = [{ name: 'WIRED' }];");
+    await writeFixture(
+      repo,
+      'src/common/env-validation.ts',
+      "const ENV_RULES = [{ name: 'WIRED' }];",
+    );
     await writeFixture(repo, '.env.example', 'WIRED=value');
     await writeFixture(repo, 'src/app.ts', 'const x = process.env.WIRED;');
     const { envVars } = discoverEnvVars(repo);
@@ -264,7 +271,11 @@ describe('discoverEnvVars — three-source union over a fixture repo', () => {
 
   it('parses .env.example lines and ignores comments / blanks', async () => {
     const repo = await freshRepo();
-    await writeFixture(repo, '.env.example', ['# a comment', '', 'FROM_EXAMPLE=1', 'lower=skip'].join('\n'));
+    await writeFixture(
+      repo,
+      '.env.example',
+      ['# a comment', '', 'FROM_EXAMPLE=1', 'lower=skip'].join('\n'),
+    );
     const { envVars } = discoverEnvVars(repo);
     expect(envVars.get('FROM_EXAMPLE')?.inEnvExample).toBe(true);
     expect(envVars.has('lower')).toBe(false);
@@ -370,11 +381,13 @@ describe('crossReference — UNDECLARED / DEAD / TRACKED classification', () => 
     expect(report.findings.map((f) => f.name)).toEqual(['REAL']);
   });
 
-  it('excludes a _TEST_ infixed var from the prod scan (registry side / DEAD)', () => {
+  it('does NOT exclude an INFIXED TEST_ var — it is a real prod var (registry side)', () => {
+    // Prefix-anchored exclusion: FEATURE_TEST_MODE does not start with TEST_, so
+    // it is a genuine prod switch and (being registry-only / unreferenced) DEAD.
     const discovery = discoveryOf({});
     const registry = registryOf(['FEATURE_TEST_MODE', 'KEEP_VAR']);
     const report = crossReference(discovery, registry);
-    expect(namesByStatus(report, 'DEAD')).toEqual(['KEEP_VAR']);
+    expect(namesByStatus(report, 'DEAD')).toEqual(['FEATURE_TEST_MODE', 'KEEP_VAR']);
   });
 
   it('produces an empty report when discovery and registry are both empty', () => {
@@ -420,7 +433,11 @@ describe('report helpers — findUndeclared / findDead / summary', () => {
   });
 
   it('findDead returns only DEAD findings', () => {
-    expect(findDead(report).map((f) => f.name).sort()).toEqual(['DEAD_A', 'DEAD_B']);
+    expect(
+      findDead(report)
+        .map((f) => f.name)
+        .sort(),
+    ).toEqual(['DEAD_A', 'DEAD_B']);
   });
 
   it('summary rolls up per-status counts that sum to the total', () => {
@@ -438,9 +455,10 @@ describe('report helpers — findUndeclared / findDead / summary', () => {
     });
   });
 
-  it('isTestOnly / TEST_ONLY_ENV agree on test-scaffold names', () => {
+  it('isTestOnly / TEST_ONLY_ENV agree on test-scaffold names (prefix-anchored)', () => {
     expect(isTestOnly('_TEST_X')).toBe(true);
-    expect(isTestOnly('FEATURE_TEST_MODE')).toBe(true);
+    // INFIXED TEST_ is a real prod var, not test-only, under the prefix anchor.
+    expect(isTestOnly('FEATURE_TEST_MODE')).toBe(false);
     expect(isTestOnly('DATABASE_URL')).toBe(false);
     expect(TEST_ONLY_ENV.test('_TEST_X')).toBe(true);
   });
@@ -467,7 +485,11 @@ describe('discoverWithRegistry — end-to-end scan', () => {
 
   it('crosses a fixture src tree against a fixture registry file on disk', async () => {
     const repo = await freshRepo();
-    await writeFixture(repo, 'src/app.ts', 'const a = process.env.TRACKED_ONE; const b = process.env.UNDECLARED_ONE;');
+    await writeFixture(
+      repo,
+      'src/app.ts',
+      'const a = process.env.TRACKED_ONE; const b = process.env.UNDECLARED_ONE;',
+    );
     await writeFixture(repo, 'prod-switches.yml', registryYaml(['TRACKED_ONE', 'DEAD_ONE']));
     const report = await discoverWithRegistry(repo, join(repo, 'prod-switches.yml'));
     expect(namesByStatus(report, 'TRACKED')).toContain('TRACKED_ONE');
@@ -486,7 +508,11 @@ describe('discoverWithRegistry — end-to-end scan', () => {
   it('re-throws an invalid-registry (too-few-rows) error with context', async () => {
     const repo = await freshRepo();
     await writeFixture(repo, 'src/app.ts', 'const a = process.env.X;');
-    await writeFixture(repo, 'prod-switches.yml', 'switches:\n  - name: ONLY_ONE\n    tier: optional\n    prod_default: OFF\n    auto_flip_on_in_prod: false\n    owner: platform\n    description: "x"\n');
+    await writeFixture(
+      repo,
+      'prod-switches.yml',
+      'switches:\n  - name: ONLY_ONE\n    tier: optional\n    prod_default: OFF\n    auto_flip_on_in_prod: false\n    owner: platform\n    description: "x"\n',
+    );
     await expect(discoverWithRegistry(repo, join(repo, 'prod-switches.yml'))).rejects.toThrow(
       /env-discovery could not load registry/,
     );
@@ -613,7 +639,11 @@ describe('extractEnvRuleNames — empty and malformed ENV_RULES', () => {
 describe('discoverEnvVars — partial source attribution', () => {
   it('attributes a var to ENV_RULES + .env.example but not code', async () => {
     const repo = await freshRepo();
-    await writeFixture(repo, 'src/common/env-validation.ts', "const ENV_RULES = [{ name: 'NO_CODE' }];");
+    await writeFixture(
+      repo,
+      'src/common/env-validation.ts',
+      "const ENV_RULES = [{ name: 'NO_CODE' }];",
+    );
     await writeFixture(repo, '.env.example', 'NO_CODE=1');
     const { envVars } = discoverEnvVars(repo);
     const o = envVars.get('NO_CODE');
@@ -626,7 +656,12 @@ describe('discoverEnvVars — partial source attribution', () => {
     const repo = await freshRepo();
     await writeFixture(repo, 'src/svc.ts', 'const x = process.env.CODE_SOLE;');
     const o = discoverEnvVars(repo).envVars.get('CODE_SOLE');
-    expect(o).toEqual({ inEnvRules: false, inEnvExample: false, inCode: true, codeRefs: ['src/svc.ts'] });
+    expect(o).toEqual({
+      inEnvRules: false,
+      inEnvExample: false,
+      inCode: true,
+      codeRefs: ['src/svc.ts'],
+    });
   });
 
   it('uses repo-root-relative paths for code references', async () => {
@@ -683,8 +718,11 @@ describe('crossReference — additional corners', () => {
 
   it('handles a large mix of undeclared, dead, and tracked vars', () => {
     const discovery = discoveryOf({
-      T1: { inCode: true }, T2: { inCode: true }, T3: { inEnvExample: true },
-      U1: { inCode: true }, U2: { inEnvExample: true },
+      T1: { inCode: true },
+      T2: { inCode: true },
+      T3: { inEnvExample: true },
+      U1: { inCode: true },
+      U2: { inEnvExample: true },
     });
     const registry = registryOf(['T1', 'T2', 'T3', 'D1', 'D2', 'D3']);
     const s = summary(crossReference(discovery, registry));
@@ -739,7 +777,11 @@ describe('discoverWithRegistry — additional end-to-end paths', () => {
 
   it('reports a clean (all-TRACKED) repo with zero undeclared and zero dead', async () => {
     const repo = await freshRepo();
-    await writeFixture(repo, 'src/a.ts', 'const x = process.env.CLEAN_A; const y = process.env.CLEAN_B;');
+    await writeFixture(
+      repo,
+      'src/a.ts',
+      'const x = process.env.CLEAN_A; const y = process.env.CLEAN_B;',
+    );
     await writeFixture(repo, 'prod-switches.yml', regYaml(['CLEAN_A', 'CLEAN_B']));
     const report = await discoverWithRegistry(repo, join(repo, 'prod-switches.yml'));
     const s = summary(report);
@@ -816,7 +858,11 @@ describe('extractEnvVarRefs — destructuring and rest corners', () => {
 describe('discoverEnvVars — mixed-source repo end-to-end shape', () => {
   it('produces a union whose every entry has the full origin shape', async () => {
     const repo = await freshRepo();
-    await writeFixture(repo, 'src/common/env-validation.ts', "const ENV_RULES = [{ name: 'R_VAR' }];");
+    await writeFixture(
+      repo,
+      'src/common/env-validation.ts',
+      "const ENV_RULES = [{ name: 'R_VAR' }];",
+    );
     await writeFixture(repo, '.env.example', 'E_VAR=1');
     await writeFixture(repo, 'src/use.ts', 'const x = process.env.C_VAR;');
     const { envVars } = discoverEnvVars(repo);
@@ -839,7 +885,11 @@ describe('discoverEnvVars — mixed-source repo end-to-end shape', () => {
 
   it('does not double-count a var referenced twice within one file', async () => {
     const repo = await freshRepo();
-    await writeFixture(repo, 'src/dup.ts', 'const a = process.env.ONCE; const b = process.env.ONCE;');
+    await writeFixture(
+      repo,
+      'src/dup.ts',
+      'const a = process.env.ONCE; const b = process.env.ONCE;',
+    );
     const o = discoverEnvVars(repo).envVars.get('ONCE');
     expect(o?.codeRefs).toEqual(['src/dup.ts']);
   });
@@ -866,5 +916,126 @@ describe('summary / helpers — invariants on real-data report', () => {
   it('no REAL finding is a test-only name (the prod scan excludes them)', async () => {
     const report = await discoverWithRegistry(REAL_REPO_ROOT, REAL_REGISTRY_PATH);
     for (const f of report.findings) expect(isTestOnly(f.name)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5. Lens B regression probes (H4.B R1)
+// ---------------------------------------------------------------------------
+
+// Finding 1 (MAJOR): the test-only exclusion must be PREFIX-anchored so that
+// genuine prod vars containing an infixed `TEST_` segment are not silently
+// hidden from the readiness scan. `isTestOnly` is true only for names that
+// START with an optional underscore then `TEST_`.
+describe('isTestOnly — prefix-anchored TEST_ exclusion (Finding 1)', () => {
+  it('EXCLUDES TEST_ONLY (bare prefix)', () => {
+    expect(isTestOnly('TEST_ONLY')).toBe(true);
+  });
+
+  it('EXCLUDES _TEST_FLAG (underscore + prefix)', () => {
+    expect(isTestOnly('_TEST_FLAG')).toBe(true);
+  });
+
+  it('INCLUDES MY_TEST_VAR (infixed TEST_ — real prod var)', () => {
+    expect(isTestOnly('MY_TEST_VAR')).toBe(false);
+  });
+
+  it('INCLUDES AB_TEST_BUCKET (infixed TEST_ — real prod var)', () => {
+    expect(isTestOnly('AB_TEST_BUCKET')).toBe(false);
+  });
+
+  it('INCLUDES FEATURE_TEST_MODE (infixed TEST_ — real prod var)', () => {
+    expect(isTestOnly('FEATURE_TEST_MODE')).toBe(false);
+  });
+
+  it('INCLUDES TESTING_ENABLED (TEST not followed by underscore)', () => {
+    // The anchor requires `TEST_`; `TESTING_` does not match, so this is prod.
+    expect(isTestOnly('TESTING_ENABLED')).toBe(false);
+  });
+
+  it('the regex itself agrees with isTestOnly on the same set', () => {
+    expect(TEST_ONLY_ENV.test('TEST_ONLY')).toBe(true);
+    expect(TEST_ONLY_ENV.test('_TEST_FLAG')).toBe(true);
+    expect(TEST_ONLY_ENV.test('MY_TEST_VAR')).toBe(false);
+    expect(TEST_ONLY_ENV.test('AB_TEST_BUCKET')).toBe(false);
+  });
+
+  it('an infixed-TEST_ var read in code now surfaces as UNDECLARED (not hidden)', () => {
+    const discovery = discoveryOf({ MY_TEST_VAR: { inCode: true } });
+    const report = crossReference(discovery, registryOf([]));
+    expect(namesByStatus(report, 'UNDECLARED')).toEqual(['MY_TEST_VAR']);
+  });
+});
+
+// Finding 2 (MAJOR): bracket access to the env namespace — `process['env'].X`
+// and `process['env']['Y']` — must be discovered exactly like `process.env.X`.
+describe('extractEnvVarRefs — process["env"] bracket access (Finding 2)', () => {
+  it('discovers process["env"].HIDDEN (double-quoted env, property key)', () => {
+    expect([...extractEnvVarRefs('const x = process["env"].HIDDEN;')]).toEqual(['HIDDEN']);
+  });
+
+  it("discovers process['env'].HIDDEN (single-quoted env, property key)", () => {
+    expect([...extractEnvVarRefs("const x = process['env'].HIDDEN;")]).toEqual(['HIDDEN']);
+  });
+
+  it('discovers process["env"]["HIDDEN2"] (double-quoted env, string key)', () => {
+    expect([...extractEnvVarRefs('const x = process["env"]["HIDDEN2"];')]).toEqual(['HIDDEN2']);
+  });
+
+  it("discovers process['env']['HIDDEN2'] (single-quoted env, string key)", () => {
+    expect([...extractEnvVarRefs("const x = process['env']['HIDDEN2'];")]).toEqual(['HIDDEN2']);
+  });
+
+  it('resolves an in-file const key under bracket-env access', () => {
+    const code = "const K = 'BRACKET_CONST'; const x = process['env'][K];";
+    expect([...extractEnvVarRefs(code)]).toEqual(['BRACKET_CONST']);
+  });
+
+  it('discovers a destructuring off bracket-env: const { D_VAR } = process["env"]', () => {
+    expect([...extractEnvVarRefs('const { D_VAR } = process["env"];')]).toEqual(['D_VAR']);
+  });
+
+  it('does NOT treat process["notenv"].X as an env reference', () => {
+    expect([...extractEnvVarRefs('const x = process["notenv"].X;')]).toEqual([]);
+  });
+
+  it('does NOT treat other["env"].X (non-process base) as an env reference', () => {
+    expect([...extractEnvVarRefs('const x = other["env"].X;')]).toEqual([]);
+  });
+
+  it('collects mixed dot-env and bracket-env references in one file', () => {
+    const code = [
+      'const a = process.env.DOT_VAR;',
+      'const b = process["env"].BRACKET_VAR;',
+      'const c = process["env"]["BRACKET_STR"];',
+    ].join('\n');
+    expect([...extractEnvVarRefs(code)].sort()).toEqual(['BRACKET_STR', 'BRACKET_VAR', 'DOT_VAR']);
+  });
+
+  it('surfaces a bracket-env var end-to-end via discoverEnvVars', async () => {
+    const repo = await freshRepo();
+    await writeFixture(repo, 'src/svc.ts', "const h = process['env'].END_TO_END_HIDDEN;");
+    const o = discoverEnvVars(repo).envVars.get('END_TO_END_HIDDEN');
+    expect(o?.inCode).toBe(true);
+    expect(o?.codeRefs).toEqual(['src/svc.ts']);
+  });
+});
+
+// Finding 3 (MINOR): import.meta.env (Vite/frontend) is intentionally out of
+// scope for this NestJS backend. The scanner must return [] for it — this test
+// documents the deliberate scope boundary so a future reader does not mistake
+// the omission for a bug.
+describe('extractEnvVarRefs — import.meta.env is out of scope (Finding 3)', () => {
+  it('returns [] for import.meta.env.VITE_FLAG (no Vite in this repo)', () => {
+    expect([...extractEnvVarRefs('const x = import.meta.env.VITE_FLAG;')]).toEqual([]);
+  });
+
+  it('returns [] for bracket import.meta.env["VITE_OTHER"]', () => {
+    expect([...extractEnvVarRefs('const x = import.meta.env["VITE_OTHER"];')]).toEqual([]);
+  });
+
+  it('ignores import.meta.env but still finds a sibling process.env ref', () => {
+    const code = 'const a = import.meta.env.VITE_X; const b = process.env.NODE_REAL;';
+    expect([...extractEnvVarRefs(code)]).toEqual(['NODE_REAL']);
   });
 });
