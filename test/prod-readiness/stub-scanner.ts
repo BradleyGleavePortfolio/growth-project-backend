@@ -127,7 +127,10 @@ export function scanForStubs(opts: StubScanOptions = {}): StubFinding[] {
   walkSource(root, (file) => {
     const rel = path.relative(repoRoot, file);
     const exemptZone = isExemptZone(rel);
-    const text = fs.readFileSync(file, 'utf8');
+    const text = readUtf8OrNull(file);
+    // Skip binary files (F-A13): a stray NUL byte means this is not text source,
+    // and decoding it as UTF-8 would produce garbage "matches".
+    if (text === null) return;
     const lines = text.split('\n');
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -171,15 +174,45 @@ function isExemptZone(rel: string): boolean {
   return false;
 }
 
-function walkSource(dir: string, visit: (file: string) => void): void {
+/**
+ * Read a file as UTF-8, returning null for binary content (F-A13). A NUL byte
+ * within the first 1 KiB is treated as a binary signal — real text source never
+ * embeds NULs. Mirrors env-discovery.readUtf8OrNull so both scanners agree on
+ * what counts as scannable text.
+ */
+function readUtf8OrNull(file: string): string | null {
+  const buf = fs.readFileSync(file);
+  const probe = buf.subarray(0, 1024);
+  if (probe.indexOf(0) !== -1) return null;
+  return buf.toString('utf8');
+}
+
+/**
+ * Recursively walk `src/` for `.ts` files. Follows directory symlinks (F-A14)
+ * while tracking real (resolved) paths in a visited-set so cyclic links can't
+ * loop forever. Mirrors env-discovery.walkTs.
+ */
+function walkSource(dir: string, visit: (file: string) => void, visited: Set<string> = new Set()): void {
+  const real = fs.realpathSync(dir);
+  if (visited.has(real)) return;
+  visited.add(real);
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const e of entries) {
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) {
+    const isDir = e.isDirectory() || (e.isSymbolicLink() && safeIsDir(p));
+    if (isDir) {
       if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
-      walkSource(p, visit);
-    } else if (e.isFile() && e.name.endsWith('.ts') && !e.name.endsWith('.d.ts')) {
+      walkSource(p, visit, visited);
+    } else if ((e.isFile() || e.isSymbolicLink()) && p.endsWith('.ts') && !p.endsWith('.d.ts')) {
       visit(p);
     }
+  }
+}
+
+function safeIsDir(p: string): boolean {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
   }
 }
