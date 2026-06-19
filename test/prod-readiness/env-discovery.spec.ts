@@ -1039,3 +1039,123 @@ describe('extractEnvVarRefs — import.meta.env is out of scope (Finding 3)', ()
     expect([...extractEnvVarRefs(code)]).toEqual(['NODE_REAL']);
   });
 });
+
+describe('collectStringConsts via extractEnvVarRefs — const-only alias keys (R2 F001)', () => {
+  it('resolves a const string key: const K = "FOO"; process.env[K] -> FOO', () => {
+    const code = 'const K = "FOO"; const v = process.env[K];';
+    expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
+  });
+
+  it('does NOT resolve a let alias key: let K = "FOO"; process.env[K] -> []', () => {
+    const code = 'let K = "FOO"; const v = process.env[K];';
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('does NOT resolve a var alias key: var K = "FOO"; process.env[K] -> []', () => {
+    const code = 'var K = "FOO"; const v = process.env[K];';
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('does NOT resolve a let alias even when never reassigned (mutable by type)', () => {
+    const code = 'let MUT = "MUTABLE_NAME";\nconst v = process.env[MUT];';
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('resolves only the const key when a const and a let share the env-key role', () => {
+    const code =
+      'const GOOD = "GOOD_VAR"; let BAD = "BAD_VAR";\n' +
+      'const a = process.env[GOOD]; const b = process.env[BAD];';
+    expect([...extractEnvVarRefs(code)]).toEqual(['GOOD_VAR']);
+  });
+});
+
+describe('extractEnvVarRefs — expression-wrapper unwrapping (R2 F002)', () => {
+  it('discovers (process)["env"].FOO (parenthesized process, string env, property key)', () => {
+    expect([...extractEnvVarRefs('const v = (process)["env"].FOO;')]).toEqual(['FOO']);
+  });
+
+  it('discovers (process).env.FOO (parenthesized process, dot env)', () => {
+    expect([...extractEnvVarRefs('const v = (process).env.FOO;')]).toEqual(['FOO']);
+  });
+
+  it('discovers (process.env).FOO (parenthesized process.env)', () => {
+    expect([...extractEnvVarRefs('const v = (process.env).FOO;')]).toEqual(['FOO']);
+  });
+
+  it('discovers const { FOO } = (process.env) (parenthesized destructuring init)', () => {
+    expect([...extractEnvVarRefs('const { FOO } = (process.env);')]).toEqual(['FOO']);
+  });
+
+  it('discovers process.env!.FOO (non-null assertion on the namespace)', () => {
+    expect([...extractEnvVarRefs('const v = process.env!.FOO;')]).toEqual(['FOO']);
+  });
+
+  it('discovers (process.env as Record<string,string>).FOO (as-cast on the namespace)', () => {
+    const code = 'const v = (process.env as Record<string, string>).FOO;';
+    expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
+  });
+
+  it('discovers (process.env satisfies Record<string,string>).FOO (satisfies on the namespace)', () => {
+    const code = 'const v = (process.env satisfies Record<string, string>).FOO;';
+    expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
+  });
+
+  it('unwraps wrappers for string-element keys too: (process.env as Record<...>)["BAR"]', () => {
+    const code = 'const v = (process.env as Record<string, string>)["BAR"];';
+    expect([...extractEnvVarRefs(code)]).toEqual(['BAR']);
+  });
+
+  it('still rejects a wrapped NON-process namespace: (other.env).FOO -> []', () => {
+    expect([...extractEnvVarRefs('const v = (other.env).FOO;')]).toEqual([]);
+  });
+
+  it('still rejects (process.notenv).FOO -> [] (wrapper does not invent env)', () => {
+    expect([...extractEnvVarRefs('const v = (process.notenv).FOO;')]).toEqual([]);
+  });
+
+  it('collects several wrapper shapes in one file without duplicates', () => {
+    const code =
+      'const a = (process.env).A_ONE;\n' +
+      'const b = process.env!.B_TWO;\n' +
+      'const c = (process.env as Record<string, string>).C_THREE;\n' +
+      'const { D_FOUR } = (process.env);';
+    expect([...extractEnvVarRefs(code)].sort()).toEqual(['A_ONE', 'B_TWO', 'C_THREE', 'D_FOUR']);
+  });
+});
+
+describe('extractEnvVarRefs — literal-preserving const initializers (R2 F003)', () => {
+  it('discovers const K = "FOO" as const; process.env[K] -> FOO', () => {
+    const code = 'const K = "FOO" as const; const v = process.env[K];';
+    expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
+  });
+
+  it('discovers a plain as-cast key: const K = "FOO" as string; process.env[K] -> FOO', () => {
+    const code = 'const K = "FOO" as string; const v = process.env[K];';
+    expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
+  });
+
+  it('discovers a satisfies key: const K = "FOO" satisfies string; process.env[K] -> FOO', () => {
+    const code = 'const K = "FOO" satisfies string; const v = process.env[K];';
+    expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
+  });
+
+  it('discovers a parenthesized key: const K = ("FOO"); process.env[K] -> FOO', () => {
+    const code = 'const K = ("FOO"); const v = process.env[K];';
+    expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
+  });
+
+  it('discovers a no-substitution-template key: const K = `FOO`; process.env[K] -> FOO', () => {
+    const code = 'const K = `FOO`; const v = process.env[K];';
+    expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
+  });
+
+  it('discovers a nested-wrapper key: const K = ("FOO" as const); process.env[K] -> FOO', () => {
+    const code = 'const K = ("FOO" as const); const v = process.env[K];';
+    expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
+  });
+
+  it('keeps the F001 rejection under as const: let K = "FOO" as const; process.env[K] -> []', () => {
+    const code = 'let K = "FOO" as const; const v = process.env[K];';
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+});

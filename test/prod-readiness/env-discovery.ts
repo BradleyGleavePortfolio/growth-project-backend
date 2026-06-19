@@ -160,13 +160,28 @@ export function extractEnvRuleNames(filePath: string): string[] {
   return [...names];
 }
 
-/** Strip `as T` / `satisfies T` / parenthesized wrappers to the inner expression. */
+/**
+ * Strip the TypeScript expression wrappers that carry no runtime meaning down to
+ * the inner expression they wrap:
+ *   - `(expr)`                  ParenthesizedExpression
+ *   - `expr!`                   NonNullExpression
+ *   - `expr as T` / `as const`  AsExpression
+ *   - `<T>expr`                 TypeAssertionExpression (angle-bracket cast)
+ *   - `expr satisfies T`        SatisfiesExpression
+ * All five preserve the wrapped value identity, so unwrapping them lets the
+ * `process.env` namespace, ENV_RULES array, and string-const initialisers be
+ * recognised regardless of how many such wrappers surround them. The loop runs
+ * to a fixed point, so arbitrarily nested combinations (e.g.
+ * `((process.env as Record<string, string>)!)`) collapse to the core expression.
+ */
 function unwrapExpression(node: ts.Expression): ts.Expression {
   let cur = node;
   while (
+    ts.isParenthesizedExpression(cur) ||
+    ts.isNonNullExpression(cur) ||
     ts.isAsExpression(cur) ||
-    ts.isSatisfiesExpression(cur) ||
-    ts.isParenthesizedExpression(cur)
+    ts.isTypeAssertionExpression(cur) ||
+    ts.isSatisfiesExpression(cur)
   ) {
     cur = cur.expression;
   }
@@ -196,23 +211,28 @@ export function extractEnvVarRefs(content: string, fileName = 'inline.ts'): Set<
   // destructuring) then applies uniformly to whichever inner form was used, so
   // `process['env'].HIDDEN` and `process['env']['HIDDEN2']` are no longer able
   // to slip past discovery.
-  const isProcessEnv = (node: ts.Expression): boolean => {
-    if (
-      ts.isPropertyAccessExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === 'process' &&
-      node.name.text === 'env'
-    ) {
-      return true;
+  // `unwrap` strips TypeScript expression wrappers (`(...)`, `!`, `as T`,
+  // `<T>...`, `satisfies T`) that carry no runtime meaning. Applying it before
+  // every shape check means wrapped forms the codebase can legitimately write —
+  // `(process.env).FOO`, `process.env!.FOO`, `(process.env as Record<...>).FOO`,
+  // `(process)["env"].FOO`, `const { FOO } = (process.env)` — resolve to the
+  // same core nodes as their bare equivalents instead of slipping past scan.
+  const unwrap = (node: ts.Expression): ts.Expression => unwrapExpression(node);
+
+  const isProcessEnv = (raw: ts.Expression): boolean => {
+    const node = unwrap(raw);
+    if (ts.isPropertyAccessExpression(node)) {
+      const recv = unwrap(node.expression);
+      return ts.isIdentifier(recv) && recv.text === 'process' && node.name.text === 'env';
     }
-    if (
-      ts.isElementAccessExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === 'process' &&
-      ts.isStringLiteralLike(node.argumentExpression) &&
-      node.argumentExpression.text === 'env'
-    ) {
-      return true;
+    if (ts.isElementAccessExpression(node)) {
+      const recv = unwrap(node.expression);
+      return (
+        ts.isIdentifier(recv) &&
+        recv.text === 'process' &&
+        ts.isStringLiteralLike(node.argumentExpression) &&
+        node.argumentExpression.text === 'env'
+      );
     }
     return false;
   };
@@ -254,7 +274,26 @@ export function extractEnvVarRefs(content: string, fileName = 'inline.ts'): Set<
   return found;
 }
 
-/** Map of `const X = '<string>'` declarations (string-valued only). */
+/**
+ * Map of `const X = '<string>'` declarations (string-valued only), used to
+ * resolve identifier-keyed element accesses (`process.env[X]`) to the literal
+ * name the key holds.
+ *
+ * TWO correctness constraints, both required for a sound static key:
+ *   1. CONST-ONLY (closes mutable-alias false positives): only declarations in
+ *      a `const` `VariableDeclarationList` are recorded. A `let`/`var` binding
+ *      can be reassigned between declaration and use, so its initial string is
+ *      NOT a statically-knowable env-var name — e.g. `let K = 'FOO'; K = 'BAR';
+ *      process.env[K]` must not be mis-discovered as `FOO`. We read the
+ *      `NodeFlags.Const` bit off the enclosing `VariableDeclarationList`.
+ *   2. LITERAL-PRESERVING UNWRAP (closes `as const` misses): the initializer is
+ *      unwrapped through `as T` / `as const`, angle-bracket casts, `satisfies`,
+ *      and parentheses before the string-literal check, and a
+ *      `NoSubstitutionTemplateLiteral` (a backtick string with no `${}`) is
+ *      accepted too. `isStringLiteralLike` already covers plain string and
+ *      no-substitution-template literals; unwrapping handles the wrapped forms
+ *      such as `const K = 'FOO' as const`.
+ */
 function collectStringConsts(sf: ts.SourceFile): Map<string, string> {
   const map = new Map<string, string>();
   const visit = (node: ts.Node): void => {
@@ -262,14 +301,29 @@ function collectStringConsts(sf: ts.SourceFile): Map<string, string> {
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
       node.initializer &&
-      ts.isStringLiteralLike(node.initializer)
+      isConstDeclaration(node)
     ) {
-      map.set(node.name.text, node.initializer.text);
+      const init = unwrapExpression(node.initializer);
+      if (ts.isStringLiteralLike(init)) {
+        map.set(node.name.text, init.text);
+      }
     }
     ts.forEachChild(node, visit);
   };
   visit(sf);
   return map;
+}
+
+/**
+ * True when a `VariableDeclaration` lives inside a `const` declaration list
+ * (rejecting `let` and `var`). The const-ness is a flag on the enclosing
+ * `VariableDeclarationList`, not the individual declaration, so we walk up to
+ * it and test `NodeFlags.Const`.
+ */
+function isConstDeclaration(decl: ts.VariableDeclaration): boolean {
+  const list = decl.parent;
+  if (!list || !ts.isVariableDeclarationList(list)) return false;
+  return (list.flags & ts.NodeFlags.Const) !== 0;
 }
 
 /**
