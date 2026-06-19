@@ -16,6 +16,8 @@ import {
   isSdkImported,
   scanProvidersWith,
   looksLikePlaceholder,
+  passesShapeCheck,
+  KEY_SHAPE_VALIDATORS,
   type ProviderDef,
   type EnvMap,
   type ProviderReport,
@@ -60,7 +62,7 @@ describe('looksLikePlaceholder (pure predicate)', () => {
   });
 
   it('accepts a realistic non-placeholder secret', () => {
-    expect(looksLikePlaceholder('sk_live_51HxYz9abcDEF')).toBe(false);
+    expect(looksLikePlaceholder('sk_live_51HxYz9abcDEFghijklmnop0123456789')).toBe(false);
     expect(looksLikePlaceholder('a-perfectly-normal-token-9f3')).toBe(false);
   });
 });
@@ -97,8 +99,8 @@ describe('looksLikePlaceholder — extended sentinel coverage', () => {
 describe('ProviderReport shape invariants', () => {
   it('always echoes the provider id, label, packages and required_vars', () => {
     const r = wired('stripe', {
-      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEF',
-      STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWX',
+      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEFghijklmnop0123456789',
+      STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWXabcdEFGH1234',
     });
     expect(r.id).toBe('stripe');
     expect(r.label).toBe('Stripe');
@@ -108,7 +110,7 @@ describe('ProviderReport shape invariants', () => {
 
   it('partitions vars into present/missing/placeholder with no overlap', () => {
     const r = wired('stripe', {
-      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEF', // present
+      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEFghijklmnop0123456789', // present
       STRIPE_WEBHOOK_SECRET: 'todo',              // placeholder
     });
     const all = [...r.env_vars_present, ...r.env_vars_missing, ...r.env_vars_placeholder];
@@ -128,8 +130,8 @@ describe('ProviderReport shape invariants', () => {
 describe('Stripe provider', () => {
   it('live: both required vars present + non-placeholder → WIRED', () => {
     const r = wired('stripe', {
-      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEF',
-      STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWX',
+      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEFghijklmnop0123456789',
+      STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWXabcdEFGH1234',
     });
     expect(r.status).toBe('WIRED');
     expect(r.env_vars_present).toEqual(expect.arrayContaining(['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET']));
@@ -140,14 +142,14 @@ describe('Stripe provider', () => {
   it('test: sk_test_ secret key → placeholder → STUB', () => {
     const r = wired('stripe', {
       STRIPE_SECRET_KEY: 'sk_test_51HxYz9abcDEF',
-      STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWX',
+      STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWXabcdEFGH1234',
     });
     expect(r.status).toBe('STUB');
     expect(r.env_vars_placeholder).toContain('STRIPE_SECRET_KEY');
   });
 
   it('missing: webhook secret absent while secret key present → STUB, missing populated', () => {
-    const r = wired('stripe', { STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEF' });
+    const r = wired('stripe', { STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEFghijklmnop0123456789' });
     expect(r.status).toBe('STUB');
     expect(r.env_vars_present).toContain('STRIPE_SECRET_KEY');
     expect(r.env_vars_missing).toContain('STRIPE_WEBHOOK_SECRET');
@@ -155,7 +157,7 @@ describe('Stripe provider', () => {
 
   it('malformed: placeholder webhook secret → STUB with placeholder list', () => {
     const r = wired('stripe', {
-      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEF',
+      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEFghijklmnop0123456789',
       STRIPE_WEBHOOK_SECRET: 'whsec_replace',
     });
     expect(r.status).toBe('STUB');
@@ -170,11 +172,160 @@ describe('Stripe provider', () => {
 
   it('dormant: SDK not imported → NOT_USED regardless of env', () => {
     const r = dormant('stripe', {
-      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEF',
-      STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWX',
+      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEFghijklmnop0123456789',
+      STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWXabcdEFGH1234',
     });
     expect(r.status).toBe('NOT_USED');
     expect(r.sdk_imported).toBe(false);
+  });
+});
+
+describe('passesShapeCheck + KEY_SHAPE_VALIDATORS (provider key shapes)', () => {
+  it('vars with no registered validator always pass the shape gate', () => {
+    expect(passesShapeCheck('SENDGRID_API_KEY', 'anything-nonempty')).toBe(true);
+    expect(passesShapeCheck('TWILIO_AUTH_TOKEN', 'x')).toBe(true);
+  });
+
+  it('STRIPE_SECRET_KEY accepts a long sk_live_/sk_test_ secret', () => {
+    expect(passesShapeCheck('STRIPE_SECRET_KEY', 'sk_live_51HxYz9abcDEFghijklmnop0123456789')).toBe(true);
+    expect(passesShapeCheck('STRIPE_SECRET_KEY', 'sk_test_51HxYz9abcDEFghijklmnop0123456789')).toBe(true);
+  });
+
+  it('STRIPE_SECRET_KEY rejects truncated, publishable (pk_) and restricted (rk_) keys', () => {
+    expect(passesShapeCheck('STRIPE_SECRET_KEY', 'sk_live_aaaaa')).toBe(false); // too short
+    expect(passesShapeCheck('STRIPE_SECRET_KEY', 'pk_live_publishableABCDEFGHIJKLMNOP')).toBe(false); // wrong type
+    expect(passesShapeCheck('STRIPE_SECRET_KEY', 'rk_live_restrictedABCDEFGHIJKLMNOP')).toBe(false); // wrong type
+  });
+
+  it('STRIPE_WEBHOOK_SECRET requires whsec_ + ≥20 body chars', () => {
+    expect(passesShapeCheck('STRIPE_WEBHOOK_SECRET', 'whsec_9f3kPq2rstuVWXabcdEFGH1234')).toBe(true);
+    expect(passesShapeCheck('STRIPE_WEBHOOK_SECRET', 'whsec_short')).toBe(false);
+    expect(passesShapeCheck('STRIPE_WEBHOOK_SECRET', 'sk_live_51HxYz9abcDEFghijklmnop0123456789')).toBe(false);
+  });
+
+  it('SUPABASE_SERVICE_ROLE_KEY requires a three-segment JWT shape', () => {
+    expect(passesShapeCheck('SUPABASE_SERVICE_ROLE_KEY', 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.sig9f3')).toBe(true);
+    expect(passesShapeCheck('SUPABASE_SERVICE_ROLE_KEY', 'eyJhbGci-not-a-jwt')).toBe(false); // no dots
+    expect(passesShapeCheck('SUPABASE_SERVICE_ROLE_KEY', 'not-even-close')).toBe(false);
+  });
+
+  it('OPENAI_API_KEY requires sk- + ≥20 body chars', () => {
+    expect(passesShapeCheck('OPENAI_API_KEY', 'sk-proj-9f3kPq2rstuVWXabcdEFGH')).toBe(true);
+    expect(passesShapeCheck('OPENAI_API_KEY', 'sk-tiny')).toBe(false);
+    expect(passesShapeCheck('OPENAI_API_KEY', 'pk-proj-9f3kPq2rstuVWXabcdEFGH')).toBe(false);
+  });
+
+  it('trims surrounding whitespace before validating shape', () => {
+    expect(passesShapeCheck('OPENAI_API_KEY', '  sk-proj-9f3kPq2rstuVWXabcdEFGH  ')).toBe(true);
+  });
+
+  it('exposes a validator entry for each shaped provider key', () => {
+    expect(Object.keys(KEY_SHAPE_VALIDATORS).sort()).toEqual(
+      ['OPENAI_API_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'SUPABASE_SERVICE_ROLE_KEY'].sort(),
+    );
+  });
+});
+
+describe('Stripe key-shape classification (malformed/wrong-type keys never WIRE)', () => {
+  const goodWebhook = 'whsec_9f3kPq2rstuVWXabcdEFGH1234';
+
+  it('truncated secret key (sk_live_aaaaa) → STUB, secret flagged as placeholder', () => {
+    const r = wired('stripe', { STRIPE_SECRET_KEY: 'sk_live_aaaaa', STRIPE_WEBHOOK_SECRET: goodWebhook });
+    expect(r.status).toBe('STUB');
+    expect(r.env_vars_placeholder).toContain('STRIPE_SECRET_KEY');
+    expect(r.env_vars_present).not.toContain('STRIPE_SECRET_KEY');
+  });
+
+  it('publishable key (pk_live_) in the secret slot → STUB', () => {
+    const r = wired('stripe', {
+      STRIPE_SECRET_KEY: 'pk_live_publishableABCDEFGHIJKLMNOP',
+      STRIPE_WEBHOOK_SECRET: goodWebhook,
+    });
+    expect(r.status).toBe('STUB');
+    expect(r.env_vars_placeholder).toContain('STRIPE_SECRET_KEY');
+  });
+
+  it('restricted key (rk_live_) in the secret slot → STUB', () => {
+    const r = wired('stripe', {
+      STRIPE_SECRET_KEY: 'rk_live_restrictedABCDEFGHIJKLMNOP',
+      STRIPE_WEBHOOK_SECRET: goodWebhook,
+    });
+    expect(r.status).toBe('STUB');
+    expect(r.env_vars_placeholder).toContain('STRIPE_SECRET_KEY');
+  });
+
+  it('malformed webhook secret (too short) → STUB even with a valid secret key', () => {
+    const r = wired('stripe', {
+      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEFghijklmnop0123456789',
+      STRIPE_WEBHOOK_SECRET: 'whsec_short',
+    });
+    expect(r.status).toBe('STUB');
+    expect(r.env_vars_placeholder).toContain('STRIPE_WEBHOOK_SECRET');
+  });
+
+  it('well-formed secret + webhook → WIRED (shape gate lets real keys through)', () => {
+    const r = wired('stripe', {
+      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEFghijklmnop0123456789',
+      STRIPE_WEBHOOK_SECRET: goodWebhook,
+    });
+    expect(r.status).toBe('WIRED');
+    expect(r.env_vars_present).toEqual(
+      expect.arrayContaining(['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET']),
+    );
+  });
+});
+
+describe('KEY_SHAPE_VALIDATORS predicates exercised directly', () => {
+  it('STRIPE_SECRET_KEY validator accepts boundary length (exactly 24 body chars)', () => {
+    const body24 = 'A'.repeat(24);
+    expect(KEY_SHAPE_VALIDATORS.STRIPE_SECRET_KEY(`sk_live_${body24}`)).toBe(true);
+    expect(KEY_SHAPE_VALIDATORS.STRIPE_SECRET_KEY(`sk_live_${'A'.repeat(23)}`)).toBe(false);
+  });
+
+  it('STRIPE_SECRET_KEY validator rejects non-alphanumeric body characters', () => {
+    expect(KEY_SHAPE_VALIDATORS.STRIPE_SECRET_KEY('sk_live_has spaces and more chars here')).toBe(false);
+    expect(KEY_SHAPE_VALIDATORS.STRIPE_SECRET_KEY('sk_live_has-dashes-and-more-chars-here')).toBe(false);
+  });
+
+  it('STRIPE_WEBHOOK_SECRET validator enforces the whsec_ prefix exactly', () => {
+    expect(KEY_SHAPE_VALIDATORS.STRIPE_WEBHOOK_SECRET(`whsec_${'B'.repeat(20)}`)).toBe(true);
+    expect(KEY_SHAPE_VALIDATORS.STRIPE_WEBHOOK_SECRET(`wsec_${'B'.repeat(20)}`)).toBe(false);
+    expect(KEY_SHAPE_VALIDATORS.STRIPE_WEBHOOK_SECRET(`whsec_${'B'.repeat(19)}`)).toBe(false);
+  });
+
+  it('SUPABASE_SERVICE_ROLE_KEY validator requires exactly three dot-segments', () => {
+    expect(KEY_SHAPE_VALIDATORS.SUPABASE_SERVICE_ROLE_KEY('eyJa.bbb.ccc')).toBe(true);
+    expect(KEY_SHAPE_VALIDATORS.SUPABASE_SERVICE_ROLE_KEY('eyJa.bbb')).toBe(false); // two segments
+    expect(KEY_SHAPE_VALIDATORS.SUPABASE_SERVICE_ROLE_KEY('eyJa.bbb.ccc.ddd')).toBe(false); // four segments
+    expect(KEY_SHAPE_VALIDATORS.SUPABASE_SERVICE_ROLE_KEY('xyz.bbb.ccc')).toBe(false); // wrong header prefix
+  });
+
+  it('OPENAI_API_KEY validator accepts underscores/dashes and rejects short bodies', () => {
+    expect(KEY_SHAPE_VALIDATORS.OPENAI_API_KEY(`sk-${'c'.repeat(20)}`)).toBe(true);
+    expect(KEY_SHAPE_VALIDATORS.OPENAI_API_KEY('sk-proj_under-dash-9f3kPq2rst')).toBe(true);
+    expect(KEY_SHAPE_VALIDATORS.OPENAI_API_KEY(`sk-${'c'.repeat(19)}`)).toBe(false);
+  });
+});
+
+describe('shape gate interaction with placeholder gate', () => {
+  it('a placeholder value short-circuits before the shape check (still STUB)', () => {
+    // 'sk_test_' prefix is a placeholder AND a valid secret shape; placeholder
+    // wins, keeping the var out of the present bucket.
+    const r = wired('stripe', {
+      STRIPE_SECRET_KEY: `sk_test_${'Z'.repeat(30)}`,
+      STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWXabcdEFGH1234',
+    });
+    expect(r.status).toBe('STUB');
+    expect(r.env_vars_placeholder).toContain('STRIPE_SECRET_KEY');
+  });
+
+  it('a malformed-but-non-placeholder value is bucketed as placeholder by the shape gate', () => {
+    const r = wired('stripe', {
+      STRIPE_SECRET_KEY: 'sk_live_aaaaa', // not a sentinel, just malformed
+      STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWXabcdEFGH1234',
+    });
+    expect(r.env_vars_placeholder).toContain('STRIPE_SECRET_KEY');
+    expect(r.env_vars_missing).not.toContain('STRIPE_SECRET_KEY');
   });
 });
 
@@ -261,8 +412,8 @@ describe('isSdkImported (pure detection helper) for part-1 providers', () => {
 describe('classifyProvider env-map injection guarantees', () => {
   it('reads ONLY the injected map — unrelated keys never leak into a report', () => {
     const r = wired('stripe', {
-      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEF',
-      STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWX',
+      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEFghijklmnop0123456789',
+      STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWXabcdEFGH1234',
       // Decoy keys for OTHER providers must be ignored by a Stripe classify.
       OPENAI_API_KEY: 'sk-proj-decoy',
       MUX_TOKEN_ID: 'decoy',
@@ -280,7 +431,7 @@ describe('classifyProvider env-map injection guarantees', () => {
   });
 
   it('does not mutate the injected env map', () => {
-    const env: EnvMap = { STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEF' };
+    const env: EnvMap = { STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEFghijklmnop0123456789' };
     const before = JSON.stringify(env);
     wired('stripe', env);
     expect(JSON.stringify(env)).toBe(before);
@@ -293,8 +444,8 @@ describe('scanProvidersWith over a part-1 subset', () => {
   it('classifies a mixed import/env set into WIRED + STUB + NOT_USED', () => {
     const imported = new Set(['stripe', '@mux/mux-node']); // sendgrid NOT imported
     const env: EnvMap = {
-      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEF',
-      STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWX',
+      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEFghijklmnop0123456789',
+      STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWXabcdEFGH1234',
       MUX_TOKEN_ID: '0a1b2c3d-token-id',
       // MUX_TOKEN_SECRET missing → Mux STUB
       SENDGRID_API_KEY: 'SG.realKey9f3kPq2rstuVWX.longsuffix',

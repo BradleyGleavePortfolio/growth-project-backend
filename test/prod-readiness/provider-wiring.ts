@@ -36,11 +36,21 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as ts from 'typescript';
 
 export type ProviderStatus = 'WIRED' | 'STUB' | 'NOT_USED';
 
 /** Minimal injectable environment shape — a plain string→string map. */
 export type EnvMap = Readonly<Record<string, string | undefined>>;
+
+/**
+ * Injectable EVIDENCE map: out-of-band facts the pure core cannot derive from
+ * the env map alone (e.g. whether a credential FILE actually exists on disk).
+ * Keys are `<ENV_VAR>_FILE_EXISTS` booleans, populated by the I/O edge wrapper
+ * (`scanProvidersFromProcess`) via `fs.existsSync`. The core stays pure: it only
+ * reads what the caller injects here and never touches the filesystem itself.
+ */
+export type EvidenceMap = Readonly<Record<string, boolean | undefined>>;
 
 export interface ProviderDef {
   /** Stable identifier, e.g. "stripe", "supabase", "aws-s3". */
@@ -108,7 +118,43 @@ export interface ProviderReport {
   env_vars_missing: string[];
   env_vars_placeholder: string[];
   status: ProviderStatus;
+  /**
+   * Optional human-readable explanation for a non-WIRED status that the
+   * present/missing/placeholder buckets alone don't capture — e.g. a credential
+   * file that is referenced but does not exist on disk. Absent when the buckets
+   * fully explain the status.
+   */
+  diagnostic?: string;
 }
+
+/**
+ * Provider-specific KEY-SHAPE validators. A value that is set and not a generic
+ * placeholder can STILL be malformed for its slot — e.g. a Stripe publishable
+ * key (`pk_live_…`) or restricted key (`rk_live_…`) pasted into the SECRET-key
+ * slot, or a secret key truncated below any plausible length. These predicates
+ * return `true` only when the value is a STRUCTURALLY VALID credential for that
+ * exact env var. A var with a validator that returns `false` is treated like a
+ * placeholder (→ STUB), so malformed/wrong-type keys can never report WIRED.
+ *
+ * Conservative bounds: real Stripe secret keys are ~99 chars, but enforcing
+ * ≥24 chars after the `sk_(live|test)_` prefix catches the obvious truncated /
+ * wrong-type cases without coupling to Stripe's exact (and historically
+ * changing) length. Vars with no known shape fall back to the placeholder /
+ * length checks already applied in `classifyVars`.
+ */
+export const KEY_SHAPE_VALIDATORS: Readonly<Record<string, (v: string) => boolean>> = {
+  // Must be a SECRET key (sk_), live or test, with a long-enough body. This
+  // rejects publishable (pk_) and restricted (rk_) keys outright — they are the
+  // wrong type for this slot — as well as truncated secret keys.
+  STRIPE_SECRET_KEY: (v) => /^sk_(live|test)_[A-Za-z0-9]{24,}$/.test(v),
+  // Stripe webhook signing secret: `whsec_` + ≥20 chars of body.
+  STRIPE_WEBHOOK_SECRET: (v) => /^whsec_[A-Za-z0-9]{20,}$/.test(v),
+  // Supabase service-role key is a JWT: three base64url segments, dot-separated,
+  // header starting `eyJ`.
+  SUPABASE_SERVICE_ROLE_KEY: (v) => /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(v),
+  // OpenAI API key: `sk-` prefix + ≥20 chars of body (covers `sk-proj-…` too).
+  OPENAI_API_KEY: (v) => /^sk-[A-Za-z0-9_-]{20,}$/.test(v),
+};
 
 interface VarGroupClassification {
   present: string[];
@@ -125,22 +171,76 @@ function classifyVars(vars: string[], env: EnvMap): VarGroupClassification {
   for (const v of vars) {
     const raw = env[v];
     if (raw === undefined || raw === '') g.missing.push(v);
-    else if (looksLikePlaceholder(raw)) g.placeholder.push(v);
+    else if (looksLikePlaceholder(raw) || !passesShapeCheck(v, raw)) g.placeholder.push(v);
     else g.present.push(v);
   }
   return g;
 }
 
 /**
+ * Returns `true` when `raw` is structurally valid for env var `name`. A var with
+ * a registered `KEY_SHAPE_VALIDATORS` entry must satisfy its predicate; vars with
+ * no known shape always pass here (length/placeholder is enforced elsewhere).
+ * A failing shape causes `classifyVars` to bucket the var as a placeholder, so a
+ * malformed or wrong-type key (e.g. `pk_live_…` in the secret slot) never wires.
+ */
+export function passesShapeCheck(name: string, raw: string): boolean {
+  const validator = KEY_SHAPE_VALIDATORS[name];
+  if (validator === undefined) return true;
+  return validator(raw.trim());
+}
+
+/**
+ * The env-var name suffix that marks a credential whose VALUE is a filesystem
+ * path (e.g. `AWS_WEB_IDENTITY_TOKEN_FILE`). For each such var the edge wrapper
+ * injects `<VAR>_FILE_EXISTS` into the evidence map.
+ */
+const FILE_VAR_SUFFIX = '_FILE';
+
+/** Evidence key for a `*_FILE` var: `<VAR>_FILE_EXISTS`. */
+function fileExistsEvidenceKey(fileVar: string): string {
+  return `${fileVar}_EXISTS`;
+}
+
+/** The `*_FILE` vars within a credential group. */
+function fileVarsOf(group: string[]): string[] {
+  return group.filter((v) => v.endsWith(FILE_VAR_SUFFIX));
+}
+
+/**
+ * Pure evidence gate for a credential group: returns `false` only when the group
+ * references a `*_FILE` var whose injected `<VAR>_FILE_EXISTS` evidence is
+ * explicitly `false`. Missing evidence (undefined) is treated as OK so the core
+ * stays backward-compatible when no edge wrapper populated it (tests of pure
+ * env-only wiring don't need to assert disk state).
+ */
+function fileEvidenceOk(group: string[], evidence: EvidenceMap): boolean {
+  return fileVarsOf(group).every((v) => evidence[fileExistsEvidenceKey(v)] !== false);
+}
+
+/** Diagnostic for the first `*_FILE` var in a group whose file is missing. */
+function fileEvidenceDiagnostic(group: string[], evidence: EvidenceMap): string | undefined {
+  const missingFileVar = fileVarsOf(group).find((v) => evidence[fileExistsEvidenceKey(v)] === false);
+  return missingFileVar === undefined ? undefined : `${missingFileVar} points to non-existent path`;
+}
+
+/**
  * CORE classification logic for one provider. Pure and fully injectable: the
- * caller supplies whether the SDK was detected as imported (`sdkImported`) and
- * the environment map (`env`). No `process.env`, no filesystem access — every
+ * caller supplies whether the SDK was detected as imported (`sdkImported`), the
+ * environment map (`env`), and an optional out-of-band `evidence` map (e.g.
+ * credential-file existence). No `process.env`, no filesystem access — every
  * status branch is reachable from a unit test with explicit inputs.
  */
-export function classifyProvider(def: ProviderDef, sdkImported: boolean, env: EnvMap): ProviderReport {
+export function classifyProvider(
+  def: ProviderDef,
+  sdkImported: boolean,
+  env: EnvMap,
+  evidence: EvidenceMap = {},
+): ProviderReport {
   const present: string[] = [];
   const missing: string[] = [];
   const placeholder: string[] = [];
+  let diagnostic: string | undefined;
 
   const always = classifyVars(def.requires, env);
   present.push(...always.present);
@@ -149,24 +249,45 @@ export function classifyProvider(def: ProviderDef, sdkImported: boolean, env: En
   const alwaysSatisfied = always.missing.length === 0 && always.placeholder.length === 0;
 
   // Either/or credential groups: satisfied when ANY group is fully set with
-  // non-placeholder values. We report the BEST (most-satisfied) group's gaps so
+  // non-placeholder values AND any referenced credential FILE actually exists
+  // (per injected evidence). We report the BEST (most-satisfied) group's gaps so
   // the operator sees the shortest path to wiring it.
   let anyOfSatisfied = true;
   if (def.requiresAnyOf && def.requiresAnyOf.length > 0) {
-    const classified = def.requiresAnyOf.map((group) => classifyVars(group, env));
-    anyOfSatisfied = classified.some((g) => g.missing.length === 0 && g.placeholder.length === 0);
+    const classified = def.requiresAnyOf.map((group) => ({
+      group,
+      result: classifyVars(group, env),
+    }));
+    const isSatisfied = (c: { group: string[]; result: VarGroupClassification }): boolean =>
+      c.result.missing.length === 0 &&
+      c.result.placeholder.length === 0 &&
+      fileEvidenceOk(c.group, evidence);
+    anyOfSatisfied = classified.some(isSatisfied);
     if (anyOfSatisfied) {
       // Record the satisfied group's present vars for transparency.
-      const sat = classified.find((g) => g.missing.length === 0 && g.placeholder.length === 0);
-      if (sat) present.push(...sat.present);
+      const sat = classified.find(isSatisfied);
+      if (sat) present.push(...sat.result.present);
     } else {
       // Surface the group with the fewest gaps as the actionable one.
       const best = classified.reduce((a, b) =>
-        b.missing.length + b.placeholder.length < a.missing.length + a.placeholder.length ? b : a,
+        b.result.missing.length + b.result.placeholder.length <
+        a.result.missing.length + a.result.placeholder.length
+          ? b
+          : a,
       );
-      present.push(...best.present);
-      missing.push(...best.missing);
-      placeholder.push(...best.placeholder);
+      present.push(...best.result.present);
+      missing.push(...best.result.missing);
+      placeholder.push(...best.result.placeholder);
+      // If the only thing wrong with the surfaced group is a missing FILE on
+      // disk (vars set + non-placeholder but the file does not exist), explain
+      // it: the env says wired but the referenced token file is unusable.
+      if (
+        best.result.missing.length === 0 &&
+        best.result.placeholder.length === 0 &&
+        !fileEvidenceOk(best.group, evidence)
+      ) {
+        diagnostic = fileEvidenceDiagnostic(best.group, evidence);
+      }
     }
   }
 
@@ -184,6 +305,7 @@ export function classifyProvider(def: ProviderDef, sdkImported: boolean, env: En
     env_vars_present: present,
     env_vars_missing: missing,
     env_vars_placeholder: placeholder,
+    ...(diagnostic !== undefined ? { diagnostic } : {}),
     status,
   };
 }
@@ -200,16 +322,41 @@ export function isSdkImported(def: ProviderDef, importedPackages: ReadonlySet<st
 }
 
 /**
- * Classify ALL providers against an injected import set + env map. This is the
- * fully-pure scan entry point used by tests — it performs no I/O.
+ * Classify ALL providers against an injected import set + env map (+ optional
+ * evidence map). This is the fully-pure scan entry point used by tests — it
+ * performs no I/O; disk facts must arrive via the injected `evidence` map.
  */
 export function scanProvidersWith(
   importedPackages: ReadonlySet<string>,
   pathPresence: ReadonlySet<string>,
   env: EnvMap,
   providers: ProviderDef[] = PROVIDERS,
+  evidence: EvidenceMap = {},
 ): ProviderReport[] {
-  return providers.map((def) => classifyProvider(def, isSdkImported(def, importedPackages, pathPresence), env));
+  return providers.map((def) =>
+    classifyProvider(def, isSdkImported(def, importedPackages, pathPresence), env, evidence),
+  );
+}
+
+/**
+ * Build the file-existence EVIDENCE map for a set of providers from a real env
+ * map: for every `*_FILE` var referenced by any provider's `requires` /
+ * `requiresAnyOf` that is SET in `env`, probe the path with `fs.existsSync` and
+ * record `<VAR>_FILE_EXISTS`. This is the ONLY place file existence is checked;
+ * the result is injected into the pure core. Lives at the I/O edge.
+ */
+export function collectFileEvidence(env: EnvMap, providers: ProviderDef[] = PROVIDERS): EvidenceMap {
+  const out: Record<string, boolean> = {};
+  for (const p of providers) {
+    const groups = [p.requires, ...(p.requiresAnyOf ?? [])];
+    for (const fileVar of fileVarsOf(groups.flat())) {
+      const value = env[fileVar];
+      if (value !== undefined && value !== '') {
+        out[fileExistsEvidenceKey(fileVar)] = fs.existsSync(value);
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -229,14 +376,62 @@ export function getProductionBlockers(reports: ProviderReport[]): ProviderReport
 }
 
 /**
- * I/O EDGE: walk `<repoRoot>/src` once and collect the set of bare package
- * names that appear in `from '...'` import statements. Never reads env.
+ * Normalize an import specifier to a bare package id, or return undefined when
+ * it is a relative/absolute path (not a package). Scoped packages collapse to
+ * `@scope/name` (dropping any deep sub-path).
+ */
+function normalizeSpecifier(spec: string): string | undefined {
+  if (spec === '' || spec.startsWith('.') || spec.startsWith('/')) return undefined;
+  const parts = spec.split('/');
+  return spec.startsWith('@') && parts.length >= 2 ? `${parts[0]}/${parts[1]}` : parts[0];
+}
+
+/**
+ * Extract every statically-known module specifier from one source file's AST.
+ * Covers: `import … from 'pkg'` and side-effect `import 'pkg'`
+ * (ImportDeclaration), `require('pkg')` (CallExpression to the `require`
+ * identifier with a string-literal arg), and dynamic `import('pkg')`
+ * (CallExpression whose expression is the `import` keyword). Computed/dynamic
+ * specifiers (e.g. `import(variable)`, `require(`a` + b)`) are NOT statically
+ * known and are skipped safely.
+ */
+export function extractModuleSpecifiers(sourceText: string, fileName = 'in-memory.ts'): string[] {
+  const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const specifiers: string[] = [];
+  const visit = (node: ts.Node): void => {
+    // Static `import ... from 'pkg'` and side-effect `import 'pkg'`.
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+      specifiers.push(node.moduleSpecifier.text);
+    }
+    // `export ... from 'pkg'` re-exports also pull in the package.
+    else if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+      specifiers.push(node.moduleSpecifier.text);
+    } else if (ts.isCallExpression(node)) {
+      const arg = node.arguments[0];
+      // Only string-literal arguments are statically known specifiers.
+      if (arg !== undefined && ts.isStringLiteral(arg)) {
+        const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require';
+        const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
+        if (isRequire || isDynamicImport) specifiers.push(arg.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return specifiers;
+}
+
+/**
+ * I/O EDGE: walk `<repoRoot>/src` once and collect the set of bare package names
+ * imported anywhere in the TypeScript sources. Uses the TypeScript AST (not a
+ * regex) so it captures static `from` imports, side-effect imports,
+ * `require(...)`, and dynamic `import(...)` while safely ignoring relative paths
+ * and non-literal (computed) specifiers. Never reads env.
  */
 export function collectImports(repoRoot: string): Set<string> {
   const root = path.join(repoRoot, 'src');
   const found = new Set<string>();
   if (!fs.existsSync(root)) return found;
-  const importRe = /from\s+['"]([^'"]+)['"]/g;
   const walk = (dir: string): void => {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
       const p = path.join(dir, e.name);
@@ -245,15 +440,9 @@ export function collectImports(repoRoot: string): Set<string> {
         walk(p);
       } else if (e.isFile() && e.name.endsWith('.ts') && !e.name.endsWith('.d.ts')) {
         const text = fs.readFileSync(p, 'utf8');
-        let m: RegExpExecArray | null;
-        while ((m = importRe.exec(text))) {
-          const pkg = m[1];
-          if (!pkg.startsWith('.') && !pkg.startsWith('/')) {
-            // Normalize scoped packages: @x/y or @x/y/sub → @x/y.
-            const parts = pkg.split('/');
-            const id = pkg.startsWith('@') && parts.length >= 2 ? `${parts[0]}/${parts[1]}` : parts[0];
-            found.add(id);
-          }
+        for (const spec of extractModuleSpecifiers(text, p)) {
+          const id = normalizeSpecifier(spec);
+          if (id !== undefined) found.add(id);
         }
       }
     }
@@ -302,9 +491,10 @@ export function collectPathPresence(repoRoot: string, providers: ProviderDef[]):
 
 /**
  * I/O EDGE wrapper: the ONLY function that touches `process.env` /
- * `process.cwd()`. It performs the filesystem import discovery and then hands
- * off to the pure `scanProvidersWith` core. Tests must NOT call this; they call
- * the pure entry points with explicit inputs.
+ * `process.cwd()` and the credential-file filesystem. It performs the import
+ * discovery, probes `*_FILE` credential paths for existence, and then hands off
+ * to the pure `scanProvidersWith` core with an injected evidence map. Tests must
+ * NOT call this; they call the pure entry points with explicit inputs.
  */
 export function scanProvidersFromProcess(
   repoRoot: string = process.cwd(),
@@ -313,7 +503,8 @@ export function scanProvidersFromProcess(
 ): ProviderReport[] {
   const importedPackages = collectImports(repoRoot);
   const pathPresence = collectPathPresence(repoRoot, providers);
-  return scanProvidersWith(importedPackages, pathPresence, env, providers);
+  const evidence = collectFileEvidence(env, providers);
+  return scanProvidersWith(importedPackages, pathPresence, env, providers, evidence);
 }
 
 /**
