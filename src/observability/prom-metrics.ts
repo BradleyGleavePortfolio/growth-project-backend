@@ -7,23 +7,11 @@ import {
 
 /**
  * prom-metrics — official `prom-client` registry that complements the
- * hand-rolled {@link MetricsService}.
- *
- * WHY a second registry?  The existing {@link MetricsService} serialises a
- * minimal set of application counters/histograms in Prometheus text format
- * and is wired through the NestJS interceptor chain. It does NOT expose the
- * Node.js runtime internals (process CPU, resident memory, event-loop lag,
- * garbage-collection pauses) that operators need to diagnose a misbehaving
- * process. `prom-client`'s {@link collectDefaultMetrics} captures exactly
- * those, plus we register a request-duration histogram with the
- * operator-blessed bucket layout. Both registries are scraped — the new
- * runtime metrics live behind a bearer-gated endpoint (see
- * prom-metrics.controller).
- *
- * HISTOGRAM BUCKETS (seconds): Prometheus client defaults extended with a 10s
- * tail so genuinely slow requests are still bucketed rather than collapsing
- * into +Inf. PII is deliberately excluded from labels — only `method`,
- * `route` (the normalised Express route pattern), and `status_code`.
+ * hand-rolled {@link MetricsService}. It adds the Node.js runtime internals
+ * (process CPU, resident memory, event-loop lag, GC) via collectDefaultMetrics
+ * plus a request-duration histogram, exposed behind a bearer-gated endpoint.
+ * Buckets are the Prometheus defaults + a 10s tail; labels are bounded to
+ * method/route/status_code (no PII).
  */
 
 /** Request-duration histogram buckets, in SECONDS. */
@@ -34,20 +22,15 @@ export const HTTP_DURATION_BUCKETS_SECONDS = [
 /** Bounded label set — never include userId/email or other high-cardinality PII. */
 export const HTTP_HISTOGRAM_LABELS = ['method', 'route', 'status_code'] as const;
 
-/**
- * A dedicated registry keeps the prom-client metrics isolated from any other
- * default global registry usage and makes the unit tests deterministic — each
- * test can build a fresh registry instead of fighting shared global state.
- */
+/** Dedicated registry keeps prom-client metrics isolated + tests deterministic. */
 export const promRegistry = new Registry();
 
 let defaultsRegistered = false;
 
 /**
- * Register the Node.js default collectors (process CPU, memory, event-loop
- * lag, GC, handles) on {@link promRegistry}. Idempotent: prom-client throws on
- * duplicate metric registration, so a guard makes a second call a safe no-op —
- * important because the app may be re-bootstrapped within a single test run.
+ * Register the Node.js default collectors on {@link promRegistry}. Idempotent:
+ * a guard makes a second call a safe no-op (prom-client throws on duplicate
+ * registration, and some test suites re-bootstrap the app).
  */
 export function registerDefaultMetrics(register: Registry = promRegistry): void {
   if (register === promRegistry && defaultsRegistered) {
@@ -59,10 +42,7 @@ export function registerDefaultMetrics(register: Registry = promRegistry): void 
   }
 }
 
-/**
- * Build (or reuse) the HTTP request-duration histogram on the given registry.
- * Returns the histogram so callers/tests can observe directly.
- */
+/** Build (or reuse) the HTTP request-duration histogram on the given registry. */
 export function buildHttpHistogram(
   register: Registry = promRegistry,
 ): Histogram<(typeof HTTP_HISTOGRAM_LABELS)[number]> {
@@ -83,9 +63,9 @@ export function buildHttpHistogram(
 export const httpRequestDurationSeconds = buildHttpHistogram();
 
 /**
- * Normalise an Express route to bound `route`-label cardinality. Prefers the
- * matched route pattern (`/api/users/:id`); falls back to the raw path with
- * UUIDs and numeric ids collapsed to `:id`.
+ * Normalise an Express route to bound `route`-label cardinality: prefer the
+ * matched pattern (`/api/users/:id`), else collapse UUIDs/numeric ids in the
+ * raw path to `:id`.
  */
 export function normaliseRouteLabel(req: Request): string {
   const pattern = (req as Request & { route?: { path?: string } }).route?.path;
@@ -103,11 +83,9 @@ export function normaliseRouteLabel(req: Request): string {
 
 /**
  * Express-style middleware that observes request duration into the prom-client
- * histogram. Registered FIRST in the chain so it measures the full lifecycle
- * (including auth rejections). It records on the response `finish` event so the
- * final status code is known.
- *
- * @param histogram injectable for tests; defaults to the process-wide instance.
+ * histogram. Registered FIRST so it measures the full lifecycle (including auth
+ * rejections); records on the response `finish` event when the status is known.
+ * The histogram is injectable for tests; defaults to the process-wide instance.
  */
 export function promHttpMiddleware(
   histogram: Histogram<(typeof HTTP_HISTOGRAM_LABELS)[number]> = httpRequestDurationSeconds,

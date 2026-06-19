@@ -9,20 +9,15 @@ import type { Request } from 'express';
 import { isProdLike } from '../common/env-validation';
 
 /**
- * MetricsAuthGuard — bearer-token gate for the privileged observability
- * endpoints (`/metrics/prom`, `/admin/db-stats`).
+ * MetricsAuthGuard — bearer-token gate (default-deny) for the privileged
+ * observability endpoints (`/metrics/prom`, `/admin/db-stats`).
  *
- * Default-deny posture:
- *   - When `METRICS_AUTH_TOKEN` is SET, the caller must present a matching
- *     `Authorization: Bearer <token>` header. Mismatch → 401.
- *   - When `METRICS_AUTH_TOKEN` is UNSET in a prod-like environment, the
- *     endpoint returns 503 (fail closed) so a misconfigured deploy never
- *     exposes runtime internals unauthenticated.
- *   - When unset in development, access is allowed so contributors can scrape
- *     locally without provisioning a token.
+ *   - METRICS_AUTH_TOKEN set   → require matching `Authorization: Bearer`; else 401.
+ *   - unset in a prod-like env → 503 (fail closed) so a misconfigured deploy
+ *                                never exposes runtime internals.
+ *   - unset in development     → allow, for local scraping.
  *
- * The token is compared with a constant-time check to avoid leaking length /
- * prefix information through response timing.
+ * The token is compared in constant time to avoid leaking it via response timing.
  */
 @Injectable()
 export class MetricsAuthGuard implements CanActivate {

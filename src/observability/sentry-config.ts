@@ -1,21 +1,13 @@
 import * as Sentry from '@sentry/node';
 
 /**
- * sentry-config — single source of truth for the Sentry initialisation
- * options, factored out of `src/instrument.ts` so the release/environment/tags
- * logic is unit-testable without invoking Sentry's global side effects.
+ * sentry-config — single source of truth for the Sentry init options, factored
+ * out of `src/instrument.ts` so release/environment/tags logic is unit-testable
+ * without Sentry's global side effects.
  *
- * Release tagging (H3):
- *   - `SENTRY_RELEASE` (CI-injected, preferred) takes priority. CI sets it to
- *     `growth-project-backend@<commit-sha>-<environment>`.
- *   - Falls back to the legacy `GIT_SHA` then `RELEASE_VERSION` for backwards
- *     compatibility with the existing source-map upload pipeline.
- *   - When none are set the release is left undefined so Sentry buckets events
- *     under "no release" rather than a misleading default.
- *
- * A `tags` block stamps every event with the service name, runtime, and
- * resolved environment so events can be filtered in the Sentry UI without a
- * search expression.
+ * Release tagging (H3): SENTRY_RELEASE (CI-injected, preferred,
+ * `growth-project-backend@<sha>-<env>`) → GIT_SHA → RELEASE_VERSION → unset.
+ * A `tags` block stamps service/runtime/environment on every event.
  */
 
 /** Service identifier used in the release name and the `service` tag. */

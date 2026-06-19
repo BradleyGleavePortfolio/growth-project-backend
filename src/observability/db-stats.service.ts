@@ -17,13 +17,10 @@ export interface RawStatementRow {
   rows: number | bigint;
 }
 
-/** Sanitised statement entry returned to the caller. */
+/** Sanitised statement entry returned to the caller (no raw literals). */
 export interface DbStatementStat {
-  /** First {@link DB_STATS_QUERY_PREVIEW_CHARS} chars of the SQL text. */
   queryPreview: string;
-  /** sha256 of the FULL query text — lets operators correlate without exposing literals. */
   queryHash: string;
-  /** True when the original query exceeded the preview length and was truncated. */
   truncated: boolean;
   calls: number;
   totalExecTimeMs: number;
@@ -32,11 +29,10 @@ export interface DbStatementStat {
 }
 
 /**
- * Redact a raw SQL statement to a bounded preview plus a stable hash of the
- * full text. The preview keeps the statement shape (table / column names,
- * operation) visible for triage while the hash lets the same statement be
- * recognised across scrapes WITHOUT shipping the full text — which may embed
- * inlined literals (emails, ids) that count as PII.
+ * Redact a raw SQL statement to a bounded preview plus a sha256 of the full
+ * text. The preview keeps the statement shape visible for triage; the hash
+ * lets the statement be recognised across scrapes without shipping inlined
+ * literals (emails, ids) that count as PII.
  */
 export function redactStatement(query: string): {
   queryPreview: string;
@@ -58,14 +54,10 @@ function toNumber(value: number | bigint): number {
 }
 
 /**
- * DbStatsService — reads the top-N slowest statements from the
- * `pg_stat_statements` extension (enabled by the H3 migration) and returns a
- * redacted view suitable for the bearer-gated /admin/db-stats endpoint.
- *
- * The extension is operator-attach (requires a Postgres restart + superuser on
- * first deploy). When it is absent the helper degrades gracefully: the
- * undefined-relation error (SQLSTATE 42P01) and missing-extension error
- * (42704) are caught and surfaced as `available: false` rather than a 500.
+ * DbStatsService — reads the top-N slowest statements from pg_stat_statements
+ * (enabled by the H3 migration) for the bearer-gated /admin/db-stats endpoint.
+ * The extension is operator-attach; when absent the helper degrades gracefully
+ * (SQLSTATE 42P01 / 42704 → `available: false` instead of a 500).
  */
 @Injectable()
 export class DbStatsService {
