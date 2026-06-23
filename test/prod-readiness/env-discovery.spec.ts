@@ -1004,28 +1004,21 @@ describe('extractEnvVarRefs — ambiguous const-key shadowing (F002)', () => {
 
 describe('extractEnvVarRefs — parameter / catch-clause shadows (R4 F001)', () => {
   it('drops a const shadowed by a function parameter (no fabricated env)', () => {
-    const code = [
-      'function f(K) { return process.env[K]; }',
-      "const K = 'FOO';",
-    ].join('\n');
+    const code = ['function f(K) { return process.env[K]; }', "const K = 'FOO';"].join('\n');
     // K is bound by the parameter AND the file-scope const → ambiguous →
     // dropped. The dynamic param read resolves to nothing, not FOO.
     expect([...extractEnvVarRefs(code)]).toEqual([]);
   });
 
   it('drops a const shadowed by an arrow-function parameter (no fabricated env)', () => {
-    const code = [
-      'const g = (K) => process.env[K];',
-      "const K = 'BAR';",
-    ].join('\n');
+    const code = ['const g = (K) => process.env[K];', "const K = 'BAR';"].join('\n');
     expect([...extractEnvVarRefs(code)]).toEqual([]);
   });
 
   it('drops a const shadowed by a catch-clause variable (no fabricated env)', () => {
-    const code = [
-      'try { /* noop */ } catch (K) { void process.env[K]; }',
-      "const K = 'QUX';",
-    ].join('\n');
+    const code = ['try { /* noop */ } catch (K) { void process.env[K]; }', "const K = 'QUX';"].join(
+      '\n',
+    );
     expect([...extractEnvVarRefs(code)]).toEqual([]);
   });
 
@@ -1039,6 +1032,84 @@ describe('extractEnvVarRefs — parameter / catch-clause shadows (R4 F001)', () 
   it('discovers nothing for a function-param key with NO same-named file-scope const (sanity)', () => {
     const code = 'function f(K) { return process.env[K]; }';
     // Pure dynamic parameter read, no const anywhere — nothing to resolve.
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R5 F001 — destructured BindingElement identifiers must count toward the
+// ambiguous-binding map. Before the fix `countBindings` only matched
+// VariableDeclaration / Parameter nodes whose `name` is an Identifier; when a
+// declaration, parameter, catch clause, or for-of/for-in uses a destructure
+// pattern, `node.name` is an Object/Array BindingPattern (NOT an Identifier),
+// so the bound identifier living on the inner BindingElement.name went
+// uncounted. A same-named file-scope const therefore stayed bound-once and a
+// dynamic `process.env[K]` read inside the destructure scope was mis-resolved
+// to the const's literal, FABRICATING an env var. The fix adds a third arm
+// (ts.isBindingElement && ts.isIdentifier(name)) so a shadowing destructure
+// makes the name ambiguous (bound > 1) and is dropped (fail closed). The
+// BindingElement.propertyName (source key in renames like {x:K}) is NOT counted.
+// ---------------------------------------------------------------------------
+
+describe('extractEnvVarRefs — destructured-binding shadows (R5 F001)', () => {
+  it('drops a const shadowed by an obj-destructured function param', () => {
+    const code = ['function f({K}) { return process.env[K]; }', "const K = 'FOO';"].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a const shadowed by an arr-destructured function param', () => {
+    const code = ['function f([K]) { return process.env[K]; }', "const K = 'FOO';"].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a const shadowed by an obj-destructured arrow param', () => {
+    const code = ['const g = ({K}) => process.env[K];', "const K = 'FOO';"].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a const shadowed by a renamed destructured param ({x: K})', () => {
+    const code = ['const g = ({x: K}) => process.env[K];', "const K = 'FOO';"].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a const shadowed by a nested destructured param ({a:{K}})', () => {
+    const code = ['function h({a:{K}}) { return process.env[K]; }', "const K = 'FOO';"].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a const shadowed by an obj-destructured catch binding', () => {
+    const code = ['try {} catch ({K}) { void process.env[K]; }', "const K = 'QUX';"].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a const shadowed by an obj-destructured for-of binding', () => {
+    const code = ['for (const {K} of arr) { void process.env[K]; }', "const K = 'LOOP';"].join(
+      '\n',
+    );
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a const shadowed by an obj-destructured variable decl', () => {
+    const code = ['const { K } = o;', "const K = 'FOO';", 'const v = process.env[K];'].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a const shadowed by an arr-destructured variable decl', () => {
+    const code = ['const [K] = a;', "const K = 'FOO';", 'const v = process.env[K];'].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a const shadowed by a let-destructured variable decl', () => {
+    const code = ['let { K } = o;', "const K = 'FOO';", 'const v = process.env[K];'].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('does not count propertyName: a renamed-only destructure with no string source resolves []', () => {
+    // `const { x: K } = o` binds K exactly once (propertyName `x` is the SOURCE
+    // key, not a binding). There is no string-valued const for K, so the dynamic
+    // read resolves to nothing — confirming `x` is never counted as a binding
+    // that could mask resolution.
+    const code = ['const { x: K } = o;', 'const v = process.env[K];'].join('\n');
     expect([...extractEnvVarRefs(code)]).toEqual([]);
   });
 });

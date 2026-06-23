@@ -355,6 +355,17 @@ function collectStringConsts(sf: ts.SourceFile): Map<string, string> {
       // missed them. A parameter shadows any file-scope const of the same name
       // inside the body, so it must count toward ambiguity (R4 F001).
       bumpBinding(node.name.text);
+    } else if (ts.isBindingElement(node) && ts.isIdentifier(node.name)) {
+      // BindingElement.name is the bound identifier (Identifier | BindingPattern);
+      // when it is an Identifier this is the introduced name. BindingElement.propertyName
+      // is the source key (renames like {x:K}) and must NOT be counted — only the bound
+      // name. A destructure (`{K}`, `[K]`, `{x:K}`, `{a:{K}}`) on a VariableDeclaration,
+      // Parameter, CatchClause, or for-of/for-in has node.name as an Object/Array
+      // BindingPattern (NOT an Identifier), so the two arms above never fire; the bound
+      // identifier lives on the inner BindingElement.name and would otherwise go
+      // uncounted (R5-F001). Nested patterns (BindingElement whose .name is itself a
+      // BindingPattern) are walked recursively by ts.forEachChild below.
+      bumpBinding(node.name.text);
     }
     ts.forEachChild(node, countBindings);
   };
