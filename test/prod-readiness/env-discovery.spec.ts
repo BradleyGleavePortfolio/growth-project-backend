@@ -1104,15 +1104,6 @@ describe('extractEnvVarRefs — destructured-binding shadows (R5 F001)', () => {
     expect([...extractEnvVarRefs(code)]).toEqual([]);
   });
 
-  it('does not count propertyName: a renamed-only destructure with no string source resolves []', () => {
-    // `const { x: K } = o` binds K exactly once (propertyName `x` is the SOURCE
-    // key, not a binding). There is no string-valued const for K, so the dynamic
-    // read resolves to nothing — confirming `x` is never counted as a binding
-    // that could mask resolution.
-    const code = ['const { x: K } = o;', 'const v = process.env[K];'].join('\n');
-    expect([...extractEnvVarRefs(code)]).toEqual([]);
-  });
-
   it('does not count propertyName: a file-scope const named by propertyName still resolves cleanly', () => {
     // Discriminating shape: if propertyName "x" were wrongly counted, then "x" would
     // have bindingCounts === 2 (file-scope const + propertyName), become ambiguous, and
@@ -1214,6 +1205,41 @@ describe('extractEnvVarRefs — declaration-name shadows (R5b F001)', () => {
     // Drop the guard: StringLiteral.text "FOO" gets bumped → FOO bound twice →
     // ambiguous → dropped → []. The two halves diverge → the guard is pinned.
     expect([...extractEnvVarRefs(code)]).toEqual(['BAR']);
+  });
+
+  it('R5d: named FunctionExpression shadowing file-scope const drops resolution', () => {
+    const code = [
+      "const K = 'FOO';",
+      'const f = function K() { return process.env[K]; };',
+    ].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('R5d: named ClassExpression shadowing file-scope const drops resolution', () => {
+    const code = [
+      "const K = 'FOO';",
+      'const C = class K { m() { return process.env[K]; } };',
+    ].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('R5d: named IIFE FunctionExpression shadowing file-scope const drops resolution', () => {
+    const code = [
+      "const K = 'FOO';",
+      'const v = (function K() { return process.env[K]; })();',
+    ].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('R5d: anonymous FunctionExpression does not pollute bindings — node.name guard pin', () => {
+    const code = [
+      "const K = 'FOO';",
+      'const f = function () { return process.env[K]; };',
+    ].join('\n');
+    // Anonymous function expression introduces no name binding; K is bound only by
+    // the outer const and resolves to 'FOO'. If the node.name && guard were dropped,
+    // ts.isIdentifier(undefined) would throw → this assertion fails red → guard pinned.
+    expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
   });
 });
 

@@ -338,10 +338,11 @@ export function extractEnvVarRefs(content: string, fileName = 'inline.ts'): Set<
 function collectStringConsts(sf: ts.SourceFile): Map<string, string> {
   // First pass: count every value-introducing binding per identifier name,
   // across all scopes. Any name bound more than once is an ambiguous alias and
-  // is excluded from resolution (F002 — ambiguous binding → skip). FIVE binder
+  // is excluded from resolution (F002 — ambiguous binding → skip). SIX binder
   // kinds are counted: VariableDeclaration (incl. catch / for-of / for-in vars),
-  // Parameter, BindingElement, named function/class/enum/module declarations, and
-  // ImportEqualsDeclaration (import K = require('x') / import K = ns.X).
+  // Parameter, BindingElement, named function/class/enum/module declarations,
+  // ImportEqualsDeclaration (import K = require('x') / import K = ns.X), and named
+  // FunctionExpression / ClassExpression (const f = function K(){}, class K {}).
   const bindingCounts = new Map<string, number>();
   const bumpBinding = (name: string): void => {
     bindingCounts.set(name, (bindingCounts.get(name) ?? 0) + 1);
@@ -390,6 +391,17 @@ function collectStringConsts(sf: ts.SourceFile): Map<string, string> {
       // R5c-F001: import K = require('x') / import K = ns.X introduce a value
       // binding via an Identifier .name that can shadow a same-named file-scope
       // const inside a namespace/module. Count for fail-closed ambiguity (R59).
+      bumpBinding(node.name.text);
+    } else if (
+      (ts.isFunctionExpression(node) || ts.isClassExpression(node)) &&
+      node.name &&
+      ts.isIdentifier(node.name)
+    ) {
+      // R5d-F001: named FunctionExpression/ClassExpression binds its .name
+      // inside its body, shadowing a same-named file-scope const. arm 4 only
+      // matches isFunctionDeclaration/isClassDeclaration; the expression
+      // predicates miss arm 4. Count for fail-closed ambiguity (R59). The
+      // node.name && guard handles anonymous forms which bind nothing.
       bumpBinding(node.name.text);
     }
     ts.forEachChild(node, countBindings);
