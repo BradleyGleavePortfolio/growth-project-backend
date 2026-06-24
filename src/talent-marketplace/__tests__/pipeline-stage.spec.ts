@@ -5,6 +5,7 @@ import {
   isTerminalStage,
   stageToStatus,
   statusToStage,
+  tryStatusToStage,
   type PipelineStage,
 } from '../pipeline-stage';
 
@@ -78,7 +79,19 @@ describe('pipeline-stage — status mapping round-trip', () => {
     }
   });
 
-  it('maps out-of-band statuses to new rather than throwing', () => {
+  it('maps out-of-band statuses to new rather than throwing (display path)', () => {
     expect(statusToStage('withdrawn')).toBe('new');
+  });
+
+  it('tryStatusToStage returns null for statuses with no pipeline representation (write path)', () => {
+    // withdrawn is the applicant's own opt-out: the WRITE path must NOT coerce
+    // it to `new` and resurrect it (A-P0-1 / B-P1-1).
+    expect(tryStatusToStage('withdrawn')).toBeNull();
+  });
+
+  it('tryStatusToStage round-trips every mapped status back to its stage', () => {
+    for (const stage of PIPELINE_STAGES) {
+      expect(tryStatusToStage(stageToStatus(stage))).toBe(stage);
+    }
   });
 });

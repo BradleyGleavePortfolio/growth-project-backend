@@ -75,9 +75,23 @@ export function stageToStatus(stage: PipelineStage): ApplicationStatus {
   return STAGE_TO_STATUS[stage];
 }
 
-// Map a persisted status back to a pipeline stage. `withdrawn` (and any future
-// status) has no pipeline representation and surfaces as `new` so the queue
-// still renders rather than throwing on an out-of-band value.
+// Map a persisted status back to a pipeline stage for the READ/DISPLAY path
+// (CandidateCard). `withdrawn` (and any future status) has no pipeline
+// representation and surfaces as `new` so the queue still renders rather than
+// throwing on an out-of-band value. This lossy fallback is tolerated ONLY for
+// degraded display — the write path (moveStage) must use `tryStatusToStage`
+// below so a status with no genuine pipeline representation cannot be silently
+// resurrected into a live stage.
 export function statusToStage(status: ApplicationStatus): PipelineStage {
   return STATUS_TO_STAGE[status] ?? 'new';
+}
+
+// Strict mapping for the WRITE path. Returns null for any status without a
+// genuine pipeline representation (e.g. `withdrawn` — the applicant's own
+// opt-out), so moveStage can reject rather than coerce it to `new` and pull a
+// withdrawn candidate back into the active pipeline.
+export function tryStatusToStage(
+  status: ApplicationStatus,
+): PipelineStage | null {
+  return STATUS_TO_STAGE[status] ?? null;
 }

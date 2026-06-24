@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { NotImplementedException } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import type { User } from '@prisma/client';
 import type { AuthedRequest } from '../../auth/auth-request';
@@ -89,5 +90,42 @@ describe('ApplicantTrackingController — subject forwarding', () => {
       'idem-1',
     );
     expect(moveStage).toHaveBeenCalledWith('hirer-7', 'app-1', 'screening', 'idem-1');
+  });
+});
+
+// TM-8b route contract is wired now (stable URL) but the persistence ships in
+// 8b; the service methods throw NotImplementedException with documented codes.
+// These specs pin that the controller routes exist, delegate to the service
+// once, and are covered by the SAME class guard/role stack as moveStage (so a
+// non-hirer can never reach them either).
+describe('ApplicantTrackingController — 8b routes (notes / shortlist) delegation', () => {
+  it('appendNote parses the applicationId and delegates to the service once', async () => {
+    const appendNote = jest.fn(() => {
+      throw new NotImplementedException({ code: 'NOTES_NOT_AVAILABLE' });
+    });
+    const controller = makeController({ appendNote });
+    await expect(
+      controller.appendNote('app-1', { note: 'great call' }),
+    ).rejects.toMatchObject({ response: { code: 'NOTES_NOT_AVAILABLE' } });
+    expect(appendNote).toHaveBeenCalledTimes(1);
+  });
+
+  it('toggleShortlist parses the applicationId and delegates to the service once', async () => {
+    const toggleShortlist = jest.fn(() => {
+      throw new NotImplementedException({ code: 'SHORTLIST_NOT_AVAILABLE' });
+    });
+    const controller = makeController({ toggleShortlist });
+    await expect(controller.toggleShortlist('app-1')).rejects.toMatchObject({
+      response: { code: 'SHORTLIST_NOT_AVAILABLE' },
+    });
+    expect(toggleShortlist).toHaveBeenCalledTimes(1);
+  });
+
+  it('covers the 8b routes with the same JWT + coach-role + verified-hirer stack', () => {
+    // The guard/role stack is class-level, so it already gates appendNote and
+    // toggleShortlist exactly as it gates moveStage.
+    expect(Reflect.getMetadata(ROLES_KEY, ApplicantTrackingController)).toEqual(['coach']);
+    const guards = Reflect.getMetadata(GUARDS_METADATA, ApplicantTrackingController) ?? [];
+    expect(guards).toEqual([JwtAuthGuard, RolesGuard, HirerVerifiedGuard]);
   });
 });

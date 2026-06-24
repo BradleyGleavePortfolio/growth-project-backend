@@ -11,6 +11,7 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   NotImplementedException,
 } from '@nestjs/common';
@@ -20,9 +21,10 @@ import { MarketplaceIdempotencyService } from './marketplace-idempotency.service
 import { buildTupleCursor, parseTupleCursor } from './application-cursor';
 import {
   canTransition,
+  isPipelineStage,
   isTerminalStage,
   stageToStatus,
-  statusToStage,
+  tryStatusToStage,
   type PipelineStage,
 } from './pipeline-stage';
 import { toCandidateCard } from './candidate-card.dto';
@@ -38,6 +40,8 @@ const QUEUE_MAX_LIMIT = 50;
 
 @Injectable()
 export class ApplicantTrackingService {
+  private readonly logger = new Logger(ApplicantTrackingService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly idempotency: MarketplaceIdempotencyService,
@@ -120,7 +124,8 @@ export class ApplicantTrackingService {
         email: true,
         first_name: true,
         last_name: true,
-        headline: true,
+        // headline is intentionally NOT selected: applicant-authored free text
+        // (can carry email/phone/name) and not in the TM-8 PII allow-list.
         specialties: true,
         years_experience: true,
       },
@@ -130,7 +135,6 @@ export class ApplicantTrackingService {
     const card = toCandidateCard(app, applicant);
     return {
       ...card,
-      headline: applicant.headline ?? null,
       years_experience: applicant.years_experience ?? null,
       email_domain: emailDomain(applicant.email),
       phone_last4: null,
@@ -152,31 +156,25 @@ export class ApplicantTrackingService {
     });
     if (!app) throw this.notFound();
 
-    const current = statusToStage(app.status);
-    if (isTerminalStage(current)) {
-      throw new ConflictException({
-        error: 'Conflict',
-        message: 'This applicant is in a terminal stage and cannot be moved.',
-        code: 'PIPELINE_STAGE_TERMINAL',
-      });
-    }
-    if (current !== target && !canTransition(current, target)) {
-      throw new ConflictException({
-        error: 'Conflict',
-        message: 'That pipeline transition is not allowed.',
-        code: 'PIPELINE_TRANSITION_INVALID',
-      });
-    }
-
+    // Consult the idempotency ledger BEFORE any transition validation. A
+    // legitimate retry of an already-completed move (including one that landed
+    // on a terminal stage) must replay the stored response rather than
+    // re-running the now-stale terminal/transition gates and 409-ing (B-P2-2).
     const claimKey = {
       userId: hirerId,
       routeKey: STAGE_ROUTE_KEY,
-      idempotencyKey: idempotencyKey?.trim() || `stage:${applicationId}:${target}`,
+      idempotencyKey:
+        idempotencyKey?.trim() || `stage:${applicationId}:${target}`,
     };
     const claim = await this.idempotency.claimOrReplay(claimKey);
+
+    // Replay: return the ORIGINALLY stored response, never a value fabricated
+    // from the current request's target (a reused key with a different target
+    // must not assert a transition that never happened).
     if (claim.outcome === 'replay') {
-      return { application_id: applicationId, stage: target };
+      return this.replayStage(claim.response);
     }
+    // A sibling request owns this key right now -- retryable, not a dupe.
     if (claim.outcome === 'in_flight') {
       throw new ConflictException({
         error: 'Conflict',
@@ -185,21 +183,103 @@ export class ApplicantTrackingService {
       });
     }
 
+    // Freshly claimed: now run the state-machine validation against the
+    // persisted status. On any rejection, release the claim we just took so a
+    // corrected retry can proceed, then throw.
     try {
-      await this.prisma.application.update({
-        where: { id: applicationId },
+      // `withdrawn` (and any status without a genuine pipeline representation)
+      // has no movable stage -- reject rather than coerce it to `new` and
+      // resurrect an applicant who opted out (A-P0-1 / B-P1-1).
+      const current = tryStatusToStage(app.status);
+      if (current === null) {
+        throw new ConflictException({
+          error: 'Conflict',
+          message: 'This applicant cannot be moved in the pipeline.',
+          code: 'PIPELINE_STAGE_IMMUTABLE',
+        });
+      }
+      if (isTerminalStage(current)) {
+        throw new ConflictException({
+          error: 'Conflict',
+          message:
+            'This applicant is in a terminal stage and cannot be moved.',
+          code: 'PIPELINE_STAGE_TERMINAL',
+        });
+      }
+      if (current !== target && !canTransition(current, target)) {
+        throw new ConflictException({
+          error: 'Conflict',
+          message: 'That pipeline transition is not allowed.',
+          code: 'PIPELINE_TRANSITION_INVALID',
+        });
+      }
+
+      // Atomic, hirer-scoped compare-and-set. The `status: app.status` clause
+      // guards against a concurrent move (CAS); the `hirer_id` clause is
+      // defense-in-depth on the write. count === 0 means the row changed out
+      // from under us between the read and this write -- a stale conflict, NOT a
+      // not-found (ownership was already verified).
+      const updated = await this.prisma.application.updateMany({
+        where: {
+          id: applicationId,
+          hirer_id: hirerId,
+          status: app.status,
+        },
         data: { status: stageToStatus(target) },
       });
-      const result = { application_id: applicationId, stage: target };
-      const done = await this.idempotency.markCompleted(claimKey, claim.claimNonce, result);
-      if (done.outcome === 'conflict') {
-        return result;
+      if (updated.count === 0) {
+        await this.idempotency.releaseClaim(claimKey, claim.claimNonce);
+        throw new ConflictException({
+          error: 'Conflict',
+          message:
+            'The applicant moved before your change could be applied.',
+          code: 'PIPELINE_STAGE_STALE',
+        });
       }
+
+      const result = { application_id: applicationId, stage: target };
+      await this.idempotency.markCompleted(claimKey, claim.claimNonce, result);
+      // The stage result is deterministic under a markCompleted reclaim, so it
+      // is safe to return without re-reading the application.
       return result;
     } catch (err) {
+      // A PIPELINE_STAGE_STALE conflict already released its own claim above;
+      // re-releasing is a guarded no-op (nonce-fenced), so this single handler
+      // safely covers validation rejections, the CAS conflict, and any
+      // updateMany/markCompleted failure.
       await this.idempotency.releaseClaim(claimKey, claim.claimNonce);
       throw err;
     }
+  }
+
+  // Replay path: the ledger stored the verbatim first result. Validate the
+  // stored shape field-by-field before returning so a malformed/missing row
+  // degrades loudly rather than smuggling an off-shape object past the type
+  // system. We should never reach the corrupt branch in practice -- defense in
+  // depth (mirrors apply.service's fromLedger).
+  private replayStage(response: Prisma.JsonValue): {
+    application_id: string;
+    stage: PipelineStage;
+  } {
+    if (
+      response !== null &&
+      typeof response === 'object' &&
+      !Array.isArray(response)
+    ) {
+      const row = response as Record<string, unknown>;
+      if (
+        typeof row.application_id === 'string' &&
+        isPipelineStage(row.stage)
+      ) {
+        return { application_id: row.application_id, stage: row.stage };
+      }
+    }
+    this.logger.warn('Stage idempotency replay response was malformed');
+    throw new ConflictException({
+      error: 'Conflict',
+      message: 'This stage change could not be replayed.',
+      code: 'STAGE_LEDGER_CORRUPT',
+    });
   }
 
   // POST /applicants/:applicantId/notes — hirer-private note. 8b: requires a

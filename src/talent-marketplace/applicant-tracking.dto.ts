@@ -28,11 +28,9 @@ export class ApplicantQueueQueryDto {
 export class MoveStageDto {
   @IsIn(PIPELINE_STAGES as readonly string[])
   stage!: PipelineStage;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(2_000)
-  note?: string;
+  // NOTE: no `note` field here. A stage-change note was accepted-then-discarded
+  // (misleading). Real hirer-private notes ship in TM-8b via
+  // POST /applicants/:applicantId/notes with AppendNoteDto.
 }
 
 export class AppendNoteDto {
@@ -60,7 +58,10 @@ export interface ApplicantDetailDto {
   fit_score: number | null;
   stage: PipelineStage;
   applied_at: string;
-  headline: string | null;
+  // NOTE: no `headline` field. headline is applicant-authored free text that can
+  // contain email/phone/name — it is not in the TM-8 PII allow-list and must not
+  // cross the hirer boundary. A future reveal/consent path would ship it
+  // separately with redaction + tests.
   years_experience: number | null;
   email_domain: string | null;
   phone_last4: string | null;
