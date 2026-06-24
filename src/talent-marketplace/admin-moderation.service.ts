@@ -77,6 +77,7 @@ export class AdminModerationService {
     ownerId: string,
     listingId: string,
     dto: ReviewDecisionDto,
+    requestId?: string,
   ): Promise<ReviewDecisionResult> {
     const result = await review(
       this.idempotency,
@@ -124,7 +125,7 @@ export class AdminModerationService {
     // Structured moderation-decision audit event on BOTH the first decision and
     // every replay (matches the owner-tooling convention in
     // coach-ai-budget.service.ts: `logger.log({ event, ...fields }, msg)`).
-    this.logModerationDecision(ownerId, listingId, result);
+    this.logModerationDecision(ownerId, listingId, result, requestId);
     return result;
   }
 
@@ -132,6 +133,7 @@ export class AdminModerationService {
     ownerId: string,
     listingId: string,
     result: ReviewDecisionResult,
+    requestId?: string,
   ): void {
     this.logger.log(
       {
@@ -142,6 +144,10 @@ export class AdminModerationService {
         note: truncateNote(result.note),
         replayed: result.replayed,
         result_status: result.status,
+        // Correlate the decision with the request/error/Sentry trail when the
+        // request-scoped id is available; omit the key entirely otherwise so we
+        // never log a `null`/`undefined` request_id (B-P2-7).
+        ...(requestId ? { request_id: requestId } : {}),
       },
       'listing moderation decision',
     );

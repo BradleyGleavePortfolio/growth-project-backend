@@ -13,8 +13,8 @@ import type { User } from '@prisma/client';
 // The controller reads only req.user.id. A minimal owner stub: the user field
 // is narrowed with a concrete Pick<User,'id'> cast (no blanket any/never),
 // which is all the handler dereferences.
-function ownerReq(id: string): AuthedRequest {
-  return { user: { id } as Pick<User, 'id'> as User };
+function ownerReq(id: string, requestId?: string): AuthedRequest {
+  return { user: { id } as Pick<User, 'id'> as User, requestId };
 }
 
 // TM-7a — the admin controller is owner-only. Its security contract is pinned
@@ -86,23 +86,35 @@ describe('AdminModerationController — delegation', () => {
     expect(service.listListings).toHaveBeenCalledWith(query);
   });
 
-  it('forwards the authed owner id, listing id and dto to reviewListing', async () => {
+  it('forwards the authed owner id, listing id, dto and request id to reviewListing', async () => {
+    const { controller, service } = makeController();
+    const req = ownerReq('owner-1', 'req-abc-123');
+    const dto: ReviewDecisionDto = { decision: 'approved' };
+    await controller.reviewListing(req, 'list-1', dto, undefined);
+    // The request-scoped correlation id (RequestIdMiddleware) is threaded
+    // through to the audit log (B-P2-7).
+    expect(service.reviewListing).toHaveBeenCalledWith('owner-1', 'list-1', dto, 'req-abc-123');
+  });
+
+  it('forwards an undefined request id when the middleware did not set one', async () => {
     const { controller, service } = makeController();
     const req = ownerReq('owner-1');
     const dto: ReviewDecisionDto = { decision: 'approved' };
     await controller.reviewListing(req, 'list-1', dto, undefined);
-    expect(service.reviewListing).toHaveBeenCalledWith('owner-1', 'list-1', dto);
+    expect(service.reviewListing).toHaveBeenCalledWith('owner-1', 'list-1', dto, undefined);
   });
 
   it('folds the Idempotency-Key header into the dto when body omits it', async () => {
     const { controller, service } = makeController();
-    const req = ownerReq('owner-1');
+    const req = ownerReq('owner-1', 'req-xyz');
     const dto: ReviewDecisionDto = { decision: 'approved' };
     await controller.reviewListing(req, 'list-1', dto, 'hdr-key');
-    expect(service.reviewListing).toHaveBeenCalledWith('owner-1', 'list-1', {
-      decision: 'approved',
-      idempotency_key: 'hdr-key',
-    });
+    expect(service.reviewListing).toHaveBeenCalledWith(
+      'owner-1',
+      'list-1',
+      { decision: 'approved', idempotency_key: 'hdr-key' },
+      'req-xyz',
+    );
   });
 });
 

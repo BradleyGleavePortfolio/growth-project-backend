@@ -268,6 +268,49 @@ describe('AdminModerationService.reviewListing — decision + idempotency', () =
     );
   });
 
+  it('includes request_id on the first-decision audit event when supplied (B-P2-7)', async () => {
+    const { service } = serviceFor({ outcome: 'claimed', claimNonce: 'n1' });
+    await service.reviewListing('owner-1', 'list-1', { decision: 'approved' }, 'req-abc-123');
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'talent_marketplace.listing.moderation_decision',
+        request_id: 'req-abc-123',
+      }),
+      expect.any(String),
+    );
+  });
+
+  it('retains request_id on the replay audit event (B-P2-7)', async () => {
+    const { service } = serviceFor({
+      outcome: 'replay',
+      response: {
+        id: 'list-1',
+        status: 'published',
+        decision: 'approved',
+        note: 'approved with a note',
+        decided_by: 'owner-1',
+        decided_at: NOW.toISOString(),
+      },
+    });
+    await service.reviewListing('owner-1', 'list-1', { decision: 'rejected' }, 'req-abc-123');
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'talent_marketplace.listing.moderation_decision',
+        replayed: true,
+        request_id: 'req-abc-123',
+      }),
+      expect.any(String),
+    );
+  });
+
+  it('omits request_id entirely when none is supplied (no null/undefined key) (B-P2-7)', async () => {
+    const { service } = serviceFor({ outcome: 'claimed', claimNonce: 'n1' });
+    await service.reviewListing('owner-1', 'list-1', { decision: 'approved' });
+    const payload = logSpy.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.event).toBe('talent_marketplace.listing.moderation_decision');
+    expect(payload).not.toHaveProperty('request_id');
+  });
+
   it('throws an opaque listing_not_found for an unknown listing', async () => {
     const { service } = serviceFor(
       { outcome: 'claimed', claimNonce: 'n1' },

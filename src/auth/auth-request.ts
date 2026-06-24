@@ -12,6 +12,11 @@ export interface AuthedRequest {
   ip?: string;
   socket?: { remoteAddress?: string };
   headers?: Record<string, string | string[] | undefined>;
+  // Attached by RequestIdMiddleware (observability/request-id.middleware.ts) on
+  // every request, before any guard runs, so controllers can correlate audit
+  // events with the request/error/Sentry trail. Optional because lightweight
+  // test doubles populate only `user`.
+  requestId?: string;
   // Set by CommunityFeatureFlagGuard for community endpoints.
   community_flag_state?: 'enabled' | 'disabled';
 }
