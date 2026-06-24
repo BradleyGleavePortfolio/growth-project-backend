@@ -105,9 +105,9 @@ export class SpecialtyAlertsService {
     userId: string,
     specialties: string[] | null | undefined,
   ): Promise<{ specialties: string[] }> {
-    // Applicant rows exist only post-Apply; a student who has never applied has
-    // none. Guard first so a missing row is a clean 404 envelope rather than a
-    // raw Prisma P2025 → generic 500 (Lens A P1-1).
+    // Applicant rows exist only post-Apply; a student who hasn't yet applied
+    // owns none. Guard first so a missing row is a clean 404 envelope rather
+    // than a raw Prisma P2025 → generic 500 (Lens A P1-1).
     const applicant = await this.requireApplicant(userId);
     if (specialties === undefined) {
       return { specialties: applicant.specialties };
