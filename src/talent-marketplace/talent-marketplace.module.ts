@@ -19,6 +19,10 @@ import { AdminModerationController } from './admin-moderation.controller';
 import { AdminModerationService } from './admin-moderation.service';
 import { AdminApplicationsController } from './admin-applications.controller';
 import { AdminApplicationsService } from './admin-applications.service';
+import { ApplicantTrackingController } from './applicant-tracking.controller';
+import { ApplicantTrackingService } from './applicant-tracking.service';
+import { SavedSearchController } from './saved-search.controller';
+import { SavedSearchService } from './saved-search.service';
 
 // TM-2 — Talent Marketplace job-listing CRUD + publish.
 // TM-3 — public, unauthenticated browse + SEO detail.
@@ -30,6 +34,9 @@ import { AdminApplicationsService } from './admin-applications.service';
 // TM-7a — owner-only listing moderation (admin review queue + decisions).
 // TM-7b — owner-only applicant review; appends additively atop 7a, reusing the
 // shared review-queue/ledger helpers.
+// TM-8 — hirer applicant tracking + PII-stripped CandidateCard projection.
+//        Saved-search controller is wired for 8b route stability; service
+//        returns 501 until persistence lands.
 @Module({
   imports: [AntiBotModule, TalentConnectAdapterModule],
   controllers: [
@@ -39,6 +46,8 @@ import { AdminApplicationsService } from './admin-applications.service';
     PublicListingController,
     AdminModerationController,
     AdminApplicationsController,
+    ApplicantTrackingController,
+    SavedSearchController,
   ],
   providers: [
     JobListingService,
@@ -53,6 +62,8 @@ import { AdminApplicationsService } from './admin-applications.service';
     OwnerGuard,
     AdminModerationService,
     AdminApplicationsService,
+    ApplicantTrackingService,
+    SavedSearchService,
   ],
   exports: [JobListingService, ApplyService],
 })
