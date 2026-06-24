@@ -46,10 +46,14 @@ export class AdminApplicationsController {
     @Body() dto: ReviewDecisionDto,
     @Headers('idempotency-key') idemHeader?: string,
   ) {
+    // Forward the request-scoped correlation id (set by RequestIdMiddleware) so
+    // the moderation_decision audit event self-correlates with the request /
+    // error / Sentry trail (B-P2-7). Omitted downstream when absent.
     return this.applications.reviewApplication(
       req.user.id,
       id,
       withKey(dto, idemHeader),
+      req.requestId,
     );
   }
 }
