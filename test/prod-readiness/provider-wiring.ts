@@ -471,6 +471,17 @@ export function classifyProvider(
     always.missing.length === 0 &&
     always.placeholder.length === 0 &&
     fileEvidenceOk(def.requires, evidence);
+  // Mirror the requiresAnyOf branch: when the buckets are clean but the sole
+  // reason the always-bucket fails is a `*_FILE` var whose file is missing on
+  // disk, the present/missing/placeholder buckets don't explain the STUB, so
+  // emit the same human-readable diagnostic both paths use (R5c contract parity).
+  if (
+    always.missing.length === 0 &&
+    always.placeholder.length === 0 &&
+    !fileEvidenceOk(def.requires, evidence)
+  ) {
+    diagnostic = fileEvidenceDiagnostic(def.requires, evidence);
+  }
 
   // Either/or credential groups: satisfied when ANY group is fully set with
   // non-placeholder values AND any referenced credential FILE actually exists

@@ -1527,6 +1527,12 @@ describe('R5-F002 (Lens A) — fileEvidenceOk gates *_FILE vars placed in `requi
       { X_TOKEN_FILE_EXISTS: false },
     );
     expect(r.status).toBe('STUB');
+    // R5c-F001-LensB: buckets are clean (file var present, none missing/placeholder)
+    // so the STUB is unexplained unless the diagnostic surfaces the missing file —
+    // mirrors the requiresAnyOf path's "points to non-existent path" wording.
+    expect(r.diagnostic).toBe('X_TOKEN_FILE points to non-existent path');
+    expect(r.diagnostic).toContain('X_TOKEN_FILE');
+    expect(r.diagnostic).toContain('points to non-existent path');
   });
 
   it('21. same provider + evidence FILE_EXISTS=true → WIRED', () => {
