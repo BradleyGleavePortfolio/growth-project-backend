@@ -402,6 +402,37 @@ describe('runFlyctl — defense-in-depth env gate (R5b F002)', () => {
   });
 });
 
+describe('commit — CommitOptions.env authorises the default-runner inner gate (R5d)', () => {
+  // Regression for the convergent R5c re-audit finding: the inner runFlyctl
+  // defense-in-depth gate must consult the SAME env the outer gate did. With
+  // process.env[AUTO_FLIP_ENV] unset but opts.env set, a default-runner commit
+  // must mutate every row instead of failing them all at the inner gate.
+  let saved: string | undefined;
+  beforeEach(() => {
+    saved = process.env[AUTO_FLIP_ENV];
+    delete process.env[AUTO_FLIP_ENV];
+  });
+  afterEach(() => {
+    if (saved === undefined) delete process.env[AUTO_FLIP_ENV];
+    else process.env[AUTO_FLIP_ENV] = saved;
+  });
+
+  it('mutates rows via the default runner when only opts.env carries the gate', async () => {
+    execFileSyncMock.mockReturnValue(Buffer.from(''));
+    const registry = [
+      row({ name: 'FEATURE_A', prod_default: 'ON' }),
+      row({ name: 'FEATURE_B', prod_default: 'ON' }),
+    ];
+    const p = plan({ registry, current: {} });
+    // No `run` override: exercise the default runFlyctl path. The gate lives
+    // ONLY in opts.env; process.env[AUTO_FLIP_ENV] is unset by the hooks above.
+    const res = await commit({ plan: p, env: ENABLED_ENV });
+    expect(res.succeeded.map((r) => r.name)).toEqual(['FEATURE_A', 'FEATURE_B']);
+    expect(res.failed).toEqual([]);
+    expect(execFileSyncMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('commit — secret redaction in logs', () => {
   it('emits KEY=*** in the operator log and never the value', async () => {
     const sink = makeSink();

@@ -810,6 +810,14 @@ export interface PlanOptions {
 
 export interface CommitOptions {
   plan: FlipPlan;
+  /**
+   * Env consulted for the {@link AUTO_FLIP_ENV} authorization gate. Defaults to
+   * `process.env`. When provided it is honored by BOTH the outer authorization
+   * gate in {@link commit}/{@link flip} AND the inner `runFlyctl`
+   * defense-in-depth gate when the default runner is used — the two gates always
+   * read the same env (R5d), so injecting `env` here is sufficient to authorise
+   * the full default-runner commit path without touching `process.env`.
+   */
   env?: NodeJS.ProcessEnv;
   /** Defaults to runFlyctl (execFileSync). Override in tests. */
   run?: FlyRunner;
@@ -890,13 +898,17 @@ export function autoFlipEnabled(env: NodeJS.ProcessEnv): boolean {
  * whose message is built only from the (non-secret) subcommand verbs — never
  * from argv pairs that carry a `KEY=VALUE` secret.
  */
-function runFlyctl(args: readonly string[]): void {
+function runFlyctl(args: readonly string[], env: NodeJS.ProcessEnv = process.env): void {
   // F002 (R5b) defense-in-depth: gate the raw exec primitive on the same
   // capability flag the gated entry points use, so even a caller reaching
   // runFlyctl directly (the __runFlyctlForTest seam, future code) cannot
   // mutate prod secrets without READINESS_AUTO_FLIP. The commit() path
   // already gates before reaching here; this is belt-and-suspenders.
-  if (!autoFlipEnabled(process.env)) {
+  // R5d: the gate reads the threaded `env` (single-sourced from `opts.env ??
+  // process.env` at the commit()/flip() callers) so the inner gate consults the
+  // SAME env the outer gate did — the documented CommitOptions.env injection
+  // channel is honored end-to-end, not silently bypassed here.
+  if (!autoFlipEnabled(env)) {
     throw new Error('runFlyctl: READINESS_AUTO_FLIP is not enabled (defense-in-depth gate)');
   }
   // F007: surface the PATH-dependency once if no absolute FLY_BIN was pinned,
@@ -940,8 +952,11 @@ function runFlyctl(args: readonly string[]): void {
  * match the existing `__…ForTest` seam convention in form, not only in name.
  * Only consumed by `test/prod-readiness/auto-flipper.spec.ts`.
  */
-export function __runFlyctlForTest(args: readonly string[]): void {
-  runFlyctl(args);
+export function __runFlyctlForTest(
+  args: readonly string[],
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  runFlyctl(args, env);
 }
 
 /**
@@ -1093,7 +1108,12 @@ export async function commit(opts: CommitOptions): Promise<FlipResult> {
 
 /** The actual per-row commit work, run under the {@link _commitChain} mutex. */
 async function doCommit(opts: CommitOptions): Promise<FlipResult> {
-  const run = opts.run ?? runFlyctl;
+  // R5d: single-source the env the default runner gates on. The outer gate in
+  // commit() already evaluated `opts.env ?? process.env`; thread that SAME
+  // expression into runFlyctl's defense-in-depth gate so both consult identical
+  // env and the documented CommitOptions.env injection works end-to-end.
+  const env = opts.env ?? process.env;
+  const run = opts.run ?? ((args: readonly string[]) => runFlyctl(args, env));
   const now = opts.now ?? (() => new Date());
   // F001: literal secret values this plan touches, so the redactor can scrub
   // them from ANY sink even when they appear with no KEY=VAL shape.
