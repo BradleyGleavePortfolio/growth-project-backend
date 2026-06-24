@@ -410,13 +410,7 @@ describe('R4 F001 — YAML block-scalar chomping/indent indicators (no value-bas
   });
 
   it('multi-line decorated block body is fully redacted while a benign block survives', () => {
-    const yaml = [
-      'password: |-',
-      `  ${CHOMP}`,
-      `  ${CHOMP}-second`,
-      'count: |2',
-      '  5',
-    ].join('\n');
+    const yaml = ['password: |-', `  ${CHOMP}`, `  ${CHOMP}-second`, 'count: |2', '  5'].join('\n');
     const out = redactSecretValues(yaml, []);
     expect(out).not.toContain(CHOMP);
     expect(out).toContain('password: |-'); // secret header intact
@@ -427,6 +421,66 @@ describe('R4 F001 — YAML block-scalar chomping/indent indicators (no value-bas
   it('does NOT redact a benign (non-secret-named) decorated block scalar', () => {
     const out = redactSecretValues('count: |-\n  5\n  6', []);
     expect(out).toBe('count: |-\n  5\n  6'); // wholly untouched
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R5 F001 — block-scalar HEADER carrying a trailing comment (`KEY: |- # …`).
+// A trailing comment on a block-scalar header is valid YAML 1.2 (§8.1.1). The
+// pass-h HEADER_RE already permitted `[ \t]*(?:#.*)?`, but pass-f's VALUE_RE
+// did NOT — so pass-f rewrote `PASSWORD: |- # x` to `PASSWORD: ***`, destroying
+// the indicator pass-h anchors on, and the continuation secret LEAKED. VALUE_RE
+// is now widened to the same trailing-comment/whitespace tail, restoring the
+// R125 "identical surface" invariant. Every case runs WITHOUT a secretValues
+// set so it proves the PATTERN passes close the leak on the no-value sinks.
+// ---------------------------------------------------------------------------
+describe('R5 F001 — block-scalar header with a trailing comment (no value-based pass)', () => {
+  it('`|- # comment` header preserved, continuation body redacted (no leak)', () => {
+    const out = redactSecretValues(`PASSWORD: |- # ignore\n  ${CHOMP}`, []);
+    expect(out).not.toContain(CHOMP);
+    expect(out).toBe(`PASSWORD: |- # ignore\n  ${REDACTED}`);
+  });
+
+  it('`| # comment` header preserved, body redacted', () => {
+    const out = redactSecretValues(`PASSWORD: | # comment\n  ${CHOMP}`, []);
+    expect(out).not.toContain(CHOMP);
+    expect(out).toBe(`PASSWORD: | # comment\n  ${REDACTED}`);
+  });
+
+  it('keep-chomp + comment `|+ # x` header preserved, body redacted', () => {
+    const out = redactSecretValues(`PASSWORD: |+ # x\n  ${CHOMP}\n`, []);
+    expect(out).not.toContain(CHOMP);
+    expect(out).toBe(`PASSWORD: |+ # x\n  ${REDACTED}\n`);
+  });
+
+  it('chomp + indent + comment `|-2 # x` header preserved, body redacted', () => {
+    const out = redactSecretValues(`PASSWORD: |-2 # x\n    ${CHOMP}`, []);
+    expect(out).not.toContain(CHOMP);
+    expect(out).toBe(`PASSWORD: |-2 # x\n    ${REDACTED}`);
+  });
+
+  it('bare header `|-` (no comment, no body) preserved literally — not rewritten to ***', () => {
+    const out = redactSecretValues('PASSWORD: |-', []);
+    expect(out).toBe('PASSWORD: |-');
+  });
+
+  it('header + comment, no body `|- # comment` preserved literally — not rewritten to ***', () => {
+    const out = redactSecretValues('PASSWORD: |- # comment', []);
+    expect(out).toBe('PASSWORD: |- # comment');
+  });
+
+  it('same comment-bearing headers WITH secretValues set: values still redacted (no double-coverage regression)', () => {
+    const inputs = [
+      `PASSWORD: |- # ignore\n  ${CHOMP}`,
+      `PASSWORD: | # comment\n  ${CHOMP}`,
+      `PASSWORD: |+ # x\n  ${CHOMP}\n`,
+      `PASSWORD: |-2 # x\n    ${CHOMP}`,
+    ];
+    for (const input of inputs) {
+      const out = redactSecretValues(input, [CHOMP]);
+      expect(out).not.toContain(CHOMP);
+      expect(out).toContain(REDACTED);
+    }
   });
 });
 

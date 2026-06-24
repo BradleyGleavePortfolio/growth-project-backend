@@ -16,7 +16,7 @@ import {
   plan,
   commit,
   flip,
-  runFlyctl,
+  __runFlyctlForTest,
   targetValueFor,
   autoFlipEnabled,
   auditEntry,
@@ -48,6 +48,7 @@ import {
   type FlyBinFs,
   type FlyBinStat,
 } from './auto-flipper';
+import * as autoFlipperExports from './auto-flipper';
 import { RegistryParseError, type RegistryRow } from './registry-loader';
 
 jest.mock('node:child_process', () => ({ execFileSync: jest.fn() }));
@@ -286,6 +287,84 @@ describe('commit — execution', () => {
   });
 });
 
+describe('commit — fatal security signals abort the per-row loop (R5 F002)', () => {
+  it('FlyBinIdentityMismatch on row A aborts: commit throws, runner NOT invoked for row B', async () => {
+    const run = jest.fn<void, [readonly string[]]>(() => {
+      throw new FlyBinIdentityMismatch('FLY_BIN swapped: ino 2 -> 999, refusing');
+    });
+    const p = plan({
+      registry: [
+        row({ name: 'FEATURE_A', prod_default: 'ON' }),
+        row({ name: 'FEATURE_B', prod_default: 'ON' }),
+      ],
+      current: {},
+    });
+    await expect(commit({ plan: p, env: ENABLED_ENV, run })).rejects.toThrow(
+      FlyBinIdentityMismatch,
+    );
+    expect(run.mock.calls).toHaveLength(1);
+    expect(run.mock.calls[0][0]).toEqual(['secrets', 'set', 'FEATURE_A=true']);
+  });
+
+  it('FlyctlTimeoutError on row A aborts: commit throws, runner NOT invoked for row B', async () => {
+    const run = jest.fn<void, [readonly string[]]>(() => {
+      throw new FlyctlTimeoutError('flyctl secrets set timed out after 60000ms');
+    });
+    const p = plan({
+      registry: [
+        row({ name: 'FEATURE_A', prod_default: 'ON' }),
+        row({ name: 'FEATURE_B', prod_default: 'ON' }),
+      ],
+      current: {},
+    });
+    await expect(commit({ plan: p, env: ENABLED_ENV, run })).rejects.toThrow(FlyctlTimeoutError);
+    expect(run.mock.calls).toHaveLength(1);
+  });
+
+  it('a generic Error on row A does NOT abort: row B is still attempted (per-row continue intact)', async () => {
+    const run = jest.fn<void, [readonly string[]]>((args) => {
+      if (args[2] === 'FEATURE_A=true') throw new Error('ordinary flyctl exec failure');
+    });
+    const p = plan({
+      registry: [
+        row({ name: 'FEATURE_A', prod_default: 'ON' }),
+        row({ name: 'FEATURE_B', prod_default: 'ON' }),
+      ],
+      current: {},
+    });
+    const res = await commit({ plan: p, env: ENABLED_ENV, run });
+    expect(run.mock.calls).toHaveLength(2);
+    expect(res.failed.map((f) => f.row.name)).toEqual(['FEATURE_A']);
+    expect(res.succeeded.map((r) => r.name)).toEqual(['FEATURE_B']);
+  });
+
+  it('after a FlyBinIdentityMismatch abort the commit-chain mutex is released (next commit proceeds)', async () => {
+    const swap = jest.fn<void, [readonly string[]]>(() => {
+      throw new FlyBinIdentityMismatch('FLY_BIN swapped, refusing');
+    });
+    const p1 = plan({ registry: [row({ name: 'FEATURE_A', prod_default: 'ON' })], current: {} });
+    await expect(commit({ plan: p1, env: ENABLED_ENV, run: swap })).rejects.toThrow(
+      FlyBinIdentityMismatch,
+    );
+    // The mutex must have released on the throw, so a subsequent commit runs.
+    const ok = jest.fn<void, [readonly string[]]>();
+    const p2 = plan({ registry: [row({ name: 'FEATURE_B', prod_default: 'ON' })], current: {} });
+    const res = await commit({ plan: p2, env: ENABLED_ENV, run: ok });
+    expect(ok.mock.calls).toHaveLength(1);
+    expect(res.succeeded.map((r) => r.name)).toEqual(['FEATURE_B']);
+  });
+});
+
+describe('runFlyctl is module-private — only the gated entries are exported (R5 F003)', () => {
+  it('the exported surface does NOT include a bare `runFlyctl`', () => {
+    expect(Object.keys(autoFlipperExports)).not.toContain('runFlyctl');
+  });
+
+  it('exposes the `__runFlyctlForTest` seam as a callable function', () => {
+    expect(typeof __runFlyctlForTest).toBe('function');
+  });
+});
+
 describe('commit — secret redaction in logs', () => {
   it('emits KEY=*** in the operator log and never the value', async () => {
     const sink = makeSink();
@@ -383,7 +462,7 @@ describe('auditEntry', () => {
 describe('runFlyctl — default execFileSync runner', () => {
   it('calls execFileSync with the flyctl binary and an argv array (no shell)', () => {
     execFileSyncMock.mockReturnValue(Buffer.from(''));
-    runFlyctl(['secrets', 'set', 'FEATURE_A=true']);
+    __runFlyctlForTest(['secrets', 'set', 'FEATURE_A=true']);
     expect(execFileSyncMock).toHaveBeenCalledTimes(1);
     const [bin, args, options] = execFileSyncMock.mock.calls[0];
     expect(bin).toBe(FLY_BIN);
@@ -398,7 +477,7 @@ describe('runFlyctl — default execFileSync runner', () => {
     execFileSyncMock.mockImplementation(() => {
       throw enoent;
     });
-    expect(() => runFlyctl(['secrets', 'set', 'X=true'])).toThrow(
+    expect(() => __runFlyctlForTest(['secrets', 'set', 'X=true'])).toThrow(
       new RegExp(`not found on PATH.*${FLY_INSTALL_DOCS.replace(/[/.]/g, '\\$&')}`),
     );
   });
@@ -409,14 +488,14 @@ describe('runFlyctl — default execFileSync runner', () => {
         stderr: Buffer.from('Error: app not found\n'),
       });
     });
-    expect(() => runFlyctl(['secrets', 'set', 'X=true'])).toThrow(/app not found/);
+    expect(() => __runFlyctlForTest(['secrets', 'set', 'X=true'])).toThrow(/app not found/);
   });
 
   it('falls back to the error message when no stderr is present', () => {
     execFileSyncMock.mockImplementation(() => {
       throw new Error('generic failure');
     });
-    expect(() => runFlyctl(['secrets', 'set', 'X=true'])).toThrow(/generic failure/);
+    expect(() => __runFlyctlForTest(['secrets', 'set', 'X=true'])).toThrow(/generic failure/);
   });
 });
 
@@ -549,7 +628,7 @@ describe('commit — multi-row argv and ordering', () => {
 describe('runFlyctl — stdio and ENOENT message detail', () => {
   it('never passes shell:true and pipes stderr for capture', () => {
     execFileSyncMock.mockReturnValue(Buffer.from(''));
-    runFlyctl(['secrets', 'set', 'A=true']);
+    __runFlyctlForTest(['secrets', 'set', 'A=true']);
     const options = execFileSyncMock.mock.calls[0][2] as { stdio?: unknown; shell?: unknown };
     expect(options.shell).toBeUndefined();
     expect(options.stdio).toEqual(['ignore', 'pipe', 'pipe']);
@@ -559,21 +638,23 @@ describe('runFlyctl — stdio and ENOENT message detail', () => {
     execFileSyncMock.mockImplementation(() => {
       throw Object.assign(new Error('spawn flyctl ENOENT'), { code: 'ENOENT' });
     });
-    expect(() => runFlyctl(['secrets', 'set', 'A=true'])).toThrow(new RegExp(FLY_BIN));
+    expect(() => __runFlyctlForTest(['secrets', 'set', 'A=true'])).toThrow(new RegExp(FLY_BIN));
   });
 
   it('handles a string stderr (not only Buffer)', () => {
     execFileSyncMock.mockImplementation(() => {
       throw Object.assign(new Error('Command failed'), { stderr: 'Error: auth required' });
     });
-    expect(() => runFlyctl(['secrets', 'set', 'A=true'])).toThrow(/auth required/);
+    expect(() => __runFlyctlForTest(['secrets', 'set', 'A=true'])).toThrow(/auth required/);
   });
 
   it('falls back to a default message when stderr is empty whitespace', () => {
     execFileSyncMock.mockImplementation(() => {
       throw Object.assign(new Error(''), { stderr: Buffer.from('   \n') });
     });
-    expect(() => runFlyctl(['secrets', 'set', 'A=true'])).toThrow(/flyctl secrets set failed/);
+    expect(() => __runFlyctlForTest(['secrets', 'set', 'A=true'])).toThrow(
+      /flyctl secrets set failed/,
+    );
   });
 });
 
@@ -699,7 +780,7 @@ describe('redactSecretValues (Fix 1 — secret leak)', () => {
 describe('runFlyctl timeout (Fix 2 — hang protection)', () => {
   it('passes a 60s timeout and SIGTERM killSignal to execFileSync', () => {
     execFileSyncMock.mockReturnValue(Buffer.from(''));
-    runFlyctl(['secrets', 'set', 'A=true']);
+    __runFlyctlForTest(['secrets', 'set', 'A=true']);
     const options = execFileSyncMock.mock.calls[0][2] as {
       timeout?: number;
       killSignal?: string;
@@ -713,14 +794,16 @@ describe('runFlyctl timeout (Fix 2 — hang protection)', () => {
     execFileSyncMock.mockImplementation(() => {
       throw Object.assign(new Error('Command failed'), { signal: 'SIGTERM', killed: true });
     });
-    expect(() => runFlyctl(['secrets', 'set', 'A=true'])).toThrow(FlyctlTimeoutError);
+    expect(() => __runFlyctlForTest(['secrets', 'set', 'A=true'])).toThrow(FlyctlTimeoutError);
   });
 
   it('maps an ETIMEDOUT code to a FlyctlTimeoutError mentioning the timeout', () => {
     execFileSyncMock.mockImplementation(() => {
       throw Object.assign(new Error('Command failed'), { code: 'ETIMEDOUT' });
     });
-    expect(() => runFlyctl(['secrets', 'set', 'A=true'])).toThrow(/timed out after 60000ms/);
+    expect(() => __runFlyctlForTest(['secrets', 'set', 'A=true'])).toThrow(
+      /timed out after 60000ms/,
+    );
   });
 
   it('the timeout error context never echoes the secret value from argv', () => {
@@ -729,7 +812,7 @@ describe('runFlyctl timeout (Fix 2 — hang protection)', () => {
     });
     let caught: unknown;
     try {
-      runFlyctl(['secrets', 'set', 'FEATURE_SECRET=true']);
+      __runFlyctlForTest(['secrets', 'set', 'FEATURE_SECRET=true']);
     } catch (e: unknown) {
       caught = e;
     }
@@ -738,7 +821,7 @@ describe('runFlyctl timeout (Fix 2 — hang protection)', () => {
     expect(message).not.toContain('FEATURE_SECRET=true');
   });
 
-  it('commit surfaces a timeout as a redacted failed entry (not a thrown error)', async () => {
+  it('commit aborts on a timeout — it re-throws FlyctlTimeoutError without leaking the value (R5 F002)', async () => {
     execFileSyncMock.mockImplementation(() => {
       throw Object.assign(new Error('Command failed'), {
         signal: 'SIGTERM',
@@ -750,12 +833,13 @@ describe('runFlyctl timeout (Fix 2 — hang protection)', () => {
       registry: [row({ name: 'FEATURE_SECRET', prod_default: 'ON' })],
       current: {},
     });
-    const res = await commit({ plan: p, env: ENABLED_ENV });
-    expect(res.succeeded).toHaveLength(0);
-    expect(res.failed).toHaveLength(1);
-    expect(res.failed[0].row.name).toBe('FEATURE_SECRET');
-    expect(res.failed[0].error).toMatch(/timed out/);
-    expect(res.failed[0].error).not.toContain('FEATURE_SECRET=true');
+    let caught: unknown;
+    await commit({ plan: p, env: ENABLED_ENV }).catch((e: unknown) => {
+      caught = e;
+    });
+    expect(caught).toBeInstanceOf(FlyctlTimeoutError);
+    expect((caught as Error).message).toMatch(/timed out/);
+    expect((caught as Error).message).not.toContain('FEATURE_SECRET=true');
   });
 
   it('FlyctlTimeoutError is an instanceof Error with the right name', () => {
@@ -928,14 +1012,17 @@ describe('redactSecretValues — additional shapes (Fix 1 hardening)', () => {
     );
   });
 
-  it('commit timeout via default runner records the row name without its value', async () => {
+  it('commit timeout via default runner aborts (re-throws) without echoing the value (R5 F002)', async () => {
     execFileSyncMock.mockImplementation(() => {
       throw Object.assign(new Error('Command failed'), { code: 'ETIMEDOUT' });
     });
     const p = plan({ registry: [row({ name: 'HANGS', prod_default: 'ON' })], current: {} });
-    const res = await commit({ plan: p, env: ENABLED_ENV });
-    expect(res.failed[0].row.name).toBe('HANGS');
-    expect(res.failed[0].error).not.toContain('HANGS=true');
+    let caught: unknown;
+    await commit({ plan: p, env: ENABLED_ENV }).catch((e: unknown) => {
+      caught = e;
+    });
+    expect(caught).toBeInstanceOf(FlyctlTimeoutError);
+    expect((caught as Error).message).not.toContain('HANGS=true');
   });
 });
 
@@ -1299,7 +1386,6 @@ describe('F001 wiring — collectSecretValues gathers plan literals for the reda
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // H4.F R3 — F003: FLY_BIN realpath resolution + regular-executable-file checks,
 // production-strict bare rejection, and per-invocation TOCTOU revalidation.
@@ -1408,7 +1494,10 @@ describe('R3 F003 — production-strict bare-flyctl rejection', () => {
 
   it('bare flyctl with FLY_BIN_REQUIRE_ABSOLUTE=true is REJECTED regardless of NODE_ENV', () => {
     expect(() =>
-      __resolveFlyBinForTest({ NODE_ENV: 'development', FLY_BIN_REQUIRE_ABSOLUTE: 'true' }, fsStub()),
+      __resolveFlyBinForTest(
+        { NODE_ENV: 'development', FLY_BIN_REQUIRE_ABSOLUTE: 'true' },
+        fsStub(),
+      ),
     ).toThrow(/not allowed/);
   });
 
@@ -1468,7 +1557,10 @@ describe('R4 F002 — FLY_BIN stat-identity gate catches a same-path binary swap
   }
 
   it('captures the canonical identity at cache fill', () => {
-    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    __resolveFlyBinForTest(
+      { [FLY_BIN_ENV]: '/opt/bin/flyctl' },
+      goodFsWith(() => mkStat()),
+    );
     const id = __getResolvedFlyBinIdentityForTest();
     expect(id).toMatchObject({
       dev: 100n,
@@ -1480,40 +1572,58 @@ describe('R4 F002 — FLY_BIN stat-identity gate catches a same-path binary swap
   });
 
   it('REFUSES when the INODE changes between cache and revalidation (same path)', () => {
-    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    __resolveFlyBinForTest(
+      { [FLY_BIN_ENV]: '/opt/bin/flyctl' },
+      goodFsWith(() => mkStat()),
+    );
     const swapped = goodFsWith(() => mkStat({ ino: 999n }));
     expect(() => assertFlyBinUnchanged(swapped)).toThrow(FlyBinIdentityMismatch);
     expect(() => assertFlyBinUnchanged(swapped)).toThrow(/changed identity \(ino: 200 -> 999\)/);
   });
 
   it('REFUSES when only the MTIME changes (in-place overwrite at the same inode)', () => {
-    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    __resolveFlyBinForTest(
+      { [FLY_BIN_ENV]: '/opt/bin/flyctl' },
+      goodFsWith(() => mkStat()),
+    );
     const swapped = goodFsWith(() => mkStat({ mtimeNs: 1_700_000_000_000_000_001n }));
     expect(() => assertFlyBinUnchanged(swapped)).toThrow(FlyBinIdentityMismatch);
     expect(() => assertFlyBinUnchanged(swapped)).toThrow(/mtimeNs:/);
   });
 
   it('REFUSES when only the SIZE changes', () => {
-    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    __resolveFlyBinForTest(
+      { [FLY_BIN_ENV]: '/opt/bin/flyctl' },
+      goodFsWith(() => mkStat()),
+    );
     const swapped = goodFsWith(() => mkStat({ size: 8192n }));
     expect(() => assertFlyBinUnchanged(swapped)).toThrow(FlyBinIdentityMismatch);
     expect(() => assertFlyBinUnchanged(swapped)).toThrow(/size: 4096 -> 8192/);
   });
 
   it('REFUSES when only the DEV (mount point) changes', () => {
-    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    __resolveFlyBinForTest(
+      { [FLY_BIN_ENV]: '/opt/bin/flyctl' },
+      goodFsWith(() => mkStat()),
+    );
     const swapped = goodFsWith(() => mkStat({ dev: 101n }));
     expect(() => assertFlyBinUnchanged(swapped)).toThrow(/dev: 100 -> 101/);
   });
 
   it('REFUSES when only the MODE (permission bits) changes', () => {
-    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    __resolveFlyBinForTest(
+      { [FLY_BIN_ENV]: '/opt/bin/flyctl' },
+      goodFsWith(() => mkStat()),
+    );
     const swapped = goodFsWith(() => mkStat({ mode: 0o100777n }));
     expect(() => assertFlyBinUnchanged(swapped)).toThrow(/mode:/);
   });
 
   it('PROCEEDS when the stat-identity is IDENTICAL across two consecutive validations', () => {
-    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    __resolveFlyBinForTest(
+      { [FLY_BIN_ENV]: '/opt/bin/flyctl' },
+      goodFsWith(() => mkStat()),
+    );
     const same = goodFsWith(() => mkStat());
     expect(() => assertFlyBinUnchanged(same)).not.toThrow();
     expect(() => assertFlyBinUnchanged(same)).not.toThrow(); // stable across repeats
@@ -1532,7 +1642,10 @@ describe('R4 F002 — FLY_BIN stat-identity gate catches a same-path binary swap
   });
 
   it('REFUSES a SYMLINK swap that changes the realpath (regression — F003 behavior preserved)', () => {
-    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    __resolveFlyBinForTest(
+      { [FLY_BIN_ENV]: '/opt/bin/flyctl' },
+      goodFsWith(() => mkStat()),
+    );
     // The symlink now points elsewhere AND the new target is not a regular file:
     // the realpath-based F003 check fires first, before identity comparison.
     const swapped: FlyBinFs = {
@@ -1544,7 +1657,10 @@ describe('R4 F002 — FLY_BIN stat-identity gate catches a same-path binary swap
   });
 
   it('REFUSES a symlink swap whose new realpath target is a DIFFERENT-identity executable', () => {
-    __resolveFlyBinForTest({ [FLY_BIN_ENV]: '/opt/bin/flyctl' }, goodFsWith(() => mkStat()));
+    __resolveFlyBinForTest(
+      { [FLY_BIN_ENV]: '/opt/bin/flyctl' },
+      goodFsWith(() => mkStat()),
+    );
     // Realpath still equal, but the file behind it has a different inode — the
     // F003 file-type checks pass; the F002 identity gate must still REFUSE.
     const swapped: FlyBinFs = {
@@ -1561,9 +1677,11 @@ describe('R4 F002 — FLY_BIN stat-identity gate catches a same-path binary swap
 // ---------------------------------------------------------------------------
 
 describe('R3 F002 — causeName allowlist + value redaction', () => {
-  const throwing = (err: unknown): (() => readonly RegistryRow[]) => () => {
-    throw err;
-  };
+  const throwing =
+    (err: unknown): (() => readonly RegistryRow[]) =>
+    () => {
+      throw err;
+    };
   const NO_CURRENT: Record<string, string> = {};
 
   it('an attacker-named error class collapses to "UnknownError"', async () => {

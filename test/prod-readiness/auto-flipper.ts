@@ -24,12 +24,7 @@
 // never auto-flipped — they need human judgement — so they land in to_skip.
 
 import { execFileSync } from 'node:child_process';
-import {
-  accessSync,
-  constants as fsConstants,
-  realpathSync,
-  statSync,
-} from 'node:fs';
+import { accessSync, constants as fsConstants, realpathSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import type { RegistryRow } from './registry-loader';
 import { RegistryParseError } from './registry-loader';
@@ -391,7 +386,7 @@ function isSecretKey(key: string): boolean {
  * captured — only the indent digit is needed downstream to anchor continuation
  * scanning when an explicit indentation indicator is present.
  */
-const YAML_BLOCK_SCALAR_VALUE_RE = /^([|>])(?:([+-])([1-9])?|([1-9])([+-])?)?$/;
+const YAML_BLOCK_SCALAR_VALUE_RE = /^([|>])(?:([+-])([1-9])?|([1-9])([+-])?)?[ \t]*(?:#.*)?$/;
 
 /**
  * True when `value` is a complete YAML block-scalar header indicator (`|`, `>`
@@ -639,9 +634,7 @@ function redactYamlBlockScalars(text: string): string {
     if (m && isSecretKey(m[2])) {
       const headerIndent = m[1].length;
       const digitMatch = YAML_BLOCK_SCALAR_INDENT_DIGIT_RE.exec(lines[i]);
-      const explicitDigit = digitMatch
-        ? Number(digitMatch[1] ?? digitMatch[2])
-        : 0;
+      const explicitDigit = digitMatch ? Number(digitMatch[1] ?? digitMatch[2]) : 0;
       // Floor a content line must clear to count as block body: the deeper of
       // the header indent and (when an explicit indicator is present) the
       // header indent plus that indicator. Either way it is > headerIndent.
@@ -891,7 +884,7 @@ export function autoFlipEnabled(env: NodeJS.ProcessEnv): boolean {
  * whose message is built only from the (non-secret) subcommand verbs — never
  * from argv pairs that carry a `KEY=VALUE` secret.
  */
-export function runFlyctl(args: readonly string[]): void {
+function runFlyctl(args: readonly string[]): void {
   // F007: surface the PATH-dependency once if no absolute FLY_BIN was pinned,
   // before we hand a secret to a possibly-spoofable binary.
   warnIfPathResolvedFlyBin();
@@ -922,6 +915,15 @@ export function runFlyctl(args: readonly string[]): void {
     throw new Error(flyErrorMessage(err, argvSecretValues(args)));
   }
 }
+
+/**
+ * Test-only seam (F003). `runFlyctl` is module-private so the only exported
+ * mutation entries stay the gated {@link commit}/{@link flip}; a caller cannot
+ * forget a gate that has no reachable entry point. Unit tests that drive the raw
+ * exec primitive (identity assert, execFileSync wiring, timeout) reach it here,
+ * matching the existing `__…ForTest` convention.
+ */
+export const __runFlyctlForTest = runFlyctl;
 
 /**
  * Extract the literal VALUE side of each `KEY=VALUE` argv pair so the redactor
@@ -1142,6 +1144,21 @@ async function doCommit(opts: CommitOptions): Promise<FlipResult> {
       log(JSON.stringify(auditEntry(row, before, now)));
       succeeded.push(row);
     } catch (err: unknown) {
+      // SECURITY (F002): a binary-identity mismatch means the resolved flyctl may
+      // be an attacker-swapped binary; a timeout means a hung host on this
+      // secret-mutating exec primitive. Either is a fail-closed "stop everything"
+      // signal — re-throw so the commit aborts and no further row's secret is
+      // offered to the suspect/hung binary. Ordinary flyctl exec failures still
+      // continue per-row below.
+      // SECURITY (F002): a binary-identity mismatch means the resolved flyctl may
+      // be an attacker-swapped binary; a timeout means a hung host on this
+      // secret-mutating exec primitive. Either is a fail-closed "stop everything"
+      // signal — re-throw so the commit aborts and no further row's secret is
+      // offered to the suspect/hung binary. Ordinary flyctl exec failures still
+      // continue per-row below.
+      if (err instanceof FlyBinIdentityMismatch || err instanceof FlyctlTimeoutError) {
+        throw err;
+      }
       const raw = err instanceof Error ? err.message : String(err);
       // Defence-in-depth (F001): redact pattern + value-based before this
       // message reaches result.failed[i].error so a custom runner that echoes a
