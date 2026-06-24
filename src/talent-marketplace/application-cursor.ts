@@ -35,5 +35,10 @@ export function parseTupleCursor(cursor: string): TupleCursor | null {
   if (id.length === 0) return null;
   const ms = Date.parse(isoPart);
   if (Number.isNaN(ms)) return null;
+  // Strict round-trip: reject anything that is not the exact ISO string the
+  // encoder would emit. Date.parse coerces partials like '2026' or '2026-01'
+  // (and '99') to valid dates, which would let a hand-crafted cursor silently
+  // reframe the keyset window instead of degrading to page 1 (A-P1-2).
+  if (new Date(ms).toISOString() !== isoPart) return null;
   return { created_at: new Date(ms), id };
 }

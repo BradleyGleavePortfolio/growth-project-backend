@@ -26,6 +26,13 @@ export function isApplicationStatus(value: unknown): value is ApplicationStatus 
   );
 }
 
-export function isTerminalStatus(status: ApplicationStatus): boolean {
-  return TERMINAL_STATUSES.includes(status);
+// Accepts `unknown` so call sites holding a Prisma-enum value (typed as the
+// generated enum, not our mirror) can ask without a cast (A-P2-2). Membership
+// is checked against the terminal set widened to strings; a non-string can
+// never be terminal.
+export function isTerminalStatus(status: unknown): boolean {
+  return (
+    typeof status === 'string' &&
+    (TERMINAL_STATUSES as readonly string[]).includes(status)
+  );
 }

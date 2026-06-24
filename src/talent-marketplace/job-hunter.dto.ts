@@ -40,24 +40,22 @@ export class UpdatePortfolioDto {
   @MaxLength(2_000)
   about?: string | null;
 
+  // null is an explicit clear (@IsOptional skips validation for null), handled
+  // by the service as "reset to []" (B-P0-2).
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(20)
   @IsString({ each: true })
   @MaxLength(120, { each: true })
-  specialties?: string[];
+  specialties?: string[] | null;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(1_024)
-  intro_video_url?: string | null;
-
+  // null and [] both clear the persisted URL; omission leaves it unchanged (B-P0-2).
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(PORTFOLIO_MAX_SAMPLE_PROGRAMS)
   @IsString({ each: true })
   @MaxLength(1_024, { each: true })
-  sample_program_urls?: string[];
+  sample_program_urls?: string[] | null;
 }
 
 export interface MyApplicationCardDto {

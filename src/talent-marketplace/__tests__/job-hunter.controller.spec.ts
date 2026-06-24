@@ -9,7 +9,6 @@ import { JobHunterController } from '../job-hunter.controller';
 import { JobHunterService } from '../job-hunter.service';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import type { AuthedRequest } from '../../auth/auth-request';
-import type { User } from '@prisma/client';
 
 // TM-9a — the /me/* dashboard surface is owner-scoped: JWT-gated,
 // @Roles('student'), and every handler forwards the JWT subject (req.user.id)
@@ -44,12 +43,14 @@ function makeController() {
   };
 }
 
-// A concrete owner-scoped request fixture — only `user.id` is read by the
-// handlers, so a narrow concrete cast on the user keeps this structurally an
-// AuthedRequest without any forbidden double cast.
-const reqFor = (id: string): AuthedRequest => ({
-  user: { id } as Pick<User, 'id'> as User,
-});
+// A concrete owner-scoped request fixture — handlers only read `user.id`, so a
+// minimal structural stub is sufficient. A single `as AuthedRequest` at the
+// factory return is the only assertion (no chained/double cast) (A-P2-3).
+interface MinimalAuthedRequest {
+  user: { id: string };
+}
+const reqFor = (id: string): AuthedRequest =>
+  ({ user: { id } } satisfies MinimalAuthedRequest) as AuthedRequest;
 
 describe('JobHunterController — owner-scoped /me dashboard surface', () => {
   let hunter: HunterShape;
@@ -96,6 +97,15 @@ describe('JobHunterController — owner-scoped /me dashboard surface', () => {
       expect(
         Reflect.getMetadata(METHOD_METADATA, controller.updatePortfolio),
       ).toBe(RequestMethod.PUT);
+    });
+
+    it('GET portfolio', () => {
+      expect(
+        Reflect.getMetadata(PATH_METADATA, controller.getPortfolio),
+      ).toBe('portfolio');
+      expect(
+        Reflect.getMetadata(METHOD_METADATA, controller.getPortfolio),
+      ).toBe(RequestMethod.GET);
     });
 
     it('GET profile-strength', () => {

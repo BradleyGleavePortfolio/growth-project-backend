@@ -59,10 +59,11 @@ describe('portfolio-showcase — URL validators', () => {
     it('null → empty list', () => {
       expect(checkSampleProgramUrls(null)).toEqual({ ok: true, value: [] });
     });
-    it('accepts a bounded list of HTTPS links', () => {
-      expect(
-        checkSampleProgramUrls(['https://a.com', 'https://b.com']),
-      ).toEqual({ ok: true, value: ['https://a.com', 'https://b.com'] });
+    it('accepts a bounded list of HTTPS links (cap is 1)', () => {
+      expect(checkSampleProgramUrls(['https://a.com'])).toEqual({
+        ok: true,
+        value: ['https://a.com'],
+      });
     });
     it('rejects when over the count cap', () => {
       const many = Array.from(
@@ -74,10 +75,11 @@ describe('portfolio-showcase — URL validators', () => {
         reason: 'too_many',
       });
     });
-    it('rejects when any entry is invalid', () => {
-      expect(
-        checkSampleProgramUrls(['https://ok.com', 'data:x;base64,AAAA']),
-      ).toEqual({ ok: false, reason: 'invalid_url' });
+    it('rejects when an entry is invalid (within the count cap)', () => {
+      expect(checkSampleProgramUrls(['data:x;base64,AAAA'])).toEqual({
+        ok: false,
+        reason: 'invalid_url',
+      });
     });
   });
 });

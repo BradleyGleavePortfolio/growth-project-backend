@@ -1,9 +1,18 @@
 // TM-9 — Portfolio showcase model + validators. A projection over existing
 // Applicant columns; every external URL is HTTPS-only, length-capped, and
 // rejected if it carries an inline base64 / data-URI blob (DoS guard).
+//
+// NOTE (intro_video deferred): there is intentionally no `intro_video_url`
+// field on the showcase. The Applicant table has no backing column for it, so
+// exposing it in the contract would advertise a write that silently evaporates
+// (the dual-lens P0). It will be reintroduced — DTO, persistence, and read-back
+// together — only once a real `intro_video_url` column exists on Applicant.
 
 export const PORTFOLIO_URL_MAX_LEN = 1024;
-export const PORTFOLIO_MAX_SAMPLE_PROGRAMS = 10;
+// One sample-program URL is persisted (single Applicant column), so the cap is
+// 1 everywhere — DTO @ArrayMaxSize and the service share this single constant
+// so OpenAPI clients and the runtime guard never disagree (B-P1-1).
+export const PORTFOLIO_MAX_SAMPLE_PROGRAMS = 1;
 
 const BASE64_BLOB = /^data:|;base64,|^[A-Za-z0-9+/]{512,}={0,2}$/;
 
@@ -11,7 +20,6 @@ export interface PortfolioShowcase {
   headline: string | null;
   about: string | null;
   specialties: string[];
-  intro_video_url: string | null;
   sample_program_urls: string[];
 }
 

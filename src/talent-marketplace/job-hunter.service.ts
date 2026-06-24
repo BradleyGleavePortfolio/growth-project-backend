@@ -5,8 +5,12 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { buildTupleCursor, parseTupleCursor } from './application-cursor';
-import { isTerminalStatus, isApplicationStatus } from './application-status';
-import { checkOptionalUrl, checkSampleProgramUrls, type PortfolioShowcase } from './portfolio-showcase';
+import { isTerminalStatus } from './application-status';
+import {
+  PORTFOLIO_MAX_SAMPLE_PROGRAMS,
+  checkSampleProgramUrls,
+  type PortfolioShowcase,
+} from './portfolio-showcase';
 import type {
   MyApplicationsQueryDto,
   MyApplicationsResponse,
@@ -18,9 +22,48 @@ import type {
 const MY_APPLICATIONS_DEFAULT_LIMIT = 20;
 const MY_APPLICATIONS_MAX_LIMIT = 50;
 
-// The Applicant column persists ONE sample-program URL; an over-cap submission
-// is rejected outright (P2-1), never silently truncated to the first entry.
-const MAX_SAMPLE_PROGRAM_URLS = 1;
+// The projected Applicant columns the portfolio showcase reads + writes. Shared
+// by getPortfolio and the single-read updatePortfolio so both map identically.
+const PORTFOLIO_SELECT = {
+  headline: true,
+  bio: true,
+  specialties: true,
+  sample_program_url: true,
+} as const;
+
+interface PortfolioRow {
+  headline: string | null;
+  bio: string | null;
+  specialties: string[];
+  sample_program_url: string | null;
+}
+
+function toPortfolioShape(applicant: PortfolioRow): PortfolioShowcase {
+  return {
+    headline: applicant.headline,
+    about: applicant.bio,
+    specialties: applicant.specialties,
+    sample_program_urls: applicant.sample_program_url
+      ? [applicant.sample_program_url]
+      : [],
+  };
+}
+
+// Map → trim → drop empties → dedupe while preserving first-seen order, so a
+// payload like ['', '  ', 'Strength', 'Strength'] persists as ['Strength']
+// (A-P1-1). An explicit null clears to [] (B-P0-2).
+function normalizeSpecialties(input: string[] | null | undefined): string[] {
+  if (input == null) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of input) {
+    const trimmed = raw.trim();
+    if (trimmed.length === 0 || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
 
 const NUDGES: Record<string, ProfileStrengthNudge> = {
   add_headline: { kind: 'add_headline', message: 'Add a headline to introduce yourself.' },
@@ -73,9 +116,10 @@ export class JobHunterService {
         id: row.id,
         listing_id: row.listing_id,
         status: row.status,
-        is_terminal: isApplicationStatus(row.status)
-          ? isTerminalStatus(row.status)
-          : false,
+        // row.status is the Prisma ApplicationStatus enum (byte-equal to our
+        // mirror, asserted in application-status.spec) — isTerminalStatus takes
+        // unknown, so no guard/cast is needed at the call site (A-P2-2).
+        is_terminal: isTerminalStatus(row.status),
         cover_note: row.cover_note,
         created_at: row.created_at.toISOString(),
       })),
@@ -84,47 +128,64 @@ export class JobHunterService {
   }
 
   async getPortfolio(userId: string): Promise<PortfolioShowcase> {
-    const applicant = await this.requireApplicant(userId);
-    return {
-      headline: applicant.headline,
-      about: applicant.bio,
-      specialties: applicant.specialties,
-      intro_video_url: null,
-      sample_program_urls: applicant.sample_program_url
-        ? [applicant.sample_program_url]
-        : [],
-    };
+    const applicant = await this.prisma.applicant.findUnique({
+      where: { user_id: userId },
+      select: PORTFOLIO_SELECT,
+    });
+    if (!applicant) this.rejectMissingApplicant();
+    return toPortfolioShape(applicant);
   }
 
   async updatePortfolio(
     userId: string,
     dto: UpdatePortfolioDto,
   ): Promise<PortfolioShowcase> {
-    await this.requireApplicant(userId);
     const data: Prisma.ApplicantUpdateInput = {};
     if (dto.headline !== undefined) data.headline = dto.headline;
     if (dto.about !== undefined) data.bio = dto.about;
-    if (dto.specialties !== undefined) data.specialties = dto.specialties;
-    if (dto.intro_video_url !== undefined) {
-      const check = checkOptionalUrl(dto.intro_video_url);
-      if (!check.ok) this.rejectUrl();
+    // Explicit null clears to [] (the column is non-null String[]); a present
+    // list is trimmed/deduped before persist (A-P1-1 + B-P0-2).
+    if (dto.specialties !== undefined) {
+      data.specialties = normalizeSpecialties(dto.specialties);
     }
     if (dto.sample_program_urls !== undefined) {
-      // P2-1: reject an over-cap list rather than truncating to the first entry.
-      if (dto.sample_program_urls.length > MAX_SAMPLE_PROGRAM_URLS) {
+      // null clears; [] also clears — PUT-replacement semantics: omission means
+      // "unchanged", an empty list means "clear the persisted URL" (B-P0-2, B-P2-1).
+      const urls = dto.sample_program_urls ?? [];
+      // The Applicant column persists ONE sample-program URL; an over-cap
+      // submission is rejected outright, never silently truncated.
+      if (urls.length > PORTFOLIO_MAX_SAMPLE_PROGRAMS) {
         throw new BadRequestException({
           error: 'Bad Request',
-          message: `At most ${MAX_SAMPLE_PROGRAM_URLS} sample program URL is supported`,
+          message: `At most ${PORTFOLIO_MAX_SAMPLE_PROGRAMS} sample program URL is supported`,
           code: 'too_many_sample_urls',
         });
       }
-      const check = checkSampleProgramUrls(dto.sample_program_urls);
+      const check = checkSampleProgramUrls(urls);
       if (!check.ok) this.rejectUrl();
+      // [] → value[0] is undefined → null: clears the persisted single URL.
       else data.sample_program_url = check.value[0] ?? null;
     }
 
-    await this.prisma.applicant.update({ where: { user_id: userId }, data });
-    return this.getPortfolio(userId);
+    // Single read-write: update + project in one round-trip, then map directly.
+    // A concurrent delete surfaces as Prisma P2025 → the same opaque 404 the
+    // upfront existence check used to throw (B-P1-3).
+    try {
+      const applicant = await this.prisma.applicant.update({
+        where: { user_id: userId },
+        data,
+        select: PORTFOLIO_SELECT,
+      });
+      return toPortfolioShape(applicant);
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        this.rejectMissingApplicant();
+      }
+      throw err;
+    }
   }
 
   async profileStrength(userId: string): Promise<ProfileStrengthDto> {
@@ -132,11 +193,16 @@ export class JobHunterService {
     const checks: Array<[boolean, ProfileStrengthNudge]> = [
       [!!a.headline, NUDGES.add_headline],
       [!!a.bio, NUDGES.add_bio],
-      [a.specialties.length > 0, NUDGES.add_specialties],
+      // Non-empty rule mirrors normalizeSpecialties so a stored [''] (legacy
+      // row) does not score positive or suppress the add_specialties nudge (A-P1-1).
+      [a.specialties.some((s) => s.trim().length > 0), NUDGES.add_specialties],
       [!!a.sample_program_url, NUDGES.add_sample],
     ];
     const filled = checks.filter(([done]) => done).length;
-    const score = Math.round((filled / checks.length) * 100);
+    // Math.floor so the score can never over-report completion: 100 only when
+    // every check passes. At today's denominator (4) the buckets are exact
+    // quarters, so this is behavior-neutral now and safe if checks are added (A-P2-1).
+    const score = Math.floor((filled / checks.length) * 100);
     const nudges = checks.filter(([done]) => !done).map(([, n]) => n);
     return { score, nudges };
   }
@@ -145,14 +211,16 @@ export class JobHunterService {
     const applicant = await this.prisma.applicant.findUnique({
       where: { user_id: userId },
     });
-    if (!applicant) {
-      throw new NotFoundException({
-        error: 'Not Found',
-        message: 'Applicant profile not found',
-        code: 'applicant_not_found',
-      });
-    }
+    if (!applicant) this.rejectMissingApplicant();
     return applicant;
+  }
+
+  private rejectMissingApplicant(): never {
+    throw new NotFoundException({
+      error: 'Not Found',
+      message: 'Applicant profile not found',
+      code: 'applicant_not_found',
+    });
   }
 
   private rejectUrl(): never {
