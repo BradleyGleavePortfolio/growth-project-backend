@@ -107,5 +107,20 @@ describe('SpecialtyAlertsController — owner-scoped /me/alerts surface', () => 
       await controller.setPreferences(reqFor('u2'), { specialties: ['Strength'] });
       expect(alerts.savePreferences).toHaveBeenCalledWith('u2', ['Strength']);
     });
+
+    // P3 / B-P3-1: { specialties: [] } forwards an explicit clear; the service
+    // canonicalizes [] → [] and persists.
+    it('setPreferences forwards an explicit [] to clear', async () => {
+      alerts.savePreferences.mockResolvedValue({ specialties: [] });
+      await controller.setPreferences(reqFor('u2'), { specialties: [] });
+      expect(alerts.savePreferences).toHaveBeenCalledWith('u2', []);
+    });
+
+    // An omitted specialties field forwards undefined → read-current (no write).
+    it('setPreferences forwards undefined for an omitted body (read-current)', async () => {
+      alerts.savePreferences.mockResolvedValue({ specialties: ['Mobility'] });
+      await controller.setPreferences(reqFor('u2'), {});
+      expect(alerts.savePreferences).toHaveBeenCalledWith('u2', undefined);
+    });
   });
 });

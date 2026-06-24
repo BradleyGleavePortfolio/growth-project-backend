@@ -1,5 +1,8 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, ValidationPipe } from '@nestjs/common';
+import type { ArgumentMetadata } from '@nestjs/common';
 import { SpecialtyAlertsService } from '../specialty-alerts.service';
+import { JobHunterService } from '../job-hunter.service';
+import { AlertPreferencesDto } from '../specialty-alerts.dto';
 import { PrismaService } from '../../prisma.service';
 
 // TM-9b — specialty alerts are owner-scoped and PII-free. Invariants:
@@ -248,5 +251,113 @@ describe('SpecialtyAlertsService.savePreferences — guard + persist', () => {
       NotFoundException,
     );
     expect(prisma.applicant.update).not.toHaveBeenCalled();
+  });
+});
+
+// P1-4 (read-path defense): blank members stored alongside real specialties must
+// be trimmed out of the `IN` list so a blank-specialty listing can never match.
+describe('SpecialtyAlertsService.listForApplicant — blank-specialty read defense', () => {
+  it('drops blank stored specialties from the IN filter', async () => {
+    const { prisma, service } = makeService();
+    prisma.applicant.findUnique.mockResolvedValue({
+      specialties: ['', '  ', 'Strength', '  Mobility  '],
+    });
+    prisma.jobListing.findMany.mockResolvedValue([]);
+
+    await service.listForApplicant('u1');
+
+    // Only the trimmed, non-blank specialties reach Prisma — never '' or '  '.
+    expect(prisma.jobListing.findMany.mock.calls[0][0].where.specialty).toEqual({
+      in: ['Strength', 'Mobility'],
+    });
+  });
+});
+
+// P1-5: cross-surface integrity. The Applicant.specialties column is the single
+// source of truth for both the alerts writer and the portfolio reader. Writing
+// dirty prefs via SpecialtyAlertsService.savePreferences must leave the column
+// canonical, so JobHunterService.getPortfolio sees the cleaned set — proving the
+// two surfaces share one normalization (the whole point of the shared helper).
+describe('cross-surface integrity — alerts write, portfolio read see the same canonical set', () => {
+  it('savePreferences cleans the column so getPortfolio returns the canonical set', async () => {
+    // One shared in-memory Applicant row, backing a Prisma double both services use.
+    const store: {
+      headline: string | null;
+      bio: string | null;
+      specialties: string[];
+      sample_program_url: string | null;
+    } = { headline: null, bio: null, specialties: [], sample_program_url: null };
+
+    const applicant = {
+      findUnique: jest.fn(async () => ({ ...store })),
+      update: jest.fn(async ({ data }: { data: { specialties?: string[] } }) => {
+        if (data.specialties !== undefined) store.specialties = data.specialties;
+        return { ...store };
+      }),
+    };
+    const delegates = {
+      applicant,
+      jobListing: { findMany: jest.fn() },
+      application: { findMany: jest.fn() },
+    };
+    const prisma = Object.assign(
+      Object.create(PrismaService.prototype) as PrismaService,
+      delegates,
+    );
+    const alerts = new SpecialtyAlertsService(prisma);
+    const jobHunter = new JobHunterService(prisma);
+
+    // Write a deliberately dirty array through the alerts surface.
+    const saved = await alerts.savePreferences('u1', ['', '  ', 'Strength', 'Strength']);
+    expect(saved).toEqual({ specialties: ['Strength'] });
+
+    // The portfolio reader sees the SAME canonical column — no blanks/dupes.
+    const portfolio = await jobHunter.getPortfolio('u1');
+    expect(portfolio.specialties).toEqual(['Strength']);
+  });
+});
+
+// P1-3 / P3 (DTO boundary): the production ValidationPipe is the public entry
+// point. Prove the 21+ specialty cap rejects with a 400 and that null/[]/omitted
+// pass validation (clear/read semantics) the way the service expects.
+describe('AlertPreferencesDto — production ValidationPipe boundary', () => {
+  const pipe = new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+  });
+  const meta: ArgumentMetadata = {
+    type: 'body',
+    metatype: AlertPreferencesDto,
+    data: '',
+  };
+
+  it('rejects 21+ specialties with a 400', async () => {
+    await expect(
+      pipe.transform({ specialties: Array(21).fill('x') }, meta),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects a non-array specialties value (e.g. number)', async () => {
+    await expect(pipe.transform({ specialties: 5 }, meta)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('accepts null (clear semantics)', async () => {
+    await expect(pipe.transform({ specialties: null }, meta)).resolves.toEqual({
+      specialties: null,
+    });
+  });
+
+  it('accepts an empty body (read-current semantics)', async () => {
+    await expect(pipe.transform({}, meta)).resolves.toEqual({});
+  });
+
+  it('accepts a valid 20-element list', async () => {
+    const list = Array.from({ length: 20 }, (_, i) => `s${i}`);
+    await expect(pipe.transform({ specialties: list }, meta)).resolves.toEqual({
+      specialties: list,
+    });
   });
 });
