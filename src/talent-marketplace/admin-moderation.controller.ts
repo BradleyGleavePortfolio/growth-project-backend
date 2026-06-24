@@ -28,8 +28,9 @@ import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { OwnerGuard } from '../common/guards/owner.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { ReviewDecisionDto, ReviewQueueQueryDto } from './admin-moderation.dto';
+import { ReviewDecisionDto, ReviewQueueQueryDto, type ListingStatus } from './admin-moderation.dto';
 import { AdminModerationService } from './admin-moderation.service';
+import { ParseListingStatusPipe } from './admin-moderation.pipes';
 
 @ApiTags('talent-marketplace')
 @Controller('talent-marketplace/admin')
@@ -38,9 +39,21 @@ import { AdminModerationService } from './admin-moderation.service';
 export class AdminModerationController {
   constructor(private readonly moderation: AdminModerationService) {}
 
+  // `status` is parsed by ParseListingStatusPipe so an unknown value returns a
+  // 400 carrying the stable `code: 'invalid_listing_status'` (B-P2-6) instead
+  // of class-validator's generic 400; cursor/limit still flow through the
+  // global ValidationPipe via the DTO. @IsIn(LISTING_STATUS) is kept on the DTO
+  // for OpenAPI + class-validator metadata.
   @Get('listings')
-  async listings(@Query() query: ReviewQueueQueryDto) {
-    return this.moderation.listListings(query);
+  async listings(
+    @Query() query: ReviewQueueQueryDto,
+    @Query('status', ParseListingStatusPipe) status?: ListingStatus,
+  ) {
+    // Re-pin the pipe-validated status onto the query the service consumes (the
+    // global ValidationPipe leaves the raw string on `query.status`; the pipe is
+    // the authoritative parse). Omit the key entirely when no filter was given
+    // so the service's `if (query.status)` short-circuits cleanly.
+    return this.moderation.listListings(status === undefined ? query : { ...query, status });
   }
 
   // Review is an idempotent state transition, not a resource creation: a first
