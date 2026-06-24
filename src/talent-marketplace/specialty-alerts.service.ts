@@ -8,6 +8,7 @@
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { normalizeSpecialties } from './specialties';
 import type { ListingAlertDto } from './specialty-alerts.dto';
 
 const ALERT_LISTING_LIMIT = 20;
@@ -23,11 +24,17 @@ export class SpecialtyAlertsService {
       where: { user_id: userId },
       select: { specialties: true },
     });
-    const specialties = applicant?.specialties ?? [];
-    if (specialties.length === 0) return [];
+    // Defense in depth: even though savePreferences normalizes on write, a
+    // legacy or out-of-band row could hold blanks. Trim + drop empties so a
+    // stored [''] never becomes an `IN ['']` term that matches a listing with a
+    // blank specialty (P1-4); short-circuit to no alerts when nothing is left.
+    const queryable = (applicant?.specialties ?? [])
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (queryable.length === 0) return [];
 
     const rows = await this.prisma.jobListing.findMany({
-      where: { status: 'published', specialty: { in: specialties } },
+      where: { status: 'published', specialty: { in: queryable } },
       orderBy: [{ published_at: 'desc' }, { id: 'desc' }],
       take: ALERT_LISTING_LIMIT,
       select: {
@@ -51,9 +58,15 @@ export class SpecialtyAlertsService {
   // Save alert preferences. With no dedicated preferences table, the applicant's
   // own specialties column IS the saved preference (single source of truth for
   // both profile + alert matching). Returns the persisted specialty set.
+  //
+  // POST replaces the saved specialties when a list is provided (use [] or null
+  // to clear; an omitted body returns the current set without writing). The
+  // write is a full replace, not a merge, and routes through the shared
+  // normalizeSpecialties so the column stays canonical across both writers
+  // (P0-1, P0-2, P1-3).
   async savePreferences(
     userId: string,
-    specialties: string[] | undefined,
+    specialties: string[] | null | undefined,
   ): Promise<{ specialties: string[] }> {
     // Applicant rows exist only post-Apply; a student who has never applied has
     // none. Guard first so a missing row is a clean 404 envelope rather than a
@@ -62,9 +75,11 @@ export class SpecialtyAlertsService {
     if (specialties === undefined) {
       return { specialties: applicant.specialties };
     }
+    // null/[]/dirty arrays all canonicalize here: null → [], blanks dropped,
+    // duplicates deduped — matching TM-9a's portfolio write (P0-1, P0-2).
     const updated = await this.prisma.applicant.update({
       where: { user_id: userId },
-      data: { specialties },
+      data: { specialties: normalizeSpecialties(specialties) },
       select: { specialties: true },
     });
     return { specialties: updated.specialties };

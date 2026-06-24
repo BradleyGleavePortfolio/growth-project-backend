@@ -39,6 +39,16 @@ describe('SpecialtyAlertsService.listForApplicant — matched + PII-free', () =>
     expect(prisma.jobListing.findMany).not.toHaveBeenCalled();
   });
 
+  // P1-4: a legacy/out-of-band row holding only blanks must short-circuit to no
+  // alerts — never an `IN ['']` term that matches a blank-specialty listing.
+  it('returns no alerts when stored specialties are all blank', async () => {
+    const { prisma, service } = makeService();
+    prisma.applicant.findUnique.mockResolvedValue({ specialties: ['', '  '] });
+    const alerts = await service.listForApplicant('u1');
+    expect(alerts).toEqual([]);
+    expect(prisma.jobListing.findMany).not.toHaveBeenCalled();
+  });
+
   it('returns no alerts when the applicant row is missing', async () => {
     const { prisma, service } = makeService();
     prisma.applicant.findUnique.mockResolvedValue(null);
@@ -104,6 +114,45 @@ describe('SpecialtyAlertsService.savePreferences — guard + persist', () => {
       data: { specialties: ['Strength'] },
     });
     expect(res).toEqual({ specialties: ['Strength'] });
+  });
+
+  // P0-1: the alerts writer must canonicalize exactly like TM-9a's portfolio
+  // write — trim, drop blanks, dedupe — so the shared column never dirties.
+  it('normalizes a dirty array on save (trim + drop blanks + dedupe)', async () => {
+    const { prisma, service } = makeService();
+    prisma.applicant.findUnique.mockResolvedValue({ specialties: [] });
+    prisma.applicant.update.mockResolvedValue({ specialties: ['Strength'] });
+
+    const res = await service.savePreferences('u1', ['', '  ', 'Strength', 'Strength']);
+
+    expect(prisma.applicant.update.mock.calls[0][0].data).toEqual({
+      specialties: ['Strength'],
+    });
+    expect(res).toEqual({ specialties: ['Strength'] });
+  });
+
+  // P0-2: an explicit null body clears to [] (matches TM-9a) instead of reaching
+  // Prisma as a non-null-column violation → 500.
+  it('clears to [] when specialties is null', async () => {
+    const { prisma, service } = makeService();
+    prisma.applicant.findUnique.mockResolvedValue({ specialties: ['Strength'] });
+    prisma.applicant.update.mockResolvedValue({ specialties: [] });
+
+    const res = await service.savePreferences('u1', null);
+
+    expect(prisma.applicant.update.mock.calls[0][0].data).toEqual({ specialties: [] });
+    expect(res).toEqual({ specialties: [] });
+  });
+
+  it('clears to [] when specialties is an empty array', async () => {
+    const { prisma, service } = makeService();
+    prisma.applicant.findUnique.mockResolvedValue({ specialties: ['Strength'] });
+    prisma.applicant.update.mockResolvedValue({ specialties: [] });
+
+    const res = await service.savePreferences('u1', []);
+
+    expect(prisma.applicant.update.mock.calls[0][0].data).toEqual({ specialties: [] });
+    expect(res).toEqual({ specialties: [] });
   });
 
   it('returns the current specialties without writing when none are supplied', async () => {
