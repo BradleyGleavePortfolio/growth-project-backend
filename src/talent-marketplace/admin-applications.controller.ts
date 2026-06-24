@@ -8,6 +8,8 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -24,8 +26,10 @@ import { withKey } from './admin-moderation.controller';
 import {
   ReviewDecisionDto,
   ReviewQueueQueryDto,
+  type ApplicationStatus,
 } from './admin-applications.dto';
 import { AdminApplicationsService } from './admin-applications.service';
+import { ParseApplicationStatusPipe } from './admin-applications.pipes';
 
 @ApiTags('talent-marketplace')
 @Controller('talent-marketplace/admin')
@@ -34,12 +38,29 @@ import { AdminApplicationsService } from './admin-applications.service';
 export class AdminApplicationsController {
   constructor(private readonly applications: AdminApplicationsService) {}
 
+  // `status` is parsed by ParseApplicationStatusPipe so an unknown value returns
+  // a 400 carrying the stable `code: 'invalid_application_status'` instead of
+  // class-validator's generic 400; cursor/limit still flow through the global
+  // ValidationPipe via the DTO. @IsIn(APPLICATION_STATUS) is kept on the DTO for
+  // OpenAPI + class-validator metadata.
   @Get('applications')
-  async list(@Query() query: ReviewQueueQueryDto) {
-    return this.applications.listApplications(query);
+  async list(
+    @Query() query: ReviewQueueQueryDto,
+    @Query('status', ParseApplicationStatusPipe) status?: ApplicationStatus,
+  ) {
+    // Re-pin the pipe-validated status onto the query the service consumes (the
+    // global ValidationPipe leaves the raw string on `query.status`; the pipe is
+    // the authoritative parse). Omit the key entirely when no filter was given
+    // so the service's `if (query.status)` short-circuits cleanly.
+    return this.applications.listApplications(
+      status === undefined ? query : { ...query, status },
+    );
   }
 
+  // Review is an idempotent state transition, not a resource creation: a first
+  // decision and a replay both return 200, never Nest's default 201 Created.
   @Post('applications/:id/review')
+  @HttpCode(HttpStatus.OK)
   async review(
     @Req() req: AuthedRequest,
     @Param('id', ParseUUIDPipe) id: string,
