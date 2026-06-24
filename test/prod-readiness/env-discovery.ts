@@ -366,6 +366,23 @@ function collectStringConsts(sf: ts.SourceFile): Map<string, string> {
       // uncounted (R5-F001). Nested patterns (BindingElement whose .name is itself a
       // BindingPattern) are walked recursively by ts.forEachChild below.
       bumpBinding(node.name.text);
+    } else if (
+      (ts.isFunctionDeclaration(node) ||
+        ts.isClassDeclaration(node) ||
+        ts.isEnumDeclaration(node) ||
+        ts.isModuleDeclaration(node)) &&
+      node.name &&
+      ts.isIdentifier(node.name)
+    ) {
+      // FunctionDeclaration/ClassDeclaration/EnumDeclaration/ModuleDeclaration each
+      // introduce a value binding via a direct Identifier .name. They CAN shadow a
+      // same-named file-scope string const inside their containing scope, so they
+      // must count toward bindingCounts (R5b-F001). Guard node.name && because
+      // FunctionDeclaration and ClassDeclaration names are optional
+      // (export default function(){}) and ModuleDeclaration .name can be a
+      // StringLiteral (declare module "x") — neither shape introduces a same-name
+      // value binding we'd be guarding against.
+      bumpBinding(node.name.text);
     }
     ts.forEachChild(node, countBindings);
   };

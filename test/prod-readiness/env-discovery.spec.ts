@@ -1112,6 +1112,80 @@ describe('extractEnvVarRefs — destructured-binding shadows (R5 F001)', () => {
     const code = ['const { x: K } = o;', 'const v = process.env[K];'].join('\n');
     expect([...extractEnvVarRefs(code)]).toEqual([]);
   });
+
+  it('does not count propertyName: a file-scope const named by propertyName still resolves cleanly', () => {
+    // Discriminating shape: if propertyName "x" were wrongly counted, then "x" would
+    // have bindingCounts === 2 (file-scope const + propertyName), become ambiguous, and
+    // drop from the resolvable map → process.env[x] would resolve to []. Correct
+    // behavior: propertyName is NOT counted, so "x" stays bound-once and resolves "FOO".
+    const code = ['const { x: K } = o;', "const x = 'FOO';", 'const v = process.env[x];'].join(
+      '\n',
+    );
+    expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
+  });
+});
+
+// R5b F001 (Lens A) — declaration-name shadows must count toward the
+// ambiguous-binding map. FunctionDeclaration / ClassDeclaration / EnumDeclaration
+// / ModuleDeclaration each introduce a value binding via a direct Identifier .name
+// that can shadow a same-named file-scope string const inside the containing scope.
+// Before the fix `countBindings` matched none of these binder kinds, so a nested
+// declaration named like a file-scope const left the const resolvable and
+// `process.env[K]` fabricated a phantom var. After the fix the const becomes
+// ambiguous (bound > 1) and is dropped (fail closed). Anonymous default exports and
+// string-literal module declarations introduce no same-name binding and must not
+// throw or pollute the count.
+describe('extractEnvVarRefs — declaration-name shadows (R5b F001)', () => {
+  it('drops a const shadowed by a nested function declaration', () => {
+    const code = ['function f(){ function K(){} return process.env[K]; }', "const K = 'FOO';"].join(
+      '\n',
+    );
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a const shadowed by a nested class declaration', () => {
+    const code = ['function f(){ class K {} return process.env[K]; }', "const K = 'FOO';"].join(
+      '\n',
+    );
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a const shadowed by a nested enum declaration', () => {
+    const code = ['function f(){ enum K {A} return process.env[K]; }', "const K = 'FOO';"].join(
+      '\n',
+    );
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('drops a const shadowed by a nested namespace declaration', () => {
+    const code = ['function f(){ namespace K {} return process.env[K]; }', "const K = 'FOO';"].join(
+      '\n',
+    );
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('handles an anonymous default function export (no throw, no pollution)', () => {
+    const code = [
+      'export default function(){}',
+      "const K = 'FOO';",
+      'const v = process.env[K];',
+    ].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
+  });
+
+  it('handles an anonymous default class export (no throw, no pollution)', () => {
+    const code = ['export default class {}', "const K = 'FOO';", 'const v = process.env[K];'].join(
+      '\n',
+    );
+    expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
+  });
+
+  it('handles a string-literal module declaration (no throw, no pollution)', () => {
+    const code = ['declare module "x" {}', "const K = 'FOO';", 'const v = process.env[K];'].join(
+      '\n',
+    );
+    expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
+  });
 });
 
 describe('discoverEnvVars — mixed-source repo end-to-end shape', () => {
