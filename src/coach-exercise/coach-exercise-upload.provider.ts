@@ -137,6 +137,13 @@ export class CoachExerciseUploadProvider {
   }
 
   /**
+   * FORWARD REFERENCE (B2 #428): The API-layer service MUST enforce, before
+   * calling this method: (a) positive integer `size_bytes` within image/video
+   * max-byte caps, (b) MIME allow-list
+   * `image/jpeg|image/png|image/webp|video/mp4|video/quicktime`. This provider
+   * is a storage seam and intentionally trusts a validated payload, mirroring
+   * the landed `community/voice/voice-upload.provider.ts` pattern.
+   *
    * Issue a Supabase Storage signed-upload URL for coach-exercise media. The
    * caller validates size + content_type up-front so a signed URL is never
    * issued for a payload that would be rejected later. Returns both a signed

@@ -1,10 +1,9 @@
 -- FEATURE_CUSTOM_EXERCISE — coach-owned custom exercise library.
 --
 -- Additive only. Creates ONE new table (coach_exercises). No existing table is
--- altered and no FK on an existing table changes (no FK churn). Timestamp
--- 20261220000001 is strictly AFTER the latest landed migration
--- (20261220000000_talent_marketplace_rls) so the ordered apply never reorders
--- behind a shipped migration (migrations are append-only).
+-- altered and no FK on an existing table changes (no FK churn). Lands after
+-- `20261220000031_application_applicant_listing_unique` (current migration tail
+-- at time of authoring). Append-only — see R76 §6.
 --
 -- WHAT THIS IS: a coach (e.g. a yoga instructor) authors a brand-new move NOT
 -- in the fixed catalog — free-text name, written instructions, and an optional
