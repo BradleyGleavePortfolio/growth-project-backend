@@ -52,10 +52,6 @@ function wired(id: string, env: EnvMap): ProviderReport {
   return classifyProvider(def(id), true, env);
 }
 
-function dormant(id: string, env: EnvMap): ProviderReport {
-  return classifyProvider(def(id), false, env);
-}
-
 describe('Twilio provider', () => {
   const live: EnvMap = {
     TWILIO_ACCOUNT_SID: 'AC9f3kPq2rstuVWXyz0123456789abcd',
@@ -78,7 +74,10 @@ describe('Twilio provider', () => {
   });
 
   it('missing: phone number absent → STUB, missing populated', () => {
-    const r = wired('twilio', { TWILIO_ACCOUNT_SID: live.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: live.TWILIO_AUTH_TOKEN });
+    const r = wired('twilio', {
+      TWILIO_ACCOUNT_SID: live.TWILIO_ACCOUNT_SID,
+      TWILIO_AUTH_TOKEN: live.TWILIO_AUTH_TOKEN,
+    });
     expect(r.status).toBe('STUB');
     expect(r.env_vars_missing).toContain('TWILIO_PHONE_NUMBER');
   });
@@ -92,24 +91,30 @@ describe('AWS S3 provider (either/or credential groups)', () => {
       AWS_SECRET_ACCESS_KEY: 'secret9f3kPq2rstuVWXabcdEFGH',
     });
     expect(r.status).toBe('WIRED');
-    expect(r.env_vars_present).toEqual(expect.arrayContaining(['AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']));
+    expect(r.env_vars_present).toEqual(
+      expect.arrayContaining(['AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']),
+    );
     expect(r.env_vars_missing).toEqual([]);
   });
 
-  it('live via IAM role: region + web-identity token file, no static keys → WIRED', () => {
+  it('live via IAM role: region + role ARN + web-identity token file, no static keys → WIRED', () => {
     const r = wired('aws-s3', {
       AWS_REGION: 'us-east-1',
+      AWS_ROLE_ARN: 'arn:aws:iam::123456789012:role/eks-s3-access',
       AWS_WEB_IDENTITY_TOKEN_FILE: '/var/run/secrets/eks.amazonaws.com/serviceaccount/token',
     });
     expect(r.status).toBe('WIRED');
-    expect(r.env_vars_present).toEqual(expect.arrayContaining(['AWS_REGION', 'AWS_WEB_IDENTITY_TOKEN_FILE']));
+    expect(r.env_vars_present).toEqual(
+      expect.arrayContaining(['AWS_REGION', 'AWS_ROLE_ARN', 'AWS_WEB_IDENTITY_TOKEN_FILE']),
+    );
   });
 
   it('missing creds: region present but NO credential group satisfied → STUB', () => {
     const r = wired('aws-s3', { AWS_REGION: 'us-east-1' });
     expect(r.status).toBe('STUB');
-    // The actionable (fewest-gaps) group surfaced is the single-var IAM group.
-    expect(r.env_vars_missing).toContain('AWS_WEB_IDENTITY_TOKEN_FILE');
+    // All three credential groups are equally empty; the reducer surfaces the
+    // first (static-key) group as the actionable one.
+    expect(r.env_vars_missing).toContain('AWS_ACCESS_KEY_ID');
   });
 
   it('missing region: always-required AWS_REGION absent → STUB even with static keys', () => {
@@ -122,7 +127,10 @@ describe('AWS S3 provider (either/or credential groups)', () => {
   });
 
   it('partial static group: only access key id (no secret) → STUB, surfaces best group', () => {
-    const r = wired('aws-s3', { AWS_REGION: 'us-east-1', AWS_ACCESS_KEY_ID: 'AKIA9F3KPQ2RSTUVWXYZ' });
+    const r = wired('aws-s3', {
+      AWS_REGION: 'us-east-1',
+      AWS_ACCESS_KEY_ID: 'AKIA9F3KPQ2RSTUVWXYZ',
+    });
     expect(r.status).toBe('STUB');
     // Best (fewest-gaps) group here is the static-key group missing the secret.
     expect(r.env_vars_missing).toContain('AWS_SECRET_ACCESS_KEY');
@@ -132,6 +140,7 @@ describe('AWS S3 provider (either/or credential groups)', () => {
 describe('AWS web-identity token-file existence (evidence map, pure core)', () => {
   const iamEnv: EnvMap = {
     AWS_REGION: 'us-east-1',
+    AWS_ROLE_ARN: 'arn:aws:iam::123456789012:role/eks-s3-access',
     AWS_WEB_IDENTITY_TOKEN_FILE: '/var/run/secrets/eks/token',
   };
   const evKey = 'AWS_WEB_IDENTITY_TOKEN_FILE_EXISTS';
@@ -177,6 +186,7 @@ describe('scanProvidersWith threads the evidence map to the core', () => {
     const imported = new Set(['@aws-sdk/client-s3']);
     const env: EnvMap = {
       AWS_REGION: 'us-east-1',
+      AWS_ROLE_ARN: 'arn:aws:iam::123456789012:role/eks-s3-access',
       AWS_WEB_IDENTITY_TOKEN_FILE: '/var/run/secrets/token',
     };
     const evidence: EvidenceMap = { AWS_WEB_IDENTITY_TOKEN_FILE_EXISTS: false };
@@ -189,6 +199,7 @@ describe('scanProvidersWith threads the evidence map to the core', () => {
     const imported = new Set(['@aws-sdk/client-s3']);
     const env: EnvMap = {
       AWS_REGION: 'us-east-1',
+      AWS_ROLE_ARN: 'arn:aws:iam::123456789012:role/eks-s3-access',
       AWS_WEB_IDENTITY_TOKEN_FILE: '/var/run/secrets/token',
     };
     const evidence: EvidenceMap = { AWS_WEB_IDENTITY_TOKEN_FILE_EXISTS: true };
@@ -200,6 +211,7 @@ describe('scanProvidersWith threads the evidence map to the core', () => {
     const imported = new Set(['@aws-sdk/client-s3']);
     const env: EnvMap = {
       AWS_REGION: 'us-east-1',
+      AWS_ROLE_ARN: 'arn:aws:iam::123456789012:role/eks-s3-access',
       AWS_WEB_IDENTITY_TOKEN_FILE: '/var/run/secrets/token',
     };
     const reports = scanProvidersWith(imported, new Set(), env, [def('aws-s3')], {
@@ -243,7 +255,9 @@ describe('extractModuleSpecifiers (AST-based import discovery)', () => {
   });
 
   it('captures a dynamic import() call', () => {
-    const specs = extractModuleSpecifiers("async function f() { return await import('@aws-sdk/client-s3'); }");
+    const specs = extractModuleSpecifiers(
+      "async function f() { return await import('@aws-sdk/client-s3'); }",
+    );
     expect(specs).toContain('@aws-sdk/client-s3');
   });
 
@@ -340,9 +354,13 @@ describe('AWS diagnostic is omitted when the provider is genuinely wired', () =>
 
 describe('Fly.io provider (file-path hint detection)', () => {
   it('live: token present and detected via path hint → WIRED', () => {
-    const r = classifyProvider(def('fly'), isSdkImported(def('fly'), new Set(), new Set(['fly.toml'])), {
-      FLY_API_TOKEN: 'fo1_9f3kPq2rstuVWXabcdEFGH',
-    });
+    const r = classifyProvider(
+      def('fly'),
+      isSdkImported(def('fly'), new Set(), new Set(['fly.toml'])),
+      {
+        FLY_API_TOKEN: 'fo1_9f3kPq2rstuVWXabcdEFGH',
+      },
+    );
     expect(r.status).toBe('WIRED');
     expect(r.env_vars_present).toContain('FLY_API_TOKEN');
   });
@@ -371,7 +389,10 @@ describe('Sentry provider', () => {
   });
 
   it('placeholder: dsn is a fake sentinel → STUB', () => {
-    const r = wired('sentry', { SENTRY_DSN: 'fake-dsn', SENTRY_AUTH_TOKEN: 'sntrys_9f3kPq2rstuVWX' });
+    const r = wired('sentry', {
+      SENTRY_DSN: 'fake-dsn',
+      SENTRY_AUTH_TOKEN: 'sntrys_9f3kPq2rstuVWX',
+    });
     expect(r.status).toBe('STUB');
     expect(r.env_vars_placeholder).toContain('SENTRY_DSN');
   });
@@ -387,19 +408,26 @@ describe('Supabase provider', () => {
   it('live: url + service role key present → WIRED', () => {
     const r = wired('supabase', {
       SUPABASE_URL: 'https://abcdefgh.supabase.co',
-      SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.9f3kPq2rstuVWXabcdEFGH',
+      SUPABASE_SERVICE_ROLE_KEY:
+        'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.9f3kPq2rstuVWXabcdEFGH',
     });
     expect(r.status).toBe('WIRED');
   });
 
   it('placeholder: service role key is TODO → STUB', () => {
-    const r = wired('supabase', { SUPABASE_URL: 'https://abcdefgh.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'TODO' });
+    const r = wired('supabase', {
+      SUPABASE_URL: 'https://abcdefgh.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'TODO',
+    });
     expect(r.status).toBe('STUB');
     expect(r.env_vars_placeholder).toContain('SUPABASE_SERVICE_ROLE_KEY');
   });
 
   it('missing: url absent → STUB', () => {
-    const r = wired('supabase', { SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.9f3kPq2rstuVWXabcdEFGH' });
+    const r = wired('supabase', {
+      SUPABASE_SERVICE_ROLE_KEY:
+        'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.9f3kPq2rstuVWXabcdEFGH',
+    });
     expect(r.status).toBe('STUB');
     expect(r.env_vars_missing).toContain('SUPABASE_URL');
   });
@@ -449,7 +477,10 @@ describe('Cloudflare provider', () => {
   });
 
   it('placeholder: api token is yourkey → STUB', () => {
-    const r = wired('cloudflare', { CLOUDFLARE_ACCOUNT_ID: '9f3kpq2rstuvwxabcdef0123456789ab', CLOUDFLARE_API_TOKEN: 'yourkey' });
+    const r = wired('cloudflare', {
+      CLOUDFLARE_ACCOUNT_ID: '9f3kpq2rstuvwxabcdef0123456789ab',
+      CLOUDFLARE_API_TOKEN: 'yourkey',
+    });
     expect(r.status).toBe('STUB');
     expect(r.env_vars_placeholder).toContain('CLOUDFLARE_API_TOKEN');
   });
@@ -473,10 +504,15 @@ describe('filterProviders (--provider filter)', () => {
   });
 
   it('scanning a filtered single-provider set yields a single report', () => {
-    const reports = scanProvidersWith(new Set(['stripe']), new Set(), {
-      STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEFghijklmnop0123456789',
-      STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWXabcdEFGH1234',
-    }, filterProviders(PROVIDERS, 'stripe'));
+    const reports = scanProvidersWith(
+      new Set(['stripe']),
+      new Set(),
+      {
+        STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEFghijklmnop0123456789',
+        STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWXabcdEFGH1234',
+      },
+      filterProviders(PROVIDERS, 'stripe'),
+    );
     expect(reports).toHaveLength(1);
     expect(reports[0].status).toBe('WIRED');
   });
@@ -490,7 +526,11 @@ describe('getProductionBlockers summary', () => {
       STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWXabcdEFGH1234', // stripe WIRED
       // OPENAI_API_KEY missing → openai STUB
     };
-    const reports = scanProvidersWith(imported, new Set(), env, [def('stripe'), def('openai'), def('supabase')]);
+    const reports = scanProvidersWith(imported, new Set(), env, [
+      def('stripe'),
+      def('openai'),
+      def('supabase'),
+    ]);
     const blockers = getProductionBlockers(reports);
     expect(blockers.map((b) => b.id)).toEqual(['openai']);
   });
@@ -522,14 +562,20 @@ describe('negative: empty env across the full seed list', () => {
 
 describe('full seed-list scan via scanProvidersWith (default providers arg)', () => {
   it('classifies all ten providers when every SDK is imported and fully wired', () => {
-    const imported = new Set(
-      PROVIDERS.flatMap((p) => p.packages),
-    );
+    const imported = new Set(PROVIDERS.flatMap((p) => p.packages));
     // Path hints for the package-less / hint-detected providers.
-    const paths = new Set(['src/billing', 'src/email', 'src/sms', 'src/cdn', 'src/video', 'fly.toml']);
+    const paths = new Set([
+      'src/billing',
+      'src/email',
+      'src/sms',
+      'src/cdn',
+      'src/video',
+      'fly.toml',
+    ]);
     const env: EnvMap = {
       SUPABASE_URL: 'https://abcdefgh.supabase.co',
-      SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.9f3kPq2rstuVWXabcdEFGH',
+      SUPABASE_SERVICE_ROLE_KEY:
+        'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.9f3kPq2rstuVWXabcdEFGH',
       STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEFghijklmnop0123456789',
       STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWXabcdEFGH1234',
       OPENAI_API_KEY: 'sk-proj-9f3kPq2rstuVWXabcdEFGH',
@@ -542,6 +588,7 @@ describe('full seed-list scan via scanProvidersWith (default providers arg)', ()
       MUX_TOKEN_ID: '0a1b2c3d-token-id',
       MUX_TOKEN_SECRET: 'mux-secret-9f3kPq2rstuVWX',
       AWS_REGION: 'us-east-1',
+      AWS_ROLE_ARN: 'arn:aws:iam::123456789012:role/eks-s3-access',
       AWS_WEB_IDENTITY_TOKEN_FILE: '/var/run/secrets/token',
       FLY_API_TOKEN: 'fo1_9f3kPq2rstuVWXabcdEFGH',
       SENTRY_DSN: 'https://abc123@o123.ingest.sentry.io/456',
@@ -556,7 +603,18 @@ describe('full seed-list scan via scanProvidersWith (default providers arg)', ()
 
   it('the seed list contains exactly the ten briefed providers', () => {
     expect(PROVIDERS.map((p) => p.id).sort()).toEqual(
-      ['aws-s3', 'cloudflare', 'fly', 'mux', 'openai', 'sendgrid', 'sentry', 'stripe', 'supabase', 'twilio'].sort(),
+      [
+        'aws-s3',
+        'cloudflare',
+        'fly',
+        'mux',
+        'openai',
+        'sendgrid',
+        'sentry',
+        'stripe',
+        'supabase',
+        'twilio',
+      ].sort(),
     );
   });
 
@@ -591,7 +649,11 @@ describe('I/O edges against a temp repo (collectImports / collectPathPresence / 
       'utf8',
     );
     // A declaration file that must be ignored by the import collector.
-    await writeFile(join(srcBilling, 'types.d.ts'), "import type { Foo } from 'should-be-ignored';\n", 'utf8');
+    await writeFile(
+      join(srcBilling, 'types.d.ts'),
+      "import type { Foo } from 'should-be-ignored';\n",
+      'utf8',
+    );
   });
 
   afterAll(async () => {
@@ -645,6 +707,7 @@ describe('I/O edges against a temp repo (collectImports / collectPathPresence / 
     const env: EnvMap = {
       OPENAI_API_KEY: 'sk-proj-9f3kPq2rstuVWXabcdEFGH',
       AWS_REGION: 'us-east-1',
+      AWS_ROLE_ARN: 'arn:aws:iam::123456789012:role/eks-s3-access',
       AWS_WEB_IDENTITY_TOKEN_FILE: tokenPath,
       // stripe detected via src/billing path hint but no keys → STUB
     };
@@ -663,6 +726,7 @@ describe('I/O edges against a temp repo (collectImports / collectPathPresence / 
     const env: EnvMap = {
       OPENAI_API_KEY: 'sk-proj-9f3kPq2rstuVWXabcdEFGH',
       AWS_REGION: 'us-east-1',
+      AWS_ROLE_ARN: 'arn:aws:iam::123456789012:role/eks-s3-access',
       AWS_WEB_IDENTITY_TOKEN_FILE: join(root, 'definitely', 'not', 'here'),
     };
     const reports = scanProvidersFromProcess(root, env);
@@ -682,8 +746,7 @@ describe('I/O edges against a temp repo (collectImports / collectPathPresence / 
 describe('F001 — Supabase service-role JWT segment validation (offline)', () => {
   // A full, valid HS256 service-role token (header {"alg":"HS256"},
   // payload {"role":"service_role"}). This is the exact shape the live tests use.
-  const validToken =
-    'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.9f3kPq2rstuVWXabcdEFGH';
+  const validToken = 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.9f3kPq2rstuVWXabcdEFGH';
 
   function enc(obj: unknown): string {
     return Buffer.from(JSON.stringify(obj), 'utf8').toString('base64url');
@@ -940,6 +1003,7 @@ describe('F002 — collectFileEvidence requires a regular readable file (not a d
     await mkdir(asDir, { recursive: true });
     const env: EnvMap = {
       AWS_REGION: 'us-east-1',
+      AWS_ROLE_ARN: 'arn:aws:iam::123456789012:role/eks-s3-access',
       AWS_WEB_IDENTITY_TOKEN_FILE: asDir,
     };
     const evidence = collectFileEvidence(env);
@@ -1072,6 +1136,7 @@ describe('F002 (R3) — symlink-to-regular-file is accepted; bad symlink targets
     await symlink(target, linkPath);
     const env: EnvMap = {
       AWS_REGION: 'us-east-1',
+      AWS_ROLE_ARN: 'arn:aws:iam::123456789012:role/eks-s3-access',
       AWS_WEB_IDENTITY_TOKEN_FILE: linkPath,
     };
     const evidence = collectFileEvidence(env);
@@ -1113,9 +1178,17 @@ describe('F003 — collectImports / extractModuleSpecifiers scan .tsx (and skip 
         'utf8',
       );
       // An .mts module importing the OpenAI SDK.
-      await writeFile(join(root, 'src', 'mod.mts'), "import OpenAI from 'openai';\nexport const o = OpenAI;\n", 'utf8');
+      await writeFile(
+        join(root, 'src', 'mod.mts'),
+        "import OpenAI from 'openai';\nexport const o = OpenAI;\n",
+        'utf8',
+      );
       // A .d.ts declaration that must STILL be ignored.
-      await writeFile(join(root, 'src', 'shapes.d.ts'), "import type { Z } from 'should-be-ignored-tsx';\n", 'utf8');
+      await writeFile(
+        join(root, 'src', 'shapes.d.ts'),
+        "import type { Z } from 'should-be-ignored-tsx';\n",
+        'utf8',
+      );
     });
 
     afterAll(async () => {
@@ -1157,11 +1230,11 @@ describe('F003 (R3) — type-only imports/exports are not counted as runtime usa
   // the TS compiler — they emit no runtime require/import. The R2 scanner
   // counted them as provider usage, producing false-positive "used" providers.
   // R3 skips them while still counting any mixed runtime binding.
-  it('import type { X } from \'stripe\' → not counted', () => {
+  it("import type { X } from 'stripe' → not counted", () => {
     expect(extractModuleSpecifiers("import type { Stripe } from 'stripe';")).toEqual([]);
   });
 
-  it('export type { X } from \'stripe\' → not counted', () => {
+  it("export type { X } from 'stripe' → not counted", () => {
     expect(extractModuleSpecifiers("export type { Stripe } from 'stripe';")).toEqual([]);
   });
 
@@ -1189,7 +1262,7 @@ describe('F003 (R3) — type-only imports/exports are not counted as runtime usa
     expect(extractModuleSpecifiers("import { Stripe } from 'stripe';")).toContain('stripe');
   });
 
-  it('side-effect import \'stripe\' → counted (still runtime per R2)', () => {
+  it("side-effect import 'stripe' → counted (still runtime per R2)", () => {
     expect(extractModuleSpecifiers("import 'stripe';")).toContain('stripe');
   });
 
@@ -1203,7 +1276,7 @@ describe('F003 (R3) — type-only imports/exports are not counted as runtime usa
     expect(extractModuleSpecifiers("import * as S from 'stripe';")).toContain('stripe');
   });
 
-  it('export * from \'stripe\' (runtime star re-export) → counted', () => {
+  it("export * from 'stripe' (runtime star re-export) → counted", () => {
     expect(extractModuleSpecifiers("export * from 'stripe';")).toContain('stripe');
   });
 
@@ -1235,5 +1308,238 @@ describe('F003 (R3) — type-only imports/exports are not counted as runtime usa
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H4.D R5 regression coverage
+//   - R5-F001 (Lens B): IRSA path requires BOTH AWS_ROLE_ARN AND
+//     AWS_WEB_IDENTITY_TOKEN_FILE; new EKS Pod Identity branch requires BOTH
+//     AWS_CONTAINER_CREDENTIALS_FULL_URI AND AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE.
+//   - R5-F001 (Lens A): isPlausibleSupabaseServiceRoleJwt is fail-closed on
+//     non-string / empty input.
+//   - R5-F002 (Lens A): fileEvidenceOk gates *_FILE vars placed in `requires`,
+//     not just those in requiresAnyOf groups.
+// ---------------------------------------------------------------------------
+
+describe('R5-F001 (Lens B) — AWS IRSA path requires BOTH role ARN and token file', () => {
+  const ROLE_ARN = 'arn:aws:iam::123456789012:role/eks-s3-access';
+  const TOKEN_FILE = '/var/run/secrets/eks.amazonaws.com/serviceaccount/token';
+  const FILE_EV = 'AWS_WEB_IDENTITY_TOKEN_FILE_EXISTS' as const;
+
+  it('1. region + role ARN + token file (file exists) → WIRED', () => {
+    const r = classifyProvider(
+      def('aws-s3'),
+      true,
+      { AWS_REGION: 'us-east-1', AWS_ROLE_ARN: ROLE_ARN, AWS_WEB_IDENTITY_TOKEN_FILE: TOKEN_FILE },
+      { [FILE_EV]: true },
+    );
+    expect(r.status).toBe('WIRED');
+    expect(r.env_vars_present).toEqual(
+      expect.arrayContaining(['AWS_REGION', 'AWS_ROLE_ARN', 'AWS_WEB_IDENTITY_TOKEN_FILE']),
+    );
+  });
+
+  it('2. token file only, no role ARN → STUB naming the missing AWS_ROLE_ARN', () => {
+    const r = wired('aws-s3', { AWS_REGION: 'us-east-1', AWS_WEB_IDENTITY_TOKEN_FILE: TOKEN_FILE });
+    expect(r.status).toBe('STUB');
+    expect(r.env_vars_missing).toContain('AWS_ROLE_ARN');
+  });
+
+  it('3. role ARN only, no token file → STUB naming the missing token file', () => {
+    const r = wired('aws-s3', { AWS_REGION: 'us-east-1', AWS_ROLE_ARN: ROLE_ARN });
+    expect(r.status).toBe('STUB');
+    expect(r.env_vars_missing).toContain('AWS_WEB_IDENTITY_TOKEN_FILE');
+  });
+
+  it('4. role ARN + token file but file does not exist → STUB with non-existent-path diagnostic', () => {
+    const r = classifyProvider(
+      def('aws-s3'),
+      true,
+      { AWS_REGION: 'us-east-1', AWS_ROLE_ARN: ROLE_ARN, AWS_WEB_IDENTITY_TOKEN_FILE: TOKEN_FILE },
+      { [FILE_EV]: false },
+    );
+    expect(r.status).toBe('STUB');
+    expect(r.diagnostic).toBe('AWS_WEB_IDENTITY_TOKEN_FILE points to non-existent path');
+  });
+});
+
+describe('R5-F001 (Lens B) — AWS EKS Pod Identity branch requires BOTH URI and token file', () => {
+  const FULL_URI = 'http://169.254.170.23/v1/credentials';
+  const AUTH_FILE = '/var/run/secrets/pods.eks.amazonaws.com/serviceaccount/eks-pod-identity-token';
+  const FILE_EV = 'AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE_EXISTS' as const;
+
+  it('5. region + full URI + auth token file (file exists) → WIRED', () => {
+    const r = classifyProvider(
+      def('aws-s3'),
+      true,
+      {
+        AWS_REGION: 'us-east-1',
+        AWS_CONTAINER_CREDENTIALS_FULL_URI: FULL_URI,
+        AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE: AUTH_FILE,
+      },
+      { [FILE_EV]: true },
+    );
+    expect(r.status).toBe('WIRED');
+    expect(r.env_vars_present).toEqual(
+      expect.arrayContaining([
+        'AWS_REGION',
+        'AWS_CONTAINER_CREDENTIALS_FULL_URI',
+        'AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE',
+      ]),
+    );
+  });
+
+  it('6. full URI only, no auth token file → STUB naming the missing token file', () => {
+    const r = wired('aws-s3', {
+      AWS_REGION: 'us-east-1',
+      AWS_CONTAINER_CREDENTIALS_FULL_URI: FULL_URI,
+    });
+    expect(r.status).toBe('STUB');
+    expect(r.env_vars_missing).toContain('AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE');
+  });
+
+  it('7. auth token file only, no full URI → STUB naming the missing URI', () => {
+    const r = wired('aws-s3', {
+      AWS_REGION: 'us-east-1',
+      AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE: AUTH_FILE,
+    });
+    expect(r.status).toBe('STUB');
+    expect(r.env_vars_missing).toContain('AWS_CONTAINER_CREDENTIALS_FULL_URI');
+  });
+
+  it('8. both Pod Identity vars but auth token file does not exist → STUB with diagnostic', () => {
+    const r = classifyProvider(
+      def('aws-s3'),
+      true,
+      {
+        AWS_REGION: 'us-east-1',
+        AWS_CONTAINER_CREDENTIALS_FULL_URI: FULL_URI,
+        AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE: AUTH_FILE,
+      },
+      { [FILE_EV]: false },
+    );
+    expect(r.status).toBe('STUB');
+    expect(r.diagnostic).toBe('AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE points to non-existent path');
+  });
+});
+
+describe('R5-F001 (Lens B) — AWS credential modes: mixed and region-gated cases', () => {
+  const ROLE_ARN = 'arn:aws:iam::123456789012:role/eks-s3-access';
+  const TOKEN_FILE = '/var/run/secrets/eks.amazonaws.com/serviceaccount/token';
+  const FULL_URI = 'http://169.254.170.23/v1/credentials';
+  const AUTH_FILE = '/var/run/secrets/pods.eks.amazonaws.com/serviceaccount/eks-pod-identity-token';
+
+  it('9. static keys + complete IRSA pair → WIRED (any one alternative satisfies)', () => {
+    const r = wired('aws-s3', {
+      AWS_REGION: 'us-east-1',
+      AWS_ACCESS_KEY_ID: 'AKIA9F3KPQ2RSTUVWXYZ',
+      AWS_SECRET_ACCESS_KEY: 'secret9f3kPq2rstuVWXabcdEFGH',
+      AWS_ROLE_ARN: ROLE_ARN,
+      AWS_WEB_IDENTITY_TOKEN_FILE: TOKEN_FILE,
+    });
+    expect(r.status).toBe('WIRED');
+  });
+
+  it('10. static keys + complete Pod Identity pair → WIRED', () => {
+    const r = wired('aws-s3', {
+      AWS_REGION: 'us-east-1',
+      AWS_ACCESS_KEY_ID: 'AKIA9F3KPQ2RSTUVWXYZ',
+      AWS_SECRET_ACCESS_KEY: 'secret9f3kPq2rstuVWXabcdEFGH',
+      AWS_CONTAINER_CREDENTIALS_FULL_URI: FULL_URI,
+      AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE: AUTH_FILE,
+    });
+    expect(r.status).toBe('WIRED');
+  });
+
+  it('11. partial static keys + complete IRSA pair → WIRED (IRSA branch satisfies)', () => {
+    const r = wired('aws-s3', {
+      AWS_REGION: 'us-east-1',
+      AWS_ACCESS_KEY_ID: 'AKIA9F3KPQ2RSTUVWXYZ', // no secret → static group incomplete
+      AWS_ROLE_ARN: ROLE_ARN,
+      AWS_WEB_IDENTITY_TOKEN_FILE: TOKEN_FILE,
+    });
+    expect(r.status).toBe('WIRED');
+  });
+
+  it('12. AWS_REGION missing + complete IRSA pair → STUB (always-bucket fails)', () => {
+    const r = wired('aws-s3', {
+      AWS_ROLE_ARN: ROLE_ARN,
+      AWS_WEB_IDENTITY_TOKEN_FILE: TOKEN_FILE,
+    });
+    expect(r.status).toBe('STUB');
+    expect(r.env_vars_missing).toContain('AWS_REGION');
+  });
+
+  it('13. AWS_REGION missing + complete Pod Identity pair → STUB (always-bucket fails)', () => {
+    const r = wired('aws-s3', {
+      AWS_CONTAINER_CREDENTIALS_FULL_URI: FULL_URI,
+      AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE: AUTH_FILE,
+    });
+    expect(r.status).toBe('STUB');
+    expect(r.env_vars_missing).toContain('AWS_REGION');
+  });
+});
+
+describe('R5-F001 (Lens A) — isPlausibleSupabaseServiceRoleJwt is fail-closed on non-string input', () => {
+  const validToken = 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.9f3kPq2rstuVWXabcdEFGH';
+
+  it('14. null → false (no throw)', () => {
+    expect(isPlausibleSupabaseServiceRoleJwt(null)).toBe(false);
+  });
+
+  it('15. undefined → false (no throw)', () => {
+    expect(isPlausibleSupabaseServiceRoleJwt(undefined)).toBe(false);
+  });
+
+  it('16. number → false (no throw)', () => {
+    expect(isPlausibleSupabaseServiceRoleJwt(12345)).toBe(false);
+  });
+
+  it('17. object → false (no throw)', () => {
+    expect(isPlausibleSupabaseServiceRoleJwt({})).toBe(false);
+  });
+
+  it('18. empty string → false', () => {
+    expect(isPlausibleSupabaseServiceRoleJwt('')).toBe(false);
+  });
+
+  it('19. valid service-role JWT string → true (happy-path smoke)', () => {
+    expect(isPlausibleSupabaseServiceRoleJwt(validToken)).toBe(true);
+  });
+});
+
+describe('R5-F002 (Lens A) — fileEvidenceOk gates *_FILE vars placed in `requires`', () => {
+  // The seeded PROVIDERS list has no provider with a *_FILE var in `requires`
+  // (the only *_FILE vars live in requiresAnyOf groups), so the gap is latent.
+  // We declare a synthetic test-only provider (NOT added to PROVIDERS) with a
+  // *_FILE var in `requires` and drive classifyProvider directly to prove the
+  // always-bucket now consults the same on-disk evidence gate.
+  const synthetic: ProviderDef = {
+    id: 'synthetic-file',
+    label: 'Synthetic (requires-bucket *_FILE)',
+    packages: ['synthetic-file-sdk'],
+    requires: ['X_TOKEN_FILE'],
+    requiresAnyOf: [],
+  };
+
+  it('20. *_FILE var in requires + evidence FILE_EXISTS=false → STUB (gate now fires)', () => {
+    const r = classifyProvider(
+      synthetic,
+      true,
+      { X_TOKEN_FILE: '/missing' },
+      { X_TOKEN_FILE_EXISTS: false },
+    );
+    expect(r.status).toBe('STUB');
+  });
+
+  it('21. same provider + evidence FILE_EXISTS=true → WIRED', () => {
+    const r = classifyProvider(
+      synthetic,
+      true,
+      { X_TOKEN_FILE: '/present' },
+      { X_TOKEN_FILE_EXISTS: true },
+    );
+    expect(r.status).toBe('WIRED');
   });
 });

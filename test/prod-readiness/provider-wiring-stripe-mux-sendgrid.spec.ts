@@ -70,8 +70,17 @@ describe('looksLikePlaceholder (pure predicate)', () => {
 describe('looksLikePlaceholder — extended sentinel coverage', () => {
   it('flags each documented substring sentinel', () => {
     const sentinels = [
-      'change-me', 'your-key', 'your_key', 'yourkey', 'tbd', 'fixme',
-      'fake', 'example', 'insert_key_here', 'sk_test_replace', 'whsec_replace',
+      'change-me',
+      'your-key',
+      'your_key',
+      'yourkey',
+      'tbd',
+      'fixme',
+      'fake',
+      'example',
+      'insert_key_here',
+      'sk_test_replace',
+      'whsec_replace',
     ];
     for (const s of sentinels) {
       expect(looksLikePlaceholder(`prefix-${s}-suffix`)).toBe(true);
@@ -111,7 +120,7 @@ describe('ProviderReport shape invariants', () => {
   it('partitions vars into present/missing/placeholder with no overlap', () => {
     const r = wired('stripe', {
       STRIPE_SECRET_KEY: 'sk_live_51HxYz9abcDEFghijklmnop0123456789', // present
-      STRIPE_WEBHOOK_SECRET: 'todo',              // placeholder
+      STRIPE_WEBHOOK_SECRET: 'todo', // placeholder
     });
     const all = [...r.env_vars_present, ...r.env_vars_missing, ...r.env_vars_placeholder];
     // No var appears in more than one bucket.
@@ -134,7 +143,9 @@ describe('Stripe provider', () => {
       STRIPE_WEBHOOK_SECRET: 'whsec_9f3kPq2rstuVWXabcdEFGH1234',
     });
     expect(r.status).toBe('WIRED');
-    expect(r.env_vars_present).toEqual(expect.arrayContaining(['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET']));
+    expect(r.env_vars_present).toEqual(
+      expect.arrayContaining(['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET']),
+    );
     expect(r.env_vars_missing).toEqual([]);
     expect(r.env_vars_placeholder).toEqual([]);
   });
@@ -167,7 +178,9 @@ describe('Stripe provider', () => {
   it('empty env → both vars missing → STUB (SDK imported but unwired)', () => {
     const r = wired('stripe', {});
     expect(r.status).toBe('STUB');
-    expect(r.env_vars_missing).toEqual(expect.arrayContaining(['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET']));
+    expect(r.env_vars_missing).toEqual(
+      expect.arrayContaining(['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET']),
+    );
   });
 
   it('dormant: SDK not imported → NOT_USED regardless of env', () => {
@@ -187,24 +200,39 @@ describe('passesShapeCheck + KEY_SHAPE_VALIDATORS (provider key shapes)', () => 
   });
 
   it('STRIPE_SECRET_KEY accepts a long sk_live_/sk_test_ secret', () => {
-    expect(passesShapeCheck('STRIPE_SECRET_KEY', 'sk_live_51HxYz9abcDEFghijklmnop0123456789')).toBe(true);
-    expect(passesShapeCheck('STRIPE_SECRET_KEY', 'sk_test_51HxYz9abcDEFghijklmnop0123456789')).toBe(true);
+    expect(passesShapeCheck('STRIPE_SECRET_KEY', 'sk_live_51HxYz9abcDEFghijklmnop0123456789')).toBe(
+      true,
+    );
+    expect(passesShapeCheck('STRIPE_SECRET_KEY', 'sk_test_51HxYz9abcDEFghijklmnop0123456789')).toBe(
+      true,
+    );
   });
 
   it('STRIPE_SECRET_KEY rejects truncated, publishable (pk_) and restricted (rk_) keys', () => {
     expect(passesShapeCheck('STRIPE_SECRET_KEY', 'sk_live_aaaaa')).toBe(false); // too short
-    expect(passesShapeCheck('STRIPE_SECRET_KEY', 'pk_live_publishableABCDEFGHIJKLMNOP')).toBe(false); // wrong type
+    expect(passesShapeCheck('STRIPE_SECRET_KEY', 'pk_live_publishableABCDEFGHIJKLMNOP')).toBe(
+      false,
+    ); // wrong type
     expect(passesShapeCheck('STRIPE_SECRET_KEY', 'rk_live_restrictedABCDEFGHIJKLMNOP')).toBe(false); // wrong type
   });
 
   it('STRIPE_WEBHOOK_SECRET requires whsec_ + ≥20 body chars', () => {
-    expect(passesShapeCheck('STRIPE_WEBHOOK_SECRET', 'whsec_9f3kPq2rstuVWXabcdEFGH1234')).toBe(true);
+    expect(passesShapeCheck('STRIPE_WEBHOOK_SECRET', 'whsec_9f3kPq2rstuVWXabcdEFGH1234')).toBe(
+      true,
+    );
     expect(passesShapeCheck('STRIPE_WEBHOOK_SECRET', 'whsec_short')).toBe(false);
-    expect(passesShapeCheck('STRIPE_WEBHOOK_SECRET', 'sk_live_51HxYz9abcDEFghijklmnop0123456789')).toBe(false);
+    expect(
+      passesShapeCheck('STRIPE_WEBHOOK_SECRET', 'sk_live_51HxYz9abcDEFghijklmnop0123456789'),
+    ).toBe(false);
   });
 
   it('SUPABASE_SERVICE_ROLE_KEY requires a three-segment JWT shape', () => {
-    expect(passesShapeCheck('SUPABASE_SERVICE_ROLE_KEY', 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.sig9f3')).toBe(true);
+    expect(
+      passesShapeCheck(
+        'SUPABASE_SERVICE_ROLE_KEY',
+        'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.sig9f3',
+      ),
+    ).toBe(true);
     expect(passesShapeCheck('SUPABASE_SERVICE_ROLE_KEY', 'eyJhbGci-not-a-jwt')).toBe(false); // no dots
     expect(passesShapeCheck('SUPABASE_SERVICE_ROLE_KEY', 'not-even-close')).toBe(false);
   });
@@ -221,8 +249,64 @@ describe('passesShapeCheck + KEY_SHAPE_VALIDATORS (provider key shapes)', () => 
 
   it('exposes a validator entry for each shaped provider key', () => {
     expect(Object.keys(KEY_SHAPE_VALIDATORS).sort()).toEqual(
-      ['OPENAI_API_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'SUPABASE_SERVICE_ROLE_KEY'].sort(),
+      [
+        'OPENAI_API_KEY',
+        'STRIPE_SECRET_KEY',
+        'STRIPE_WEBHOOK_SECRET',
+        'SUPABASE_SERVICE_ROLE_KEY',
+        'AWS_ROLE_ARN',
+        'AWS_CONTAINER_CREDENTIALS_FULL_URI',
+        'AWS_WEB_IDENTITY_TOKEN_FILE',
+        'AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE',
+      ].sort(),
     );
+  });
+
+  it('AWS_ROLE_ARN requires a well-formed IAM role ARN (H4.D R5)', () => {
+    expect(passesShapeCheck('AWS_ROLE_ARN', 'arn:aws:iam::123456789012:role/eks-s3-access')).toBe(
+      true,
+    );
+    expect(passesShapeCheck('AWS_ROLE_ARN', 'arn:aws-us-gov:iam::123456789012:role/gov-role')).toBe(
+      true,
+    );
+    expect(passesShapeCheck('AWS_ROLE_ARN', 'arn:aws:iam::123:role/too-few-account-digits')).toBe(
+      false,
+    );
+    expect(passesShapeCheck('AWS_ROLE_ARN', 'arn:aws:s3:::my-bucket')).toBe(false); // not an iam role
+    expect(passesShapeCheck('AWS_ROLE_ARN', 'not-an-arn')).toBe(false);
+  });
+
+  it('AWS_CONTAINER_CREDENTIALS_FULL_URI accepts http(s) URLs incl. the Pod Identity loopback (H4.D R5)', () => {
+    expect(
+      passesShapeCheck(
+        'AWS_CONTAINER_CREDENTIALS_FULL_URI',
+        'http://169.254.170.23/v1/credentials',
+      ),
+    ).toBe(true);
+    expect(
+      passesShapeCheck('AWS_CONTAINER_CREDENTIALS_FULL_URI', 'https://creds.internal/v1'),
+    ).toBe(true);
+    expect(
+      passesShapeCheck('AWS_CONTAINER_CREDENTIALS_FULL_URI', 'ftp://169.254.170.23/creds'),
+    ).toBe(false);
+    expect(passesShapeCheck('AWS_CONTAINER_CREDENTIALS_FULL_URI', '169.254.170.23/v1')).toBe(false);
+  });
+
+  it('AWS *_FILE credential vars require a path-shaped value (H4.D R5)', () => {
+    expect(
+      passesShapeCheck(
+        'AWS_WEB_IDENTITY_TOKEN_FILE',
+        '/var/run/secrets/eks.amazonaws.com/serviceaccount/token',
+      ),
+    ).toBe(true);
+    expect(
+      passesShapeCheck(
+        'AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE',
+        '/var/run/secrets/pods.eks.amazonaws.com/serviceaccount/eks-pod-identity-token',
+      ),
+    ).toBe(true);
+    expect(passesShapeCheck('AWS_WEB_IDENTITY_TOKEN_FILE', 'has spaces in path')).toBe(false);
+    expect(passesShapeCheck('AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE', '')).toBe(false);
   });
 });
 
@@ -230,7 +314,10 @@ describe('Stripe key-shape classification (malformed/wrong-type keys never WIRE)
   const goodWebhook = 'whsec_9f3kPq2rstuVWXabcdEFGH1234';
 
   it('truncated secret key (sk_live_aaaaa) → STUB, secret flagged as placeholder', () => {
-    const r = wired('stripe', { STRIPE_SECRET_KEY: 'sk_live_aaaaa', STRIPE_WEBHOOK_SECRET: goodWebhook });
+    const r = wired('stripe', {
+      STRIPE_SECRET_KEY: 'sk_live_aaaaa',
+      STRIPE_WEBHOOK_SECRET: goodWebhook,
+    });
     expect(r.status).toBe('STUB');
     expect(r.env_vars_placeholder).toContain('STRIPE_SECRET_KEY');
     expect(r.env_vars_present).not.toContain('STRIPE_SECRET_KEY');
@@ -283,8 +370,12 @@ describe('KEY_SHAPE_VALIDATORS predicates exercised directly', () => {
   });
 
   it('STRIPE_SECRET_KEY validator rejects non-alphanumeric body characters', () => {
-    expect(KEY_SHAPE_VALIDATORS.STRIPE_SECRET_KEY('sk_live_has spaces and more chars here')).toBe(false);
-    expect(KEY_SHAPE_VALIDATORS.STRIPE_SECRET_KEY('sk_live_has-dashes-and-more-chars-here')).toBe(false);
+    expect(KEY_SHAPE_VALIDATORS.STRIPE_SECRET_KEY('sk_live_has spaces and more chars here')).toBe(
+      false,
+    );
+    expect(KEY_SHAPE_VALIDATORS.STRIPE_SECRET_KEY('sk_live_has-dashes-and-more-chars-here')).toBe(
+      false,
+    );
   });
 
   it('STRIPE_WEBHOOK_SECRET validator enforces the whsec_ prefix exactly', () => {
@@ -296,8 +387,7 @@ describe('KEY_SHAPE_VALIDATORS predicates exercised directly', () => {
   it('SUPABASE_SERVICE_ROLE_KEY validator decodes JWT segments offline (F001)', () => {
     // A genuinely valid HS256 service-role token: header {"alg":"HS256"},
     // payload {"role":"service_role"}, non-empty signature.
-    const valid =
-      'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.9f3kPq2rstuVWXabcdEFGH';
+    const valid = 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.9f3kPq2rstuVWXabcdEFGH';
     expect(KEY_SHAPE_VALIDATORS.SUPABASE_SERVICE_ROLE_KEY(valid)).toBe(true);
     // F001: matches the old segment regex but decodes to invalid JSON → reject.
     expect(KEY_SHAPE_VALIDATORS.SUPABASE_SERVICE_ROLE_KEY('eyJbad.abc.def')).toBe(false);
@@ -343,7 +433,9 @@ describe('Mux provider', () => {
       MUX_TOKEN_SECRET: 'mux-secret-9f3kPq2rstuVWX',
     });
     expect(r.status).toBe('WIRED');
-    expect(r.env_vars_present).toEqual(expect.arrayContaining(['MUX_TOKEN_ID', 'MUX_TOKEN_SECRET']));
+    expect(r.env_vars_present).toEqual(
+      expect.arrayContaining(['MUX_TOKEN_ID', 'MUX_TOKEN_SECRET']),
+    );
   });
 
   it('test/placeholder: token secret is an example value → STUB', () => {
@@ -412,7 +504,9 @@ describe('isSdkImported (pure detection helper) for part-1 providers', () => {
   });
 
   it('returns false when neither package nor path hint matches', () => {
-    expect(isSdkImported(def('stripe'), new Set(['openai']), new Set(['src/unrelated']))).toBe(false);
+    expect(isSdkImported(def('stripe'), new Set(['openai']), new Set(['src/unrelated']))).toBe(
+      false,
+    );
   });
 });
 

@@ -64,10 +64,12 @@ export interface ProviderDef {
   /**
    * Credential alternatives: an array of mutually-exclusive var groups where
    * AT LEAST ONE group must be fully satisfied. Used for providers that accept
-   * more than one auth mode — e.g. AWS S3 is wired with either static access
-   * keys (AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY) OR a web-identity token
-   * file (AWS_WEB_IDENTITY_TOKEN_FILE, the IAM-role / IRSA path). The provider
-   * is STUB only when NO group is fully satisfied.
+   * more than one auth mode — e.g. AWS S3 is wired with static access keys
+   * (AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY) OR the IRSA web-identity pair
+   * (AWS_ROLE_ARN + AWS_WEB_IDENTITY_TOKEN_FILE) OR the EKS Pod Identity pair
+   * (AWS_CONTAINER_CREDENTIALS_FULL_URI + AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE).
+   * Every var WITHIN a chosen group is required. The provider is STUB only when
+   * NO group is fully satisfied.
    */
   requiresAnyOf?: string[][];
   /** Optional fallback domains (paths) to also confirm provider wiring. */
@@ -76,36 +78,90 @@ export interface ProviderDef {
 
 export const PROVIDERS: ProviderDef[] = [
   // ----- Auth / identity -----
-  { id: 'supabase', label: 'Supabase (auth + DB)', packages: ['@supabase/supabase-js'], requires: ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'] },
+  {
+    id: 'supabase',
+    label: 'Supabase (auth + DB)',
+    packages: ['@supabase/supabase-js'],
+    requires: ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'],
+  },
   // ----- Payments -----
-  { id: 'stripe', label: 'Stripe', packages: ['stripe'], filePathHints: ['src/billing', 'src/stripe', 'src/checkout'], requires: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'] },
+  {
+    id: 'stripe',
+    label: 'Stripe',
+    packages: ['stripe'],
+    filePathHints: ['src/billing', 'src/stripe', 'src/checkout'],
+    requires: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'],
+  },
   // ----- Model vendors -----
   { id: 'openai', label: 'OpenAI', packages: ['openai'], requires: ['OPENAI_API_KEY'] },
   // ----- Email -----
-  { id: 'sendgrid', label: 'SendGrid (email)', packages: ['@sendgrid/mail'], filePathHints: ['src/email'], requires: ['SENDGRID_API_KEY'] },
+  {
+    id: 'sendgrid',
+    label: 'SendGrid (email)',
+    packages: ['@sendgrid/mail'],
+    filePathHints: ['src/email'],
+    requires: ['SENDGRID_API_KEY'],
+  },
   // ----- SMS / voice -----
-  { id: 'twilio', label: 'Twilio (SMS)', packages: ['twilio'], filePathHints: ['src/sms'], requires: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER'] },
+  {
+    id: 'twilio',
+    label: 'Twilio (SMS)',
+    packages: ['twilio'],
+    filePathHints: ['src/sms'],
+    requires: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER'],
+  },
   // ----- Edge / CDN -----
-  { id: 'cloudflare', label: 'Cloudflare', packages: ['cloudflare'], filePathHints: ['src/cdn', 'src/cloudflare'], requires: ['CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN'] },
+  {
+    id: 'cloudflare',
+    label: 'Cloudflare',
+    packages: ['cloudflare'],
+    filePathHints: ['src/cdn', 'src/cloudflare'],
+    requires: ['CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN'],
+  },
   // ----- Media / video -----
-  { id: 'mux', label: 'Mux (video)', packages: ['@mux/mux-node'], filePathHints: ['src/video', 'src/coach-media'], requires: ['MUX_TOKEN_ID', 'MUX_TOKEN_SECRET'] },
+  {
+    id: 'mux',
+    label: 'Mux (video)',
+    packages: ['@mux/mux-node'],
+    filePathHints: ['src/video', 'src/coach-media'],
+    requires: ['MUX_TOKEN_ID', 'MUX_TOKEN_SECRET'],
+  },
   // ----- Storage / files -----
   {
     id: 'aws-s3',
     label: 'AWS S3',
     packages: ['@aws-sdk/client-s3'],
-    // AWS_REGION is always needed; credentials may arrive via static keys OR an
-    // IAM web-identity token file (IRSA / OIDC), so those are an either/or group.
+    // AWS_REGION is always needed; credentials may arrive via one of three
+    // mutually-exclusive modes, so they form an either/or group:
+    //   - static keys (AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY);
+    //   - IRSA / web identity (AWS_ROLE_ARN + AWS_WEB_IDENTITY_TOKEN_FILE) — BOTH
+    //     are required: the EKS pod-identity webhook injects the role ARN and the
+    //     token file together, and the SDK assumes the role named by the ARN;
+    //   - EKS Pod Identity (AWS_CONTAINER_CREDENTIALS_FULL_URI +
+    //     AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE) — AWS's recommended default for
+    //     new EKS workloads; both are injected by the Pod Identity daemon.
     requires: ['AWS_REGION'],
     requiresAnyOf: [
       ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'],
-      ['AWS_WEB_IDENTITY_TOKEN_FILE'],
+      ['AWS_ROLE_ARN', 'AWS_WEB_IDENTITY_TOKEN_FILE'],
+      ['AWS_CONTAINER_CREDENTIALS_FULL_URI', 'AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE'],
     ],
   },
   // ----- Hosting / platform -----
-  { id: 'fly', label: 'Fly.io', packages: [], filePathHints: ['src/platform', 'fly.toml'], requires: ['FLY_API_TOKEN'] },
+  {
+    id: 'fly',
+    label: 'Fly.io',
+    packages: [],
+    filePathHints: ['src/platform', 'fly.toml'],
+    requires: ['FLY_API_TOKEN'],
+  },
   // ----- Observability -----
-  { id: 'sentry', label: 'Sentry', packages: ['@sentry/node'], requires: ['SENTRY_DSN', 'SENTRY_AUTH_TOKEN'] },
+  {
+    id: 'sentry',
+    label: 'Sentry',
+    packages: ['@sentry/node'],
+    requires: ['SENTRY_DSN', 'SENTRY_AUTH_TOKEN'],
+  },
 ];
 
 export interface ProviderReport {
@@ -231,7 +287,12 @@ const ALLOWED_JWT_ALGS: ReadonlySet<string> = new Set([
  * never verified offline. Any failure returns `false`, so the value is bucketed
  * as a placeholder (→ STUB) rather than wired.
  */
-export function isPlausibleSupabaseServiceRoleJwt(v: string): boolean {
+export function isPlausibleSupabaseServiceRoleJwt(v: unknown): boolean {
+  // Fail-closed type guard (R31): the TS signature is compile-time only, and this
+  // function is part of the public module surface with a documented "any failure
+  // returns false" contract. A JS caller or a future refactor passing a non-string
+  // (null/undefined/number/object) must return false, never throw on `.split`.
+  if (typeof v !== 'string' || v.length === 0) return false;
   const segments = v.split('.');
   if (segments.length !== 3) return false;
   const [headerSeg, payloadSeg, signatureSeg] = segments;
@@ -266,6 +327,18 @@ export function isPlausibleSupabaseServiceRoleJwt(v: string): boolean {
   return payload.role === 'service_role';
 }
 
+/**
+ * Loose structural check that a value LOOKS like a filesystem path (absolute or
+ * relative) rather than a URL or an opaque secret blob. Used for `*_FILE`
+ * credential vars (AWS_WEB_IDENTITY_TOKEN_FILE, AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE):
+ * actual on-disk existence is gated separately through the injected evidence map
+ * (`fileEvidenceOk`). Rejects empty values and any value containing whitespace
+ * or characters that never appear in a credential-file path.
+ */
+function isPathShaped(v: string): boolean {
+  return v.length > 0 && /^[\w.\-/@+=,:~]+$/.test(v);
+}
+
 export const KEY_SHAPE_VALIDATORS: Readonly<Record<string, (v: string) => boolean>> = {
   // Must be a SECRET key (sk_), live or test, with a long-enough body. This
   // rejects publishable (pk_) and restricted (rk_) keys outright — they are the
@@ -281,6 +354,16 @@ export const KEY_SHAPE_VALIDATORS: Readonly<Record<string, (v: string) => boolea
   SUPABASE_SERVICE_ROLE_KEY: (v) => isPlausibleSupabaseServiceRoleJwt(v),
   // OpenAI API key: `sk-` prefix + ≥20 chars of body (covers `sk-proj-…` too).
   OPENAI_API_KEY: (v) => /^sk-[A-Za-z0-9_-]{20,}$/.test(v),
+  // AWS IAM role ARN (IRSA path): `arn:aws[partition]:iam::<12-digit acct>:role/<name>`.
+  AWS_ROLE_ARN: (v) => /^arn:aws[a-z0-9-]*:iam::\d{12}:role\/[\w+=,.@/-]+$/.test(v),
+  // EKS Pod Identity credentials endpoint: an HTTP(S) URL. The Pod Identity
+  // daemon serves credentials over plain HTTP on the loopback link-local address
+  // (169.254.170.23), so `http://` MUST be accepted alongside `https://`.
+  AWS_CONTAINER_CREDENTIALS_FULL_URI: (v) => /^https?:\/\/[^\s]+$/.test(v),
+  // Credential-FILE vars: structurally a filesystem path. On-disk existence /
+  // readability is gated separately via the evidence map (`fileEvidenceOk`).
+  AWS_WEB_IDENTITY_TOKEN_FILE: (v) => isPathShaped(v),
+  AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE: (v) => isPathShaped(v),
 };
 
 interface VarGroupClassification {
@@ -347,7 +430,9 @@ function fileEvidenceOk(group: string[], evidence: EvidenceMap): boolean {
 
 /** Diagnostic for the first `*_FILE` var in a group whose file is missing. */
 function fileEvidenceDiagnostic(group: string[], evidence: EvidenceMap): string | undefined {
-  const missingFileVar = fileVarsOf(group).find((v) => evidence[fileExistsEvidenceKey(v)] === false);
+  const missingFileVar = fileVarsOf(group).find(
+    (v) => evidence[fileExistsEvidenceKey(v)] === false,
+  );
   return missingFileVar === undefined ? undefined : `${missingFileVar} points to non-existent path`;
 }
 
@@ -373,7 +458,15 @@ export function classifyProvider(
   present.push(...always.present);
   missing.push(...always.missing);
   placeholder.push(...always.placeholder);
-  const alwaysSatisfied = always.missing.length === 0 && always.placeholder.length === 0;
+  // The same `*_FILE` evidence-existence rule applied to requiresAnyOf groups
+  // (below) must also gate the always-bucket: a `*_FILE` var placed in `requires`
+  // is otherwise classified on env-string presence alone, so a missing/unusable
+  // file on disk would fail open to WIRED (R5-F002). `fileEvidenceOk` is inert
+  // for groups with no `*_FILE` var, so this is a no-op for all current providers.
+  const alwaysSatisfied =
+    always.missing.length === 0 &&
+    always.placeholder.length === 0 &&
+    fileEvidenceOk(def.requires, evidence);
 
   // Either/or credential groups: satisfied when ANY group is fully set with
   // non-placeholder values AND any referenced credential FILE actually exists
@@ -441,7 +534,11 @@ export function classifyProvider(
  * Determine, from a detected-imports set and a path-presence set, whether a
  * provider's SDK is considered imported. Pure helper (no fs/process access).
  */
-export function isSdkImported(def: ProviderDef, importedPackages: ReadonlySet<string>, pathPresence: ReadonlySet<string>): boolean {
+export function isSdkImported(
+  def: ProviderDef,
+  importedPackages: ReadonlySet<string>,
+  pathPresence: ReadonlySet<string>,
+): boolean {
   return (
     def.packages.some((pkg) => importedPackages.has(pkg)) ||
     Boolean(def.filePathHints?.some((hint) => pathPresence.has(hint)))
@@ -472,7 +569,10 @@ export function scanProvidersWith(
  * record `<VAR>_FILE_EXISTS`. This is the ONLY place file existence is checked;
  * the result is injected into the pure core. Lives at the I/O edge.
  */
-export function collectFileEvidence(env: EnvMap, providers: ProviderDef[] = PROVIDERS): EvidenceMap {
+export function collectFileEvidence(
+  env: EnvMap,
+  providers: ProviderDef[] = PROVIDERS,
+): EvidenceMap {
   const out: Record<string, boolean> = {};
   for (const p of providers) {
     const groups = [p.requires, ...(p.requiresAnyOf ?? [])];
@@ -650,7 +750,13 @@ function isTypeOnlyExport(node: ts.ExportDeclaration): boolean {
  * would be misparsed and its `import` statements lost.
  */
 export function extractModuleSpecifiers(sourceText: string, fileName = 'in-memory.ts'): string[] {
-  const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, scriptKindFor(fileName));
+  const sf = ts.createSourceFile(
+    fileName,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindFor(fileName),
+  );
   const specifiers: string[] = [];
   const visit = (node: ts.Node): void => {
     // Static `import ... from 'pkg'` and side-effect `import 'pkg'`.
@@ -658,7 +764,11 @@ export function extractModuleSpecifiers(sourceText: string, fileName = 'in-memor
       if (!isTypeOnlyImport(node)) specifiers.push(node.moduleSpecifier.text);
     }
     // `export ... from 'pkg'` re-exports also pull in the package.
-    else if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+    else if (
+      ts.isExportDeclaration(node) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
       if (!isTypeOnlyExport(node)) specifiers.push(node.moduleSpecifier.text);
     } else if (ts.isCallExpression(node)) {
       const arg = node.arguments[0];
@@ -693,10 +803,7 @@ export function extractModuleSpecifiers(sourceText: string, fileName = 'in-memor
 function isScannableSourceFile(name: string): boolean {
   if (name.endsWith('.d.ts')) return false;
   return (
-    name.endsWith('.ts') ||
-    name.endsWith('.tsx') ||
-    name.endsWith('.mts') ||
-    name.endsWith('.cts')
+    name.endsWith('.ts') || name.endsWith('.tsx') || name.endsWith('.mts') || name.endsWith('.cts')
   );
 }
 
@@ -786,9 +893,22 @@ export function scanProvidersFromProcess(
  * be imported (e.g. when the DB is unreachable).
  */
 const PLACEHOLDER_SUBSTRINGS = [
-  'changeme', 'change-me', 'your-key', 'your_key', 'yourkey',
-  'placeholder', 'todo', 'tbd', 'xxx', 'fixme', 'fake', 'example',
-  'insert_key_here', 'sk_test_replace', 'whsec_replace', 'redacted',
+  'changeme',
+  'change-me',
+  'your-key',
+  'your_key',
+  'yourkey',
+  'placeholder',
+  'todo',
+  'tbd',
+  'xxx',
+  'fixme',
+  'fake',
+  'example',
+  'insert_key_here',
+  'sk_test_replace',
+  'whsec_replace',
+  'redacted',
 ] as const;
 
 /**
