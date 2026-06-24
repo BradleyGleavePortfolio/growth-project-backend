@@ -81,7 +81,7 @@
     "ts-jest": "^29.4.9",
     "ts-node": "^10.9.0",
     "typescript": "^5.0.0",
-    "typescript-eslint": "^8.60.0"
+    "typescript-eslint": "^8.62.0"
   },
   "overrides": {
     "qs": "6.15.2",
