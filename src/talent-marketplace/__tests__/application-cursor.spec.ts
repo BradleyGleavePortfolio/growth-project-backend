@@ -66,4 +66,23 @@ describe('parseTupleCursor — tamper / malformed degrade to null', () => {
   it('returns null for an empty string', () => {
     expect(parseTupleCursor('')).toBeNull();
   });
+
+  // A-P1-2: Date.parse coerces partial/garbage timestamps ('2026', '2026-01',
+  // '99') to valid dates. The strict round-trip rejects anything that is not
+  // the exact ISO string the encoder emits, so a hand-crafted cursor degrades
+  // to page 1 instead of silently shifting the keyset window.
+  it('returns null for non-round-trippable timestamp halves (tamper)', () => {
+    for (const ts of ['2026', '2026-01', '99', '2026-06-18']) {
+      const tampered = Buffer.from(`${ts}|some-id`, 'utf8').toString('base64url');
+      expect(parseTupleCursor(tampered)).toBeNull();
+    }
+  });
+
+  it('still accepts a full canonical ISO timestamp', () => {
+    const iso = '2026-06-18T04:41:00.000Z';
+    const good = Buffer.from(`${iso}|some-id`, 'utf8').toString('base64url');
+    const parsed = parseTupleCursor(good);
+    expect(parsed?.created_at.toISOString()).toBe(iso);
+    expect(parsed?.id).toBe('some-id');
+  });
 });

@@ -23,6 +23,8 @@ import { ApplicantTrackingController } from './applicant-tracking.controller';
 import { ApplicantTrackingService } from './applicant-tracking.service';
 import { SavedSearchController } from './saved-search.controller';
 import { SavedSearchService } from './saved-search.service';
+import { JobHunterController } from './job-hunter.controller';
+import { JobHunterService } from './job-hunter.service';
 
 // TM-2 — Talent Marketplace job-listing CRUD + publish.
 // TM-3 — public, unauthenticated browse + SEO detail.
@@ -37,6 +39,8 @@ import { SavedSearchService } from './saved-search.service';
 // TM-8 — hirer applicant tracking + PII-stripped CandidateCard projection.
 //        Saved-search controller is wired for 8b route stability; service
 //        returns 501 until persistence lands.
+// TM-9a — applicant-facing /me/* job-hunter dashboard (own applications,
+// portfolio showcase, profile-strength nudges); append-only.
 @Module({
   imports: [AntiBotModule, TalentConnectAdapterModule],
   controllers: [
@@ -48,6 +52,7 @@ import { SavedSearchService } from './saved-search.service';
     AdminApplicationsController,
     ApplicantTrackingController,
     SavedSearchController,
+    JobHunterController,
   ],
   providers: [
     JobListingService,
@@ -64,6 +69,7 @@ import { SavedSearchService } from './saved-search.service';
     AdminApplicationsService,
     ApplicantTrackingService,
     SavedSearchService,
+    JobHunterService,
   ],
   exports: [JobListingService, ApplyService],
 })
