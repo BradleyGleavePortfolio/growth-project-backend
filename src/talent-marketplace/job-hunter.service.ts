@@ -11,6 +11,7 @@ import {
   checkSampleProgramUrls,
   type PortfolioShowcase,
 } from './portfolio-showcase';
+import { normalizeSpecialties } from './specialties';
 import type {
   MyApplicationsQueryDto,
   MyApplicationsResponse,
@@ -49,21 +50,9 @@ function toPortfolioShape(applicant: PortfolioRow): PortfolioShowcase {
   };
 }
 
-// Map → trim → drop empties → dedupe while preserving first-seen order, so a
-// payload like ['', '  ', 'Strength', 'Strength'] persists as ['Strength']
-// (A-P1-1). An explicit null clears to [] (B-P0-2).
-function normalizeSpecialties(input: string[] | null | undefined): string[] {
-  if (input == null) return [];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of input) {
-    const trimmed = raw.trim();
-    if (trimmed.length === 0 || seen.has(trimmed)) continue;
-    seen.add(trimmed);
-    out.push(trimmed);
-  }
-  return out;
-}
+// Applicant.specialties normalization (trim → drop empties → dedupe, first-seen
+// order; null clears to []) now lives in ./specialties so the alerts writer
+// (TM-9b) and this portfolio writer (TM-9a) share one canonical implementation.
 
 const NUDGES: Record<string, ProfileStrengthNudge> = {
   add_headline: { kind: 'add_headline', message: 'Add a headline to introduce yourself.' },
