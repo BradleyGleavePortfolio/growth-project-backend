@@ -484,6 +484,55 @@ describe('R5 F001 — block-scalar header with a trailing comment (no value-base
   });
 });
 
+// ---------------------------------------------------------------------------
+// R5b F001 — block-scalar header whose trailing COMMENT carries a `|N`/`>N`
+// token (e.g. `PASSWORD: >- # see |9`). The indent-digit regex was run against
+// the WHOLE header line, so the comment's `|9` was mistaken for an explicit
+// indentation indicator: contentFloor inflated to headerIndent+N-1 and the
+// continuation secret fell "outside" the block — never redacted. A real leak
+// on the no-secretValues sinks. The digit regex now runs against the captured
+// indicator substring ONLY, never the comment. Every case runs WITHOUT a
+// secretValues set so it proves the PATTERN pass closes the leak.
+// ---------------------------------------------------------------------------
+const POISON = 'SuperSecretValue_abc';
+describe('R5b F001 — block-scalar header comment carrying a |N/>N token (no value-based pass)', () => {
+  it('`>- # see |9` comment digit ignored, continuation body redacted (no leak)', () => {
+    const out = redactSecretValues(`PASSWORD: >- # see |9\n  ${POISON}`, []);
+    expect(out).not.toContain(POISON);
+    expect(out).toBe(`PASSWORD: >- # see |9\n  ${REDACTED}`);
+  });
+
+  it('`>- # see |9` with secretValues set still redacts (no-value sink parity)', () => {
+    const out = redactSecretValues(`PASSWORD: >- # see |9\n  ${POISON}`, [POISON]);
+    expect(out).not.toContain(POISON);
+    expect(out).toBe(`PASSWORD: >- # see |9\n  ${REDACTED}`);
+  });
+
+  it('`| # ref >5 lines` comment digit ignored, body redacted', () => {
+    const out = redactSecretValues(`PASSWORD: | # ref >5 lines\n  ${POISON}`, []);
+    expect(out).not.toContain(POISON);
+    expect(out).toBe(`PASSWORD: | # ref >5 lines\n  ${REDACTED}`);
+  });
+
+  it('`|- #>9` no-space comment digit ignored, body redacted', () => {
+    const out = redactSecretValues(`PASSWORD: |- #>9\n  ${POISON}`, []);
+    expect(out).not.toContain(POISON);
+    expect(out).toBe(`PASSWORD: |- #>9\n  ${REDACTED}`);
+  });
+
+  it('`> # x |8 y` mid-comment digit ignored, body redacted', () => {
+    const out = redactSecretValues(`PASSWORD: > # x |8 y\n  ${POISON}`, []);
+    expect(out).not.toContain(POISON);
+    expect(out).toBe(`PASSWORD: > # x |8 y\n  ${REDACTED}`);
+  });
+
+  it('boundary control `|- # note |2 here`: shallow body still redacted (was passing)', () => {
+    const out = redactSecretValues(`PASSWORD: |- # note |2 here\n  ${POISON}`, []);
+    expect(out).not.toContain(POISON);
+    expect(out).toBe(`PASSWORD: |- # note |2 here\n  ${REDACTED}`);
+  });
+});
+
 describe('redactSecretValues — safety / no-op cases', () => {
   it('returns the empty string unchanged', () => {
     expect(redactSecretValues('')).toBe('');

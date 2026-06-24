@@ -84,6 +84,24 @@ beforeEach(() => {
   execFileSyncMock.mockReset();
 });
 
+/**
+ * Register hooks enabling the READINESS_AUTO_FLIP gate for the seam tests that
+ * drive `__runFlyctlForTest` directly. R5b F002 added a defense-in-depth gate
+ * at the top of `runFlyctl` that reads `process.env`, so these tests must set
+ * the canonical sentinel and restore the prior value afterwards.
+ */
+function useAutoFlipEnv(): void {
+  let saved: string | undefined;
+  beforeEach(() => {
+    saved = process.env[AUTO_FLIP_ENV];
+    process.env[AUTO_FLIP_ENV] = 'true';
+  });
+  afterEach(() => {
+    if (saved === undefined) delete process.env[AUTO_FLIP_ENV];
+    else process.env[AUTO_FLIP_ENV] = saved;
+  });
+}
+
 describe('targetValueFor', () => {
   it('maps prod_default ON to "true"', () => {
     expect(targetValueFor(row({ prod_default: 'ON' }))).toBe('true');
@@ -365,6 +383,25 @@ describe('runFlyctl is module-private — only the gated entries are exported (R
   });
 });
 
+describe('runFlyctl — defense-in-depth env gate (R5b F002)', () => {
+  let saved: string | undefined;
+  beforeEach(() => {
+    saved = process.env[AUTO_FLIP_ENV];
+    delete process.env[AUTO_FLIP_ENV];
+  });
+  afterEach(() => {
+    if (saved === undefined) delete process.env[AUTO_FLIP_ENV];
+    else process.env[AUTO_FLIP_ENV] = saved;
+  });
+
+  it('the seam refuses (and never execs) when READINESS_AUTO_FLIP is unset', () => {
+    expect(() => __runFlyctlForTest(['secrets', 'set', 'X=true'])).toThrow(
+      /READINESS_AUTO_FLIP is not enabled \(defense-in-depth gate\)/,
+    );
+    expect(execFileSyncMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('commit — secret redaction in logs', () => {
   it('emits KEY=*** in the operator log and never the value', async () => {
     const sink = makeSink();
@@ -460,6 +497,7 @@ describe('auditEntry', () => {
 });
 
 describe('runFlyctl — default execFileSync runner', () => {
+  useAutoFlipEnv();
   it('calls execFileSync with the flyctl binary and an argv array (no shell)', () => {
     execFileSyncMock.mockReturnValue(Buffer.from(''));
     __runFlyctlForTest(['secrets', 'set', 'FEATURE_A=true']);
@@ -626,6 +664,7 @@ describe('commit — multi-row argv and ordering', () => {
 });
 
 describe('runFlyctl — stdio and ENOENT message detail', () => {
+  useAutoFlipEnv();
   it('never passes shell:true and pipes stderr for capture', () => {
     execFileSyncMock.mockReturnValue(Buffer.from(''));
     __runFlyctlForTest(['secrets', 'set', 'A=true']);
@@ -778,6 +817,7 @@ describe('redactSecretValues (Fix 1 — secret leak)', () => {
 });
 
 describe('runFlyctl timeout (Fix 2 — hang protection)', () => {
+  useAutoFlipEnv();
   it('passes a 60s timeout and SIGTERM killSignal to execFileSync', () => {
     execFileSyncMock.mockReturnValue(Buffer.from(''));
     __runFlyctlForTest(['secrets', 'set', 'A=true']);
@@ -989,6 +1029,7 @@ describe('commit recheckCurrent (Fix 3 — TOCTOU)', () => {
 });
 
 describe('redactSecretValues — additional shapes (Fix 1 hardening)', () => {
+  useAutoFlipEnv();
   it('redacts a KEY=VALUE that has surrounding spaces around the equals sign', () => {
     expect(redactSecretValues('FEATURE_SECRET = topsecret')).toBe('FEATURE_SECRET=***');
   });

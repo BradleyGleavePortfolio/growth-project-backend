@@ -622,8 +622,14 @@ function redactBase64Values(text: string, literals: readonly string[]): string {
  * two enforcers cover the identical surface (defense-in-depth, R125).
  */
 const YAML_BLOCK_SCALAR_HEADER_RE =
-  /^(\s*)([A-Za-z][A-Za-z0-9_-]*)\s*:[ \t]+[|>](?:[+-][1-9]?|[1-9][+-]?)?[ \t]*(?:#.*)?$/;
-/** Pulls the explicit indentation-indicator digit (1-9) out of a header, if any. */
+  /^(\s*)([A-Za-z][A-Za-z0-9_-]*)\s*:[ \t]+([|>](?:[+-][1-9]?|[1-9][+-]?)?)[ \t]*(?:#.*)?$/;
+/**
+ * Pulls the explicit indentation-indicator digit (1-9) out of a header's
+ * indicator token (group 3 of {@link YAML_BLOCK_SCALAR_HEADER_RE}), if any.
+ * MUST be run against the indicator substring ONLY — never the whole line —
+ * or a trailing comment containing a `|N`/`>N` token (e.g. `>- # see |9`)
+ * would poison the digit, inflate the content floor, and skip the secret.
+ */
 const YAML_BLOCK_SCALAR_INDENT_DIGIT_RE = /[|>][+-]?([1-9])|[|>]([1-9])/;
 function redactYamlBlockScalars(text: string): string {
   if (!text.includes('\n')) return text;
@@ -633,7 +639,7 @@ function redactYamlBlockScalars(text: string): string {
     const m = YAML_BLOCK_SCALAR_HEADER_RE.exec(lines[i]);
     if (m && isSecretKey(m[2])) {
       const headerIndent = m[1].length;
-      const digitMatch = YAML_BLOCK_SCALAR_INDENT_DIGIT_RE.exec(lines[i]);
+      const digitMatch = YAML_BLOCK_SCALAR_INDENT_DIGIT_RE.exec(m[3]);
       const explicitDigit = digitMatch ? Number(digitMatch[1] ?? digitMatch[2]) : 0;
       // Floor a content line must clear to count as block body: the deeper of
       // the header indent and (when an explicit indicator is present) the
@@ -885,6 +891,14 @@ export function autoFlipEnabled(env: NodeJS.ProcessEnv): boolean {
  * from argv pairs that carry a `KEY=VALUE` secret.
  */
 function runFlyctl(args: readonly string[]): void {
+  // F002 (R5b) defense-in-depth: gate the raw exec primitive on the same
+  // capability flag the gated entry points use, so even a caller reaching
+  // runFlyctl directly (the __runFlyctlForTest seam, future code) cannot
+  // mutate prod secrets without READINESS_AUTO_FLIP. The commit() path
+  // already gates before reaching here; this is belt-and-suspenders.
+  if (!autoFlipEnabled(process.env)) {
+    throw new Error('runFlyctl: READINESS_AUTO_FLIP is not enabled (defense-in-depth gate)');
+  }
   // F007: surface the PATH-dependency once if no absolute FLY_BIN was pinned,
   // before we hand a secret to a possibly-spoofable binary.
   warnIfPathResolvedFlyBin();
@@ -920,10 +934,15 @@ function runFlyctl(args: readonly string[]): void {
  * Test-only seam (F003). `runFlyctl` is module-private so the only exported
  * mutation entries stay the gated {@link commit}/{@link flip}; a caller cannot
  * forget a gate that has no reachable entry point. Unit tests that drive the raw
- * exec primitive (identity assert, execFileSync wiring, timeout) reach it here,
- * matching the existing `__…ForTest` convention.
+ * exec primitive (identity assert, execFileSync wiring, timeout) reach it here.
+ * Routes through {@link runFlyctl} and so inherits its defense-in-depth
+ * {@link autoFlipEnabled} guard. Declared as a function (not a `const` alias) to
+ * match the existing `__…ForTest` seam convention in form, not only in name.
+ * Only consumed by `test/prod-readiness/auto-flipper.spec.ts`.
  */
-export const __runFlyctlForTest = runFlyctl;
+export function __runFlyctlForTest(args: readonly string[]): void {
+  runFlyctl(args);
+}
 
 /**
  * Extract the literal VALUE side of each `KEY=VALUE` argv pair so the redactor
@@ -1041,9 +1060,14 @@ let _commitChain: Promise<unknown> = Promise.resolve();
  * Execute the plan's `to_set` flips. Refuses unless READINESS_AUTO_FLIP=true.
  * Runs strictly sequentially — and serialized ACROSS concurrent callers (F006)
  * — so the "one inflight flyctl at a time" invariant holds even when two
- * callers race. One failing flip does not abort the rest. Never logs a secret
- * value: every sink is routed through the value-aware redactor seeded with this
- * plan's literal secret values (F001).
+ * callers race. An ordinary failing flip does not abort the rest; the row is
+ * recorded in `failed[]` and the loop continues. However, a fatal security
+ * signal — `FlyBinIdentityMismatch` (binary swap detected during commit) or
+ * `FlyctlTimeoutError` (host hang) — aborts the commit immediately
+ * (fail-closed) and propagates to the caller. The mutex is released in both
+ * the success and abort paths. Never logs a secret value: every sink is routed
+ * through the value-aware redactor seeded with this plan's literal secret
+ * values (F001).
  */
 export async function commit(opts: CommitOptions): Promise<FlipResult> {
   const env = opts.env ?? process.env;
@@ -1144,12 +1168,6 @@ async function doCommit(opts: CommitOptions): Promise<FlipResult> {
       log(JSON.stringify(auditEntry(row, before, now)));
       succeeded.push(row);
     } catch (err: unknown) {
-      // SECURITY (F002): a binary-identity mismatch means the resolved flyctl may
-      // be an attacker-swapped binary; a timeout means a hung host on this
-      // secret-mutating exec primitive. Either is a fail-closed "stop everything"
-      // signal — re-throw so the commit aborts and no further row's secret is
-      // offered to the suspect/hung binary. Ordinary flyctl exec failures still
-      // continue per-row below.
       // SECURITY (F002): a binary-identity mismatch means the resolved flyctl may
       // be an attacker-swapped binary; a timeout means a hung host on this
       // secret-mutating exec primitive. Either is a fail-closed "stop everything"
