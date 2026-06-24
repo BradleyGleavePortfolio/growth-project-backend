@@ -88,9 +88,25 @@ describe('SpecialtyAlertsService.listForApplicant — matched + PII-free', () =>
       },
     ]);
     expect(result.next_cursor).toBeNull();
-    // PII-free: no hirer/applicant identity fields leak onto the card.
-    expect(JSON.stringify(result.items)).not.toContain('hirer');
-    expect(JSON.stringify(result.items)).not.toContain('email');
+
+    // P2-3: pin the exact card shape (no hirer/applicant PII keys) and the exact
+    // no-overfetch Prisma select — stronger than a substring scan, which could
+    // false-pass on a benign value or miss a future over-selected column.
+    const items = result.items;
+    expect(Object.keys(items[0]).sort()).toEqual(
+      ['listing_id', 'location', 'published_at', 'specialty', 'title'].sort(),
+    );
+    expect(prisma.jobListing.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: {
+          id: true,
+          title: true,
+          specialty: true,
+          location: true,
+          published_at: true,
+        },
+      }),
+    );
   });
 
   // P1-1: when more than a page matches, the overflow row is sliced off and a

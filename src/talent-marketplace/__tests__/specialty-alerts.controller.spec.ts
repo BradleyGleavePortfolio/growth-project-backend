@@ -9,7 +9,6 @@ import { SpecialtyAlertsController } from '../specialty-alerts.controller';
 import { SpecialtyAlertsService } from '../specialty-alerts.service';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import type { AuthedRequest } from '../../auth/auth-request';
-import type { User } from '@prisma/client';
 
 // TM-9b — the /me/alerts/* surface is owner-scoped: @Roles('student'), and every
 // handler forwards the JWT subject (req.user.id) to the service. Invariants:
@@ -35,12 +34,14 @@ function makeController() {
   return { alerts, controller: new SpecialtyAlertsController(injected) };
 }
 
-// A concrete owner-scoped request fixture — only `user.id` is read by the
-// handlers, so a narrow concrete cast on the user keeps this structurally an
-// AuthedRequest without any forbidden double cast.
-const reqFor = (id: string): AuthedRequest => ({
-  user: { id } as Pick<User, 'id'> as User,
-});
+// A concrete owner-scoped request fixture. The handlers read only `user.id`, so
+// a minimal structural shape narrowed once to AuthedRequest is sufficient — and
+// avoids the chained double cast (`X as A as B`) that prior lanes removed.
+interface MinimalAuthedRequest {
+  user: { id: string };
+}
+const reqFor = (id: string): AuthedRequest =>
+  ({ user: { id } } satisfies MinimalAuthedRequest) as AuthedRequest;
 
 describe('SpecialtyAlertsController — owner-scoped /me/alerts surface', () => {
   let alerts: AlertsShape;
