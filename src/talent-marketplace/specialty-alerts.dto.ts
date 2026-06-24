@@ -29,10 +29,37 @@ export class AlertPreferencesDto {
 }
 
 // A specialty-matched listing alert. No hirer PII — public listing fields only.
+// published_at is non-null: the alert query filters `published_at: { not: null }`
+// (P1-2), and the feed's keyset cursor sorts on it, so a matched card always
+// carries a real timestamp.
 export interface ListingAlertDto {
   listing_id: string;
   title: string;
   specialty: string | null;
   location: string | null;
-  published_at: string | null;
+  published_at: string;
+}
+
+// GET /me/alerts query — an opaque keyset cursor for the next page (omit for
+// page 1). Capped to keep a hand-crafted blob bounded; a malformed value
+// degrades to page 1 in the service rather than erroring.
+export class AlertsQueryDto {
+  @ApiPropertyOptional({
+    type: String,
+    description:
+      'Opaque keyset cursor from a prior response next_cursor; omit for the first page.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  cursor?: string;
+}
+
+// GET /me/alerts response envelope. The feed is keyset-paginated on
+// (published_at, id), newest-first, in pages of ALERT_LISTING_LIMIT (20).
+// next_cursor is an opaque base64url blob, or null when the last page is
+// reached (P1-1, P2-2, P2-4).
+export interface AlertsListResponseDto {
+  items: ListingAlertDto[];
+  next_cursor: string | null;
 }

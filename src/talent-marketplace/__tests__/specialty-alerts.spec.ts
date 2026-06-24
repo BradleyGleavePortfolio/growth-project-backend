@@ -34,8 +34,8 @@ describe('SpecialtyAlertsService.listForApplicant — matched + PII-free', () =>
   it('returns no alerts when the applicant has no saved specialties', async () => {
     const { prisma, service } = makeService();
     prisma.applicant.findUnique.mockResolvedValue({ specialties: [] });
-    const alerts = await service.listForApplicant('u1');
-    expect(alerts).toEqual([]);
+    const result = await service.listForApplicant('u1');
+    expect(result).toEqual({ items: [], next_cursor: null });
     expect(prisma.jobListing.findMany).not.toHaveBeenCalled();
   });
 
@@ -44,16 +44,16 @@ describe('SpecialtyAlertsService.listForApplicant — matched + PII-free', () =>
   it('returns no alerts when stored specialties are all blank', async () => {
     const { prisma, service } = makeService();
     prisma.applicant.findUnique.mockResolvedValue({ specialties: ['', '  '] });
-    const alerts = await service.listForApplicant('u1');
-    expect(alerts).toEqual([]);
+    const result = await service.listForApplicant('u1');
+    expect(result).toEqual({ items: [], next_cursor: null });
     expect(prisma.jobListing.findMany).not.toHaveBeenCalled();
   });
 
   it('returns no alerts when the applicant row is missing', async () => {
     const { prisma, service } = makeService();
     prisma.applicant.findUnique.mockResolvedValue(null);
-    const alerts = await service.listForApplicant('u1');
-    expect(alerts).toEqual([]);
+    const result = await service.listForApplicant('u1');
+    expect(result).toEqual({ items: [], next_cursor: null });
     expect(prisma.jobListing.findMany).not.toHaveBeenCalled();
   });
 
@@ -70,13 +70,15 @@ describe('SpecialtyAlertsService.listForApplicant — matched + PII-free', () =>
       },
     ]);
 
-    const alerts = await service.listForApplicant('u1');
+    const result = await service.listForApplicant('u1');
 
     const where = prisma.jobListing.findMany.mock.calls[0][0].where;
     expect(where.status).toBe('published');
     expect(where.specialty).toEqual({ in: ['Strength', 'Mobility'] });
+    // P1-2: null-published rows are filtered at the query, never sorted ahead.
+    expect(where.published_at).toEqual({ not: null });
 
-    expect(alerts).toEqual([
+    expect(result.items).toEqual([
       {
         listing_id: 'listing-1',
         title: 'Head Strength Coach',
@@ -85,19 +87,70 @@ describe('SpecialtyAlertsService.listForApplicant — matched + PII-free', () =>
         published_at: '2026-06-18T04:41:00.000Z',
       },
     ]);
+    expect(result.next_cursor).toBeNull();
     // PII-free: no hirer/applicant identity fields leak onto the card.
-    expect(JSON.stringify(alerts)).not.toContain('hirer');
-    expect(JSON.stringify(alerts)).not.toContain('email');
+    expect(JSON.stringify(result.items)).not.toContain('hirer');
+    expect(JSON.stringify(result.items)).not.toContain('email');
   });
 
-  it('echoes a null published_at rather than crashing', async () => {
+  // P1-1: when more than a page matches, the overflow row is sliced off and a
+  // next_cursor is emitted; supplying it as the cursor opens the keyset window.
+  it('paginates with a keyset cursor and resumes on page 2', async () => {
+    const { prisma, service } = makeService();
+    prisma.applicant.findUnique.mockResolvedValue({ specialties: ['Strength'] });
+    // 21 rows (LIMIT + 1) → page 1 returns 20 items + a next_cursor.
+    const page1 = Array.from({ length: 21 }, (_, i) => ({
+      id: `l${i}`,
+      title: `T${i}`,
+      specialty: 'Strength',
+      location: null,
+      published_at: new Date(Date.UTC(2026, 5, 20, 0, 0, 21 - i)),
+    }));
+    prisma.jobListing.findMany.mockResolvedValueOnce(page1);
+
+    const r1 = await service.listForApplicant('u1');
+    expect(r1.items).toHaveLength(20);
+    expect(r1.next_cursor).toEqual(expect.any(String));
+    expect(prisma.jobListing.findMany.mock.calls[0][0].take).toBe(21);
+
+    // Page 2: passing the cursor adds the OR keyset window to the where clause.
+    prisma.jobListing.findMany.mockResolvedValueOnce([
+      {
+        id: 'l20',
+        title: 'T20',
+        specialty: 'Strength',
+        location: null,
+        published_at: new Date('2026-06-19T00:00:00.000Z'),
+      },
+    ]);
+    const r2 = await service.listForApplicant('u1', r1.next_cursor as string);
+    expect(r2.items).toHaveLength(1);
+    expect(r2.next_cursor).toBeNull();
+    const where2 = prisma.jobListing.findMany.mock.calls[1][0].where;
+    expect(where2.OR).toHaveLength(2);
+  });
+
+  // P1-2 (was P3-1): a null-published row never reaches mapping because the
+  // query filters `published_at: { not: null }`. The publish paths invariant-set
+  // published_at on status change, so this is defense in depth against the
+  // schema's nullable column; the feed only ever carries real timestamps.
+  it('filters null-published listings at the query (feed carries real timestamps)', async () => {
     const { prisma, service } = makeService();
     prisma.applicant.findUnique.mockResolvedValue({ specialties: ['Strength'] });
     prisma.jobListing.findMany.mockResolvedValue([
-      { id: 'l2', title: 'T', specialty: 'Strength', location: null, published_at: null },
+      {
+        id: 'l2',
+        title: 'T',
+        specialty: 'Strength',
+        location: null,
+        published_at: new Date('2026-06-18T04:41:00.000Z'),
+      },
     ]);
-    const alerts = await service.listForApplicant('u1');
-    expect(alerts[0].published_at).toBeNull();
+    const result = await service.listForApplicant('u1');
+    expect(prisma.jobListing.findMany.mock.calls[0][0].where.published_at).toEqual({
+      not: null,
+    });
+    expect(result.items[0].published_at).toBe('2026-06-18T04:41:00.000Z');
   });
 });
 

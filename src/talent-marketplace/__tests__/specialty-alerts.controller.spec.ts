@@ -89,10 +89,16 @@ describe('SpecialtyAlertsController — owner-scoped /me/alerts surface', () => 
   });
 
   describe('owner-scope delegation (forwards req.user.id, never a client id)', () => {
-    it('myAlerts forwards the caller id', async () => {
-      alerts.listForApplicant.mockResolvedValue([]);
-      await controller.myAlerts(reqFor('u1'));
-      expect(alerts.listForApplicant).toHaveBeenCalledWith('u1');
+    it('myAlerts forwards the caller id + cursor', async () => {
+      alerts.listForApplicant.mockResolvedValue({ items: [], next_cursor: null });
+      await controller.myAlerts(reqFor('u1'), { cursor: 'c1' });
+      expect(alerts.listForApplicant).toHaveBeenCalledWith('u1', 'c1');
+    });
+
+    it('myAlerts forwards undefined cursor for page 1 (no cursor query)', async () => {
+      alerts.listForApplicant.mockResolvedValue({ items: [], next_cursor: null });
+      await controller.myAlerts(reqFor('u1'), {});
+      expect(alerts.listForApplicant).toHaveBeenCalledWith('u1', undefined);
     });
 
     it('setPreferences forwards the caller id + the dto specialties', async () => {

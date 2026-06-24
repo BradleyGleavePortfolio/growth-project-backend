@@ -7,9 +7,11 @@
 // and nothing is logged.
 
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { buildAlertCursor, parseAlertCursor } from './alert-cursor';
 import { normalizeSpecialties } from './specialties';
-import type { ListingAlertDto } from './specialty-alerts.dto';
+import type { AlertsListResponseDto } from './specialty-alerts.dto';
 
 const ALERT_LISTING_LIMIT = 20;
 
@@ -19,7 +21,12 @@ export class SpecialtyAlertsService {
 
   // List recent published listings matching the applicant's saved specialties.
   // Empty specialties → no alerts (we never fan out the whole board as "alerts").
-  async listForApplicant(userId: string): Promise<ListingAlertDto[]> {
+  // Keyset-paginated on (published_at, id), newest-first, in pages of
+  // ALERT_LISTING_LIMIT; returns an envelope with next_cursor (P1-1, P2-4).
+  async listForApplicant(
+    userId: string,
+    cursor?: string,
+  ): Promise<AlertsListResponseDto> {
     const applicant = await this.prisma.applicant.findUnique({
       where: { user_id: userId },
       select: { specialties: true },
@@ -31,12 +38,31 @@ export class SpecialtyAlertsService {
     const queryable = (applicant?.specialties ?? [])
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
-    if (queryable.length === 0) return [];
+    if (queryable.length === 0) return { items: [], next_cursor: null };
+
+    // `published_at: { not: null }` is defensive against the schema's nullable
+    // column: Postgres DESC puts nulls first, so an un-timestamped published row
+    // could otherwise displace genuinely-recent matches under the page cap, and
+    // it keeps the keyset cursor's published_at always real (P1-2).
+    const where: Prisma.JobListingWhereInput = {
+      status: 'published',
+      specialty: { in: queryable },
+      published_at: { not: null },
+    };
+    // Keyset window: rows strictly older than the cursor tuple (published_at, id).
+    // A malformed cursor parses to null → we silently restart at page 1.
+    const decoded = cursor ? parseAlertCursor(cursor) : null;
+    if (decoded) {
+      where.OR = [
+        { published_at: { lt: decoded.published_at } },
+        { published_at: decoded.published_at, id: { lt: decoded.id } },
+      ];
+    }
 
     const rows = await this.prisma.jobListing.findMany({
-      where: { status: 'published', specialty: { in: queryable } },
+      where,
       orderBy: [{ published_at: 'desc' }, { id: 'desc' }],
-      take: ALERT_LISTING_LIMIT,
+      take: ALERT_LISTING_LIMIT + 1,
       select: {
         id: true,
         title: true,
@@ -46,13 +72,24 @@ export class SpecialtyAlertsService {
       },
     });
 
-    return rows.map((row) => ({
+    const hasMore = rows.length > ALERT_LISTING_LIMIT;
+    const page = hasMore ? rows.slice(0, ALERT_LISTING_LIMIT) : rows;
+    const items = page.map((row) => ({
       listing_id: row.id,
       title: row.title,
       specialty: row.specialty,
       location: row.location,
-      published_at: row.published_at ? row.published_at.toISOString() : null,
+      // Non-null by the `published_at: { not: null }` filter; coalesce only to
+      // satisfy the nullable column type without a cast.
+      published_at: (row.published_at ?? new Date(0)).toISOString(),
     }));
+
+    const last = page[page.length - 1];
+    const next_cursor =
+      hasMore && last && last.published_at
+        ? buildAlertCursor({ published_at: last.published_at, id: last.id })
+        : null;
+    return { items, next_cursor };
   }
 
   // Save alert preferences. With no dedicated preferences table, the applicant's
