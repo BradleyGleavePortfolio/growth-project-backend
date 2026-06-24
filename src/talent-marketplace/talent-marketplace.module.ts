@@ -17,6 +17,8 @@ import { PublicListingService } from './public-listing.service';
 import { OwnerGuard } from '../common/guards/owner.guard';
 import { AdminModerationController } from './admin-moderation.controller';
 import { AdminModerationService } from './admin-moderation.service';
+import { AdminApplicationsController } from './admin-applications.controller';
+import { AdminApplicationsService } from './admin-applications.service';
 
 // TM-2 — Talent Marketplace job-listing CRUD + publish.
 // TM-3 — public, unauthenticated browse + SEO detail.
@@ -25,8 +27,9 @@ import { AdminModerationService } from './admin-moderation.service';
 // TM-4 ledger backing idempotent submit).
 // TM-14 — appends the event-driven Connect `account.updated` webhook surface
 // (controller + thin service) reusing the TM-10 adapter; append-only.
-// TM-7a — owner-only listing moderation (admin review queue + decisions); the
-// applicant-review half (TM-7b) appends additively atop this.
+// TM-7a — owner-only listing moderation (admin review queue + decisions).
+// TM-7b — owner-only applicant review; appends additively atop 7a, reusing the
+// shared review-queue/ledger helpers.
 @Module({
   imports: [AntiBotModule, TalentConnectAdapterModule],
   controllers: [
@@ -35,6 +38,7 @@ import { AdminModerationService } from './admin-moderation.service';
     TalentConnectWebhookController,
     PublicListingController,
     AdminModerationController,
+    AdminApplicationsController,
   ],
   providers: [
     JobListingService,
@@ -48,6 +52,7 @@ import { AdminModerationService } from './admin-moderation.service';
     TalentConnectWebhookService,
     OwnerGuard,
     AdminModerationService,
+    AdminApplicationsService,
   ],
   exports: [JobListingService, ApplyService],
 })

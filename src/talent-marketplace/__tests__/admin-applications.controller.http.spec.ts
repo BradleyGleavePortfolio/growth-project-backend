@@ -1,0 +1,148 @@
+import 'reflect-metadata';
+import * as http from 'http';
+import { CanActivate, INestApplication, ValidationPipe } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import { AdminApplicationsController } from '../admin-applications.controller';
+import { AdminApplicationsService } from '../admin-applications.service';
+import { JwtAuthGuard } from '../../auth/auth.guard';
+import { OwnerGuard } from '../../common/guards/owner.guard';
+import { HttpExceptionFilter } from '../../filters/http-exception.filter';
+
+// TM-7b — wire-envelope pin for the applicant queue's invalid `?status` filter,
+// mirroring the TM-7a admin-moderation http spec. The service-level spec asserts
+// class-validator constraint keys; THIS spec boots a real Nest HTTP app with the
+// SAME global ValidationPipe + HttpExceptionFilter main.ts wires and issues real
+// GETs over Node's built-in http module (no supertest — absent from this repo's
+// golden node_modules). It locks the exact 400 wire body so a regression that
+// drops the stable `code: 'invalid_application_status'` discriminator fails the
+// build, and pins valid-status 200s so the pipe never rejects a real queue.
+//
+// No DB: the service is replaced by a stub returning an empty page, so the happy
+// path returns 200 without Prisma. The owner guards are overridden to allow so
+// the request reaches the handler (their contract is pinned in the controller
+// metadata spec and is not under test here).
+
+interface HttpResult {
+  status: number;
+  body: unknown;
+}
+
+describe('AdminApplicationsController — invalid_application_status wire envelope', () => {
+  let app: INestApplication;
+  let baseUrl: string;
+
+  // Stub service: listApplications resolves an empty page so the 200 happy path
+  // exercises the full pipe → handler → service chain without Prisma.
+  class StubService {
+    listApplications() {
+      return Promise.resolve({ items: [], next_cursor: null });
+    }
+    reviewApplication() {
+      return Promise.resolve(null);
+    }
+  }
+
+  // Allow-all guards so the GET reaches the controller; the owner-only contract
+  // is pinned in admin-applications.controller.spec.ts and is not under test here.
+  class AllowGuard implements CanActivate {
+    canActivate(): boolean {
+      return true;
+    }
+  }
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      controllers: [AdminApplicationsController],
+      providers: [{ provide: AdminApplicationsService, useClass: StubService }],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useClass(AllowGuard)
+      .overrideGuard(OwnerGuard)
+      .useClass(AllowGuard)
+      .compile();
+
+    app = moduleRef.createNestApplication();
+    // Register the SAME global pipe + filter main.ts wires, so the asserted body
+    // is the real production envelope, not Nest's raw default.
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+    );
+    app.useGlobalFilters(new HttpExceptionFilter());
+    await app.init();
+    await app.listen(0);
+    const addr = app.getHttpServer().address();
+    const port = typeof addr === 'object' && addr ? addr.port : 0;
+    baseUrl = `http://127.0.0.1:${port}`;
+  });
+
+  afterAll(async () => {
+    if (app) await app.close();
+  });
+
+  function get(path: string): Promise<HttpResult> {
+    return new Promise((resolve, reject) => {
+      const req = http.request(`${baseUrl}${path}`, { method: 'GET' }, (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          let body: unknown = null;
+          try {
+            body = data.length ? JSON.parse(data) : null;
+          } catch {
+            body = data;
+          }
+          resolve({ status: res.statusCode ?? 0, body });
+        });
+      });
+      req.on('error', reject);
+      req.end();
+    });
+  }
+
+  it('returns 400 with code:invalid_application_status for an unknown status', async () => {
+    const res = await get('/talent-marketplace/admin/applications?status=garbage');
+    expect(res.status).toBe(400);
+    const body = res.body as Record<string, unknown>;
+    expect(body.statusCode).toBe(400);
+    expect(body.error).toBe('Bad Request');
+    expect(body.message).toBe('Invalid application status');
+    // The stable discriminator clients branch on must reach the wire.
+    expect(body.code).toBe('invalid_application_status');
+  });
+
+  it('returns 400 with code:invalid_application_status for an empty status (B-P2-8)', async () => {
+    // `?status=` is supplied-but-invalid: it must return the SAME stable coded
+    // envelope as `?status=garbage`, not the DTO @IsIn's generic, uncoded 400.
+    const res = await get('/talent-marketplace/admin/applications?status=');
+    expect(res.status).toBe(400);
+    const body = res.body as Record<string, unknown>;
+    expect(body.statusCode).toBe(400);
+    expect(body.error).toBe('Bad Request');
+    expect(body.message).toBe('Invalid application status');
+    expect(body.code).toBe('invalid_application_status');
+  });
+
+  it('returns 400 with code:invalid_application_status for a listing-only status (draft)', async () => {
+    // `draft` is a JobListing status, not an Application status — it must be
+    // rejected by THIS queue's pipe with the application-coded envelope.
+    const res = await get('/talent-marketplace/admin/applications?status=draft');
+    expect(res.status).toBe(400);
+    const body = res.body as Record<string, unknown>;
+    expect(body.code).toBe('invalid_application_status');
+  });
+
+  it.each(['submitted', 'screening', 'shortlisted', 'offered', 'placed', 'rejected', 'withdrawn'])(
+    'returns 200 for the canonical status %s (sanity, not regression)',
+    async (status) => {
+      const res = await get(`/talent-marketplace/admin/applications?status=${status}`);
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ items: [], next_cursor: null });
+    },
+  );
+
+  it('returns 200 with no status filter (optional)', async () => {
+    const res = await get('/talent-marketplace/admin/applications');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ items: [], next_cursor: null });
+  });
+});
