@@ -15,8 +15,13 @@ export class ParseListingStatusPipe
   implements PipeTransform<unknown, ListingStatus | undefined>
 {
   transform(value: unknown): ListingStatus | undefined {
-    // The filter is optional: an omitted status is a valid "all queues" query.
-    if (value === undefined || value === null || value === '') return undefined;
+    // The filter is optional: a genuinely omitted status (no `status` key at
+    // all) is a valid "all queues" query.
+    if (value === undefined || value === null) return undefined;
+    // B-P2-8: an empty-string status (`?status=`) is supplied-but-invalid, not
+    // omitted. Treat it like any other unknown value so it returns the same
+    // stable `code: 'invalid_listing_status'` envelope as `?status=garbage`
+    // rather than falling through to the DTO @IsIn's generic, uncoded 400.
     if (typeof value === 'string' && (LISTING_STATUS as readonly string[]).includes(value)) {
       return value as ListingStatus;
     }

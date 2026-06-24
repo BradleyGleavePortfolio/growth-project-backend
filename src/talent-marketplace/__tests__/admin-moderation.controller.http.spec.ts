@@ -110,6 +110,18 @@ describe('AdminModerationController — invalid_listing_status wire envelope (B-
     expect(body.code).toBe('invalid_listing_status');
   });
 
+  it('returns 400 with code:invalid_listing_status for an empty status (B-P2-8)', async () => {
+    // `?status=` is supplied-but-invalid: it must return the SAME stable coded
+    // envelope as `?status=garbage`, not the DTO @IsIn's generic, uncoded 400.
+    const res = await get('/talent-marketplace/admin/listings?status=');
+    expect(res.status).toBe(400);
+    const body = res.body as Record<string, unknown>;
+    expect(body.statusCode).toBe(400);
+    expect(body.error).toBe('Bad Request');
+    expect(body.message).toBe('Invalid listing status');
+    expect(body.code).toBe('invalid_listing_status');
+  });
+
   it.each(['draft', 'published', 'closed'])(
     'returns 200 for the canonical status %s (sanity, not regression)',
     async (status) => {
