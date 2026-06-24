@@ -1164,6 +1164,29 @@ describe('extractEnvVarRefs — declaration-name shadows (R5b F001)', () => {
     expect([...extractEnvVarRefs(code)]).toEqual([]);
   });
 
+  it('R5c: import K = require() inside namespace shadowing file-scope const drops resolution', () => {
+    const code = [
+      "const K = 'FOO';",
+      'namespace N {',
+      "  import K = require('./x');",
+      '  export const v = process.env[K];',
+      '}',
+    ].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
+  it('R5c: import K = ns.X inside namespace shadowing file-scope const drops resolution', () => {
+    const code = [
+      "const K = 'FOO';",
+      'namespace Outer { export namespace Inner { export const X = 1; } }',
+      'namespace N {',
+      '  import K = Outer.Inner.X;',
+      '  export const v = process.env[K];',
+      '}',
+    ].join('\n');
+    expect([...extractEnvVarRefs(code)]).toEqual([]);
+  });
+
   it('handles an anonymous default function export (no throw, no pollution)', () => {
     const code = [
       'export default function(){}',
@@ -1180,11 +1203,17 @@ describe('extractEnvVarRefs — declaration-name shadows (R5b F001)', () => {
     expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
   });
 
-  it('handles a string-literal module declaration (no throw, no pollution)', () => {
-    const code = ['declare module "x" {}', "const K = 'FOO';", 'const v = process.env[K];'].join(
-      '\n',
-    );
-    expect([...extractEnvVarRefs(code)]).toEqual(['FOO']);
+  it('R5c: declare module "FOO" {} does not pollute bindings — isIdentifier guard pin', () => {
+    const code = [
+      'declare module "FOO" {}',
+      "const FOO = 'BAR';",
+      'const v = process.env[FOO];',
+    ].join('\n');
+    // isIdentifier(node.name) guard present (correct): the string-literal module
+    // name "FOO" is skipped, FOO stays bound once → resolves 'BAR' → ['BAR'].
+    // Drop the guard: StringLiteral.text "FOO" gets bumped → FOO bound twice →
+    // ambiguous → dropped → []. The two halves diverge → the guard is pinned.
+    expect([...extractEnvVarRefs(code)]).toEqual(['BAR']);
   });
 });
 

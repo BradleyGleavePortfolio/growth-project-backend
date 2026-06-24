@@ -336,9 +336,12 @@ export function extractEnvVarRefs(content: string, fileName = 'inline.ts'): Set<
  *      string-valued `const` variable declaration.
  */
 function collectStringConsts(sf: ts.SourceFile): Map<string, string> {
-  // First pass: count every variable-declaration binding per identifier name,
+  // First pass: count every value-introducing binding per identifier name,
   // across all scopes. Any name bound more than once is an ambiguous alias and
-  // is excluded from resolution (F002 — ambiguous binding → skip).
+  // is excluded from resolution (F002 — ambiguous binding → skip). FIVE binder
+  // kinds are counted: VariableDeclaration (incl. catch / for-of / for-in vars),
+  // Parameter, BindingElement, named function/class/enum/module declarations, and
+  // ImportEqualsDeclaration (import K = require('x') / import K = ns.X).
   const bindingCounts = new Map<string, number>();
   const bumpBinding = (name: string): void => {
     bindingCounts.set(name, (bindingCounts.get(name) ?? 0) + 1);
@@ -382,6 +385,11 @@ function collectStringConsts(sf: ts.SourceFile): Map<string, string> {
       // (export default function(){}) and ModuleDeclaration .name can be a
       // StringLiteral (declare module "x") — neither shape introduces a same-name
       // value binding we'd be guarding against.
+      bumpBinding(node.name.text);
+    } else if (ts.isImportEqualsDeclaration(node) && ts.isIdentifier(node.name)) {
+      // R5c-F001: import K = require('x') / import K = ns.X introduce a value
+      // binding via an Identifier .name that can shadow a same-named file-scope
+      // const inside a namespace/module. Count for fail-closed ambiguity (R59).
       bumpBinding(node.name.text);
     }
     ts.forEachChild(node, countBindings);
