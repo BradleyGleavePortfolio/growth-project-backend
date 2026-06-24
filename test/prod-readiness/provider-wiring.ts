@@ -292,7 +292,9 @@ export function isPlausibleSupabaseServiceRoleJwt(v: unknown): boolean {
   // function is part of the public module surface with a documented "any failure
   // returns false" contract. A JS caller or a future refactor passing a non-string
   // (null/undefined/number/object) must return false, never throw on `.split`.
-  if (typeof v !== 'string' || v.length === 0) return false;
+  // No explicit length === 0 clause is needed here: the downstream
+  // segments.length !== 3 check already rejects empty/short strings.
+  if (typeof v !== 'string') return false;
   const segments = v.split('.');
   if (segments.length !== 3) return false;
   const [headerSeg, payloadSeg, signatureSeg] = segments;
@@ -328,12 +330,14 @@ export function isPlausibleSupabaseServiceRoleJwt(v: unknown): boolean {
 }
 
 /**
- * Loose structural check that a value LOOKS like a filesystem path (absolute or
- * relative) rather than a URL or an opaque secret blob. Used for `*_FILE`
- * credential vars (AWS_WEB_IDENTITY_TOKEN_FILE, AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE):
- * actual on-disk existence is gated separately through the injected evidence map
- * (`fileEvidenceOk`). Rejects empty values and any value containing whitespace
- * or characters that never appear in a credential-file path.
+ * Loose syntactic shape check for credential-file path env values. Rejects
+ * empty/whitespace strings and inputs containing characters that never appear
+ * in well-formed paths (newlines, tabs, etc.). NOTE: this is a non-authoritative
+ * pre-gate and intentionally admits URL-like inputs (e.g. 'https://…'); for
+ * `*_FILE` vars the authoritative check is `fileEvidenceOk`, which consults
+ * `<VAR>_FILE_EXISTS` evidence collected by `collectFileEvidence` →
+ * `isReadableRegularFile` at the production edge. A URL-as-path resolves to
+ * no regular file → `_EXISTS:false` → STUB.
  */
 function isPathShaped(v: string): boolean {
   return v.length > 0 && /^[\w.\-/@+=,:~]+$/.test(v);

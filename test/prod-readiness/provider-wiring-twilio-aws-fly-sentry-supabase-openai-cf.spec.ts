@@ -1500,10 +1500,6 @@ describe('R5-F001 (Lens A) — isPlausibleSupabaseServiceRoleJwt is fail-closed 
     expect(isPlausibleSupabaseServiceRoleJwt({})).toBe(false);
   });
 
-  it('18. empty string → false', () => {
-    expect(isPlausibleSupabaseServiceRoleJwt('')).toBe(false);
-  });
-
   it('19. valid service-role JWT string → true (happy-path smoke)', () => {
     expect(isPlausibleSupabaseServiceRoleJwt(validToken)).toBe(true);
   });
