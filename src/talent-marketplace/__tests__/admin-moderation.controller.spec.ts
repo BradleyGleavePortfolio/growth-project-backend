@@ -1,12 +1,10 @@
 import 'reflect-metadata';
-import { GUARDS_METADATA, PATH_METADATA } from '@nestjs/common/constants';
+import { HttpStatus } from '@nestjs/common';
+import { GUARDS_METADATA, HTTP_CODE_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { OwnerGuard } from '../../common/guards/owner.guard';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
-import {
-  AdminModerationController,
-  withKey,
-} from '../admin-moderation.controller';
+import { AdminModerationController, withKey } from '../admin-moderation.controller';
 import { AdminModerationService } from '../admin-moderation.service';
 import type { ReviewDecisionDto } from '../admin-moderation.dto';
 import type { AuthedRequest } from '../../auth/auth-request';
@@ -57,18 +55,26 @@ describe('AdminModerationController — owner-only security contract', () => {
   });
 
   it('gates the class on @Roles(owner)', () => {
-    expect(Reflect.getMetadata(ROLES_KEY, AdminModerationController)).toEqual([
-      'owner',
-    ]);
+    expect(Reflect.getMetadata(ROLES_KEY, AdminModerationController)).toEqual(['owner']);
   });
 
   it('applies JwtAuthGuard + OwnerGuard at the class level', () => {
-    const guards = Reflect.getMetadata(
-      GUARDS_METADATA,
-      AdminModerationController,
-    );
+    const guards = Reflect.getMetadata(GUARDS_METADATA, AdminModerationController);
     expect(guards).toContain(JwtAuthGuard);
     expect(guards).toContain(OwnerGuard);
+  });
+
+  // Review is an idempotent state transition, not a creation: a first decision
+  // AND a replay both return 200, never Nest's default 201 (FIX 5). The handler
+  // returns the same shape on both paths, so the single @HttpCode(200) covers
+  // both wire responses.
+  it('pins HTTP 200 on the review POST (not the default 201)', () => {
+    const httpCode = Reflect.getMetadata(
+      HTTP_CODE_METADATA,
+      AdminModerationController.prototype.reviewListing,
+    );
+    expect(httpCode).toBe(HttpStatus.OK);
+    expect(httpCode).toBe(200);
   });
 });
 

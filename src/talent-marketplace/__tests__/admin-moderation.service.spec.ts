@@ -1,10 +1,14 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import 'reflect-metadata';
+import { ConflictException, Logger, NotFoundException } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { PrismaService } from '../../prisma.service';
 import {
   MarketplaceIdempotencyService,
   type ClaimOrReplayResult,
 } from '../marketplace-idempotency.service';
 import { AdminModerationService } from '../admin-moderation.service';
+import { ReviewQueueQueryDto } from '../admin-moderation.dto';
 
 // TM-7a — the moderation service is the owner-only listing review boundary.
 // Tests pin: keyset queue projection (allow-list card, no raw entity spread),
@@ -14,6 +18,16 @@ import { AdminModerationService } from '../admin-moderation.service';
 
 const NOW = new Date('2026-06-18T04:41:00.000Z');
 
+// Silence + capture the structured moderation-decision log (see
+// logModerationDecision). Tests that assert the audit event read this spy.
+let logSpy: jest.SpyInstance;
+beforeEach(() => {
+  logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+});
+afterEach(() => {
+  logSpy.mockRestore();
+});
+
 function makePrisma(parts: Record<string, unknown>): PrismaService {
   return Object.assign(
     Object.create(PrismaService.prototype) as PrismaService,
@@ -21,16 +35,41 @@ function makePrisma(parts: Record<string, unknown>): PrismaService {
   ) as PrismaService;
 }
 
-function makeIdempotency(
-  parts: Partial<Record<string, jest.Mock>>,
-): MarketplaceIdempotencyService {
+function makeIdempotency(parts: Partial<Record<string, jest.Mock>>): MarketplaceIdempotencyService {
   return Object.assign(
-    Object.create(
-      MarketplaceIdempotencyService.prototype,
-    ) as MarketplaceIdempotencyService,
+    Object.create(MarketplaceIdempotencyService.prototype) as MarketplaceIdempotencyService,
     parts,
   );
 }
+
+describe('ReviewQueueQueryDto — status filter validation (FIX 1)', () => {
+  async function validateStatus(status: unknown): Promise<string[]> {
+    const dto = plainToInstance(ReviewQueueQueryDto, { status });
+    const errors = await validate(dto as object, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+    return errors.flatMap((e) => Object.keys(e.constraints ?? {}));
+  }
+
+  it.each(['draft', 'published', 'closed'])('accepts the canonical status %s', async (status) => {
+    expect(await validateStatus(status)).toHaveLength(0);
+  });
+
+  it('rejects ?status=garbage at the validation layer', async () => {
+    const constraints = await validateStatus('garbage');
+    expect(constraints).toContain('isIn');
+  });
+
+  it('still allows an omitted status (optional filter)', async () => {
+    const dto = plainToInstance(ReviewQueueQueryDto, {});
+    const errors = await validate(dto as object, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+    expect(errors).toHaveLength(0);
+  });
+});
 
 describe('AdminModerationService.listListings — keyset queue + projection', () => {
   it('projects an allow-list card and never spreads the raw row', async () => {
@@ -66,6 +105,25 @@ describe('AdminModerationService.listListings — keyset queue + projection', ()
     expect(findMany.mock.calls[0][0].where.status).toBe('draft');
   });
 
+  it.each(['published', 'closed'] as const)(
+    'passes a %s status filter straight onto the indexed column',
+    async (status) => {
+      const findMany = jest.fn(async (_args: { where: Record<string, unknown> }) => []);
+      const prisma = makePrisma({ jobListing: { findMany } });
+      const service = new AdminModerationService(prisma, makeIdempotency({}));
+      await service.listListings({ status });
+      expect(findMany.mock.calls[0][0].where.status).toBe(status);
+    },
+  );
+
+  it('omits the status filter entirely when none is supplied', async () => {
+    const findMany = jest.fn(async (_args: { where: Record<string, unknown> }) => []);
+    const prisma = makePrisma({ jobListing: { findMany } });
+    const service = new AdminModerationService(prisma, makeIdempotency({}));
+    await service.listListings({});
+    expect('status' in findMany.mock.calls[0][0].where).toBe(false);
+  });
+
   it('returns a next_cursor only when a full page + 1 is fetched', async () => {
     const rows = Array.from({ length: 21 }, (_, i) => ({
       id: `list-${i}`,
@@ -94,24 +152,16 @@ describe('AdminModerationService.reviewListing — decision + idempotency', () =
       releaseClaim?: jest.Mock;
     } = {},
   ) {
-    const findUnique =
-      opts.findUnique ?? jest.fn(async () => ({ id: 'list-1' }));
-    const updateMany =
-      opts.updateMany ?? jest.fn(async () => ({ count: 1 }));
+    const findUnique = opts.findUnique ?? jest.fn(async () => ({ id: 'list-1' }));
+    const updateMany = opts.updateMany ?? jest.fn(async () => ({ count: 1 }));
     const prisma = makePrisma({
       jobListing: { findUnique, updateMany },
     });
     const claimOrReplay = jest.fn(
-      async (_key: {
-        userId: string;
-        routeKey: string;
-        idempotencyKey: string;
-      }) => claim,
+      async (_key: { userId: string; routeKey: string; idempotencyKey: string }) => claim,
     );
-    const markCompleted =
-      opts.markCompleted ?? jest.fn(async () => ({ outcome: 'ok' }));
-    const releaseClaim =
-      opts.releaseClaim ?? jest.fn(async () => ({ outcome: 'ok' }));
+    const markCompleted = opts.markCompleted ?? jest.fn(async () => ({ outcome: 'ok' }));
+    const releaseClaim = opts.releaseClaim ?? jest.fn(async () => ({ outcome: 'ok' }));
     const idem = makeIdempotency({
       claimOrReplay,
       markCompleted,
@@ -127,7 +177,7 @@ describe('AdminModerationService.reviewListing — decision + idempotency', () =
     };
   }
 
-  it('approves a draft listing → published via a status-guarded write', async () => {
+  it('approves a draft listing → published via a status-guarded write, stamping published_at', async () => {
     const { service, updateMany } = serviceFor({
       outcome: 'claimed',
       claimNonce: 'n1',
@@ -141,15 +191,81 @@ describe('AdminModerationService.reviewListing — decision + idempotency', () =
     const where = updateMany.mock.calls[0][0].where;
     expect(where.id).toBe('list-1');
     expect(where.status).toBe('draft');
-    expect(updateMany.mock.calls[0][0].data.status).toBe('published');
+    const data = updateMany.mock.calls[0][0].data;
+    expect(data.status).toBe('published');
+    // Lifecycle timestamp set on approval (P2-1) and echoed on the result with
+    // the SAME instant.
+    expect(data.published_at).toBeInstanceOf(Date);
+    expect(data.closed_at).toBeUndefined();
+    expect(res.decided_at).toBe((data.published_at as Date).toISOString());
+    expect(res.decided_by).toBe('owner-1');
   });
 
-  it('rejects a draft listing → closed', async () => {
-    const { service } = serviceFor({ outcome: 'claimed', claimNonce: 'n1' });
+  it('rejects a draft listing → closed, stamping closed_at', async () => {
+    const { service, updateMany } = serviceFor({
+      outcome: 'claimed',
+      claimNonce: 'n1',
+    });
     const res = await service.reviewListing('owner-1', 'list-1', {
       decision: 'rejected',
     });
     expect(res.status).toBe('closed');
+    const data = updateMany.mock.calls[0][0].data;
+    expect(data.status).toBe('closed');
+    // Lifecycle timestamp set on rejection (P2-1) with the same instant echoed.
+    expect(data.closed_at).toBeInstanceOf(Date);
+    expect(data.published_at).toBeUndefined();
+    expect(res.decided_at).toBe((data.closed_at as Date).toISOString());
+  });
+
+  it('persists the moderation note onto the result and returns it', async () => {
+    const { service, markCompleted } = serviceFor({
+      outcome: 'claimed',
+      claimNonce: 'n1',
+    });
+    const res = await service.reviewListing('owner-1', 'list-1', {
+      decision: 'rejected',
+      note: 'spam listing',
+    });
+    expect(res.note).toBe('spam listing');
+    // The note is written into the ledger row JSON so it survives a replay.
+    const stored = markCompleted.mock.calls[0][2] as Record<string, unknown>;
+    expect(stored.note).toBe('spam listing');
+    expect(stored.decided_by).toBe('owner-1');
+    expect(typeof stored.decided_at).toBe('string');
+  });
+
+  it('defaults a missing note to null on the result and ledger row', async () => {
+    const { service, markCompleted } = serviceFor({
+      outcome: 'claimed',
+      claimNonce: 'n1',
+    });
+    const res = await service.reviewListing('owner-1', 'list-1', {
+      decision: 'approved',
+    });
+    expect(res.note).toBeNull();
+    const stored = markCompleted.mock.calls[0][2] as Record<string, unknown>;
+    expect(stored.note).toBeNull();
+  });
+
+  it('emits a structured moderation_decision audit event on a first decision', async () => {
+    const { service } = serviceFor({ outcome: 'claimed', claimNonce: 'n1' });
+    await service.reviewListing('owner-1', 'list-1', {
+      decision: 'approved',
+      note: 'looks good',
+    });
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'talent_marketplace.listing.moderation_decision',
+        owner_id: 'owner-1',
+        listing_id: 'list-1',
+        decision: 'approved',
+        note: 'looks good',
+        replayed: false,
+        result_status: 'published',
+      }),
+      expect.any(String),
+    );
   });
 
   it('throws an opaque listing_not_found for an unknown listing', async () => {
@@ -179,7 +295,14 @@ describe('AdminModerationService.reviewListing — decision + idempotency', () =
   it('replays the FIRST decision when the ledger reports a replay', async () => {
     const { service, updateMany } = serviceFor({
       outcome: 'replay',
-      response: { id: 'list-1', status: 'published', decision: 'approved' },
+      response: {
+        id: 'list-1',
+        status: 'published',
+        decision: 'approved',
+        note: 'approved with a note',
+        decided_by: 'owner-1',
+        decided_at: NOW.toISOString(),
+      },
     });
     const res = await service.reviewListing('owner-1', 'list-1', {
       decision: 'rejected',
@@ -188,7 +311,39 @@ describe('AdminModerationService.reviewListing — decision + idempotency', () =
     expect(res.decision).toBe('approved');
     expect(res.status).toBe('published');
     expect(res.replayed).toBe(true);
+    // The note + actor + timestamp round-trip through the ledger on replay so
+    // the replay response shares the same shape as the first decision (FIX 3).
+    expect(res.note).toBe('approved with a note');
+    expect(res.decided_by).toBe('owner-1');
+    expect(res.decided_at).toBe(NOW.toISOString());
     expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it('emits the audit event with replayed=true on a replay', async () => {
+    const { service } = serviceFor({
+      outcome: 'replay',
+      response: {
+        id: 'list-1',
+        status: 'published',
+        decision: 'approved',
+        note: 'approved with a note',
+        decided_by: 'owner-1',
+        decided_at: NOW.toISOString(),
+      },
+    });
+    await service.reviewListing('owner-1', 'list-1', { decision: 'rejected' });
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'talent_marketplace.listing.moderation_decision',
+        owner_id: 'owner-1',
+        listing_id: 'list-1',
+        decision: 'approved',
+        note: 'approved with a note',
+        replayed: true,
+        result_status: 'published',
+      }),
+      expect.any(String),
+    );
   });
 
   it('a second decision on an already-decided row conflicts (status guard catches it)', async () => {

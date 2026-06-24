@@ -14,6 +14,8 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -26,10 +28,7 @@ import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { OwnerGuard } from '../common/guards/owner.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import {
-  ReviewDecisionDto,
-  ReviewQueueQueryDto,
-} from './admin-moderation.dto';
+import { ReviewDecisionDto, ReviewQueueQueryDto } from './admin-moderation.dto';
 import { AdminModerationService } from './admin-moderation.service';
 
 @ApiTags('talent-marketplace')
@@ -44,7 +43,10 @@ export class AdminModerationController {
     return this.moderation.listListings(query);
   }
 
+  // Review is an idempotent state transition, not a resource creation: a first
+  // decision and a replay both return 200, never Nest's default 201 Created.
   @Post('listings/:id/review')
+  @HttpCode(HttpStatus.OK)
   async reviewListing(
     @Req() req: AuthedRequest,
     @Param('id', ParseUUIDPipe) id: string,

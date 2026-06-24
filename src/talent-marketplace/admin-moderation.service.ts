@@ -8,19 +8,11 @@
 // fromLedger) and the atomic `review` wrapper are exported so the TM-7b
 // applicant-review service can import them without duplicating the ledger
 // protocol. The applications half itself ships in admin-applications.service.ts.
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { MarketplaceIdempotencyService } from './marketplace-idempotency.service';
-import {
-  buildReviewCursor,
-  clampReviewLimit,
-  parseReviewCursor,
-} from './admin-review-cursor';
+import { buildReviewCursor, clampReviewLimit, parseReviewCursor } from './admin-review-cursor';
 import type {
   ListingReviewCardDto,
   ReviewDecisionDto,
@@ -28,6 +20,15 @@ import type {
   ReviewQueueQueryDto,
   ReviewQueueResponse,
 } from './admin-moderation.dto';
+
+// Truncate a note before it lands in a structured log line so a 2k-char note
+// cannot bloat the log/Sentry breadcrumb. The full note is still persisted to
+// the ledger row; only the logged copy is clipped.
+const NOTE_LOG_MAX = 256;
+function truncateNote(note: string | null): string | null {
+  if (note === null) return null;
+  return note.length > NOTE_LOG_MAX ? `${note.slice(0, NOTE_LOG_MAX)}…` : note;
+}
 
 export const LISTING_ROUTE_KEY = 'tm:admin:listings:review';
 
@@ -40,6 +41,8 @@ const LISTING_REVIEWABLE: Prisma.JobListingWhereInput['status'] = 'draft';
 
 @Injectable()
 export class AdminModerationService {
+  private readonly logger = new Logger(AdminModerationService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly idempotency: MarketplaceIdempotencyService,
@@ -51,8 +54,10 @@ export class AdminModerationService {
   ): Promise<ReviewQueueResponse<ListingReviewCardDto>> {
     const limit = clampReviewLimit(query.limit);
     const where: Prisma.JobListingWhereInput = keysetWhere(query, {});
-    if (query.status)
-      where.status = query.status as Prisma.JobListingWhereInput['status'];
+    // `query.status` is already validated to a canonical `JobListingStatus`
+    // member by @IsIn on the DTO, so it narrows directly onto the indexed
+    // column — no raw cast required.
+    if (query.status) where.status = query.status;
 
     const rows = await this.prisma.jobListing.findMany({
       where,
@@ -73,13 +78,17 @@ export class AdminModerationService {
     listingId: string,
     dto: ReviewDecisionDto,
   ): Promise<ReviewDecisionResult> {
-    return review(
+    const result = await review(
       this.idempotency,
       ownerId,
       listingId,
       dto,
       LISTING_ROUTE_KEY,
       async () => {
+        // One timestamp captured up front so the status enum and the lifecycle
+        // column (published_at / closed_at) are written with the exact same
+        // instant; it is also the durable `decided_at` on the ledger row.
+        const decidedAt = new Date();
         const found = await this.prisma.jobListing.findUnique({
           where: { id: listingId },
           select: { id: true },
@@ -88,18 +97,53 @@ export class AdminModerationService {
         // Status-guarded write: only a still-reviewable (draft) row advances.
         // A repeat decision (e.g. approve→reject) matches zero rows here and is
         // caught below, so the ledger's first stored result is what replays —
-        // the decision can never be silently overwritten (P1-3).
+        // the decision can never be silently overwritten (P1-3). The lifecycle
+        // timestamp is set alongside status so an approved listing is not
+        // published with a null published_at and a rejected one carries a
+        // durable closed_at (P2-1). Only this draft→published transition sets
+        // published_at (the row is `draft` until now), so "first publish wins".
         const updated = await this.prisma.jobListing.updateMany({
           where: { id: listingId, status: LISTING_REVIEWABLE },
-          data: { status: LISTING_NEXT[dto.decision] },
+          data:
+            dto.decision === 'approved'
+              ? { status: 'published', published_at: decidedAt }
+              : { status: 'closed', closed_at: decidedAt },
         });
         if (updated.count === 0) throw alreadyDecided('listing');
         return {
           id: listingId,
           status: LISTING_NEXT[dto.decision],
           decision: dto.decision,
+          note: dto.note ?? null,
+          decided_by: ownerId,
+          decided_at: decidedAt.toISOString(),
         };
       },
+    );
+
+    // Structured moderation-decision audit event on BOTH the first decision and
+    // every replay (matches the owner-tooling convention in
+    // coach-ai-budget.service.ts: `logger.log({ event, ...fields }, msg)`).
+    this.logModerationDecision(ownerId, listingId, result);
+    return result;
+  }
+
+  private logModerationDecision(
+    ownerId: string,
+    listingId: string,
+    result: ReviewDecisionResult,
+  ): void {
+    this.logger.log(
+      {
+        event: 'talent_marketplace.listing.moderation_decision',
+        owner_id: ownerId,
+        listing_id: listingId,
+        decision: result.decision,
+        note: truncateNote(result.note),
+        replayed: result.replayed,
+        result_status: result.status,
+      },
+      'listing moderation decision',
     );
   }
 }
@@ -108,22 +152,24 @@ export class AdminModerationService {
 
 // (created_at, id) keyset predicate shared by both queues. Pre-cursor pages
 // return everything; a cursor pins the strict "older than" tuple boundary.
-export function keysetWhere<T extends { AND?: unknown }>(
-  query: ReviewQueueQueryDto,
-  base: T,
-): T {
+export function keysetWhere<T extends { AND?: unknown }>(query: ReviewQueueQueryDto, base: T): T {
   const cursor = query.cursor ? parseReviewCursor(query.cursor) : null;
   if (!cursor) return base;
+  const cursorPredicate = {
+    OR: [
+      { created_at: { lt: cursor.created_at } },
+      { created_at: cursor.created_at, id: { lt: cursor.id } },
+    ],
+  };
+  // Preserve any existing `base.AND` rather than clobbering it: a TM-7b caller
+  // may pass a base that already carries AND predicates, and a paginated
+  // request must keep them. Normalize the prior AND (object or array) to an
+  // array and append the cursor boundary.
+  const priorAnd = base.AND;
+  const existing = Array.isArray(priorAnd) ? priorAnd : priorAnd !== undefined ? [priorAnd] : [];
   return {
     ...base,
-    AND: [
-      {
-        OR: [
-          { created_at: { lt: cursor.created_at } },
-          { created_at: cursor.created_at, id: { lt: cursor.id } },
-        ],
-      },
-    ],
+    AND: [...existing, cursorPredicate],
   };
 }
 
@@ -208,6 +254,9 @@ export function toLedgerJson(result: ReviewDecisionResult): Prisma.InputJsonValu
     id: result.id,
     status: result.status,
     decision: result.decision,
+    note: result.note,
+    decided_by: result.decided_by,
+    decided_at: result.decided_at,
   };
 }
 
@@ -219,12 +268,18 @@ export function fromLedger(value: Prisma.JsonValue): ReviewDecisionResult {
     if (
       typeof row.id === 'string' &&
       typeof row.status === 'string' &&
-      (row.decision === 'approved' || row.decision === 'rejected')
+      (row.decision === 'approved' || row.decision === 'rejected') &&
+      (row.note === null || typeof row.note === 'string') &&
+      typeof row.decided_by === 'string' &&
+      typeof row.decided_at === 'string'
     ) {
       return {
         id: row.id,
         status: row.status,
         decision: row.decision,
+        note: row.note,
+        decided_by: row.decided_by,
+        decided_at: row.decided_at,
         replayed: true,
       };
     }

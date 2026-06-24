@@ -2,15 +2,13 @@
 // Responses are explicit allow-list shapes — no raw entity is ever spread.
 
 import { Type } from 'class-transformer';
-import {
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsString,
-  Max,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+
+// Canonical JobListing status enum members (mirrors prisma `JobListingStatus`).
+// Used both to validate the queue filter and to narrow it into Prisma's
+// `where.status` without a raw cast.
+export const LISTING_STATUS = ['draft', 'published', 'closed'] as const;
+export type ListingStatus = (typeof LISTING_STATUS)[number];
 
 // Keyset (created_at, id) tuple cursor query, optionally filtered by status.
 // Status values are the canonical DB enum members for each queue so the filter
@@ -28,12 +26,12 @@ export class ReviewQueueQueryDto {
   @Max(50)
   limit?: number;
 
-  // Listing queue: draft | published | closed. Validated loosely here; the
-  // service pins it to the row's own enum.
+  // Listing queue: draft | published | closed. Validated against the canonical
+  // enum here (@IsIn), so an unknown value is rejected with a 400 at the
+  // validation layer before it ever reaches Prisma.
   @IsOptional()
-  @IsString()
-  @MaxLength(40)
-  status?: string;
+  @IsIn(LISTING_STATUS)
+  status?: ListingStatus;
 }
 
 // A single review decision. Idempotent via the TM-4 ledger (Idempotency-Key
@@ -72,5 +70,11 @@ export interface ReviewDecisionResult {
   id: string;
   status: string;
   decision: 'approved' | 'rejected';
+  // The reviewer's optional note, the acting owner, and the decision instant —
+  // persisted to the idempotency ledger and round-tripped on replay so the
+  // first-decision and replay responses share the exact same shape.
+  note: string | null;
+  decided_by: string;
+  decided_at: string;
   replayed: boolean;
 }
