@@ -258,3 +258,41 @@ npx prisma migrate diff \
   --from-url "$DATABASE_URL" \
   --to-schema-datamodel prisma/schema.prisma --exit-code   # -> non-zero (Part 2 drift)
 ```
+
+---
+
+## Update — CI gate split (Part 1 / Part 2 codified in the workflow)
+
+The single `Migration Dry-Run` job `Forward migration applies cleanly` — which
+bundled BOTH the `prisma migrate deploy` apply step AND the
+`prisma migrate diff ... --exit-code` schema-parity step — has been split into
+two independently-named jobs in `.github/workflows/migration-dry-run.yml`:
+
+1. **`migrations-apply`** (display name `Forward migrations apply cleanly`) —
+   runs `npx prisma migrate deploy` after the `_supabase_bootstrap.sql` step.
+   This is the **Part 1** signal and is a **REQUIRED** status check. It keeps
+   the existing grandfather clause (PRs that touch zero `prisma/migrations/**`
+   files do not hard-fail on a pre-existing apply break).
+
+2. **`migrations-schema-parity`** (display name
+   `Schema parity (deferred to BL-MIGRATION-REBASELINE)`) — runs
+   `npx prisma migrate diff --from-url $DATABASE_URL
+   --to-schema-datamodel prisma/schema.prisma --exit-code`. This is the
+   **Part 2** signal. It is **INFORMATIONAL only** — the diff step uses
+   `continue-on-error: true` and an `if: always()` summary step prints a
+   human-readable drift count (e.g. `schema-parity drift: N items pending
+   BL-MIGRATION-REBASELINE`) and exits 0, so the ~114-item drift stays visible
+   without blocking unrelated PRs. The same grandfather clause is mirrored
+   verbatim. **Flip-back:** when BL-MIGRATION-REBASELINE lands and the chain is
+   at parity, remove `continue-on-error` from the diff step, delete the
+   summary-step `exit 0` shim, and add `migrations-schema-parity` to main's
+   required status checks — this is part of BL-MIGRATION-REBASELINE's
+   acceptance criteria (R125).
+
+The `reversibility-check` job is unchanged except that its `needs:` now points
+at the renamed `migrations-apply` job.
+
+This split is why H3 PR #459 — which never touched `prisma/migrations/**` —
+went from red (it inherited the bundled gate's verify-schema failure) to green
+on `migrations-apply`, with the deferred drift surfaced (not hidden) on
+`migrations-schema-parity`.
