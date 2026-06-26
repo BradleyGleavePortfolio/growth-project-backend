@@ -64,8 +64,8 @@ DROP TABLE IF EXISTS "community_wearable_prompts";
 CREATE TABLE "community_wearable_prompts" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "workspaceId" UUID NOT NULL,
-    "coachId" UUID NOT NULL,
-    "clientId" UUID NOT NULL,
+    "coachId" TEXT NOT NULL,
+    "clientId" TEXT NOT NULL,
     "metricKey" VARCHAR(64) NOT NULL,
     "promptText" TEXT NOT NULL,
     "generatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -79,7 +79,7 @@ CREATE TABLE "community_wearable_prompts" (
 CREATE TABLE "community_wearable_prompt_sources" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "promptId" UUID NOT NULL,
-    "sampleId" UUID NOT NULL,
+    "sampleId" TEXT NOT NULL,
     "metricKey" VARCHAR(64) NOT NULL,
     "observedValue" DECIMAL(18,6) NOT NULL,
 

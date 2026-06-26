@@ -16,13 +16,14 @@
 --   takes longer in wall-clock time and uses more I/O, but only takes a
 --   ShareUpdateExclusive lock that does not conflict with normal DML.
 --
--- WHY THE COMMIT / BEGIN BOOKENDS:
---   Prisma migrate deploy wraps every migration file in a single transaction.
---   CREATE INDEX CONCURRENTLY cannot run inside a transaction block. The
---   accepted Prisma 5 workaround is to break out of the implicit transaction
---   with COMMIT, run the concurrent index build at the top level, and then
---   start a fresh transaction so Prisma's wrapping COMMIT still has something
---   to close. This is documented in:
+-- TRANSACTION HANDLING (Prisma 6.19):
+--   CREATE INDEX CONCURRENTLY cannot run inside a transaction block. Prisma
+--   6.19's migration engine does NOT wrap a migration file in a transaction,
+--   so a bare CREATE INDEX CONCURRENTLY runs at the top level as required.
+--   The previous COMMIT;/BEGIN; bookend (a Prisma 5-era workaround) actively
+--   re-broke this under 6.19 by putting the statement back inside a
+--   transaction (SQLSTATE 25001: CREATE INDEX CONCURRENTLY cannot run inside
+--   a transaction block). The bookend has been removed accordingly.
 --     https://github.com/prisma/prisma/issues/12940
 --     https://github.com/prisma/prisma/issues/13672
 --
@@ -34,17 +35,20 @@
 --   after deploy and DROP INDEX CONCURRENTLY any invalid leftovers before
 --   re-running, per Postgres docs.
 --
+-- INDEX NAME:
+--   Named to match Prisma's auto-generated name for
+--   @@index([assigned_by_coach_id, approved_by_coach_at]) on
+--   ClientWorkoutAssignment (schema.prisma). The full generated name exceeds
+--   Postgres's 63-char identifier limit, so Prisma truncates the base and
+--   keeps the _idx suffix, yielding
+--   ClientWorkoutAssignment_assigned_by_coach_id_approved_by_co_idx. Using
+--   this exact name keeps `prisma migrate diff` drift-free.
+--
 -- ROLLBACK:
---   COMMIT;
 --   DROP INDEX CONCURRENTLY IF EXISTS
---     "ClientWorkoutAssignment_assigned_by_coach_id_approved_by_coa_idx";
---   BEGIN;
+--     "ClientWorkoutAssignment_assigned_by_coach_id_approved_by_co_idx";
 -- ─────────────────────────────────────────────────────────────────────────────
 
-COMMIT;
-
 CREATE INDEX CONCURRENTLY IF NOT EXISTS
-  "ClientWorkoutAssignment_assigned_by_coach_id_approved_by_coa_idx"
+  "ClientWorkoutAssignment_assigned_by_coach_id_approved_by_co_idx"
   ON "ClientWorkoutAssignment" ("assigned_by_coach_id", "approved_by_coach_at");
-
-BEGIN;

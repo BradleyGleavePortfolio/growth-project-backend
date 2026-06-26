@@ -43,7 +43,7 @@ CREATE TABLE "community_voice_notes" (
     "workspace_id" UUID NOT NULL,
     "cohort_id" UUID,
     "conversation_id" UUID,
-    "author_id" UUID NOT NULL,
+    "author_id" TEXT NOT NULL,
     "storage_key" TEXT NOT NULL,
     "duration_ms" INTEGER NOT NULL,
     "bytes" BIGINT NOT NULL,

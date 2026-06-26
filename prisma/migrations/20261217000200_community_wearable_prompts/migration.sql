@@ -39,8 +39,8 @@ CREATE SCHEMA IF NOT EXISTS app;
 CREATE TABLE "community_wearable_prompts" (
     "id" TEXT NOT NULL,
     "workspaceId" UUID NOT NULL,
-    "coachId" UUID NOT NULL,
-    "clientId" UUID NOT NULL,
+    "coachId" TEXT NOT NULL,
+    "clientId" TEXT NOT NULL,
     "metricKey" VARCHAR(64) NOT NULL,
     "promptText" TEXT NOT NULL,
     "generatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -54,7 +54,7 @@ CREATE TABLE "community_wearable_prompts" (
 CREATE TABLE "community_wearable_prompt_sources" (
     "id" TEXT NOT NULL,
     "promptId" TEXT NOT NULL,
-    "sampleId" UUID NOT NULL,
+    "sampleId" TEXT NOT NULL,
     "metricKey" VARCHAR(64) NOT NULL,
     "observedValue" DECIMAL(18,6) NOT NULL,
 

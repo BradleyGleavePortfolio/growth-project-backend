@@ -46,7 +46,7 @@ CREATE TABLE "community_classroom_posts" (
     "id" UUID NOT NULL,
     "workspace_id" UUID NOT NULL,
     "cohort_id" UUID,
-    "coach_id" UUID NOT NULL,
+    "coach_id" TEXT NOT NULL,
     "title" VARCHAR(200) NOT NULL,
     "body_markdown" TEXT NOT NULL,
     "status" "CommunityClassroomPostStatus" NOT NULL DEFAULT 'draft',
