@@ -99,3 +99,78 @@ redacts the name without needing to touch the brief row.
 
 Do only if telemetry shows `brief_context` average blob size exceeding ~10 KB
 or if a GDPR DPA requires a shorter erasure window than the 7-day TTL provides.
+
+---
+
+## BL-MIGRATION-REBASELINE — Replace 156-migration chain with a single declarative baseline before GA
+
+**Status:** OPEN — launch-gate item (no time trigger; sequence-only)
+**Opened by:** Operator 50 investigation, 2026-06-26 (chain-vs-prod-vs-schema drift surfaced by Op 49's `chore/migration-chain-full-repair` branch and confirmed by deep research against hyperscaler practice)
+**Priority:** P2 (build-hygiene, not user-visible — pre-launch, zero users)
+**Owner:** Next operator scheduled against this item
+
+### Problem
+
+Three sources of truth disagree:
+
+1. `prisma/schema.prisma` — declares `Recipe`, `SavedRecipe`, `ListItem`, `UserPreferences`, and other models queried by live controllers and wired into `AppModule`.
+2. `prisma/migrations/` — 156 migrations that, replayed from empty on a clean Postgres, do not create those tables and do not match the final declared schema. Fails CI's `migration-dry-run.yml` gate, which is currently bypassed by a grandfather clause.
+3. Production DB (Fly app `backend-spring-lake-3890`, Supabase us-west-1) — has the tables, plus ~18 out-of-band SQL-layer foreign keys, 2 orphan tables, a generated `tsvector` column, and a partial unique index. None of those appear in `schema.prisma`. Got there via manual DDL accumulated over 18 months.
+
+Production is healthy because each migration applied incrementally as it was added. A fresh-from-empty replay fails. The CI gate cannot be flipped from advisory to blocking until the chain is reconciled.
+
+### Why this is filed and not done
+
+Pre-launch with zero users. None of the in-flight work (A1–A13, H-class, Dependabot ladder) depends on the chain replaying from empty. The chain does not degrade by waiting; each new additive migration appends cleanly on top of running prod. This item must be resolved **before GA / first real user**, not before next feature merge.
+
+### Documented procedure (per Prisma official squashing guide)
+
+Reference: https://www.prisma.io/docs/orm/prisma-migrate/workflows/squashing-migrations
+
+1. **Reconcile `schema.prisma` to actual production state first.** Run `prisma db pull` against prod. Inspect the diff against the committed `schema.prisma`. Manually merge the 18 out-of-band FKs, the 2 orphan tables, the `tsvector` generated column, and the partial unique index into `schema.prisma` so the declarative model reflects production reality. Anything Prisma cannot model declaratively (generated columns, partial indexes, custom FK ON DELETE/UPDATE clauses) must be captured as a SQL note for step 4.
+2. **Archive the existing chain.** Move `prisma/migrations/*` (except `migration_lock.toml`) to `prisma/migrations/_archive/`. Git already preserves them; the archive directory provides local navigability.
+3. **Generate the baseline.** Create `prisma/migrations/000000000000_baseline/`. Run:
+   ```bash
+   npx prisma migrate diff \
+     --from-empty \
+     --to-schema-datamodel ./prisma/schema.prisma \
+     --script > ./prisma/migrations/000000000000_baseline/migration.sql
+   ```
+4. **Manually append any non-declarative SQL** (generated columns, partial indexes, custom FK clauses, orphan-table DDL) to the bottom of the generated `migration.sql`. Prisma's squashing guide explicitly anticipates this: *"any manually changed or added SQL in your migration.sql files will not be retained… ensure to re-add them after your migrations were squashed."*
+5. **Mark the baseline as applied on production** (prod already has the schema; this prevents `migrate deploy` from trying to recreate tables):
+   ```bash
+   npx prisma migrate resolve --applied 000000000000_baseline
+   ```
+6. **Verify a fresh-from-empty replay succeeds.** Spin up a clean Postgres, run `prisma migrate deploy`, run `prisma db pull` against it, diff against `schema.prisma` — expect zero drift.
+7. **Flip `migration-dry-run.yml` from advisory to blocking** on the same PR or the immediately following one. Remove the grandfather clause.
+8. **Add a `prisma db pull` drift-detection step** to scheduled CI (weekly is sufficient) so any future out-of-band change is surfaced within a week, per Atlas drift-detection guidance.
+
+### Acceptance criteria
+
+- `prisma migrate deploy` against a clean Postgres produces a schema with zero diff against `prisma/schema.prisma`.
+- `migration-dry-run.yml` is blocking, not advisory, and is green on `main`.
+- Production `_prisma_migrations` table reflects the new baseline as applied; existing app traffic is unaffected (zero downtime expected since no DDL runs against prod — only the metadata row is added).
+- All 18 previously-out-of-band FKs, the 2 orphan tables, the `tsvector` column, and the partial unique index are present in either `schema.prisma` or the baseline `migration.sql`. None remain out-of-band.
+- Old chain is preserved under `prisma/migrations/_archive/`.
+- An ADR is committed at `docs/decisions/<date>-pre-launch-migration-rebaseline.md` documenting the decision, the rejected alternative (in-place 114-item repair via `chore/migration-chain-full-repair`), and the consequences.
+
+### Dependencies and ordering
+
+- **Blocks:** GA / first real user. Must be done before launch.
+- **Blocked by:** nothing. Can be executed at any time. No prior work required.
+- **Conflicts with:** `chore/migration-chain-full-repair@542dcffb91` (Op 49's in-place repair branch). When this item is executed, that branch is superseded and should be archived as a tag (`git tag archive/chain-repair-2026-06-24 542dcffb91`) and deleted, not merged.
+- **Adjacent hygiene:** any Prisma major version bump from Dependabot may force this work earlier if the newer Prisma CLI tightens drift detection or refuses to deploy against an inconsistent chain. Treat such a Dependabot major bump as a soft trigger.
+
+### Reference evidence (preserved for future operator)
+
+- Grep of all 156 migrations + baseline returns zero CREATE TABLE statements for `Recipe`, `SavedRecipe`, `ListItem`, `UserPreferences` (verified 2026-06-26 on local clone of `main@be1cdb7`).
+- `prisma/schema.prisma` declares all four models at lines 1390, 1411, 1438, 1459.
+- `src/app.module.ts:40-41,223-224` wires `RecipesModule` and `ListsModule`; routes registered on `src/recipes/recipes.controller.ts` and `src/lists/lists.controller.ts`.
+- Op 49's chain-repair runbook at `docs/runbooks/migration-chain-repair-2026-06-24.md` enumerates ~114 Part 2 drift items (52 safe additive, 24 declarative, 18 SQL-layer FKs, 2 orphan tables, 1 generated column, 1 partial index). Op 49 deliberately did not open a PR; the branch tip is `542dcffb91`.
+- Deep research validates Option 1 (this approach) as the documented hyperscaler practice across Prisma, Flyway, Liquibase, Alembic, Atlas, Skeema, Supabase, GitHub, Shopify, Stripe, GitLab, and Martin Fowler / Evolutionary Database Design literature. Strong confidence.
+
+### Out of scope for this item
+
+- Any further work on the 114-item Part 2 drift in `chore/migration-chain-full-repair`. Superseded by this rebaseline.
+- Migrating user data. By construction, there is no user data to migrate at execution time.
+- Changing `scripts/release.sh`. The release pipeline continues to run `prisma migrate deploy` and the new baseline migration applies as a no-op on prod (via `migrate resolve --applied`).
