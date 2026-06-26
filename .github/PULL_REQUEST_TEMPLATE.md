@@ -20,6 +20,7 @@
 - [ ] **R23 LOC cap:** net additions ≤ 400. Actual: ___
 - [ ] **R18 lane scope:** this PR touches only the lane it was briefed against
 - [ ] **R100 prod-readiness:** `test:deploy-readiness` passes (or N/A pre-H4)
+- [ ] **R100 deploy-readiness board: ALL CLEAR** (PR mode gating sections green; environment-dependent sections surfaced for the prod-deploy gate)
 - [ ] **R75 banned cast tokens:** zero net new `@ts-ignore`, `as any`, `as unknown as`, `as never`, `.catch(()=>undefined|null|{})`, "Coming soon"
 - [ ] **R74 test:src ratio:** ≥ 2.0 over diff (test lines added / src lines added). Actual: ___
 - [ ] **R92 RLS impact:** this PR does not weaken row-level security
