@@ -31,6 +31,7 @@ enum Role {
   coach
   student
   owner
+  sub_coach
 }
 
 // Phase 1A: subscription state for a coach's $300/mo seat. Stored as
@@ -5711,7 +5712,7 @@ model CommunityVoiceNote {
   workspace_id    String    @db.Uuid
   cohort_id       String?   @db.Uuid
   conversation_id String?   @db.Uuid
-  author_id       String    @db.Uuid
+  author_id       String
   storage_key     String    @db.Text
   duration_ms     Int
   bytes           BigInt
@@ -5735,7 +5736,7 @@ model CommunityVoiceNote {
 
 model CommunityWorkspace {
   id                 String    @id @default(uuid()) @db.Uuid
-  coach_id           String    @db.Uuid
+  coach_id           String
   name               String    @db.VarChar(120)
   slug               String    @unique @db.VarChar(80)
   description        String?   @db.Text
@@ -5800,7 +5801,7 @@ model CommunityMembership {
   id                   String                    @id @default(uuid()) @db.Uuid
   workspace_id         String                    @db.Uuid
   cohort_id            String                    @db.Uuid
-  user_id              String                    @db.Uuid
+  user_id              String
   role                 CommunityMembershipRole   @default(student)
   status               CommunityMembershipStatus @default(active)
   dm_enabled           Boolean?
@@ -5832,8 +5833,8 @@ model CommunityMessage {
   cohort_id            String?               @db.Uuid
   scope                CommunityMessageScope
   dm_key               String?               @db.VarChar(160)
-  recipient_user_id    String?               @db.Uuid
-  sender_id            String                @db.Uuid
+  recipient_user_id    String?
+  sender_id            String
   kind                 CommunityMessageKind  @default(text)
   body                 String?               @db.VarChar(4000)
   voice_url            String?               @db.Text
@@ -5882,7 +5883,7 @@ model CommunityPost {
   id             String             @id @default(uuid()) @db.Uuid
   workspace_id   String             @db.Uuid
   cohort_id      String?            @db.Uuid
-  author_id      String             @db.Uuid
+  author_id      String
   scope          CommunityPostScope
   type           CommunityPostType  @default(text)
   title          String?            @db.VarChar(160)
@@ -5918,7 +5919,7 @@ model CommunityResponse {
   target_type       CommunityResponseTargetType
   target_id         String                      @db.Uuid
   target_created_at DateTime?                   @db.Timestamptz(6)
-  user_id           String                      @db.Uuid
+  user_id           String
   response_kind     String                      @db.VarChar(32)
   created_at        DateTime                    @default(now()) @db.Timestamptz(6)
 
@@ -5938,7 +5939,7 @@ model CommunityEvent {
   id                    String              @id @default(uuid()) @db.Uuid
   workspace_id          String              @db.Uuid
   cohort_id             String?             @db.Uuid
-  created_by_id         String              @db.Uuid
+  created_by_id         String
   title                 String              @db.VarChar(160)
   description           String?             @db.Text
   state                 CommunityEventState @default(scheduled)
@@ -5969,7 +5970,7 @@ model CommunityEventRsvp {
   id           String                   @id @default(uuid()) @db.Uuid
   workspace_id String                   @db.Uuid
   event_id     String                   @db.Uuid
-  user_id      String                   @db.Uuid
+  user_id      String
   status       CommunityEventRsvpStatus
   reminded_at  DateTime?                @db.Timestamptz(6)
   created_at   DateTime                 @default(now()) @db.Timestamptz(6)
@@ -5992,7 +5993,7 @@ model CommunityChallenge {
   id                  String                   @id @default(uuid()) @db.Uuid
   workspace_id        String                   @db.Uuid
   cohort_id           String?                  @db.Uuid
-  created_by_id       String                   @db.Uuid
+  created_by_id       String
   title               String                   @db.VarChar(160)
   description         String?                  @db.Text
   status              CommunityChallengeStatus @default(draft)
@@ -6022,7 +6023,7 @@ model CommunityChallengeParticipation {
   id             String    @id @default(uuid()) @db.Uuid
   workspace_id   String    @db.Uuid
   challenge_id   String    @db.Uuid
-  user_id        String    @db.Uuid
+  user_id        String
   progress_value Decimal   @default(0) @db.Decimal(12, 2)
   completed_at   DateTime? @db.Timestamptz(6)
   last_logged_at DateTime? @db.Timestamptz(6)
@@ -6047,8 +6048,8 @@ model CommunityModerationAction {
   workspace_id   String                        @db.Uuid
   target_type    CommunityModerationTargetType
   target_id      String                        @db.Uuid
-  reported_by_id String?                       @db.Uuid
-  actor_id       String?                       @db.Uuid
+  reported_by_id String?
+  actor_id       String?
   status         CommunityModerationStatus     @default(open)
   reason         String                        @db.VarChar(80)
   notes          String?                       @db.Text
@@ -6080,7 +6081,7 @@ model CommunityClassroomPost {
   id              String                       @id @default(uuid()) @db.Uuid
   workspace_id    String                       @db.Uuid
   cohort_id       String?                      @db.Uuid
-  coach_id        String                       @db.Uuid
+  coach_id        String
   title           String                       @db.VarChar(200)
   body_markdown   String                       @db.Text
   status          CommunityClassroomPostStatus @default(draft)
@@ -6435,8 +6436,8 @@ model CommunitySearchEntry {
 model CommunityWearablePrompt {
   id          String                          @id @default(uuid()) @db.Uuid
   workspaceId String                          @db.Uuid
-  coachId     String                          @db.Uuid
-  clientId    String                          @db.Uuid
+  coachId     String
+  clientId    String
   metricKey   String                          @db.VarChar(64)
   promptText  String                          @db.Text
   sources     CommunityWearablePromptSource[]
@@ -6456,7 +6457,7 @@ model CommunityWearablePrompt {
 model CommunityWearablePromptSource {
   id            String                  @id @default(uuid()) @db.Uuid
   promptId      String                  @db.Uuid
-  sampleId      String                  @db.Uuid
+  sampleId      String
   metricKey     String                  @db.VarChar(64)
   observedValue Decimal                 @db.Decimal(18, 6)
   prompt        CommunityWearablePrompt @relation(fields: [promptId], references: [id], onDelete: Cascade)

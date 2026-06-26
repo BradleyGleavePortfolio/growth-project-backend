@@ -83,6 +83,30 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Ensure postgresql-client is available
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+          fi
+          psql --version
+
+      - name: Bootstrap Supabase-equivalent environment (CI only)
+        # Production runs on Supabase-managed Postgres, which provides the
+        # `auth` schema (auth.uid()) and the service_role/authenticated/anon
+        # roles. The bare postgres:15.18 service used here provides none of
+        # them, so the committed migrations that reference those objects
+        # cannot apply without this scaffolding. The bootstrap script is
+        # idempotent and lives at prisma/migrations/_supabase_bootstrap.sql
+        # (leading underscore => Prisma's migration engine ignores it; it is
+        # NOT a migration). Strip the ?schema= query param because psql does
+        # not accept it as a libpq URI parameter.
+        run: |
+          set -euo pipefail
+          PSQL_URL="${DATABASE_URL%%\?*}"
+          psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql
+
       - name: Detect migration changes in this PR
         id: detect_migration_changes
         # Grandfather clause: this forward-only gate exists to catch NEW
