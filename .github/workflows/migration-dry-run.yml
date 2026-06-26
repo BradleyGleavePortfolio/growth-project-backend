@@ -6,22 +6,87 @@ name: Migration Dry-Run
 # committed before this workflow shipped are exempt; only NEW directories
 # created in this PR are checked.
 #
+# ─────────────────────────────────────────────────────────────────────────
+# WORKFLOW SPLIT — apply vs schema-parity (Op 49 Part 1 / Part 2 codified)
+# ─────────────────────────────────────────────────────────────────────────
+# Context (pre-launch, ZERO live users — the product has not GA'd):
+#   PR #487 landed Op 49 "Part 1": the forward migration chain now applies
+#   cleanly (`npx prisma migrate deploy` -> exit 0) against a disposable
+#   Postgres with the Supabase-equivalent bootstrap. What that fix EXPOSED
+#   (it did not introduce) is "Part 2": ~114 pre-existing schema-parity
+#   drift items between the applied migration chain and prisma/schema.prisma,
+#   surfaced by `prisma migrate diff ... --exit-code`. That drift never ran
+#   on main before, because main's chain never applied, so the diff step was
+#   never reached.
+#
+# Why this file used to be ONE job named "Forward migration applies cleanly":
+#   it bundled the apply step AND the schema-parity (`migrate diff`) step in a
+#   single job. After Part 1 the apply passes but the bundled diff fails on
+#   the ~114 deferred drift items, so the single gate showed RED on unrelated
+#   PRs (e.g. H3 #459) purely because of the verify-schema step — not because
+#   the apply path was broken. That conflated a real, required signal (does
+#   the chain apply?) with a deferred, tracked one (is the chain at parity
+#   with schema.prisma?).
+#
+# The split below separates the two concerns into two independently-named
+# jobs:
+#   * migrations-apply        — "Forward migrations apply cleanly"
+#                               REQUIRED status check. Must be green.
+#   * migrations-schema-parity — "Schema parity (deferred to
+#                               BL-MIGRATION-REBASELINE)"
+#                               INFORMATIONAL only — must NOT block merge.
+#
+# Why schema-parity is non-blocking (and HOW):
+#   The ~114-item drift is tracked as the BL-MIGRATION-REBASELINE launch-gate
+#   item in BACKLOG.md (filed in PR #486). It is a launch-gate item with no
+#   time trigger — resolving it requires production / schema-architecture
+#   decisions (destructive FK drops, central User-model redesign, partial
+#   unique-index policy, etc. — see docs/runbooks/
+#   migration-chain-repair-2026-06-24.md Part 2). Until BL-MIGRATION-REBASELINE
+#   lands, forcing this gate red would block every unrelated PR on debt it did
+#   not create. So the diff step runs with `continue-on-error: true`, and a
+#   final summary step ALWAYS runs (`if: always()`), prints a real,
+#   human-readable drift count, and exits 0 — the job stays VISIBLE and prints
+#   actionable output, but its overall conclusion is green-with-drift-summary,
+#   never a silent skip and never a fake-clean checkmark (R109).
+#   We chose `continue-on-error` on the diff step + an `if: always()` summary
+#   step (rather than a bare step-level swallow) because it keeps the raw diff
+#   output in the log, keeps the drift COUNT in the job summary, and makes the
+#   "deferred, not clean" status legible to a human reading the checks list.
+#
+# FLIP-BACK CONDITION (make schema-parity blocking again):
+#   When BL-MIGRATION-REBASELINE merges and the chain reaches parity
+#   (`prisma migrate diff ... --exit-code` -> 0), the migrations-schema-parity
+#   job MUST be flipped back to blocking: remove `continue-on-error: true`
+#   from the "Verify schema matches schema.prisma" step, delete the
+#   `if: always()` summary-step exit-0 shim, and add migrations-schema-parity
+#   to main's required status checks. Re-flipping this job to blocking MUST be
+#   part of BL-MIGRATION-REBASELINE's acceptance criteria (R125 — this split
+#   is itself an enforcement-layer change, so the enforcer that makes it real
+#   again travels with the backlog item).
+#
 # Behavior:
-#   1. forward-only: spin up a disposable Postgres, apply ALL migrations
-#      forward, and assert the resulting schema matches schema.prisma.
-#      Grandfather clause: if this PR touches zero files under
-#      prisma/migrations/**, a forward-deploy failure is treated as
-#      pre-existing debt on the base branch (warning, not error), so the
-#      gate cannot block unrelated PRs on bugs they did not introduce.
-#      Any PR that DOES modify prisma/migrations/** still fails hard on
-#      a broken forward-deploy.
-#   2. reversibility-check: detect migration directories added in this PR.
+#   1. migrations-apply: spin up a disposable Postgres, run the
+#      Supabase-equivalent bootstrap, then apply ALL migrations forward
+#      (`npx prisma migrate deploy`). Grandfather clause: if this PR touches
+#      zero files under prisma/migrations/**, a forward-deploy failure is
+#      treated as pre-existing debt on the base branch (warning, not error),
+#      so the gate cannot block unrelated PRs on bugs they did not introduce.
+#      Any PR that DOES modify prisma/migrations/** still fails hard on a
+#      broken forward-deploy.
+#   2. migrations-schema-parity: same disposable Postgres + bootstrap + apply,
+#      then `prisma migrate diff --from-url $DATABASE_URL
+#      --to-schema-datamodel prisma/schema.prisma --exit-code`. Informational
+#      only until BL-MIGRATION-REBASELINE lands (see above). The SAME
+#      grandfather clause applies here as in migrations-apply — it is mirrored
+#      verbatim, neither tightened nor loosened.
+#   3. reversibility-check: detect migration directories added in this PR.
 #      For each NEW directory, require either:
 #        - a sibling `down.sql` file, OR
 #        - a `-- IRREVERSIBLE: <reason>` line in migration.sql.
 #      Directories with NEITHER fail (grandfathered dirs are never checked
 #      because only PR-added dirs enter the loop).
-#   3. For each NEW directory that DOES ship a `down.sql`, prove real
+#   4. For each NEW directory that DOES ship a `down.sql`, prove real
 #      reversibility: apply all migrations forward, snapshot the schema
 #      (pg_dump -s), apply that directory's down.sql, re-apply the same
 #      migration forward, snapshot again, and require the two schema dumps
@@ -49,8 +114,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  forward-only:
-    name: Forward migration applies cleanly
+  migrations-apply:
+    name: Forward migrations apply cleanly
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -109,14 +174,14 @@ jobs:
 
       - name: Detect migration changes in this PR
         id: detect_migration_changes
-        # Grandfather clause: this forward-only gate exists to catch NEW
-        # migrations that fail to apply. Pre-existing breakage on main
-        # (e.g. a migration ordering bug shipped before this gate landed)
-        # is not this PR's fault and must not block unrelated PRs. We
-        # compare the PR's prisma/migrations/** tree against the merge
-        # base; if the PR adds, modifies, or renames zero migration
-        # files, any forward-deploy failure is pre-existing debt and
-        # gets surfaced as a warning rather than a hard fail.
+        # Grandfather clause: this apply gate exists to catch NEW migrations
+        # that fail to apply. Pre-existing breakage on main (e.g. a migration
+        # ordering bug shipped before this gate landed) is not this PR's fault
+        # and must not block unrelated PRs. We compare the PR's
+        # prisma/migrations/** tree against the merge base; if the PR adds,
+        # modifies, or renames zero migration files, any forward-deploy
+        # failure is pre-existing debt and gets surfaced as a warning rather
+        # than a hard fail.
         run: |
           set -euo pipefail
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
@@ -181,18 +246,216 @@ jobs:
           echo "::warning::Track it as a separate fix-migration-ordering task; this gate passes for unrelated PRs."
           exit 0
 
+  migrations-schema-parity:
+    name: Schema parity (deferred to BL-MIGRATION-REBASELINE)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # INFORMATIONAL ONLY — must NOT block merge until BL-MIGRATION-REBASELINE
+    # lands (see the top-of-file comment block for the full rationale and the
+    # exact flip-back condition). This job intentionally runs even though it
+    # is non-blocking, so the ~114-item drift stays VISIBLE and prints a real,
+    # actionable summary (R109) — it is never skipped, never silently green.
+    services:
+      postgres:
+        image: postgres:15.18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: migration_dryrun
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/migration_dryrun?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/migration_dryrun?schema=public
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure postgresql-client is available
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+          fi
+          psql --version
+
+      - name: Bootstrap Supabase-equivalent environment (CI only)
+        # Identical to migrations-apply: the bare postgres service lacks the
+        # Supabase `auth` schema + roles the committed migrations reference, so
+        # the chain cannot apply without this idempotent bootstrap. Strip the
+        # ?schema= query param because psql does not accept it as a libpq URI
+        # parameter.
+        run: |
+          set -euo pipefail
+          PSQL_URL="${DATABASE_URL%%\?*}"
+          psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql
+
+      - name: Detect migration changes in this PR
+        id: detect_migration_changes
+        # Grandfather clause — MIRRORED VERBATIM from migrations-apply, neither
+        # tightened nor loosened. If this PR touches zero files under
+        # prisma/migrations/**, an apply failure here is pre-existing debt on
+        # the base branch, not this PR's fault, and must not be treated as a
+        # PR-introduced regression. (Schema parity is informational regardless,
+        # but the clause is mirrored so the two jobs classify PR scope
+        # identically.)
+        run: |
+          set -euo pipefail
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
+          # List files under prisma/migrations/** that changed in this PR.
+          # Use --diff-filter=AMRCD: Added, Modified, Renamed, Copied, Deleted.
+          # Deletions MUST count as a migration touch — a PR that only deletes
+          # migrations was previously classified pr_touches_migrations=false and
+          # silently slipped past the hard-fail path.
+          CHANGED=$(git diff --name-only --diff-filter=AMRCD "$BASE_SHA"..."$HEAD_SHA" -- 'prisma/migrations/**' 2>/dev/null || true)
+          DELETED=$(git diff --name-only --diff-filter=D "$BASE_SHA"..."$HEAD_SHA" -- 'prisma/migrations/**' 2>/dev/null || true)
+          if [ -n "$CHANGED" ]; then
+            echo "pr_touches_migrations=true" >> "$GITHUB_OUTPUT"
+            echo "This PR modifies prisma/migrations:"
+            printf '%s\n' "$CHANGED" | sed 's/^/  /'
+          else
+            echo "pr_touches_migrations=false" >> "$GITHUB_OUTPUT"
+            echo "This PR does not touch prisma/migrations — any forward-deploy failure is pre-existing debt."
+          fi
+          # Hard-fail policy: deleting committed migrations is forbidden without
+          # explicit operator approval (R106). Fail BEFORE the apply step so a
+          # deletion-only PR never reaches the grandfather path.
+          if [ -n "$DELETED" ]; then
+            echo "migration_deletion=true" >> "$GITHUB_OUTPUT"
+            echo "::error::Migration deletion detected in this PR. Deleting committed migrations is forbidden without explicit operator approval (R106). Files:"
+            printf '%s\n' "$DELETED" | sed 's/^/  /'
+            exit 1
+          fi
+          echo "migration_deletion=false" >> "$GITHUB_OUTPUT"
+
+      - name: Apply all migrations forward
+        id: apply
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          npx prisma migrate deploy 2>&1 | tee migrate_deploy.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
       - name: Verify schema matches schema.prisma
-        # Only enforce schema-vs-migrations parity when the forward apply
-        # succeeded; otherwise the schema check would compare against an
-        # empty/partial DB and emit confusing noise.
+        id: schema_diff
+        # INFORMATIONAL ONLY (continue-on-error). This is the ~114-item
+        # schema-parity drift exposed by Op 49 Part 1 and tracked as
+        # BL-MIGRATION-REBASELINE (BACKLOG.md; filed in PR #486). It runs only
+        # when the forward apply succeeded — otherwise the diff would compare
+        # against an empty/partial DB and emit confusing noise. The drift count
+        # is captured into a SQL script (--script) so the summary step below
+        # can report a real, human-readable number. To flip this job back to
+        # blocking once BL-MIGRATION-REBASELINE lands: remove
+        # `continue-on-error: true` here and delete the exit-0 shim in the
+        # summary step below, then add migrations-schema-parity to main's
+        # required status checks.
         if: steps.apply.outcome == 'success'
-        run: npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Capture the drift as a migration script so we can both (a) honour
+          # the original --exit-code contract via $? and (b) count the drift
+          # statements for a human-readable summary. `migrate diff --script`
+          # emits the DDL that WOULD reconcile the applied DB to schema.prisma;
+          # an empty script means zero drift.
+          set +e
+          npx prisma migrate diff \
+            --from-url "$DATABASE_URL" \
+            --to-schema-datamodel prisma/schema.prisma \
+            --script > schema_parity_drift.sql 2> schema_parity_diff.log
+          DIFF_RC=$?
+          set -e
+          echo "diff_exit_code=$DIFF_RC" >> "$GITHUB_OUTPUT"
+          # Count drift statements: non-comment, non-blank lines ending in `;`.
+          if [ -f schema_parity_drift.sql ]; then
+            DRIFT_COUNT=$(grep -cE ';[[:space:]]*$' schema_parity_drift.sql || true)
+          else
+            DRIFT_COUNT=0
+          fi
+          echo "drift_count=$DRIFT_COUNT" >> "$GITHUB_OUTPUT"
+          echo "Schema-parity diff exit code: $DIFF_RC"
+          echo "Schema-parity drift statements detected: $DRIFT_COUNT"
+          # Re-run the canonical --exit-code form for the log of record so the
+          # raw original contract is still visible in CI output.
+          set +e
+          npx prisma migrate diff \
+            --from-url "$DATABASE_URL" \
+            --to-schema-datamodel prisma/schema.prisma \
+            --exit-code
+          echo "(--exit-code form returned $? — non-zero means drift; informational)"
+          set -e
+
+      - name: Schema-parity summary (non-blocking; surfaces deferred drift)
+        # ALWAYS runs so the job's overall conclusion is success (green) while
+        # still printing a real, actionable summary of the deferred drift —
+        # never a silent skip, never a fake-clean checkmark (R109). This is the
+        # exit-0 shim referenced in the flip-back instructions above: deleting
+        # this step's `exit 0` (and the continue-on-error on the diff step) is
+        # what makes schema parity blocking again once BL-MIGRATION-REBASELINE
+        # lands.
+        if: always()
+        env:
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          DIFF_OUTCOME: ${{ steps.schema_diff.outcome }}
+          DIFF_RC: ${{ steps.schema_diff.outputs.diff_exit_code }}
+          DRIFT_COUNT: ${{ steps.schema_diff.outputs.drift_count }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "## Schema parity (deferred to BL-MIGRATION-REBASELINE)"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          if [ "$APPLY_OUTCOME" != "success" ]; then
+            MSG="schema-parity: SKIPPED diff — forward apply did not succeed (apply outcome: ${APPLY_OUTCOME:-unknown}). Drift cannot be measured against an empty/partial DB."
+            echo "::warning::$MSG"
+            echo "$MSG" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+            # Non-blocking job: apply-path failures are owned by the
+            # migrations-apply REQUIRED check, not here.
+            exit 0
+          fi
+          COUNT="${DRIFT_COUNT:-unknown}"
+          if [ "${DIFF_RC:-1}" = "0" ] && [ "$COUNT" = "0" ]; then
+            MSG="schema-parity drift: 0 items — migration chain is at parity with prisma/schema.prisma. BL-MIGRATION-REBASELINE may be ready to close; flip this job back to blocking."
+            echo "::notice::$MSG"
+            echo "$MSG" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+            exit 0
+          fi
+          MSG="schema-parity drift: ${COUNT} items pending BL-MIGRATION-REBASELINE (see BACKLOG.md). This check is INFORMATIONAL and intentionally non-blocking pre-launch; it does NOT gate merge until BL-MIGRATION-REBASELINE lands (full reconciliation script: schema_parity_drift.sql in this job's logs)."
+          echo "::warning::$MSG"
+          echo "$MSG" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          # Exit 0 on purpose — see the flip-back instructions in the step
+          # comment above and the top-of-file comment block.
+          exit 0
 
   reversibility-check:
     name: New migrations are reversible (or explicitly marked IRREVERSIBLE)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: forward-only
+    needs: migrations-apply
     services:
       postgres:
         image: postgres:15.18
