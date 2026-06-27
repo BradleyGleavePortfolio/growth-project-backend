@@ -269,3 +269,70 @@ The checklist organizes capture into 14 sections. Highlights:
 - Implementing any individual PR. This BL is the index entry; each PR opens its own scoped operator.
 - Migrating historical data. By construction, TGP is pre-launch with zero live users at file time — there is no historical event data to backfill, and the foundation lands clean.
 - Any data-export API for end-clients. Tracked separately if/when needed.
+
+## BL-CI-REVERSIBILITY-PSQL — Strip `?schema=` from `DATABASE_URL` before psql calls in `ci.yml` (parity with migration-dry-run.yml)
+
+**Filed:** 2026-06-26 by operator (Bradley Gleave), Op 50.5 dispatch (Option A).
+**Severity:** P2 — latent landmine. Currently accidentally-safe because `ci.yml`'s `DATABASE_URL` has no `?schema=` query param, but ANY future PR that adds `?schema=` to that URL (e.g., to satisfy a Prisma test that wants explicit schema scoping) will silently break every `psql "$DATABASE_URL"` call in the workflow — `psql` does NOT accept `?schema=` as a libpq URI parameter and fails with an opaque connection error.
+
+### Gap (verified 2026-06-26)
+
+- **`.github/workflows/migration-dry-run.yml`** ALREADY strips `?schema=` before every `psql` call:
+  ```yaml
+  # Lines 168-173 and 301-306 (both occurrences)
+  # Strip the ?schema= query param because psql does not accept it as a libpq URI
+  PSQL_URL="${DATABASE_URL%%\?*}"
+  psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql
+  ```
+- **`.github/workflows/ci.yml`** does NOT strip — psql calls at lines 264, 267, 272, 279 (and 367) call `psql "$DATABASE_URL"` directly. Currently safe because `ci.yml`'s `DATABASE_URL` (lines 233, 337) is `postgresql://postgres:postgres@localhost:5432/postgres` with no query string. The day any future PR appends `?schema=public` (or any other libpq-incompatible param), all five psql invocations break.
+
+### The fix (Option A — codified for builder)
+
+Apply the same strip pattern to every `psql "$DATABASE_URL"` call in `ci.yml`. Single-PR scope:
+
+```yaml
+# Before:
+- name: bootstrap supabase shim
+  run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/supabase-shim.sql
+
+# After:
+- name: bootstrap supabase shim
+  run: |
+    # Strip ?schema= because psql does not accept it as a libpq URI
+    PSQL_URL="${DATABASE_URL%%\?*}"
+    psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f scripts/ci/supabase-shim.sql
+```
+
+Apply to each of:
+- Line 264 (`scripts/ci/supabase-shim.sql`)
+- Line 267 (`scripts/ci/rls01-live-bootstrap.sql`)
+- Line 272 (`prisma/migrations/20260704000000_rls01_helper_searchpath_hibp/migration.sql`)
+- Line 279 (inline `-c` GRANT statement)
+- Line 367 (MWB3 RLS bootstrap, identical pattern)
+
+### Why this is filed as a backlog item, not a hot fix
+
+- No PR is currently being blocked by this gap (every existing CI run uses the no-`?schema=` `DATABASE_URL`).
+- The H6 wave (H6A/B/C) does NOT introduce a `?schema=` query param to `ci.yml`'s `DATABASE_URL`, so the H6 sequence is not at risk.
+- The fix is mechanical (5 identical 2-line wrappers) and can be batched with any other CI workflow touch.
+- Option A (codify the gap + planned fix as a backlog item) was operator-chosen on 2026-06-26 over Option B (hot-fix on its own PR right now) for sequencing reasons: keep PR #491 focused on the data-capture checklist + this backlog amendment, dispatch the actual `ci.yml` patch as a separate small PR when convenient.
+
+### Acceptance criteria
+
+- All 5 `psql "$DATABASE_URL"` call sites in `.github/workflows/ci.yml` strip `?schema=` (and any future query params) via the `${DATABASE_URL%%\?*}` pattern.
+- The CI test matrix passes unchanged on the existing no-query-string `DATABASE_URL`.
+- A regression test (`scripts/ci/verify-psql-url-strip.sh` or equivalent — optional, low-priority) asserts the strip pattern is present in any new psql call sites added in future PRs.
+- The fix lands as a single small PR titled `ci(reversibility): strip ?schema= before psql in ci.yml (BL-CI-REVERSIBILITY-PSQL)` with the per-line diff in the PR body.
+
+### Cross-references
+
+- Source: `.github/workflows/migration-dry-run.yml` lines 168-173, 301-306 (the canonical strip pattern, already shipped via #488).
+- Affected: `.github/workflows/ci.yml` lines 264, 267, 272, 279, 367.
+- Doctrine: R82 (migration reversibility) — every `psql` invocation in CI must be portable across Prisma's `?schema=` URL convention and psql's libpq URI requirements; failure to strip is a latent reversibility breakage.
+- Operator decision: 2026-06-26, Op 50.5 dispatch, Option A chosen verbatim ("amend BL-CI-REVERSIBILITY-PSQL onto PR #491 (Option A) — workflow YAML patch stripping ?schema= before psql, second commit on existing branch").
+
+### Out of scope for this item
+
+- Refactoring `ci.yml` to consolidate the 5 psql calls into a single helper script — separate cleanup, lower priority.
+- Changing the `DATABASE_URL` shape used by Prisma elsewhere in the workflow.
+- Migrating away from psql to a Prisma-native bootstrap path — orthogonal architectural decision, not in this BL's scope.
