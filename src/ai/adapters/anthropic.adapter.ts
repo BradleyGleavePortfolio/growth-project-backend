@@ -2,6 +2,7 @@ import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../prisma.service';
+import { createBreaker } from '../../circuit-breakers/circuit-breaker.factory';
 import {
   COACH_AI_MODEL,
   INPUT_USD_PER_MTOK,
@@ -58,6 +59,53 @@ export class AnthropicAdapter {
   private readonly logger = new Logger(AnthropicAdapter.name);
   private client: Anthropic | null = null;
 
+  // H6 (D-H6-2): per-client Opossum breaker around the outbound Anthropic
+  // SDK boundary. No bespoke config key, so the 'default' profile applies
+  // (8s/50%/30s). The breaker wraps the WHOLE retry sequence (createWithRetries
+  // below), so one logical completion is exactly one breaker call: a single
+  // call's internal 429/503 retries do NOT each count as breaker samples (which
+  // would let one slow call self-trip the circuit and mask the real upstream
+  // error). A sustained stream of failing completions across calls still trips
+  // the circuit, which is the D-H6-2 intent. Touches only the SDK call
+  // boundary; retry/backoff and call-logging logic are unchanged.
+  private static breakerSeq = 0;
+  private guardedCreate = createBreaker(
+    'anthropic',
+    (params: Anthropic.MessageCreateParamsNonStreaming) => this.createWithRetries(params),
+    // Per-instance cache key (mirrors StripeApiService): the breaker closure
+    // captures this instance's lazily-built client, so each adapter instance
+    // owns its breaker rather than share one module-scoped 'anthropic'
+    // breaker — keeps each instance's rolling error window isolated.
+    { key: `anthropic:${AnthropicAdapter.breakerSeq++}` },
+  );
+
+  // The raw SDK call plus the 429/503 retry/backoff loop. Runs INSIDE the
+  // breaker (via guardedCreate) so retries are internal to one breaker call.
+  // On exhausted retries it throws the LAST upstream error unchanged, so the
+  // caller sees the real Anthropic error (e.g. 'overloaded'), not a breaker
+  // artifact.
+  private async createWithRetries(
+    params: Anthropic.MessageCreateParamsNonStreaming,
+  ): Promise<Anthropic.Message> {
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < RETRY_DELAYS_MS.length + 1; attempt++) {
+      try {
+        return await this.getClient().messages.create(params);
+      } catch (err) {
+        lastErr = err;
+        const status = pickStatus(err);
+        const isRetryable = status != null && RETRYABLE_HTTP_STATUSES.has(status);
+        if (!isRetryable || attempt >= RETRY_DELAYS_MS.length) break;
+        const delay = RETRY_DELAYS_MS[attempt];
+        this.logger.warn(
+          `[anthropic] retryable error status=${status} attempt=${attempt + 1} delay=${delay}ms`,
+        );
+        await sleep(delay);
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+  }
+
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
@@ -90,54 +138,44 @@ export class AnthropicAdapter {
     const temperature = opts.temperature ?? 0.7;
     const startedAt = Date.now();
 
-    let lastErr: unknown = null;
-    for (let attempt = 0; attempt < RETRY_DELAYS_MS.length + 1; attempt++) {
-      try {
-        const client = this.getClient();
-        const resp = await client.messages.create({
-          model: COACH_AI_MODEL,
-          max_tokens: maxTokens,
-          temperature,
-          system: prompt.system,
-          messages: [{ role: 'user', content: prompt.user }],
-        });
-        const latencyMs = Date.now() - startedAt;
-        const text = extractText(resp);
-        const tokensIn = resp.usage?.input_tokens ?? 0;
-        const tokensOut = resp.usage?.output_tokens ?? 0;
-        const modelUsed = resp.model ?? COACH_AI_MODEL;
-        await this.writeCallLog({
-          model: modelUsed,
-          tokensIn,
-          tokensOut,
-          latencyMs,
-          success: true,
-          opts,
-        });
-        return { text, tokensIn, tokensOut, modelUsed, latencyMs };
-      } catch (err) {
-        lastErr = err;
-        const status = pickStatus(err);
-        const isRetryable = status != null && RETRYABLE_HTTP_STATUSES.has(status);
-        if (!isRetryable || attempt >= RETRY_DELAYS_MS.length) break;
-        const delay = RETRY_DELAYS_MS[attempt];
-        this.logger.warn(
-          `[anthropic] retryable error status=${status} attempt=${attempt + 1} delay=${delay}ms`,
-        );
-        await sleep(delay);
-      }
+    // One breaker call per completion. guardedCreate -> createWithRetries runs
+    // the 429/503 retry/backoff loop internally and throws the last upstream
+    // error on exhaustion, so retries are not separate breaker samples.
+    try {
+      const resp = await this.guardedCreate({
+        model: COACH_AI_MODEL,
+        max_tokens: maxTokens,
+        temperature,
+        system: prompt.system,
+        messages: [{ role: 'user', content: prompt.user }],
+      });
+      const latencyMs = Date.now() - startedAt;
+      const text = extractText(resp);
+      const tokensIn = resp.usage?.input_tokens ?? 0;
+      const tokensOut = resp.usage?.output_tokens ?? 0;
+      const modelUsed = resp.model ?? COACH_AI_MODEL;
+      await this.writeCallLog({
+        model: modelUsed,
+        tokensIn,
+        tokensOut,
+        latencyMs,
+        success: true,
+        opts,
+      });
+      return { text, tokensIn, tokensOut, modelUsed, latencyMs };
+    } catch (err) {
+      const latencyMs = Date.now() - startedAt;
+      await this.writeCallLog({
+        model: COACH_AI_MODEL,
+        tokensIn: 0,
+        tokensOut: 0,
+        latencyMs,
+        success: false,
+        errorMessage: errorMessageOf(err),
+        opts,
+      });
+      throw err instanceof Error ? err : new Error(String(err));
     }
-    const latencyMs = Date.now() - startedAt;
-    await this.writeCallLog({
-      model: COACH_AI_MODEL,
-      tokensIn: 0,
-      tokensOut: 0,
-      latencyMs,
-      success: false,
-      errorMessage: errorMessageOf(lastErr),
-      opts,
-    });
-    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
   }
 
   // JSON-shaped completion. Strategy: instruct the model in the system
@@ -204,8 +242,7 @@ export class AnthropicAdapter {
   // probe and tests can reuse the math without re-importing constants.
   static computeCostCents(tokensIn: number, tokensOut: number): number {
     const dollars =
-      (tokensIn / 1_000_000) * INPUT_USD_PER_MTOK +
-      (tokensOut / 1_000_000) * OUTPUT_USD_PER_MTOK;
+      (tokensIn / 1_000_000) * INPUT_USD_PER_MTOK + (tokensOut / 1_000_000) * OUTPUT_USD_PER_MTOK;
     return Math.round(dollars * 100);
   }
 
