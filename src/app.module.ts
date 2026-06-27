@@ -29,6 +29,7 @@ import { LessonsModule } from './lessons/lessons.module';
 import { WaterModule } from './water/water.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { AuditLogModule } from './audit-log/audit-log.module';
 import { KmsModule } from './common/kms/kms.module';
 import { HealthModule } from './health/health.module';
 import { InviteCodesModule } from './invite-codes/invite-codes.module';
@@ -140,8 +141,7 @@ import { WearablesModule } from './wearables/wearables.module';
     // for the limit table; see UserThrottlerGuard for the user-id-vs-IP
     // tracker policy.
     ThrottlerModule.forRootAsync({
-      useFactory: () =>
-        buildThrottlerOptions(process.env.REDIS_URL, new Logger('ThrottlerConfig')),
+      useFactory: () => buildThrottlerOptions(process.env.REDIS_URL, new Logger('ThrottlerConfig')),
     }),
 
     // In-process cron scheduler. Drives the daily GDPR scrub
@@ -152,6 +152,10 @@ import { WearablesModule } from './wearables/wearables.module';
 
     // Global Prisma module — single PrismaClient shared by every feature module.
     PrismaModule,
+
+    // Global audit-log substrate (H6 / D-H6-5). Provides AuditLogService so any
+    // PII-touching feature module can wrap a mutation in withAuditLog().
+    AuditLogModule,
 
     // Global KMS helper. Provides KmsService for at-rest encryption of
     // sensitive fields (Bloodwork free-text, Google Calendar refresh
@@ -414,7 +418,6 @@ import { WearablesModule } from './wearables/wearables.module';
     // guard are now provided by SecurityGuardsModule (@Global). Selective
     // application via @UseGuards() on controllers continues to work — the DI
     // scope is global.
-
 
     // SECURITY (Phase 10 — audit P2-2): RolesGuard is now a global APP_GUARD.
     // It is intentionally a NO-OP when no @Roles(...) decorator is present
