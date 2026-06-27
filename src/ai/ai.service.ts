@@ -2,6 +2,7 @@ import { HttpException, HttpStatus, Injectable, Logger, Optional } from '@nestjs
 import OpenAI from 'openai';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { createBreaker } from '../circuit-breakers/circuit-breaker.factory';
 import { ClientAIContextService } from './client-ai-context.service';
 import { AIGuardrailsService } from './ai-guardrails.service';
 import { ClientAIContext } from './client-ai-context.types';
@@ -166,6 +167,17 @@ export interface ChatResult {
 export class AiService {
   private readonly logger = new Logger(AiService.name);
 
+  // H6 (D-H6-2): per-client Opossum breaker around the outbound
+  // OpenAI-compatible (Perplexity) chat-completions boundary. No bespoke
+  // config key, so the 'default' profile applies (8s/50%/30s). Touches only
+  // the SDK call boundary; token-reservation and reconciliation are unchanged.
+  private guardedChat = createBreaker(
+    'openai',
+    (params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming) =>
+      this.getPerplexityClient().chat.completions.create(params),
+    { key: 'openai:ai-service' },
+  );
+
   // Perplexity uses the OpenAI-compatible HTTP surface, so we reuse the
   // OpenAI SDK against the Perplexity baseURL. In SDK v5+ the constructor
   // throws synchronously when no apiKey is provided, so we lazy-init on
@@ -217,7 +229,13 @@ export class AiService {
       return 600;
     }
     // Planning intents — meal plan and workout plan generation.
-    if (msg.includes('meal_plan') || msg.includes('meal plan') || msg.includes('workout_plan') || msg.includes('workout plan') || msg.includes('program')) {
+    if (
+      msg.includes('meal_plan') ||
+      msg.includes('meal plan') ||
+      msg.includes('workout_plan') ||
+      msg.includes('workout plan') ||
+      msg.includes('program')
+    ) {
       return 600;
     }
     // Explanation / analysis intents.
@@ -341,7 +359,10 @@ Now answer the user's next message using the rules above. Keep the answer under 
   // the model would have seen.
   // Returns an object with text + degraded marker so callers can propagate
   // the degraded flag without an out-of-band boolean.
-  private generateFallbackResponse(userMessage: string, ctx: ClientAIContext): { text: string; degraded: true } {
+  private generateFallbackResponse(
+    userMessage: string,
+    ctx: ClientAIContext,
+  ): { text: string; degraded: true } {
     const msg = userMessage.toLowerCase().trim();
     const tx = ctx.prescribed;
     const today = ctx.today;
@@ -356,8 +377,8 @@ Now answer the user's next message using the rules above. Keep the answer under 
         pct < 40
           ? `You have ${remaining} kcal left. Front-load the day; biggest meal before 2pm.`
           : pct > 95
-          ? `You are close to your limit. Keep dinner lean: grilled protein and vegetables.`
-          : `You are on pace. Hit your protein before worrying about anything else.`;
+            ? `You are close to your limit. Keep dinner lean: grilled protein and vegetables.`
+            : `You are on pace. Hit your protein before worrying about anything else.`;
       text = `Today: ${today.calories}/${cal} kcal (${pct}%), ${today.protein_g}/${pro}g protein. ${tail}`;
     } else if (/(meal plan|what should i eat|what to eat|plan (my|for) day|food today)/.test(msg)) {
       text = `Your ${cal} kcal / ${pro}g protein plan for today:\n\nBreakfast (~${Math.round(cal * 0.25)} kcal): 4-5 eggs scrambled with oatmeal and black coffee. ~${Math.round(pro * 0.22)}g protein.\n\nLunch (~${Math.round(cal * 0.35)} kcal): chicken breast or 2 cans tuna with rice and any vegetables.\n\nDinner (~${Math.round(cal * 0.3)} kcal): salmon or 90% lean beef with sweet potato.\n\nSnack (~${Math.round(cal * 0.1)} kcal): Greek yogurt and almonds.\n\nTotal hits your prescribed targets.`;
@@ -369,8 +390,8 @@ Now answer the user's next message using the rules above. Keep the answer under 
         ctx.profile.goal_type === 'fat_loss'
           ? `You are in a fat loss phase (${cal} kcal target). Protect muscle by hitting ${pro}g protein and training hard.`
           : ctx.profile.goal_type === 'muscle_gain'
-          ? `You are in a muscle gain phase (${cal} kcal target). Hit your protein, train progressively, sleep 7-9 hours.`
-          : `You are maintaining (${cal} kcal target). Focus on body recomposition.`;
+            ? `You are in a muscle gain phase (${cal} kcal target). Hit your protein, train progressively, sleep 7-9 hours.`
+            : `You are maintaining (${cal} kcal target). Focus on body recomposition.`;
       text = `${goalMsg}\n\nToday you logged ${today.calories} kcal and ${today.protein_g}g protein. Ask me anything specific about nutrition, training, or training schedule and I will give you a direct answer.`;
     }
     return { text, degraded: true };
@@ -411,11 +432,7 @@ Now answer the user's next message using the rules above. Keep the answer under 
     // preserved). The EXACT post-call reconcile is authoritative for the daily
     // total.
     const systemPrompt = this.buildSystemPrompt(ctx, userMessage);
-    const clamped = clampPromptParts(
-      systemPrompt,
-      conversationHistory.slice(-10),
-      userMessage,
-    );
+    const clamped = clampPromptParts(systemPrompt, conversationHistory.slice(-10), userMessage);
     const clampedHistory = clamped.history;
     const clampedUserMessage = clamped.userMessage;
 
@@ -456,11 +473,7 @@ Now answer the user's next message using the rules above. Keep the answer under 
     //      post-call reconcile/refund always hits the SAME row even across a
     //      midnight rollover. The EXACT post-call reconcile is what makes the
     //      running daily total authoritative.
-    const quotaDate = await this.reserveDailyTokens(
-      userId,
-      reservation,
-      reservation,
-    );
+    const quotaDate = await this.reserveDailyTokens(userId, reservation, reservation);
 
     // A1 (P1-a) — actual provider TOTAL token usage (prompt+completion) when
     // the provider reports it, for the post-call reconcile against the up-front
@@ -470,8 +483,7 @@ Now answer the user's next message using the rules above. Keep the answer under 
     let actualTokens: number | null = null;
     let rawReply = '';
     const perplexityKey = process.env.PERPLEXITY_API_KEY?.trim();
-    const anthropicReady =
-      this.anthropic && this.coachAIState && this.coachAIState.isReady();
+    const anthropicReady = this.anthropic && this.coachAIState && this.coachAIState.isReady();
 
     // A1 (P1-b) — reconcile/refund the reservation in a finally path so a
     // failed or fallback call never permanently leaks reserved quota. When the
@@ -479,114 +491,113 @@ Now answer the user's next message using the rules above. Keep the answer under 
     // otherwise (exception, empty completion, or fallback) we refund the entire
     // reservation because no billable provider tokens were consumed.
     try {
-    if (!perplexityKey && anthropicReady && this.anthropic) {
-      // Coach AI v1 — Claude Sonnet fallback for the client chat surface.
-      // We hand it the same system prompt the Perplexity branch would
-      // see so guardrails / APP_PRESCRIBED defense apply identically.
-      try {
-        // A1 (P1) — send the CLAMPED history + user message so the provider
-        // input is the same bounded text the reservation was sized against.
-        const historyText = clampedHistory
-          .map((m) => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${m.content}`)
-          .join('\n');
-        const result = await this.anthropic.complete(
-          {
-            system: systemPrompt,
-            user: historyText
-              ? `${historyText}\nUser: ${clampedUserMessage}`
-              : clampedUserMessage,
-          },
-          {
-            // P3 — use the shared MAX_TOKENS_PER_CALL constant so the provider
-            // output cap and the reservation can never desynchronize.
-            maxTokens: MAX_TOKENS_PER_CALL,
+      if (!perplexityKey && anthropicReady && this.anthropic) {
+        // Coach AI v1 — Claude Sonnet fallback for the client chat surface.
+        // We hand it the same system prompt the Perplexity branch would
+        // see so guardrails / APP_PRESCRIBED defense apply identically.
+        try {
+          // A1 (P1) — send the CLAMPED history + user message so the provider
+          // input is the same bounded text the reservation was sized against.
+          const historyText = clampedHistory
+            .map((m) => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${m.content}`)
+            .join('\n');
+          const result = await this.anthropic.complete(
+            {
+              system: systemPrompt,
+              user: historyText
+                ? `${historyText}\nUser: ${clampedUserMessage}`
+                : clampedUserMessage,
+            },
+            {
+              // P3 — use the shared MAX_TOKENS_PER_CALL constant so the provider
+              // output cap and the reservation can never desynchronize.
+              maxTokens: MAX_TOKENS_PER_CALL,
+              temperature: 0.7,
+              capability: COACH_AI_CAPABILITIES.CLIENT_CHAT_FALLBACK,
+              clientId: userId,
+            },
+          );
+          // P2 — the provider may report billable usage even when it returns no
+          // text (e.g. a truncated/empty completion that still consumed prompt +
+          // some output tokens). Capture the reported usage REGARDLESS of whether
+          // there was text so the reconcile charges the TRUE usage instead of
+          // refunding a call that genuinely spent tokens. Only a response with no
+          // usage at all leaves actualTokens null (full refund in the finally).
+          const reportedUsage = (result.tokensIn ?? 0) + (result.tokensOut ?? 0);
+          if (reportedUsage > 0) {
+            actualTokens = reportedUsage;
+          }
+          if (result.text) {
+            rawReply = result.text;
+            modelUsed = 'anthropic';
+          } else {
+            // No text to return to the user — serve the deterministic fallback,
+            // but the daily ledger is reconciled to the real usage above (P2),
+            // NOT refunded, because the provider still billed those tokens.
+            const fb = this.generateFallbackResponse(userMessage, ctx);
+            rawReply = fb.text;
+            modelUsed = 'fallback';
+          }
+        } catch (error) {
+          this.logger.warn(
+            `Anthropic chat fallback failed; using deterministic: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          const fb = this.generateFallbackResponse(userMessage, ctx);
+          rawReply = fb.text;
+          modelUsed = 'fallback';
+        }
+      } else if (!perplexityKey) {
+        const fb = this.generateFallbackResponse(userMessage, ctx);
+        rawReply = fb.text;
+        modelUsed = 'fallback';
+      } else {
+        // A1 (P1) — send the CLAMPED history + user message so the provider input
+        // is the same bounded text the reservation was sized against.
+        const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+          { role: 'system', content: systemPrompt },
+          ...clampedHistory.map((m) => {
+            // A9 defense-in-depth: the role is already validated to
+            // 'user'|'assistant' by ChatRequestDto, but we still narrow here so
+            // any non-'assistant' value collapses to 'user' — a 'system' role
+            // can never reach Perplexity even if this method is called directly.
+            const role: 'assistant' | 'user' = m.role === 'assistant' ? 'assistant' : 'user';
+            return { role, content: m.content };
+          }),
+          { role: 'user', content: clampedUserMessage },
+        ];
+        try {
+          const response = await this.guardedChat({
+            model: 'sonar-pro',
+            messages,
             temperature: 0.7,
-            capability: COACH_AI_CAPABILITIES.CLIENT_CHAT_FALLBACK,
-            clientId: userId,
-          },
-        );
-        // P2 — the provider may report billable usage even when it returns no
-        // text (e.g. a truncated/empty completion that still consumed prompt +
-        // some output tokens). Capture the reported usage REGARDLESS of whether
-        // there was text so the reconcile charges the TRUE usage instead of
-        // refunding a call that genuinely spent tokens. Only a response with no
-        // usage at all leaves actualTokens null (full refund in the finally).
-        const reportedUsage = (result.tokensIn ?? 0) + (result.tokensOut ?? 0);
-        if (reportedUsage > 0) {
-          actualTokens = reportedUsage;
-        }
-        if (result.text) {
-          rawReply = result.text;
-          modelUsed = 'anthropic';
-        } else {
-          // No text to return to the user — serve the deterministic fallback,
-          // but the daily ledger is reconciled to the real usage above (P2),
-          // NOT refunded, because the provider still billed those tokens.
+            max_tokens: MAX_TOKENS_PER_CALL,
+          });
+          // P2 — capture the reported TOTAL usage REGARDLESS of whether the
+          // provider returned text. A response with empty content but a real
+          // usage figure still billed those tokens, so we reconcile to the true
+          // usage rather than refunding the reservation in full. Only a response
+          // with no usage figure leaves actualTokens null (full refund).
+          if (typeof response.usage?.total_tokens === 'number') {
+            actualTokens = response.usage.total_tokens;
+          }
+          if (response.choices[0]?.message?.content) {
+            rawReply = response.choices[0].message.content;
+          } else {
+            // No text — serve the deterministic fallback, but keep the real usage
+            // (captured above) charged to the daily ledger (P2), not refunded.
+            const fb = this.generateFallbackResponse(userMessage, ctx);
+            rawReply = fb.text;
+            modelUsed = 'fallback';
+          }
+        } catch (error) {
+          this.logger.warn(
+            `Perplexity chat failed; falling back: ${error instanceof Error ? error.message : String(error)}`,
+          );
           const fb = this.generateFallbackResponse(userMessage, ctx);
           rawReply = fb.text;
           modelUsed = 'fallback';
         }
-      } catch (error) {
-        this.logger.warn(
-          `Anthropic chat fallback failed; using deterministic: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        const fb = this.generateFallbackResponse(userMessage, ctx);
-        rawReply = fb.text;
-        modelUsed = 'fallback';
       }
-    } else if (!perplexityKey) {
-      const fb = this.generateFallbackResponse(userMessage, ctx);
-      rawReply = fb.text;
-      modelUsed = 'fallback';
-    } else {
-      // A1 (P1) — send the CLAMPED history + user message so the provider input
-      // is the same bounded text the reservation was sized against.
-      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-        { role: 'system', content: systemPrompt },
-        ...clampedHistory.map((m) => {
-          // A9 defense-in-depth: the role is already validated to
-          // 'user'|'assistant' by ChatRequestDto, but we still narrow here so
-          // any non-'assistant' value collapses to 'user' — a 'system' role
-          // can never reach Perplexity even if this method is called directly.
-          const role: 'assistant' | 'user' = m.role === 'assistant' ? 'assistant' : 'user';
-          return { role, content: m.content };
-        }),
-        { role: 'user', content: clampedUserMessage },
-      ];
-      try {
-        const response = await this.getPerplexityClient().chat.completions.create({
-          model: 'sonar-pro',
-          messages,
-          temperature: 0.7,
-          max_tokens: MAX_TOKENS_PER_CALL,
-        });
-        // P2 — capture the reported TOTAL usage REGARDLESS of whether the
-        // provider returned text. A response with empty content but a real
-        // usage figure still billed those tokens, so we reconcile to the true
-        // usage rather than refunding the reservation in full. Only a response
-        // with no usage figure leaves actualTokens null (full refund).
-        if (typeof response.usage?.total_tokens === 'number') {
-          actualTokens = response.usage.total_tokens;
-        }
-        if (response.choices[0]?.message?.content) {
-          rawReply = response.choices[0].message.content;
-        } else {
-          // No text — serve the deterministic fallback, but keep the real usage
-          // (captured above) charged to the daily ledger (P2), not refunded.
-          const fb = this.generateFallbackResponse(userMessage, ctx);
-          rawReply = fb.text;
-          modelUsed = 'fallback';
-        }
-      } catch (error) {
-        this.logger.warn(
-          `Perplexity chat failed; falling back: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        const fb = this.generateFallbackResponse(userMessage, ctx);
-        rawReply = fb.text;
-        modelUsed = 'fallback';
-      }
-    }
-
     } finally {
       // A1 (P1) — settle the reservation against reality on the SAME day-bucket
       // row we reserved (P2). In the designed path the reservation estimate is
@@ -636,11 +647,18 @@ Now answer the user's next message using the rules above. Keep the answer under 
           requester_id: userId,
           subject_user_id: userId,
           provider: isFallback ? 'stub' : modelUsed,
-          model: modelUsed === 'perplexity' ? 'sonar-pro' : modelUsed === 'anthropic' ? 'claude-sonnet' : 'disabled',
+          model:
+            modelUsed === 'perplexity'
+              ? 'sonar-pro'
+              : modelUsed === 'anthropic'
+                ? 'claude-sonnet'
+                : 'disabled',
           enabled: !isFallback,
         },
       });
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
 
     return {
       reply: result.reply,
@@ -657,9 +675,7 @@ Now answer the user's next message using the rules above. Keep the answer under 
   // (e.g. to exercise the day-rollover path deterministically).
   protected getQuotaDate(): Date {
     const now = new Date();
-    return new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    );
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   }
 
   // A1 (P1) — atomically reserve `cost` tokens against the user's daily budget,
@@ -717,15 +733,11 @@ Now answer the user's next message using the rules above. Keep the answer under 
     // budget. These are best-effort pre-spend guards on the estimate; the EXACT
     // post-call reconcile is what makes the daily total authoritative.
     const consumed = row?.tokens_used ?? 0;
-    if (
-      consumed >= DAILY_TOKEN_QUOTA ||
-      consumed + minRequired > DAILY_TOKEN_QUOTA
-    ) {
+    if (consumed >= DAILY_TOKEN_QUOTA || consumed + minRequired > DAILY_TOKEN_QUOTA) {
       throw new HttpException(
         {
           error: AI_DAILY_QUOTA_EXCEEDED,
-          message:
-            'You have reached your daily AI coaching limit. It refreshes tomorrow.',
+          message: 'You have reached your daily AI coaching limit. It refreshes tomorrow.',
         },
         HttpStatus.TOO_MANY_REQUESTS, // 429
       );
@@ -750,8 +762,7 @@ Now answer the user's next message using the rules above. Keep the answer under 
       throw new HttpException(
         {
           error: AI_DAILY_QUOTA_EXCEEDED,
-          message:
-            'You have reached your daily AI coaching limit. It refreshes tomorrow.',
+          message: 'You have reached your daily AI coaching limit. It refreshes tomorrow.',
         },
         HttpStatus.TOO_MANY_REQUESTS, // 429
       );
