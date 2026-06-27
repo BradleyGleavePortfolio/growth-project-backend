@@ -24,9 +24,12 @@
  *
  * The orchestrator imports each scanner's PUBLIC exports and never modifies a
  * sub-scanner. Aggregation types are declared locally with precise interfaces;
- * no `as any` / `as unknown as` / `as never` is introduced (R75 net zero).
+ * none of the three R75 banned-cast forms (see AGENT_RULES.md R75 for the
+ * literal token list) is introduced (R75 net zero).
  */
 
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 import {
@@ -39,7 +42,13 @@ import {
   type BoardSection,
 } from './prod-readiness.config';
 
-import { scanForStubs, describePatterns, type StubFinding } from './prod-readiness/stub-scanner';
+import {
+  scanForStubs,
+  describePatterns,
+  computeFingerprint,
+  type StubFinding,
+  type StubSeverity,
+} from './prod-readiness/stub-scanner';
 import {
   loadRegistry,
   validateRegistry,
@@ -158,14 +167,23 @@ export interface BoardResult {
 }
 
 /**
- * The five gating buckets that appear, in order, in the DO NOT DEPLOY exit line.
+ * The gating buckets that appear, in order, in the DO NOT DEPLOY exit line.
  * ENV gaps and KEY gaps extend R100 paragraph 4's three-bucket headline to cover
  * the env-discovery (H4.C) and operator-keys (H4.G) sub-scanners; their sum plus
  * the original three is the single number that gates the deploy.
+ *
+ * `prodSwitchesWrong` counts switches whose ACTUAL value is definitively wrong
+ * (an OFF-expected switch turned ON, or an ON-expected switch explicitly set
+ * falsy) — a codebase/value-coherent red that gates on every run. `prodSwitchesWarn`
+ * counts the soft prod-switch states (a MUST_SET / ON switch still unset, or a
+ * STUB_ALLOWED placeholder still in place): environment-dependent, so it is
+ * INFORMATIONAL on a PR and gates ONLY under strict, exactly like the wiring,
+ * env-discovery, and operator-keys buckets.
  */
 export interface ExitCounts {
   stub: number;
   prodSwitchesWrong: number;
+  prodSwitchesWarn: number;
   wiringGaps: number;
   envGaps: number;
   keyGaps: number;
@@ -173,10 +191,15 @@ export interface ExitCounts {
 
 /** Exact regex an exit line in the DO-NOT-DEPLOY form must match. */
 export const EXIT_DO_NOT_DEPLOY_RE =
-  /^EXIT: (\d+) STUB \+ (\d+) PROD SWITCHES WRONG \+ (\d+) WIRING GAPS \+ (\d+) ENV GAPS \+ (\d+) KEY GAPS \u2192 DO NOT DEPLOY$/;
+  /^EXIT: (\d+) STUB \+ (\d+) PROD SWITCHES WRONG \+ (\d+) PROD SWITCHES WARN \+ (\d+) WIRING GAPS \+ (\d+) ENV GAPS \+ (\d+) KEY GAPS \u2192 DO NOT DEPLOY$/;
 
 /** Exact string an exit line in the ALL-CLEAR form must equal. */
 export const EXIT_ALL_CLEAR = 'EXIT: ALL CLEAR \u2192 SAFE TO DEPLOY';
+
+/** Status markers for the prod-switch rendering (R100 paragraph 2). */
+export const OK_MARK = '\u2705';
+export const WRONG_MARK = '\u274c';
+export const WARN_MARK = '\u26a0\ufe0f';
 
 /**
  * Build the aggregate exit line from the gating counts. Pure and deterministic:
@@ -189,6 +212,7 @@ export function buildExitLine(counts: ExitCounts): string {
   return (
     `EXIT: ${counts.stub} STUB ` +
     `+ ${counts.prodSwitchesWrong} PROD SWITCHES WRONG ` +
+    `+ ${counts.prodSwitchesWarn} PROD SWITCHES WARN ` +
     `+ ${counts.wiringGaps} WIRING GAPS ` +
     `+ ${counts.envGaps} ENV GAPS ` +
     `+ ${counts.keyGaps} KEY GAPS ` +
@@ -196,10 +220,15 @@ export function buildExitLine(counts: ExitCounts): string {
   );
 }
 
-/** Sum the five gating buckets into the single deploy-gating total. */
+/** Sum every gating bucket into the single (strict) deploy-gating total. */
 export function sumCounts(counts: ExitCounts): number {
   return (
-    counts.stub + counts.prodSwitchesWrong + counts.wiringGaps + counts.envGaps + counts.keyGaps
+    counts.stub +
+    counts.prodSwitchesWrong +
+    counts.prodSwitchesWarn +
+    counts.wiringGaps +
+    counts.envGaps +
+    counts.keyGaps
   );
 }
 
@@ -221,6 +250,9 @@ export function aggregateBoard(
   strict = false,
 ): BoardResult {
   const strictTotalRed = sumCounts(counts);
+  // Non-strict (PR) gating: only the codebase/value-coherent buckets. Prod-switch
+  // WARN is environment-dependent (unset switches / placeholders), so it stays
+  // out of the PR gate and joins the strict total only — same as wiring/env/keys.
   const invariantTotal = counts.stub + counts.prodSwitchesWrong;
   const totalRed = strict ? strictTotalRed : invariantTotal;
   // The EXIT line always itemises the full breakdown (every bucket) so the board
@@ -284,6 +316,157 @@ export function applyTrackedDebt(
   );
 }
 
+// ---------------------------------------------------------------------------
+// STUB SCAN SCOPE (R100 paragraph 1). R100 mandates the stub scan run across
+// `src/`, `supabase/`, and `.env.example`. The shipped stub-scanner (H4.B,
+// READ-ONLY per R18) structurally only walks `<repoRoot>/src/**/*.ts`: its scan
+// root is hard-coded to the `src` directory and its walker visits only `.ts`
+// files. It therefore cannot, by itself, reach `supabase/` (a sibling of
+// `src/`) or `.env.example` (a dotfile with no `.ts` extension). Rather than
+// modify the read-only scanner, the orchestrator runs the native scanner over
+// `src/` AND a thin orchestrator-layer scan over the remaining two roots,
+// reusing the scanner's OWN exported pattern table and fingerprint function so
+// the token logic is byte-identical across roots, then merges and de-dupes by
+// fingerprint. See the fixer report for the token-set follow-up note.
+// ---------------------------------------------------------------------------
+
+/** The three roots R100 paragraph 1 requires the stub scan to cover. */
+export const STUB_SCAN_ROOTS = ['src', 'supabase', '.env.example'] as const;
+
+/**
+ * The R100 paragraph 1 secret/host placeholder tokens that are NOT in the
+ * read-only scanner's pattern table (which carries STUB/MOCK/FAKE/PLACEHOLDER
+ * and friends). These honour R100's enumerated token set for the non-`src`
+ * roots the scanner cannot reach; they are matched verbatim. Each is BLOCK_SHIP
+ * because a live config containing one is a deploy hazard.
+ */
+export const R100_EXTRA_STUB_TOKENS: readonly string[] = [
+  'TODO_BEFORE_PROD',
+  '_test_PLACEHOLDER',
+  'example.com',
+  'localhost:',
+  '127.0.0.1',
+  'pk_test_',
+  'sk_test_',
+  'whsec_test',
+];
+
+/**
+ * The full token set the orchestrator scans the non-`src` roots for: the
+ * scanner's own SCREAMING_SNAKE pattern tokens (sourced from its public
+ * describePatterns() so the two never drift) PLUS the R100 extra tokens above.
+ * The scanner's assembled human-phrase needles (lorem ipsum etc.) are src-code
+ * smells and are intentionally not re-scanned in YAML/dotfile config roots.
+ */
+function nonSrcStubTokens(): string[] {
+  const scannerTokens = describePatterns()
+    .map((p) => p.token)
+    .filter((t) => t === t.toUpperCase() && /^[A-Z0-9_]+$/.test(t));
+  return Array.from(new Set([...scannerTokens, ...R100_EXTRA_STUB_TOKENS]));
+}
+
+/** Build a BLOCK_SHIP finding for an orchestrator-layer config-root hit. */
+function makeConfigFinding(
+  token: string,
+  rel: string,
+  lineNo: number,
+  line: string,
+  fingerprint: string,
+): StubFinding {
+  const severity: StubSeverity = 'BLOCK_SHIP';
+  return {
+    pattern: token,
+    kind: token,
+    file: rel,
+    line: lineNo,
+    excerpt: line.trim().slice(0, 200),
+    severity,
+    fingerprint,
+  };
+}
+
+/**
+ * Scan a single non-`src` root (a directory tree or a single file) for the
+ * R100 token set. Reuses the scanner's exported computeFingerprint so a hit
+ * here shares the same ledger-addressable fingerprint shape as a `src/` hit and
+ * can be adjudicated through the same learning ledger. Findings are BLOCK_SHIP
+ * minus any fingerprint the operator has already adjudicated as a false
+ * positive.
+ */
+export function scanConfigRoot(
+  repoRoot: string,
+  relRoot: string,
+  knownFalsePositives: ReadonlySet<string> = new Set<string>(),
+): StubFinding[] {
+  const abs = path.join(repoRoot, relRoot);
+  if (!fs.existsSync(abs)) return [];
+  const tokens = nonSrcStubTokens();
+  const findings: StubFinding[] = [];
+  const files = fs.statSync(abs).isDirectory() ? walkConfigFiles(abs) : [abs];
+  for (const file of files) {
+    const rel = path.relative(repoRoot, file);
+    const text = readTextOrNull(file);
+    if (text === null) continue;
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      for (const token of tokens) {
+        if (line.indexOf(token) === -1) continue;
+        const fingerprint = computeFingerprint(rel, line);
+        if (knownFalsePositives.has(fingerprint)) continue;
+        findings.push(makeConfigFinding(token, rel, i + 1, line, fingerprint));
+      }
+    }
+  }
+  return findings;
+}
+
+/** Recursively list files under a config directory, skipping VCS/dep dirs. */
+function walkConfigFiles(dir: string, acc: string[] = []): string[] {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.isDirectory()) {
+      if (e.name === 'node_modules' || e.name === '.git') continue;
+      walkConfigFiles(path.join(dir, e.name), acc);
+    } else if (e.isFile()) {
+      acc.push(path.join(dir, e.name));
+    }
+  }
+  return acc;
+}
+
+/** Read a file as UTF-8, returning null on a binary (NUL-byte) signal. */
+function readTextOrNull(file: string): string | null {
+  const buf = fs.readFileSync(file);
+  if (buf.subarray(0, 1024).indexOf(0) !== -1) return null;
+  return buf.toString('utf8');
+}
+
+/**
+ * Run the stub scan across ALL R100 paragraph 1 roots and merge: the native
+ * scanner over `src/` plus the orchestrator-layer config scan over `supabase/`
+ * and `.env.example`. De-dupes by fingerprint (a fingerprint is path+content,
+ * so the same line cannot be double-counted). This is the function the board
+ * uses so the stub section's scope matches R100 exactly.
+ */
+export function scanAllStubRoots(
+  repoRoot: string,
+  knownFalsePositives: ReadonlySet<string> = new Set<string>(),
+): StubFinding[] {
+  const merged = new Map<string, StubFinding>();
+  // Root 1: `src/` -- the native scanner (its hard-coded scan root IS src/).
+  for (const f of scanForStubs({ repoRoot, knownFalsePositives })) {
+    merged.set(f.fingerprint, f);
+  }
+  // Roots 2 + 3: `supabase/` and `.env.example` -- orchestrator-layer scan over
+  // the roots the read-only scanner cannot reach.
+  for (const relRoot of ['supabase', '.env.example']) {
+    for (const f of scanConfigRoot(repoRoot, relRoot, knownFalsePositives)) {
+      if (!merged.has(f.fingerprint)) merged.set(f.fingerprint, f);
+    }
+  }
+  return Array.from(merged.values());
+}
+
 /** SECTION 1 — STUB VALUES (H4.B). RED = count of BLOCK_SHIP findings. */
 export function runStubSection(findings: readonly StubFinding[]): SectionResult {
   const reg = registrationFor('STUB_VALUES');
@@ -298,35 +481,124 @@ export function runStubSection(findings: readonly StubFinding[]): SectionResult 
   return { section: reg.section, label: reg.label, red: block.length, gating: true, lines };
 }
 
+/** The status of one prod switch's ACTUAL value against its expected default. */
+export type SwitchStatus = 'OK' | 'WRONG' | 'WARN';
+
+/** A rendered prod-switch row: name, expected, actual, status, marker. */
+export interface SwitchRowStatus {
+  name: string;
+  expected: string;
+  actual: string;
+  status: SwitchStatus;
+  marker: string;
+}
+
+/** True when an env string is a recognised truthy on-value. */
+function isTruthyValue(v: string): boolean {
+  return ['1', 'true', 'on', 'yes', 'enabled'].includes(v.trim().toLowerCase());
+}
+
+/** True when an env string is a recognised falsy off-value. */
+function isFalsyValue(v: string): boolean {
+  return ['0', 'false', 'off', 'no', 'disabled'].includes(v.trim().toLowerCase());
+}
+
+/** True when a value still looks like an unfilled placeholder. */
+function looksPlaceholder(v: string): boolean {
+  const upper = v.toUpperCase();
+  return (
+    upper.includes('PLACEHOLDER') ||
+    upper.includes('CHANGEME') ||
+    upper.includes('CHANGE_ME') ||
+    upper.includes('YOUR_') ||
+    v.includes('pk_test_') ||
+    v.includes('sk_test_') ||
+    v.includes('whsec_test')
+  );
+}
+
 /**
- * SECTION 2 — PROD SWITCHES (H4.A). RED = registry-coherence error findings.
- * For each MUST_SET switch the section also prints actual vs expected value and
- * a marker, satisfying R100 paragraph 2's "actual + expected + status" contract.
+ * Classify ONE registry switch against its actual env value, per R100
+ * paragraph 2 ("actual + expected + status"). The status is value-coherent and
+ * deterministic given (row, env):
+ *
+ *   - WRONG (gates always): the actual value contradicts the expected default
+ *     -- an OFF-expected switch turned ON, or an ON-expected switch explicitly
+ *     set to a falsy value. This is the only definitively-broken state and is
+ *     the codebase/value-coherent red the PR gate uses.
+ *   - WARN (gates under strict only): a soft prod state -- a MUST_SET or ON
+ *     switch still unset (needs an operator value / auto-flip before deploy), or
+ *     a STUB_ALLOWED switch whose value still looks like a placeholder. These
+ *     depend on the environment, so they are informational on a PR.
+ *   - OK: the actual value matches the expected default.
+ */
+export function classifySwitch(row: RegistryRow, env: NodeJS.ProcessEnv): SwitchRowStatus {
+  const raw = env[row.name];
+  const set = isSet(raw);
+  const value = set && raw !== undefined ? raw : '';
+  const expected = row.prod_default;
+  let status: SwitchStatus = 'OK';
+  if (expected === 'MUST_SET') {
+    status = set ? 'OK' : 'WARN';
+  } else if (expected === 'ON') {
+    if (!set) status = 'WARN';
+    else status = isFalsyValue(value) ? 'WRONG' : 'OK';
+  } else if (expected === 'OFF') {
+    if (!set) status = 'OK';
+    else status = isTruthyValue(value) ? 'WRONG' : 'OK';
+  } else {
+    // STUB_ALLOWED: a still-placeholder value is a soft warn; anything else OK.
+    status = set && looksPlaceholder(value) ? 'WARN' : 'OK';
+  }
+  const marker = status === 'OK' ? OK_MARK : status === 'WRONG' ? WRONG_MARK : WARN_MARK;
+  return { name: row.name, expected, actual: set ? 'set' : '<unset>', status, marker };
+}
+
+/**
+ * SECTION 2 -- PROD SWITCHES (H4.A). R100 paragraph 2: for EVERY switch in the
+ * registry (not just MUST_SET rows) print name + expected (prod_default) +
+ * actual (env value or <unset>) + status. The section's gating red count is the
+ * registry-coherence errors PLUS the count of switches whose actual value is
+ * definitively WRONG; WARN states are aggregated separately into the PROD
+ * SWITCHES WARN total (informational on a PR, gating under strict).
  */
 export function runProdSwitchesSection(
   registry: Registry,
   env: NodeJS.ProcessEnv,
-): { result: SectionResult; unsetRequired: RegistryRow[] } {
+): { result: SectionResult; unsetRequired: RegistryRow[]; wrong: number; warn: number } {
   const reg = registrationFor('PROD_SWITCHES');
   const report = validateRegistry(registry);
   const errors = errorFindings(report);
   const required = getProdRequired(registry);
   const unsetRequired = required.filter((r) => !isSet(env[r.name]));
+  const statuses = registry.switches.map((r) => classifySwitch(r, env));
+  const wrongRows = statuses.filter((s) => s.status === 'WRONG');
+  const warnRows = statuses.filter((s) => s.status === 'WARN');
+  // The gating red for THIS section is coherence errors + definitively-wrong
+  // values. WARN states feed the separate prodSwitchesWarn bucket in the run.
+  const red = errors.length + wrongRows.length;
+  const okCount = statuses.length - wrongRows.length - warnRows.length;
   const lines: string[] = [];
   lines.push(`registry switches: ${registry.switches.length}   coherence errors: ${errors.length}`);
   for (const e of errors) lines.push(`[ERROR] ${e.name}  (${e.kind})`);
-  lines.push(`MUST_SET switches: ${required.length}   unset in current env: ${unsetRequired.length}`);
-  for (const r of required) {
-    const actual = isSet(env[r.name]) ? 'set' : '(unset)';
-    const mark = isSet(env[r.name]) ? '\u2705' : '\u274c';
-    lines.push(`${r.name}: actual=${actual} expected=MUST_SET ${mark}`);
+  lines.push(`switch states: WRONG=${wrongRows.length}  WARN=${warnRows.length}  OK=${okCount}`);
+  // Render EVERY switch class: name + expected + actual + status marker (R100
+  // #2). Wrong rows first (they gate), then a capped sample of warn rows, then a
+  // capped sample of OK rows so the board stays readable on a 200+ row registry.
+  for (const s of wrongRows) {
+    lines.push(`[${WRONG_MARK} WRONG] ${s.name}: actual=${s.actual} expected=${s.expected} ${s.marker}`);
   }
-  // Coherence errors are the gating red count for this section; unset MUST_SET
-  // switches are surfaced here and feed the OPERATOR KEYS section's key gaps so
-  // they are counted exactly once toward the exit total.
+  for (const s of warnRows.slice(0, 25)) {
+    lines.push(`[${WARN_MARK} WARN] ${s.name}: actual=${s.actual} expected=${s.expected} ${s.marker}`);
+  }
+  for (const s of statuses.filter((x) => x.status === 'OK').slice(0, 10)) {
+    lines.push(`[${OK_MARK} OK] ${s.name}: actual=${s.actual} expected=${s.expected} ${s.marker}`);
+  }
   return {
-    result: { section: reg.section, label: reg.label, red: errors.length, gating: true, lines },
+    result: { section: reg.section, label: reg.label, red, gating: true, lines },
     unsetRequired,
+    wrong: wrongRows.length,
+    warn: warnRows.length,
   };
 }
 
@@ -469,7 +741,10 @@ export async function runDeployReadiness(opts: RunOptions): Promise<BoardResult>
   const ledger = await loadLedger(ledgerPath);
   const knownFalsePositives = falsePositives(ledger);
   const debt = trackedDebt(ledger);
-  const rawStubFindings = scanForStubs({ repoRoot: opts.repoRoot, knownFalsePositives });
+  // R100 paragraph 1: scan ALL three roots (src/, supabase/, .env.example), not
+  // just the scanner's hard-coded src/ default. scanAllStubRoots merges the
+  // native src/ scan with the orchestrator-layer config-root scan.
+  const rawStubFindings = scanAllStubRoots(opts.repoRoot, knownFalsePositives);
   const stubFindings = applyTrackedDebt(rawStubFindings, debt);
   const stubResult = runStubSection(stubFindings);
 
@@ -477,6 +752,7 @@ export async function runDeployReadiness(opts: RunOptions): Promise<BoardResult>
     const counts: ExitCounts = {
       stub: stubResult.red,
       prodSwitchesWrong: 0,
+      prodSwitchesWarn: 0,
       wiringGaps: 0,
       envGaps: 0,
       keyGaps: 0,
@@ -505,7 +781,10 @@ export async function runDeployReadiness(opts: RunOptions): Promise<BoardResult>
   ];
   const counts: ExitCounts = {
     stub: stubResult.red,
+    // The prod-switch section's red is coherence errors + definitively-wrong
+    // values; its WARN states feed the separate, strict-only WARN bucket.
     prodSwitchesWrong: prodSwitches.result.red,
+    prodSwitchesWarn: prodSwitches.warn,
     wiringGaps: wiringResult.red,
     envGaps: envSection.result.red,
     keyGaps: keysSection.keyGaps,
@@ -525,6 +804,7 @@ describe('R100 deploy-readiness orchestrator', () => {
       const counts: ExitCounts = {
         stub: 0,
         prodSwitchesWrong: 0,
+        prodSwitchesWarn: 0,
         wiringGaps: 0,
         envGaps: 0,
         keyGaps: 0,
@@ -537,6 +817,7 @@ describe('R100 deploy-readiness orchestrator', () => {
       const counts: ExitCounts = {
         stub: 2,
         prodSwitchesWrong: 1,
+        prodSwitchesWarn: 6,
         wiringGaps: 3,
         envGaps: 4,
         keyGaps: 5,
@@ -545,9 +826,9 @@ describe('R100 deploy-readiness orchestrator', () => {
       expect(line).toMatch(EXIT_DO_NOT_DEPLOY_RE);
       const m = EXIT_DO_NOT_DEPLOY_RE.exec(line);
       expect(m).not.toBeNull();
-      // The five captured numbers must match the five buckets in order.
-      expect(m && m.slice(1, 6).map(Number)).toEqual([2, 1, 3, 4, 5]);
-      expect(sumCounts(counts)).toBe(15);
+      // The six captured numbers must match the six buckets in order.
+      expect(m && m.slice(1, 7).map(Number)).toEqual([2, 1, 6, 3, 4, 5]);
+      expect(sumCounts(counts)).toBe(21);
     });
 
     it('the ALL CLEAR line never matches the DO NOT DEPLOY regex', () => {
@@ -555,9 +836,10 @@ describe('R100 deploy-readiness orchestrator', () => {
     });
 
     it.each([
-      [{ stub: 1, prodSwitchesWrong: 0, wiringGaps: 0, envGaps: 0, keyGaps: 0 }, 1],
-      [{ stub: 0, prodSwitchesWrong: 0, wiringGaps: 0, envGaps: 0, keyGaps: 7 }, 7],
-      [{ stub: 3, prodSwitchesWrong: 3, wiringGaps: 3, envGaps: 3, keyGaps: 3 }, 15],
+      [{ stub: 1, prodSwitchesWrong: 0, prodSwitchesWarn: 0, wiringGaps: 0, envGaps: 0, keyGaps: 0 }, 1],
+      [{ stub: 0, prodSwitchesWrong: 0, prodSwitchesWarn: 0, wiringGaps: 0, envGaps: 0, keyGaps: 7 }, 7],
+      [{ stub: 0, prodSwitchesWrong: 0, prodSwitchesWarn: 4, wiringGaps: 0, envGaps: 0, keyGaps: 0 }, 4],
+      [{ stub: 3, prodSwitchesWrong: 3, prodSwitchesWarn: 3, wiringGaps: 3, envGaps: 3, keyGaps: 3 }, 18],
     ])('sums buckets %j to %i', (counts, expected) => {
       expect(sumCounts(counts as ExitCounts)).toBe(expected);
     });
@@ -575,6 +857,7 @@ describe('R100 deploy-readiness orchestrator', () => {
     const mixedCounts: ExitCounts = {
       stub: 2,
       prodSwitchesWrong: 1,
+      prodSwitchesWarn: 0,
       wiringGaps: 0,
       envGaps: 4,
       keyGaps: 5,
@@ -618,6 +901,7 @@ describe('R100 deploy-readiness orchestrator', () => {
       const counts: ExitCounts = {
         stub: 0,
         prodSwitchesWrong: 0,
+        prodSwitchesWarn: 0,
         wiringGaps: 0,
         envGaps: 0,
         keyGaps: 0,
@@ -636,6 +920,7 @@ describe('R100 deploy-readiness orchestrator', () => {
       const counts: ExitCounts = {
         stub: 0,
         prodSwitchesWrong: 0,
+        prodSwitchesWarn: 0,
         wiringGaps: 1,
         envGaps: 0,
         keyGaps: 0,
@@ -841,6 +1126,174 @@ describe('R100 deploy-readiness orchestrator', () => {
     it('the live repo ledger downgrades every BLOCK_SHIP stub so the PR stub count is zero', async () => {
       const board = await runDeployReadiness({ repoRoot: REPO_ROOT, mode: 'quick' });
       expect(board.counts.stub).toBe(0);
+    });
+  });
+
+  describe('stub-scan scope covers src/, supabase/, and .env.example (R100 #1)', () => {
+    // A fixture repo root carrying planted tokens in BOTH the supabase/migrations
+    // tree and a .env.example dotfile -- the two roots the read-only scanner
+    // cannot reach on its own. scanAllStubRoots must surface them.
+    //
+    // The fixture tree (including a dotfile literally named `.env.example`) is
+    // materialised under os.tmpdir() at runtime rather than committed to git:
+    // the repo's dangerfile fails any PR that *adds* a tracked file matching
+    // /\.env(\.|$)/, so a checked-in `.env.example` fixture -- even one full of
+    // obviously-fake PLANTED tokens -- would trip the sensitive-file guard. A
+    // temp-dir fixture exercises the identical scan-root code path with zero
+    // sensitive paths in the tree.
+    let STUB_FIXTURE_ROOT = '';
+
+    beforeAll(() => {
+      STUB_FIXTURE_ROOT = fs.mkdtempSync(
+        path.join(os.tmpdir(), 'h4h-stub-roots-'),
+      );
+      const write = (rel: string, body: string): void => {
+        const abs = path.join(STUB_FIXTURE_ROOT, rel);
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, body);
+      };
+      // Root 1 (src/): a clean .ts file -- proves the scanner default still runs
+      // and yields nothing here.
+      write(path.join('src', 'clean.ts'), 'export const clean = true;\n');
+      // Root 2 (supabase/): planted secret + host + TODO_BEFORE_PROD tokens in a
+      // migration. The read-only scanner only walks src/**/*.ts, so finding this
+      // proves the orchestrator-layer config scan ran.
+      write(
+        path.join('supabase', 'migrations', '0001_seed.sql'),
+        [
+          '-- planted fixture: a stub secret left in a migration',
+          "insert into config (key, value) values ('stripe_pk', 'pk_test_PLANTED1234567890');",
+          "insert into config (key, value) values ('webhook', 'whsec_test_PLANTEDhook');",
+          '-- TODO_BEFORE_PROD: rotate this before shipping',
+          '',
+        ].join('\n'),
+      );
+      // Root 3 (.env.example): a dotfile with no .ts extension carrying host +
+      // secret tokens. Materialised here, never committed (see note above).
+      write(
+        '.env.example',
+        [
+          'API_BASE_URL=http://localhost:3000',
+          'CALLBACK_URL=https://app.example.com/callback',
+          'STRIPE_SECRET_KEY=sk_test_PLANTEDexamplekey',
+          '',
+        ].join('\n'),
+      );
+    });
+
+    afterAll(() => {
+      if (STUB_FIXTURE_ROOT) {
+        fs.rmSync(STUB_FIXTURE_ROOT, { recursive: true, force: true });
+      }
+    });
+
+    it('enumerates all three R100 stub-scan roots', () => {
+      expect([...STUB_SCAN_ROOTS]).toEqual(['src', 'supabase', '.env.example']);
+    });
+
+    it('finds planted tokens in supabase/migrations and .env.example', () => {
+      const findings = scanAllStubRoots(STUB_FIXTURE_ROOT);
+      const files = findings.map((f) => f.file);
+      // A migration file under supabase/ is scanned (the scanner alone only walks
+      // src/**/*.ts, so this proves the orchestrator-layer config scan ran).
+      expect(files.some((f) => f.startsWith('supabase/migrations/'))).toBe(true);
+      // The .env.example dotfile (no .ts extension) is scanned too.
+      expect(files).toContain('.env.example');
+      // The planted secret/host tokens R100 enumerates are detected.
+      const tokens = new Set(findings.map((f) => f.pattern));
+      expect(tokens.has('pk_test_')).toBe(true);
+      expect(tokens.has('sk_test_')).toBe(true);
+      expect(tokens.has('whsec_test')).toBe(true);
+      expect(tokens.has('localhost:')).toBe(true);
+      expect(tokens.has('example.com')).toBe(true);
+      expect(tokens.has('TODO_BEFORE_PROD')).toBe(true);
+      // Every config-root hit is BLOCK_SHIP, so the stub section counts them red.
+      const supabaseAndEnv = findings.filter(
+        (f) => f.file.startsWith('supabase/') || f.file === '.env.example',
+      );
+      expect(supabaseAndEnv.length).toBeGreaterThan(0);
+      expect(supabaseAndEnv.every((f) => f.severity === 'BLOCK_SHIP')).toBe(true);
+      expect(runStubSection(findings).red).toBeGreaterThan(0);
+    });
+
+    it('honours the learning ledger for config-root fingerprints', () => {
+      const all = scanConfigRoot(STUB_FIXTURE_ROOT, '.env.example');
+      expect(all.length).toBeGreaterThan(0);
+      // Suppress the first finding by fingerprint; it must drop out.
+      const suppressed = new Set<string>([all[0].fingerprint]);
+      const after = scanConfigRoot(STUB_FIXTURE_ROOT, '.env.example', suppressed);
+      expect(after.find((f) => f.fingerprint === all[0].fingerprint)).toBeUndefined();
+      expect(after.length).toBe(all.length - 1);
+    });
+  });
+
+  describe('prod-switch section renders + gates every registry row (R100 #2)', () => {
+    /** Build a registry of `extra` rows padded to clear the MIN_SWITCHES floor. */
+    function buildRegistry(extra: RegistryRow[]): Registry {
+      const filler: RegistryRow[] = Array.from({ length: 240 }, (_, i) => ({
+        name: `FILLER_SWITCH_${i}`,
+        tier: 'optional',
+        prod_default: 'OFF',
+        auto_flip_on_in_prod: false,
+        owner: 'platform',
+        description: `filler switch ${i}`,
+      }));
+      return { switches: [...extra, ...filler] };
+    }
+
+    it('puts a wrongly-set switch in the red bucket and a correct one in OK', () => {
+      const rows: RegistryRow[] = [
+        // Correctly set: OFF-expected, env leaves it unset (reads OFF) -> OK.
+        { name: 'CORRECT_FLAG', tier: 'prod', prod_default: 'OFF', auto_flip_on_in_prod: false, owner: 'platform', description: 'correct flag' },
+        // Wrongly set: OFF-expected but the env turns it ON -> WRONG (red).
+        { name: 'WRONG_FLAG', tier: 'prod', prod_default: 'OFF', auto_flip_on_in_prod: false, owner: 'platform', description: 'wrong flag' },
+      ];
+      const registry = buildRegistry(rows);
+      const env: NodeJS.ProcessEnv = { WRONG_FLAG: 'true' };
+      const { result, wrong, warn } = runProdSwitchesSection(registry, env);
+      // Exactly one switch is definitively wrong; it lands in the red bucket.
+      expect(wrong).toBe(1);
+      expect(result.red).toBeGreaterThanOrEqual(1);
+      const body = result.lines.join('\n');
+      expect(body).toContain('WRONG] WRONG_FLAG');
+      expect(body).toContain('actual=set expected=OFF');
+      // The correctly-configured switch is NOT in the wrong tally.
+      expect(classifySwitch(rows[0], env).status).toBe('OK');
+      expect(classifySwitch(rows[1], env).status).toBe('WRONG');
+      // A wrongly-set switch is value-coherent, so it gates even on a PR run.
+      const board = aggregateBoard([result], {
+        stub: 0,
+        prodSwitchesWrong: result.red,
+        prodSwitchesWarn: warn,
+        wiringGaps: 0,
+        envGaps: 0,
+        keyGaps: 0,
+      }, false);
+      expect(board.totalRed).toBeGreaterThan(0);
+      expect(board.exitLine).toMatch(EXIT_DO_NOT_DEPLOY_RE);
+    });
+
+    it('classifies unset MUST_SET / ON switches as WARN (strict-only gating)', () => {
+      const rows: RegistryRow[] = [
+        { name: 'NEEDS_SECRET', tier: 'prod', prod_default: 'MUST_SET', auto_flip_on_in_prod: false, owner: 'billing', description: 'needs secret' },
+        { name: 'SHOULD_BE_ON', tier: 'prod', prod_default: 'ON', auto_flip_on_in_prod: true, owner: 'platform', description: 'should be on' },
+      ];
+      const registry = buildRegistry(rows);
+      const { warn, wrong } = runProdSwitchesSection(registry, {});
+      // Both soft states are WARN, not WRONG.
+      expect(wrong).toBe(0);
+      expect(warn).toBeGreaterThanOrEqual(2);
+      // WARN feeds the strict-only bucket: gates strict, not a PR.
+      const counts: ExitCounts = {
+        stub: 0,
+        prodSwitchesWrong: 0,
+        prodSwitchesWarn: warn,
+        wiringGaps: 0,
+        envGaps: 0,
+        keyGaps: 0,
+      };
+      expect(aggregateBoard([], counts, false).totalRed).toBe(0);
+      expect(aggregateBoard([], counts, true).totalRed).toBe(warn);
     });
   });
 });
