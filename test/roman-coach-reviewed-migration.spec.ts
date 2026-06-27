@@ -214,7 +214,15 @@ describe('ED.2 daily-rings review-arc composite index — static integrity', () 
     // TM-1 authoring time. Bump this ONLY when intentionally landing a migration
     // with a prefix below the floor (which should essentially never happen under
     // append-only) — never to silence a surprise back-dated dir.
-    const KNOWN_BELOW_FLOOR_COUNT = 146;
+    //
+    // 146 -> 149: the PR #487 forward-deploy chain repair split three companion
+    // migrations into their chronologically-correct slots below the floor
+    // (add_community_win_visibility at 20260425030001, add_sub_coach_role_value
+    // at 20260701235900, pr14_client_purchase_landing_page_idx_concurrent at
+    // 20261207000001). Each sits immediately after its own predecessor, so this
+    // is grandfathered append-only hygiene, not a back-dated reorder of later
+    // work — R76 §6 compliant.
+    const KNOWN_BELOW_FLOOR_COUNT = 149;
     const dirs = sortedMigrationDirs();
     const self = '20261219000000_conv_review_coach_reviewed_at_idx';
     expect(dirs).toContain(self);

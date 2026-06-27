@@ -4,7 +4,7 @@
  * STATIC assertions (always run, no database required): the NEW additive
  * migration 20261218000100_rls_partial_refund_decision enables AND forces RLS
  * on the PartialRefundDecision table (created in the earlier, untouched
- * 20261214000000 migration) and ships the operator Decision-2 coach-only
+ * 20261215000300 migration) and ships the operator Decision-2 coach-only
  * policy set: a service_role bypass (Primitive A), a coach-of-purchase SELECT,
  * and a coach-of-purchase UPDATE — all keyed on the parent
  * ClientPurchase.coach_user_id = app.current_user_id(), with NO client policy
@@ -41,7 +41,7 @@ function readOriginalMigrationSql(): string {
       ROOT,
       'prisma',
       'migrations',
-      '20261214000000_named_regimes_and_partial_refund_decision',
+      '20261215000300_named_regimes_and_partial_refund_decision',
       'migration.sql',
     ),
     'utf8',
@@ -121,6 +121,6 @@ describe('PartialRefundDecision RLS migration — static integrity (F3)', () => 
   });
 
   it('uses a timestamp strictly after the original table migration (append-only ordering)', () => {
-    expect('20261218000100' > '20261214000000').toBe(true);
+    expect('20261218000100' > '20261215000300').toBe(true);
   });
 });
