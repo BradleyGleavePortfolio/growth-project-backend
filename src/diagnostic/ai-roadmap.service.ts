@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import OpenAI from 'openai';
 import { PrismaService } from '../prisma.service';
+import { createBreaker } from '../circuit-breakers/circuit-breaker.factory';
 import {
   DiagnosticBuckets,
   DiagnosticScores,
@@ -52,13 +53,29 @@ export const ROADMAP_PROMPT_VERSION = 'v1';
 interface RoadmapInput {
   scores: DiagnosticScores;
   buckets: DiagnosticBuckets;
-  weakest_questions_per_section: Array<{ section: string; question_id: number; text: string; answer: number }>;
+  weakest_questions_per_section: Array<{
+    section: string;
+    question_id: number;
+    text: string;
+    answer: number;
+  }>;
   current_date_iso: string;
 }
 
 @Injectable()
 export class AiRoadmapService {
   private readonly logger = new Logger(AiRoadmapService.name);
+
+  // H6 (D-H6-2): per-client Opossum breaker around the outbound
+  // OpenAI-compatible (Perplexity) chat-completions boundary. 'default'
+  // profile (8s/50%/30s). Distinct cache key so this diagnostic boundary
+  // keeps its own rolling window. Touches only the SDK call boundary.
+  private guardedChat = createBreaker(
+    'openai',
+    (params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming) =>
+      this.getClient().chat.completions.create(params),
+    { key: 'openai:ai-roadmap' },
+  );
 
   // Lazy-init: OpenAI SDK v5+ throws synchronously when apiKey is empty,
   // so the client cannot be built at provider construction (env var is
@@ -83,14 +100,21 @@ export class AiRoadmapService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  buildUserPrompt(body: SubmitDiagnosticDto, scores: DiagnosticScores, buckets: DiagnosticBuckets): string {
+  buildUserPrompt(
+    body: SubmitDiagnosticDto,
+    scores: DiagnosticScores,
+    buckets: DiagnosticBuckets,
+  ): string {
     const catalog = loadCatalog();
     const byId = new Map<number, { section: string; text: string }>();
     for (const q of catalog.questions) byId.set(q.id, { section: q.section, text: q.text });
 
     // Pull the three lowest-scoring questions per section. These give the
     // model concrete language to reference rather than abstract scores.
-    const bySection: Record<string, Array<{ question_id: number; text: string; answer: number }>> = {
+    const bySection: Record<
+      string,
+      Array<{ question_id: number; text: string; answer: number }>
+    > = {
       income: [],
       body: [],
       lifestyle: [],
@@ -98,7 +122,11 @@ export class AiRoadmapService {
     for (const a of body.answers) {
       const meta = byId.get(a.question_id);
       if (!meta) continue;
-      bySection[meta.section].push({ question_id: a.question_id, text: meta.text, answer: a.answer });
+      bySection[meta.section].push({
+        question_id: a.question_id,
+        text: meta.text,
+        answer: a.answer,
+      });
     }
     const weakest: RoadmapInput['weakest_questions_per_section'] = [];
     for (const section of ['income', 'body', 'lifestyle'] as const) {
@@ -111,9 +139,15 @@ export class AiRoadmapService {
     lines.push(`Today: ${today}.`);
     lines.push('');
     lines.push('Section scores (0-100% of max):');
-    lines.push(`  Income Architecture: ${scores.income}% — bucket=${buckets.income} (raw ${scores.income_raw}/75)`);
-    lines.push(`  Body Protocol: ${scores.body}% — bucket=${buckets.body} (raw ${scores.body_raw}/60)`);
-    lines.push(`  Calendar & Lifestyle: ${scores.lifestyle}% — bucket=${buckets.lifestyle} (raw ${scores.lifestyle_raw}/65)`);
+    lines.push(
+      `  Income Architecture: ${scores.income}% — bucket=${buckets.income} (raw ${scores.income_raw}/75)`,
+    );
+    lines.push(
+      `  Body Protocol: ${scores.body}% — bucket=${buckets.body} (raw ${scores.body_raw}/60)`,
+    );
+    lines.push(
+      `  Calendar & Lifestyle: ${scores.lifestyle}% — bucket=${buckets.lifestyle} (raw ${scores.lifestyle_raw}/65)`,
+    );
     lines.push('');
     lines.push(`Overall raw score: ${scores.overall_raw}/200 — bucket=${buckets.overall}.`);
     lines.push(`Overall headline (do not quote verbatim): "${buckets.overall_headline}"`);
@@ -143,7 +177,7 @@ export class AiRoadmapService {
 
     const userPrompt = this.buildUserPrompt(body, scores, buckets);
     try {
-      const response = await this.getClient().chat.completions.create({
+      const response = await this.guardedChat({
         model: 'sonar-pro',
         messages: [
           { role: 'system', content: ROADMAP_SYSTEM_PROMPT },
