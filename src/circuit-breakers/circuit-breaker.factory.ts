@@ -16,8 +16,11 @@
 //     outage. The breaker's job is to fail fast and loud (CircuitOpenError
 //     -> 503), not to fake success (NO FAKE SUCCESS doctrine).
 
+import { Logger } from '@nestjs/common';
 import CircuitBreaker from 'opossum';
 import { resolveBreakerConfig } from './circuit-breaker.constants';
+
+const logger = new Logger('CircuitBreakerFactory');
 
 // Domain error raised when a breaker rejects a call because it is open.
 // Carries the client name so the filter and logs can attribute the outage.
@@ -67,6 +70,26 @@ export interface CreateBreakerOptions {
   forceNew?: boolean;
 }
 
+// Attach structured-log listeners for the three observable state transitions.
+// (#34 observability) Called once when the breaker is first created.
+function attachObservabilityListeners(breaker: CircuitBreaker, clientName: string): void {
+  breaker.on('open', () => {
+    logger.warn({ event: 'circuit_open', client: clientName }, `Circuit OPEN for ${clientName}`);
+  });
+  breaker.on('halfOpen', () => {
+    logger.log(
+      { event: 'circuit_half_open', client: clientName },
+      `Circuit HALF-OPEN for ${clientName} — probing`,
+    );
+  });
+  breaker.on('close', () => {
+    logger.log(
+      { event: 'circuit_close', client: clientName },
+      `Circuit CLOSED for ${clientName} — upstream healthy`,
+    );
+  });
+}
+
 // Wrap `fn` in a per-client breaker and return a callable with the same
 // args/return type. Throws CircuitOpenError when the breaker is open.
 export function createBreaker<A extends unknown[], R>(
@@ -88,6 +111,7 @@ export function createBreaker<A extends unknown[], R>(
       // Name surfaces in Opossum stats/events for observability.
       name: clientName,
     });
+    attachObservabilityListeners(breaker, clientName);
     breakerCache.set(cacheKey, breaker);
   }
 
