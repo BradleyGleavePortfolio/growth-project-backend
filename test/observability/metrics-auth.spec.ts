@@ -61,6 +61,46 @@ describe('extractBearerToken', () => {
   });
 });
 
+describe('extractBearerToken ReDoS resistance', () => {
+  it('parses a long but legitimate bearer header well within the length cap quickly', () => {
+    const token = 'a'.repeat(2000);
+    const start = Date.now();
+    expect(extractBearerToken(`Bearer ${token}`)).toBe(token);
+    expect(Date.now() - start).toBeLessThan(50);
+  });
+
+  it('does not hang on a pathological header of many spaces after the scheme', () => {
+    // The legacy regex /^Bearer\s+(.+)$/i backtracked polynomially on inputs
+    // shaped like "Bearer" + many spaces. The bounded parser must resolve in
+    // constant-ish time regardless of how many spaces are supplied.
+    const malicious = `Bearer${' '.repeat(50000)}`;
+    const start = Date.now();
+    const result = extractBearerToken(malicious);
+    expect(Date.now() - start).toBeLessThan(50);
+    // All-whitespace after the scheme leaves no token, so it is rejected.
+    expect(result).toBeUndefined();
+  });
+
+  it('rejects an over-long header beyond the length cap without scanning it', () => {
+    const oversized = `Bearer ${'a'.repeat(5000)}`;
+    const start = Date.now();
+    expect(extractBearerToken(oversized)).toBeUndefined();
+    expect(Date.now() - start).toBeLessThan(50);
+  });
+
+  it('accepts a lowercase bearer scheme', () => {
+    expect(extractBearerToken('bearer lower-scheme-token')).toBe('lower-scheme-token');
+  });
+
+  it('rejects a bearer scheme with no token', () => {
+    expect(extractBearerToken('Bearer    ')).toBeUndefined();
+  });
+
+  it('rejects an empty header value', () => {
+    expect(extractBearerToken('')).toBeUndefined();
+  });
+});
+
 describe('MetricsAuthGuard', () => {
   const ORIGINAL_TOKEN = process.env.METRICS_AUTH_TOKEN;
   const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
