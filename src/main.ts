@@ -10,6 +10,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ThrottlerExceptionFilter } from './filters/throttler-exception.filter';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
+import { CircuitOpenFilter } from './circuit-breakers/circuit-open.filter';
 import { assertEnv, isProdLike, parseStorefrontBaseUrl } from './common/env-validation';
 import { BootstrapValidationError } from './common/errors/bootstrap-validation.error';
 import { setupSwagger } from './common/openapi';
@@ -137,6 +138,7 @@ async function bootstrap() {
   app.useGlobalFilters(
     new HttpExceptionFilter(),
     new ThrottlerExceptionFilter(metrics),
+    new CircuitOpenFilter(),
   );
 
   // Global Cache-Control interceptor — adds `private, max-age=60` to safe

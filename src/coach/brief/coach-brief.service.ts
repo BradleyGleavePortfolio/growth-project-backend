@@ -18,17 +18,12 @@
 //   * Date bucketing   — ALWAYS bucketDateLocal(d, tz); never toISOString().
 //   * ConfigService    — ANTHROPIC_API_KEY read only via this.config.get<>().
 
-import {
-  Inject,
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-  Optional,
-} from '@nestjs/common';
+import { Inject, Injectable, InternalServerErrorException, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../prisma.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
 
 /**
  * Sentinel error surfaced by `markBriefRead` when the briefId either does
@@ -77,10 +72,7 @@ const WEIGHT_FLAG_THRESHOLD_LBS = 4.4;
 // running with TZ=UTC (Fly.io) still bucket dates in the coach's local
 // timezone. Never use toISOString().slice(0,10) — that returns the UTC
 // date — and never use Date#getFullYear/Month/Date (process tz).
-export function bucketDateLocal(
-  d: Date,
-  timeZone = 'America/Los_Angeles',
-): string {
+export function bucketDateLocal(d: Date, timeZone = 'America/Los_Angeles'): string {
   try {
     return new Intl.DateTimeFormat('en-CA', {
       timeZone,
@@ -116,13 +108,9 @@ function errorMessageOf(err: unknown): string {
 // (callClaude catches and falls back to the deterministic narrative),
 // but a `code` field keeps internal logs greppable.
 class CoachBriefClaudeError extends Error {
-  readonly code:
-    | 'COACH_BRIEF_CLAUDE_EMPTY'
-    | 'COACH_BRIEF_CLAUDE_CONTRACT_FAILED';
+  readonly code: 'COACH_BRIEF_CLAUDE_EMPTY' | 'COACH_BRIEF_CLAUDE_CONTRACT_FAILED';
   constructor(
-    code:
-      | 'COACH_BRIEF_CLAUDE_EMPTY'
-      | 'COACH_BRIEF_CLAUDE_CONTRACT_FAILED',
+    code: 'COACH_BRIEF_CLAUDE_EMPTY' | 'COACH_BRIEF_CLAUDE_CONTRACT_FAILED',
     message: string,
   ) {
     super(message);
@@ -202,9 +190,7 @@ export function sanitizePromptIdentifier(
   return stripped.length > 80 ? stripped.slice(0, 80) : stripped;
 }
 
-export function buildBriefPrompt(
-  ctx: BriefContext | BriefContextHeadCoach,
-): string {
+export function buildBriefPrompt(ctx: BriefContext | BriefContextHeadCoach): string {
   // P1-8: produce a sanitized shallow copy so the prompt builders
   // cannot see raw user-controlled name strings. The original ctx is
   // still used for downstream non-prompt code (DB persistence,
@@ -223,9 +209,7 @@ function sanitizeSoloCtxForPrompt(ctx: BriefContext): BriefContext {
   };
 }
 
-function sanitizeHeadCoachCtxForPrompt(
-  ctx: BriefContextHeadCoach,
-): BriefContextHeadCoach {
+function sanitizeHeadCoachCtxForPrompt(ctx: BriefContextHeadCoach): BriefContextHeadCoach {
   return {
     ...ctx,
     coach_first_name: sanitizePromptIdentifier(ctx.coach_first_name),
@@ -330,9 +314,7 @@ function buildHeadCoachPrompt(ctx: BriefContextHeadCoach): string {
 // person plural, "we / we're / we've"), coach first name, 3–5 sentences,
 // max 600 chars. Used when Claude is unavailable OR when Claude output
 // fails the contract validation in callClaude (P1-7).
-export function buildFallbackNarrative(
-  ctx: BriefContext | BriefContextHeadCoach,
-): string {
+export function buildFallbackNarrative(ctx: BriefContext | BriefContextHeadCoach): string {
   const sentences: string[] =
     ctx.brief_mode === 'head_coach'
       ? buildHeadCoachFallbackSentences(ctx)
@@ -351,9 +333,7 @@ export function buildFallbackNarrative(
     // previous slice(0, MAX) followed by `+= '.'` could produce a
     // 601-character string and silently violate the DB CHECK and the
     // documented ≤600 contract.
-    narrative = narrative
-      .slice(0, BRIEF_MAX_NARRATIVE_CHARS - 1)
-      .trimEnd();
+    narrative = narrative.slice(0, BRIEF_MAX_NARRATIVE_CHARS - 1).trimEnd();
     if (!/[.!?]$/.test(narrative)) narrative += '.';
   }
   // Defense in depth: never allow a value greater than the hard cap to
@@ -420,16 +400,12 @@ function buildSoloOrSubCoachFallbackSentences(ctx: BriefContext): string[] {
         `${ctx.unread_messages} unread message${ctx.unread_messages === 1 ? '' : 's'}`,
       );
     if (ctx.missed_checkin > 0)
-      fragments.push(
-        `${ctx.missed_checkin} missed check-in${ctx.missed_checkin === 1 ? '' : 's'}`,
-      );
+      fragments.push(`${ctx.missed_checkin} missed check-in${ctx.missed_checkin === 1 ? '' : 's'}`);
     if (ctx.weight_logs_flagged > 0)
       fragments.push(
         `${ctx.weight_logs_flagged} weight log${ctx.weight_logs_flagged === 1 ? '' : 's'} flagged`,
       );
-    sentences.push(
-      `Here's what needs your eyes: ${fragments.join(', ')}.`,
-    );
+    sentences.push(`Here's what needs your eyes: ${fragments.join(', ')}.`);
   }
 
   return sentences;
@@ -437,9 +413,7 @@ function buildSoloOrSubCoachFallbackSentences(ctx: BriefContext): string[] {
 
 function buildHeadCoachFallbackSentences(ctx: BriefContextHeadCoach): string[] {
   const sentences: string[] = [];
-  sentences.push(
-    `${ctx.coach_first_name}, we pulled together this morning's team report for you.`,
-  );
+  sentences.push(`${ctx.coach_first_name}, we pulled together this morning's team report for you.`);
 
   // Revenue + headcount snapshot.
   if (ctx.total_revenue_today_cents > 0) {
@@ -486,10 +460,7 @@ function buildHeadCoachFallbackSentences(ctx: BriefContextHeadCoach): string[] {
 //   - No markdown bullet/heading/code-fence characters left after normalize
 //   - No meta prefix ("Here is", "Sure,", "Of course")
 //   - Length ≤ BRIEF_MAX_NARRATIVE_CHARS
-export function validateClaudeNarrative(
-  narrative: string,
-  coachFirstName: string,
-): string | null {
+export function validateClaudeNarrative(narrative: string, coachFirstName: string): string | null {
   if (!narrative.trim()) return 'empty';
 
   if (narrative.length > BRIEF_MAX_NARRATIVE_CHARS) {
@@ -516,10 +487,7 @@ export function validateClaudeNarrative(
   if (sentences.length > 5) return `too_many_sentences:${sentences.length}`;
 
   // Coach first name must appear in sentence 1 or 2.
-  const namePattern = new RegExp(
-    `\\b${escapeRegex(coachFirstName)}\\b`,
-    'i',
-  );
+  const namePattern = new RegExp(`\\b${escapeRegex(coachFirstName)}\\b`, 'i');
   const opener = sentences.slice(0, 2).join(' ');
   if (!namePattern.test(opener)) return 'missing_first_name';
 
@@ -615,17 +583,13 @@ export function buildActionItems(args: {
     });
   }
 
-  return items.sort(
-    (a, b) => a.priority - b.priority || a.type.localeCompare(b.type),
-  );
+  return items.sort((a, b) => a.priority - b.priority || a.type.localeCompare(b.type));
 }
 
 // P1-3: head-coach business actions. NEVER carries client_id or
 // client_name — only KPI-shaped detail strings the mobile renders as
 // summary tiles instead of per-client rows.
-export function buildHeadCoachActionItems(
-  ctx: BriefContextHeadCoach,
-): HeadCoachActionItem[] {
+export function buildHeadCoachActionItems(ctx: BriefContextHeadCoach): HeadCoachActionItem[] {
   const items: HeadCoachActionItem[] = [];
 
   if (ctx.dunning_in_progress > 0) {
@@ -668,9 +632,7 @@ export function buildHeadCoachActionItems(
     });
   }
 
-  return items.sort(
-    (a, b) => a.priority - b.priority || a.type.localeCompare(b.type),
-  );
+  return items.sort((a, b) => a.priority - b.priority || a.type.localeCompare(b.type));
 }
 
 // ─── Service ────────────────────────────────────────────────────────────
@@ -686,6 +648,10 @@ export class CoachBriefService {
     @Optional()
     @Inject(BRIEF_ANTHROPIC_CLIENT_TOKEN)
     injectedClient?: Anthropic,
+    // H6 (D-H6-3): structured same-transaction audit substrate. @Optional
+    // so legacy direct-construction specs keep compiling; AuditLogModule is
+    // @Global so production DI always populates it.
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {
     if (injectedClient) this.anthropic = injectedClient;
   }
@@ -715,9 +681,7 @@ export class CoachBriefService {
       new Intl.DateTimeFormat('en-US', { timeZone: tz });
       return tz;
     } catch {
-      this.logger.warn(
-        `coach=${coachId} has invalid timezone="${tz}" — falling back to UTC`,
-      );
+      this.logger.warn(`coach=${coachId} has invalid timezone="${tz}" — falling back to UTC`);
       return 'UTC';
     }
   }
@@ -903,9 +867,7 @@ export class CoachBriefService {
             AND cp."coach_user_id" = ${coachId}
         `,
       ),
-      this.prisma.$queryRaw<
-        Array<{ user_id: string; user_name: string; delta_lbs: number }>
-      >(
+      this.prisma.$queryRaw<Array<{ user_id: string; user_name: string; delta_lbs: number }>>(
         Prisma.sql`
           WITH ranked AS (
             SELECT
@@ -1095,14 +1057,10 @@ export class CoachBriefService {
         client_id: true,
       },
     });
-    const delegatedClientIds = new Set(
-      openAssignments.map((a) => a.client_id),
-    );
+    const delegatedClientIds = new Set(openAssignments.map((a) => a.client_id));
     const clientsBySubCoach = new Map<string, Set<string>>();
     for (const a of openAssignments) {
-      const set =
-        clientsBySubCoach.get(a.sub_coach_id) ??
-        new Set<string>();
+      const set = clientsBySubCoach.get(a.sub_coach_id) ?? new Set<string>();
       set.add(a.client_id);
       clientsBySubCoach.set(a.sub_coach_id, set);
     }
@@ -1148,12 +1106,9 @@ export class CoachBriefService {
       }
     }
 
-    const personallyManagedClients = headOwnedClients.filter(
-      (c) => !delegatedClientIds.has(c.id),
-    );
+    const personallyManagedClients = headOwnedClients.filter((c) => !delegatedClientIds.has(c.id));
 
-    const teamClientsTotal =
-      personallyManagedClients.length + delegatedClientIds.size;
+    const teamClientsTotal = personallyManagedClients.length + delegatedClientIds.size;
 
     // P1-7: head coach's tenant client set used to scope payment
     // aggregates. The union of own (non-delegated) clients and
@@ -1163,10 +1118,7 @@ export class CoachBriefService {
     // raw SQL ANY() parameter for the dunning query. delegatedClientIds
     // is now the post-filter set (A5-P2-3).
     const tenantClientIds = Array.from(
-      new Set<string>([
-        ...personallyManagedClients.map((c) => c.id),
-        ...delegatedClientIds,
-      ]),
+      new Set<string>([...personallyManagedClients.map((c) => c.id), ...delegatedClientIds]),
     );
 
     // P1-4: new clients in last 24h derived from the same union — head's
@@ -1216,30 +1168,29 @@ export class CoachBriefService {
     let dunningStateRaw: Array<{ count: bigint; total: bigint | null }> = [];
 
     if (tenantClientIds.length > 0) {
-      const [revenueTodayAgg, revenue30dAgg, mrrAgg, dunningRows] =
-        await Promise.all([
-          this.prisma.clientPurchase.aggregate({
-            _sum: { amount_cents: true },
-            _count: { _all: true },
-            where: {
-              client_user_id: { in: tenantClientIds },
-              status: 'paid',
-              updated_at: { gte: briefDateStart, lte: briefDateEnd },
-            },
-          }),
-          this.prisma.clientPurchase.aggregate({
-            _sum: { amount_cents: true },
-            where: {
-              client_user_id: { in: tenantClientIds },
-              status: 'paid',
-              updated_at: { gte: thirtyDaysAgo },
-            },
-          }),
-          // A5-P1-5: SQL aggregate. SUM(ROUND(per-row monthly equivalent))
-          // mirrors the previous reducer's behavior so MRR numbers stay
-          // stable across the migration.
-          this.prisma.$queryRaw<Array<{ mrr_cents: bigint | null }>>(
-            Prisma.sql`
+      const [revenueTodayAgg, revenue30dAgg, mrrAgg, dunningRows] = await Promise.all([
+        this.prisma.clientPurchase.aggregate({
+          _sum: { amount_cents: true },
+          _count: { _all: true },
+          where: {
+            client_user_id: { in: tenantClientIds },
+            status: 'paid',
+            updated_at: { gte: briefDateStart, lte: briefDateEnd },
+          },
+        }),
+        this.prisma.clientPurchase.aggregate({
+          _sum: { amount_cents: true },
+          where: {
+            client_user_id: { in: tenantClientIds },
+            status: 'paid',
+            updated_at: { gte: thirtyDaysAgo },
+          },
+        }),
+        // A5-P1-5: SQL aggregate. SUM(ROUND(per-row monthly equivalent))
+        // mirrors the previous reducer's behavior so MRR numbers stay
+        // stable across the migration.
+        this.prisma.$queryRaw<Array<{ mrr_cents: bigint | null }>>(
+          Prisma.sql`
               SELECT COALESCE(SUM(
                 CASE
                   WHEN p."interval" = 'year'
@@ -1258,11 +1209,9 @@ export class CoachBriefService {
                 AND cp."billing_type" = 'recurring'
                 AND cp."entitlement_active" = true
             `,
-          ),
-          this.prisma.$queryRaw<
-            Array<{ count: bigint; total: bigint | null }>
-          >(
-            Prisma.sql`
+        ),
+        this.prisma.$queryRaw<Array<{ count: bigint; total: bigint | null }>>(
+          Prisma.sql`
               SELECT
                 COUNT(*)::bigint AS count,
                 COALESCE(SUM(ds."last_failed_amount_cents"), 0)::bigint AS total
@@ -1271,8 +1220,8 @@ export class CoachBriefService {
               WHERE ds."status" = 'active'
                 AND cp."client_user_id" = ANY(${tenantClientIds}::text[])
             `,
-          ),
-        ]);
+        ),
+      ]);
       revenueTodayCents = revenueTodayAgg._sum.amount_cents ?? 0;
       revenueTodayCount = revenueTodayAgg._count._all ?? 0;
       revenue30dCents = revenue30dAgg._sum.amount_cents ?? 0;
@@ -1342,9 +1291,7 @@ export class CoachBriefService {
     // dunning, headcount changes).
     if (ctx.brief_mode === 'head_coach') {
       const headlineActivity =
-        ctx.total_revenue_today_cents +
-        ctx.dunning_in_progress +
-        ctx.new_clients_last_24h;
+        ctx.total_revenue_today_cents + ctx.dunning_in_progress + ctx.new_clients_last_24h;
       if (headlineActivity === 0) {
         return {
           narrative: buildFallbackNarrative(ctx),
@@ -1371,9 +1318,7 @@ export class CoachBriefService {
       client = this.getAnthropicClient();
     } catch (err) {
       // ANTHROPIC_API_KEY missing — never propagate as 500 to coach.
-      this.logger.error(
-        `CoachBrief Anthropic client init failed: ${errorMessageOf(err)}`,
-      );
+      this.logger.error(`CoachBrief Anthropic client init failed: ${errorMessageOf(err)}`);
       return {
         narrative: buildFallbackNarrative(ctx),
         generated_by: 'fallback',
@@ -1381,33 +1326,22 @@ export class CoachBriefService {
     }
 
     const systemPrompt =
-      ctx.brief_mode === 'head_coach'
-        ? buildHeadCoachSystemPrompt()
-        : buildSoloCoachSystemPrompt();
+      ctx.brief_mode === 'head_coach' ? buildHeadCoachSystemPrompt() : buildSoloCoachSystemPrompt();
     const userPrompt = buildBriefPrompt(ctx);
     // P1-8: every downstream prompt-or-log interpolation of the
     // coach's name (repair prompt, contract validator, log lines)
     // must run through sanitizePromptIdentifier so a malicious
     // User.name cannot smuggle newlines, fake system delimiters, or
     // injection payloads into the Claude conversation.
-    const safeCoachFirstName = sanitizePromptIdentifier(
-      ctx.coach_first_name,
-    );
+    const safeCoachFirstName = sanitizePromptIdentifier(ctx.coach_first_name);
     const safeCoachName = sanitizePromptIdentifier(ctx.coach_name);
 
     // P1-7: validate Claude output against the voice contract. On
     // violation, try one repair round-trip with the violation reason
     // appended, then fall back to the deterministic narrative.
-    const firstAttempt = await this.invokeClaudeOnce(
-      client,
-      systemPrompt,
-      userPrompt,
-    );
+    const firstAttempt = await this.invokeClaudeOnce(client, systemPrompt, userPrompt);
     if (firstAttempt.kind === 'success') {
-      const violation = validateClaudeNarrative(
-        firstAttempt.narrative,
-        safeCoachFirstName,
-      );
+      const violation = validateClaudeNarrative(firstAttempt.narrative, safeCoachFirstName);
       if (!violation) {
         return { narrative: firstAttempt.narrative, generated_by: 'ai' };
       }
@@ -1417,16 +1351,9 @@ export class CoachBriefService {
 
       const repairPrompt = `${userPrompt}\n\nYour previous response violated the contract (${violation}). Output a fresh brief that:\n- Is exactly 3 to 5 complete sentences (no more, no fewer).\n- Begins with ${safeCoachFirstName} in the very first sentence.\n- Uses first-person plural TGP voice ("we", "we're", "we've") at least once.\n- Contains no markdown, no bullet points, no meta prefix like "Here is".\n- Stays under ${BRIEF_MAX_NARRATIVE_CHARS} characters.`;
 
-      const secondAttempt = await this.invokeClaudeOnce(
-        client,
-        systemPrompt,
-        repairPrompt,
-      );
+      const secondAttempt = await this.invokeClaudeOnce(client, systemPrompt, repairPrompt);
       if (secondAttempt.kind === 'success') {
-        const violation2 = validateClaudeNarrative(
-          secondAttempt.narrative,
-          safeCoachFirstName,
-        );
+        const violation2 = validateClaudeNarrative(secondAttempt.narrative, safeCoachFirstName);
         if (!violation2) {
           return { narrative: secondAttempt.narrative, generated_by: 'ai' };
         }
@@ -1457,16 +1384,9 @@ export class CoachBriefService {
     client: Anthropic,
     systemPrompt: string,
     userPrompt: string,
-  ):
-    Promise<
-      | { kind: 'success'; narrative: string }
-      | { kind: 'error'; error: string }
-    > {
+  ): Promise<{ kind: 'success'; narrative: string } | { kind: 'error'; error: string }> {
     const controller = new AbortController();
-    const timer = setTimeout(
-      () => controller.abort(),
-      BRIEF_ANTHROPIC_TIMEOUT_MS,
-    );
+    const timer = setTimeout(() => controller.abort(), BRIEF_ANTHROPIC_TIMEOUT_MS);
     try {
       const resp = await client.messages.create(
         {
@@ -1479,13 +1399,9 @@ export class CoachBriefService {
         { signal: controller.signal },
       );
       const block = resp.content?.find((b) => b.type === 'text');
-      const rawText =
-        block && block.type === 'text' ? block.text.trim() : '';
+      const rawText = block && block.type === 'text' ? block.text.trim() : '';
       if (!rawText) {
-        throw new CoachBriefClaudeError(
-          'COACH_BRIEF_CLAUDE_EMPTY',
-          'Empty Claude response',
-        );
+        throw new CoachBriefClaudeError('COACH_BRIEF_CLAUDE_EMPTY', 'Empty Claude response');
       }
       const normalized = normalizeClaudeOutput(rawText);
       const clamped =
@@ -1568,10 +1484,7 @@ export class CoachBriefService {
             },
           });
         } catch (err) {
-          if (
-            err instanceof Prisma.PrismaClientKnownRequestError &&
-            err.code === 'P2002'
-          ) {
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
             const inflight = await this.prisma.coachBrief.findUnique({
               where: {
                 CoachBrief_coach_date_key: {
@@ -1615,10 +1528,7 @@ export class CoachBriefService {
             coach_id: coachId,
             brief_date: briefDate,
             status: 'generating',
-            OR: [
-              { generation_started_at: null },
-              { generation_started_at: { lt: leaseCutoff } },
-            ],
+            OR: [{ generation_started_at: null }, { generation_started_at: { lt: leaseCutoff } }],
           },
           data: {
             status: 'generating',
@@ -1653,10 +1563,7 @@ export class CoachBriefService {
           // Sanity — we own the claim only because create succeeded.
           void created;
         } catch (err) {
-          if (
-            err instanceof Prisma.PrismaClientKnownRequestError &&
-            err.code === 'P2002'
-          ) {
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
             // Lost the create race: another caller is generating (or just
             // finished). Return whatever's there — generated rows return
             // the cached narrative, generating rows tell the client to
@@ -1686,11 +1593,7 @@ export class CoachBriefService {
       if (briefMode === 'head_coach') {
         // P1-3: head-coach is business-only. No client scope queries,
         // no per-client action items, no client_id in the response.
-        const headRes = await this.aggregateHeadCoachContext(
-          coachId,
-          timezone,
-          briefDate,
-        );
+        const headRes = await this.aggregateHeadCoachContext(coachId, timezone, briefDate);
         context = headRes.context;
         actionItems = headRes.actionItems;
       } else {
@@ -1716,7 +1619,10 @@ export class CoachBriefService {
 
       const { narrative, generated_by } = await this.callClaude(context);
 
-      const updated = await this.prisma.coachBrief.update({
+      // H6 (D-H6-3): a generated brief aggregates client PII into a narrative
+      // — finalizing it is an auditable write. afterState carries metadata
+      // only (status, generator, lengths), never the narrative body (R98).
+      const finalizeArgs = {
         where: {
           CoachBrief_coach_date_key: {
             coach_id: coachId,
@@ -1735,7 +1641,26 @@ export class CoachBriefService {
           generated_by,
           brief_mode: briefMode,
         },
-      });
+      } as const;
+      const updated = this.auditLog
+        ? await this.auditLog.withAuditLog(
+            {
+              tenantId: coachId,
+              actorId: coachId,
+              actorType: 'coach',
+              action: 'update',
+              resourceType: 'CoachBrief',
+              afterState: {
+                status: 'generated',
+                generated_by,
+                narrative_length: narrative?.length ?? 0,
+                action_item_count: Array.isArray(actionItems) ? actionItems.length : 0,
+              },
+              reason: 'coach-brief.generated',
+            },
+            (tx) => tx.coachBrief.update(finalizeArgs),
+          )
+        : await this.prisma.coachBrief.update(finalizeArgs);
 
       return this.toResponse(updated);
     } catch (err) {
@@ -1805,10 +1730,27 @@ export class CoachBriefService {
     // Atomic conditional UPDATE — only write if (a) the brief belongs
     // to this coach, AND (b) read_at is currently null. result.count
     // tells us which branch we landed in.
-    const result = await this.prisma.coachBrief.updateMany({
+    // H6 (D-H6-3): a coach brief aggregates client PII; marking it read is
+    // an access-state mutation, so wrap it in withAuditLog().
+    const markReadArgs = {
       where: { id: briefId, coach_id: coachId, read_at: null },
       data: { read_at: now },
-    });
+    } as const;
+    const result = this.auditLog
+      ? await this.auditLog.withAuditLog(
+          {
+            tenantId: coachId,
+            actorId: coachId,
+            actorType: 'coach',
+            action: 'update',
+            resourceType: 'CoachBrief',
+            resourceId: briefId,
+            afterState: { read: true },
+            reason: 'coach_brief.marked_read',
+          },
+          (tx) => tx.coachBrief.updateMany(markReadArgs),
+        )
+      : await this.prisma.coachBrief.updateMany(markReadArgs);
     if (result.count > 0) {
       return { id: briefId, read_at: now.toISOString(), already_read: false };
     }
@@ -1934,9 +1876,7 @@ export class CoachBriefService {
     // and choose the poll interval accordingly. Only the unknown
     // / legacy values fall back to 'pending'.
     const status: BriefStatus =
-      row.status === 'generated' ||
-      row.status === 'generating' ||
-      row.status === 'failed'
+      row.status === 'generated' || row.status === 'generating' || row.status === 'failed'
         ? (row.status as BriefStatus)
         : 'pending';
     const briefMode =
@@ -1954,15 +1894,18 @@ export class CoachBriefService {
       row.action_items &&
       briefMode
     ) {
-      const generatedBy =
-        row.generated_by === 'ai' ? 'ai' : 'fallback';
+      const generatedBy = row.generated_by === 'ai' ? 'ai' : 'fallback';
+      // Prisma persists brief_context as Json; the runtime shape is one of the
+      // two domain unions. Narrow via JSON round-trip (no `as`-double-cast —
+      // R75 banned-cast hygiene) so the value is structurally re-typed.
+      const briefContext = JSON.parse(JSON.stringify(row.brief_context)) as
+        | BriefContext
+        | BriefContextHeadCoach;
       summary = {
         date: row.brief_date,
         brief_mode: briefMode,
         narrative: row.narrative,
-        brief_context: row.brief_context as unknown as
-          | BriefContext
-          | BriefContextHeadCoach,
+        brief_context: briefContext,
         // Head-coach action items are HeadCoachActionItem[] (no
         // client_id / client_name); solo + sub-coach use ActionItem[].
         // The union in BriefSummary covers both shapes.
@@ -2050,37 +1993,21 @@ interface WallClock {
 function zonedWallClockToUtc(wc: WallClock, timeZone: string): Date {
   // Initial guess — treat the wall-clock as UTC. This is wrong by the
   // tz offset, but the iteration converges in 1–2 steps.
-  let guess = Date.UTC(
-    wc.year,
-    wc.month - 1,
-    wc.day,
-    wc.hour,
-    wc.minute,
-    wc.second,
-    wc.ms,
-  );
-  const targetMillisInDay =
-    ((wc.hour * 60 + wc.minute) * 60 + wc.second) * 1000 + wc.ms;
+  let guess = Date.UTC(wc.year, wc.month - 1, wc.day, wc.hour, wc.minute, wc.second, wc.ms);
+  const targetMillisInDay = ((wc.hour * 60 + wc.minute) * 60 + wc.second) * 1000 + wc.ms;
   const targetDateNum = wc.year * 10000 + wc.month * 100 + wc.day;
 
   for (let i = 0; i < 4; i++) {
     const observed = readWallClockInTz(new Date(guess), timeZone);
-    const observedDateNum =
-      observed.year * 10000 + observed.month * 100 + observed.day;
+    const observedDateNum = observed.year * 10000 + observed.month * 100 + observed.day;
     const observedMillisInDay =
-      ((observed.hour * 60 + observed.minute) * 60 + observed.second) *
-        1000 +
-      observed.ms;
+      ((observed.hour * 60 + observed.minute) * 60 + observed.second) * 1000 + observed.ms;
 
     // Diff in calendar days × 86_400_000 ms + diff in time-of-day ms.
     // We approximate the day diff using Date.UTC of midnight in each
     // calendar position, which is exact (no DST inside UTC).
     const targetMidnightUtc = Date.UTC(wc.year, wc.month - 1, wc.day);
-    const observedMidnightUtc = Date.UTC(
-      observed.year,
-      observed.month - 1,
-      observed.day,
-    );
+    const observedMidnightUtc = Date.UTC(observed.year, observed.month - 1, observed.day);
     const dayDeltaMs = targetMidnightUtc - observedMidnightUtc;
     const tofDeltaMs = targetMillisInDay - observedMillisInDay;
     const totalDelta = dayDeltaMs + tofDeltaMs;
@@ -2106,8 +2033,7 @@ function readWallClockInTz(d: Date, timeZone: string): WallClock {
     second: '2-digit',
     hour12: false,
   }).formatToParts(d);
-  const pick = (t: string) =>
-    parseInt(parts.find((p) => p.type === t)?.value ?? '0', 10);
+  const pick = (t: string) => parseInt(parts.find((p) => p.type === t)?.value ?? '0', 10);
   let hour = pick('hour');
   // Intl emits '24' for midnight on some engines; normalise.
   if (hour === 24) hour = 0;

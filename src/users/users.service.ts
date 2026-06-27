@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly audit: AuditLogService,
+  ) {}
 
   async getFoundingNumber(userId: string): Promise<{
     rank: number;
@@ -104,9 +108,24 @@ export class UsersService {
   }
 
   async updatePushToken(userId: string, token: string | null): Promise<void> {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { expo_push_token: token },
-    });
+    // H6 (D-H6-3): updating a user's push token mutates PII-adjacent
+    // contact state, so it records an audit row in the same transaction.
+    // tenant scope is the user's own id (a self-service mutation).
+    await this.audit.withAuditLog(
+      {
+        tenantId: userId,
+        actorId: userId,
+        actorType: 'user',
+        action: 'update',
+        resourceType: 'User',
+        resourceId: userId,
+        afterState: { expo_push_token: token },
+      },
+      (tx) =>
+        tx.user.update({
+          where: { id: userId },
+          data: { expo_push_token: token },
+        }),
+    );
   }
 }

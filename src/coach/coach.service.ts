@@ -1,7 +1,8 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { ConsentScope, ConsentService } from '../consent/consent.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 
@@ -66,6 +67,10 @@ export class CoachService {
     // unit-test reason as `consent` above — SubCoachModule is @Global,
     // so production DI always populates this.
     private subCoachScope?: SubCoachScopeService,
+    // H6 (D-H6-3): structured same-transaction audit substrate. Optional
+    // for the same legacy-unit-test reason; AuditLogModule is @Global so
+    // production DI always populates it.
+    @Optional() private auditLog?: AuditLogService,
   ) {}
 
   private async loadFitnessConsents(
@@ -86,7 +91,12 @@ export class CoachService {
       this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_WORKOUTS, callerRole),
       this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_FOOD_MACROS, callerRole),
       this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_BODY_METRICS, callerRole),
-      this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_HABITS_PROGRESS, callerRole),
+      this.consent.coachCanAccess(
+        coachId,
+        clientId,
+        ConsentScope.FITNESS_HABITS_PROGRESS,
+        callerRole,
+      ),
     ]);
     return { workouts, food, bodyMetrics, habitsProgress };
   }
@@ -173,10 +183,31 @@ export class CoachService {
       // avoid polluting the log on a double-tap.
       return client;
     }
-    const updated = await this.prisma.user.update({
-      where: { id: clientId },
-      data: { archived_at: new Date() },
-    });
+    // H6 (D-H6-3): wrap the archival mutation in withAuditLog() so the
+    // structured before/after audit row commits in the same transaction.
+    const updated = this.auditLog
+      ? await this.auditLog.withAuditLog(
+          {
+            tenantId: client.coach_id ?? coachId,
+            actorId: coachId,
+            actorType: 'coach',
+            action: 'update',
+            resourceType: 'User',
+            resourceId: clientId,
+            beforeState: { archived_at: client.archived_at },
+            afterState: { archived_at: 'now' },
+            reason: 'coach.client_archived',
+          },
+          (tx) =>
+            tx.user.update({
+              where: { id: clientId },
+              data: { archived_at: new Date() },
+            }),
+        )
+      : await this.prisma.user.update({
+          where: { id: clientId },
+          data: { archived_at: new Date() },
+        });
     await this.audit.write({
       action: AuditAction.COACH_CLIENT_ARCHIVED,
       actorId: coachId,
@@ -206,10 +237,30 @@ export class CoachService {
       // Idempotent — already active, skip audit.
       return client;
     }
-    const updated = await this.prisma.user.update({
-      where: { id: clientId },
-      data: { archived_at: null },
-    });
+    // H6 (D-H6-3): wrap the unarchive mutation in withAuditLog().
+    const updated = this.auditLog
+      ? await this.auditLog.withAuditLog(
+          {
+            tenantId: client.coach_id ?? coachId,
+            actorId: coachId,
+            actorType: 'coach',
+            action: 'update',
+            resourceType: 'User',
+            resourceId: clientId,
+            beforeState: { archived_at: client.archived_at },
+            afterState: { archived_at: null },
+            reason: 'coach.client_unarchived',
+          },
+          (tx) =>
+            tx.user.update({
+              where: { id: clientId },
+              data: { archived_at: null },
+            }),
+        )
+      : await this.prisma.user.update({
+          where: { id: clientId },
+          data: { archived_at: null },
+        });
     await this.audit.write({
       action: AuditAction.COACH_CLIENT_UNARCHIVED,
       actorId: coachId,
@@ -356,13 +407,37 @@ export class CoachService {
 
   async postGuidelines(coachId: string, clientId: string, guidelines: string) {
     await this.assertCoachOwnsClient(coachId, clientId);
-    return this.prisma.coachGuideline.upsert({
-      where: {
-        CoachGuideline_coach_client_key: { coach_id: coachId, client_id: clientId },
+    // H6 (D-H6-3): coach guidelines are PII-adjacent free text about a
+    // client, so the upsert records an audit row in the same transaction.
+    const upsertFn = (tx: import('@prisma/client').Prisma.TransactionClient) =>
+      tx.coachGuideline.upsert({
+        where: {
+          CoachGuideline_coach_client_key: { coach_id: coachId, client_id: clientId },
+        },
+        create: { coach_id: coachId, client_id: clientId, content: guidelines },
+        update: { content: guidelines },
+      });
+    if (!this.auditLog) {
+      return this.prisma.coachGuideline.upsert({
+        where: {
+          CoachGuideline_coach_client_key: { coach_id: coachId, client_id: clientId },
+        },
+        create: { coach_id: coachId, client_id: clientId, content: guidelines },
+        update: { content: guidelines },
+      });
+    }
+    return this.auditLog.withAuditLog(
+      {
+        tenantId: coachId,
+        actorId: coachId,
+        actorType: 'coach',
+        action: 'update',
+        resourceType: 'CoachGuideline',
+        resourceId: clientId,
+        afterState: { content_length: guidelines.length },
       },
-      create: { coach_id: coachId, client_id: clientId, content: guidelines },
-      update: { content: guidelines },
-    });
+      upsertFn,
+    );
   }
 
   async getGuidelines(coachId: string, clientId?: string) {
@@ -458,7 +533,10 @@ export class CoachService {
         : Promise.resolve([]),
     ]);
 
-    let total_calories = 0, total_protein_g = 0, total_carbs_g = 0, total_fat_g = 0;
+    let total_calories = 0,
+      total_protein_g = 0,
+      total_carbs_g = 0,
+      total_fat_g = 0;
     for (const entry of todayEntries) {
       const qty = entry.quantity_multiplier || 1;
       const fi = entry.food_item;
@@ -580,7 +658,8 @@ export class CoachService {
       weightLogsByUser.set(wl.user_id, arr);
     }
 
-    const alerts: Array<{ type: string; client_id: string; client_name: string; message: string }> = [];
+    const alerts: Array<{ type: string; client_id: string; client_name: string; message: string }> =
+      [];
 
     for (const client of clients) {
       const weightLogs = weightLogsByUser.get(client.id) ?? [];
@@ -674,11 +753,11 @@ export class CoachService {
 
     // ── Step 2: Parallel aggregations (all index-friendly, no per-row JS) ──
     const [
-      foodLogGroups,      // clients who logged food today
-      workoutGroups,      // clients who worked out in the last 5 days
-      pendingCheckIns,    // check-ins submitted but not reviewed
-      unreadMsgCount,     // messages not yet read by the coach
-      recentWeightLogs,   // weight logs for trend detection (last 30 days)
+      foodLogGroups, // clients who logged food today
+      workoutGroups, // clients who worked out in the last 5 days
+      pendingCheckIns, // check-ins submitted but not reviewed
+      unreadMsgCount, // messages not yet read by the coach
+      recentWeightLogs, // weight logs for trend detection (last 30 days)
       unreviewedCheckins, // per-client unreviewed check-in groupBy (for no_checkin flag)
     ] = await Promise.all([
       // Active today: clients with at least one food log entry today.

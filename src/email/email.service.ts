@@ -10,11 +10,8 @@ import * as path from 'path';
 import * as Handlebars from 'handlebars';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import {
-  EmailTemplateKey,
-  SendEmailInput,
-  SendEmailResult,
-} from './email.types';
+import { createBreaker } from '../circuit-breakers/circuit-breaker.factory';
+import { EmailTemplateKey, SendEmailInput, SendEmailResult } from './email.types';
 
 // Provider abstraction is intentionally minimal: send(from, to, subject,
 // html) -> providerMessageId. Each transport implementation lives below.
@@ -46,8 +43,7 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
   'coach-invites-client': '{{coach_name}} invited you to The Growth Project',
   'payment-reminder': 'Your subscription payment is due soon',
   'payment-failed': 'We could not process your payment',
-  'coach-onboarding-welcome':
-    'Welcome to The Growth Project, Coach {{coach_name}}',
+  'coach-onboarding-welcome': 'Welcome to The Growth Project, Coach {{coach_name}}',
   'client-onboarding-welcome': 'Welcome to The Growth Project',
   'weekly-digest': 'Your weekly Growth Project summary',
   'payment-receipt': 'Receipt for your Growth Project subscription',
@@ -79,12 +75,30 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private readonly templates = new Map<string, HandlebarsTemplateDelegate>();
-  private readonly subjectTemplates = new Map<
-    EmailTemplateKey,
-    HandlebarsTemplateDelegate
-  >();
+  private readonly subjectTemplates = new Map<EmailTemplateKey, HandlebarsTemplateDelegate>();
   private transport: EmailTransport | null = null;
   private transportKind: 'resend' | 'log' = 'log';
+
+  // H6 (D-H6-2): per-client Opossum breaker around the outbound email
+  // transport boundary. The provider is Resend, but per the LOCKED D-H6-2
+  // decision the breaker config key remains 'sendgrid' (5s/30%/30s); the
+  // clientName below selects that config. Touches only the send() boundary
+  // — transport construction and idempotency logic are unchanged.
+  private static breakerSeq = 0;
+  private guardedSend = createBreaker(
+    'sendgrid',
+    (args: Parameters<EmailTransport['send']>[0]) => {
+      if (!this.transport) {
+        throw new InternalServerErrorException('Email transport not configured');
+      }
+      return this.transport.send(args);
+    },
+    // Per-instance cache key (mirrors StripeApiService): the breaker closure
+    // captures this instance's transport, so each instance must own its
+    // breaker rather than share one module-scoped 'sendgrid' breaker. This
+    // also keeps each service instance's rolling error window isolated.
+    { key: `sendgrid:${EmailService.breakerSeq++}` },
+  );
 
   constructor(
     private readonly prisma: PrismaService,
@@ -102,9 +116,7 @@ export class EmailService {
   ): { html: string; subject: string } {
     const tpl = this.templates.get(template);
     if (!tpl) {
-      throw new InternalServerErrorException(
-        `Email template not found: ${template}`,
-      );
+      throw new InternalServerErrorException(`Email template not found: ${template}`);
     }
     const subjectTpl = this.subjectTemplates.get(template);
     const html = tpl(data);
@@ -150,13 +162,8 @@ export class EmailService {
         select: { id: true },
       });
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
-        this.logger.log(
-          `email send skipped: idempotency hit key=${input.idempotencyKey}`,
-        );
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        this.logger.log(`email send skipped: idempotency hit key=${input.idempotencyKey}`);
         return {
           status: 'skipped',
           providerMessageId: null,
@@ -168,8 +175,7 @@ export class EmailService {
 
     const from =
       input.from ??
-      (this.config.get<string>('EMAIL_FROM_ADDRESS') ||
-        'noreply@thegrowthproject.app');
+      (this.config.get<string>('EMAIL_FROM_ADDRESS') || 'noreply@thegrowthproject.app');
 
     let html: string;
     let subject: string;
@@ -204,7 +210,7 @@ export class EmailService {
     }
 
     try {
-      const { providerMessageId } = await this.transport.send({
+      const { providerMessageId } = await this.guardedSend({
         from,
         to: input.to,
         subject,
@@ -223,9 +229,7 @@ export class EmailService {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'unknown';
       await this._finalize(logRow.id, 'failed', null, msg.slice(0, 500));
-      this.logger.error(
-        `email send failed template=${input.template} to=${input.to}: ${msg}`,
-      );
+      this.logger.error(`email send failed template=${input.template} to=${input.to}: ${msg}`);
       return {
         status: 'failed',
         providerMessageId: null,
@@ -263,9 +267,7 @@ export class EmailService {
   }
 
   private _initTransport(): void {
-    const kind = (
-      this.config.get<string>('EMAIL_TRANSPORT') ?? 'log'
-    ).toLowerCase();
+    const kind = (this.config.get<string>('EMAIL_TRANSPORT') ?? 'log').toLowerCase();
 
     if (kind === 'log') {
       this.transportKind = 'log';

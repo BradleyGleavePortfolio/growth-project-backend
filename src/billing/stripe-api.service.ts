@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createBreaker } from '../circuit-breakers/circuit-breaker.factory';
 
 // Thin REST client over `fetch` for the three outbound Stripe calls this
 // backend needs (Customer create, Subscription create, BillingPortal session
@@ -128,6 +129,19 @@ export class StripeApiService {
   // Overridable in tests via subclass to avoid monkey-patching globalThis.fetch.
   protected fetchImpl: typeof fetch = (input, init) => fetch(input, init);
 
+  // H6 (D-H6-2): per-client Opossum breaker around the single outbound
+  // Stripe chokepoint. The breaker wraps the live (possibly test-overridden)
+  // fetchImpl via a closure. Keyed per instance so subclass test doubles do
+  // not share a rolling window with production singletons. Touches only the
+  // call boundary; timeout/error-translation logic in stripeFetch is unchanged.
+  private guardedFetch = createBreaker(
+    'stripe',
+    (url: string, init: RequestInit) => this.fetchImpl(url, init),
+    { key: `stripe:${StripeApiService.instanceSeq++}` },
+  );
+
+  private static instanceSeq = 0;
+
   /**
    * R2 NEW-P2-2: Single chokepoint for every outbound Stripe call.
    *
@@ -171,7 +185,7 @@ export class StripeApiService {
       ? AbortSignal.any([init.signal as AbortSignal, timeoutSignal])
       : timeoutSignal;
     try {
-      return await this.fetchImpl(url, { ...init, signal });
+      return await this.guardedFetch(url, { ...init, signal });
     } catch (err) {
       // AbortSignal.timeout() rejects the fetch with a DOMException
       // whose name is 'TimeoutError'; a caller-cancelled abort fires
@@ -190,11 +204,7 @@ export class StripeApiService {
       // surface as 499 client_closed_request to distinguish from the
       // upstream-timeout case. Practical impact: dashboards can
       // separate "Stripe slow" from "client gave up".
-      if (
-        err instanceof Error &&
-        err.name === 'AbortError' &&
-        !timeoutSignal.aborted
-      ) {
+      if (err instanceof Error && err.name === 'AbortError' && !timeoutSignal.aborted) {
         throw new StripeApiError(
           `Stripe API request aborted by caller on ${pathForError}`,
           499,
@@ -233,9 +243,7 @@ export class StripeApiService {
     return this.post<StripeCustomer>('/customers', form, args.idempotencyKey);
   }
 
-  async createSubscription(
-    args: CreateSubscriptionArgs,
-  ): Promise<StripeSubscription> {
+  async createSubscription(args: CreateSubscriptionArgs): Promise<StripeSubscription> {
     const form: Record<string, string> = {
       customer: args.customer,
       'items[0][price]': args.priceId,
@@ -251,11 +259,7 @@ export class StripeApiService {
         form[`metadata[${k}]`] = v;
       }
     }
-    return this.post<StripeSubscription>(
-      '/subscriptions',
-      form,
-      args.idempotencyKey,
-    );
+    return this.post<StripeSubscription>('/subscriptions', form, args.idempotencyKey);
   }
 
   /**
@@ -309,11 +313,7 @@ export class StripeApiService {
       // flow (PaymentIntent-based) still has the linkage.
       form[`payment_intent_data[metadata][${k}]`] = v;
     }
-    return this.post<StripeCheckoutSession>(
-      '/checkout/sessions',
-      form,
-      args.idempotencyKey,
-    );
+    return this.post<StripeCheckoutSession>('/checkout/sessions', form, args.idempotencyKey);
   }
 
   async createBillingPortalSession(
@@ -533,8 +533,7 @@ export class StripeApiService {
           ? (parsed as { error: Record<string, unknown> }).error
           : null;
       const message =
-        (errEnvelope?.message as string | undefined) ??
-        `Stripe API ${res.status} on ${path}`;
+        (errEnvelope?.message as string | undefined) ?? `Stripe API ${res.status} on ${path}`;
       const code = (errEnvelope?.code as string | undefined) ?? null;
       const type = (errEnvelope?.type as string | undefined) ?? null;
       throw new StripeApiError(message, res.status, code, type);

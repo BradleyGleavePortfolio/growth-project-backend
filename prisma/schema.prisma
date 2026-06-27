@@ -6715,3 +6715,40 @@ model MarketplaceAbuseSignal {
   @@index([identity_hash, created_at])
   @@index([surface, created_at])
 }
+
+// ============================================================
+// H6 — audit_log substrate (D-H6-1 LOCKED 2026-06-26)
+// ============================================================
+//
+// Distinct from the legacy `AuditLog` model above (table "AuditLog",
+// forensic event log). This model maps to the snake_case `audit_log`
+// table created in 20261226000000_create_audit_log — the structured
+// before/after-state capture substrate written exclusively through
+// AuditLogService.withAuditLog() in the same transaction as the PII
+// mutation it records (D-H6-5).
+//
+// Append-only at the DB level: the migration REVOKEs UPDATE/DELETE from
+// PUBLIC and app_runtime, so there is deliberately no @updatedAt field and
+// no update/delete call site. GDPR Art. 17 erasure redacts PII columns
+// in place via the privileged retention/erasure path, never row deletion.
+//
+// Contract note: BL-DATA-CAPTURE PR1 must reuse this exact 13-column shape.
+model AuditLogEntry {
+  id            String    @id @default(uuid()) @db.Uuid
+  tenant_id     String    @db.Uuid
+  actor_id      String?   @db.Uuid
+  actor_type    String    @db.Text
+  action        String    @db.Text
+  resource_type String    @db.Text
+  resource_id   String?   @db.Text
+  before_state  Json?     @db.JsonB
+  after_state   Json?     @db.JsonB
+  reason        String?   @db.Text
+  request_id    String?   @db.Text
+  ip_address    String?   @db.Inet
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([tenant_id, created_at(sort: Desc)], map: "audit_log_tenant_created_idx")
+  @@index([resource_type, resource_id], map: "audit_log_resource_idx")
+  @@map("audit_log")
+}

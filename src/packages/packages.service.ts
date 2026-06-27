@@ -4,9 +4,11 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
-import type { CoachPackage, ClientPurchase } from '@prisma/client';
+import type { CoachPackage, ClientPurchase, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 
 // CoachPackage CRUD. Owns coach offers / packages.
@@ -86,11 +88,17 @@ export class PackagesService {
   constructor(
     private prisma: PrismaService,
     private subCoachScope: SubCoachScopeService,
+    // H6 (D-H6-3): structured same-transaction audit substrate. Optional so
+    // legacy direct-construction specs keep compiling; AuditLogModule is
+    // @Global so production DI always populates it.
+    @Optional() private auditLog?: AuditLogService,
   ) {}
 
   async create(coachUserId: string, input: CreatePackageInput): Promise<CoachPackage> {
     this.assertValidPricing(input);
-    return this.prisma.coachPackage.create({
+    // H6 (D-H6-3): a coach package is a sellable commercial entity tied to a
+    // coach tenant; creating one records an audit row in the same txn.
+    const createArgs: Prisma.CoachPackageCreateArgs = {
       data: {
         coach_id: coachUserId,
         name: input.name,
@@ -98,21 +106,31 @@ export class PackagesService {
         amount_cents: input.amount_cents,
         currency: (input.currency ?? 'usd').toLowerCase(),
         billing_type: input.billing_type ?? 'one_time',
-        interval: input.billing_type === 'recurring' ? input.interval ?? 'month' : null,
+        interval: input.billing_type === 'recurring' ? (input.interval ?? 'month') : null,
         interval_count: input.interval_count ?? 1,
         duration_periods: input.duration_periods ?? null,
         recurring_amount_cents: input.recurring_amount_cents ?? null,
-        recurring_interval: input.recurring_amount_cents != null
-          ? input.recurring_interval ?? 'month'
-          : null,
-        recurring_interval_count: input.recurring_amount_cents != null
-          ? input.recurring_interval_count ?? 1
-          : null,
+        recurring_interval:
+          input.recurring_amount_cents != null ? (input.recurring_interval ?? 'month') : null,
+        recurring_interval_count:
+          input.recurring_amount_cents != null ? (input.recurring_interval_count ?? 1) : null,
         // PR-6 — new packages start as DRAFT (not purchasable). The
         // coach must explicitly call POST :id/publish to make it live.
         published_at: null,
       },
-    });
+    };
+    if (!this.auditLog) return this.prisma.coachPackage.create(createArgs);
+    return this.auditLog.withAuditLog(
+      {
+        tenantId: coachUserId,
+        actorId: coachUserId,
+        actorType: 'coach',
+        action: 'create',
+        resourceType: 'CoachPackage',
+        afterState: { name_length: input.name?.length ?? 0, amount_cents: input.amount_cents },
+      },
+      (tx) => tx.coachPackage.create(createArgs),
+    );
   }
 
   async update(
@@ -133,8 +151,7 @@ export class PackagesService {
     if (input.duration_periods !== undefined) data.duration_periods = input.duration_periods;
     if (input.recurring_amount_cents !== undefined)
       data.recurring_amount_cents = input.recurring_amount_cents;
-    if (input.recurring_interval !== undefined)
-      data.recurring_interval = input.recurring_interval;
+    if (input.recurring_interval !== undefined) data.recurring_interval = input.recurring_interval;
     if (input.recurring_interval_count !== undefined)
       data.recurring_interval_count = input.recurring_interval_count;
     if (input.is_active !== undefined) data.is_active = input.is_active;
@@ -144,27 +161,24 @@ export class PackagesService {
       name: (data.name as string) ?? row.name,
       amount_cents: (data.amount_cents as number) ?? row.amount_cents,
       currency: (data.currency as string) ?? row.currency,
-      billing_type:
-        ((data.billing_type as 'one_time' | 'recurring') ?? row.billing_type) as
-          | 'one_time'
-          | 'recurring',
-      interval:
-        ((data.interval as 'week' | 'month' | 'year' | null) ?? row.interval) as
-          | 'week'
-          | 'month'
-          | 'year'
-          | null,
+      billing_type: ((data.billing_type as 'one_time' | 'recurring') ?? row.billing_type) as
+        | 'one_time'
+        | 'recurring',
+      interval: ((data.interval as 'week' | 'month' | 'year' | null) ?? row.interval) as
+        | 'week'
+        | 'month'
+        | 'year'
+        | null,
       interval_count: (data.interval_count as number) ?? row.interval_count,
-      duration_periods:
-        (data.duration_periods as number | null) ?? row.duration_periods,
+      duration_periods: (data.duration_periods as number | null) ?? row.duration_periods,
       recurring_amount_cents:
         'recurring_amount_cents' in data
           ? (data.recurring_amount_cents as number | null)
           : row.recurring_amount_cents,
       recurring_interval:
-        ('recurring_interval' in data
+        'recurring_interval' in data
           ? (data.recurring_interval as 'week' | 'month' | 'year' | null)
-          : (row.recurring_interval as 'week' | 'month' | 'year' | null)),
+          : (row.recurring_interval as 'week' | 'month' | 'year' | null),
       recurring_interval_count:
         'recurring_interval_count' in data
           ? (data.recurring_interval_count as number | null)
@@ -194,16 +208,14 @@ export class PackagesService {
     const recurringChanged =
       ('recurring_amount_cents' in data &&
         data.recurring_amount_cents !== row.recurring_amount_cents) ||
-      ('recurring_interval' in data &&
-        data.recurring_interval !== row.recurring_interval) ||
+      ('recurring_interval' in data && data.recurring_interval !== row.recurring_interval) ||
       ('recurring_interval_count' in data &&
         data.recurring_interval_count !== row.recurring_interval_count) ||
       ('currency' in data && data.currency !== row.currency);
     if (recurringChanged) data.recurring_stripe_price_id = null;
 
     const durationChanged =
-      'duration_periods' in data &&
-      data.duration_periods !== row.duration_periods;
+      'duration_periods' in data && data.duration_periods !== row.duration_periods;
 
     // B1 — pricing lock. If ANY price-shaping field changed (primary price,
     // recurring companion, OR duration_periods), the edit may not proceed
@@ -214,14 +226,29 @@ export class PackagesService {
     // Pure name/description/status/availability edits (priceChanged ==
     // recurringChanged == durationChanged == false) are ALWAYS allowed and
     // skip the lock + transaction entirely.
-    const priceShapingChanged =
-      priceChanged || recurringChanged || durationChanged;
+    const priceShapingChanged = priceChanged || recurringChanged || durationChanged;
 
     if (!priceShapingChanged) {
-      return this.prisma.coachPackage.update({
+      // H6 (D-H6-3): a pure name/description/status edit mutates a
+      // commercial entity tied to a coach tenant — audit it in the same txn.
+      const editArgs: Prisma.CoachPackageUpdateArgs = {
         where: { id: packageId },
         data,
-      });
+      };
+      if (!this.auditLog) return this.prisma.coachPackage.update(editArgs);
+      return this.auditLog.withAuditLog(
+        {
+          tenantId: coachUserId,
+          actorId: coachUserId,
+          actorType: 'coach',
+          action: 'update',
+          resourceType: 'CoachPackage',
+          resourceId: packageId,
+          afterState: { fields_changed: Object.keys(data).length },
+          reason: 'package.updated',
+        },
+        (tx) => tx.coachPackage.update(editArgs),
+      );
     }
 
     // Race guard — lock the package row, recount active recurring buyers,
@@ -306,10 +333,25 @@ export class PackagesService {
       });
     }
 
-    return this.prisma.coachPackage.update({
+    // H6 (D-H6-3): archiving pulls a package off the storefront — audit it.
+    const archiveArgs: Prisma.CoachPackageUpdateArgs = {
       where: { id: packageId },
       data: { archived_at: new Date(), is_active: false },
-    });
+    };
+    if (!this.auditLog) return this.prisma.coachPackage.update(archiveArgs);
+    return this.auditLog.withAuditLog(
+      {
+        tenantId: coachUserId,
+        actorId: coachUserId,
+        actorType: 'coach',
+        action: 'update',
+        resourceType: 'CoachPackage',
+        resourceId: packageId,
+        afterState: { archived: true, is_active: false },
+        reason: 'package.archived',
+      },
+      (tx) => tx.coachPackage.update(archiveArgs),
+    );
   }
 
   // PR-6 — publish/unpublish lifecycle. Both idempotent. publish()
@@ -337,11 +379,7 @@ export class PackagesService {
       interval_count: row.interval_count,
       duration_periods: row.duration_periods,
       recurring_amount_cents: row.recurring_amount_cents,
-      recurring_interval: row.recurring_interval as
-        | 'week'
-        | 'month'
-        | 'year'
-        | null,
+      recurring_interval: row.recurring_interval as 'week' | 'month' | 'year' | null,
       recurring_interval_count: row.recurring_interval_count,
     });
     // TODO(PR-8): once content-attach lands, gate sellable packages
@@ -350,20 +388,50 @@ export class PackagesService {
     // Idempotent: if already published, return the existing row
     // without bumping the timestamp.
     if (row.published_at) return row;
-    return this.prisma.coachPackage.update({
+    // H6 (D-H6-3): publishing makes a package live/purchasable — audit it.
+    const publishArgs: Prisma.CoachPackageUpdateArgs = {
       where: { id: packageId },
       data: { published_at: new Date() },
-    });
+    };
+    if (!this.auditLog) return this.prisma.coachPackage.update(publishArgs);
+    return this.auditLog.withAuditLog(
+      {
+        tenantId: coachUserId,
+        actorId: coachUserId,
+        actorType: 'coach',
+        action: 'update',
+        resourceType: 'CoachPackage',
+        resourceId: packageId,
+        afterState: { published: true },
+        reason: 'package.published',
+      },
+      (tx) => tx.coachPackage.update(publishArgs),
+    );
   }
 
   async unpublish(coachUserId: string, packageId: string): Promise<CoachPackage> {
     const row = await this.requireOwnedPackage(coachUserId, packageId);
     // Idempotent: already-draft → return current row.
     if (!row.published_at) return row;
-    return this.prisma.coachPackage.update({
+    // H6 (D-H6-3): unpublishing removes a package from the buy-side — audit it.
+    const unpublishArgs: Prisma.CoachPackageUpdateArgs = {
       where: { id: packageId },
       data: { published_at: null },
-    });
+    };
+    if (!this.auditLog) return this.prisma.coachPackage.update(unpublishArgs);
+    return this.auditLog.withAuditLog(
+      {
+        tenantId: coachUserId,
+        actorId: coachUserId,
+        actorType: 'coach',
+        action: 'update',
+        resourceType: 'CoachPackage',
+        resourceId: packageId,
+        afterState: { published: false },
+        reason: 'package.unpublished',
+      },
+      (tx) => tx.coachPackage.update(unpublishArgs),
+    );
   }
 
   // List packages for a coach. Owner = the coach themselves (manage view).
@@ -448,15 +516,11 @@ export class PackagesService {
   // ownership check. Mirrors the resolver-sub-coach-scope.helper used
   // by the asset resolvers (PR-7).
   async resolveEffectiveCoachId(callerUserId: string): Promise<string> {
-    const headCoachId =
-      await this.subCoachScope.getHeadCoachIdForSubCoach(callerUserId);
+    const headCoachId = await this.subCoachScope.getHeadCoachIdForSubCoach(callerUserId);
     return headCoachId ?? callerUserId;
   }
 
-  async requireOwnedPackage(
-    coachUserId: string,
-    packageId: string,
-  ): Promise<CoachPackage> {
+  async requireOwnedPackage(coachUserId: string, packageId: string): Promise<CoachPackage> {
     const row = await this.prisma.coachPackage.findFirst({
       where: { id: packageId, coach_id: coachUserId },
     });
@@ -502,10 +566,7 @@ export class PackagesService {
   // an empty string into stripe_price_id and break the next one-time
   // checkout. This writer lets the companion-mint path persist the
   // Product without touching stripe_price_id.
-  async setStripeProductId(
-    packageId: string,
-    stripeProductId: string,
-  ): Promise<void> {
+  async setStripeProductId(packageId: string, stripeProductId: string): Promise<void> {
     await this.prisma.coachPackage.update({
       where: { id: packageId },
       data: { stripe_product_id: stripeProductId },
@@ -556,11 +617,7 @@ export class PackagesService {
       });
     }
     if (input.billing_type === 'recurring') {
-      if (
-        input.interval !== 'week' &&
-        input.interval !== 'month' &&
-        input.interval !== 'year'
-      ) {
+      if (input.interval !== 'week' && input.interval !== 'month' && input.interval !== 'year') {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
           message: 'recurring packages require interval = week | month | year',
@@ -613,15 +670,13 @@ export class PackagesService {
       if (input.billing_type === 'recurring') {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
-          message:
-            'recurring companion price is only valid when primary billing_type=one_time',
+          message: 'recurring companion price is only valid when primary billing_type=one_time',
         });
       }
       if (!allRecurring) {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
-          message:
-            'recurring companion requires recurring_amount_cents and recurring_interval',
+          message: 'recurring companion requires recurring_amount_cents and recurring_interval',
         });
       }
       if (!Number.isInteger(r.amt!) || (r.amt as number) < 50) {
@@ -637,10 +692,7 @@ export class PackagesService {
           message: 'recurring_interval must be week | month | year',
         });
       }
-      if (
-        r.count !== null &&
-        (!Number.isInteger(r.count) || (r.count as number) < 1)
-      ) {
+      if (r.count !== null && (!Number.isInteger(r.count) || (r.count as number) < 1)) {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
           message: 'recurring_interval_count must be an integer ≥ 1',

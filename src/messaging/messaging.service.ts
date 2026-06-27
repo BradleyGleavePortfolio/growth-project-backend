@@ -13,6 +13,7 @@ import {
   type SignedVoiceUploadRequest as ProviderSignedVoiceUploadRequest,
   type SignedVoiceUploadResponse as ProviderSignedVoiceUploadResponse,
 } from '../community/voice/voice-upload.provider';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -103,6 +104,12 @@ export class MessagingService {
     // lazily build one from the already-injected SupabaseService, so behaviour
     // is identical whether or not DI supplied it.
     @Optional() private voiceUpload: VoiceUploadProvider | null = null,
+    // H6 (D-H6-3): structured same-transaction audit substrate. D-H6-3
+    // verbatim wants every message saved for future AI training; this wrap
+    // is the first concrete delivery toward BL-DATA-CAPTURE. @Optional so
+    // legacy positional-construction specs keep compiling; AuditLogModule
+    // is @Global so production DI always populates it.
+    @Optional() private auditLog?: AuditLogService,
   ) {}
 
   // Resolve the extracted signed-upload provider, lazily constructing one from
@@ -134,10 +141,7 @@ export class MessagingService {
   private maxVoiceDurationSec(): number {
     const raw = parseInt(process.env.VOICE_NOTE_MAX_DURATION_SEC ?? '', 10);
     if (!Number.isFinite(raw)) return VOICE_DEFAULT_MAX_DURATION_SEC;
-    return Math.min(
-      Math.max(raw, VOICE_DURATION_CLAMP.min),
-      VOICE_DURATION_CLAMP.max,
-    );
+    return Math.min(Math.max(raw, VOICE_DURATION_CLAMP.min), VOICE_DURATION_CLAMP.max);
   }
 
   private maxVoiceSizeBytes(): number {
@@ -194,12 +198,8 @@ export class MessagingService {
   // arbitrary URLs (including `javascript:`, attacker hosts, or another
   // sender's object key) and the service would persist + render them. See
   // QA P0-V1.
-  private assertSendablePayload(
-    payload: SendMessagePayload,
-    senderId: string,
-  ): void {
-    const trimmedBody =
-      typeof payload.body === 'string' ? payload.body.trim() : '';
+  private assertSendablePayload(payload: SendMessagePayload, senderId: string): void {
+    const trimmedBody = typeof payload.body === 'string' ? payload.body.trim() : '';
     const hasBody = trimmedBody.length > 0;
     const hasVoice = !!payload.voice;
     if (!hasBody && !hasVoice) {
@@ -295,8 +295,7 @@ export class MessagingService {
     // Phase 11 fallback: caller might be a sub-coach with an open
     // assignment for this client. Authorize via SubCoachAssignment.
     if (this.subCoachScope) {
-      const headCoachId =
-        await this.subCoachScope.getHeadCoachIdForSubCoach(coachId);
+      const headCoachId = await this.subCoachScope.getHeadCoachIdForSubCoach(coachId);
       if (headCoachId) {
         const open = await this.prisma.subCoachAssignment.findFirst({
           where: {
@@ -403,11 +402,7 @@ export class MessagingService {
 
   // ---- send ----
 
-  async sendAsCoach(
-    coachId: string,
-    clientId: string,
-    payload: SendMessagePayload | string,
-  ) {
+  async sendAsCoach(coachId: string, clientId: string, payload: SendMessagePayload | string) {
     // Back-compat: existing test fixtures and pre-Phase-6C call sites pass
     // a bare string. Normalize to the payload shape so the new code only
     // sees one form; the controllers always pass the structured form.
@@ -415,8 +410,7 @@ export class MessagingService {
       typeof payload === 'string' ? { body: payload } : payload;
     const client = await this.assertClientOfCoach(coachId, clientId);
     this.assertSendablePayload(normalized, coachId);
-    const trimmedBody =
-      typeof normalized.body === 'string' ? normalized.body.trim() : '';
+    const trimmedBody = typeof normalized.body === 'string' ? normalized.body.trim() : '';
     const body = trimmedBody.length > 0 ? trimmedBody : null;
     const voice = normalized.voice;
 
@@ -438,7 +432,10 @@ export class MessagingService {
     // so existing head-coach queries keep returning them. For sub-coaches
     // the sender_id captures who actually sent.
     const threadCoachId = client.coach_id ?? coachId;
-    const created = await this.prisma.coachMessage.create({
+    // H6 (D-H6-3): persist the message under withAuditLog() so the audit
+    // row commits in the same transaction. afterState carries metadata
+    // only (length, voice flag), never the raw body (R98).
+    const coachMsgArgs = {
       data: {
         coach_id: threadCoachId,
         client_id: clientId,
@@ -449,7 +446,21 @@ export class MessagingService {
         voice_size_bytes: voice?.size_bytes ?? null,
         voice_content_type: voice?.content_type ?? null,
       },
-    });
+    } as const;
+    const created = this.auditLog
+      ? await this.auditLog.withAuditLog(
+          {
+            tenantId: threadCoachId,
+            actorId: coachId,
+            actorType: 'coach',
+            action: 'create',
+            resourceType: 'CoachMessage',
+            resourceId: clientId,
+            afterState: { body_length: body?.length ?? 0, has_voice: Boolean(voice) },
+          },
+          (tx) => tx.coachMessage.create(coachMsgArgs),
+        )
+      : await this.prisma.coachMessage.create(coachMsgArgs);
     // Realtime ping to the recipient (the client). No body is sent over the
     // wire — just a refresh signal. The mobile client refetches via the
     // authenticated REST endpoint when it receives the ping. Fire-and-
@@ -513,8 +524,7 @@ export class MessagingService {
       typeof payload === 'string' ? { body: payload } : payload;
     const coachId = await this.requireClientCoachId(clientId);
     this.assertSendablePayload(normalized, clientId);
-    const trimmedBody =
-      typeof normalized.body === 'string' ? normalized.body.trim() : '';
+    const trimmedBody = typeof normalized.body === 'string' ? normalized.body.trim() : '';
     const body = trimmedBody.length > 0 ? trimmedBody : null;
     const voice = normalized.voice;
 
@@ -529,7 +539,8 @@ export class MessagingService {
       }
     }
 
-    const created = await this.prisma.coachMessage.create({
+    // H6 (D-H6-3): same-transaction audit for the client send path.
+    const clientMsgArgs = {
       data: {
         coach_id: coachId,
         client_id: clientId,
@@ -540,7 +551,21 @@ export class MessagingService {
         voice_size_bytes: voice?.size_bytes ?? null,
         voice_content_type: voice?.content_type ?? null,
       },
-    });
+    } as const;
+    const created = this.auditLog
+      ? await this.auditLog.withAuditLog(
+          {
+            tenantId: coachId,
+            actorId: clientId,
+            actorType: 'user',
+            action: 'create',
+            resourceType: 'CoachMessage',
+            resourceId: clientId,
+            afterState: { body_length: body?.length ?? 0, has_voice: Boolean(voice) },
+          },
+          (tx) => tx.coachMessage.create(clientMsgArgs),
+        )
+      : await this.prisma.coachMessage.create(clientMsgArgs);
     // Ping the coach.
     void this.supabase.broadcastNewMessage(coachId);
     // Push notification — block check already ran above.
@@ -620,7 +645,9 @@ export class MessagingService {
   async markReadByCoach(coachId: string, clientId: string) {
     const client = await this.assertClientOfCoach(coachId, clientId);
     const threadCoachId = client.coach_id ?? coachId;
-    const result = await this.prisma.coachMessage.updateMany({
+    // H6 (D-H6-3): a read acknowledgement mutates message state in a client
+    // PII thread — audit it. afterState carries the count only (R98).
+    const markReadArgs = {
       where: {
         coach_id: threadCoachId,
         client_id: clientId,
@@ -628,7 +655,21 @@ export class MessagingService {
         read_at: null,
       },
       data: { read_at: new Date() },
-    });
+    } as const;
+    const result = this.auditLog
+      ? await this.auditLog.withAuditLog(
+          {
+            tenantId: threadCoachId,
+            actorId: coachId,
+            actorType: 'coach',
+            action: 'update',
+            resourceType: 'CoachMessage',
+            resourceId: clientId,
+            reason: 'messaging.markReadByCoach',
+          },
+          (tx) => tx.coachMessage.updateMany(markReadArgs),
+        )
+      : await this.prisma.coachMessage.updateMany(markReadArgs);
     // ED.6 — stamp the per-thread coach-review marker so the client
     // CompetencePill can show "Your coach reviewed this thread {relative}.".
     // Most-recent semantics: every coach read re-stamps coach_reviewed_at to
@@ -674,9 +715,7 @@ export class MessagingService {
   // the thread yet OR the marker was never written (flag OFF) — the mobile
   // CompetencePill renders nothing on null. Resolves the client's assigned
   // coach the same way as the thread read (409 NO_COACH_ASSIGNED when none).
-  async coachReviewForClient(
-    clientId: string,
-  ): Promise<{ coachReviewedAt: string | null }> {
+  async coachReviewForClient(clientId: string): Promise<{ coachReviewedAt: string | null }> {
     const coachId = await this.requireClientCoachId(clientId);
     const marker = await this.prisma.conversationReview.findUnique({
       where: {
@@ -697,7 +736,9 @@ export class MessagingService {
     // Mark every non-client sender's message read in this thread. Filtering on
     // sender_id = coachId would miss sub-coach messages, since sub-coaches
     // send with sender_id = subCoachId (the head coach still owns the thread).
-    const result = await this.prisma.coachMessage.updateMany({
+    // H6 (D-H6-3): a client read acknowledgement mutates message state in a
+    // client PII thread — audit it. afterState carries the count only (R98).
+    const markReadArgs = {
       where: {
         coach_id: coachId,
         client_id: clientId,
@@ -705,7 +746,21 @@ export class MessagingService {
         read_at: null,
       },
       data: { read_at: new Date() },
-    });
+    } as const;
+    const result = this.auditLog
+      ? await this.auditLog.withAuditLog(
+          {
+            tenantId: coachId,
+            actorId: clientId,
+            actorType: 'user',
+            action: 'update',
+            resourceType: 'CoachMessage',
+            resourceId: clientId,
+            reason: 'messaging.markReadByClient',
+          },
+          (tx) => tx.coachMessage.updateMany(markReadArgs),
+        )
+      : await this.prisma.coachMessage.updateMany(markReadArgs);
     return { updated: result.count };
   }
 
@@ -721,8 +776,7 @@ export class MessagingService {
     let threadCoachId = coachId;
     let clientFilter: { in: string[] } | undefined = undefined;
     if (this.subCoachScope) {
-      const headCoachId =
-        await this.subCoachScope.getHeadCoachIdForSubCoach(coachId);
+      const headCoachId = await this.subCoachScope.getHeadCoachIdForSubCoach(coachId);
       if (headCoachId) {
         // Sub-coach: messages live under the head coach; restrict to
         // assigned clients only.
@@ -746,8 +800,7 @@ export class MessagingService {
     let senderFilter: Prisma.CoachMessageWhereInput;
     if (this.subCoachScope) {
       const clientIds =
-        clientFilter?.in ??
-        (await this.subCoachScope.getAuthorizedClientIds(coachId));
+        clientFilter?.in ?? (await this.subCoachScope.getAuthorizedClientIds(coachId));
       senderFilter = { sender_id: { in: clientIds } };
     } else {
       senderFilter = { NOT: { sender_id: coachId } };

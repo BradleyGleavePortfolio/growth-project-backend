@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -11,6 +12,7 @@ import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { SupabaseService } from '../supabase/supabase.service';
 
 // ─── State machine ────────────────────────────────────────────────────────────
@@ -49,8 +51,7 @@ export const DeletionAuditEvent = {
   ADMIN_FORCE_DELETE: 'admin_force_delete',
 } as const;
 
-export type DeletionAuditEventValue =
-  (typeof DeletionAuditEvent)[keyof typeof DeletionAuditEvent];
+export type DeletionAuditEventValue = (typeof DeletionAuditEvent)[keyof typeof DeletionAuditEvent];
 
 export interface DeletionStatus {
   state: 'none' | 'requested' | 'confirmed' | 'deleted';
@@ -81,6 +82,10 @@ export class AccountDeletionService {
     private readonly auditService: AuditService,
     private readonly config: ConfigService,
     private readonly supabase: SupabaseService,
+    // H6 (D-H6-3): structured same-transaction audit substrate. Optional so
+    // legacy direct-construction specs keep compiling; AuditLogModule is
+    // @Global so production DI always populates it.
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   // ── Env helpers ─────────────────────────────────────────────────────────────
@@ -130,7 +135,8 @@ export class AccountDeletionService {
       user.deletion_requested_at
     ) {
       return {
-        message: 'A deletion request is already pending for your account. You can cancel it from Settings.',
+        message:
+          'A deletion request is already pending for your account. You can cancel it from Settings.',
         expires_at: user.deletion_token_expires_at.toISOString(),
       };
     }
@@ -139,7 +145,9 @@ export class AccountDeletionService {
     const expiresAt = new Date(Date.now() + this.tokenTtlHours * 60 * 60 * 1000);
     const now = new Date();
 
-    await this.prisma.user.update({
+    // H6 (D-H6-3): scheduling an account deletion is a high-stakes PII
+    // mutation; record an audit row in the same transaction.
+    const requestArgs: Prisma.UserUpdateArgs = {
       where: { id: userId },
       data: {
         deletion_requested_at: now,
@@ -148,7 +156,24 @@ export class AccountDeletionService {
         deletion_token_hash: hash,
         deletion_token_expires_at: expiresAt,
       },
-    });
+    };
+    if (this.auditLog) {
+      await this.auditLog.withAuditLog(
+        {
+          tenantId: userId,
+          actorId: userId,
+          actorType: 'user',
+          action: 'update',
+          resourceType: 'User',
+          resourceId: userId,
+          afterState: { deletion_requested: true },
+          reason: 'account.deletion_requested',
+        },
+        (tx) => tx.user.update(requestArgs),
+      );
+    } else {
+      await this.prisma.user.update(requestArgs);
+    }
 
     // Send confirmation email via the same infra as Phase 9 digests.
     // If the email module is not yet wired, we log and continue — a missing
@@ -198,9 +223,7 @@ export class AccountDeletionService {
 
   // ── Step 2: Confirm via one-time email link ───────────────────────────────────
 
-  async confirmDeletion(
-    token: string,
-  ): Promise<{ message: string; purge_after: string }> {
+  async confirmDeletion(token: string): Promise<{ message: string; purge_after: string }> {
     const hash = this.hashToken(token);
 
     const user = await this.prisma.user.findFirst({
@@ -223,14 +246,33 @@ export class AccountDeletionService {
     const purgeAfter = new Date(now.getTime() + this.graceDays * 24 * 60 * 60 * 1000);
 
     // Consume the token (single-use): clear hash + expiry, set confirmed_at.
-    await this.prisma.user.update({
+    const confirmArgs = {
       where: { id: user.id },
       data: {
         deletion_confirmed_at: now,
         deletion_token_hash: null,
         deletion_token_expires_at: null,
       },
-    });
+    } as const;
+    // H6 (D-H6-3): confirming a deletion schedules a user's PII for purge —
+    // audit it in the same txn. afterState carries flags only (R98).
+    if (this.auditLog) {
+      await this.auditLog.withAuditLog(
+        {
+          tenantId: user.id,
+          actorId: user.id,
+          actorType: 'user',
+          action: 'update',
+          resourceType: 'User',
+          resourceId: user.id,
+          afterState: { deletion_confirmed: true },
+          reason: 'account.deletion_confirmed',
+        },
+        (tx) => tx.user.update(confirmArgs),
+      );
+    } else {
+      await this.prisma.user.update(confirmArgs);
+    }
 
     await this.writeDeletionAudit({
       userId: user.id,
@@ -290,7 +332,9 @@ export class AccountDeletionService {
       }
     }
 
-    await this.prisma.user.update({
+    // H6 (D-H6-3): cancelling a pending deletion is also a PII-state
+    // mutation; wrap it in withAuditLog().
+    const cancelArgs: Prisma.UserUpdateArgs = {
       where: { id: userId },
       data: {
         deletion_requested_at: null,
@@ -298,7 +342,24 @@ export class AccountDeletionService {
         deletion_token_hash: null,
         deletion_token_expires_at: null,
       },
-    });
+    };
+    if (this.auditLog) {
+      await this.auditLog.withAuditLog(
+        {
+          tenantId: userId,
+          actorId: userId,
+          actorType: 'user',
+          action: 'update',
+          resourceType: 'User',
+          resourceId: userId,
+          afterState: { deletion_requested: false },
+          reason: 'account.deletion_cancelled',
+        },
+        (tx) => tx.user.update(cancelArgs),
+      );
+    } else {
+      await this.prisma.user.update(cancelArgs);
+    }
 
     await this.writeDeletionAudit({
       userId,
@@ -374,7 +435,10 @@ export class AccountDeletionService {
    * dual write is intentional so GDPR auditors and security teams each
    * have their own query surface.
    */
-  async adminForceDelete(targetUserId: string, opts: AdminDeleteOptions): Promise<{ message: string }> {
+  async adminForceDelete(
+    targetUserId: string,
+    opts: AdminDeleteOptions,
+  ): Promise<{ message: string }> {
     const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
     if (!user) throw new NotFoundException('User not found');
     if (user.deleted_at) {
@@ -442,9 +506,7 @@ export class AccountDeletionService {
   async runFinalizeCron(): Promise<void> {
     this.logger.log('AccountDeletion finalize cron: starting');
 
-    const cutoff = new Date(
-      Date.now() - this.graceDays * 24 * 60 * 60 * 1000,
-    );
+    const cutoff = new Date(Date.now() - this.graceDays * 24 * 60 * 60 * 1000);
 
     const candidates = await this.prisma.user.findMany({
       where: {
@@ -499,9 +561,7 @@ export class AccountDeletionService {
         finalized += 1;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        this.logger.error(
-          `AccountDeletion finalize: failed for user=${candidate.id}: ${msg}`,
-        );
+        this.logger.error(`AccountDeletion finalize: failed for user=${candidate.id}: ${msg}`);
         errors.push({ userId: candidate.id, error: msg });
       }
     }
@@ -592,9 +652,7 @@ export class AccountDeletionService {
       if (!preCheck) return { skipped: 'user-not-found' };
       if (preCheck.deleted_at) return { skipped: 'already-deleted' };
       if (!preCheck.deletion_confirmed_at) {
-        this.logger.warn(
-          `finalizeUserDeletion: cancelled mid-cron for ${userId} — aborting scrub`,
-        );
+        this.logger.warn(`finalizeUserDeletion: cancelled mid-cron for ${userId} — aborting scrub`);
         return { skipped: 'cancelled' };
       }
     }
@@ -660,7 +718,13 @@ export class AccountDeletionService {
     // coach_id is non-nullable. LessonCompletion rows cascade via their FK.
     await this.prisma.lesson
       .deleteMany({ where: { coach_id: userId } })
-      .catch(() => undefined);
+      .catch((err) =>
+        this.logger.warn(
+          `finalizeUserDeletion: lesson deleteMany failed for ${userId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        ),
+      );
 
     // ── 7. Delete WorkoutRoutine rows created by this user ────────────
     // creator_id is non-nullable. RoutineExercise rows cascade.
@@ -731,10 +795,7 @@ export class AccountDeletionService {
         where: { id: userId },
         select: { supabase_id: true },
       });
-      if (
-        originalUser?.supabase_id &&
-        !originalUser.supabase_id.startsWith('deleted-')
-      ) {
+      if (originalUser?.supabase_id && !originalUser.supabase_id.startsWith('deleted-')) {
         const adminClient = this.supabase.getClient();
         await adminClient.auth.admin.deleteUser(originalUser.supabase_id);
       }
@@ -746,7 +807,12 @@ export class AccountDeletionService {
     }
 
     // ── 12. Final transaction: delete user-owned rows + tombstone User ────────
-    await this.prisma.$transaction(async (tx) => {
+    // H6 (D-H6-3): the final tombstone scrub is the canonical GDPR Art.17
+    // erasure write — audit the scrub action itself (meta-audit). The entire
+    // existing transaction body is handed to withAuditLog() unchanged so the
+    // audit row commits in the same transaction as the tombstone; afterState
+    // carries flags only (R98), never the scrubbed PII.
+    const finalizeScrub = async (tx: Prisma.TransactionClient) => {
       // Re-read inside the transaction (A1-C5-P1-4 belt-and-suspenders):
       // A cancel could have arrived between the pre-flight check above and
       // the transaction start. Re-verify here under serializable-ish
@@ -845,7 +911,24 @@ export class AccountDeletionService {
           deletion_token_expires_at: null,
         },
       });
-    });
+    };
+    if (this.auditLog) {
+      await this.auditLog.withAuditLog(
+        {
+          tenantId: userId,
+          actorId: opts.actorId ?? userId,
+          actorType: opts.isAdminForced ? 'admin' : 'system',
+          action: 'delete',
+          resourceType: 'User',
+          resourceId: userId,
+          afterState: { tombstoned: true, admin_forced: opts.isAdminForced },
+          reason: 'account.finalize_deletion',
+        },
+        finalizeScrub,
+      );
+    } else {
+      await this.prisma.$transaction(finalizeScrub);
+    }
   }
 
   // ── Email ─────────────────────────────────────────────────────────────────────
@@ -870,7 +953,9 @@ export class AccountDeletionService {
     // Do not send a second email after confirmation — the mobile client
     // shows the in-app status instead.
     // Do not log email, name, token, or any URL derived from the token.
-    void email; void name; void token;
+    void email;
+    void name;
+    void token;
     this.logger.warn(
       `AccountDeletion: confirmation pending — email not yet configured. ` +
         `Token stored in DB, expires ${expiresAt.toISOString()}. ` +

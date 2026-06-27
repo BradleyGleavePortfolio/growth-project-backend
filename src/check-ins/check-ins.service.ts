@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PtmService } from '../ptm/ptm.service';
 import { CoachAlertsService } from '../coach/coach-alerts.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
@@ -42,6 +43,10 @@ export class CheckInsService {
     @Optional() private readonly coachAlerts?: CoachAlertsService,
     // M2 — bust the AI context cache after check-in writes.
     @Optional() private readonly aiContext?: ClientAIContextService,
+    // H6 (D-H6-3): structured same-transaction audit substrate. @Optional
+    // so legacy direct-construction specs keep compiling; AuditLogModule is
+    // @Global so production DI always populates it.
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   // ---- helpers ----
@@ -58,9 +63,7 @@ export class CheckInsService {
   private parseDay(value: string): Date | undefined {
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return undefined;
-    return new Date(
-      Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
-    );
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   }
 
   private async assertClientOfCoach(coachId: string, clientId: string) {
@@ -106,7 +109,10 @@ export class CheckInsService {
     if (dto.weight_kg !== undefined) updateData.weight_kg = dto.weight_kg;
     if (dto.notes !== undefined) updateData.notes = dto.notes;
 
-    const row = await this.prisma.checkIn.upsert({
+    // H6 (D-H6-3): a check-in carries client wellness PII (mood, weight,
+    // notes), so the upsert records an audit row in the same transaction.
+    // The afterState captures which fields changed, never the raw notes.
+    const upsertArgs = {
       where: {
         CheckIn_user_id_date_key: { user_id: clientId, date: day },
       },
@@ -124,7 +130,19 @@ export class CheckInsService {
         soreness: 0,
       },
       update: updateData,
-    });
+    } as const;
+    const auditCtx = {
+      tenantId: coachId ?? clientId,
+      actorId: clientId,
+      actorType: 'user' as const,
+      action: 'update' as const,
+      resourceType: 'CheckIn',
+      resourceId: clientId,
+      afterState: { fields_changed: Object.keys(updateData) },
+    };
+    const row = this.auditLog
+      ? await this.auditLog.withAuditLog(auditCtx, (tx) => tx.checkIn.upsert(upsertArgs))
+      : await this.prisma.checkIn.upsert(upsertArgs);
 
     await this.emitPtmAfterUpsert(clientId, coachId, day);
     // M2 — bust AI context cache so next chat sees the new check-in.
@@ -162,9 +180,7 @@ export class CheckInsService {
       const today = this.midnightUtc(new Date());
       const latest = recent[0]?.date;
       if (latest) {
-        const gap = Math.floor(
-          (today.getTime() - this.midnightUtc(latest).getTime()) / ONE_DAY_MS,
-        );
+        const gap = Math.floor((today.getTime() - this.midnightUtc(latest).getTime()) / ONE_DAY_MS);
         if (gap >= PTM_MISS_MIN_DAYS) {
           this.ptm.emit(clientId, 'checkin_miss', gap);
 
@@ -177,9 +193,7 @@ export class CheckInsService {
 
       // Phase 6B — streak_dropped alert emitter.
       if (this.coachAlerts && coachId) {
-        const priorStreak = this.computeStreak(
-          recent.slice(1).map((r) => r.date),
-        );
+        const priorStreak = this.computeStreak(recent.slice(1).map((r) => r.date));
         if (priorStreak >= STREAK_DROP_PRIOR_MIN && streak === 0) {
           void this.maybeFireStreakDroppedAlert(clientId, coachId, priorStreak);
         }
@@ -243,9 +257,7 @@ export class CheckInsService {
   }
 
   private midnightUtc(d: Date): Date {
-    return new Date(
-      Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
-    );
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   }
 
   // Count consecutive calendar days starting from the most recent date and
@@ -309,11 +321,7 @@ export class CheckInsService {
   // coach relationship to authorize — see spec §B.1: historical check-ins
   // are attached to the coach-of-record via coach_id, but the auth check
   // here is about current ownership of the client record.
-  async listForClientByCoach(
-    coachId: string,
-    clientId: string,
-    query: ListCheckInsQueryDto,
-  ) {
+  async listForClientByCoach(coachId: string, clientId: string, query: ListCheckInsQueryDto) {
     await this.assertClientOfCoach(coachId, clientId);
     const limit = this.clampLimit(query.limit);
 
@@ -322,9 +330,7 @@ export class CheckInsService {
     if (!from) {
       const d = new Date();
       d.setUTCDate(d.getUTCDate() - COACH_DEFAULT_WINDOW_DAYS);
-      from = new Date(
-        Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
-      );
+      from = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
     }
 
     return this.prisma.checkIn.findMany({
@@ -363,13 +369,29 @@ export class CheckInsService {
   async markReviewedByCoach(coachId: string, checkInId: string) {
     await this.assertCheckInOfCoach(coachId, checkInId);
     const flagOn = isCoachReviewedAtEnabled();
-    const updated = await this.prisma.checkIn.update({
+    // H6 (D-H6-3): coach reviewing a client check-in is an access/mutation
+    // event over client PII, so wrap it in withAuditLog().
+    const updateArgs = {
       where: { id: checkInId },
       data: {
         reviewed_by_coach: true,
         ...(flagOn ? { coach_reviewed_at: new Date() } : {}),
       },
-    });
+    } as const;
+    const updated = this.auditLog
+      ? await this.auditLog.withAuditLog(
+          {
+            tenantId: coachId,
+            actorId: coachId,
+            actorType: 'coach',
+            action: 'update',
+            resourceType: 'CheckIn',
+            resourceId: checkInId,
+            afterState: { reviewed_by_coach: true },
+          },
+          (tx) => tx.checkIn.update(updateArgs),
+        )
+      : await this.prisma.checkIn.update(updateArgs);
     return updated;
   }
 

@@ -1,12 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
 import { PrismaService } from '../prisma.service';
+import { createBreaker } from '../circuit-breakers/circuit-breaker.factory';
 
-export type WinType =
-  | 'logged_first_weight'
-  | 'set_first_goal'
-  | 'first_checkin'
-  | 'first_meal';
+export type WinType = 'logged_first_weight' | 'set_first_goal' | 'first_checkin' | 'first_meal';
 
 const VALID_WIN_TYPES = new Set<WinType>([
   'logged_first_weight',
@@ -36,6 +33,18 @@ const FALLBACK_MESSAGES: Record<WinType, string> = {
 @Injectable()
 export class FirstWinService {
   private readonly logger = new Logger(FirstWinService.name);
+
+  // H6 (D-H6-2): per-client Opossum breaker around the outbound
+  // OpenAI-compatible (Perplexity) chat-completions boundary. 'default'
+  // profile (8s/50%/30s). The caller already null-checks the client and
+  // falls back to a deterministic message; the breaker only fails fast on a
+  // sustained upstream outage. Touches only the SDK call boundary.
+  private guardedChat = createBreaker(
+    'openai',
+    (client: OpenAI, params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming) =>
+      client.chat.completions.create(params),
+    { key: 'openai:first-win' },
+  );
 
   // Lazy-init: OpenAI SDK v5+ throws synchronously when apiKey is empty,
   // so we defer construction until first use and read the env var at call
@@ -105,9 +114,7 @@ export class FirstWinService {
    *
    * @param userId The internal User.id (UUID)
    */
-  async getStatus(
-    userId: string,
-  ): Promise<{ completed: boolean; completedAt: string | null }> {
+  async getStatus(userId: string): Promise<{ completed: boolean; completedAt: string | null }> {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
       select: { first_win_completed_at: true },
@@ -136,9 +143,9 @@ export class FirstWinService {
 
     const winLabel: Record<WinType, string> = {
       logged_first_weight: 'logged their first body weight measurement',
-      set_first_goal:      'set their first 90-day goal',
-      first_checkin:       'submitted their first daily check-in',
-      first_meal:          'logged their first meal',
+      set_first_goal: 'set their first 90-day goal',
+      first_checkin: 'submitted their first daily check-in',
+      first_meal: 'logged their first meal',
     };
 
     const systemPrompt =
@@ -151,11 +158,11 @@ export class FirstWinService {
     const userMessage = `The client has just ${winLabel[winType]}. Write the 2-sentence message.`;
 
     try {
-      const response = await perplexity.chat.completions.create({
+      const response = await this.guardedChat(perplexity, {
         model: 'sonar-pro',
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user',   content: userMessage },
+          { role: 'user', content: userMessage },
         ],
         temperature: 0.4,
         max_tokens: 120,

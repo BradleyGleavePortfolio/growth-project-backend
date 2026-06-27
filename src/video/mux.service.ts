@@ -30,12 +30,9 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  createHmac,
-  createSign,
-  timingSafeEqual,
-} from 'crypto';
+import { createHmac, createSign, timingSafeEqual } from 'crypto';
 import { MuxApiError, MuxDisabledError } from './mux.errors';
+import { createBreaker } from '../circuit-breakers/circuit-breaker.factory';
 
 const MUX_API_BASE = 'https://api.mux.com';
 const SIGNED_URL_DEFAULT_TTL_SECONDS = 60 * 60; // 1 hour
@@ -65,6 +62,19 @@ export interface MintPlaybackUrlInput {
 export class MuxService {
   private readonly logger = new Logger(MuxService.name);
 
+  // H6 (D-H6-2): per-client Opossum breaker around the single outbound Mux
+  // HTTP boundary (muxFetch). Touches only the fetch call; request shaping
+  // and error translation in muxFetch are unchanged.
+  private static breakerSeq = 0;
+  private guardedFetch = createBreaker(
+    'mux',
+    (url: string, init: RequestInit) => fetch(url, init),
+    // Per-instance cache key (mirrors StripeApiService): keeps each service
+    // instance's rolling error window isolated so a breaker tripped in one
+    // context (or test) does not bleed into another module-scoped instance.
+    { key: `mux:${MuxService.breakerSeq++}` },
+  );
+
   constructor(private readonly config: ConfigService) {}
 
   isConfigured(): boolean {
@@ -81,14 +91,14 @@ export class MuxService {
    * Throws MuxDisabledError when Mux secrets are absent. Callers should
    * translate that into a 503.
    */
-  async createDirectUpload(opts: {
-    playbackPolicy?: 'public' | 'signed';
-    corsOrigin?: string;
-  } = {}): Promise<CreateDirectUploadResult> {
+  async createDirectUpload(
+    opts: {
+      playbackPolicy?: 'public' | 'signed';
+      corsOrigin?: string;
+    } = {},
+  ): Promise<CreateDirectUploadResult> {
     if (!this.isConfigured()) {
-      throw new MuxDisabledError(
-        'Set MUX_TOKEN_ID and MUX_TOKEN_SECRET to enable video uploads.',
-      );
+      throw new MuxDisabledError('Set MUX_TOKEN_ID and MUX_TOKEN_SECRET to enable video uploads.');
     }
     const policy = opts.playbackPolicy ?? 'public';
     const body = {
@@ -106,9 +116,7 @@ export class MuxService {
   /** Fetch the full asset record. Used by the webhook handler. */
   async getAsset(assetId: string): Promise<MuxAsset> {
     if (!this.isConfigured()) {
-      throw new MuxDisabledError(
-        'Set MUX_TOKEN_ID and MUX_TOKEN_SECRET to fetch Mux assets.',
-      );
+      throw new MuxDisabledError('Set MUX_TOKEN_ID and MUX_TOKEN_SECRET to fetch Mux assets.');
     }
     const json = await this.muxFetch<{
       data: {
@@ -213,9 +221,7 @@ export class MuxService {
     if (Math.abs(now() - t) > tolerance) return false;
 
     const signed = `${tStr}.${opts.payload}`;
-    const expected = createHmac('sha256', secret)
-      .update(signed, 'utf8')
-      .digest('hex');
+    const expected = createHmac('sha256', secret).update(signed, 'utf8').digest('hex');
     const expectedBuf = Buffer.from(expected, 'hex');
     for (const v1 of v1List) {
       let candidate: Buffer;
@@ -224,10 +230,7 @@ export class MuxService {
       } catch {
         continue;
       }
-      if (
-        candidate.length === expectedBuf.length &&
-        timingSafeEqual(candidate, expectedBuf)
-      ) {
+      if (candidate.length === expectedBuf.length && timingSafeEqual(candidate, expectedBuf)) {
         return true;
       }
     }
@@ -244,15 +247,9 @@ export class MuxService {
     return this.config.get<string>('MUX_TOKEN_SECRET') ?? '';
   }
 
-  private async muxFetch<T>(
-    method: 'GET' | 'POST',
-    path: string,
-    body?: unknown,
-  ): Promise<T> {
-    const auth = Buffer.from(`${this.tokenId}:${this.tokenSecret}`).toString(
-      'base64',
-    );
-    const res = await fetch(`${MUX_API_BASE}${path}`, {
+  private async muxFetch<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+    const auth = Buffer.from(`${this.tokenId}:${this.tokenSecret}`).toString('base64');
+    const res = await this.guardedFetch(`${MUX_API_BASE}${path}`, {
       method,
       headers: {
         Authorization: `Basic ${auth}`,
@@ -263,10 +260,7 @@ export class MuxService {
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new MuxApiError(
-        res.status,
-        `Mux API error ${res.status}: ${text.slice(0, 300)}`,
-      );
+      throw new MuxApiError(res.status, `Mux API error ${res.status}: ${text.slice(0, 300)}`);
     }
     return (await res.json()) as T;
   }
