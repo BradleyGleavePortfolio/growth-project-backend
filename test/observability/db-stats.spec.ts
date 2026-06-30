@@ -22,7 +22,18 @@ import {
   DB_STATS_QUERY_PREVIEW_CHARS,
 } from '../../src/observability/db-stats.service';
 import { DbStatsController } from '../../src/observability/db-stats.controller';
-import type { PrismaService } from '../../src/prisma.service';
+import { PrismaService } from '../../src/prisma.service';
+
+/**
+ * The service only ever touches `prisma.$queryRaw`. We build a real
+ * PrismaService instance and override that single method with a jest spy so
+ * the double is a genuine PrismaService (no structural cast needed).
+ */
+function makePrisma(impl: jest.Mock): PrismaService {
+  const prisma = new PrismaService();
+  jest.spyOn(prisma, '$queryRaw').mockImplementation(impl);
+  return prisma;
+}
 
 describe('redactStatement', () => {
   it('preserves a short query verbatim and does not flag truncation', () => {
@@ -70,10 +81,6 @@ describe('redactStatement', () => {
     expect(r.queryPreview).toContain('t1');
   });
 });
-
-function makePrisma(impl: jest.Mock): PrismaService {
-  return { $queryRaw: impl } as unknown as PrismaService;
-}
 
 describe('DbStatsService.topStatements', () => {
   it('maps rows, coerces bigints, and redacts query text', async () => {
@@ -142,9 +149,8 @@ describe('DbStatsService.topStatements', () => {
 
 describe('DbStatsController', () => {
   it('returns generatedAt plus the available payload', async () => {
-    const svc = {
-      topStatements: jest.fn().mockResolvedValue({ available: true, statements: [] }),
-    } as unknown as DbStatsService;
+    const svc = new DbStatsService(makePrisma(jest.fn()));
+    jest.spyOn(svc, 'topStatements').mockResolvedValue({ available: true, statements: [] });
     const controller = new DbStatsController(svc);
     const body = await controller.dbStatsTop();
     expect(body.available).toBe(true);
@@ -152,9 +158,8 @@ describe('DbStatsController', () => {
   });
 
   it('surfaces an unavailable result unchanged', async () => {
-    const svc = {
-      topStatements: jest.fn().mockResolvedValue({ available: false, reason: 'not enabled' }),
-    } as unknown as DbStatsService;
+    const svc = new DbStatsService(makePrisma(jest.fn()));
+    jest.spyOn(svc, 'topStatements').mockResolvedValue({ available: false, reason: 'not enabled' });
     const controller = new DbStatsController(svc);
     const body = await controller.dbStatsTop();
     expect(body.available).toBe(false);

@@ -13,11 +13,17 @@ import {
 } from '../../src/observability/metrics-auth.guard';
 
 function ctxWithAuth(authHeader?: string): ExecutionContext {
-  return {
+  const headers = authHeader ? { authorization: authHeader } : {};
+  const host = {
     switchToHttp: () => ({
-      getRequest: () => ({ headers: authHeader ? { authorization: authHeader } : {} }),
+      getRequest: () => ({ headers }),
     }),
-  } as unknown as ExecutionContext;
+  };
+  // The guard only ever calls `context.switchToHttp().getRequest()`; the rest
+  // of the ExecutionContext surface (getArgs/getClass/switchToRpc/...) is
+  // infeasible to mock, so we expose just the exercised method and widen the
+  // structurally-compatible stub to the public type.
+  return host as ExecutionContext;
 }
 
 describe('constantTimeEquals edge cases', () => {
@@ -84,9 +90,7 @@ describe('MetricsAuthGuard env permutations', () => {
 
   it('rejects a token that differs only by trailing whitespace inside the value', () => {
     process.env.METRICS_AUTH_TOKEN = 'tok-123';
-    expect(() => guard.canActivate(ctxWithAuth('Bearer tok-1234'))).toThrow(
-      UnauthorizedException,
-    );
+    expect(() => guard.canActivate(ctxWithAuth('Bearer tok-1234'))).toThrow(UnauthorizedException);
   });
 
   it('allows unauthenticated access when token unset in test env', () => {

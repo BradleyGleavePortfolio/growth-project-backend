@@ -25,7 +25,11 @@ describe('resolveRelease precedence', () => {
   });
 
   it('GIT_SHA beats RELEASE_VERSION', () => {
-    const env = { GIT_SHA: 'sha', RELEASE_VERSION: 'v1', NODE_ENV: 'production' } as NodeJS.ProcessEnv;
+    const env = {
+      GIT_SHA: 'sha',
+      RELEASE_VERSION: 'v1',
+      NODE_ENV: 'production',
+    } as NodeJS.ProcessEnv;
     expect(resolveRelease(env)).toBe(`${SENTRY_SERVICE_NAME}@sha-production`);
   });
 
@@ -42,13 +46,19 @@ describe('resolveRelease precedence', () => {
 
 describe('resolveTracesSampleRate boundaries', () => {
   it('clamps a negative rate to 0', () => {
-    expect(resolveTracesSampleRate({ SENTRY_TRACES_SAMPLE_RATE: '-1' } as NodeJS.ProcessEnv)).toBe(0);
+    expect(resolveTracesSampleRate({ SENTRY_TRACES_SAMPLE_RATE: '-1' } as NodeJS.ProcessEnv)).toBe(
+      0,
+    );
   });
   it('accepts exactly 0', () => {
-    expect(resolveTracesSampleRate({ SENTRY_TRACES_SAMPLE_RATE: '0' } as NodeJS.ProcessEnv)).toBe(0);
+    expect(resolveTracesSampleRate({ SENTRY_TRACES_SAMPLE_RATE: '0' } as NodeJS.ProcessEnv)).toBe(
+      0,
+    );
   });
   it('accepts exactly 1', () => {
-    expect(resolveTracesSampleRate({ SENTRY_TRACES_SAMPLE_RATE: '1' } as NodeJS.ProcessEnv)).toBe(1);
+    expect(resolveTracesSampleRate({ SENTRY_TRACES_SAMPLE_RATE: '1' } as NodeJS.ProcessEnv)).toBe(
+      1,
+    );
   });
   it('defaults to 0.1 when unset', () => {
     expect(resolveTracesSampleRate({} as NodeJS.ProcessEnv)).toBe(0.1);
@@ -62,9 +72,10 @@ describe('stripSensitiveHeaders', () => {
   });
 
   it('is idempotent when run twice', () => {
-    const event = {
+    const event: Parameters<typeof stripSensitiveHeaders>[0] = {
+      type: undefined,
       request: { headers: { authorization: 'Bearer x', 'x-keep': '1' } },
-    } as unknown as Parameters<typeof stripSensitiveHeaders>[0];
+    };
     stripSensitiveHeaders(event);
     stripSensitiveHeaders(event);
     const headers = event.request?.headers as Record<string, unknown>;

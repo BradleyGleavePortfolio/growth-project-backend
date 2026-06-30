@@ -57,19 +57,26 @@ describe('resolveRelease', () => {
 
 describe('resolveTracesSampleRate', () => {
   it('parses a valid rate', () => {
-    expect(resolveTracesSampleRate({ SENTRY_TRACES_SAMPLE_RATE: '0.5' } as NodeJS.ProcessEnv)).toBe(0.5);
+    expect(resolveTracesSampleRate({ SENTRY_TRACES_SAMPLE_RATE: '0.5' } as NodeJS.ProcessEnv)).toBe(
+      0.5,
+    );
   });
   it('clamps above 1', () => {
-    expect(resolveTracesSampleRate({ SENTRY_TRACES_SAMPLE_RATE: '5' } as NodeJS.ProcessEnv)).toBe(1);
+    expect(resolveTracesSampleRate({ SENTRY_TRACES_SAMPLE_RATE: '5' } as NodeJS.ProcessEnv)).toBe(
+      1,
+    );
   });
   it('defaults to 0.1 on invalid input', () => {
-    expect(resolveTracesSampleRate({ SENTRY_TRACES_SAMPLE_RATE: 'nope' } as NodeJS.ProcessEnv)).toBe(0.1);
+    expect(
+      resolveTracesSampleRate({ SENTRY_TRACES_SAMPLE_RATE: 'nope' } as NodeJS.ProcessEnv),
+    ).toBe(0.1);
   });
 });
 
 describe('stripSensitiveHeaders', () => {
   it('removes Authorization and Cookie headers', () => {
-    const event = {
+    const event: Parameters<typeof stripSensitiveHeaders>[0] = {
+      type: undefined,
       request: {
         headers: {
           authorization: 'Bearer x',
@@ -79,7 +86,7 @@ describe('stripSensitiveHeaders', () => {
           'user-agent': 'jest',
         },
       },
-    } as unknown as Parameters<typeof stripSensitiveHeaders>[0];
+    };
     const out = stripSensitiveHeaders(event);
     const headers = out.request?.headers as Record<string, unknown>;
     expect(headers.authorization).toBeUndefined();
@@ -124,9 +131,7 @@ describe('initSentry', () => {
   });
 
   it('calls Sentry.init when SENTRY_DSN is set', () => {
-    expect(
-      initSentry({ SENTRY_DSN: 'https://dsn@o.ingest/1' } as NodeJS.ProcessEnv),
-    ).toBe(true);
+    expect(initSentry({ SENTRY_DSN: 'https://dsn@o.ingest/1' } as NodeJS.ProcessEnv)).toBe(true);
     expect(Sentry.init as jest.Mock).toHaveBeenCalledTimes(1);
   });
 });

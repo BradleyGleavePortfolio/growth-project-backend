@@ -27,6 +27,39 @@ import {
   renderPromMetrics,
 } from '../../src/observability/prom-metrics';
 
+/**
+ * The metrics helpers read only a tiny slice of the Express `Request`
+ * (`method`, `path`, optional `route.path`). The full Express Request surface
+ * is hundreds of members and infeasible to mock, so we build the exercised
+ * fields and suppress the single structural mismatch.
+ */
+function makeReq(fields: { path?: string; method?: string; routePath?: string }): Request {
+  const { path = '', method = 'GET', routePath } = fields;
+  const req: { path: string; method: string; route?: { path: string } } = {
+    path,
+    method,
+  };
+  if (routePath !== undefined) {
+    req.route = { path: routePath };
+  }
+  // @ts-expect-error partial Express Request: only method/path/route are read
+  return req;
+}
+
+/**
+ * A `Response` double backed by a real EventEmitter so `res.on('finish', ...)`
+ * fires through `emitter.emit('finish')`. The Express Response surface is huge
+ * and infeasible to mock, so we expose the exercised members and suppress the
+ * single structural mismatch.
+ */
+function makeRes(statusCode = 200): { res: Response; emitter: EventEmitter } {
+  const emitter = new EventEmitter();
+  const res = Object.assign(emitter, { statusCode });
+  // @ts-expect-error partial Express Response: only on()/statusCode are used
+  const typed: Response = res;
+  return { res: typed, emitter };
+}
+
 describe('registerDefaultMetrics', () => {
   it('installs Node.js default runtime collectors on a fresh registry', async () => {
     const reg = new Registry();
@@ -71,45 +104,44 @@ describe('buildHttpHistogram', () => {
 
 describe('normaliseRouteLabel', () => {
   it('prefers the matched Express route pattern', () => {
-    const req = { route: { path: '/api/users/:id' }, path: '/api/users/42' } as unknown as Request;
+    const req = makeReq({ routePath: '/api/users/:id', path: '/api/users/42' });
     expect(normaliseRouteLabel(req)).toBe('/api/users/:id');
   });
 
   it('collapses UUIDs in the raw path when no pattern is present', () => {
-    const req = {
+    const req = makeReq({
       path: '/api/users/a1b2c3d4-e5f6-7890-abcd-ef1234567890/weight',
-    } as unknown as Request;
+    });
     expect(normaliseRouteLabel(req)).toBe('/api/users/:id/weight');
   });
 
   it('collapses numeric ids in the raw path', () => {
-    const req = { path: '/api/posts/12345/comments' } as unknown as Request;
+    const req = makeReq({ path: '/api/posts/12345/comments' });
     expect(normaliseRouteLabel(req)).toBe('/api/posts/:id/comments');
   });
 
   it('falls back to "unknown" when no path information is available', () => {
-    const req = { path: '' } as unknown as Request;
+    const req = makeReq({ path: '' });
     expect(normaliseRouteLabel(req)).toBe('unknown');
   });
 });
 
 describe('promHttpMiddleware', () => {
   function makeReqRes(method: string, path: string) {
-    const req = { method, path } as unknown as Request;
-    const res = new EventEmitter() as unknown as Response & EventEmitter;
-    (res as unknown as { statusCode: number }).statusCode = 200;
-    return { req, res };
+    const req = makeReq({ method, path });
+    const { res, emitter } = makeRes(200);
+    return { req, res, emitter };
   }
 
   it('observes a duration sample with method/route/status_code labels on finish', async () => {
     const reg = new Registry();
     const histogram = buildHttpHistogram(reg);
     const middleware = promHttpMiddleware(histogram);
-    const { req, res } = makeReqRes('get', '/api/health');
+    const { req, res, emitter } = makeReqRes('get', '/api/health');
 
     middleware(req, res, () => undefined);
-    (res as unknown as { statusCode: number }).statusCode = 204;
-    (res as unknown as EventEmitter).emit('finish');
+    res.statusCode = 204;
+    emitter.emit('finish');
 
     const text = await reg.metrics();
     expect(text).toContain('method="GET"');

@@ -12,14 +12,31 @@ import { PromMetricsController } from '../../src/observability/prom-metrics.cont
 import { DbStatsController } from '../../src/observability/db-stats.controller';
 import { DbStatsService } from '../../src/observability/db-stats.service';
 import { registerDefaultMetrics } from '../../src/observability/prom-metrics';
-import type { PrismaService } from '../../src/prisma.service';
+import { PrismaService } from '../../src/prisma.service';
+
+/**
+ * The service only ever touches `prisma.$queryRaw`. We build a real
+ * PrismaService instance and override that single method with a jest spy so
+ * the double is a genuine PrismaService (no structural cast needed).
+ */
+function prismaWith$queryRaw(impl: jest.Mock): PrismaService {
+  const prisma = new PrismaService();
+  jest.spyOn(prisma, '$queryRaw').mockImplementation(impl);
+  return prisma;
+}
 
 function ctx(authHeader?: string): ExecutionContext {
-  return {
+  const headers = authHeader ? { authorization: authHeader } : {};
+  const host = {
     switchToHttp: () => ({
-      getRequest: () => ({ headers: authHeader ? { authorization: authHeader } : {} }),
+      getRequest: () => ({ headers }),
     }),
-  } as unknown as ExecutionContext;
+  };
+  // The guard only ever calls `context.switchToHttp().getRequest()`; the rest
+  // of the ExecutionContext surface (getArgs/getClass/switchToRpc/...) is
+  // infeasible to mock, so we expose just the exercised method and widen the
+  // structurally-compatible stub to the public type.
+  return host as ExecutionContext;
 }
 
 describe('PromMetricsController behind MetricsAuthGuard', () => {
@@ -57,7 +74,7 @@ describe('PromMetricsController behind MetricsAuthGuard', () => {
 
 describe('DbStatsController over DbStatsService', () => {
   function prismaReturning(rows: unknown[]): PrismaService {
-    return { $queryRaw: jest.fn().mockResolvedValue(rows) } as unknown as PrismaService;
+    return prismaWith$queryRaw(jest.fn().mockResolvedValue(rows));
   }
 
   it('returns a redacted, timestamped payload when the extension is present', async () => {
@@ -76,11 +93,9 @@ describe('DbStatsController over DbStatsService', () => {
   });
 
   it('returns an unavailable payload when the extension is missing', async () => {
-    const failing = {
-      $queryRaw: jest
-        .fn()
-        .mockRejectedValue(Object.assign(new Error('missing'), { code: '42P01' })),
-    } as unknown as PrismaService;
+    const failing = prismaWith$queryRaw(
+      jest.fn().mockRejectedValue(Object.assign(new Error('missing'), { code: '42P01' })),
+    );
     const controller = new DbStatsController(new DbStatsService(failing));
     const body = await controller.dbStatsTop();
     expect(body.available).toBe(false);

@@ -10,10 +10,17 @@ import {
   DB_STATS_TOP_N,
   DB_STATS_QUERY_PREVIEW_CHARS,
 } from '../../src/observability/db-stats.service';
-import type { PrismaService } from '../../src/prisma.service';
+import { PrismaService } from '../../src/prisma.service';
 
+/**
+ * The service only ever touches `prisma.$queryRaw`. We build a real
+ * PrismaService instance and override that single method with a jest spy so
+ * the double is a genuine PrismaService (no structural cast needed).
+ */
 function makePrisma(impl: jest.Mock): PrismaService {
-  return { $queryRaw: impl } as unknown as PrismaService;
+  const prisma = new PrismaService();
+  jest.spyOn(prisma, '$queryRaw').mockImplementation(impl);
+  return prisma;
 }
 
 describe('db-stats constants', () => {
@@ -47,9 +54,7 @@ describe('redactStatement edge cases', () => {
   });
 
   it('strips leading/trailing whitespace before hashing', () => {
-    expect(redactStatement('  SELECT 1  ').queryHash).toBe(
-      redactStatement('SELECT 1').queryHash,
-    );
+    expect(redactStatement('  SELECT 1  ').queryHash).toBe(redactStatement('SELECT 1').queryHash);
   });
 });
 
@@ -103,9 +108,7 @@ describe('DbStatsService.topStatements — data handling', () => {
 
   it('redacts query text in the mapped output (preview + hash)', async () => {
     const longQuery = 'SELECT * FROM "User" WHERE id = ' + "'x'".repeat(200);
-    const rows = [
-      { query: longQuery, calls: 1n, total_exec_time: 1, mean_exec_time: 1, rows: 0n },
-    ];
+    const rows = [{ query: longQuery, calls: 1n, total_exec_time: 1, mean_exec_time: 1, rows: 0n }];
     const svc = new DbStatsService(makePrisma(jest.fn().mockResolvedValue(rows)));
     const result = await svc.topStatements();
     if (!result.available) throw new Error('expected available');

@@ -19,6 +19,39 @@ import {
 } from '../../src/observability/prom-metrics';
 import { PromMetricsController } from '../../src/observability/prom-metrics.controller';
 
+/**
+ * The metrics helpers read only a tiny slice of the Express `Request`
+ * (`method`, `path`, optional `route.path`). The full Express Request surface
+ * is hundreds of members and infeasible to mock, so we build the exercised
+ * fields and suppress the single structural mismatch.
+ */
+function makeReq(fields: { path?: string; method?: string; routePath?: string }): Request {
+  const { path = '', method = 'GET', routePath } = fields;
+  const req: { path: string; method: string; route?: { path: string } } = {
+    path,
+    method,
+  };
+  if (routePath !== undefined) {
+    req.route = { path: routePath };
+  }
+  // @ts-expect-error partial Express Request: only method/path/route are read
+  return req;
+}
+
+/**
+ * A `Response` double backed by a real EventEmitter so `res.on('finish', ...)`
+ * fires through `emitter.emit('finish')`. The Express Response surface is huge
+ * and infeasible to mock, so we expose the exercised members and suppress the
+ * single structural mismatch.
+ */
+function makeRes(statusCode = 200): { res: Response; emitter: EventEmitter } {
+  const emitter = new EventEmitter();
+  const res = Object.assign(emitter, { statusCode });
+  // @ts-expect-error partial Express Response: only on()/statusCode are used
+  const typed: Response = res;
+  return { res: typed, emitter };
+}
+
 describe('HTTP_HISTOGRAM_LABELS', () => {
   it('contains exactly method, route, status_code (no PII labels)', () => {
     expect([...HTTP_HISTOGRAM_LABELS]).toEqual(['method', 'route', 'status_code']);
@@ -33,7 +66,9 @@ describe('HTTP_HISTOGRAM_LABELS', () => {
 
 describe('histogram bucket boundaries', () => {
   function bucketCount(text: string, le: string): number {
-    const re = new RegExp(`http_request_duration_seconds_bucket\\{[^}]*le="${le.replace('.', '\\.')}"[^}]*\\}\\s+(\\d+)`);
+    const re = new RegExp(
+      `http_request_duration_seconds_bucket\\{[^}]*le="${le.replace('.', '\\.')}"[^}]*\\}\\s+(\\d+)`,
+    );
     const m = re.exec(text);
     return m ? Number(m[1]) : 0;
   }
@@ -97,29 +132,28 @@ describe('process-wide default instances', () => {
 describe('promHttpMiddleware on the default histogram', () => {
   it('records against the shared instance without an explicit histogram arg', () => {
     const middleware = promHttpMiddleware();
-    const req = { method: 'get', path: '/api/health' } as unknown as Request;
-    const res = new EventEmitter() as unknown as Response & EventEmitter;
-    (res as unknown as { statusCode: number }).statusCode = 200;
+    const req = makeReq({ method: 'get', path: '/api/health' });
+    const { res, emitter } = makeRes(200);
     const next = jest.fn();
     middleware(req, res, next);
     expect(next).toHaveBeenCalledTimes(1);
-    expect(() => (res as unknown as EventEmitter).emit('finish')).not.toThrow();
+    expect(() => emitter.emit('finish')).not.toThrow();
   });
 });
 
 describe('normaliseRouteLabel additional cases', () => {
   it('handles trailing numeric id with no suffix', () => {
-    const req = { path: '/api/orders/99' } as unknown as Request;
+    const req = makeReq({ path: '/api/orders/99' });
     expect(normaliseRouteLabel(req)).toBe('/api/orders/:id');
   });
 
   it('does not collapse numbers embedded in a word', () => {
-    const req = { path: '/api/v1/users' } as unknown as Request;
+    const req = makeReq({ path: '/api/v1/users' });
     expect(normaliseRouteLabel(req)).toBe('/api/v1/users');
   });
 
   it('prefers an empty-string route pattern fallback to raw path', () => {
-    const req = { route: { path: '' }, path: '/api/raw' } as unknown as Request;
+    const req = makeReq({ routePath: '', path: '/api/raw' });
     expect(normaliseRouteLabel(req)).toBe('/api/raw');
   });
 });
