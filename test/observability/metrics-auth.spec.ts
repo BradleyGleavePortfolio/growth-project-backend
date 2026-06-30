@@ -88,6 +88,16 @@ describe('extractBearerToken ReDoS resistance', () => {
     expect(Date.now() - start).toBeLessThan(50);
   });
 
+  it('rejects a 5MB whitespace-prefixed header in constant time (cap before trim)', () => {
+    // A megabyte-scale run of leading whitespace must hit the raw-length cap
+    // BEFORE any trim()/scan touches it, so rejection stays fast regardless of
+    // size. If the cap were applied after trim(), the whole 5MB would be walked.
+    const fiveMb = `${' '.repeat(5 * 1024 * 1024)}Bearer token`;
+    const start = Date.now();
+    expect(extractBearerToken(fiveMb)).toBeUndefined();
+    expect(Date.now() - start).toBeLessThan(50);
+  });
+
   it('accepts a lowercase bearer scheme', () => {
     expect(extractBearerToken('bearer lower-scheme-token')).toBe('lower-scheme-token');
   });
@@ -124,9 +134,7 @@ describe('MetricsAuthGuard', () => {
 
   it('rejects with 401 when the token does not match', () => {
     process.env.METRICS_AUTH_TOKEN = 'super-secret';
-    expect(() => guard.canActivate(ctxWithAuth('Bearer wrong'))).toThrow(
-      UnauthorizedException,
-    );
+    expect(() => guard.canActivate(ctxWithAuth('Bearer wrong'))).toThrow(UnauthorizedException);
   });
 
   it('rejects with 401 when no Authorization header is present but a token is configured', () => {

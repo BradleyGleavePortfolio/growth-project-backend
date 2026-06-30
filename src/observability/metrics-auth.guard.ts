@@ -61,15 +61,20 @@ const BEARER_PREFIX = 'bearer ';
  * than a regular expression, so an attacker-controlled header on the
  * pre-auth metrics endpoints cannot trigger polynomial backtracking.
  */
-export function extractBearerToken(
-  header: string | string[] | undefined,
-): string | undefined {
+export function extractBearerToken(header: string | string[] | undefined): string | undefined {
   const value = Array.isArray(header) ? header[0] : header;
   if (!value) {
     return undefined;
   }
+  // Bound the parser on the RAW header length BEFORE any scan (`trim()` walks
+  // the whole string). Checking the cap first ensures a multi-megabyte
+  // whitespace-prefixed header is rejected in constant time rather than being
+  // fully scanned by trim() before the cap engages.
+  if (value.length > MAX_AUTHORIZATION_HEADER_LENGTH) {
+    return undefined;
+  }
   const trimmed = value.trim();
-  if (trimmed.length === 0 || trimmed.length > MAX_AUTHORIZATION_HEADER_LENGTH) {
+  if (trimmed.length === 0) {
     return undefined;
   }
   if (trimmed.slice(0, BEARER_PREFIX.length).toLowerCase() !== BEARER_PREFIX) {
