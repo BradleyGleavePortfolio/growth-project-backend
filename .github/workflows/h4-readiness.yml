@@ -9,16 +9,27 @@
 #
 # Two trigger surfaces (R100 paragraph 6):
 #
-#   test-deploy-readiness  PR check, INFORMATIONAL. continue-on-error: true so it
-#                          does not block the H6 / A-class lanes during the
-#                          pre-launch burn-down. Posts the full board as a PR
-#                          comment so the operator reads it without opening the
-#                          action log. Runs in PR (informational) mode: only the
-#                          codebase-invariant buckets (stub values, prod-switch
-#                          coherence) gate; the environment-dependent buckets
-#                          (wiring, env-discovery, operator keys) are surfaced
-#                          but do not fail the PR because the PR runner carries
-#                          no production secrets.
+#   test-deploy-readiness  PR check, INFORMATIONAL. Runs the board in PR
+#                          (informational) mode: only the codebase-invariant
+#                          buckets (stub values, prod-switch coherence) gate; the
+#                          environment-dependent buckets (wiring, env-discovery,
+#                          operator keys) are surfaced but do not fail the PR
+#                          because the PR runner carries no production secrets.
+#                          This job executes PR-controlled code (npm ci, prisma
+#                          generate, the test board) and therefore holds NO write
+#                          scopes: contents: read only. It uploads the rendered
+#                          board as a workflow artifact.
+#
+#   comment-deploy-readiness  PR comment, commenting only. needs:
+#                          test-deploy-readiness. Holds the only elevated scope in
+#                          the workflow (pull-requests: write) and runs NO
+#                          PR-controlled code: it downloads the board artifact and
+#                          posts it as a PR comment via github-script. Isolating
+#                          the write scope from PR-controlled code execution
+#                          closes the canonical GitHub Actions token-exfiltration
+#                          vector (a malicious postinstall hook in package.json
+#                          cannot reach a pull-requests: write token here because
+#                          this job never runs install/test).
 #
 #   deploy-readiness-gate  Prod-deploy check, HARD-BLOCKING. No continue-on-error.
 #                          Triggered on workflow_dispatch and on push to
@@ -41,8 +52,9 @@ on:
     branches:
       - 'release/*'
 
-# Least privilege: the PR job needs write to post a comment; everything else is
-# read-only.
+# Least privilege: declared per job. The workflow default is read-only; only the
+# dedicated commenting job (which runs no PR-controlled code) elevates to
+# pull-requests: write.
 permissions:
   contents: read
 
@@ -52,9 +64,12 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # PR check. Informational during pre-launch: it prints and comments the board
-  # but does not block the merge (continue-on-error). The operator flips it to a
-  # required check once the burn-down stabilises (operator action, out of scope).
+  # PR check (code execution). Informational during pre-launch: it renders the
+  # board and uploads it as an artifact for the commenting job. This job runs
+  # PR-controlled code (npm ci, prisma generate, the test board) and therefore
+  # holds NO write scopes -- contents: read only -- so a malicious PR cannot use
+  # an elevated token from here. The operator flips it to a required check once
+  # the burn-down stabilises (operator action, out of scope).
   # ---------------------------------------------------------------------------
   test-deploy-readiness:
     name: test-deploy-readiness
@@ -63,7 +78,6 @@ jobs:
     continue-on-error: true
     permissions:
       contents: read
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -99,6 +113,38 @@ jobs:
           if [ ! -s board-extract.txt ]; then
             echo "Deploy-readiness board did not render; see the job log for details." > board-extract.txt
           fi
+
+      - name: Upload the rendered board as an artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-readiness-board
+          path: board-extract.txt
+          retention-days: 1
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # PR comment (commenting only). This is the ONLY job in the workflow with an
+  # elevated scope (pull-requests: write). It runs NO PR-controlled code: it
+  # downloads the board artifact produced by test-deploy-readiness and posts it
+  # as a PR comment. Keeping the write scope here -- away from npm ci / prisma /
+  # test execution -- closes the canonical Actions token-exfiltration vector.
+  # Runs even when the test job fails (if: always() + needs) so the operator
+  # still gets the board comment.
+  # ---------------------------------------------------------------------------
+  comment-deploy-readiness:
+    name: comment-deploy-readiness
+    if: github.event_name == 'pull_request'
+    needs: test-deploy-readiness
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Download the rendered board artifact
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          name: deploy-readiness-board
 
       - name: Comment the board on the PR
         if: always()
