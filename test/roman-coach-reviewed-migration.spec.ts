@@ -222,6 +222,10 @@ describe('ED.2 daily-rings review-arc composite index — static integrity', () 
     // 20261207000001). Each sits immediately after its own predecessor, so this
     // is grandfathered append-only hygiene, not a back-dated reorder of later
     // work — R76 §6 compliant.
+    // The pinned-literal pattern is a deliberate human-review tripwire:
+    // every legitimate R76 §6 back-dated insertion forces a manual bump
+    // and a reviewer's eyes. Dynamic-hash alternative tracked in
+    // BradleyGleavePortfolio/growth-project-backend#495.
     const KNOWN_BELOW_FLOOR_COUNT = 149;
     const dirs = sortedMigrationDirs();
     const self = '20261219000000_conv_review_coach_reviewed_at_idx';
