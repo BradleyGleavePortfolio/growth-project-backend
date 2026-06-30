@@ -70,12 +70,18 @@ jobs:
   # holds NO write scopes -- contents: read only -- so a malicious PR cannot use
   # an elevated token from here. The operator flips it to a required check once
   # the burn-down stabilises (operator action, out of scope).
+  #
+  # No continue-on-error: a broken board render must show the PR check red rather
+  # than mask the failure behind a green check (Failure #36, silent errors). The
+  # PR check stays INFORMATIONAL because it is not (yet) a required check and
+  # because the PR-mode board gates only the codebase-invariant buckets; the
+  # strict prod-deploy gate (deploy-readiness-gate) remains the sole enforcer of
+  # the environment-dependent sections.
   # ---------------------------------------------------------------------------
   test-deploy-readiness:
     name: test-deploy-readiness
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    continue-on-error: true
     permissions:
       contents: read
     steps:
