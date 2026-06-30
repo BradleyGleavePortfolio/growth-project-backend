@@ -29,21 +29,40 @@ export interface DbStatementStat {
 }
 
 /**
+ * Strip bound literal values out of a SQL statement so the preview never ships
+ * inlined PII (emails, ids) even when pg_stat_statements hands back a
+ * non-normalised raw statement (utility commands, raw SQL). Normalised plan
+ * text already uses `$n` placeholders, but raw statements can carry literals
+ * verbatim, so we mask them defensively:
+ *   - single-quoted strings  'foo@bar.com' -> '?'
+ *   - double-quoted strings   "secret"      -> "?"  (rare in stat output, but safe)
+ *   - runs of 2+ digits       12345         -> ?    (single digits such as the
+ *                                                    `t1` table-alias suffix stay)
+ */
+function redactLiterals(sql: string): string {
+  return sql
+    .replace(/'[^']*'/g, "'?'")
+    .replace(/"[^"]*"/g, '"?"')
+    .replace(/\d{2,}/g, '?');
+}
+
+/**
  * Redact a raw SQL statement to a bounded preview plus a sha256 of the full
  * text. The preview keeps the statement shape visible for triage; the hash
  * lets the statement be recognised across scrapes without shipping inlined
- * literals (emails, ids) that count as PII.
+ * literals (emails, ids) that count as PII. Literal values are masked first
+ * (so a non-normalised raw statement cannot leak bound values through the
+ * preview), then whitespace is collapsed and the preview is truncated.
  */
 export function redactStatement(query: string): {
   queryPreview: string;
   queryHash: string;
   truncated: boolean;
 } {
-  const normalised = (query ?? '').replace(/\s+/g, ' ').trim();
+  const redacted = redactLiterals(query ?? '');
+  const normalised = redacted.replace(/\s+/g, ' ').trim();
   const truncated = normalised.length > DB_STATS_QUERY_PREVIEW_CHARS;
-  const queryPreview = truncated
-    ? normalised.slice(0, DB_STATS_QUERY_PREVIEW_CHARS)
-    : normalised;
+  const queryPreview = truncated ? normalised.slice(0, DB_STATS_QUERY_PREVIEW_CHARS) : normalised;
   const queryHash = createHash('sha256').update(normalised).digest('hex');
   return { queryPreview, queryHash, truncated };
 }
@@ -73,8 +92,7 @@ export class DbStatsService {
   async topStatements(
     topN: number = DB_STATS_TOP_N,
   ): Promise<
-    | { available: true; statements: DbStatementStat[] }
-    | { available: false; reason: string }
+    { available: true; statements: DbStatementStat[] } | { available: false; reason: string }
   > {
     const limit = Math.max(1, Math.min(100, Math.floor(topN)));
     try {

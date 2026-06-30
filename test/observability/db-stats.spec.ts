@@ -44,15 +44,30 @@ describe('redactStatement', () => {
   });
 
   it('produces a stable hash for identical normalised text', () => {
-    expect(redactStatement('SELECT 1').queryHash).toBe(
-      redactStatement('SELECT   1').queryHash,
-    );
+    expect(redactStatement('SELECT 1').queryHash).toBe(redactStatement('SELECT   1').queryHash);
   });
 
   it('produces different hashes for different text', () => {
-    expect(redactStatement('SELECT 1').queryHash).not.toBe(
-      redactStatement('SELECT 2').queryHash,
-    );
+    expect(redactStatement('SELECT 1').queryHash).not.toBe(redactStatement('SELECT 2').queryHash);
+  });
+
+  it('masks quoted and numeric literals so bound values never reach the preview', () => {
+    const raw = "SELECT * FROM users WHERE email = 'foo@bar.com' AND id = 12345";
+    const r = redactStatement(raw);
+    // The single-quoted email literal is collapsed to '?' ...
+    expect(r.queryPreview).not.toContain('foo@bar.com');
+    expect(r.queryPreview).toContain("email = '?'");
+    // ... and the multi-digit id literal is collapsed to ?.
+    expect(r.queryPreview).not.toContain('12345');
+    expect(r.queryPreview).toContain('id = ?');
+  });
+
+  it('masks double-quoted literals while leaving single-digit aliases intact', () => {
+    const r = redactStatement('SELECT t1.a FROM users AS t1 WHERE name = "secret"');
+    expect(r.queryPreview).not.toContain('secret');
+    expect(r.queryPreview).toContain('"?"');
+    // A lone single digit (alias suffix t1) is preserved.
+    expect(r.queryPreview).toContain('t1');
   });
 });
 
@@ -80,7 +95,9 @@ describe('DbStatsService.topStatements', () => {
     expect(stat.calls).toBe(10);
     expect(stat.rows).toBe(10);
     expect(stat.totalExecTimeMs).toBeCloseTo(1234.5);
-    expect(stat.queryPreview).toContain('SELECT * FROM "User"');
+    // The double-quoted identifier is masked by the literal redactor; the
+    // statement shape (SELECT ... FROM ... WHERE email = $1) is preserved.
+    expect(stat.queryPreview).toContain('SELECT * FROM "?" WHERE email = $1');
     expect(stat.queryHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
@@ -126,9 +143,7 @@ describe('DbStatsService.topStatements', () => {
 describe('DbStatsController', () => {
   it('returns generatedAt plus the available payload', async () => {
     const svc = {
-      topStatements: jest
-        .fn()
-        .mockResolvedValue({ available: true, statements: [] }),
+      topStatements: jest.fn().mockResolvedValue({ available: true, statements: [] }),
     } as unknown as DbStatsService;
     const controller = new DbStatsController(svc);
     const body = await controller.dbStatsTop();
@@ -138,9 +153,7 @@ describe('DbStatsController', () => {
 
   it('surfaces an unavailable result unchanged', async () => {
     const svc = {
-      topStatements: jest
-        .fn()
-        .mockResolvedValue({ available: false, reason: 'not enabled' }),
+      topStatements: jest.fn().mockResolvedValue({ available: false, reason: 'not enabled' }),
     } as unknown as DbStatsService;
     const controller = new DbStatsController(svc);
     const body = await controller.dbStatsTop();
