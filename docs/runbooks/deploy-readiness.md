@@ -25,7 +25,9 @@ The seven sections are:
 The board ends with one of two lines:
 
 - `EXIT: ALL CLEAR -> SAFE TO DEPLOY` when there are no blocking red lines.
-- `EXIT: N STUB + N PROD SWITCHES WRONG + N WIRING GAPS + N ENV GAPS + N KEY GAPS -> DO NOT DEPLOY` when there is at least one.
+- `EXIT: N STUB + N PROD SWITCHES WRONG + N PROD SWITCHES WARN + N WIRING GAPS + N ENV GAPS + N KEY GAPS -> DO NOT DEPLOY` when there is at least one.
+
+**WRONG vs WARN.** The exit line carries two prod-switch buckets, and they gate differently. `PROD SWITCHES WRONG` counts switches whose declaration is genuinely incoherent — a codebase-invariant defect that does not depend on which secrets are loaded — so it blocks on both surfaces: it gates the informational PR check and the strict prod-deploy gate alike. `PROD SWITCHES WARN` counts environment-dependent switch findings (for example an unset or placeholder switch the runner has no secret for); like WIRING, ENV, and KEY gaps it is surfaced everywhere but only counts toward the gate under strict mode (the prod-deploy gate), not on a pull request. So a non-zero WARN bucket will fail the prod-deploy gate but is informational-only on the PR check, where the runner carries no production secrets.
 
 ---
 
