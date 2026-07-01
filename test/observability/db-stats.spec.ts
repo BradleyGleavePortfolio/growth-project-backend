@@ -26,13 +26,28 @@ import { DbStatsController } from '../../src/observability/db-stats.controller';
 import { PrismaService } from '../../src/prisma.service';
 
 /**
+ * The single-method surface the service actually exercises on Prisma.
+ *
+ * `jest.spyOn(target, key)` resolves against an overload set keyed on whether
+ * `key` names a function or an accessor of `target`. When `target` is the full
+ * `PrismaService` (dozens of `$`-prefixed members, and a heavily-overloaded
+ * `$queryRaw` tagged-template signature), some strict-mode toolchains fail to
+ * pick the function overload and report TS2769/TS2339 (`$queryRaw` not seen as
+ * a spyable key). Narrowing the spy target to just `$queryRaw` via `Pick`
+ * keeps the exact Prisma signature (no banned cast, no structural widening)
+ * while giving `spyOn` an unambiguous single-method object to resolve against.
+ */
+type QueryRawHost = Pick<PrismaService, '$queryRaw'>;
+
+/**
  * The service only ever touches `prisma.$queryRaw`. We build a real
  * PrismaService instance and override that single method with a jest spy so
  * the double is a genuine PrismaService (no structural cast needed).
  */
 function makePrisma(impl: jest.Mock): PrismaService {
   const prisma = new PrismaService();
-  jest.spyOn(prisma, '$queryRaw').mockImplementation(impl);
+  const spyTarget: QueryRawHost = prisma;
+  jest.spyOn(spyTarget, '$queryRaw').mockImplementation(impl);
   return prisma;
 }
 
