@@ -1,0 +1,223 @@
+# H4.H deploy-readiness orchestrator (R88 / R100).
+#
+# This workflow runs the single flagship deploy-readiness board defined in
+# test/deploy-readiness.spec.ts. It wires the seven merged H4 sub-scanners
+# (H4.A through H4.G) into one human-readable board and answers, in one place,
+# whether every stub is gone, every prod switch is coherent, every integration
+# is credentialed, every env var is registered, and every operator key is
+# provided.
+#
+# Two trigger surfaces (R100 paragraph 6):
+#
+#   test-deploy-readiness  PR check, INFORMATIONAL. Runs the board in PR
+#                          (informational) mode: only the codebase-invariant
+#                          buckets (stub values, prod-switch coherence) gate; the
+#                          environment-dependent buckets (wiring, env-discovery,
+#                          operator keys) are surfaced but do not fail the PR
+#                          because the PR runner carries no production secrets.
+#                          This job executes PR-controlled code (npm ci, prisma
+#                          generate, the test board) and therefore holds NO write
+#                          scopes: contents: read only. It uploads the rendered
+#                          board as a workflow artifact.
+#
+#   comment-deploy-readiness  PR comment, commenting only. needs:
+#                          test-deploy-readiness. Holds the only elevated scope in
+#                          the workflow (pull-requests: write) and runs NO
+#                          PR-controlled code: it downloads the board artifact and
+#                          posts it as a PR comment via github-script. Isolating
+#                          the write scope from PR-controlled code execution
+#                          closes the canonical GitHub Actions token-exfiltration
+#                          vector (a malicious postinstall hook in package.json
+#                          cannot reach a pull-requests: write token here because
+#                          this job never runs install/test).
+#
+#   deploy-readiness-gate  Prod-deploy check, HARD-BLOCKING. No continue-on-error.
+#                          Triggered on workflow_dispatch and on push to
+#                          release/*. Sets DEPLOY_READINESS_STRICT=1 so every
+#                          gating section counts and the job exits non-zero on any
+#                          red line. This is the gate that refuses to ship an
+#                          un-credentialed or incoherent production build.
+#
+# Job names are intentionally exactly test-deploy-readiness and
+# deploy-readiness-gate (R102) so the operator can add them to branch protection
+# required checks via scripts/setup-branch-protection.sh after merge. This
+# workflow does not modify branch protection.
+
+name: H4 deploy readiness
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'release/*'
+
+# Least privilege: declared per job. The workflow default is read-only; only the
+# dedicated commenting job (which runs no PR-controlled code) elevates to
+# pull-requests: write.
+permissions:
+  contents: read
+
+concurrency:
+  group: h4-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # PR check (code execution). Informational during pre-launch: it renders the
+  # board and uploads it as an artifact for the commenting job. This job runs
+  # PR-controlled code (npm ci, prisma generate, the test board) and therefore
+  # holds NO write scopes -- contents: read only -- so a malicious PR cannot use
+  # an elevated token from here. The operator flips it to a required check once
+  # the burn-down stabilises (operator action, out of scope).
+  #
+  # No continue-on-error: a broken board render must show the PR check red rather
+  # than mask the failure behind a green check (Failure #36, silent errors). The
+  # PR check stays INFORMATIONAL because it is not (yet) a required check and
+  # because the PR-mode board gates only the codebase-invariant buckets; the
+  # strict prod-deploy gate (deploy-readiness-gate) remains the sole enforcer of
+  # the environment-dependent sections.
+  # ---------------------------------------------------------------------------
+  test-deploy-readiness:
+    name: test-deploy-readiness
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run deploy-readiness board (informational, PR mode)
+        id: board
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: |
+          set -o pipefail
+          npm run test -- test/deploy-readiness.spec.ts 2>&1 | tee board-output.txt
+
+      - name: Extract board for the PR comment
+        if: always()
+        run: |
+          # Carve out the rendered board (between the banner lines) from the test
+          # log so the comment is just the human-readable board, not the jest
+          # scaffolding. Falls back to a short notice if the markers are absent.
+          if grep -q 'DEPLOY READINESS BOARD' board-output.txt; then
+            awk '/=+ DEPLOY READINESS BOARD/{flag=1} flag{print} /=====================$/{if(flag) exit}' \
+              board-output.txt > board-extract.txt || true
+          fi
+          if [ ! -s board-extract.txt ]; then
+            echo "Deploy-readiness board did not render; see the job log for details." > board-extract.txt
+          fi
+
+      - name: Upload the rendered board as an artifact
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
+        with:
+          name: deploy-readiness-board
+          path: board-extract.txt
+          retention-days: 1
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # PR comment (commenting only). This is the ONLY job in the workflow with an
+  # elevated scope (pull-requests: write). It runs NO PR-controlled code: it
+  # downloads the board artifact produced by test-deploy-readiness and posts it
+  # as a PR comment. Keeping the write scope here -- away from npm ci / prisma /
+  # test execution -- closes the canonical Actions token-exfiltration vector.
+  # Runs even when the test job fails (if: always() + needs) so the operator
+  # still gets the board comment.
+  # ---------------------------------------------------------------------------
+  comment-deploy-readiness:
+    name: comment-deploy-readiness
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    needs: test-deploy-readiness
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Download the rendered board artifact
+        if: always()
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          name: deploy-readiness-board
+
+      - name: Comment the board on the PR
+        if: always()
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            let board = 'Deploy-readiness board unavailable.';
+            try {
+              board = fs.readFileSync('board-extract.txt', 'utf8');
+            } catch (err) {
+              core.warning('Could not read board-extract.txt: ' + err.message);
+            }
+            const marker = '<!-- h4-deploy-readiness-board -->';
+            const body = [
+              marker,
+              '## Deploy readiness board (R100, informational)',
+              '',
+              'This check is informational on pull requests during the pre-launch',
+              'burn-down. It gates only the codebase-invariant sections (stub values',
+              'and prod-switch coherence). The environment-dependent sections (wiring,',
+              'env discovery, operator keys) are surfaced below but do not block the',
+              'PR because the runner carries no production secrets. The prod-deploy',
+              'gate (deploy-readiness-gate) enforces every section under strict mode.',
+              '',
+              '```',
+              board.trim(),
+              '```',
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const existing = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+            });
+            const mine = existing.find((c) => c.body && c.body.includes(marker));
+            if (mine) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+  # ---------------------------------------------------------------------------
+  # Prod-deploy gate. Hard-blocking: strict mode counts every gating section and
+  # the job exits non-zero on any red line. No continue-on-error.
+  # ---------------------------------------------------------------------------
+  deploy-readiness-gate:
+    name: deploy-readiness-gate
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run deploy-readiness gate (strict, hard-blocking)
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          DEPLOY_READINESS_STRICT: '1'
+        run: npm run test -- test/deploy-readiness.spec.ts
