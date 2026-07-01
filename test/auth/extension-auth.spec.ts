@@ -1,4 +1,9 @@
-import { UnauthorizedException } from '@nestjs/common';
+import {
+  ArgumentMetadata,
+  BadRequestException,
+  UnauthorizedException,
+  ValidationPipe,
+} from '@nestjs/common';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { AuthService } from '../../src/auth/auth.service';
@@ -368,5 +373,76 @@ describe('Extension auth DTO validation', () => {
     });
     const errors = await validate(dto);
     expect(errors.some((e) => e.property === 'ref')).toBe(true);
+  });
+
+  it('RegisterDto rejects a 65-char ref (one over MaxLength 64) that is otherwise regex-valid', async () => {
+    // Lowercase-only, matches ^[a-z0-9_-]+$ — so ONLY the length ceiling can fail.
+    const longRef = 'a'.repeat(65);
+    const dto = plainToInstance(RegisterDto, {
+      email: 'a@b.com',
+      password: 'password1',
+      name: 'A',
+      ref: longRef,
+    });
+    const errors = await validate(dto);
+    const refError = errors.find((e) => e.property === 'ref');
+    expect(refError).toBeDefined();
+    expect(refError?.constraints).toHaveProperty('maxLength');
+  });
+
+  it('RegisterDto rejects a ref with uppercase letters via the @Matches regex path', async () => {
+    // letters + digits + uppercase, no spaces/symbols — isolates the lowercase
+    // regex enforcement (as opposed to the spaces/symbols case above).
+    const dto = plainToInstance(RegisterDto, {
+      email: 'a@b.com',
+      password: 'password1',
+      name: 'A',
+      ref: 'abc123DEF',
+    });
+    const errors = await validate(dto);
+    const refError = errors.find((e) => e.property === 'ref');
+    expect(refError).toBeDefined();
+    expect(refError?.constraints).toHaveProperty('matches');
+  });
+
+  it('maps an invalid ExtensionRefreshDto to HTTP 400 through the global ValidationPipe', async () => {
+    // Same config as the global pipe in src/main.ts.
+    const pipe = new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    });
+    const meta: ArgumentMetadata = { type: 'body', metatype: ExtensionRefreshDto, data: '' };
+
+    const invalidBodies = [
+      {}, // missing refresh_token — violates @IsString
+      { refresh_token: '' }, // empty — violates @MinLength(1)
+      { refresh_token: 'a'.repeat(4097) }, // oversized — violates @MaxLength(4096)
+    ];
+
+    for (const body of invalidBodies) {
+      let caught: unknown;
+      try {
+        await pipe.transform(body, meta);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(BadRequestException);
+      expect((caught as BadRequestException).getStatus()).toBe(400);
+    }
+  });
+
+  it('accepts a valid ExtensionRefreshDto through the global ValidationPipe', async () => {
+    const pipe = new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    });
+    const meta: ArgumentMetadata = { type: 'body', metatype: ExtensionRefreshDto, data: '' };
+
+    const result = await pipe.transform({ refresh_token: 'abc.def.ghi' }, meta);
+
+    expect(result).toBeInstanceOf(ExtensionRefreshDto);
+    expect(result.refresh_token).toBe('abc.def.ghi');
   });
 });
