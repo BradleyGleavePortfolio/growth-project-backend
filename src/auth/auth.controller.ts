@@ -9,12 +9,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuditableRequest, AuthedRequest } from './auth-request';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
@@ -33,6 +28,7 @@ import {
   AttachInviteCodeDto,
   BootstrapOwnerDto,
   IssueRecentAuthTokenDto,
+  ExtensionRefreshDto,
 } from './auth.dto';
 import {
   InviteCodesService,
@@ -83,7 +79,7 @@ export class AuthController {
   // keyed by IP (login is unauthed). UserThrottlerGuard will check both.
   // A successful login resets BOTH counters via LoginThrottleResetService.
   @Throttle({
-    [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]:  { ttl: 60_000,    limit: 5 },
+    [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]: { ttl: 60_000, limit: 5 },
     [THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]: { ttl: 3_600_000, limit: 30 },
   })
   @HttpCode(HttpStatus.OK)
@@ -93,6 +89,44 @@ export class AuthController {
     // Wi-Fi does not lock out a legitimate user.
     await this.loginThrottleReset.resetLoginCounters(extractIp(req));
     return result;
+  }
+
+  @ApiOperation({
+    summary: 'Extension login (tgp-importer Chrome extension)',
+    description:
+      'Same as /auth/login (proxies Supabase signInWithPassword, returns ' +
+      'Supabase access/refresh tokens verbatim) but tagged source=extension ' +
+      'in the audit log. Rate-limited 5/min per IP. Unlike /auth/login it does ' +
+      'NOT reset the IP login throttle on success — extensions fan out across ' +
+      'many IPs, so a per-IP reset is neither useful nor safe.',
+  })
+  @ApiResponse({ status: 200, description: 'Authenticated session.' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials.' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
+  @Public()
+  @Post('extension/login')
+  @Throttle({ [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]: { ttl: 60_000, limit: 5 } })
+  @HttpCode(HttpStatus.OK)
+  async extensionLogin(@Body() body: LoginDto, @Request() req: AuditableRequest) {
+    return this.authService.extensionLogin(body.email, body.password, auditContext(req));
+  }
+
+  @ApiOperation({
+    summary: 'Extension token refresh (tgp-importer Chrome extension)',
+    description:
+      'Proxies Supabase refreshSession(refresh_token) and returns the rotated ' +
+      'access/refresh pair. No backend-minted tokens — Supabase owns rotation ' +
+      'and revocation. Rate-limited 30/min per IP.',
+  })
+  @ApiResponse({ status: 200, description: 'Rotated token pair.' })
+  @ApiResponse({ status: 401, description: 'Refresh token invalid or expired.' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
+  @Public()
+  @Post('extension/refresh')
+  @Throttle({ [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]: { ttl: 60_000, limit: 30 } })
+  @HttpCode(HttpStatus.OK)
+  async extensionRefresh(@Body() body: ExtensionRefreshDto) {
+    return this.authService.extensionRefresh(body);
   }
 
   @ApiOperation({
@@ -108,7 +142,7 @@ export class AuthController {
   @Public()
   @Post('google')
   @Throttle({
-    [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]:  { ttl: 60_000,    limit: 5 },
+    [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]: { ttl: 60_000, limit: 5 },
     [THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]: { ttl: 3_600_000, limit: 30 },
   })
   @HttpCode(HttpStatus.OK)
@@ -134,7 +168,7 @@ export class AuthController {
   @Public()
   @Post('apple')
   @Throttle({
-    [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]:  { ttl: 60_000,    limit: 5 },
+    [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]: { ttl: 60_000, limit: 5 },
     [THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]: { ttl: 3_600_000, limit: 30 },
   })
   @HttpCode(HttpStatus.OK)
@@ -176,10 +210,7 @@ export class AuthController {
   @Post('attach-invite-code')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async attachInviteCode(
-    @Request() req: AuthedRequest,
-    @Body() body: AttachInviteCodeDto,
-  ) {
+  async attachInviteCode(@Request() req: AuthedRequest, @Body() body: AttachInviteCodeDto) {
     return this.inviteCodes.attachUserToCoachByCode(req.user.id, body.invite_code);
   }
 
@@ -276,17 +307,12 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async becomeCoach(@Request() req: AuthedRequest, @Body() body: BecomeCoachDto) {
-    return this.authService.becomeCoach(
-      req.user.id,
-      body.password,
-      auditContext(req),
-    );
+    return this.authService.becomeCoach(req.user.id, body.password, auditContext(req));
   }
 
   @ApiOperation({
     summary: 'Signup including a coach invite code in one call',
-    description:
-      'Behind COACH_CODE_GATE_ENABLED=true the invite_code is required.',
+    description: 'Behind COACH_CODE_GATE_ENABLED=true the invite_code is required.',
   })
   @ApiResponse({ status: 201, description: 'New session, attached to coach.' })
   @ApiResponse({ status: 400, description: 'Invite code missing or invalid.' })
@@ -353,10 +379,7 @@ export class AuthController {
   // authenticated user id when a JWT is present and by IP otherwise.
   @Throttle({ [THROTTLER_NAMES.AUTH_RECENT_AUTH]: { ttl: 60_000, limit: 5 } })
   @HttpCode(HttpStatus.OK)
-  async issueRecentAuthToken(
-    @Request() req: AuthedRequest,
-    @Body() body: IssueRecentAuthTokenDto,
-  ) {
+  async issueRecentAuthToken(@Request() req: AuthedRequest, @Body() body: IssueRecentAuthTokenDto) {
     return this.authService.issueRecentAuthToken(req.user.id, {
       password: body.password,
       provider_token: body.provider_token,
@@ -387,6 +410,6 @@ function auditContext(req: AuditableRequest): { ip: string | null; userAgent: st
   const fwdIp = xff.split(',')[0]?.trim();
   const ip = fwdIp || req?.ip || req?.socket?.remoteAddress || null;
   const uaRaw = req?.headers?.['user-agent'];
-  const userAgent = Array.isArray(uaRaw) ? uaRaw[0] ?? null : uaRaw ?? null;
+  const userAgent = Array.isArray(uaRaw) ? (uaRaw[0] ?? null) : (uaRaw ?? null);
   return { ip: ip || null, userAgent: userAgent || null };
 }

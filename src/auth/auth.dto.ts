@@ -1,4 +1,4 @@
-import { IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsIn, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // SECURITY: DTOs for high-risk auth endpoints that touch the User model and/or
@@ -26,6 +26,13 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @ApiPropertyOptional({ description: 'Signup attribution ref (e.g. importer-extension)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^[a-z0-9_-]+$/, { message: 'ref must be lowercase alphanumeric with dashes/underscores' })
+  ref?: string;
 }
 
 export class LoginDto {
@@ -230,6 +237,25 @@ export class SignupWithCodeDto {
   @IsString()
   @MaxLength(32)
   invite_code?: string;
+
+  @ApiPropertyOptional({ description: 'Signup attribution ref (e.g. importer-extension)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^[a-z0-9_-]+$/, { message: 'ref must be lowercase alphanumeric with dashes/underscores' })
+  ref?: string;
+}
+
+// Extension token refresh: proxies Supabase refreshSession(refresh_token) and
+// returns the rotated pair. The Chrome importer extension calls this when its
+// short-lived Supabase access token expires. No backend-minted tokens — the
+// refresh token is Supabase's and Supabase owns rotation + revocation.
+export class ExtensionRefreshDto {
+  @ApiProperty({ description: 'Supabase refresh token issued by /auth/extension/login' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(4096)
+  refresh_token!: string;
 }
 
 // First-gym bootstrap: creates the very first owner-role user on a fresh

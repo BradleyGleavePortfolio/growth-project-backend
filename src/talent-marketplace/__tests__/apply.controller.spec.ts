@@ -47,6 +47,7 @@ const BASE_USER = {
   deletion_requested_at: null,
   deletion_confirmed_at: null,
   expo_push_token: null,
+  signup_ref: null,
   default_payout_method_id: null,
   first_win_completed_at: null,
   show_on_leaderboard: false,
@@ -57,10 +58,7 @@ function makeController(parts: Partial<Record<keyof ApplyService, jest.Mock>>): 
   controller: ApplyController;
   service: Record<string, jest.Mock>;
 } {
-  const service = Object.assign(
-    Object.create(ApplyService.prototype) as ApplyService,
-    parts,
-  );
+  const service = Object.assign(Object.create(ApplyService.prototype) as ApplyService, parts);
   return { controller: new ApplyController(service), service: parts as Record<string, jest.Mock> };
 }
 
@@ -115,46 +113,29 @@ describe('ApplyController reads-own routes pass the caller subject', () => {
 // anonymous apply funnel — which would 403 every applicant — or (b) open a
 // reads-own profile route to the public.
 describe('ApplyController — auth boundary metadata', () => {
-  const handler = (name: keyof ApplyController) =>
-    ApplyController.prototype[name];
+  const handler = (name: keyof ApplyController) => ApplyController.prototype[name];
 
   it('applyToListing is @Public() (anonymous funnel) behind the Apply anti-bot gate', () => {
-    expect(
-      Reflect.getMetadata(IS_PUBLIC_KEY, handler('applyToListing')),
-    ).toBe(true);
+    expect(Reflect.getMetadata(IS_PUBLIC_KEY, handler('applyToListing'))).toBe(true);
     // It must NOT also carry @Roles — RolesGuard would 403 the anon caller.
-    expect(
-      Reflect.getMetadata(ROLES_KEY, handler('applyToListing')),
-    ).toBeUndefined();
+    expect(Reflect.getMetadata(ROLES_KEY, handler('applyToListing'))).toBeUndefined();
     // The abuse control for the anonymous surface is the anti-bot gate.
-    expect(
-      Reflect.getMetadata(ANTI_BOT_SURFACE_KEY, handler('applyToListing')),
-    ).toBe(ANTI_BOT_SURFACES.Apply);
+    expect(Reflect.getMetadata(ANTI_BOT_SURFACE_KEY, handler('applyToListing'))).toBe(
+      ANTI_BOT_SURFACES.Apply,
+    );
   });
 
-  it.each([
-    'getMyProfile',
-    'updateMyProfile',
-    'myApplications',
-  ] as const)(
+  it.each(['getMyProfile', 'updateMyProfile', 'myApplications'] as const)(
     '%s is @Roles(student) reads-own and never @Public()',
     (name) => {
-      expect(Reflect.getMetadata(ROLES_KEY, handler(name))).toEqual([
-        'student',
-      ]);
+      expect(Reflect.getMetadata(ROLES_KEY, handler(name))).toEqual(['student']);
       expect(Reflect.getMetadata(IS_PUBLIC_KEY, handler(name))).not.toBe(true);
     },
   );
 
   it('no route is gated to coach/owner (this is a student/anon surface)', () => {
-    for (const name of [
-      'getMyProfile',
-      'updateMyProfile',
-      'myApplications',
-    ] as const) {
-      const roles = Reflect.getMetadata(ROLES_KEY, handler(name)) as
-        | string[]
-        | undefined;
+    for (const name of ['getMyProfile', 'updateMyProfile', 'myApplications'] as const) {
+      const roles = Reflect.getMetadata(ROLES_KEY, handler(name)) as string[] | undefined;
       expect(roles).not.toContain('coach');
       expect(roles).not.toContain('owner');
     }

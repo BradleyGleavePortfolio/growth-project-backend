@@ -71,13 +71,25 @@ export class AuthService {
         reject(new Error(`AUTH_TIMEOUT:${label}`));
       }, MS);
       promise.then(
-        (v) => { clearTimeout(timer); resolve(v); },
-        (e) => { clearTimeout(timer); reject(e); },
+        (v) => {
+          clearTimeout(timer);
+          resolve(v);
+        },
+        (e) => {
+          clearTimeout(timer);
+          reject(e);
+        },
       );
     });
   }
 
-  async register(data: { email: string; password: string; name: string; phone?: string }) {
+  async register(data: {
+    email: string;
+    password: string;
+    name: string;
+    phone?: string;
+    ref?: string;
+  }) {
     // Validate password strength before sending to Supabase
     const { password } = data;
     if (
@@ -123,6 +135,7 @@ export class AuthService {
         name: data.name,
         phone: data.phone || null,
         role: 'student',
+        signup_ref: data.ref ?? null,
       },
     });
 
@@ -146,6 +159,35 @@ export class AuthService {
     password: string,
     ctx: { ip?: string | null; userAgent?: string | null } = {},
   ) {
+    return this._passwordLogin(email, password, ctx, 'email_password');
+  }
+
+  // Extension login for the tgp-importer Chrome extension. Functionally
+  // identical to `login` (proxies Supabase signInWithPassword and returns the
+  // Supabase tokens verbatim) — it only differs in the audit-log source tag
+  // (`source: 'extension'`) so ops can distinguish extension sessions from the
+  // mobile/web app. It reuses Supabase sessions per the 2026-06-30 operator
+  // ruling: no backend-minted tokens, no refresh-token table — Supabase owns
+  // rotation + revocation. The controller does NOT reset the IP login throttle
+  // on success (unlike /auth/login) because extensions fan out across many IPs,
+  // so a per-IP reset is neither useful nor safe here.
+  async extensionLogin(
+    email: string,
+    password: string,
+    ctx: { ip?: string | null; userAgent?: string | null } = {},
+  ) {
+    return this._passwordLogin(email, password, ctx, 'extension');
+  }
+
+  // Shared email+password login against Supabase. `source` only affects the
+  // audit-log metadata tag; the returned token/user shape is identical for
+  // every caller. Extracted so `login` and `extensionLogin` cannot drift.
+  private async _passwordLogin(
+    email: string,
+    password: string,
+    ctx: { ip?: string | null; userAgent?: string | null },
+    source: 'email_password' | 'extension',
+  ) {
     // Authenticate via Supabase
     const supaClient = createClient(
       process.env.SUPABASE_URL || '',
@@ -163,6 +205,9 @@ export class AuthService {
       // user row to capture actor_id if the account exists (e.g. wrong
       // password scenario). We deliberately do NOT reveal in the thrown
       // error whether the email exists; the audit log is for ops only.
+      // R30: the password is NEVER logged or audited — only a redacted reason.
+      const failMetadata: Record<string, unknown> = { reason: 'invalid_credentials' };
+      if (source === 'extension') failMetadata.source = 'extension';
       void this.prisma.user
         .findUnique({ where: { email }, select: { id: true, email: true } })
         .then((u) => {
@@ -173,7 +218,7 @@ export class AuthService {
             ip: ctx.ip ?? null,
             userAgent: ctx.userAgent ?? null,
             // Redacted: reason only (never the password or full error message)
-            metadata: { reason: 'invalid_credentials' },
+            metadata: failMetadata,
           };
           return this.audit.write(auditInput);
         })
@@ -182,7 +227,9 @@ export class AuthService {
         });
 
       if (msg.toLowerCase().includes('email') && msg.toLowerCase().includes('confirm')) {
-        throw new UnauthorizedException('Email not confirmed. Please check your inbox and verify your email first.');
+        throw new UnauthorizedException(
+          'Email not confirmed. Please check your inbox and verify your email first.',
+        );
       }
       throw new UnauthorizedException('Invalid email or password');
     }
@@ -195,7 +242,10 @@ export class AuthService {
 
     if (!user) throw new UnauthorizedException('User not found');
 
-    // Audit successful login — fire-and-forget.
+    // Audit successful login — fire-and-forget. `login` keeps its historical
+    // `{ via: 'email_password' }` shape; extension logins add `source`.
+    const metadata: Record<string, unknown> = { via: 'email_password' };
+    if (source === 'extension') metadata.source = 'extension';
     void this.audit.write({
       action: AuditAction.AUTH_LOGIN,
       actorId: user.id,
@@ -206,7 +256,7 @@ export class AuthService {
       targetId: user.id,
       ip: ctx.ip ?? null,
       userAgent: ctx.userAgent ?? null,
-      metadata: { via: 'email_password' },
+      metadata,
     });
 
     // Return Supabase tokens + our user record
@@ -221,6 +271,31 @@ export class AuthService {
         coach_id: user.coach_id,
         profile: user.profile,
       },
+    };
+  }
+
+  // Extension token refresh. Proxies Supabase refreshSession(refresh_token) and
+  // returns the rotated pair verbatim. No backend-minted tokens and no
+  // refresh-token table (2026-06-30 operator ruling): Supabase owns rotation +
+  // revocation. On any Supabase error or missing session we surface a
+  // structured 401 (R109: a real, actionable error — never a silent failure).
+  async extensionRefresh(dto: { refresh_token: string }) {
+    const { data, error } = await this.supabaseAdmin.auth.refreshSession({
+      refresh_token: dto.refresh_token,
+    });
+    if (error || !data?.session) {
+      // R30/R109: never log the refresh token; surface a clear, actionable code.
+      this.logger.warn(`extension refresh rejected: ${error?.message ?? 'no session returned'}`);
+      throw new UnauthorizedException({
+        code: 'extension_refresh_invalid',
+        message: 'refresh token invalid or expired',
+      });
+    }
+    return {
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      expires_in: data.session.expires_in,
+      expires_at: data.session.expires_at,
     };
   }
 
@@ -240,8 +315,7 @@ export class AuthService {
   //     mobile invite QA surfaced in PR #61).
   //   - `providers`: ordered list of usable auth providers for this build.
   getSignupPolicy() {
-    const gateEnabled =
-      (process.env.COACH_CODE_GATE_ENABLED || '').toLowerCase() === 'true';
+    const gateEnabled = (process.env.COACH_CODE_GATE_ENABLED || '').toLowerCase() === 'true';
     // Base Supabase wiring is required for ANY OAuth provider to function —
     // the supabase admin client mints sessions from the verified provider
     // identity token. Without it, both Google and Apple paths return 401.
@@ -253,14 +327,12 @@ export class AuthService {
     // attempt is rejected with a generic 401. Advertising "google" in the
     // policy on an unconfigured server gives mobile no way to know the
     // provider is unavailable until the user hits the failure mid-flow.
-    const googleEnabled =
-      supabaseConfigured && this.googleVerifier.isConfigured();
+    const googleEnabled = supabaseConfigured && this.googleVerifier.isConfigured();
     // Apple is only advertised once an APPLE_AUDIENCES allow-list is set.
     // Without it the local defense-in-depth verifier has no audience to pin
     // the identity token to (see AppleVerifierService) and the route returns
     // 503; advertising it would just produce client errors at signup time.
-    const appleEnabled =
-      supabaseConfigured && this.appleVerifier.isConfigured();
+    const appleEnabled = supabaseConfigured && this.appleVerifier.isConfigured();
     const providers = ['email'];
     if (googleEnabled) providers.push('google');
     if (appleEnabled) providers.push('apple');
@@ -298,12 +370,11 @@ export class AuthService {
     // so this does not affect that flow.
     const provider = supaUser.app_metadata?.provider;
     const providers: string[] = supaUser.app_metadata?.providers || [];
-    const identityProviders: string[] =
-      (supaUser.identities || []).map((i) => i.provider).filter(Boolean);
+    const identityProviders: string[] = (supaUser.identities || [])
+      .map((i) => i.provider)
+      .filter(Boolean);
     const isGoogle =
-      provider === 'google' ||
-      providers.includes('google') ||
-      identityProviders.includes('google');
+      provider === 'google' || providers.includes('google') || identityProviders.includes('google');
     if (!isGoogle) {
       throw new UnauthorizedException('Google auth failed — token is not from Google');
     }
@@ -410,9 +481,7 @@ export class AuthService {
       // Feature-tier env var APPLE_AUDIENCES is not set on this deployment.
       // 503 (rather than a 401) so mobile can distinguish "not configured
       // yet — fall back to email or Google" from "your token is bad."
-      throw new ServiceUnavailableException(
-        'Sign in with Apple is not configured on this server',
-      );
+      throw new ServiceUnavailableException('Sign in with Apple is not configured on this server');
     }
 
     // Defense-in-depth: verify the identity token locally before handing it
@@ -432,19 +501,14 @@ export class AuthService {
     // Optional for now (migration period) — log missing nonces but don't
     // hard-block. Once all clients are updated, make this a hard throw.
     if (raw_nonce) {
-      const expectedNonceHash = crypto
-        .createHash('sha256')
-        .update(raw_nonce)
-        .digest('hex');
+      const expectedNonceHash = crypto.createHash('sha256').update(raw_nonce).digest('hex');
       const tokenNonce = applePayload.nonce as string | undefined;
       if (!tokenNonce) {
         throw new UnauthorizedException(
           'Apple auth failed — nonce provided by client but token contains no nonce claim',
         );
       } else if (tokenNonce !== expectedNonceHash) {
-        throw new UnauthorizedException(
-          'Apple auth failed — nonce mismatch',
-        );
+        throw new UnauthorizedException('Apple auth failed — nonce mismatch');
       }
     } else {
       if (process.env.APPLE_NONCE_REQUIRED === 'true') {
@@ -463,8 +527,7 @@ export class AuthService {
     // authorization and on subsequent ones for users who have not chosen
     // "Hide My Email" + email-relay invalidation. We require email to upsert
     // a user row (Supabase will also reject without one).
-    const appleEmail =
-      typeof applePayload.email === 'string' ? applePayload.email : null;
+    const appleEmail = typeof applePayload.email === 'string' ? applePayload.email : null;
     if (!appleEmail) {
       throw new UnauthorizedException('Apple account has no email');
     }
@@ -478,12 +541,11 @@ export class AuthService {
       process.env.SUPABASE_ANON_KEY || '',
       { realtime: { transport: WS as any } },
     );
-    const { data: signInData, error: signInError } =
-      await supaClient.auth.signInWithIdToken({
-        provider: 'apple',
-        token,
-        ...(raw_nonce ? { nonce: raw_nonce } : {}),
-      });
+    const { data: signInData, error: signInError } = await supaClient.auth.signInWithIdToken({
+      provider: 'apple',
+      token,
+      ...(raw_nonce ? { nonce: raw_nonce } : {}),
+    });
 
     if (signInError || !signInData.session || !signInData.user) {
       this.logger.warn(
@@ -526,11 +588,7 @@ export class AuthService {
         // auto-link) and the Apple SDK gave us a real name, upgrade it now.
         // Subsequent logins (no full_name in body) leave the existing name
         // untouched.
-        if (
-          fullName &&
-          fullName.trim().length > 0 &&
-          (user.name === user.email || !user.name)
-        ) {
+        if (fullName && fullName.trim().length > 0 && (user.name === user.email || !user.name)) {
           dataToUpdate.name = fullName.trim();
         }
         user = await this.prisma.user.update({
@@ -557,11 +615,7 @@ export class AuthService {
           provider: 'apple',
         });
       }
-    } else if (
-      fullName &&
-      fullName.trim().length > 0 &&
-      (user.name === user.email || !user.name)
-    ) {
+    } else if (fullName && fullName.trim().length > 0 && (user.name === user.email || !user.name)) {
       // Existing supabase-linked row with no real name yet — upgrade once.
       user = await this.prisma.user.update({
         where: { id: user.id },
@@ -626,9 +680,7 @@ export class AuthService {
     // build a proper invite/admin flow. Contract is preserved (body still accepts
     // role + coach_code/invite_code); we just reject coach requests.
     if (role === 'coach') {
-      throw new ForbiddenException(
-        'Coach accounts are provisioned manually. Contact support.',
-      );
+      throw new ForbiddenException('Coach accounts are provisioned manually. Contact support.');
     }
 
     // OWNERs cannot be coached. selectRole would otherwise silently demote
@@ -705,7 +757,9 @@ export class AuthService {
       return { role: result.role, coach_id: result.coach_id };
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
-      this.logger.warn(`invite code redemption failed for ${inviteCode}: ${(err as Error).message}`);
+      this.logger.warn(
+        `invite code redemption failed for ${inviteCode}: ${(err as Error).message}`,
+      );
       throw new BadRequestException('Invalid or expired invite code');
     }
   }
@@ -783,9 +837,9 @@ export class AuthService {
     name: string;
     phone?: string;
     invite_code?: string;
+    ref?: string;
   }) {
-    const gateEnabled =
-      (process.env.COACH_CODE_GATE_ENABLED || '').toLowerCase() === 'true';
+    const gateEnabled = (process.env.COACH_CODE_GATE_ENABLED || '').toLowerCase() === 'true';
 
     if (gateEnabled && !data.invite_code) {
       throw new BadRequestException('Coach invite code is required');
@@ -802,14 +856,12 @@ export class AuthService {
       password: data.password,
       name: data.name,
       phone: data.phone,
+      ref: data.ref,
     });
 
     if (data.invite_code) {
       try {
-        await this.inviteCodes.attachUserToCoachByCode(
-          registered.user_id,
-          data.invite_code,
-        );
+        await this.inviteCodes.attachUserToCoachByCode(registered.user_id, data.invite_code);
       } catch (err) {
         this.logger.warn(
           `signupWithCode attach failed for user=${registered.user_id}: ${(err as Error).message}`,
@@ -881,7 +933,9 @@ export class AuthService {
       password,
     });
     if (error) {
-      throw new UnauthorizedException('Password is incorrect. Provide your current password to become a coach.');
+      throw new UnauthorizedException(
+        'Password is incorrect. Provide your current password to become a coach.',
+      );
     }
 
     // HYBRID PRICING: Replace old payment gate with a tier-aware upsert.
@@ -969,9 +1023,7 @@ export class AuthService {
   }> {
     const expectedSecret = process.env.BOOTSTRAP_SECRET;
     if (!expectedSecret) {
-      throw new ForbiddenException(
-        'Bootstrap endpoint is not enabled on this instance.',
-      );
+      throw new ForbiddenException('Bootstrap endpoint is not enabled on this instance.');
     }
     if (input.bootstrapSecret !== expectedSecret) {
       throw new ForbiddenException('Invalid bootstrap secret.');
@@ -1003,9 +1055,7 @@ export class AuthService {
         email_confirm: true,
       });
       if (error || !data?.user) {
-        throw new BadRequestException(
-          error?.message ?? 'Failed to create Supabase user.',
-        );
+        throw new BadRequestException(error?.message ?? 'Failed to create Supabase user.');
       }
       user = await this.prisma.user.upsert({
         where: { supabase_id: data.user.id },
@@ -1030,15 +1080,13 @@ export class AuthService {
       process.env.SUPABASE_ANON_KEY || '',
       { realtime: { transport: WS as any } },
     );
-    const { data: signInData, error: signInError } =
-      await supaClient.auth.signInWithPassword({
-        email: input.email,
-        password: input.password,
-      });
+    const { data: signInData, error: signInError } = await supaClient.auth.signInWithPassword({
+      email: input.email,
+      password: input.password,
+    });
     if (signInError || !signInData?.session?.access_token) {
       throw new UnauthorizedException(
-        'Created owner but could not sign in: ' +
-          (signInError?.message ?? 'unknown'),
+        'Created owner but could not sign in: ' + (signInError?.message ?? 'unknown'),
       );
     }
 
@@ -1120,9 +1168,7 @@ export class AuthService {
         const m = (err as Error)?.message ?? '';
         if (m.startsWith('AUTH_TIMEOUT:')) {
           this.logger.warn(`recent-auth supabase timeout: ${m}`);
-          throw new ServiceUnavailableException(
-            'Authentication service temporarily unavailable',
-          );
+          throw new ServiceUnavailableException('Authentication service temporarily unavailable');
         }
         throw err;
       }
@@ -1130,9 +1176,7 @@ export class AuthService {
         throw new UnauthorizedException('Password is incorrect');
       }
     } else {
-      throw new BadRequestException(
-        'Provide either password or provider_token + provider',
-      );
+      throw new BadRequestException('Provide either password or provider_token + provider');
     }
 
     const token = issueRecentAuthToken(userId, secret);
@@ -1208,9 +1252,7 @@ export class AuthService {
         const m = (err as Error)?.message ?? '';
         if (m.startsWith('AUTH_TIMEOUT:')) {
           this.logger.warn(`recent-auth supabase timeout: ${m}`);
-          throw new ServiceUnavailableException(
-            'Authentication service temporarily unavailable',
-          );
+          throw new ServiceUnavailableException('Authentication service temporarily unavailable');
         }
         throw err;
       }
@@ -1273,9 +1315,7 @@ export class AuthService {
     const googleEmail = typeof payload.email === 'string' ? payload.email : null;
     const emailVerified = payload.email_verified === true;
     const matchesByEmail =
-      emailVerified &&
-      !!googleEmail &&
-      googleEmail.toLowerCase() === user.email.toLowerCase();
+      emailVerified && !!googleEmail && googleEmail.toLowerCase() === user.email.toLowerCase();
     // Look up the Supabase user's Google identity `sub` to support binding
     // by stable id (preferred — survives the user changing their Google
     // primary email).
@@ -1301,9 +1341,7 @@ export class AuthService {
         const m = (err as Error)?.message ?? '';
         if (m.startsWith('AUTH_TIMEOUT:')) {
           this.logger.warn(`recent-auth supabase timeout: ${m}`);
-          throw new ServiceUnavailableException(
-            'Authentication service temporarily unavailable',
-          );
+          throw new ServiceUnavailableException('Authentication service temporarily unavailable');
         }
         this.logger.warn(
           `recent-auth google sub lookup failed for user=${user.id}: ${(err as Error).message}`,
