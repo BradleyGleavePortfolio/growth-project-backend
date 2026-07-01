@@ -541,10 +541,23 @@ jobs:
           PSQL="psql --no-psqlrc -v ON_ERROR_STOP=1 -X -q $PSQL_URL"
           DUMP="pg_dump --schema-only --no-owner --no-privileges $PSQL_URL"
 
-          # Reset DB to an empty public schema, then apply every migration
-          # forward via prisma. Echoes nothing sensitive.
+          # Reset DB to an empty public schema + fresh Supabase scaffolding,
+          # then apply every migration forward via prisma. Echoes nothing
+          # sensitive.
+          #
+          # We must also drop `auth` and re-run _supabase_bootstrap.sql on each
+          # reset because:
+          #  - `DROP SCHEMA public CASCADE` nukes public-schema policies that
+          #    reference roles from _supabase_bootstrap.sql, but leaves stale
+          #    partial state under `auth` (e.g. helper functions).
+          #  - `npx prisma migrate deploy` then runs migrations that
+          #    `CREATE POLICY ... USING (auth.uid() = ...)`, which fail with
+          #    `schema "auth" does not exist` if we did not re-bootstrap.
+          # _supabase_bootstrap.sql is idempotent by design (see the file's
+          # header comment) so re-running it is safe.
           reset_and_migrate_forward() {
-            $PSQL -c 'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;' >/dev/null
+            $PSQL -c 'DROP SCHEMA IF EXISTS public CASCADE; DROP SCHEMA IF EXISTS auth CASCADE; CREATE SCHEMA public;' >/dev/null
+            $PSQL -f prisma/migrations/_supabase_bootstrap.sql >/dev/null
             npx prisma migrate deploy >/dev/null
           }
 
