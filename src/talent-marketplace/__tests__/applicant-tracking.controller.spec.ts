@@ -34,6 +34,7 @@ const BASE_USER = {
   deletion_requested_at: null,
   deletion_confirmed_at: null,
   expo_push_token: null,
+  signup_ref: null,
   default_payout_method_id: null,
   first_win_completed_at: null,
   show_on_leaderboard: false,
@@ -83,12 +84,7 @@ describe('ApplicantTrackingController — subject forwarding', () => {
   it('moveStage forwards the caller id, application id, stage, and idempotency key', async () => {
     const moveStage = jest.fn(async () => ({ application_id: 'app-1', stage: 'screening' }));
     const controller = makeController({ moveStage });
-    await controller.moveStage(
-      authedReq('hirer-7'),
-      'app-1',
-      { stage: 'screening' },
-      'idem-1',
-    );
+    await controller.moveStage(authedReq('hirer-7'), 'app-1', { stage: 'screening' }, 'idem-1');
     expect(moveStage).toHaveBeenCalledWith('hirer-7', 'app-1', 'screening', 'idem-1');
   });
 });
@@ -104,9 +100,9 @@ describe('ApplicantTrackingController — 8b routes (notes / shortlist) delegati
       throw new NotImplementedException({ code: 'NOTES_NOT_AVAILABLE' });
     });
     const controller = makeController({ appendNote });
-    await expect(
-      controller.appendNote('app-1', { note: 'great call' }),
-    ).rejects.toMatchObject({ response: { code: 'NOTES_NOT_AVAILABLE' } });
+    await expect(controller.appendNote('app-1', { note: 'great call' })).rejects.toMatchObject({
+      response: { code: 'NOTES_NOT_AVAILABLE' },
+    });
     expect(appendNote).toHaveBeenCalledTimes(1);
   });
 

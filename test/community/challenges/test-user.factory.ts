@@ -17,11 +17,7 @@ const EPOCH = new Date('2026-01-01T00:00:00.000Z');
  * services read), filling every other scalar column with a safe default. Extra
  * overrides may be supplied and are merged last.
  */
-export function makeUser(args: {
-  id: string;
-  role: Role;
-  overrides?: Partial<User>;
-}): User {
+export function makeUser(args: { id: string; role: Role; overrides?: Partial<User> }): User {
   const base: User = {
     id: args.id,
     supabase_id: `supabase-${args.id}`,
@@ -40,6 +36,7 @@ export function makeUser(args: {
     deletion_requested_at: null,
     deletion_confirmed_at: null,
     expo_push_token: null,
+    signup_ref: null,
     default_payout_method_id: null,
     first_win_completed_at: null,
     show_on_leaderboard: false,
