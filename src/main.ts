@@ -33,12 +33,10 @@ async function bootstrap() {
     rawBody: true,
   });
 
-  // OBSERVABILITY (H3): the prom-client request-duration middleware is
-  // registered FIRST — before helmet, CORS, validation, and any auth guard —
-  // so its timer spans the full request lifecycle, including responses that
-  // are short-circuited by helmet/CORS or rejected with 401/403. It only
-  // observes timings on the response `finish` event and never mutates the
-  // request, so ordering it ahead of security middleware is safe.
+  // OBSERVABILITY (H3): register the prom-client duration middleware FIRST —
+  // ahead of helmet/CORS/validation/auth — so its timer spans the full request
+  // lifecycle (incl. short-circuited or 401/403 responses). It only reads the
+  // `finish` event and never mutates the request, so this ordering is safe.
   app.use(promHttpMiddleware());
 
   // SECURITY (audit E-1): register helmet before any routes so every response

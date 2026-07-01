@@ -29,65 +29,34 @@ export interface DbStatementStat {
 }
 
 /**
- * Strip bound literal values out of a SQL statement so the preview never ships
- * inlined PII (emails, ids) even when pg_stat_statements hands back a
- * non-normalised raw statement (utility commands, raw SQL). Normalised plan
- * text already uses `$n` placeholders, but raw statements can carry literals
- * verbatim, so we mask them defensively:
- *   - dollar-quoted strings   $$body$$ / $tag$body$tag$ -> $?$  (masked first
- *                                                    so the body — which may be
- *                                                    an unescaped email/id — can
- *                                                    never reach the preview)
- *   - escape-string literals E'foo\'@bar' -> '?'  (matched first; backslash
- *                                                    escapes are honoured so a
- *                                                    \'-embedded quote can't end
- *                                                    the literal early and leak
- *                                                    the tail into the preview)
- *   - single-quoted strings  'foo@bar.com' -> '?'  ('' doubled-quote escape,
- *                                                    the SQL standard, is kept
- *                                                    inside one literal)
- *   - double-quoted strings   "secret"      -> "?"  (rare in stat output, but safe)
- *   - runs of 2+ digits       12345         -> ?    (single digits such as the
- *                                                    `t1` table-alias suffix stay;
- *                                                    a `$n` placeholder such as
- *                                                    `$99` is NOT a literal and
- *                                                    is preserved via lookbehind)
+ * Strip bound literal values from a SQL statement so the preview never ships
+ * inlined PII, even for a non-normalised raw statement. Ordering matters: each
+ * pass masks a literal form fully before the next runs, so no delimiter or body
+ * leaks. `$n` prepared-statement placeholders (e.g. $99) are NOT literals and
+ * are preserved via the digit-pass lookbehind.
  */
 function redactLiterals(sql: string): string {
   return (
     sql
-      // Postgres dollar-quoted strings: $$body$$ (anonymous) or $tag$body$tag$
-      // (tag = optional identifier of letters/digits/underscore, no `$` inside).
-      // The backreference \1 ties the closing delimiter to the opening tag, and
-      // the body match is non-greedy so adjacent literals are not merged. Masked
-      // before the quote/digit passes so the entire literal (delimiters + body)
-      // is gone before anything inside it could leak into the preview.
+      // Dollar-quoted strings $$body$$ / $tag$body$tag$ (\1 ties the closing tag;
+      // non-greedy body so adjacent literals aren't merged). Masked first.
       .replace(/\$([A-Za-z0-9_]*)\$[\s\S]*?\$\1\$/g, '$?$')
-      // Postgres escape-string literal E'...': backslash escapes (\', \\, ...)
-      // are honoured, so a backslash-escaped quote does NOT terminate the
-      // literal early (which previously left the tail — e.g. `@bar.com'` —
-      // unmasked in the preview). Matched before the plain-quote passes.
+      // Escape-string E'...' — honour backslash escapes (\', \\) so a \'-quote
+      // can't end the literal early and leak the tail. Before plain-quote passes.
       .replace(/E'(?:[^'\\]|\\.)*'/gi, "'?'")
-      // Standard SQL string literal '...', where the only in-string escape is a
-      // doubled single quote ('') — so `'it''s'` is one literal, not two.
+      // Standard '...' with the SQL '' doubled-quote escape, then a plain fallback.
       .replace(/'(?:[^']|'')*'/g, "'?'")
-      // Fallback: mask any residual simple '...' run the passes above missed.
       .replace(/'[^']*'/g, "'?'")
       .replace(/"[^"]*"/g, '"?"')
-      // Runs of 2+ digits are numeric literals, EXCEPT when they form a `$n`
-      // prepared-statement placeholder (e.g. $99, $10). The negative lookbehind
-      // keeps those placeholders intact while still masking real literals.
+      // Runs of 2+ digits are numeric literals, EXCEPT a `$n` placeholder ($99).
       .replace(/(?<!\$)\d{2,}/g, '?')
   );
 }
 
 /**
  * Redact a raw SQL statement to a bounded preview plus a sha256 of the full
- * text. The preview keeps the statement shape visible for triage; the hash
- * lets the statement be recognised across scrapes without shipping inlined
- * literals (emails, ids) that count as PII. Literal values are masked first
- * (so a non-normalised raw statement cannot leak bound values through the
- * preview), then whitespace is collapsed and the preview is truncated.
+ * text: mask literals, collapse whitespace, then truncate. The hash lets the
+ * statement be recognised across scrapes without shipping inlined PII.
  */
 export function redactStatement(query: string): {
   queryPreview: string;
@@ -108,10 +77,9 @@ function toNumber(value: number | bigint): number {
 }
 
 /**
- * DbStatsService — reads the top-N slowest statements from pg_stat_statements
- * (enabled by the H3 migration) for the bearer-gated /admin/db-stats endpoint.
- * The extension is operator-attach; when absent the helper degrades gracefully
- * (SQLSTATE 42P01 / 42704 → `available: false` instead of a 500).
+ * DbStatsService — top-N slowest pg_stat_statements rows for the bearer-gated
+ * /admin/db-stats endpoint. The extension is operator-attach; when absent the
+ * helper degrades gracefully (SQLSTATE 42P01 / 42704 → `available: false`).
  */
 @Injectable()
 export class DbStatsService {
@@ -119,11 +87,7 @@ export class DbStatsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * @param topN number of statements to return, ordered by total_exec_time DESC.
-   * @returns `available:false` with a reason when pg_stat_statements is not
-   *          installed, otherwise the redacted top-N statements.
-   */
+  /** @param topN rows to return, by total_exec_time DESC (clamped to [1,100]). */
   async topStatements(
     topN: number = DB_STATS_TOP_N,
   ): Promise<

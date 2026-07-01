@@ -1,13 +1,9 @@
 import * as Sentry from '@sentry/node';
 
 /**
- * sentry-config — single source of truth for the Sentry init options, factored
- * out of `src/instrument.ts` so release/environment/tags logic is unit-testable
- * without Sentry's global side effects.
- *
- * Release tagging (H3): SENTRY_RELEASE (CI-injected, preferred,
- * `growth-project-backend@<sha>-<env>`) → GIT_SHA → RELEASE_VERSION → unset.
- * A `tags` block stamps service/runtime/environment on every event.
+ * sentry-config — Sentry init options factored out of `src/instrument.ts` so
+ * release/environment/tags logic is unit-testable without global side effects.
+ * Release precedence: SENTRY_RELEASE → GIT_SHA → RELEASE_VERSION → unset.
  */
 
 /** Service identifier used in the release name and the `service` tag. */
@@ -18,11 +14,8 @@ export function resolveEnvironment(env: NodeJS.ProcessEnv = process.env): string
   return env.NODE_ENV || 'production';
 }
 
-/**
- * Resolve the release identifier. Prefers the CI-injected `SENTRY_RELEASE`;
- * otherwise composes `growth-project-backend@<sha>-<env>` from `GIT_SHA` /
- * `RELEASE_VERSION` when one is present; otherwise undefined.
- */
+/** Resolve the release id: SENTRY_RELEASE, else `<service>@<sha>-<env>` from
+ * GIT_SHA/RELEASE_VERSION, else undefined. */
 export function resolveRelease(env: NodeJS.ProcessEnv = process.env): string | undefined {
   if (env.SENTRY_RELEASE && env.SENTRY_RELEASE.length > 0) {
     return env.SENTRY_RELEASE;
@@ -55,10 +48,7 @@ export function stripSensitiveHeaders(event: Sentry.ErrorEvent): Sentry.ErrorEve
   return event;
 }
 
-/**
- * Build the full Sentry init options object from the environment. Pure — no
- * side effects — so it can be asserted directly in unit tests.
- */
+/** Build the Sentry init options from the environment. Pure (no side effects). */
 export function buildSentryOptions(
   dsn: string,
   env: NodeJS.ProcessEnv = process.env,
@@ -85,9 +75,8 @@ export function buildSentryOptions(
 }
 
 /**
- * Initialise Sentry. No-op when `SENTRY_DSN` is unset so local/dev boots and
- * the test suite do not require a DSN. Returns true when Sentry was actually
- * initialised, false when skipped.
+ * Initialise Sentry. No-op (returns false) when `SENTRY_DSN` is unset so dev/test
+ * need no DSN; returns true when actually initialised.
  */
 export function initSentry(env: NodeJS.ProcessEnv = process.env): boolean {
   const dsn = env.SENTRY_DSN;

@@ -43,33 +43,25 @@ export class MetricsAuthGuard implements CanActivate {
   }
 }
 
-/**
- * Maximum accepted length of the `Authorization` header value, in bytes.
- * Anything longer is rejected outright before any parsing. The 4096-byte cap
- * follows the OWASP guidance for HTTP header parsing and ensures the bounded
- * string scan below cannot be driven to pathological cost by an attacker.
- */
+/** Max accepted `Authorization` length (OWASP header-parsing cap); longer
+ * values are rejected before any scan so the parser can't be driven to
+ * pathological cost. */
 const MAX_AUTHORIZATION_HEADER_LENGTH = 4096;
 
 const BEARER_PREFIX = 'bearer ';
 
 /**
- * Pull the raw token out of an `Authorization: Bearer <token>` header.
- *
- * Parsing is deliberately performed with bounded, non-backtracking string
- * operations (a length cap, a fixed-length prefix check, and `trim`) rather
- * than a regular expression, so an attacker-controlled header on the
- * pre-auth metrics endpoints cannot trigger polynomial backtracking.
+ * Pull the token out of an `Authorization: Bearer <token>` header using bounded,
+ * non-backtracking string ops (length cap + prefix check + trim, no regex) so an
+ * attacker-controlled pre-auth header can't trigger polynomial backtracking.
  */
 export function extractBearerToken(header: string | string[] | undefined): string | undefined {
   const value = Array.isArray(header) ? header[0] : header;
   if (!value) {
     return undefined;
   }
-  // Bound the parser on the RAW header length BEFORE any scan (`trim()` walks
-  // the whole string). Checking the cap first ensures a multi-megabyte
-  // whitespace-prefixed header is rejected in constant time rather than being
-  // fully scanned by trim() before the cap engages.
+  // Cap on RAW length BEFORE any scan (trim() walks the whole string), so a huge
+  // whitespace-prefixed header is rejected without being fully scanned first.
   if (value.length > MAX_AUTHORIZATION_HEADER_LENGTH) {
     return undefined;
   }
@@ -85,10 +77,9 @@ export function extractBearerToken(header: string | string[] | undefined): strin
 }
 
 /**
- * Length-aware constant-time string comparison. Returns false fast on length
- * mismatch (length is not secret here) and otherwise XOR-accumulates every
- * character so the loop duration does not depend on where the first
- * difference occurs.
+ * Constant-time string compare. Fast-fails on length mismatch (length is not
+ * secret here); otherwise XOR-accumulates every char so loop duration is
+ * independent of where the first difference occurs.
  */
 export function constantTimeEquals(a: string, b: string): boolean {
   if (a.length !== b.length) {

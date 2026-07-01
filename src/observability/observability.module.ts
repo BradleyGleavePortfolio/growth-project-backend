@@ -53,9 +53,8 @@ import { registerDefaultMetrics } from './prom-metrics';
   exports: [AppLoggerService, MetricsService, DbStatsService],
 })
 export class ObservabilityModule implements NestModule, OnModuleInit {
-  // H3: register the prom-client default collectors (process CPU/memory,
-  // event-loop lag, GC) once the module boots. Idempotent — safe under the
-  // repeated AppModule bootstraps that some test suites perform.
+  // H3: register the prom-client default collectors on boot. Idempotent — safe
+  // under the repeated AppModule bootstraps some test suites perform.
   onModuleInit(): void {
     registerDefaultMetrics();
   }
