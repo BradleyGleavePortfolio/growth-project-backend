@@ -82,6 +82,17 @@ describe('redactStatement', () => {
     expect(r.queryPreview).toContain('t1');
   });
 
+  it('preserves $n prepared-statement placeholders while masking numeric literals', () => {
+    const r = redactStatement('SELECT * FROM t WHERE id = $99 AND rank = $10 AND score = 12345');
+    // The bare numeric literal is masked ...
+    expect(r.queryPreview).not.toContain('12345');
+    expect(r.queryPreview).toContain('score = ?');
+    // ... but multi-digit prepared-statement placeholders are NOT literals and
+    // must survive intact (regression: the digit pass rewrote $99 -> $?).
+    expect(r.queryPreview).toContain('id = $99');
+    expect(r.queryPreview).toContain('rank = $10');
+  });
+
   it('masks anonymous dollar-quoted literals ($$body$$)', () => {
     const r = redactStatement('SELECT * FROM users WHERE bio = $$secret@example.com$$');
     // The dollar-quoted body must not reach the preview ...

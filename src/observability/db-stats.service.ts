@@ -41,7 +41,10 @@ export interface DbStatementStat {
  *   - single-quoted strings  'foo@bar.com' -> '?'
  *   - double-quoted strings   "secret"      -> "?"  (rare in stat output, but safe)
  *   - runs of 2+ digits       12345         -> ?    (single digits such as the
- *                                                    `t1` table-alias suffix stay)
+ *                                                    `t1` table-alias suffix stay;
+ *                                                    a `$n` placeholder such as
+ *                                                    `$99` is NOT a literal and
+ *                                                    is preserved via lookbehind)
  */
 function redactLiterals(sql: string): string {
   return (
@@ -55,7 +58,10 @@ function redactLiterals(sql: string): string {
       .replace(/\$([A-Za-z0-9_]*)\$[\s\S]*?\$\1\$/g, '$?$')
       .replace(/'[^']*'/g, "'?'")
       .replace(/"[^"]*"/g, '"?"')
-      .replace(/\d{2,}/g, '?')
+      // Runs of 2+ digits are numeric literals, EXCEPT when they form a `$n`
+      // prepared-statement placeholder (e.g. $99, $10). The negative lookbehind
+      // keeps those placeholders intact while still masking real literals.
+      .replace(/(?<!\$)\d{2,}/g, '?')
   );
 }
 
