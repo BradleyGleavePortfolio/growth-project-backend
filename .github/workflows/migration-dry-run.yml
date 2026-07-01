@@ -532,8 +532,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          PSQL="psql --no-psqlrc -v ON_ERROR_STOP=1 -X -q $DATABASE_URL"
-          DUMP="pg_dump --schema-only --no-owner --no-privileges $DATABASE_URL"
+          # psql / pg_dump reject the `?schema=<name>` query parameter that
+          # Prisma appends to DATABASE_URL — it is a Prisma-specific extension,
+          # not a libpq URI. Strip it before invoking either tool. Mirrors the
+          # same strip performed earlier in this workflow for _supabase_bootstrap.
+          PSQL_URL="${DATABASE_URL%%\?*}"
+
+          PSQL="psql --no-psqlrc -v ON_ERROR_STOP=1 -X -q $PSQL_URL"
+          DUMP="pg_dump --schema-only --no-owner --no-privileges $PSQL_URL"
 
           # Reset DB to an empty public schema, then apply every migration
           # forward via prisma. Echoes nothing sensitive.
