@@ -34,16 +34,29 @@ export interface DbStatementStat {
  * non-normalised raw statement (utility commands, raw SQL). Normalised plan
  * text already uses `$n` placeholders, but raw statements can carry literals
  * verbatim, so we mask them defensively:
+ *   - dollar-quoted strings   $$body$$ / $tag$body$tag$ -> $?$  (masked first
+ *                                                    so the body — which may be
+ *                                                    an unescaped email/id — can
+ *                                                    never reach the preview)
  *   - single-quoted strings  'foo@bar.com' -> '?'
  *   - double-quoted strings   "secret"      -> "?"  (rare in stat output, but safe)
  *   - runs of 2+ digits       12345         -> ?    (single digits such as the
  *                                                    `t1` table-alias suffix stay)
  */
 function redactLiterals(sql: string): string {
-  return sql
-    .replace(/'[^']*'/g, "'?'")
-    .replace(/"[^"]*"/g, '"?"')
-    .replace(/\d{2,}/g, '?');
+  return (
+    sql
+      // Postgres dollar-quoted strings: $$body$$ (anonymous) or $tag$body$tag$
+      // (tag = optional identifier of letters/digits/underscore, no `$` inside).
+      // The backreference \1 ties the closing delimiter to the opening tag, and
+      // the body match is non-greedy so adjacent literals are not merged. Masked
+      // before the quote/digit passes so the entire literal (delimiters + body)
+      // is gone before anything inside it could leak into the preview.
+      .replace(/\$([A-Za-z0-9_]*)\$[\s\S]*?\$\1\$/g, '$?$')
+      .replace(/'[^']*'/g, "'?'")
+      .replace(/"[^"]*"/g, '"?"')
+      .replace(/\d{2,}/g, '?')
+  );
 }
 
 /**

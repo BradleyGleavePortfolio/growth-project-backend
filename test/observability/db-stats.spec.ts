@@ -7,6 +7,7 @@
  *  3. redactStatement — whitespace is normalised
  *  4. redactStatement — hash is stable for identical normalised text
  *  5. redactStatement — hash differs for different text
+ *  5b. redactStatement — masks dollar-quoted literals ($$body$$ / $tag$body$tag$)
  *  6. topStatements — maps rows, coerces bigints, redacts query text
  *  7. topStatements — clamps the requested topN into [1,100]
  *  8. topStatements — returns available:false when extension missing (42P01)
@@ -79,6 +80,22 @@ describe('redactStatement', () => {
     expect(r.queryPreview).toContain('"?"');
     // A lone single digit (alias suffix t1) is preserved.
     expect(r.queryPreview).toContain('t1');
+  });
+
+  it('masks anonymous dollar-quoted literals ($$body$$)', () => {
+    const r = redactStatement('SELECT * FROM users WHERE bio = $$secret@example.com$$');
+    // The dollar-quoted body must not reach the preview ...
+    expect(r.queryPreview).not.toContain('secret@example.com');
+    // ... and the whole literal collapses to the $?$ placeholder.
+    expect(r.queryPreview).toContain('bio = $?$');
+  });
+
+  it('masks tag-delimited dollar-quoted literals ($tag$body$tag$)', () => {
+    const r = redactStatement('SELECT * FROM logs WHERE msg = $tag$my-secret$tag$');
+    expect(r.queryPreview).not.toContain('my-secret');
+    expect(r.queryPreview).toContain('msg = $?$');
+    // The tag itself is part of the delimiter and must not leak either.
+    expect(r.queryPreview).not.toContain('$tag$');
   });
 });
 
