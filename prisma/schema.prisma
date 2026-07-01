@@ -185,6 +185,9 @@ model User {
   // Push notifications — Expo push token registered from the mobile app.
   // Null means the user has not granted permission or has signed out.
   expo_push_token           String?
+  // Signup attribution ref (e.g. "importer-extension"). Null for users who
+  // signed up before this column or via a surface that carries no ref.
+  signup_ref                String?
 
   profile                  UserProfile?
   logged_entries           LoggedFoodEntry[]
