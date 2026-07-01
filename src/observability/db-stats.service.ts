@@ -38,7 +38,14 @@ export interface DbStatementStat {
  *                                                    so the body — which may be
  *                                                    an unescaped email/id — can
  *                                                    never reach the preview)
- *   - single-quoted strings  'foo@bar.com' -> '?'
+ *   - escape-string literals E'foo\'@bar' -> '?'  (matched first; backslash
+ *                                                    escapes are honoured so a
+ *                                                    \'-embedded quote can't end
+ *                                                    the literal early and leak
+ *                                                    the tail into the preview)
+ *   - single-quoted strings  'foo@bar.com' -> '?'  ('' doubled-quote escape,
+ *                                                    the SQL standard, is kept
+ *                                                    inside one literal)
  *   - double-quoted strings   "secret"      -> "?"  (rare in stat output, but safe)
  *   - runs of 2+ digits       12345         -> ?    (single digits such as the
  *                                                    `t1` table-alias suffix stay;
@@ -56,6 +63,15 @@ function redactLiterals(sql: string): string {
       // before the quote/digit passes so the entire literal (delimiters + body)
       // is gone before anything inside it could leak into the preview.
       .replace(/\$([A-Za-z0-9_]*)\$[\s\S]*?\$\1\$/g, '$?$')
+      // Postgres escape-string literal E'...': backslash escapes (\', \\, ...)
+      // are honoured, so a backslash-escaped quote does NOT terminate the
+      // literal early (which previously left the tail — e.g. `@bar.com'` —
+      // unmasked in the preview). Matched before the plain-quote passes.
+      .replace(/E'(?:[^'\\]|\\.)*'/gi, "'?'")
+      // Standard SQL string literal '...', where the only in-string escape is a
+      // doubled single quote ('') — so `'it''s'` is one literal, not two.
+      .replace(/'(?:[^']|'')*'/g, "'?'")
+      // Fallback: mask any residual simple '...' run the passes above missed.
       .replace(/'[^']*'/g, "'?'")
       .replace(/"[^"]*"/g, '"?"')
       // Runs of 2+ digits are numeric literals, EXCEPT when they form a `$n`

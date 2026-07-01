@@ -82,6 +82,21 @@ describe('redactStatement', () => {
     expect(r.queryPreview).toContain('t1');
   });
 
+  it('masks Postgres escape-string literals without leaking the backslash-escaped tail', () => {
+    // E'secret\'@bar.com' is a single escape-string literal; the \' is an
+    // in-string escaped quote, not the terminator. The old '[^']*' pass stopped
+    // at the backslash-escaped quote and left `@bar.com'` in the preview.
+    const r = redactStatement("SELECT E'secret\\'@bar.com' FROM t");
+    expect(r.queryPreview).not.toContain('@bar.com');
+    expect(r.queryPreview).not.toContain('secret');
+  });
+
+  it('treats a doubled-single-quote escape as one literal', () => {
+    const r = redactStatement("SELECT * FROM t WHERE note = 'it''s a secret'");
+    expect(r.queryPreview).not.toContain('secret');
+    expect(r.queryPreview).toContain("note = '?'");
+  });
+
   it('preserves $n prepared-statement placeholders while masking numeric literals', () => {
     const r = redactStatement('SELECT * FROM t WHERE id = $99 AND rank = $10 AND score = 12345');
     // The bare numeric literal is masked ...
