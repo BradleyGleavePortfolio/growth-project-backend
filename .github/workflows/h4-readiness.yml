@@ -140,7 +140,7 @@ jobs:
   # ---------------------------------------------------------------------------
   comment-deploy-readiness:
     name: comment-deploy-readiness
-    if: github.event_name == 'pull_request'
+    if: ${{ always() && github.event_name == 'pull_request' }}
     needs: test-deploy-readiness
     runs-on: ubuntu-latest
     permissions:
