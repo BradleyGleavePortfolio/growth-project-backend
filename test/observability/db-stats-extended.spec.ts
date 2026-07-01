@@ -107,7 +107,11 @@ describe('DbStatsService.topStatements — data handling', () => {
   });
 
   it('redacts query text in the mapped output (preview + hash)', async () => {
-    const longQuery = 'SELECT * FROM "User" WHERE id = ' + "'x'".repeat(200);
+    // A long list of distinct identifiers keeps the redacted text over the
+    // preview cap (literal-masking collapses quoted runs, so use identifiers,
+    // not repeated string literals, to exercise truncation).
+    const columns = Array.from({ length: 100 }, (_, i) => `col_${i}`).join(', ');
+    const longQuery = `SELECT ${columns} FROM "User" WHERE email = 'x@y.z'`;
     const rows = [{ query: longQuery, calls: 1n, total_exec_time: 1, mean_exec_time: 1, rows: 0n }];
     const svc = new DbStatsService(makePrisma(jest.fn().mockResolvedValue(rows)));
     const result = await svc.topStatements();
