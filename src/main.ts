@@ -15,6 +15,7 @@ import { BootstrapValidationError } from './common/errors/bootstrap-validation.e
 import { setupSwagger } from './common/openapi';
 import { CacheControlInterceptor } from './common/cache-control.interceptor';
 import { MetricsService } from './observability/metrics.service';
+import { promHttpMiddleware } from './observability/prom-metrics';
 import { LANDING_PUBLIC_PREFIX_EXCLUDE } from './landing-pages/public-route-prefix';
 
 async function bootstrap() {
@@ -31,6 +32,12 @@ async function bootstrap() {
     // `req.rawBody` to every request without disabling JSON parsing.
     rawBody: true,
   });
+
+  // OBSERVABILITY (H3): register the prom-client duration middleware FIRST —
+  // ahead of helmet/CORS/validation/auth — so its timer spans the full request
+  // lifecycle (incl. short-circuited or 401/403 responses). It only reads the
+  // `finish` event and never mutates the request, so this ordering is safe.
+  app.use(promHttpMiddleware());
 
   // SECURITY (audit E-1): register helmet before any routes so every response
   // carries sensible defaults — HSTS, frameguard (X-Frame-Options: SAMEORIGIN),

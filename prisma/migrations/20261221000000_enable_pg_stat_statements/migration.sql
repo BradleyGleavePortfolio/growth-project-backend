@@ -1,0 +1,21 @@
+-- Enables the pg_stat_statements extension for query-level performance
+-- telemetry surfaced via GET /admin/db-stats.
+--
+-- REVERSIBLE: this migration has a documented down path. The reverse step lives
+-- in the companion down.sql (DROP EXTENSION IF EXISTS pg_stat_statements;) and
+-- the full rollback procedure — including the operator-only
+-- shared_preload_libraries + restart step — is documented in
+-- docs/runbooks/pg-stat-statements-rollback.md.
+--
+-- OPERATOR-ATTACH: on managed Postgres (Fly, RDS, etc.) loading this extension
+-- requires it to be present in shared_preload_libraries, which needs a
+-- superuser-level ALTER SYSTEM plus a Postgres RESTART on first deploy. Those
+-- steps cannot be performed from inside a Prisma migration (no superuser, no
+-- restart), so they are documented in OPERATOR_ATTACH and must be completed by
+-- an operator. The CREATE EXTENSION below is idempotent (IF NOT EXISTS) and is
+-- a no-op until the operator-attach prerequisites are satisfied.
+--
+-- This migration adds NO tables and NO columns — it only loads a read-only
+-- diagnostic extension. The reverse of that load is DROP EXTENSION (see
+-- down.sql), so the migration is reversible, not irreversible.
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;

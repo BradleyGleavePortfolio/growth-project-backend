@@ -1,0 +1,14 @@
+-- Reverse of 20261221000000: drop the pg_stat_statements extension.
+--
+-- This is the documented rollback (down) path for the extension load. It is
+-- idempotent (IF EXISTS) so it is safe to run even if the extension was never
+-- successfully attached (the operator-attach prerequisites — see README.md and
+-- docs/runbooks/pg-stat-statements-rollback.md — may not have been completed on
+-- a given environment).
+--
+-- Dropping the extension only removes the pg_stat_statements view/functions; it
+-- does NOT touch shared_preload_libraries. Fully backing the extension out on
+-- managed Postgres additionally requires an operator to remove it from
+-- shared_preload_libraries and restart Postgres — that operator step is
+-- documented in docs/runbooks/pg-stat-statements-rollback.md.
+DROP EXTENSION IF EXISTS pg_stat_statements;
