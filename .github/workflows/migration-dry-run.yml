@@ -541,6 +541,15 @@ jobs:
           PSQL="psql --no-psqlrc -v ON_ERROR_STOP=1 -X -q $PSQL_URL"
           DUMP="pg_dump --schema-only --no-owner --no-privileges $PSQL_URL"
 
+          # pg_dump 16 emits ephemeral per-run session tokens on `\restrict` /
+          # `\unrestrict` metacommand lines. These are randomized every
+          # invocation and are NOT part of the schema — comparing two
+          # back-to-back dumps of the same DB will diff on those two lines
+          # despite the schema being byte-identical. Strip them before diffing.
+          dump_normalized() {
+            $DUMP | grep -Ev '^\\(restrict|unrestrict) '
+          }
+
           # Reset DB to an empty public schema + fresh Supabase scaffolding,
           # then apply every migration forward via prisma. Echoes nothing
           # sensitive.
@@ -587,7 +596,7 @@ jobs:
 
             reset_and_migrate_forward
             BEFORE=$(mktemp)
-            $DUMP > "$BEFORE"
+            dump_normalized > "$BEFORE"
 
             echo "  Applying $dir/down.sql ..."
             if ! $PSQL -f "$dir/down.sql" >/dev/null; then
@@ -604,7 +613,7 @@ jobs:
             fi
 
             AFTER=$(mktemp)
-            $DUMP > "$AFTER"
+            dump_normalized > "$AFTER"
 
             if diff -u "$BEFORE" "$AFTER" > schema-parity.diff; then
               echo "  OK: schema is byte-identical after forward → down → forward."
