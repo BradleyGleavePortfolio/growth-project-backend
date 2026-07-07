@@ -1,9 +1,11 @@
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
 import type { ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import type { AuthedRequest } from '../../src/auth/auth-request';
-import { CoachGuard } from '../../src/auth/coach.guard';
+import { RolesGuard } from '../../src/auth/roles.guard';
+import { ROLES_KEY } from '../../src/common/decorators/roles.decorator';
 import { ScoutIngestController } from '../../src/scout/scout-ingest.controller';
 import { ScoutIngestService } from '../../src/scout/scout-ingest.service';
 import { ScoutIngestFeatureGuard } from '../../src/scout/scout-ingest-feature.guard';
@@ -54,8 +56,12 @@ async function validationErrors(body: unknown): Promise<string[]> {
   return props;
 }
 
-function makeGuardCtx(user: unknown): ExecutionContext {
+// An ExecutionContext whose handler/class point at the real controller route,
+// so RolesGuard reads the actual @Roles('coach') metadata via the Reflector.
+function makeRolesCtx(user: unknown): ExecutionContext {
   return {
+    getHandler: () => ScoutIngestController.prototype.ingest,
+    getClass: () => ScoutIngestController,
     switchToHttp: () => ({ getRequest: () => ({ user }) }),
   } as object as ExecutionContext;
 }
@@ -243,21 +249,27 @@ describe('ScoutIngestFeatureGuard', () => {
   });
 });
 
-describe('CoachGuard on the ingest surface', () => {
+describe('role gate on the ingest surface', () => {
+  it('declares @Roles("coach") on the route handler (roles-enforced governance)', () => {
+    expect(Reflect.getMetadata(ROLES_KEY, ScoutIngestController.prototype.ingest)).toEqual([
+      'coach',
+    ]);
+  });
+
   it('rejects a non-coach principal (wrong auth role)', () => {
-    const guard = new CoachGuard();
-    expect(() => guard.canActivate(makeGuardCtx({ role: 'student' }))).toThrow(ForbiddenException);
+    const guard = new RolesGuard(new Reflector());
+    expect(() => guard.canActivate(makeRolesCtx({ role: 'student' }))).toThrow(ForbiddenException);
   });
 
   it('rejects a request with no authenticated user', () => {
-    const guard = new CoachGuard();
-    expect(() => guard.canActivate(makeGuardCtx(undefined))).toThrow(ForbiddenException);
+    const guard = new RolesGuard(new Reflector());
+    expect(() => guard.canActivate(makeRolesCtx(undefined))).toThrow(ForbiddenException);
   });
 
-  it('admits a coach and an owner', () => {
-    const guard = new CoachGuard();
-    expect(guard.canActivate(makeGuardCtx({ role: 'coach' }))).toBe(true);
-    expect(guard.canActivate(makeGuardCtx({ role: 'owner' }))).toBe(true);
+  it('admits a coach, and an owner via the hierarchy bypass', () => {
+    const guard = new RolesGuard(new Reflector());
+    expect(guard.canActivate(makeRolesCtx({ role: 'coach' }))).toBe(true);
+    expect(guard.canActivate(makeRolesCtx({ role: 'owner' }))).toBe(true);
   });
 });
 
