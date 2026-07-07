@@ -6718,3 +6718,33 @@ model MarketplaceAbuseSignal {
   @@index([identity_hash, created_at])
   @@index([surface, created_at])
 }
+
+// ─── ScoutIngestEntity ──────────────────────────────────────────────────────────
+//
+// IMPORTER-B — receiver store for the tgp-importer extension's autonomous crawl
+// envelope (POST /api/scout/ingest). One row per ingested entity. The envelope
+// shape is the R80-locked contract in tgp-importer-extension extractors/_interface.js:
+//   { intent_id, entity_type, entities:[{ source_id, payload }] }
+//
+// coach_id comes from the extension bearer-token identity (never a body field);
+// the (coach_id, intent_id, source_id) unique key makes the endpoint idempotent
+// so the extension can safely replay a batch during retry/recovery without
+// duplicating rows.
+//
+// RLS: RESTRICTIVE deny-all to anon + authenticated — written/read only via
+// service_role (the ingest endpoint runs server-side). Mirrors
+// MarketplaceMutationIdempotency. See the companion migration.
+model ScoutIngestEntity {
+  id              String    @id @default(uuid())
+  coach_id        String
+  intent_id       String
+  entity_type     String
+  source_id       String
+  source_platform String
+  captured_at     DateTime?
+  payload         Json
+  created_at      DateTime  @default(now())
+
+  @@unique([coach_id, intent_id, source_id])
+  @@index([coach_id, entity_type])
+}
