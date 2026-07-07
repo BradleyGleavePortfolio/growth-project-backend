@@ -124,6 +124,9 @@ import { LandingPagesModule } from './landing-pages/landing-pages.module';
 // PR-HK-0 — wearables/HealthKit foundation (schema + RLS gate). Provides the
 // canonical IngestionService + ProviderHttpClient that later wearables PRs build on.
 import { WearablesModule } from './wearables/wearables.module';
+// IMPORTER-E — scout progress + completion for the tgp-importer extension
+// (DESIGN.md v0.3 §10 + §2). Ships dark behind FEATURE_SCOUT_INGEST.
+import { ScoutModule } from './scout/scout.module';
 
 @Module({
   imports: [
@@ -140,8 +143,7 @@ import { WearablesModule } from './wearables/wearables.module';
     // for the limit table; see UserThrottlerGuard for the user-id-vs-IP
     // tracker policy.
     ThrottlerModule.forRootAsync({
-      useFactory: () =>
-        buildThrottlerOptions(process.env.REDIS_URL, new Logger('ThrottlerConfig')),
+      useFactory: () => buildThrottlerOptions(process.env.REDIS_URL, new Logger('ThrottlerConfig')),
     }),
 
     // In-process cron scheduler. Drives the daily GDPR scrub
@@ -371,6 +373,7 @@ import { WearablesModule } from './wearables/wearables.module';
     LandingPagesModule,
     // PR-HK-0 — wearables/HealthKit foundation.
     WearablesModule,
+    ScoutModule,
   ],
   providers: [
     // SECURITY: global JWT auth guard — every route is private by default.
@@ -414,7 +417,6 @@ import { WearablesModule } from './wearables/wearables.module';
     // guard are now provided by SecurityGuardsModule (@Global). Selective
     // application via @UseGuards() on controllers continues to work — the DI
     // scope is global.
-
 
     // SECURITY (Phase 10 — audit P2-2): RolesGuard is now a global APP_GUARD.
     // It is intentionally a NO-OP when no @Roles(...) decorator is present

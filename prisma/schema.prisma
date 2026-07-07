@@ -6718,3 +6718,55 @@ model MarketplaceAbuseSignal {
   @@index([identity_hash, created_at])
   @@index([surface, created_at])
 }
+
+// ─── ScoutProgressSnapshot ──────────────────────────────────────────────────────
+//
+// IMPORTER-E — cross-device progress mirroring for the tgp-importer Chrome
+// extension (DESIGN.md v0.3 §10). The extension's background worker POSTs its
+// status_snapshot to /api/scout/progress on every batch commit so the TGP
+// mobile app can mirror crawl progress on its in-app progress screen.
+//
+// One row per (coach_id, intent_id): the endpoint UPSERTS the latest snapshot
+// (only the newest matters — this is not an append log), so the hot path is a
+// single upsert flushed from an in-process cache rather than a write per commit.
+//
+// RLS: RESTRICTIVE deny-all to anon + authenticated; service_role bypass only.
+// The endpoint runs server-side under the extension bearer token and writes as
+// service_role. Mirrors MarketplaceConnectEvent (see 20261220000030 migration).
+model ScoutProgressSnapshot {
+  id         String   @id @default(uuid())
+  coach_id   String
+  intent_id  String
+  snapshot   Json
+  last_error String?
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@unique([coach_id, intent_id])
+  @@index([coach_id])
+}
+
+// ─── ScoutImportCompletion ──────────────────────────────────────────────────────
+//
+// IMPORTER-E — terminal completion ledger for an extension import
+// (DESIGN.md v0.3 §2 step 11). The extension POSTs /api/scout/ingest/complete
+// once the crawl settles; the row is the idempotency anchor.
+//
+// The @@unique([coach_id, intent_id]) makes completion exactly-once: a retry
+// after a network flake loses the unique-insert race and is treated as a no-op,
+// so the coach is never double-notified. When Lane 3's scout ingest table
+// (IMPORTER-B) lands, the settle step can additionally flip that import row's
+// state; this ledger is the independent source of truth until then.
+//
+// RLS: RESTRICTIVE deny-all to anon + authenticated; service_role bypass only.
+model ScoutImportCompletion {
+  id              String   @id @default(uuid())
+  coach_id        String
+  intent_id       String
+  terminal_status String
+  final_counts    Json?
+  error_summary   String?
+  completed_at    DateTime @default(now())
+
+  @@unique([coach_id, intent_id])
+  @@index([coach_id])
+}
