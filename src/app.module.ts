@@ -6,6 +6,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { UserThrottlerGuard } from './throttler/user-throttler.guard';
 import { buildThrottlerOptions } from './throttler/throttler.config';
 import { AuthModule } from './auth/auth.module';
+import { ExtensionPairModule } from './extension-pair/extension-pair.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 import { ProfileModule } from './profile/profile.module';
@@ -140,8 +141,7 @@ import { WearablesModule } from './wearables/wearables.module';
     // for the limit table; see UserThrottlerGuard for the user-id-vs-IP
     // tracker policy.
     ThrottlerModule.forRootAsync({
-      useFactory: () =>
-        buildThrottlerOptions(process.env.REDIS_URL, new Logger('ThrottlerConfig')),
+      useFactory: () => buildThrottlerOptions(process.env.REDIS_URL, new Logger('ThrottlerConfig')),
     }),
 
     // In-process cron scheduler. Drives the daily GDPR scrub
@@ -174,6 +174,7 @@ import { WearablesModule } from './wearables/wearables.module';
     SecurityGuardsModule,
 
     AuthModule,
+    ExtensionPairModule,
     ProfileModule,
     FoodModule,
     LogModule,
@@ -414,7 +415,6 @@ import { WearablesModule } from './wearables/wearables.module';
     // guard are now provided by SecurityGuardsModule (@Global). Selective
     // application via @UseGuards() on controllers continues to work — the DI
     // scope is global.
-
 
     // SECURITY (Phase 10 — audit P2-2): RolesGuard is now a global APP_GUARD.
     // It is intentionally a NO-OP when no @Roles(...) decorator is present

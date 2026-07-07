@@ -69,6 +69,15 @@ module.exports = {
   // and the root is intentionally the slice subtree ONLY — NOT the whole
   // `src/` tree. Both specs use mocked Prisma and need no live DB; the
   // JobListing RLS coverage lives under test/rls/ from TM-1.
+  // IMPORTER-D adds `src/extension-pair` as a TWELFTH narrowly-scoped root so
+  // the pairing-code unit specs colocated under
+  // src/extension-pair/__tests__/*.spec.ts (service init/status/redeem,
+  // controller binding, feature-flag guard, and the AuthService mint helper)
+  // are discovered. Same rationale as the roots above: this slice owns those
+  // spec files in the source tree, and the root is intentionally the slice
+  // subtree ONLY — NOT the whole `src/` tree. All specs mock Prisma/Supabase
+  // and need no live DB; the ExtensionPairCode RLS coverage lives under
+  // test/rls/.
   roots: [
     '<rootDir>/test',
     '<rootDir>/src/roman/voice',
@@ -81,12 +90,16 @@ module.exports = {
     '<rootDir>/src/regimes',
     '<rootDir>/src/feature-flags',
     '<rootDir>/src/talent-marketplace',
+    '<rootDir>/src/extension-pair',
   ],
   testRegex: '\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'mjs', 'json'],
   transform: {
     // ts-jest handles .ts test/source files.
-    '^.+\\.ts$': ['ts-jest', { tsconfig: { strict: false, noImplicitAny: false, esModuleInterop: true } }],
+    '^.+\\.ts$': [
+      'ts-jest',
+      { tsconfig: { strict: false, noImplicitAny: false, esModuleInterop: true } },
+    ],
     // expo-server-sdk v6 ships pure-ESM .js in node_modules. ts-jest's
     // TypeScript transform refuses to rewrite .js, so we hand that one
     // dep to babel-jest (configured via babel.config.js to emit CJS for
@@ -115,9 +128,7 @@ module.exports = {
   // a 10x test-startup penalty. This is the surgical "one ESM dep in a CJS
   // project" pattern documented at
   // https://jestjs.io/docs/ecmascript-modules#transformignorepatterns-customization
-  transformIgnorePatterns: [
-    'node_modules/(?!(expo-server-sdk)/)',
-  ],
+  transformIgnorePatterns: ['node_modules/(?!(expo-server-sdk)/)'],
   collectCoverageFrom: ['src/**/*.ts'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
   testTimeout: 10000,

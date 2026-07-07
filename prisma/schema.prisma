@@ -233,6 +233,10 @@ model User {
   // additively).
   coach_profile            CoachProfile?            @relation("CoachProfileUser")
   owners_created_profiles  CoachProfile[]           @relation("CoachProfileCreatedBy")
+  // v0.3 importer pairing (operator ruling 2026-07-06). Codes a coach mints
+  // from the mobile app to bootstrap the desktop Chrome extension. Only
+  // meaningful for role=coach/owner; empty for clients.
+  extension_pair_codes     ExtensionPairCode[]      @relation("ExtensionPairCodeCoach")
 
   // SaaS billing additions (1:1 with coach users; null for clients/owners).
   coach_subscription           CoachSubscription?
@@ -6717,4 +6721,30 @@ model MarketplaceAbuseSignal {
   @@index([device_hash, created_at])
   @@index([identity_hash, created_at])
   @@index([surface, created_at])
+}
+
+// ============================================================
+// EXTENSION PAIRING (v0.3 — operator ruling 2026-07-06)
+// ============================================================
+
+// Short-lived pairing codes that bridge the TGP mobile app (where coach
+// identity lives) and the desktop Chrome importer extension. The mobile app
+// mints a 6-digit code bound to the coach + chosen source platform; the
+// extension redeems it once for a token bound to that coach. See
+// docs/DESIGN.md v0.3 §2/§4. Single-use is enforced by a conditional update on
+// used_at; expiry by expires_at. RLS: RESTRICTIVE deny-all to anon +
+// authenticated — the rows are only ever touched via the service role.
+model ExtensionPairCode {
+  id              String    @id @default(uuid())
+  code            String    @unique
+  coach_id        String
+  coach           User      @relation("ExtensionPairCodeCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  chosen_platform String
+  expires_at      DateTime
+  used_at         DateTime?
+  created_at      DateTime  @default(now())
+
+  @@index([coach_id])
+  @@index([expires_at])
+  @@index([used_at])
 }

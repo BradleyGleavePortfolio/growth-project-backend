@@ -299,6 +299,59 @@ export class AuthService {
     };
   }
 
+  // Mint an extension session for a coach BY IDENTITY — used by the v0.3
+  // pairing-code redeem flow, which has no password to replay. Reuses the same
+  // token authority as the rest of /auth/extension/*: a real Supabase session,
+  // not a backend-minted token (R80). Supabase has no "session for a user id"
+  // admin call, so we use the documented two-step server flow — generateLink
+  // ({ type: 'magiclink' }) yields a single-use hashed OTP (no email is sent),
+  // verifyOtp() exchanges it for a session. R30: never log the token.
+  async mintExtensionSessionForCoach(
+    coachUserId: string,
+  ): Promise<{ access_token: string; refresh_token: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: coachUserId },
+      select: { email: true },
+    });
+    if (!user) {
+      throw new InternalServerErrorException('pair_redeem_user_missing');
+    }
+
+    const { data: linkData, error: linkError } = await this.supabaseAdmin.auth.admin.generateLink({
+      type: 'magiclink',
+      email: user.email,
+    });
+    const hashedToken = linkData?.properties?.hashed_token;
+    if (linkError || !hashedToken) {
+      this.logger.error(
+        `pair redeem: generateLink failed: ${linkError?.message ?? 'no hashed_token'}`,
+      );
+      throw new InternalServerErrorException('pair_redeem_session_mint_failed');
+    }
+
+    // No realtime transport option here (unlike the long-lived admin client):
+    // verifyOtp is a one-shot REST call and never opens a realtime socket, so
+    // the ws WebSocket shim is unnecessary.
+    const supaAnon = createClient(
+      process.env.SUPABASE_URL || '',
+      process.env.SUPABASE_ANON_KEY || '',
+    );
+    const { data: otpData, error: otpError } = await supaAnon.auth.verifyOtp({
+      token_hash: hashedToken,
+      type: 'email',
+    });
+    if (otpError || !otpData?.session) {
+      this.logger.error(
+        `pair redeem: verifyOtp failed: ${otpError?.message ?? 'no session returned'}`,
+      );
+      throw new InternalServerErrorException('pair_redeem_session_mint_failed');
+    }
+    return {
+      access_token: otpData.session.access_token,
+      refresh_token: otpData.session.refresh_token,
+    };
+  }
+
   // Returns the signup policy in effect for this build. Mobile calls this on
   // launch to decide whether to require the coach invite code field, which
   // auth providers to surface, and the format constraints for client-side
