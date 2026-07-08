@@ -1,23 +1,38 @@
 // Decorator-wiring guards. These invariants are security-critical and easy to
 // break by an innocent-looking refactor, so we pin them with metadata reflection
 // rather than trusting review:
-//   - every route sits behind the feature-flag guard (off ⇒ 404, surface hidden);
+//   - the feature-flag gate lives in the global R-DARK-1 middleware
+//     (featureFlagNotFoundMiddleware) BEFORE any guard runs; no per-controller
+//     guard is needed and adding one back is a regression;
 //   - init + status stay coach-gated (mobile-authenticated coach only);
 //   - redeem stays @Public (extension bootstrap has no JWT) AND rate-limited
 //     (the only brute-force brake over the 6-digit space).
 import 'reflect-metadata';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { RequestMethod } from '@nestjs/common';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { CoachGuard } from '../../auth/coach.guard';
 import { ExtensionPairController } from '../extension-pair.controller';
-import { ExtensionPairingFeatureFlagGuard } from '../extension-pair-feature-flag.guard';
+import {
+  FEATURE_GATED_ROUTES,
+} from '../../common/feature-flag/feature-flag-not-found.middleware';
 
 // Nest stores @UseGuards targets under the '__guards__' metadata key, at the
 // class for class-level guards and at the handler for method-level guards.
 function guardsOn(target: object): unknown[] {
   const meta: unknown = Reflect.getMetadata('__guards__', target);
   return Array.isArray(meta) ? meta : [];
+}
+
+function guardName(g: unknown): string {
+  if (typeof g === 'function' && typeof g.name === 'string') return g.name;
+  if (g !== null && typeof g === 'object' && 'name' in g) {
+    const n: unknown = Reflect.get(g, 'name');
+    return typeof n === 'string' ? n : '';
+  }
+  return '';
 }
 
 // @nestjs/throttler stores per-bucket metadata under `THROTTLER:LIMIT<name>` /
@@ -27,9 +42,26 @@ const THROTTLE_LIMIT_KEY = 'THROTTLER:LIMITdefault';
 const THROTTLE_TTL_KEY = 'THROTTLER:TTLdefault';
 
 describe('ExtensionPairController wiring', () => {
-  it('gates the whole controller behind the feature-flag guard', () => {
+  it('feature-flag gate is enforced by the global R-DARK-1 middleware, not a per-controller guard', () => {
+    // R-DARK-1: /api/extension/pair/* is enforced by the global middleware
+    // BEFORE any Nest guard runs. Assert the route is in the registry and
+    // that no per-controller feature-flag guard has been re-added.
+    const gated = FEATURE_GATED_ROUTES.find((r) => r.pattern === '/api/extension/pair');
+    expect(gated).toBeDefined();
+    expect(gated?.envVar).toBe('FEATURE_EXTENSION_PAIRING');
+
     const classGuards = guardsOn(ExtensionPairController);
-    expect(classGuards).toContain(ExtensionPairingFeatureFlagGuard);
+    for (const g of classGuards) {
+      const name = guardName(g);
+      expect(name).not.toMatch(/FeatureFlagGuard$/);
+    }
+  });
+
+  it('main.ts registers featureFlagNotFoundMiddleware', () => {
+    // A refactor that deletes app.use(featureFlagNotFoundMiddleware) would
+    // silently drop the R-DARK-1 gate for this controller. Pin it here.
+    const mainSrc = readFileSync(join(__dirname, '../../..', 'src/main.ts'), 'utf8');
+    expect(mainSrc).toMatch(/app\.use\(\s*featureFlagNotFoundMiddleware\s*\)/);
   });
 
   it('keeps init coach-gated', () => {

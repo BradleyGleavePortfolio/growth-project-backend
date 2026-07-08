@@ -6,7 +6,6 @@ import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CoachGuard } from '../auth/coach.guard';
 import { THROTTLER_NAMES } from '../throttler/throttler.config';
-import { ExtensionPairingFeatureFlagGuard } from './extension-pair-feature-flag.guard';
 import { ExtensionPairService } from './extension-pair.service';
 import { PairInitDto, PairRedeemDto, PairStatusDto } from './extension-pair.dto';
 import type { PairInitResult, PairRedeemResult, PairStatusResult } from './extension-pair.dto';
@@ -21,15 +20,15 @@ function redeemPerMin(): number {
 }
 const PAIR_REDEEM_PER_MIN = redeemPerMin();
 
-// Mounts under the global `/api` prefix → /api/extension/pair/*. Every route is
-// gated by ExtensionPairingFeatureFlagGuard: off (default) ⇒ 404, hiding the
-// surface entirely. See docs/DESIGN.md v0.3 §2/§4.
+// Mounts under the global `/api` prefix → /api/extension/pair/*.
 //
-// TODO(#503): remove ExtensionPairingFeatureFlagGuard after #503 (R-DARK-1
-// middleware) merges — the middleware then owns the flag-off 404 gate.
+// Feature gate: FEATURE_EXTENSION_PAIRING is enforced by the global
+// featureFlagNotFoundMiddleware (R-DARK-1) BEFORE any guard runs. Flag off ⇒
+// uniform 404 at the edge, indistinguishable from an unmounted route. See
+// src/common/feature-flag/feature-flag-not-found.middleware.ts and
+// docs/DESIGN.md v0.3 §2/§4.
 @ApiTags('extension-pair')
 @Controller('extension/pair')
-@UseGuards(ExtensionPairingFeatureFlagGuard)
 export class ExtensionPairController {
   constructor(private readonly pair: ExtensionPairService) {}
 
