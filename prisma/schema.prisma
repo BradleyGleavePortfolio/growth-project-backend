@@ -6742,6 +6742,10 @@ model ExtensionPairCode {
   chosen_platform String
   expires_at      DateTime
   used_at         DateTime?
+  // Per-code brute-force lockout counter. Charged once per redeem that finds
+  // the row but fails to claim it; at the service lockout ceiling the code is
+  // hard-invalidated (410 locked). DB-backed so lockout survives across IPs.
+  failed_attempts Int       @default(0)
   created_at      DateTime  @default(now())
 
   @@index([coach_id])

@@ -5,7 +5,7 @@
 // and that no token is minted on any failure path.
 import { BadRequestException, GoneException, HttpException } from '@nestjs/common';
 import { ExtensionPairService } from '../extension-pair.service';
-import { asAuthDouble, asPrismaDouble } from './test-doubles';
+import { asAuthDouble, asPrismaDouble } from './test-doubles.test';
 
 interface Row {
   id: string;
@@ -14,6 +14,7 @@ interface Row {
   chosen_platform: string;
   expires_at: Date;
   used_at: Date | null;
+  failed_attempts: number;
   created_at: Date;
 }
 
@@ -25,6 +26,7 @@ function makeRow(overrides: Partial<Row> = {}): Row {
     chosen_platform: 'truecoach',
     expires_at: new Date(Date.now() + 120_000),
     used_at: null,
+    failed_attempts: 0,
     created_at: new Date(),
     ...overrides,
   };
@@ -36,6 +38,9 @@ function makePrisma() {
       create: jest.fn(),
       findUnique: jest.fn(),
       updateMany: jest.fn(),
+      // A failed attempt charges the row; default well under the lockout ceiling
+      // so the underlying failure code (e.g. `expired`) is what surfaces.
+      update: jest.fn().mockResolvedValue({ failed_attempts: 1 }),
     },
   };
 }
@@ -53,7 +58,8 @@ async function captureError(p: Promise<unknown>): Promise<HttpException> {
   try {
     await p;
   } catch (e) {
-    return e as HttpException;
+    if (e instanceof HttpException) return e;
+    throw new Error(`expected an HttpException, got ${String(e)}`);
   }
   throw new Error('expected the redeem promise to reject');
 }
@@ -96,6 +102,16 @@ describe('ExtensionPairService.redeem — failure contract', () => {
     expect(err).toBeInstanceOf(GoneException);
     expect(err.getStatus()).toBe(410);
     expect(err.getResponse()).toMatchObject({ code: 'expired' });
+    expect(auth.mintExtensionSessionForCoach).not.toHaveBeenCalled();
+  });
+
+  it('locked code (attempt budget exhausted) → HTTP 410 with { code: "locked" }', async () => {
+    prisma.extensionPairCode.findUnique.mockResolvedValue(makeRow({ failed_attempts: 5 }));
+    const err = await captureError(svc.redeem('142856'));
+    expect(err).toBeInstanceOf(GoneException);
+    expect(err.getStatus()).toBe(410);
+    expect(err.getResponse()).toMatchObject({ code: 'locked' });
+    expect(prisma.extensionPairCode.updateMany).not.toHaveBeenCalled();
     expect(auth.mintExtensionSessionForCoach).not.toHaveBeenCalled();
   });
 

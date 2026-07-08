@@ -1,5 +1,5 @@
 import { ExtensionPairController } from '../extension-pair.controller';
-import { asPairServiceDouble, authedRequest } from './test-doubles';
+import { asPairServiceDouble, authedRequest } from './test-doubles.test';
 
 function makeService() {
   return {
@@ -33,16 +33,15 @@ describe('ExtensionPairController', () => {
   });
 
   describe('status', () => {
-    it('scopes the poll to the caller and trims the code query', async () => {
-      const result = await controller.status(reqAs('coach-1'), '  142856 ');
+    it('scopes the poll to the caller and forwards the body code', async () => {
+      const result = await controller.status(reqAs('coach-1'), { code: '142856' });
       expect(service.status).toHaveBeenCalledWith('coach-1', '142856');
       expect(result).toEqual({ status: 'pending' });
     });
 
-    it('coerces a missing code query to an empty string', async () => {
-      // @ts-expect-error exercise the missing-query path (?code omitted entirely)
-      await controller.status(reqAs('coach-1'), undefined);
-      expect(service.status).toHaveBeenCalledWith('coach-1', '');
+    it('reads the code from the request body, never a query string', async () => {
+      await controller.status(reqAs('coach-2'), { code: '000042' });
+      expect(service.status).toHaveBeenCalledWith('coach-2', '000042');
     });
   });
 

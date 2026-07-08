@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma.service';
 import { AuthService } from '../auth/auth.service';
 import type {
   PairInitResult,
+  PairRedeemErrorCode,
   PairRedeemResult,
   PairStatus,
   PairStatusResult,
@@ -16,6 +17,17 @@ const MIN_TTL_SECONDS = 30;
 const MAX_TTL_SECONDS = 300;
 
 const CODE_MINT_MAX_ATTEMPTS = 5;
+
+// Per-code brute-force lockout. A code accrues a failed_attempts count for each
+// redeem that finds the row but cannot claim it (expired, or a lost single-use
+// race). Once it reaches this ceiling the code is hard-invalidated: every
+// subsequent redeem — even one that would otherwise be valid — returns 410
+// `locked`, forcing a re-mint. This survives across requests AND IPs (the
+// counter lives on the DB row), so it complements the per-IP redeem throttle
+// and the constant-time compare rather than duplicating them. Primary threat:
+// a harvested/leaked code (e.g. from an access log) hammered from many IPs to
+// slip past the per-IP cap. DESIGN.md v0.3 §4.
+const REDEEM_MAX_FAILED_ATTEMPTS = 5;
 
 function resolveTtlSeconds(): number {
   const raw = process.env.PAIR_CODE_TTL_SECONDS;
@@ -101,22 +113,37 @@ export class ExtensionPairService {
     });
 
     // Uniform "invalid" for a missing/mismatched code — never reveal which
-    // check failed for a code that was never minted.
+    // check failed for a code that was not minted.
     if (!row || !timingSafeStrEqual(code, row.code)) {
       throw new BadRequestException({ code: 'invalid', message: 'Invalid pairing code.' });
+    }
+    // Locked code takes precedence over every other terminal state: once a code
+    // has burned through its attempt budget it is dead regardless of expiry or
+    // single-use, so a legitimate holder must re-mint.
+    if ((row.failed_attempts ?? 0) >= REDEEM_MAX_FAILED_ATTEMPTS) {
+      throw new GoneException({ code: 'locked', message: 'Pairing code is locked.' });
     }
     if (row.used_at) {
       throw new GoneException({ code: 'already_used', message: 'Pairing code already used.' });
     }
     if (row.expires_at.getTime() <= Date.now()) {
-      throw new GoneException({ code: 'expired', message: 'Pairing code has expired.' });
+      throw await this.registerFailedAttempt(row.id, {
+        code: 'expired',
+        message: 'Pairing code has expired.',
+      });
     }
 
     // Atomic single-use claim: only the writer that flips used_at from NULL
-    // (while still unexpired) wins. A lost race means another redeem already
-    // consumed the code — surface it as already_used.
+    // (while still unexpired, and while under the lockout ceiling) wins. A lost
+    // race means another redeem already consumed the code — surface it as
+    // already_used.
     const claim = await this.prisma.extensionPairCode.updateMany({
-      where: { id: row.id, used_at: null, expires_at: { gt: new Date() } },
+      where: {
+        id: row.id,
+        used_at: null,
+        expires_at: { gt: new Date() },
+        failed_attempts: { lt: REDEEM_MAX_FAILED_ATTEMPTS },
+      },
       data: { used_at: new Date() },
     });
     if (claim.count !== 1) {
@@ -131,6 +158,27 @@ export class ExtensionPairService {
       refresh_token: tokens.refresh_token,
       chosen_platform: row.chosen_platform,
     };
+  }
+
+  // Atomically charge one failed attempt against a code and return the error to
+  // throw. The increment is a DB-side `increment` (not a read-modify-write) so
+  // concurrent redeems from different IPs each count exactly once. When the
+  // charge tips the code to the lockout ceiling, the caller sees `locked`
+  // instead of the underlying failure so the code reads as hard-dead from here
+  // on.
+  private async registerFailedAttempt(
+    id: string,
+    underlying: { code: PairRedeemErrorCode; message: string },
+  ): Promise<GoneException> {
+    const updated = await this.prisma.extensionPairCode.update({
+      where: { id },
+      data: { failed_attempts: { increment: 1 } },
+      select: { failed_attempts: true },
+    });
+    if ((updated.failed_attempts ?? 0) >= REDEEM_MAX_FAILED_ATTEMPTS) {
+      return new GoneException({ code: 'locked', message: 'Pairing code is locked.' });
+    }
+    return new GoneException(underlying);
   }
 }
 
@@ -148,6 +196,12 @@ function deriveStatus(usedAt: Date | null, expiresAt: Date): PairStatus {
 
 // Prisma unique-constraint (P2002) detection without importing the Prisma
 // error class (keeps this service decoupled from the client's error surface).
+// Narrows via a real `in` guard rather than a type assertion (R75): once
+// `'code' in err` holds, TS exposes `err.code` as `unknown`, which compares
+// safely against the literal.
 function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002';
+  if (typeof err !== 'object' || err === null || !('code' in err)) {
+    return false;
+  }
+  return err.code === 'P2002';
 }

@@ -12,6 +12,7 @@
  * tokens (R75). Callers keep full autocomplete on the mock literal.
  */
 
+import type { ExecutionContext } from '@nestjs/common';
 import { AuthService } from '../../auth/auth.service';
 import type { PrismaService } from '../../prisma.service';
 import type { AuthedRequest } from '../../auth/auth-request';
@@ -38,6 +39,14 @@ export function asPairServiceDouble<T extends object>(mock: T): ExtensionPairSer
 export function authedRequest(userId: string): AuthedRequest {
   // @ts-expect-error minimal authed request — the handlers read only req.user.id.
   return { user: { id: userId } };
+}
+
+// Minimal ExecutionContext whose only exercised path is
+// switchToHttp().getRequest() → { user }. Guards under test read nothing else.
+export function executionContextFor(user: unknown): ExecutionContext {
+  // @ts-expect-error partial ExecutionContext — only switchToHttp().getRequest()
+  // is touched by the guards (R0-sanctioned escape; see doc comment above).
+  return { switchToHttp: () => ({ getRequest: () => ({ user }) }) };
 }
 
 /**

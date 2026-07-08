@@ -1,6 +1,6 @@
 import { BadRequestException, GoneException } from '@nestjs/common';
 import { ExtensionPairService } from '../extension-pair.service';
-import { asAuthDouble, asPrismaDouble } from './test-doubles';
+import { asAuthDouble, asPrismaDouble } from './test-doubles.test';
 
 // Minimal in-shape doubles. We drive the service directly with mocked Prisma +
 // AuthService so no network / DB is touched (DESIGN.md v0.3 §11: hermetic).
@@ -12,6 +12,7 @@ interface Row {
   chosen_platform: string;
   expires_at: Date;
   used_at: Date | null;
+  failed_attempts: number;
   created_at: Date;
 }
 
@@ -23,6 +24,7 @@ function makeRow(overrides: Partial<Row> = {}): Row {
     chosen_platform: 'truecoach',
     expires_at: new Date(Date.now() + 120_000),
     used_at: null,
+    failed_attempts: 0,
     created_at: new Date(),
     ...overrides,
   };
@@ -34,6 +36,9 @@ function makePrisma() {
       create: jest.fn(),
       findUnique: jest.fn(),
       updateMany: jest.fn(),
+      // A failed attempt charges the row; default stays well under the lockout
+      // ceiling so the underlying failure code surfaces unless a test overrides.
+      update: jest.fn().mockResolvedValue({ failed_attempts: 1 }),
     },
   };
 }
@@ -206,6 +211,107 @@ describe('ExtensionPairService', () => {
       prisma.extensionPairCode.findUnique.mockResolvedValue(null);
       await expect(svc.redeem('123456')).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.extensionPairCode.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects as invalid when the stored code fails the constant-time compare', async () => {
+      // Defence in depth: even if a row surfaces whose stored code does not
+      // byte-equal the presented one, the timing-safe compare must reject it as
+      // `invalid` (never claim it) — the row lookup alone is not the authority.
+      prisma.extensionPairCode.findUnique.mockResolvedValue(makeRow({ code: '999999' }));
+      await expect(svc.redeem('142856')).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.extensionPairCode.updateMany).not.toHaveBeenCalled();
+      expect(auth.mintExtensionSessionForCoach).not.toHaveBeenCalled();
+    });
+  });
+
+  // Per-code brute-force lockout (P2). MAX = 5 (REDEEM_MAX_FAILED_ATTEMPTS).
+  describe('redeem — per-code lockout', () => {
+    const MAX = 5;
+
+    it('still redeems a valid code sitting at MAX-1 prior failed attempts', async () => {
+      prisma.extensionPairCode.findUnique.mockResolvedValue(makeRow({ failed_attempts: MAX - 1 }));
+      prisma.extensionPairCode.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await svc.redeem('142856');
+
+      expect(result.access_token).toBe('access-xyz');
+      // The atomic claim itself must refuse to fire at/above the ceiling.
+      const where = prisma.extensionPairCode.updateMany.mock.calls[0][0].where;
+      expect(where.failed_attempts).toEqual({ lt: MAX });
+    });
+
+    it('locks a code that has reached MAX failed attempts (410 locked, no mint)', async () => {
+      prisma.extensionPairCode.findUnique.mockResolvedValue(makeRow({ failed_attempts: MAX }));
+      await expect(svc.redeem('142856')).rejects.toMatchObject({ response: { code: 'locked' } });
+      await expect(svc.redeem('142856')).rejects.toBeInstanceOf(GoneException);
+      expect(prisma.extensionPairCode.updateMany).not.toHaveBeenCalled();
+      expect(auth.mintExtensionSessionForCoach).not.toHaveBeenCalled();
+    });
+
+    it('charges a failed attempt when an expired code is hammered', async () => {
+      prisma.extensionPairCode.findUnique.mockResolvedValue(
+        makeRow({ expires_at: new Date(Date.now() - 1_000), failed_attempts: 1 }),
+      );
+      prisma.extensionPairCode.update.mockResolvedValue({ failed_attempts: 2 });
+
+      await expect(svc.redeem('142856')).rejects.toMatchObject({ response: { code: 'expired' } });
+      expect(prisma.extensionPairCode.update).toHaveBeenCalledWith({
+        where: { id: 'row-1' },
+        data: { failed_attempts: { increment: 1 } },
+        select: { failed_attempts: true },
+      });
+    });
+
+    it('the Nth failed attempt flips the response from expired to locked', async () => {
+      prisma.extensionPairCode.findUnique.mockResolvedValue(
+        makeRow({ expires_at: new Date(Date.now() - 1_000), failed_attempts: MAX - 1 }),
+      );
+      // The increment tips the counter to MAX → the caller sees `locked`.
+      prisma.extensionPairCode.update.mockResolvedValue({ failed_attempts: MAX });
+
+      await expect(svc.redeem('142856')).rejects.toMatchObject({ response: { code: 'locked' } });
+    });
+
+    it('does not charge a failed attempt on a benign lost single-use race', async () => {
+      // A lost race means another redeem legitimately WON the code — that is a
+      // success elsewhere, not a brute-force miss, so it must not burn budget.
+      prisma.extensionPairCode.findUnique.mockResolvedValue(makeRow());
+      prisma.extensionPairCode.updateMany.mockResolvedValue({ count: 0 });
+      await expect(svc.redeem('142856')).rejects.toMatchObject({
+        response: { code: 'already_used' },
+      });
+      expect(prisma.extensionPairCode.update).not.toHaveBeenCalled();
+      expect(auth.mintExtensionSessionForCoach).not.toHaveBeenCalled();
+    });
+
+    it('reports locked (not already_used) for a code that is both used AND at MAX', async () => {
+      // Lockout precedence: a harvested code that was redeemed once and then
+      // hammered to the ceiling must read as terminally `locked`, not leak the
+      // softer `already_used` — the two share a 410 but a coach re-mints on
+      // either, and `locked` is the truthful terminal state.
+      prisma.extensionPairCode.findUnique.mockResolvedValue(
+        makeRow({ used_at: new Date(), failed_attempts: MAX }),
+      );
+      await expect(svc.redeem('142856')).rejects.toMatchObject({ response: { code: 'locked' } });
+    });
+
+    it('reports locked without charging further once an expired code is already at MAX', async () => {
+      // Precedence again: past the ceiling the increment path is short-circuited,
+      // so a locked+expired code neither over-counts nor downgrades to `expired`.
+      prisma.extensionPairCode.findUnique.mockResolvedValue(
+        makeRow({ expires_at: new Date(Date.now() - 1_000), failed_attempts: MAX }),
+      );
+      await expect(svc.redeem('142856')).rejects.toMatchObject({ response: { code: 'locked' } });
+      expect(prisma.extensionPairCode.update).not.toHaveBeenCalled();
+    });
+
+    it('does not charge a failed attempt on the happy-path claim', async () => {
+      // A successful redeem is not a brute-force miss; the attempt counter must
+      // stay untouched so a legitimate holder never edges toward lockout.
+      prisma.extensionPairCode.findUnique.mockResolvedValue(makeRow({ failed_attempts: 2 }));
+      prisma.extensionPairCode.updateMany.mockResolvedValue({ count: 1 });
+      await svc.redeem('142856');
+      expect(prisma.extensionPairCode.update).not.toHaveBeenCalled();
     });
   });
 

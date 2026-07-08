@@ -6,7 +6,9 @@
 //   - redeem stays @Public (extension bootstrap has no JWT) AND rate-limited
 //     (the only brute-force brake over the 6-digit space).
 import 'reflect-metadata';
+import { RequestMethod } from '@nestjs/common';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
+import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { CoachGuard } from '../../auth/coach.guard';
 import { ExtensionPairController } from '../extension-pair.controller';
 import { ExtensionPairingFeatureFlagGuard } from '../extension-pair-feature-flag.guard';
@@ -14,7 +16,8 @@ import { ExtensionPairingFeatureFlagGuard } from '../extension-pair-feature-flag
 // Nest stores @UseGuards targets under the '__guards__' metadata key, at the
 // class for class-level guards and at the handler for method-level guards.
 function guardsOn(target: object): unknown[] {
-  return (Reflect.getMetadata('__guards__', target) as unknown[]) ?? [];
+  const meta: unknown = Reflect.getMetadata('__guards__', target);
+  return Array.isArray(meta) ? meta : [];
 }
 
 // @nestjs/throttler stores per-bucket metadata under `THROTTLER:LIMIT<name>` /
@@ -37,6 +40,31 @@ describe('ExtensionPairController wiring', () => {
   it('keeps status coach-gated', () => {
     const handlerGuards = guardsOn(ExtensionPairController.prototype.status);
     expect(handlerGuards).toContain(CoachGuard);
+  });
+
+  it("declares @Roles('coach','owner') on init + status (global RolesGuard contract)", () => {
+    // roles-enforced.spec walks the whole module and requires every non-@Public
+    // route to carry @Roles. Pin the exact roles so a refactor that drops or
+    // widens them (e.g. admitting students) is caught here, not in prod.
+    for (const handler of [
+      ExtensionPairController.prototype.init,
+      ExtensionPairController.prototype.status,
+    ]) {
+      expect(Reflect.getMetadata(ROLES_KEY, handler)).toEqual(['coach', 'owner']);
+    }
+  });
+
+  it('does NOT declare @Roles on the public redeem route', () => {
+    expect(
+      Reflect.getMetadata(ROLES_KEY, ExtensionPairController.prototype.redeem),
+    ).toBeUndefined();
+  });
+
+  it('mounts status as POST so the pairing code never rides in a query string', () => {
+    // A GET status would force ?code=… into access logs, browser history and
+    // proxies. Pin the method so a refactor back to @Get is caught here.
+    const method = Reflect.getMetadata('method', ExtensionPairController.prototype.status);
+    expect(method).toBe(RequestMethod.POST);
   });
 
   it('does NOT put a coach guard on redeem (extension bootstrap is unauthenticated)', () => {

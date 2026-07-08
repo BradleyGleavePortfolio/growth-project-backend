@@ -24,7 +24,7 @@ jest.mock('@supabase/supabase-js', () => ({
   }),
 }));
 
-import { makeAuthServiceUnderTest } from './test-doubles';
+import { makeAuthServiceUnderTest } from './test-doubles.test';
 
 function makeAuthService(userEmail: string | null) {
   const prisma = {

@@ -1,23 +1,14 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Post,
-  Query,
-  Request,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, Request, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import { CoachGuard } from '../auth/coach.guard';
 import { THROTTLER_NAMES } from '../throttler/throttler.config';
 import { ExtensionPairingFeatureFlagGuard } from './extension-pair-feature-flag.guard';
 import { ExtensionPairService } from './extension-pair.service';
-import { PairInitDto, PairRedeemDto } from './extension-pair.dto';
+import { PairInitDto, PairRedeemDto, PairStatusDto } from './extension-pair.dto';
 import type { PairInitResult, PairRedeemResult, PairStatusResult } from './extension-pair.dto';
 
 // Per-IP redeem cap (brute-force brake over the 10^6 code space). Default 10/
@@ -51,6 +42,7 @@ export class ExtensionPairController {
   @ApiResponse({ status: 403, description: 'Caller is not a coach.' })
   @ApiResponse({ status: 404, description: 'Pairing feature disabled.' })
   @Post('init')
+  @Roles('coach', 'owner')
   @UseGuards(CoachGuard)
   async init(@Request() req: AuthedRequest, @Body() body: PairInitDto): Promise<PairInitResult> {
     return this.pair.init(req.user.id, body.chosen_platform);
@@ -60,22 +52,24 @@ export class ExtensionPairController {
   @ApiOperation({
     summary: 'Poll a pairing code status',
     description:
-      'Mobile-authenticated coach polls their OWN code. Returns ' +
-      '{ status: pending | paired | expired }. A code the caller did not mint ' +
-      "reads as `expired` (never confirms another coach's code). " +
+      'Mobile-authenticated coach polls their OWN code. The code travels in the ' +
+      'POST body (never a query string, which would leak into logs/history/APM). ' +
+      'Returns { status: pending | paired | expired }. A code the caller did not ' +
+      "mint reads as `expired` (never confirms another coach's code). " +
       'Returns 404 when FEATURE_EXTENSION_PAIRING is off.',
   })
   @ApiResponse({ status: 200, description: 'Pairing code status.' })
   @ApiResponse({ status: 403, description: 'Caller is not a coach.' })
   @ApiResponse({ status: 404, description: 'Pairing feature disabled.' })
-  @Get('status')
+  @Post('status')
+  @Roles('coach', 'owner')
   @UseGuards(CoachGuard)
   @HttpCode(HttpStatus.OK)
   async status(
     @Request() req: AuthedRequest,
-    @Query('code') code: string,
+    @Body() body: PairStatusDto,
   ): Promise<PairStatusResult> {
-    return this.pair.status(req.user.id, (code ?? '').trim());
+    return this.pair.status(req.user.id, body.code);
   }
 
   @ApiOperation({
@@ -84,12 +78,13 @@ export class ExtensionPairController {
       'UNAUTHENTICATED. The extension exchanges a 6-digit code for a ' +
       'coach-bound Supabase token pair + chosen_platform. Single-use: a ' +
       'second redeem of the same code returns 410 already_used. Expired → 410 ' +
-      'expired; unknown/malformed → 400 invalid. Rate-limited per IP. ' +
+      'expired; unknown/malformed → 400 invalid. After too many failed attempts ' +
+      'a code is hard-locked → 410 locked. Rate-limited per IP. ' +
       'Returns 404 when FEATURE_EXTENSION_PAIRING is off.',
   })
   @ApiResponse({ status: 200, description: 'Token pair issued.' })
   @ApiResponse({ status: 400, description: 'Invalid pairing code.' })
-  @ApiResponse({ status: 410, description: 'Code expired or already used.' })
+  @ApiResponse({ status: 410, description: 'Code expired, already used, or locked.' })
   @ApiResponse({ status: 404, description: 'Pairing feature disabled.' })
   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()

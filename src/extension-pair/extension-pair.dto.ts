@@ -35,6 +35,20 @@ export class PairRedeemDto {
   code!: string;
 }
 
+// Status is a POST (not a GET with ?code=) so the pairing code never lands in a
+// URL — query strings leak into access logs, browser history, proxies and APM.
+// The code travels in the request body instead. Same 6-digit constraint as
+// redeem, enforced at the DTO boundary before any DB lookup.
+export class PairStatusDto {
+  @ApiProperty({
+    example: '142856',
+    description: '6-digit numeric pairing code to poll (the code the caller minted).',
+  })
+  @IsString()
+  @Matches(SIX_DIGIT, { message: 'code must be exactly 6 digits' })
+  code!: string;
+}
+
 // Status of a pairing code as reported to the polling mobile app.
 export type PairStatus = 'pending' | 'paired' | 'expired';
 
@@ -55,5 +69,6 @@ export interface PairRedeemResult {
 
 // Structured failure reasons for redeem (DESIGN.md v0.3 §4). Surfaced in the
 // error body's `code` field so the extension popup can map each to the right
-// user-facing string.
-export type PairRedeemErrorCode = 'expired' | 'already_used' | 'invalid';
+// user-facing string. `locked` = the code burned through its per-code attempt
+// budget and is hard-invalidated (re-mint required).
+export type PairRedeemErrorCode = 'expired' | 'already_used' | 'invalid' | 'locked';

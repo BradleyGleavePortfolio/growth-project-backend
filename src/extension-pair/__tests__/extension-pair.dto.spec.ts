@@ -5,11 +5,11 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { PairInitDto, PairRedeemDto } from '../extension-pair.dto';
+import { PairInitDto, PairRedeemDto, PairStatusDto } from '../extension-pair.dto';
 
 async function errorsFor<T extends object>(cls: new () => T, payload: unknown) {
   const dto = plainToInstance(cls, payload);
-  return validate(dto as object);
+  return validate(dto);
 }
 
 describe('PairInitDto', () => {
@@ -93,6 +93,45 @@ describe('PairRedeemDto', () => {
 
   it('rejects a missing code', async () => {
     const errors = await errorsFor(PairRedeemDto, {});
+    expect(errors.length).toBeGreaterThan(0);
+  });
+});
+
+// PairStatusDto carries the pairing code in the POST body (the P2 fix that keeps
+// it out of a ?code= query string). It reuses the exact 6-digit constraint as
+// redeem, so pin the same boundary here: a malformed status code must be
+// rejected before the request ever reaches the service / a DB lookup.
+describe('PairStatusDto', () => {
+  it('accepts exactly six digits (incl. leading zeros)', async () => {
+    for (const code of ['142856', '000042']) {
+      const errors = await errorsFor(PairStatusDto, { code });
+      expect(errors).toHaveLength(0);
+    }
+  });
+
+  it('rejects a code of the wrong length', async () => {
+    for (const bad of ['12345', '1234567']) {
+      const errors = await errorsFor(PairStatusDto, { code: bad });
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors[0].constraints).toHaveProperty('matches');
+    }
+  });
+
+  it('rejects a non-numeric code', async () => {
+    for (const bad of ['abcdef', '12ab56', '1428 6']) {
+      const errors = await errorsFor(PairStatusDto, { code: bad });
+      expect(errors.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('rejects a non-string code', async () => {
+    const errors = await errorsFor(PairStatusDto, { code: 142856 });
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0].constraints).toHaveProperty('isString');
+  });
+
+  it('rejects a missing code', async () => {
+    const errors = await errorsFor(PairStatusDto, {});
     expect(errors.length).toBeGreaterThan(0);
   });
 });

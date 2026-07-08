@@ -21,6 +21,10 @@ CREATE TABLE "ExtensionPairCode" (
     "chosen_platform" TEXT NOT NULL,
     "expires_at"      TIMESTAMP(3) NOT NULL,
     "used_at"         TIMESTAMP(3),
+    -- Per-code brute-force lockout: charged once per redeem that finds the row
+    -- but cannot claim it; at the service ceiling the code is hard-invalidated
+    -- (410 locked). DB-backed so the lockout survives across requests and IPs.
+    "failed_attempts" INTEGER NOT NULL DEFAULT 0,
     "created_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "ExtensionPairCode_pkey" PRIMARY KEY ("id")
 );
