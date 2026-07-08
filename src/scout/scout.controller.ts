@@ -1,9 +1,8 @@
-import { Body, Controller, HttpCode, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { Roles } from '../common/decorators/roles.decorator';
-import { ScoutFeatureFlagGuard } from './scout-feature-flag.guard';
 import { ScoutCompleteDto, ScoutProgressDto } from './scout.dto';
 import { ScoutService } from './scout.service';
 
@@ -16,15 +15,17 @@ import { ScoutService } from './scout.service';
  * #496). The coach identity is `req.user.id`; the payload is routed by TOKEN
  * IDENTITY, never a body field (DESIGN §3, R80).
  *
- * Feature gate: ScoutFeatureFlagGuard returns 404 on every route while
- * FEATURE_SCOUT_INGEST is off (the default) — the surface ships dark behind the
- * same flag as Lane 3's ingest endpoint (IMPORTER-B).
+ * Feature gate (R-DARK-1): FEATURE_SCOUT_INGEST is enforced by the global
+ * featureFlagNotFoundMiddleware — while the flag is off (the default) EVERY
+ * /api/scout request returns a uniform 404 BEFORE any guard runs, so the
+ * surface is indistinguishable from an unmounted route. There is no
+ * controller-level feature guard: see
+ * src/common/feature-flag/feature-flag-not-found.middleware.ts.
  */
 @ApiTags('scout')
 @ApiBearerAuth('bearer')
 @ApiResponse({ status: 401, description: 'Missing or invalid bearer token.' })
-@ApiResponse({ status: 404, description: 'Feature disabled.' })
-@UseGuards(ScoutFeatureFlagGuard)
+@ApiResponse({ status: 404, description: 'Feature disabled (FEATURE_SCOUT_INGEST off).' })
 @Controller('scout')
 export class ScoutController {
   constructor(private readonly scout: ScoutService) {}
@@ -48,10 +49,13 @@ export class ScoutController {
   @ApiOperation({
     summary: 'Settle an extension import to its terminal state',
     description:
-      'Idempotent per (coach, intent): the first call settles the import and ' +
-      'pushes an import.complete notification to the mobile app; retries after ' +
-      'a network flake are acknowledged no-ops so the coach is never ' +
-      'double-notified.',
+      'Idempotent per (coach, intent): the first call atomically flips the ' +
+      'parent ScoutImport row to its terminal state AND appends the completion ' +
+      'ledger row in a single transaction (R-STATE-1), then pushes an ' +
+      'import.complete notification to the mobile app. Retries after a network ' +
+      'flake are acknowledged no-ops — the ledger unique constraint rolls the ' +
+      'transaction back, so the state is never re-flipped and the coach is ' +
+      'never double-notified.',
   })
   @ApiResponse({ status: 200, description: 'Completion acknowledged.' })
   @Post('ingest/complete')

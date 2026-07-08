@@ -15,12 +15,18 @@ import { ScoutCompleteDto, ScoutProgressDto } from './scout.dto';
 interface PrismaDoubles {
   upsert: jest.Mock;
   create: jest.Mock;
+  importUpsert: jest.Mock;
 }
 
 function makePrisma(doubles: PrismaDoubles): PrismaService {
   return Object.assign(Object.create(PrismaService.prototype) as PrismaService, {
     scoutProgressSnapshot: { upsert: doubles.upsert },
     scoutImportCompletion: { create: doubles.create },
+    scoutImport: { upsert: doubles.importUpsert },
+    // Batch $transaction([...]) resolves iff every op resolves; a rejected op
+    // (e.g. the ledger's P2002) rejects the whole transaction, mirroring the
+    // real client's all-or-nothing settle so the state upsert never lands alone.
+    $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   });
 }
 
@@ -43,6 +49,7 @@ function p2002(): PrismaClientKnownRequestError {
 
 const PROGRESS: ScoutProgressDto = {
   intent_id: 'intent-1',
+  deviceId: 'device-a',
   progress: [
     { entity_type: 'clients', count_committed: 3, total_estimated: 10 },
     { entity_type: 'workouts', count_committed: 0, total_estimated: 40 },
@@ -58,6 +65,7 @@ const COMPLETE_OK: ScoutCompleteDto = {
 describe('ScoutService', () => {
   let upsert: jest.Mock;
   let create: jest.Mock;
+  let importUpsert: jest.Mock;
   let pushToUser: jest.Mock;
   let capture: jest.Mock;
   let prisma: PrismaService;
@@ -68,9 +76,10 @@ describe('ScoutService', () => {
   beforeEach(() => {
     upsert = jest.fn().mockResolvedValue({});
     create = jest.fn().mockResolvedValue({});
+    importUpsert = jest.fn().mockResolvedValue({});
     pushToUser = jest.fn().mockResolvedValue({ delivered: true, code: 'delivered' });
     capture = jest.fn();
-    prisma = makePrisma({ upsert, create });
+    prisma = makePrisma({ upsert, create, importUpsert });
     notifications = makeNotifications(pushToUser);
     analytics = makeAnalytics(capture);
     service = new ScoutService(prisma, notifications, analytics);
@@ -88,16 +97,37 @@ describe('ScoutService', () => {
       expect(upsert).toHaveBeenCalledTimes(1);
     });
 
-    it('keys the upsert by (coach_id, intent_id)', async () => {
+    it('keys the upsert by (coach_id, intent_id, device_id)', async () => {
       service.recordProgress('coach-1', PROGRESS);
       await service.flush();
       expect(upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
-            coach_id_intent_id: { coach_id: 'coach-1', intent_id: 'intent-1' },
+            coach_id_intent_id_device_id: {
+              coach_id: 'coach-1',
+              intent_id: 'intent-1',
+              device_id: 'device-a',
+            },
           },
         }),
       );
+    });
+
+    it('keeps two independent rows when one import is mirrored from two devices', async () => {
+      service.recordProgress('coach-1', PROGRESS);
+      service.recordProgress('coach-1', { ...PROGRESS, deviceId: 'device-b' });
+      await service.flush();
+      expect(upsert).toHaveBeenCalledTimes(2);
+    });
+
+    it('coalesces two snapshots from the same device into one upsert', async () => {
+      service.recordProgress('coach-1', PROGRESS);
+      service.recordProgress('coach-1', {
+        ...PROGRESS,
+        progress: [{ entity_type: 'clients', count_committed: 8, total_estimated: 10 }],
+      });
+      await service.flush();
+      expect(upsert).toHaveBeenCalledTimes(1);
     });
 
     it('normalises the snapshot to the persisted entity shape', async () => {
@@ -152,6 +182,7 @@ describe('ScoutService', () => {
       service.recordProgress('coach-1', PROGRESS);
       service.recordProgress('coach-1', {
         intent_id: 'intent-1',
+        deviceId: 'device-a',
         progress: [{ entity_type: 'clients', count_committed: 7, total_estimated: 10 }],
       });
       await service.flush();
@@ -207,6 +238,7 @@ describe('ScoutService', () => {
         // flight — it must win over the one being re-queued.
         service.recordProgress('coach-1', {
           intent_id: 'intent-1',
+          deviceId: 'device-a',
           progress: [{ entity_type: 'clients', count_committed: 9, total_estimated: 10 }],
         });
         throw new Error('db blip');
@@ -271,6 +303,26 @@ describe('ScoutService', () => {
     it('returns an acknowledgement carrying the intent_id', async () => {
       const res = await service.complete('coach-1', COMPLETE_OK);
       expect(res).toEqual({ acknowledged: true, intent_id: 'intent-1' });
+    });
+
+    it('flips the parent import state to the terminal_status (R-STATE-1)', async () => {
+      await service.complete('coach-1', COMPLETE_OK);
+      expect(importUpsert).toHaveBeenCalledTimes(1);
+      const arg = importUpsert.mock.calls[0][0];
+      expect(arg.where).toEqual({
+        coach_id_intent_id: { coach_id: 'coach-1', intent_id: 'intent-1' },
+      });
+      expect(arg.create.state).toBe('success');
+      expect(arg.create.terminal_status).toBe('success');
+      expect(arg.update.state).toBe('success');
+      expect(arg.update.terminal_status).toBe('success');
+    });
+
+    it('owns the state flip and the ledger insert in a single transaction', async () => {
+      await service.complete('coach-1', COMPLETE_OK);
+      const tx = (prisma.$transaction as jest.Mock).mock.calls[0][0];
+      expect(Array.isArray(tx)).toBe(true);
+      expect(tx).toHaveLength(2);
     });
 
     it('flushes pending progress before settling', async () => {
@@ -343,6 +395,18 @@ describe('ScoutService', () => {
       create.mockRejectedValueOnce(p2002());
       await service.complete('coach-1', COMPLETE_OK);
       expect(capture).not.toHaveBeenCalled();
+    });
+
+    it('never flips the parent state outside the ledger transaction on a duplicate', async () => {
+      create.mockRejectedValueOnce(p2002());
+      await service.complete('coach-1', COMPLETE_OK);
+      // The state upsert only ever runs as an op inside the same $transaction as
+      // the ledger insert — never on its own — so when the ledger's P2002 rolls
+      // the transaction back the state is not re-flipped. Assert it was only
+      // submitted as part of a batch transaction, never as a standalone commit.
+      const tx = prisma.$transaction as jest.Mock;
+      expect(tx).toHaveBeenCalledTimes(1);
+      expect(tx.mock.calls[0][0]).toHaveLength(2);
     });
 
     it('notifies exactly once across a first call and a retry', async () => {

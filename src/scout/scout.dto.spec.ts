@@ -18,6 +18,7 @@ function meta(metatype: ArgumentMetadata['metatype']): ArgumentMetadata {
 
 const validProgress = {
   intent_id: 'intent-1',
+  deviceId: 'device-a',
   progress: [
     { entity_type: 'clients', count_committed: 3, total_estimated: 10 },
     { entity_type: 'workouts', count_committed: 0, total_estimated: 40 },
@@ -48,16 +49,42 @@ describe('ScoutProgressDto validation', () => {
 
   it('accepts an empty progress array (nothing committed yet)', async () => {
     const out = await pipe.transform(
-      { intent_id: 'intent-1', progress: [] },
+      { intent_id: 'intent-1', deviceId: 'device-a', progress: [] },
       meta(ScoutProgressDto),
     );
     expect(out.progress).toEqual([]);
   });
 
+  it('carries the deviceId through onto the transformed instance', async () => {
+    const out = await pipe.transform(validProgress, meta(ScoutProgressDto));
+    expect(out.deviceId).toBe('device-a');
+  });
+
+  it('rejects a missing deviceId', async () => {
+    await expect(
+      pipe.transform({ intent_id: 'intent-1', progress: [] }, meta(ScoutProgressDto)),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects an empty deviceId', async () => {
+    await expect(
+      pipe.transform({ intent_id: 'intent-1', deviceId: '', progress: [] }, meta(ScoutProgressDto)),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects an over-long deviceId (Length max 64)', async () => {
+    await expect(
+      pipe.transform(
+        { intent_id: 'intent-1', deviceId: 'x'.repeat(65), progress: [] },
+        meta(ScoutProgressDto),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('rejects a missing intent_id', async () => {
-    await expect(pipe.transform({ progress: [] }, meta(ScoutProgressDto))).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      pipe.transform({ deviceId: 'device-a', progress: [] }, meta(ScoutProgressDto)),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects a non-string intent_id', async () => {

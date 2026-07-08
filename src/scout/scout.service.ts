@@ -15,6 +15,7 @@ export const SCOUT_PROGRESS_FLUSH_MS = 5_000;
 interface CachedSnapshot {
   coachId: string;
   intentId: string;
+  deviceId: string;
   snapshot: Prisma.InputJsonValue;
   lastError: string | null;
 }
@@ -25,15 +26,21 @@ interface CachedSnapshot {
  *
  * Progress is a HOT path: the worker posts a snapshot on every batch commit.
  * To keep that path cheap we coalesce snapshots in an in-process Map keyed by
- * `${coachId}:${intentId}` (only the latest matters — this is an upsert, not
- * an append) and flush the dirty set to Postgres on a timer. A burst of N
- * commits for one import collapses to a single upsert per flush window.
+ * `${coachId}:${intentId}:${deviceId}` (only the latest matters — this is an
+ * upsert, not an append) and flush the dirty set to Postgres on a timer. A
+ * burst of N commits for one import collapses to a single upsert per flush
+ * window. device_id is part of the key so a coach mirroring one import from two
+ * physical devices at once (laptop + phone) keeps two independent snapshots
+ * instead of overwriting each other.
  *
- * Completion is the COLD path and must be exactly-once: the ScoutImportCompletion
- * @@unique([coach_id, intent_id]) is the idempotency anchor. The first call
- * inserts, notifies the coach, and emits analytics; a retry after a network
- * flake loses the insert race (P2002) and is a silent no-op so the coach is
- * never double-notified.
+ * Completion is the COLD path and must be exactly-once AND state-owning
+ * (R-STATE-1): the first call atomically flips the parent ScoutImport row to
+ * its terminal state AND appends the ScoutImportCompletion ledger row in one
+ * $transaction, then notifies the coach and emits analytics. The ledger's
+ * @@unique([coach_id, intent_id]) is the idempotency anchor — a retry after a
+ * network flake loses the insert race (P2002), the whole transaction rolls
+ * back (so the state is never re-flipped), and the call is a silent no-op so
+ * the coach is never double-notified.
  */
 @Injectable()
 export class ScoutService implements OnModuleDestroy {
@@ -48,14 +55,14 @@ export class ScoutService implements OnModuleDestroy {
     private readonly analytics: AnalyticsService,
   ) {}
 
-  private static key(coachId: string, intentId: string): string {
-    return `${coachId}:${intentId}`;
+  private static key(coachId: string, intentId: string, deviceId: string): string {
+    return `${coachId}:${intentId}:${deviceId}`;
   }
 
   /**
    * Hot path for POST /api/scout/progress. Records the latest snapshot for
-   * (coachId, intent_id) in memory and returns immediately — no DB write on
-   * the request. The snapshot is persisted on the next flush tick.
+   * (coachId, intent_id, device_id) in memory and returns immediately — no DB
+   * write on the request. The snapshot is persisted on the next flush tick.
    */
   recordProgress(coachId: string, dto: ScoutProgressDto): void {
     const snapshot: Prisma.InputJsonValue = {
@@ -66,9 +73,10 @@ export class ScoutService implements OnModuleDestroy {
         total_estimated: p.total_estimated,
       })),
     };
-    this.pending.set(ScoutService.key(coachId, dto.intent_id), {
+    this.pending.set(ScoutService.key(coachId, dto.intent_id, dto.deviceId), {
       coachId,
       intentId: dto.intent_id,
+      deviceId: dto.deviceId,
       snapshot,
       lastError: dto.lastError ?? null,
     });
@@ -88,14 +96,16 @@ export class ScoutService implements OnModuleDestroy {
       try {
         await this.prisma.scoutProgressSnapshot.upsert({
           where: {
-            coach_id_intent_id: {
+            coach_id_intent_id_device_id: {
               coach_id: item.coachId,
               intent_id: item.intentId,
+              device_id: item.deviceId,
             },
           },
           create: {
             coach_id: item.coachId,
             intent_id: item.intentId,
+            device_id: item.deviceId,
             snapshot: item.snapshot,
             last_error: item.lastError,
           },
@@ -108,7 +118,7 @@ export class ScoutService implements OnModuleDestroy {
         // Re-queue the failed snapshot so a transient DB blip does not drop
         // progress — unless a newer snapshot for the same import already
         // landed in the cache while we were flushing (that one is fresher).
-        const key = ScoutService.key(item.coachId, item.intentId);
+        const key = ScoutService.key(item.coachId, item.intentId, item.deviceId);
         if (!this.pending.has(key)) this.pending.set(key, item);
         this.logger.warn(
           `scout progress flush failed for ${key}: ${err instanceof Error ? err.name : 'unknown'}`,
@@ -129,8 +139,11 @@ export class ScoutService implements OnModuleDestroy {
 
   /**
    * Cold path for POST /api/scout/ingest/complete. Idempotent per
-   * (coachId, intent_id): the first call settles the import and notifies the
-   * coach; repeated calls are acknowledged no-ops.
+   * (coachId, intent_id) and state-owning (R-STATE-1): the first call flips the
+   * parent ScoutImport row to its terminal state AND appends the completion
+   * ledger row in a single transaction, then notifies the coach. Repeated calls
+   * are acknowledged no-ops — the transaction rolls back on the ledger's unique
+   * constraint, so the state is never re-flipped and no second push fires.
    */
   async complete(
     coachId: string,
@@ -140,17 +153,39 @@ export class ScoutService implements OnModuleDestroy {
     // snapshot reflects the final committed counts before we settle.
     await this.flush();
 
+    const now = new Date();
     let firstTime: boolean;
     try {
-      await this.prisma.scoutImportCompletion.create({
-        data: {
-          coach_id: coachId,
-          intent_id: dto.intent_id,
-          terminal_status: dto.terminal_status,
-          final_counts: (dto.final_counts ?? undefined) as Prisma.InputJsonValue | undefined,
-          error_summary: dto.error_summary,
-        },
-      });
+      // Ledger insert is FIRST in the batch so a duplicate settle aborts the
+      // transaction (P2002) before the state upsert can re-flip anything.
+      await this.prisma.$transaction([
+        this.prisma.scoutImportCompletion.create({
+          data: {
+            coach_id: coachId,
+            intent_id: dto.intent_id,
+            terminal_status: dto.terminal_status,
+            final_counts: (dto.final_counts ?? undefined) as Prisma.InputJsonValue | undefined,
+            error_summary: dto.error_summary,
+          },
+        }),
+        this.prisma.scoutImport.upsert({
+          where: {
+            coach_id_intent_id: { coach_id: coachId, intent_id: dto.intent_id },
+          },
+          create: {
+            coach_id: coachId,
+            intent_id: dto.intent_id,
+            state: dto.terminal_status,
+            terminal_status: dto.terminal_status,
+            completed_at: now,
+          },
+          update: {
+            state: dto.terminal_status,
+            terminal_status: dto.terminal_status,
+            completed_at: now,
+          },
+        }),
+      ]);
       firstTime = true;
     } catch (err) {
       if (err instanceof PrismaClientKnownRequestError && err.code === 'P2002') {

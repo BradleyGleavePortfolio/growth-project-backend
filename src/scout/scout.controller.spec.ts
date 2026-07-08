@@ -1,12 +1,10 @@
 import 'reflect-metadata';
 import { HTTP_CODE_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
-import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { RequestMethod } from '@nestjs/common';
 import type { AuthedRequest } from '../auth/auth-request';
 import { ROLES_KEY } from '../common/decorators/roles.decorator';
 import { ScoutController } from './scout.controller';
 import { ScoutService } from './scout.service';
-import { ScoutFeatureFlagGuard } from './scout-feature-flag.guard';
 import { ScoutCompleteDto, ScoutProgressDto } from './scout.dto';
 
 // @Throttle stores per-bucket metadata under `THROTTLER:LIMIT<name>` /
@@ -21,6 +19,7 @@ function makeReq(userId: string): AuthedRequest {
 
 const PROGRESS: ScoutProgressDto = {
   intent_id: 'intent-1',
+  deviceId: 'device-a',
   progress: [{ entity_type: 'clients', count_committed: 1, total_estimated: 5 }],
 };
 
@@ -125,11 +124,9 @@ describe('ScoutController', () => {
   });
 
   describe('feature gate', () => {
-    it('mounts the ScoutFeatureFlagGuard at the controller level', () => {
-      const guards = Reflect.getMetadata(GUARDS_METADATA, ScoutController) ?? [];
-      expect(guards).toContain(ScoutFeatureFlagGuard);
-    });
-
+    // The feature gate is the global featureFlagNotFoundMiddleware (R-DARK-1),
+    // proven at bootstrap in test/common/feature-flag-not-found.bootstrap.spec.ts.
+    // The controller no longer carries a per-route guard.
     it('is mounted under the scout base path (global `api` prefix is applied by main.ts)', () => {
       expect(Reflect.getMetadata(PATH_METADATA, ScoutController)).toBe('scout');
     });

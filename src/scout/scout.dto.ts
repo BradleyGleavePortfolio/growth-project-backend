@@ -7,6 +7,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Length,
   MaxLength,
   Min,
   ValidateNested,
@@ -44,6 +45,24 @@ export class ScoutProgressDto {
   @IsString()
   @MaxLength(128)
   intent_id!: string;
+
+  /**
+   * Client-generated stable identifier for the physical device running the
+   * crawl (the same device id the extension already mints under R80). It is
+   * part of the progress storage key so a coach mirroring one import from two
+   * devices at once — e.g. laptop and phone — keeps two independent snapshot
+   * rows instead of clobbering each other.
+   *
+   * deviceId alone is sufficient: intent_id is already generated per crawl
+   * session, so the only overlap it does not disambiguate is the same intent
+   * mirrored from two physical devices, which deviceId resolves. Two tabs on a
+   * single device either share one crawl (one stream — coalescing is correct)
+   * or mint distinct intent_ids, so a separate sessionId would add a key column
+   * with no distinct collision to prevent.
+   */
+  @IsString()
+  @Length(1, 64)
+  deviceId!: string;
 
   @IsArray()
   @ArrayMaxSize(64)
