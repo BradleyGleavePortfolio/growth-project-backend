@@ -25,7 +25,7 @@ import { ScoutService } from './scout.service';
 @ApiResponse({ status: 401, description: 'Missing or invalid bearer token.' })
 @ApiResponse({ status: 404, description: 'Feature disabled.' })
 @UseGuards(ScoutFeatureFlagGuard)
-@Controller('api/scout')
+@Controller('scout')
 export class ScoutController {
   constructor(private readonly scout: ScoutService) {}
 

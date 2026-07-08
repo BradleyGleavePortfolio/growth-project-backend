@@ -130,8 +130,8 @@ describe('ScoutController', () => {
       expect(guards).toContain(ScoutFeatureFlagGuard);
     });
 
-    it('is mounted under the api/scout base path', () => {
-      expect(Reflect.getMetadata(PATH_METADATA, ScoutController)).toBe('api/scout');
+    it('is mounted under the scout base path (global `api` prefix is applied by main.ts)', () => {
+      expect(Reflect.getMetadata(PATH_METADATA, ScoutController)).toBe('scout');
     });
   });
 });
