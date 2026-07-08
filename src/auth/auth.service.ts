@@ -30,6 +30,8 @@ import {
   RECENT_AUTH_SECRET_MIN_LENGTH,
   RECENT_AUTH_TTL_MS as RECENT_AUTH_TTL_DEFAULT_MS,
 } from './recent-auth.guard';
+import { roleSatisfies } from './roles.guard';
+import type { AppRole } from '../common/decorators/roles.decorator';
 
 // Self-service promotion to coach is the legacy behavior of POST
 // /auth/become-coach. It is a privilege-escalation hole on a sale-ready
@@ -311,10 +313,21 @@ export class AuthService {
   ): Promise<{ access_token: string; refresh_token: string }> {
     const user = await this.prisma.user.findUnique({
       where: { id: coachUserId },
-      select: { email: true },
+      select: { email: true, role: true, deleted_at: true },
     });
-    if (!user) {
-      throw new InternalServerErrorException('pair_redeem_user_missing');
+    // Re-validate the coach AT MINT TIME, not just at init (round-2 audit,
+    // accepted): a coach demoted or deleted between init and redeem must not
+    // receive a session. Role check reuses roleSatisfies — the same exported
+    // predicate RolesGuard enforces on the init/status routes (owner > coach >
+    // student hierarchy), so the mint gate can never drift from the route gate.
+    // The rejection is the SAME generic `invalid` body redeem returns for an
+    // unknown code — a distinct error would tell an unauthenticated holder of
+    // a harvested code that the coach exists but was demoted/deleted (account-
+    // state leak). All three predicates below are cheap in-memory checks on the
+    // single fetched row, so no additional timing oracle is introduced beyond
+    // the unavoidable DB lookup.
+    if (!user || user.deleted_at || !roleSatisfies(user.role as AppRole, ['coach'])) {
+      throw new BadRequestException({ code: 'invalid', message: 'Invalid pairing code.' });
     }
 
     const { data: linkData, error: linkError } = await this.supabaseAdmin.auth.admin.generateLink({

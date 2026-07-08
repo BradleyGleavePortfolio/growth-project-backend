@@ -71,6 +71,20 @@ export class ExtensionPairService {
             expires_at: expiresAt,
           },
         });
+        // Single-active-code invariant (round-2 audit, accepted): a fresh mint
+        // supersedes every prior still-live code for this coach, so two valid
+        // codes can never coexist. Runs AFTER the successful create — a failed
+        // mint must not nuke a coach's existing valid code — and excludes the
+        // row just created (code is unique, so the exclusion is exact).
+        await this.prisma.extensionPairCode.updateMany({
+          where: {
+            coach_id: coachId,
+            code: { not: code },
+            used_at: null,
+            expires_at: { gt: new Date() },
+          },
+          data: { expires_at: new Date() },
+        });
         return { pairing_code: code, expires_at: expiresAt.toISOString() };
       } catch (err) {
         // P2002 = unique-constraint violation on `code`. Extremely unlikely in
@@ -133,6 +147,18 @@ export class ExtensionPairService {
       });
     }
 
+    // Mint BEFORE the single-use claim (round-2 audit, accepted — "mint then
+    // claim"). The previous order flipped used_at first, so a mint failure
+    // (coach demoted/deleted between init and redeem, or a transient Supabase
+    // error) burned a valid code with no token ever issued. Minting first
+    // leaves the row untouched on failure — the coach can retry the same code.
+    // Mint is stateless from the DB's point of view, so if two redeems race
+    // here both may mint, but the conditional claim below picks exactly one
+    // winner; the loser's session is orphaned and never returned to any caller
+    // (they get 410 already_used). The mint goes through the shared
+    // /auth/extension token authority (R80) — no parallel token surface here.
+    const tokens = await this.auth.mintExtensionSessionForCoach(row.coach_id);
+
     // Atomic single-use claim: only the writer that flips used_at from NULL
     // (while still unexpired, and while under the lockout ceiling) wins. A lost
     // race means another redeem already consumed the code — surface it as
@@ -150,9 +176,6 @@ export class ExtensionPairService {
       throw new GoneException({ code: 'already_used', message: 'Pairing code already used.' });
     }
 
-    // Mint the coach-bound session via the shared /auth/extension token
-    // authority (R80) — no parallel token surface here.
-    const tokens = await this.auth.mintExtensionSessionForCoach(row.coach_id);
     return {
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token,
@@ -184,6 +207,21 @@ export class ExtensionPairService {
 
 // 6-digit numeric code with leading zeros preserved (000000–999999). Uses a
 // CSPRNG (crypto.randomInt) so codes are not predictable from prior codes.
+//
+// DECISION (round-2 triage, 2026-07): a wave-2 audit flagged the ~19.93-bit
+// code space as a BLOCK and asked for ≥64 bits of entropy. REJECTED — do not
+// "fix" this by widening the code. Short human-typeable codes with layered
+// server-side controls are the industry-standard pairing pattern (Bluetooth
+// Secure Simple Pairing, Apple device setup, Google Cast). The brute-force
+// budget is bounded by FOUR stacked defenses, not by entropy alone:
+//   1. 120s nominal TTL (clamped 30–300s) — the space is unreachable in-window;
+//   2. per-code lockout after REDEEM_MAX_FAILED_ATTEMPTS=5 failures — lives on
+//      the DB row, so it survives across requests and IPs;
+//   3. per-IP redeem throttle (10/min default) at the controller;
+//   4. constant-time compare on the final code equality check.
+// A ≥64-bit code cannot be typed off a phone screen and would defeat the UX
+// this flow exists for. Future audits: re-raise only if one of the four layers
+// above is removed or weakened.
 function mintSixDigitCode(): string {
   return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
 }

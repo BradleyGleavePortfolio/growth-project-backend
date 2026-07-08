@@ -2,7 +2,7 @@
 // authority reused by the pairing redeem flow (R80). We mock @supabase/supabase-js
 // so no network is touched: the admin client's generateLink returns a hashed
 // OTP token and the anon client's verifyOtp exchanges it for a session.
-import { InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, InternalServerErrorException } from '@nestjs/common';
 
 const generateLink = jest.fn();
 const verifyOtp = jest.fn();
@@ -26,10 +26,19 @@ jest.mock('@supabase/supabase-js', () => ({
 
 import { makeAuthServiceUnderTest } from './test-doubles.test';
 
-function makeAuthService(userEmail: string | null) {
+interface MintUserRow {
+  email: string;
+  role: string;
+  deleted_at: Date | null;
+}
+
+function makeAuthService(user: Partial<MintUserRow> | null) {
+  const row: MintUserRow | null = user
+    ? { email: 'coach@example.com', role: 'coach', deleted_at: null, ...user }
+    : null;
   const prisma = {
     user: {
-      findUnique: jest.fn().mockResolvedValue(userEmail ? { email: userEmail } : null),
+      findUnique: jest.fn().mockResolvedValue(row),
     },
   };
   const svc = makeAuthServiceUnderTest(prisma);
@@ -44,7 +53,7 @@ describe('AuthService.mintExtensionSessionForCoach', () => {
   });
 
   it('mints a Supabase session pair for the coach by identity', async () => {
-    const { svc, prisma } = makeAuthService('coach@example.com');
+    const { svc, prisma } = makeAuthService({ email: 'coach@example.com' });
     generateLink.mockResolvedValue({
       data: { properties: { hashed_token: 'hash-1' } },
       error: null,
@@ -58,23 +67,62 @@ describe('AuthService.mintExtensionSessionForCoach', () => {
 
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
       where: { id: 'coach-1' },
-      select: { email: true },
+      // role + deleted_at feed the mint-time revalidation — a coach demoted or
+      // deleted between init and redeem must not receive a session.
+      select: { email: true, role: true, deleted_at: true },
     });
     expect(generateLink).toHaveBeenCalledWith({ type: 'magiclink', email: 'coach@example.com' });
     expect(verifyOtp).toHaveBeenCalledWith({ token_hash: 'hash-1', type: 'email' });
     expect(result).toEqual({ access_token: 'access-1', refresh_token: 'refresh-1' });
   });
 
-  it('throws when the coach user no longer exists', async () => {
+  // Mint-time revalidation (round-2 audit, accepted). All three rejections
+  // share redeem's generic 400 { code: 'invalid' } — a distinct error would
+  // leak account state (existed-but-demoted/deleted) to an unauthenticated
+  // caller holding a harvested code.
+  it('rejects with generic invalid when the coach user no longer exists', async () => {
     const { svc } = makeAuthService(null);
-    await expect(svc.mintExtensionSessionForCoach('ghost')).rejects.toBeInstanceOf(
-      InternalServerErrorException,
-    );
+    const err = svc.mintExtensionSessionForCoach('ghost');
+    await expect(err).rejects.toBeInstanceOf(BadRequestException);
+    await expect(err).rejects.toMatchObject({ response: { code: 'invalid' } });
     expect(generateLink).not.toHaveBeenCalled();
   });
 
+  it('rejects with generic invalid when the coach user has been deleted', async () => {
+    const { svc } = makeAuthService({ deleted_at: new Date() });
+    const err = svc.mintExtensionSessionForCoach('coach-1');
+    await expect(err).rejects.toBeInstanceOf(BadRequestException);
+    await expect(err).rejects.toMatchObject({ response: { code: 'invalid' } });
+    expect(generateLink).not.toHaveBeenCalled();
+  });
+
+  it('rejects with generic invalid when the coach was demoted to a non-coach role', async () => {
+    for (const role of ['student', 'sub_coach']) {
+      generateLink.mockReset();
+      const { svc } = makeAuthService({ role });
+      const err = svc.mintExtensionSessionForCoach('coach-1');
+      await expect(err).rejects.toBeInstanceOf(BadRequestException);
+      await expect(err).rejects.toMatchObject({ response: { code: 'invalid' } });
+      expect(generateLink).not.toHaveBeenCalled();
+    }
+  });
+
+  it('still mints for an owner (owner > coach hierarchy, matching the route guards)', async () => {
+    const { svc } = makeAuthService({ role: 'owner' });
+    generateLink.mockResolvedValue({
+      data: { properties: { hashed_token: 'hash-1' } },
+      error: null,
+    });
+    verifyOtp.mockResolvedValue({
+      data: { session: { access_token: 'access-1', refresh_token: 'refresh-1' } },
+      error: null,
+    });
+    const result = await svc.mintExtensionSessionForCoach('owner-1');
+    expect(result).toEqual({ access_token: 'access-1', refresh_token: 'refresh-1' });
+  });
+
   it('throws when generateLink returns no hashed token', async () => {
-    const { svc } = makeAuthService('coach@example.com');
+    const { svc } = makeAuthService({});
     generateLink.mockResolvedValue({ data: { properties: {} }, error: null });
     await expect(svc.mintExtensionSessionForCoach('coach-1')).rejects.toBeInstanceOf(
       InternalServerErrorException,
@@ -83,7 +131,7 @@ describe('AuthService.mintExtensionSessionForCoach', () => {
   });
 
   it('throws when verifyOtp returns no session', async () => {
-    const { svc } = makeAuthService('coach@example.com');
+    const { svc } = makeAuthService({});
     generateLink.mockResolvedValue({
       data: { properties: { hashed_token: 'hash-1' } },
       error: null,
@@ -95,7 +143,7 @@ describe('AuthService.mintExtensionSessionForCoach', () => {
   });
 
   it('never replays a password — the redeem flow has no credential to sign in with', async () => {
-    const { svc } = makeAuthService('coach@example.com');
+    const { svc } = makeAuthService({});
     generateLink.mockResolvedValue({
       data: { properties: { hashed_token: 'hash-1' } },
       error: null,
@@ -112,7 +160,7 @@ describe('AuthService.mintExtensionSessionForCoach', () => {
   });
 
   it('returns exactly the two session tokens and nothing else', async () => {
-    const { svc } = makeAuthService('coach@example.com');
+    const { svc } = makeAuthService({});
     generateLink.mockResolvedValue({
       data: { properties: { hashed_token: 'hash-1' } },
       error: null,
@@ -135,7 +183,7 @@ describe('AuthService.mintExtensionSessionForCoach', () => {
   });
 
   it('surfaces a Supabase generateLink error as a 500 (never a silent empty session)', async () => {
-    const { svc } = makeAuthService('coach@example.com');
+    const { svc } = makeAuthService({});
     generateLink.mockResolvedValue({
       data: { properties: {} },
       error: { message: 'supabase down' },

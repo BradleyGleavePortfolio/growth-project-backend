@@ -2,7 +2,9 @@
 // extension popup maps each { code } to a distinct user-facing string, and the
 // HTTP status distinguishes "retryable input" (400) from "dead code" (410).
 // These tests assert the exact status + structured body for every failure mode,
-// and that no token is minted on any failure path.
+// and that no token is ever RETURNED on any failure path. (Under mint-then-
+// claim, a lost single-use race may mint an orphaned session before losing the
+// conditional claim — but the loser still gets a 410 and never sees a token.)
 import { BadRequestException, GoneException, HttpException } from '@nestjs/common';
 import { ExtensionPairService } from '../extension-pair.service';
 import { asAuthDouble, asPrismaDouble } from './test-doubles.test';
@@ -122,7 +124,24 @@ describe('ExtensionPairService.redeem — failure contract', () => {
     expect(err).toBeInstanceOf(GoneException);
     expect(err.getStatus()).toBe(410);
     expect(err.getResponse()).toMatchObject({ code: 'already_used' });
-    expect(auth.mintExtensionSessionForCoach).not.toHaveBeenCalled();
+    // Mint-then-claim: the loser minted first (mint is DB-stateless) but its
+    // orphaned session is never returned — the 410 above is the whole response.
+    expect(auth.mintExtensionSessionForCoach).toHaveBeenCalledTimes(1);
+  });
+
+  it('coach demoted/deleted between init and redeem → HTTP 400 invalid, code not burned', async () => {
+    // The mint authority rejects with the same generic body redeem uses for an
+    // unknown code (no existed-but-demoted leak), and because the mint runs
+    // BEFORE the single-use claim, used_at is never set — the row is untouched.
+    prisma.extensionPairCode.findUnique.mockResolvedValue(makeRow());
+    auth.mintExtensionSessionForCoach.mockRejectedValue(
+      new BadRequestException({ code: 'invalid', message: 'Invalid pairing code.' }),
+    );
+    const err = await captureError(svc.redeem('142856'));
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(err.getStatus()).toBe(400);
+    expect(err.getResponse()).toMatchObject({ code: 'invalid' });
+    expect(prisma.extensionPairCode.updateMany).not.toHaveBeenCalled();
   });
 
   it('already-used precedence: a code both used AND expired reads as already_used', async () => {

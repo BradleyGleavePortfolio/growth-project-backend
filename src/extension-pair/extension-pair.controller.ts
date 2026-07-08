@@ -24,6 +24,9 @@ const PAIR_REDEEM_PER_MIN = redeemPerMin();
 // Mounts under the global `/api` prefix → /api/extension/pair/*. Every route is
 // gated by ExtensionPairingFeatureFlagGuard: off (default) ⇒ 404, hiding the
 // surface entirely. See docs/DESIGN.md v0.3 §2/§4.
+//
+// TODO(#503): remove ExtensionPairingFeatureFlagGuard after #503 (R-DARK-1
+// middleware) merges — the middleware then owns the flag-off 404 gate.
 @ApiTags('extension-pair')
 @Controller('extension/pair')
 @UseGuards(ExtensionPairingFeatureFlagGuard)

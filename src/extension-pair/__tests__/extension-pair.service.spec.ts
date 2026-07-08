@@ -123,6 +123,34 @@ describe('ExtensionPairService', () => {
       await expect(svc.init('coach-1', 'truecoach')).rejects.toMatchObject({ code: 'P1001' });
       expect(prisma.extensionPairCode.create).toHaveBeenCalledTimes(1);
     });
+
+    // Single-active-code invariant (round-2): a fresh mint supersedes every
+    // prior still-live code for the same coach.
+    it('expires prior live codes for the coach after a successful mint, sparing the new one', async () => {
+      prisma.extensionPairCode.create.mockImplementation(async ({ data }: any) => data);
+
+      const result = await svc.init('coach-1', 'truecoach');
+
+      expect(prisma.extensionPairCode.updateMany).toHaveBeenCalledTimes(1);
+      const call = prisma.extensionPairCode.updateMany.mock.calls[0][0];
+      // Scoped to the minting coach's still-live (unused + unexpired) codes…
+      expect(call.where.coach_id).toBe('coach-1');
+      expect(call.where.used_at).toBeNull();
+      expect(call.where.expires_at.gt).toBeInstanceOf(Date);
+      // …excluding the code minted in THIS call (codes are unique).
+      expect(call.where.code).toEqual({ not: result.pairing_code });
+      // Prior codes are expired immediately, not deleted (audit trail intact).
+      expect(call.data.expires_at).toBeInstanceOf(Date);
+      expect(call.data.expires_at.getTime()).toBeLessThanOrEqual(Date.now());
+    });
+
+    it('does not touch existing codes when the mint itself fails', async () => {
+      // A failed mint must never nuke a coach's existing valid code — the
+      // invalidation runs only AFTER a successful create.
+      prisma.extensionPairCode.create.mockRejectedValue({ code: 'P2002' });
+      await expect(svc.init('coach-1', 'truecoach')).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.extensionPairCode.updateMany).not.toHaveBeenCalled();
+    });
   });
 
   describe('status', () => {
@@ -204,7 +232,59 @@ describe('ExtensionPairService', () => {
       await expect(svc.redeem('142856')).rejects.toMatchObject({
         response: { code: 'already_used' },
       });
-      expect(auth.mintExtensionSessionForCoach).not.toHaveBeenCalled();
+      // Mint-then-claim: the loser may have minted (mint is DB-stateless), but
+      // its session is orphaned — never returned to the caller.
+      expect(auth.mintExtensionSessionForCoach).toHaveBeenCalledTimes(1);
+    });
+
+    // Mint-then-claim atomicity (round-2, accepted): a mint failure must never
+    // burn the code — used_at stays NULL so the coach can retry.
+    it('does not flip used_at when the mint rejects (demoted coach) — code stays retryable', async () => {
+      prisma.extensionPairCode.findUnique.mockResolvedValue(makeRow());
+      auth.mintExtensionSessionForCoach.mockRejectedValue(
+        new BadRequestException({ code: 'invalid', message: 'Invalid pairing code.' }),
+      );
+      await expect(svc.redeem('142856')).rejects.toMatchObject({
+        response: { code: 'invalid' },
+      });
+      // The single-use claim never fires, so used_at was never set.
+      expect(prisma.extensionPairCode.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('does not flip used_at when the mint fails transiently (Supabase error)', async () => {
+      prisma.extensionPairCode.findUnique.mockResolvedValue(makeRow());
+      auth.mintExtensionSessionForCoach.mockRejectedValue(new Error('supabase down'));
+      await expect(svc.redeem('142856')).rejects.toThrow('supabase down');
+      expect(prisma.extensionPairCode.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('claims the code only AFTER a successful mint (mint-then-claim order)', async () => {
+      const order: string[] = [];
+      prisma.extensionPairCode.findUnique.mockResolvedValue(makeRow());
+      auth.mintExtensionSessionForCoach.mockImplementation(async () => {
+        order.push('mint');
+        return { access_token: 'access-xyz', refresh_token: 'refresh-xyz' };
+      });
+      prisma.extensionPairCode.updateMany.mockImplementation(async () => {
+        order.push('claim');
+        return { count: 1 };
+      });
+      await svc.redeem('142856');
+      expect(order).toEqual(['mint', 'claim']);
+    });
+
+    it('valid claim then a demoted mint: caller sees invalid and the code is NOT burned', async () => {
+      // Service-level demotion race: the row is perfectly valid at redeem time,
+      // but the coach was demoted between init and redeem so the mint rejects
+      // with the generic invalid body. The redeem must surface that same body
+      // and must NOT leave used_at set — no write ever reaches the row.
+      prisma.extensionPairCode.findUnique.mockResolvedValue(makeRow({ failed_attempts: 0 }));
+      auth.mintExtensionSessionForCoach.mockRejectedValue(
+        new BadRequestException({ code: 'invalid', message: 'Invalid pairing code.' }),
+      );
+      await expect(svc.redeem('142856')).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.extensionPairCode.updateMany).not.toHaveBeenCalled();
+      expect(prisma.extensionPairCode.update).not.toHaveBeenCalled();
     });
 
     it('does not mint a token when the code is invalid', async () => {
@@ -281,7 +361,6 @@ describe('ExtensionPairService', () => {
         response: { code: 'already_used' },
       });
       expect(prisma.extensionPairCode.update).not.toHaveBeenCalled();
-      expect(auth.mintExtensionSessionForCoach).not.toHaveBeenCalled();
     });
 
     it('reports locked (not already_used) for a code that is both used AND at MAX', async () => {
