@@ -2,13 +2,21 @@
 --
 -- Backs POST /api/scout/ingest, the receiver for the tgp-importer extension's
 -- autonomous crawl envelope. The envelope shape is the R80-locked contract in
--- tgp-importer-extension extractors/_interface.js:
---   { intent_id, entity_type, entities:[{ source_id, payload }] }
+-- tgp-importer-extension extractors/_interface.js — provenance is TOP-LEVEL
+-- camelCase, not nested inside payload:
+--   { intent_id, entity_type,
+--     entities:[{ sourceId, sourcePlatform, capturedAt, payload }] }
+-- (persisted here as source_id / source_platform / captured_at / payload).
 --
--- IDEMPOTENCY: the UNIQUE (coach_id, intent_id, source_id) constraint is the
--- anchor for the endpoint's replay-safety — a re-posted entity loses the
--- INSERT ... ON CONFLICT DO NOTHING race and is counted as deduped, so the
--- extension can retry a batch during recovery without duplicating rows.
+-- IDEMPOTENCY (R-IDEMP-1, 2026-07-08): the UNIQUE (coach_id, intent_id,
+-- source_id) constraint is the anchor for replay-safety. The key models "the
+-- coach saw entity X during crawl session Y." captured_at is deliberately a
+-- VALUE, not part of the key: a coach re-observes the same source entity over
+-- time, and each re-observation within an intent must be a no-op replay, not a
+-- new row. If captured_at were in the key, an extension retry carrying a fresh
+-- timestamp would insert a duplicate and defeat replay-safety. A re-posted
+-- entity loses the INSERT ... ON CONFLICT DO NOTHING race and is counted as
+-- deduped; a different intent_id starts a new observation series.
 --
 -- REVERSIBLE (R82/R106): additive, self-contained. The reverse step lives in
 -- the companion down.sql (DROP TABLE IF EXISTS "ScoutIngestEntity";).

@@ -5,7 +5,6 @@ import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { ScoutIngestFeatureGuard } from './scout-ingest-feature.guard';
 import { ScoutIngestDto, type ScoutIngestResult } from './scout-ingest.dto';
 import { ScoutIngestService } from './scout-ingest.service';
 
@@ -32,7 +31,10 @@ export class ScoutIngestController {
    * Returns 202 Accepted with { received, deduped }.
    */
   @Post('ingest')
-  @UseGuards(ScoutIngestFeatureGuard, JwtAuthGuard, RolesGuard)
+  // Feature gate: FEATURE_SCOUT_INGEST is enforced by the global
+  // featureFlagNotFoundMiddleware (R-DARK-1) BEFORE any guard runs. See
+  // src/common/feature-flag/feature-flag-not-found.middleware.ts.
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('coach')
   @Throttle({ default: { ttl: 60_000, limit: 120 } })
   @HttpCode(202)

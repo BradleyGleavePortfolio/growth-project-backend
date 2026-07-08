@@ -6,12 +6,13 @@ import { SCOUT_INGEST_EVENT, type ScoutIngestDto } from '../../src/scout/scout-i
 /**
  * ScoutIngestService unit tests — idempotent persistence + provenance signal.
  *
- * Covers the happy path (all rows new), full replay (all deduped), partial
- * replay, captured_at parsing (valid + malformed), the row-mapping contract fed
- * to Prisma, verbatim (non-sensitive) payload persistence, server-side denylist
- * redaction, and the PostHog batch event. Provenance (sourceId / sourcePlatform
- * / capturedAt) is a top-level makeEntity field validated by the DTO, so its
- * presence is exercised in the controller/DTO spec.
+ * Covers the happy path (all rows new), captured_at parsing of a validated
+ * strict-ISO8601 value, the row-mapping contract fed to Prisma, verbatim
+ * (non-sensitive) payload persistence, server-side denylist redaction, and the
+ * PostHog batch event. Provenance (sourceId / sourcePlatform / capturedAt) is a
+ * top-level makeEntity field validated by the DTO, so its presence is exercised
+ * in the controller/DTO spec. Real idempotency-key semantics (R-IDEMP-1) are
+ * asserted structurally in scout-ingest.idempotency.spec.ts.
  */
 
 type CreateManyArgs = {
@@ -78,18 +79,15 @@ describe('ScoutIngestService', () => {
     expect(args.data).toHaveLength(2);
   });
 
-  it('reports all entities as deduped on a full replay (zero inserts)', async () => {
-    const { service } = build(0);
-    const result = await service.ingest('coach-1', makeDto());
-    expect(result).toEqual({ received: 1, deduped: 1 });
-  });
-
-  it('reports partial dedup when only some rows are new', async () => {
-    const { service } = build(1);
-    const dto = makeDto({ entities: [entity('s1'), entity('s2'), entity('s3')] });
-    const result = await service.ingest('coach-1', dto);
-    expect(result).toEqual({ received: 3, deduped: 2 });
-  });
+  // NOTE: replay/dedup counting was previously asserted here against a mocked
+  // createMany count — a tautology (the mock decided the count, so the test
+  // only proved received - count arithmetic, not that the unique index dedups).
+  // The real idempotency semantics of the (coach_id, intent_id, source_id) key
+  // — including that a re-observation with a fresh capturedAt is a no-op replay
+  // and a new intent_id inserts a fresh series (R-IDEMP-1) — are now enforced
+  // structurally and asserted in scout-ingest.idempotency.spec.ts. The
+  // received - count → deduped arithmetic is still covered by the happy-path
+  // and PostHog-event cases in this file.
 
   it('derives coach_id from the argument, never from the body', async () => {
     const { service, createMany } = build(1);
@@ -108,15 +106,6 @@ describe('ScoutIngestService', () => {
     const row = dataOf(createMany)[0];
     expect(row.captured_at).toBeInstanceOf(Date);
     expect((row.captured_at as Date).toISOString()).toBe('2026-07-07T00:00:00.000Z');
-  });
-
-  it('degrades a malformed capturedAt to null rather than failing the batch', async () => {
-    const { service, createMany } = build(1);
-    const dto = makeDto({
-      entities: [entity('s1', { plan: 'gold' }, { capturedAt: 'not-a-date' })],
-    });
-    await service.ingest('coach-1', dto);
-    expect(dataOf(createMany)[0].captured_at).toBeNull();
   });
 
   it('persists the full payload verbatim, including extractor-specific fields', async () => {

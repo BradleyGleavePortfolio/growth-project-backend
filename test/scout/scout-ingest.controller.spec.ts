@@ -1,4 +1,4 @@
-import { NotFoundException, ForbiddenException } from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
 import type { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { plainToInstance } from 'class-transformer';
@@ -8,20 +8,18 @@ import { RolesGuard } from '../../src/auth/roles.guard';
 import { ROLES_KEY } from '../../src/common/decorators/roles.decorator';
 import { ScoutIngestController } from '../../src/scout/scout-ingest.controller';
 import { ScoutIngestService } from '../../src/scout/scout-ingest.service';
-import { ScoutIngestFeatureGuard } from '../../src/scout/scout-ingest-feature.guard';
-import {
-  FEATURE_SCOUT_INGEST,
-  SCOUT_INGEST_MAX_ENTITIES,
-  ScoutIngestDto,
-} from '../../src/scout/scout-ingest.dto';
+import { SCOUT_INGEST_MAX_ENTITIES, ScoutIngestDto } from '../../src/scout/scout-ingest.dto';
 
 /**
- * Controller + DTO + guard unit tests for POST /api/scout/ingest.
+ * Controller + DTO unit tests for POST /api/scout/ingest.
  *
  * Covers: valid-envelope validation, invalid shapes (missing intent_id /
  * entity_type / entities, empty entities, oversized batch, bad nested payload),
- * the FEATURE_SCOUT_INGEST kill switch, the coach-only auth gate, and coach_id
- * derivation from the token identity. The entity shape mirrors the extension's
+ * the coach-only auth gate, and coach_id
+ * derivation from the token identity. The FEATURE_SCOUT_INGEST kill switch is
+ * enforced by the global featureFlagNotFoundMiddleware (R-DARK-1), proven at
+ * bootstrap in test/common/feature-flag-not-found.bootstrap.spec.ts. The
+ * entity shape mirrors the extension's
  * makeEntity() exactly: sourceId / sourcePlatform / capturedAt live at the TOP
  * LEVEL (camelCase) alongside the opaque payload — provenance is DTO-validated
  * here, not nested inside payload.
@@ -127,6 +125,24 @@ describe('ScoutIngestDto validation', () => {
     expect(await validationErrors({ ...validEnvelope, entities: [rest] })).toContain('capturedAt');
   });
 
+  it('rejects a capturedAt that is not an ISO8601 timestamp', async () => {
+    const bad = { ...validEnvelope, entities: [makeEntity({ capturedAt: 'not-an-iso' })] };
+    expect(await validationErrors(bad)).toContain('capturedAt');
+  });
+
+  it('rejects a capturedAt missing the strict "T" date/time separator', async () => {
+    const bad = { ...validEnvelope, entities: [makeEntity({ capturedAt: '2026-07-08 12:00:00' })] };
+    expect(await validationErrors(bad)).toContain('capturedAt');
+  });
+
+  it('accepts a strict ISO8601 capturedAt', async () => {
+    const ok = {
+      ...validEnvelope,
+      entities: [makeEntity({ capturedAt: '2026-07-08T12:00:00.000Z' })],
+    };
+    expect(await validationErrors(ok)).toEqual([]);
+  });
+
   it('rejects an empty-string intent_id', async () => {
     expect(await validationErrors({ ...validEnvelope, intent_id: '' })).toContain('intent_id');
   });
@@ -194,29 +210,6 @@ describe('ScoutIngestDto validation', () => {
 
   it('rejects entities that is not an array', async () => {
     expect(await validationErrors({ ...validEnvelope, entities: 'nope' })).toContain('entities');
-  });
-});
-
-describe('ScoutIngestFeatureGuard', () => {
-  const saved = process.env[FEATURE_SCOUT_INGEST];
-  afterEach(() => {
-    if (saved === undefined) delete process.env[FEATURE_SCOUT_INGEST];
-    else process.env[FEATURE_SCOUT_INGEST] = saved;
-  });
-
-  it('throws 404 when the flag is unset (off by default)', () => {
-    delete process.env[FEATURE_SCOUT_INGEST];
-    expect(() => new ScoutIngestFeatureGuard().canActivate()).toThrow(NotFoundException);
-  });
-
-  it('throws 404 when the flag is any value other than the literal "true"', () => {
-    process.env[FEATURE_SCOUT_INGEST] = '1';
-    expect(() => new ScoutIngestFeatureGuard().canActivate()).toThrow(NotFoundException);
-  });
-
-  it('allows the request when the flag is exactly "true"', () => {
-    process.env[FEATURE_SCOUT_INGEST] = 'true';
-    expect(new ScoutIngestFeatureGuard().canActivate()).toBe(true);
   });
 });
 

@@ -4,6 +4,8 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsISO8601,
+  IsNotEmpty,
   IsObject,
   IsString,
   MaxLength,
@@ -36,9 +38,13 @@ export class ScoutEntityDto {
   @MaxLength(256)
   sourcePlatform!: string;
 
-  @IsString()
-  @MinLength(1)
-  @MaxLength(64)
+  // Strict ISO8601 with a mandatory "T" date/time separator. The extension's
+  // makeEntity() emits new Date().toISOString(), so a strict check costs the
+  // producer nothing while rejecting ambiguous or malformed timestamps at the
+  // boundary — the service can then persist captured_at unconditionally with no
+  // null-degrade path (R-IDEMP-1 keeps captured_at a value, never a key).
+  @IsNotEmpty()
+  @IsISO8601({ strict: true, strictSeparator: true })
   capturedAt!: string;
 
   // The crawled record itself, kept as an opaque JSON object rather than a

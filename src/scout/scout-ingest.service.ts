@@ -53,6 +53,14 @@ export class ScoutIngestService {
    * is reported as fully deduped. In-batch duplicate source_ids collapse the
    * same way, so `received` counts the envelope while `deduped` counts every
    * entity that did not produce a new row.
+   *
+   * R-IDEMP-1 (2026-07-08): capturedAt is a value, not a key. The idempotency
+   * key is (coach_id, intent_id, source_id) — "the coach saw entity X during
+   * crawl session Y." A coach's crawl re-observes the same source entity over
+   * time; each re-observation within an intent must be a no-op replay, not a
+   * new row. Putting capturedAt in the key would break this: an extension retry
+   * carrying a fresh timestamp would insert a duplicate, defeating replay
+   * safety. Different intent_id = a new observation series, correctly inserts.
    */
   async ingest(coachId: string, dto: ScoutIngestDto): Promise<ScoutIngestResult> {
     const received = dto.entities.length;
@@ -63,7 +71,9 @@ export class ScoutIngestService {
       entity_type: dto.entity_type,
       source_id: entity.sourceId,
       source_platform: entity.sourcePlatform,
-      captured_at: parseCapturedAt(entity.capturedAt),
+      // capturedAt is a strict-ISO8601-validated DTO field (see ScoutEntityDto),
+      // so it always parses — no null-degrade path.
+      captured_at: new Date(entity.capturedAt),
       payload: redactPayload(entity.payload),
     }));
 
@@ -83,17 +93,6 @@ export class ScoutIngestService {
 
     return { received, deduped };
   }
-}
-
-/**
- * Parse the top-level `capturedAt` ISO timestamp into a Date. The DTO already
- * guarantees it is a non-empty string, but a value that is not a parseable date
- * must not fail the whole batch — provenance persistence degrades to NULL
- * rather than 500ing an otherwise valid crawl.
- */
-function parseCapturedAt(value: string): Date | null {
-  const ms = Date.parse(value);
-  return Number.isNaN(ms) ? null : new Date(ms);
 }
 
 /**
