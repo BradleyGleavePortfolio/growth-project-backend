@@ -97,6 +97,19 @@ function parseCapturedAt(value: string): Date | null {
 }
 
 /**
+ * Keys that could pollute Object.prototype if written dynamically to a
+ * plain object. Enumerated separately from REDACTED_PAYLOAD_KEYS because
+ * they are structural (prototype pollution) rather than semantic
+ * (credentials) — a security-conscious payload could legitimately contain
+ * "token" but never "__proto__" as a JSON key we intend to persist.
+ */
+const PROTOTYPE_POLLUTION_KEYS: ReadonlySet<string> = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+]);
+
+/**
  * Recursively strip denylisted keys from a client-supplied payload before it is
  * persisted as JSONB. Structure is otherwise preserved verbatim. Nested objects
  * and array elements are walked; matching happens on the lowercased key.
@@ -104,13 +117,22 @@ function parseCapturedAt(value: string): Date | null {
 function redactPayload(
   payload: Prisma.InputJsonObject,
 ): Record<string, Prisma.InputJsonValue | null> {
-  const clean: Record<string, Prisma.InputJsonValue | null> = {};
+  // Use a Map + null-prototype output object so no dynamic write can traverse
+  // the prototype chain. CodeQL js/remote-property-injection would otherwise
+  // flag `clean[key] = ...` where `key` derives from a client payload.
+  const clean = new Map<string, Prisma.InputJsonValue | null>();
   for (const [key, value] of Object.entries(payload)) {
+    if (PROTOTYPE_POLLUTION_KEYS.has(key)) continue;
     if (REDACTED_PAYLOAD_KEYS.has(key.toLowerCase())) continue;
     if (value === undefined) continue;
-    clean[key] = redactValue(value);
+    clean.set(key, redactValue(value));
   }
-  return clean;
+  // Object.create(null) yields an object with no prototype — Prisma serialises
+  // it identically to a plain object for JSONB, but it cannot inherit or leak
+  // Object.prototype pollution from any source.
+  const out: Record<string, Prisma.InputJsonValue | null> = Object.create(null);
+  for (const [k, v] of clean) out[k] = v;
+  return out;
 }
 
 function redactValue(value: Prisma.InputJsonValue | null): Prisma.InputJsonValue | null {

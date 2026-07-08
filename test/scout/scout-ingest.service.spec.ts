@@ -349,3 +349,48 @@ describe('ScoutIngestService payload redaction', () => {
     expect(stored).toEqual({ a: { b: { c: { keep: 'yes', d: [{ ok: 1 }] } } } });
   });
 });
+
+describe('ScoutIngestService prototype pollution defenses', () => {
+  // Persist one entity and hand back the payload as it was written to the DB.
+  async function persistedPayload(payload: EntityPayload): Promise<Record<string, unknown>> {
+    const { service, createMany } = build(1);
+    await service.ingest('coach-1', makeDto({ entities: [entity('s1', payload)] }));
+    return dataOf(createMany)[0].payload as Record<string, unknown>;
+  }
+
+  afterEach(() => {
+    // Belt-and-suspenders — if we somehow polluted Object.prototype, fail loudly.
+    expect((Object.prototype as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it('drops __proto__ keys and does not pollute Object.prototype', async () => {
+    // JSON.parse gives __proto__ an OWN enumerable property (unlike an object
+    // literal, where __proto__ is the prototype setter), so it reaches redact.
+    const payload = JSON.parse('{"__proto__": {"polluted": true}, "safe": 1}') as EntityPayload;
+    const stored = await persistedPayload(payload);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(stored, '__proto__')).toBe(false);
+    expect(stored.safe).toBe(1);
+  });
+
+  it('drops constructor and prototype keys', async () => {
+    const stored = await persistedPayload({
+      constructor: { evil: true },
+      prototype: { evil: true },
+      kept: 'ok',
+    });
+    expect(Object.prototype.hasOwnProperty.call(stored, 'constructor')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(stored, 'prototype')).toBe(false);
+    expect(stored.kept).toBe('ok');
+  });
+
+  it('drops __proto__ recursively inside nested payload', async () => {
+    const payload = JSON.parse(
+      '{"nested": {"__proto__": {"polluted": true}, "value": 42}}',
+    ) as EntityPayload;
+    const stored = await persistedPayload(payload);
+    const nested = stored.nested as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(nested, '__proto__')).toBe(false);
+    expect(nested.value).toBe(42);
+  });
+});
