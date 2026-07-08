@@ -1,4 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
+import { buildNotFoundEnvelope } from '../../filters/not-found-envelope';
+import { resolveRequestId } from '../../observability/request-id.middleware';
+import { computeCorsAllowedOrigin } from '../cors-origins';
 
 /**
  * Registry of feature-gated route patterns. Each entry: { pattern, envVar }.
@@ -31,14 +34,26 @@ export function featureFlagNotFoundMiddleware(
     if (path === route.pattern || path.startsWith(route.pattern + '/')) {
       // Read env at request time (not cached) so ops can toggle without redeploy.
       if (process.env[route.envVar] !== 'true') {
-        // Mirror Nest's default NotFoundException body for an unmounted route
-        // ("Cannot <METHOD> <url>") so a disabled route is byte-for-byte
-        // indistinguishable from an unregistered path.
-        res.status(404).json({
-          statusCode: 404,
-          message: 'Cannot ' + req.method + ' ' + req.originalUrl,
-          error: 'Not Found',
-        });
+        // Round-2 hardening: mirror HttpExceptionFilter's normalized 404 for
+        // an unmounted route (shared builder — see not-found-envelope.ts),
+        // including the X-Request-ID header + request_id field that
+        // RequestIdMiddleware would have added had the request reached the
+        // Nest stack. Same id-resolution logic (resolveRequestId), so the
+        // dark 404 is key-for-key identical to a real unmounted 404.
+        const requestId = resolveRequestId(req.headers['x-request-id']);
+        res.setHeader('X-Request-ID', requestId);
+        // This gate now runs BEFORE enableCors (so OPTIONS preflight on a
+        // dark route 404s instead of being answered 204 by the cors
+        // package). Echo the allow-list origin — same origin math as
+        // enableCors via computeCorsAllowedOrigin — so an allow-listed
+        // browser client can read the 404 body.
+        res.setHeader('Vary', 'Origin');
+        const allowOrigin = computeCorsAllowedOrigin(req);
+        if (allowOrigin) {
+          res.setHeader('Access-Control-Allow-Origin', allowOrigin);
+          res.setHeader('Access-Control-Allow-Credentials', 'true');
+        }
+        res.status(404).json(buildNotFoundEnvelope(req, requestId));
         return;
       }
     }

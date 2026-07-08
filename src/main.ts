@@ -10,8 +10,8 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ThrottlerExceptionFilter } from './filters/throttler-exception.filter';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
-import { assertEnv, isProdLike, parseStorefrontBaseUrl } from './common/env-validation';
-import { BootstrapValidationError } from './common/errors/bootstrap-validation.error';
+import { assertEnv } from './common/env-validation';
+import { computeCorsAllowedOrigins } from './common/cors-origins';
 import { setupSwagger } from './common/openapi';
 import { CacheControlInterceptor } from './common/cache-control.interceptor';
 import { MetricsService } from './observability/metrics.service';
@@ -60,56 +60,29 @@ async function bootstrap() {
   // OnModuleDestroy → $disconnect (see src/prisma.service.ts).
   app.enableShutdownHooks();
 
-  // SECURITY: CORS was previously `origin: '*'` (audit C6). The React Native mobile
-  // client does not require CORS (it isn't a browser), so the only consumers of CORS
-  // are future browser-based admin/web pages. Default to a deny-all allow-list so a
-  // misconfigured deploy doesn't inadvertently expose the API to every origin.
-  // Set CORS_ORIGINS as a comma-separated list in Fly secrets when a web client needs
-  // access, e.g. `CORS_ORIGINS=https://admin.example.com,https://app.example.com`.
-  const corsOriginsEnv = process.env.CORS_ORIGINS || '';
-  const corsOrigins = corsOriginsEnv
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  // Reject the wildcard outright: `cors` accepts `'*'` but combined with
-  // `credentials: true` it produces a response browsers refuse. In
-  // production we want a hard failure rather than silent breakage.
-  if (corsOrigins.includes('*')) {
-    throw new BootstrapValidationError(
-      'CORS_ORIGINS=* is not permitted — list explicit origins (e.g. https://console.example.com).',
-      'BOOTSTRAP_CORS_WILDCARD',
-    );
-  }
-  // R43 / P2-1 — the public storefront is hosted at STOREFRONT_BASE_URL and
-  // calls /api/v1/packages/public/* from the browser. Auto-include its
-  // origin in the CORS allow-list so operators don't have to duplicate the
-  // hostname across CORS_ORIGINS and STOREFRONT_BASE_URL. The single
-  // source of truth for the URL shape is parseStorefrontBaseUrl in
-  // src/common/env-validation.ts.
+  // SECURITY: CORS was previously `origin: '*'` (audit C6). Deny-all
+  // allow-list by default; the origin math (CORS_ORIGINS parsing, wildcard
+  // rejection, R43 storefront auto-include) lives in
+  // src/common/cors-origins.ts — shared with featureFlagNotFoundMiddleware
+  // so the dark-route 404's CORS echo uses the exact same allow-list.
+  const corsOrigins = computeCorsAllowedOrigins(new Logger('bootstrap'));
+
+  // R-DARK-1: feature-flag route gate. Registered as raw express middleware so
+  // it runs BEFORE the entire Nest guard chain (guards resolve after all
+  // express middleware). A route whose flag is OFF returns a uniform 404 —
+  // identical to an unmounted route — so an unauth/wrong-role caller cannot
+  // distinguish "flag off" from "route does not exist" (no 401/403 leak).
   //
-  // Under prod-like NODE_ENV a malformed STOREFRONT_BASE_URL is fatal —
-  // assertEnv already enforces presence, and parsing failures here would
-  // mean a deploy that ships a public URL the storefront can't actually
-  // round-trip. In dev a malformed value is logged and skipped so
-  // contributors are not blocked by a stale value in their .env.
-  const storefrontBaseRaw = process.env.STOREFRONT_BASE_URL;
-  if (typeof storefrontBaseRaw === 'string' && storefrontBaseRaw.trim().length > 0) {
-    const parsed = parseStorefrontBaseUrl(storefrontBaseRaw);
-    if (parsed.ok) {
-      if (!corsOrigins.includes(parsed.origin)) {
-        corsOrigins.push(parsed.origin);
-      }
-    } else if (isProdLike(process.env.NODE_ENV)) {
-      throw new BootstrapValidationError(
-        `STOREFRONT_BASE_URL is invalid: ${parsed.message}`,
-        'BOOTSTRAP_STOREFRONT_BASE_URL_INVALID',
-      );
-    } else {
-      new Logger('bootstrap').warn(
-        `STOREFRONT_BASE_URL is invalid (skipping CORS auto-include in dev): ${parsed.message}`,
-      );
-    }
-  }
+  // Round-2 hardening: positioned BEFORE enableCors so a browser preflight
+  // OPTIONS on a dark route hits the 404 gate instead of being answered 204
+  // by the cors package — R-DARK-1 covers ALL methods, OPTIONS included. The
+  // middleware emits its own Access-Control-Allow-Origin echo against the
+  // same allow-list (computeCorsAllowedOrigin) so allow-listed browser
+  // clients can still read the 404 body. Still after promHttpMiddleware +
+  // helmet (full-lifecycle metrics, security headers on every response) and
+  // before useGlobalPipes/guards, exactly as the ruling requires.
+  app.use(featureFlagNotFoundMiddleware);
+
   app.enableCors({
     origin: corsOrigins.length > 0 ? corsOrigins : false,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -119,18 +92,6 @@ async function bootstrap() {
     // browser will actually send them when the origin is in the allow-list.
     credentials: true,
   });
-
-  // R-DARK-1: feature-flag route gate. Registered as raw express middleware so
-  // it runs BEFORE the entire Nest guard chain (guards resolve after all
-  // express middleware). A route whose flag is OFF returns a uniform 404 —
-  // identical to an unmounted route — so an unauth/wrong-role caller cannot
-  // distinguish "flag off" from "route does not exist" (no 401/403 leak).
-  //
-  // Positioned after promHttpMiddleware + helmet + CORS (so those invariants —
-  // full-lifecycle metrics, security headers on every response, CORS handling —
-  // still apply to the 404) and before useGlobalPipes/guards, exactly as the
-  // ruling requires ("before useGlobalPipes and before the global guards resolve").
-  app.use(featureFlagNotFoundMiddleware);
 
   // Global validation pipe using class-validator
   app.useGlobalPipes(

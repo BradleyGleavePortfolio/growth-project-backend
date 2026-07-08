@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import * as Sentry from '@sentry/node';
+import { buildErrorEnvelope } from './not-found-envelope';
 
 // Structured error shape: { statusCode, message, error, timestamp, path }.
 // Mobile only reads `err.response?.data?.message` (verified in growth-project-mobile
@@ -24,9 +25,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const request = ctx.getRequest<Request>();
 
     const status =
-      exception instanceof HttpException
-        ? exception.getStatus()
-        : HttpStatus.INTERNAL_SERVER_ERROR;
+      exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
 
     let message: string | string[] = 'Internal server error';
     let error = 'Internal Server Error';
@@ -74,14 +73,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // which extends the Express Request type at runtime.
     const reqWithId = request as Request & { requestId?: string };
 
-    response.status(status).json({
-      statusCode: status,
-      ...(code ? { code } : {}),
-      message,
-      error,
-      timestamp: new Date().toISOString(),
-      path: request.url,
-      ...(reqWithId.requestId ? { request_id: reqWithId.requestId } : {}),
-    });
+    // Envelope construction is shared with the R-DARK-1 feature-flag 404
+    // middleware (see src/filters/not-found-envelope.ts) so a dark-route 404
+    // is key-for-key identical to this filter's unmounted-route 404.
+    response.status(status).json(
+      buildErrorEnvelope(request, {
+        statusCode: status,
+        code,
+        message,
+        error,
+        requestId: reqWithId.requestId,
+      }),
+    );
   }
 }

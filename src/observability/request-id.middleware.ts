@@ -30,19 +30,27 @@ import { AppLoggerService } from './app-logger.service';
  * module itself is the FIRST import in AppModule.  This ensures the request_id
  * is present on every log line, including auth failures.
  */
+/**
+ * Resolve the request id from an incoming `X-Request-ID` header value:
+ * honour an upstream proxy's ID (Fly edge, mobile retry, load balancer),
+ * sanitised to alphanumeric + hyphens to prevent header/log injection, or
+ * generate a fresh 16-byte hex ID. Exported so the R-DARK-1 feature-flag
+ * 404 middleware — which runs BEFORE this Nest-consumer middleware — can
+ * derive the identical id for its short-circuited responses.
+ */
+export function resolveRequestId(incoming: string | string[] | undefined): string {
+  const raw = Array.isArray(incoming) ? incoming[0] : incoming;
+  return raw
+    ? String(raw)
+        .replace(/[^a-zA-Z0-9\-_]/g, '')
+        .slice(0, 128)
+    : randomBytes(16).toString('hex');
+}
+
 @Injectable()
 export class RequestIdMiddleware implements NestMiddleware {
   use(req: Request & { requestId?: string }, res: Response, next: NextFunction): void {
-    // Allow an upstream proxy (Fly edge, mobile retry, load balancer) to
-    // propagate an existing trace ID.  Sanitise to alphanumeric + hyphens to
-    // prevent header injection.
-    const incoming = req.headers['x-request-id'];
-    const raw = Array.isArray(incoming) ? incoming[0] : incoming;
-    const id = raw
-      ? String(raw)
-          .replace(/[^a-zA-Z0-9\-_]/g, '')
-          .slice(0, 128)
-      : randomBytes(16).toString('hex');
+    const id = resolveRequestId(req.headers['x-request-id']);
 
     req.requestId = id;
 

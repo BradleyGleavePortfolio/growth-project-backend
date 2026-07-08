@@ -7,27 +7,43 @@ import {
 /**
  * R-DARK-1 generic middleware contract.
  *
- * These are unit tests over the middleware function itself — the concrete
- * per-feature 6-probe request tests (no-auth / non-coach / coach × flag on/off)
- * land with the downstream PRs that actually mount /api/scout and
- * /api/extension/pair routes; those routes do not exist on `main`, so a full
- * supertest bootstrap here would assert nothing beyond this function's behavior.
+ * These are unit tests over the middleware function itself. The bootstrap-
+ * level 6-probe request suite (real guard chain, real HTTP, key-equality
+ * against a truly unmounted route) lives in
+ * feature-flag-not-found.bootstrap.spec.ts.
  */
 
-function makeRes(): { res: Response; status: jest.Mock; json: jest.Mock } {
+function makeRes(): {
+  res: Response;
+  status: jest.Mock;
+  json: jest.Mock;
+  setHeader: jest.Mock;
+} {
   const json = jest.fn();
   // mockReturnThis() makes `res.status(404)` return `res`, so the chained
   // `.status(404).json(...)` call in the middleware resolves against the mock.
   const status = jest.fn().mockReturnThis();
+  const setHeader = jest.fn();
   // Response is assignable to Partial<Response>, so the `as Response` narrowing
   // assertion below is permitted (it is not one of the R75 banned cast forms).
-  const partial: Partial<Response> = { status, json };
-  return { res: partial as Response, status, json };
+  const partial: Partial<Response> = { status, json, setHeader };
+  return { res: partial as Response, status, json, setHeader };
 }
 
-function makeReq(path: string, method = 'GET', originalUrl = path): Request {
-  return { path, method, originalUrl } as Request;
+function makeReq(path: string, method = 'GET', headers: Record<string, string> = {}): Request {
+  return { path, method, url: path, originalUrl: path, headers } as Request;
 }
+
+/** The exact key set HttpExceptionFilter emits for a 404 with a request id
+ * present — round-2 shape-leak fix: the middleware must match it exactly. */
+const FILTER_404_BODY = (method: string, url: string) => ({
+  statusCode: 404,
+  message: `Cannot ${method} ${url}`,
+  error: 'Not Found',
+  timestamp: expect.any(String),
+  path: url,
+  request_id: expect.any(String),
+});
 
 describe('featureFlagNotFoundMiddleware (R-DARK-1)', () => {
   const originalEnv = { ...process.env };
@@ -43,7 +59,7 @@ describe('featureFlagNotFoundMiddleware (R-DARK-1)', () => {
     expect(envVars).toContain('FEATURE_EXTENSION_PAIRING');
   });
 
-  it('returns a uniform 404 with the Nest not-found body shape when FEATURE_SCOUT_INGEST is unset', () => {
+  it('returns a uniform 404 with the HttpExceptionFilter envelope when FEATURE_SCOUT_INGEST is unset', () => {
     delete process.env.FEATURE_SCOUT_INGEST;
     const { res, status, json } = makeRes();
     const next = jest.fn();
@@ -51,11 +67,79 @@ describe('featureFlagNotFoundMiddleware (R-DARK-1)', () => {
     featureFlagNotFoundMiddleware(makeReq('/api/scout', 'GET'), res, next);
 
     expect(status).toHaveBeenCalledWith(404);
-    expect(json).toHaveBeenCalledWith({
-      statusCode: 404,
-      message: 'Cannot GET /api/scout',
-      error: 'Not Found',
-    });
+    expect(json).toHaveBeenCalledWith(FILTER_404_BODY('GET', '/api/scout'));
+    // No extra keys either — key equality, not just a superset.
+    expect(Object.keys(json.mock.calls[0][0]).sort()).toEqual([
+      'error',
+      'message',
+      'path',
+      'request_id',
+      'statusCode',
+      'timestamp',
+    ]);
+  });
+
+  it('honours an upstream X-Request-ID and mirrors it in header + body', () => {
+    delete process.env.FEATURE_SCOUT_INGEST;
+    const { res, json, setHeader } = makeRes();
+
+    featureFlagNotFoundMiddleware(
+      makeReq('/api/scout', 'GET', { 'x-request-id': 'edge-abc-123' }),
+      res,
+      jest.fn(),
+    );
+
+    expect(setHeader).toHaveBeenCalledWith('X-Request-ID', 'edge-abc-123');
+    expect(json.mock.calls[0][0].request_id).toBe('edge-abc-123');
+  });
+
+  it('echoes Access-Control-Allow-Origin for an allow-listed Origin (gate runs before cors)', () => {
+    delete process.env.FEATURE_SCOUT_INGEST;
+    process.env.CORS_ORIGINS = 'https://console.example.test';
+    delete process.env.STOREFRONT_BASE_URL;
+    const { res, setHeader } = makeRes();
+
+    featureFlagNotFoundMiddleware(
+      makeReq('/api/scout', 'GET', { origin: 'https://console.example.test' }),
+      res,
+      jest.fn(),
+    );
+
+    expect(setHeader).toHaveBeenCalledWith('Vary', 'Origin');
+    expect(setHeader).toHaveBeenCalledWith(
+      'Access-Control-Allow-Origin',
+      'https://console.example.test',
+    );
+    expect(setHeader).toHaveBeenCalledWith('Access-Control-Allow-Credentials', 'true');
+  });
+
+  it('does NOT echo Access-Control-Allow-Origin for a non-allow-listed Origin', () => {
+    delete process.env.FEATURE_SCOUT_INGEST;
+    process.env.CORS_ORIGINS = 'https://console.example.test';
+    delete process.env.STOREFRONT_BASE_URL;
+    const { res, setHeader } = makeRes();
+
+    featureFlagNotFoundMiddleware(
+      makeReq('/api/scout', 'GET', { origin: 'https://evil.example.test' }),
+      res,
+      jest.fn(),
+    );
+
+    const acao = setHeader.mock.calls.filter(
+      (c: unknown[]) => c[0] === 'Access-Control-Allow-Origin',
+    );
+    expect(acao).toHaveLength(0);
+  });
+
+  it('returns 404 for OPTIONS (preflight) on a gated path when the flag is off', () => {
+    delete process.env.FEATURE_SCOUT_INGEST;
+    const { res, status } = makeRes();
+    const next = jest.fn();
+
+    featureFlagNotFoundMiddleware(makeReq('/api/scout/ingest', 'OPTIONS'), res, next);
+
+    expect(status).toHaveBeenCalledWith(404);
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('runs before the guard chain — short-circuits a gated subpath without invoking next()', () => {
@@ -63,11 +147,7 @@ describe('featureFlagNotFoundMiddleware (R-DARK-1)', () => {
     const { res, status } = makeRes();
     const next = jest.fn();
 
-    featureFlagNotFoundMiddleware(
-      makeReq('/api/scout/ingest', 'POST', '/api/scout/ingest'),
-      res,
-      next,
-    );
+    featureFlagNotFoundMiddleware(makeReq('/api/scout/ingest', 'POST'), res, next);
 
     expect(status).toHaveBeenCalledWith(404);
     // next() is what hands control to the Nest guard chain. Not calling it
@@ -80,18 +160,10 @@ describe('featureFlagNotFoundMiddleware (R-DARK-1)', () => {
     const { res, status, json } = makeRes();
     const next = jest.fn();
 
-    featureFlagNotFoundMiddleware(
-      makeReq('/api/extension/pair/init', 'POST', '/api/extension/pair/init'),
-      res,
-      next,
-    );
+    featureFlagNotFoundMiddleware(makeReq('/api/extension/pair/init', 'POST'), res, next);
 
     expect(status).toHaveBeenCalledWith(404);
-    expect(json).toHaveBeenCalledWith({
-      statusCode: 404,
-      message: 'Cannot POST /api/extension/pair/init',
-      error: 'Not Found',
-    });
+    expect(json).toHaveBeenCalledWith(FILTER_404_BODY('POST', '/api/extension/pair/init'));
     expect(next).not.toHaveBeenCalled();
   });
 
