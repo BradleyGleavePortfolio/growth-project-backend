@@ -17,6 +17,7 @@ import { CacheControlInterceptor } from './common/cache-control.interceptor';
 import { MetricsService } from './observability/metrics.service';
 import { promHttpMiddleware } from './observability/prom-metrics';
 import { LANDING_PUBLIC_PREFIX_EXCLUDE } from './landing-pages/public-route-prefix';
+import { featureFlagNotFoundMiddleware } from './common/feature-flag/feature-flag-not-found.middleware';
 
 async function bootstrap() {
   // Fail fast at boot if required env vars are missing. See
@@ -119,6 +120,18 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // R-DARK-1: feature-flag route gate. Registered as raw express middleware so
+  // it runs BEFORE the entire Nest guard chain (guards resolve after all
+  // express middleware). A route whose flag is OFF returns a uniform 404 —
+  // identical to an unmounted route — so an unauth/wrong-role caller cannot
+  // distinguish "flag off" from "route does not exist" (no 401/403 leak).
+  //
+  // Positioned after promHttpMiddleware + helmet + CORS (so those invariants —
+  // full-lifecycle metrics, security headers on every response, CORS handling —
+  // still apply to the 404) and before useGlobalPipes/guards, exactly as the
+  // ruling requires ("before useGlobalPipes and before the global guards resolve").
+  app.use(featureFlagNotFoundMiddleware);
+
   // Global validation pipe using class-validator
   app.useGlobalPipes(
     new ValidationPipe({
@@ -141,10 +154,7 @@ async function bootstrap() {
   // resolved at module init time; if observability is not wired (tests),
   // the filter falls back to logging-only.
   const metrics = app.get(MetricsService, { strict: false });
-  app.useGlobalFilters(
-    new HttpExceptionFilter(),
-    new ThrottlerExceptionFilter(metrics),
-  );
+  app.useGlobalFilters(new HttpExceptionFilter(), new ThrottlerExceptionFilter(metrics));
 
   // Global Cache-Control interceptor — adds `private, max-age=60` to safe
   // GET responses, `no-store` to /auth/*, /messaging/*, /admin/*, /health*,
