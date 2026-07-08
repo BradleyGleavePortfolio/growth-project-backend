@@ -17,20 +17,36 @@ import {
 // request memory and the size of a single ON CONFLICT insert.
 export const SCOUT_INGEST_MAX_ENTITIES = 500;
 
-/** A single crawled entity: `{ source_id, payload }`. */
+/**
+ * A single crawled entity as emitted by the extension's makeEntity():
+ *   { sourceId, sourcePlatform, payload, capturedAt }
+ * Provenance (sourceId / sourcePlatform / capturedAt) lives at the TOP LEVEL
+ * in camelCase — it is NOT nested inside payload. This mirrors the executable
+ * producer (extractors/_interface.js makeEntity) verbatim, which is the R80
+ * source of truth over any prose header comment.
+ */
 export class ScoutEntityDto {
   @IsString()
   @MinLength(1)
   @MaxLength(256)
-  source_id!: string;
+  sourceId!: string;
 
-  // The self-describing provenance envelope, kept as an opaque JSON object
-  // rather than a nested validated DTO on purpose: the global ValidationPipe
-  // runs whitelist + forbidNonWhitelisted, which would strip (and reject) the
-  // extractor-specific fields the R80 contract permits beyond sourcePlatform /
-  // capturedAt. Validating payload as a leaf object preserves those fields
-  // verbatim; the two required self-describing fields are enforced in
-  // ScoutIngestService.
+  @IsString()
+  @MinLength(1)
+  @MaxLength(256)
+  sourcePlatform!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  capturedAt!: string;
+
+  // The crawled record itself, kept as an opaque JSON object rather than a
+  // nested validated DTO on purpose: the global ValidationPipe runs whitelist +
+  // forbidNonWhitelisted, which would strip (and reject) the extractor-specific
+  // fields the R80 contract permits. Validating payload as a leaf object
+  // preserves those fields verbatim; the service applies a denylist redaction
+  // before persistence.
   @IsObject()
   payload!: Prisma.InputJsonObject;
 }

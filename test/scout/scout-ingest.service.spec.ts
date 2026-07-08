@@ -1,4 +1,3 @@
-import { BadRequestException } from '@nestjs/common';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { PrismaService } from '../../src/prisma.service';
 import { ScoutIngestService } from '../../src/scout/scout-ingest.service';
@@ -8,9 +7,11 @@ import { SCOUT_INGEST_EVENT, type ScoutIngestDto } from '../../src/scout/scout-i
  * ScoutIngestService unit tests — idempotent persistence + provenance signal.
  *
  * Covers the happy path (all rows new), full replay (all deduped), partial
- * replay, provenance validation (missing sourcePlatform / capturedAt),
- * captured_at parsing (valid + malformed), the row-mapping contract fed to
- * Prisma, verbatim payload persistence, and the PostHog batch event.
+ * replay, captured_at parsing (valid + malformed), the row-mapping contract fed
+ * to Prisma, verbatim (non-sensitive) payload persistence, server-side denylist
+ * redaction, and the PostHog batch event. Provenance (sourceId / sourcePlatform
+ * / capturedAt) is a top-level makeEntity field validated by the DTO, so its
+ * presence is exercised in the controller/DTO spec.
  */
 
 type CreateManyArgs = {
@@ -21,13 +22,16 @@ type CreateManyArgs = {
 type EntityPayload = ScoutIngestDto['entities'][number]['payload'];
 
 function entity(
-  source_id: string,
-  payload: EntityPayload = {
-    sourcePlatform: 'auto:coachrx.example.com',
-    capturedAt: '2026-07-07T00:00:00.000Z',
-  },
+  sourceId: string,
+  payload: EntityPayload = { plan: 'gold' },
+  provenance: { sourcePlatform?: string; capturedAt?: string } = {},
 ): ScoutIngestDto['entities'][number] {
-  return { source_id, payload };
+  return {
+    sourceId,
+    sourcePlatform: provenance.sourcePlatform ?? 'auto:coachrx.example.com',
+    capturedAt: provenance.capturedAt ?? '2026-07-07T00:00:00.000Z',
+    payload,
+  };
 }
 
 function makeDto(overrides: Partial<ScoutIngestDto> = {}): ScoutIngestDto {
@@ -98,20 +102,6 @@ describe('ScoutIngestService', () => {
     expect(row.source_platform).toBe('auto:coachrx.example.com');
   });
 
-  it('rejects an entity whose payload is missing sourcePlatform', async () => {
-    const { service, createMany } = build(1);
-    const dto = makeDto({ entities: [entity('s1', { capturedAt: '2026-07-07T00:00:00.000Z' })] });
-    await expect(service.ingest('coach-1', dto)).rejects.toBeInstanceOf(BadRequestException);
-    expect(createMany).not.toHaveBeenCalled();
-  });
-
-  it('rejects an entity whose payload is missing capturedAt', async () => {
-    const { service, createMany } = build(1);
-    const dto = makeDto({ entities: [entity('s1', { sourcePlatform: 'auto:a.com' })] });
-    await expect(service.ingest('coach-1', dto)).rejects.toBeInstanceOf(BadRequestException);
-    expect(createMany).not.toHaveBeenCalled();
-  });
-
   it('parses a valid capturedAt into a Date', async () => {
     const { service, createMany } = build(1);
     await service.ingest('coach-1', makeDto());
@@ -123,7 +113,7 @@ describe('ScoutIngestService', () => {
   it('degrades a malformed capturedAt to null rather than failing the batch', async () => {
     const { service, createMany } = build(1);
     const dto = makeDto({
-      entities: [entity('s1', { sourcePlatform: 'auto:a.com', capturedAt: 'not-a-date' })],
+      entities: [entity('s1', { plan: 'gold' }, { capturedAt: 'not-a-date' })],
     });
     await service.ingest('coach-1', dto);
     expect(dataOf(createMany)[0].captured_at).toBeNull();
@@ -132,19 +122,44 @@ describe('ScoutIngestService', () => {
   it('persists the full payload verbatim, including extractor-specific fields', async () => {
     const { service, createMany } = build(1);
     const dto = makeDto({
+      entities: [entity('s1', { extra: 'kept', plan: 'gold' })],
+    });
+    await service.ingest('coach-1', dto);
+    expect(dataOf(createMany)[0].payload).toEqual({ extra: 'kept', plan: 'gold' });
+  });
+
+  it('strips denylisted secret keys from the payload before persistence', async () => {
+    const { service, createMany } = build(1);
+    const dto = makeDto({
       entities: [
         entity('s1', {
-          sourcePlatform: 'auto:a.com',
-          capturedAt: '2026-07-07T00:00:00.000Z',
-          extra: 'kept',
+          name: 'Jane',
+          password: 'hunter2',
+          API_KEY: 'sk-live-123',
+          nested: { authorization: 'Bearer x', keep: 'yes' },
+          list: [{ token: 'abc', label: 'ok' }],
         }),
       ],
     });
     await service.ingest('coach-1', dto);
-    expect(dataOf(createMany)[0].payload).toMatchObject({
-      extra: 'kept',
-      sourcePlatform: 'auto:a.com',
+    expect(dataOf(createMany)[0].payload).toEqual({
+      name: 'Jane',
+      nested: { keep: 'yes' },
+      list: [{ label: 'ok' }],
     });
+  });
+
+  it('does not derive provenance from payload keys (top-level makeEntity fields win)', async () => {
+    const { service, createMany } = build(1);
+    const dto = makeDto({
+      entities: [
+        entity('s1', { sourcePlatform: 'payload-decoy' }, { sourcePlatform: 'auto:real.com' }),
+      ],
+    });
+    await service.ingest('coach-1', dto);
+    const row = dataOf(createMany)[0];
+    expect(row.source_platform).toBe('auto:real.com');
+    expect(row.payload).toEqual({ sourcePlatform: 'payload-decoy' });
   });
 
   it('emits one scout.ingest.received event per batch with the counts', async () => {
@@ -175,8 +190,8 @@ describe('ScoutIngestService', () => {
       intent_id: 'crawl-42',
       entity_type: 'contact',
       entities: [
-        entity('a', { sourcePlatform: 'auto:x.com', capturedAt: '2026-07-07T00:00:00.000Z' }),
-        entity('b', { sourcePlatform: 'auto:y.com', capturedAt: '2026-07-07T00:00:00.000Z' }),
+        entity('a', { plan: 'gold' }, { sourcePlatform: 'auto:x.com' }),
+        entity('b', { plan: 'gold' }, { sourcePlatform: 'auto:y.com' }),
       ],
     });
     await service.ingest('coach-7', dto);
@@ -195,14 +210,8 @@ describe('ScoutIngestService', () => {
     const { service, createMany } = build(2);
     const dto = makeDto({
       entities: [
-        entity('a', {
-          sourcePlatform: 'auto:mypthub.example',
-          capturedAt: '2026-07-07T00:00:00.000Z',
-        }),
-        entity('b', {
-          sourcePlatform: 'auto:trainerize.example',
-          capturedAt: '2026-07-07T00:00:00.000Z',
-        }),
+        entity('a', { plan: 'gold' }, { sourcePlatform: 'auto:mypthub.example' }),
+        entity('b', { plan: 'gold' }, { sourcePlatform: 'auto:trainerize.example' }),
       ],
     });
     await service.ingest('coach-1', dto);
@@ -214,9 +223,7 @@ describe('ScoutIngestService', () => {
   it('parses a capturedAt carrying a timezone offset to the correct instant', async () => {
     const { service, createMany } = build(1);
     const dto = makeDto({
-      entities: [
-        entity('s1', { sourcePlatform: 'auto:a.com', capturedAt: '2026-07-07T05:00:00.000+05:00' }),
-      ],
+      entities: [entity('s1', { plan: 'gold' }, { capturedAt: '2026-07-07T05:00:00.000+05:00' })],
     });
     await service.ingest('coach-1', dto);
     expect((dataOf(createMany)[0].captured_at as Date).toISOString()).toBe(
@@ -241,5 +248,104 @@ describe('ScoutIngestService', () => {
     const result = await service.ingest('coach-1', makeDto({ entities }));
     expect(result).toEqual({ received: 250, deduped: 0 });
     expect(dataOf(createMany)).toHaveLength(250);
+  });
+});
+
+describe('ScoutIngestService payload redaction', () => {
+  // Persist one entity and hand back the payload as it was written to the DB,
+  // so each case can assert exactly which keys survived the denylist strip.
+  async function persistedPayload(payload: EntityPayload): Promise<unknown> {
+    const { service, createMany } = build(1);
+    await service.ingest('coach-1', makeDto({ entities: [entity('s1', payload)] }));
+    return dataOf(createMany)[0].payload;
+  }
+
+  it('strips every top-level denylisted key regardless of surrounding data', async () => {
+    const stored = await persistedPayload({
+      password: 'p',
+      passwd: 'p',
+      pwd: 'p',
+      secret: 's',
+      token: 't',
+      authorization: 'a',
+      auth: 'a',
+      cookie: 'c',
+      session: 's',
+      api_key: 'k',
+      apikey: 'k',
+      access_token: 'a',
+      refresh_token: 'r',
+      bearer: 'b',
+      ssn: '1',
+      credit_card: '1',
+      cardnumber: '1',
+      cvv: '1',
+      private_key: 'k',
+      keep_me: 'yes',
+    });
+    expect(stored).toEqual({ keep_me: 'yes' });
+  });
+
+  it('matches denylisted keys case-insensitively', async () => {
+    const stored = await persistedPayload({
+      PassWord: 'x',
+      API_KEY: 'x',
+      Authorization: 'x',
+      Name: 'kept',
+    });
+    expect(stored).toEqual({ Name: 'kept' });
+  });
+
+  it('strips denylisted keys nested inside objects', async () => {
+    const stored = await persistedPayload({
+      profile: { name: 'Jane', password: 'x', contact: { email: 'j@x.io', token: 'y' } },
+    });
+    expect(stored).toEqual({ profile: { name: 'Jane', contact: { email: 'j@x.io' } } });
+  });
+
+  it('strips denylisted keys inside objects nested in arrays', async () => {
+    const stored = await persistedPayload({
+      sessions: [
+        { id: 1, token: 'a', note: 'ok' },
+        { id: 2, secret: 'b', note: 'fine' },
+      ],
+    });
+    expect(stored).toEqual({
+      sessions: [
+        { id: 1, note: 'ok' },
+        { id: 2, note: 'fine' },
+      ],
+    });
+  });
+
+  it('preserves scalar array elements verbatim', async () => {
+    const stored = await persistedPayload({ tags: ['a', 'b', 'c'], count: 3, active: true });
+    expect(stored).toEqual({ tags: ['a', 'b', 'c'], count: 3, active: true });
+  });
+
+  it('preserves null and falsy non-sensitive values', async () => {
+    const stored = await persistedPayload({ note: null, zero: 0, flag: false, empty: '' });
+    expect(stored).toEqual({ note: null, zero: 0, flag: false, empty: '' });
+  });
+
+  it('leaves a payload with no sensitive keys byte-for-byte intact', async () => {
+    const clean = { name: 'Jane', plan: 'gold', meta: { tier: 2, tags: ['vip'] } };
+    expect(await persistedPayload(clean)).toEqual(clean);
+  });
+
+  it('does not treat a denylisted substring inside a longer key as sensitive', async () => {
+    const stored = await persistedPayload({ token_count: 5, password_reset_at: '2026-07-07' });
+    expect(stored).toEqual({ token_count: 5, password_reset_at: '2026-07-07' });
+  });
+
+  it('returns an empty object for an empty payload', async () => {
+    expect(await persistedPayload({})).toEqual({});
+  });
+
+  it('strips denylisted keys at deep nesting levels', async () => {
+    const stored = await persistedPayload({
+      a: { b: { c: { keep: 'yes', secret: 'x', d: [{ token: 't', ok: 1 }] } } },
+    });
+    expect(stored).toEqual({ a: { b: { c: { keep: 'yes', d: [{ ok: 1 }] } } } });
   });
 });

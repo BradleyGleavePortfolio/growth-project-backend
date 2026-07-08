@@ -21,24 +21,26 @@ import {
  * Covers: valid-envelope validation, invalid shapes (missing intent_id /
  * entity_type / entities, empty entities, oversized batch, bad nested payload),
  * the FEATURE_SCOUT_INGEST kill switch, the coach-only auth gate, and coach_id
- * derivation from the token identity. Provenance (sourcePlatform / capturedAt)
- * is a service-level contract, not a DTO shape rule (payload is a free-form
- * leaf object so the whitelist pipe can't strip extractor fields), so those
- * assertions live in scout-ingest.service.spec.ts.
+ * derivation from the token identity. The entity shape mirrors the extension's
+ * makeEntity() exactly: sourceId / sourcePlatform / capturedAt live at the TOP
+ * LEVEL (camelCase) alongside the opaque payload — provenance is DTO-validated
+ * here, not nested inside payload.
  */
+
+function makeEntity(overrides: Record<string, unknown> = {}) {
+  return {
+    sourceId: 's1',
+    sourcePlatform: 'auto:coachrx.example.com',
+    capturedAt: '2026-07-07T00:00:00.000Z',
+    payload: { plan: 'gold' },
+    ...overrides,
+  };
+}
 
 const validEnvelope = {
   intent_id: 'intent-1',
   entity_type: 'lead',
-  entities: [
-    {
-      source_id: 's1',
-      payload: {
-        sourcePlatform: 'auto:coachrx.example.com',
-        capturedAt: '2026-07-07T00:00:00.000Z',
-      },
-    },
-  ],
+  entities: [makeEntity()],
 };
 
 async function validationErrors(body: unknown): Promise<string[]> {
@@ -102,21 +104,27 @@ describe('ScoutIngestDto validation', () => {
   });
 
   it('rejects an oversized batch above the entity ceiling', async () => {
-    const entities = Array.from({ length: SCOUT_INGEST_MAX_ENTITIES + 1 }, (_, i) => ({
-      source_id: `s${i}`,
-      payload: { sourcePlatform: 'auto:a.com', capturedAt: '2026-07-07T00:00:00.000Z' },
-    }));
+    const entities = Array.from({ length: SCOUT_INGEST_MAX_ENTITIES + 1 }, (_, i) =>
+      makeEntity({ sourceId: `s${i}` }),
+    );
     expect(await validationErrors({ ...validEnvelope, entities })).toContain('entities');
   });
 
-  it('rejects an entity missing source_id', async () => {
-    const bad = {
-      ...validEnvelope,
-      entities: [
-        { payload: { sourcePlatform: 'auto:a.com', capturedAt: '2026-07-07T00:00:00.000Z' } },
-      ],
-    };
-    expect(await validationErrors(bad)).toContain('source_id');
+  it('rejects an entity missing sourceId', async () => {
+    const { sourceId: _omit, ...rest } = makeEntity();
+    expect(await validationErrors({ ...validEnvelope, entities: [rest] })).toContain('sourceId');
+  });
+
+  it('rejects an entity missing sourcePlatform', async () => {
+    const { sourcePlatform: _omit, ...rest } = makeEntity();
+    expect(await validationErrors({ ...validEnvelope, entities: [rest] })).toContain(
+      'sourcePlatform',
+    );
+  });
+
+  it('rejects an entity missing capturedAt', async () => {
+    const { capturedAt: _omit, ...rest } = makeEntity();
+    expect(await validationErrors({ ...validEnvelope, entities: [rest] })).toContain('capturedAt');
   });
 
   it('rejects an empty-string intent_id', async () => {
@@ -132,62 +140,31 @@ describe('ScoutIngestDto validation', () => {
   });
 
   it('rejects a payload that is not an object', async () => {
-    const bad = {
-      ...validEnvelope,
-      entities: [{ source_id: 's1', payload: 'not-an-object' }],
-    };
-    const props = await validationErrors(bad);
-    expect(props).toContain('payload');
+    const bad = { ...validEnvelope, entities: [makeEntity({ payload: 'not-an-object' })] };
+    expect(await validationErrors(bad)).toContain('payload');
   });
 
-  it('rejects an empty-string source_id', async () => {
-    const bad = {
-      ...validEnvelope,
-      entities: [
-        {
-          source_id: '',
-          payload: { sourcePlatform: 'auto:a.com', capturedAt: '2026-07-07T00:00:00.000Z' },
-        },
-      ],
-    };
-    expect(await validationErrors(bad)).toContain('source_id');
+  it('rejects an empty-string sourceId', async () => {
+    const bad = { ...validEnvelope, entities: [makeEntity({ sourceId: '' })] };
+    expect(await validationErrors(bad)).toContain('sourceId');
   });
 
-  it('rejects a source_id past the length ceiling', async () => {
-    const bad = {
-      ...validEnvelope,
-      entities: [
-        {
-          source_id: 'x'.repeat(257),
-          payload: { sourcePlatform: 'auto:a.com', capturedAt: '2026-07-07T00:00:00.000Z' },
-        },
-      ],
-    };
-    expect(await validationErrors(bad)).toContain('source_id');
+  it('rejects a sourceId past the length ceiling', async () => {
+    const bad = { ...validEnvelope, entities: [makeEntity({ sourceId: 'x'.repeat(257) })] };
+    expect(await validationErrors(bad)).toContain('sourceId');
   });
 
   it('accepts a batch of exactly the maximum allowed entities', async () => {
-    const entities = Array.from({ length: SCOUT_INGEST_MAX_ENTITIES }, (_, i) => ({
-      source_id: `s${i}`,
-      payload: { sourcePlatform: 'auto:a.com', capturedAt: '2026-07-07T00:00:00.000Z' },
-    }));
+    const entities = Array.from({ length: SCOUT_INGEST_MAX_ENTITIES }, (_, i) =>
+      makeEntity({ sourceId: `s${i}` }),
+    );
     expect(await validationErrors({ ...validEnvelope, entities })).toEqual([]);
   });
 
   it('accepts a payload carrying extra extractor-specific fields', async () => {
     const body = {
       ...validEnvelope,
-      entities: [
-        {
-          source_id: 's1',
-          payload: {
-            sourcePlatform: 'auto:a.com',
-            capturedAt: '2026-07-07T00:00:00.000Z',
-            name: 'redacted-by-posthog-not-here',
-            plan: 'gold',
-          },
-        },
-      ],
+      entities: [makeEntity({ payload: { name: 'kept-verbatim', plan: 'gold' } })],
     };
     expect(await validationErrors(body)).toEqual([]);
   });
@@ -196,14 +173,8 @@ describe('ScoutIngestDto validation', () => {
     const body = {
       ...validEnvelope,
       entities: [
-        {
-          source_id: 's1',
-          payload: { sourcePlatform: 'auto:a.com', capturedAt: '2026-07-07T00:00:00.000Z' },
-        },
-        {
-          source_id: 's2',
-          payload: { sourcePlatform: 'auto:b.com', capturedAt: '2026-07-07T00:00:00.000Z' },
-        },
+        makeEntity({ sourceId: 's1', sourcePlatform: 'auto:a.com' }),
+        makeEntity({ sourceId: 's2', sourcePlatform: 'auto:b.com' }),
       ],
     };
     expect(await validationErrors(body)).toEqual([]);

@@ -6723,8 +6723,11 @@ model MarketplaceAbuseSignal {
 //
 // IMPORTER-B — receiver store for the tgp-importer extension's autonomous crawl
 // envelope (POST /api/scout/ingest). One row per ingested entity. The envelope
-// shape is the R80-locked contract in tgp-importer-extension extractors/_interface.js:
-//   { intent_id, entity_type, entities:[{ source_id, payload }] }
+// shape is the R80-locked contract in tgp-importer-extension extractors/_interface.js
+// (makeEntity is the source of truth over the file's header comment):
+//   { intent_id, entity_type, entities:[{ sourceId, sourcePlatform, payload, capturedAt }] }
+// Provenance (sourceId/sourcePlatform/capturedAt) is top-level camelCase on each
+// entity; only intent_id/entity_type on the outer envelope stay snake_case.
 //
 // coach_id comes from the extension bearer-token identity (never a body field);
 // the (coach_id, intent_id, source_id) unique key makes the endpoint idempotent

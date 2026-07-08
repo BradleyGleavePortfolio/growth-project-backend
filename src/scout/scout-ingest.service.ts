@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { PrismaService } from '../prisma.service';
 import {
@@ -6,6 +7,35 @@ import {
   type ScoutIngestDto,
   type ScoutIngestResult,
 } from './scout-ingest.dto';
+
+/**
+ * Payload keys stripped server-side before persistence (case-insensitive,
+ * recursively through nested objects and arrays). OWASP: never trust the
+ * client — the extractor should never send secrets, but a compromised or buggy
+ * extension must not be able to land credentials in our JSONB store. Values are
+ * dropped silently; nothing about a stripped value is logged.
+ */
+const REDACTED_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
+  'password',
+  'passwd',
+  'pwd',
+  'secret',
+  'token',
+  'authorization',
+  'auth',
+  'cookie',
+  'session',
+  'api_key',
+  'apikey',
+  'access_token',
+  'refresh_token',
+  'bearer',
+  'ssn',
+  'credit_card',
+  'cardnumber',
+  'cvv',
+  'private_key',
+]);
 
 @Injectable()
 export class ScoutIngestService {
@@ -27,26 +57,15 @@ export class ScoutIngestService {
   async ingest(coachId: string, dto: ScoutIngestDto): Promise<ScoutIngestResult> {
     const received = dto.entities.length;
 
-    const rows = dto.entities.map((entity) => {
-      const sourcePlatform = entity.payload.sourcePlatform;
-      if (typeof sourcePlatform !== 'string' || sourcePlatform.length === 0) {
-        throw new BadRequestException('entity payload missing sourcePlatform');
-      }
-      const capturedAtRaw = entity.payload.capturedAt;
-      if (typeof capturedAtRaw !== 'string' || capturedAtRaw.length === 0) {
-        throw new BadRequestException('entity payload missing capturedAt');
-      }
-
-      return {
-        coach_id: coachId,
-        intent_id: dto.intent_id,
-        entity_type: dto.entity_type,
-        source_id: entity.source_id,
-        source_platform: sourcePlatform,
-        captured_at: parseCapturedAt(capturedAtRaw),
-        payload: entity.payload,
-      };
-    });
+    const rows = dto.entities.map((entity) => ({
+      coach_id: coachId,
+      intent_id: dto.intent_id,
+      entity_type: dto.entity_type,
+      source_id: entity.sourceId,
+      source_platform: entity.sourcePlatform,
+      captured_at: parseCapturedAt(entity.capturedAt),
+      payload: redactPayload(entity.payload),
+    }));
 
     const { count } = await this.prisma.scoutIngestEntity.createMany({
       data: rows,
@@ -67,7 +86,7 @@ export class ScoutIngestService {
 }
 
 /**
- * Parse the self-describing `capturedAt` ISO timestamp into a Date. The service
+ * Parse the top-level `capturedAt` ISO timestamp into a Date. The DTO already
  * guarantees it is a non-empty string, but a value that is not a parseable date
  * must not fail the whole batch — provenance persistence degrades to NULL
  * rather than 500ing an otherwise valid crawl.
@@ -75,4 +94,35 @@ export class ScoutIngestService {
 function parseCapturedAt(value: string): Date | null {
   const ms = Date.parse(value);
   return Number.isNaN(ms) ? null : new Date(ms);
+}
+
+/**
+ * Recursively strip denylisted keys from a client-supplied payload before it is
+ * persisted as JSONB. Structure is otherwise preserved verbatim. Nested objects
+ * and array elements are walked; matching happens on the lowercased key.
+ */
+function redactPayload(
+  payload: Prisma.InputJsonObject,
+): Record<string, Prisma.InputJsonValue | null> {
+  const clean: Record<string, Prisma.InputJsonValue | null> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (REDACTED_PAYLOAD_KEYS.has(key.toLowerCase())) continue;
+    if (value === undefined) continue;
+    clean[key] = redactValue(value);
+  }
+  return clean;
+}
+
+function redactValue(value: Prisma.InputJsonValue | null): Prisma.InputJsonValue | null {
+  if (Array.isArray(value)) {
+    return value.map((item) => redactValue(item));
+  }
+  if (isJsonRecord(value)) {
+    return redactPayload(value);
+  }
+  return value;
+}
+
+function isJsonRecord(value: Prisma.InputJsonValue | null): value is Prisma.InputJsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
