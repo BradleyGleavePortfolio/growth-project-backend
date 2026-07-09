@@ -1,0 +1,47 @@
+name: Fly Recent Auth Secrets Set (operator)
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: "Fly app name"
+        required: true
+        default: "backend-spring-lake-3890"
+      confirm:
+        description: "Type SET to confirm"
+        required: true
+
+jobs:
+  set-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard
+        run: |
+          if [ "${{ inputs.confirm }}" != "SET" ]; then
+            echo "Confirmation missing; aborting." >&2
+            exit 1
+          fi
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Set recent-auth secrets on Fly
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          RECENT_AUTH_SECRET: ${{ secrets.RECENT_AUTH_SECRET }}
+          RECENT_AUTH_TTL_MS: ${{ secrets.RECENT_AUTH_TTL_MS }}
+        run: |
+          if [ -z "$RECENT_AUTH_SECRET" ] || [ -z "$RECENT_AUTH_TTL_MS" ]; then
+            echo "Repo secrets RECENT_AUTH_SECRET / RECENT_AUTH_TTL_MS not configured." >&2
+            exit 1
+          fi
+          flyctl secrets set \
+            RECENT_AUTH_SECRET="$RECENT_AUTH_SECRET" \
+            RECENT_AUTH_TTL_MS="$RECENT_AUTH_TTL_MS" \
+            --app "${{ inputs.app }}"
+      - name: Validate presence
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          LIST=$(flyctl secrets list --app "${{ inputs.app }}")
+          echo "$LIST"
+          echo "$LIST" | grep -q "RECENT_AUTH_SECRET" || { echo "RECENT_AUTH_SECRET missing" >&2; exit 1; }
+          echo "$LIST" | grep -q "RECENT_AUTH_TTL_MS" || { echo "RECENT_AUTH_TTL_MS missing" >&2; exit 1; }
