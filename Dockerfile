@@ -14,11 +14,13 @@ COPY package*.json ./
 COPY prisma ./prisma/
 COPY scripts ./scripts/
 
-# LEFTHOOK=0 makes `lefthook install` (the package.json `prepare` script)
-# a no-op inside the image build. lefthook shells out to `git`, which is
-# not installed in node:20-slim, and git hooks are meaningless in an
-# image build anyway. All other npm lifecycle scripts still run.
-ENV LEFTHOOK=0
+# Git hooks are meaningless inside an image build, and the `prepare`
+# script (`lefthook install`) execs `git`, which node:20-slim does not
+# ship — every deploy fails at `npm ci` otherwise. LEFTHOOK=0 does NOT
+# gate the install subcommand (it only skips hook execution on git
+# commands), so strip the script instead. `postinstall` (prisma
+# generate) and native-module install scripts still run.
+RUN npm pkg delete scripts.prepare
 
 RUN npm ci
 
