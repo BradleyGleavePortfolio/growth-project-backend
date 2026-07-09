@@ -100,6 +100,15 @@ export const Events = {
    * Properties: { plan_id, deleted_count }. Emitted only when deleted_count > 0.
    */
   MWB_AUTOSAVE_REVISION_PRUNED: 'mwb_autosave_revision_pruned',
+
+  // ── Scout ingest (tgp-importer extension) ────────────────────────────
+  /**
+   * IMPORTER-E (DESIGN.md v0.3 §2 step 11): an extension import settled to a
+   * terminal state via POST /api/scout/ingest/complete. Emitted exactly once
+   * per (coach, intent) — the completion ledger's unique key gates re-emits on
+   * retry. Properties: { intent_id, terminal_status }. No PII.
+   */
+  SCOUT_INGEST_COMPLETED: 'scout.ingest.completed',
 } as const;
 
 export type EventName = (typeof Events)[keyof typeof Events];

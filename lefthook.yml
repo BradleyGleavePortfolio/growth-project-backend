@@ -13,11 +13,18 @@ pre-commit:
     tsc:
       run: npx tsc --noEmit
     eslint:
-      run: npx eslint --max-warnings 0 {staged_files}
-      glob: "*.{ts,tsx,js,jsx}"
+      # --no-warn-ignored: eslint v10 emits a hard warning when an explicitly
+      # passed file matches a global `ignores` entry (e.g. jest.config.js under
+      # `**/*.js`). With --max-warnings 0 that fails the hook even though the
+      # file was never meant to be linted. The flag restores the pre-v10
+      # behaviour of silently skipping ignored inputs; it does not reduce
+      # coverage of any file eslint actually lints. CI's `eslint .` is
+      # unaffected (it never passes ignored files explicitly).
+      run: npx eslint --no-warn-ignored --max-warnings 0 {staged_files}
+      glob: '*.{ts,tsx,js,jsx}'
     prettier:
       run: npx prettier --check {staged_files}
-      glob: "*.{ts,tsx,js,jsx,json,md,yml,yaml}"
+      glob: '*.{ts,tsx,js,jsx,json,md,yml,yaml}'
     prod-readiness-quick:
       run: |
         if [ -x scripts/prod-readiness-precheck.sh ]; then

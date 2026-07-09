@@ -81,12 +81,22 @@ module.exports = {
     '<rootDir>/src/regimes',
     '<rootDir>/src/feature-flags',
     '<rootDir>/src/talent-marketplace',
+    // IMPORTER-E adds `src/scout` as a narrowly-scoped root so the scout
+    // progress/completion unit specs colocated under src/scout/*.spec.ts are
+    // discovered. Same rationale as the roots above: this slice owns those spec
+    // files in the source tree, and the root is intentionally NOT the whole
+    // `src/` tree. All scout unit specs use mocked Prisma/notifications/analytics
+    // and need no live DB.
+    '<rootDir>/src/scout',
   ],
   testRegex: '\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'mjs', 'json'],
   transform: {
     // ts-jest handles .ts test/source files.
-    '^.+\\.ts$': ['ts-jest', { tsconfig: { strict: false, noImplicitAny: false, esModuleInterop: true } }],
+    '^.+\\.ts$': [
+      'ts-jest',
+      { tsconfig: { strict: false, noImplicitAny: false, esModuleInterop: true } },
+    ],
     // expo-server-sdk v6 ships pure-ESM .js in node_modules. ts-jest's
     // TypeScript transform refuses to rewrite .js, so we hand that one
     // dep to babel-jest (configured via babel.config.js to emit CJS for
@@ -115,9 +125,7 @@ module.exports = {
   // a 10x test-startup penalty. This is the surgical "one ESM dep in a CJS
   // project" pattern documented at
   // https://jestjs.io/docs/ecmascript-modules#transformignorepatterns-customization
-  transformIgnorePatterns: [
-    'node_modules/(?!(expo-server-sdk)/)',
-  ],
+  transformIgnorePatterns: ['node_modules/(?!(expo-server-sdk)/)'],
   collectCoverageFrom: ['src/**/*.ts'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
   testTimeout: 10000,
