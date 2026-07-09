@@ -91,6 +91,13 @@ module.exports = {
     '<rootDir>/src/feature-flags',
     '<rootDir>/src/talent-marketplace',
     '<rootDir>/src/extension-pair',
+    // IMPORTER-E adds `src/scout` as a narrowly-scoped root so the scout
+    // progress/completion unit specs colocated under src/scout/*.spec.ts are
+    // discovered. Same rationale as the roots above: this slice owns those spec
+    // files in the source tree, and the root is intentionally NOT the whole
+    // `src/` tree. All scout unit specs use mocked Prisma/notifications/analytics
+    // and need no live DB.
+    '<rootDir>/src/scout',
   ],
   testRegex: '\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'mjs', 'json'],

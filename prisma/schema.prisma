@@ -189,54 +189,54 @@ model User {
   // signed up before this column or via a surface that carries no ref.
   signup_ref                String?
 
-  profile                  UserProfile?
-  logged_entries           LoggedFoodEntry[]
-  workouts                 WorkoutSession[]
-  fasting_windows          FastingWindow[]
-  weight_logs              WeightLog[]
-  notification_prefs       NotificationPreferences?
-  preferences              UserPreferences?
-  habits                   Habit[]
-  lesson_completions       LessonCompletion[]
-  check_ins                CheckIn[]
-  water_logs               WaterLog[]
-  created_routines         WorkoutRoutine[]         @relation("RoutineCreator")
-  coached_lessons          Lesson[]                 @relation("LessonCoach")
-  invite_codes             InviteCode[]             @relation("CoachInviteCodes")
-  coach_messages_as_coach  CoachMessage[]           @relation("CoachMessagesAsCoach")
-  coach_messages_as_client CoachMessage[]           @relation("CoachMessagesAsClient")
-  coach_messages_sent      CoachMessage[]           @relation("CoachMessagesSender")
+  profile                        UserProfile?
+  logged_entries                 LoggedFoodEntry[]
+  workouts                       WorkoutSession[]
+  fasting_windows                FastingWindow[]
+  weight_logs                    WeightLog[]
+  notification_prefs             NotificationPreferences?
+  preferences                    UserPreferences?
+  habits                         Habit[]
+  lesson_completions             LessonCompletion[]
+  check_ins                      CheckIn[]
+  water_logs                     WaterLog[]
+  created_routines               WorkoutRoutine[]         @relation("RoutineCreator")
+  coached_lessons                Lesson[]                 @relation("LessonCoach")
+  invite_codes                   InviteCode[]             @relation("CoachInviteCodes")
+  coach_messages_as_coach        CoachMessage[]           @relation("CoachMessagesAsCoach")
+  coach_messages_as_client       CoachMessage[]           @relation("CoachMessagesAsClient")
+  coach_messages_sent            CoachMessage[]           @relation("CoachMessagesSender")
   // ED.6 (Roman coach-is-watching) — per-thread coach-review markers this user
   // participates in, as coach and as client.
-  conversation_reviews_as_coach  ConversationReview[] @relation("ConversationReviewCoach")
-  conversation_reviews_as_client ConversationReview[] @relation("ConversationReviewClient")
+  conversation_reviews_as_coach  ConversationReview[]     @relation("ConversationReviewCoach")
+  conversation_reviews_as_client ConversationReview[]     @relation("ConversationReviewClient")
   // Apple 1.2 — safety: reports filed by this user, blocks they have set,
   // and inbound blocks against them. The reviewer relation is owner-staff only.
-  reports_filed            MessageReport[]          @relation("MessageReportReporter")
-  reports_reviewed         MessageReport[]          @relation("MessageReportReviewer")
-  blocks_set               UserBlock[]              @relation("UserBlockBlocker")
-  blocks_received          UserBlock[]              @relation("UserBlockBlocked")
-  coach_nudges_as_coach    CoachNudge[]             @relation("CoachNudgesAsCoach")
-  coach_nudges_as_client   CoachNudge[]             @relation("CoachNudgesAsClient")
-  meal_plans_as_coach      MealPlan[]               @relation("MealPlanCoach")
-  meal_plans_as_client     MealPlan[]               @relation("MealPlanClient")
-  community_wins           CommunityWin[]           @relation("CommunityWinAuthor")
-  community_wins_as_coach  CommunityWin[]           @relation("CommunityWinCoach")
-  guidelines_as_coach      CoachGuideline[]         @relation("CoachGuidelineCoach")
-  guidelines_as_client     CoachGuideline[]         @relation("CoachGuidelineClient")
-  created_recipes          Recipe[]                 @relation("RecipeCreator")
-  saved_recipes            SavedRecipe[]
-  list_items               ListItem[]
+  reports_filed                  MessageReport[]          @relation("MessageReportReporter")
+  reports_reviewed               MessageReport[]          @relation("MessageReportReviewer")
+  blocks_set                     UserBlock[]              @relation("UserBlockBlocker")
+  blocks_received                UserBlock[]              @relation("UserBlockBlocked")
+  coach_nudges_as_coach          CoachNudge[]             @relation("CoachNudgesAsCoach")
+  coach_nudges_as_client         CoachNudge[]             @relation("CoachNudgesAsClient")
+  meal_plans_as_coach            MealPlan[]               @relation("MealPlanCoach")
+  meal_plans_as_client           MealPlan[]               @relation("MealPlanClient")
+  community_wins                 CommunityWin[]           @relation("CommunityWinAuthor")
+  community_wins_as_coach        CommunityWin[]           @relation("CommunityWinCoach")
+  guidelines_as_coach            CoachGuideline[]         @relation("CoachGuidelineCoach")
+  guidelines_as_client           CoachGuideline[]         @relation("CoachGuidelineClient")
+  created_recipes                Recipe[]                 @relation("RecipeCreator")
+  saved_recipes                  SavedRecipe[]
+  list_items                     ListItem[]
   // Phase 1A: 1:1 coach metadata. Only present for users with role=coach.
   // The relation stays optional so the existing student/owner rows do not
   // need a CoachProfile row (and the bootstrap script can backfill coaches
   // additively).
-  coach_profile            CoachProfile?            @relation("CoachProfileUser")
-  owners_created_profiles  CoachProfile[]           @relation("CoachProfileCreatedBy")
+  coach_profile                  CoachProfile?            @relation("CoachProfileUser")
+  owners_created_profiles        CoachProfile[]           @relation("CoachProfileCreatedBy")
   // v0.3 importer pairing (operator ruling 2026-07-06). Codes a coach mints
   // from the mobile app to bootstrap the desktop Chrome extension. Only
   // meaningful for role=coach/owner; empty for clients.
-  extension_pair_codes     ExtensionPairCode[]      @relation("ExtensionPairCodeCoach")
+  extension_pair_codes           ExtensionPairCode[]      @relation("ExtensionPairCodeCoach")
 
   // SaaS billing additions (1:1 with coach users; null for clients/owners).
   coach_subscription           CoachSubscription?
@@ -2180,30 +2180,30 @@ model WorkoutPlan {
 // is_template=false). Legacy standalone plans (program_id=null) never touch
 // any of this. See spec §3.
 model WorkoutProgram {
-  id               String    @id @default(uuid())
+  id                       String    @id @default(uuid())
   // TENANT key — the coaching business this program belongs to. Used by RLS
   // tenant-sharing checks and as the head-coach ownership anchor.
-  coach_id         String
+  coach_id                 String
   // OWNER key — the individual user (head coach or sub-coach) who authored /
   // owns this row. RLS write policy keys on this; forking writes a NEW owned
   // row so the fork passes the owner check.
-  owner_user_id    String
+  owner_user_id            String
   // 'owner_only'  => only owner_user_id (and service_role) can read.
   // 'tenant_shared' => any coach/sub-coach in the same coach_id tenant may read.
-  visibility       String    @default("owner_only")
+  visibility               String    @default("owner_only")
   // Provenance when this program was forked from another template (§7.3).
-  forked_from_id   String?
-  name             String
-  description      String?
-  weeks            Int
-  days_per_week    Int
+  forked_from_id           String?
+  name                     String
+  description              String?
+  weeks                    Int
+  days_per_week            Int
   // true => master template (authoring surface). false => a concrete program
   // cloned onto a client (cloned_from_id points at the master).
-  is_template      Boolean   @default(true)
-  cloned_from_id   String?
-  goal_tag         String?
-  version          Int       @default(1)
-  head_revision_id String?
+  is_template              Boolean   @default(true)
+  cloned_from_id           String?
+  goal_tag                 String?
+  version                  Int       @default(1)
+  head_revision_id         String?
   // ── F: Named Regimes (F2) ────────────────────────────────────────────
   // A "named regime" is a WorkoutProgram a coach has explicitly promoted so
   // it surfaces in the regime UI and can be attached to packages. We layer
@@ -2213,16 +2213,16 @@ model WorkoutProgram {
   //
   // is_regime — coach-marked flag distinguishing named regimes (surfaced in
   // regime UI) from raw workout-builder programs. Default false.
-  is_regime               Boolean   @default(false)
+  is_regime                Boolean   @default(false)
   // regime_display_name — name shown in the regime UI, INDEPENDENT of the
   // package name and of WorkoutProgram.name. Falls back to `name` when null.
-  regime_display_name     String?
+  regime_display_name      String?
   // revision_retention_count — rolling history depth for WorkoutProgramRevision
   // eviction on this regime. Default 3 = "last 2 versions + the new one".
-  revision_retention_count Int      @default(3)
-  created_at       DateTime  @default(now())
-  updated_at       DateTime  @updatedAt
-  archived_at      DateTime?
+  revision_retention_count Int       @default(3)
+  created_at               DateTime  @default(now())
+  updated_at               DateTime  @updatedAt
+  archived_at              DateTime?
 
   plans     WorkoutPlan[]            @relation("WorkoutProgramPlans")
   revisions WorkoutProgramRevision[]
@@ -3573,13 +3573,13 @@ model ClientPurchase {
   created_at                 DateTime     @default(now())
   updated_at                 DateTime     @updatedAt
 
-  splits         SplitLedgerEntry[]
-  transfers      ConnectTransfer[]
-  dunning        DunningState?
-  reminders      PaymentReminder[]
-  refunds        ChargeRefund[]
-  disputes       ChargeDispute[]
-  reconciliation ReconciliationSnapshot?
+  splits                 SplitLedgerEntry[]
+  transfers              ConnectTransfer[]
+  dunning                DunningState?
+  reminders              PaymentReminder[]
+  refunds                ChargeRefund[]
+  disputes               ChargeDispute[]
+  reconciliation         ReconciliationSnapshot?
   // F2 — partial-refund coach decisions keyed off this purchase.
   partialRefundDecisions PartialRefundDecision[]
 
@@ -4116,17 +4116,17 @@ model ChargeRefund {
 // 'partial_refund_decision'). One row per Stripe refund id (unique) so Stripe
 // webhook redelivery collapses to the same pending decision.
 model PartialRefundDecision {
-  id                 String         @id @default(uuid())
-  client_purchase_id String
-  client_purchase    ClientPurchase @relation(fields: [client_purchase_id], references: [id], onDelete: Cascade)
+  id                       String         @id @default(uuid())
+  client_purchase_id       String
+  client_purchase          ClientPurchase @relation(fields: [client_purchase_id], references: [id], onDelete: Cascade)
   // Stripe refund id this decision is keyed on. Unique so the partial-refund
   // hook is idempotent under webhook redelivery.
-  stripe_refund_id   String         @unique
+  stripe_refund_id         String         @unique
   // 'pending' | 'keep_drops' | 'unassign_drops'
-  decision           String         @default("pending")
-  decided_at         DateTime?
+  decision                 String         @default("pending")
+  decided_at               DateTime?
   decided_by_coach_user_id String?
-  created_at         DateTime       @default(now())
+  created_at               DateTime       @default(now())
 
   @@index([client_purchase_id, decision])
 }
@@ -6563,19 +6563,19 @@ model JobListing {
 // head-coach SELECT is granted only via the reused TeamSubCoachAssignment
 // predicate after a flip. anon → zero rows.
 model Applicant {
-  id               String   @id @default(uuid())
-  user_id          String   @unique
-  email            String
-  first_name       String
-  last_name        String
-  headline         String?
-  bio              String?
-  specialties      String[]
-  certifications   String[]
-  years_experience Int?
+  id                 String   @id @default(uuid())
+  user_id            String   @unique
+  email              String
+  first_name         String
+  last_name          String
+  headline           String?
+  bio                String?
+  specialties        String[]
+  certifications     String[]
+  years_experience   Int?
   sample_program_url String?
-  created_at       DateTime @default(now())
-  updated_at       DateTime @updatedAt
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
 
   @@index([email])
 }
@@ -6751,4 +6751,123 @@ model ExtensionPairCode {
   @@index([coach_id])
   @@index([expires_at])
   @@index([used_at])
+}
+
+// ─── ScoutProgressSnapshot ──────────────────────────────────────────────────────
+//
+// IMPORTER-E — cross-device progress mirroring for the tgp-importer Chrome
+// extension (DESIGN.md v0.3 §10). The extension's background worker POSTs its
+// status_snapshot to /api/scout/progress on every batch commit so the TGP
+// mobile app can mirror crawl progress on its in-app progress screen.
+//
+// One row per (coach_id, intent_id, device_id): the endpoint UPSERTS the latest
+// snapshot (only the newest matters — this is not an append log), so the hot
+// path is a single upsert flushed from an in-process cache rather than a write
+// per commit. device_id is in the key so a coach mirroring one import from two
+// physical devices at once (laptop + phone) keeps two independent rows.
+//
+// RLS: RESTRICTIVE deny-all to anon + authenticated; service_role bypass only.
+// The endpoint runs server-side under the extension bearer token and writes as
+// service_role. Mirrors MarketplaceConnectEvent (see 20261220000030 migration).
+model ScoutProgressSnapshot {
+  id         String   @id @default(uuid())
+  coach_id   String
+  intent_id  String
+  device_id  String
+  snapshot   Json
+  last_error String?
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@unique([coach_id, intent_id, device_id])
+  @@index([coach_id])
+}
+
+// ─── ScoutImportCompletion ──────────────────────────────────────────────────────
+//
+// IMPORTER-E — terminal completion ledger for an extension import
+// (DESIGN.md v0.3 §2 step 11). The extension POSTs /api/scout/ingest/complete
+// once the crawl settles; the row is the idempotency anchor.
+//
+// The @@unique([coach_id, intent_id]) makes completion exactly-once: a retry
+// after a network flake loses the unique-insert race and is treated as a no-op,
+// so the coach is never double-notified. When Lane 3's scout ingest table
+// (IMPORTER-B) lands, the settle step can additionally flip that import row's
+// state; this ledger is the independent source of truth until then.
+//
+// RLS: RESTRICTIVE deny-all to anon + authenticated; service_role bypass only.
+model ScoutImportCompletion {
+  id              String   @id @default(uuid())
+  coach_id        String
+  intent_id       String
+  terminal_status String
+  final_counts    Json?
+  error_summary   String?
+  completed_at    DateTime @default(now())
+
+  @@unique([coach_id, intent_id])
+  @@index([coach_id])
+}
+
+// ─── ScoutImport ────────────────────────────────────────────────────────────────
+//
+// IMPORTER-E — parent lifecycle state for an extension import (R-STATE-1).
+// The completion ledger (ScoutImportCompletion) records THAT a settle happened;
+// this table owns the import's current lifecycle STATE so the ingest side is not
+// stuck reading `in_progress` forever. /api/scout/ingest/complete flips `state`
+// to the reported terminal_status atomically, in the same $transaction as the
+// ledger insert, so the two can never disagree.
+//
+// `state` carries the lifecycle value: it starts at `in_progress` and is set to
+// the terminal_status (`success` | `partial` | `failed`) on settle.
+// `terminal_status` mirrors that terminal value for ledger parity and stays
+// null until the import settles. A second /complete for the same
+// (coach_id, intent_id) hits the ledger unique constraint, the transaction
+// rolls back, and the state is never re-flipped (idempotent settle).
+//
+// RLS: RESTRICTIVE deny-all to anon + authenticated; service_role bypass only,
+// the same posture as the other scout tables.
+model ScoutImport {
+  id              String    @id @default(uuid())
+  coach_id        String
+  intent_id       String
+  state           String    @default("in_progress")
+  terminal_status String?
+  started_at      DateTime  @default(now())
+  completed_at    DateTime?
+
+  @@unique([coach_id, intent_id])
+  @@index([coach_id])
+}
+
+// ─── ScoutIngestEntity ──────────────────────────────────────────────────────────
+//
+// IMPORTER-B — receiver store for the tgp-importer extension's autonomous crawl
+// envelope (POST /api/scout/ingest). One row per ingested entity. The envelope
+// shape is the R80-locked contract in tgp-importer-extension extractors/_interface.js
+// (makeEntity is the source of truth over the file's header comment):
+//   { intent_id, entity_type, entities:[{ sourceId, sourcePlatform, payload, capturedAt }] }
+// Provenance (sourceId/sourcePlatform/capturedAt) is top-level camelCase on each
+// entity; only intent_id/entity_type on the outer envelope stay snake_case.
+//
+// coach_id comes from the extension bearer-token identity (never a body field);
+// the (coach_id, intent_id, source_id) unique key makes the endpoint idempotent
+// so the extension can safely replay a batch during retry/recovery without
+// duplicating rows.
+//
+// RLS: RESTRICTIVE deny-all to anon + authenticated — written/read only via
+// service_role (the ingest endpoint runs server-side). Mirrors
+// MarketplaceMutationIdempotency. See the companion migration.
+model ScoutIngestEntity {
+  id              String    @id @default(uuid())
+  coach_id        String
+  intent_id       String
+  entity_type     String
+  source_id       String
+  source_platform String
+  captured_at     DateTime?
+  payload         Json
+  created_at      DateTime  @default(now())
+
+  @@unique([coach_id, intent_id, source_id])
+  @@index([coach_id, entity_type])
 }

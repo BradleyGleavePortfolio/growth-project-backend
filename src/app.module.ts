@@ -82,6 +82,7 @@ import { ExerciseCatalogModule } from './exercise-catalog/exercise-catalog.modul
 import { WorkoutBuilderModule } from './workout-builder/workout-builder.module';
 import { RegimesModule } from './regimes/regimes.module';
 import { MacrosModule } from './macros/macros.module';
+import { ScoutModule } from './scout/scout.module';
 import { RealMealPlansModule } from './real-meal-plans/real-meal-plans.module';
 import { InsightsModule } from './insights/insights.module';
 // Team Mode foundation — sub-coach assignments, curated audit feed,
@@ -331,6 +332,7 @@ import { WearablesModule } from './wearables/wearables.module';
     WorkoutBuilderModule,
     RegimesModule,
     MacrosModule,
+    ScoutModule,
     RealMealPlansModule,
     InsightsModule,
     // Team Mode v1 — head-coach -> sub-coach assignments, curated
