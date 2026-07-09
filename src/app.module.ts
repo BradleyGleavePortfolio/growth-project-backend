@@ -81,6 +81,7 @@ import { ExerciseCatalogModule } from './exercise-catalog/exercise-catalog.modul
 import { WorkoutBuilderModule } from './workout-builder/workout-builder.module';
 import { RegimesModule } from './regimes/regimes.module';
 import { MacrosModule } from './macros/macros.module';
+import { ScoutModule } from './scout/scout.module';
 import { RealMealPlansModule } from './real-meal-plans/real-meal-plans.module';
 import { InsightsModule } from './insights/insights.module';
 // Team Mode foundation — sub-coach assignments, curated audit feed,
@@ -124,9 +125,6 @@ import { LandingPagesModule } from './landing-pages/landing-pages.module';
 // PR-HK-0 — wearables/HealthKit foundation (schema + RLS gate). Provides the
 // canonical IngestionService + ProviderHttpClient that later wearables PRs build on.
 import { WearablesModule } from './wearables/wearables.module';
-// IMPORTER-E — scout progress + completion for the tgp-importer extension
-// (DESIGN.md v0.3 §10 + §2). Ships dark behind FEATURE_SCOUT_INGEST.
-import { ScoutModule } from './scout/scout.module';
 
 @Module({
   imports: [
@@ -332,6 +330,7 @@ import { ScoutModule } from './scout/scout.module';
     WorkoutBuilderModule,
     RegimesModule,
     MacrosModule,
+    ScoutModule,
     RealMealPlansModule,
     InsightsModule,
     // Team Mode v1 — head-coach -> sub-coach assignments, curated
@@ -373,7 +372,6 @@ import { ScoutModule } from './scout/scout.module';
     LandingPagesModule,
     // PR-HK-0 — wearables/HealthKit foundation.
     WearablesModule,
-    ScoutModule,
   ],
   providers: [
     // SECURITY: global JWT auth guard — every route is private by default.
