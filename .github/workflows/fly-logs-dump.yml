@@ -1,0 +1,28 @@
+name: Fly Logs Dump (operator)
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: "Fly app name"
+        required: true
+        default: "backend-spring-lake-3890"
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: App status
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl status --app "${{ inputs.app }}"
+          echo "──── machines ────"
+          flyctl machine list --app "${{ inputs.app }}"
+      - name: Recent logs (no tail)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          timeout 60 flyctl logs --app "${{ inputs.app }}" --no-tail || true
