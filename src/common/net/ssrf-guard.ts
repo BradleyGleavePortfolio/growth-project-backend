@@ -15,9 +15,16 @@
  * to pin axios to the resolved IP — otherwise a DNS rebinding attacker
  * could swap the resolution between the guard and the actual request.
  */
-import dns from 'dns';
+import * as dns from 'dns';
 import { promisify } from 'util';
 
+// NOTE: use a namespace import (`import * as dns`) rather than a default
+// import. With `esModuleInterop` off, `import dns from 'dns'` emits
+// `dns_1.default.lookup`, and `.default` is undefined on the CJS `dns`
+// module — this throws at module load, and the failure is triggered when
+// require-in-the-middle (Sentry instrumentation) wraps the module. The
+// namespace form emits `dns_1.lookup`, reading the property off the real
+// module object under any wrapping.
 const dnsLookup = promisify(dns.lookup);
 
 // IPv4 ranges that must never be reached from a server-side HTTP request
