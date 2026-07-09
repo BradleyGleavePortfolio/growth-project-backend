@@ -14,27 +14,20 @@ jobs:
     steps:
       - name: Install flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
-      - name: App status
+      - name: Live-capture a machine boot
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          flyctl status --app "${{ inputs.app }}"
-          echo "──── machines ────"
-          flyctl machine list --app "${{ inputs.app }}"
-      - name: Force machine start and probe
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: |
+          set -x
           MID=$(flyctl machine list --app "${{ inputs.app }}" --json | python3 -c "import sys,json; ms=json.load(sys.stdin); print([m['id'] for m in ms if m.get('config',{}).get('metadata',{}).get('fly_process_group','app')=='app'][0])")
           echo "machine: $MID"
+          (timeout 100 flyctl logs --app "${{ inputs.app }}" > /tmp/live.log 2>&1 || true) &
+          LOGPID=$!
+          sleep 5
           flyctl machine start "$MID" --app "${{ inputs.app }}" || true
-          sleep 50
+          sleep 90
+          kill $LOGPID 2>/dev/null || true
+          echo "──────── LIVE BOOT LOGS ────────"
+          cat /tmp/live.log
+          echo "──────── MACHINE STATUS ────────"
           flyctl machine status "$MID" --app "${{ inputs.app }}" || true
-          echo "──── health probe from runner ────"
-          curl -s -o /tmp/h.json -w "HTTP %{http_code} in %{time_total}s\n" --max-time 60 "https://${{ inputs.app }}.fly.dev/api/health" || true
-          cat /tmp/h.json 2>/dev/null || true
-      - name: Recent logs (no tail)
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: |
-          timeout 90 flyctl logs --app "${{ inputs.app }}" --no-tail || true
