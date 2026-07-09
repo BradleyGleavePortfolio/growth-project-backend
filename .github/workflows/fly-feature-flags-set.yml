@@ -1,0 +1,121 @@
+name: Fly Feature Flags Set (operator)
+
+# Operator workflow that flips the importer-wave feature flags on the
+# production Fly app via `fly secrets set`. Triggered manually via
+# workflow_dispatch only — never on push/PR — matching the pattern of
+# the existing Fly Secrets Set (operator) workflow.
+#
+# What it does:
+#   1. Pushes FEATURE_SCOUT_INGEST and FEATURE_EXTENSION_PAIRING to Fly
+#      in one `fly secrets set` invocation so machines restart once.
+#      Both values are non-sensitive booleans read at request time by
+#      src/common/feature-flag/feature-flag-not-found.middleware.ts.
+#   2. Validates by running `fly secrets list` and checking both names
+#      are present. Only names and digests are printed, never values.
+#
+# How to run (operator):
+#   gh workflow run "Fly Feature Flags Set (operator)" \
+#     -f app=backend-spring-lake-3890 \
+#     -f confirm=SET \
+#     -f feature_scout_ingest=true \
+#     -f feature_extension_pairing=true
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Fly app name (production)
+        required: true
+        default: backend-spring-lake-3890
+      confirm:
+        description: Type SET to confirm you intend to change production flags
+        required: true
+        default: ''
+      feature_scout_ingest:
+        description: Value for FEATURE_SCOUT_INGEST (true/false)
+        required: true
+        default: 'true'
+      feature_extension_pairing:
+        description: Value for FEATURE_EXTENSION_PAIRING (true/false)
+        required: true
+        default: 'true'
+
+permissions:
+  contents: read
+
+jobs:
+  fly-feature-flags-set:
+    name: Push feature flags to Fly
+    runs-on: ubuntu-latest
+    concurrency: fly-secrets-${{ inputs.app }}
+    steps:
+      - name: Confirm operator intent
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "${CONFIRM}" != "SET" ]; then
+            echo "::error::confirm input must be the literal string 'SET'. Aborting."
+            exit 1
+          fi
+          echo "Operator confirmed."
+
+      - name: Validate flag values
+        env:
+          SCOUT: ${{ inputs.feature_scout_ingest }}
+          PAIRING: ${{ inputs.feature_extension_pairing }}
+        run: |
+          for v in "${SCOUT}" "${PAIRING}"; do
+            case "${v}" in
+              true|false) ;;
+              *)
+                echo "::error::Flag values must be exactly 'true' or 'false' — got '${v}'."
+                exit 1
+                ;;
+            esac
+          done
+          echo "Flag values are valid booleans."
+
+      - name: Check Fly token configuration
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "${FLY_API_TOKEN}" ]; then
+            echo "::error::FLY_API_TOKEN secret is not set — cannot manage secrets."
+            exit 1
+          fi
+          echo "FLY_API_TOKEN is configured."
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Push feature flags to Fly
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ inputs.app }}
+          SCOUT: ${{ inputs.feature_scout_ingest }}
+          PAIRING: ${{ inputs.feature_extension_pairing }}
+        run: |
+          set +x
+          flyctl secrets set -a "${APP}" \
+            FEATURE_SCOUT_INGEST="${SCOUT}" \
+            FEATURE_EXTENSION_PAIRING="${PAIRING}"
+
+      - name: Validate flag names exist on Fly
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ inputs.app }}
+        run: |
+          set +x
+          listing=$(flyctl secrets list -a "${APP}")
+          echo "${listing}"
+          names=$(echo "${listing}" | awk '{print $1}')
+          missing=""
+          for name in FEATURE_SCOUT_INGEST FEATURE_EXTENSION_PAIRING; do
+            if ! echo "${names}" | grep -qx "${name}"; then
+              missing="${missing} ${name}"
+            fi
+          done
+          if [ -n "${missing}" ]; then
+            echo "::error::Flags did not appear on Fly after set:${missing}"
+            exit 1
+          fi
+          echo "Both feature flag names are present on Fly."
