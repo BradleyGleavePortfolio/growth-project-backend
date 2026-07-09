@@ -21,8 +21,20 @@ jobs:
           flyctl status --app "${{ inputs.app }}"
           echo "──── machines ────"
           flyctl machine list --app "${{ inputs.app }}"
+      - name: Force machine start and probe
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          MID=$(flyctl machine list --app "${{ inputs.app }}" --json | python3 -c "import sys,json; ms=json.load(sys.stdin); print([m['id'] for m in ms if m.get('config',{}).get('metadata',{}).get('fly_process_group','app')=='app'][0])")
+          echo "machine: $MID"
+          flyctl machine start "$MID" --app "${{ inputs.app }}" || true
+          sleep 50
+          flyctl machine status "$MID" --app "${{ inputs.app }}" || true
+          echo "──── health probe from runner ────"
+          curl -s -o /tmp/h.json -w "HTTP %{http_code} in %{time_total}s\n" --max-time 60 "https://${{ inputs.app }}.fly.dev/api/health" || true
+          cat /tmp/h.json 2>/dev/null || true
       - name: Recent logs (no tail)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          timeout 60 flyctl logs --app "${{ inputs.app }}" --no-tail || true
+          timeout 90 flyctl logs --app "${{ inputs.app }}" --no-tail || true
