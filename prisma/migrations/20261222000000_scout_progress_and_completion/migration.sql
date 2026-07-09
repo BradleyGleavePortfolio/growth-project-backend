@@ -7,10 +7,13 @@
 --
 -- Dated AFTER main's latest migration 20261221010000_add_signup_ref_to_user.
 --
--- ScoutProgressSnapshot: latest crawl snapshot per (coach_id, intent_id). The
--- endpoint upserts (not appends) so only the newest snapshot is retained; the
--- @@unique anchors the upsert. Progress can arrive before the first ingest
--- batch, so there is deliberately NO foreign key to any ingest table.
+-- ScoutProgressSnapshot: latest crawl snapshot per (coach_id, intent_id,
+-- device_id). The endpoint upserts (not appends) so only the newest snapshot per
+-- device is retained; the @@unique anchors the upsert. device_id is in the key
+-- so a coach mirroring one import from two physical devices at once keeps two
+-- independent rows instead of clobbering each other. Progress can arrive before
+-- the first ingest batch, so there is deliberately NO foreign key to any ingest
+-- table.
 --
 -- ScoutImportCompletion: terminal completion per (coach_id, intent_id). The
 -- @@unique is the idempotency anchor — a redelivered completion loses the
@@ -26,6 +29,7 @@ CREATE TABLE "ScoutProgressSnapshot" (
     "id" TEXT NOT NULL,
     "coach_id" TEXT NOT NULL,
     "intent_id" TEXT NOT NULL,
+    "device_id" TEXT NOT NULL,
     "snapshot" JSONB NOT NULL,
     "last_error" TEXT,
     "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -33,7 +37,7 @@ CREATE TABLE "ScoutProgressSnapshot" (
     CONSTRAINT "ScoutProgressSnapshot_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "ScoutProgressSnapshot_coach_id_intent_id_key" ON "ScoutProgressSnapshot"("coach_id", "intent_id");
+CREATE UNIQUE INDEX "ScoutProgressSnapshot_coach_id_intent_id_device_id_key" ON "ScoutProgressSnapshot"("coach_id", "intent_id", "device_id");
 CREATE INDEX "ScoutProgressSnapshot_coach_id_idx" ON "ScoutProgressSnapshot"("coach_id");
 
 CREATE TABLE "ScoutImportCompletion" (
