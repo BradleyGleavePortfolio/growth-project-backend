@@ -15,6 +15,12 @@ module.exports = [
       'node_modules/**',
       'prisma/migrations/**',
       '**/*.js',
+      // Re-include the root config .js so lefthook's eslint pre-commit hook
+      // (which passes every staged *.js to eslint) lints them instead of
+      // emitting a "File ignored" warning that trips --max-warnings 0 when a
+      // slice edits jest.config.js. Both files lint clean.
+      '!jest.config.js',
+      '!eslint.config.js',
     ],
   },
 

@@ -69,6 +69,15 @@ module.exports = {
   // and the root is intentionally the slice subtree ONLY — NOT the whole
   // `src/` tree. Both specs use mocked Prisma and need no live DB; the
   // JobListing RLS coverage lives under test/rls/ from TM-1.
+  // IMPORTER-D adds `src/extension-pair` as a TWELFTH narrowly-scoped root so
+  // the pairing-code unit specs colocated under
+  // src/extension-pair/__tests__/*.spec.ts (service init/status/redeem,
+  // controller binding, feature-flag guard, and the AuthService mint helper)
+  // are discovered. Same rationale as the roots above: this slice owns those
+  // spec files in the source tree, and the root is intentionally the slice
+  // subtree ONLY — NOT the whole `src/` tree. All specs mock Prisma/Supabase
+  // and need no live DB; the ExtensionPairCode RLS coverage lives under
+  // test/rls/.
   roots: [
     '<rootDir>/test',
     '<rootDir>/src/roman/voice',
@@ -81,6 +90,7 @@ module.exports = {
     '<rootDir>/src/regimes',
     '<rootDir>/src/feature-flags',
     '<rootDir>/src/talent-marketplace',
+    '<rootDir>/src/extension-pair',
     // IMPORTER-E adds `src/scout` as a narrowly-scoped root so the scout
     // progress/completion unit specs colocated under src/scout/*.spec.ts are
     // discovered. Same rationale as the roots above: this slice owns those spec

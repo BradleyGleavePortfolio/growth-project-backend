@@ -6,6 +6,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { UserThrottlerGuard } from './throttler/user-throttler.guard';
 import { buildThrottlerOptions } from './throttler/throttler.config';
 import { AuthModule } from './auth/auth.module';
+import { ExtensionPairModule } from './extension-pair/extension-pair.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 import { ProfileModule } from './profile/profile.module';
@@ -174,6 +175,7 @@ import { WearablesModule } from './wearables/wearables.module';
     SecurityGuardsModule,
 
     AuthModule,
+    ExtensionPairModule,
     ProfileModule,
     FoodModule,
     LogModule,
