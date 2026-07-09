@@ -1,0 +1,45 @@
+name: Fly Launch Env Set (operator)
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Fly app name
+        required: true
+      confirm:
+        description: Type SET to confirm
+        required: true
+
+jobs:
+  set:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "SET" ]; then
+            echo "Confirmation not provided; aborting."
+            exit 1
+          fi
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Set launch env vars
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          V_PII_SALT: ${{ secrets.GUEST_CHECKOUT_PII_SALT }}
+          V_LANDING: ${{ secrets.LANDING_VIEW_HASH_SECRET }}
+          V_CHECKOUT: ${{ secrets.CHECKOUT_RECOVERY_SECRET }}
+          V_CENTS: ${{ secrets.COACH_AI_MAX_ACTUAL_CENTS }}
+          V_MULT: ${{ secrets.COACH_AI_VALUE_MULTIPLIER }}
+          V_ANDROID: ${{ secrets.ANDROID_CERT_SHA256_FINGERPRINTS }}
+        run: |
+          for pair in "GUEST_CHECKOUT_PII_SALT=$V_PII_SALT" "LANDING_VIEW_HASH_SECRET=$V_LANDING" "CHECKOUT_RECOVERY_SECRET=$V_CHECKOUT" "COACH_AI_MAX_ACTUAL_CENTS=$V_CENTS" "COACH_AI_VALUE_MULTIPLIER=$V_MULT"; do
+            name="${pair%%=*}"; val="${pair#*=}"
+            if [ -z "$val" ]; then echo "Missing GH secret for $name; aborting."; exit 1; fi
+          done
+          args="GUEST_CHECKOUT_PII_SALT=$V_PII_SALT LANDING_VIEW_HASH_SECRET=$V_LANDING CHECKOUT_RECOVERY_SECRET=$V_CHECKOUT COACH_AI_MAX_ACTUAL_CENTS=$V_CENTS COACH_AI_VALUE_MULTIPLIER=$V_MULT"
+          if [ -n "$V_ANDROID" ]; then
+            args="$args ANDROID_CERT_SHA256_FINGERPRINTS=$V_ANDROID"
+            echo "Including ANDROID_CERT_SHA256_FINGERPRINTS."
+          else
+            echo "ANDROID_CERT_SHA256_FINGERPRINTS not set in repo secrets; skipping."
+          fi
+          flyctl secrets set $args --app "${{ github.event.inputs.app }}"
