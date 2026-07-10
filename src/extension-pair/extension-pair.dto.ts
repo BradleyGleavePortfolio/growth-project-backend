@@ -50,25 +50,71 @@ export class PairStatusDto {
 }
 
 // Status of a pairing code as reported to the polling mobile app.
-export type PairStatus = 'pending' | 'paired' | 'expired';
+export const PAIR_STATUSES = ['pending', 'paired', 'expired'] as const;
+export type PairStatus = (typeof PAIR_STATUSES)[number];
 
-export interface PairInitResult {
-  pairing_code: string;
-  expires_at: string;
+// Result shapes are decorated classes (not bare interfaces) so @nestjs/swagger
+// can emit their schemas into the frozen importer contract (R80). Structural
+// typing keeps the service layer, which returns plain object literals,
+// compatible without change.
+export class PairInitResult {
+  @ApiProperty({
+    description: '6-digit numeric pairing code the coach reads out to the extension.',
+    example: '142856',
+  })
+  pairing_code!: string;
+
+  @ApiProperty({
+    description: 'ISO-8601 instant the code expires (short TTL, DESIGN §4).',
+    format: 'date-time',
+    example: '2026-07-09T18:35:00.000Z',
+  })
+  expires_at!: string;
 }
 
-export interface PairStatusResult {
-  status: PairStatus;
+export class PairStatusResult {
+  @ApiProperty({
+    description: 'Lifecycle state of the polled code.',
+    enum: PAIR_STATUSES,
+    example: 'pending',
+  })
+  status!: PairStatus;
 }
 
-export interface PairRedeemResult {
-  access_token: string;
-  refresh_token: string;
-  chosen_platform: string;
+export class PairRedeemResult {
+  @ApiProperty({ description: 'Coach-bound Supabase access token.' })
+  access_token!: string;
+
+  @ApiProperty({ description: 'Coach-bound Supabase refresh token.' })
+  refresh_token!: string;
+
+  @ApiProperty({
+    description: 'Source platform the code was minted for (echoed to the extension).',
+    example: 'truecoach',
+  })
+  chosen_platform!: string;
 }
 
 // Structured failure reasons for redeem (DESIGN.md v0.3 §4). Surfaced in the
 // error body's `code` field so the extension popup can map each to the right
 // user-facing string. `locked` = the code burned through its per-code attempt
 // budget and is hard-invalidated (re-mint required).
-export type PairRedeemErrorCode = 'expired' | 'already_used' | 'invalid' | 'locked';
+export const PAIR_REDEEM_ERROR_CODES = ['expired', 'already_used', 'invalid', 'locked'] as const;
+export type PairRedeemErrorCode = (typeof PAIR_REDEEM_ERROR_CODES)[number];
+
+// Error body returned by redeem on the 400/410 paths. Modeled so the contract
+// pins both the enum of failure reasons and the presence of a human message.
+export class PairRedeemErrorDto {
+  @ApiProperty({
+    description: 'Machine-readable failure reason for a rejected redeem.',
+    enum: PAIR_REDEEM_ERROR_CODES,
+    example: 'expired',
+  })
+  code!: PairRedeemErrorCode;
+
+  @ApiProperty({
+    description: 'Human-readable failure message.',
+    example: 'This pairing code has expired.',
+  })
+  message!: string;
+}

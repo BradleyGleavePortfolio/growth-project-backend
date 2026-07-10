@@ -1,4 +1,12 @@
-import { IsEmail, IsIn, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // SECURITY: DTOs for high-risk auth endpoints that touch the User model and/or
@@ -31,7 +39,9 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   @MaxLength(64)
-  @Matches(/^[a-z0-9_-]+$/, { message: 'ref must be lowercase alphanumeric with dashes/underscores' })
+  @Matches(/^[a-z0-9_-]+$/, {
+    message: 'ref must be lowercase alphanumeric with dashes/underscores',
+  })
   ref?: string;
 }
 
@@ -228,8 +238,7 @@ export class SignupWithCodeDto {
   phone?: string;
 
   @ApiPropertyOptional({
-    description:
-      'Required when COACH_CODE_GATE_ENABLED=true; otherwise optional.',
+    description: 'Required when COACH_CODE_GATE_ENABLED=true; otherwise optional.',
     example: 'GP-A1B2C3',
     maxLength: 32,
   })
@@ -242,7 +251,9 @@ export class SignupWithCodeDto {
   @IsOptional()
   @IsString()
   @MaxLength(64)
-  @Matches(/^[a-z0-9_-]+$/, { message: 'ref must be lowercase alphanumeric with dashes/underscores' })
+  @Matches(/^[a-z0-9_-]+$/, {
+    message: 'ref must be lowercase alphanumeric with dashes/underscores',
+  })
   ref?: string;
 }
 
@@ -256,6 +267,39 @@ export class ExtensionRefreshDto {
   @MinLength(1)
   @MaxLength(4096)
   refresh_token!: string;
+}
+
+// 200 body: the rotated Supabase session the extension stores. expires_in /
+// expires_at are Supabase's own numeric fields (seconds / unix-seconds) and are
+// passed through verbatim (expires_at may be absent on some Supabase responses).
+export class ExtensionRefreshResult {
+  @ApiProperty({ description: 'Rotated Supabase access token.' })
+  access_token!: string;
+
+  @ApiProperty({ description: 'Rotated Supabase refresh token.' })
+  refresh_token!: string;
+
+  @ApiProperty({ description: 'Access-token lifetime in seconds.', example: 3600 })
+  expires_in!: number;
+
+  @ApiPropertyOptional({
+    description: 'Absolute expiry as a unix timestamp (seconds).',
+    example: 1_752_086_400,
+  })
+  expires_at?: number;
+}
+
+// 401 body for a rejected refresh (R109 structured error). `code` is a fixed
+// discriminant the extension keys off to force a re-pair.
+export class ExtensionRefreshErrorDto {
+  @ApiProperty({ description: 'Fixed failure discriminant.', example: 'extension_refresh_invalid' })
+  code!: string;
+
+  @ApiProperty({
+    description: 'Human-readable failure message.',
+    example: 'refresh token invalid or expired',
+  })
+  message!: string;
 }
 
 // First-gym bootstrap: creates the very first owner-role user on a fresh
@@ -325,8 +369,7 @@ export class IssueRecentAuthTokenDto {
   provider_token?: string;
 
   @ApiPropertyOptional({
-    description:
-      'Provider for provider_token. Required when provider_token is provided.',
+    description: 'Provider for provider_token. Required when provider_token is provided.',
     enum: ['google', 'apple'],
   })
   @IsOptional()

@@ -1,0 +1,751 @@
+{
+  "components": {
+    "schemas": {
+      "ExtensionRefreshDto": {
+        "properties": {
+          "refresh_token": {
+            "description": "Supabase refresh token issued by /auth/extension/login",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "type": "object"
+      },
+      "ExtensionRefreshErrorDto": {
+        "properties": {
+          "code": {
+            "description": "Fixed failure discriminant.",
+            "example": "extension_refresh_invalid",
+            "type": "string"
+          },
+          "message": {
+            "description": "Human-readable failure message.",
+            "example": "refresh token invalid or expired",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "ExtensionRefreshResult": {
+        "properties": {
+          "access_token": {
+            "description": "Rotated Supabase access token.",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "Absolute expiry as a unix timestamp (seconds).",
+            "example": 1752086400,
+            "type": "number"
+          },
+          "expires_in": {
+            "description": "Access-token lifetime in seconds.",
+            "example": 3600,
+            "type": "number"
+          },
+          "refresh_token": {
+            "description": "Rotated Supabase refresh token.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token",
+          "expires_in"
+        ],
+        "type": "object"
+      },
+      "PairInitDto": {
+        "properties": {
+          "chosen_platform": {
+            "description": "Source coaching platform the coach is migrating from. Lowercase slug driven by the extension ROADMAP matrix (truecoach, trainerize, mypthub, …).",
+            "example": "truecoach",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chosen_platform"
+        ],
+        "type": "object"
+      },
+      "PairInitResult": {
+        "properties": {
+          "expires_at": {
+            "description": "ISO-8601 instant the code expires (short TTL, DESIGN §4).",
+            "example": "2026-07-09T18:35:00.000Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "pairing_code": {
+            "description": "6-digit numeric pairing code the coach reads out to the extension.",
+            "example": "142856",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pairing_code",
+          "expires_at"
+        ],
+        "type": "object"
+      },
+      "PairRedeemDto": {
+        "properties": {
+          "code": {
+            "description": "6-digit numeric pairing code minted by POST /api/extension/pair/init.",
+            "example": "142856",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "PairRedeemErrorDto": {
+        "properties": {
+          "code": {
+            "description": "Machine-readable failure reason for a rejected redeem.",
+            "enum": [
+              "expired",
+              "already_used",
+              "invalid",
+              "locked"
+            ],
+            "example": "expired",
+            "type": "string"
+          },
+          "message": {
+            "description": "Human-readable failure message.",
+            "example": "This pairing code has expired.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "PairRedeemResult": {
+        "properties": {
+          "access_token": {
+            "description": "Coach-bound Supabase access token.",
+            "type": "string"
+          },
+          "chosen_platform": {
+            "description": "Source platform the code was minted for (echoed to the extension).",
+            "example": "truecoach",
+            "type": "string"
+          },
+          "refresh_token": {
+            "description": "Coach-bound Supabase refresh token.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token",
+          "chosen_platform"
+        ],
+        "type": "object"
+      },
+      "PairStatusDto": {
+        "properties": {
+          "code": {
+            "description": "6-digit numeric pairing code to poll (the code the caller minted).",
+            "example": "142856",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "PairStatusResult": {
+        "properties": {
+          "status": {
+            "description": "Lifecycle state of the polled code.",
+            "enum": [
+              "pending",
+              "paired",
+              "expired"
+            ],
+            "example": "pending",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "ScoutCompleteDto": {
+        "properties": {
+          "error_summary": {
+            "description": "Human-readable summary for partial/failed runs.",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "final_counts": {
+            "additionalProperties": true,
+            "description": "Optional per-entity final tally.",
+            "type": "object"
+          },
+          "intent_id": {
+            "description": "Crawl session id (snake_case outer envelope).",
+            "example": "intent_2026_07_09_abc123",
+            "maxLength": 128,
+            "type": "string"
+          },
+          "terminal_status": {
+            "description": "Terminal state the crawl settled into.",
+            "enum": [
+              "success",
+              "partial",
+              "failed"
+            ],
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent_id",
+          "terminal_status"
+        ],
+        "type": "object"
+      },
+      "ScoutCompleteResult": {
+        "properties": {
+          "acknowledged": {
+            "description": "Always true on a successful (idempotent) settle.",
+            "example": true,
+            "type": "boolean"
+          },
+          "intent_id": {
+            "description": "The intent id that was settled.",
+            "example": "intent_2026_07_09_abc123",
+            "type": "string"
+          }
+        },
+        "required": [
+          "acknowledged",
+          "intent_id"
+        ],
+        "type": "object"
+      },
+      "ScoutEntityDto": {
+        "properties": {
+          "capturedAt": {
+            "description": "Strict ISO-8601 timestamp with a mandatory \"T\" separator (new Date().toISOString()).",
+            "example": "2026-07-09T18:30:00.000Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "description": "Opaque source record. Extractor-specific fields are preserved verbatim; the server strips a credential/prototype-pollution denylist before persistence.",
+            "type": "object"
+          },
+          "sourceId": {
+            "description": "Stable per-record id from the source platform (camelCase, top-level provenance).",
+            "example": "tc_client_9f831",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourcePlatform": {
+            "description": "Slug of the platform the record was captured from (camelCase, top-level).",
+            "example": "truecoach",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceId",
+          "sourcePlatform",
+          "capturedAt",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "ScoutIngestDto": {
+        "properties": {
+          "entities": {
+            "description": "Crawled records for this batch (1..500).",
+            "items": {
+              "$ref": "#/components/schemas/ScoutEntityDto"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          },
+          "entity_type": {
+            "description": "Entity family carried by this batch (e.g. clients, workouts, library).",
+            "example": "clients",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "intent_id": {
+            "description": "Idempotency scope for this crawl session (snake_case outer envelope).",
+            "example": "intent_2026_07_09_abc123",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent_id",
+          "entity_type",
+          "entities"
+        ],
+        "type": "object"
+      },
+      "ScoutIngestResult": {
+        "properties": {
+          "deduped": {
+            "description": "Entities that produced no new row (idempotent replay).",
+            "example": 3,
+            "type": "number"
+          },
+          "received": {
+            "description": "Entities in the accepted envelope.",
+            "example": 42,
+            "type": "number"
+          }
+        },
+        "required": [
+          "received",
+          "deduped"
+        ],
+        "type": "object"
+      },
+      "ScoutProgressDto": {
+        "properties": {
+          "deviceId": {
+            "description": "Client-minted stable device id (camelCase); part of the progress storage key.",
+            "example": "dev_5f2c",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "intent_id": {
+            "description": "Crawl session id (snake_case outer envelope).",
+            "example": "intent_2026_07_09_abc123",
+            "maxLength": 128,
+            "type": "string"
+          },
+          "lastError": {
+            "description": "Latest non-fatal error, if any.",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "progress": {
+            "description": "Per-entity progress lines.",
+            "items": {
+              "$ref": "#/components/schemas/ScoutProgressEntryDto"
+            },
+            "maxItems": 64,
+            "type": "array"
+          }
+        },
+        "required": [
+          "intent_id",
+          "deviceId",
+          "progress"
+        ],
+        "type": "object"
+      },
+      "ScoutProgressEntryDto": {
+        "properties": {
+          "count_committed": {
+            "description": "Entities committed so far for this family.",
+            "example": 12,
+            "minimum": 0,
+            "type": "number"
+          },
+          "entity_type": {
+            "description": "Entity family this line reports on.",
+            "example": "clients",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "total_estimated": {
+            "description": "Best-effort total the crawler expects.",
+            "example": 40,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "entity_type",
+          "count_committed",
+          "total_estimated"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "bearerFormat": "JWT",
+        "description": "Supabase-issued JWT. Send as `Authorization: Bearer <token>`. Tokens are verified against the Supabase JWKS in JwtAuthGuard.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Frozen public contract for the tgp-importer Chrome extension + mobile pairing surface. Generated from the backend @nestjs/swagger document — do not hand-edit. Run `npm run contract:importer` to regenerate.",
+    "title": "Growth Project API — Importer Contract",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/auth/extension/refresh": {
+      "post": {
+        "description": "Proxies Supabase refreshSession(refresh_token) and returns the rotated access/refresh pair. No backend-minted tokens — Supabase owns rotation and revocation. Rate-limited 30/min per IP.",
+        "operationId": "AuthController_extensionRefresh",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtensionRefreshDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionRefreshResult"
+                }
+              }
+            },
+            "description": "Rotated token pair."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionRefreshErrorDto"
+                }
+              }
+            },
+            "description": "Refresh token invalid or expired."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          }
+        },
+        "summary": "Extension token refresh (tgp-importer Chrome extension)",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/extension/pair/init": {
+      "post": {
+        "description": "Mobile-authenticated coach mints a 6-digit code bound to their account + chosen source platform. Returns { pairing_code, expires_at }. Returns 404 when FEATURE_EXTENSION_PAIRING is off.",
+        "operationId": "ExtensionPairController_init",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairInitDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairInitResult"
+                }
+              }
+            },
+            "description": "Pairing code minted."
+          },
+          "403": {
+            "description": "Caller is not a coach."
+          },
+          "404": {
+            "description": "Pairing feature disabled."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mint a pairing code (mobile app → extension bridge)",
+        "tags": [
+          "extension-pair"
+        ]
+      }
+    },
+    "/api/extension/pair/redeem": {
+      "post": {
+        "description": "UNAUTHENTICATED. The extension exchanges a 6-digit code for a coach-bound Supabase token pair + chosen_platform. Single-use: a second redeem of the same code returns 410 already_used. Expired → 410 expired; unknown/malformed → 400 invalid. After too many failed attempts a code is hard-locked → 410 locked. Rate-limited per IP. Returns 404 when FEATURE_EXTENSION_PAIRING is off.",
+        "operationId": "ExtensionPairController_redeem",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairRedeemDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairRedeemResult"
+                }
+              }
+            },
+            "description": "Token pair issued."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairRedeemErrorDto"
+                }
+              }
+            },
+            "description": "Invalid pairing code."
+          },
+          "404": {
+            "description": "Pairing feature disabled."
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairRedeemErrorDto"
+                }
+              }
+            },
+            "description": "Code expired, already used, or locked."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          }
+        },
+        "summary": "Redeem a pairing code (extension bootstrap)",
+        "tags": [
+          "extension-pair"
+        ]
+      }
+    },
+    "/api/extension/pair/status": {
+      "post": {
+        "description": "Mobile-authenticated coach polls their OWN code. The code travels in the POST body (never a query string, which would leak into logs/history/APM). Returns { status: pending | paired | expired }. A code the caller did not mint reads as `expired` (never confirms another coach's code). Returns 404 when FEATURE_EXTENSION_PAIRING is off.",
+        "operationId": "ExtensionPairController_status",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairStatusDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairStatusResult"
+                }
+              }
+            },
+            "description": "Pairing code status."
+          },
+          "403": {
+            "description": "Caller is not a coach."
+          },
+          "404": {
+            "description": "Pairing feature disabled."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Poll a pairing code status",
+        "tags": [
+          "extension-pair"
+        ]
+      }
+    },
+    "/api/scout/ingest": {
+      "post": {
+        "description": "Receives the extension crawl envelope { intent_id, entity_type, entities[] }. Idempotent on (coach_id, intent_id, sourceId). Returns 202 { received, deduped }. Returns 404 when FEATURE_SCOUT_INGEST is off.",
+        "operationId": "ScoutIngestController_ingest",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScoutIngestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoutIngestResult"
+                }
+              }
+            },
+            "description": "Batch accepted."
+          },
+          "400": {
+            "description": "Validation failed or batch oversized."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          },
+          "403": {
+            "description": "Caller is not a coach."
+          },
+          "404": {
+            "description": "Feature disabled (FEATURE_SCOUT_INGEST off)."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Ingest a batch of crawled entities",
+        "tags": [
+          "scout"
+        ]
+      }
+    },
+    "/api/scout/ingest/complete": {
+      "post": {
+        "description": "Idempotent per (coach, intent): the first call atomically flips the parent ScoutImport row to its terminal state AND appends the completion ledger row in a single transaction (R-STATE-1), then pushes an import.complete notification to the mobile app. Retries after a network flake are acknowledged no-ops — the ledger unique constraint rolls the transaction back, so the state is never re-flipped and the coach is never double-notified.",
+        "operationId": "ScoutController_postComplete",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScoutCompleteDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoutCompleteResult"
+                }
+              }
+            },
+            "description": "Completion acknowledged."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          },
+          "403": {
+            "description": "Caller is not a coach or owner."
+          },
+          "404": {
+            "description": "Feature disabled (FEATURE_SCOUT_INGEST off)."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Settle an extension import to its terminal state",
+        "tags": [
+          "scout"
+        ]
+      }
+    },
+    "/api/scout/progress": {
+      "post": {
+        "description": "Accepts the status_snapshot the extension broadcasts on every batch commit and records the latest per (coach, intent). Cheap by design: the snapshot is coalesced in-process and flushed to storage on a timer.",
+        "operationId": "ScoutController_postProgress",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScoutProgressDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Snapshot accepted."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          },
+          "403": {
+            "description": "Caller is not a coach or owner."
+          },
+          "404": {
+            "description": "Feature disabled (FEATURE_SCOUT_INGEST off)."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mirror an extension crawl progress snapshot to the mobile app",
+        "tags": [
+          "scout"
+        ]
+      }
+    }
+  }
+}

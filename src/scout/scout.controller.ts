@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagg
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { Roles } from '../common/decorators/roles.decorator';
-import { ScoutCompleteDto, ScoutProgressDto } from './scout.dto';
+import { ScoutCompleteDto, ScoutCompleteResult, ScoutProgressDto } from './scout.dto';
 import { ScoutService } from './scout.service';
 
 /**
@@ -25,7 +25,9 @@ import { ScoutService } from './scout.service';
 @ApiTags('scout')
 @ApiBearerAuth('bearer')
 @ApiResponse({ status: 401, description: 'Missing or invalid bearer token.' })
+@ApiResponse({ status: 403, description: 'Caller is not a coach or owner.' })
 @ApiResponse({ status: 404, description: 'Feature disabled (FEATURE_SCOUT_INGEST off).' })
+@ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
 @Controller('scout')
 export class ScoutController {
   constructor(private readonly scout: ScoutService) {}
@@ -57,7 +59,7 @@ export class ScoutController {
       'transaction back, so the state is never re-flipped and the coach is ' +
       'never double-notified.',
   })
-  @ApiResponse({ status: 200, description: 'Completion acknowledged.' })
+  @ApiResponse({ status: 200, description: 'Completion acknowledged.', type: ScoutCompleteResult })
   @Post('ingest/complete')
   @HttpCode(200)
   @Roles('coach', 'owner')

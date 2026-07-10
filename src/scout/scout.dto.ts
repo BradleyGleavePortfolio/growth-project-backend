@@ -1,3 +1,4 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -22,14 +23,25 @@ import {
 
 /** One per-entity progress line inside a status_snapshot. */
 export class ScoutProgressEntryDto {
+  @ApiProperty({
+    description: 'Entity family this line reports on.',
+    maxLength: 64,
+    example: 'clients',
+  })
   @IsString()
   @MaxLength(64)
   entity_type!: string;
 
+  @ApiProperty({
+    description: 'Entities committed so far for this family.',
+    minimum: 0,
+    example: 12,
+  })
   @IsInt()
   @Min(0)
   count_committed!: number;
 
+  @ApiProperty({ description: 'Best-effort total the crawler expects.', minimum: 0, example: 40 })
   @IsInt()
   @Min(0)
   total_estimated!: number;
@@ -42,6 +54,11 @@ export class ScoutProgressEntryDto {
  * entity types (identity, clients, workouts, library, goals — see DESIGN §9).
  */
 export class ScoutProgressDto {
+  @ApiProperty({
+    description: 'Crawl session id (snake_case outer envelope).',
+    maxLength: 128,
+    example: 'intent_2026_07_09_abc123',
+  })
   @IsString()
   @MaxLength(128)
   intent_id!: string;
@@ -60,16 +77,28 @@ export class ScoutProgressDto {
    * or mint distinct intent_ids, so a separate sessionId would add a key column
    * with no distinct collision to prevent.
    */
+  @ApiProperty({
+    description: 'Client-minted stable device id (camelCase); part of the progress storage key.',
+    minLength: 1,
+    maxLength: 64,
+    example: 'dev_5f2c',
+  })
   @IsString()
   @Length(1, 64)
   deviceId!: string;
 
+  @ApiProperty({
+    type: [ScoutProgressEntryDto],
+    description: 'Per-entity progress lines.',
+    maxItems: 64,
+  })
   @IsArray()
   @ArrayMaxSize(64)
   @ValidateNested({ each: true })
   @Type(() => ScoutProgressEntryDto)
   progress!: ScoutProgressEntryDto[];
 
+  @ApiPropertyOptional({ description: 'Latest non-fatal error, if any.', maxLength: 2000 })
   @IsOptional()
   @IsString()
   @MaxLength(2000)
@@ -86,19 +115,50 @@ export type ScoutTerminalStatus = (typeof SCOUT_TERMINAL_STATUSES)[number];
  * JSON object; error_summary is present only for partial / failed runs.
  */
 export class ScoutCompleteDto {
+  @ApiProperty({
+    description: 'Crawl session id (snake_case outer envelope).',
+    maxLength: 128,
+    example: 'intent_2026_07_09_abc123',
+  })
   @IsString()
   @MaxLength(128)
   intent_id!: string;
 
+  @ApiProperty({
+    description: 'Terminal state the crawl settled into.',
+    enum: SCOUT_TERMINAL_STATUSES,
+    example: 'success',
+  })
   @IsIn(SCOUT_TERMINAL_STATUSES)
   terminal_status!: ScoutTerminalStatus;
 
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: true,
+    description: 'Optional per-entity final tally.',
+  })
   @IsOptional()
   @IsObject()
   final_counts?: Record<string, unknown>;
 
+  @ApiPropertyOptional({
+    description: 'Human-readable summary for partial/failed runs.',
+    maxLength: 2000,
+  })
   @IsOptional()
   @IsString()
   @MaxLength(2000)
   error_summary?: string;
+}
+
+/** 200 body: the settle call is acknowledged and echoes the intent id. */
+export class ScoutCompleteResult {
+  @ApiProperty({ description: 'Always true on a successful (idempotent) settle.', example: true })
+  acknowledged!: true;
+
+  @ApiProperty({
+    description: 'The intent id that was settled.',
+    example: 'intent_2026_07_09_abc123',
+  })
+  intent_id!: string;
 }

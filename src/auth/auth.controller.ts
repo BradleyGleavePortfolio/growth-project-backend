@@ -29,6 +29,8 @@ import {
   BootstrapOwnerDto,
   IssueRecentAuthTokenDto,
   ExtensionRefreshDto,
+  ExtensionRefreshResult,
+  ExtensionRefreshErrorDto,
 } from './auth.dto';
 import {
   InviteCodesService,
@@ -118,8 +120,12 @@ export class AuthController {
       'access/refresh pair. No backend-minted tokens — Supabase owns rotation ' +
       'and revocation. Rate-limited 30/min per IP.',
   })
-  @ApiResponse({ status: 200, description: 'Rotated token pair.' })
-  @ApiResponse({ status: 401, description: 'Refresh token invalid or expired.' })
+  @ApiResponse({ status: 200, description: 'Rotated token pair.', type: ExtensionRefreshResult })
+  @ApiResponse({
+    status: 401,
+    description: 'Refresh token invalid or expired.',
+    type: ExtensionRefreshErrorDto,
+  })
   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('extension/refresh')

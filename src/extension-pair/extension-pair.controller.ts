@@ -7,8 +7,15 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CoachGuard } from '../auth/coach.guard';
 import { THROTTLER_NAMES } from '../throttler/throttler.config';
 import { ExtensionPairService } from './extension-pair.service';
-import { PairInitDto, PairRedeemDto, PairStatusDto } from './extension-pair.dto';
-import type { PairInitResult, PairRedeemResult, PairStatusResult } from './extension-pair.dto';
+import {
+  PairInitDto,
+  PairInitResult,
+  PairRedeemDto,
+  PairRedeemErrorDto,
+  PairRedeemResult,
+  PairStatusDto,
+  PairStatusResult,
+} from './extension-pair.dto';
 
 // Per-IP redeem cap (brute-force brake over the 10^6 code space). Default 10/
 // min/IP, env-tunable + clamped.
@@ -40,7 +47,7 @@ export class ExtensionPairController {
       '+ chosen source platform. Returns { pairing_code, expires_at }. ' +
       'Returns 404 when FEATURE_EXTENSION_PAIRING is off.',
   })
-  @ApiResponse({ status: 201, description: 'Pairing code minted.' })
+  @ApiResponse({ status: 201, description: 'Pairing code minted.', type: PairInitResult })
   @ApiResponse({ status: 403, description: 'Caller is not a coach.' })
   @ApiResponse({ status: 404, description: 'Pairing feature disabled.' })
   @Post('init')
@@ -60,7 +67,7 @@ export class ExtensionPairController {
       "mint reads as `expired` (never confirms another coach's code). " +
       'Returns 404 when FEATURE_EXTENSION_PAIRING is off.',
   })
-  @ApiResponse({ status: 200, description: 'Pairing code status.' })
+  @ApiResponse({ status: 200, description: 'Pairing code status.', type: PairStatusResult })
   @ApiResponse({ status: 403, description: 'Caller is not a coach.' })
   @ApiResponse({ status: 404, description: 'Pairing feature disabled.' })
   @Post('status')
@@ -84,9 +91,13 @@ export class ExtensionPairController {
       'a code is hard-locked → 410 locked. Rate-limited per IP. ' +
       'Returns 404 when FEATURE_EXTENSION_PAIRING is off.',
   })
-  @ApiResponse({ status: 200, description: 'Token pair issued.' })
-  @ApiResponse({ status: 400, description: 'Invalid pairing code.' })
-  @ApiResponse({ status: 410, description: 'Code expired, already used, or locked.' })
+  @ApiResponse({ status: 200, description: 'Token pair issued.', type: PairRedeemResult })
+  @ApiResponse({ status: 400, description: 'Invalid pairing code.', type: PairRedeemErrorDto })
+  @ApiResponse({
+    status: 410,
+    description: 'Code expired, already used, or locked.',
+    type: PairRedeemErrorDto,
+  })
   @ApiResponse({ status: 404, description: 'Pairing feature disabled.' })
   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
