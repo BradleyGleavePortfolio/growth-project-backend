@@ -42,7 +42,7 @@ jobs:
     name: Banned cast tokens (R75 / R100.A2)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
       - name: Diff banned tokens
@@ -54,21 +54,22 @@ jobs:
             echo "Not in PR context; skipping."
             exit 0
           fi
-          # Scan scope (R75 / R100.A2). Includes application code, prod scripts,
-          # and the Danger config; excludes type-declaration files, unit/spec
-          # files (fixture false positives), node_modules, and — critically —
-          # this gate's own home under .github/** so the token list below cannot
-          # self-match when a PR edits the gate workflow itself.
+          # Scan scope (R75 / R100.A2): application code, prod scripts, and the
+          # Danger config; excludes .d.ts, unit/spec files, and node_modules. No
+          # .github/** exclude is needed — every positive pathspec is rooted at
+          # src/, scripts/, test/, or dangerfile.js, so the token list cannot
+          # self-match a workflow file (asserted in the r100-pathspec spec). The
+          # :(glob) prefix makes `**` match zero-or-more segments so top-level
+          # files (e.g. src/main.ts) are scanned; a bare src/**/*.ts skips them.
           PATHSPEC=(
-            'src/**/*.ts' 'src/**/*.tsx' 'src/**/*.js' 'src/**/*.jsx'
-            'scripts/**/*.ts' 'scripts/**/*.js' 'scripts/**/*.sh'
+            ':(glob)src/**/*.ts' ':(glob)src/**/*.tsx' ':(glob)src/**/*.js' ':(glob)src/**/*.jsx'
+            ':(glob)scripts/**/*.ts' ':(glob)scripts/**/*.js' ':(glob)scripts/**/*.sh'
             'dangerfile.js'
-            'test/**/*.ts' 'test/**/*.tsx' 'test/**/*.js'
-            ':(exclude)**/*.d.ts'
-            ':(exclude)**/node_modules/**'
-            ':(exclude)**/*.test.*'
-            ':(exclude)**/*.spec.*'
-            ':(exclude).github/**'
+            ':(glob)test/**/*.ts' ':(glob)test/**/*.tsx' ':(glob)test/**/*.js'
+            ':(exclude,glob)**/*.d.ts'
+            ':(exclude,glob)**/node_modules/**'
+            ':(exclude,glob)**/*.test.*'
+            ':(exclude,glob)**/*.spec.*'
           )
           # Build the added/removed line sets ONCE per side, scoped above.
           ADDED_LINES=$(git diff "$BASE_SHA"...HEAD -- "${PATHSPEC[@]}" | grep -E '^\+[^+]' || true)
@@ -137,7 +138,7 @@ jobs:
     name: LOC budget (R100.A3)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
       - name: Compute net LOC
@@ -186,7 +187,7 @@ jobs:
     name: Test density (R100.A1)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
       - name: Compute test:src ratio
@@ -206,15 +207,22 @@ jobs:
           PR_TITLE="$(gh pr view "$PR_NUMBER" --json title --jq .title 2>/dev/null || true)"
           if [ -z "$PR_TITLE" ]; then PR_TITLE="$PR_TITLE_EVENT"; fi
           echo "PR title (live): $PR_TITLE"
-          # src side counts application code plus testable infra code
-          # (scripts/*.ts, dangerfile.js). Non-TS infra (workflow YAML, shell)
-          # is not unit-testable and is validated by the infra-lint workflow
-          # instead; cover it with a [TEST-EXEMPT: <reason>] marker.
+          # src side covers every executable production extension the banned-cast
+          # scan covers — .ts/.tsx/.js/.jsx under src/, scripts/*.{ts,js}, and
+          # dangerfile.js. A scripts/*.ts-only denominator let a production .js
+          # module escape the ratio; :(glob) also counts top-level files. Non-TS/
+          # JS infra (YAML, shell) is validated by infra-lint; cover it with a
+          # [TEST-EXEMPT: <reason>] marker. Co-located specs are counted as TEST.
           SRC=$(git diff --numstat "$BASE_SHA"...HEAD -- \
-            'src/**/*.ts' 'src/**/*.tsx' 'scripts/**/*.ts' 'dangerfile.js' \
-            ':(exclude)src/**/*.spec.ts' ':(exclude)src/**/*.test.ts' \
+            ':(glob)src/**/*.ts' ':(glob)src/**/*.tsx' ':(glob)src/**/*.js' ':(glob)src/**/*.jsx' \
+            ':(glob)scripts/**/*.ts' ':(glob)scripts/**/*.js' 'dangerfile.js' \
+            ':(exclude,glob)src/**/*.spec.*' ':(exclude,glob)src/**/*.test.*' \
+            ':(exclude,glob)scripts/**/*.spec.*' ':(exclude,glob)scripts/**/*.test.*' \
             | awk '{ a += $1 } END { print a + 0 }')
-          TEST=$(git diff --numstat "$BASE_SHA"...HEAD -- 'test/**/*.ts' 'src/**/*.spec.ts' 'src/**/*.test.ts' \
+          TEST=$(git diff --numstat "$BASE_SHA"...HEAD -- \
+            ':(glob)test/**/*.ts' ':(glob)test/**/*.tsx' ':(glob)test/**/*.js' \
+            ':(glob)src/**/*.spec.*' ':(glob)src/**/*.test.*' \
+            ':(glob)scripts/**/*.spec.*' ':(glob)scripts/**/*.test.*' \
             | awk '{ a += $1 } END { print a + 0 }')
           echo "src lines added: $SRC"
           echo "test lines added: $TEST"

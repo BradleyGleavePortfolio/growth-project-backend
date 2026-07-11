@@ -10,6 +10,7 @@
 // nudging.
 
 const { danger, message, warn, fail, markdown, schedule } = require('danger');
+const { shouldRequireLockfile } = require('./scripts/lockfile-relevance');
 
 // ---------- 1) Risk markers ----------
 // Include deleted_files: a removed migration / auth / billing file is at
@@ -122,12 +123,36 @@ if (prBody.includes('BREAKING CHANGE:')) {
 }
 
 // ---------- 3) Lockfile hygiene ----------
+// Only a change to a DEPENDENCY field of package.json requires a matching
+// package-lock.json update; a scripts/metadata/version-only edit does not touch
+// the resolved graph, so demanding a lockfile bump there is a false blocker.
+// The relevance verdict is computed by scripts/lockfile-relevance.js, which
+// fails CLOSED (required=true) on a read error OR an unrecognized diff shape and
+// only clears when it can positively confirm no dependency field changed. The
+// success ✅ message is emitted ONLY on that positive-clear path, so an
+// unexpected Danger diff shape can never produce a fake-green checkmark (R109).
 const touchedPackage = touched.includes('package.json');
 const touchedLock = touched.includes('package-lock.json');
 if (touchedPackage && !touchedLock) {
-  fail(
-    'You changed **package.json** without updating **package-lock.json**. Run `npm install` and commit the lockfile.',
-  );
+  schedule(async () => {
+    const verdict = await shouldRequireLockfile((f) => danger.git.JSONDiffForFile(f), {
+      onReadError: (err) =>
+        warn(
+          `Could not read the package.json JSON diff (${
+            err && err.message ? err.message : String(err)
+          }); requiring a lockfile update to stay safe.`,
+        ),
+    });
+    if (verdict.required) {
+      fail(
+        `You changed **package.json** without a matching **package-lock.json** update (${verdict.reason}). Run \`npm install\` and commit the lockfile.`,
+      );
+    } else {
+      message(
+        'package.json changed, but no dependency fields were touched — no lockfile update needed. ✅',
+      );
+    }
+  });
 }
 if (touchedLock && !touchedPackage) {
   message('Lockfile-only update — looks like a `npm install` ran cleanly. ✅');
