@@ -17,6 +17,12 @@ import { buildOpenApiDocument } from '../src/common/openapi';
 import { buildImporterContract, serializeContract } from './importer-contract';
 
 export function contractOutPath(): string {
+  // IMPORTER_CONTRACT_OUT lets a caller (the cross-process determinism test)
+  // redirect the write to a scratch path so a fresh, cold-process regeneration
+  // can be diffed against the committed artifact WITHOUT clobbering it. Unset in
+  // normal use, so the CLI still writes the canonical location.
+  const override = process.env.IMPORTER_CONTRACT_OUT;
+  if (override && override.trim().length > 0) return path.resolve(override.trim());
   return path.resolve(__dirname, '..', 'docs', 'contracts', 'importer-openapi.json');
 }
 

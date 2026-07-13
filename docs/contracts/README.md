@@ -14,6 +14,19 @@ covering exactly these routes:
 | `POST /api/scout/progress`         | Mirror a crawl progress snapshot             |
 | `POST /api/scout/ingest/complete`  | Settle an import to its terminal state       |
 
+### Scope — what is intentionally NOT in the contract
+
+`POST /api/auth/extension/login` is extension-facing but deliberately **excluded**.
+It is a thin variant of the general `POST /api/auth/login` (it proxies Supabase
+`signInWithPassword` and returns the raw Supabase session verbatim, only tagging
+`source=extension` in the audit log). It shares `/auth/login`'s general auth
+semantics and Supabase-owned session shape, not the importer's bespoke pairing
+lifecycle. The contract governs the **pairing bootstrap** the extension depends
+on — `pair/redeem` (code → token pair) and `auth/extension/refresh` (rotate that
+pair) — whose shapes are unique to this surface. Pulling `extension/login` in
+would couple the frozen importer artifact to the general Supabase login response,
+which evolves on its own cadence, for no client-visible pairing benefit.
+
 ## Source of truth
 
 The artifact is **generated**, never hand-edited. It is sliced out of the
@@ -63,11 +76,16 @@ server's real runtime output — not a per-route shape:
   constraint (e.g. a malformed `pair/redeem` body). Where a status has a fixed
   machine-readable `code`, the response composes `ErrorEnvelope` with an
   `allOf` that pins the `code` enum (required on `auth/extension/refresh` 401 and
-  `pair/redeem` 410; optional-but-pinned on `pair/redeem` 400, which can also
-  arrive code-less from the ValidationPipe).
+  `pair/redeem` 410; optional-but-pinned on `pair/redeem` 400 and `pair/init` 400,
+  both of which can also arrive code-less from the ValidationPipe — the domain
+  paths set `invalid` and `code_mint_failed` respectively).
 - **`RateLimitError`** — the `429` body emitted by `ThrottlerExceptionFilter`.
   It is intentionally a different shape (`retryAfter`, matching the
   `Retry-After` header; no `timestamp`/`path`), so it is a distinct schema.
+  Every importer route can emit it: `pair/redeem` under its explicit per-IP
+  `@Throttle`, and the authenticated routes (`pair/init`, `pair/status`, the
+  scout routes) under the global authenticated default enforced by
+  `UserThrottlerGuard`, so the `429` is documented on each for parity.
 
 ## Generating clients
 

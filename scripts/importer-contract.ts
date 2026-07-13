@@ -10,6 +10,13 @@ import type { OpenAPIObject } from '@nestjs/swagger';
 // OpenAPI document. setGlobalPrefix('api') is applied at runtime only, so the
 // document itself records paths without the /api prefix — the extractor re-adds
 // it below so the artifact matches the real HTTP routes clients call.
+//
+// Deliberately EXCLUDED: POST /auth/extension/login. It is extension-facing but
+// a thin variant of the general /auth/login (proxies Supabase signInWithPassword,
+// returns the raw Supabase session verbatim, only tagging source=extension in the
+// audit log). It carries general-auth semantics, not the importer's bespoke
+// pairing lifecycle; the contract governs the pairing bootstrap (redeem + refresh)
+// instead. See docs/contracts/README.md § "Scope".
 export const IMPORTER_BARE_PATHS = [
   '/auth/extension/refresh',
   '/extension/pair/init',

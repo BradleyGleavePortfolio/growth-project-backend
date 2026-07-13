@@ -106,6 +106,14 @@ export class PairRedeemResult {
 // The contract pins each enum against the status it can actually appear on, so
 // a client can exhaustively switch on `code` per status. PAIR_REDEEM_ERROR_CODES
 // remains the union for the service's shared type.
+// Domain failure code for init: after the mint-retry budget is exhausted the
+// service throws BadRequestException({ code: 'code_mint_failed' }) (see
+// ExtensionPairService.init). A 400 can ALSO arise code-less from the global
+// ValidationPipe (a chosen_platform that fails the slug/length constraints),
+// so the contract pins this enum only WHEN a `code` is present.
+export const PAIR_INIT_400_CODES = ['code_mint_failed'] as const;
+export type PairInitErrorCode = (typeof PAIR_INIT_400_CODES)[number];
+
 export const PAIR_REDEEM_400_CODES = ['invalid'] as const;
 export const PAIR_REDEEM_410_CODES = ['expired', 'already_used', 'locked'] as const;
 export const PAIR_REDEEM_ERROR_CODES = [

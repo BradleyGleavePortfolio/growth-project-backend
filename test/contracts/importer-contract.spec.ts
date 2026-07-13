@@ -1,4 +1,7 @@
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import type { OpenAPIObject } from '@nestjs/swagger';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module';
@@ -223,6 +226,48 @@ describe('importer contract (R80 freeze)', () => {
       expect(Object.keys(props).sort()).toEqual(['expires_at', 'pairing_code']);
     });
 
+    it('init 400 is the shared envelope; code is OPTIONAL and pinned to `code_mint_failed` when present', () => {
+      // Like redeem, init 400 has two sources: the domain `code_mint_failed`
+      // path (mint-retry budget exhausted, sets code) and the code-less
+      // ValidationPipe array (a chosen_platform failing the slug/length rules).
+      const schema = rec(
+        dig(
+          contract,
+          'paths',
+          '/api/extension/pair/init',
+          'post',
+          'responses',
+          '400',
+          'content',
+          'application/json',
+          'schema',
+        ),
+      );
+      const allOf = schema.allOf as unknown[];
+      expect(rec(allOf[0]).$ref).toBe('#/components/schemas/ErrorEnvelope');
+      expect(rec(allOf[1]).required).toBeUndefined();
+      expect(dig(allOf[1], 'properties', 'code', 'enum')).toEqual(['code_mint_failed']);
+    });
+
+    it('init advertises the reachable 429 (global authed throttle)', () => {
+      // init carries no explicit @Throttle, so it is governed by the global
+      // authenticated default (UserThrottlerGuard). Documented for parity.
+      expect(
+        dig(
+          contract,
+          'paths',
+          '/api/extension/pair/init',
+          'post',
+          'responses',
+          '429',
+          'content',
+          'application/json',
+          'schema',
+          '$ref',
+        ),
+      ).toBe('#/components/schemas/RateLimitError');
+    });
+
     it('status returns the pending|paired|expired enum on 200', () => {
       expect(
         dig(
@@ -241,6 +286,25 @@ describe('importer contract (R80 freeze)', () => {
       expect(
         dig(contract, 'components', 'schemas', 'PairStatusResult', 'properties', 'status', 'enum'),
       ).toEqual(['pending', 'paired', 'expired']);
+    });
+
+    it('status advertises the reachable 429 (global authed throttle)', () => {
+      // Same global-throttle parity as init: no explicit @Throttle → governed by
+      // the global authenticated default (UserThrottlerGuard).
+      expect(
+        dig(
+          contract,
+          'paths',
+          '/api/extension/pair/status',
+          'post',
+          'responses',
+          '429',
+          'content',
+          'application/json',
+          'schema',
+          '$ref',
+        ),
+      ).toBe('#/components/schemas/RateLimitError');
     });
 
     it('redeem returns the token pair + chosen_platform on 200', () => {
@@ -532,5 +596,44 @@ describe('importer contract (R80 freeze)', () => {
         ),
       ).toBe('#/components/schemas/RateLimitError');
     });
+  });
+
+  // The in-process determinism checks (stableSort idempotence, repeated
+  // serializeContract) live in importer-contract-extraction.spec.ts. This one is
+  // stronger: it regenerates the artifact from a COLD, SEPARATE Node process (a
+  // full fresh Nest boot via the real `npm run contract:importer` CLI) and
+  // asserts the bytes are identical to the committed file. That catches any
+  // nondeterminism the same-process path cannot — Set/Map iteration order,
+  // env-dependent output, or absolute-path leakage that only differs across
+  // process boundaries. The child writes to a scratch path via
+  // IMPORTER_CONTRACT_OUT so the committed artifact is never touched; the var is
+  // scoped to the child env and never leaks into this (parent) process, so the
+  // drift check above still reads the canonical location.
+  describe('cross-process determinism', () => {
+    const repoRoot = path.resolve(__dirname, '..', '..');
+    const scratch = path.join(os.tmpdir(), `importer-contract-xproc-${process.pid}.json`);
+
+    afterAll(() => {
+      try {
+        fs.unlinkSync(scratch);
+      } catch {
+        // best-effort cleanup; a leftover temp file is harmless.
+      }
+    });
+
+    it('a fresh subprocess regeneration is byte-identical to the committed artifact', () => {
+      execFileSync('npm', ['run', 'contract:importer'], {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          IMPORTER_CONTRACT_OUT: scratch,
+          NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --max-old-space-size=6144`.trim(),
+        },
+        stdio: 'ignore',
+      });
+      const fromSubprocess = fs.readFileSync(scratch, 'utf8');
+      const committed = fs.readFileSync(contractOutPath(), 'utf8');
+      expect(fromSubprocess).toBe(committed);
+    }, 180_000);
   });
 });

@@ -8,6 +8,7 @@ import { CoachGuard } from '../auth/coach.guard';
 import { THROTTLER_NAMES } from '../throttler/throttler.config';
 import { ExtensionPairService } from './extension-pair.service';
 import {
+  PAIR_INIT_400_CODES,
   PAIR_REDEEM_400_CODES,
   PAIR_REDEEM_410_CODES,
   PairInitDto,
@@ -55,6 +56,17 @@ export class ExtensionPairController {
   })
   @ApiResponse({ status: 201, description: 'Pairing code minted.', type: PairInitResult })
   @ApiResponse({
+    status: 400,
+    description:
+      'Rejected init. Standard HttpExceptionFilter envelope. Two sources: the ' +
+      'domain path sets `code: "code_mint_failed"` when the mint-retry budget is ' +
+      'exhausted; a malformed body (chosen_platform failing the slug/length rules) ' +
+      'is rejected by the global ValidationPipe with NO `code` and `message` as a ' +
+      'string ARRAY of constraint violations. `code` is therefore optional here and ' +
+      'pinned to `code_mint_failed` only when present.',
+    schema: envelopeWithCode(PAIR_INIT_400_CODES, { required: false }),
+  })
+  @ApiResponse({
     status: 403,
     description: 'Caller is not a coach.',
     schema: errorEnvelopeSchema(),
@@ -63,6 +75,14 @@ export class ExtensionPairController {
     status: 404,
     description: 'Pairing feature disabled (uniform R-DARK-1 404).',
     schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 429,
+    description:
+      'Rate limit exceeded. This route carries no explicit @Throttle, so it is ' +
+      'governed by the global authenticated default (UserThrottlerGuard, keyed by ' +
+      'user id). Documented for parity with the other throttled importer routes.',
+    schema: rateLimitSchema(),
   })
   @Post('init')
   @Roles('coach', 'owner')
@@ -91,6 +111,14 @@ export class ExtensionPairController {
     status: 404,
     description: 'Pairing feature disabled (uniform R-DARK-1 404).',
     schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 429,
+    description:
+      'Rate limit exceeded. Like init, status carries no explicit @Throttle and is ' +
+      'governed by the global authenticated default (UserThrottlerGuard, keyed by ' +
+      'user id). Documented for parity with the other throttled importer routes.',
+    schema: rateLimitSchema(),
   })
   @Post('status')
   @Roles('coach', 'owner')
