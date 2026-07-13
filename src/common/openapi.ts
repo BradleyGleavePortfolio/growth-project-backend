@@ -1,5 +1,6 @@
 import { INestApplication, Logger } from '@nestjs/common';
 import { DocumentBuilder, OpenAPIObject, SwaggerModule } from '@nestjs/swagger';
+import { ErrorEnvelope, RateLimitError } from './errors/error-envelope.dto';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pkg = require('../../package.json') as { version: string };
 
@@ -37,7 +38,12 @@ export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
     .addServer(`http://localhost:${process.env.PORT || '3000'}`, 'Local development')
     .build();
 
-  const document = SwaggerModule.createDocument(app, config);
+  // Register the shared error schemas explicitly: routes reference them via
+  // getSchemaPath()/$ref (not a bare `type:`), so @nestjs/swagger would not
+  // otherwise emit their component definitions.
+  const document = SwaggerModule.createDocument(app, config, {
+    extraModels: [ErrorEnvelope, RateLimitError],
+  });
   // @nestjs/swagger emits OpenAPI 3.0; bump the version field so SDK
   // generators that key on `openapi: '3.1.0'` accept the spec. The shape
   // emitted is a strict subset of 3.1, so no other fields need patching.

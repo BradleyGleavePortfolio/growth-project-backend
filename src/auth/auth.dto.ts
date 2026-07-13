@@ -289,19 +289,6 @@ export class ExtensionRefreshResult {
   expires_at?: number;
 }
 
-// 401 body for a rejected refresh (R109 structured error). `code` is a fixed
-// discriminant the extension keys off to force a re-pair.
-export class ExtensionRefreshErrorDto {
-  @ApiProperty({ description: 'Fixed failure discriminant.', example: 'extension_refresh_invalid' })
-  code!: string;
-
-  @ApiProperty({
-    description: 'Human-readable failure message.',
-    example: 'refresh token invalid or expired',
-  })
-  message!: string;
-}
-
 // First-gym bootstrap: creates the very first owner-role user on a fresh
 // instance. Gated by BOOTSTRAP_SECRET env var AND a "no existing owners"
 // precondition, so it cannot be used to escalate after launch.

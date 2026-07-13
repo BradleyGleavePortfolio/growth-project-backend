@@ -99,22 +99,17 @@ export class PairRedeemResult {
 // error body's `code` field so the extension popup can map each to the right
 // user-facing string. `locked` = the code burned through its per-code attempt
 // budget and is hard-invalidated (re-mint required).
-export const PAIR_REDEEM_ERROR_CODES = ['expired', 'already_used', 'invalid', 'locked'] as const;
+//
+// The reasons split by HTTP status, matching ExtensionPairService.redeem():
+//   400 → `invalid`                              (BadRequestException)
+//   410 → `expired` | `already_used` | `locked`  (GoneException)
+// The contract pins each enum against the status it can actually appear on, so
+// a client can exhaustively switch on `code` per status. PAIR_REDEEM_ERROR_CODES
+// remains the union for the service's shared type.
+export const PAIR_REDEEM_400_CODES = ['invalid'] as const;
+export const PAIR_REDEEM_410_CODES = ['expired', 'already_used', 'locked'] as const;
+export const PAIR_REDEEM_ERROR_CODES = [
+  ...PAIR_REDEEM_410_CODES,
+  ...PAIR_REDEEM_400_CODES,
+] as const;
 export type PairRedeemErrorCode = (typeof PAIR_REDEEM_ERROR_CODES)[number];
-
-// Error body returned by redeem on the 400/410 paths. Modeled so the contract
-// pins both the enum of failure reasons and the presence of a human message.
-export class PairRedeemErrorDto {
-  @ApiProperty({
-    description: 'Machine-readable failure reason for a rejected redeem.',
-    enum: PAIR_REDEEM_ERROR_CODES,
-    example: 'expired',
-  })
-  code!: PairRedeemErrorCode;
-
-  @ApiProperty({
-    description: 'Human-readable failure message.',
-    example: 'This pairing code has expired.',
-  })
-  message!: string;
-}

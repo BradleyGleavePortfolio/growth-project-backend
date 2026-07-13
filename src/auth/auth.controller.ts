@@ -30,8 +30,8 @@ import {
   IssueRecentAuthTokenDto,
   ExtensionRefreshDto,
   ExtensionRefreshResult,
-  ExtensionRefreshErrorDto,
 } from './auth.dto';
+import { envelopeWithCode, rateLimitSchema } from '../common/errors/importer-error-responses';
 import {
   InviteCodesService,
   INVITE_CODE_MAX_LENGTH,
@@ -123,10 +123,16 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Rotated token pair.', type: ExtensionRefreshResult })
   @ApiResponse({
     status: 401,
-    description: 'Refresh token invalid or expired.',
-    type: ExtensionRefreshErrorDto,
+    description:
+      'Refresh token invalid or expired. Structured HttpExceptionFilter envelope ' +
+      'with `code: "extension_refresh_invalid"` — the extension keys off this to force a re-pair.',
+    schema: envelopeWithCode(['extension_refresh_invalid']),
   })
-  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
+  @ApiResponse({
+    status: 429,
+    description: 'Rate limit exceeded (per-IP throttle).',
+    schema: rateLimitSchema(),
+  })
   @Public()
   @Post('extension/refresh')
   @Throttle({ [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]: { ttl: 60_000, limit: 30 } })

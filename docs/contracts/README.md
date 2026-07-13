@@ -45,9 +45,29 @@ Expected the checked-in artifact to equal a fresh regeneration.
 ```
 
 The same suite pins the semantic invariants clients depend on (status codes,
-the `PairRedeemErrorDto` failure enum, camelCase provenance inside the
-snake_case scout envelope, strict ISO-8601 `capturedAt`), so a regeneration that
-silently changes them is caught in review.
+the shared `ErrorEnvelope` / `RateLimitError` bodies and their pinned `code`
+enums, camelCase provenance inside the snake_case scout envelope, strict
+ISO-8601 `capturedAt`), so a regeneration that silently changes them is caught
+in review.
+
+## Error bodies
+
+Every importer 4xx/5xx references one of two **shared** schemas that mirror the
+server's real runtime output — not a per-route shape:
+
+- **`ErrorEnvelope`** — the body emitted by the global `HttpExceptionFilter`
+  (`src/filters/not-found-envelope.ts`). Always carries
+  `statusCode`, `message`, `error`, `timestamp`, `path`; `code` and `request_id`
+  are present only when set. `message` is a **string** for most errors and a
+  **string array** when the global `ValidationPipe` reports one entry per failed
+  constraint (e.g. a malformed `pair/redeem` body). Where a status has a fixed
+  machine-readable `code`, the response composes `ErrorEnvelope` with an
+  `allOf` that pins the `code` enum (required on `auth/extension/refresh` 401 and
+  `pair/redeem` 410; optional-but-pinned on `pair/redeem` 400, which can also
+  arrive code-less from the ValidationPipe).
+- **`RateLimitError`** — the `429` body emitted by `ThrottlerExceptionFilter`.
+  It is intentionally a different shape (`retryAfter`, matching the
+  `Retry-After` header; no `timestamp`/`path`), so it is a distinct schema.
 
 ## Generating clients
 

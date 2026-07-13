@@ -8,9 +8,9 @@ import {
   stableSort,
 } from '../../scripts/importer-contract';
 
-// Terse navigation of the synthetic OpenAPI tree in assertions without a
-// banned wide cast token; mirrors the intent of test/openapi-spec.spec.ts.
-const node = (value: unknown): Record<string, any> => value as Record<string, any>;
+// Terse navigation of the synthetic OpenAPI tree in assertions without the
+// `any` token; mirrors the intent of test/openapi-spec.spec.ts.
+const node = (value: unknown): Record<string, unknown> => value as Record<string, unknown>;
 // Treat a synthetic partial document as a full OpenAPIObject for the extractor.
 const asDoc = (value: unknown): OpenAPIObject => value as OpenAPIObject;
 

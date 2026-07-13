@@ -8,18 +8,6 @@
 //
 // Usage: `npm run contract:importer`
 
-// Stub the env vars required by assertEnv() so the export runs outside a real
-// environment (CI, contributor laptop). No network socket is opened.
-process.env.NODE_ENV = process.env.NODE_ENV || 'development';
-process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'http://localhost:54321';
-process.env.SUPABASE_SERVICE_ROLE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY || 'export-only-service-role-key';
-process.env.DATABASE_URL =
-  process.env.DATABASE_URL || 'postgresql://export:export@localhost:5432/export';
-process.env.USDA_API_KEY = process.env.USDA_API_KEY || 'export-only';
-// Force docs on regardless of NODE_ENV.
-process.env.ENABLE_API_DOCS = 'true';
-
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import * as fs from 'fs';
@@ -32,7 +20,25 @@ export function contractOutPath(): string {
   return path.resolve(__dirname, '..', 'docs', 'contracts', 'importer-openapi.json');
 }
 
+// Stub the env vars required by assertEnv() so the export runs outside a real
+// environment (CI, contributor laptop). No network socket is opened. This runs
+// ONLY inside main() (CLI path) — importing this module for contractOutPath()
+// (the drift test does) must NOT mutate the ambient process.env, which would
+// leak across the Jest worker's other suites.
+function stubExportEnv(): void {
+  process.env.NODE_ENV = process.env.NODE_ENV || 'development';
+  process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'http://localhost:54321';
+  process.env.SUPABASE_SERVICE_ROLE_KEY =
+    process.env.SUPABASE_SERVICE_ROLE_KEY || 'export-only-service-role-key';
+  process.env.DATABASE_URL =
+    process.env.DATABASE_URL || 'postgresql://export:export@localhost:5432/export';
+  process.env.USDA_API_KEY = process.env.USDA_API_KEY || 'export-only';
+  // Force docs on regardless of NODE_ENV.
+  process.env.ENABLE_API_DOCS = 'true';
+}
+
 async function main() {
+  stubExportEnv();
   const app = await NestFactory.create(AppModule, { logger: false });
   const document = buildOpenApiDocument(app);
   await app.close();

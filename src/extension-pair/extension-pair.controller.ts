@@ -8,14 +8,20 @@ import { CoachGuard } from '../auth/coach.guard';
 import { THROTTLER_NAMES } from '../throttler/throttler.config';
 import { ExtensionPairService } from './extension-pair.service';
 import {
+  PAIR_REDEEM_400_CODES,
+  PAIR_REDEEM_410_CODES,
   PairInitDto,
   PairInitResult,
   PairRedeemDto,
-  PairRedeemErrorDto,
   PairRedeemResult,
   PairStatusDto,
   PairStatusResult,
 } from './extension-pair.dto';
+import {
+  envelopeWithCode,
+  errorEnvelopeSchema,
+  rateLimitSchema,
+} from '../common/errors/importer-error-responses';
 
 // Per-IP redeem cap (brute-force brake over the 10^6 code space). Default 10/
 // min/IP, env-tunable + clamped.
@@ -48,8 +54,16 @@ export class ExtensionPairController {
       'Returns 404 when FEATURE_EXTENSION_PAIRING is off.',
   })
   @ApiResponse({ status: 201, description: 'Pairing code minted.', type: PairInitResult })
-  @ApiResponse({ status: 403, description: 'Caller is not a coach.' })
-  @ApiResponse({ status: 404, description: 'Pairing feature disabled.' })
+  @ApiResponse({
+    status: 403,
+    description: 'Caller is not a coach.',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Pairing feature disabled (uniform R-DARK-1 404).',
+    schema: errorEnvelopeSchema(),
+  })
   @Post('init')
   @Roles('coach', 'owner')
   @UseGuards(CoachGuard)
@@ -68,8 +82,16 @@ export class ExtensionPairController {
       'Returns 404 when FEATURE_EXTENSION_PAIRING is off.',
   })
   @ApiResponse({ status: 200, description: 'Pairing code status.', type: PairStatusResult })
-  @ApiResponse({ status: 403, description: 'Caller is not a coach.' })
-  @ApiResponse({ status: 404, description: 'Pairing feature disabled.' })
+  @ApiResponse({
+    status: 403,
+    description: 'Caller is not a coach.',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Pairing feature disabled (uniform R-DARK-1 404).',
+    schema: errorEnvelopeSchema(),
+  })
   @Post('status')
   @Roles('coach', 'owner')
   @UseGuards(CoachGuard)
@@ -92,14 +114,33 @@ export class ExtensionPairController {
       'Returns 404 when FEATURE_EXTENSION_PAIRING is off.',
   })
   @ApiResponse({ status: 200, description: 'Token pair issued.', type: PairRedeemResult })
-  @ApiResponse({ status: 400, description: 'Invalid pairing code.', type: PairRedeemErrorDto })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Rejected pairing code. Standard HttpExceptionFilter envelope. Two sources: ' +
+      'the domain path sets `code: "invalid"` with a string `message`; a malformed ' +
+      'body (not 6 digits) is rejected by the global ValidationPipe with NO `code` ' +
+      'and `message` as a string ARRAY of constraint violations. `code` is therefore ' +
+      'optional here and pinned to `invalid` only when present.',
+    schema: envelopeWithCode(PAIR_REDEEM_400_CODES, { required: false }),
+  })
   @ApiResponse({
     status: 410,
-    description: 'Code expired, already used, or locked.',
-    type: PairRedeemErrorDto,
+    description:
+      'Code expired, already used, or locked. Standard envelope with a required ' +
+      '`code` from the redeem 410 enum.',
+    schema: envelopeWithCode(PAIR_REDEEM_410_CODES),
   })
-  @ApiResponse({ status: 404, description: 'Pairing feature disabled.' })
-  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Pairing feature disabled (uniform R-DARK-1 404).',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Rate limit exceeded (per-IP redeem throttle).',
+    schema: rateLimitSchema(),
+  })
   @Public()
   @Post('redeem')
   @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: PAIR_REDEEM_PER_MIN } })

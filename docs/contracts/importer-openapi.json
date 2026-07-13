@@ -1,6 +1,64 @@
 {
   "components": {
     "schemas": {
+      "ErrorEnvelope": {
+        "properties": {
+          "code": {
+            "description": "Machine-readable failure discriminant, present only when the handler set one (e.g. `extension_refresh_invalid`, `invalid`). Absent for generic validation/guard errors.",
+            "example": "invalid",
+            "type": "string"
+          },
+          "error": {
+            "description": "Short error class name (Nest default), e.g. `Bad Request`, `Unauthorized`.",
+            "example": "Bad Request",
+            "type": "string"
+          },
+          "message": {
+            "description": "Human-readable message. A single string for most errors; an array of strings when the global ValidationPipe reports one entry per failed constraint.",
+            "example": "Invalid pairing code.",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ]
+          },
+          "path": {
+            "description": "Request path the error occurred on.",
+            "example": "/api/scout/ingest",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Correlation id from RequestIdMiddleware; omitted when absent.",
+            "example": "5f2c9b1e-6d3a-4c8b-9f0e-1a2b3c4d5e6f",
+            "type": "string"
+          },
+          "statusCode": {
+            "description": "HTTP status code, echoed in the body.",
+            "example": 400,
+            "type": "number"
+          },
+          "timestamp": {
+            "description": "ISO-8601 instant the error envelope was built.",
+            "example": "2026-07-13T18:30:00.000Z",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "statusCode",
+          "message",
+          "error",
+          "timestamp",
+          "path"
+        ],
+        "type": "object"
+      },
       "ExtensionRefreshDto": {
         "properties": {
           "refresh_token": {
@@ -10,25 +68,6 @@
         },
         "required": [
           "refresh_token"
-        ],
-        "type": "object"
-      },
-      "ExtensionRefreshErrorDto": {
-        "properties": {
-          "code": {
-            "description": "Fixed failure discriminant.",
-            "example": "extension_refresh_invalid",
-            "type": "string"
-          },
-          "message": {
-            "description": "Human-readable failure message.",
-            "example": "refresh token invalid or expired",
-            "type": "string"
-          }
-        },
-        "required": [
-          "code",
-          "message"
         ],
         "type": "object"
       },
@@ -106,31 +145,6 @@
         ],
         "type": "object"
       },
-      "PairRedeemErrorDto": {
-        "properties": {
-          "code": {
-            "description": "Machine-readable failure reason for a rejected redeem.",
-            "enum": [
-              "expired",
-              "already_used",
-              "invalid",
-              "locked"
-            ],
-            "example": "expired",
-            "type": "string"
-          },
-          "message": {
-            "description": "Human-readable failure message.",
-            "example": "This pairing code has expired.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "code",
-          "message"
-        ],
-        "type": "object"
-      },
       "PairRedeemResult": {
         "properties": {
           "access_token": {
@@ -182,6 +196,37 @@
         },
         "required": [
           "status"
+        ],
+        "type": "object"
+      },
+      "RateLimitError": {
+        "properties": {
+          "error": {
+            "description": "Always `Too Many Requests`.",
+            "example": "Too Many Requests",
+            "type": "string"
+          },
+          "message": {
+            "description": "Generic backoff message (never echoes input or which limit fired).",
+            "example": "Too many attempts. Please wait before trying again.",
+            "type": "string"
+          },
+          "retryAfter": {
+            "description": "Seconds to wait before retrying; matches the `Retry-After` header.",
+            "example": 3600,
+            "type": "number"
+          },
+          "statusCode": {
+            "description": "Always 429.",
+            "example": 429,
+            "type": "number"
+          }
+        },
+        "required": [
+          "statusCode",
+          "error",
+          "message",
+          "retryAfter"
         ],
         "type": "object"
       },
@@ -438,14 +483,39 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExtensionRefreshErrorDto"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "extension_refresh_invalid"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "type": "object"
+                    }
+                  ]
                 }
               }
             },
-            "description": "Refresh token invalid or expired."
+            "description": "Refresh token invalid or expired. Structured HttpExceptionFilter envelope with `code: \"extension_refresh_invalid\"` — the extension keys off this to force a re-pair."
           },
           "429": {
-            "description": "Rate limit exceeded."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            },
+            "description": "Rate limit exceeded (per-IP throttle)."
           }
         },
         "summary": "Extension token refresh (tgp-importer Chrome extension)",
@@ -481,10 +551,24 @@
             "description": "Pairing code minted."
           },
           "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Caller is not a coach."
           },
           "404": {
-            "description": "Pairing feature disabled."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Pairing feature disabled (uniform R-DARK-1 404)."
           }
         },
         "security": [
@@ -528,27 +612,76 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PairRedeemErrorDto"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "invalid"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
                 }
               }
             },
-            "description": "Invalid pairing code."
+            "description": "Rejected pairing code. Standard HttpExceptionFilter envelope. Two sources: the domain path sets `code: \"invalid\"` with a string `message`; a malformed body (not 6 digits) is rejected by the global ValidationPipe with NO `code` and `message` as a string ARRAY of constraint violations. `code` is therefore optional here and pinned to `invalid` only when present."
           },
           "404": {
-            "description": "Pairing feature disabled."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Pairing feature disabled (uniform R-DARK-1 404)."
           },
           "410": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PairRedeemErrorDto"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "expired",
+                            "already_used",
+                            "locked"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "type": "object"
+                    }
+                  ]
                 }
               }
             },
-            "description": "Code expired, already used, or locked."
+            "description": "Code expired, already used, or locked. Standard envelope with a required `code` from the redeem 410 enum."
           },
           "429": {
-            "description": "Rate limit exceeded."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            },
+            "description": "Rate limit exceeded (per-IP redeem throttle)."
           }
         },
         "summary": "Redeem a pairing code (extension bootstrap)",
@@ -584,10 +717,24 @@
             "description": "Pairing code status."
           },
           "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Caller is not a coach."
           },
           "404": {
-            "description": "Pairing feature disabled."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Pairing feature disabled (uniform R-DARK-1 404)."
           }
         },
         "security": [
@@ -628,18 +775,53 @@
             "description": "Batch accepted."
           },
           "400": {
-            "description": "Validation failed or batch oversized."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation failed or batch oversized. Standard HttpExceptionFilter envelope; `message` is a string ARRAY when the global ValidationPipe reports per-field constraint violations, and a plain string for the oversized-batch guard."
           },
           "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Missing or invalid bearer token."
           },
           "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Caller is not a coach."
           },
           "404": {
-            "description": "Feature disabled (FEATURE_SCOUT_INGEST off)."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Feature disabled (FEATURE_SCOUT_INGEST off — uniform R-DARK-1 404)."
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            },
             "description": "Rate limit exceeded."
           }
         },
@@ -681,15 +863,43 @@
             "description": "Completion acknowledged."
           },
           "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Missing or invalid bearer token."
           },
           "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Caller is not a coach or owner."
           },
           "404": {
-            "description": "Feature disabled (FEATURE_SCOUT_INGEST off)."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Feature disabled (FEATURE_SCOUT_INGEST off — uniform R-DARK-1 404)."
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            },
             "description": "Rate limit exceeded."
           }
         },
@@ -724,15 +934,43 @@
             "description": "Snapshot accepted."
           },
           "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Missing or invalid bearer token."
           },
           "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Caller is not a coach or owner."
           },
           "404": {
-            "description": "Feature disabled (FEATURE_SCOUT_INGEST off)."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Feature disabled (FEATURE_SCOUT_INGEST off — uniform R-DARK-1 404)."
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            },
             "description": "Rate limit exceeded."
           }
         },
