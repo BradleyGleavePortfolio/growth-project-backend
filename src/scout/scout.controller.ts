@@ -26,6 +26,14 @@ import { errorEnvelopeSchema, rateLimitSchema } from '../common/errors/importer-
 @ApiTags('scout')
 @ApiBearerAuth('bearer')
 @ApiResponse({
+  status: 400,
+  description:
+    'Malformed body (global ValidationPipe: whitelist + forbidNonWhitelisted). ' +
+    'Standard HttpExceptionFilter envelope; `message` is a string ARRAY of ' +
+    'per-field constraint violations when present.',
+  schema: errorEnvelopeSchema(),
+})
+@ApiResponse({
   status: 401,
   description: 'Missing or invalid bearer token.',
   schema: errorEnvelopeSchema(),

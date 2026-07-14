@@ -67,6 +67,11 @@ export class ExtensionPairController {
     schema: envelopeWithCode(PAIR_INIT_400_CODES, { required: false }),
   })
   @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid bearer token (global JwtAuthGuard runs before role checks).',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
     status: 403,
     description: 'Caller is not a coach.',
     schema: errorEnvelopeSchema(),
@@ -102,6 +107,19 @@ export class ExtensionPairController {
       'Returns 404 when FEATURE_EXTENSION_PAIRING is off.',
   })
   @ApiResponse({ status: 200, description: 'Pairing code status.', type: PairStatusResult })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Malformed body (global ValidationPipe). The 6-digit code field uses the same ' +
+      '`@Matches(/^[0-9]{6}$/)` rule as redeem; constraint failures yield a standard ' +
+      'envelope with `message` as a string ARRAY and no domain `code`.',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid bearer token (global JwtAuthGuard runs before role checks).',
+    schema: errorEnvelopeSchema(),
+  })
   @ApiResponse({
     status: 403,
     description: 'Caller is not a coach.',
@@ -168,6 +186,13 @@ export class ExtensionPairController {
     status: 429,
     description: 'Rate limit exceeded (per-IP redeem throttle).',
     schema: rateLimitSchema(),
+  })
+  @ApiResponse({
+    status: 500,
+    description:
+      'Session mint failed after a successful code claim (upstream auth error). ' +
+      'Standard HttpExceptionFilter envelope; no domain `code` is guaranteed.',
+    schema: errorEnvelopeSchema(),
   })
   @Public()
   @Post('redeem')

@@ -479,6 +479,16 @@
             },
             "description": "Rotated token pair."
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Malformed body (global ValidationPipe: whitelist + forbidNonWhitelisted). Standard HttpExceptionFilter envelope; `message` is a string ARRAY of per-field constraint violations and there is no domain `code`."
+          },
           "401": {
             "content": {
               "application/json": {
@@ -574,6 +584,16 @@
               }
             },
             "description": "Rejected init. Standard HttpExceptionFilter envelope. Two sources: the domain path sets `code: \"code_mint_failed\"` when the mint-retry budget is exhausted; a malformed body (chosen_platform failing the slug/length rules) is rejected by the global ValidationPipe with NO `code` and `message` as a string ARRAY of constraint violations. `code` is therefore optional here and pinned to `code_mint_failed` only when present."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token (global JwtAuthGuard runs before role checks)."
           },
           "403": {
             "content": {
@@ -717,6 +737,16 @@
               }
             },
             "description": "Rate limit exceeded (per-IP redeem throttle)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Session mint failed after a successful code claim (upstream auth error). Standard HttpExceptionFilter envelope; no domain `code` is guaranteed."
           }
         },
         "summary": "Redeem a pairing code (extension bootstrap)",
@@ -750,6 +780,26 @@
               }
             },
             "description": "Pairing code status."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Malformed body (global ValidationPipe). The 6-digit code field uses the same `@Matches(/^[0-9]{6}$/)` rule as redeem; constraint failures yield a standard envelope with `message` as a string ARRAY and no domain `code`."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token (global JwtAuthGuard runs before role checks)."
           },
           "403": {
             "content": {
@@ -907,6 +957,16 @@
             },
             "description": "Completion acknowledged."
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Malformed body (global ValidationPipe: whitelist + forbidNonWhitelisted). Standard HttpExceptionFilter envelope; `message` is a string ARRAY of per-field constraint violations when present."
+          },
           "401": {
             "content": {
               "application/json": {
@@ -977,6 +1037,16 @@
         "responses": {
           "204": {
             "description": "Snapshot accepted."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Malformed body (global ValidationPipe: whitelist + forbidNonWhitelisted). Standard HttpExceptionFilter envelope; `message` is a string ARRAY of per-field constraint violations when present."
           },
           "401": {
             "content": {

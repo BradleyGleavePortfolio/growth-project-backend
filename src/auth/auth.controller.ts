@@ -31,7 +31,11 @@ import {
   ExtensionRefreshDto,
   ExtensionRefreshResult,
 } from './auth.dto';
-import { envelopeWithCode, rateLimitSchema } from '../common/errors/importer-error-responses';
+import {
+  envelopeWithCode,
+  errorEnvelopeSchema,
+  rateLimitSchema,
+} from '../common/errors/importer-error-responses';
 import {
   InviteCodesService,
   INVITE_CODE_MAX_LENGTH,
@@ -121,6 +125,14 @@ export class AuthController {
       'and revocation. Rate-limited 30/min per IP.',
   })
   @ApiResponse({ status: 200, description: 'Rotated token pair.', type: ExtensionRefreshResult })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Malformed body (global ValidationPipe: whitelist + forbidNonWhitelisted). ' +
+      'Standard HttpExceptionFilter envelope; `message` is a string ARRAY of ' +
+      'per-field constraint violations and there is no domain `code`.',
+    schema: errorEnvelopeSchema(),
+  })
   @ApiResponse({
     status: 401,
     description:

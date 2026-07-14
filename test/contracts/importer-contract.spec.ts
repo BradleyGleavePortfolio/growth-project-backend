@@ -188,6 +188,14 @@ describe('importer contract (R80 freeze)', () => {
       expect(dig(allOf[1], 'properties', 'code', 'enum')).toEqual(['extension_refresh_invalid']);
     });
 
+    it('advertises ValidationPipe 400 as the shared ErrorEnvelope (no domain code)', () => {
+      const resp = dig(contract, 'paths', path, 'post', 'responses', '400');
+      expect(resp).toBeDefined();
+      // shared envelope — no required code enum on pure ValidationPipe failures
+      const schema = dig(resp, 'content', 'application/json', 'schema') ?? dig(resp, 'schema');
+      expect(schema).toBeDefined();
+    });
+
     it('advertises the rate-limit status as the RateLimitError body', () => {
       expect(
         dig(
@@ -286,6 +294,24 @@ describe('importer contract (R80 freeze)', () => {
       expect(
         dig(contract, 'components', 'schemas', 'PairStatusResult', 'properties', 'status', 'enum'),
       ).toEqual(['pending', 'paired', 'expired']);
+    });
+
+    it('status advertises ValidationPipe 400 (same 6-digit code rule as redeem)', () => {
+      expect(
+        dig(contract, 'paths', '/api/extension/pair/status', 'post', 'responses', '400'),
+      ).toBeDefined();
+    });
+
+    it('status advertises JwtAuth 401 before role 403', () => {
+      expect(
+        dig(contract, 'paths', '/api/extension/pair/status', 'post', 'responses', '401'),
+      ).toBeDefined();
+    });
+
+    it('init advertises JwtAuth 401 before role 403', () => {
+      expect(
+        dig(contract, 'paths', '/api/extension/pair/init', 'post', 'responses', '401'),
+      ).toBeDefined();
     });
 
     it('status advertises the reachable 429 (global authed throttle)', () => {
@@ -407,6 +433,12 @@ describe('importer contract (R80 freeze)', () => {
     });
   });
 
+  it('redeem advertises 500 for post-claim session mint failure', () => {
+    expect(
+      dig(contract, 'paths', '/api/extension/pair/redeem', 'post', 'responses', '500'),
+    ).toBeDefined();
+  });
+
   describe('scout: POST /api/scout/*', () => {
     it('ingest returns { received, deduped } on 202', () => {
       expect(
@@ -501,6 +533,12 @@ describe('importer contract (R80 freeze)', () => {
       expect(required).toEqual(expect.arrayContaining(['deviceId', 'intent_id', 'progress']));
     });
 
+    it('progress advertises ValidationPipe 400', () => {
+      expect(
+        dig(contract, 'paths', '/api/scout/progress', 'post', 'responses', '400'),
+      ).toBeDefined();
+    });
+
     it('progress advertises the reachable 403 (role) and 429 (throttle)', () => {
       // Both are enforced by global guards (RolesGuard + UserThrottlerGuard),
       // so the contract must document them for parity with /api/scout/ingest.
@@ -564,6 +602,12 @@ describe('importer contract (R80 freeze)', () => {
           'enum',
         ),
       ).toEqual(['success', 'partial', 'failed']);
+    });
+
+    it('complete advertises ValidationPipe 400', () => {
+      expect(
+        dig(contract, 'paths', '/api/scout/ingest/complete', 'post', 'responses', '400'),
+      ).toBeDefined();
     });
 
     it('complete advertises the reachable 403 (role) and 429 (throttle)', () => {
