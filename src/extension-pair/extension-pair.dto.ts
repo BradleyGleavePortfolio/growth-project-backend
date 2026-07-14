@@ -50,25 +50,74 @@ export class PairStatusDto {
 }
 
 // Status of a pairing code as reported to the polling mobile app.
-export type PairStatus = 'pending' | 'paired' | 'expired';
+export const PAIR_STATUSES = ['pending', 'paired', 'expired'] as const;
+export type PairStatus = (typeof PAIR_STATUSES)[number];
 
-export interface PairInitResult {
-  pairing_code: string;
-  expires_at: string;
+// Result shapes are decorated classes (not bare interfaces) so @nestjs/swagger
+// can emit their schemas into the frozen importer contract (R80). Structural
+// typing keeps the service layer, which returns plain object literals,
+// compatible without change.
+export class PairInitResult {
+  @ApiProperty({
+    description: '6-digit numeric pairing code the coach reads out to the extension.',
+    example: '142856',
+  })
+  pairing_code!: string;
+
+  @ApiProperty({
+    description: 'ISO-8601 instant the code expires (short TTL, DESIGN §4).',
+    format: 'date-time',
+    example: '2026-07-09T18:35:00.000Z',
+  })
+  expires_at!: string;
 }
 
-export interface PairStatusResult {
-  status: PairStatus;
+export class PairStatusResult {
+  @ApiProperty({
+    description: 'Lifecycle state of the polled code.',
+    enum: PAIR_STATUSES,
+    example: 'pending',
+  })
+  status!: PairStatus;
 }
 
-export interface PairRedeemResult {
-  access_token: string;
-  refresh_token: string;
-  chosen_platform: string;
+export class PairRedeemResult {
+  @ApiProperty({ description: 'Coach-bound Supabase access token.' })
+  access_token!: string;
+
+  @ApiProperty({ description: 'Coach-bound Supabase refresh token.' })
+  refresh_token!: string;
+
+  @ApiProperty({
+    description: 'Source platform the code was minted for (echoed to the extension).',
+    example: 'truecoach',
+  })
+  chosen_platform!: string;
 }
 
 // Structured failure reasons for redeem (DESIGN.md v0.3 §4). Surfaced in the
 // error body's `code` field so the extension popup can map each to the right
 // user-facing string. `locked` = the code burned through its per-code attempt
 // budget and is hard-invalidated (re-mint required).
-export type PairRedeemErrorCode = 'expired' | 'already_used' | 'invalid' | 'locked';
+//
+// The reasons split by HTTP status, matching ExtensionPairService.redeem():
+//   400 → `invalid`                              (BadRequestException)
+//   410 → `expired` | `already_used` | `locked`  (GoneException)
+// The contract pins each enum against the status it can actually appear on, so
+// a client can exhaustively switch on `code` per status. PAIR_REDEEM_ERROR_CODES
+// remains the union for the service's shared type.
+// Domain failure code for init: after the mint-retry budget is exhausted the
+// service throws BadRequestException({ code: 'code_mint_failed' }) (see
+// ExtensionPairService.init). A 400 can ALSO arise code-less from the global
+// ValidationPipe (a chosen_platform that fails the slug/length constraints),
+// so the contract pins this enum only WHEN a `code` is present.
+export const PAIR_INIT_400_CODES = ['code_mint_failed'] as const;
+export type PairInitErrorCode = (typeof PAIR_INIT_400_CODES)[number];
+
+export const PAIR_REDEEM_400_CODES = ['invalid'] as const;
+export const PAIR_REDEEM_410_CODES = ['expired', 'already_used', 'locked'] as const;
+export const PAIR_REDEEM_ERROR_CODES = [
+  ...PAIR_REDEEM_410_CODES,
+  ...PAIR_REDEEM_400_CODES,
+] as const;
+export type PairRedeemErrorCode = (typeof PAIR_REDEEM_ERROR_CODES)[number];

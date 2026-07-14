@@ -1,14 +1,16 @@
 import { Body, Controller, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { ScoutIngestDto, type ScoutIngestResult } from './scout-ingest.dto';
+import { ScoutIngestDto, ScoutIngestResult } from './scout-ingest.dto';
 import { ScoutIngestService } from './scout-ingest.service';
+import { errorEnvelopeSchema, rateLimitSchema } from '../common/errors/importer-error-responses';
 
 @ApiTags('scout')
+@ApiBearerAuth('bearer')
 @Controller('scout')
 export class ScoutIngestController {
   constructor(private readonly scout: ScoutIngestService) {}
@@ -30,6 +32,42 @@ export class ScoutIngestController {
    *
    * Returns 202 Accepted with { received, deduped }.
    */
+  @ApiOperation({
+    summary: 'Ingest a batch of crawled entities',
+    description:
+      'Receives the extension crawl envelope { intent_id, entity_type, entities[] }. ' +
+      'Idempotent on (coach_id, intent_id, sourceId). Returns 202 { received, deduped }. ' +
+      'Returns 404 when FEATURE_SCOUT_INGEST is off.',
+  })
+  @ApiResponse({ status: 202, description: 'Batch accepted.', type: ScoutIngestResult })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Validation failed or batch oversized. Standard HttpExceptionFilter envelope; ' +
+      '`message` is a string ARRAY when the global ValidationPipe reports per-field ' +
+      'constraint violations, and a plain string for the oversized-batch guard.',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid bearer token.',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Caller is not a coach.',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Feature disabled (FEATURE_SCOUT_INGEST off — uniform R-DARK-1 404).',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Rate limit exceeded.',
+    schema: rateLimitSchema(),
+  })
   @Post('ingest')
   // Feature gate: FEATURE_SCOUT_INGEST is enforced by the global
   // featureFlagNotFoundMiddleware (R-DARK-1) BEFORE any guard runs. See

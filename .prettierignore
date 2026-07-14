@@ -6,3 +6,6 @@ package-lock.json
 *.lock
 prisma/migrations/
 CHANGELOG.md
+# Generated, deterministically-serialized contract artifact (JSON.stringify,2);
+# byte-identity is enforced by the R80 drift test, so prettier must not reflow it.
+docs/contracts/importer-openapi.json

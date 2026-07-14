@@ -29,7 +29,13 @@ import {
   BootstrapOwnerDto,
   IssueRecentAuthTokenDto,
   ExtensionRefreshDto,
+  ExtensionRefreshResult,
 } from './auth.dto';
+import {
+  envelopeWithCode,
+  errorEnvelopeSchema,
+  rateLimitSchema,
+} from '../common/errors/importer-error-responses';
 import {
   InviteCodesService,
   INVITE_CODE_MAX_LENGTH,
@@ -118,9 +124,27 @@ export class AuthController {
       'access/refresh pair. No backend-minted tokens — Supabase owns rotation ' +
       'and revocation. Rate-limited 30/min per IP.',
   })
-  @ApiResponse({ status: 200, description: 'Rotated token pair.' })
-  @ApiResponse({ status: 401, description: 'Refresh token invalid or expired.' })
-  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
+  @ApiResponse({ status: 200, description: 'Rotated token pair.', type: ExtensionRefreshResult })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Malformed body (global ValidationPipe: whitelist + forbidNonWhitelisted). ' +
+      'Standard HttpExceptionFilter envelope; `message` is a string ARRAY of ' +
+      'per-field constraint violations and there is no domain `code`.',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 401,
+    description:
+      'Refresh token invalid or expired. Structured HttpExceptionFilter envelope ' +
+      'with `code: "extension_refresh_invalid"` — the extension keys off this to force a re-pair.',
+    schema: envelopeWithCode(['extension_refresh_invalid']),
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Rate limit exceeded (per-IP throttle).',
+    schema: rateLimitSchema(),
+  })
   @Public()
   @Post('extension/refresh')
   @Throttle({ [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]: { ttl: 60_000, limit: 30 } })
