@@ -39,7 +39,9 @@ machine or a duplicate store.
 There was no read projection over the existing importer tables. The write path
 (`complete()`) is the sole owner of `ScoutImport`; nothing surfaced its state
 plus the `ScoutIngestEntity` proof to a client. The blocker is a missing
-read, not a missing model — so the fix must be a pure projection.
+read, not a missing model — so the fix is a projection over existing tables,
+preceded by a bounded, single-flight persist of the requested run's own already
+accepted-in-memory snapshot (no new state, no new store).
 
 ## Options considered
 
@@ -53,7 +55,8 @@ read, not a missing model — so the fix must be a pure projection.
   with `ScoutImport`/`ScoutIngestEntity`, plus a migration and write-path changes
   this PR is not scoped for. Rejected — duplicate storage + second state machine,
   explicitly forbidden.
-- **(c) [CHOSEN] Pure read projection over existing tables.** `getImportStatus`
+- **(c) [CHOSEN] Read projection over existing tables (with a bounded requested-key
+  handoff persist).** `getImportStatus`
   reads `ScoutImport` (verbatim terminal state + timestamps) and a
   `ScoutIngestEntity.groupBy` (authoritative committed counts) under a
   coach-scoped `WHERE`, derives `running` only from present evidence, and 404s an
@@ -71,11 +74,17 @@ read, not a missing model — so the fix must be a pure projection.
 - **Simplified:** One projection method + one GET handler; status is
   `ScoutImport.terminal_status` reflected verbatim, or `running` when evidence
   exists but no settle row does.
-- **Accelerated:** A single pre-read drain of the in-process progress cache
-  (the same `flush()` `complete()` runs before it settles, so a just-started run
-  whose snapshot is still cached is recognised as `running` rather than 404'd),
-  then three parallel bounded reads (`Promise.all`) keyed on existing
-  unique/index columns: `ScoutImport` on `@@unique([coach_id,intent_id])`,
+- **Accelerated:** A single pre-read, **tenant + intent scoped** persist of only
+  THIS run's cached snapshot (`flushRun`, the same single-flight handoff
+  `complete()` runs before it settles) so a just-started run whose snapshot is
+  still cached is recognised as `running` rather than 404'd. This means the read
+  MAY cause a bounded, idempotent write of the requested run's own key(s) — never
+  another tenant's backlog, and never O(global backlog) work. It is not a pure
+  read. The write is single-flight (concurrent reads for the same key join one
+  in-flight upsert — no duplicate write, no gap that could false-404), and if it
+  fails the read **fails closed**: the error propagates as a 5xx, never a
+  misleading 404. Then three parallel bounded reads (`Promise.all`) keyed on
+  existing unique/index columns: `ScoutImport` on `@@unique([coach_id,intent_id])`,
   `ScoutIngestEntity.groupBy` on `@@index([coach_id,entity_type])` (carrying
   `_min.created_at` for the first-observation timestamp — no extra query), and
   the latest `ScoutProgressSnapshot` on `@@index([coach_id])`
@@ -95,9 +104,12 @@ preserving the full value (a provable status for the UI).
 
 ## Extreme test
 
-- **10x/100x reads:** it is a bounded, indexed, read-only projection; it scales
-  with per-run entity cardinality (small, fixed entity families), and carries a
-  per-caller throttle. No write amplification.
+- **10x/100x reads:** it is a bounded, indexed projection plus at most one
+  idempotent single-flight upsert of the requested run's own cached snapshot; it
+  scales with per-run entity cardinality (small, fixed entity families), and
+  carries a per-caller throttle. The optional write is confined to the requested
+  key — repeated or concurrent reads of the same run coalesce onto one in-flight
+  upsert, so read volume does not amplify into extra writes.
 - **Worst case (unknown/spoofed intent, cross-tenant probe):** every query is
   scoped by `coach_id` from the **token identity**, never a body/query field, so
   a coach probing another coach's `intent_id` gets the same `404` as a genuinely
@@ -108,8 +120,11 @@ preserving the full value (a provable status for the UI).
 
 ## Hyperscaler lens
 
-- **Reliability/failure-containment:** read-only; cannot corrupt state; a DB blip
-  surfaces as a generic 5xx via the standard filter, never a partial write.
+- **Reliability/failure-containment:** the only write it can trigger is an
+  idempotent upsert of the requested run's own progress snapshot (no cross-run,
+  no cross-tenant reach); a DB blip on that write leaves the snapshot pending for
+  retry and surfaces as a generic 5xx via the standard filter — the read fails
+  closed rather than returning a false 404, and no other run's state is touched.
 - **Reversibility:** additive contract (version bump `1.0.0 → 1.1.0`), flag OFF
   by default; rollback is flag-off or revert with zero data migration.
 - **Observability:** emits a non-PII RED-signal analytics event

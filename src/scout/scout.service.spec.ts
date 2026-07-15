@@ -671,4 +671,101 @@ describe('ScoutService', () => {
       ]);
     });
   });
+
+  describe('getImportStatus concurrency + tenant isolation (key-scoped flush)', () => {
+    // Deferred so two reads can be launched while a requested-key write is in
+    // flight; resolve() lets the pending upsert(s) complete.
+    function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+      let resolve!: (v: T) => void;
+      const promise = new Promise<T>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    }
+
+    it('does not touch an unrelated tenant/run backlog on a read (no global drain)', async () => {
+      // coach-2/intent-2 progress is cached but must NOT be persisted by a read
+      // of coach-1/intent-1 — the read drains only its own run's key(s).
+      service.recordProgress('coach-2', { ...PROGRESS, intent_id: 'intent-2' });
+
+      await expect(service.getImportStatus('coach-1', 'intent-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(upsert).not.toHaveBeenCalled();
+
+      // The unrelated backlog survives and drains normally on the next tick.
+      await service.flush();
+      expect(upsert).toHaveBeenCalledTimes(1);
+      expect(upsert.mock.calls[0][0].where.coach_id_intent_id_device_id).toEqual({
+        coach_id: 'coach-2',
+        intent_id: 'intent-2',
+        device_id: 'device-a',
+      });
+    });
+
+    it('coalesces two concurrent reads onto one in-flight write (no double write, no false 404)', async () => {
+      service.recordProgress('coach-1', PROGRESS);
+      const gate = deferred<Record<string, never>>();
+      let calls = 0;
+      upsert.mockImplementation(async () => {
+        calls += 1;
+        await gate.promise;
+        // The just-persisted snapshot becomes readable, so both reads see running.
+        snapshotFindFirst.mockResolvedValue({ updated_at: new Date('2026-07-09T10:05:00.000Z') });
+        return {};
+      });
+
+      const first = service.getImportStatus('coach-1', 'intent-1');
+      const second = service.getImportStatus('coach-1', 'intent-1');
+      gate.resolve({} as Record<string, never>);
+      const [a, b] = await Promise.all([first, second]);
+
+      expect(calls).toBe(1); // single-flight: exactly one upsert for the key
+      expect(a.status).toBe('running');
+      expect(b.status).toBe('running');
+    });
+
+    it('fails closed (propagates, not a 404) when the requested-key persist fails', async () => {
+      service.recordProgress('coach-1', PROGRESS);
+      upsert.mockRejectedValueOnce(new Error('db down'));
+
+      const err = await service
+        .getImportStatus('coach-1', 'intent-1')
+        .then(() => null)
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(NotFoundException);
+      expect((err as Error).message).toBe('db down');
+      // The main projection reads never ran — we failed before them.
+      expect(importFindUnique).not.toHaveBeenCalled();
+    });
+
+    it('recovers on retry after a requested-key persist failure (snapshot stays pending)', async () => {
+      service.recordProgress('coach-1', PROGRESS);
+      upsert.mockRejectedValueOnce(new Error('db blip'));
+
+      await expect(service.getImportStatus('coach-1', 'intent-1')).rejects.toThrow('db blip');
+
+      // Second read: the write now succeeds and lands a snapshot → running.
+      upsert.mockImplementation(async () => {
+        snapshotFindFirst.mockResolvedValue({ updated_at: new Date('2026-07-09T10:05:00.000Z') });
+        return {};
+      });
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(upsert).toHaveBeenCalledTimes(2);
+      expect(res.status).toBe('running');
+    });
+
+    it('drops the run from the pending index once its key persists (no repeat write)', async () => {
+      service.recordProgress('coach-1', PROGRESS);
+      snapshotFindFirst.mockResolvedValue({ updated_at: new Date('2026-07-09T10:05:00.000Z') });
+      await service.getImportStatus('coach-1', 'intent-1');
+      expect(upsert).toHaveBeenCalledTimes(1);
+
+      // A second read finds nothing pending for the run → no further write.
+      await service.getImportStatus('coach-1', 'intent-1');
+      expect(upsert).toHaveBeenCalledTimes(1);
+    });
+  });
 });
