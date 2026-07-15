@@ -217,6 +217,14 @@ export class ScoutService implements OnModuleDestroy {
    * or `running` derived from present evidence; counts are persisted rows, not
    * estimates. Scoped by `coachId` so unknown OR cross-tenant intents both 404. */
   async getImportStatus(coachId: string, intentId: string): Promise<ScoutImportStatusResult> {
+    // Persist any in-flight progress first (same drain complete() runs before it
+    // settles). A snapshot the extension has already POSTed sits in the in-process
+    // cache for up to one flush window; without this drain a genuinely running
+    // import that has only just started would 404 despite the backend having
+    // accepted its progress. After the drain the residual 404 is truthful: there
+    // is no committed entity, persisted snapshot, or settle row to recognise.
+    await this.flush();
+
     const [importRow, grouped, snapshot] = await Promise.all([
       this.prisma.scoutImport.findUnique({
         where: { coach_id_intent_id: { coach_id: coachId, intent_id: intentId } },

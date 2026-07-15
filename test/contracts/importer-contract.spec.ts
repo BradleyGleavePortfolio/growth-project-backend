@@ -144,12 +144,28 @@ describe('importer contract (R80 freeze)', () => {
     const props = (name: string): string[] =>
       Object.keys(rec(dig(contract, 'components', 'schemas', name, 'properties'))).sort();
 
-    it('requires the intent_id query parameter', () => {
+    it('requires the intent_id query parameter with a 1..128 bounded string schema', () => {
       const params = dig(contract, 'paths', path, 'get', 'parameters') as unknown[];
-      expect(params.map(rec).find((p) => p.name === 'intent_id')).toMatchObject({
-        in: 'query',
-        required: true,
+      const intent = rec(params.map(rec).find((p) => p.name === 'intent_id'));
+      expect(intent).toMatchObject({ in: 'query', required: true });
+      // minLength must be emitted (not just maxLength) so a client generator
+      // rejects an empty intent_id the way the server's @Length(1,128) does.
+      expect(rec(intent.schema)).toMatchObject({
+        type: 'string',
+        minLength: 1,
+        maxLength: 128,
       });
+    });
+
+    it('documents 400 and 404 without an existence oracle (flag-off ≡ not-found)', () => {
+      const g = dig(contract, 'paths', path, 'get', 'responses');
+      // The bodyless GET rejects a bad QUERY, never a "Malformed body".
+      expect(rec(dig(g, '400')).description as string).toMatch(/query/i);
+      expect(rec(dig(g, '400')).description as string).not.toMatch(/malformed body/i);
+      // Flag-off and no-evidence must be a single indistinguishable 404.
+      const notFound = rec(dig(g, '404')).description as string;
+      expect(notFound).toMatch(/FEATURE_SCOUT_INGEST/);
+      expect(notFound).toMatch(/no existence oracle/i);
     });
 
     it('returns the ScoutImportStatusResult projection on 200 with exactly its five fields', () => {

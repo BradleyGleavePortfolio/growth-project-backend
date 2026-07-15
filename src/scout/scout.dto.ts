@@ -160,7 +160,11 @@ export type ScoutReadStatus = (typeof SCOUT_READ_STATUSES)[number];
 
 /** GET /api/scout/import/status query — one run, identified by its intent id. */
 export class ScoutImportStatusQueryDto {
-  @ApiProperty({ description: 'Crawl session id of the run to read.', maxLength: 128 })
+  @ApiProperty({
+    description: 'Crawl session id of the run to read.',
+    minLength: 1,
+    maxLength: 128,
+  })
   @IsString()
   @Length(1, 128)
   intent_id!: string;

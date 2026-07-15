@@ -918,6 +918,7 @@
             "required": true,
             "schema": {
               "maxLength": 128,
+              "minLength": 1,
               "type": "string"
             }
           }
@@ -941,7 +942,7 @@
                 }
               }
             },
-            "description": "Malformed body (global ValidationPipe: whitelist + forbidNonWhitelisted). Standard HttpExceptionFilter envelope; `message` is a string ARRAY of per-field constraint violations when present."
+            "description": "Invalid query string (global ValidationPipe: whitelist + forbidNonWhitelisted). Raised when `intent_id` is missing, empty, over 128 chars, or an unknown query param is supplied. Standard HttpExceptionFilter envelope; `message` is a string ARRAY of per-field constraint violations when present."
           },
           "401": {
             "content": {
@@ -971,7 +972,7 @@
                 }
               }
             },
-            "description": "Feature disabled (FEATURE_SCOUT_INGEST off — uniform R-DARK-1 404)."
+            "description": "Uniform not-found. Returned identically whether FEATURE_SCOUT_INGEST is off (R-DARK-1 dark route, decided before any guard runs) OR the run has no server-side evidence for the calling coach (unknown intent, cross-tenant intent, or a run with no committed entity, persisted progress snapshot, or settle row yet). The two cases are deliberately indistinguishable — no existence oracle."
           },
           "429": {
             "content": {

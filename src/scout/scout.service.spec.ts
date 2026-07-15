@@ -513,6 +513,22 @@ describe('ScoutService', () => {
       expect(capture).not.toHaveBeenCalled();
     });
 
+    it('drains in-flight progress before reading so a just-accepted run is not falsely 404d', async () => {
+      // A snapshot the extension has already POSTed but that has not yet hit its
+      // flush tick lives only in the in-process cache. The read must persist it
+      // first (the same drain complete() runs) so a genuinely running import is
+      // recognised instead of 404'd on the accepted-but-unflushed window.
+      service.recordProgress('coach-1', PROGRESS);
+      // Model the drain landing the row so the subsequent snapshot read sees it.
+      upsert.mockImplementation(async () => {
+        snapshotFindFirst.mockResolvedValue({ updated_at: SEEN });
+        return {};
+      });
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(upsert).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe('running');
+    });
+
     it('reports running when committed entities exist but no terminal row does', async () => {
       ingestGroupBy.mockResolvedValue(groups());
       const res = await service.getImportStatus('coach-1', 'intent-1');

@@ -103,6 +103,26 @@ export class ScoutController {
   })
   @ApiQuery({ name: 'intent_id', required: true, description: 'Crawl session id to read.' })
   @ApiResponse({ status: 200, description: 'Import status.', type: ScoutImportStatusResult })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Invalid query string (global ValidationPipe: whitelist + forbidNonWhitelisted). ' +
+      'Raised when `intent_id` is missing, empty, over 128 chars, or an unknown ' +
+      'query param is supplied. Standard HttpExceptionFilter envelope; `message` is ' +
+      'a string ARRAY of per-field constraint violations when present.',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 404,
+    description:
+      'Uniform not-found. Returned identically whether FEATURE_SCOUT_INGEST is off ' +
+      '(R-DARK-1 dark route, decided before any guard runs) OR the run has no ' +
+      'server-side evidence for the calling coach (unknown intent, cross-tenant ' +
+      'intent, or a run with no committed entity, persisted progress snapshot, or ' +
+      'settle row yet). The two cases are deliberately indistinguishable — no ' +
+      'existence oracle.',
+    schema: errorEnvelopeSchema(),
+  })
   @Get('import/status')
   @Roles('coach', 'owner')
   @Throttle({ default: { ttl: 60_000, limit: 120 } })
