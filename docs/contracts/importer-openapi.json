@@ -359,7 +359,7 @@
             "type": "string"
           },
           "started_at": {
-            "description": "Earliest evidence timestamp the backend holds for this run (ISO-8601): the first committed entity when any exist, else the run lifecycle start, else the most recent progress snapshot. Null when no evidence is timestamped.",
+            "description": "Earliest evidence timestamp (ISO-8601): first committed entity, else lifecycle start, else latest progress snapshot. Null when none timestamped.",
             "format": "date-time",
             "nullable": true,
             "type": "string"

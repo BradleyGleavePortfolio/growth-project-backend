@@ -221,8 +221,8 @@ export class ScoutService implements OnModuleDestroy {
       this.prisma.scoutImport.findUnique({
         where: { coach_id_intent_id: { coach_id: coachId, intent_id: intentId } },
       }),
-      // _min.created_at rides the SAME grouped read (no extra query) and gives
-      // the canonical, immutable first-commit timestamp per entity family.
+      // _min.created_at rides the same grouped read (no extra query): the
+      // immutable first-commit timestamp per entity family.
       this.prisma.scoutIngestEntity.groupBy({
         by: ['entity_type'],
         where: { coach_id: coachId, intent_id: intentId },
@@ -239,9 +239,8 @@ export class ScoutService implements OnModuleDestroy {
     const status = this.projectReadStatus(coachId, intentId, importRow?.terminal_status ?? null);
     const settled = status !== 'running';
 
-    // Earliest evidence the backend actually holds: the first committed entity
-    // is the stable first observation; the lifecycle row's start and the latest
-    // progress snapshot are ordered fallbacks only when no entity exists yet.
+    // Stable first observation: earliest committed entity; the lifecycle start
+    // and latest snapshot are ordered fallbacks used only when none exists yet.
     const firstCommittedAt = grouped.reduce<Date | null>((earliest, g) => {
       const at = g._min.created_at;
       return at && (!earliest || at < earliest) ? at : earliest;
@@ -267,15 +266,10 @@ export class ScoutService implements OnModuleDestroy {
   }
 
   /**
-   * Exhaustive lifecycle projection for the read surface. `running` when no
-   * settled row exists yet (or the row carries no terminal_status); the settled
-   * terminal_status reflected verbatim when recognised; and a fail-closed
-   * `failed` projection for a settled row whose persisted terminal_status is NOT
-   * one of the known terminal states. That last branch is a corruption guard: a
-   * settled-but-unrecognised run must never be reported as still `running`
-   * (which would misreport progress forever). The offending value is never
-   * returned to the caller — it is recorded server-side as a RED signal so the
-   * corruption is observable without leaking internals or PII.
+   * Lifecycle projection: `running` when no terminal_status is set, the settled
+   * status verbatim when recognised, else a fail-closed `failed` for a corrupt
+   * (unrecognised) settled value — never reported as still `running`. The bad
+   * value is recorded as a RED signal, never returned (no internals or PII).
    */
   private projectReadStatus(
     coachId: string,

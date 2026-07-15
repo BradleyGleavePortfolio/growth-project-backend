@@ -188,17 +188,15 @@ export class ScoutImportStatusResult {
   @ApiProperty({ type: [ScoutImportEntityCountDto], description: 'Committed counts per entity.' })
   entity_counts!: ScoutImportEntityCountDto[];
 
-  // type/format are explicit because the reflector cannot infer them from a
-  // `string | null` union — without them @nestjs/swagger emits `type: object`,
-  // which breaks client codegen (a Date field degrades to `any`/`object`).
+  // type/format explicit: the reflector cannot infer them from `string | null`
+  // and would emit `type: object`, degrading a Date field in client codegen.
   @ApiProperty({
     type: String,
     format: 'date-time',
     nullable: true,
     description:
-      'Earliest evidence timestamp the backend holds for this run (ISO-8601): ' +
-      'the first committed entity when any exist, else the run lifecycle start, ' +
-      'else the most recent progress snapshot. Null when no evidence is timestamped.',
+      'Earliest evidence timestamp (ISO-8601): first committed entity, else ' +
+      'lifecycle start, else latest progress snapshot. Null when none timestamped.',
   })
   started_at!: string | null;
 
